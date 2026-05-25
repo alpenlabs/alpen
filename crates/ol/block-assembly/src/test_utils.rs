@@ -16,7 +16,8 @@ use bitcoin::Network;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
 use strata_acct_types::{
     AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, Hash, L1BlockRecord, MessageEntry,
-    MsgPayload, l1_block_record_leaf_hash, tree_hash::TreeHash,
+    MsgPayload, l1_block_record_leaf_hash,
+    tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
@@ -344,7 +345,7 @@ impl<'a> StorageInboxMmr<'a> {
             .as_ref()
             .get_handle(MmrId::SnarkMsgInbox(self.account_id));
 
-        let hash = <MessageEntry as TreeHash>::tree_hash_root(&message);
+        let hash = <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(&message);
         let idx = mmr_handle
             .append_leaf_blocking(hash.into_inner().into())
             .unwrap();
@@ -1420,7 +1421,7 @@ fn build_inbox_claims_for_messages(
         .iter()
         .zip(messages.iter())
         .map(|(&idx, msg)| {
-            let hash = <MessageEntry as TreeHash>::tree_hash_root(msg).into_inner();
+            let hash = <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(msg).into_inner();
             AccumulatorClaim::new(idx, hash)
         })
         .collect()

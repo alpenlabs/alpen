@@ -23,7 +23,7 @@ impl OLLog {
 
     /// Computes the hash commitment of this log using SSZ tree hash.
     pub fn compute_hash_commitment(&self) -> Buf32 {
-        let root = TreeHash::<Sha256Hasher>::tree_hash_root(self);
+        let root = TreeHash::tree_hash_root::<Sha256Hasher>(self);
         Buf32::from(root.0)
     }
 }
