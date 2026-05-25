@@ -5,13 +5,19 @@
 //! values match. The comparison has three tiers:
 //!
 //! - Tier 1, byte-identical (consensus): toplevel state, state root, summary.
-//! - Tier 2, equal modulo a documented mode difference: index records carry block attribution under
-//!   full sync, `None` under checkpoint sync; snark update records collapse to one per account
-//!   under checkpoint sync.
+//! - Tier 2, equal modulo a documented mode difference at the [`IndexerWrites`] layer: snark update
+//!   records are rebuilt from the checkpoint sidecar's `ol_logs` so the per-account sequence
+//!   matches full sync.
 //! - Tier 3, not compared: per-block write batches (checkpoint sync has none).
+//!
+//! Note: the `Some` vs `None` block-attribution difference between sync modes
+//! lives one layer down, when [`IndexerWrites`] is converted into the
+//! attributed `IndexingWrites` written to the indexing store. That conversion
+//! is not covered here.
 
 use std::collections::HashMap;
 
+use strata_acct_types::AccountId;
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
@@ -184,21 +190,28 @@ fn test_apply_checkpoint_deposit_manifest_only() {
 }
 
 #[test]
-fn test_apply_checkpoint_snark_update() {
-    let built = build_epoch(EpochShape::SnarkUpdate);
+fn test_apply_checkpoint_snark_multi_update_and_deposit() {
+    let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
     let (ctx, epoch) = mock_for(&built);
 
     let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
-}
 
-#[test]
-fn test_apply_checkpoint_snark_update_and_deposit() {
-    let built = build_epoch(EpochShape::SnarkUpdateAndDeposit);
-    let (ctx, epoch) = mock_for(&built);
-
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
-    assert_consistent(&built, &artifacts);
+    // Sanity: both modes genuinely produced 2 snark records.
+    assert_eq!(
+        artifacts
+            .output
+            .indexer_writes()
+            .snark_state_updates()
+            .len(),
+        2,
+        "checkpoint sync should produce one snark record per ol_logs entry"
+    );
+    assert_eq!(
+        built.full_sync_indexer_writes().snark_state_updates().len(),
+        2,
+        "full sync should produce one snark record per update tx"
+    );
 }
 
 #[test]
@@ -245,8 +258,7 @@ fn assert_consistent(built: &BuiltEpoch, artifacts: &AppliedEpochArtifacts) {
 }
 
 /// Compares full-sync vs checkpoint-sync [`IndexerWrites`] under the tier-2
-/// rules: same created-account set, same inbox messages, and snark updates
-/// matching on final `seq_no` / `next_inbox_idx` per account.
+/// rules.
 fn assert_indexer_writes_consistent(full_sync: &IndexerWrites, checkpoint: &IndexerWrites) {
     // Created accounts: same set.
     let mut fs_created: Vec<_> = full_sync
@@ -266,44 +278,92 @@ fn assert_indexer_writes_consistent(full_sync: &IndexerWrites, checkpoint: &Inde
         "created accounts must match across sync modes"
     );
 
-    // Inbox messages: same set of (account, entry) pairs.
+    // Inbox messages: same set of (account, MMR index, entry). MMR index is
+    // included because DA reconstruction must preserve message positions.
     let mut fs_inbox: Vec<_> = full_sync
         .inbox_messages()
         .iter()
-        .map(|w| (w.account_id(), w.entry().clone()))
+        .map(|w| (w.account_id(), w.index(), w.entry().clone()))
         .collect();
     let mut cp_inbox: Vec<_> = checkpoint
         .inbox_messages()
         .iter()
-        .map(|w| (w.account_id(), w.entry().clone()))
+        .map(|w| (w.account_id(), w.index(), w.entry().clone()))
         .collect();
-    fs_inbox.sort_by_key(|(id, _)| *id);
-    cp_inbox.sort_by_key(|(id, _)| *id);
+    fs_inbox.sort_by_key(|(id, idx, _)| (*id, *idx));
+    cp_inbox.sort_by_key(|(id, idx, _)| (*id, *idx));
     assert_eq!(
         fs_inbox, cp_inbox,
-        "inbox messages must match across sync modes"
+        "inbox messages (incl. MMR index) must match across sync modes"
     );
 
-    // Snark updates: final-state equivalence per account. Full sync emits one
-    // update per tx; checkpoint sync collapses to one per account. So the
-    // checkpoint record for an account must match the *last* full-sync record
-    // for that account on seq_no and next_inbox_idx.
-    let mut fs_final: HashMap<_, (u64, u64)> = HashMap::new();
-    for upd in full_sync.snark_state_updates() {
-        fs_final.insert(
-            upd.account_id(),
-            (*upd.seqno().inner(), upd.next_read_idx()),
-        );
-    }
-    let mut cp_final: HashMap<_, (u64, u64)> = HashMap::new();
-    for upd in checkpoint.snark_state_updates() {
-        cp_final.insert(
-            upd.account_id(),
-            (*upd.seqno().inner(), upd.next_read_idx()),
-        );
-    }
+    // Manifests: same set of (L1 height, manifest). Both paths emit manifest
+    // writes for the same L1 heights; this catches a checkpoint-sync bug that
+    // drops or reorders them.
+    let mut fs_manifests: Vec<_> = full_sync
+        .manifests()
+        .iter()
+        .map(|m| (m.height, m.manifest.clone()))
+        .collect();
+    let mut cp_manifests: Vec<_> = checkpoint
+        .manifests()
+        .iter()
+        .map(|m| (m.height, m.manifest.clone()))
+        .collect();
+    fs_manifests.sort_by_key(|(h, _)| *h);
+    cp_manifests.sort_by_key(|(h, _)| *h);
     assert_eq!(
-        fs_final, cp_final,
-        "final snark seq_no/next_inbox_idx must match across sync modes"
+        fs_manifests, cp_manifests,
+        "manifest writes must match across sync modes"
     );
+
+    // Snark updates: per-account ordered sequence equality. Checkpoint sync now
+    // rebuilds per-update records from the sidecar's `ol_logs`, so the record
+    // count and order must match full sync.
+    //
+    // `state` (inner state root) is deliberately not compared: checkpoint sync
+    // has no per-update intermediate roots on chain, so the records carry a
+    // sentinel `Hash::default()`.
+    let fs_snark = group_snark_by_account(full_sync);
+    let cp_snark = group_snark_by_account(checkpoint);
+    assert_eq!(
+        fs_snark, cp_snark,
+        "per-account snark update sequence (seqno, next_inbox_idx, extra_data) must match"
+    );
+
+    // Predicate-key updates: same sequence. No current fixture shape exercises
+    // a non-empty case (a future `EePredicateUpdate` shape will); this guards
+    // against a regression that spuriously emits one under either mode.
+    let fs_pred: Vec<_> = full_sync
+        .predicate_key_updates()
+        .iter()
+        .map(|u| (u.account_id(), u.new_vk().clone()))
+        .collect();
+    let cp_pred: Vec<_> = checkpoint
+        .predicate_key_updates()
+        .iter()
+        .map(|u| (u.account_id(), u.new_vk().clone()))
+        .collect();
+    assert_eq!(
+        fs_pred, cp_pred,
+        "predicate-key updates must match across sync modes"
+    );
+}
+
+/// `(seqno, next_inbox_idx, extra_data)` — the comparable snark-update fields.
+type SnarkUpdateProj = (u64, u64, Option<Vec<u8>>);
+
+/// Groups snark updates by account, preserving emission order within each
+/// account. Returns the comparable projection per record — see the call site
+/// for why `state` is excluded.
+fn group_snark_by_account(writes: &IndexerWrites) -> HashMap<AccountId, Vec<SnarkUpdateProj>> {
+    let mut out: HashMap<AccountId, Vec<SnarkUpdateProj>> = HashMap::new();
+    for upd in writes.snark_state_updates() {
+        out.entry(upd.account_id()).or_default().push((
+            *upd.seqno().inner(),
+            upd.next_read_idx(),
+            upd.extra_data().map(<[u8]>::to_vec),
+        ));
+    }
+    out
 }

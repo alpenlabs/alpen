@@ -9,20 +9,29 @@
 //! even though both must live in [`ChainWorkerServiceState`] due to the current
 //! service framework design.
 
+use std::collections::HashMap;
+
+use strata_acct_types::AccountSerial;
+use strata_asm_proto_checkpoint_types::OLLog;
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
+use strata_codec::decode_buf_exact;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment};
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLL1ManifestContainer, OLLog};
+use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ol_chain_types_new::{
+    OLBlock, OLBlockHeader, OLL1ManifestContainer, OLLog, SnarkAccountUpdateLogData,
+};
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
-    IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
+    IndexerState, IndexerWrites, MemoryStateBaseLayer, SAStateUpdateOp, SnarkAcctStateUpdate,
+    WriteTrackingState,
 };
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
 use strata_ol_stf::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
+use strata_snark_acct_types::Seqno;
 use tracing::*;
 
 use crate::{
@@ -445,6 +454,11 @@ pub(crate) fn apply_checkpoint_epoch(
     );
     let epoch_info = EpochInfo::new(terminal_info, prev_terminal);
 
+    // Read pre-epoch seqno for every snark account touched by `ol_logs`. The DA
+    // path will mutate them; we need the base values to derive per-update
+    // seqnos below.
+    let pre_seqnos = collect_pre_seqnos(&base_state, sidecar.ol_logs())?;
+
     // Reconstruct: wrap the base state in the write-tracking + indexer stack,
     // run apply_da_epoch, then extract the batch and indexer writes.
     let tracking_state = WriteTrackingState::new_empty(&base_state);
@@ -454,7 +468,13 @@ pub(crate) fn apply_checkpoint_epoch(
         .compute_state_root()
         .map_err(|e| WorkerError::Unexpected(format!("compute indexer state root: {epoch} {e}")))?;
 
-    let (tracking_state, indexer_writes) = indexer_state.into_parts();
+    // Replace the DA-collapsed snark records (one per account) with per-update
+    // records derived from the checkpoint sidecar's `ol_logs`.
+    let rebuilt_snark_updates =
+        rebuild_snark_records_from_logs(&indexer_state, sidecar.ol_logs(), &pre_seqnos)?;
+
+    let (tracking_state, mut indexer_writes) = indexer_state.into_parts();
+    indexer_writes.set_snark_acct_state_updates(rebuilt_snark_updates);
     let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
 
     // Apply the batch onto the base state to get the reconstructed state.
@@ -497,6 +517,86 @@ pub(crate) fn apply_checkpoint_epoch(
         summary,
         output,
     })
+}
+
+/// Reads the pre-epoch seqno for every snark account touched by `ol_logs`.
+fn collect_pre_seqnos<S: IStateAccessor>(
+    base_state: &S,
+    ol_logs: &[OLLog],
+) -> WorkerResult<HashMap<AccountSerial, Seqno>> {
+    let mut pre_seqnos = HashMap::new();
+    for log in ol_logs {
+        let serial = log.account_serial();
+        if pre_seqnos.contains_key(&serial) {
+            continue;
+        }
+        let seqno = match base_state.find_account_id_by_serial(serial).map_err(|e| {
+            WorkerError::Unexpected(format!("resolve pre-state serial {serial:?}: {e}"))
+        })? {
+            Some(id) => match base_state
+                .get_account_state(id)
+                .map_err(|e| WorkerError::Unexpected(format!("read pre-state account {id}: {e}")))?
+            {
+                Some(state) => state
+                    .as_snark_account()
+                    .map(|s| s.seqno())
+                    .unwrap_or_else(|_| Seqno::zero()),
+                None => Seqno::zero(),
+            },
+            None => Seqno::zero(),
+        };
+        pre_seqnos.insert(serial, seqno);
+    }
+    Ok(pre_seqnos)
+}
+
+/// Rebuilds per-update snark index records from the checkpoint sidecar's logs.
+///
+/// NOTE: The DA path collapses multi-update epochs into one record per account; the on-chain
+/// `ol_logs` carry per-update detail. The `inner_state` field is set to [`Hash::default`] as a
+/// sentinel which is later discarded by downstream indexing layer.
+fn rebuild_snark_records_from_logs<S: IStateAccessor>(
+    state: &S,
+    ol_logs: &[OLLog],
+    pre_seqnos: &HashMap<AccountSerial, Seqno>,
+) -> WorkerResult<Vec<SnarkAcctStateUpdate>> {
+    let mut next_seqno: HashMap<AccountSerial, Seqno> = HashMap::new();
+    let mut records = Vec::with_capacity(ol_logs.len());
+
+    for log in ol_logs {
+        let serial = log.account_serial();
+        let log_data: SnarkAccountUpdateLogData = decode_buf_exact(log.payload()).map_err(|e| {
+            WorkerError::Unexpected(format!("decode snark log for serial {serial:?}: {e}"))
+        })?;
+
+        let account_id = state
+            .find_account_id_by_serial(serial)
+            .map_err(|e| {
+                WorkerError::Unexpected(format!("resolve post-state serial {serial:?}: {e}"))
+            })?
+            .ok_or_else(|| {
+                WorkerError::Unexpected(format!(
+                    "snark log references unknown account serial {serial:?}"
+                ))
+            })?;
+
+        let cur = next_seqno
+            .entry(serial)
+            .or_insert_with(|| pre_seqnos.get(&serial).copied().unwrap_or_else(Seqno::zero));
+        *cur = cur.incr();
+        let seqno = *cur;
+
+        let op = SAStateUpdateOp::new(
+            account_id,
+            Default::default(),
+            log_data.new_msg_idx,
+            seqno,
+            log_data.extra_data.to_vec(),
+        );
+        records.push(SnarkAcctStateUpdate::Update(op));
+    }
+
+    Ok(records)
 }
 
 /// The values produced by reconstructing one epoch from its checkpoint,

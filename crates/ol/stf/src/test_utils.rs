@@ -1659,6 +1659,21 @@ impl InboxMmrTracker {
     pub fn num_entries(&self) -> u64 {
         self.mmr.num_entries()
     }
+
+    /// Returns the current (i.e. updated through every later `add_message`)
+    /// merkle proof for the leaf at `leaf_idx`.
+    pub fn proof_for(&self, leaf_idx: usize) -> RawMerkleProof {
+        let proof = &self.proofs[leaf_idx];
+        RawMerkleProof {
+            cohashes: proof
+                .cohashes()
+                .iter()
+                .map(|h| FixedBytes::from(*h))
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("proof cohashes should fit into RawMerkleProof"),
+        }
+    }
 }
 
 /// Tracks ASM manifests in a parallel MMR to generate proofs for ledger references.
@@ -2026,10 +2041,16 @@ pub fn get_snark_state_expect(
 
 /// The inbox message a GAM block delivers and a snark update consumes in tests.
 pub fn snark_inbox_msg() -> MessageEntry {
+    snark_inbox_msg_with_data(b"inbox msg")
+}
+
+/// Variant of [`snark_inbox_msg`] with caller-supplied payload bytes, for
+/// tests that need multiple distinguishable inbox messages.
+pub fn snark_inbox_msg_with_data(data: &[u8]) -> MessageEntry {
     MessageEntry::new(
         crate::SEQUENCER_ACCT_ID,
         1,
-        MsgPayload::from_bytes(BitcoinAmount::from_sat(0), b"inbox msg".to_vec())
+        MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data.to_vec())
             .expect("inbox msg payload"),
     )
 }
