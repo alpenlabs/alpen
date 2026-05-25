@@ -312,8 +312,8 @@ assert_proofs() {
     exit 1
 }
 
-compile_contract() {
-    echo "=== Compiling Counter contract ==="
+compile_contracts() {
+    echo "=== Compiling contracts ==="
     local build_dir
     build_dir=$(mktemp -d)
     chmod 777 "${build_dir}"
@@ -325,63 +325,90 @@ compile_contract() {
         ghcr.io/foundry-rs/foundry:latest \
         build 2>&1
 
-    CONTRACT_BYTECODE=$(python3 -c "
+    COUNTER_BYTECODE=$(python3 -c "
 import json
 with open('${build_dir}/out/Counter.sol/Counter.json') as f:
+    print(json.load(f)['bytecode']['object'])
+")
+    FACTORY_BYTECODE=$(python3 -c "
+import json
+with open('${build_dir}/out/CounterFactory.sol/CounterFactory.json') as f:
     print(json.load(f)['bytecode']['object'])
 ")
     docker run --rm -v "${build_dir}:/app" -w /app --entrypoint rm \
         ghcr.io/foundry-rs/foundry:latest -rf /app/out /app/cache 2>/dev/null || true
     rm -rf "${build_dir}" 2>/dev/null || true
 
-    if [ -z "${CONTRACT_BYTECODE}" ]; then
+    if [ -z "${COUNTER_BYTECODE}" ] || [ -z "${FACTORY_BYTECODE}" ]; then
         echo "FAIL: forge build failed"
         exit 1
     fi
-    echo "  Compiled (${#CONTRACT_BYTECODE} chars)"
+    echo "  Counter compiled (${#COUNTER_BYTECODE} chars)"
+    echo "  CounterFactory compiled (${#FACTORY_BYTECODE} chars)"
 }
 
-deploy_and_interact_contract() {
-    echo "=== Deploy + interact with contract ==="
+deploy_and_interact_contracts() {
     local privkey="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
     local rpc="http://localhost:8545"
     local increment_sig="0xd09de08a"
     local get_sig="0x6d4ce63c"
+    local deploy_and_call_sig="0xc5c135ba"
     local n_interactions=10
 
-    echo "  Deploying Counter..."
+    # --- Cross-block: deploy Counter, then call in subsequent blocks ---
+    echo "=== Cross-block: deploy Counter + interact ==="
     local deploy_out
     deploy_out=$(docker run --rm --network host --entrypoint cast \
         ghcr.io/foundry-rs/foundry:latest \
         send --private-key "${privkey}" --rpc-url "${rpc}" \
-        --create "${CONTRACT_BYTECODE}" --json)
-    local contract
-    contract=$(echo "${deploy_out}" | python3 -c "import json,sys; print(json.load(sys.stdin)['contractAddress'])")
+        --create "${COUNTER_BYTECODE}" --json)
+    local counter_addr
+    counter_addr=$(echo "${deploy_out}" | python3 -c "import json,sys; print(json.load(sys.stdin)['contractAddress'])")
     local deploy_block
     deploy_block=$(echo "${deploy_out}" | python3 -c "import json,sys; print(int(json.load(sys.stdin)['blockNumber'],16))")
-    echo "  Deployed at ${contract} (block ${deploy_block})"
+    echo "  Counter deployed at ${counter_addr} (block ${deploy_block})"
 
-    echo "  Sending ${n_interactions} increment() txs sequentially..."
+    echo "  Sending ${n_interactions} increment() txs..."
     for i in $(seq 1 ${n_interactions}); do
         docker run --rm --network host --entrypoint cast \
             ghcr.io/foundry-rs/foundry:latest \
             send --private-key "${privkey}" --rpc-url "${rpc}" \
-            "${contract}" "${increment_sig}" --json >/dev/null 2>&1
+            "${counter_addr}" "${increment_sig}" --json >/dev/null 2>&1
         echo "    tx ${i}/${n_interactions} confirmed"
     done
 
     local count_hex
     count_hex=$(docker run --rm --network host --entrypoint cast \
         ghcr.io/foundry-rs/foundry:latest \
-        call "${contract}" "${get_sig}" --rpc-url "${rpc}" 2>/dev/null)
+        call "${counter_addr}" "${get_sig}" --rpc-url "${rpc}" 2>/dev/null)
     local count=$((count_hex))
     echo "  Counter value: ${count}"
-
     if [ "${count}" -lt 1 ]; then
-        echo "FAIL: Counter should be > 0 after interactions"
+        echo "FAIL: Counter should be > 0"
         exit 1
     fi
-    echo "PASS: Contract deployed and interacted with (counter=${count})"
+    echo "PASS: Cross-block deploy+interact (counter=${count})"
+
+    # --- Same-block: factory deploys Counter and calls it in one tx ---
+    echo "=== Same-block: CounterFactory.deployAndCall() ==="
+    local factory_out
+    factory_out=$(docker run --rm --network host --entrypoint cast \
+        ghcr.io/foundry-rs/foundry:latest \
+        send --private-key "${privkey}" --rpc-url "${rpc}" \
+        --create "${FACTORY_BYTECODE}" --json)
+    local factory_addr
+    factory_addr=$(echo "${factory_out}" | python3 -c "import json,sys; print(json.load(sys.stdin)['contractAddress'])")
+    echo "  Factory deployed at ${factory_addr}"
+
+    local call_out
+    call_out=$(docker run --rm --network host --entrypoint cast \
+        ghcr.io/foundry-rs/foundry:latest \
+        send --private-key "${privkey}" --rpc-url "${rpc}" \
+        "${factory_addr}" "${deploy_and_call_sig}" --json)
+    local call_block
+    call_block=$(echo "${call_out}" | python3 -c "import json,sys; print(int(json.load(sys.stdin)['blockNumber'],16))")
+    echo "  deployAndCall() confirmed in block ${call_block}"
+    echo "PASS: Same-block deploy+call via factory"
 }
 
 assert_no_always_accept() {
@@ -397,13 +424,13 @@ assert_no_always_accept() {
 # --- Orchestration ---
 
 preflight_cleanup
-compile_contract
+compile_contracts
 start_signet_fast
 restart_signet_slow
 extract_datatool
 generate_params
 start_sequencer_stack
-deploy_and_interact_contract
+deploy_and_interact_contracts
 assert_proofs
 assert_no_always_accept
 
