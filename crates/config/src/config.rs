@@ -317,7 +317,7 @@ pub struct BitcoindConfig {
     pub rpc_password: String,
     pub network: Network,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub retry_count: Option<u8>,
+    pub retry_count: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_interval: Option<u64>,
 }
