@@ -65,6 +65,7 @@ use strata_btcio::{
     broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
     BtcioParams,
 };
+use strata_common::healthz::{start_health_check_server, HealthCheckState};
 #[cfg(feature = "sequencer")]
 use strata_config::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
 use strata_identifiers::{EpochCommitment, OLBlockId};
@@ -116,6 +117,9 @@ use crate::{
 #[cfg(feature = "sequencer")]
 const ALPEN_EE_BLOCK_TIME_MS_ENV_VAR: &str = "ALPEN_EE_BLOCK_TIME_MS";
 
+const DEFAULT_HEALTH_CHECK_HOST: &str = "0.0.0.0";
+const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
+
 /// Default end-to-end deadline applied to the SP1 prover network for the EE
 /// chunk + acct provers when `--sp1-proof-deadline-secs` is not set. Chosen
 /// to comfortably cover chunk/acct proofs while still failing fast on stuck
@@ -148,6 +152,13 @@ fn main() {
         |builder: WithLaunchContext<NodeBuilder<Arc<reth_db::DatabaseEnv>, ChainSpec>>,
          ext: AdditionalConfig| async move {
             let service_executor = ServiceExecutor::from_reth(builder.task_executor().clone());
+            let health_check_state = HealthCheckState::new();
+            let health_check_addr = format!("{}:{}", ext.health_check_host, ext.health_check_port);
+            let _health_check_handle =
+                start_health_check_server(health_check_addr.clone(), health_check_state.clone())
+                    .await
+                    .context("failed to start health check server")?;
+            info!(%health_check_addr, "health check server started");
 
             // --- CONFIGS ---
 
@@ -817,6 +828,7 @@ fn main() {
                 // TODO: post update to OL
             }
 
+            health_check_state.mark_ready();
             handle.node_exit_future.await
         },
     ) {
@@ -903,6 +915,14 @@ pub struct AdditionalConfig {
     /// tests that don't need OL interaction.
     #[arg(long, default_value_t = false)]
     pub dummy_ol_client: bool,
+
+    /// Host for the HTTP health check endpoint.
+    #[arg(long, default_value = DEFAULT_HEALTH_CHECK_HOST)]
+    pub health_check_host: String,
+
+    /// Port for the HTTP health check endpoint.
+    #[arg(long, default_value_t = DEFAULT_HEALTH_CHECK_PORT)]
+    pub health_check_port: u16,
 
     #[arg(long, required = false)]
     pub db_retry_count: Option<u16>,

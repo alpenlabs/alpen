@@ -180,6 +180,10 @@ class StrataFactory(flexitest.Factory):
             admin_rpc_host,
             "--admin-rpc-port",
             str(admin_rpc_port),
+            "--health-check-host",
+            "127.0.0.1",
+            "--health-check-port",
+            "0",
         ]
 
         if is_sequencer:

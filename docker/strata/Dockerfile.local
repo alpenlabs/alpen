@@ -99,5 +99,5 @@ RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/entrypoint.sh
 
 USER alpen
 
-EXPOSE 8432
+EXPOSE 8432 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

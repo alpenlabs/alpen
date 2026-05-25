@@ -2,8 +2,9 @@
 
 use std::time::Duration;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use argh::from_env;
+use strata_common::healthz::{HealthCheckState, start_health_check_server};
 use strata_db_types as _;
 use strata_logging::{LoggingInitConfig, init_logging_from_config};
 #[cfg(test)]
@@ -102,6 +103,16 @@ fn main() -> Result<()> {
     } else {
         None
     };
+
+    let health_check_addr = format!("{}:{}", args.health_check_host, args.health_check_port);
+    let _health_check_handle = rt
+        .handle()
+        .block_on(start_health_check_server(
+            health_check_addr.clone(),
+            HealthCheckState::ready(),
+        ))
+        .with_context(|| format!("failed to start health check server on {health_check_addr}"))?;
+    info!(%health_check_addr, "health check server started");
 
     // Monitor tasks.
     runctx.task_manager.start_signal_listeners();

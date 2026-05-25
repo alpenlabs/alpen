@@ -15307,10 +15307,12 @@ name = "strata-common"
 version = "0.3.0-alpha.1"
 dependencies = [
  "deadpool",
+ "futures",
  "http 1.4.0",
  "jsonrpsee",
  "serde",
  "tokio",
+ "tower 0.5.3",
  "tracing",
 ]
 
