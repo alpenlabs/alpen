@@ -14,7 +14,10 @@ use crate::checkpoint_sync::{
     context::CheckpointSyncCtx,
     errors::{CheckpointSyncError, CheckpointSyncResult},
     input::{CheckpointSyncEvent, CheckpointSyncInput},
-    state::{apply_checkpoint, build_ol_sync_status, CheckpointSyncState, InnerState},
+    state::{
+        apply_checkpoint, build_ol_sync_status, refinalize_applied_epoch, CheckpointSyncState,
+        InnerState,
+    },
 };
 
 /// Marker type implementing the [`Service`] trait for checkpoint sync.
@@ -25,8 +28,13 @@ pub struct CheckpointSyncService<C: CheckpointSyncCtx> {
 }
 
 /// Status published by the checkpoint sync service.
-#[derive(Clone, Debug, Serialize)]
-pub struct CheckpointSyncStatus;
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CheckpointSyncStatus {
+    /// Epoch number of the last checkpoint applied and finalized, if any.
+    pub last_finalized_and_applied_epoch: Option<u32>,
+    /// Terminal slot of that epoch, if any.
+    pub last_finalized_and_applied_slot: Option<u64>,
+}
 
 /// Handle type for the checkpoint sync service.
 pub type CssServiceHandle = ServiceMonitor<CheckpointSyncStatus>;
@@ -39,8 +47,12 @@ where
     type State = CheckpointSyncState<C>;
     type Status = CheckpointSyncStatus;
 
-    fn get_status(_s: &Self::State) -> Self::Status {
-        CheckpointSyncStatus
+    fn get_status(s: &Self::State) -> Self::Status {
+        let last = s.last_finalized_and_applied();
+        CheckpointSyncStatus {
+            last_finalized_and_applied_epoch: last.map(|e| e.epoch()),
+            last_finalized_and_applied_slot: last.map(|e| e.last_slot()),
+        }
     }
 }
 
@@ -77,7 +89,7 @@ pub async fn start_css_service<C: CheckpointSyncCtx + 'static>(
     let inner_state = initialize_css_inner_state(ctx.as_ref()).await?;
 
     // Publish initial OL sync status so the RPC is populated from startup.
-    match inner_state.last_finalized_epoch() {
+    match inner_state.last_finalized_and_applied() {
         Some(epoch) => {
             debug!(%epoch, "resuming from last finalized epoch");
             let status = build_ol_sync_status(ctx.as_ref(), epoch).await?;
@@ -102,6 +114,11 @@ pub async fn start_css_service<C: CheckpointSyncCtx + 'static>(
 
 /// Catches up on any unapplied finalized epochs at startup and returns the
 /// resulting last-applied epoch.
+///
+/// Also re-runs finalization on the last already-applied epoch found by the
+/// scan: if a previous run crashed between writing the summary and finalizing,
+/// the chain worker's `last_finalized_epoch` would otherwise stay behind
+/// silently. The re-finalize is idempotent.
 async fn initialize_css_inner_state(
     ctx: &impl CheckpointSyncCtx,
 ) -> CheckpointSyncResult<InnerState> {
@@ -116,6 +133,12 @@ async fn initialize_css_inner_state(
     };
 
     let last_applied_epoch = find_and_apply_unapplied_epochs(ctx, cur_finalized).await?;
+    if let Some(epoch) = last_applied_epoch {
+        if epoch.epoch() > 0 {
+            debug!(%epoch, "re-finalizing last applied epoch at startup");
+            refinalize_applied_epoch(ctx, epoch).await?;
+        }
+    }
     Ok(InnerState::new(last_applied_epoch))
 }
 
@@ -215,6 +238,10 @@ pub(crate) async fn scan_unapplied_epochs(
         }
         debug!(%cur_finalized, "epoch not yet applied, queuing for catchup");
         unapplied.push(cur_finalized);
+        // Periodic progress so a large catch-up scan is not invisible at info level.
+        if unapplied.len() % 50 == 0 {
+            info!(scanned = unapplied.len(), %cur_finalized, "scan in progress");
+        }
 
         let prev_epoch_num = cur_finalized.epoch().saturating_sub(1);
         cur_finalized = ctx
