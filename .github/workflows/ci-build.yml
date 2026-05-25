@@ -192,6 +192,7 @@ jobs:
   build-and-push:
     name: "Build ${{ matrix.program }}"
     needs: [prepare, build-sp1-artifacts]
+    if: always() && needs.prepare.result == 'success' && needs.build-sp1-artifacts.result == 'success'
     runs-on: ubuntu-latest
     environment: prod
     permissions:
@@ -329,6 +330,7 @@ jobs:
   dispatch-cd:
     name: Dispatch CD to deployments
     needs: [build-and-push]
+    if: always() && needs.build-and-push.result == 'success'
     runs-on: ubuntu-latest
     permissions: {}
     environment: prod
