@@ -366,8 +366,10 @@ impl ChainWorkerServiceState {
 
         self.ctx
             .store_toplevel_state(artifacts.terminal, artifacts.new_state)?;
-        self.ctx.store_summary(artifacts.summary)?;
         self.ctx.apply_epoch_indexing(&epoch, &artifacts.output)?;
+        // Store the summary last to indicate the epoch has been processed and applied. If this
+        // fails, this will be applied again, which is idempotent in db operations.
+        self.ctx.store_summary(artifacts.summary)?;
 
         Ok(())
     }
