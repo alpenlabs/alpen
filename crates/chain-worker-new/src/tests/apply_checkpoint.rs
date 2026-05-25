@@ -367,3 +367,257 @@ fn group_snark_by_account(writes: &IndexerWrites) -> HashMap<AccountId, Vec<Snar
     }
     out
 }
+
+// =============================================================================
+// Three-write composite idempotency test
+// =============================================================================
+//
+// `ChainWorkerServiceState::apply_checkpoint` performs three writes in sequence
+// (store_toplevel_state, apply_epoch_indexing, store_summary) which need to be idempotent because
+// right now we don't have atomic writes throughout multiple db managers.
+
+mod db_idempotency {
+    use std::{collections::BTreeSet, sync::Arc};
+
+    use strata_db_store_sled::{
+        MmrIndexDb, SledDbConfig, ol_checkpoint::db::OLCheckpointDBSled,
+        ol_state::db::OLStateDBSled, ol_state_index::db::OLStateIndexingDBSled,
+    };
+    use strata_db_types::{
+        errors::DbError,
+        ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
+    };
+    use strata_identifiers::AccountId;
+    use strata_ledger_types::IStateAccessor;
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_storage::{
+        MmrId, MmrIndexManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager,
+    };
+    use threadpool::ThreadPool;
+    use typed_sled::SledDb;
+
+    use super::{EpochCommitment, build_epoch, mock_for};
+    use crate::{
+        context::{build_checkpoint_indexing_writes, index_inbox_mmr_writes},
+        state::{AppliedEpochArtifacts, apply_checkpoint_epoch},
+        tests::fixture::EpochShape,
+    };
+
+    /// Sled-backed wiring for the four managers `apply_checkpoint`'s writes
+    /// touch. Each is opened on its own temporary sled, matching how
+    /// production constructs them per storage tree.
+    struct WriteHarness {
+        ol_state: Arc<OLStateManager>,
+        ol_indexing: Arc<OLStateIndexingManager>,
+        ol_checkpoint: Arc<OLCheckpointManager>,
+        mmr_index: Arc<MmrIndexManager>,
+    }
+
+    impl WriteHarness {
+        fn new() -> Self {
+            let pool = ThreadPool::new(1);
+            Self {
+                ol_state: Arc::new(OLStateManager::new(pool.clone(), make_ol_state_db())),
+                ol_indexing: Arc::new(OLStateIndexingManager::new(
+                    pool.clone(),
+                    make_ol_state_indexing_db(),
+                )),
+                ol_checkpoint: Arc::new(OLCheckpointManager::new(
+                    pool.clone(),
+                    make_ol_checkpoint_db(),
+                )),
+                mmr_index: Arc::new(MmrIndexManager::new(pool, make_mmr_index_db())),
+            }
+        }
+
+        /// Runs the same three writes `ChainWorkerServiceState::apply_checkpoint`
+        /// runs, in the same order.
+        fn run_three_writes(
+            &self,
+            epoch: EpochCommitment,
+            artifacts: &AppliedEpochArtifacts,
+        ) -> anyhow::Result<()> {
+            self.ol_state
+                .put_toplevel_ol_state_blocking(artifacts.terminal, artifacts.new_state.clone())?;
+            let indexing_writes = build_checkpoint_indexing_writes(&artifacts.output);
+            self.ol_indexing
+                .apply_epoch_indexing_blocking(epoch, indexing_writes)?;
+            index_inbox_mmr_writes(&self.mmr_index, &artifacts.output)?;
+
+            let commitment = artifacts.summary.get_epoch_commitment();
+            self.ol_indexing
+                .set_epoch_commitment_blocking(commitment.epoch(), commitment)?;
+            match self
+                .ol_checkpoint
+                .insert_epoch_summary_blocking(artifacts.summary)
+            {
+                Ok(()) => {}
+                Err(DbError::OverwriteEpoch(c)) if c == commitment => {
+                    let existing = self
+                        .ol_checkpoint
+                        .get_epoch_summary_blocking(commitment)?
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "OverwriteEpoch reported but get_epoch_summary returned None for {commitment}"
+                            )
+                        })?;
+                    anyhow::ensure!(
+                        existing == artifacts.summary,
+                        "epoch summary content mismatch on retry"
+                    );
+                }
+                Err(e) => return Err(e.into()),
+            }
+            Ok(())
+        }
+
+        /// Reads back everything the three writes touched, projected to a
+        /// shape we can compare with `assert_eq!`.
+        fn snapshot(
+            &self,
+            epoch: EpochCommitment,
+            terminal: super::OLBlockCommitment,
+            accounts: &[AccountId],
+        ) -> DbSnapshot {
+            let toplevel_state_root = self
+                .ol_state
+                .get_toplevel_ol_state_blocking(terminal)
+                .expect("get_toplevel_ol_state")
+                .map(|arc| {
+                    MemoryStateBaseLayer::new((*arc).clone())
+                        .compute_state_root()
+                        .expect("compute_state_root")
+                });
+            let summary = self
+                .ol_checkpoint
+                .get_epoch_summary_blocking(epoch)
+                .expect("get_epoch_summary");
+            let canonical = self
+                .ol_checkpoint
+                .get_canonical_epoch_commitment_at_blocking(epoch.epoch())
+                .expect("get_canonical_epoch_commitment");
+            let mut per_account = Vec::new();
+            for &acct in accounts {
+                let updates = self
+                    .ol_indexing
+                    .get_account_update_records_blocking(epoch.epoch(), acct)
+                    .expect("get_account_update_records")
+                    .unwrap_or_default();
+                let inbox = self
+                    .ol_indexing
+                    .get_account_inbox_records_blocking(epoch.epoch(), acct)
+                    .expect("get_account_inbox_records")
+                    .unwrap_or_default();
+                let mmr_handle = self.mmr_index.get_handle(MmrId::SnarkMsgInbox(acct));
+                let mmr_leaves = mmr_handle
+                    .get_num_leaves_blocking()
+                    .expect("get_num_leaves");
+                per_account.push((acct, updates, inbox, mmr_leaves));
+            }
+            DbSnapshot {
+                toplevel_state_root,
+                summary,
+                canonical_epoch_commitment: canonical,
+                per_account,
+            }
+        }
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct DbSnapshot {
+        toplevel_state_root: Option<strata_identifiers::Buf32>,
+        summary: Option<strata_checkpoint_types::EpochSummary>,
+        canonical_epoch_commitment: Option<EpochCommitment>,
+        per_account: Vec<(
+            AccountId,
+            Vec<AccountUpdateRecord>,
+            Vec<InboxMessageRecord>,
+            u64,
+        )>,
+    }
+
+    fn make_temp_sled() -> Arc<SledDb> {
+        let db = sled::Config::new()
+            .temporary(true)
+            .open()
+            .expect("temporary sled");
+        Arc::new(SledDb::new(db).expect("typed_sled::SledDb"))
+    }
+
+    fn make_ol_state_db() -> Arc<OLStateDBSled> {
+        Arc::new(OLStateDBSled::new(make_temp_sled(), SledDbConfig::test()).expect("OLStateDBSled"))
+    }
+
+    fn make_ol_state_indexing_db() -> Arc<OLStateIndexingDBSled> {
+        Arc::new(
+            OLStateIndexingDBSled::new(make_temp_sled(), SledDbConfig::test())
+                .expect("OLStateIndexingDBSled"),
+        )
+    }
+
+    fn make_ol_checkpoint_db() -> Arc<OLCheckpointDBSled> {
+        Arc::new(
+            OLCheckpointDBSled::new(make_temp_sled(), SledDbConfig::test())
+                .expect("OLCheckpointDBSled"),
+        )
+    }
+
+    fn make_mmr_index_db() -> Arc<MmrIndexDb> {
+        Arc::new(MmrIndexDb::new(make_temp_sled(), SledDbConfig::test()).expect("MmrIndexDb"))
+    }
+
+    /// Running the three writes twice must yield identical db state.
+    #[test]
+    fn test_apply_checkpoint_writes_are_idempotent() {
+        let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
+        let (mock_ctx, epoch) = mock_for(&built);
+        let artifacts = apply_checkpoint_epoch(&mock_ctx, epoch).expect("apply_checkpoint_epoch");
+
+        // Accounts touched by the fixture's writes — used to scope snapshot reads.
+        let touched_accounts: Vec<AccountId> = artifacts
+            .output
+            .indexer_writes()
+            .snark_state_updates()
+            .iter()
+            .map(|u| u.account_id())
+            .chain(
+                artifacts
+                    .output
+                    .indexer_writes()
+                    .inbox_messages()
+                    .iter()
+                    .map(|w| w.account_id()),
+            )
+            .chain(
+                artifacts
+                    .output
+                    .indexer_writes()
+                    .created_accounts()
+                    .iter()
+                    .map(|c| c.account_id()),
+            )
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        assert!(
+            !touched_accounts.is_empty(),
+            "fixture must touch at least one account for the snapshot to be meaningful"
+        );
+
+        let harness = WriteHarness::new();
+        harness
+            .run_three_writes(epoch, &artifacts)
+            .expect("first apply");
+        let first = harness.snapshot(epoch, artifacts.terminal, &touched_accounts);
+
+        harness
+            .run_three_writes(epoch, &artifacts)
+            .expect("second apply (idempotency check)");
+        let second = harness.snapshot(epoch, artifacts.terminal, &touched_accounts);
+
+        assert_eq!(
+            first, second,
+            "second apply must leave db state byte-identical to first"
+        );
+    }
+}
