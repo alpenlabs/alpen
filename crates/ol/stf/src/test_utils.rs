@@ -2023,3 +2023,96 @@ pub fn snark_inbox_msg_with_data(data: &[u8]) -> MessageEntry {
             .expect("inbox msg payload"),
     )
 }
+
+/// Genesis block timestamp used by the shared epoch runner.
+pub const EPOCH_RUNNER_GENESIS_TIMESTAMP: u64 = 1_000_000;
+
+/// Per-slot timestamp step used by the shared epoch runner.
+pub const EPOCH_RUNNER_SLOT_TIMESTAMP_STEP: u64 = 1_000;
+
+/// L1 height of an epoch's terminal manifest under the shared epoch runner.
+///
+/// Genesis carries the manifest at height 1; the non-terminal blocks of the
+/// epoch under test carry none, so the terminal manifest is always at height 2.
+pub const EPOCH_RUNNER_TERMINAL_L1_HEIGHT: u32 = 2;
+
+/// Seeds the standard test recipient and snark accounts.
+///
+/// Inserts an empty account under [`TEST_RECIPIENT_ID`] and creates a snark
+/// account under [`TEST_SNARK_ACCOUNT_ID`] with an `always_accept` predicate
+/// and a deterministic initial state root. Returns the snark account's serial.
+pub fn epoch_runner_seed_accounts(state: &mut MemoryStateBaseLayer) -> AccountSerial {
+    insert_empty_account(state, make_account_id(TEST_RECIPIENT_ID));
+    state
+        .create_new_account(
+            make_account_id(TEST_SNARK_ACCOUNT_ID),
+            NewAccountData::new(
+                BitcoinAmount::from_sat(100_000_000),
+                NewAccountTypeState::Snark {
+                    update_vk: PredicateKey::always_accept(),
+                    initial_state_root: make_state_root(1),
+                },
+            ),
+        )
+        .expect("create snark account")
+}
+
+/// Executes the genesis (epoch 0 terminal) block under the shared epoch runner.
+pub fn epoch_runner_run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
+    execute_block(
+        state,
+        &BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP),
+        None,
+        BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]),
+    )
+    .expect("genesis block")
+}
+
+/// Executes one block at the slot following `parent` with the given
+/// `components`, appends it to `blocks`, and returns its header.
+pub fn epoch_runner_run_block(
+    state: &mut MemoryStateBaseLayer,
+    blocks: &mut Vec<OLBlock>,
+    parent: &OLBlockHeader,
+    components: BlockComponents,
+) -> OLBlockHeader {
+    let slot = parent.slot() + 1;
+    let cb = execute_block(
+        state,
+        &BlockInfo::new(
+            EPOCH_RUNNER_GENESIS_TIMESTAMP + slot * EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+            slot,
+            1,
+        ),
+        Some(parent),
+        components,
+    )
+    .expect("epoch block");
+    blocks.push(to_ol_block(&cb));
+    cb.header().clone()
+}
+
+/// Executes the terminal block carrying `manifest`, closing the epoch, and
+/// returns the [`CompletedBlock`] (so callers can read the body the way the
+/// checkpoint payload assembler does).
+pub fn epoch_runner_run_terminal(
+    state: &mut MemoryStateBaseLayer,
+    blocks: &mut Vec<OLBlock>,
+    parent: &OLBlockHeader,
+    manifest: AsmManifest,
+) -> CompletedBlock {
+    let slot = parent.slot() + 1;
+    let cb = execute_block(
+        state,
+        &BlockInfo::new(
+            EPOCH_RUNNER_GENESIS_TIMESTAMP + slot * EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+            slot,
+            1,
+        ),
+        Some(parent),
+        BlockComponents::new_manifests(vec![manifest]),
+    )
+    .expect("terminal block");
+    blocks.push(to_ol_block(&cb));
+    cb
+}

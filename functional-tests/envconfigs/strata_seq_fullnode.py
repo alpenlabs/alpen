@@ -88,5 +88,5 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
             ServiceType.Bitcoin: bitcoind,
             ServiceType.Strata: sequencer,
             ServiceType.StrataSigner: signer,
-            ServiceType.StrataCheckpointNode: fullnode,
+            ServiceType.StrataFullnode: fullnode,
         }

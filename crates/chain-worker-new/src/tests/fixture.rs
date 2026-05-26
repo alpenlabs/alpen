@@ -16,9 +16,9 @@ use strata_asm_proto_checkpoint_types::{
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
-    AccountSerial, Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
 };
-use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState};
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::{
@@ -26,25 +26,17 @@ use strata_ol_state_support_types::{
 };
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
 use strata_ol_stf::{
-    BlockComponents, BlockInfo, CompletedBlock, execute_block_batch_preseal,
+    BlockComponents, execute_block_batch_preseal,
     test_utils::{
-        InboxMmrTracker, SnarkUpdateBuilder, TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID,
-        execute_block, get_snark_state_expect, insert_empty_account, make_account_id,
-        make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state, make_state_root,
-        snark_inbox_msg_with_data, to_ol_block,
+        EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
+        TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
+        epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
+        epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
+        make_deposit_manifest_for_account, make_genesis_state, make_state_root,
+        snark_inbox_msg_with_data,
     },
     verify_block,
 };
-use strata_predicate::PredicateKey;
-
-const GENESIS_TIMESTAMP: u64 = 1_000_000;
-const SLOT_TIMESTAMP_STEP: u64 = 1_000;
-
-/// L1 height of the epoch's terminal manifest.
-///
-/// Genesis carries its manifest at height 1; the non-terminal blocks of the
-/// epoch under test carry none, so the terminal manifest sits at height 2.
-const TERMINAL_L1_HEIGHT: u32 = 2;
 
 /// The shape of the epoch [`build_epoch`] constructs.
 #[derive(Debug, Clone, Copy)]
@@ -105,13 +97,25 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
             for _ in 0..4 {
                 prev = run_block(&mut state, &mut blocks, &prev, BlockComponents::new_empty());
             }
-            let manifest = make_deposit_manifest_for_account(TERMINAL_L1_HEIGHT, 0, snark_serial, SubjectId::from([42u8; 32]), BitcoinAmount::from_sat(150_000_000));
+            let manifest = make_deposit_manifest_for_account(
+                TERMINAL_L1_HEIGHT,
+                0,
+                snark_serial,
+                SubjectId::from([42u8; 32]),
+                BitcoinAmount::from_sat(150_000_000),
+            );
             run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
             manifest
         }
         EpochShape::SnarkMultiUpdateAndDeposit => {
             let prev = run_snark_multi_update_blocks(&mut state, &mut blocks, genesis.header());
-            let manifest = make_deposit_manifest_for_account(TERMINAL_L1_HEIGHT, 0, snark_serial, SubjectId::from([42u8; 32]), BitcoinAmount::from_sat(150_000_000));
+            let manifest = make_deposit_manifest_for_account(
+                TERMINAL_L1_HEIGHT,
+                0,
+                snark_serial,
+                SubjectId::from([42u8; 32]),
+                BitcoinAmount::from_sat(150_000_000),
+            );
             run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
             manifest
         }
@@ -266,72 +270,6 @@ fn rebuild_da_and_logs(
         .map(|l| CheckpointOLLog::new(l.account_serial(), l.payload().to_vec()))
         .collect();
     (blob, ol_logs)
-}
-
-/// Seeds the recipient and snark accounts, returning the snark account serial.
-fn seed_accounts(state: &mut MemoryStateBaseLayer) -> AccountSerial {
-    insert_empty_account(state, make_account_id(TEST_RECIPIENT_ID));
-    state
-        .create_new_account(
-            make_account_id(TEST_SNARK_ACCOUNT_ID),
-            NewAccountData::new(
-                BitcoinAmount::from_sat(100_000_000),
-                NewAccountTypeState::Snark {
-                    update_vk: PredicateKey::always_accept(),
-                    initial_state_root: make_state_root(1),
-                },
-            ),
-        )
-        .expect("create snark account")
-}
-
-/// Executes the genesis (epoch 0 terminal) block.
-fn run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
-    execute_block(
-        state,
-        &BlockInfo::new_genesis(GENESIS_TIMESTAMP),
-        None,
-        BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]),
-    )
-    .expect("genesis block")
-}
-
-/// Executes one block following `parent` with the given components.
-fn run_block(
-    state: &mut MemoryStateBaseLayer,
-    blocks: &mut Vec<OLBlock>,
-    parent: &OLBlockHeader,
-    components: BlockComponents,
-) -> OLBlockHeader {
-    let slot = parent.slot() + 1;
-    let cb = execute_block(
-        state,
-        &BlockInfo::new(GENESIS_TIMESTAMP + slot * SLOT_TIMESTAMP_STEP, slot, 1),
-        Some(parent),
-        components,
-    )
-    .expect("epoch block");
-    blocks.push(to_ol_block(&cb));
-    cb.header().clone()
-}
-
-/// Executes the terminal block carrying `manifest`, closing the epoch.
-fn run_terminal(
-    state: &mut MemoryStateBaseLayer,
-    blocks: &mut Vec<OLBlock>,
-    parent: &OLBlockHeader,
-    manifest: AsmManifest,
-) -> CompletedBlock {
-    let slot = parent.slot() + 1;
-    let cb = execute_block(
-        state,
-        &BlockInfo::new(GENESIS_TIMESTAMP + slot * SLOT_TIMESTAMP_STEP, slot, 1),
-        Some(parent),
-        BlockComponents::new_manifests(vec![manifest]),
-    )
-    .expect("terminal block");
-    blocks.push(to_ol_block(&cb));
-    cb
 }
 
 /// Runs the non-terminal blocks of a multi-update snark epoch: two GAMs

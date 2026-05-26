@@ -37,10 +37,9 @@ pub(crate) enum CheckpointSyncError {
     #[error("db: {0}")]
     Db(#[from] DbError),
 
-    /// Failure from a contextless chain-worker / CSM call (e.g. fetching CSM
-    /// status, L1 tip).
-    #[error("chain worker")]
-    ChainWorker(#[source] anyhow::Error),
+    /// Failure querying sync status (CSM status, L1 tip height).
+    #[error("sync status query failed")]
+    SyncStatusQuery(#[source] anyhow::Error),
 
     /// Failure from a per-epoch chain-worker call (apply, update_safe_tip,
     /// finalize).

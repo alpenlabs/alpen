@@ -222,7 +222,7 @@ mod sequencer_services {
 
     pub(super) fn start_if_enabled(
         _: &NodeContext,
-        _: Arc<MempoolHandle>,
+        _: Option<Arc<MempoolHandle>>,
         _: Option<[u8; 32]>,
     ) -> Result<()> {
         Ok(())

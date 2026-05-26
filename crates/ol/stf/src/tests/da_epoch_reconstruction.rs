@@ -6,41 +6,28 @@
 //! around the meaningful ones.
 
 use strata_acct_types::{BitcoinAmount, MessageEntry};
-use strata_asm_common::{AsmLogEntry, AsmManifest};
-use strata_asm_logs::DepositLog;
 use strata_codec::decode_buf_exact;
-use strata_identifiers::{
-    AccountSerial, Buf32, OLBlockCommitment, SubjectId, SubjectIdBytes, WtxidsRoot,
-};
-use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState};
-use strata_ol_bridge_types::DepositDescriptor;
+use strata_identifiers::{Buf32, OLBlockCommitment, SubjectId};
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{
-    L1BlockId, OLBlock, OLBlockHeader, OLTransaction, OLTransactionData, TxProofs,
+    OLBlock, OLBlockHeader, OLTransaction, OLTransactionData, TxProofs,
 };
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_predicate::PredicateKey;
 
 use crate::{
     BlockInfo, EpochInfo, apply_da_epoch,
     assembly::{BlockComponents, CompletedBlock},
     execute_block_batch_preseal,
     test_utils::{
-        InboxMmrTracker, SnarkUpdateBuilder, TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID,
-        execute_block, get_snark_state_expect, insert_empty_account, make_account_id,
-        make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state, make_state_root,
-        snark_inbox_msg, to_ol_block,
+        EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
+        TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
+        epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
+        epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
+        make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state,
+        make_state_root, snark_inbox_msg,
     },
 };
-
-const GENESIS_TIMESTAMP: u64 = 1_000_000;
-const SLOT_TIMESTAMP_STEP: u64 = 1_000;
-
-/// L1 height of an epoch's terminal manifest in these tests.
-///
-/// Genesis carries the manifest at height 1; the non-terminal blocks of the
-/// epoch under test carry none, so the terminal manifest is always at height 2.
-const TERMINAL_L1_HEIGHT: u32 = 2;
 
 #[test]
 fn test_apply_da_epoch_deposit_manifest_only() {
@@ -133,7 +120,13 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
             &mut state,
             &mut blocks,
             &prev,
-            deposit_manifest(TERMINAL_L1_HEIGHT, snark_serial),
+            make_deposit_manifest_for_account(
+                TERMINAL_L1_HEIGHT,
+                1,
+                snark_serial,
+                SubjectId::from([42u8; 32]),
+                BitcoinAmount::from_sat(150_000_000),
+            ),
         );
         reconstruct_epoch(&pre_epoch_state, &genesis, &terminal, &blocks)
     };
@@ -163,7 +156,13 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
             &mut state,
             &mut blocks,
             &prev,
-            deposit_manifest(TERMINAL_L1_HEIGHT, snark_serial),
+            make_deposit_manifest_for_account(
+                TERMINAL_L1_HEIGHT,
+                1,
+                snark_serial,
+                SubjectId::from([42u8; 32]),
+                BitcoinAmount::from_sat(150_000_000),
+            ),
         );
         reconstruct_epoch(&pre_epoch_state, &genesis, &terminal, &blocks)
     };
@@ -215,73 +214,6 @@ fn build_snark_update(state: &MemoryStateBaseLayer, inbox_msg: &MessageEntry) ->
         .with_inbox_proofs(vec![proof])
         .with_transfer(make_account_id(TEST_RECIPIENT_ID), 1_000_000)
         .build(snark_id, make_state_root(2), vec![0u8; 32])
-}
-
-/// Seeds the recipient and snark accounts, returning the snark account serial.
-fn seed_accounts(state: &mut MemoryStateBaseLayer) -> AccountSerial {
-    insert_empty_account(state, make_account_id(TEST_RECIPIENT_ID));
-    state
-        .create_new_account(
-            make_account_id(TEST_SNARK_ACCOUNT_ID),
-            NewAccountData::new(
-                BitcoinAmount::from_sat(100_000_000),
-                NewAccountTypeState::Snark {
-                    update_vk: PredicateKey::always_accept(),
-                    initial_state_root: make_state_root(1),
-                },
-            ),
-        )
-        .expect("create snark account")
-}
-
-/// Executes the genesis (epoch 0 terminal) block.
-fn run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
-    execute_block(
-        state,
-        &BlockInfo::new_genesis(GENESIS_TIMESTAMP),
-        None,
-        BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]),
-    )
-    .expect("genesis block")
-}
-
-/// Executes one block at the slot following `parent` with the given
-/// fully-formed `components`, appends it to `blocks`, and returns its header.
-fn run_block(
-    state: &mut MemoryStateBaseLayer,
-    blocks: &mut Vec<OLBlock>,
-    parent: &OLBlockHeader,
-    components: BlockComponents,
-) -> OLBlockHeader {
-    let slot = parent.slot() + 1;
-    let cb = execute_block(
-        state,
-        &BlockInfo::new(GENESIS_TIMESTAMP + slot * SLOT_TIMESTAMP_STEP, slot, 1),
-        Some(parent),
-        components,
-    )
-    .expect("epoch block");
-    blocks.push(to_ol_block(&cb));
-    cb.header().clone()
-}
-
-/// Executes the terminal block carrying `manifest`, closing the epoch.
-fn run_terminal(
-    state: &mut MemoryStateBaseLayer,
-    blocks: &mut Vec<OLBlock>,
-    parent: &OLBlockHeader,
-    manifest: AsmManifest,
-) -> CompletedBlock {
-    let slot = parent.slot() + 1;
-    let cb = execute_block(
-        state,
-        &BlockInfo::new(GENESIS_TIMESTAMP + slot * SLOT_TIMESTAMP_STEP, slot, 1),
-        Some(parent),
-        BlockComponents::new_manifests(vec![manifest]),
-    )
-    .expect("terminal block");
-    blocks.push(to_ol_block(&cb));
-    cb
 }
 
 /// Reconstructs the epoch from its DA diff and returns the post-state root.
@@ -336,19 +268,4 @@ fn assert_reconstruction_matches(
 /// Wraps a single transaction into block components.
 fn txs_components(tx: OLTransaction) -> BlockComponents {
     BlockComponents::new_txs_from_ol_transactions(vec![tx])
-}
-
-fn deposit_manifest(height: u32, target_serial: AccountSerial) -> AsmManifest {
-    let dest = SubjectIdBytes::try_new(SubjectId::from([42u8; 32]).inner().to_vec()).unwrap();
-    let descriptor = DepositDescriptor::new(target_serial, dest).unwrap();
-    let log_entry =
-        AsmLogEntry::from_log(&DepositLog::new(descriptor.encode_to_varvec(), 150_000_000))
-            .unwrap();
-    AsmManifest::new(
-        height,
-        L1BlockId::from(Buf32::from([1u8; 32])),
-        WtxidsRoot::from(Buf32::zero()),
-        vec![log_entry],
-    )
-    .unwrap()
 }

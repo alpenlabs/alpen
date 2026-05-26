@@ -41,7 +41,6 @@ tracing.workspace = true
 strata-db-store-sled.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
-strata-predicate.workspace = true
 sled.workspace = true
 threadpool.workspace = true
 typed-sled.workspace = true
