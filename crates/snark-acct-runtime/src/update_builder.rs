@@ -416,11 +416,11 @@ impl<P: SnarkAccountProgramVerification> FinalizedUpdate<P> {
     }
 
     fn into_manifest(self) -> ProgramResult<UpdateManifest, P::Error> {
-        let new_proof_state = self.new_proof_state();
+        let new_state_root = self.new_proof_state().inner_state();
         let extra_data_buf = self.encode_extra_data()?;
 
         Ok(UpdateManifest::new(
-            new_proof_state,
+            Some(new_state_root),
             extra_data_buf,
             self.messages,
         ))

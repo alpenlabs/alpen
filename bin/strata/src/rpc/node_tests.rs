@@ -24,7 +24,7 @@ use strata_predicate::PredicateKey;
 use strata_primitives::{
     HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
 };
-use strata_snark_acct_types::{Seqno, UpdateInputData};
+use strata_snark_acct_types::{ProofState, Seqno, UpdateInputData, UpdateStateData};
 use strata_status::OLSyncStatus;
 use tokio::runtime::Builder;
 
@@ -529,9 +529,25 @@ fn rpc_messages_to_entries(messages: &[RpcMessageEntry]) -> Vec<MessageEntry> {
 }
 
 fn rpc_update_to_input(update: RpcUpdateInputData) -> UpdateInputData {
-    update
-        .try_into()
-        .expect("message payload bytes must fit within SSZ max length")
+    let messages: Vec<MessageEntry> = update
+        .messages
+        .into_iter()
+        .map(|msg| {
+            msg.try_into()
+                .expect("message payload bytes must fit within SSZ max length")
+        })
+        .collect();
+    let final_state_root = update
+        .final_state_root
+        .expect("test fixtures populate final_state_root")
+        .0
+        .into();
+    let proof_state = ProofState::new(final_state_root, update.next_inbox_msg_idx);
+    UpdateInputData::new(
+        update.seq_no,
+        messages,
+        UpdateStateData::new(proof_state, update.extra_data.0),
+    )
 }
 
 fn inbox_fetch_expect_success(

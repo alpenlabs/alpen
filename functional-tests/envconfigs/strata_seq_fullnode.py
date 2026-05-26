@@ -10,8 +10,6 @@ from factories.bitcoin import BitcoinFactory
 from factories.signer import SignerFactory
 from factories.strata import StrataFactory
 
-STRATA_FULLNODE_SERVICE_NAME = "strata_fullnode"
-
 
 class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
     """Environment with one Strata sequencer and one Strata fullnode."""

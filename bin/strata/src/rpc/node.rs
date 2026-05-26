@@ -599,7 +599,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
             struct Pending {
                 seq_no: u64,
-                final_state_root: Hash,
+                final_state_root: Option<Hash>,
                 extra_data: Vec<u8>,
                 cursor_start: u64,
                 cursor_end: u64,
@@ -611,12 +611,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 let cursor_end = r.next_inbox_idx();
                 cursor = cursor_end;
 
-                let meta = r.update_meta().ok_or_else(|| {
-                    internal_error(format!(
-                        "record for account {account_id} epoch {epoch} missing update_meta \
-                         (checkpoint-sync row not serveable here)"
-                    ))
-                })?;
+                let final_state_root = r.update_meta().map(|m| m.final_state_root());
                 let extra_data = r
                     .extra_data()
                     .ok_or_else(|| {
@@ -629,7 +624,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
                 pending.push(Pending {
                     seq_no: r.seq_no(),
-                    final_state_root: meta.final_state_root(),
+                    final_state_root,
                     extra_data,
                     cursor_start,
                     cursor_end,
@@ -662,7 +657,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 };
                 out.push(RpcUpdateInputData {
                     seq_no: p.seq_no,
-                    proof_state: ProofState::new(p.final_state_root, p.cursor_end).into(),
+                    next_inbox_msg_idx: p.cursor_end,
+                    final_state_root: p.final_state_root.map(|root| root.0.into()),
                     extra_data: p.extra_data.into(),
                     messages: messages.into_iter().map(Into::into).collect(),
                 });
