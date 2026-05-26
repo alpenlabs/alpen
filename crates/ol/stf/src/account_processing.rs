@@ -148,7 +148,7 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     let dest = withdrawal_data.into_dest_desc();
     let dest_desc_len = dest.len();
     let log_data = SimpleWithdrawalIntentLogData {
-        amt: amt_raw.into(),
+        amt: amt_raw,
         selected_operator,
         dest,
     };

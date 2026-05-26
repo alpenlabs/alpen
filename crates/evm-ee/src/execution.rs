@@ -350,7 +350,7 @@ mod tests {
             serde_json::from_str(&json_content).expect("Failed to parse test data");
 
         let chain_spec: Arc<ChainSpec> = Arc::new((&test_data.witness.genesis).try_into().unwrap());
-        let env = EvmExecutionEnvironment::new(chain_spec);
+        let env = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
         let header = test_data.witness.current_block.header().clone();
         let evm_header = EvmHeader::new(header.clone());
         let mut state = EvmPartialState::new(

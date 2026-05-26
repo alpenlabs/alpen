@@ -118,29 +118,6 @@ pub fn make_state_root(variant: u8) -> Hash {
     Hash::from([variant; 32])
 }
 
-/// Execute a block with the given block info and return the completed block.
-pub fn execute_block(
-    state: &mut MemoryStateBaseLayer,
-    block_info: &BlockInfo,
-    parent_header: Option<&OLBlockHeader>,
-    components: BlockComponents,
-) -> ExecResult<CompletedBlock> {
-    let block_context = BlockContext::new(block_info, parent_header);
-    execute_and_complete_block(state, block_context, components, BridgeParams::default())
-}
-
-/// Execute a block and return the construct output which includes both the completed block and
-/// execution outputs. This is useful for tests that need to inspect the logs.
-pub fn execute_block_with_outputs(
-    state: &mut MemoryStateBaseLayer,
-    block_info: &BlockInfo,
-    parent_header: Option<&OLBlockHeader>,
-    components: BlockComponents,
-) -> ExecResult<ConstructBlockOutput> {
-    let block_context = BlockContext::new(block_info, parent_header);
-    construct_block(state, block_context, components, BridgeParams::default())
-}
-
 /// Builds proof bytes with predictable contents.
 pub fn make_proof(variant: u8) -> Vec<u8> {
     vec![variant; 100]
@@ -472,7 +449,7 @@ pub fn execute_block(
     components: BlockComponents,
 ) -> ExecResult<CompletedBlock> {
     let block_context = BlockContext::new(block_info, parent_header);
-    execute_and_complete_block(state, block_context, components)
+    execute_and_complete_block(state, block_context, components, BridgeParams::default())
 }
 
 /// Executes a block and returns the construct output, which includes both the completed block and
@@ -484,7 +461,7 @@ pub fn execute_block_with_outputs(
     components: BlockComponents,
 ) -> ExecResult<ConstructBlockOutput> {
     let block_context = BlockContext::new(block_info, parent_header);
-    construct_block(state, block_context, components)
+    construct_block(state, block_context, components, BridgeParams::default())
 }
 
 /// Executes a transaction in a non-genesis block.

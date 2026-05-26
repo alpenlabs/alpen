@@ -1,6 +1,7 @@
 //! Tests that pin mid-block failure semantics (no rollback + TxExec context wrapping).
 
 use strata_acct_types::{AccountId, BitcoinAmount, TxEffects};
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
@@ -178,7 +179,13 @@ fn test_verify_block_mid_failure_returns_txexec() {
         Buf32::zero(),
     );
 
-    let result = verify_block(&mut state, &header, Some(parent_block.header()), &body);
+    let result = verify_block(
+        &mut state,
+        &header,
+        Some(parent_block.header()),
+        &body,
+        BridgeParams::default(),
+    );
 
     match result {
         Err(ExecError::TxExec(txid, idx, inner)) => {
