@@ -3057,7 +3057,14 @@ async fn get_block_transactions_decodes_gam_tx() {
     let txs = rpc.get_block_transactions(7).await.expect("get txs");
     assert_eq!(txs.len(), 1);
     let detail = &txs[0];
-    assert!(matches!(detail.kind(), RpcOLTxKind::GenericAccountMessage));
+    assert!(matches!(
+        detail.type_data(),
+        RpcOLTxTypeData::GenericAccountMessage
+    ));
+    let detail_json = serde_json::to_value(detail).expect("serialize tx detail");
+    assert_eq!(detail_json["type"], "generic_account_message");
+    assert!(detail_json.get("kind").is_none());
+    assert!(detail_json.get("type_data").is_none());
     assert_eq!(
         detail.target().expect("gam target").0,
         *target.inner(),
@@ -3101,9 +3108,17 @@ async fn list_accounts_returns_ledger_entries() {
         .iter()
         .find(|e| e.id().0 == *acct.inner())
         .expect("account present in ledger");
-    assert!(matches!(our_entry.kind(), RpcAccountKind::Snark(_)));
-    let snark = our_entry.snark().expect("snark summary");
+    assert!(matches!(
+        our_entry.state().type_data(),
+        RpcAccountTypeData::Snark(_)
+    ));
+    let snark = our_entry.state().snark().expect("snark summary");
     assert_eq!(snark.seq_no(), 7);
+    assert_eq!(snark.update_vk(), &PredicateKey::always_accept());
+    let entry_json = serde_json::to_value(our_entry).expect("serialize account entry");
+    assert_eq!(entry_json["state"]["type"], "snark");
+    assert!(entry_json["state"].get("kind").is_none());
+    assert!(entry_json["state"].get("type_data").is_none());
     assert_eq!(entries.len(), 1);
 }
 

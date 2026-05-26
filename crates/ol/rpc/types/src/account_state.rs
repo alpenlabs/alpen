@@ -62,12 +62,8 @@ impl RpcSnarkAccountState {
 pub struct RpcAccountEntry {
     /// Account ID.
     id: HexBytes32,
-    /// Serial assigned at creation.
-    serial: u32,
-    /// Balance in sats.
-    balance_sats: u64,
-    /// Account-type discriminator with type-specific fields inline.
-    kind: RpcAccountKind,
+    /// Account state at the queried block.
+    state: RpcAccountState,
 }
 
 impl RpcAccountEntry {
@@ -75,6 +71,34 @@ impl RpcAccountEntry {
         &self.id
     }
 
+    pub fn state(&self) -> &RpcAccountState {
+        &self.state
+    }
+}
+
+impl From<&TsnlAccountEntry> for RpcAccountEntry {
+    fn from(entry: &TsnlAccountEntry) -> Self {
+        Self {
+            id: HexBytes32::from(<[u8; 32]>::from(entry.id())),
+            state: RpcAccountState::from(entry.state()),
+        }
+    }
+}
+
+/// Account state at a block.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcAccountState {
+    /// Serial assigned at creation.
+    serial: u32,
+    /// Balance in sats.
+    balance_sats: u64,
+    /// Account-type discriminator with type-specific fields inline.
+    #[serde(flatten)]
+    type_data: RpcAccountTypeData,
+}
+
+impl RpcAccountState {
     pub fn serial(&self) -> u32 {
         self.serial
     }
@@ -83,62 +107,63 @@ impl RpcAccountEntry {
         self.balance_sats
     }
 
-    pub fn kind(&self) -> &RpcAccountKind {
-        &self.kind
+    pub fn type_data(&self) -> &RpcAccountTypeData {
+        &self.type_data
     }
 
     /// Convenience accessor: returns the snark summary when the account
     /// is a snark account, `None` otherwise.
     pub fn snark(&self) -> Option<&RpcAccountSnarkSummary> {
-        match &self.kind {
-            RpcAccountKind::Snark(summary) => Some(summary),
-            RpcAccountKind::Empty => None,
+        match &self.type_data {
+            RpcAccountTypeData::Snark(summary) => Some(summary),
+            RpcAccountTypeData::Empty => None,
         }
     }
 }
 
-impl From<&TsnlAccountEntry> for RpcAccountEntry {
-    fn from(entry: &TsnlAccountEntry) -> Self {
-        let state = entry.state();
-        let kind = match state.as_snark_account().ok() {
-            Some(snark) => RpcAccountKind::Snark(RpcAccountSnarkSummary {
+impl<S> From<&S> for RpcAccountState
+where
+    S: IAccountState,
+{
+    fn from(state: &S) -> Self {
+        let type_data = match state.as_snark_account().ok() {
+            Some(snark) => RpcAccountTypeData::Snark(RpcAccountSnarkSummary {
                 seq_no: *snark.seqno().inner(),
                 inner_state_root: HexBytes32::from(snark.inner_state_root().0),
                 next_inbox_msg_idx: snark.next_inbox_msg_idx(),
+                update_vk: snark.update_vk().clone(),
             }),
-            None => RpcAccountKind::Empty,
+            None => RpcAccountTypeData::Empty,
         };
         Self {
-            id: HexBytes32::from(<[u8; 32]>::from(entry.id())),
             serial: *state.serial().inner(),
             balance_sats: state.balance().to_sat(),
-            kind,
+            type_data,
         }
     }
 }
 
-/// Account-type discriminator for [`RpcAccountEntry`].
+/// Account-type discriminator for [`RpcAccountState`].
 ///
 /// Mirrors the on-chain `OLAccountTypeState` and carries snark-specific
 /// summary data inline so the wire format is self-describing.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum RpcAccountKind {
+pub enum RpcAccountTypeData {
     Empty,
     Snark(RpcAccountSnarkSummary),
 }
 
 /// Snark-account summary fields surfaced in account listings.
-///
-/// Distinct from [`RpcSnarkAccountState`] in that it omits the update verification
-/// key, which is not available from the runtime account state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcAccountSnarkSummary {
     seq_no: u64,
     inner_state_root: HexBytes32,
     next_inbox_msg_idx: u64,
+    #[cfg_attr(feature = "jsonschema", schemars(with = "String"))]
+    update_vk: PredicateKey,
 }
 
 impl RpcAccountSnarkSummary {
@@ -152,5 +177,9 @@ impl RpcAccountSnarkSummary {
 
     pub fn next_inbox_msg_idx(&self) -> u64 {
         self.next_inbox_msg_idx
+    }
+
+    pub fn update_vk(&self) -> &PredicateKey {
+        &self.update_vk
     }
 }

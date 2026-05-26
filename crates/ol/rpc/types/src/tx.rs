@@ -160,8 +160,8 @@ pub enum RpcTxConversionError {
 /// Decoded view of a transaction included in a block.
 ///
 /// Returned by `strata_getBlockTransactions`. Carries the computed txid, the
-/// target account (if any), constraints, effects, and a tagged
-/// [`RpcOLTxKind`] that carries any payload-type-specific fields inline.
+/// target account (if any), constraints, effects, and tagged
+/// [`RpcOLTxTypeData`] with any payload-type-specific fields inline.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcOLTxDetail {
@@ -172,9 +172,10 @@ pub struct RpcOLTxDetail {
     /// Inclusion constraints.
     constraints: RpcTxConstraints,
     /// Effects produced when this transaction is applied.
-    effects: RpcTxEffectsView,
+    effects: RpcTxEffects,
     /// Payload-type discriminator with type-specific fields inline.
-    kind: RpcOLTxKind,
+    #[serde(flatten)]
+    type_data: RpcOLTxTypeData,
 }
 
 impl RpcOLTxDetail {
@@ -190,12 +191,12 @@ impl RpcOLTxDetail {
         &self.constraints
     }
 
-    pub fn effects(&self) -> &RpcTxEffectsView {
+    pub fn effects(&self) -> &RpcTxEffects {
         &self.effects
     }
 
-    pub fn kind(&self) -> &RpcOLTxKind {
-        &self.kind
+    pub fn type_data(&self) -> &RpcOLTxTypeData {
+        &self.type_data
     }
 }
 
@@ -203,21 +204,21 @@ impl From<&OLTransaction> for RpcOLTxDetail {
     fn from(tx: &OLTransaction) -> Self {
         let txid = tx.compute_txid();
         let data = tx.data();
-        let kind = match data.payload() {
-            TransactionPayload::GenericAccountMessage(_) => RpcOLTxKind::GenericAccountMessage,
+        let type_data = match data.payload() {
+            TransactionPayload::GenericAccountMessage(_) => RpcOLTxTypeData::GenericAccountMessage,
             TransactionPayload::SnarkAccountUpdate(sau_payload) => {
-                RpcOLTxKind::SnarkAccountUpdate(RpcSauTxSummary::from(sau_payload))
+                RpcOLTxTypeData::SnarkAccountUpdate(RpcSauTxSummary::from(sau_payload))
             }
         };
         let target = tx.target().map(|a| HexBytes32::from(<[u8; 32]>::from(a)));
         let constraints = RpcTxConstraints::from(data.constraints().clone());
-        let effects = RpcTxEffectsView::from(data.effects());
+        let effects = RpcTxEffects::from(data.effects());
         Self {
             txid,
             target,
             constraints,
             effects,
-            kind,
+            type_data,
         }
     }
 }
@@ -229,7 +230,7 @@ impl From<&OLTransaction> for RpcOLTxDetail {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum RpcOLTxKind {
+pub enum RpcOLTxTypeData {
     GenericAccountMessage,
     SnarkAccountUpdate(RpcSauTxSummary),
 }
@@ -237,12 +238,12 @@ pub enum RpcOLTxKind {
 /// Summary of transfers and messages produced by a transaction.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
-pub struct RpcTxEffectsView {
+pub struct RpcTxEffects {
     transfers: Vec<RpcSentTransfer>,
     messages: Vec<RpcSentMessageEffect>,
 }
 
-impl RpcTxEffectsView {
+impl RpcTxEffects {
     pub fn transfers(&self) -> &[RpcSentTransfer] {
         &self.transfers
     }
@@ -252,7 +253,7 @@ impl RpcTxEffectsView {
     }
 }
 
-impl From<&TxEffects> for RpcTxEffectsView {
+impl From<&TxEffects> for RpcTxEffects {
     fn from(effects: &TxEffects) -> Self {
         Self {
             transfers: effects

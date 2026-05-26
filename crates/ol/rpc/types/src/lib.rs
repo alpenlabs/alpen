@@ -15,7 +15,8 @@ mod snark_acct_update;
 mod tx;
 
 pub use account_state::{
-    RpcAccountEntry, RpcAccountKind, RpcAccountSnarkSummary, RpcSnarkAccountState,
+    RpcAccountEntry, RpcAccountSnarkSummary, RpcAccountState, RpcAccountTypeData,
+    RpcSnarkAccountState,
 };
 pub use account_summary::{
     RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMessageEntry, RpcUpdateInputData,
@@ -30,7 +31,7 @@ pub use duty::*;
 pub use provider::OLRpcProvider;
 pub use snark_acct_update::RpcSnarkAccountUpdate;
 pub use tx::{
-    RpcGenericAccountMessage, RpcOLTransaction, RpcOLTxDetail, RpcOLTxKind, RpcSauTxSummary,
+    RpcGenericAccountMessage, RpcOLTransaction, RpcOLTxDetail, RpcOLTxTypeData, RpcSauTxSummary,
     RpcSentMessageEffect, RpcSentTransfer, RpcTransactionPayload, RpcTxConstraints,
-    RpcTxConversionError, RpcTxEffectsView,
+    RpcTxConversionError, RpcTxEffects,
 };

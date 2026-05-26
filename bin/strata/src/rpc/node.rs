@@ -988,7 +988,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
     }
 }
 
-const MAX_RAW_BLOCKS_RANGE: usize = 5000; // FIXME: make this configurable
+const MAX_RAW_BLOCKS_RANGE: usize = 5000;
 
 #[async_trait]
 impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
