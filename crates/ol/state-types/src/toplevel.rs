@@ -81,6 +81,14 @@ impl OLState {
         &self.epoch
     }
 
+    pub fn intraepoch_state(&self) -> &IntraepochState {
+        &self.intraepoch
+    }
+
+    pub fn intraepoch_state_mut(&mut self) -> &mut IntraepochState {
+        &mut self.intraepoch
+    }
+
     /// Checks that a batch can be applied safely.
     ///
     /// This checks:
@@ -152,7 +160,7 @@ impl OLState {
     pub fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountState>) -> StateResult<()> {
         // Safety check first so we can use `.expect`.
         self.check_write_batch_safe(&batch)?;
-        let (global_writes, epochal_writes, ledger) = batch.into_parts();
+        let (global_writes, epochal_writes, intraepoch_writes, ledger) = batch.into_parts();
 
         // Separate new accounts from updates.
         let (new_accounts, updated_accounts) = ledger.into_new_and_updated();
@@ -217,6 +225,17 @@ impl OLState {
 
         if let Some(mmr) = epochal_writes.l1_block_refs_mmr {
             self.epoch.l1_block_refs_mmr = mmr;
+        }
+
+        // Apply intraepoch state writes.
+        if intraepoch_writes.reset {
+            self.intraepoch.reset();
+        }
+        for entry in intraepoch_writes.appended_pending_asm_logs {
+            let ssz_entry = entry.into();
+            if !self.intraepoch.try_append_pending_log(ssz_entry) {
+                return Err(StateError::PendingAsmLogsFull);
+            }
         }
 
         Ok(())

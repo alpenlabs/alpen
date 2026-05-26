@@ -136,6 +136,7 @@ pub fn ol_state_strategy() -> impl Strategy<Value = OLState> {
         .prop_map(|(epoch, global, ledger)| OLState {
             epoch,
             global,
+            intraepoch: crate::ssz_generated::ssz::state::IntraepochState::default(),
             ledger,
         })
 }

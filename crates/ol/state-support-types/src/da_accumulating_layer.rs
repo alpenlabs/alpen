@@ -665,6 +665,20 @@ impl<S: IStateAccessor> IStateAccessor for DaAccumulatingState<S> {
         self.inner.l1_block_refs_mmr()
     }
 
+    // ===== Intraepoch state methods =====
+
+    fn pending_asm_logs_len(&self) -> usize {
+        self.inner.pending_asm_logs_len()
+    }
+
+    fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
+        self.inner.get_pending_asm_log(idx)
+    }
+
+    fn pending_asm_logs_full(&self) -> bool {
+        self.inner.pending_asm_logs_full()
+    }
+
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
@@ -812,6 +826,16 @@ where
         }
 
         Ok(serial)
+    }
+
+    // Intraepoch state is not persisted in DA; passthrough without tracking.
+
+    fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
+        self.inner.try_append_pending_asm_log(entry)
+    }
+
+    fn reset_intraepoch_state(&mut self) {
+        self.inner.reset_intraepoch_state();
     }
 }
 

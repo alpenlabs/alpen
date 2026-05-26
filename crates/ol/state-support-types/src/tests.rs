@@ -13,7 +13,7 @@ use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Hei
 use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
-use strata_ol_state_types::{OLSnarkAccountState, WriteBatch};
+use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, OLSnarkAccountState, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::Seqno;
 
@@ -626,6 +626,7 @@ struct TestState {
     last_l1_height: L1Height,
     asm_recorded_epoch: EpochCommitment,
     total_ledger_balance: BitcoinAmount,
+    pending_asm_logs: Vec<PendingAsmLog>,
 }
 
 impl TestState {
@@ -641,6 +642,7 @@ impl TestState {
             last_l1_height: L1Height::from(0u32),
             asm_recorded_epoch: EpochCommitment::null(),
             total_ledger_balance: BitcoinAmount::ZERO,
+            pending_asm_logs: Vec::new(),
         }
     }
 }
@@ -701,6 +703,18 @@ impl IStateAccessor for TestState {
 
     fn l1_block_refs_mmr(&self) -> &Mmr64 {
         todo!()
+    }
+
+    fn pending_asm_logs_len(&self) -> usize {
+        self.pending_asm_logs.len()
+    }
+
+    fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
+        self.pending_asm_logs.get(idx).cloned()
+    }
+
+    fn pending_asm_logs_full(&self) -> bool {
+        self.pending_asm_logs.len() as u64 == MAX_PENDING_ASM_LOGS
     }
 }
 
@@ -782,6 +796,18 @@ impl IStateAccessorMut for TestState {
         let acct = TestAccountState::new_with_serial(new_acct_data, serial);
         self.accounts.insert(id, acct);
         Ok(serial)
+    }
+
+    fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
+        if self.pending_asm_logs.len() as u64 == MAX_PENDING_ASM_LOGS {
+            return Err(StateError::PendingAsmLogsFull);
+        }
+        self.pending_asm_logs.push(entry);
+        Ok(())
+    }
+
+    fn reset_intraepoch_state(&mut self) {
+        self.pending_asm_logs.clear();
     }
 }
 

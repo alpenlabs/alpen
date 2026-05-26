@@ -8,8 +8,8 @@ use std::fmt;
 
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::{IStateAccessor, StateResult};
-use strata_ol_state_types::WriteBatch;
+use strata_ledger_types::{IStateAccessor, PendingAsmLog, StateResult};
+use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
 
@@ -160,6 +160,50 @@ impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAcc
         )
     }
 
+    // ===== Intraepoch state methods =====
+
+    fn pending_asm_logs_len(&self) -> usize {
+        let mut len = self.base.pending_asm_logs_len();
+        for wb in self.write_batches.iter() {
+            if wb.intraepoch_writes().reset {
+                len = 0;
+            }
+            len += wb.intraepoch_writes().appended_pending_asm_logs.len();
+        }
+        len
+    }
+
+    fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
+        // Find the most recent reset; everything before it is hidden.
+        let last_reset = self
+            .write_batches
+            .iter()
+            .rposition(|wb| wb.intraepoch_writes().reset);
+
+        let (base_len, first_batch) = match last_reset {
+            Some(i) => (0, i),
+            None => (self.base.pending_asm_logs_len(), 0),
+        };
+
+        if idx < base_len {
+            return self.base.get_pending_asm_log(idx);
+        }
+
+        let mut remaining = idx - base_len;
+        for wb in self.write_batches.iter().skip(first_batch) {
+            let segment = &wb.intraepoch_writes().appended_pending_asm_logs;
+            if remaining < segment.len() {
+                return Some(segment[remaining].clone());
+            }
+            remaining -= segment.len();
+        }
+        None
+    }
+
+    fn pending_asm_logs_full(&self) -> bool {
+        self.pending_asm_logs_len() as u64 == MAX_PENDING_ASM_LOGS
+    }
+
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
@@ -213,9 +257,9 @@ impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrite
 mod tests {
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
     use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot};
-    use strata_ledger_types::{IAccountState, IStateAccessor};
+    use strata_ledger_types::{IAccountState, IStateAccessor, IStateAccessorMut};
     use strata_ol_params::OLParams;
-    use strata_ol_state_types::OLState;
+    use strata_ol_state_types::{OLAccountState, OLState};
 
     use super::*;
     use crate::{memory_state_layer::MemoryStateBaseLayer, test_utils::*};
@@ -603,5 +647,105 @@ mod tests {
         // Should return the L1 block ID from the batch's epochal state
         let blkid = diff_state.last_l1_blkid();
         assert_eq!(*blkid, L1BlockId::from(Buf32::zero()));
+    }
+
+    // =========================================================================
+    // Intraepoch pending ASM log fold across stacked batches
+    // =========================================================================
+
+    fn pending_log(tag: u8) -> PendingAsmLog {
+        let entry = strata_asm_manifest_types::AsmLogEntry::from_raw(vec![tag])
+            .expect("bytes within capacity");
+        PendingAsmLog::new(strata_identifiers::L1Height::from(tag as u32), entry)
+    }
+
+    fn batch_with_appends(tags: &[u8]) -> WriteBatch<OLAccountState> {
+        let mut wb: WriteBatch<OLAccountState> = WriteBatch::default();
+        for t in tags {
+            wb.intraepoch_writes_mut()
+                .appended_pending_asm_logs
+                .push(pending_log(*t));
+        }
+        wb
+    }
+
+    fn batch_reset_then_appends(tags: &[u8]) -> WriteBatch<OLAccountState> {
+        let mut wb = batch_with_appends(tags);
+        wb.intraepoch_writes_mut().reset = true;
+        // reset+appends mean: clear, then append the tags above.
+        wb
+    }
+
+    #[test]
+    fn test_appends_concat_across_batches() {
+        let mut base = create_test_base_layer();
+        base.try_append_pending_asm_log(pending_log(1)).unwrap();
+        base.try_append_pending_asm_log(pending_log(2)).unwrap();
+
+        let batches = vec![batch_with_appends(&[10, 11]), batch_with_appends(&[20])];
+        let diff = BatchDiffState::new(&base, &batches);
+
+        assert_eq!(diff.pending_asm_logs_len(), 5);
+        let heights: Vec<u32> = (0..5)
+            .map(|i| u32::from(diff.get_pending_asm_log(i).unwrap().height()))
+            .collect();
+        assert_eq!(heights, vec![1, 2, 10, 11, 20]);
+        assert!(diff.get_pending_asm_log(5).is_none());
+    }
+
+    #[test]
+    fn test_inner_reset_hides_base_and_prior_appends() {
+        let mut base = create_test_base_layer();
+        base.try_append_pending_asm_log(pending_log(1)).unwrap();
+        base.try_append_pending_asm_log(pending_log(2)).unwrap();
+
+        let batches = vec![
+            batch_with_appends(&[10, 11]),
+            batch_reset_then_appends(&[30]),
+            batch_with_appends(&[40, 41]),
+        ];
+        let diff = BatchDiffState::new(&base, &batches);
+
+        // base(2) + batch0(2) are hidden by the reset in batch1; effective list
+        // is [30, 40, 41].
+        assert_eq!(diff.pending_asm_logs_len(), 3);
+        let heights: Vec<u32> = (0..3)
+            .map(|i| u32::from(diff.get_pending_asm_log(i).unwrap().height()))
+            .collect();
+        assert_eq!(heights, vec![30, 40, 41]);
+        assert!(diff.get_pending_asm_log(3).is_none());
+    }
+
+    #[test]
+    fn test_most_recent_reset_wins() {
+        let mut base = create_test_base_layer();
+        base.try_append_pending_asm_log(pending_log(1)).unwrap();
+
+        // Two resets: only the latest matters.
+        let batches = vec![
+            batch_reset_then_appends(&[10]),
+            batch_with_appends(&[11]),
+            batch_reset_then_appends(&[20, 21]),
+        ];
+        let diff = BatchDiffState::new(&base, &batches);
+
+        assert_eq!(diff.pending_asm_logs_len(), 2);
+        let heights: Vec<u32> = (0..2)
+            .map(|i| u32::from(diff.get_pending_asm_log(i).unwrap().height()))
+            .collect();
+        assert_eq!(heights, vec![20, 21]);
+    }
+
+    #[test]
+    fn test_empty_reset_yields_empty_view() {
+        let mut base = create_test_base_layer();
+        base.try_append_pending_asm_log(pending_log(1)).unwrap();
+        base.try_append_pending_asm_log(pending_log(2)).unwrap();
+
+        let batches = vec![batch_reset_then_appends(&[])];
+        let diff = BatchDiffState::new(&base, &batches);
+
+        assert_eq!(diff.pending_asm_logs_len(), 0);
+        assert!(diff.get_pending_asm_log(0).is_none());
     }
 }
