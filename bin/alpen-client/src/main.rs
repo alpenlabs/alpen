@@ -94,8 +94,8 @@ mod sequencer_imports {
         header_summary::RethHeaderSummaryProvider,
         payload_builder::AlpenRethPayloadEngine,
         prover::{
-            AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec, EeBatchProofDbManager,
-            EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
+            AcctRangeWitnessFn, AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec,
+            EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
         },
     };
 }
@@ -691,11 +691,20 @@ fn main() {
                 .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
                 .retry(RetryConfig::default());
 
+                let acct_range_witness_fn: Arc<AcctRangeWitnessFn> = {
+                    let extractor = range_witness_extractor.clone();
+                    Arc::new(move |first_block, last_block| {
+                        extractor.extract_range_witness(first_block, last_block)
+                    })
+                };
+
                 let acct_builder = ProverBuilder::new(AcctSpec::new(
                     chunk_receipts.clone(),
                     batch_storage_dyn.clone(),
                     storage.clone(),
-                    ol_client.clone(),
+                    btc_client.clone(),
+                    dbs.witness_db(),
+                    acct_range_witness_fn,
                     genesis,
                 ))
                 .task_store(task_store)

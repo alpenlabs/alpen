@@ -43,6 +43,8 @@ alpen-ee-genesis.workspace = true
 alpen-ee-ol-tracker.workspace = true
 alpen-ee-rpc-server.workspace = true
 alpen-ee-sequencer = { workspace = true, optional = true }
+alpen-reth-db.workspace = true
+alpen-reth-statediff.workspace = true
 alpen-reth-evm = { workspace = true, optional = true }
 alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
@@ -54,6 +56,7 @@ strata-btcio = { workspace = true, optional = true }
 strata-codec.workspace = true
 strata-common = { workspace = true, features = ["async"] }
 strata-config = { workspace = true, optional = true }
+strata-crypto.workspace = true
 strata-db-types.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
@@ -61,6 +64,7 @@ strata-ee-chain-types.workspace = true
 strata-ee-chunk-runtime.workspace = true
 strata-evm-ee.workspace = true
 strata-identifiers.workspace = true
+strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
 strata-logging.workspace = true
 strata-ol-rpc-api = { workspace = true, features = ["client"] }
@@ -83,6 +87,7 @@ alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
 anyhow.workspace = true
 async-trait.workspace = true
+bitcoin.workspace = true
 clap.workspace = true
 eyre.workspace = true
 jsonrpsee = { workspace = true, features = ["http-client", "server", "macros"] }

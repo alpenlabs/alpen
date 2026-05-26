@@ -2,7 +2,7 @@ use k256::schnorr::SigningKey;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
 use ssz::Decode;
-use strata_ee_acct_runtime::EePrivateInput;
+use strata_ee_acct_runtime::{DaWitness, EePrivateInput};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_snark_acct_runtime::PrivateInput as UpdatePrivateInput;
 use strata_snark_acct_types::UpdateProofPubParams;
@@ -34,6 +34,7 @@ pub struct EeAcctProofInput {
     pub genesis: Genesis,
     pub ee_private_input: EePrivateInput,
     pub update_private_input: UpdatePrivateInput,
+    pub da_witness: DaWitness,
 }
 
 #[derive(Debug)]
@@ -75,6 +76,10 @@ impl ZkVmProgram for EeAcctProgram {
         let upd_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.update_private_input)
             .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
         builder.write_buf(&upd_rkyv_bytes)?;
+
+        let da_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.da_witness)
+            .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
+        builder.write_buf(&da_rkyv_bytes)?;
 
         builder.build()
     }
@@ -120,7 +125,7 @@ mod tests {
     use ssz::Encode;
     use strata_acct_types::BitcoinAmount;
     use strata_codec::encode_to_vec;
-    use strata_ee_acct_runtime::EePrivateInput;
+    use strata_ee_acct_runtime::{DaWitness, EePrivateInput};
     use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
     use strata_identifiers::Hash;
     use strata_predicate::{PredicateKey, PredicateTypeId};
@@ -172,6 +177,7 @@ mod tests {
             genesis,
             ee_private_input,
             update_private_input,
+            da_witness: DaWitness::empty(),
         };
 
         // Predicate is carried through but never evaluated in this
