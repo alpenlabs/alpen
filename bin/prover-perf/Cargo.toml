@@ -35,6 +35,7 @@ strata-zkvm-hosts.workspace = true
 reth-chainspec.workspace = true
 reth-primitives-traits.workspace = true
 rsp-client-executor.workspace = true
+rsp-primitives.workspace = true
 serde = { workspace = true, features = ["derive"] }
 
 # sp1

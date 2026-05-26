@@ -112,7 +112,7 @@ async fn seal_batch<P: BatchPolicy>(
 
     // One chunk per batch, spanning the whole batch.
     //
-    // TODO(STR-1369): replace with a real chunking/batching policy
+    // TODO(STR-TBD): replace with a real chunking/batching policy
     // (e.g. sub-batch chunker driven by prover cost). Today the PAAS
     // chunk + acct provers only need the chunk records to exist and
     // be linked to the batch — cardinality is a policy knob.

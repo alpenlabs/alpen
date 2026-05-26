@@ -16550,6 +16550,7 @@ dependencies = [
  "reth-chainspec",
  "reth-primitives-traits",
  "rsp-client-executor",
+ "rsp-primitives",
  "serde",
  "serde_json",
  "sp1-sdk",
