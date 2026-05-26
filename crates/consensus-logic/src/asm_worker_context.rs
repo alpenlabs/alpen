@@ -103,7 +103,7 @@ impl WorkerContext for AsmWorkerCtx {
     fn get_network(&self) -> WorkerResult<bitcoin::Network> {
         self.handle
             .block_on(self.bitcoin_client.network())
-            .map_err(|_| WorkerError::BtcClient)
+            .map_err(|e| WorkerError::BtcRpc(format!("network: {e}")))
     }
 
     fn get_bitcoin_tx(&self, txid: &strata_btc_types::BitcoinTxid) -> WorkerResult<RawBitcoinTx> {

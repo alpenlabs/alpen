@@ -2,7 +2,7 @@
 
 use std::{fs, num::NonZero, str::FromStr};
 
-use bitcoin::{XOnlyPublicKey, hashes::{Hash, hash160}, secp256k1::PublicKey};
+use bitcoin::{secp256k1::PublicKey, XOnlyPublicKey};
 use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
     ConfirmationDepths, SubprotocolInstance,
@@ -16,6 +16,7 @@ use strata_l1_txfmt::MagicBytes;
 use strata_ol_genesis::build_genesis_artifacts;
 use strata_ol_params::OLParams;
 use strata_predicate::{PredicateKey, PredicateTypeId};
+use strata_primitives::bitcoin_bosd::{Descriptor, DescriptorType};
 
 use crate::{
     args::{CmdContext, SubcAsmParams},
@@ -145,6 +146,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         .transpose()?
         .unwrap_or(DEFAULT_DEPOSIT_SATS);
 
+    let safe_harbour_address = resolve_safe_harbour_address(&cmd.safe_harbour_address)?;
     let operators: Vec<EvenPublicKey> = pubkeys.into_iter().map(EvenPublicKey::from).collect();
 
     let bridge = BridgeV1InitConfig {
@@ -155,6 +157,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
             .unwrap_or(DEFAULT_ASSIGNMENT_DURATION),
         operator_fee: BitcoinAmount::from_sat(cmd.operator_fee.unwrap_or(DEFAULT_OPERATOR_FEE)),
         recovery_delay: cmd.recovery_delay.unwrap_or(DEFAULT_RECOVERY_DELAY),
+        safe_harbour_address,
     };
 
     // Assemble ASM params.
@@ -198,6 +201,25 @@ fn resolve_sequencer_predicate(seq_pk: Option<&str>) -> anyhow::Result<Predicate
     ))
 }
 
+fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<Descriptor> {
+    let descriptor = descriptor.trim();
+    anyhow::ensure!(
+        !descriptor.is_empty(),
+        "safe harbour descriptor must not be empty"
+    );
+
+    let descriptor = descriptor
+        .parse::<Descriptor>()
+        .map_err(|e| anyhow::anyhow!("invalid safe harbour descriptor: {e}"))?;
+    anyhow::ensure!(
+        descriptor.type_tag() == DescriptorType::P2tr,
+        "safe harbour descriptor must be P2TR, got {}",
+        descriptor.type_tag()
+    );
+
+    Ok(descriptor)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,5 +245,26 @@ mod tests {
 
         assert_eq!(predicate.id(), PredicateTypeId::Bip340Schnorr.as_u8());
         assert_eq!(predicate.condition(), expected_pubkey.as_slice());
+    }
+
+    #[test]
+    fn safe_harbour_address_accepts_p2tr_descriptor() {
+        let xonly = XOnlyPublicKey::from_str(TEST_SEQ_PK).expect("x-only hex should parse");
+        let descriptor =
+            Descriptor::new_p2tr(&xonly.serialize()).expect("x-only pubkey should be valid p2tr");
+
+        let resolved = resolve_safe_harbour_address(&descriptor.to_string())
+            .expect("p2tr descriptor should resolve");
+
+        assert_eq!(resolved, descriptor);
+    }
+
+    #[test]
+    fn safe_harbour_address_rejects_non_p2tr_descriptor() {
+        let descriptor = Descriptor::new_p2wpkh(&[1; 20]);
+
+        let err = resolve_safe_harbour_address(&descriptor.to_string()).unwrap_err();
+
+        assert!(err.to_string().contains("must be P2TR"));
     }
 }
