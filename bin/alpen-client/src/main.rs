@@ -644,7 +644,7 @@ fn main() {
                     broadcast_ops,
                     btc_client.clone(),
                     magic_bytes,
-                ));
+                )?);
 
                 // Spawn btcio tasks.
                 node.task_executor

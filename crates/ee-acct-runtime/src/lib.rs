@@ -13,9 +13,9 @@ mod verification_state;
 
 pub use block_assembly::apply_input_messages;
 pub use da_witness::{
-    ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness, ArchivedDaTxWitness, ArchivedDaWitness,
-    ArchivedL1DaBlockInclusion, BitcoinMerkleProof, DaBlockWitness, DaTxWitness, DaWitness,
-    L1DaBlockInclusion,
+    ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness, ArchivedDaBytecodeWitness,
+    ArchivedDaTxWitness, ArchivedDaWitness, ArchivedL1DaBlockInclusion, BitcoinMerkleProof,
+    DaBlockWitness, DaBytecodeWitness, DaTxWitness, DaWitness, L1DaBlockInclusion,
 };
 pub use ee_program::EeSnarkAccountProgram;
 pub use private_input::{

@@ -6,6 +6,9 @@
 use alpen_reth_statediff::BatchStateDiff;
 use strata_codec::{decode_buf_exact, encode_to_vec, Codec, CodecError};
 
+/// Magic bytes in the EE DA commit transaction marker output.
+pub const EE_DA_MAGIC_BYTES: [u8; 4] = *b"ALPN";
+
 /// Current EE DA blob encoding version.
 ///
 /// The commit transaction carries this version next to the EE DA magic bytes

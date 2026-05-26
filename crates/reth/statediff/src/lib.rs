@@ -62,6 +62,8 @@ pub(crate) mod test_utils;
 // Re-export main types at crate level for convenience
 pub use batch::{AccountChange, AccountDiff, BatchBuilder, BatchStateDiff, StorageDiff};
 pub use block::{AccountSnapshot, BlockAccountChange, BlockStateChanges, BlockStorageDiff};
-pub use reconstruct::{ReconstructError, StateReconstructor};
+pub use reconstruct::{
+    apply_batch_state_diff_to_ethereum_state, ReconstructError, StateReconstructor,
+};
 #[cfg(feature = "serde")]
 pub use serde_impl::{AccountChangeSerde, AccountDiffSerde, BatchStateDiffSerde};

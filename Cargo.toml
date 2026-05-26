@@ -156,7 +156,7 @@ alpen-reth-exex = { path = "crates/reth/exex" }
 alpen-reth-node = { path = "crates/reth/node" }
 alpen-reth-primitives = { path = "crates/reth/primitives" }
 alpen-reth-rpc = { path = "crates/reth/rpc" }
-alpen-reth-statediff = { path = "crates/reth/statediff" }
+alpen-reth-statediff = { path = "crates/reth/statediff", default-features = false }
 alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
 strata-btcio = { path = "crates/btcio" }

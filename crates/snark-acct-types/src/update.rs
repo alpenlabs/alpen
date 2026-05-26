@@ -60,33 +60,6 @@ impl UpdateStateData {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn l1_block_ref_leaf_hash_matches_tree_hash() {
-        let block_hash = [1u8; 32];
-        let wtxids_root = [2u8; 32];
-        let l1_block_ref = L1BlockRef::new(block_hash, wtxids_root);
-
-        assert_eq!(
-            l1_block_ref_leaf_hash(&block_hash, &wtxids_root),
-            <L1BlockRef as TreeHash>::tree_hash_root(&l1_block_ref).into_inner()
-        );
-    }
-
-    #[test]
-    fn l1_block_ref_accessors_return_fixed_bytes() {
-        let block_hash = [3u8; 32];
-        let wtxids_root = [4u8; 32];
-        let l1_block_ref = L1BlockRef::new(block_hash, wtxids_root);
-
-        assert_eq!(l1_block_ref.block_hash(), block_hash);
-        assert_eq!(l1_block_ref.wtxids_root(), wtxids_root);
-    }
-}
-
 impl UpdateInputData {
     pub fn new(seq_no: u64, messages: Vec<MessageEntry>, update_state: UpdateStateData) -> Self {
         Self {
@@ -247,5 +220,32 @@ impl UpdateAccumulatorProofs {
 
     pub fn ledger_ref_proofs(&self) -> &LedgerRefProofs {
         &self.ledger_ref_proofs
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn l1_block_ref_leaf_hash_matches_pinned_root() {
+        let block_hash = [1u8; 32];
+        let wtxids_root = [2u8; 32];
+        let expected = [
+            248, 24, 175, 211, 122, 109, 195, 188, 146, 251, 68, 115, 16, 17, 39, 112, 6, 219, 78,
+            250, 110, 144, 35, 205, 116, 104, 192, 35, 53, 210, 42, 77,
+        ];
+
+        assert_eq!(l1_block_ref_leaf_hash(&block_hash, &wtxids_root), expected);
+    }
+
+    #[test]
+    fn l1_block_ref_accessors_return_fixed_bytes() {
+        let block_hash = [3u8; 32];
+        let wtxids_root = [4u8; 32];
+        let l1_block_ref = L1BlockRef::new(block_hash, wtxids_root);
+
+        assert_eq!(l1_block_ref.block_hash(), block_hash);
+        assert_eq!(l1_block_ref.wtxids_root(), wtxids_root);
     }
 }

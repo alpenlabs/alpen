@@ -98,6 +98,9 @@ pub enum EnvelopeError {
     #[error("envelope_pubkey is required for envelope transactions")]
     MissingEnvelopePubkey,
 
+    #[error("chunked envelope sequencer/change address must not be P2TR")]
+    P2trChangeAddressUnsupported,
+
     #[error("failed to fetch envelope prerequisites: {0}")]
     PrereqFetch(#[source] anyhow::Error),
 

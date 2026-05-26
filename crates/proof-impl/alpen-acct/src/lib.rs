@@ -11,11 +11,12 @@ use strata_predicate::PredicateKey;
 use strata_snark_acct_runtime::ArchivedPrivateInput as ArchivedUpdatePrivateInput;
 use zkaleido::ZkVmEnvSerde;
 
-mod da_inclusion;
+mod da;
 mod program;
 
-pub use da_inclusion::{
-    bitcoin_merkle_root, bitcoin_merkle_root_from_archived_proof, bitcoin_merkle_root_from_proof,
+pub use da::{
+    DaBlob, DaVerificationError, EvmHeaderSummary, bitcoin_merkle_root,
+    bitcoin_merkle_root_from_archived_proof, bitcoin_merkle_root_from_proof, verify_da_witness,
 };
 pub use program::{EeAcctProgram, EeAcctProofInput};
 

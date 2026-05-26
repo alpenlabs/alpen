@@ -9,11 +9,28 @@ use rkyv_impl::archive_impl;
 pub struct DaWitness {
     /// One per L1 block holding DA commit/reveal transactions for this batch.
     blocks: Vec<DaBlockWitness>,
+
+    /// Private bytecodes omitted from the current DA blob because they were
+    /// already known locally from prior DA publication.
+    known_bytecodes: Vec<DaBytecodeWitness>,
 }
 
 impl DaWitness {
     pub fn new(blocks: Vec<DaBlockWitness>) -> Self {
-        Self { blocks }
+        Self {
+            blocks,
+            known_bytecodes: Vec::new(),
+        }
+    }
+
+    pub fn new_with_known_bytecodes(
+        blocks: Vec<DaBlockWitness>,
+        known_bytecodes: Vec<DaBytecodeWitness>,
+    ) -> Self {
+        Self {
+            blocks,
+            known_bytecodes,
+        }
     }
 
     pub fn empty() -> Self {
@@ -23,17 +40,70 @@ impl DaWitness {
     pub fn blocks(&self) -> &[DaBlockWitness] {
         &self.blocks
     }
+
+    pub fn known_bytecodes(&self) -> &[DaBytecodeWitness] {
+        &self.known_bytecodes
+    }
 }
 
 impl ArchivedDaWitness {
     pub fn blocks(&self) -> &[ArchivedDaBlockWitness] {
         &self.blocks
     }
+
+    pub fn known_bytecodes(&self) -> &[ArchivedDaBytecodeWitness] {
+        &self.known_bytecodes
+    }
+}
+
+/// Private witness bytecode keyed by the EVM code hash it must match.
+///
+/// NOTE: this is a pragmatic bridge for cross-batch bytecode DA dedupe. The
+/// public DA blob may omit a bytecode when its hash was already published in an
+/// earlier batch, but a later account diff can still set that same `code_hash`.
+/// The acct guest needs the bytes to verify that the code hash refers to real
+/// EVM bytecode, so the host supplies omitted bytecodes here and the guest
+/// re-hashes them before accepting the account diff.
+///
+/// This proves bytecode identity, not prior L1 publication. The proper future
+/// protocol fix is to prove membership in an authenticated published-bytecode
+/// set, or include explicit prior blob inclusion for the omitted bytecode.
+#[derive(Clone, Debug, Eq, PartialEq, Archive, Deserialize, Serialize)]
+#[rkyv(derive(Debug))]
+pub struct DaBytecodeWitness {
+    code_hash: [u8; 32],
+    bytecode: Vec<u8>,
+}
+
+impl DaBytecodeWitness {
+    pub fn new(code_hash: [u8; 32], bytecode: Vec<u8>) -> Self {
+        Self {
+            code_hash,
+            bytecode,
+        }
+    }
+
+    pub fn code_hash(&self) -> &[u8; 32] {
+        &self.code_hash
+    }
+}
+
+#[archive_impl]
+impl DaBytecodeWitness {
+    pub fn bytecode(&self) -> &[u8] {
+        &self.bytecode
+    }
+}
+
+impl ArchivedDaBytecodeWitness {
+    pub fn code_hash(&self) -> &[u8; 32] {
+        &self.code_hash
+    }
 }
 
 /// Block-level public L1 reference data used for DA transaction inclusion.
 ///
-/// This mirrors the reduced L1 DA ref shape without using the existing
+/// This mirrors the reduced L1 block ref shape without using the existing
 /// identifier wrapper types because the witness crosses the rkyv private-input
 /// boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Archive, Deserialize, Serialize)]
@@ -206,6 +276,7 @@ mod tests {
         let archived = rkyv::access::<ArchivedDaWitness, RkyvError>(&bytes).unwrap();
 
         assert!(archived.blocks().is_empty());
+        assert!(archived.known_bytecodes().is_empty());
     }
 
     #[test]
@@ -229,5 +300,20 @@ mod tests {
         assert_eq!(tx.raw_tx(), &[0x44, 0x55]);
         assert_eq!(tx.wtxid_inclusion_proof().siblings(), &[[0x33; 32]]);
         assert_eq!(tx.wtxid_inclusion_proof().position(), 7);
+    }
+
+    #[test]
+    fn da_witness_with_known_bytecode_roundtrips_through_rkyv() {
+        let bytecode = DaBytecodeWitness::new([0x55; 32], vec![0x60, 0x80]);
+        let witness = DaWitness::new_with_known_bytecodes(Vec::new(), vec![bytecode]);
+
+        let bytes = rkyv::to_bytes::<RkyvError>(&witness).unwrap();
+        let archived = rkyv::access::<ArchivedDaWitness, RkyvError>(&bytes).unwrap();
+
+        assert!(archived.blocks().is_empty());
+        assert_eq!(archived.known_bytecodes().len(), 1);
+        let bytecode = &archived.known_bytecodes()[0];
+        assert_eq!(bytecode.code_hash(), &[0x55; 32]);
+        assert_eq!(bytecode.bytecode(), &[0x60, 0x80]);
     }
 }

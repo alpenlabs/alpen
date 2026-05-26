@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt, sync::Arc};
 
 use alpen_ee_common::{
     prepare_da_chunks, BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockInfo,
-    L1DaBlockRef, DA_BLOB_VERSION,
+    L1DaBlockRef, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES,
 };
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
@@ -104,14 +104,22 @@ impl ChunkedEnvelopeDaProvider {
         broadcast_ops: Arc<BroadcastDbOps>,
         l1_blocks: Arc<dyn L1BlockReader>,
         magic_bytes: MagicBytes,
-    ) -> Self {
-        Self {
+    ) -> eyre::Result<Self> {
+        let actual_magic = *magic_bytes.as_bytes();
+        ensure!(
+            actual_magic == EE_DA_MAGIC_BYTES,
+            "EE DA magic bytes mismatch: expected {:?}, got {:?}",
+            EE_DA_MAGIC_BYTES,
+            actual_magic
+        );
+
+        Ok(Self {
             blob_provider,
             envelope_handle,
             broadcast_ops,
             l1_blocks,
             magic_bytes,
-        }
+        })
     }
 }
 
@@ -413,11 +421,13 @@ mod tests {
         entry
     }
 
-    fn make_provider() -> (
+    fn make_provider_with_magic(
+        magic_bytes: MagicBytes,
+    ) -> eyre::Result<(
         ChunkedEnvelopeDaProvider,
         Arc<ChunkedEnvelopeOps>,
         Arc<BroadcastDbOps>,
-    ) {
+    )> {
         let backend = get_test_sled_backend();
         let chunked_ops = Arc::new(
             ChunkedEnvelopeContext::new(backend.chunked_envelope_db())
@@ -432,10 +442,19 @@ mod tests {
             Arc::new(ChunkedEnvelopeHandle::new(chunked_ops.clone())),
             broadcast_ops.clone(),
             Arc::new(StaticL1BlockReader),
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
+            magic_bytes,
+        )?;
 
-        (provider, chunked_ops, broadcast_ops)
+        Ok((provider, chunked_ops, broadcast_ops))
+    }
+
+    fn make_provider() -> (
+        ChunkedEnvelopeDaProvider,
+        Arc<ChunkedEnvelopeOps>,
+        Arc<BroadcastDbOps>,
+    ) {
+        make_provider_with_magic(MagicBytes::new(EE_DA_MAGIC_BYTES))
+            .expect("test provider magic matches EE DA magic")
     }
 
     fn finalized_tx_entry(height: u32) -> L1TxEntry {
@@ -446,6 +465,14 @@ mod tests {
             block_height: height,
         };
         entry
+    }
+
+    #[test]
+    fn test_chunked_envelope_da_provider_rejects_wrong_magic_bytes() {
+        match make_provider_with_magic(MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD])) {
+            Ok(_) => panic!("provider construction should fail for non-EE-DA magic bytes"),
+            Err(err) => assert!(err.to_string().contains("EE DA magic bytes mismatch")),
+        }
     }
 
     /// Ensures a persisted `envelope_idx` is treated as required state, not as

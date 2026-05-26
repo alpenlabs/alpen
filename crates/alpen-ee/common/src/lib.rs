@@ -39,7 +39,10 @@ pub use types::{
     chunk::{Chunk, ChunkId, ChunkStatus},
     chunk_witness::{ChunkWitnessExtractFn, ChunkWitnessRecord},
     consensus_heads::ConsensusHeads,
-    da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderSummary, DA_BLOB_VERSION},
+    da::{
+        prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderSummary, DA_BLOB_VERSION,
+        EE_DA_MAGIC_BYTES,
+    },
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::{ExecBlockPayload, ExecBlockRecord},
     fees::{

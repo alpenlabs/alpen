@@ -1,14 +1,21 @@
-//! L1 DA inclusion helpers.
+//! L1 inclusion checks for DA witnesses.
 
-use strata_crypto::hash::sha256d;
-use strata_ee_acct_runtime::{ArchivedBitcoinMerkleProof, BitcoinMerkleProof};
+use bitcoin::{Transaction, consensus::deserialize as btc_deserialize, hashes::Hash as _};
+use sha2::{Digest, Sha256};
+use strata_ee_acct_runtime::{
+    ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness, BitcoinMerkleProof,
+};
+use strata_snark_acct_types::{LedgerRefs, l1_block_ref_leaf_hash};
+
+use super::error::DaVerificationError;
 
 fn bitcoin_hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
     let mut pair = [0u8; 64];
     pair[..32].copy_from_slice(&left);
     pair[32..].copy_from_slice(&right);
 
-    *sha256d(&pair).as_ref()
+    let first = Sha256::digest(pair);
+    Sha256::digest(first).into()
 }
 
 /// Computes a Bitcoin-style Merkle root from a leaf and inclusion path.
@@ -48,10 +55,72 @@ pub fn bitcoin_merkle_root_from_archived_proof(
     bitcoin_merkle_root(leaf_hash, proof.siblings(), proof.position())
 }
 
+/// Computes the public ledger-ref entry hash for an L1 block ref.
+pub(crate) fn l1_block_ref_commitment(block_hash: &[u8; 32], wtxids_root: &[u8; 32]) -> [u8; 32] {
+    l1_block_ref_leaf_hash(block_hash, wtxids_root)
+}
+
+/// Verifies all witnessed DA transactions in one L1 block.
+///
+/// This checks both the public reduced L1 ref binding and each tx's wtxid
+/// Merkle path to the block's `wtxids_root`.
+pub(super) fn verify_block_witness(
+    block: &ArchivedDaBlockWitness,
+    ledger_refs: &LedgerRefs,
+) -> Result<Vec<Transaction>, DaVerificationError> {
+    verify_l1_ref_binding(block, ledger_refs)?;
+
+    if block.txs().is_empty() {
+        return Err(DaVerificationError::MissingDaTransactions);
+    }
+
+    let expected_root = *block.inclusion().wtxids_root();
+    let mut decoded = Vec::with_capacity(block.txs().len());
+    for tx_witness in block.txs() {
+        let tx: Transaction = btc_deserialize(tx_witness.raw_tx())
+            .map_err(|e| DaVerificationError::DaTxDecode(e.to_string()))?;
+        let computed_root = bitcoin_merkle_root_from_archived_proof(
+            tx.compute_wtxid().to_byte_array(),
+            tx_witness.wtxid_inclusion_proof(),
+        );
+        if computed_root != expected_root {
+            return Err(DaVerificationError::WtxidsRootMismatch {
+                expected: expected_root,
+                computed: computed_root,
+            });
+        }
+        decoded.push(tx);
+    }
+
+    Ok(decoded)
+}
+
+/// Verifies that a witnessed DA block is claimed in public LedgerRefs.
+///
+/// The L1 block ref MMR leaf is indexed by L1 height and commits to
+/// the SSZ tree hash of `{block_hash, wtxids_root}`.
+fn verify_l1_ref_binding(
+    block: &ArchivedDaBlockWitness,
+    ledger_refs: &LedgerRefs,
+) -> Result<(), DaVerificationError> {
+    let inclusion = block.inclusion();
+    let idx = u64::from(inclusion.l1_block_height());
+    let expected_hash = l1_block_ref_commitment(inclusion.l1_block_hash(), inclusion.wtxids_root());
+
+    let found = ledger_refs
+        .l1_block_refs()
+        .iter()
+        .any(|claim| claim.idx() == idx && claim.entry_hash().as_ref() == expected_hash.as_slice());
+    if !found {
+        return Err(DaVerificationError::L1DaBlockRefNotInLedgerRefs { idx });
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use rkyv::rancor::Error as RkyvError;
-    use strata_ee_acct_runtime::{ArchivedBitcoinMerkleProof, BitcoinMerkleProof};
 
     use super::*;
 
