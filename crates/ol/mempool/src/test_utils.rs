@@ -128,12 +128,12 @@ pub(crate) fn create_test_snark_tx_from_update(
         operation.extra_data().to_vec(),
     );
 
-    let asm_hist_refs = operation.ledger_refs().asm_manifest_refs();
-    let sau_ledger_refs = if asm_hist_refs.is_empty() {
+    let l1_block_refs = operation.ledger_refs().l1_block_refs();
+    let sau_ledger_refs = if l1_block_refs.is_empty() {
         SauTxLedgerRefs::new_empty()
     } else {
-        let claim_list =
-            ClaimList::new(asm_hist_refs.to_vec()).expect("snark update has too many ASM claims");
+        let claim_list = ClaimList::new(l1_block_refs.to_vec())
+            .expect("snark update has too many L1 block refs");
         SauTxLedgerRefs::new_with_claims(claim_list)
     };
 

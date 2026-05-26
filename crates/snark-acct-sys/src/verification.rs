@@ -80,20 +80,17 @@ pub fn verify_message_index(
     Ok(())
 }
 
-/// Verifies the ledger ref proofs against the ASM manifest MMR using the proof verifier.
-///
-/// For each ledger reference, resolves the L1 height to an MMR index, constructs
-/// an [`AccumulatorClaim`], and delegates verification to the proof verifier.
+/// Verifies ledger ref proofs using the OL L1 block refs accumulator.
 fn verify_ledger_refs(
     target: AccountId,
     proof_verifier: &mut impl TxProofVerifier,
     ledger_refs: &LedgerRefs,
 ) -> ExecResult<()> {
-    let manifest_claims = ledger_refs.asm_manifest_refs();
+    let l1_block_ref_claims = ledger_refs.l1_block_refs();
 
-    for claim in manifest_claims {
+    for claim in l1_block_ref_claims {
         proof_verifier
-            .verify_asm_history_mmr_proof_next(claim)
+            .verify_l1_block_ref_mmr_proof_next(claim)
             .map_err(|_| AcctError::InvalidLedgerReference {
                 account_id: target,
                 ref_idx: claim.idx(),

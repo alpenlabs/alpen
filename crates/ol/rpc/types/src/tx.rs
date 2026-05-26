@@ -147,9 +147,9 @@ pub enum RpcTxConversionError {
     #[error("failed to decode update operation data: {0}")]
     DecodeOperationData(String),
 
-    /// Too many ASM history claims in snark operation.
-    #[error("too many ASM history claims in snark operation")]
-    TooManyAsmHistoryClaims,
+    /// Too many L1 block ref claims in snark operation.
+    #[error("too many L1 block ref claims in snark operation")]
+    TooManyL1BlockRefClaims,
 
     /// Message payload data exceeds SSZ limits.
     #[error("invalid message payload: {0}")]
@@ -189,12 +189,12 @@ impl TryFrom<RpcOLTransaction> for OLTransaction {
                     operation.extra_data().to_vec(),
                 );
 
-                let asm_hist_refs = operation.ledger_refs().asm_manifest_refs();
-                let sau_ledger_refs = if asm_hist_refs.is_empty() {
+                let l1_block_refs = operation.ledger_refs().l1_block_refs();
+                let sau_ledger_refs = if l1_block_refs.is_empty() {
                     SauTxLedgerRefs::new_empty()
                 } else {
-                    let claim_list = ClaimList::new(asm_hist_refs.to_vec())
-                        .ok_or(RpcTxConversionError::TooManyAsmHistoryClaims)?;
+                    let claim_list = ClaimList::new(l1_block_refs.to_vec())
+                        .ok_or(RpcTxConversionError::TooManyL1BlockRefClaims)?;
                     SauTxLedgerRefs::new_with_claims(claim_list)
                 };
 

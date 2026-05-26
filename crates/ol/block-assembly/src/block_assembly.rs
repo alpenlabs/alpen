@@ -82,7 +82,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         BlockAssemblyError::InvalidAccumulatorClaim(_)
         | BlockAssemblyError::Acct(_)
         | BlockAssemblyError::State(_)
-        | BlockAssemblyError::AsmManifestHashMismatch { .. }
+        | BlockAssemblyError::L1BlockRefHashMismatch { .. }
         | BlockAssemblyError::InboxEntryHashMismatch { .. }
         | BlockAssemblyError::AccountNotFound(_)
         | BlockAssemblyError::InboxProofCountMismatch { .. } => MempoolTxInvalidReason::Invalid,
@@ -797,10 +797,10 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
     let mut all_acc_proofs = Vec::new();
     for check in proof_indexer.accumulator_checks() {
         match check {
-            AccProofCheck::AsmHistory(claim) => {
+            AccProofCheck::L1BlockRef(claim) => {
                 let proofs =
-                    proof_gen.generate_asm_manifest_proofs(slice::from_ref(claim), state)?;
-                all_acc_proofs.extend(proofs.asm_manifest_proofs().iter().cloned());
+                    proof_gen.generate_l1_block_ref_proofs(slice::from_ref(claim), state)?;
+                all_acc_proofs.extend(proofs.l1_block_ref_proofs().iter().cloned());
             }
             AccProofCheck::Inbox(claim) => {
                 let inbox_proofs = proof_gen.generate_inbox_proofs_for_claims(
@@ -818,7 +818,7 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
         target = ?target,
         acc_proof_count = all_acc_proofs.len(),
         pred_check_count = proof_indexer.predicate_checks().len(),
-        manifests_mmr_entries = state.asm_manifests_mmr().num_entries(),
+        l1_block_refs_mmr_entries = state.l1_block_refs_mmr().num_entries(),
         "generated proofs for snark update via indexer"
     );
 
@@ -852,7 +852,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_proof_gen_success() {
+    async fn test_l1_block_ref_proof_gen_success() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
@@ -865,13 +865,13 @@ mod tests {
             .await
             .expect("fetch stored state")
             .expect("stored state missing");
-        let asm_manifest_claim = fixture
-            .asm_manifest_ref(1)
+        let l1_block_ref_claim = fixture
+            .l1_block_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create tx with claims from the tracker using builder
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(vec![asm_manifest_claim])
+            .with_l1_block_ref_claims(vec![l1_block_ref_claim])
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
@@ -1015,7 +1015,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_claim_hash_mismatch() {
+    async fn test_l1_block_ref_claim_hash_mismatch() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
@@ -1029,7 +1029,7 @@ mod tests {
             .expect("fetch stored state")
             .expect("stored state missing");
         let seeded_claim = fixture
-            .asm_manifest_ref(1)
+            .l1_block_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create claim with correct MMR index but wrong hash.
@@ -1042,7 +1042,7 @@ mod tests {
         let invalid_claims = vec![AccumulatorClaim::new(seeded_claim.idx(), wrong_hash)];
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(invalid_claims)
+            .with_l1_block_ref_claims(invalid_claims)
             .build();
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
@@ -1053,14 +1053,14 @@ mod tests {
         assert!(result.is_err(), "Should fail with hash mismatch");
         let err = result.unwrap_err();
         assert!(
-            matches!(err, BlockAssemblyError::AsmManifestHashMismatch { .. }),
-            "Expected AsmManifestHashMismatch, got: {:?}",
+            matches!(err, BlockAssemblyError::L1BlockRefHashMismatch { .. }),
+            "Expected L1BlockRefHashMismatch, got: {:?}",
             err
         );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_claim_missing_index() {
+    async fn test_l1_block_ref_claim_missing_index() {
         // Seed one L1 header so we can reuse its hash with a missing index.
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
@@ -1075,7 +1075,7 @@ mod tests {
             .expect("fetch stored state")
             .expect("stored state missing");
         let seeded_claim = fixture
-            .asm_manifest_ref(1)
+            .l1_block_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create claim with non-existent index.
@@ -1086,7 +1086,7 @@ mod tests {
         )];
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(invalid_claims)
+            .with_l1_block_ref_claims(invalid_claims)
             .build();
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
@@ -1109,7 +1109,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_claim_with_only_genesis_prefill() {
+    async fn test_l1_block_ref_claim_with_only_genesis_prefill() {
         // No real manifests are seeded, so the MMR contains only the genesis
         // sentinel at index 0. A claim quoting an arbitrary hash at that index
         // must be rejected as a hash mismatch.
@@ -1129,7 +1129,7 @@ mod tests {
             .expect("stored state missing");
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(invalid_claims)
+            .with_l1_block_ref_claims(invalid_claims)
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
@@ -1141,7 +1141,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(BlockAssemblyError::AsmManifestHashMismatch { idx: 0, .. })
+            Err(BlockAssemblyError::L1BlockRefHashMismatch { idx: 0, .. })
         ));
     }
 
@@ -1328,15 +1328,15 @@ mod tests {
             .await
             .expect("fetch stored state")
             .expect("stored state missing");
-        let asm_manifest_claims = vec![
+        let l1_block_ref_claims = vec![
             fixture
-                .asm_manifest_ref(1)
+                .l1_block_ref(1)
                 .expect("claim for L1 height 1 should exist"),
         ];
 
         // Create tx with BOTH L1 claims and inbox messages
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(asm_manifest_claims.clone())
+            .with_l1_block_ref_claims(l1_block_ref_claims.clone())
             .with_processed_messages(messages.clone())
             .build();
 
@@ -1353,13 +1353,13 @@ mod tests {
         let acc_proofs = tx_proofs
             .accumulator_proofs()
             .expect("should have accumulator proofs");
-        let n_asm_manifests = asm_manifest_claims.len();
+        let n_l1_block_refs = l1_block_ref_claims.len();
         let n_inbox = messages.len();
         assert_eq!(
             acc_proofs.proofs().len(),
-            n_asm_manifests + n_inbox,
-            "Should have {n_asm_manifests} L1 header + {n_inbox} inbox = {} total accumulator proofs",
-            n_asm_manifests + n_inbox
+            n_l1_block_refs + n_inbox,
+            "Should have {n_l1_block_refs} L1 block refs + {n_inbox} inbox = {} total accumulator proofs",
+            n_l1_block_refs + n_inbox
         );
 
         // Verify predicate satisfier exists
@@ -2024,21 +2024,22 @@ mod tests {
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        // Valid tx for account1: L1 header claims exist in both MMRs for the requested L1 height.
+        // Valid tx for account1: L1 block ref claims exist in both MMRs for the requested L1
+        // height.
         let valid_claims = vec![
-            env.asm_manifest_ref(1)
+            env.l1_block_ref(1)
                 .expect("claim for L1 height 1 should exist"),
         ];
         let valid_tx = MempoolSnarkTxBuilder::new(account1)
             .with_seq_no(0)
-            .with_asm_manifest_claims(valid_claims)
+            .with_l1_block_ref_claims(valid_claims)
             .build();
         let valid_txid = valid_tx.compute_txid();
 
         // Invalid tx for account2: non-existent MMR index (no corresponding MMR leaf)
         let fake_hash = test_hash(99);
         let max_seeded_idx = env
-            .asm_manifest_refs()
+            .l1_block_refs()
             .iter()
             .map(|claim| claim.idx())
             .max()
@@ -2047,7 +2048,7 @@ mod tests {
         let invalid_claims = vec![AccumulatorClaim::new(missing_idx, fake_hash)];
         let invalid_tx = MempoolSnarkTxBuilder::new(account2)
             .with_seq_no(0)
-            .with_asm_manifest_claims(invalid_claims)
+            .with_l1_block_ref_claims(invalid_claims)
             .build();
         let invalid_txid = invalid_tx.compute_txid();
 
@@ -2880,13 +2881,13 @@ mod tests {
             .await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let mut claims: Vec<_> = env.asm_manifest_refs().to_vec();
+        let mut claims: Vec<_> = env.l1_block_refs().to_vec();
         claims.extend(claims.clone());
         assert_eq!(claims.len(), 50, "stress setup should build 50 claims");
 
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
-            .with_asm_manifest_claims(claims)
+            .with_l1_block_ref_claims(claims)
             .build();
         let txid = tx.compute_txid();
 

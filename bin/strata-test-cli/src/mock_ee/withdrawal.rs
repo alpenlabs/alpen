@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(decoded.new_proof_state().inner_state(), inner_state);
         assert_eq!(decoded.new_proof_state().next_inbox_msg_idx(), 3);
         assert_eq!(decoded.processed_messages().len(), 0);
-        assert_eq!(decoded.ledger_refs().asm_manifest_refs().len(), 0);
+        assert_eq!(decoded.ledger_refs().l1_block_refs().len(), 0);
         assert_eq!(decoded.outputs().transfers().len(), 0);
         assert_eq!(decoded.outputs().messages().len(), 1);
 

@@ -372,7 +372,7 @@ pub(crate) struct MempoolSnarkTxBuilder {
     seq_no: u64,
     processed_messages: Vec<MessageEntry>,
     new_msg_idx: u64,
-    asm_manifest_claims: Vec<AccumulatorClaim>,
+    l1_block_ref_claims: Vec<AccumulatorClaim>,
     outputs: Vec<(AccountId, u64)>,
     output_messages: Vec<OutputMessage>,
 }
@@ -441,7 +441,7 @@ impl MempoolSnarkTxBuilder {
             seq_no: 0,
             processed_messages: Vec::new(),
             new_msg_idx: 0,
-            asm_manifest_claims: Vec::new(),
+            l1_block_ref_claims: Vec::new(),
             outputs: Vec::new(),
             output_messages: Vec::new(),
         }
@@ -460,9 +460,9 @@ impl MempoolSnarkTxBuilder {
         self
     }
 
-    /// Sets L1 header claims from AccumulatorClaim objects.
-    pub(crate) fn with_asm_manifest_claims(mut self, claims: Vec<AccumulatorClaim>) -> Self {
-        self.asm_manifest_claims = claims;
+    /// Sets L1 block ref claims from AccumulatorClaim objects.
+    pub(crate) fn with_l1_block_ref_claims(mut self, claims: Vec<AccumulatorClaim>) -> Self {
+        self.l1_block_ref_claims = claims;
         self
     }
 
@@ -524,11 +524,11 @@ impl MempoolSnarkTxBuilder {
         let proof_state = SauTxProofState::new(self.new_msg_idx, inner_state);
         let update_data = SauTxUpdateData::new(self.seq_no, proof_state, vec![]);
 
-        let ledger_refs = if self.asm_manifest_claims.is_empty() {
+        let ledger_refs = if self.l1_block_ref_claims.is_empty() {
             SauTxLedgerRefs::new_empty()
         } else {
-            let claim_list = ClaimList::new(self.asm_manifest_claims)
-                .expect("snark update has too many ASM claims");
+            let claim_list = ClaimList::new(self.l1_block_ref_claims)
+                .expect("snark update has too many L1 block ref claims");
             SauTxLedgerRefs::new_with_claims(claim_list)
         };
 
@@ -799,9 +799,9 @@ impl TestAccount {
 /// Storage fixture layer for block assembly tests.
 pub(crate) struct TestStorageFixture {
     storage: Arc<NodeStorage>,
-    /// Seeded ASM-manifest claims. Each claim's `idx()` is the L1 height of the
-    /// corresponding manifest, since the ASM manifests MMR is height-indexed.
-    asm_manifest_refs: Vec<AccumulatorClaim>,
+    /// Seeded L1 block ref claims. Each claim's `idx()` is the L1 height of the
+    /// corresponding L1 block ref.
+    l1_block_refs: Vec<AccumulatorClaim>,
     inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
 }
 
@@ -812,18 +812,18 @@ impl TestStorageFixture {
     pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
         Self {
             storage,
-            asm_manifest_refs: Vec::new(),
+            l1_block_refs: Vec::new(),
             inbox_message_claims: Vec::new(),
         }
     }
 
-    /// Sets seeded L1 header refs and inbox message claims produced during fixture setup.
+    /// Sets seeded L1 block refs and inbox message claims produced during fixture setup.
     pub(crate) fn with_seeded_claims(
         mut self,
-        asm_manifest_refs: Vec<AccumulatorClaim>,
+        l1_block_refs: Vec<AccumulatorClaim>,
         inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
     ) -> Self {
-        self.asm_manifest_refs = asm_manifest_refs;
+        self.l1_block_refs = l1_block_refs;
         self.inbox_message_claims = inbox_message_claims;
         self
     }
@@ -833,14 +833,14 @@ impl TestStorageFixture {
         &self.storage
     }
 
-    /// Returns the seeded L1 header ref claims.
-    pub(crate) fn asm_manifest_refs(&self) -> &[AccumulatorClaim] {
-        &self.asm_manifest_refs
+    /// Returns the seeded L1 block ref claims.
+    pub(crate) fn l1_block_refs(&self) -> &[AccumulatorClaim] {
+        &self.l1_block_refs
     }
 
-    /// Returns an L1 header ref for a specific L1 height.
-    pub(crate) fn asm_manifest_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
-        self.asm_manifest_refs
+    /// Returns an L1 block ref for a specific L1 height.
+    pub(crate) fn l1_block_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
+        self.l1_block_refs
             .iter()
             .find(|claim| claim.idx() == height as u64)
             .cloned()
@@ -942,14 +942,14 @@ impl TestEnv {
         inbox_mmr.add_messages(messages)
     }
 
-    /// Returns configured L1 header refs keyed by L1 height.
-    pub(crate) fn asm_manifest_refs(&self) -> &[AccumulatorClaim] {
-        self.fixture.asm_manifest_refs()
+    /// Returns configured L1 block refs keyed by L1 height.
+    pub(crate) fn l1_block_refs(&self) -> &[AccumulatorClaim] {
+        self.fixture.l1_block_refs()
     }
 
-    /// Returns an L1 header ref for a specific L1 height.
-    pub(crate) fn asm_manifest_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
-        self.fixture.asm_manifest_ref(height)
+    /// Returns an L1 block ref for a specific L1 height.
+    pub(crate) fn l1_block_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
+        self.fixture.l1_block_ref(height)
     }
 
     /// Returns inbox message claims for a specific account.
@@ -1138,7 +1138,7 @@ impl TestStorageFixtureBuilder {
         self
     }
 
-    /// Seeds L1 header refs for the provided L1 heights.
+    /// Seeds test ASM manifests whose L1 block refs are used as claims.
     pub(crate) fn with_asm_manifests(
         mut self,
         heights: impl IntoIterator<Item = L1Height>,
@@ -1224,14 +1224,14 @@ impl TestStorageFixtureBuilder {
             );
         }
 
-        // Seed requested L1 header refs into both state claims and the ASM MMR.
+        // Seed requested L1 block refs into both state claims and the L1 block refs MMR.
         // The MMR is height-indexed, so each returned claim's `idx()` is the
-        // L1 height of the corresponding manifest.
+        // L1 height of the corresponding L1 block ref.
         let mut l1_heights = self.asm_manifest_heights.clone();
         l1_heights.sort_unstable();
         l1_heights.dedup();
 
-        let seeded_asm_manifest_refs = if l1_heights.is_empty() {
+        let seeded_l1_block_refs = if l1_heights.is_empty() {
             vec![]
         } else {
             let asm_manifests = create_test_manifests_for_heights(&l1_heights);
@@ -1309,7 +1309,7 @@ impl TestStorageFixtureBuilder {
         };
 
         let fixture =
-            Arc::new(fixture.with_seeded_claims(seeded_asm_manifest_refs, inbox_message_claims));
+            Arc::new(fixture.with_seeded_claims(seeded_l1_block_refs, inbox_message_claims));
         (fixture, parent_commitment)
     }
 }
@@ -1336,14 +1336,14 @@ fn create_test_manifests_for_heights(heights: &[L1Height]) -> Vec<AsmManifest> {
         .collect()
 }
 
-/// Aligns the DB-side ASM manifests MMR with the state's genesis prefill by
+/// Aligns the DB-side L1 block refs MMR with the state's genesis prefill by
 /// appending sentinel leaves until the DB MMR has at least as many entries as
 /// the state MMR.
 ///
 /// After this runs, leaf indices in both MMRs coincide with L1 block heights.
 fn prefill_db_asm_mmr_to_match_state(storage: &NodeStorage, state: &impl IStateAccessor) {
-    let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::Asm);
-    let state_prefill = state.asm_manifests_mmr().num_entries();
+    let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::L1BlockRefs);
+    let state_prefill = state.l1_block_refs_mmr().num_entries();
     let db_count = mmr_handle.get_num_leaves_blocking().unwrap();
     for _ in db_count..state_prefill {
         mmr_handle
@@ -1365,22 +1365,24 @@ fn setup_manifests_in_state_and_storage(
     state: &mut impl IStateAccessorMut,
     manifests: Vec<AsmManifest>,
 ) -> Vec<AccumulatorClaim> {
-    let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::Asm);
+    let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::L1BlockRefs);
 
     let mut claims = Vec::with_capacity(manifests.len());
     for manifest in manifests {
-        let manifest_hash: Hash = manifest.compute_hash().into();
-        let leaf_idx = mmr_handle.append_leaf_blocking(manifest_hash).unwrap();
+        let l1_block_ref_hash: Hash =
+            l1_block_ref_leaf_hash(manifest.blkid().as_ref(), manifest.wtxids_root().as_ref())
+                .into();
+        let leaf_idx = mmr_handle.append_leaf_blocking(l1_block_ref_hash).unwrap();
 
         let height = manifest.height();
-        state.append_manifest(height, manifest);
+        state.append_l1_block_ref_from_manifest(height, manifest);
 
         debug_assert_eq!(
             leaf_idx, height as u64,
             "DB MMR index must equal L1 height after prefill alignment",
         );
 
-        claims.push(AccumulatorClaim::new(height as u64, manifest_hash));
+        claims.push(AccumulatorClaim::new(height as u64, l1_block_ref_hash));
     }
 
     claims.sort_by_key(|c| c.idx());
