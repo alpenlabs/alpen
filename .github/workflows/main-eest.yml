@@ -91,7 +91,7 @@ jobs:
 
       - name: Build Cargo project
         run: |
-          cargo build --locked -F sequencer -F debug-utils -F test-mode -F debug-asm -F prover --bin strata --bin strata-signer --bin alpen-client --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
+          cargo build --locked --release -F sequencer -F debug-utils -F test-mode -F debug-asm -F prover --bin strata --bin strata-signer --bin alpen-client --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
 
       - name: Run alpen EEST env in fntests
         env:
@@ -99,7 +99,7 @@ jobs:
           LOG_LEVEL: "info"
         run: |
           sudo apt-get install -y screen
-          NEWPATH="$(realpath target/debug/)"
+          NEWPATH="$(realpath target/release/)"
           export PATH="${NEWPATH}:${PATH}"
           which alpen-client
           cd functional-tests
