@@ -26,3 +26,4 @@ pub use manifest::UpdateManifest;
 pub use ssz_generated::ssz::{outputs::*, proof_interface::*, state::*, update::*};
 pub use state::Seqno;
 pub use strata_acct_types::AccumulatorClaim;
+pub use update::l1_block_ref_leaf_hash;

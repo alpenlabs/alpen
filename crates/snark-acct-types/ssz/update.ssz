@@ -13,17 +13,26 @@ MAX_UPDATE_PROOF_BYTES = 2 << 20
 ### Max extra data bytes
 MAX_EXTRA_DATA_BYTES = 1024
 
+### L1 block reference committed into the OL L1 block refs MMR.
+class L1BlockRef(Container):
+    ### Bitcoin block hash for the L1 block that contains DA reveal txs.
+    block_hash: Bytes32
+
+    ### Witness transaction Merkle root for that L1 block.
+    wtxids_root: Bytes32
+
 ### Describes references to entries in accumulators available in the ledger.
 class LedgerRefs(Container):
-    ### Claims against the ASM manifests MMR. Each claim's `idx` is the L1
-    ### block height of the manifest being referenced.
+    ### Claims against the OL L1 block refs MMR. Each claim's `idx` is the L1
+    ### block height of the referenced block ref, and each
+    ### `entry_hash` commits to `{blockhash, wtxids_root}`.
     #~# external_kind: container
-    asm_manifest_refs: List[strata_acct_types.AccumulatorClaim, MAX_TYPE_LEDGER_REFS]
+    l1_block_refs: List[strata_acct_types.AccumulatorClaim, MAX_TYPE_LEDGER_REFS]
 
 class LedgerRefProofs(Container):
     ### Proofs for each entry in LedgerRefs.
     #~# external_kind: container
-    asm_manifest_proofs: List[strata_acct_types.RawMerkleProof, MAX_TYPE_LEDGER_REFS]
+    l1_block_ref_proofs: List[strata_acct_types.RawMerkleProof, MAX_TYPE_LEDGER_REFS]
 
 ### Represents the state update that will eventually go into DA on OL.
 class UpdateStateData(Container):

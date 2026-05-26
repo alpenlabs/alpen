@@ -1,11 +1,44 @@
 //! Update message types.
 
 use strata_acct_types::{MessageEntry, RawMerkleProof};
+use tree_hash::TreeHash;
 
 use crate::{
     AccumulatorClaim,
     ssz_generated::ssz::{outputs::UpdateOutputs, state::ProofState, update::*},
 };
+
+impl L1BlockRef {
+    /// Creates an L1 block reference.
+    pub fn new(block_hash: impl Into<[u8; 32]>, wtxids_root: impl Into<[u8; 32]>) -> Self {
+        Self {
+            block_hash: Into::<[u8; 32]>::into(block_hash).into(),
+            wtxids_root: Into::<[u8; 32]>::into(wtxids_root).into(),
+        }
+    }
+
+    /// Gets the referenced Bitcoin block hash.
+    pub fn block_hash(&self) -> [u8; 32] {
+        self.block_hash
+            .as_ref()
+            .try_into()
+            .expect("snark-acct-types: FixedBytes<32> is always 32 bytes")
+    }
+
+    /// Gets the block witness transaction Merkle root.
+    pub fn wtxids_root(&self) -> [u8; 32] {
+        self.wtxids_root
+            .as_ref()
+            .try_into()
+            .expect("snark-acct-types: FixedBytes<32> is always 32 bytes")
+    }
+}
+
+/// Computes the canonical OL L1 block refs MMR leaf hash.
+pub fn l1_block_ref_leaf_hash(block_hash: &[u8; 32], wtxids_root: &[u8; 32]) -> [u8; 32] {
+    let l1_block_ref = L1BlockRef::new(*block_hash, *wtxids_root);
+    <L1BlockRef as TreeHash>::tree_hash_root(&l1_block_ref).into_inner()
+}
 
 impl UpdateStateData {
     pub fn new(proof_state: ProofState, extra_data: Vec<u8>) -> Self {
@@ -24,6 +57,33 @@ impl UpdateStateData {
 
     pub fn extra_data(&self) -> &[u8] {
         self.extra_data.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn l1_block_ref_leaf_hash_matches_tree_hash() {
+        let block_hash = [1u8; 32];
+        let wtxids_root = [2u8; 32];
+        let l1_block_ref = L1BlockRef::new(block_hash, wtxids_root);
+
+        assert_eq!(
+            l1_block_ref_leaf_hash(&block_hash, &wtxids_root),
+            <L1BlockRef as TreeHash>::tree_hash_root(&l1_block_ref).into_inner()
+        );
+    }
+
+    #[test]
+    fn l1_block_ref_accessors_return_fixed_bytes() {
+        let block_hash = [3u8; 32];
+        let wtxids_root = [4u8; 32];
+        let l1_block_ref = L1BlockRef::new(block_hash, wtxids_root);
+
+        assert_eq!(l1_block_ref.block_hash(), block_hash);
+        assert_eq!(l1_block_ref.wtxids_root(), wtxids_root);
     }
 }
 
@@ -113,10 +173,10 @@ impl From<UpdateOperationData> for UpdateInputData {
 }
 
 impl LedgerRefs {
-    pub fn new(asm_manifest_refs: Vec<AccumulatorClaim>) -> Self {
+    pub fn new(l1_block_refs: Vec<AccumulatorClaim>) -> Self {
         Self {
             // FIXME does this panic?
-            asm_manifest_refs: asm_manifest_refs
+            l1_block_refs: l1_block_refs
                 .try_into()
                 .expect("ledger refs must fit within SSZ max length"),
         }
@@ -126,25 +186,27 @@ impl LedgerRefs {
         Self::new(Vec::new())
     }
 
-    /// Claims against the ASM manifests MMR. Each claim's `idx` is the L1
-    /// block height of the referenced manifest.
-    pub fn asm_manifest_refs(&self) -> &[AccumulatorClaim] {
-        self.asm_manifest_refs.as_ref()
+    /// Claims against the OL L1 block refs MMR.
+    ///
+    /// Each claim's `idx` is the L1 block height of the referenced block ref,
+    /// and each `entry_hash` commits to `{blockhash, wtxids_root}`.
+    pub fn l1_block_refs(&self) -> &[AccumulatorClaim] {
+        self.l1_block_refs.as_ref()
     }
 }
 
 impl LedgerRefProofs {
-    pub fn new(asm_manifest_proofs: Vec<RawMerkleProof>) -> Self {
+    pub fn new(l1_block_ref_proofs: Vec<RawMerkleProof>) -> Self {
         Self {
             // FIXME does this panic?
-            asm_manifest_proofs: asm_manifest_proofs
+            l1_block_ref_proofs: l1_block_ref_proofs
                 .try_into()
                 .expect("ledger ref proofs must fit within SSZ max length"),
         }
     }
 
-    pub fn asm_manifest_proofs(&self) -> &[RawMerkleProof] {
-        self.asm_manifest_proofs.as_ref()
+    pub fn l1_block_ref_proofs(&self) -> &[RawMerkleProof] {
+        self.l1_block_ref_proofs.as_ref()
     }
 }
 
