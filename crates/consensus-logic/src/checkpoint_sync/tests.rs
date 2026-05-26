@@ -172,8 +172,8 @@ impl CheckpointSyncCtx for MockCtx {
         &self.rollup_params
     }
 
-    async fn fetch_l1_tip_height(&self) -> anyhow::Result<L1Height> {
-        Ok(self.l1_tip_height)
+    async fn fetch_l1_tip_height(&self) -> anyhow::Result<Option<L1Height>> {
+        Ok(Some(self.l1_tip_height))
     }
 
     async fn fetch_csm_status(&self) -> anyhow::Result<CsmWorkerStatus> {

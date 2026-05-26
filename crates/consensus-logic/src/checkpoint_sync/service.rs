@@ -81,6 +81,10 @@ where
                         "checkpoint not reorg-safe yet, will retry on next CSM update"
                     );
                 }
+                // Pre-sync: btcio reader hasn't published an L1 tip yet.
+                Err(CheckpointSyncError::L1TipNotReady) => {
+                    debug!("L1 tip not yet ready, will retry on next CSM update");
+                }
                 Err(e) => return Err(e.into()),
             },
             CheckpointSyncEvent::Abort => {
@@ -161,6 +165,10 @@ async fn initialize_css_inner_state(
             );
             return Ok(InnerState::new(None));
         }
+        Err(CheckpointSyncError::L1TipNotReady) => {
+            debug!("L1 tip not yet ready at startup, deferring to next CSM update");
+            return Ok(InnerState::new(None));
+        }
         Err(e) => return Err(e),
     };
     if let Some(epoch) = last_applied_epoch {
@@ -182,7 +190,8 @@ pub(crate) async fn find_and_apply_unapplied_epochs(
     let l1_tip_height = ctx
         .fetch_l1_tip_height()
         .await
-        .map_err(CheckpointSyncError::ChainWorker)?;
+        .map_err(CheckpointSyncError::ChainWorker)?
+        .ok_or(CheckpointSyncError::L1TipNotReady)?;
     let reorg_safe_depth = ctx.rollup_params().l1_reorg_safe_depth;
     debug!(
         %cur_finalized,

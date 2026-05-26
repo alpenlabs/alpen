@@ -19,8 +19,10 @@ pub trait CheckpointSyncCtx: Send + Sync {
     /// Returns the rollup params.
     fn rollup_params(&self) -> &RollupParams;
 
-    /// Fetches the current L1 chain tip height.
-    fn fetch_l1_tip_height(&self) -> impl Future<Output = anyhow::Result<L1Height>> + Send;
+    /// Fetches the current L1 chain tip height, if any. `None` is a normal
+    /// pre-sync condition (btcio reader hasn't ingested its first L1 block
+    /// yet) and callers must treat it as a wait, not an error.
+    fn fetch_l1_tip_height(&self) -> impl Future<Output = anyhow::Result<Option<L1Height>>> + Send;
 
     /// Fetches the current CSM worker status.
     fn fetch_csm_status(&self) -> impl Future<Output = anyhow::Result<CsmWorkerStatus>> + Send;

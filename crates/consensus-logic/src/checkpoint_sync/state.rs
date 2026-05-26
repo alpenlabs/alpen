@@ -117,22 +117,13 @@ pub(crate) async fn apply_checkpoint(
     debug!(%epoch, "reconstructing epoch state via chain worker");
     ctx.apply_checkpoint(epoch)
         .await
-        .map_err(CheckpointSyncError::ChainWorker)?;
+        .map_err(|e| CheckpointSyncError::EpochOp {
+            epoch,
+            op: "apply_checkpoint",
+            cause: e,
+        })?;
 
-    let blk = epoch.to_block_commitment();
-    debug!(%epoch, "updating safe tip");
-    ctx.update_safe_tip(blk)
-        .await
-        .map_err(CheckpointSyncError::ChainWorker)?;
-
-    debug!(%epoch, "finalizing epoch");
-    ctx.finalize_epoch(epoch)
-        .await
-        .map_err(CheckpointSyncError::ChainWorker)?;
-
-    debug!(%epoch, "building ol sync status after finalizing epoch");
-    let status = build_ol_sync_status(ctx, epoch).await?;
-    ctx.publish_ol_sync_status(status);
+    finalize_and_publish(ctx, epoch).await?;
 
     info!(%epoch, "checkpoint applied and finalized");
     Ok(())
@@ -147,16 +138,32 @@ pub(crate) async fn refinalize_applied_epoch(
     ctx: &impl CheckpointSyncCtx,
     epoch: EpochCommitment,
 ) -> CheckpointSyncResult<()> {
-    let blk = epoch.to_block_commitment();
-    debug!(%epoch, "re-updating safe tip on already-applied epoch");
-    ctx.update_safe_tip(blk)
-        .await
-        .map_err(CheckpointSyncError::ChainWorker)?;
-
     debug!(%epoch, "re-finalizing already-applied epoch");
+    finalize_and_publish(ctx, epoch).await
+}
+
+/// Update safe tip, finalize epoch, build & publish sync status.
+async fn finalize_and_publish(
+    ctx: &impl CheckpointSyncCtx,
+    epoch: EpochCommitment,
+) -> CheckpointSyncResult<()> {
+    debug!(%epoch, "updating safe tip");
+    ctx.update_safe_tip(epoch.to_block_commitment())
+        .await
+        .map_err(|e| CheckpointSyncError::EpochOp {
+            epoch,
+            op: "update_safe_tip",
+            cause: e,
+        })?;
+
+    debug!(%epoch, "finalizing epoch");
     ctx.finalize_epoch(epoch)
         .await
-        .map_err(CheckpointSyncError::ChainWorker)?;
+        .map_err(|e| CheckpointSyncError::EpochOp {
+            epoch,
+            op: "finalize_epoch",
+            cause: e,
+        })?;
 
     let status = build_ol_sync_status(ctx, epoch).await?;
     ctx.publish_ol_sync_status(status);
@@ -175,6 +182,7 @@ pub(crate) async fn build_ol_sync_status(
     let terminal = *summary.terminal();
     let epoch_num = summary.epoch();
     let new_l1 = *summary.new_l1();
+    // Epoch 0 has no predecessor; `null` is the canonical genesis-prev value.
     let prev_epoch = summary
         .get_prev_epoch_commitment()
         .unwrap_or(EpochCommitment::null());

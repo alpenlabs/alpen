@@ -347,7 +347,8 @@ impl OLMempoolRejectReason {
             | OLMempoolError::Database(_)
             | OLMempoolError::StateProvider(_)
             | OLMempoolError::Serialization(_)
-            | OLMempoolError::ServiceClosed(_) => None,
+            | OLMempoolError::ServiceClosed(_)
+            | OLMempoolError::NotAvailable => None,
         }
     }
 }

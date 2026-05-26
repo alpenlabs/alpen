@@ -103,8 +103,10 @@ pub struct SAStateUpdateOp {
     /// The account whose state was updated.
     account_id: AccountId,
 
-    /// The new inner state root.
-    inner_state: Hash,
+    /// The new inner state root. `None` when the producer cannot supply a
+    /// per-update root (checkpoint-sync DA reconstruction for non-terminal
+    /// updates within a multi-update epoch).
+    inner_state: Option<Hash>,
 
     /// The next read index.
     next_read_idx: u64,
@@ -119,7 +121,7 @@ pub struct SAStateUpdateOp {
 impl SAStateUpdateOp {
     pub fn new(
         account_id: AccountId,
-        inner_state: Hash,
+        inner_state: Option<Hash>,
         next_read_idx: u64,
         seqno: Seqno,
         extra_data: Vec<u8>,
@@ -137,8 +139,8 @@ impl SAStateUpdateOp {
         self.account_id
     }
 
-    pub fn inner_state(&self) -> [u8; 32] {
-        self.inner_state.into()
+    pub fn inner_state(&self) -> Option<Hash> {
+        self.inner_state
     }
 
     pub fn next_read_idx(&self) -> u64 {
@@ -175,10 +177,11 @@ impl SnarkAcctStateUpdate {
         }
     }
 
-    /// Returns the state hash for this update.
-    pub fn state(&self) -> Hash {
+    /// Returns the state hash for this update. `None` only for checkpoint-sync
+    /// `Update` records on non-terminal updates within a multi-update epoch.
+    pub fn state(&self) -> Option<Hash> {
         match self {
-            Self::DirectSet(s) => s.state,
+            Self::DirectSet(s) => Some(s.state),
             Self::Update(s) => s.inner_state,
         }
     }

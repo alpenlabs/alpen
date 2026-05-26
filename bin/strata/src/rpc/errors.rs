@@ -8,6 +8,10 @@ use tracing::*;
 /// Custom error code for mempool capacity-related errors.
 pub(crate) const MEMPOOL_CAPACITY_ERROR_CODE: i32 = -32001;
 
+/// Method requested but the backing service is not running on this node
+/// (e.g. mempool on a checkpoint-sync fullnode).
+pub(crate) const NOT_AVAILABLE_ON_NODE_CODE: i32 = -32002;
+
 /// Creates an RPC error for database failures.
 pub(crate) fn db_error(e: impl Display) -> ErrorObjectOwned {
     ErrorObjectOwned::owned(
@@ -47,6 +51,10 @@ pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned 
         | OLMempoolError::TransactionNotMature { .. }
         | OLMempoolError::UsedSequenceNumber { .. }
         | OLMempoolError::SequenceNumberGap { .. } => invalid_params_error(err.to_string()),
+        // Service unavailable on this node — not an error condition.
+        OLMempoolError::NotAvailable => {
+            ErrorObjectOwned::owned(NOT_AVAILABLE_ON_NODE_CODE, err.to_string(), None::<()>)
+        }
         // Internal errors
         OLMempoolError::AccountStateAccess(_)
         | OLMempoolError::TransactionNotFound(_)

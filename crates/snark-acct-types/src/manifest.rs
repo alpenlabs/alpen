@@ -2,6 +2,9 @@
 
 use strata_acct_types::{Hash, MessageEntry};
 
+/// Snark account update extracted from L1, used to reconstruct inner state
+/// outside the proof.
+///
 /// `new_state_root` is `None` when the caller cannot supply a per-update root
 /// (checkpoint sync only recovers the terminal epoch state). The apply path
 /// asserts post-state when present and skips when absent.

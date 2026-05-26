@@ -129,14 +129,8 @@ pub(crate) struct SequencerServiceHandles {
     /// Handle for the block assembly service.
     blockasm_handle: Arc<BlockasmHandle>,
 
-    /// Handle for the L1 watcher service.
-    ///
-    /// Dropping this signals the watcher to stop gracefully.
-    #[expect(
-        dead_code,
-        reason = "held for drop semantics; signals watcher shutdown"
-    )]
-    watcher_handle: DumbTickHandle,
+    /// Held so the L1 watcher service stops when this struct is dropped.
+    _watcher_shutdown_guard: DumbTickHandle,
 }
 
 #[cfg(feature = "sequencer")]
@@ -146,13 +140,13 @@ impl SequencerServiceHandles {
         broadcast_handle: Arc<L1BroadcastHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
         blockasm_handle: Arc<BlockasmHandle>,
-        watcher_handle: DumbTickHandle,
+        watcher_shutdown_guard: DumbTickHandle,
     ) -> Self {
         Self {
             broadcast_handle,
             envelope_handle,
             blockasm_handle,
-            watcher_handle,
+            _watcher_shutdown_guard: watcher_shutdown_guard,
         }
     }
 
