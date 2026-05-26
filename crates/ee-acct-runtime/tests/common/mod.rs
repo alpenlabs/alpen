@@ -199,7 +199,6 @@ pub(crate) fn create_deposit_message(
 /// Accepts messages and chunk transitions. The builder validates chunks
 /// against its internal pending input tracking.
 pub(crate) fn build_update_operation(
-    seq_no: u64,
     messages: Vec<MessageEntry>,
     chunks: &[ChunkTransition],
     initial_state: &EeAccountState,
@@ -209,9 +208,8 @@ pub(crate) fn build_update_operation(
     let predicate_key = PredicateKey::always_accept();
     let vinput = EeVerificationInput::new(ee, &predicate_key, &[], &[]);
 
-    let mut builder =
-        UpdateBuilder::new(seq_no, snark_state.clone(), initial_state.clone(), vinput)
-            .expect("create builder");
+    let mut builder = UpdateBuilder::new(snark_state.clone(), initial_state.clone(), vinput)
+        .expect("create builder");
 
     builder.add_messages(messages).expect("add messages");
 
