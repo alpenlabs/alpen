@@ -9,7 +9,7 @@ use crate::{
 
 /// Executes the `genseqpubkey` subcommand.
 ///
-/// Derives the sequencer x-only public key (32-byte hex) from the provided
+/// Derives the sequencer [`XOnlyPublicKey`](bitcoin::XOnlyPublicKey) (32-byte hex) from the provided
 /// master [`Xpriv`](bitcoin::bip32::Xpriv) and prints it to stdout.
 pub(super) fn exec(cmd: SubcSeqPubkey, _ctx: &mut CmdContext) -> anyhow::Result<()> {
     let Some(xpriv) = resolve_xpriv(&cmd.key_file, cmd.key_from_env, SEQKEY_ENVVAR)? else {

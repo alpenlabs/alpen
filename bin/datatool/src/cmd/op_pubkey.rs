@@ -9,7 +9,7 @@ use crate::args::{CmdContext, SubcOpPubkey};
 /// Executes the `genoppubkey` subcommand.
 ///
 /// Reads a master [`Xpriv`] from the specified file and prints the corresponding
-/// compressed public key (33-byte hex) to stdout.
+/// compressed [`PublicKey`](bitcoin::PublicKey) (33-byte hex) to stdout.
 pub(super) fn exec(cmd: SubcOpPubkey, _ctx: &mut CmdContext) -> anyhow::Result<()> {
     let xpriv = Xpriv::from_str(fs::read_to_string(&cmd.key_file)?.trim())?;
     let pubkey = xpriv.to_keypair(SECP256K1).public_key();

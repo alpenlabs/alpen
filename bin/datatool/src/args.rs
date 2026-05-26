@@ -156,7 +156,7 @@ pub(crate) struct SubcParams {
 
     #[argh(
         option,
-        description = "add a bridge operator compressed public key (33-byte hex, 02/03 prefix)",
+        description = "add a bridge operator compressed public key (33-byte hex with a parity `02`/`03` prefix)",
         short = 'b'
     )]
     pub(crate) op_pk: Vec<String>,
@@ -240,7 +240,7 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
-        description = "add a bridge operator compressed public key (33-byte hex, 02/03 prefix)",
+        description = "add a bridge operator compressed public key (33-byte hex with a parity `02`/`03` prefix)",
         short = 'b'
     )]
     pub(crate) op_pk: Vec<String>,

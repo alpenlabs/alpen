@@ -159,7 +159,7 @@ struct ParamsConfig {
     genesis_l1_view: GenesisL1View,
     /// Sequencer's key.
     seqkey: Option<Buf32>,
-    /// Operators' compressed public keys.
+    /// Operators' compressed [`PublicKey`](bitcoin::PublicKey)s.
     opkeys: Vec<PublicKey>,
     /// Verifier's key.
     checkpoint_predicate: PredicateKey,
