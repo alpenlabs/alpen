@@ -28,7 +28,7 @@ impl OLState {
         // references an L1 block at or before genesis — as long as the OL
         // state and the DB-side ASM MMR agree on it.
         let prefill_count = params.last_l1_block.height() as u64 + 1;
-        let manifests_mmr =
+        let l1_block_refs_mmr =
             <Mmr64 as Mmr<StrataHasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF, prefill_count);
 
         let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
@@ -63,7 +63,7 @@ impl OLState {
             params.header.epoch,
             params.last_l1_block,
             checkpointed_epoch,
-            manifests_mmr,
+            l1_block_refs_mmr,
         );
 
         Ok(Self {
@@ -215,8 +215,8 @@ impl OLState {
             self.epoch.set_total_ledger_balance(amt);
         }
 
-        if let Some(mmr) = epochal_writes.asm_manifests_mmr {
-            self.epoch.manifests_mmr = mmr;
+        if let Some(mmr) = epochal_writes.l1_block_refs_mmr {
+            self.epoch.l1_block_refs_mmr = mmr;
         }
 
         Ok(())

@@ -20,6 +20,8 @@ pub enum MmrId {
     Asm,
     /// Snark message inbox MMR (per-account scope).
     SnarkMsgInbox(AccountId),
+    /// OL L1 block refs MMR (singleton, no account scope).
+    L1BlockRefs,
 }
 
 impl MmrId {

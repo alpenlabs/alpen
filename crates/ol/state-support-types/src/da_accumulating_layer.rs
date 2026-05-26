@@ -661,8 +661,8 @@ impl<S: IStateAccessor> IStateAccessor for DaAccumulatingState<S> {
         self.inner.total_ledger_balance()
     }
 
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
-        self.inner.asm_manifests_mmr()
+    fn l1_block_refs_mmr(&self) -> &Mmr64 {
+        self.inner.l1_block_refs_mmr()
     }
 
     // ===== Account methods =====
@@ -748,8 +748,12 @@ where
         self.inner.set_cur_epoch(epoch);
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: strata_asm_manifest_types::AsmManifest) {
-        self.inner.append_manifest(height, mf);
+    fn append_l1_block_ref_from_manifest(
+        &mut self,
+        height: L1Height,
+        mf: strata_asm_manifest_types::AsmManifest,
+    ) {
+        self.inner.append_l1_block_ref_from_manifest(height, mf);
     }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {

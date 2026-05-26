@@ -102,7 +102,7 @@ fn test_combined_manifest_tracking() {
     let manifest =
         AsmManifest::new(height, l1_blkid, wtxids_root, vec![]).expect("valid test manifest");
 
-    indexer.append_manifest(height, manifest);
+    indexer.append_l1_block_ref_from_manifest(height, manifest);
 
     // Verify IndexerState captured the manifest write
     let (_, indexer_writes) = indexer.into_parts();
@@ -703,7 +703,7 @@ impl IStateAccessor for TestState {
         Ok(Buf32::zero())
     }
 
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
+    fn l1_block_refs_mmr(&self) -> &Mmr64 {
         todo!()
     }
 }
@@ -745,7 +745,12 @@ impl IStateAccessorMut for TestState {
         self.cur_epoch = epoch;
     }
 
-    fn append_manifest(&mut self, _height: L1Height, _mf: strata_asm_manifest_types::AsmManifest) {}
+    fn append_l1_block_ref_from_manifest(
+        &mut self,
+        _height: L1Height,
+        _mf: strata_asm_manifest_types::AsmManifest,
+    ) {
+    }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
         self.asm_recorded_epoch = epoch;

@@ -2,10 +2,11 @@
 //!
 //! This can be completely omitted from DA.
 
-use strata_acct_types::{BitcoinAmount, Mmr64, StrataHasher, tree_hash::TreeHash};
+use strata_acct_types::{BitcoinAmount, Mmr64, StrataHasher};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 use strata_merkle::Mmr;
+use strata_snark_acct_types::l1_block_ref_leaf_hash;
 
 use crate::ssz_generated::ssz::state::EpochalState;
 
@@ -16,14 +17,14 @@ impl EpochalState {
         cur_epoch: u32,
         last_l1_block: L1BlockCommitment,
         checkpointed_epoch: EpochCommitment,
-        manifests_mmr: Mmr64,
+        l1_block_refs_mmr: Mmr64,
     ) -> Self {
         Self {
             total_ledger_funds,
             cur_epoch,
             last_l1_block,
             checkpointed_epoch,
-            manifests_mmr,
+            l1_block_refs_mmr,
         }
     }
 
@@ -47,23 +48,26 @@ impl EpochalState {
         self.last_l1_block.height()
     }
 
-    /// Appends a new ASM manifest to the accumulator, also updating the last L1
-    /// block height and other fields.
+    /// Appends an accepted ASM manifest's L1 block ref to the accumulator.
+    ///
+    /// This also updates the last L1 block height and ID.
     ///
     /// The MMR is height-indexed: the leaf for an L1 block at height `h` lives
     /// at MMR index `h`. The MMR is prefilled with dummy-hash entries up to
-    /// `genesis_l1_height` at genesis, so callers must append manifests with
-    /// strictly contiguous heights matching the next available MMR index.
-    pub fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+    /// `genesis_l1_height` at genesis, so callers must append accepted
+    /// manifests with strictly contiguous heights matching the next available
+    /// MMR index.
+    pub fn append_l1_block_ref_from_manifest(&mut self, height: L1Height, mf: AsmManifest) {
         debug_assert_eq!(
-            self.manifests_mmr.num_entries(),
+            self.l1_block_refs_mmr.num_entries(),
             height as u64,
             "ol/state: L1 height must equal next MMR index"
         );
 
-        let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&mf);
+        let l1_block_ref_hash =
+            l1_block_ref_leaf_hash(mf.blkid().as_ref(), mf.wtxids_root().as_ref());
 
-        Mmr::<StrataHasher>::add_leaf(&mut self.manifests_mmr, manifest_hash.into_inner())
+        Mmr::<StrataHasher>::add_leaf(&mut self.l1_block_refs_mmr, l1_block_ref_hash)
             .expect("ol/state: MMR capacity exceeded");
         self.last_l1_block = L1BlockCommitment::new(height, *mf.blkid());
     }
@@ -94,11 +98,11 @@ impl EpochalState {
         self.total_ledger_funds = amt;
     }
 
-    /// Gets the ASM manifests MMR.
+    /// Gets the OL L1 block refs MMR.
     ///
     /// Indices into this MMR are L1 block heights.
-    pub fn asm_manifests_mmr(&self) -> &Mmr64 {
-        &self.manifests_mmr
+    pub fn l1_block_refs_mmr(&self) -> &Mmr64 {
+        &self.l1_block_refs_mmr
     }
 }
 

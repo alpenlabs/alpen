@@ -45,12 +45,12 @@ pub trait IStateAccessor {
     /// Gets the total OL ledger balance.
     fn total_ledger_balance(&self) -> BitcoinAmount;
 
-    /// Gets the ASM manifests MMR for ledger reference verification.
+    /// Gets the OL L1 block refs MMR.
     ///
     /// Indices into this MMR are L1 block heights. The MMR is prefilled at
     /// genesis with zero-hash leaves for heights `0..=genesis_l1_height`, so
     /// callers can use raw L1 heights as MMR leaf indices everywhere.
-    fn asm_manifests_mmr(&self) -> &Mmr64;
+    fn l1_block_refs_mmr(&self) -> &Mmr64;
 
     // ===== Account methods =====
 
@@ -95,9 +95,10 @@ pub trait IStateAccessorMut: IStateAccessor {
     /// Sets the current epoch.
     fn set_cur_epoch(&mut self, epoch: u32);
 
-    /// Appends a new ASM manifest to the accumulator, also updating the last L1
-    /// block height and other fields.
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest);
+    /// Appends an accepted ASM manifest's L1 block ref to the accumulator.
+    ///
+    /// This also updates the last L1 block height and ID.
+    fn append_l1_block_ref_from_manifest(&mut self, height: L1Height, mf: AsmManifest);
 
     /// Sets the field for the epoch that the ASM considers to be finalized.
     ///

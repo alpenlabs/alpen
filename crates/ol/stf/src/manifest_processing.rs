@@ -113,7 +113,7 @@ fn process_asm_manifest<S: IStateAccessorMut>(
     }
 
     // 2. Accept the manifest into the ASM MMR.
-    state.append_manifest(real_height, mf.clone());
+    state.append_l1_block_ref_from_manifest(real_height, mf.clone());
 
     Ok(())
 }

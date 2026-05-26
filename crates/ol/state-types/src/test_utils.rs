@@ -53,7 +53,7 @@ pub fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
                     cp_slot,
                     OLBlockId::from(cp_blkid),
                 ),
-                manifests_mmr: Mmr64B32 {
+                l1_block_refs_mmr: Mmr64B32 {
                     entries: 0,
                     roots: Default::default(),
                 },

@@ -139,12 +139,12 @@ where
             .unwrap_or_else(|| self.base.total_ledger_balance())
     }
 
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
+    fn l1_block_refs_mmr(&self) -> &Mmr64 {
         self.batch
             .epochal_writes()
-            .asm_manifests_mmr
+            .l1_block_refs_mmr
             .as_ref()
-            .unwrap_or_else(|| self.base.asm_manifests_mmr())
+            .unwrap_or_else(|| self.base.l1_block_refs_mmr())
     }
 
     // ===== Account methods =====
@@ -236,23 +236,25 @@ where
         self.batch.epochal_writes_mut().total_ledger_balance = Some(amt);
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        // For append_manifest, we need to get the current MMR (from batch or
-        // base), clone it, append, and store back.
+    fn append_l1_block_ref_from_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+        // Get the current MMR from the pending batch or base, append, and store it back.
         let mut mmr = self
             .batch
             .epochal_writes()
-            .asm_manifests_mmr
+            .l1_block_refs_mmr
             .clone()
-            .unwrap_or_else(|| self.base.asm_manifests_mmr().clone());
+            .unwrap_or_else(|| self.base.l1_block_refs_mmr().clone());
 
-        use strata_acct_types::{StrataHasher, tree_hash::TreeHash};
-        let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&mf);
-        strata_merkle::Mmr::<StrataHasher>::add_leaf(&mut mmr, manifest_hash.into_inner())
+        use strata_acct_types::StrataHasher;
+        use strata_snark_acct_types::l1_block_ref_leaf_hash;
+
+        let l1_block_ref_hash =
+            l1_block_ref_leaf_hash(mf.blkid().as_ref(), mf.wtxids_root().as_ref());
+        strata_merkle::Mmr::<StrataHasher>::add_leaf(&mut mmr, l1_block_ref_hash)
             .expect("MMR capacity exceeded");
 
         let ew = self.batch.epochal_writes_mut();
-        ew.asm_manifests_mmr = Some(mmr);
+        ew.l1_block_refs_mmr = Some(mmr);
         ew.last_l1_blkid = Some(*mf.blkid());
         ew.last_l1_height = Some(height);
     }
@@ -506,7 +508,7 @@ mod tests {
         let manifest =
             AsmManifest::new(height, l1_blkid, wtxids_root, vec![]).expect("valid test manifest");
 
-        tracking.append_manifest(height, manifest);
+        tracking.append_l1_block_ref_from_manifest(height, manifest);
 
         // The manifest should be recorded in the epochal state
         // (The actual validation of this would depend on the epochal state implementation)
