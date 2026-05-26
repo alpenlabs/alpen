@@ -75,6 +75,9 @@ pub enum StateError {
         existing: AccountId,
         new: AccountId,
     },
+
+    #[error("pending ASM logs buffer is full")]
+    PendingAsmLogsFull,
 }
 
 /// Execution result error.

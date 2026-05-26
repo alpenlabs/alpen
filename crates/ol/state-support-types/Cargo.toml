@@ -17,6 +17,7 @@ strata-snark-acct-types.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+strata-asm-manifest-types.workspace = true
 strata-merkle.workspace = true
 strata-ol-params.workspace = true
 
