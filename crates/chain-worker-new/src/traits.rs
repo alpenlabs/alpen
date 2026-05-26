@@ -104,10 +104,11 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Used to replay manifest processing during DA-based epoch reconstruction.
     fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>>;
 
-    /// Applies epoch-granular state index writes for a reconstructed epoch.
+    /// Applies epoch-granular state index writes for a reconstructed epoch,
+    /// derived from the epoch's execution `output`.
     fn apply_epoch_indexing(
         &self,
         epoch: &EpochCommitment,
-        writes: &OLBlockExecutionOutput,
+        output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()>;
 }

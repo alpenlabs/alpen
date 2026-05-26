@@ -34,7 +34,7 @@ class RevertOLStateFnTest(BaseTest):
     def main(self, ctx):
         seq_service = self.get_service(ServiceType.Strata)
         btc_service = self.get_service(ServiceType.Bitcoin)
-        fn_service = self.get_service(ServiceType.StrataCheckpointNode)
+        fn_service = self.get_service(ServiceType.StrataFullnode)
         setup = setup_revert_ol_state_test_fullnode(seq_service, fn_service, btc_service)
         old_seq_tip, old_fn_tip = wait_for_seq_fn_progress(
             seq_service,

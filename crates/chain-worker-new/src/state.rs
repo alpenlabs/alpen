@@ -655,6 +655,11 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
 /// Sets `inner_state` on the last update per account using the terminal root
 /// read from `new_state`. Non-terminal records keep `None` (CSS cannot
 /// recover their intermediate roots).
+///
+/// Returns [`WorkerError::MissingSnarkAccountForLog`] if `new_state` has no
+/// snark account for an account that produced an update during the epoch:
+/// that combination implies state divergence between the OL logs and the
+/// reconstructed post-state.
 fn set_terminal_state_roots(
     updates: Vec<SnarkAcctStateUpdate>,
     new_state: &MemoryStateBaseLayer,
@@ -666,12 +671,14 @@ fn set_terminal_state_roots(
 
     let mut out = updates;
     for (account_id, idx) in last_idx_per_account {
-        let terminal_root = new_state
+        let account_state = new_state
             .get_account_state(account_id)
             .map_err(|e| WorkerError::Unexpected(format!("read terminal state {account_id}: {e}")))?
-            .and_then(|s| s.as_snark_account().ok())
-            .map(|s| s.inner_state_root());
-        let Some(root) = terminal_root else { continue };
+            .ok_or(WorkerError::MissingSnarkAccountForLog(account_id))?;
+        let snark_state = account_state
+            .as_snark_account()
+            .map_err(|_| WorkerError::MissingSnarkAccountForLog(account_id))?;
+        let root = snark_state.inner_state_root();
         if let SnarkAcctStateUpdate::Update(op) = &out[idx] {
             out[idx] = SnarkAcctStateUpdate::Update(SAStateUpdateOp::new(
                 op.account_id(),

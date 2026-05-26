@@ -16,8 +16,8 @@ use crate::checkpoint_sync::{
     errors::{CheckpointSyncError, CheckpointSyncResult},
     input::{CheckpointSyncEvent, CheckpointSyncInput},
     state::{
-        apply_checkpoint, build_ol_sync_status, refinalize_applied_epoch, CheckpointSyncState,
-        InnerState,
+        apply_and_finalize_epoch, build_ol_sync_status, refinalize_applied_epoch,
+        CheckpointSyncState, InnerState,
     },
 };
 
@@ -145,7 +145,7 @@ async fn initialize_css_inner_state(
     let Some(cur_finalized) = ctx
         .fetch_csm_status()
         .await
-        .map_err(CheckpointSyncError::ChainWorker)?
+        .map_err(CheckpointSyncError::SyncStatusQuery)?
         .last_finalized_epoch
     else {
         debug!("no finalized checkpoint in client state, nothing to catch up on");
@@ -190,7 +190,7 @@ pub(crate) async fn find_and_apply_unapplied_epochs(
     let l1_tip_height = ctx
         .fetch_l1_tip_height()
         .await
-        .map_err(CheckpointSyncError::ChainWorker)?
+        .map_err(CheckpointSyncError::SyncStatusQuery)?
         .ok_or(CheckpointSyncError::L1TipNotReady)?;
     let reorg_safe_depth = ctx.rollup_params().l1_reorg_safe_depth;
     debug!(
@@ -222,7 +222,7 @@ pub(crate) async fn find_and_apply_unapplied_epochs(
             total = num_unapplied,
             "applying epoch during init"
         );
-        apply_checkpoint(ctx, epoch).await?;
+        apply_and_finalize_epoch(ctx, epoch).await?;
         last_applied_epoch = Some(epoch);
     }
     Ok(last_applied_epoch)

@@ -58,7 +58,7 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
             .ctx
             .fetch_csm_status()
             .await
-            .map_err(CheckpointSyncError::ChainWorker)?;
+            .map_err(CheckpointSyncError::SyncStatusQuery)?;
         debug!(?csm_status, "obtained csm status");
         let new_finalized = match (
             self.inner.last_finalized_and_applied,
@@ -110,7 +110,7 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
 ///
 /// All DA decoding, manifest fetching and state reconstruction happen inside the
 /// chain worker.
-pub(crate) async fn apply_checkpoint(
+pub(crate) async fn apply_and_finalize_epoch(
     ctx: &impl CheckpointSyncCtx,
     epoch: EpochCommitment,
 ) -> CheckpointSyncResult<()> {
@@ -129,7 +129,7 @@ pub(crate) async fn apply_checkpoint(
     Ok(())
 }
 
-/// Re-runs the safe-tip + finalize + publish-status tail of [`apply_checkpoint`]
+/// Re-runs the safe-tip + finalize + publish-status tail of [`apply_and_finalize_epoch`]
 /// for an epoch whose state is already persisted.
 ///
 /// Used at startup to recover from a crash that left the summary written but
