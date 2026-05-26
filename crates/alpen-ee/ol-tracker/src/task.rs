@@ -1,12 +1,12 @@
 use alpen_ee_common::{
-    chain_status_checked, EeAccountStateAtEpoch, OLChainStatus, OLClient, Storage,
+    chain_status_checked, EeAccountStateAtEpoch, EpochUpdateOp, OLChainStatus, OLClient, Storage,
 };
 use strata_ee_acct_runtime::process_update_unconditionally;
 use strata_ee_acct_types::EeAccountState;
 use strata_evm_ee::EvmExecutionEnvironment;
 use strata_identifiers::EpochCommitment;
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{UpdateInputData, UpdateManifest};
+use strata_snark_acct_types::UpdateManifest;
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
 #[derive(Debug)]
 pub(crate) struct OLEpochOperations {
     pub epoch: EpochCommitment,
-    pub operations: Vec<UpdateInputData>,
+    pub operations: Vec<EpochUpdateOp>,
 }
 
 #[derive(Debug)]
@@ -160,14 +160,21 @@ pub(crate) async fn track_ol_state(
 
 pub(crate) fn apply_epoch_operations(
     state: &mut EeAccountState,
-    epoch_operations: &[UpdateInputData],
+    epoch_operations: &[EpochUpdateOp],
 ) -> Result<()> {
     for op in epoch_operations {
+        if op.final_state_root.is_none() {
+            warn!(
+                seq_no = op.seq_no,
+                "applying update without post-state check"
+            );
+        }
         let manifest = UpdateManifest::new(
-            op.new_state(),
-            op.extra_data().to_vec(),
-            op.processed_messages().to_vec(),
+            op.final_state_root,
+            op.extra_data.clone(),
+            op.messages.clone(),
         );
+
         process_update_unconditionally::<EvmExecutionEnvironment>(
             state,
             &manifest,
@@ -262,7 +269,7 @@ mod tests {
             // Scenario: Apply empty operations list
             // Expected: State unchanged, returns Ok
             let mut state = EeAccountState::new(Hash::new([0u8; 32]), Hash::zero(), vec![], vec![]);
-            let operations: Vec<UpdateInputData> = vec![];
+            let operations: Vec<EpochUpdateOp> = vec![];
 
             let result = apply_epoch_operations(&mut state, &operations);
 

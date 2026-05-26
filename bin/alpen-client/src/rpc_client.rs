@@ -1,6 +1,6 @@
 use alpen_ee_common::{
-    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
-    SequencerOLClient,
+    EpochUpdateOp, OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError,
+    OLEpochSummary, SequencerOLClient,
 };
 use async_trait::async_trait;
 use http::{header::AUTHORIZATION, HeaderMap, HeaderValue};
@@ -20,7 +20,7 @@ use strata_ol_rpc_api::{OLClientRpcClient, OLSubmitRpcClient};
 use strata_ol_rpc_types::{
     OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
 };
-use strata_snark_acct_types::{ProofState, SnarkAccountUpdate, UpdateInputData};
+use strata_snark_acct_types::{ProofState, SnarkAccountUpdate};
 use tracing::info;
 
 /// Max retries for startup RPC calls where the OL node may still be booting.
@@ -189,12 +189,25 @@ impl OLClient for RpcOLClient {
                 let epoch_summary =
                     call_read_rpc!(self, get_acct_epoch_summary(self.account_id, epoch))?;
 
-                let updates: Vec<UpdateInputData> = epoch_summary
+                let updates: Vec<EpochUpdateOp> = epoch_summary
                     .update_inputs()
                     .iter()
-                    .map(UpdateInputData::try_from)
-                    .collect::<Result<_, _>>()
-                    .map_err(|e| OLClientError::rpc(e.to_string()))?;
+                    .map(|u| {
+                        let messages = u
+                            .messages
+                            .iter()
+                            .cloned()
+                            .map(MessageEntry::try_from)
+                            .collect::<Result<_, _>>()
+                            .map_err(|e| OLClientError::rpc(e.to_string()))?;
+                        Ok(EpochUpdateOp {
+                            seq_no: u.seq_no,
+                            extra_data: u.extra_data.0.clone(),
+                            messages,
+                            final_state_root: u.final_state_root.as_ref().map(|root| root.0.into()),
+                        })
+                    })
+                    .collect::<Result<_, OLClientError>>()?;
 
                 Ok(OLEpochSummary::new(
                     epoch_summary.epoch_commitment(),

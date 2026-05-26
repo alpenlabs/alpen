@@ -7,12 +7,13 @@ account state.
 """
 
 import logging
+from typing import cast
 
 import flexitest
 
 from common.base_test import BaseTest
 from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
-from common.rpc_types.strata import ChainSyncStatus
+from common.rpc_types.strata import AccountEpochSummary, ChainSyncStatus
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
@@ -36,6 +37,7 @@ class TestCheckpointSyncNode(BaseTest):
         bitcoin: BitcoinService = self.get_service(ServiceType.Bitcoin)
         btc_rpc = bitcoin.create_rpc()
 
+        # Wait for rpcs to be ready.
         sequencer.wait_for_rpc_ready(timeout=20)
         checkpoint_node.wait_for_rpc_ready(timeout=20)
 
@@ -59,6 +61,7 @@ class TestCheckpointSyncNode(BaseTest):
 
             for epoch in range(next_epoch, seq_status["tip"]["epoch"]):
                 summary = sequencer.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
+                # Add to active epochs if updates are present for the account
                 if len(summary["update_inputs"]) > 0:
                     active_epochs.append(epoch)
                     logger.info(f"epoch {epoch} has account activity")
@@ -81,11 +84,29 @@ class TestCheckpointSyncNode(BaseTest):
         for epoch in active_epochs:
             seq_summary = sequencer.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
             node_summary = checkpoint_node.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
-            assert seq_summary == node_summary, (
-                f"account epoch summary mismatch at epoch {epoch}: "
-                f"sequencer={seq_summary} checkpoint_node={node_summary}"
-            )
+            check_summaries_equivalent(seq_summary, node_summary)
             logger.info(f"account epoch summary matches at epoch {epoch}")
+
+
+def check_summaries_equivalent(seq_summary: AccountEpochSummary, node_summary: AccountEpochSummary):
+    """Checks that everything else beside proof state root are same. This is because
+    a non-sequencer node is not guaranteed to have state root for each update.
+    """
+    # First pop fields that can be different between both and check common attributes
+    seq_summary_d = dict(seq_summary)
+    node_summary_d = dict(node_summary)
+    seq_updates = cast(list, seq_summary_d.pop("update_inputs", []))
+    node_updates = cast(list, node_summary_d.pop("update_inputs", []))
+
+    # Check common attributes
+    assert seq_summary_d == node_summary_d
+
+    # Check update inputs
+    for su, nu in zip(seq_updates, node_updates, strict=True):
+        s_root = su.pop("final_state_root")
+        n_root = nu.pop("final_state_root")
+        assert n_root is None or n_root == s_root, "proof state if present should be the same"
+        assert su == nu
 
 
 def mine_and_get_status(strata: StrataService, btc_rpc) -> ChainSyncStatus:

@@ -102,7 +102,7 @@ pub fn apply_unconditionally(
     let post_root = post_state.compute_state_root();
 
     let manifest = UpdateManifest::new(
-        ProofState::new(post_root, operation.processed_messages().len() as u64),
+        Some(post_root),
         operation.extra_data().to_vec(),
         operation.processed_messages().to_vec(),
     );

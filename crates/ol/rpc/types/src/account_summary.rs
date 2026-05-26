@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry, MsgPayload, MsgPayloadError};
 use strata_identifiers::OLBlockCommitment;
 use strata_primitives::{EpochCommitment, HexBytes, HexBytes32};
-use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
+use strata_snark_acct_types::{ProofState, UpdateInputData};
 
 /// Summary for an account's data for an epoch.
 /// This information can be reconstructed fully from data in DA.
@@ -145,8 +145,11 @@ impl RpcAccountBlockSummary {
 pub struct RpcUpdateInputData {
     /// Sequence number of the update.
     pub seq_no: u64,
-    /// Expected final state after update.
-    pub proof_state: RpcProofState,
+    /// Inbox cursor after this update.
+    pub next_inbox_msg_idx: u64,
+    /// Final inner state root after this update. `None` for checkpoint-sync
+    /// sources: DA only carries the terminal epoch state, not per-update.
+    pub final_state_root: Option<HexBytes32>,
     /// Extra data posted with this update.
     pub extra_data: HexBytes,
     /// Account inbox messages processed in this update.
@@ -155,38 +158,14 @@ pub struct RpcUpdateInputData {
 
 impl From<UpdateInputData> for RpcUpdateInputData {
     fn from(value: UpdateInputData) -> Self {
+        let proof_state = value.update_state.proof_state;
         Self {
             seq_no: value.seq_no,
-            proof_state: value.update_state.proof_state.into(),
+            next_inbox_msg_idx: proof_state.next_inbox_msg_idx(),
+            final_state_root: Some(proof_state.inner_state().0.into()),
             extra_data: value.update_state.extra_data.to_vec().into(),
             messages: value.messages.into_iter().map(Into::into).collect(),
         }
-    }
-}
-
-impl TryFrom<RpcUpdateInputData> for UpdateInputData {
-    type Error = MsgPayloadError;
-
-    fn try_from(rpc: RpcUpdateInputData) -> Result<Self, Self::Error> {
-        let messages = rpc
-            .messages
-            .into_iter()
-            .map(MessageEntry::try_from)
-            .collect::<Result<_, _>>()?;
-
-        Ok(UpdateInputData::new(
-            rpc.seq_no,
-            messages,
-            UpdateStateData::new(rpc.proof_state.into(), rpc.extra_data.0),
-        ))
-    }
-}
-
-impl TryFrom<&RpcUpdateInputData> for UpdateInputData {
-    type Error = MsgPayloadError;
-
-    fn try_from(rpc: &RpcUpdateInputData) -> Result<Self, Self::Error> {
-        rpc.clone().try_into()
     }
 }
 
