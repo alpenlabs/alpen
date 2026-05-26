@@ -20,9 +20,9 @@ use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
     OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEntry, RpcAccountEpochSummary,
-    RpcAccountListPage, RpcBlockEntry, RpcBlockHeaderEntry, RpcCheckpointConfStatus,
-    RpcCheckpointInfo, RpcCheckpointL1Ref, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
-    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
+    RpcBlockEntry, RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo,
+    RpcCheckpointL1Ref, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary, RpcOLChainStatus,
+    RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -1124,19 +1124,7 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         Ok(txs)
     }
 
-    async fn list_accounts(
-        &self,
-        block_or_tag: OLBlockOrTag,
-        start: u64,
-        count: u64,
-    ) -> RpcResult<RpcAccountListPage> {
-        if count as usize > self.max_headers_range {
-            return Err(invalid_params_error(format!(
-                "count {} exceeds max_headers_range {}",
-                count, self.max_headers_range
-            )));
-        }
-
+    async fn list_accounts(&self, block_or_tag: OLBlockOrTag) -> RpcResult<Vec<RpcAccountEntry>> {
         let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
         let ol_state = self
             .provider
@@ -1147,20 +1135,10 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
                 not_found_error(format!("No OL state found for block {block_commitment}"))
             })?;
 
-        let ledger = ol_state.ledger();
-        let total = ledger.len() as u64;
-        let entries: Vec<_> = ledger
+        Ok(ol_state
+            .ledger()
             .entries()
-            .skip(start as usize)
-            .take(count as usize)
             .map(RpcAccountEntry::from)
-            .collect();
-        let consumed = start.saturating_add(entries.len() as u64);
-        let next_offset = if count > 0 && consumed < total && (entries.len() as u64) == count {
-            Some(consumed)
-        } else {
-            None
-        };
-        Ok(RpcAccountListPage::new(entries, total, next_offset))
+            .collect())
     }
 }
