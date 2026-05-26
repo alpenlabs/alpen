@@ -13,7 +13,7 @@ pub const WITHDRAWAL_FEE_BUMP_MSG_TYPE_ID: u16 = 0x04;
 pub const WITHDRAWAL_REJECTION_MSG_TYPE_ID: u16 = 0x05;
 
 /// Maximum length for withdrawal destination descriptor.
-pub const MAX_WITHDRAWAL_DESC_LEN: usize = 255;
+pub const MAX_WITHDRAWAL_DESC_LEN: u32 = 255;
 
 // TODO: allow users to specify operator fee
 pub const DEFAULT_OPERATOR_FEE: u32 = 0;
@@ -34,15 +34,14 @@ pub struct WithdrawalMsgData {
     selected_operator: u32,
 
     /// Bitcoin Output Script Descriptor describing the withdrawal output.
-    // TODO idk why, but I can't make the MAX_WITHDRAWAL_DESC_LEN const generic work
-    dest_desc: VarVec<u8>,
+    dest_desc: VarVec<u8, { MAX_WITHDRAWAL_DESC_LEN }>,
 }
 
 impl WithdrawalMsgData {
     /// Creates a new withdrawal message data instance.
     pub fn new(fees: u32, dest_desc: Vec<u8>, selected_operator: u32) -> Option<Self> {
         // Ensure the destination descriptor isn't too long.
-        if dest_desc.len() > MAX_WITHDRAWAL_DESC_LEN {
+        if dest_desc.len() > MAX_WITHDRAWAL_DESC_LEN as usize {
             return None;
         }
 
@@ -65,7 +64,7 @@ impl WithdrawalMsgData {
     }
 
     /// Takes out the inner destination descriptor as a `VarVec`.
-    pub fn into_dest_desc(self) -> VarVec<u8> {
+    pub fn into_dest_desc(self) -> VarVec<u8, { MAX_WITHDRAWAL_DESC_LEN }> {
         self.dest_desc
     }
 
