@@ -104,9 +104,15 @@ pub async fn withdraw(
     }
     .encode();
 
+    let gas_price = l2w
+        .get_gas_price()
+        .await
+        .internal_error("Failed to fetch Alpen gas price")?;
+
     let tx = l2w
         .transaction_request()
         .with_to(settings.bridge_alpen_address)
+        .with_gas_price(gas_price)
         .with_value(U256::from(bridge_out_amount.to_sat() as u128 * SATS_TO_WEI))
         .input(TransactionInput::new(calldata.into()));
 
