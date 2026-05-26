@@ -17,7 +17,7 @@ use strata_identifiers::{
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
-use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
+use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
     OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockEntry,
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
@@ -854,53 +854,6 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         Ok(manifest.map(|m| HexBytes32::from(*m.compute_hash().as_ref())))
     }
 
-    async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {
-        // Convert RPC transaction to mempool transaction
-        let mempool_tx: OLTransaction = tx
-            .try_into()
-            .map_err(|e| invalid_params_error(format!("Invalid transaction: {e}")))?;
-        let target = mempool_tx
-            .target()
-            .expect("all OL payload variants must have a target");
-        let next_inbox_msg_idx = match mempool_tx.payload() {
-            TransactionPayload::SnarkAccountUpdate(payload) => Some(
-                payload
-                    .operation()
-                    .update()
-                    .proof_state()
-                    .new_next_msg_idx(),
-            ),
-            TransactionPayload::GenericAccountMessage(_) => None,
-        };
-
-        // Submit to mempool
-        let txid = self
-            .provider
-            .submit_transaction(mempool_tx)
-            .await
-            .map_err(map_mempool_error_to_rpc)?;
-
-        match next_inbox_msg_idx {
-            Some(next_inbox_msg_idx) => {
-                info!(
-                    %txid,
-                    %target,
-                    next_inbox_msg_idx,
-                    "snark update received by the OL mempool"
-                );
-            }
-            None => {
-                info!(
-                    %txid,
-                    %target,
-                    "transaction received by the OL mempool"
-                );
-            }
-        }
-
-        Ok(txid)
-    }
-
     async fn get_snark_account_state(
         &self,
         account_id: AccountId,
@@ -989,6 +942,56 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 }
 
 const MAX_RAW_BLOCKS_RANGE: usize = 5000; // FIXME: make this configurable
+
+#[async_trait]
+impl<P: OLRpcProvider> OLSubmitRpcServer for OLRpcServer<P> {
+    async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {
+        // Convert RPC transaction to mempool transaction
+        let mempool_tx: OLTransaction = tx
+            .try_into()
+            .map_err(|e| invalid_params_error(format!("Invalid transaction: {e}")))?;
+        let target = mempool_tx
+            .target()
+            .expect("all OL payload variants must have a target");
+        let next_inbox_msg_idx = match mempool_tx.payload() {
+            TransactionPayload::SnarkAccountUpdate(payload) => Some(
+                payload
+                    .operation()
+                    .update()
+                    .proof_state()
+                    .new_next_msg_idx(),
+            ),
+            TransactionPayload::GenericAccountMessage(_) => None,
+        };
+
+        // Submit to mempool
+        let txid = self
+            .provider
+            .submit_transaction(mempool_tx)
+            .await
+            .map_err(map_mempool_error_to_rpc)?;
+
+        match next_inbox_msg_idx {
+            Some(next_inbox_msg_idx) => {
+                info!(
+                    %txid,
+                    %target,
+                    next_inbox_msg_idx,
+                    "snark update received by the OL mempool"
+                );
+            }
+            None => {
+                info!(
+                    %txid,
+                    %target,
+                    "transaction received by the OL mempool"
+                );
+            }
+        }
+
+        Ok(txid)
+    }
+}
 
 #[async_trait]
 impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {

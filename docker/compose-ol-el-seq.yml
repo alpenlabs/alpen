@@ -14,6 +14,7 @@ services:
       PARAM_PATH: /app/configs/generated/rollup-params.json
       OL_PARAMS_PATH: /app/configs/generated/ol-params.json
       ASM_PARAMS_PATH: /app/configs/generated/asm-params.json
+      STRATA_SUBMIT_RPC_TOKEN: ${STRATA_SUBMIT_RPC_TOKEN:-dev-only-submit-token}
       RUST_BACKTRACE: 1
     volumes:
       # Explicitly mount only what strata reads — no whole-dir mount.
@@ -30,6 +31,7 @@ services:
       - strata-data:/app/data
     ports:
       - "8432:8432"
+      - "8435:8435"
     networks:
       - alpen_network
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
@@ -76,6 +78,9 @@ services:
     env_file:
       - .env
       - ./configs/generated/.env.alpen
+    environment:
+      OL_SUBMIT_URL: ws://strata:8435
+      STRATA_SUBMIT_RPC_TOKEN: ${STRATA_SUBMIT_RPC_TOKEN:-dev-only-submit-token}
     volumes:
       # Alpen-client reads only the JWT secret for authrpc.
       # Env vars (pubkey, chain spec, etc.) come from env_file above.

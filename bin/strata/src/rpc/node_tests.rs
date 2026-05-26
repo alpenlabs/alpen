@@ -16,7 +16,7 @@ use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_params::OLParams;
-use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
+use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::*;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::OLState;

@@ -98,6 +98,8 @@ class AlpenClientEnv(flexitest.EnvConfig):
         batch_sealing_block_count: int = 10,
         bitcoin_service: BitcoinService | None = None,
         ol_endpoint: str | None = None,
+        ol_submit_endpoint: str | None = None,
+        ol_submit_token: str | None = None,
         dev_track_latest_epoch: bool = False,
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
@@ -154,6 +156,8 @@ class AlpenClientEnv(flexitest.EnvConfig):
             sequencer_privkey=privkey,
             enable_discovery=enable_discovery,
             ol_endpoint=ol_endpoint,
+            ol_submit_endpoint=ol_submit_endpoint,
+            ol_submit_token=ol_submit_token,
             da_config=da_config,
             dev_track_latest_epoch=dev_track_latest_epoch,
         )
