@@ -202,9 +202,7 @@ impl OLRpcProvider for NodeRpcProvider {
 
     async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
         let Some(mempool_handle) = self.mempool_handle.as_ref() else {
-            return Err(OLMempoolError::ServiceClosed(
-                "mempool is not running on this node".to_string(),
-            ));
+            return Err(OLMempoolError::NotAvailable);
         };
         mempool_handle.submit_transaction(tx).await
     }

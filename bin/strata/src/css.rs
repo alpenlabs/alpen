@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_checkpoint_types::EpochSummary;
 use strata_consensus_logic::checkpoint_sync::{
@@ -57,14 +57,13 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
         &self.rollup_params
     }
 
-    async fn fetch_l1_tip_height(&self) -> anyhow::Result<L1Height> {
-        let tip = self
+    async fn fetch_l1_tip_height(&self) -> anyhow::Result<Option<L1Height>> {
+        Ok(self
             .storage
             .l1()
             .get_canonical_chain_tip_async()
             .await?
-            .ok_or_else(|| anyhow!("no L1 canonical chain tip in db"))?;
-        Ok(tip.0)
+            .map(|tip| tip.0))
     }
 
     async fn fetch_csm_status(&self) -> anyhow::Result<CsmWorkerStatus> {

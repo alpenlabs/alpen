@@ -10,9 +10,9 @@ use strata_acct_types::{
     MessageEntry,
     tree_hash::{Sha256Hasher, TreeHash},
 };
-use strata_bridge_params::BridgeParams;
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
+use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
@@ -436,7 +436,7 @@ fn build_indexing_writes(
                 found: log.new_msg_idx(),
             });
         }
-        let meta = AccountUpdateMeta::new(commitment, update.state());
+        let meta = AccountUpdateMeta::new(Some(commitment), update.state());
         let record = AccountUpdateRecord::new(
             Some(meta),
             *update.seqno().inner(),
@@ -483,10 +483,10 @@ fn collect_snark_update_logs<'a>(
 
 /// Builds an [`IndexingWrites`] payload for a DA-reconstructed epoch.
 ///
-/// Like [`build_indexing_writes`] but stamps no block commitment: checkpoint
-/// sync has no per-block attribution, so update records carry `update_meta:
-/// None` and inbox records carry `block_commitment: None`. RPC readers treat
-/// these as epoch-scoped rows.
+/// Like [`build_indexing_writes`] but with no per-block attribution: update
+/// records carry `block_commitment: None`, and inbox records carry
+/// `block_commitment: None`. The terminal-per-account state root is recorded
+/// when available.
 pub(crate) fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) -> IndexingWrites {
     let indexer_writes = output.indexer_writes();
 
@@ -498,8 +498,13 @@ pub(crate) fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) 
 
     let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
     for update in indexer_writes.snark_state_updates() {
+        // `state()` is `Some` only for terminal-per-account records (set by
+        // `set_terminal_state_roots`); non-terminal CSS records are `None`.
+        let update_meta = update
+            .state()
+            .map(|root| AccountUpdateMeta::new(None, root));
         let record = AccountUpdateRecord::new(
-            None,
+            update_meta,
             *update.seqno().inner(),
             update.next_read_idx(),
             update.extra_data().map(<[u8]>::to_vec),

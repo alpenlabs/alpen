@@ -8,6 +8,10 @@ use thiserror::Error;
 /// Errors from the checkpoint sync service.
 #[derive(Debug, Error)]
 pub(crate) enum CheckpointSyncError {
+    /// L1 canonical chain tip not yet available (pre-sync); treat as wait.
+    #[error("L1 canonical chain tip not yet ingested")]
+    L1TipNotReady,
+
     /// A finalized epoch has no L1 observation entry in the database.
     #[error("finalized epoch {0} has no l1 observation entry")]
     MissingL1Ref(EpochCommitment),
@@ -33,9 +37,20 @@ pub(crate) enum CheckpointSyncError {
     #[error("db: {0}")]
     Db(#[from] DbError),
 
-    /// Failure from the chain worker while applying or finalizing an epoch.
-    #[error("chain worker: {0}")]
+    /// Failure from a contextless chain-worker / CSM call (e.g. fetching CSM
+    /// status, L1 tip).
+    #[error("chain worker")]
     ChainWorker(#[source] anyhow::Error),
+
+    /// Failure from a per-epoch chain-worker call (apply, update_safe_tip,
+    /// finalize).
+    #[error("chain worker {op} at {epoch}")]
+    EpochOp {
+        epoch: EpochCommitment,
+        op: &'static str,
+        #[source]
+        cause: anyhow::Error,
+    },
 }
 
 pub(crate) type CheckpointSyncResult<T> = Result<T, CheckpointSyncError>;

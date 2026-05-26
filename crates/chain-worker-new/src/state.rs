@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use strata_acct_types::AccountSerial;
+use strata_acct_types::{AccountId, AccountSerial};
 use strata_asm_proto_checkpoint_types::OLLog;
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
@@ -438,6 +438,18 @@ pub(crate) fn apply_checkpoint_epoch(
         .fetch_checkpoint_payload(&epoch)?
         .ok_or(WorkerError::MissingCheckpointPayload(epoch))?;
 
+    // Cross-check the payload tip against the requested epoch. Defends against
+    // a key→value mismatch from a future storage backend / writer bug.
+    let tip = payload.new_tip();
+    if tip.epoch != epoch.epoch() || tip.l2_commitment() != &epoch.to_block_commitment() {
+        return Err(WorkerError::Unexpected(format!(
+            "checkpoint payload tip mismatch for {epoch}: \
+             payload epoch={} l2_commitment={:?}",
+            tip.epoch,
+            tip.l2_commitment(),
+        )));
+    }
+
     // Fetch previous terminal state.
     let prev_terminal = get_prev_terminal(ctx, epoch.epoch())?;
     let base_state_raw = ctx
@@ -450,10 +462,19 @@ pub(crate) fn apply_checkpoint_epoch(
     let da_payload = decode_ol_da_payload_bytes(sidecar.ol_state_diff())
         .map_err(|e| WorkerError::Unexpected(format!("decode OL DA payload: {e}")))?;
 
-    let tip = payload.new_tip();
-    let from_height = base_state.last_l1_height() + 1;
+    let from_height = base_state.last_l1_height().checked_add(1).ok_or_else(|| {
+        WorkerError::Unexpected(format!(
+            "L1 height overflow at base state for {epoch}: {}",
+            base_state.last_l1_height()
+        ))
+    })?;
     let to_height = tip.l1_height();
-    let range_len = to_height.saturating_sub(from_height).saturating_add(1) as u64;
+    if to_height < from_height {
+        return Err(WorkerError::Unexpected(format!(
+            "checkpoint payload L1 range inverted at {epoch}: from={from_height} to={to_height}"
+        )));
+    }
+    let range_len = (to_height - from_height + 1) as u64;
     if range_len > MAX_EPOCH_L1_RANGE {
         return Err(WorkerError::Unexpected(format!(
             "epoch L1 manifest range too large at {epoch}: {range_len} blocks (max {MAX_EPOCH_L1_RANGE})"
@@ -492,7 +513,6 @@ pub(crate) fn apply_checkpoint_epoch(
         rebuild_snark_records_from_logs(&indexer_state, sidecar.ol_logs(), &pre_seqnos)?;
 
     let (tracking_state, mut indexer_writes) = indexer_state.into_parts();
-    indexer_writes.set_snark_acct_state_updates(rebuilt_snark_updates);
     let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
 
     // Apply the batch onto the base state to get the reconstructed state.
@@ -503,12 +523,25 @@ pub(crate) fn apply_checkpoint_epoch(
             commitment: prev_terminal,
             source,
         })?;
+
+    // Fill in the terminal-per-account state root on the last record of each
+    // account using the now-reconstructed state. Non-terminal records keep
+    // `None`; only the terminal root is recoverable from DA.
+    let with_terminal_roots = set_terminal_state_roots(rebuilt_snark_updates, &new_state)?;
+    indexer_writes.set_snark_acct_state_updates(with_terminal_roots);
     let final_state_root = new_state
         .compute_state_root()
         .map_err(|e| WorkerError::Unexpected(format!("compute final state root {epoch}: {e}")))?;
 
     // Sanity check: indexer state root and final state root are same.
     if final_state_root != indexer_state_root {
+        error!(
+            %epoch, %indexer_state_root, %final_state_root,
+            payload_tip_epoch = tip.epoch,
+            payload_tip_l1 = tip.l1_height(),
+            payload_tip_l2 = ?tip.l2_commitment(),
+            "epoch reconstruction state root divergence",
+        );
         return Err(WorkerError::Unexpected(format!(
             "state root divergence at {epoch}: indexer={indexer_state_root} batch={final_state_root}"
         )));
@@ -571,9 +604,10 @@ fn collect_pre_seqnos<S: IStateAccessor>(
 
 /// Rebuilds per-update snark index records from the checkpoint sidecar's logs.
 ///
-/// NOTE: The DA path collapses multi-update epochs into one record per account; the on-chain
-/// `ol_logs` carry per-update detail. The `inner_state` field is set to [`Hash::default`] as a
-/// sentinel which is later discarded by downstream indexing layer.
+/// The DA path collapses multi-update epochs into one record per account; the
+/// on-chain `ol_logs` carry per-update detail without state roots. Records
+/// emitted here have `inner_state: None`; `set_terminal_state_roots`
+/// later fills in the terminal-per-account root from the reconstructed state.
 fn rebuild_snark_records_from_logs<S: IStateAccessor>(
     state: &S,
     ol_logs: &[OLLog],
@@ -607,7 +641,7 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
 
         let op = SAStateUpdateOp::new(
             account_id,
-            Default::default(),
+            None,
             log_data.new_msg_idx,
             seqno,
             log_data.extra_data.to_vec(),
@@ -616,6 +650,39 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
     }
 
     Ok(records)
+}
+
+/// Sets `inner_state` on the last update per account using the terminal root
+/// read from `new_state`. Non-terminal records keep `None` (CSS cannot
+/// recover their intermediate roots).
+fn set_terminal_state_roots(
+    updates: Vec<SnarkAcctStateUpdate>,
+    new_state: &MemoryStateBaseLayer,
+) -> WorkerResult<Vec<SnarkAcctStateUpdate>> {
+    let mut last_idx_per_account: HashMap<AccountId, usize> = HashMap::new();
+    for (i, u) in updates.iter().enumerate() {
+        last_idx_per_account.insert(u.account_id(), i);
+    }
+
+    let mut out = updates;
+    for (account_id, idx) in last_idx_per_account {
+        let terminal_root = new_state
+            .get_account_state(account_id)
+            .map_err(|e| WorkerError::Unexpected(format!("read terminal state {account_id}: {e}")))?
+            .and_then(|s| s.as_snark_account().ok())
+            .map(|s| s.inner_state_root());
+        let Some(root) = terminal_root else { continue };
+        if let SnarkAcctStateUpdate::Update(op) = &out[idx] {
+            out[idx] = SnarkAcctStateUpdate::Update(SAStateUpdateOp::new(
+                op.account_id(),
+                Some(root),
+                op.next_read_idx(),
+                op.seqno(),
+                op.extra_data().to_vec(),
+            ));
+        }
+    }
+    Ok(out)
 }
 
 /// The values produced by reconstructing one epoch from its checkpoint,

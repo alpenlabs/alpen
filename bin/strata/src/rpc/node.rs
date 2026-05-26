@@ -357,14 +357,18 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     let next_cursor = r.next_inbox_idx();
                     cursor = next_cursor;
 
-                    // Checkpoint-sync rows: epoch-scoped, not block-scoped.
+                    // Skip rows with no block attribution: checkpoint-sync,
+                    // or CSS-terminal-stamped rows (root present but block
+                    // absent). This endpoint is the block-scoped view.
                     let Some(meta) = r.update_meta() else {
+                        continue;
+                    };
+                    let Some(block_commitment) = meta.block_commitment().copied() else {
                         continue;
                     };
 
                     // Out-of-chain blocks: belong to a sibling/orphan that's
                     // not on the queried canonical chain.
-                    let block_commitment = *meta.block_commitment();
                     if !block_commitments.contains(&block_commitment) {
                         continue;
                     }

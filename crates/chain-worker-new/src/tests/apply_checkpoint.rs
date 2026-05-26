@@ -15,7 +15,7 @@
 //! attributed `IndexingWrites` written to the indexing store. That conversion
 //! is not covered here.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use strata_acct_types::AccountId;
 use strata_asm_common::AsmManifest;
@@ -24,7 +24,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
+use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate};
 use strata_ol_state_types::OLState;
 
 use super::fixture::{BuiltEpoch, EpochShape, build_epoch};
@@ -212,6 +212,79 @@ fn test_apply_checkpoint_snark_multi_update_and_deposit() {
         2,
         "full sync should produce one snark record per update tx"
     );
+}
+
+#[test]
+fn test_apply_checkpoint_sets_terminal_root_per_account() {
+    // Multi-update-per-account epoch: the last update for each account must
+    // carry `Some(root)` matching the full-sync run; non-terminal updates
+    // carry `None`.
+    let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
+    let (ctx, epoch) = mock_for(&built);
+
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+
+    let cp_updates = artifacts.output.indexer_writes().snark_state_updates();
+    let fs_updates = built.full_sync_indexer_writes().snark_state_updates();
+
+    let last_idx = |updates: &[SnarkAcctStateUpdate]| {
+        let mut m: HashMap<_, usize> = HashMap::new();
+        for (i, u) in updates.iter().enumerate() {
+            m.insert(u.account_id(), i);
+        }
+        m
+    };
+    let cp_last = last_idx(cp_updates);
+    let fs_last = last_idx(fs_updates);
+
+    assert_eq!(
+        cp_last.keys().collect::<HashSet<_>>(),
+        fs_last.keys().collect::<HashSet<_>>(),
+        "same set of touched accounts on both sides"
+    );
+
+    for (account_id, cp_idx) in &cp_last {
+        let cp_root = cp_updates[*cp_idx].state();
+        let fs_root = fs_updates[fs_last[account_id]].state();
+        assert_eq!(
+            cp_root, fs_root,
+            "terminal root must match full-sync for account {account_id}"
+        );
+        assert!(
+            cp_root.is_some(),
+            "terminal-per-account root must be present"
+        );
+    }
+
+    for (i, u) in cp_updates.iter().enumerate() {
+        if cp_last[&u.account_id()] == i {
+            continue;
+        }
+        assert!(
+            u.state().is_none(),
+            "non-terminal checkpoint-sync record must have no state root"
+        );
+    }
+}
+
+#[test]
+fn test_apply_checkpoint_epoch_is_deterministic() {
+    // MMR retry semantics rely on artifact-level determinism (stable index
+    // values across two reconstructions of the same payload). Lock that down.
+    let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
+    let (ctx, epoch) = mock_for(&built);
+
+    let a = apply_checkpoint_epoch(&ctx, epoch).expect("first apply");
+    let b = apply_checkpoint_epoch(&ctx, epoch).expect("second apply");
+
+    assert_eq!(a.terminal, b.terminal, "terminal commitment must be stable");
+    assert_eq!(a.summary, b.summary, "epoch summary must be stable");
+    assert_eq!(
+        a.output.computed_state_root(),
+        b.output.computed_state_root(),
+        "state root must be stable"
+    );
+    assert_indexer_writes_consistent(a.output.indexer_writes(), b.output.indexer_writes());
 }
 
 #[test]
