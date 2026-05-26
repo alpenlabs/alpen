@@ -20,7 +20,7 @@ pub(super) async fn build_update_from_batch(
     batch: &Batch,
     da_refs: &[L1DaBlockRef],
     proof_id: &ProofId,
-    ol_client: &(impl SequencerOLClient + Send + Sync),
+    _ol_client: &(impl SequencerOLClient + Send + Sync),
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
 ) -> Result<SnarkAccountUpdate> {
@@ -44,9 +44,8 @@ pub(super) async fn build_update_from_batch(
         .update_seq_no()
         .ok_or_else(|| eyre!("cannot build update for genesis batch"))?;
 
-    // Ledger refs MUST be byte-identical to what the prover commits — see
-    // `build_ledger_refs_from_da` in alpen-ee-common.
-    let ledger_refs = build_ledger_refs_from_da(da_refs, ol_client).await?;
+    // Ledger refs MUST be byte-identical to what the prover commits.
+    let ledger_refs = build_ledger_refs_from_da(da_refs);
     let update_operation = build_update_operation(seq_no, ledger_refs, blocks)?;
 
     // Should we re-check that proof is valid ?

@@ -8,7 +8,9 @@ pub enum StorageError {
     StateNotFound(u64),
 
     /// Attempted to store a slot that would create a gap in the stored sequence.
-    #[error("missing slot: attempted to store slot {attempted_slot} but last stored slot is {last_slot}")]
+    #[error(
+        "missing slot: attempted to store slot {attempted_slot} but last stored slot is {last_slot}"
+    )]
     MissingSlot { attempted_slot: u64, last_slot: u64 },
 
     /// Database operation failed.

@@ -617,7 +617,7 @@ fn main() {
                     eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair")
                 })?;
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
-                    btc_client,
+                    btc_client.clone(),
                     writer_config,
                     btcio_params,
                     sequencer_address,
@@ -642,6 +642,7 @@ fn main() {
                     blob_provider.clone(),
                     envelope_handle,
                     broadcast_ops,
+                    btc_client.clone(),
                     magic_bytes,
                 ));
 

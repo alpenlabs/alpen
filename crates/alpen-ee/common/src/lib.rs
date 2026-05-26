@@ -34,7 +34,7 @@ pub use traits::{
 };
 pub use types::{
     accessed_state::{AccessedAccount, AccessedStateRecord},
-    batch::{Batch, BatchId, BatchStatus, L1DaBlockRef},
+    batch::{Batch, BatchId, BatchStatus, L1DaBlockInfo, L1DaBlockRef},
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
     chunk_witness::{ChunkWitnessExtractFn, ChunkWitnessRecord},
@@ -54,5 +54,5 @@ pub use types::{
 pub use utils::{
     clock::{Clock, SystemClock},
     conversions::sats_to_gwei,
-    ledger_refs::{build_ledger_refs_from_da, LedgerRefsError},
+    ledger_refs::{build_ledger_refs_from_da, l1_block_ref_commitment},
 };

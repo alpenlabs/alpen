@@ -19,11 +19,11 @@ strata-btcio.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
-strata-primitives.workspace = true
 
 alloy-primitives.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
+bitcoind-async-client.workspace = true
 eyre.workspace = true
 tracing.workspace = true
 

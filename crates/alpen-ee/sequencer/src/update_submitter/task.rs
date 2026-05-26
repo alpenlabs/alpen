@@ -177,7 +177,7 @@ async fn process_ready_batches(
         };
 
         let seq_no = update.operation().seq_no();
-        let l1_ref_count = update.operation().ledger_refs().asm_manifest_refs().len();
+        let l1_ref_count = update.operation().ledger_refs().l1_block_refs().len();
         let txid = ol_client.submit_update(update).await?;
 
         info!(

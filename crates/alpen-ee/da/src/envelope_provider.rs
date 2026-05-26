@@ -3,21 +3,21 @@
 use std::{collections::HashMap, fmt, sync::Arc};
 
 use alpen_ee_common::{
-    prepare_da_chunks, BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockRef,
-    DA_BLOB_VERSION,
+    prepare_da_chunks, BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockInfo,
+    L1DaBlockRef, DA_BLOB_VERSION,
 };
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
-use bitcoin::{Txid, Wtxid};
+use bitcoin::{hashes::Hash as _, Block, BlockHash, Txid, Wtxid};
+use bitcoind_async_client::{traits::Reader, Client as BtcClient};
 use eyre::{bail, ensure};
-use strata_btc_types::Buf32BitcoinExt;
+use strata_btc_types::{BlockHashExt, Buf32BitcoinExt};
 use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
 use strata_db_types::types::{
     ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxId, L1TxStatus, L1WtxId,
 };
-use strata_identifiers::{L1BlockCommitment, L1BlockId, L1Height};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1Height, WtxidsRoot};
 use strata_l1_txfmt::MagicBytes;
-use strata_primitives::buf::Buf32;
 use tracing::*;
 
 /// Per-block accumulator: commit (when present) plus reveals tagged with
@@ -54,6 +54,20 @@ struct FinalizedRevealTx {
 /// Groups commit + reveal txs by L1 block for [`L1DaBlockRef`] construction.
 type BlockMap = HashMap<(Buf32, L1Height), BlockTxs>;
 
+#[async_trait]
+pub trait L1BlockReader: Send + Sync {
+    async fn get_l1_block(&self, block_hash: &BlockHash) -> eyre::Result<Block>;
+}
+
+#[async_trait]
+impl L1BlockReader for BtcClient {
+    async fn get_l1_block(&self, block_hash: &BlockHash) -> eyre::Result<Block> {
+        self.get_block(block_hash)
+            .await
+            .map_err(|e| eyre::eyre!("get_block({block_hash}): {e}"))
+    }
+}
+
 fn to_raw_buf32(txid: L1TxId) -> Buf32 {
     Buf32(txid.0)
 }
@@ -71,6 +85,7 @@ pub struct ChunkedEnvelopeDaProvider {
     blob_provider: Arc<dyn DaBlobSource>,
     envelope_handle: Arc<ChunkedEnvelopeHandle>,
     broadcast_ops: Arc<BroadcastDbOps>,
+    l1_blocks: Arc<dyn L1BlockReader>,
     magic_bytes: MagicBytes,
 }
 
@@ -87,12 +102,14 @@ impl ChunkedEnvelopeDaProvider {
         blob_provider: Arc<dyn DaBlobSource>,
         envelope_handle: Arc<ChunkedEnvelopeHandle>,
         broadcast_ops: Arc<BroadcastDbOps>,
+        l1_blocks: Arc<dyn L1BlockReader>,
         magic_bytes: MagicBytes,
     ) -> Self {
         Self {
             blob_provider,
             envelope_handle,
             broadcast_ops,
+            l1_blocks,
             magic_bytes,
         }
     }
@@ -220,20 +237,23 @@ impl ChunkedEnvelopeDaProvider {
         // Collapse each block's accumulated commit + reveals into a flat
         // ordered `txns` list. Within a block, the commit (if present) goes
         // first; reveals follow in ascending vout order.
-        let mut refs: Vec<L1DaBlockRef> = block_map
-            .into_iter()
-            .map(|((hash, height), mut txs)| {
-                txs.reveals.sort_by_key(|reveal| reveal.vout_index);
-                let mut txns: Vec<(Txid, Wtxid)> =
-                    Vec::with_capacity(txs.commit.is_some() as usize + txs.reveals.len());
-                if let Some(commit) = txs.commit {
-                    txns.push(commit.into_pair());
-                }
-                txns.extend(txs.reveals.into_iter().map(|reveal| reveal.tx.into_pair()));
-                let commitment = L1BlockCommitment::new(height, L1BlockId::from(hash));
-                L1DaBlockRef::new(commitment, txns)
-            })
-            .collect();
+        let mut refs: Vec<L1DaBlockRef> = Vec::with_capacity(block_map.len());
+        for ((hash, height), mut txs) in block_map {
+            let block_hash = hash.to_block_hash();
+            let block = self.l1_blocks.get_l1_block(&block_hash).await?;
+            let wtxids_root = compute_wtxids_root(&block)?;
+
+            txs.reveals.sort_by_key(|reveal| reveal.vout_index);
+            let mut txns: Vec<(Txid, Wtxid)> =
+                Vec::with_capacity(txs.commit.is_some() as usize + txs.reveals.len());
+            if let Some(commit) = txs.commit {
+                txns.push(commit.into_pair());
+            }
+            txns.extend(txs.reveals.into_iter().map(|reveal| reveal.tx.into_pair()));
+            let commitment = L1BlockCommitment::new(height, block_hash.to_l1_block_id());
+            let block_info = L1DaBlockInfo::new(commitment, wtxids_root);
+            refs.push(L1DaBlockRef::new(block_info, txns));
+        }
         refs.sort_by_key(|r| r.block.height());
 
         Ok(refs)
@@ -262,6 +282,24 @@ impl ChunkedEnvelopeDaProvider {
     }
 }
 
+fn compute_wtxids_root(block: &Block) -> eyre::Result<WtxidsRoot> {
+    ensure!(
+        !block.txdata.is_empty(),
+        "cannot compute wtxids root for empty block"
+    );
+    // NOTE: DA reveal txs are witness spends. If commit txs are also guaranteed
+    // to spend post-SegWit inputs, every DA block referenced here has witness
+    // data and the witness root matches the L1 block ref root committed by ASM.
+    // Without that funding-input guarantee, commit-only legacy blocks would
+    // require mirroring ASM's fallback to the txid merkle root.
+    let root = block
+        .witness_root()
+        .ok_or_else(|| eyre::eyre!("cannot compute wtxids root for empty block"))?;
+    Ok(WtxidsRoot::from(Buf32::from(
+        root.as_raw_hash().to_byte_array(),
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -269,9 +307,13 @@ mod tests {
     use alpen_ee_common::DaBlob;
     use async_trait::async_trait;
     use bitcoin::{
-        absolute::LockTime, consensus::encode::serialize as btc_serialize, hashes::Hash,
-        transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
-        Witness,
+        absolute::LockTime,
+        block::{Header, Version as BlockVersion},
+        consensus::encode::serialize as btc_serialize,
+        hashes::{sha256d, Hash},
+        transaction::Version,
+        Amount, CompactTarget, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxMerkleNode,
+        TxOut, Witness,
     };
     use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
@@ -300,6 +342,15 @@ mod tests {
         }
     }
 
+    struct StaticL1BlockReader;
+
+    #[async_trait]
+    impl L1BlockReader for StaticL1BlockReader {
+        async fn get_l1_block(&self, _block_hash: &BlockHash) -> eyre::Result<Block> {
+            Ok(make_test_block())
+        }
+    }
+
     fn test_batch_id() -> BatchId {
         BatchId::from_parts(Default::default(), Default::default())
     }
@@ -322,6 +373,22 @@ mod tests {
                 script_pubkey: ScriptBuf::new(),
             }],
         }
+    }
+
+    fn make_test_block() -> Block {
+        let mut block = Block {
+            header: Header {
+                version: BlockVersion::TWO,
+                prev_blockhash: BlockHash::from_raw_hash(sha256d::Hash::all_zeros()),
+                merkle_root: TxMerkleNode::from_raw_hash(sha256d::Hash::all_zeros()),
+                time: 0,
+                bits: CompactTarget::from_consensus(0),
+                nonce: 0,
+            },
+            txdata: vec![make_test_tx()],
+        };
+        block.header.merkle_root = block.compute_merkle_root().expect("non-empty block");
+        block
     }
 
     fn make_entry(status: ChunkedEnvelopeStatus, heights: &[u64]) -> ChunkedEnvelopeEntry {
@@ -364,6 +431,7 @@ mod tests {
             Arc::new(NeverCalledBlobSource),
             Arc::new(ChunkedEnvelopeHandle::new(chunked_ops.clone())),
             broadcast_ops.clone(),
+            Arc::new(StaticL1BlockReader),
             MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
         );
 
