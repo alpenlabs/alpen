@@ -60,6 +60,13 @@ pub enum BlockAssemblyError {
     #[error("no pending template found for parent id: {0}")]
     NoPendingTemplateForParent(OLBlockId),
 
+    /// A template for this parent already produced a block.
+    #[error("template already completed for parent id {parent}: {block}")]
+    TemplateAlreadyCompletedForParent {
+        parent: OLBlockId,
+        block: OLBlockCommitment,
+    },
+
     /// Invalid signature for block template completion.
     #[error("invalid signature for template: {0}")]
     InvalidSignature(OLBlockId),

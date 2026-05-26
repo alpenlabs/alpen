@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use strata_identifiers::OLBlockId;
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::OLBlock;
 use strata_service::{CommandHandle, ServiceMonitor};
 use tokio::sync::oneshot;
@@ -88,5 +88,20 @@ impl BlockasmHandle {
             completion,
         };
         self.send_command(command, rx).await?
+    }
+
+    /// Release a completed-template status if it references `block`.
+    pub async fn release_completed_template_status(
+        &self,
+        parent_block_id: OLBlockId,
+        block: OLBlockCommitment,
+    ) -> BlockAssemblyResult<bool> {
+        let (completion, rx) = create_completion();
+        let command = BlockasmCommand::ReleaseCompletedTemplateStatus {
+            parent_block_id,
+            block,
+            completion,
+        };
+        self.send_command(command, rx).await
     }
 }

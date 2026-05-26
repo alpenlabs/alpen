@@ -116,6 +116,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::Mempool(_)
         | BlockAssemblyError::StateProvider(_)
         | BlockAssemblyError::NoPendingTemplateForParent(_)
+        | BlockAssemblyError::TemplateAlreadyCompletedForParent { .. }
         | BlockAssemblyError::Other(_)
         | BlockAssemblyError::RequestChannelClosed
         | BlockAssemblyError::ResponseChannelClosed

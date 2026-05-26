@@ -98,10 +98,18 @@ impl SequencerContext for NodeSequencerContext {
             "submitting template generation request"
         );
 
-        self.blockasm_handle
-            .generate_block_template(config)
-            .await
-            .map_err(|source| SequencerContextError::TemplateGeneration { tip_blkid, source })?;
+        match self.blockasm_handle.generate_block_template(config).await {
+            Ok(_) => {}
+            Err(BlockAssemblyError::TemplateAlreadyCompletedForParent { parent, block })
+                if parent == tip_blkid =>
+            {
+                debug!(tip_blkid = ?tip_blkid, completed_block = %block, "template generation skipped: parent already completed");
+                return Ok(None);
+            }
+            Err(source) => {
+                return Err(SequencerContextError::TemplateGeneration { tip_blkid, source });
+            }
+        }
 
         debug!(tip_blkid = ?tip_blkid, "template generation request completed");
 

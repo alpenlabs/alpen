@@ -15,7 +15,7 @@ use crate::{
     block_assembly::generate_block_template_inner,
     command::BlockasmCommand,
     error::BlockAssemblyError,
-    state::BlockasmServiceState,
+    state::{BlockTemplateStatus, BlockasmServiceState},
     types::{BlockCompletionData, BlockGenerationConfig},
 };
 
@@ -87,6 +87,17 @@ where
                 let result = complete_block_template(state, template_id, data);
                 _ = completion.send(result).await;
             }
+
+            BlockasmCommand::ReleaseCompletedTemplateStatus {
+                parent_block_id,
+                block,
+                completion,
+            } => {
+                let released = state
+                    .state_mut()
+                    .release_completed_template_status(parent_block_id, block);
+                _ = completion.send(released).await;
+            }
         }
 
         Ok(Response::Continue)
@@ -110,15 +121,29 @@ where
     <<S::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
         Clone,
 {
+    let parent_blkid = config.parent_block_id();
+    state
+        .state_mut()
+        .prune_completed_template_statuses_for_parent(config.parent_block_commitment());
+
     // Check if we already have a pending template for this parent block ID
     if let Ok(template) = state
         .state_mut()
-        .get_pending_block_template_by_parent(config.parent_block_id())
+        .get_pending_block_template_by_parent(parent_blkid)
     {
         return Ok(template);
     }
 
-    let parent_blkid = config.parent_block_id();
+    if let Some(BlockTemplateStatus::Completed { block }) = state
+        .state_mut()
+        .get_template_status_by_parent(parent_blkid)
+    {
+        return Err(BlockAssemblyError::TemplateAlreadyCompletedForParent {
+            parent: parent_blkid,
+            block,
+        });
+    }
+
     let parent_da = state
         .fetch_epoch_da_until_parent(config.parent_block_commitment())
         .await?;
@@ -146,14 +171,15 @@ where
 
     let template_id = full_template.get_blockid();
 
+    let evicted_template_ids = state
+        .state_mut()
+        .insert_template(template_id, full_template.clone())?;
+
     // Store accumulated DA for the new block, removing parent entry.
     state
         .epoch_da_tracker_mut()
         .set_accumulated_da_and_remove_parent_entry(template_id, parent_blkid, accumulated_da);
 
-    let evicted_template_ids = state
-        .state_mut()
-        .insert_template(template_id, full_template.clone());
     for evicted_template_id in evicted_template_ids {
         state
             .epoch_da_tracker_mut()
@@ -179,7 +205,7 @@ fn get_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
 /// 1. Sequencer calls `GenerateBlockTemplate` to get a template with header hash
 /// 2. Sequencer signs the header hash externally (e.g., via signing service)
 /// 3. Sequencer calls `CompleteBlockTemplate` with the signature
-/// 4. This function validates the signature before completing the block
+/// 4. This function validates the signature before completing the cached template
 ///
 /// The completed block is returned to the caller, who is responsible for submitting it
 /// to the Fork Choice Manager (FCM) and storage.
@@ -188,10 +214,9 @@ fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
     template_id: OLBlockId,
     completion_data: BlockCompletionData,
 ) -> Result<OLBlock, BlockAssemblyError> {
-    // Get template to verify signature before removing it
     let template_ref = state.state_mut().get_pending_block_template(template_id)?;
 
-    // Verify signature first (before removing from cache)
+    // Verify the signature before removing the template from the cache.
     if !check_completion_data(
         state.sequencer_predicate(),
         template_ref.header(),
@@ -200,17 +225,17 @@ fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
         return Err(BlockAssemblyError::InvalidSignature(template_id));
     }
 
-    // Signature valid - now remove template from cache
-    let template = state.state_mut().remove_template(template_id)?;
+    // The signature is valid; mark the template as completed.
+    let template = state.state_mut().mark_template_completed(template_id)?;
     state
         .epoch_da_tracker_mut()
         .remove_accumulated_da(template_id);
 
-    // Complete the template
+    // Apply the signature and return the completed block.
     Ok(template.complete_block_template(completion_data))
 }
 
-/// Check if completion data (signature) is valid.
+/// Checks whether the sequencer signature matches the template header.
 fn check_completion_data(
     sequencer_predicate: &PredicateKey,
     header: &OLBlockHeader,
@@ -231,7 +256,7 @@ mod tests {
 
     use strata_config::BlockAssemblyConfig;
     use strata_crypto::sign_schnorr_sig;
-    use strata_identifiers::{Buf32, Buf64};
+    use strata_identifiers::{Buf32, Buf64, OLBlockCommitment};
     use strata_ol_chain_types_new::test_utils::schnorr_predicate;
     use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
     use strata_ol_params::OLParams;
@@ -326,7 +351,10 @@ mod tests {
         let template_id = template.get_blockid();
         let parent = *template.header().parent_blkid();
 
-        state.state_mut().insert_template(template_id, template);
+        state
+            .state_mut()
+            .insert_template(template_id, template)
+            .expect("test template insert should succeed");
         state
             .state_mut()
             .set_template_created_at_for_test(template_id, Instant::now() - TEST_BLOCK_TEMPLATE_TTL)
@@ -497,7 +525,8 @@ mod tests {
         let stale_template_id = stale_template.get_blockid();
         state
             .state_mut()
-            .insert_template(stale_template_id, stale_template);
+            .insert_template(stale_template_id, stale_template)
+            .expect("stale test template insert should succeed");
         state
             .epoch_da_tracker_mut()
             .set_accumulated_da(stale_template_id, AccumulatedDaData::new_empty());
@@ -688,6 +717,152 @@ mod tests {
         assert!(
             matches!(err, BlockAssemblyError::UnknownTemplateId(id) if id == template_id),
             "second completion should return UnknownTemplateId, got {err:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_generation_after_completion_returns_completed_parent_error() {
+        let (mut state, mempool, env, sk) = build_service_state(true).await;
+        let signing_key = sk.expect("schnorr signing key should be present");
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let parent = config.parent_block_id();
+        let template = generate_block_template(&mut state, config.clone())
+            .await
+            .expect("generation should succeed");
+        let template_id = template.get_blockid();
+
+        let completion_data = valid_completion_data(&template, signing_key);
+        let completed = complete_block_template(&mut state, template_id, completion_data)
+            .expect("valid signature should complete template");
+        let completed_commitment = OLBlockCommitment::new(
+            completed.header().slot(),
+            completed.header().compute_blkid(),
+        );
+
+        // If generation tries to rebuild, this fail mode makes the test fail.
+        mempool.set_fail_mode(MockMempoolFailMode::GetTransactions);
+        let err = generate_block_template(&mut state, config)
+            .await
+            .expect_err("completed parent should not generate a fresh template");
+
+        assert!(
+            matches!(
+                err,
+                BlockAssemblyError::TemplateAlreadyCompletedForParent {
+                    parent: err_parent,
+                    block: err_block,
+                } if err_parent == parent && err_block == completed_commitment
+            ),
+            "expected TemplateAlreadyCompletedForParent, got: {err:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_release_completed_template_status_command_releases_exact_match() {
+        let (mut state, _mempool, env, sk) = build_service_state(true).await;
+        let signing_key = sk.expect("schnorr signing key should be present");
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let parent = config.parent_block_id();
+        let template = generate_block_template(&mut state, config)
+            .await
+            .expect("generation should succeed");
+        let template_id = template.get_blockid();
+
+        let completion_data = valid_completion_data(&template, signing_key);
+        let completed = complete_block_template(&mut state, template_id, completion_data)
+            .expect("valid signature should complete template");
+        let completed_commitment = OLBlockCommitment::new(
+            completed.header().slot(),
+            completed.header().compute_blkid(),
+        );
+
+        let (completion, rx) = create_completion();
+        let cmd = BlockasmCommand::ReleaseCompletedTemplateStatus {
+            parent_block_id: parent,
+            block: completed_commitment,
+            completion,
+        };
+        BlockasmService::<_, _, _>::process_input(&mut state, cmd)
+            .await
+            .expect("process_input should succeed");
+
+        assert!(
+            rx.await.expect("release completion should be delivered"),
+            "completed status should be released when parent and block match"
+        );
+        assert!(
+            state
+                .state_mut()
+                .get_template_status_by_parent(parent)
+                .is_none(),
+            "released completed status should be removed"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_generation_after_completed_status_release_rebuilds_template() {
+        let sender = test_account_id(92);
+        let (mut state, mempool, env, sk) =
+            build_service_state_with_accounts(true, [TestAccount::new(sender, 10_000)]).await;
+        let signing_key = sk.expect("schnorr signing key should be present");
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let parent = config.parent_block_id();
+        let first = generate_block_template(&mut state, config.clone())
+            .await
+            .expect("first generation should succeed");
+        let first_template_id = first.get_blockid();
+
+        let completion_data = valid_completion_data(&first, signing_key);
+        let completed = complete_block_template(&mut state, first_template_id, completion_data)
+            .expect("valid signature should complete template");
+        let completed_commitment = OLBlockCommitment::new(
+            completed.header().slot(),
+            completed.header().compute_blkid(),
+        );
+        assert_eq!(
+            state.state_mut().get_template_status_by_parent(parent),
+            Some(BlockTemplateStatus::Completed {
+                block: completed_commitment
+            }),
+            "completed template should leave a completed parent status"
+        );
+
+        assert!(
+            state
+                .state_mut()
+                .release_completed_template_status(parent, completed_commitment),
+            "matching completed status should be released"
+        );
+        assert!(
+            state
+                .state_mut()
+                .get_template_status_by_parent(parent)
+                .is_none(),
+            "released parent should not retain a completed status"
+        );
+
+        let tx = MempoolSnarkTxBuilder::new(sender).with_seq_no(0).build();
+        mempool.add_transaction(tx.compute_txid(), tx);
+
+        let second = generate_block_template(&mut state, config)
+            .await
+            .expect("generation should rebuild after completed status release");
+        assert_eq!(
+            second.header().slot(),
+            completed_commitment.slot(),
+            "replacement template should target the same child slot"
+        );
+        assert_ne!(
+            second.get_blockid(),
+            first_template_id,
+            "released parent should rebuild a distinct template"
+        );
+        assert_eq!(
+            state.state_mut().get_template_status_by_parent(parent),
+            Some(BlockTemplateStatus::Pending {
+                template_id: second.get_blockid()
+            }),
+            "released parent should track the replacement template as pending"
         );
     }
 

@@ -31,10 +31,20 @@ pub(crate) struct CachedTemplate {
     pub(crate) created_at: Instant,
 }
 
+/// Lifecycle state for a block template.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(crate) enum BlockTemplateStatus {
+    /// The template is awaiting a sequencer signature.
+    Pending { template_id: OLBlockId },
+
+    /// The template header was signed, producing the referenced OL block.
+    Completed { block: OLBlockCommitment },
+}
+
 /// Mutable state for block assembly service (owned by service task).
 ///
 /// Manages pending block templates that have been generated but not yet completed with a
-/// signature. Templates are created by `GenerateBlockTemplate` command and removed when
+/// signature. Templates are created by `GenerateBlockTemplate` and marked completed when
 /// `CompleteBlockTemplate` is called with a valid signature.
 ///
 /// Templates expire after a configurable TTL. Expired entries are cleaned up during insertion
@@ -43,15 +53,16 @@ pub(crate) struct CachedTemplate {
 /// # Template Lifecycle
 /// 1. Template created via `generate_block_template()` and stored here
 /// 2. Template retrieved via `get_pending_block_template()` for signing
-/// 3. Template completed and removed via `remove_template()` after signature validation
-/// 4. Template expires and is cleaned up if never completed
+/// 3. Template copied for signature validation without cache mutation
+/// 4. Template marked `Completed` after signature validation
+/// 5. Template expires and is cleaned up if never completed
 #[derive(Debug)]
 pub(crate) struct BlockAssemblyState {
     /// Pending templates: template_id -> cached template.
     pub(crate) pending_templates: HashMap<OLBlockId, CachedTemplate>,
 
-    /// Parent block ID -> template ID mapping for cache lookups.
-    pub(crate) pending_by_parent: HashMap<OLBlockId, OLBlockId>,
+    /// Parent block ID -> template status.
+    pub(crate) template_status_by_parent: HashMap<OLBlockId, BlockTemplateStatus>,
 
     /// Time-to-live for cached templates.
     ttl: Duration,
@@ -61,7 +72,7 @@ impl BlockAssemblyState {
     pub(crate) fn new(ttl: Duration) -> Self {
         Self {
             pending_templates: HashMap::new(),
-            pending_by_parent: HashMap::new(),
+            template_status_by_parent: HashMap::new(),
             ttl,
         }
     }
@@ -75,12 +86,25 @@ impl BlockAssemblyState {
         &mut self,
         template_id: OLBlockId,
         template: FullBlockTemplate,
-    ) -> Vec<OLBlockId> {
+    ) -> Result<Vec<OLBlockId>, BlockAssemblyError> {
         let mut evicted_template_ids = Vec::new();
         let parent = *template.header().parent_blkid();
 
+        if let Some(BlockTemplateStatus::Completed { block }) =
+            self.template_status_by_parent.get(&parent)
+        {
+            return Err(BlockAssemblyError::TemplateAlreadyCompletedForParent {
+                parent,
+                block: *block,
+            });
+        }
+
         // If we already have a template cached for this parent, evict it to avoid orphans.
-        if let Some(old_id) = self.pending_by_parent.insert(parent, template_id)
+        if let Some(BlockTemplateStatus::Pending {
+            template_id: old_id,
+        }) = self
+            .template_status_by_parent
+            .insert(parent, BlockTemplateStatus::Pending { template_id })
             && old_id != template_id
         {
             self.pending_templates.remove(&old_id);
@@ -101,7 +125,33 @@ impl BlockAssemblyState {
         }
 
         evicted_template_ids.extend(self.cleanup_expired_templates());
-        evicted_template_ids
+        Ok(evicted_template_ids)
+    }
+
+    pub(crate) fn get_template_status_by_parent(
+        &self,
+        parent_block_id: OLBlockId,
+    ) -> Option<BlockTemplateStatus> {
+        self.template_status_by_parent
+            .get(&parent_block_id)
+            .copied()
+    }
+
+    /// Keeps completed tombstones above the current parent slot.
+    ///
+    /// If the current parent is still slot `N - 1`, a completed child at slot `N`
+    /// survives and blocks regeneration. Reorgs to lower slots may leave
+    /// higher-slot tombstones until the parent slot advances past them.
+    pub(crate) fn prune_completed_template_statuses_for_parent(
+        &mut self,
+        parent_block: OLBlockCommitment,
+    ) {
+        let parent_slot = parent_block.slot();
+        self.template_status_by_parent
+            .retain(|_, status| match status {
+                BlockTemplateStatus::Pending { .. } => true,
+                BlockTemplateStatus::Completed { block } => block.slot() > parent_slot,
+            });
     }
 
     /// Gets a pending template by template ID.
@@ -125,9 +175,13 @@ impl BlockAssemblyState {
         &self,
         parent_block_id: OLBlockId,
     ) -> Result<FullBlockTemplate, BlockAssemblyError> {
-        let template_id = self.pending_by_parent.get(&parent_block_id).ok_or(
-            BlockAssemblyError::NoPendingTemplateForParent(parent_block_id),
-        )?;
+        let Some(BlockTemplateStatus::Pending { template_id }) =
+            self.template_status_by_parent.get(&parent_block_id)
+        else {
+            return Err(BlockAssemblyError::NoPendingTemplateForParent(
+                parent_block_id,
+            ));
+        };
 
         self.pending_templates
             .get(template_id)
@@ -138,23 +192,49 @@ impl BlockAssemblyState {
             ))
     }
 
-    /// Remove a template and return it.
-    pub(crate) fn remove_template(
+    /// Marks a pending template as completed.
+    pub(crate) fn mark_template_completed(
         &mut self,
         template_id: OLBlockId,
     ) -> Result<FullBlockTemplate, BlockAssemblyError> {
         let cached = self
             .pending_templates
-            .remove(&template_id)
+            .get(&template_id)
+            .filter(|cached| cached.created_at.elapsed() < self.ttl)
             .ok_or(BlockAssemblyError::UnknownTemplateId(template_id))?;
 
-        let parent = *cached.template.header().parent_blkid();
-        // Only remove mapping if it still points to this template id.
-        if self.pending_by_parent.get(&parent) == Some(&template_id) {
-            self.pending_by_parent.remove(&parent);
+        let template = cached.template.clone();
+        let parent = *template.header().parent_blkid();
+        let expected_status = BlockTemplateStatus::Pending { template_id };
+        if self.template_status_by_parent.get(&parent) != Some(&expected_status) {
+            return Err(BlockAssemblyError::UnknownTemplateId(template_id));
         }
 
-        Ok(cached.template)
+        self.pending_templates.remove(&template_id);
+        self.template_status_by_parent.insert(
+            parent,
+            BlockTemplateStatus::Completed {
+                block: template.header().compute_block_commitment(),
+            },
+        );
+
+        Ok(template)
+    }
+
+    /// Removes a completed status when it references the provided block.
+    pub(crate) fn release_completed_template_status(
+        &mut self,
+        parent_block_id: OLBlockId,
+        block: OLBlockCommitment,
+    ) -> bool {
+        if self.template_status_by_parent.get(&parent_block_id)
+            == Some(&BlockTemplateStatus::Completed { block })
+        {
+            self.template_status_by_parent.remove(&parent_block_id);
+            return true;
+        }
+
+        false
     }
 
     /// Removes expired entries from both maps and returns removed template IDs.
@@ -171,8 +251,12 @@ impl BlockAssemblyState {
         for template_id in &expired_ids {
             if let Some(cached) = self.pending_templates.remove(template_id) {
                 let parent = *cached.template.header().parent_blkid();
-                if self.pending_by_parent.get(&parent) == Some(template_id) {
-                    self.pending_by_parent.remove(&parent);
+                if self.template_status_by_parent.get(&parent)
+                    == Some(&BlockTemplateStatus::Pending {
+                        template_id: *template_id,
+                    })
+                {
+                    self.template_status_by_parent.remove(&parent);
                 }
             }
         }
@@ -338,7 +422,7 @@ mod tests {
 
     use strata_config::BlockAssemblyConfig;
     use strata_identifiers::{AccountSerial, Buf32, Buf64};
-    use strata_ol_chain_types_new::{OLBlock, OLLog, SignedOLBlockHeader};
+    use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, SignedOLBlockHeader};
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_ol_state_support_types::EpochDaAccumulator;
     use strata_predicate::PredicateKey;
@@ -368,6 +452,25 @@ mod tests {
         )
     }
 
+    fn create_test_template_with_parent_and_slot(
+        parent: OLBlockId,
+        slot: u64,
+    ) -> FullBlockTemplate {
+        let template = create_test_template_with_parent(parent);
+        let header = template.header();
+        let header = OLBlockHeader::new(
+            header.timestamp(),
+            header.flags(),
+            slot,
+            header.epoch(),
+            *header.parent_blkid(),
+            *header.body_root(),
+            *header.state_root(),
+            *header.logs_root(),
+        );
+        FullBlockTemplate::new(header, template.body().clone())
+    }
+
     async fn build_service_state_with_env(parent_slot: u64) -> (TestServiceState, TestEnv) {
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
             .with_parent_slot(parent_slot)
@@ -394,7 +497,7 @@ mod tests {
         let template = create_test_template();
         let id = template.get_blockid();
 
-        state.insert_template(id, template);
+        state.insert_template(id, template).unwrap();
 
         let got = state.get_pending_block_template(id).unwrap();
         assert_eq!(got.get_blockid(), id);
@@ -407,7 +510,7 @@ mod tests {
         let id = template.get_blockid();
         let parent = *template.header().parent_blkid();
 
-        state.insert_template(id, template);
+        state.insert_template(id, template).unwrap();
 
         let got = state.get_pending_block_template_by_parent(parent).unwrap();
         assert_eq!(got.get_blockid(), id);
@@ -423,25 +526,222 @@ mod tests {
     }
 
     #[test]
-    fn remove_template_succeeds() {
+    fn mark_template_completed_sets_completed_status() {
         let mut state = BlockAssemblyState::new(TEST_BLOCK_TEMPLATE_TTL);
         let template = create_test_template();
         let id = template.get_blockid();
         let parent = *template.header().parent_blkid();
+        let block = template.header().compute_block_commitment();
 
-        state.insert_template(id, template);
-        let removed = state.remove_template(id).unwrap();
-        assert_eq!(removed.get_blockid(), id);
+        state.insert_template(id, template).unwrap();
+        let committed = state.mark_template_completed(id).unwrap();
+        assert_eq!(committed.get_blockid(), id);
 
-        // Second removal should fail.
-        assert!(state.remove_template(id).is_err());
+        assert!(state.mark_template_completed(id).is_err());
 
-        // Verify parent lookup also fails (proves both maps cleaned up).
+        // Verify parent lookup fails for signable templates, but the completed tombstone remains.
         assert!(state.get_pending_block_template_by_parent(parent).is_err());
-        assert!(
-            !state.pending_by_parent.contains_key(&parent),
-            "parent index must be cleared when template is removed"
+        assert_eq!(
+            state.template_status_by_parent.get(&parent),
+            Some(&BlockTemplateStatus::Completed { block }),
+            "parent index must record the completed block"
         );
+    }
+
+    #[test]
+    fn insert_template_rejects_completed_parent() {
+        let mut state = BlockAssemblyState::new(TEST_BLOCK_TEMPLATE_TTL);
+        let template = create_test_template();
+        let id = template.get_blockid();
+        let parent = *template.header().parent_blkid();
+        let block = template.header().compute_block_commitment();
+
+        state.insert_template(id, template).unwrap();
+        state.mark_template_completed(id).unwrap();
+
+        let replacement = create_test_template_with_parent(parent);
+        let replacement_id = replacement.get_blockid();
+        let err = state
+            .insert_template(replacement_id, replacement)
+            .expect_err("completed parent must reject replacement templates");
+
+        assert!(
+            matches!(
+                err,
+                BlockAssemblyError::TemplateAlreadyCompletedForParent {
+                    parent: err_parent,
+                    block: err_block,
+                } if err_parent == parent && err_block == block
+            ),
+            "expected TemplateAlreadyCompletedForParent, got: {err:?}"
+        );
+        assert!(state.get_pending_block_template(replacement_id).is_err());
+        assert_eq!(
+            state.template_status_by_parent.get(&parent),
+            Some(&BlockTemplateStatus::Completed { block }),
+            "completed status must not be overwritten"
+        );
+    }
+
+    #[test]
+    fn release_completed_template_status_removes_exact_match() {
+        let mut state = BlockAssemblyState::new(TEST_BLOCK_TEMPLATE_TTL);
+        let template = create_test_template();
+        let id = template.get_blockid();
+        let parent = *template.header().parent_blkid();
+        let block = template.header().compute_block_commitment();
+
+        state.insert_template(id, template).unwrap();
+        state.mark_template_completed(id).unwrap();
+
+        assert!(
+            state.release_completed_template_status(parent, block),
+            "completed status should be released when parent and block match"
+        );
+        assert!(
+            !state.template_status_by_parent.contains_key(&parent),
+            "released completed status should be removed from the parent index"
+        );
+
+        let replacement = create_test_template_with_parent(parent);
+        let replacement_id = replacement.get_blockid();
+        state
+            .insert_template(replacement_id, replacement)
+            .expect("released parent should accept a replacement template");
+        assert_eq!(
+            state.template_status_by_parent.get(&parent),
+            Some(&BlockTemplateStatus::Pending {
+                template_id: replacement_id
+            }),
+            "released parent should point to the replacement template"
+        );
+    }
+
+    #[test]
+    fn release_completed_template_status_keeps_mismatched_block() {
+        let mut state = BlockAssemblyState::new(TEST_BLOCK_TEMPLATE_TTL);
+        let template = create_test_template();
+        let id = template.get_blockid();
+        let parent = *template.header().parent_blkid();
+        let block = template.header().compute_block_commitment();
+        let other_block =
+            OLBlockCommitment::new(block.slot(), OLBlockId::from(Buf32::from([0x55; 32])));
+
+        state.insert_template(id, template).unwrap();
+        state.mark_template_completed(id).unwrap();
+
+        assert!(
+            !state.release_completed_template_status(parent, other_block),
+            "completed status should not be released for a different block"
+        );
+        assert_eq!(
+            state.template_status_by_parent.get(&parent),
+            Some(&BlockTemplateStatus::Completed { block }),
+            "mismatched release must keep the completed status"
+        );
+    }
+
+    #[test]
+    fn release_completed_template_status_keeps_pending_status() {
+        let mut state = BlockAssemblyState::new(TEST_BLOCK_TEMPLATE_TTL);
+        let template = create_test_template();
+        let id = template.get_blockid();
+        let parent = *template.header().parent_blkid();
+        let block = template.header().compute_block_commitment();
+
+        state.insert_template(id, template).unwrap();
+
+        assert!(
+            !state.release_completed_template_status(parent, block),
+            "pending status should not be released by the completed-status path"
+        );
+        assert_eq!(
+            state.template_status_by_parent.get(&parent),
+            Some(&BlockTemplateStatus::Pending { template_id: id }),
+            "pending status should remain unchanged"
+        );
+    }
+
+    #[test]
+    fn completed_status_releases_when_requested_parent_is_completed_block() {
+        let mut state = BlockAssemblyState::new(TEST_BLOCK_TEMPLATE_TTL);
+        let template = create_test_template();
+        let id = template.get_blockid();
+        let parent = *template.header().parent_blkid();
+        let block = template.header().compute_block_commitment();
+
+        state.insert_template(id, template).unwrap();
+        state.mark_template_completed(id).unwrap();
+
+        state.prune_completed_template_statuses_for_parent(block);
+
+        assert!(
+            !state.template_status_by_parent.contains_key(&parent),
+            "completed status should be released once generation moves to the completed block"
+        );
+    }
+
+    #[test]
+    fn completed_status_does_not_release_for_same_parent_request() {
+        let mut state = BlockAssemblyState::new(TEST_BLOCK_TEMPLATE_TTL);
+        let template = create_test_template();
+        let id = template.get_blockid();
+        let parent = *template.header().parent_blkid();
+        let block = template.header().compute_block_commitment();
+
+        state.insert_template(id, template).unwrap();
+        state.mark_template_completed(id).unwrap();
+
+        let parent_commitment = OLBlockCommitment::new(block.slot().saturating_sub(1), parent);
+        state.prune_completed_template_statuses_for_parent(parent_commitment);
+
+        assert_eq!(
+            state.template_status_by_parent.get(&parent),
+            Some(&BlockTemplateStatus::Completed { block }),
+            "same-parent generation must keep the completed status"
+        );
+    }
+
+    #[test]
+    fn completed_status_cleanup_removes_older_slots() {
+        fn parent_id(n: u64) -> OLBlockId {
+            let mut bytes = [0u8; 32];
+            bytes[..8].copy_from_slice(&n.to_le_bytes());
+            OLBlockId::from(Buf32::from(bytes))
+        }
+
+        let mut state = BlockAssemblyState::new(TEST_BLOCK_TEMPLATE_TTL);
+        let parents = [parent_id(1), parent_id(2), parent_id(3)];
+        let slots = [9, 10, 11];
+        let mut completed = Vec::new();
+
+        for (parent, slot) in parents.into_iter().zip(slots) {
+            let template = create_test_template_with_parent_and_slot(parent, slot);
+            let id = template.get_blockid();
+            let block = template.header().compute_block_commitment();
+            state.insert_template(id, template).unwrap();
+            state.mark_template_completed(id).unwrap();
+            completed.push((parent, block));
+        }
+
+        let cleanup_slot = 10;
+        let cleanup_parent = OLBlockCommitment::new(cleanup_slot, parent_id(99));
+
+        state.prune_completed_template_statuses_for_parent(cleanup_parent);
+
+        for (parent, block) in completed {
+            if block.slot() <= cleanup_slot {
+                assert!(
+                    !state.template_status_by_parent.contains_key(&parent),
+                    "completed status at or before the current parent slot should be removed"
+                );
+            } else {
+                assert!(
+                    state.template_status_by_parent.contains_key(&parent),
+                    "completed status above the current parent slot should remain"
+                );
+            }
+        }
     }
 
     #[test]
@@ -451,7 +751,7 @@ mod tests {
         let id = template.get_blockid();
         let parent = *template.header().parent_blkid();
 
-        state.insert_template(id, template);
+        state.insert_template(id, template).unwrap();
 
         // Backdate the entry so it appears expired.
         state
@@ -470,20 +770,20 @@ mod tests {
         let t1 = create_test_template();
         let parent = *t1.header().parent_blkid();
         let id1 = t1.get_blockid();
-        state.insert_template(id1, t1);
+        state.insert_template(id1, t1).unwrap();
 
         let t2 = create_test_template_with_parent(parent);
         let id2 = t2.get_blockid();
         assert_ne!(id1, id2, "templates must have distinct block IDs");
-        state.insert_template(id2, t2);
+        state.insert_template(id2, t2).unwrap();
 
         // Old template should be evicted.
         assert!(state.get_pending_block_template(id1).is_err());
         // New template should be present.
         assert!(state.get_pending_block_template(id2).is_ok());
         assert_eq!(
-            state.pending_by_parent.get(&parent),
-            Some(&id2),
+            state.template_status_by_parent.get(&parent),
+            Some(&BlockTemplateStatus::Pending { template_id: id2 }),
             "parent index must point to the newest template id"
         );
     }
@@ -496,13 +796,13 @@ mod tests {
         let t1 = create_test_template();
         let id1 = t1.get_blockid();
         let parent1 = *t1.header().parent_blkid();
-        state.insert_template(id1, t1);
+        state.insert_template(id1, t1).unwrap();
 
         let t2 = create_test_template();
         let id2 = t2.get_blockid();
         let parent2 = *t2.header().parent_blkid();
         assert_ne!(parent1, parent2, "templates must have different parents");
-        state.insert_template(id2, t2);
+        state.insert_template(id2, t2).unwrap();
 
         // Backdate the first template to make it expired.
         state
@@ -514,11 +814,11 @@ mod tests {
 
         // Expired template should be removed from both maps.
         assert!(!state.pending_templates.contains_key(&id1));
-        assert!(!state.pending_by_parent.contains_key(&parent1));
+        assert!(!state.template_status_by_parent.contains_key(&parent1));
 
         // Fresh template should still be present.
         assert!(state.pending_templates.contains_key(&id2));
-        assert!(state.pending_by_parent.contains_key(&parent2));
+        assert!(state.template_status_by_parent.contains_key(&parent2));
     }
 
     #[tokio::test(flavor = "multi_thread")]
