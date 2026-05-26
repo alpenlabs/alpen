@@ -426,9 +426,7 @@ impl<P: SnarkAccountProgramVerification> FinalizedUpdate<P> {
         ))
     }
 
-    fn into_operation_data(
-        self,
-    ) -> ProgramResult<(UpdateOperationData, Vec<Vec<u8>>), P::Error> {
+    fn into_operation_data(self) -> ProgramResult<(UpdateOperationData, Vec<Vec<u8>>), P::Error> {
         let new_proof_state = self.new_proof_state();
         let extra_data_buf = self.encode_extra_data()?;
 
