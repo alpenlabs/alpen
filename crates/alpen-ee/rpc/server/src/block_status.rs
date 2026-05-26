@@ -6,7 +6,6 @@ use alloy_primitives::B256;
 use alpen_ee_common::{BatchStorage, ChunkStatus, ConsensusHeads};
 use alpen_ee_rpc_api::{
     AlpenEeRpcServer, BlockStatus, BlockStatusResponse, ChunkProofCoverageResponse,
-    ChunkProofRange, ChunkProofStatus,
 };
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
@@ -43,39 +42,6 @@ fn canonical_block_number<N: NodeTypesWithDB + ProviderNodeTypes>(
 
 fn hash_to_b256(hash: &[u8]) -> B256 {
     B256::from_slice(hash)
-}
-
-fn hash_to_rpc_string(hash: &[u8]) -> String {
-    hash_to_b256(hash).to_string()
-}
-
-fn chunk_proof_status(status: &ChunkStatus) -> (ChunkProofStatus, Option<String>) {
-    match status {
-        ChunkStatus::ProvingNotStarted => (ChunkProofStatus::NotStarted, None),
-        ChunkStatus::ProofPending(_) => (ChunkProofStatus::Pending, None),
-        ChunkStatus::ProofReady(proof_id) => (
-            ChunkProofStatus::ProofReady,
-            Some(hash_to_rpc_string(proof_id.as_slice())),
-        ),
-    }
-}
-
-fn update_coverage(next_uncovered: &mut u64, end_block: u64, range: &ChunkProofRange) -> bool {
-    if range.status != ChunkProofStatus::ProofReady || range.end_block < *next_uncovered {
-        return false;
-    }
-
-    if range.start_block > *next_uncovered {
-        return false;
-    }
-
-    if range.end_block >= end_block {
-        *next_uncovered = end_block.saturating_add(1);
-        return true;
-    }
-
-    *next_uncovered = range.end_block + 1;
-    false
 }
 
 /// RPC handler for [`AlpenEeRpcServer`].
@@ -187,13 +153,10 @@ where
                 end_block,
                 covered: false,
                 first_uncovered_block: Some(start_block),
-                ranges: Vec::new(),
             });
         };
 
-        let mut ranges = Vec::new();
-        let mut next_uncovered = start_block;
-        let mut covered = false;
+        let mut first_uncovered_block = start_block;
 
         for chunk_idx in 0..=latest_chunk.idx() {
             let Some((chunk, status)) = self
@@ -223,36 +186,33 @@ where
             };
 
             let chunk_start_block = prev_block_num.saturating_add(1);
-            if last_block_num < start_block {
+            if last_block_num < first_uncovered_block {
                 continue;
             }
             if chunk_start_block > end_block {
                 break;
             }
-
-            let (status, proof_id) = chunk_proof_status(&status);
-            let range = ChunkProofRange {
-                chunk_index: chunk.idx(),
-                start_block: chunk_start_block,
-                end_block: last_block_num,
-                status,
-                proof_id,
-                prev_block: hash_to_rpc_string(chunk.prev_block().as_slice()),
-                last_block: hash_to_rpc_string(chunk.last_block().as_slice()),
-            };
-
-            if update_coverage(&mut next_uncovered, end_block, &range) {
-                covered = true;
+            if chunk_start_block > first_uncovered_block
+                || !matches!(status, ChunkStatus::ProofReady(_))
+            {
+                continue;
             }
-            ranges.push(range);
+            if last_block_num >= end_block {
+                return Ok(ChunkProofCoverageResponse {
+                    start_block,
+                    end_block,
+                    covered: true,
+                    first_uncovered_block: None,
+                });
+            }
+            first_uncovered_block = last_block_num + 1;
         }
 
         Ok(ChunkProofCoverageResponse {
             start_block,
             end_block,
-            covered,
-            first_uncovered_block: (!covered).then_some(next_uncovered),
-            ranges,
+            covered: false,
+            first_uncovered_block: Some(first_uncovered_block),
         })
     }
 }

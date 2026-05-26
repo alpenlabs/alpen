@@ -63,7 +63,7 @@ use strata_acct_types::AccountId;
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
     broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
-    BtcioParams, SerializedBitcoinClient,
+    BtcioParams,
 };
 use strata_common::healthz::{start_health_check_server, HealthCheckState};
 #[cfg(feature = "sequencer")]
@@ -592,16 +592,16 @@ fn main() {
                     BtcioParams::new(ext.l1_reorg_safe_depth, magic_bytes, ext.genesis_l1_height);
 
                 // Bitcoin RPC client.
-                let btc_client = Arc::new(SerializedBitcoinClient::new(
+                let btc_client = Arc::new(
                     BtcClient::new(
                         btc_url.clone(),
                         Auth::UserPass(btc_user.clone(), btc_pass.clone()),
-                        Some(ext.btcio_retry_count),
+                        Some(ext.btcio_retry_count.into()),
                         Some(ext.btcio_retry_interval),
                         None,
                     )
                     .map_err(|e| eyre::eyre!("creating Bitcoin RPC client: {e}"))?,
-                ));
+                );
                 info!(
                     target: "alpen-client",
                     retry_count = ext.btcio_retry_count,

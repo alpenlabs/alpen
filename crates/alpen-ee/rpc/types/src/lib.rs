@@ -26,45 +26,6 @@ pub struct BlockStatusResponse {
     pub status: BlockStatus,
 }
 
-/// Proof lifecycle status for a chunk range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ChunkProofStatus {
-    /// Chunk proof generation has not started.
-    NotStarted,
-
-    /// Chunk proof generation has been submitted but has not completed.
-    Pending,
-
-    /// Native or remote proving completed and the proof receipt was stored.
-    ProofReady,
-}
-
-/// A chunk range and its proof status.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChunkProofRange {
-    /// Sequential chunk index.
-    pub chunk_index: u64,
-
-    /// First EE block number covered by this chunk.
-    pub start_block: u64,
-
-    /// Last EE block number covered by this chunk.
-    pub end_block: u64,
-
-    /// Chunk proof status.
-    pub status: ChunkProofStatus,
-
-    /// Chunk proof id, when the chunk proof is ready.
-    pub proof_id: Option<String>,
-
-    /// Previous block hash for the chunk.
-    pub prev_block: String,
-
-    /// Last block hash for the chunk.
-    pub last_block: String,
-}
-
 /// Response for `alpen_getChunkProofCoverage`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChunkProofCoverageResponse {
@@ -79,7 +40,4 @@ pub struct ChunkProofCoverageResponse {
 
     /// First requested block not yet covered by a proof-ready chunk.
     pub first_uncovered_block: Option<u64>,
-
-    /// Chunk ranges that intersect the requested block range.
-    pub ranges: Vec<ChunkProofRange>,
 }
