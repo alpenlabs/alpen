@@ -129,7 +129,7 @@ impl<'b> BlockExecInput<'b> {
         self.tx_segment
     }
 
-    /// Returns the zmanifest container if present.
+    /// Returns the manifest container if present.
     pub fn manifest_container(&self) -> Option<&'b OLL1ManifestContainer> {
         self.manifest_container
     }

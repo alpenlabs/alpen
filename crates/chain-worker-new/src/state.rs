@@ -12,15 +12,15 @@
 use std::collections::HashMap;
 
 use strata_acct_types::{AccountId, AccountSerial};
-use strata_asm_proto_checkpoint_types::OLLog;
 use strata_bridge_params::BridgeParams;
+use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip, OLLog};
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::decode_buf_exact;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{Epoch, OLBlockCommitment};
+use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
-    OLBlock, OLBlockHeader, OLL1ManifestContainer, SnarkAccountUpdateLogData,
+    BlockFlags, OLBlock, OLBlockHeader, OLL1ManifestContainer, SnarkAccountUpdateLogData,
 };
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
@@ -402,9 +402,7 @@ pub(crate) fn get_prev_terminal(
         ));
     }
     let target_epoch = cur_epoch - 1;
-    let prev_summaries = ctx.fetch_epoch_summaries(target_epoch)?;
-    prev_summaries
-        .first()
+    ctx.fetch_canonical_epoch_summary_at(target_epoch)?
         .map(|s| *s.terminal())
         .ok_or(WorkerError::MissingSummaryForEpoch(target_epoch))
 }
@@ -417,10 +415,6 @@ pub(crate) fn get_prev_terminal(
 const MAX_EPOCH_L1_RANGE: u64 = 100_000;
 
 /// Reconstructs an epoch's OL state from its checkpoint, persisting nothing.
-///
-/// Fetches the checkpoint payload, replays the DA diff and ASM manifests via
-/// [`apply_da_epoch`], and builds the epoch summary. Returns the values that
-/// [`ChainWorkerServiceState::apply_checkpoint`] then persists.
 pub(crate) fn apply_checkpoint_epoch(
     ctx: &impl ChainWorkerContext,
     epoch: EpochCommitment,
@@ -439,8 +433,7 @@ pub(crate) fn apply_checkpoint_epoch(
     let tip = payload.new_tip();
     if tip.epoch != epoch.epoch() || tip.l2_commitment() != &epoch.to_block_commitment() {
         return Err(WorkerError::Unexpected(format!(
-            "checkpoint payload tip mismatch for {epoch}: \
-             payload epoch={} l2_commitment={:?}",
+            "checkpoint payload tip mismatch for {epoch}: payload epoch={} l2_commitment={:?}",
             tip.epoch,
             tip.l2_commitment(),
         )));
@@ -453,45 +446,14 @@ pub(crate) fn apply_checkpoint_epoch(
         .ok_or(WorkerError::MissingPreState(prev_terminal))?;
     let base_state = MemoryStateBaseLayer::new(base_state_raw);
 
-    // Decode the DA diff and assemble the manifest range.
     let sidecar = payload.sidecar();
+    let terminal = *tip.l2_commitment();
     let da_payload = decode_ol_da_payload_bytes(sidecar.ol_state_diff())
         .map_err(|e| WorkerError::Unexpected(format!("decode OL DA payload: {e}")))?;
+    let (manifest_cont, epoch_info) =
+        assemble_da_inputs(ctx, epoch, &base_state, sidecar, tip, prev_terminal)?;
 
-    let from_height = base_state.last_l1_height().checked_add(1).ok_or_else(|| {
-        WorkerError::Unexpected(format!(
-            "L1 height overflow at base state for {epoch}: {}",
-            base_state.last_l1_height()
-        ))
-    })?;
-    let to_height = tip.l1_height();
-    if to_height < from_height {
-        return Err(WorkerError::Unexpected(format!(
-            "checkpoint payload L1 range inverted at {epoch}: from={from_height} to={to_height}"
-        )));
-    }
-    let range_len = (to_height - from_height + 1) as u64;
-    if range_len > MAX_EPOCH_L1_RANGE {
-        return Err(WorkerError::Unexpected(format!(
-            "epoch L1 manifest range too large at {epoch}: {range_len} blocks (max {MAX_EPOCH_L1_RANGE})"
-        )));
-    }
-    let manifests = ctx.fetch_l1_manifests(from_height, to_height)?;
-    let manifest_cont = OLL1ManifestContainer::new(manifests)
-        .map_err(|e| WorkerError::Unexpected(format!("build manifest container: {e}")))?;
-
-    // Create contextual data for applying da.
-    let terminal = *tip.l2_commitment();
-    let terminal_info = BlockInfo::new(
-        sidecar.terminal_header_complement().timestamp(),
-        terminal.slot(),
-        epoch.epoch(),
-    );
-    let epoch_info = EpochInfo::new(terminal_info, prev_terminal);
-
-    // Read pre-epoch seqno for every snark account touched by `ol_logs`. The DA
-    // path will mutate them; we need the base values to derive per-update
-    // seqnos below.
+    // Read pre-epoch seqno for every snark account touched by `ol_logs`.
     let pre_seqnos = collect_pre_seqnos(&base_state, sidecar.ol_logs())?;
 
     // Reconstruct: wrap the base state in the write-tracking + indexer stack,
@@ -505,7 +467,7 @@ pub(crate) fn apply_checkpoint_epoch(
 
     // Replace the DA-collapsed snark records (one per account) with per-update
     // records derived from the checkpoint sidecar's `ol_logs`.
-    let rebuilt_snark_updates =
+    let (rebuilt_snark_updates, derived_seqnos) =
         rebuild_snark_records_from_logs(&indexer_state, sidecar.ol_logs(), &pre_seqnos)?;
 
     let (tracking_state, mut indexer_writes) = indexer_state.into_parts();
@@ -520,28 +482,26 @@ pub(crate) fn apply_checkpoint_epoch(
             source,
         })?;
 
+    verify_snark_seqno_invariant(&new_state, &derived_seqnos)?;
+
     // Fill in the terminal-per-account state root on the last record of each
-    // account using the now-reconstructed state. Non-terminal records keep
-    // `None`; only the terminal root is recoverable from DA.
+    // account using the now-reconstructed state.
     let with_terminal_roots = set_terminal_state_roots(rebuilt_snark_updates, &new_state)?;
     indexer_writes.set_snark_acct_state_updates(with_terminal_roots);
     let final_state_root = new_state
         .compute_state_root()
         .map_err(|e| WorkerError::Unexpected(format!("compute final state root {epoch}: {e}")))?;
 
-    // Sanity check: indexer state root and final state root are same.
-    if final_state_root != indexer_state_root {
-        error!(
-            %epoch, %indexer_state_root, %final_state_root,
-            payload_tip_epoch = tip.epoch,
-            payload_tip_l1 = tip.l1_height(),
-            payload_tip_l2 = ?tip.l2_commitment(),
-            "epoch reconstruction state root divergence",
-        );
-        return Err(WorkerError::Unexpected(format!(
-            "state root divergence at {epoch}: indexer={indexer_state_root} batch={final_state_root}"
-        )));
-    }
+    // Now verify.
+    verify_reconstruction(
+        epoch,
+        tip,
+        sidecar,
+        terminal,
+        indexer_state_root,
+        final_state_root,
+    )?;
+
     let new_state = new_state.into_inner();
 
     // L1 info comes from the reconstructed post-state's epochal state, the same
@@ -564,6 +524,149 @@ pub(crate) fn apply_checkpoint_epoch(
         summary,
         output,
     })
+}
+
+/// Validates the epoch's L1 range and builds the manifest container and
+/// [`EpochInfo`] used to drive [`apply_da_epoch`].
+///
+/// Fails if the L1 range derived from the base state and payload tip is
+/// inverted or exceeds [`MAX_EPOCH_L1_RANGE`].
+fn assemble_da_inputs(
+    ctx: &impl ChainWorkerContext,
+    epoch: EpochCommitment,
+    base_state: &MemoryStateBaseLayer,
+    sidecar: &CheckpointSidecar,
+    tip: &CheckpointTip,
+    prev_terminal: OLBlockCommitment,
+) -> WorkerResult<(OLL1ManifestContainer, EpochInfo)> {
+    let from_height = base_state.last_l1_height().checked_add(1).ok_or_else(|| {
+        WorkerError::Unexpected(format!(
+            "L1 height overflow at base state for {epoch}: {}",
+            base_state.last_l1_height()
+        ))
+    })?;
+    let to_height = tip.l1_height();
+    if to_height < from_height {
+        return Err(WorkerError::Unexpected(format!(
+            "checkpoint payload L1 range inverted at {epoch}: from={from_height} to={to_height}"
+        )));
+    }
+    let range_len = (to_height - from_height + 1) as u64;
+    if range_len > MAX_EPOCH_L1_RANGE {
+        return Err(WorkerError::Unexpected(format!(
+            "epoch L1 manifest range too large at {epoch}: {range_len} blocks (max {MAX_EPOCH_L1_RANGE})"
+        )));
+    }
+    let manifests = ctx.fetch_l1_manifests(from_height, to_height)?;
+    let manifest_cont = OLL1ManifestContainer::new(manifests)
+        .map_err(|e| WorkerError::Unexpected(format!("build manifest container: {e}")))?;
+
+    let terminal = tip.l2_commitment();
+    let terminal_info = BlockInfo::new(
+        sidecar.terminal_header_complement().timestamp(),
+        terminal.slot(),
+        epoch.epoch(),
+    );
+    let epoch_info = EpochInfo::new(terminal_info, prev_terminal);
+
+    Ok((manifest_cont, epoch_info))
+}
+
+/// Cross-checks the reconstructed epoch against the checkpoint's bindings.
+fn verify_reconstruction(
+    epoch: EpochCommitment,
+    tip: &CheckpointTip,
+    sidecar: &CheckpointSidecar,
+    terminal: OLBlockCommitment,
+    indexer_state_root: Buf32,
+    final_state_root: Buf32,
+) -> WorkerResult<()> {
+    if final_state_root != indexer_state_root {
+        error!(
+            %epoch, %indexer_state_root, %final_state_root,
+            payload_tip_epoch = tip.epoch,
+            payload_tip_l1 = tip.l1_height(),
+            payload_tip_l2 = ?tip.l2_commitment(),
+            "epoch reconstruction state root divergence",
+        );
+        return Err(WorkerError::Unexpected(format!(
+            "state root divergence at {epoch}: indexer={indexer_state_root} batch={final_state_root}"
+        )));
+    }
+
+    let mut terminal_flags = BlockFlags::zero();
+    terminal_flags.set_is_terminal(true);
+    let complement = sidecar.terminal_header_complement();
+    let reconstructed_header = OLBlockHeader::new(
+        complement.timestamp(),
+        terminal_flags,
+        terminal.slot(),
+        epoch.epoch(),
+        *complement.parent_blkid(),
+        *complement.body_root(),
+        final_state_root,
+        *complement.logs_root(),
+    );
+    let reconstructed_blkid = reconstructed_header.compute_blkid();
+    if reconstructed_blkid != *terminal.blkid() {
+        error!(
+            %epoch,
+            expected_blkid = %terminal.blkid(),
+            %reconstructed_blkid,
+            "terminal header reconstruction blkid mismatch",
+        );
+        return Err(WorkerError::Unexpected(format!(
+            "terminal blkid mismatch at {epoch}: expected={} reconstructed={reconstructed_blkid}",
+            terminal.blkid()
+        )));
+    }
+
+    Ok(())
+}
+
+/// Asserts that the seqno derived per-log matches the post-state seqno reached via
+/// [`apply_da_epoch`] + write batch.
+fn verify_snark_seqno_invariant<S: IStateAccessor>(
+    state: &S,
+    derived_seqnos: &HashMap<AccountSerial, Seqno>,
+) -> WorkerResult<()> {
+    for (&serial, &derived) in derived_seqnos {
+        let account_id = state
+            .find_account_id_by_serial(serial)
+            .map_err(|e| {
+                WorkerError::Unexpected(format!("resolve post-state serial {serial:?}: {e}"))
+            })?
+            .ok_or_else(|| {
+                WorkerError::Unexpected(format!(
+                    "post-state missing snark account for serial {serial:?}"
+                ))
+            })?;
+        let acct = state
+            .get_account_state(account_id)
+            .map_err(|e| {
+                WorkerError::Unexpected(format!("read post-state account {account_id}: {e}"))
+            })?
+            .ok_or_else(|| {
+                WorkerError::Unexpected(format!(
+                    "post-state account {account_id} missing after batch apply"
+                ))
+            })?;
+        let post = acct.as_snark_account().map(|s| s.seqno()).map_err(|e| {
+            WorkerError::Unexpected(format!(
+                "post-state account {account_id} is not a snark account: {e}"
+            ))
+        })?;
+        if post != derived {
+            error!(
+                ?serial, %account_id, ?derived, ?post,
+                "snark seqno invariant violated",
+            );
+            return Err(WorkerError::Unexpected(format!(
+                "snark seqno mismatch for {serial:?} ({account_id}): derived={derived:?} post={post:?}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Reads the pre-epoch seqno for every snark account touched by `ol_logs`.
@@ -599,16 +702,11 @@ fn collect_pre_seqnos<S: IStateAccessor>(
 }
 
 /// Rebuilds per-update snark index records from the checkpoint sidecar's logs.
-///
-/// The DA path collapses multi-update epochs into one record per account; the
-/// on-chain `ol_logs` carry per-update detail without state roots. Records
-/// emitted here have `inner_state: None`; `set_terminal_state_roots`
-/// later fills in the terminal-per-account root from the reconstructed state.
 fn rebuild_snark_records_from_logs<S: IStateAccessor>(
     state: &S,
     ol_logs: &[OLLog],
     pre_seqnos: &HashMap<AccountSerial, Seqno>,
-) -> WorkerResult<Vec<SnarkAcctStateUpdate>> {
+) -> WorkerResult<(Vec<SnarkAcctStateUpdate>, HashMap<AccountSerial, Seqno>)> {
     let mut next_seqno: HashMap<AccountSerial, Seqno> = HashMap::new();
     let mut records = Vec::with_capacity(ol_logs.len());
 
@@ -645,7 +743,7 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
         records.push(SnarkAcctStateUpdate::Update(op));
     }
 
-    Ok(records)
+    Ok((records, next_seqno))
 }
 
 /// Sets `inner_state` on the last update per account using the terminal root

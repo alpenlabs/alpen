@@ -76,17 +76,14 @@ class EeOLEnv(flexitest.EnvConfig):
         # Get and pass ol endpoint
         seq: StrataService = strata_services[ServiceType.Strata]
         bitcoin: BitcoinService = strata_services[ServiceType.Bitcoin]
-        ol_endpoint = seq.props["rpc_url"]
-        ol_submit_endpoint = seq.props["submit_rpc_url"]
-        ol_submit_token = seq.props["submit_rpc_token"]
 
         alpen_services = AlpenClientEnv.get_services(
             ectx,
             self.alpen_env_params,
             bitcoin_service=bitcoin,
-            ol_endpoint=ol_endpoint,
-            ol_submit_endpoint=ol_submit_endpoint,
-            ol_submit_token=ol_submit_token,
+            ol_endpoint=seq.props["rpc_url"],
+            ol_submit_endpoint=seq.props["submit_rpc_url"],
+            ol_submit_token=seq.props["submit_rpc_token"],
         )
 
         services = {**alpen_services, **strata_services}

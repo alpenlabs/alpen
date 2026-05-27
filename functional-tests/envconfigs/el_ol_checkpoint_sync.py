@@ -23,8 +23,8 @@ class EeOLCheckpointSyncEnv(EeOLEnv):
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
         strata_services = self.strata_config._get_services(ectx)
-        sequencer = strata_services[ServiceType.Strata]
-        bitcoin = strata_services[ServiceType.Bitcoin]
+        sequencer: StrataService = strata_services[ServiceType.Strata]
+        bitcoin: BitcoinService = strata_services[ServiceType.Bitcoin]
 
         checkpoint_node = self._start_checkpoint_node(ectx, bitcoin)
 
@@ -33,6 +33,8 @@ class EeOLCheckpointSyncEnv(EeOLEnv):
             self.alpen_env_params,
             bitcoin_service=bitcoin,
             ol_endpoint=sequencer.props["rpc_url"],
+            ol_submit_endpoint=sequencer.props["submit_rpc_url"],
+            ol_submit_token=sequencer.props["submit_rpc_token"],
         )
 
         services = {
