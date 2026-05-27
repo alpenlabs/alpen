@@ -226,12 +226,12 @@ pub fn make_withdrawal_payload(dest_desc: Vec<u8>) -> Vec<u8> {
 
 /// Builds terminal genesis components with one empty manifest at L1 height 1.
 pub fn build_terminal_genesis_components() -> BlockComponents {
-    BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)])
+    BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]).as_terminal()
 }
 
 /// Builds terminal block components with one empty manifest at `next_l1_height`.
 pub fn build_terminal_block_components(next_l1_height: L1Height) -> BlockComponents {
-    BlockComponents::new_manifests(vec![make_empty_manifest(next_l1_height, 0)])
+    BlockComponents::new_manifests(vec![make_empty_manifest(next_l1_height, 0)]).as_terminal()
 }
 
 /// Builds terminal genesis components with transactions and one empty manifest at L1 height 1.
@@ -239,9 +239,10 @@ pub fn build_terminal_tx_components(txs: Vec<OLTransaction>) -> BlockComponents 
     BlockComponents::new(
         OLTxSegment::new(txs).expect("tx segment should be within limits"),
         Some(
-            OLL1ManifestContainer::new(vec![make_empty_manifest(1, 0)])
+            OLAsmManifestContainer::new(vec![make_empty_manifest(1, 0)])
                 .expect("single manifest should succeed"),
         ),
+        true,
     )
 }
 
@@ -268,7 +269,7 @@ pub fn build_empty_chain(
         vec![],
     )
     .expect("genesis manifest should be valid");
-    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
+    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal();
     let genesis = execute_block(state, &genesis_info, None, genesis_components)?;
     blocks.push(genesis);
 
@@ -294,7 +295,7 @@ pub fn build_empty_chain(
                 vec![],
             )
             .expect("dummy manifest should be valid");
-            BlockComponents::new_manifests(vec![dummy_manifest])
+            BlockComponents::new_manifests(vec![dummy_manifest]).as_terminal()
         } else {
             BlockComponents::new_empty()
         };
@@ -355,7 +356,7 @@ pub fn build_chain_with_transactions(
     )
     .expect("genesis manifest should be valid");
     let genesis_info = BlockInfo::new_genesis(1_000_000);
-    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
+    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal();
     let genesis =
         execute_block(state, &genesis_info, None, genesis_components).expect("genesis should work");
     blocks.push(genesis);
@@ -386,9 +387,10 @@ pub fn build_chain_with_transactions(
                 OLTxSegment::new(vec![make_gam_tx(gam_target)])
                     .expect("tx segment should be within limits"),
                 Some(
-                    OLL1ManifestContainer::new(vec![dummy_manifest])
+                    OLAsmManifestContainer::new(vec![dummy_manifest])
                         .expect("single manifest should succeed"),
                 ),
+                true,
             )
         } else if i % 4 == 1 {
             // GAM to snark account: populates the snark's inbox for later processing
@@ -784,7 +786,7 @@ impl OLStfFixtureBuilder {
     /// Executes terminal genesis and returns the live fixture plus outputs.
     pub fn execute_genesis_with_outputs(mut self) -> FixtureGenesisOutput {
         let genesis_info = BlockInfo::new_genesis(1_000_000);
-        let genesis_components = BlockComponents::new_manifests(self.manifests);
+        let genesis_components = BlockComponents::new_manifests(self.manifests).as_terminal();
         let output =
             execute_block_with_outputs(&mut self.state, &genesis_info, None, genesis_components)
                 .expect("fixture genesis should execute");
@@ -796,7 +798,7 @@ impl OLStfFixtureBuilder {
 
     fn execute_genesis_result(mut self) -> ExecResult<OLStfFixture> {
         let genesis_info = BlockInfo::new_genesis(1_000_000);
-        let genesis_components = BlockComponents::new_manifests(self.manifests);
+        let genesis_components = BlockComponents::new_manifests(self.manifests).as_terminal();
         let genesis_block =
             execute_block(&mut self.state, &genesis_info, None, genesis_components)?;
 
@@ -954,6 +956,7 @@ impl OLStfFixture {
             slot: None,
             epoch: None,
             timestamp: None,
+            terminal: false,
         }
     }
 
@@ -1107,6 +1110,9 @@ pub struct FixtureBlockBuilder<'a> {
     slot: Option<Slot>,
     epoch: Option<Epoch>,
     timestamp: Option<u64>,
+    /// Whether this block is the epoch terminal. Terminality is explicit;
+    /// carrying manifests does not by itself make a block terminal.
+    terminal: bool,
 }
 
 impl<'a> FixtureBlockBuilder<'a> {
@@ -1128,15 +1134,24 @@ impl<'a> FixtureBlockBuilder<'a> {
         self
     }
 
-    /// Adds an ASM manifest to this terminal block.
+    /// Adds an ASM manifest to this block. Manifests may be included in any
+    /// block; use [`FixtureBlockBuilder::terminal`] to mark the epoch terminal.
     pub fn with_manifest(mut self, manifest: AsmManifest) -> Self {
         self.manifests.push(manifest);
         self
     }
 
-    /// Adds ASM manifests to this terminal block.
+    /// Adds ASM manifests to this block. Manifests may be included in any
+    /// block; use [`FixtureBlockBuilder::terminal`] to mark the epoch terminal.
     pub fn with_manifests(mut self, manifests: impl IntoIterator<Item = AsmManifest>) -> Self {
         self.manifests.extend(manifests);
+        self
+    }
+
+    /// Marks this block as the epoch terminal, which drains the buffered ASM
+    /// logs, resets intraepoch state, and advances the epoch.
+    pub fn terminal(mut self) -> Self {
+        self.terminal = true;
         self
     }
 
@@ -1214,13 +1229,13 @@ impl<'a> FixtureBlockBuilder<'a> {
             slot,
             epoch,
             timestamp,
+            terminal,
         } = self;
         let slot = slot.unwrap_or(fixture.next_slot);
         let epoch = epoch.unwrap_or(fixture.next_epoch);
         let timestamp = timestamp.unwrap_or(fixture.next_timestamp);
         let block_info = BlockInfo::new(timestamp, slot, epoch);
-        let is_terminal = !manifests.is_empty();
-        let components = Self::components_from(txs, manifests);
+        let components = Self::components_from(txs, manifests, terminal);
         let parent_header = fixture.last_block.header().clone();
         let block = execute_block(
             &mut fixture.state,
@@ -1230,7 +1245,7 @@ impl<'a> FixtureBlockBuilder<'a> {
         )?;
 
         fixture.next_slot = slot + 1;
-        fixture.next_epoch = epoch + u32::from(is_terminal);
+        fixture.next_epoch = epoch + u32::from(terminal);
         fixture.next_timestamp = timestamp + 1_000;
         fixture.last_block = block.clone();
 
@@ -1248,13 +1263,13 @@ impl<'a> FixtureBlockBuilder<'a> {
             slot,
             epoch,
             timestamp,
+            terminal,
         } = self;
         let slot = slot.unwrap_or(fixture.next_slot);
         let epoch = epoch.unwrap_or(fixture.next_epoch);
         let timestamp = timestamp.unwrap_or(fixture.next_timestamp);
         let block_info = BlockInfo::new(timestamp, slot, epoch);
-        let is_terminal = !manifests.is_empty();
-        let components = Self::components_from(txs, manifests);
+        let components = Self::components_from(txs, manifests, terminal);
         let parent_header = fixture.last_block.header().clone();
         let output = execute_block_with_outputs(
             &mut fixture.state,
@@ -1264,21 +1279,27 @@ impl<'a> FixtureBlockBuilder<'a> {
         )?;
 
         fixture.next_slot = slot + 1;
-        fixture.next_epoch = epoch + u32::from(is_terminal);
+        fixture.next_epoch = epoch + u32::from(terminal);
         fixture.next_timestamp = timestamp + 1_000;
         fixture.last_block = output.completed_block().clone();
 
         Ok(FixtureBlockOutput { output })
     }
 
-    fn components_from(txs: Vec<OLTransaction>, manifests: Vec<AsmManifest>) -> BlockComponents {
-        if manifests.is_empty() {
-            return BlockComponents::new_txs_from_ol_transactions(txs);
-        }
-
+    fn components_from(
+        txs: Vec<OLTransaction>,
+        manifests: Vec<AsmManifest>,
+        terminal: bool,
+    ) -> BlockComponents {
+        let manifest_container = if manifests.is_empty() {
+            None
+        } else {
+            Some(OLAsmManifestContainer::new(manifests).expect("manifests should be within limits"))
+        };
         BlockComponents::new(
             OLTxSegment::new(txs).expect("tx segment should be within limits"),
-            Some(OLL1ManifestContainer::new(manifests).expect("manifests should be within limits")),
+            manifest_container,
+            terminal,
         )
     }
 }
@@ -1732,7 +1753,7 @@ pub fn setup_genesis_with_snark_accounts(
     }
 
     let genesis_info = BlockInfo::new_genesis(1_000_000);
-    let genesis_components = BlockComponents::new_manifests(vec![]);
+    let genesis_components = BlockComponents::new_manifests(vec![]).as_terminal();
     execute_block(state, &genesis_info, None, genesis_components).expect("Genesis should execute")
 }
 

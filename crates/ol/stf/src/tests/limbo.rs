@@ -235,7 +235,7 @@ fn limbo_deposit_with_malformed_descriptor() {
         &mut state,
         &BlockInfo::new_genesis(1_000_000),
         None,
-        BlockComponents::new_manifests(vec![manifest]),
+        BlockComponents::new_manifests(vec![manifest]).as_terminal(),
     )
     .expect("genesis manifest with bad descriptor should still execute");
 
@@ -269,7 +269,7 @@ fn limbo_deposit_to_unknown_account_serial() {
         &mut state,
         &BlockInfo::new_genesis(1_000_000),
         None,
-        BlockComponents::new_manifests(vec![manifest]),
+        BlockComponents::new_manifests(vec![manifest]).as_terminal(),
     )
     .expect("genesis manifest with unknown serial should still execute");
 

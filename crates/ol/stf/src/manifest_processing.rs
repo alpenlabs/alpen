@@ -13,7 +13,7 @@ use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_chain_types_new::OLL1ManifestContainer;
+use strata_ol_chain_types_new::OLAsmManifestContainer;
 use strata_ol_msg_types::{DEPOSIT_MSG_TYPE_ID, DepositMsgData};
 use tracing::{debug, info, trace, warn};
 
@@ -24,11 +24,18 @@ use crate::{
     errors::{ExecError, ExecResult},
 };
 
-/// Processes the manifests from a block, which is part of the epoch sealing
-/// processing.
+/// Buffers the ASM logs carried by the manifests in a block into the intraepoch
+/// state for later processing at the epoch terminal.
 ///
-/// NOTE: Manifest processing is not expected to emit OL logs.
-/// This also does NOT check the preseal root.
+/// Manifests may be included in any block within an epoch; this does not imply
+/// the block is an epoch terminal. The manifest heights must be strictly
+/// sequential after the state's `last_l1_height`, which carries the running
+/// cursor across blocks since [`append_manifest`](IStateAccessorMut::append_manifest)
+/// is applied eagerly here. The ASM-log *effects* are deferred to
+/// [`process_epoch_terminal`].
+///
+/// NOTE: This does not apply any log effects, advance the epoch, or emit OL
+/// logs.
 #[tracing::instrument(
     skip_all,
     fields(
@@ -36,20 +43,15 @@ use crate::{
         epoch = state.cur_epoch(),
     ),
 )]
-pub fn process_block_manifests<S: IStateAccessorMut>(
+pub fn buffer_block_manifests<S: IStateAccessorMut>(
     state: &mut S,
-    mf_cont: &OLL1ManifestContainer,
-    context: &BasicExecContext<'_>,
+    mf_cont: &OLAsmManifestContainer,
 ) -> ExecResult<()> {
-    let terminating_epoch = state.cur_epoch();
-
-    // 1. Process all the manifests.
+    // The state's last seen height is the running cursor; new manifests are
+    // strictly after it, regardless of which block in the epoch they arrive in.
     let orig_l1_height = state.last_l1_height();
-    let mut last = None;
 
     for (i, mf) in mf_cont.manifests().iter().enumerate() {
-        // New manifests in a segment are strictly after the state's current
-        // last seen height.
         let real_height = next_manifest_height(orig_l1_height, i)?;
         if mf.height() != real_height {
             warn!(
@@ -67,25 +69,58 @@ pub fn process_block_manifests<S: IStateAccessorMut>(
         trace!(
             height = real_height,
             log_count = mf.logs().len(),
-            "processing asm manifest",
+            "buffering asm manifest logs",
         );
-        last = Some((real_height, mf));
-        process_asm_manifest(state, real_height, mf, context)?;
+        buffer_asm_manifest(state, real_height, mf)?;
     }
 
-    if let Some((_last_height, _last_mf)) = last {
-        // TODO this is where we would update the header, if we want to keep
-        // that as defined in the spec
+    Ok(())
+}
+
+/// Processes the epoch terminal: drains all buffered ASM logs (applying their
+/// effects), resets the intraepoch state, and advances the epoch.
+///
+/// This is invoked at the block flagged as the epoch terminal.
+#[tracing::instrument(
+    skip_all,
+    fields(
+        pending_logs = state.pending_asm_logs_len(),
+        epoch = state.cur_epoch(),
+    ),
+)]
+pub fn process_epoch_terminal<S: IStateAccessorMut>(
+    state: &mut S,
+    context: &BasicExecContext<'_>,
+) -> ExecResult<()> {
+    let terminating_epoch = state.cur_epoch();
+
+    // 1. Snapshot the buffered ASM logs into a local list so we can apply their
+    // effects and then reset the buffer without index/borrow hazards. The
+    // effect handlers do not push new pending logs, so the snapshot is stable.
+    let pending: Vec<PendingAsmLog> = (0..state.pending_asm_logs_len())
+        .map(|idx| {
+            state
+                .get_pending_asm_log(idx)
+                .expect("pending asm log index within bounds")
+        })
+        .collect();
+
+    // 2. Apply the effects of each buffered log in order.
+    for entry in &pending {
+        process_asm_log(state, entry.log(), entry.height(), context)?;
     }
 
-    // 2. Finally, we can update the epoch to get it ready for the next epoch.
+    // 3. Reset the now-consumed intraepoch buffer.
+    state.reset_intraepoch_state();
+
+    // 4. Advance the epoch to get it ready for the next epoch.
     let new_epoch = terminating_epoch
         .checked_add(1)
         .ok_or(ExecError::EpochOverflow)?;
     info!(
         from_epoch = terminating_epoch,
         to_epoch = new_epoch,
-        last_l1_height = ?last.map(|(h, _)| h),
+        drained_logs = pending.len(),
         "advancing epoch",
     );
     state.set_cur_epoch(new_epoch);
@@ -101,18 +136,21 @@ fn next_manifest_height(last_l1_height: L1Height, index: usize) -> ExecResult<L1
         .ok_or(ExecError::AsmManifestHeightOverflow)
 }
 
-fn process_asm_manifest<S: IStateAccessorMut>(
+/// Buffers a single manifest: appends each of its logs to the intraepoch
+/// pending-log buffer and eagerly accepts the manifest into the ASM MMR (which
+/// advances `last_l1_height`).
+fn buffer_asm_manifest<S: IStateAccessorMut>(
     state: &mut S,
     real_height: L1Height,
     mf: &AsmManifest,
-    context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    // 1. Process each of the logs.
+    // 1. Buffer each of the logs for processing at the epoch terminal.
     for log in mf.logs() {
-        process_asm_log(state, log, real_height, context)?;
+        state.try_append_pending_asm_log(PendingAsmLog::new(real_height, log.clone()))?;
     }
 
-    // 2. Accept the L1 block record into the ASM MMR.
+    // 2. Accept the L1 block record into the ASM MMR. This stays eager so that
+    // `last_l1_height` tracks the running cursor across blocks in the epoch.
     let rec = L1BlockRecord::new(*mf.blkid().as_ref(), *mf.wtxids_root().as_ref());
     state.append_l1_block_rec(real_height, rec);
 

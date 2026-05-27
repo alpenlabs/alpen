@@ -10,13 +10,15 @@ use strata_asm_proto_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalH
 use strata_bridge_params::BridgeParams;
 use strata_crypto::hash;
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, OLTxSegment};
+use strata_ol_chain_types_new::{
+    OLAsmManifestContainer, OLBlock, OLBlockHeader, OLLog, OLTxSegment,
+};
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{
-    BlockComponents, BlockContext, BlockInfo, EpochInfo, construct_block,
-    verify_epoch_preseal_with_diff,
+    BlockComponents, BlockContext, BlockInfo, EpochExecExpectations, EpochInfo, construct_block,
+    verify_epoch_with_diff,
 };
 use zkaleido::ZkVmEnv;
 
@@ -131,7 +133,8 @@ pub fn process_ol_stf_core(
     let initial_state = MemoryStateBaseLayer::new(state.state().clone());
 
     // SAFETY: blocks is guaranteed non-empty by the assertion above.
-    // Validate the last block is terminal before accessing its L1 update.
+    // Validate the last block is terminal (epoch terminality is signalled by
+    // the header flag).
     let terminal_input_block = blocks
         .last()
         .expect("blocks is non-empty, verified by assertion above");
@@ -139,14 +142,11 @@ pub fn process_ol_stf_core(
         terminal_input_block.header().is_terminal(),
         "last block in batch must be marked terminal in its header"
     );
-    let terminal_l1_update = terminal_input_block
-        .body()
-        .l1_update()
-        .expect("terminal checkpoint block must include an L1 update with manifests");
 
     // Execute all blocks in the batch and collect execution artifacts.
-    // Header equality checks inside execution bind manifests/preseal commitments via body_root.
-    let (logs, asm_manifests_hash, terminal_header) =
+    // Header equality checks inside execution bind manifests/state commitments
+    // via body_root and the final state root.
+    let (logs, asm_manifests_hash, terminal_header, epoch_manifests) =
         execute_block_batch(&mut state, &blocks, &parent, bridge_params);
 
     let start = parent.compute_block_commitment();
@@ -162,11 +162,12 @@ pub fn process_ol_stf_core(
         epoch
     );
 
-    // Verify the DA witness by reconstructing epoch state from the diff.
-    // Manifest processing and final state root are already proven correct by the
-    // first-pass header equality checks in `execute_block_batch`, so we only
-    // need to verify the preseal state root here (avoiding duplicate manifest
-    // proving in the zkVM guest).
+    // Verify the DA witness by reconstructing epoch state from the diff. The DA
+    // diff reproduces the ledger/global tx effects; replaying the epoch's
+    // manifests (buffer + epoch-terminal drain) inside `verify_epoch_with_diff`
+    // reproduces the intraepoch/MMR/epochal state and the deferred drain
+    // effects, which the DA diff does not carry. The reconstructed final state
+    // root is checked against the proven terminal header's state root.
     let payload = decode_ol_da_payload_bytes(&da_state_diff_bytes)
         .expect("failed to decode OL DA payload bytes with strata_codec");
     let epoch_info = EpochInfo::new(
@@ -174,13 +175,15 @@ pub fn process_ol_stf_core(
         parent.compute_block_commitment(),
     );
     let mut reconstructed_state = initial_state;
-    verify_epoch_preseal_with_diff::<MemoryStateBaseLayer, OLDaSchemeV1>(
+    let exp = EpochExecExpectations::new(*terminal_header.state_root());
+    verify_epoch_with_diff::<MemoryStateBaseLayer, OLDaSchemeV1>(
         &mut reconstructed_state,
         &epoch_info,
         payload,
-        terminal_l1_update.preseal_state_root(),
+        &epoch_manifests,
+        &exp,
     )
-    .expect("DA witness does not match authenticated preseal state root");
+    .expect("DA witness does not reproduce the authenticated epoch state root");
     let state_diff_hash = FixedBytes::<32>::from(hash::raw(&da_state_diff_bytes));
 
     // Derive the terminal header subset hash from the proven terminal header.
@@ -243,24 +246,17 @@ fn execute_block_batch(
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
     bridge_params: BridgeParams,
-) -> (Vec<OLLog>, AsmManifestRangeHash, OLBlockHeader) {
-    // Exactly one block per epoch must carry an L1 update (the terminal block).
-    // The manifest hash is computed by overwriting a single `Option` in the loop
-    // below, so multiple L1 updates would silently drop earlier hashes and zero
-    // would leave it as `None`.
-    let l1_update_count = blocks
-        .iter()
-        .filter(|b| b.body().l1_update().is_some())
-        .count();
-    assert!(
-        l1_update_count == 1,
-        "proof soundness: exactly one block per epoch must carry an L1 update, found {}",
-        l1_update_count
-    );
-
+) -> (
+    Vec<OLLog>,
+    AsmManifestRangeHash,
+    OLBlockHeader,
+    OLAsmManifestContainer,
+) {
     let mut parent = initial_parent.clone();
-    let mut asm_manifests_hash: Option<AsmManifestRangeHash> = None;
     let mut logs = Vec::new();
+    // Manifests may be included in any block within the epoch; collect them in
+    // order across the batch for the DA-witness replay and the manifest hash.
+    let mut epoch_manifests = Vec::new();
 
     // Process each block in the batch sequentially, applying state transitions
     for block in blocks {
@@ -278,24 +274,20 @@ fn execute_block_batch(
             .unwrap_or(&empty_tx_segment)
             .clone();
 
-        // Extract L1 update (ASM manifests) if present in the block.
-        // When present, compute the hash of all manifests in this update.
-        let manifest_container = block
-            .body()
-            .l1_update()
-            .map(|update| {
-                asm_manifests_hash = Some(compute_asm_manifests_hash(
-                    update.manifest_cont().manifests(),
-                ));
-                update.manifest_cont()
-            })
-            .cloned();
+        // Collect any manifests carried by this block (allowed in any block).
+        let manifest_container = block.body().manifests().cloned();
+        if let Some(mc) = &manifest_container {
+            epoch_manifests.extend_from_slice(mc.manifests());
+        }
 
-        // Assemble block components for state transition execution
-        let components = BlockComponents::new(tx_segment, manifest_container);
+        // Assemble block components for state transition execution. Terminality
+        // is read from the authoritative header flag.
+        let components =
+            BlockComponents::new(tx_segment, manifest_container, block.header().is_terminal());
 
         // Execute the block's state transition function.
-        // This applies transactions, processes manifests, and updates state.
+        // This applies transactions, buffers manifests, and (at the terminal)
+        // drains the buffered logs and updates state.
         let output = construct_block(state, context, components, bridge_params).expect(
             "block execution failed; all blocks in proof input must be valid and executable",
         );
@@ -316,9 +308,9 @@ fn execute_block_batch(
         parent = output.completed_block().header().clone();
     }
 
-    // Guaranteed by the l1_update_count == 1 assertion above.
-    let asm_manifests_hash =
-        asm_manifests_hash.expect("exactly one L1 update per epoch is enforced above");
+    let epoch_manifests = OLAsmManifestContainer::new(epoch_manifests)
+        .expect("epoch manifests should be within container limits");
+    let asm_manifests_hash = compute_asm_manifests_hash(epoch_manifests.manifests());
 
-    (logs, asm_manifests_hash, parent)
+    (logs, asm_manifests_hash, parent, epoch_manifests)
 }
