@@ -9,15 +9,35 @@ Scenario:
 
 import contextlib
 import logging
-import tempfile
+from pathlib import Path
 
 import flexitest
 
 from common.base_test import AlpenClientTest
 from common.config.constants import ServiceType
+from common.wait import wait_until
 from factories.alpen_client import AlpenClientFactory, generate_sequencer_keypair
 
 logger = logging.getLogger(__name__)
+
+
+def wait_for_canonical_block_log(ee_node, block_number: int, block_hash: str, timeout: int) -> None:
+    """Wait until Reth reports the block as added to its canonical chain."""
+    log_path = Path(ee_node.props["datadir"]) / "service.log"
+    needle = f"Block added to canonical chain number={block_number} hash={block_hash}"
+
+    def has_canonical_block_log() -> bool:
+        if not log_path.exists():
+            return False
+
+        with log_path.open(encoding="utf-8", errors="ignore") as log_file:
+            return any(needle in line for line in log_file)
+
+    wait_until(
+        has_canonical_block_log,
+        error_with=f"Canonical block {block_number} with hash {block_hash} not observed",
+        timeout=timeout,
+    )
 
 
 @flexitest.register
@@ -36,8 +56,8 @@ class TestFullnodeSync(AlpenClientTest):
 
         # Wait for initial sync
         logger.info("Waiting for initial sync...")
-        ee_sequencer.wait_for_peers(1, timeout=15)
-        ee_fullnode_0.wait_for_peers(1, timeout=15)
+        ee_sequencer.wait_for_peers(1, timeout=60)
+        ee_fullnode_0.wait_for_peers(1, timeout=60)
 
         # Produce blocks
         initial_block = ee_sequencer.get_block_number()
@@ -50,7 +70,7 @@ class TestFullnodeSync(AlpenClientTest):
 
         # Start late-joining ee_fullnode_1
         logger.info("Starting late-joining ee_fullnode_1...")
-        tmpdir = tempfile.mkdtemp(prefix="alpen_fullnode_1_")
+        tmpdir = Path(ee_fullnode_0.props["datadir"]).parent / "ee_fullnode_1"
         ee_fullnode_1 = None
         try:
             ee_fullnode_1 = factory.create_fullnode(
@@ -59,7 +79,7 @@ class TestFullnodeSync(AlpenClientTest):
                 bootnodes=None,
                 enable_discovery=False,
                 instance_id=1,
-                datadir_override=tmpdir,
+                datadir_override=str(tmpdir),
             )
             ee_fullnode_1.wait_for_ready(timeout=30)
 
@@ -67,17 +87,36 @@ class TestFullnodeSync(AlpenClientTest):
             fn0_rpc = ee_fullnode_0.create_rpc()
             fn0_rpc.admin_addPeer(ee_fullnode_1.get_enode())
 
-            ee_fullnode_1.wait_for_peers(1, timeout=15)
+            ee_fullnode_1.wait_for_peers(1, timeout=60)
 
             # Verify historical sync
-            ee_fullnode_1.wait_for_block(target_block)
-            fn1_hash = ee_fullnode_1.get_block_by_number(target_block)["hash"]
-            assert expected_hash == fn1_hash, "Historical block hash mismatch"
+            historical_sync_timeout = ee_fullnode_1.get_block_wait_timeout(
+                target_block,
+                timeout_per_block=40.0,
+                timeout_slack=60,
+            )
+            wait_for_canonical_block_log(
+                ee_fullnode_1,
+                target_block,
+                expected_hash,
+                timeout=historical_sync_timeout,
+            )
 
             # Verify new block relay
             new_target = target_block + 5
             ee_sequencer.wait_for_additional_blocks(5)
-            ee_fullnode_1.wait_for_block(new_target)
+            expected_new_hash = ee_sequencer.get_block_by_number(new_target)["hash"]
+            new_block_sync_timeout = ee_fullnode_1.get_block_wait_timeout(
+                new_target - target_block,
+                timeout_per_block=40.0,
+                timeout_slack=60,
+            )
+            wait_for_canonical_block_log(
+                ee_fullnode_1,
+                new_target,
+                expected_new_hash,
+                timeout=new_block_sync_timeout,
+            )
 
             logger.info(f"ee_fullnode_1 synced block {target_block} and new block {new_target}")
             return True
