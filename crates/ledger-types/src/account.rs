@@ -178,19 +178,7 @@ pub trait ISnarkAccountState: Clone + Sized {
 /// Mutable accessor to snark account state.
 pub trait ISnarkAccountStateMut: ISnarkAccountState {
     /// Sets the inner state root unconditionally.
-    fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno);
-
-    /// Sets an account's inner state, but also taking the update extra data arg
-    /// (which is not used directly, but is useful for DA reasons).
-    ///
-    /// This should also ensure that the seqno always increases.
-    fn update_inner_state(
-        &mut self,
-        inner_state: Hash,
-        next_read_idx: u64,
-        seqno: Seqno,
-        extra_data: &[u8],
-    ) -> StateResult<()>;
+    fn set_proof_state(&mut self, inner_state: Hash, next_read_idx: u64, seqno: Seqno);
 
     /// Inserts message data into the inbox.  Performs no other operations.
     ///

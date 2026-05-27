@@ -510,20 +510,9 @@ impl ISnarkAccountState for TestSnarkState {
 }
 
 impl ISnarkAccountStateMut for TestSnarkState {
-    fn set_proof_state_directly(&mut self, state: Hash, _next_read_idx: u64, seqno: Seqno) {
+    fn set_proof_state(&mut self, state: Hash, _next_read_idx: u64, seqno: Seqno) {
         self.inner_state_root = state;
         self.seqno = seqno;
-    }
-
-    fn update_inner_state(
-        &mut self,
-        inner_state: Hash,
-        next_read_idx: u64,
-        seqno: Seqno,
-        _extra_data: &[u8],
-    ) -> StateResult<()> {
-        self.set_proof_state_directly(inner_state, next_read_idx, seqno);
-        Ok(())
     }
 
     fn insert_inbox_message(&mut self, _entry: MessageEntry) -> StateResult<()> {
@@ -894,7 +883,7 @@ fn test_new_account_post_state_encoded() {
             acct.add_balance(coin);
             acct.as_snark_account_mut()
                 .unwrap()
-                .set_proof_state_directly(test_hash(9), 0, Seqno::new(1));
+                .set_proof_state(test_hash(9), 0, Seqno::new(1));
         })
         .unwrap();
 
