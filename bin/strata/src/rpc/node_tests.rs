@@ -19,7 +19,7 @@ use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::*;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::{OLAccountState, OLAccountTypeState, OLState, WriteBatch};
 use strata_predicate::PredicateKey;
 use strata_primitives::{
     HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
@@ -42,6 +42,7 @@ struct MockProvider {
     blocks: HashMap<OLBlockId, OLBlock>,
     canonical_slots: HashMap<Slot, OLBlockCommitment>,
     states: HashMap<OLBlockCommitment, Arc<OLState>>,
+    write_batches: HashMap<OLBlockCommitment, WriteBatch<OLAccountState>>,
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
@@ -61,6 +62,7 @@ impl MockProvider {
             blocks: HashMap::new(),
             canonical_slots: HashMap::new(),
             states: HashMap::new(),
+            write_batches: HashMap::new(),
             epoch_commitments: HashMap::new(),
             epoch_summaries: HashMap::new(),
             checkpoint_l1_refs: HashMap::new(),
@@ -122,6 +124,15 @@ impl MockProvider {
 
     fn with_state_at(mut self, commitment: OLBlockCommitment, state: OLState) -> Self {
         self.states.insert(commitment, Arc::new(state));
+        self
+    }
+
+    fn with_write_batch(
+        mut self,
+        commitment: OLBlockCommitment,
+        write_batch: WriteBatch<OLAccountState>,
+    ) -> Self {
+        self.write_batches.insert(commitment, write_batch);
         self
     }
 
@@ -238,6 +249,13 @@ impl OLRpcProvider for MockProvider {
         commitment: OLBlockCommitment,
     ) -> DbResult<Option<Arc<OLState>>> {
         Ok(self.states.get(&commitment).cloned())
+    }
+
+    async fn get_ol_write_batch(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
+        Ok(self.write_batches.get(&commitment).cloned())
     }
 
     async fn get_canonical_epoch_commitment_at(
@@ -383,6 +401,32 @@ fn make_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlock {
     OLBlock::new(signed, body)
 }
 
+fn make_block_with_gam_tx(
+    slot: u64,
+    epoch: u32,
+    parent: OLBlockId,
+    tx_target: AccountId,
+    tx_data: Vec<u8>,
+) -> OLBlock {
+    let header = OLBlockHeader::new(
+        0,
+        0.into(),
+        slot,
+        epoch,
+        parent,
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+    let signed = SignedOLBlockHeader::new(header, Buf64::zero());
+    let tx_data_inner = OLTransactionData::from_gam_bytes(tx_target, tx_data)
+        .expect("test payload should fit in GAM transaction");
+    let tx = OLTransaction::new(tx_data_inner, TxProofs::new_empty());
+    let segment = OLTxSegment::new(vec![tx]).expect("segment with one tx");
+    let body = OLBlockBody::new_common(segment);
+    OLBlock::new(signed, body)
+}
+
 fn genesis_ol_state() -> OLState {
     let params = OLParams::new_empty(test_l1_commitment());
     OLState::from_genesis_params(&params).expect("genesis state")
@@ -434,6 +478,14 @@ fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLState {
     let new_acct = NewAccountData::new(BitcoinAmount::from(0), NewAccountTypeState::Empty);
     state.create_new_account(account_id, new_acct).unwrap();
     state.into_inner()
+}
+
+fn empty_account_state(serial: u32, balance_sats: u64) -> OLAccountState {
+    OLAccountState::new(
+        AccountSerial::from(serial),
+        BitcoinAmount::from_sat(balance_sats),
+        OLAccountTypeState::Empty,
+    )
 }
 
 const TEST_GENESIS_L1_HEIGHT: L1Height = 0;
@@ -2715,6 +2767,47 @@ async fn snark_account_state_by_block_id() {
     assert_eq!(state.seq_no(), 11);
 }
 
+#[tokio::test]
+async fn snark_account_state_confirmed_uses_confirmed_epoch() {
+    let account_id = test_account_id(1);
+
+    let confirmed_block = make_block(5, 1, null_blkid());
+    let confirmed_blkid = confirmed_block.header().compute_blkid();
+    let confirmed_epoch_commitment = EpochCommitment::new(1, 5, confirmed_blkid);
+    let confirmed_state = ol_state_with_snark_account(account_id, 5, 7, DEFAULT_NEXT_INBOX_MSG_IDX);
+
+    let prev_block = make_block(10, 2, confirmed_blkid);
+    let prev_blkid = prev_block.header().compute_blkid();
+    let prev_epoch_commitment = EpochCommitment::new(2, 10, prev_blkid);
+    let prev_state = ol_state_with_snark_account(account_id, 10, 11, DEFAULT_NEXT_INBOX_MSG_IDX);
+
+    let tip = OLBlockCommitment::new(10, prev_blkid);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            2,
+            false,
+            prev_epoch_commitment,
+            confirmed_epoch_commitment,
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&confirmed_block, confirmed_state)
+        .with_block_and_state(&prev_block, prev_state);
+    let rpc = make_rpc(provider);
+
+    let state = rpc
+        .get_snark_account_state(account_id, OLBlockOrTag::Confirmed)
+        .await
+        .expect("snark state")
+        .expect("confirmed snark account");
+
+    assert_eq!(
+        state.seq_no(),
+        7,
+        "confirmed tag must resolve to confirmed_epoch, not prev_epoch"
+    );
+}
+
 // ── get_raw_blocks_range ──
 
 #[tokio::test]
@@ -2784,4 +2877,308 @@ async fn raw_blocks_range_exceeds_max_returns_invalid_params() {
     let result = rpc.get_raw_blocks_range(0, 5000).await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
+}
+
+// ── get_block_by_slot ──
+
+#[tokio::test]
+async fn get_block_by_slot_returns_decoded_detail() {
+    let block = make_block(7, 1, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(7, blkid);
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            1,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let detail = rpc
+        .get_block_by_slot(7)
+        .await
+        .expect("rpc call")
+        .expect("block present");
+    assert_eq!(detail.header().slot(), 7);
+    assert_eq!(detail.header().epoch(), 1);
+    assert_eq!(detail.header().blkid(), blkid);
+    assert_eq!(detail.tx_count(), 0);
+    assert!(detail.l1_update().is_none());
+}
+
+#[tokio::test]
+async fn get_block_by_slot_unknown_returns_none() {
+    let provider = MockProvider::new().with_sync_status(make_sync_status(
+        OLBlockCommitment::new(0, null_blkid()),
+        0,
+        false,
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+    ));
+    let rpc = make_rpc(provider);
+
+    let detail = rpc.get_block_by_slot(42).await.expect("rpc call");
+    assert!(detail.is_none());
+}
+
+// ── get_recent_blocks ──
+
+#[tokio::test]
+async fn get_recent_blocks_walks_backwards_in_order() {
+    let block0 = make_block(0, 0, null_blkid());
+    let blkid0 = block0.header().compute_blkid();
+    let block1 = make_block(1, 0, blkid0);
+    let blkid1 = block1.header().compute_blkid();
+    let block2 = make_block(2, 0, blkid1);
+    let blkid2 = block2.header().compute_blkid();
+
+    let tip = OLBlockCommitment::new(2, blkid2);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block0, genesis_ol_state())
+        .with_block_and_state(&block1, genesis_ol_state())
+        .with_block_and_state(&block2, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc.get_recent_blocks(3).await.expect("recent blocks");
+    assert_eq!(summaries.len(), 3);
+    assert_eq!(summaries[0].slot(), 0);
+    assert_eq!(summaries[1].slot(), 1);
+    assert_eq!(summaries[2].slot(), 2);
+    assert_eq!(summaries[2].blkid(), blkid2);
+    assert!(summaries.iter().all(|s| s.tx_count() == 0));
+}
+
+#[tokio::test]
+async fn get_recent_blocks_zero_returns_empty() {
+    let provider = MockProvider::new().with_sync_status(make_sync_status(
+        OLBlockCommitment::new(5, null_blkid()),
+        0,
+        false,
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+    ));
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc.get_recent_blocks(0).await.expect("rpc call");
+    assert!(summaries.is_empty());
+}
+
+#[tokio::test]
+async fn get_recent_blocks_caps_at_genesis_when_count_exceeds_tip() {
+    let block0 = make_block(0, 0, null_blkid());
+    let blkid0 = block0.header().compute_blkid();
+    let block1 = make_block(1, 0, blkid0);
+    let blkid1 = block1.header().compute_blkid();
+
+    let tip = OLBlockCommitment::new(1, blkid1);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block0, genesis_ol_state())
+        .with_block_and_state(&block1, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc.get_recent_blocks(10).await.expect("rpc call");
+    assert_eq!(summaries.len(), 2);
+    assert_eq!(summaries[0].slot(), 0);
+    assert_eq!(summaries[1].slot(), 1);
+}
+
+// ── get_block_transactions ──
+
+#[tokio::test]
+async fn get_block_transactions_empty_block_returns_empty() {
+    let block = make_block(3, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(3, blkid);
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let txs = rpc.get_block_transactions(3).await.expect("txs");
+    assert!(txs.is_empty());
+}
+
+#[tokio::test]
+async fn get_block_transactions_unknown_slot_errors() {
+    let provider = MockProvider::new().with_sync_status(make_sync_status(
+        OLBlockCommitment::new(0, null_blkid()),
+        0,
+        false,
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+    ));
+    let rpc = make_rpc(provider);
+
+    let result = rpc.get_block_transactions(99).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn get_block_transactions_decodes_gam_tx() {
+    // Exercises the From<&OLTransaction> conversion path with a real,
+    // non-empty block. `OLTransactionData::new_gam` pushes the data into
+    // tx effects as a message, so we can assert both the kind and the
+    // effects round-trip correctly.
+    let target = test_account_id(0xab);
+    let payload_bytes = b"hello".to_vec();
+    let block = make_block_with_gam_tx(7, 1, null_blkid(), target, payload_bytes.clone());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(7, blkid);
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            1,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let txs = rpc.get_block_transactions(7).await.expect("get txs");
+    assert_eq!(txs.len(), 1);
+    let detail = &txs[0];
+    assert!(matches!(
+        detail.type_data(),
+        RpcOLTxTypeData::GenericAccountMessage
+    ));
+    let detail_json = serde_json::to_value(detail).expect("serialize tx detail");
+    assert_eq!(detail_json["type"], "generic_account_message");
+    assert!(detail_json.get("kind").is_none());
+    assert!(detail_json.get("type_data").is_none());
+    assert_eq!(
+        detail.target().expect("gam target").0,
+        *target.inner(),
+        "target round-trips through HexBytes32"
+    );
+    let messages = detail.effects().messages();
+    assert_eq!(messages.len(), 1, "gam pushes one message effect");
+    assert_eq!(messages[0].dest().0, *target.inner());
+    assert_eq!(messages[0].data().0, payload_bytes);
+}
+
+// ── get_block_account_changes ──
+
+#[tokio::test]
+async fn get_block_account_changes_returns_created_and_updated_accounts() {
+    let created_acct = test_account_id(0x11);
+    let updated_acct = test_account_id(0x22);
+    let block = make_block(4, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(4, blkid);
+
+    let created_state = empty_account_state(42, 1_000);
+    let updated_state = empty_account_state(7, 2_000);
+    let mut write_batch = WriteBatch::default();
+    write_batch.ledger_mut().create_account_raw(
+        created_acct,
+        created_state,
+        AccountSerial::from(42u32),
+    );
+    write_batch
+        .ledger_mut()
+        .update_account(updated_acct, updated_state);
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state())
+        .with_write_batch(tip, write_batch);
+    let rpc = make_rpc(provider);
+
+    let response = rpc
+        .get_block_account_changes(4)
+        .await
+        .expect("get block account changes");
+    assert_eq!(response.slot(), 4);
+    assert_eq!(response.blkid(), blkid);
+    assert_eq!(response.changes().len(), 2);
+
+    let created = response
+        .changes()
+        .iter()
+        .find(|change| change.id().0 == *created_acct.inner())
+        .expect("created account change");
+    assert_eq!(created.change_type(), RpcAccountChangeType::Created);
+    assert_eq!(created.state().serial(), 42);
+    assert_eq!(created.state().balance_sats(), 1_000);
+
+    let updated = response
+        .changes()
+        .iter()
+        .find(|change| change.id().0 == *updated_acct.inner())
+        .expect("updated account change");
+    assert_eq!(updated.change_type(), RpcAccountChangeType::Updated);
+    assert_eq!(updated.state().serial(), 7);
+    assert_eq!(updated.state().balance_sats(), 2_000);
+
+    let created_json = serde_json::to_value(created).expect("serialize account change");
+    assert_eq!(created_json["change_type"], "created");
+    assert_eq!(created_json["state"]["type"], "empty");
+    assert!(created_json["state"].get("kind").is_none());
+    assert!(created_json["state"].get("type_data").is_none());
+}
+
+#[tokio::test]
+async fn get_block_account_changes_errors_when_write_batch_is_missing() {
+    let block = make_block(4, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(4, blkid);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_block_account_changes(4)
+        .await
+        .expect_err("missing write batch should error");
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
 }

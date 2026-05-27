@@ -103,6 +103,27 @@ pub trait OLFullNodeRpc {
         start_height: u64,
         end_height: u64,
     ) -> RpcResult<Vec<RpcBlockHeaderEntry>>;
+
+    /// Get a decoded summary of the canonical OL block at the given slot.
+    ///
+    /// Returns `None` when no block exists at the slot.
+    #[method(name = "getBlockBySlot")]
+    async fn get_block_by_slot(&self, slot: u64) -> RpcResult<Option<RpcOLBlockDetail>>;
+
+    /// Get the most recent `count` canonical OL blocks as lightweight summaries.
+    ///
+    /// Walks backwards from the chain tip via parent links and returns the
+    /// blocks in ascending slot order.
+    #[method(name = "getRecentBlocks")]
+    async fn get_recent_blocks(&self, count: u64) -> RpcResult<Vec<RpcOLBlockSummary>>;
+
+    /// Get all transactions in the canonical OL block at the given slot.
+    #[method(name = "getBlockTransactions")]
+    async fn get_block_transactions(&self, slot: u64) -> RpcResult<Vec<RpcOLTxDetail>>;
+
+    /// Get all account creations and updates in the canonical OL block at the given slot.
+    #[method(name = "getBlockAccountChanges")]
+    async fn get_block_account_changes(&self, slot: u64) -> RpcResult<RpcBlockAccountChanges>;
 }
 
 /// OL RPC methods served by sequencer node for sequencer signer.

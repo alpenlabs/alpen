@@ -16194,6 +16194,7 @@ dependencies = [
  "strata-csm-types",
  "strata-db-types",
  "strata-identifiers",
+ "strata-ledger-types",
  "strata-ol-block-assembly",
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
