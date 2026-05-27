@@ -7,6 +7,9 @@ use alpen_reth_statediff::BatchStateDiff;
 use strata_codec::{decode_buf_exact, encode_to_vec, Codec, CodecError};
 
 /// Magic bytes in the EE DA commit transaction marker output.
+///
+/// TODO(STR-1907): derive this from authenticated EE proof context instead of
+/// baking the network value into runtime/proof code.
 pub const EE_DA_MAGIC_BYTES: [u8; 4] = *b"ALPN";
 
 /// Current EE DA blob encoding version.
@@ -16,6 +19,9 @@ pub const EE_DA_MAGIC_BYTES: [u8; 4] = *b"ALPN";
 /// produced them. The current decoder handles only the present [`DaBlob`]
 /// shape; version dispatch can be added when a future blob schema is
 /// introduced.
+///
+/// TODO(STR-1907): make this part of the same authenticated EE proof context
+/// as chain ID and DA magic bytes.
 pub const DA_BLOB_VERSION: u32 = 0;
 
 /// Compact summary of the last EVM block header in a batch.

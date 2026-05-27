@@ -473,7 +473,7 @@ async fn build_da_witness(
     batch_block_hashes: &[Hash],
     btc: &(impl Reader + Sync),
     state_diff_provider: &(impl StateDiffProvider + Sync + ?Sized),
-    bytecode_store: &(impl AccessedStateStore + Sync),
+    bytecode_store: &impl AccessedStateStore,
 ) -> ProverResult<DaWitness> {
     if da_refs.is_empty() {
         return Err(PaasError::PermanentFailure(
@@ -572,7 +572,7 @@ fn build_unfiltered_batch_state_diff(
 async fn build_known_bytecode_witnesses(
     blob: &alpen_ee_common::DaBlob,
     unfiltered_state_diff: &BatchStateDiff,
-    bytecode_store: &(impl AccessedStateStore + Sync),
+    bytecode_store: &impl AccessedStateStore,
 ) -> ProverResult<Vec<DaBytecodeWitness>> {
     let (mut known_bytecodes, unresolved) =
         known_bytecodes_from_unfiltered_diff(blob, unfiltered_state_diff);

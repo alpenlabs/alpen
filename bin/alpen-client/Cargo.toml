@@ -44,10 +44,10 @@ alpen-ee-ol-tracker.workspace = true
 alpen-ee-rpc-server.workspace = true
 alpen-ee-sequencer = { workspace = true, optional = true }
 alpen-reth-db.workspace = true
-alpen-reth-statediff.workspace = true
 alpen-reth-evm = { workspace = true, optional = true }
 alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
+alpen-reth-statediff.workspace = true
 alpen-reth-witness.workspace = true
 bitcoind-async-client = { workspace = true, optional = true }
 ssz.workspace = true

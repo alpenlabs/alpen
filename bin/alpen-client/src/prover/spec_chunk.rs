@@ -305,7 +305,7 @@ impl ProofSpec for ChunkSpec {
 
 /// Chunk-level aggregation of per-block [`ExecOutputs`].
 ///
-/// TODO(STR-TBD): move to upstream `ExecOutputs::extend_from`; outputs
+/// TODO(STR-3553): move to upstream `ExecOutputs::extend_from`; outputs
 /// must be bit-identical across chunk execution -> DA blob -> pub_params.
 fn extend_exec_outputs(dst: &mut ExecOutputs, src: &ExecOutputs) {
     for t in src.output_transfers() {
