@@ -290,6 +290,11 @@ def parse_finalized_epoch_from_syncinfo(syncinfo: dict[str, Any]) -> tuple[str, 
     return last_blkid, parsed_last_slot
 
 
+def get_ol_blocks_at_slot(datadir: str, slot: int) -> dict[str, Any]:
+    """Return the dbtool output for OL blocks indexed at a slot."""
+    return run_dbtool_json(datadir, "get-ol-blocks-at-slot", str(slot))
+
+
 def parse_ol_block_parent_blkid(ol_block: dict[str, Any]) -> str:
     """Parse and validate parent block id from get-ol-block JSON."""
     parent_blkid = ol_block.get("header_prev_blkid")
@@ -343,6 +348,17 @@ def assert_epoch_summary_present(datadir: str, epoch: int) -> None:
     """Assert epoch summary entry is present for epoch."""
     epoch_summary = run_dbtool_json(datadir, "get-epoch-summary", str(epoch))
     assert epoch_summary.get("epoch_summary") is not None
+
+
+def assert_ol_block_status(datadir: str, block_id: str, expected_status: str) -> dict[str, Any]:
+    """Assert OL block status for a known block ID."""
+    block = run_dbtool_json(datadir, "get-ol-block", block_id)
+    status = block["status"]
+
+    assert status == expected_status, (
+        f"expected OL block {block_id} status {expected_status}, got {status}"
+    )
+    return block
 
 
 def assert_checkpoint_deleted(datadir: str, epoch: int) -> None:
