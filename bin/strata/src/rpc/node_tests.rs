@@ -2908,7 +2908,7 @@ async fn get_block_by_slot_returns_decoded_detail() {
     assert_eq!(detail.header().epoch(), 1);
     assert_eq!(detail.header().blkid(), blkid);
     assert_eq!(detail.tx_count(), 0);
-    assert!(detail.l1_update().is_none());
+    assert!(detail.manifests().is_none());
 }
 
 #[tokio::test]

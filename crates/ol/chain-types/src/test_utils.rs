@@ -39,11 +39,10 @@ pub fn ol_tx_segment_strategy() -> impl Strategy<Value = OLTxSegment> {
     })
 }
 
-pub fn l1_update_strategy() -> impl Strategy<Value = Option<OLL1Update>> {
-    prop::option::of(buf32_strategy().prop_map(|preseal_state_root| OLL1Update {
-        preseal_state_root,
-        manifest_cont: OLL1ManifestContainer::new(vec![]).expect("empty manifest should succeed"),
-    }))
+pub fn manifests_strategy() -> impl Strategy<Value = Option<OLAsmManifestContainer>> {
+    prop::option::of(Just(
+        OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed"),
+    ))
 }
 
 pub fn ol_block_header_strategy() -> impl Strategy<Value = OLBlockHeader> {
@@ -85,10 +84,10 @@ pub fn signed_ol_block_header_strategy() -> impl Strategy<Value = SignedOLBlockH
 }
 
 pub fn ol_block_body_strategy() -> impl Strategy<Value = OLBlockBody> {
-    (ol_tx_segment_strategy(), l1_update_strategy()).prop_map(|(tx_segment, l1_update)| {
+    (ol_tx_segment_strategy(), manifests_strategy()).prop_map(|(tx_segment, manifests)| {
         OLBlockBody {
             tx_segment: Some(tx_segment).into(),
-            l1_update: l1_update.into(),
+            manifests: manifests.into(),
         }
     })
 }

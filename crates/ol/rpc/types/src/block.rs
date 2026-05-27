@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ssz::Encode;
 use strata_identifiers::{Epoch, Slot};
-use strata_ol_chain_types_new::{OLBlock, OLL1Update};
+use strata_ol_chain_types_new::{OLAsmManifestContainer, OLBlock};
 use strata_primitives::{HexBytes, HexBytes32, HexBytes64, OLBlockId};
 
 /// Rpc version of OL block entry in a slot range.
@@ -183,8 +183,9 @@ pub struct RpcOLBlockDetail {
     signature: Option<HexBytes64>,
     /// Number of transactions in the block.
     tx_count: u32,
-    /// L1 update summary, present only on terminal blocks.
-    l1_update: Option<RpcOLL1UpdateSummary>,
+    /// Manifest summary, present on blocks carrying ASM manifests (which may
+    /// appear in any block, not only terminal ones).
+    manifests: Option<RpcOLManifestsSummary>,
 }
 
 impl RpcOLBlockDetail {
@@ -200,8 +201,8 @@ impl RpcOLBlockDetail {
         self.tx_count
     }
 
-    pub fn l1_update(&self) -> Option<&RpcOLL1UpdateSummary> {
-        self.l1_update.as_ref()
+    pub fn manifests(&self) -> Option<&RpcOLManifestsSummary> {
+        self.manifests.as_ref()
     }
 }
 
@@ -217,41 +218,34 @@ impl From<&OLBlock> for RpcOLBlockDetail {
             .tx_segment()
             .map(|seg| seg.txs().len() as u32)
             .unwrap_or(0);
-        let l1_update = body.l1_update().map(RpcOLL1UpdateSummary::from);
+        let manifests = body.manifests().map(RpcOLManifestsSummary::from);
         Self {
             header,
             signature,
             tx_count,
-            l1_update,
+            manifests,
         }
     }
 }
 
-/// Summary of an OL L1 update segment included in a terminal block.
+/// Summary of the ASM manifests carried by an OL block.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
-pub struct RpcOLL1UpdateSummary {
-    /// State root captured before the seal was applied.
-    preseal_state_root: HexBytes32,
-    /// Number of L1 manifests included in the seal.
+pub struct RpcOLManifestsSummary {
+    /// Number of ASM manifests included in the block.
     manifest_count: u32,
 }
 
-impl RpcOLL1UpdateSummary {
-    pub fn preseal_state_root(&self) -> &HexBytes32 {
-        &self.preseal_state_root
-    }
-
+impl RpcOLManifestsSummary {
     pub fn manifest_count(&self) -> u32 {
         self.manifest_count
     }
 }
 
-impl From<&OLL1Update> for RpcOLL1UpdateSummary {
-    fn from(update: &OLL1Update) -> Self {
+impl From<&OLAsmManifestContainer> for RpcOLManifestsSummary {
+    fn from(container: &OLAsmManifestContainer) -> Self {
         Self {
-            preseal_state_root: HexBytes32::from(update.preseal_state_root().0),
-            manifest_count: update.manifest_cont().manifests().len() as u32,
+            manifest_count: container.manifests().len() as u32,
         }
     }
 }

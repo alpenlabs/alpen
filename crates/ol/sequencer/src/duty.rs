@@ -226,7 +226,7 @@ mod tests {
                 txs: vec![].try_into().unwrap(),
             })
             .into(),
-            l1_update: None.into(),
+            manifests: None.into(),
         };
 
         FullBlockTemplate::new(header, body)

@@ -99,7 +99,7 @@ pub(crate) fn get_ol_state(
         block_id: &block_id,
         current_slot: block_slot,
         current_epoch: block_epoch,
-        is_epoch_finishing: ol_block.body().l1_update().is_some(),
+        is_epoch_finishing: ol_block.header().is_terminal(),
         previous_epoch: recorded_epoch,
         finalized_epoch: &finalized_epoch,
         l1_next_expected_height: l1_safe_block_height.saturating_add(1),
@@ -135,7 +135,7 @@ pub(crate) fn revert_ol_state(
                 Box::new(target_block_id),
             )
         })?;
-    let target_slot_is_terminal = target_block.body().l1_update().is_some();
+    let target_slot_is_terminal = target_block.header().is_terminal();
 
     let dry_run = !args.force;
 

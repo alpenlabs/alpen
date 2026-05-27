@@ -1295,7 +1295,8 @@ impl TestStorageFixtureBuilder {
                     vec![],
                 )
                 .expect("test manifest should be valid");
-                let components = BlockComponents::new_manifests(vec![genesis_manifest]);
+                let components =
+                    BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal();
 
                 let block_context = BlockContext::new(&block_info, None);
                 let construct_output = stf_construct_block(

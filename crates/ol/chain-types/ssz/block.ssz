@@ -62,28 +62,24 @@ class OLTxSegment(Container):
     txs: List[transaction.OLTransaction, MAX_TXS_PER_BLOCK]
 
 ### Container for manifests building on top of previous l1 height to the new l1 height.
-class OLL1ManifestContainer(Container):
+class OLAsmManifestContainer(Container):
     ### Manifests building on top of previous l1 height to the new l1 height.
     #~# external_kind: container
     manifests: List[strata_asm_common.AsmManifest, MAX_SEALING_MANIFEST_COUNT]
 
-### Represents an update from L1.
-class OLL1Update(Container):
-    ### The state root before applying updates from L1.
-    preseal_state_root: strata_identifiers.Buf32
-
-    ### The manifests we extend the chain with.
-    manifest_cont: OLL1ManifestContainer
-
-### OL block body containing transactions and L1 updates.
+### OL block body containing transactions and optional ASM manifests.
 class OLBlockBody(StableContainer[16]):
     ### The transactions contained in an OL block.
     tx_segment: Optional[OLTxSegment]
 
-    ### Updates from L1.
+    ### ASM manifests included in this block.
     ###
-    ### This is only set in terminal blocks.
-    l1_update: Optional[OLL1Update]
+    ### Manifests may be included in any block within an epoch; their inclusion
+    ### is independent of whether the block is an epoch terminal (which is
+    ### signalled authoritatively by the `IS_TERMINAL` header flag). The logs
+    ### carried by these manifests are buffered into intraepoch state and
+    ### processed at the epoch terminal.
+    manifests: Optional[OLAsmManifestContainer]
 
 ### Complete OL block with signed header and body.
 class OLBlock(Container):

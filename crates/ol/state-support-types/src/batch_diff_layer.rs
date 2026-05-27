@@ -687,7 +687,7 @@ mod tests {
 
         assert_eq!(diff.pending_asm_logs_len(), 5);
         let heights: Vec<u32> = (0..5)
-            .map(|i| u32::from(diff.get_pending_asm_log(i).unwrap().height()))
+            .map(|i| diff.get_pending_asm_log(i).unwrap().height())
             .collect();
         assert_eq!(heights, vec![1, 2, 10, 11, 20]);
         assert!(diff.get_pending_asm_log(5).is_none());
@@ -710,7 +710,7 @@ mod tests {
         // is [30, 40, 41].
         assert_eq!(diff.pending_asm_logs_len(), 3);
         let heights: Vec<u32> = (0..3)
-            .map(|i| u32::from(diff.get_pending_asm_log(i).unwrap().height()))
+            .map(|i| diff.get_pending_asm_log(i).unwrap().height())
             .collect();
         assert_eq!(heights, vec![30, 40, 41]);
         assert!(diff.get_pending_asm_log(3).is_none());
@@ -731,7 +731,7 @@ mod tests {
 
         assert_eq!(diff.pending_asm_logs_len(), 2);
         let heights: Vec<u32> = (0..2)
-            .map(|i| u32::from(diff.get_pending_asm_log(i).unwrap().height()))
+            .map(|i| diff.get_pending_asm_log(i).unwrap().height())
             .collect();
         assert_eq!(heights, vec![20, 21]);
     }

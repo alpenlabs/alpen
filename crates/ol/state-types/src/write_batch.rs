@@ -287,8 +287,7 @@ impl Codec for IntraepochStateWrites {
         let mut appended_pending_asm_logs = Vec::with_capacity(len);
         for _ in 0..len {
             let height = CodecSsz::<L1Height>::decode(dec)?.into_inner();
-            let log =
-                CodecSsz::<strata_asm_manifest_types::AsmLogEntry>::decode(dec)?.into_inner();
+            let log = CodecSsz::<strata_asm_manifest_types::AsmLogEntry>::decode(dec)?.into_inner();
             appended_pending_asm_logs.push(PendingAsmLog::new(height, log));
         }
         Ok(Self {

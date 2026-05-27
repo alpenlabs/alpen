@@ -1,6 +1,6 @@
-//! Applying a DA blob built via the checkpoint-builder path to the
-//! pre-epoch state must reproduce the preseal root recorded in the terminal
-//! block.
+//! Applying a DA blob built via the checkpoint-builder path to the pre-epoch
+//! state, then replaying the epoch's manifests (buffer + epoch-terminal drain),
+//! must reproduce the final epoch state root recorded in the terminal block.
 
 use strata_acct_types::BitcoinAmount;
 use strata_asm_common::AsmManifest;
@@ -8,7 +8,9 @@ use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{Buf64, OLBlockCommitment, SubjectId};
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
+use strata_ol_chain_types_new::{
+    OLAsmManifestContainer, OLBlock, OLBlockHeader, SignedOLBlockHeader,
+};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 
@@ -17,7 +19,7 @@ use crate::{
     assembly::{BlockComponents, CompletedBlock},
     execute_block_batch_preseal,
     test_utils::*,
-    verification::verify_epoch_preseal_with_diff,
+    verification::{EpochExecExpectations, verify_epoch_with_diff},
 };
 
 const SLOTS_PER_EPOCH: u64 = 10;
@@ -50,7 +52,7 @@ fn test_preseal_round_trip_with_deposit_manifest() {
     let terminal = execute_terminal(&mut state, &last_pre_terminal_header, terminal_manifest);
     epoch_blocks.push(to_ol_block(&terminal));
 
-    assert_preseal_round_trip(&pre_epoch_state, &genesis, &epoch_blocks, &terminal);
+    assert_epoch_root_round_trip(&pre_epoch_state, &genesis, &epoch_blocks, &terminal);
 }
 
 #[test]
@@ -73,20 +75,25 @@ fn test_preseal_round_trip_with_limbo_deposit_manifest() {
     let terminal = execute_terminal(&mut state, &last_pre_terminal_header, terminal_manifest);
     epoch_blocks.push(to_ol_block(&terminal));
 
-    assert_preseal_round_trip(&pre_epoch_state, &genesis, &epoch_blocks, &terminal);
+    assert_epoch_root_round_trip(&pre_epoch_state, &genesis, &epoch_blocks, &terminal);
 }
 
-fn assert_preseal_round_trip(
+fn assert_epoch_root_round_trip(
     pre_epoch_state: &MemoryStateBaseLayer,
     genesis: &CompletedBlock,
     epoch_blocks: &[OLBlock],
     terminal: &CompletedBlock,
 ) {
-    let preseal_recorded = *terminal
+    // The terminal header commits the single final epoch state root.
+    let expected_root = *terminal.header().state_root();
+
+    // The DA blob excludes the terminal drain effects; the epoch's manifests
+    // are replayed (buffer + drain) on the verify side to reproduce them.
+    let manifests = terminal
         .body()
-        .l1_update()
-        .expect("terminal must have l1_update")
-        .preseal_state_root();
+        .manifests()
+        .cloned()
+        .unwrap_or_else(|| OLAsmManifestContainer::new(vec![]).expect("empty manifests"));
 
     let da_blob = rebuild_da_blob(pre_epoch_state, epoch_blocks, genesis.header());
     let payload: OLDaPayloadV1 = decode_buf_exact(&da_blob).expect("decode DA payload");
@@ -96,18 +103,20 @@ fn assert_preseal_round_trip(
         OLBlockCommitment::new(genesis.header().slot(), genesis.header().compute_blkid()),
     );
     let mut verify_state = pre_epoch_state.clone();
-    let result = verify_epoch_preseal_with_diff::<_, OLDaSchemeV1>(
+    let exp = EpochExecExpectations::new(expected_root);
+    let result = verify_epoch_with_diff::<_, OLDaSchemeV1>(
         &mut verify_state,
         &epoch_info,
         payload,
-        &preseal_recorded,
+        &manifests,
+        &exp,
     );
 
     let actual_root = verify_state
         .compute_state_root()
         .expect("verification state root should compute");
     result.unwrap_or_else(|e| {
-        panic!("preseal mismatch: {e:?}. recorded = {preseal_recorded:?}, actual = {actual_root:?}")
+        panic!("epoch root mismatch: {e:?}. expected = {expected_root:?}, actual = {actual_root:?}")
     });
 }
 
@@ -146,7 +155,7 @@ fn execute_terminal(
             1,
         ),
         Some(parent_header),
-        BlockComponents::new_manifests(vec![manifest]),
+        BlockComponents::new_manifests(vec![manifest]).as_terminal(),
     )
     .expect("terminal block")
 }
