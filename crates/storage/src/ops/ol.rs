@@ -13,6 +13,7 @@ inst_ops_simple! {
         get_block_high_watermark() => Option<OLBlockCommitment>;
         put_block_data_with_high_watermark(block: OLBlock) => OLBlockCommitment;
         clear_block_high_watermark(expected: OLBlockCommitment) => bool;
+        rollback_block_high_watermark(target: OLBlockCommitment) => bool;
         del_block_data(id: OLBlockId) => bool;
         get_blocks_at_height(slot: u64) => Vec<OLBlockId>;
         get_tip_slot() => Slot;

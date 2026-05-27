@@ -111,6 +111,28 @@ impl OLBlockManager {
         self.ops.clear_block_high_watermark_blocking(expected)
     }
 
+    /// Rolls the block high-watermark back to an existing target block.
+    ///
+    /// This is not normal chain progression; it is used by explicit recovery
+    /// paths that revert OL state.
+    pub async fn rollback_block_high_watermark_async(
+        &self,
+        target: OLBlockCommitment,
+    ) -> DbResult<bool> {
+        self.ops.rollback_block_high_watermark_async(target).await
+    }
+
+    /// Rolls the block high-watermark back to an existing target block.
+    ///
+    /// This is not normal chain progression; it is used by explicit recovery
+    /// paths that revert OL state.
+    pub fn rollback_block_high_watermark_blocking(
+        &self,
+        target: OLBlockCommitment,
+    ) -> DbResult<bool> {
+        self.ops.rollback_block_high_watermark_blocking(target)
+    }
+
     /// Gets a block either in the cache or from the underlying database.
     pub async fn get_block_data_async(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
         self.block_cache

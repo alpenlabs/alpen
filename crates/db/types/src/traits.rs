@@ -721,6 +721,13 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Returns `true` when the high-watermark was cleared.
     fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool>;
 
+    /// Rolls the block high-watermark back to an existing target block.
+    ///
+    /// This is for explicit recovery paths that revert OL state. If the current high-watermark is
+    /// already at or below `target`, this is a no-op and returns `false`. Otherwise, the
+    /// high-watermark is set to `target` and this returns `true`.
+    fn rollback_block_high_watermark(&self, target: OLBlockCommitment) -> DbResult<bool>;
+
     /// Retrieves an OL block for a given block ID.
     fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>>;
 

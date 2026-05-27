@@ -122,6 +122,37 @@ impl OLBlockDatabase for OLBlockDBSled {
             .map_err(to_db_error)
     }
 
+    fn rollback_block_high_watermark(&self, target: OLBlockCommitment) -> DbResult<bool> {
+        self.config.with_retry(
+            (&self.blk_tree, &self.blk_high_watermark_tree),
+            |(bt, hwt)| {
+                let target_block_id = *target.blkid();
+                let Some(target_block) = bt.get(&target_block_id)? else {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::NonExistentEntry,
+                    )));
+                };
+
+                if target_block.header().slot() != target.slot() {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::InvalidArgument,
+                    )));
+                }
+
+                let Some(current) = hwt.get(&OL_BLOCK_HIGH_WATERMARK_KEY)? else {
+                    return Ok(false);
+                };
+
+                if current.slot() <= target.slot() {
+                    return Ok(false);
+                }
+
+                hwt.insert(&OL_BLOCK_HIGH_WATERMARK_KEY, &target)?;
+                Ok(true)
+            },
+        )
+    }
+
     fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
         Ok(self.blk_tree.get(&id)?)
     }

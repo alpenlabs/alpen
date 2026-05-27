@@ -292,6 +292,57 @@ pub fn proptest_high_watermark_monotonic_under_mixed_puts(
     }
 }
 
+pub fn proptest_rollback_block_high_watermark(
+    db: &impl OLBlockDatabase,
+    mut block1: OLBlock,
+    mut block2: OLBlock,
+) {
+    block1.signed_header.header.slot = 10;
+    block2.signed_header.header.slot = 11;
+
+    let block1_commitment = db
+        .put_block_data_with_high_watermark(block1)
+        .expect("test: put target block with high-watermark");
+    let block2_commitment = db
+        .put_block_data_with_high_watermark(block2)
+        .expect("test: put later block with high-watermark");
+
+    let rolled_back = db
+        .rollback_block_high_watermark(block1_commitment)
+        .expect("test: roll back block high-watermark");
+    assert!(rolled_back);
+    assert_eq!(
+        db.get_block_high_watermark()
+            .expect("test: get rolled-back block high-watermark"),
+        Some(block1_commitment)
+    );
+
+    let unchanged = db
+        .rollback_block_high_watermark(block2_commitment)
+        .expect("test: non-rollback target above current high-watermark");
+    assert!(!unchanged);
+    assert_eq!(
+        db.get_block_high_watermark()
+            .expect("test: get unchanged block high-watermark"),
+        Some(block1_commitment)
+    );
+}
+
+pub fn proptest_rollback_block_high_watermark_missing_target(
+    db: &impl OLBlockDatabase,
+    mut block: OLBlock,
+) {
+    block.signed_header.header.slot = 10;
+    db.put_block_data_with_high_watermark(block)
+        .expect("test: put block with high-watermark");
+
+    let missing_target = OLBlockCommitment::new(9, OLBlockId::from(Buf32::from([0xeeu8; 32])));
+    let err = db
+        .rollback_block_high_watermark(missing_target)
+        .expect_err("test: missing rollback target should fail");
+    assert!(matches!(err, DbError::NonExistentEntry));
+}
+
 pub fn proptest_delete_random_block(db: &impl OLBlockDatabase, block: OLBlock) {
     let block_id = block.header().compute_blkid();
 
@@ -462,6 +513,21 @@ macro_rules! ol_block_db_tests {
             ) {
                 let db = $setup_expr;
                 $crate::ol_block_tests::proptest_high_watermark_monotonic_under_mixed_puts(&db, ops);
+            }
+
+            #[test]
+            fn proptest_rollback_block_high_watermark(
+                block1 in ol_test_utils::ol_block_strategy(),
+                block2 in ol_test_utils::ol_block_strategy()
+            ) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_rollback_block_high_watermark(&db, block1, block2);
+            }
+
+            #[test]
+            fn proptest_rollback_block_high_watermark_missing_target(block in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_rollback_block_high_watermark_missing_target(&db, block);
             }
 
             #[test]
