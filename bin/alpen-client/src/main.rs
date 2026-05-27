@@ -1045,7 +1045,7 @@ pub struct AdditionalConfig {
     /// Max retries for Bitcoin RPC requests.
     #[cfg(feature = "sequencer")]
     #[arg(long, default_value_t = DEFAULT_BTCIO_RETRY_COUNT)]
-    pub btcio_retry_count: u8,
+    pub btcio_retry_count: u16,
 
     /// Bitcoin RPC retry interval in ms.
     #[cfg(feature = "sequencer")]
@@ -1177,7 +1177,7 @@ fn sequencer_bitcoin_keypair(privkey: &Buf32) -> eyre::Result<Keypair> {
 
 // Mirrors `bitcoind-async-client`'s upstream defaults.
 #[cfg(feature = "sequencer")]
-const DEFAULT_BTCIO_RETRY_COUNT: u8 = 3;
+const DEFAULT_BTCIO_RETRY_COUNT: u16 = 3;
 #[cfg(feature = "sequencer")]
 const DEFAULT_BTCIO_RETRY_INTERVAL_MS: u64 = 1_000;
 
