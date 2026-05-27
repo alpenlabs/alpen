@@ -10,9 +10,7 @@ use strata_asm_proto_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalH
 use strata_bridge_params::BridgeParams;
 use strata_crypto::hash;
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{
-    OLAsmManifestContainer, OLBlock, OLBlockHeader, OLLog, OLTxSegment,
-};
+use strata_ol_chain_types_new::{AsmManifest, OLBlock, OLBlockHeader, OLLog, OLTxSegment};
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::OLState;
@@ -146,8 +144,12 @@ pub fn process_ol_stf_core(
     // Execute all blocks in the batch and collect execution artifacts.
     // Header equality checks inside execution bind manifests/state commitments
     // via body_root and the final state root.
-    let (logs, asm_manifests_hash, terminal_header, epoch_manifests) =
-        execute_block_batch(&mut state, &blocks, &parent, bridge_params);
+    let EpochBatchExecution {
+        logs,
+        asm_manifests_hash,
+        terminal_header,
+        epoch_manifests,
+    } = execute_block_batch(&mut state, &blocks, &parent, bridge_params);
 
     let start = parent.compute_block_commitment();
     let end = terminal_header.compute_block_commitment();
@@ -219,6 +221,28 @@ pub fn process_ol_stf_core(
     )
 }
 
+/// Artifacts collected while executing an epoch's block batch.
+struct EpochBatchExecution {
+    /// All OL logs emitted across the batch (tx-segment plus terminal drain).
+    logs: Vec<OLLog>,
+
+    /// Range hash over all ASM manifests in the epoch.
+    asm_manifests_hash: AsmManifestRangeHash,
+
+    /// The proven terminal block header (last block in the batch).
+    terminal_header: OLBlockHeader,
+
+    /// All ASM manifests in the epoch, in order, for DA-witness replay and
+    /// hashing.
+    ///
+    /// Held as an unbounded sequence rather than an
+    /// [`OLAsmManifestContainer`](strata_ol_chain_types_new::OLAsmManifestContainer)
+    /// because an epoch may span several blocks that each independently satisfy
+    /// the per-block `MAX_SEALING_MANIFEST_COUNT` limit, so the epoch total can
+    /// legitimately exceed that per-block cap.
+    epoch_manifests: Vec<AsmManifest>,
+}
+
 /// Executes a batch of blocks and collects execution artifacts.
 ///
 /// Processes each block sequentially, applying state transitions to the provided state
@@ -230,12 +254,6 @@ pub fn process_ol_stf_core(
 /// * `blocks` - Slice of blocks to execute
 /// * `initial_parent` - The parent block header for the first block in the batch
 ///
-/// # Returns
-///
-/// A tuple containing:
-/// - `Vec<OLLog>`: All logs emitted during block execution
-/// - `FixedBytes<32>`: Hash of ASM manifests encountered in the batch
-///
 /// # Panics
 ///
 /// Panics if:
@@ -246,12 +264,7 @@ fn execute_block_batch(
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
     bridge_params: BridgeParams,
-) -> (
-    Vec<OLLog>,
-    AsmManifestRangeHash,
-    OLBlockHeader,
-    OLAsmManifestContainer,
-) {
+) -> EpochBatchExecution {
     let mut parent = initial_parent.clone();
     let mut logs = Vec::new();
     // Manifests may be included in any block within the epoch; collect them in
@@ -308,9 +321,12 @@ fn execute_block_batch(
         parent = output.completed_block().header().clone();
     }
 
-    let epoch_manifests = OLAsmManifestContainer::new(epoch_manifests)
-        .expect("epoch manifests should be within container limits");
-    let asm_manifests_hash = compute_asm_manifests_hash(epoch_manifests.manifests());
+    let asm_manifests_hash = compute_asm_manifests_hash(&epoch_manifests);
 
-    (logs, asm_manifests_hash, parent, epoch_manifests)
+    EpochBatchExecution {
+        logs,
+        asm_manifests_hash,
+        terminal_header: parent,
+        epoch_manifests,
+    }
 }

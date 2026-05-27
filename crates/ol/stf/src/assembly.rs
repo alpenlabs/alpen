@@ -107,9 +107,9 @@ pub fn execute_block_tx_segment<S: IStateAccessorMut>(
 /// Buffers the ASM logs carried by a block's manifests into intraepoch state.
 pub fn execute_block_manifest_buffering<S: IStateAccessorMut>(
     state: &mut S,
-    manifest_container: &OLAsmManifestContainer,
+    manifests: &[AsmManifest],
 ) -> ExecResult<()> {
-    manifest_processing::buffer_block_manifests(state, manifest_container)
+    manifest_processing::buffer_block_manifests(state, manifests)
 }
 
 /// Processes the epoch terminal: drains buffered ASM logs, resets intraepoch
@@ -155,7 +155,7 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     // 4. If the block carries manifests, buffer their ASM logs into intraepoch
     // state. Manifests may appear in any block; this does not apply effects.
     if let Some(manifest_container) = block_exec_input.manifest_container() {
-        execute_block_manifest_buffering(state, manifest_container)?;
+        execute_block_manifest_buffering(state, manifest_container.manifests())?;
     }
 
     // 5. If this is the epoch terminal (per the authoritative flag), drain the

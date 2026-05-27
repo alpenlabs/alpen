@@ -11,7 +11,6 @@ use strata_identifiers::SubjectId;
 use strata_ledger_types::{
     ISnarkAccountState, IStateAccessor, IStateAccessorMut, PendingAsmLog, StateError,
 };
-use strata_ol_chain_types_new::OLAsmManifestContainer;
 
 use crate::{buffer_block_manifests, errors::ExecError, test_utils::*};
 
@@ -261,9 +260,7 @@ fn intraepoch_buffer_full_is_rejected() {
     let manifest = FixtureAsmManifestBuilder::new_at_height(1)
         .with_log(raw_log)
         .build();
-    let container =
-        OLAsmManifestContainer::new(vec![manifest]).expect("single manifest should fit");
-    let err = buffer_block_manifests(&mut state, &container)
+    let err = buffer_block_manifests(&mut state, &[manifest])
         .expect_err("buffering into a full intraepoch buffer must error");
 
     assert!(

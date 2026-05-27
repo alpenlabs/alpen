@@ -655,7 +655,7 @@ where
 
     // Buffer any manifests carried by this block into intraepoch state.
     if let Some(mc) = &manifest_container {
-        buffer_block_manifests(&mut final_state, mc).map_err(|e| {
+        buffer_block_manifests(&mut final_state, mc.manifests()).map_err(|e| {
             error!(?e, "manifest buffering failed");
             BlockAssemblyError::BlockConstruction(e)
         })?;
