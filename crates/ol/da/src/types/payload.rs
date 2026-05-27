@@ -37,7 +37,7 @@ pub fn decode_ol_da_payload_bytes(bytes: &[u8]) -> Result<OLDaPayloadV1, CodecEr
     decode_buf_exact(bytes)
 }
 
-/// Preseal OL state diff (global + ledger).
+/// Epoch OL state diff (global + ledger).
 #[derive(Debug, Default, Codec)]
 pub struct StateDiff {
     /// Global state diff.

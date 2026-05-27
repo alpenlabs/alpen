@@ -170,9 +170,6 @@ pub enum ExecError {
     #[error("incorrect slot (expected {expected}, got {got})")]
     IncorrectSlot { expected: u64, got: u64 },
 
-    #[error("body inconsistent with header terminal flag")]
-    InconsistentBodyTerminality,
-
     #[error("genesis block was not a terminal")]
     GenesisNonterminal,
 

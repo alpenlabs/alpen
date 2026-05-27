@@ -443,7 +443,7 @@ pub fn execute_and_complete_block<S: IStateAccessorMut>(
 ///
 /// Generic over `S` so callers may pass `OLState` directly or a wrapper
 /// (e.g. `DaAccumulatingState<OLState>`). Use
-/// [`execute_block_batch_preseal`] instead when building a DA blob that
+/// [`execute_block_batch_predrain`] instead when building a DA blob that
 /// excludes the epoch-terminal drain effects.
 pub fn execute_block_batch<S: IStateAccessorMut>(
     state: &mut S,
@@ -478,7 +478,7 @@ pub fn execute_block_batch<S: IStateAccessorMut>(
 /// not capture; the deferred drain effects (which would mutate DA-covered
 /// ledger state) are skipped so they are not double-counted when the manifests
 /// are replayed on top of the diff during rebuild.
-pub fn execute_block_batch_preseal<S: IStateAccessorMut>(
+pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
