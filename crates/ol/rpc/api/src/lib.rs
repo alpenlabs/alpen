@@ -121,13 +121,9 @@ pub trait OLFullNodeRpc {
     #[method(name = "getBlockTransactions")]
     async fn get_block_transactions(&self, slot: u64) -> RpcResult<Vec<RpcOLTxDetail>>;
 
-    /// List accounts on the ledger at the given block.
-    ///
-    /// `block_or_tag` accepts the same forms as `getSnarkAccountState`:
-    /// `"latest"`, `"confirmed"`, `"finalized"`, a slot number, or a block ID
-    /// (`0x...`).
-    #[method(name = "listAccounts")]
-    async fn list_accounts(&self, block_or_tag: OLBlockOrTag) -> RpcResult<Vec<RpcAccountEntry>>;
+    /// Get all account creations and updates in the canonical OL block at the given slot.
+    #[method(name = "getBlockAccountChanges")]
+    async fn get_block_account_changes(&self, slot: u64) -> RpcResult<RpcBlockAccountChanges>;
 }
 
 /// OL RPC methods served by sequencer node for sequencer signer.

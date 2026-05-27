@@ -19,10 +19,11 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEntry, RpcAccountEpochSummary,
-    RpcBlockEntry, RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo,
-    RpcCheckpointL1Ref, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary, RpcOLChainStatus,
-    RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
+    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
+    RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
+    RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
+    RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary, RpcOLChainStatus, RpcOLTransaction,
+    RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -1124,21 +1125,46 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         Ok(txs)
     }
 
-    async fn list_accounts(&self, block_or_tag: OLBlockOrTag) -> RpcResult<Vec<RpcAccountEntry>> {
-        let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
-        let ol_state = self
+    async fn get_block_account_changes(&self, slot: u64) -> RpcResult<RpcBlockAccountChanges> {
+        let block_commitment = self
             .provider
-            .get_toplevel_ol_state(block_commitment)
+            .get_canonical_block_at(slot)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?;
+        let write_batch = self
+            .provider
+            .get_ol_write_batch(block_commitment)
             .await
             .map_err(db_error)?
             .ok_or_else(|| {
-                not_found_error(format!("No OL state found for block {block_commitment}"))
+                not_found_error(format!(
+                    "No OL write batch found for block {block_commitment}"
+                ))
             })?;
-
-        Ok(ol_state
+        let created_accounts: HashSet<AccountId> = write_batch
             .ledger()
-            .entries()
-            .map(RpcAccountEntry::from)
-            .collect())
+            .new_accounts()
+            .iter()
+            .copied()
+            .collect();
+        let changes = write_batch
+            .ledger()
+            .iter_accounts()
+            .map(|(id, state)| {
+                let change_type = if created_accounts.contains(id) {
+                    RpcAccountChangeType::Created
+                } else {
+                    RpcAccountChangeType::Updated
+                };
+                RpcAccountChange::new(*id, change_type, RpcAccountState::from(state))
+            })
+            .collect();
+
+        Ok(RpcBlockAccountChanges::new(
+            slot,
+            block_commitment.blkid,
+            changes,
+        ))
     }
 }

@@ -19,7 +19,7 @@ use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::*;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::{OLAccountState, OLAccountTypeState, OLState, WriteBatch};
 use strata_predicate::PredicateKey;
 use strata_primitives::{
     HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
@@ -42,6 +42,7 @@ struct MockProvider {
     blocks: HashMap<OLBlockId, OLBlock>,
     canonical_slots: HashMap<Slot, OLBlockCommitment>,
     states: HashMap<OLBlockCommitment, Arc<OLState>>,
+    write_batches: HashMap<OLBlockCommitment, WriteBatch<OLAccountState>>,
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
@@ -61,6 +62,7 @@ impl MockProvider {
             blocks: HashMap::new(),
             canonical_slots: HashMap::new(),
             states: HashMap::new(),
+            write_batches: HashMap::new(),
             epoch_commitments: HashMap::new(),
             epoch_summaries: HashMap::new(),
             checkpoint_l1_refs: HashMap::new(),
@@ -122,6 +124,15 @@ impl MockProvider {
 
     fn with_state_at(mut self, commitment: OLBlockCommitment, state: OLState) -> Self {
         self.states.insert(commitment, Arc::new(state));
+        self
+    }
+
+    fn with_write_batch(
+        mut self,
+        commitment: OLBlockCommitment,
+        write_batch: WriteBatch<OLAccountState>,
+    ) -> Self {
+        self.write_batches.insert(commitment, write_batch);
         self
     }
 
@@ -238,6 +249,13 @@ impl OLRpcProvider for MockProvider {
         commitment: OLBlockCommitment,
     ) -> DbResult<Option<Arc<OLState>>> {
         Ok(self.states.get(&commitment).cloned())
+    }
+
+    async fn get_ol_write_batch(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
+        Ok(self.write_batches.get(&commitment).cloned())
     }
 
     async fn get_canonical_epoch_commitment_at(
@@ -462,15 +480,12 @@ fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLState {
     state.into_inner()
 }
 
-fn ol_state_with_n_empty_accounts(account_ids: &[AccountId], slot: u64) -> OLState {
-    let base = genesis_ol_state();
-    let mut state = MemoryStateBaseLayer::new(base);
-    state.set_cur_slot(slot);
-    for id in account_ids {
-        let new_acct = NewAccountData::new(BitcoinAmount::from(0), NewAccountTypeState::Empty);
-        state.create_new_account(*id, new_acct).unwrap();
-    }
-    state.into_inner()
+fn empty_account_state(serial: u32, balance_sats: u64) -> OLAccountState {
+    OLAccountState::new(
+        AccountSerial::from(serial),
+        BitcoinAmount::from_sat(balance_sats),
+        OLAccountTypeState::Empty,
+    )
 }
 
 const TEST_GENESIS_L1_HEIGHT: L1Height = 0;
@@ -3076,14 +3091,27 @@ async fn get_block_transactions_decodes_gam_tx() {
     assert_eq!(messages[0].data().0, payload_bytes);
 }
 
-// ── list_accounts ──
+// ── get_block_account_changes ──
 
 #[tokio::test]
-async fn list_accounts_returns_ledger_entries() {
-    let acct = AccountId::from([0x11; 32]);
+async fn get_block_account_changes_returns_created_and_updated_accounts() {
+    let created_acct = test_account_id(0x11);
+    let updated_acct = test_account_id(0x22);
     let block = make_block(4, 0, null_blkid());
     let blkid = block.header().compute_blkid();
     let tip = OLBlockCommitment::new(4, blkid);
+
+    let created_state = empty_account_state(42, 1_000);
+    let updated_state = empty_account_state(7, 2_000);
+    let mut write_batch = WriteBatch::default();
+    write_batch.ledger_mut().create_account_raw(
+        created_acct,
+        created_state,
+        AccountSerial::from(42u32),
+    );
+    write_batch
+        .ledger_mut()
+        .update_account(updated_acct, updated_state);
 
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
@@ -3094,73 +3122,63 @@ async fn list_accounts_returns_ledger_entries() {
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
-        .with_block_and_state(
-            &block,
-            ol_state_with_snark_account(acct, 4, 7, DEFAULT_NEXT_INBOX_MSG_IDX),
-        );
+        .with_block_and_state(&block, genesis_ol_state())
+        .with_write_batch(tip, write_batch);
     let rpc = make_rpc(provider);
 
-    let entries = rpc
-        .list_accounts(OLBlockOrTag::Slot(4))
+    let response = rpc
+        .get_block_account_changes(4)
         .await
-        .expect("list accounts");
-    let our_entry = entries
+        .expect("get block account changes");
+    assert_eq!(response.slot(), 4);
+    assert_eq!(response.blkid(), blkid);
+    assert_eq!(response.changes().len(), 2);
+
+    let created = response
+        .changes()
         .iter()
-        .find(|e| e.id().0 == *acct.inner())
-        .expect("account present in ledger");
-    assert!(matches!(
-        our_entry.state().type_data(),
-        RpcAccountTypeData::Snark(_)
-    ));
-    let snark = our_entry.state().snark().expect("snark summary");
-    assert_eq!(snark.seq_no(), 7);
-    assert_eq!(snark.update_vk(), &PredicateKey::always_accept());
-    let entry_json = serde_json::to_value(our_entry).expect("serialize account entry");
-    assert_eq!(entry_json["state"]["type"], "snark");
-    assert!(entry_json["state"].get("kind").is_none());
-    assert!(entry_json["state"].get("type_data").is_none());
-    assert_eq!(entries.len(), 1);
+        .find(|change| change.id().0 == *created_acct.inner())
+        .expect("created account change");
+    assert_eq!(created.change_type(), RpcAccountChangeType::Created);
+    assert_eq!(created.state().serial(), 42);
+    assert_eq!(created.state().balance_sats(), 1_000);
+
+    let updated = response
+        .changes()
+        .iter()
+        .find(|change| change.id().0 == *updated_acct.inner())
+        .expect("updated account change");
+    assert_eq!(updated.change_type(), RpcAccountChangeType::Updated);
+    assert_eq!(updated.state().serial(), 7);
+    assert_eq!(updated.state().balance_sats(), 2_000);
+
+    let created_json = serde_json::to_value(created).expect("serialize account change");
+    assert_eq!(created_json["change_type"], "created");
+    assert_eq!(created_json["state"]["type"], "empty");
+    assert!(created_json["state"].get("kind").is_none());
+    assert!(created_json["state"].get("type_data").is_none());
 }
 
 #[tokio::test]
-async fn list_accounts_resolves_confirmed_tag_to_confirmed_epoch() {
-    let acct_a = test_account_id(1);
-    let acct_b = test_account_id(2);
-
-    // Confirmed-state block has 1 account.
-    let confirmed_block = make_block(5, 1, null_blkid());
-    let confirmed_blkid = confirmed_block.header().compute_blkid();
-    let confirmed_epoch_commitment = EpochCommitment::new(1, 5, confirmed_blkid);
-    let confirmed_state = ol_state_with_n_empty_accounts(&[acct_a], 5);
-
-    // Local-tip / prev-epoch block has 2 accounts (the bug would route here).
-    let prev_block = make_block(10, 2, confirmed_blkid);
-    let prev_blkid = prev_block.header().compute_blkid();
-    let prev_epoch_commitment = EpochCommitment::new(2, 10, prev_blkid);
-    let prev_state = ol_state_with_n_empty_accounts(&[acct_a, acct_b], 10);
-
-    let tip = OLBlockCommitment::new(10, prev_blkid);
+async fn get_block_account_changes_errors_when_write_batch_is_missing() {
+    let block = make_block(4, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(4, blkid);
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
-            2,
+            0,
             false,
-            prev_epoch_commitment,
-            confirmed_epoch_commitment,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
             EpochCommitment::null(),
         ))
-        .with_block_and_state(&confirmed_block, confirmed_state)
-        .with_block_and_state(&prev_block, prev_state);
+        .with_block_and_state(&block, genesis_ol_state());
     let rpc = make_rpc(provider);
 
-    let entries = rpc
-        .list_accounts(OLBlockOrTag::Confirmed)
+    let err = rpc
+        .get_block_account_changes(4)
         .await
-        .expect("confirmed accounts");
-    assert_eq!(
-        entries.len(),
-        1,
-        "confirmed tag must resolve to confirmed_epoch (1 account), \
-         not prev_epoch (would be 2 accounts)"
-    );
+        .expect_err("missing write batch should error");
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
 }

@@ -15,8 +15,8 @@ mod snark_acct_update;
 mod tx;
 
 pub use account_state::{
-    RpcAccountEntry, RpcAccountSnarkSummary, RpcAccountState, RpcAccountTypeData,
-    RpcSnarkAccountState,
+    RpcAccountChange, RpcAccountChangeType, RpcAccountSnarkSummary, RpcAccountState,
+    RpcAccountTypeData, RpcBlockAccountChanges, RpcSnarkAccountState,
 };
 pub use account_summary::{
     RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMessageEntry, RpcUpdateInputData,

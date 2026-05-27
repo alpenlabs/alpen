@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
+use strata_identifiers::{AccountId, OLBlockId};
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
-use strata_ol_state_types::TsnlAccountEntry;
 use strata_predicate::PredicateKey;
 use strata_primitives::HexBytes32;
 
@@ -56,19 +56,67 @@ impl RpcSnarkAccountState {
     }
 }
 
-/// Account list entry returned by `strata_listAccounts`.
+/// Account changes for a canonical OL block.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
-pub struct RpcAccountEntry {
+pub struct RpcBlockAccountChanges {
+    /// Slot containing the changed accounts.
+    slot: u64,
+    /// Canonical block ID at `slot`.
+    blkid: OLBlockId,
+    /// Account changes written by the block.
+    changes: Vec<RpcAccountChange>,
+}
+
+impl RpcBlockAccountChanges {
+    pub fn new(slot: u64, blkid: OLBlockId, changes: Vec<RpcAccountChange>) -> Self {
+        Self {
+            slot,
+            blkid,
+            changes,
+        }
+    }
+
+    pub fn slot(&self) -> u64 {
+        self.slot
+    }
+
+    pub fn blkid(&self) -> OLBlockId {
+        self.blkid
+    }
+
+    pub fn changes(&self) -> &[RpcAccountChange] {
+        &self.changes
+    }
+}
+
+/// Account write emitted by a block.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcAccountChange {
     /// Account ID.
     id: HexBytes32,
-    /// Account state at the queried block.
+    /// Whether the block created or updated the account.
+    change_type: RpcAccountChangeType,
+    /// Account post-state after the block.
     state: RpcAccountState,
 }
 
-impl RpcAccountEntry {
+impl RpcAccountChange {
+    pub fn new(id: AccountId, change_type: RpcAccountChangeType, state: RpcAccountState) -> Self {
+        Self {
+            id: HexBytes32::from(<[u8; 32]>::from(id)),
+            change_type,
+            state,
+        }
+    }
+
     pub fn id(&self) -> &HexBytes32 {
         &self.id
+    }
+
+    pub fn change_type(&self) -> RpcAccountChangeType {
+        self.change_type
     }
 
     pub fn state(&self) -> &RpcAccountState {
@@ -76,13 +124,13 @@ impl RpcAccountEntry {
     }
 }
 
-impl From<&TsnlAccountEntry> for RpcAccountEntry {
-    fn from(entry: &TsnlAccountEntry) -> Self {
-        Self {
-            id: HexBytes32::from(<[u8; 32]>::from(entry.id())),
-            state: RpcAccountState::from(entry.state()),
-        }
-    }
+/// Account change kind for [`RpcAccountChange`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum RpcAccountChangeType {
+    Created,
+    Updated,
 }
 
 /// Account state at a block.
