@@ -462,7 +462,7 @@ fn ol_state_with_snark_account_and_inbox_entries(
     state
         .update_account(account_id, |acct| {
             let s = acct.as_snark_account_mut().unwrap();
-            s.set_proof_state_directly(Hash::zero(), next_inbox_msg_idx, Seqno::from(seq_no));
+            s.set_proof_state(Hash::zero(), next_inbox_msg_idx, Seqno::from(seq_no));
             for message in inbox_messages {
                 s.insert_inbox_message(message.clone()).unwrap();
             }

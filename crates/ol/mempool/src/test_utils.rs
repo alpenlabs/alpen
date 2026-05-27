@@ -237,7 +237,7 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     layer
         .update_account(account_id, |account| {
             let snark_account = account.as_snark_account_mut().unwrap();
-            snark_account.set_proof_state_directly(Hash::zero(), 0, Seqno::from(seq_no));
+            snark_account.set_proof_state(Hash::zero(), 0, Seqno::from(seq_no));
         })
         .unwrap();
 
@@ -405,7 +405,7 @@ pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
         if layer.create_new_account(account_id, new_acct).is_ok() {
             let _ = layer.update_account(account_id, |account| {
                 let snark_account = account.as_snark_account_mut().unwrap();
-                snark_account.set_proof_state_directly(Hash::zero(), 0, Seqno::from(0));
+                snark_account.set_proof_state(Hash::zero(), 0, Seqno::from(0));
             });
         }
     }

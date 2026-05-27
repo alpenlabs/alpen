@@ -903,7 +903,7 @@ impl OLStfFixture {
                 let account_state = account
                     .as_snark_account_mut()
                     .expect("account should be a snark account");
-                account_state.set_proof_state_directly(
+                account_state.set_proof_state(
                     account_state.inner_state_root(),
                     account_state.next_inbox_msg_idx(),
                     Seqno::from(seqno),
