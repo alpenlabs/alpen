@@ -3100,11 +3100,10 @@ async fn list_accounts_returns_ledger_entries() {
         );
     let rpc = make_rpc(provider);
 
-    let page = rpc
-        .list_accounts(OLBlockOrTag::Slot(4), None, 10)
+    let entries = rpc
+        .list_accounts(OLBlockOrTag::Slot(4))
         .await
         .expect("list accounts");
-    let entries = page.accounts();
     let our_entry = entries
         .iter()
         .find(|e| e.id().0 == *acct.inner())
@@ -3121,85 +3120,6 @@ async fn list_accounts_returns_ledger_entries() {
     assert!(entry_json["state"].get("kind").is_none());
     assert!(entry_json["state"].get("type_data").is_none());
     assert_eq!(entries.len(), 1);
-    assert_eq!(page.total(), 1);
-    assert!(page.next_cursor().is_none());
-}
-
-#[tokio::test]
-async fn list_accounts_paginates_by_cursor() {
-    let acct_a = test_account_id(1);
-    let acct_b = test_account_id(2);
-    let acct_c = test_account_id(3);
-    let block = make_block(4, 0, null_blkid());
-    let blkid = block.header().compute_blkid();
-    let tip = OLBlockCommitment::new(4, blkid);
-
-    let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(
-            tip,
-            0,
-            false,
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-        ))
-        .with_block_and_state(
-            &block,
-            ol_state_with_n_empty_accounts(&[acct_c, acct_a, acct_b], 4),
-        );
-    let rpc = make_rpc(provider);
-
-    let first_page = rpc
-        .list_accounts(OLBlockOrTag::Slot(4), None, 2)
-        .await
-        .expect("first page");
-    assert_eq!(first_page.total(), 3);
-    assert_eq!(first_page.accounts().len(), 2);
-    assert_eq!(first_page.accounts()[0].id().0, *acct_a.inner());
-    assert_eq!(first_page.accounts()[1].id().0, *acct_b.inner());
-    assert_eq!(
-        first_page.next_cursor().expect("next cursor").0,
-        *acct_b.inner()
-    );
-
-    let second_page = rpc
-        .list_accounts(OLBlockOrTag::Slot(4), first_page.next_cursor().cloned(), 2)
-        .await
-        .expect("second page");
-    assert_eq!(second_page.total(), 3);
-    assert_eq!(second_page.accounts().len(), 1);
-    assert_eq!(second_page.accounts()[0].id().0, *acct_c.inner());
-    assert!(second_page.next_cursor().is_none());
-}
-
-#[tokio::test]
-async fn list_accounts_rejects_invalid_limit() {
-    let block = make_block(4, 0, null_blkid());
-    let blkid = block.header().compute_blkid();
-    let tip = OLBlockCommitment::new(4, blkid);
-    let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(
-            tip,
-            0,
-            false,
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-        ))
-        .with_block_and_state(&block, genesis_ol_state());
-    let rpc = make_rpc(provider);
-
-    let zero_limit = rpc.list_accounts(OLBlockOrTag::Slot(4), None, 0).await;
-    assert_eq!(
-        zero_limit.expect_err("zero limit error").code(),
-        INVALID_PARAMS_CODE
-    );
-
-    let oversized_limit = rpc.list_accounts(OLBlockOrTag::Slot(4), None, 1001).await;
-    assert_eq!(
-        oversized_limit.expect_err("oversized limit error").code(),
-        INVALID_PARAMS_CODE
-    );
 }
 
 #[tokio::test]
@@ -3233,12 +3153,12 @@ async fn list_accounts_resolves_confirmed_tag_to_confirmed_epoch() {
         .with_block_and_state(&prev_block, prev_state);
     let rpc = make_rpc(provider);
 
-    let page = rpc
-        .list_accounts(OLBlockOrTag::Confirmed, None, 10)
+    let entries = rpc
+        .list_accounts(OLBlockOrTag::Confirmed)
         .await
         .expect("confirmed accounts");
     assert_eq!(
-        page.accounts().len(),
+        entries.len(),
         1,
         "confirmed tag must resolve to confirmed_epoch (1 account), \
          not prev_epoch (would be 2 accounts)"
