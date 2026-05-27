@@ -4,11 +4,13 @@
 
 use core::fmt;
 
-use arbitrary::Arbitrary;
+use arbitrary::{Arbitrary, Unstructured};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_checkpoint_types::BatchInfo;
-use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, RBuf32};
+use strata_asm_proto_checkpoint_types::CheckpointTip;
+use strata_identifiers::{
+    Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, RBuf32,
+};
 
 /// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.
@@ -59,7 +61,7 @@ impl ClientState {
     pub fn get_last_epoch(&self) -> Option<EpochCommitment> {
         self.last_seen_checkpoint
             .as_ref()
-            .map(|c| c.batch_info.get_epoch_commitment())
+            .map(EpochCommitment::from)
     }
 
     /// Gets the last checkpoint that has already been finalized.
@@ -71,14 +73,14 @@ impl ClientState {
     pub fn get_declared_final_epoch(&self) -> Option<EpochCommitment> {
         self.last_finalized_checkpoint
             .as_ref()
-            .map(|ckpt| ckpt.batch_info.get_epoch_commitment())
+            .map(EpochCommitment::from)
     }
 
     /// Gets the next epoch we expect to be confirmed.
     pub fn get_next_expected_epoch_conf(&self) -> Epoch {
         self.last_seen_checkpoint
             .as_ref()
-            .map(|ck| ck.batch_info.get_epoch_commitment().epoch() + 1)
+            .map(|ck| ck.tip.epoch + 1)
             .unwrap_or(0u32)
     }
 }
@@ -136,14 +138,20 @@ impl CheckpointL1Ref {
     }
 }
 
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Deserialize, Serialize)]
 pub struct L1Checkpoint {
-    /// The inner checkpoint batch info.
-    pub batch_info: BatchInfo,
+    /// Tip published by the ASM checkpoint subprotocol for this checkpoint.
+    ///
+    /// `tip.l1_height` is the L1 view consumed by the OL for this epoch — distinct
+    /// from `l1_reference.l1_commitment`, which records where the checkpoint
+    /// envelope was observed on L1.
+    ///
+    /// `CheckpointTip` is SSZ-defined; its Borsh impl is provided by
+    /// `impl_borsh_via_ssz_fixed!` in `strata-asm-proto-checkpoint-types`, so a
+    /// plain Borsh derive on the parent works without field-level codecs.
+    pub tip: CheckpointTip,
 
-    /// L1 reference for this checkpoint.
+    /// L1 reference for the envelope that carried this checkpoint.
     pub l1_reference: CheckpointL1Ref,
 }
 
@@ -154,10 +162,43 @@ impl fmt::Display for L1Checkpoint {
 }
 
 impl L1Checkpoint {
-    pub fn new(batch_info: BatchInfo, l1_reference: CheckpointL1Ref) -> Self {
-        Self {
-            batch_info,
-            l1_reference,
-        }
+    pub fn new(tip: CheckpointTip, l1_reference: CheckpointL1Ref) -> Self {
+        Self { tip, l1_reference }
+    }
+}
+
+impl From<&L1Checkpoint> for EpochCommitment {
+    fn from(checkpoint: &L1Checkpoint) -> Self {
+        EpochCommitment::from_terminal(checkpoint.tip.epoch, checkpoint.tip.l2_commitment)
+    }
+}
+
+// `CheckpointTip` is an SSZ-generated type in an external crate and doesn't
+// derive `Arbitrary`; the orphan rule blocks adding it there, so we provide
+// the `Arbitrary` impl on the wrapper.
+impl<'a> Arbitrary<'a> for L1Checkpoint {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let tip = CheckpointTip {
+            epoch: Epoch::arbitrary(u)?,
+            l1_height: L1Height::arbitrary(u)?,
+            l2_commitment: OLBlockCommitment::arbitrary(u)?,
+        };
+        let l1_reference = CheckpointL1Ref::arbitrary(u)?;
+        Ok(Self { tip, l1_reference })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_test_utils::ArbitraryGenerator;
+
+    use super::*;
+
+    #[test]
+    fn l1_checkpoint_borsh_roundtrip() {
+        let original: L1Checkpoint = ArbitraryGenerator::new().generate();
+        let bytes = borsh::to_vec(&original).expect("borsh encode");
+        let decoded: L1Checkpoint = borsh::from_slice(&bytes).expect("borsh decode");
+        assert_eq!(decoded, original);
     }
 }

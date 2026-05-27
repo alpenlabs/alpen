@@ -52,7 +52,7 @@ strata-chain-worker-new.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec = { workspace = true, optional = true }
 strata-codec-utils = { workspace = true, optional = true }
-strata-common = { workspace = true, optional = true }
+strata-common.workspace = true
 strata-config.workspace = true
 strata-consensus-logic.workspace = true
 strata-crypto = { workspace = true, optional = true }

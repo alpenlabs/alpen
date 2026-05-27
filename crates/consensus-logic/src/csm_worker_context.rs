@@ -161,4 +161,14 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
             .ol_checkpoint()
             .get_checkpoint_l1_ref_blocking(commitment)?)
     }
+
+    fn get_checkpoint_payload(
+        &self,
+        commitment: EpochCommitment,
+    ) -> anyhow::Result<Option<CheckpointPayload>> {
+        Ok(self
+            .storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_observed_payload_blocking(commitment)?)
+    }
 }

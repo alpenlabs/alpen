@@ -3,6 +3,7 @@ use alpen_ee_common::{
     SequencerOLClient,
 };
 use async_trait::async_trait;
+use http::{header::AUTHORIZATION, HeaderMap, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use ssz::Encode;
 use strata_acct_types::MessageEntry;
@@ -15,7 +16,7 @@ use strata_common::{
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLTxId,
 };
-use strata_ol_rpc_api::OLClientRpcClient;
+use strata_ol_rpc_api::{OLClientRpcClient, OLSubmitRpcClient};
 use strata_ol_rpc_types::{
     OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
 };
@@ -30,8 +31,10 @@ const STARTUP_RPC_MAX_RETRIES: u16 = 10;
 pub(crate) struct RpcOLClient {
     /// Own account id
     account_id: AccountId,
-    /// RPC client
-    client: RpcTransportClient,
+    /// RPC client used for read-only OL calls.
+    read_client: RpcTransportClient,
+    /// RPC client used for authenticated OL transaction submission.
+    submit_client: RpcTransportClient,
 }
 
 impl RpcOLClient {
@@ -39,9 +42,28 @@ impl RpcOLClient {
     pub(crate) fn try_new(
         account_id: AccountId,
         ol_rpc_url: impl Into<String>,
+        ol_submit_url: Option<&str>,
+        ol_submit_bearer_token: Option<&str>,
     ) -> Result<Self, OLClientError> {
-        let client = RpcTransportClient::from_url(ol_rpc_url.into())?;
-        Ok(Self { account_id, client })
+        let ol_rpc_url = ol_rpc_url.into();
+        let read_client = RpcTransportClient::from_url(ol_rpc_url.clone())?;
+        let submit_client = match ol_submit_url {
+            Some(url) => {
+                let token = ol_submit_bearer_token.ok_or_else(|| {
+                    OLClientError::rpc("--ol-submit-bearer-token is required with --ol-submit-url")
+                })?;
+                RpcTransportClient::from_url_with_headers(
+                    url.to_string(),
+                    bearer_auth_headers(token)?,
+                )?
+            }
+            None => RpcTransportClient::from_url(ol_rpc_url)?,
+        };
+        Ok(Self {
+            account_id,
+            read_client,
+            submit_client,
+        })
     }
 }
 
@@ -56,9 +78,9 @@ enum RpcTransportClient {
 
 /// Dispatches an RPC method call to the underlying transport client (WS or HTTP),
 /// mapping any RPC error to [`OLClientError`].
-macro_rules! call_rpc {
-    ($self:expr, $method:ident($($args:expr),*)) => {
-        match &$self.client {
+macro_rules! call_rpc_on {
+    ($client:expr, $method:ident($($args:expr),*)) => {
+        match $client {
             RpcTransportClient::Ws(client) => client
                 .$method($($args),*)
                 .await
@@ -71,10 +93,35 @@ macro_rules! call_rpc {
     };
 }
 
+macro_rules! call_read_rpc {
+    ($self:expr, $method:ident($($args:expr),*)) => {
+        call_rpc_on!(&$self.read_client, $method($($args),*))
+    };
+}
+
+macro_rules! call_submit_rpc {
+    ($self:expr, $method:ident($($args:expr),*)) => {
+        call_rpc_on!(&$self.submit_client, $method($($args),*))
+    };
+}
+
+fn bearer_auth_headers(token: &str) -> Result<HeaderMap, OLClientError> {
+    let mut headers = HeaderMap::new();
+    let value = HeaderValue::from_str(&format!("Bearer {token}"))
+        .map_err(|e| OLClientError::rpc(e.to_string()))?;
+    headers.insert(AUTHORIZATION, value);
+    Ok(headers)
+}
+
 impl RpcTransportClient {
     fn from_url(url: String) -> Result<Self, OLClientError> {
+        Self::from_url_with_headers(url, HeaderMap::new())
+    }
+
+    fn from_url_with_headers(url: String, headers: HeaderMap) -> Result<Self, OLClientError> {
         if url.starts_with("http://") || url.starts_with("https://") {
             let client = HttpClientBuilder::default()
+                .set_headers(headers)
                 .build(&url)
                 .map_err(|e| OLClientError::rpc(e.to_string()))?;
             return Ok(Self::Http(client));
@@ -94,7 +141,7 @@ impl RpcTransportClient {
         Ok(Self::Ws(ManagedWsClient::new_with_default_pool(
             WsClientConfig {
                 url: ws_url,
-                headers: Default::default(),
+                headers,
             },
         )))
     }
@@ -108,7 +155,7 @@ impl OLClient for RpcOLClient {
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || async {
-                let status = call_rpc!(self, chain_status())?;
+                let status = call_read_rpc!(self, chain_status())?;
 
                 Ok(OLChainStatus {
                     tip: OLBlockCommitment::new(status.tip().slot(), status.tip().blkid()),
@@ -126,7 +173,9 @@ impl OLClient for RpcOLClient {
             "ol_client_account_genesis_epoch",
             STARTUP_RPC_MAX_RETRIES,
             &ExponentialBackoff::default(),
-            || async { call_rpc!(self, get_account_genesis_epoch_commitment(self.account_id)) },
+            || async {
+                call_read_rpc!(self, get_account_genesis_epoch_commitment(self.account_id))
+            },
         )
         .await
     }
@@ -138,7 +187,7 @@ impl OLClient for RpcOLClient {
             &ExponentialBackoff::default(),
             || async {
                 let epoch_summary =
-                    call_rpc!(self, get_acct_epoch_summary(self.account_id, epoch))?;
+                    call_read_rpc!(self, get_acct_epoch_summary(self.account_id, epoch))?;
 
                 let updates: Vec<UpdateInputData> = epoch_summary
                     .update_inputs()
@@ -174,7 +223,7 @@ impl SequencerOLClient for RpcOLClient {
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || async {
-                let block_summaries = call_rpc!(
+                let block_summaries = call_read_rpc!(
                     self,
                     get_blocks_summaries(self.account_id, min_slot, max_slot)
                 )?;
@@ -205,7 +254,7 @@ impl SequencerOLClient for RpcOLClient {
 
     /// Retrieves latest account state in the OL Chain for this account.
     async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError> {
-        let snark_account_state = call_rpc!(
+        let snark_account_state = call_read_rpc!(
             self,
             get_snark_account_state(self.account_id, OLBlockOrTag::Latest)
         )?
@@ -229,7 +278,7 @@ impl SequencerOLClient for RpcOLClient {
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || async {
-                let commitment = call_rpc!(self, get_asm_manifest_commitment(l1_height))?;
+                let commitment = call_read_rpc!(self, get_asm_manifest_commitment(l1_height))?;
 
                 commitment.map(|h| Hash::from(h.0)).ok_or_else(|| {
                     OLClientError::rpc(format!(
@@ -277,7 +326,7 @@ impl SequencerOLClient for RpcOLClient {
             "ol_client_submit_update",
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
-            || async { call_rpc!(self, submit_transaction(tx.clone())) },
+            || async { call_submit_rpc!(self, submit_transaction(tx.clone())) },
         )
         .await?;
 
@@ -302,7 +351,10 @@ impl SequencerOLClient for RpcOLClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{OLClientError, RpcTransportClient};
+    use http::header::HeaderName;
+    use strata_identifiers::AccountId;
+
+    use super::{bearer_auth_headers, OLClientError, RpcOLClient, RpcTransportClient};
 
     #[test]
     fn http_url_uses_http_client() {
@@ -341,6 +393,35 @@ mod tests {
         match err {
             OLClientError::Rpc(msg) => {
                 assert!(msg.contains("unsupported OL RPC scheme"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bearer_auth_headers_sets_authorization() {
+        let headers = bearer_auth_headers("test-token").unwrap();
+        assert_eq!(
+            headers
+                .get(HeaderName::from_static("authorization"))
+                .unwrap(),
+            "Bearer test-token"
+        );
+    }
+
+    #[test]
+    fn submit_url_requires_bearer_token() {
+        let err = RpcOLClient::try_new(
+            AccountId::new([0u8; 32]),
+            "http://localhost:1234",
+            Some("http://localhost:1235"),
+            None,
+        )
+        .expect_err("missing submit token should fail");
+
+        match err {
+            OLClientError::Rpc(msg) => {
+                assert!(msg.contains("--ol-submit-bearer-token"));
             }
             other => panic!("unexpected error: {other:?}"),
         }

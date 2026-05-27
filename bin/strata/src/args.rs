@@ -8,11 +8,15 @@ use strata_config::{Config, SecretString};
 use crate::errors::*;
 
 const STRATA_ADMIN_RPC_TOKEN: &str = "STRATA_ADMIN_RPC_TOKEN";
+const STRATA_SUBMIT_RPC_TOKEN: &str = "STRATA_SUBMIT_RPC_TOKEN";
+const DEFAULT_HEALTH_CHECK_HOST: &str = "0.0.0.0";
+const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
 
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
 pub(crate) struct EnvArgs {
     admin_rpc_token: Option<String>,
+    submit_rpc_token: Option<String>,
 }
 
 impl EnvArgs {
@@ -20,6 +24,7 @@ impl EnvArgs {
     pub(crate) fn from_env() -> Result<Self, InitError> {
         Ok(Self {
             admin_rpc_token: env::var(STRATA_ADMIN_RPC_TOKEN).ok(),
+            submit_rpc_token: env::var(STRATA_SUBMIT_RPC_TOKEN).ok(),
         })
     }
 
@@ -27,6 +32,9 @@ impl EnvArgs {
     pub(crate) fn apply_to_config(&self, config: &mut Config) {
         if let Some(token) = &self.admin_rpc_token {
             config.client.admin_rpc_bearer_token = Some(SecretString::from(token.clone()));
+        }
+        if let Some(token) = &self.submit_rpc_token {
+            config.client.submit_rpc_bearer_token = Some(SecretString::from(token.clone()));
         }
     }
 }
@@ -83,6 +91,30 @@ pub(crate) struct Args {
     #[argh(option, description = "admin rpc port")]
     pub admin_rpc_port: Option<u16>,
 
+    /// Submit RPC host that the client will listen to.
+    #[argh(option, description = "submit rpc host")]
+    pub submit_rpc_host: Option<String>,
+
+    /// Submit RPC port that the client will listen to.
+    #[argh(option, description = "submit rpc port")]
+    pub submit_rpc_port: Option<u16>,
+
+    /// Host for the HTTP health check endpoint.
+    #[argh(
+        option,
+        default = "DEFAULT_HEALTH_CHECK_HOST.to_string()",
+        description = "health check host"
+    )]
+    pub health_check_host: String,
+
+    /// Port for the HTTP health check endpoint.
+    #[argh(
+        option,
+        default = "DEFAULT_HEALTH_CHECK_PORT",
+        description = "health check port"
+    )]
+    pub health_check_port: u16,
+
     /// Other generic overrides to the config toml.
     /// Will be used, for example, as `-o btcio.reader.client_poll_dur_ms=1000 -o exec.reth.rpc_url=http://reth`
     #[argh(option, short = 'o', description = "generic config overrides")]
@@ -120,6 +152,12 @@ impl Args {
         }
         if let Some(admin_rpc_port) = &self.admin_rpc_port {
             overrides.push(format!("client.admin_rpc_port={admin_rpc_port}"));
+        }
+        if let Some(submit_rpc_host) = &self.submit_rpc_host {
+            overrides.push(format!("client.submit_rpc_host={submit_rpc_host}"));
+        }
+        if let Some(submit_rpc_port) = &self.submit_rpc_port {
+            overrides.push(format!("client.submit_rpc_port={submit_rpc_port}"));
         }
 
         Ok(overrides)
@@ -176,17 +214,20 @@ mod tests {
     fn test_env_args_without_token_leave_config_unchanged() {
         let env_args = EnvArgs {
             admin_rpc_token: None,
+            submit_rpc_token: None,
         };
         let mut config = test_config();
 
         env_args.apply_to_config(&mut config);
         assert_eq!(config.client.admin_rpc_bearer_token, None);
+        assert_eq!(config.client.submit_rpc_bearer_token, None);
     }
 
     #[test]
     fn test_env_args_admin_token_applies_directly_to_config() {
         let env_args = EnvArgs {
             admin_rpc_token: Some("test-token".to_string()),
+            submit_rpc_token: None,
         };
         let mut config = test_config();
 
@@ -202,7 +243,26 @@ mod tests {
     }
 
     #[test]
-    fn test_args_admin_rpc_overrides() {
+    fn test_env_args_submit_token_applies_directly_to_config() {
+        let env_args = EnvArgs {
+            admin_rpc_token: None,
+            submit_rpc_token: Some("test-submit-token".to_string()),
+        };
+        let mut config = test_config();
+
+        env_args.apply_to_config(&mut config);
+        assert_eq!(
+            config
+                .client
+                .submit_rpc_bearer_token
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("test-submit-token")
+        );
+    }
+
+    #[test]
+    fn test_args_rpc_overrides() {
         let args = Args {
             config: PathBuf::from("config.toml"),
             datadir: None,
@@ -215,6 +275,10 @@ mod tests {
             rpc_port: None,
             admin_rpc_host: Some("127.0.0.2".to_string()),
             admin_rpc_port: Some(9544),
+            submit_rpc_host: Some("127.0.0.3".to_string()),
+            submit_rpc_port: Some(9545),
+            health_check_host: DEFAULT_HEALTH_CHECK_HOST.to_string(),
+            health_check_port: DEFAULT_HEALTH_CHECK_PORT,
             overrides: Vec::new(),
         };
 
@@ -222,7 +286,9 @@ mod tests {
             args.get_internal_overrides().unwrap(),
             vec![
                 "client.admin_rpc_host=127.0.0.2",
-                "client.admin_rpc_port=9544"
+                "client.admin_rpc_port=9544",
+                "client.submit_rpc_host=127.0.0.3",
+                "client.submit_rpc_port=9545"
             ]
         );
     }

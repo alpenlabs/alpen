@@ -95,6 +95,9 @@ class StrataFactory(flexitest.Factory):
         admin_rpc_port = self.next_port()
         admin_rpc_host = "127.0.0.1"
         admin_rpc_token = "test-admin-token"
+        submit_rpc_port = self.next_port()
+        submit_rpc_host = "127.0.0.1"
+        submit_rpc_token = "test-submit-token"
         logfile = datadir / "service.log"
 
         # Create config
@@ -104,6 +107,9 @@ class StrataFactory(flexitest.Factory):
             admin_rpc_host=admin_rpc_host,
             admin_rpc_port=admin_rpc_port,
             admin_rpc_bearer_token=admin_rpc_token,
+            submit_rpc_host=submit_rpc_host,
+            submit_rpc_port=submit_rpc_port,
+            submit_rpc_bearer_token=submit_rpc_token,
         )
         # Leave log_dir/log_file_prefix unset so strata writes tracing to
         # stdout/stderr; the harness captures both into service.log.
@@ -180,6 +186,14 @@ class StrataFactory(flexitest.Factory):
             admin_rpc_host,
             "--admin-rpc-port",
             str(admin_rpc_port),
+            "--submit-rpc-host",
+            submit_rpc_host,
+            "--submit-rpc-port",
+            str(submit_rpc_port),
+            "--health-check-host",
+            "127.0.0.1",
+            "--health-check-port",
+            "0",
         ]
 
         if is_sequencer:
@@ -203,6 +217,7 @@ class StrataFactory(flexitest.Factory):
 
         rpc_url = f"http://{rpc_host}:{rpc_port}"
         admin_rpc_url = f"http://{admin_rpc_host}:{admin_rpc_port}"
+        submit_rpc_url = f"http://{submit_rpc_host}:{submit_rpc_port}"
 
         resolved_slots_per_epoch = 4
         if epoch_sealing_config is not None and epoch_sealing_config.slots_per_epoch is not None:
@@ -216,6 +231,10 @@ class StrataFactory(flexitest.Factory):
             "admin_rpc_host": admin_rpc_host,
             "admin_rpc_url": admin_rpc_url,
             "admin_rpc_token": admin_rpc_token,
+            "submit_rpc_port": submit_rpc_port,
+            "submit_rpc_host": submit_rpc_host,
+            "submit_rpc_url": submit_rpc_url,
+            "submit_rpc_token": submit_rpc_token,
             "datadir": str(datadir),
             "mode": mode,
             "slots_per_epoch": resolved_slots_per_epoch,

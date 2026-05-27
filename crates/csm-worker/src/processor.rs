@@ -7,7 +7,6 @@ use bitcoin::hashes::Hash;
 use strata_asm_common::{AsmLogEntry, Subprotocol, VerifiedAuxData};
 use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
-use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
@@ -30,7 +29,7 @@ pub(crate) struct PendingCsmUpdate {
 
     /// Checkpoint observations made during this block, applied to the worker's
     /// finality cursors only after a successful commit.
-    pub(crate) observations: Vec<(EpochCommitment, CheckpointL1Ref)>,
+    pub(crate) observations: Vec<L1Checkpoint>,
 
     /// Per-block verification fixtures, built once on the first checkpoint tip log.
     pub(crate) ckpt_verification_ctx: Option<CheckpointVerificationContext>,
@@ -100,16 +99,15 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             );
         }
 
-        let observation =
+        let new_checkpoint =
             self.mark_ol_checkpoint_l1_observed(pending, checkpoint_tip_update, asm_block)?;
-        // Tip logs do not contain full batch transition details.
-        // CSM only needs epoch progression for finalized-epoch signaling, so we
-        // synthesize a minimal checkpoint view from the tip.
-        // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
-        // these fields directly without legacy L1Checkpoint shape coupling.
-        let synthetic_checkpoint =
-            checkpoint_from_tip_update(checkpoint_tip_update, asm_block, observation);
-        pending.cur_state = next_client_state(&pending.cur_state, synthetic_checkpoint, epoch);
+        // `last_finalized_checkpoint` is left as the previous value here; the
+        // service loop refreshes it once `advance_finalization` declares a new
+        // finalized epoch based on L1 depth.
+        pending.cur_state = Arc::new(ClientState::new(
+            pending.cur_state.get_last_finalized_checkpoint(),
+            Some(new_checkpoint),
+        ));
 
         pending.last_processed_epoch = Some(epoch);
         Ok(())
@@ -162,40 +160,57 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
     /// Folds checkpoint observations made during a successfully committed block
     /// into the worker's finality cursors.
-    fn apply_observations(&mut self, observations: Vec<(EpochCommitment, CheckpointL1Ref)>) {
-        for (commitment, observation) in observations {
-            // Update cached confirmed epoch monotonically.
-            if self
-                .confirmed_epoch
-                .is_none_or(|current| commitment.epoch() > current.epoch())
-            {
-                self.confirmed_epoch = Some(commitment);
-            }
+    fn apply_observations(&mut self, observations: impl IntoIterator<Item = L1Checkpoint>) {
+        for checkpoint in observations {
+            self.apply_checkpoint_observation(checkpoint);
+        }
+    }
 
-            // Queue only non-finalized candidates and avoid duplicates.
-            if self
-                .finalized_epoch
-                .is_none_or(|current| commitment.epoch() > current.epoch())
-                && !self
-                    .observed_checkpoints
-                    .iter()
-                    .any(|(epoch, _)| *epoch == commitment)
-            {
-                self.observed_checkpoints
-                    .push_back((commitment, observation));
-            }
+    /// Folds a single checkpoint observation into the worker's finality
+    /// cursors: bumps `confirmed_epoch` monotonically and queues the
+    /// observation for incremental depth-driven finalization if it's still
+    /// ahead of `finalized_epoch` and not already present.
+    fn apply_checkpoint_observation(&mut self, checkpoint: L1Checkpoint) {
+        let commitment = EpochCommitment::from(&checkpoint);
+
+        // Update cached confirmed epoch monotonically.
+        if self
+            .confirmed_epoch
+            .is_none_or(|current| commitment.epoch() > current.epoch())
+        {
+            self.confirmed_epoch = Some(commitment);
+        }
+
+        // Queue only non-finalized candidates and avoid duplicates.
+        if self
+            .finalized_epoch
+            .is_none_or(|current| commitment.epoch() > current.epoch())
+            && !self
+                .observed_checkpoints
+                .iter()
+                .any(|existing| EpochCommitment::from(existing) == commitment)
+        {
+            self.observed_checkpoints.push_back(checkpoint);
         }
     }
 
     /// Walks the observation queue and advances `finalized_epoch` for every
     /// candidate buried at least `finality_depth` deep under `current_l1_tip`.
     ///
-    /// Returns `true` if `finalized_epoch` advanced.
-    pub(crate) fn advance_finalization(&mut self, current_l1_tip: L1Height) -> bool {
+    /// Returns the most recently finalized `L1Checkpoint` if `finalized_epoch`
+    /// advanced, else `None`. The caller uses the returned record to refresh
+    /// `ClientState.last_finalized_checkpoint` so it reflects depth-driven
+    /// finality rather than the (since-removed) observation heuristic.
+    pub(crate) fn advance_finalization(
+        &mut self,
+        current_l1_tip: L1Height,
+    ) -> Option<L1Checkpoint> {
         let prev_finalized = self.finalized_epoch;
         let finality_depth = self.ctx.l1_reorg_safe_depth().max(1);
+        let mut latest_finalized: Option<L1Checkpoint> = None;
 
-        while let Some((commitment, observation)) = self.observed_checkpoints.front() {
+        while let Some(candidate) = self.observed_checkpoints.front() {
+            let commitment = EpochCommitment::from(candidate);
             if self
                 .finalized_epoch
                 .is_some_and(|current| commitment.epoch() <= current.epoch())
@@ -205,23 +220,30 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             }
 
             let confirmations = current_l1_tip
-                .saturating_sub(observation.l1_commitment.height())
+                .saturating_sub(candidate.l1_reference.l1_commitment.height())
                 .saturating_add(1);
             if confirmations < finality_depth {
                 break;
             }
 
-            let epoch = *commitment;
-            self.observed_checkpoints.pop_front();
+            let finalized = self
+                .observed_checkpoints
+                .pop_front()
+                .expect("front returned Some above");
             if self
                 .finalized_epoch
-                .is_none_or(|current| epoch.epoch() > current.epoch())
+                .is_none_or(|current| commitment.epoch() > current.epoch())
             {
-                self.finalized_epoch = Some(epoch);
+                self.finalized_epoch = Some(commitment);
             }
+            latest_finalized = Some(finalized);
         }
 
-        self.finalized_epoch != prev_finalized
+        if self.finalized_epoch != prev_finalized {
+            latest_finalized
+        } else {
+            None
+        }
     }
 
     /// Processes `asm_block` and its logs, first replaying any ASM blocks skipped
@@ -328,7 +350,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         pending: &mut PendingCsmUpdate,
         checkpoint_tip_update: &CheckpointTipUpdate,
         asm_block: &L1BlockCommitment,
-    ) -> anyhow::Result<CheckpointL1Ref> {
+    ) -> anyhow::Result<L1Checkpoint> {
         let tip = checkpoint_tip_update.tip();
         let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
         let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
@@ -358,73 +380,18 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             observation.clone(),
         )?;
 
-        pending.observations.push((commitment, observation.clone()));
+        let checkpoint = L1Checkpoint::new(*tip, observation);
+        pending.observations.push(checkpoint.clone());
 
         debug!(
             ?commitment,
             l1_height = asm_block.height(),
-            txid = ?extracted.txid,
-            wtxid = ?extracted.wtxid,
+            txid = ?checkpoint.l1_reference.txid,
+            wtxid = ?checkpoint.l1_reference.wtxid,
             "Recorded OL checkpoint L1 ref from tip update"
         );
-        Ok(observation)
+        Ok(checkpoint)
     }
-}
-
-/// Returns the next client state after folding `new_checkpoint` for `epoch`
-/// into `prev`.
-fn next_client_state(
-    prev: &ClientState,
-    new_checkpoint: L1Checkpoint,
-    epoch: Epoch,
-) -> Arc<ClientState> {
-    // Determine if this checkpoint should be the last finalized or just recent.
-
-    // TODO(STR-2438): This comes from the legacy design currently and will be
-    // simplified in the future.
-    // Currently, `last_finalized` is the buried checkpoint and recent and the last be observed
-    // (the checkpoint that makes the the finalized one to be buried).
-    // It's better to store `L1Checkpoint` separately, move the
-    // logic of "recent/finalized" to the DbManager (that can actually fetches
-    // actual persisted data and doesn't rely on the current state).
-    let (last_finalized, recent) = match prev.get_last_checkpoint() {
-        Some(existing) => {
-            // If the new checkpoint is for a later epoch, it becomes recent
-            if epoch > existing.batch_info.epoch() {
-                (Some(existing.clone()), Some(new_checkpoint))
-            } else {
-                // Otherwise keep existing
-                (Some(existing.clone()), None)
-            }
-        }
-        None => {
-            // New checkpoint is the first checkpoint, and it is marked recent
-            (None, Some(new_checkpoint))
-        }
-    };
-
-    Arc::new(ClientState::new(last_finalized, recent))
-}
-
-/// Build a compatibility synthetic [`L1Checkpoint`] from a checkpoint tip update.
-fn checkpoint_from_tip_update(
-    checkpoint_tip_update: &CheckpointTipUpdate,
-    asm_block: &L1BlockCommitment,
-    l1_reference: CheckpointL1Ref,
-) -> L1Checkpoint {
-    let tip = checkpoint_tip_update.tip();
-
-    // TODO(STR-2438): This `BatchInfo` synthesis is semantically incorrect
-    // for checkpoint tip updates (start/end L1 and L2 commitments are
-    // duplicated placeholders). Replace with native checkpoint data flow
-    // and remove legacy `BatchInfo` construction.
-    let batch_info = BatchInfo::new(
-        tip.epoch,
-        (*asm_block, *asm_block),
-        (*tip.l2_commitment(), *tip.l2_commitment()),
-    );
-
-    L1Checkpoint::new(batch_info, l1_reference)
 }
 
 /// Returns the parent L1 commitment derived from `block`'s header.
@@ -464,7 +431,7 @@ mod tests {
     };
     use strata_asm_logs::constants::DEPOSIT_LOG_TYPE_ID;
     use strata_btc_verification::L1Anchor;
-    use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
+    use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::RBuf32;
     use strata_l1_txfmt::MagicBytes;
@@ -978,21 +945,23 @@ mod tests {
     }
 
     /// Builds an observation queue entry at `epoch` anchored to L1 `height`.
-    fn observation_at(epoch: u32, l1_height: L1Height) -> (EpochCommitment, CheckpointL1Ref) {
-        let commitment = EpochCommitment::from_terminal(
-            epoch,
-            OLBlockCommitment::new(
-                epoch as u64 * 10,
-                OLBlockId::from(Buf32::from([epoch as u8; 32])),
-            ),
+    fn observation_at(epoch: u32, l1_height: L1Height) -> L1Checkpoint {
+        let l2_commitment = OLBlockCommitment::new(
+            epoch as u64 * 10,
+            OLBlockId::from(Buf32::from([epoch as u8; 32])),
         );
+        let tip = strata_asm_proto_checkpoint_types::CheckpointTip {
+            epoch,
+            l1_height,
+            l2_commitment,
+        };
         let l1_block = L1BlockCommitment::new(l1_height, block_id_at(l1_height));
         let l1_ref = CheckpointL1Ref::new(
             l1_block,
             RBuf32::from([epoch as u8; 32]),
             RBuf32::from([epoch as u8; 32]),
         );
-        (commitment, l1_ref)
+        L1Checkpoint::new(tip, l1_ref)
     }
 
     /// Empty queue is a trivial no-op and never advances `finalized_epoch`.
@@ -1001,20 +970,19 @@ mod tests {
         let (mut state, _) = create_test_state();
         assert!(state.observed_checkpoints.is_empty());
 
-        let changed = state.advance_finalization(1_000);
-        assert!(!changed);
+        let finalized = state.advance_finalization(1_000);
+        assert!(finalized.is_none());
         assert_eq!(state.finalized_epoch, None);
     }
 
     #[test]
     fn advance_finalization_below_depth_does_not_advance() {
         let (mut state, _) = create_test_state();
-        let obs = observation_at(1, 100);
-        state.observed_checkpoints.push_back(obs.clone());
+        state.observed_checkpoints.push_back(observation_at(1, 100));
 
         // tip at 101 has 2 confirmations, below threshold of 3.
-        let changed = state.advance_finalization(101);
-        assert!(!changed);
+        let finalized = state.advance_finalization(101);
+        assert!(finalized.is_none());
         assert_eq!(state.finalized_epoch, None);
         assert_eq!(state.observed_checkpoints.len(), 1);
     }
@@ -1022,12 +990,13 @@ mod tests {
     #[test]
     fn advance_finalization_single_advance() {
         let (mut state, _) = create_test_state();
-        let (commitment, _) = observation_at(1, 100);
-        state.observed_checkpoints.push_back(observation_at(1, 100));
+        let candidate = observation_at(1, 100);
+        let commitment = EpochCommitment::from(&candidate);
+        state.observed_checkpoints.push_back(candidate.clone());
 
         // tip at 102 has 3 confirmations = depth threshold.
-        let changed = state.advance_finalization(102);
-        assert!(changed);
+        let finalized = state.advance_finalization(102);
+        assert_eq!(finalized.as_ref(), Some(&candidate));
         assert_eq!(state.finalized_epoch, Some(commitment));
         assert!(state.observed_checkpoints.is_empty());
     }
@@ -1035,14 +1004,15 @@ mod tests {
     #[test]
     fn advance_finalization_multi_advance_in_one_call() {
         let (mut state, _) = create_test_state();
-        let (_, _) = observation_at(1, 100);
-        let (commitment_2, _) = observation_at(2, 101);
-        state.observed_checkpoints.push_back(observation_at(1, 100));
-        state.observed_checkpoints.push_back(observation_at(2, 101));
+        let candidate_1 = observation_at(1, 100);
+        let candidate_2 = observation_at(2, 101);
+        let commitment_2 = EpochCommitment::from(&candidate_2);
+        state.observed_checkpoints.push_back(candidate_1);
+        state.observed_checkpoints.push_back(candidate_2.clone());
 
         // tip at 103 so both candidates have ≥ 3 confirmations.
-        let changed = state.advance_finalization(103);
-        assert!(changed);
+        let finalized = state.advance_finalization(103);
+        assert_eq!(finalized.as_ref(), Some(&candidate_2));
         assert_eq!(state.finalized_epoch, Some(commitment_2));
         assert!(state.observed_checkpoints.is_empty());
     }
@@ -1050,17 +1020,22 @@ mod tests {
     #[test]
     fn advance_finalization_stops_at_shallow_candidate() {
         let (mut state, _) = create_test_state();
-        let (commitment_1, _) = observation_at(1, 100);
-        state.observed_checkpoints.push_back(observation_at(1, 100));
-        state.observed_checkpoints.push_back(observation_at(2, 102));
+        let candidate_1 = observation_at(1, 100);
+        let commitment_1 = EpochCommitment::from(&candidate_1);
+        let candidate_2 = observation_at(2, 102);
+        state.observed_checkpoints.push_back(candidate_1.clone());
+        state.observed_checkpoints.push_back(candidate_2.clone());
 
         // tip at 102 so epoch 1 has 3 confirmations (buried), epoch 2 has 1.
-        let changed = state.advance_finalization(102);
-        assert!(changed);
+        let finalized = state.advance_finalization(102);
+        assert_eq!(finalized.as_ref(), Some(&candidate_1));
         assert_eq!(state.finalized_epoch, Some(commitment_1));
         assert_eq!(state.observed_checkpoints.len(), 1);
         assert_eq!(
-            state.observed_checkpoints.front().map(|(e, _)| *e),
+            state
+                .observed_checkpoints
+                .front()
+                .map(EpochCommitment::from),
             Some(EpochCommitment::from_terminal(
                 2,
                 OLBlockCommitment::new(20, OLBlockId::from(Buf32::from([2u8; 32])))
@@ -1071,14 +1046,15 @@ mod tests {
     #[test]
     fn advance_finalization_pops_already_finalized() {
         let (mut state, _) = create_test_state();
-        let (commitment_1, _) = observation_at(1, 100);
+        let candidate = observation_at(1, 100);
+        let commitment_1 = EpochCommitment::from(&candidate);
         state.finalized_epoch = Some(commitment_1);
         // Stale entry for an epoch ≤ finalized.
-        state.observed_checkpoints.push_back(observation_at(1, 100));
+        state.observed_checkpoints.push_back(candidate);
 
-        let changed = state.advance_finalization(200);
+        let finalized = state.advance_finalization(200);
         assert!(
-            !changed,
+            finalized.is_none(),
             "popping a stale entry must not register as an advance"
         );
         assert_eq!(state.finalized_epoch, Some(commitment_1));

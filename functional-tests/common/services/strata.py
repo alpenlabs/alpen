@@ -36,6 +36,10 @@ class StrataProps(TypedDict):
     admin_rpc_host: str
     admin_rpc_url: str
     admin_rpc_token: str
+    submit_rpc_port: int
+    submit_rpc_host: str
+    submit_rpc_url: str
+    submit_rpc_token: str
     datadir: str
     mode: str
     slots_per_epoch: int
@@ -120,6 +124,23 @@ class StrataService(RpcService):
         rpc = JsonRpcClient(
             self.props["admin_rpc_url"],
             headers={"Authorization": f"Bearer {self.props['admin_rpc_token']}"},
+        )
+
+        def _status_check(method: str):
+            if not self.check_status():
+                self._logger.warning(f"service '{self._name}' crashed before call to {method}")
+                raise RuntimeError(f"process '{self._name}' crashed")
+
+        rpc.set_pre_call_hook(_status_check)
+        return rpc
+
+    def create_submit_rpc(self) -> JsonRpcClient:
+        if not self.check_status():
+            raise RuntimeError("Service is not running")
+
+        rpc = JsonRpcClient(
+            self.props["submit_rpc_url"],
+            headers={"Authorization": f"Bearer {self.props['submit_rpc_token']}"},
         )
 
         def _status_check(method: str):

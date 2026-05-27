@@ -77,6 +77,7 @@ class TestMockWithdrawal(StrataNodeTest):
 
         logger.info("Waiting for Strata RPC to be ready...")
         rpc = strata.wait_for_rpc_ready(timeout=30)
+        submit_rpc = strata.create_submit_rpc()
 
         account_id_hex = make_test_account_id_hex()
         logger.info(f"Test account ID: {account_id_hex}")
@@ -153,7 +154,7 @@ class TestMockWithdrawal(StrataNodeTest):
 
         # Step 6: Submit withdrawal
         logger.info("Submitting withdrawal transaction...")
-        tx_id = rpc.strata_submitTransaction(tx_json)
+        tx_id = submit_rpc.strata_submitTransaction(tx_json)
         logger.info(f"Withdrawal submitted, ID: {tx_id}")
 
         # Step 7: Wait for OL blocks to process withdrawal

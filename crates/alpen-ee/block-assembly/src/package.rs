@@ -11,7 +11,7 @@ use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 use strata_ol_bridge_types::OperatorSelection;
 use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
 use strata_snark_acct_runtime::InputMessage;
-use tracing::warn;
+use tracing::{info, warn};
 
 /// Builds [`ExecInputs`] from parsed input messages.
 ///
@@ -26,10 +26,13 @@ pub(crate) fn build_block_inputs(
         let value = msg.meta().value();
         match msg.message() {
             Some(DecodedEeMessageData::Deposit(deposit_msg_data)) => {
-                inputs.add_subject_deposit(SubjectDepositData::new(
-                    *deposit_msg_data.dest_subject(),
-                    value,
-                ));
+                let dest_subject = *deposit_msg_data.dest_subject();
+                info!(
+                    ?dest_subject,
+                    amount_sat = value.to_sat(),
+                    "accepted deposit message as EE input",
+                );
+                inputs.add_subject_deposit(SubjectDepositData::new(dest_subject, value));
             }
             Some(DecodedEeMessageData::SubjTransfer(_)) => {
                 // no need to warn on this
@@ -63,6 +66,14 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
             );
             continue;
         };
+        info!(
+            withdrawal_txid = ?withdrawal_intent.withdrawal_txid,
+            amount_sat = withdrawal_intent.amt,
+            selected_operator = withdrawal_intent.selected_operator.raw(),
+            dest_desc_len = withdrawal_intent.destination.to_bytes().len(),
+            %bridge_gateway_account_id,
+            "created withdrawal output message for bridge gateway",
+        );
         outputs.add_message(OutputMessage::new(bridge_gateway_account_id, msg_payload));
     }
     outputs

@@ -1,25 +1,23 @@
 //! General handling around checkpoint verification.
 
+use strata_asm_proto_checkpoint_types::CheckpointTip;
 use strata_chaintsn::transition::verify_checkpoint_proof;
 use strata_checkpoint_types::{BatchInfo, Checkpoint};
-use strata_csm_types::L1Checkpoint;
 use strata_params::RollupParams;
 use tracing::*;
 use zkaleido::ProofReceipt;
 
 use crate::errors::CheckpointError;
 
-/// Verifies if a checkpoint if valid, given the context of a previous checkpoint.
+/// Verifies if a checkpoint is valid, given the context of a previous checkpoint.
 ///
 /// If this is the first checkpoint we verify, then there is no checkpoint to
 /// check against.
 ///
 /// This does NOT check the signature.
-// TODO reduce this to actually just passing in the core information we really
-// need, not like the height
 pub fn verify_checkpoint(
     checkpoint: &Checkpoint,
-    prev_checkpoint: Option<&L1Checkpoint>,
+    prev_tip: Option<&CheckpointTip>,
     params: &RollupParams,
 ) -> Result<(), CheckpointError> {
     // First thing obviously is to verify the proof.  No sense in continuing if
@@ -28,7 +26,7 @@ pub fn verify_checkpoint(
     verify_proof(checkpoint, &proof_receipt, params)?;
 
     // And check that we're building upon the previous state correctly.
-    if let Some(prev) = prev_checkpoint {
+    if let Some(prev) = prev_tip {
         verify_checkpoint_extends(checkpoint, prev, params)?;
     } else {
         // If it's the first checkpoint we want it to be the initial epoch.
@@ -43,11 +41,11 @@ pub fn verify_checkpoint(
 /// Verifies that the a checkpoint extends the state of a previous checkpoint.
 fn verify_checkpoint_extends(
     checkpoint: &Checkpoint,
-    prev: &L1Checkpoint,
+    prev: &CheckpointTip,
     _params: &RollupParams,
 ) -> Result<(), CheckpointError> {
     let epoch = checkpoint.batch_info().epoch();
-    let prev_epoch = prev.batch_info.epoch();
+    let prev_epoch = prev.epoch;
 
     // Check that the epoch numbers line up.
     if epoch != prev_epoch + 1 {

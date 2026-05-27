@@ -15,7 +15,7 @@ use alpen_reth_node::{
 use eyre::{eyre, Context};
 use reth_node_builder::{ConsensusEngineHandle, PayloadBuilderAttributes};
 use reth_payload_builder::{PayloadBuilderError, PayloadBuilderHandle};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 const MISSING_PARENT_RETRY_DELAY_MS: u64 = 250;
 const MISSING_PARENT_MAX_RETRIES: u16 = 120;
@@ -123,6 +123,15 @@ impl PayloadBuilderEngine for AlpenRethPayloadEngine {
                 })
             })
             .collect::<Result<Vec<Withdrawal>, _>>()?;
+        for (deposit_index, withdrawal) in withdrawals.iter().enumerate() {
+            info!(
+                %parent,
+                deposit_index,
+                address = %withdrawal.address,
+                amount_gwei = withdrawal.amount,
+                "prepared deposit mint for payload attributes",
+            );
+        }
         let payload_attrs = AlpenPayloadAttributes::new_from_eth(PayloadAttributes {
             timestamp: build_attrs.timestamp(),
             // IMPORTANT: post cancun payload build will fail without
@@ -151,6 +160,16 @@ impl PayloadBuilderEngine for AlpenRethPayloadEngine {
                 .await
             {
                 Ok(Ok(payload_id)) => {
+                    if deposit_count > 0 {
+                        info!(
+                            %parent,
+                            timestamp,
+                            deposit_count,
+                            ?payload_id,
+                            elapsed_ms = build_started.elapsed().as_millis(),
+                            "payload builder accepted deposit mint job",
+                        );
+                    }
                     debug!(
                         %parent,
                         timestamp,
@@ -208,6 +227,17 @@ impl PayloadBuilderEngine for AlpenRethPayloadEngine {
                 .await
             {
                 Some(Ok(payload)) => {
+                    if deposit_count > 0 {
+                        info!(
+                            %parent,
+                            timestamp,
+                            deposit_count,
+                            ?payload_id,
+                            resolve_elapsed_ms = resolve_started.elapsed().as_millis(),
+                            total_elapsed_ms = build_started.elapsed().as_millis(),
+                            "payload builder resolved deposit mint payload",
+                        );
+                    }
                     debug!(
                         %parent,
                         timestamp,

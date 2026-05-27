@@ -55,6 +55,8 @@ class SignerFactory(flexitest.Factory):
             f'sequencer_admin_endpoint = "{ws_url}"\n'
             f'sequencer_admin_bearer_token = "{admin_rpc_token}"\n'
             f"duty_poll_interval = {TEST_POLL_INTERVAL_MS}\n"
+            f'health_check_host = "127.0.0.1"\n'
+            f"health_check_port = 0\n"
         )
 
         tool = shutil.which("strata-signer")

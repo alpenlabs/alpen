@@ -5,7 +5,7 @@ use alpen_ee_common::{DepositInfo, EnginePayload, PayloadBuildAttributes, Payloa
 use alpen_reth_evm::subject_to_address_unchecked;
 use strata_acct_types::Hash;
 use strata_ee_acct_types::{EeAccountState, PendingInputEntry, UpdateExtraData};
-use tracing::debug;
+use tracing::{debug, info};
 
 /// Extracts deposits from pending inputs, limited by `max_deposits`.
 ///
@@ -42,6 +42,16 @@ pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
     let processed_inputs = deposits.len() as u32;
     // dont handle forced inclusions currently
     let processed_fincls = 0;
+
+    for (deposit_index, deposit) in deposits.iter().enumerate() {
+        info!(
+            %parent,
+            deposit_index,
+            address = %deposit.address(),
+            amount_sat = deposit.amount().to_sat(),
+            "selected deposit for EE payload",
+        );
+    }
 
     debug!(%parent, timestamp = %timestamp_sec, deposits = %processed_inputs, "starting payload build");
     let payload = payload_builder

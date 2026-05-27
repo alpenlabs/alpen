@@ -153,9 +153,34 @@ fn validate_config(config: Config) -> Result<Config, InitError> {
         }));
     }
 
+    if config.client.is_sequencer
+        && config
+            .client
+            .submit_rpc_bearer_token
+            .as_ref()
+            .is_none_or(|token| token.expose_secret().is_empty())
+    {
+        return Err(InitError::MalformedConfig(ConfigError::InvalidOverride {
+            override_str: "client.submit_rpc_bearer_token must be set and non-empty".to_string(),
+        }));
+    }
+
     if config.client.is_sequencer && config.client.rpc_port == config.client.admin_rpc_port {
         return Err(InitError::MalformedConfig(ConfigError::InvalidOverride {
             override_str: "client.admin_rpc_port must differ from client.rpc_port".to_string(),
+        }));
+    }
+
+    if config.client.is_sequencer && config.client.rpc_port == config.client.submit_rpc_port {
+        return Err(InitError::MalformedConfig(ConfigError::InvalidOverride {
+            override_str: "client.submit_rpc_port must differ from client.rpc_port".to_string(),
+        }));
+    }
+
+    if config.client.is_sequencer && config.client.admin_rpc_port == config.client.submit_rpc_port {
+        return Err(InitError::MalformedConfig(ConfigError::InvalidOverride {
+            override_str: "client.submit_rpc_port must differ from client.admin_rpc_port"
+                .to_string(),
         }));
     }
 
@@ -521,6 +546,8 @@ mod tests {
             rpc_port = 8432
             admin_rpc_host = "127.0.0.1"
             admin_rpc_port = 8432
+            submit_rpc_host = "127.0.0.1"
+            submit_rpc_port = 8435
             l2_blocks_fetch_limit = 1_000
             datadir = "/path/to/data/directory"
             sync_endpoint = "9.9.9.9:8432"
@@ -606,6 +633,18 @@ mod tests {
     fn validate_config_rejects_sequencer_without_admin_token() {
         let mut config = fullnode_config();
         config.client.is_sequencer = true;
+        config.client.submit_rpc_bearer_token = Some("test-submit-token".to_string().into());
+        config.sequencer = Some(SequencerConfig::default());
+
+        let error = super::validate_config(config).unwrap_err();
+        assert!(matches!(error, InitError::MalformedConfig(_)));
+    }
+
+    #[test]
+    fn validate_config_rejects_sequencer_without_submit_token() {
+        let mut config = fullnode_config();
+        config.client.is_sequencer = true;
+        config.client.admin_rpc_bearer_token = Some("test-token".to_string().into());
         config.sequencer = Some(SequencerConfig::default());
 
         let error = super::validate_config(config).unwrap_err();
@@ -617,6 +656,35 @@ mod tests {
         let mut config = fullnode_config();
         config.client.is_sequencer = true;
         config.client.admin_rpc_bearer_token = Some("test-token".to_string().into());
+        config.client.submit_rpc_bearer_token = Some("test-submit-token".to_string().into());
+        config.sequencer = Some(SequencerConfig::default());
+
+        let error = super::validate_config(config).unwrap_err();
+        assert!(matches!(error, InitError::MalformedConfig(_)));
+    }
+
+    #[test]
+    fn validate_config_rejects_same_public_and_submit_rpc_port_for_sequencer() {
+        let mut config = fullnode_config();
+        config.client.is_sequencer = true;
+        config.client.admin_rpc_port = 8434;
+        config.client.submit_rpc_port = config.client.rpc_port;
+        config.client.admin_rpc_bearer_token = Some("test-token".to_string().into());
+        config.client.submit_rpc_bearer_token = Some("test-submit-token".to_string().into());
+        config.sequencer = Some(SequencerConfig::default());
+
+        let error = super::validate_config(config).unwrap_err();
+        assert!(matches!(error, InitError::MalformedConfig(_)));
+    }
+
+    #[test]
+    fn validate_config_rejects_same_admin_and_submit_rpc_port_for_sequencer() {
+        let mut config = fullnode_config();
+        config.client.is_sequencer = true;
+        config.client.admin_rpc_port = 8434;
+        config.client.submit_rpc_port = config.client.admin_rpc_port;
+        config.client.admin_rpc_bearer_token = Some("test-token".to_string().into());
+        config.client.submit_rpc_bearer_token = Some("test-submit-token".to_string().into());
         config.sequencer = Some(SequencerConfig::default());
 
         let error = super::validate_config(config).unwrap_err();

@@ -86,5 +86,5 @@ RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/strata-datatool /usr/local/b
 
 USER alpen
 
-EXPOSE 8432
+EXPOSE 8432 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

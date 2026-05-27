@@ -15,7 +15,10 @@ use config::SignerConfig;
 use constants::SHUTDOWN_TIMEOUT_MS;
 use helpers::load_seqkey;
 use http::{header::AUTHORIZATION, HeaderMap, HeaderValue};
-use strata_common::ws_client::{ManagedWsClient, WsClientConfig};
+use strata_common::{
+    healthz::{start_health_check_server, HealthCheckState},
+    ws_client::{ManagedWsClient, WsClientConfig},
+};
 use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_signer::SignerBuilder;
 use strata_tasks::TaskManager;
@@ -58,6 +61,14 @@ fn main() -> anyhow::Result<()> {
         extra_filter_directives: &["sp1_core_executor=warn", "jsonrpsee_server::server=warn"],
     });
 
+    let health_check_state = HealthCheckState::new();
+    let health_check_addr = format!("{}:{}", config.health_check_host, config.health_check_port);
+    let _health_check_handle = handle.block_on(start_health_check_server(
+        health_check_addr.clone(),
+        health_check_state.clone(),
+    ))?;
+    info!(%health_check_addr, "health check server started");
+
     // Load sequencer key. Raw bytes are zeroized inside load_seqkey before it returns.
     let (sk, pubkey) = load_seqkey(&config.sequencer_key)?;
     info!(?pubkey, "sequencer key loaded");
@@ -79,6 +90,7 @@ fn main() -> anyhow::Result<()> {
         SignerBuilder::new(rpc, sk, Duration::from_millis(config.duty_poll_interval))
             .launch(&executor),
     )?;
+    health_check_state.mark_ready();
 
     task_manager.start_signal_listeners();
     task_manager.monitor(Some(Duration::from_millis(SHUTDOWN_TIMEOUT_MS)))?;

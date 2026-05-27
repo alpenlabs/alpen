@@ -144,7 +144,7 @@ fn process_asm_log<S: IStateAccessorMut>(
                 );
                 return Ok(());
             };
-            process_deposit_log(state, &deposit, context)?;
+            process_deposit_log(state, real_height, &deposit, context)?;
         }
 
         CHECKPOINT_TIP_UPDATE_LOG_TYPE => {
@@ -186,6 +186,7 @@ fn process_asm_log<S: IStateAccessorMut>(
 
 fn process_deposit_log<S: IStateAccessorMut>(
     state: &mut S,
+    real_height: L1Height,
     deposit: &DepositLog,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
@@ -195,7 +196,11 @@ fn process_deposit_log<S: IStateAccessorMut>(
     let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
         // Malformed destination descriptor, sweep to limbo.
         let coin = Coin::new_unchecked(amt_btc);
-        warn!(amount = %deposit.amount, "limboing deposit with malformed destination descriptor");
+        warn!(
+            l1_height = real_height,
+            amount_sat = deposit.amount,
+            "limboing deposit with malformed destination descriptor",
+        );
         handle_misplaced_funds(state, coin)?;
         return Ok(());
     };
@@ -207,7 +212,12 @@ fn process_deposit_log<S: IStateAccessorMut>(
     let Some(dest_id) = state.find_account_id_by_serial(acct_serial)? else {
         // Account serial not found, sweep to limbo.
         let coin = Coin::new_unchecked(amt_btc);
-        warn!(?acct_serial, amount = %deposit.amount, "limboing deposit for unknown account serial");
+        warn!(
+            l1_height = real_height,
+            ?acct_serial,
+            amount_sat = deposit.amount,
+            "limboing deposit for unknown account serial",
+        );
         handle_misplaced_funds(state, coin)?;
         return Ok(());
     };
@@ -221,10 +231,12 @@ fn process_deposit_log<S: IStateAccessorMut>(
     let msg_payload = MsgPayload::from_bytes(deposit.amount.into(), deposit_data)
         .expect("deposit message payload bytes must fit within SSZ max length");
 
-    debug!(
+    info!(
+        l1_height = real_height,
         %dest_id,
         %acct_serial,
-        amount = deposit.amount,
+        ?subject_id,
+        amount_sat = deposit.amount,
         "crediting deposit to account",
     );
 

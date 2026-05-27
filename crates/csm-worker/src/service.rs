@@ -1,8 +1,10 @@
 //! CSM worker service implementation.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use strata_asm_worker::AsmWorkerStatus;
+use strata_csm_types::{ClientState, ClientUpdateOutput, L1Checkpoint};
+use strata_primitives::l1::L1BlockCommitment;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
@@ -51,25 +53,235 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
 
         let prev_confirmed_epoch = state.confirmed_epoch;
 
-        // Process `asm_block` and any blocks that might have been skipped.
-        //
-        // Errors here are intentionally swallowed: gap-fill is idempotent and
-        // the next ASM status update will retry the missed blocks.
+        // Bail before touching finality: persisting a `ClientState` row at a
+        // failed block would make bootstrap skip the retry gap-fill guarantees.
         if let Err(e) = state.process_asm_block(asm_block, asm_status.logs()) {
             error!(%asm_block, err = ?e, "Failed to process ASM block");
+            return Ok(Response::Continue);
         }
 
-        let finalized_changed = state.advance_finalization(asm_block.height());
+        let newly_finalized = state.advance_finalization(asm_block.height());
         let confirmed_changed = state.confirmed_epoch != prev_confirmed_epoch;
+
+        // If depth-driven finality advanced, refresh ClientState's
+        // `last_finalized_checkpoint` so persisted state matches the worker's
+        // depth-derived view. ClientState is the only thing downstream consumers
+        // (fork choice, chain worker, RPC) can see, so it has to carry the truth.
+        if let Some(finalized) = newly_finalized.as_ref()
+            && let Err(e) = refresh_finalized_checkpoint(state, asm_block, finalized.clone())
+        {
+            error!(%asm_block, err = ?e, "Failed to persist refreshed finalized checkpoint");
+        }
 
         // FCM listens on checkpoint-state updates. Emit when checkpoint status changed
         // even if client-state object itself did not change (tip-only L1 movement).
-        if confirmed_changed || finalized_changed {
+        if confirmed_changed || newly_finalized.is_some() {
             state
                 .ctx
                 .publish_client_state(state.last_committed_state.as_ref().clone(), asm_block);
         }
 
         Ok(Response::Continue)
+    }
+}
+
+/// Rewrites the committed `ClientState` so its `last_finalized_checkpoint`
+/// matches the depth-finalized `L1Checkpoint`, then re-persists it under
+/// `asm_block`. The publish happens in the caller alongside other status edges.
+fn refresh_finalized_checkpoint<C: CsmWorkerContext>(
+    state: &mut CsmWorkerState<C>,
+    asm_block: L1BlockCommitment,
+    finalized: L1Checkpoint,
+) -> anyhow::Result<()> {
+    let last_seen = state.last_committed_state.get_last_checkpoint();
+    let refreshed = ClientState::new(Some(finalized), last_seen);
+    state.ctx.put_client_state_update(
+        &asm_block,
+        ClientUpdateOutput::new(refreshed.clone(), vec![]),
+    )?;
+    state.last_committed_state = Arc::new(refreshed);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use strata_asm_logs::CheckpointTipUpdate;
+    use strata_asm_proto_checkpoint_types::CheckpointTip;
+    use strata_asm_worker::{AsmState, AsmWorkerStatus};
+    use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_identifiers::{Buf32, L1BlockId, OLBlockId, RBuf32};
+    use strata_primitives::prelude::*;
+    use strata_service::{Response, SyncService};
+    use strata_status::StatusChannel;
+    use strata_storage::create_node_storage;
+    use strata_test_utils::ArbitraryGenerator;
+
+    use super::CsmWorkerService;
+    use crate::{state::CsmWorkerState, test_utils::StubCtx};
+
+    /// Builds a worker state with an already-seeded finalizable observation in
+    /// the queue, anchored to `last` at height `last_height`. `finality_depth`
+    /// controls when the queued observation counts as finalized.
+    fn state_with_pending_finalization(
+        last_height: L1Height,
+        finality_depth: u32,
+    ) -> (
+        CsmWorkerState<StubCtx>,
+        Arc<strata_storage::NodeStorage>,
+        L1BlockCommitment,
+    ) {
+        let params = strata_test_utils_l2::gen_params();
+        let db = get_test_sled_backend();
+        let pool = threadpool::ThreadPool::new(4);
+        let storage = Arc::new(create_node_storage(db, pool).expect("create storage"));
+
+        // Seed the genesis ClientState row keyed at `last`, so bootstrap
+        // resolves `last_asm_block = last` and the worker has no prior finality
+        // — the refresh path can only fire because of the queued observation.
+        let last = L1BlockCommitment::new(last_height, L1BlockId::from(Buf32::from([7; 32])));
+        storage
+            .client_state()
+            .put_update_blocking(
+                &last,
+                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+            )
+            .expect("seed client state");
+
+        let mut arbgen = ArbitraryGenerator::new();
+        let status_channel = Arc::new(StatusChannel::new(
+            arbgen.generate(),
+            params.rollup.genesis_l1_view.blk,
+            arbgen.generate(),
+            None,
+            None,
+        ));
+
+        // L1-fetch failure pins the failure to the checkpoint-tip log path;
+        // any other error type could mask the property we want to assert.
+        let ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            finality_depth,
+            params.rollup.magic_bytes,
+            params.rollup.genesis_l1_view.blk,
+        )
+        .with_l1_fetch_failure();
+
+        let mut state = CsmWorkerState::new(ctx).expect("bootstrap state");
+
+        // Inject a queued observation deep enough that any
+        // `advance_finalization` call would advance finality.
+        let epoch = 1u32;
+        let obs_height = last_height - 1;
+        let l2_commitment = OLBlockCommitment::new(
+            epoch as u64 * 10,
+            OLBlockId::from(Buf32::from([epoch as u8; 32])),
+        );
+        let tip = CheckpointTip {
+            epoch,
+            l1_height: obs_height,
+            l2_commitment,
+        };
+        let obs_block = L1BlockCommitment::new(
+            obs_height,
+            L1BlockId::from(Buf32::from([obs_height as u8; 32])),
+        );
+        let l1_ref = CheckpointL1Ref::new(obs_block, RBuf32::from([1; 32]), RBuf32::from([2; 32]));
+        state
+            .observed_checkpoints
+            .push_back(L1Checkpoint::new(tip, l1_ref));
+
+        (state, storage, last)
+    }
+
+    /// Build an `AsmWorkerStatus` for `block` carrying a single checkpoint-tip
+    /// log. With `with_l1_fetch_failure`, that log triggers the failure path
+    /// in `process_asm_block`.
+    fn status_with_tip_log(block: L1BlockCommitment, epoch: u32) -> AsmWorkerStatus {
+        let l2_commitment = OLBlockCommitment::new(
+            epoch as u64 * 10,
+            OLBlockId::from(Buf32::from([epoch as u8; 32])),
+        );
+        let tip = CheckpointTip {
+            epoch,
+            l1_height: block.height(),
+            l2_commitment,
+        };
+        let log = strata_asm_common::AsmLogEntry::from_log(&CheckpointTipUpdate::new(tip))
+            .expect("tip log");
+        let anchor = make_anchor();
+        let asm_state = AsmState::new(anchor, vec![log]);
+        AsmWorkerStatus {
+            is_initialized: true,
+            cur_block: Some(block),
+            cur_state: Some(asm_state),
+        }
+    }
+
+    fn make_anchor() -> strata_asm_common::AnchorState {
+        use bitcoin::Network;
+        use strata_asm_common::{
+            AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
+        };
+        use strata_btc_verification::L1Anchor;
+        use strata_l1_txfmt::MagicBytes;
+
+        let anchor = L1Anchor {
+            block: L1BlockCommitment::default(),
+            next_target: 0,
+            epoch_start_timestamp: 0,
+            network: Network::Bitcoin,
+        };
+        AnchorState {
+            magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
+            chain_view: ChainViewState {
+                pow_state: HeaderVerificationState::init(anchor),
+                history_accumulator: AsmHistoryAccumulatorState::new(0),
+            },
+            sections: Default::default(),
+        }
+    }
+
+    /// When `process_asm_block` fails, neither finality advancement nor the
+    /// resulting `ClientState` refresh should run — otherwise we'd persist a
+    /// row keyed on a block that was never actually committed, and bootstrap
+    /// would treat it as committed on restart.
+    #[test]
+    fn process_input_skips_finalization_when_process_asm_block_fails() {
+        let last_height: L1Height = 100;
+        let finality_depth: u32 = 3;
+        let (mut state, storage, last) =
+            state_with_pending_finalization(last_height, finality_depth);
+
+        // Target one block ahead — the queued observation at height 99 will
+        // have 3 confirmations relative to this tip, so without the gate the
+        // refresh path would persist at the failing block.
+        let target = L1BlockCommitment::new(last_height + 1, L1BlockId::from(Buf32::from([8; 32])));
+        let status = status_with_tip_log(target, /* epoch */ 1);
+
+        let response =
+            <CsmWorkerService<StubCtx> as SyncService>::process_input(&mut state, status)
+                .expect("process_input never errors — failures are swallowed");
+        assert!(matches!(response, Response::Continue));
+
+        // Finality must not have moved in-memory.
+        assert_eq!(
+            state.finalized_epoch, None,
+            "finalized_epoch must not advance when process_asm_block failed"
+        );
+        // The cursor must stay pinned at the last committed block.
+        assert_eq!(state.last_asm_block, Some(last));
+        // No ClientState row may exist at the failed block.
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&target)
+                .expect("query client state")
+                .is_none(),
+            "no ClientState row should be persisted at the failed block"
+        );
     }
 }
