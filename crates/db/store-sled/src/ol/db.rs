@@ -1,21 +1,28 @@
+use sled::transaction::ConflictableTransactionError;
 use strata_db_types::{
     DbError, DbResult,
     traits::{BlockStatus, OLBlockDatabase},
 };
-use strata_identifiers::{OLBlockId, Slot};
+use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
+use typed_sled::error::Error as TSledError;
 
-use super::schemas::{OLBlockHeightSchema, OLBlockSchema, OLBlockStatusSchema};
+use super::schemas::{
+    OLBlockHeightSchema, OLBlockHighWatermarkSchema, OLBlockSchema, OLBlockStatusSchema,
+};
 use crate::{
     define_sled_database,
     utils::{first, to_db_error},
 };
+
+const OL_BLOCK_HIGH_WATERMARK_KEY: u8 = 0;
 
 define_sled_database!(
     pub struct OLBlockDBSled {
         blk_tree: OLBlockSchema,
         blk_status_tree: OLBlockStatusSchema,
         blk_height_tree: OLBlockHeightSchema,
+        blk_high_watermark_tree: OLBlockHighWatermarkSchema,
     }
 );
 
@@ -46,6 +53,73 @@ impl OLBlockDatabase for OLBlockDBSled {
             )
             .map_err(to_db_error)?;
         Ok(())
+    }
+
+    fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>> {
+        Ok(self
+            .blk_high_watermark_tree
+            .get(&OL_BLOCK_HIGH_WATERMARK_KEY)?)
+    }
+
+    fn put_block_data_with_high_watermark(&self, block: OLBlock) -> DbResult<OLBlockCommitment> {
+        let slot = block.header().slot();
+        let block_id = block.header().compute_blkid();
+        let commitment = OLBlockCommitment::new(slot, block_id);
+
+        self.config.with_retry(
+            (
+                &self.blk_tree,
+                &self.blk_status_tree,
+                &self.blk_height_tree,
+                &self.blk_high_watermark_tree,
+            ),
+            |(bt, bst, bht, hwt)| {
+                if let Some(current) = hwt.get(&OL_BLOCK_HIGH_WATERMARK_KEY)?
+                    && commitment.slot() <= current.slot()
+                {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::BlockHighWatermarkConflict {
+                            attempted: commitment,
+                            current,
+                        },
+                    )));
+                }
+
+                let mut blocks_at_slot = bht.get(&slot)?.unwrap_or(Vec::new());
+                let is_new = !blocks_at_slot.contains(&block_id);
+
+                if is_new {
+                    blocks_at_slot.push(block_id);
+                    bht.insert(&slot, &blocks_at_slot)?;
+
+                    // Only set status to Unchecked for new blocks.
+                    // This preserves Valid/Invalid status if block is re-inserted.
+                    bst.insert(&block_id, &BlockStatus::Unchecked)?;
+                }
+
+                bt.insert(&block_id, &block)?;
+                hwt.insert(&OL_BLOCK_HIGH_WATERMARK_KEY, &commitment)?;
+
+                Ok(commitment)
+            },
+        )
+    }
+
+    fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool> {
+        self.config
+            .with_retry((&self.blk_high_watermark_tree,), |(hwt,)| {
+                let Some(current) = hwt.get(&OL_BLOCK_HIGH_WATERMARK_KEY)? else {
+                    return Ok(false);
+                };
+
+                if current != expected {
+                    return Ok(false);
+                }
+
+                hwt.remove(&OL_BLOCK_HIGH_WATERMARK_KEY)?;
+                Ok(true)
+            })
+            .map_err(to_db_error)
     }
 
     fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {

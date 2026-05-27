@@ -702,6 +702,25 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// status to "unchecked" if this is a new block.
     fn put_block_data(&self, block: OLBlock) -> DbResult<()>;
 
+    /// Returns the latest OL block committed through the high-watermark path, if any.
+    ///
+    /// This is not the highest block in the OL block database. Plain
+    /// [`Self::put_block_data`] does not read or update it.
+    fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>>;
+
+    /// Stores an OL block and advances the block high-watermark atomically.
+    ///
+    /// Block persistence semantics match [`Self::put_block_data`]. If the block's slot is not
+    /// strictly greater than the current high-watermark slot, this writes nothing and returns
+    /// [`DbError::BlockHighWatermarkConflict`](crate::DbError::BlockHighWatermarkConflict).
+    fn put_block_data_with_high_watermark(&self, block: OLBlock) -> DbResult<OLBlockCommitment>;
+
+    /// Clears the block high-watermark if it currently equals `expected`.
+    ///
+    /// This does not delete block data, block status, or height-index entries.
+    /// Returns `true` when the high-watermark was cleared.
+    fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool>;
+
     /// Retrieves an OL block for a given block ID.
     fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>>;
 

@@ -2,12 +2,13 @@ use borsh::{BorshDeserialize, to_vec};
 use sled::IVec;
 use ssz::{Decode, Encode};
 use strata_db_types::traits::BlockStatus;
-use strata_identifiers::OLBlockId;
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::OLBlock;
 use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
 
 use crate::{
     define_table_with_default_codec, define_table_with_integer_key, define_table_without_codec,
+    impl_codec_value_codec,
 };
 
 define_table_without_codec!(
@@ -35,6 +36,13 @@ define_table_with_integer_key!(
     /// A table to store OL Block IDs by slot. Maps slot to Vec<OLBlockId>
     (OLBlockHeightSchema) u64 => Vec<OLBlockId>
 );
+
+define_table_without_codec!(
+    /// Stores the latest OL block committed through the high-watermark path.
+    (OLBlockHighWatermarkSchema) u8 => OLBlockCommitment
+);
+
+impl_codec_value_codec!(OLBlockHighWatermarkSchema, OLBlockCommitment);
 
 // OLBlock is SSZ-generated, so we use SSZ serialization instead of Borsh
 impl ValueCodec<OLBlockSchema> for OLBlock {
