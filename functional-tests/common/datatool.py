@@ -65,13 +65,15 @@ def ensure_priv_key(path: Path) -> None:
     )
 
 
-def get_operator_xprivs(datadir, operator_fname) -> list[str]:
-    # Generate operator keys
+def get_operator_pubkeys(datadir, operator_fname) -> list[str]:
+    """Generates an operator xpriv and returns the derived compressed public keys."""
     operator_key_path = datadir / operator_fname
     ensure_priv_key(operator_key_path)
-    operator_xpriv = operator_key_path.read_text().strip()
-    operator_xprivs = [operator_xpriv]
-    return operator_xprivs
+    res = run_datatool(["genoppubkey", "-f", str(operator_key_path)])
+    pubkey = res.stdout.strip()
+    if not pubkey:
+        raise RuntimeError("strata-datatool genoppubkey returned empty output")
+    return [pubkey]
 
 
 @dataclass
@@ -114,7 +116,7 @@ def generate_rollup_params_unchecked(
     """
     sequencer_key_path = datadir / seq_fname
     ensure_priv_key(sequencer_key_path)
-    operator_xprivs = get_operator_xprivs(datadir, "bridge-operator_keys")
+    operator_pubkeys = get_operator_pubkeys(datadir, "bridge-operator_keys")
     params_path = datadir / "rollup-params.json"
 
     args = [
@@ -128,15 +130,15 @@ def generate_rollup_params_unchecked(
         "-o",
         str(params_path),
     ]
-    for opkey in operator_xprivs:
-        args.extend(["--opkey", opkey])
+    for pk in operator_pubkeys:
+        args.extend(["--op-pk", pk])
 
     run_datatool(args, bconfig)
     return RollupParamsArtifacts(
         params_path=params_path,
         sequencer_key_path=sequencer_key_path,
         sequencer_pubkey=None,
-        operator_keys=operator_xprivs,
+        operator_keys=operator_pubkeys,
     )
 
 
@@ -150,7 +152,7 @@ def generate_rollup_params(
     sequencer_key_path = datadir / seq_fname
     ensure_priv_key(sequencer_key_path)
     sequencer_pubkey = generate_sequencer_pubkey(sequencer_key_path)
-    operator_xprivs = get_operator_xprivs(datadir, "bridge-operator_keys")
+    operator_pubkeys = get_operator_pubkeys(datadir, "bridge-operator_keys")
 
     params_path = datadir / "rollup-params.json"
 
@@ -162,16 +164,18 @@ def generate_rollup_params(
         "ALPN",
         "--genesis-l1-height",
         str(genesis_l1_height),
-        "--seqkey",
+        "--seq-pk",
         sequencer_pubkey,
         "-o",
         str(params_path),
     ]
-    for opkey in operator_xprivs:
-        args.extend(["--opkey", opkey])
+    for pk in operator_pubkeys:
+        args.extend(["--op-pk", pk])
 
     run_datatool(args, bconfig)
-    return RollupParamsArtifacts(params_path, sequencer_key_path, sequencer_pubkey, operator_xprivs)
+    return RollupParamsArtifacts(
+        params_path, sequencer_key_path, sequencer_pubkey, operator_pubkeys
+    )
 
 
 def generate_sequencer_pubkey(sequencer_key_path: Path) -> str:
@@ -208,7 +212,7 @@ def generate_asm_params(
     datadir: Path,
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
-    operator_xprivs: list[str],
+    operator_pubkeys: list[str],
     ol_params_path: Path | None = None,
     sequencer_pubkey: str | None = None,
     admin_confirmation_depth: int | None = None,
@@ -229,11 +233,11 @@ def generate_asm_params(
     if ol_params_path is not None:
         args.extend(["--ol-params", str(ol_params_path)])
     if sequencer_pubkey is not None:
-        args.extend(["--seqkey", sequencer_pubkey])
+        args.extend(["--seq-pk", sequencer_pubkey])
     if admin_confirmation_depth is not None:
         args.extend(["--confirmation-depth", str(admin_confirmation_depth)])
-    for opkey in operator_xprivs:
-        args.extend(["--opkey", opkey])
+    for pk in operator_pubkeys:
+        args.extend(["--op-pk", pk])
 
     run_datatool(args, bconfig)
     return params_path

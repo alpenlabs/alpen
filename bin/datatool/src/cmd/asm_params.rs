@@ -2,10 +2,7 @@
 
 use std::{fs, num::NonZero, str::FromStr};
 
-use bitcoin::{
-    bip32::{Xpriv, Xpub},
-    secp256k1::{PublicKey, SECP256K1},
-};
+use bitcoin::{secp256k1::PublicKey, XOnlyPublicKey};
 use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
     ConfirmationDepths, SubprotocolInstance,
@@ -64,30 +61,24 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         ctx,
     )?;
 
-    // Parse operator keys.
-    let mut opkeys = Vec::new();
+    // Parse operator public keys.
+    let mut pubkeys: Vec<PublicKey> = Vec::new();
 
-    if let Some(opkeys_path) = cmd.opkeys {
-        let opkeys_str = fs::read_to_string(opkeys_path)?;
+    if let Some(pks_path) = cmd.op_pks {
+        let pks_str = fs::read_to_string(pks_path)?;
 
-        for line in opkeys_str.lines() {
+        for line in pks_str.lines() {
             if line.trim().is_empty() || line.starts_with('#') {
                 continue;
             }
 
-            opkeys.push(Xpriv::from_str(line)?);
+            pubkeys.push(PublicKey::from_str(line.trim())?);
         }
     }
 
-    for key in cmd.opkey {
-        opkeys.push(Xpriv::from_str(&key)?);
+    for key in &cmd.op_pk {
+        pubkeys.push(PublicKey::from_str(key.trim())?);
     }
-
-    // Convert xpriv keys to secp256k1 public keys.
-    let pubkeys: Vec<PublicKey> = opkeys
-        .iter()
-        .map(|xpriv| xpriv.to_keypair(SECP256K1).public_key())
-        .collect();
 
     // Build admin subprotocol params using the operator keys for all three admin roles.
     let admin_keys: Vec<CompressedPublicKey> = pubkeys
@@ -136,7 +127,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let genesis_ol_blkid = *genesis_artifacts.commitment.blkid();
 
     // Build checkpoint config.
-    let sequencer_predicate = resolve_sequencer_predicate(cmd.seqkey.as_deref())?;
+    let sequencer_predicate = resolve_sequencer_predicate(cmd.seq_pk.as_deref())?;
     let checkpoint_predicate = resolve_checkpoint_predicate(cmd.checkpoint_predicate)?;
     let genesis_l1_height = genesis_l1_view.blk.height();
 
@@ -195,25 +186,26 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     Ok(())
 }
 
-fn resolve_sequencer_predicate(seqkey: Option<&str>) -> anyhow::Result<PredicateKey> {
-    let Some(seqkey) = seqkey.map(str::trim) else {
+fn resolve_sequencer_predicate(seq_pk: Option<&str>) -> anyhow::Result<PredicateKey> {
+    let Some(pk_hex) = seq_pk.map(str::trim) else {
         return Ok(PredicateKey::always_accept());
     };
 
-    let xpub = Xpub::from_str(seqkey)?;
+    let xonly = XOnlyPublicKey::from_str(pk_hex)?;
     Ok(PredicateKey::new(
         PredicateTypeId::Bip340Schnorr,
-        xpub.to_x_only_pub().serialize().to_vec(),
+        xonly.serialize().to_vec(),
     ))
 }
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::bip32::Xpub;
-
     use super::*;
 
-    const TEST_SEQUENCER_XPUB: &str = "tpubDASVk1m5cxpmUbwVEZEQb8maDVx9kDxBhSLCqsKHJJmZ8htSegpHx7G3RFudZCdDLtNKTosQiBLbbFsVA45MemurWenzn16Y1ft7NkQekcD";
+    /// X-only pubkey hex derived from the test xpriv
+    /// `tprv8ZgxMBicQKsPd4arFr7sKjSnKFDVMR2JHw9Y8L9nXN4kiok4u28LpHijEudH3mMYoL4pM5UL9Bgdz2M4Cy8EzfErmU9m86ZTw6hCzvFeTg7`
+    /// via `genseqpubkey`.
+    const TEST_SEQ_PK: &str = "14ebfa9a90fee3020686b5334b297b675a9f29282f44b6c3a4ab1f0582021839";
 
     #[test]
     fn sequencer_predicate_defaults_to_always_accept() {
@@ -225,9 +217,9 @@ mod tests {
     #[test]
     fn sequencer_predicate_uses_bip340_schnorr_pubkey() {
         let predicate =
-            resolve_sequencer_predicate(Some(TEST_SEQUENCER_XPUB)).expect("xpub should parse");
-        let xpub = Xpub::from_str(TEST_SEQUENCER_XPUB).expect("xpub should parse");
-        let expected_pubkey = xpub.to_x_only_pub().serialize();
+            resolve_sequencer_predicate(Some(TEST_SEQ_PK)).expect("x-only hex should parse");
+        let xonly = XOnlyPublicKey::from_str(TEST_SEQ_PK).expect("x-only hex should parse");
+        let expected_pubkey = xonly.serialize();
 
         assert_eq!(predicate.id(), PredicateTypeId::Bip340Schnorr.as_u8());
         assert_eq!(predicate.condition(), expected_pubkey.as_slice());
