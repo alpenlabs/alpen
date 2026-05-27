@@ -7,6 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use metrics::{counter, gauge};
 use ssz::{Decode, Encode};
 use strata_acct_types::AccountId;
 use strata_db_types::types::MempoolTxData;
@@ -166,14 +167,17 @@ impl<P: StateProvider> MempoolServiceState<P> {
                 OLMempoolError::StateProvider(format!("State not found for tip {:?}", tip))
             })?;
 
-        Ok(Self {
+        let state = Self {
             ctx,
             entries: HashMap::new(),
             ordering_index: BTreeMap::new(),
             account_state: HashMap::new(),
             state_accessor,
             stats: OLMempoolStats::default(),
-        })
+        };
+        state.record_mempool_gauges();
+
+        Ok(state)
     }
 
     /// Load existing transactions from database.
@@ -429,6 +433,9 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Validate transaction using STF validation helpers
         // This checks: slot bounds, account existence, sequence number validity
         if let Err(e) = validate_transaction(txid, &tx, &self.state_accessor, &self.account_state) {
+            if let Some(reason) = OLMempoolRejectReason::from_error(&e) {
+                self.update_stats_on_reject(reason);
+            }
             debug!(?txid, error = ?e, "rejecting transaction: validation failed");
             return Err(e);
         }
@@ -459,6 +466,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         // Add to in-memory state
         self.add_tx_to_in_memory_state(txid, entry);
+        counter!("strata_mempool_enqueued_total").increment(1);
 
         debug!(
             ?txid,
@@ -666,18 +674,26 @@ impl<P: StateProvider> MempoolServiceState<P> {
         self.stats.mempool_size += 1;
         self.stats.total_bytes += tx_size;
         self.stats.enqueues_accepted += 1;
+        self.record_mempool_gauges();
     }
 
     /// Update stats when a transaction is removed.
     fn update_stats_on_remove(&mut self, tx_size: usize) {
         self.stats.mempool_size -= 1;
         self.stats.total_bytes -= tx_size;
+        self.record_mempool_gauges();
     }
 
     /// Update stats when a transaction is rejected.
     fn update_stats_on_reject(&mut self, reason: OLMempoolRejectReason) {
         self.stats.enqueues_rejected += 1;
         self.stats.rejects_by_reason.increment(reason);
+        counter!("strata_mempool_rejected_total", "reason" => reason.as_str()).increment(1);
+    }
+
+    fn record_mempool_gauges(&self) {
+        gauge!("strata_mempool_tx_count").set(self.stats.mempool_size() as f64);
+        gauge!("strata_mempool_size_bytes").set(self.stats.total_bytes() as f64);
     }
 
     /// Revalidates all transactions in the mempool against the current state.

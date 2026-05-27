@@ -23,6 +23,7 @@ strata-storage.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true
+metrics.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }

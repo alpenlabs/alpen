@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
+metrics.workspace = true
 serde.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
 strata-checkpoint-types.workspace = true

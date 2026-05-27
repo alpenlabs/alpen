@@ -63,6 +63,7 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-logging.workspace = true
+strata-metrics.workspace = true
 strata-node-context.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }
 strata-ol-chain-types-new.workspace = true

@@ -1,5 +1,6 @@
 //! Service state for OL checkpoint builder.
 
+use metrics::{counter, gauge};
 use strata_asm_proto_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
     TerminalHeaderComplement,
@@ -106,6 +107,8 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
 
         let payload = build_checkpoint_payload(commitment, &summary, &self.ctx)?;
         self.ctx.put_checkpoint_payload(commitment, payload)?;
+        counter!("strata_checkpoint_created_total").increment(1);
+        gauge!("strata_checkpoint_last_created_epoch").set(epoch as f64);
 
         info!(
             component = "ol_checkpoint",

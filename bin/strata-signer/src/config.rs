@@ -1,6 +1,6 @@
 //! Configuration for the signer, loaded from a TOML file.
 
-use std::{fmt, path::PathBuf};
+use std::{fmt, net::IpAddr, path::PathBuf};
 
 use serde::Deserialize;
 
@@ -78,6 +78,16 @@ pub(crate) struct LoggingConfig {
     /// Use JSON format for logs instead of compact format.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) json_format: Option<bool>,
+
+    /// Host for the Prometheus `/metrics` HTTP endpoint.
+    ///
+    /// Defaults to `127.0.0.1` when `metrics_port` is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) metrics_host: Option<IpAddr>,
+
+    /// Port for the Prometheus `/metrics` HTTP endpoint. Disabled if not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) metrics_port: Option<u16>,
 }
 
 const fn default_duty_poll_interval() -> u64 {
@@ -137,6 +147,26 @@ mod tests {
         let config = toml::from_str::<SignerConfig>(config).unwrap();
         assert_eq!(config.health_check_host, "127.0.0.1");
         assert_eq!(config.health_check_port, 18_080);
+    }
+
+    #[test]
+    fn test_signer_config_parses_metrics_port() {
+        let config = r#"
+            sequencer_key = "/tmp/sequencer.key"
+            sequencer_admin_endpoint = "ws://127.0.0.1:8434"
+            sequencer_admin_bearer_token = "test-token"
+
+            [logging]
+            metrics_host = "0.0.0.0"
+            metrics_port = 9615
+        "#;
+
+        let config = toml::from_str::<SignerConfig>(config).unwrap();
+        assert_eq!(
+            config.logging.metrics_host,
+            Some(IpAddr::from([0, 0, 0, 0]))
+        );
+        assert_eq!(config.logging.metrics_port, Some(9615));
     }
 
     #[test]

@@ -32,6 +32,7 @@ services:
     ports:
       - "8432:8432"
       - "8435:8435"
+      - "9615:9615"
     networks:
       - alpen_network
     entrypoint: ["/usr/local/bin/entrypoint.sh"]

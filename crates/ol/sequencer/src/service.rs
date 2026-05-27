@@ -3,9 +3,10 @@
 //! After the signer extraction, this service is a pure template-generation
 //! worker.  All signing is handled externally by `strata-signer` via RPC.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc, time::Instant};
 
 use async_trait::async_trait;
+use metrics::{counter, histogram};
 use serde::Serialize;
 use strata_db_types::errors::DbError;
 use strata_ol_block_assembly::BlockAssemblyError;
@@ -104,7 +105,12 @@ impl<C: SequencerContext> AsyncService for SequencerService<C> {
 async fn process_generation_tick<C: SequencerContext>(state: &mut SequencerServiceState<C>) {
     debug!(last_seen_tip = ?state.last_seen_tip, "generation tick fired");
 
-    let generated_tip = match state.context.generate_template_for_tip().await {
+    let generation_started = Instant::now();
+    let generation_result = state.context.generate_template_for_tip().await;
+    histogram!("strata_sequencer_template_generation_duration_us")
+        .record(generation_started.elapsed().as_micros() as f64);
+
+    let generated_tip = match generation_result {
         Ok(tip) => tip,
         Err(err) => {
             error!(%err, "failed to generate template on generation tick");
@@ -121,6 +127,7 @@ async fn process_generation_tick<C: SequencerContext>(state: &mut SequencerServi
 
     if previous_tip != state.last_seen_tip {
         state.templates_generated += 1;
+        counter!("strata_sequencer_templates_generated_total").increment(1);
         debug!(?previous_tip, current_tip = ?state.last_seen_tip, "sequencer tip changed");
     }
 }

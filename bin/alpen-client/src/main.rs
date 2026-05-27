@@ -880,11 +880,9 @@ pub struct AdditionalConfig {
 
     /// OTLP gRPC endpoint for the OpenTelemetry collector.
     ///
-    /// When set, `strata-logging` builds an `SdkMeterProvider` and a
-    /// tracer provider against this endpoint and installs a
-    /// `metrics`-crate recorder bridge. Every `metrics::*!` call
-    /// (including reth's), span busy/idle histograms, and service
-    /// framework instrumentation flow over OTLP gRPC to the collector.
+    /// When set, `strata-logging` builds a tracer provider against this
+    /// endpoint. Metrics stay on Reth's native recorder and Prometheus
+    /// endpoint; use Reth's `--metrics` flag for `/metrics`.
     /// Falls back to the standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var
     /// when the flag isn't passed.
     #[arg(long, env = "OTEL_EXPORTER_OTLP_ENDPOINT")]
@@ -1092,15 +1090,13 @@ where
     }
 
     // Build the tokio runtime ourselves so logging init can run inside its
-    // context, then hand it to CliRunner. strata-logging's OTLP exporters
-    // spawn periodic export tasks that require an active tokio handle when
-    // they're built.
+    // context, then hand it to CliRunner. The OTLP tracing exporter requires
+    // an active tokio handle when it is built.
     let rt = tokio_runtime()?;
 
     {
         let _g = rt.handle().enter();
 
-        let metrics_enabled = command.ext.otlp_url.is_some();
         let mut extra_filter_directives =
             vec!["sp1_core_executor=warn", "jsonrpsee_server::server=warn"];
         if let Some(verbosity_filter) = command.ext.verbosity_filter_directive() {
@@ -1115,7 +1111,6 @@ where
             log_file_prefix: None,
             json_format: None,
             default_log_prefix: "alpen-client",
-            enable_metrics_layer: metrics_enabled,
             extra_filter_directives: &extra_filter_directives,
         });
     }
@@ -1131,7 +1126,7 @@ where
         )
     });
 
-    // Flush OTLP buffers (spans + metrics) before the process exits.
+    // Flush OTLP tracing buffers before the process exits.
     strata_logging::finalize();
 
     result

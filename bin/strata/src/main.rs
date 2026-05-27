@@ -1,12 +1,18 @@
 //! Strata client binary entrypoint.
 
-use std::time::Duration;
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 
 use anyhow::{Context, Result, anyhow};
 use argh::from_env;
 use strata_common::healthz::{HealthCheckState, start_health_check_server};
 use strata_db_types as _;
-use strata_logging::{LoggingInitConfig, init_logging_from_config};
+use strata_logging::{
+    LoggingInitConfig, format_service_name, init_logging_from_config_with_layers,
+};
+use strata_metrics::{MetricsConfig, MetricsInitConfig, MetricsLayer};
 #[cfg(test)]
 use strata_ol_state_types as _;
 #[cfg(test)]
@@ -51,13 +57,9 @@ fn main() -> Result<()> {
         .build()
         .map_err(InitError::RuntimeBuild)?;
 
-    // Initialize logging. When otlp_url is configured, strata-logging also
-    // builds an OpenTelemetry meter provider, sets it as global, and installs
-    // a metrics-crate recorder bridge. After that, every metrics::counter! /
-    // gauge! / histogram! call (including reth's, MetricsLayer's span
-    // busy/idle histograms, and our domain instrumentation) flows via OTLP
-    // gRPC to the collector.
-    init_logging(rt.handle(), &config);
+    // Initialize logging and metrics. strata-logging owns tracing subscriber
+    // setup; strata-metrics owns the process metrics recorder and exporters.
+    init_logging(rt.handle(), &config)?;
 
     // Validate sequencer flag isn't used when sequencer feature is disabled.
     #[cfg(not(feature = "sequencer"))]
@@ -119,21 +121,48 @@ fn main() -> Result<()> {
     runctx.task_manager.monitor(Some(Duration::from_secs(5)))?;
 
     info!("Exiting strata");
+    strata_metrics::finalize();
+    strata_logging::finalize();
     Ok(())
 }
 
-fn init_logging(rt: &Handle, config: &strata_config::Config) {
+fn init_logging(rt: &Handle, config: &strata_config::Config) -> Result<()> {
     // Need to set the runtime context for async OTLP setup
     let _g = rt.enter();
-    init_logging_from_config(LoggingInitConfig {
-        service_base_name: "strata-client",
-        service_label: config.logging.service_label.as_deref(),
-        otlp_url: config.logging.otlp_url.as_deref(),
-        log_dir: config.logging.log_dir.as_ref(),
-        log_file_prefix: config.logging.log_file_prefix.as_deref(),
-        json_format: config.logging.json_format,
-        default_log_prefix: "alpen",
-        enable_metrics_layer: config.logging.otlp_url.is_some(),
-        extra_filter_directives: &["sp1_core_executor=warn", "jsonrpsee_server::server=warn"],
+    let prometheus_listen_addr = config.logging.metrics_port.map(|port| {
+        let host = config
+            .logging
+            .metrics_host
+            .unwrap_or(IpAddr::from([127, 0, 0, 1]));
+        SocketAddr::from((host, port))
     });
+    let metrics_config =
+        MetricsConfig::from_exporters(config.logging.otlp_url.clone(), prometheus_listen_addr);
+    let metrics_enabled = metrics_config.is_explicitly_enabled();
+    let service_name =
+        format_service_name("strata-client", config.logging.service_label.as_deref());
+
+    let mut extra_layers = Vec::new();
+    if metrics_enabled {
+        extra_layers.push(Box::new(MetricsLayer) as strata_logging::BoxedLayer);
+    }
+
+    init_logging_from_config_with_layers(
+        LoggingInitConfig {
+            service_base_name: "strata-client",
+            service_label: config.logging.service_label.as_deref(),
+            otlp_url: config.logging.otlp_url.as_deref(),
+            log_dir: config.logging.log_dir.as_ref(),
+            log_file_prefix: config.logging.log_file_prefix.as_deref(),
+            json_format: config.logging.json_format,
+            default_log_prefix: "alpen",
+            extra_filter_directives: &["sp1_core_executor=warn", "jsonrpsee_server::server=warn"],
+        },
+        extra_layers,
+    );
+
+    let metrics_init = MetricsInitConfig::new(service_name).with_metrics_config(metrics_config);
+    strata_metrics::init(metrics_init, rt).context("failed to initialize process metrics")?;
+
+    Ok(())
 }

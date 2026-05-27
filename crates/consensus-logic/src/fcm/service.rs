@@ -1,6 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::anyhow;
+use metrics::{counter, histogram};
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
 use strata_db_types::traits::BlockStatus;
@@ -207,6 +208,11 @@ async fn process_fc_message<C: FcmContext>(
             };
 
             fcm_state.ctx().set_block_status(*blkid, status).await?;
+            if ok {
+                counter!("strata_fcm_blocks_accepted_total").increment(1);
+            } else {
+                counter!("strata_fcm_blocks_rejected_total").increment(1);
+            }
         }
     }
 
@@ -495,7 +501,8 @@ async fn apply_tip_update<C: FcmContext>(
             let pivot_slot = fcm_state.get_block_slot(pivot_blkid).await?;
             let pivot_block = OLBlockCommitment::new(pivot_slot, pivot_blkid);
             let cur_best = fcm_state.cur_best_block();
-            let reverts_blocks = reorg.revert_iter().next().is_some();
+            let reorg_depth = reorg.revert_iter().count();
+            let reverts_blocks = reorg_depth > 0;
 
             // We probably need to roll back to an earlier block and update our
             // in-memory state first.
@@ -526,6 +533,9 @@ async fn apply_tip_update<C: FcmContext>(
             }
 
             // TODO any cleanup?
+
+            counter!("strata_fcm_reorgs_total").increment(1);
+            histogram!("strata_fcm_reorg_depth").record(reorg_depth as f64);
 
             Ok(())
         }

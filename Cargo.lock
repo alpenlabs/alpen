@@ -699,7 +699,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -2790,7 +2790,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "lazy_static",
  "lazycell",
  "log",
@@ -3581,7 +3581,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4858,6 +4858,12 @@ checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "endian-type"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
 
 [[package]]
 name = "enr"
@@ -7188,11 +7194,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd7399781913e5393588a8d8c6a2867bf85fb38eaf2502fdce465aad2dc6f034"
 dependencies = [
  "base64 0.22.1",
+ "http-body-util",
+ "hyper 1.9.0",
+ "hyper-util",
  "indexmap 2.13.0",
+ "ipnet",
  "metrics",
  "metrics-util 0.19.1",
  "quanta",
  "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -7233,10 +7245,12 @@ version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdfb1365fea27e6dd9dc1dbc19f570198bc86914533ad639dae939635f096be4"
 dependencies = [
+ "aho-corasick",
  "crossbeam-epoch",
  "crossbeam-utils",
  "hashbrown 0.16.1",
  "metrics",
+ "radix_trie",
  "rand 0.9.2",
  "rand_xoshiro",
  "sketches-ddsketch",
@@ -7501,6 +7515,15 @@ dependencies = [
  "security-framework 2.11.1",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "nibble_vec"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77a5d83df9f36fe23f0c3648c6bbb8b0298bb5f1939c8f2704431371f4b84d43"
+dependencies = [
+ "smallvec",
 ]
 
 [[package]]
@@ -8991,7 +9014,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "once_cell",
@@ -9011,7 +9034,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9024,7 +9047,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9181,6 +9204,16 @@ name = "radium"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
+
+[[package]]
+name = "radix_trie"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c069c179fcdc6a2fe24d8d18305cf085fdbd4f922c041943e203685d6a1c58fd"
+dependencies = [
+ "endian-type",
+ "nibble_vec",
+]
 
 [[package]]
 name = "rancor"
@@ -14657,6 +14690,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ledger-types",
  "strata-logging",
+ "strata-metrics",
  "strata-node-context",
  "strata-ol-block-assembly",
  "strata-ol-chain-types-new",
@@ -15866,10 +15900,8 @@ dependencies = [
 [[package]]
 name = "strata-logging"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc21#bb060d613880d8d4c8decd0e7544acb54e4d5a25"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc22#7eaaf489b26e0d673a77491a295e568af2e9092b"
 dependencies = [
- "metrics",
- "metrics-exporter-otel",
  "opentelemetry 0.31.0",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -15897,6 +15929,24 @@ dependencies = [
  "thiserror 2.0.18",
  "tree_hash 0.15.0",
  "tree_hash_derive 0.15.0",
+]
+
+[[package]]
+name = "strata-metrics"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc22#7eaaf489b26e0d673a77491a295e568af2e9092b"
+dependencies = [
+ "metrics",
+ "metrics-exporter-otel",
+ "metrics-exporter-prometheus",
+ "metrics-util 0.20.1",
+ "opentelemetry 0.31.0",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.23",
 ]
 
 [[package]]
@@ -16060,6 +16110,7 @@ name = "strata-ol-checkpoint"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "metrics",
  "proptest",
  "serde",
  "strata-asm-proto-checkpoint-types",
@@ -16129,6 +16180,7 @@ name = "strata-ol-mempool"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "metrics",
  "proptest",
  "serde",
  "ssz",
@@ -16228,6 +16280,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "metrics",
  "proptest",
  "serde",
  "ssz",
@@ -16706,6 +16759,7 @@ dependencies = [
  "strata-crypto",
  "strata-key-derivation",
  "strata-logging",
+ "strata-metrics",
  "strata-primitives",
  "strata-signer",
  "strata-tasks",
@@ -16866,6 +16920,7 @@ dependencies = [
  "async-trait",
  "borsh",
  "futures",
+ "metrics",
  "strata-common",
  "strata-consensus-logic",
  "strata-db-types",

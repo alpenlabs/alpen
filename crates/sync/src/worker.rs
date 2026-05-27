@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use futures::StreamExt;
+use metrics::counter;
 #[cfg(feature = "debug-utils")]
 use strata_common::{check_and_pause_debug_async, WorkerType};
 use strata_consensus_logic::{message::ForkChoiceMessage, sync_manager::SyncManager};
@@ -243,6 +244,7 @@ async fn handle_new_block<T: SyncClient>(
             .sync_manager
             .submit_chain_tip_msg_async(ForkChoiceMessage::NewBlock(block.header().get_blockid()))
             .await;
+        counter!("strata_sync_blocks_received_total").increment(1);
         debug!(%block_idx, "l2 sync: sending chain tip sent");
     }
     Ok(())
