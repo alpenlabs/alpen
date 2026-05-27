@@ -69,10 +69,6 @@ impl RunContext {
     }
 
     /// Returns the mempool handle if this node runs the mempool.
-    ///
-    /// `Some` for sequencer nodes (and any future fullnode that admits txs);
-    /// `None` for checkpoint-sync nodes which never have the OL block bodies
-    /// the mempool needs.
     pub(crate) fn mempool_handle(&self) -> Option<&Arc<MempoolHandle>> {
         self.service_handles.mempool_handle.as_ref()
     }
@@ -84,13 +80,10 @@ impl RunContext {
     }
 
     /// Returns the fork-choice manager handle if this node runs FCM.
-    ///
-    /// `Some` for sequencer nodes today; future block-syncing fullnodes will
-    /// also return `Some`. Checkpoint-sync nodes return `None`.
     pub(crate) fn fcm_handle(&self) -> Option<&Arc<FcmServiceHandle>> {
         match &self.service_handles.sync_handle {
             SyncServiceHandle::Fcm(handle) => Some(handle),
-            SyncServiceHandle::Css(_) => None,
+            SyncServiceHandle::Css { .. } => None,
         }
     }
 
@@ -169,8 +162,7 @@ pub(crate) enum SyncServiceHandle {
     /// Fork-choice manager handle (sequencer nodes).
     Fcm(Arc<FcmServiceHandle>),
     /// Checkpoint sync service handle (non-sequencer nodes).
-    #[expect(dead_code, reason = "held to keep the service alive; not yet read")]
-    Css(Arc<CssServiceHandle>),
+    Css { _handle: Arc<CssServiceHandle> },
 }
 
 /// Handles for all services.

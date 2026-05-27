@@ -7,10 +7,42 @@ use strata_identifiers::{EpochCommitment, Hash};
 /// only the terminal epoch state root is recoverable from DA, not per-update.
 #[derive(Clone, Debug)]
 pub struct EpochUpdateOp {
-    pub seq_no: u64,
-    pub extra_data: Vec<u8>,
-    pub messages: Vec<MessageEntry>,
-    pub final_state_root: Option<Hash>,
+    seq_no: u64,
+    extra_data: Vec<u8>,
+    messages: Vec<MessageEntry>,
+    final_state_root: Option<Hash>,
+}
+
+impl EpochUpdateOp {
+    pub fn new(
+        seq_no: u64,
+        extra_data: Vec<u8>,
+        messages: Vec<MessageEntry>,
+        final_state_root: Option<Hash>,
+    ) -> Self {
+        Self {
+            seq_no,
+            extra_data,
+            messages,
+            final_state_root,
+        }
+    }
+
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
+
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+
+    pub fn messages(&self) -> &[MessageEntry] {
+        &self.messages
+    }
+
+    pub fn final_state_root(&self) -> Option<Hash> {
+        self.final_state_root
+    }
 }
 
 #[derive(Debug)]

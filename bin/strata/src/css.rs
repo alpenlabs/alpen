@@ -6,7 +6,8 @@ use anyhow::Result;
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_checkpoint_types::EpochSummary;
 use strata_consensus_logic::checkpoint_sync::{
-    CheckpointSyncCtx, CssServiceHandle, start_css_service,
+    CheckpointSyncCtx, CheckpointSyncError, CheckpointSyncResult, CssServiceHandle,
+    start_css_service,
 };
 use strata_csm_types::CheckpointL1Ref;
 use strata_csm_worker::CsmWorkerStatus;
@@ -57,16 +58,16 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
         &self.rollup_params
     }
 
-    async fn fetch_l1_tip_height(&self) -> anyhow::Result<Option<L1Height>> {
-        Ok(self
-            .storage
+    async fn fetch_l1_tip_height(&self) -> CheckpointSyncResult<Option<L1Height>> {
+        self.storage
             .l1()
             .get_canonical_chain_tip_async()
-            .await?
-            .map(|tip| tip.0))
+            .await
+            .map(|opt| opt.map(|tip| tip.0))
+            .map_err(|e| CheckpointSyncError::SyncStatusQuery(e.into()))
     }
 
-    async fn fetch_csm_status(&self) -> anyhow::Result<CsmWorkerStatus> {
+    async fn fetch_csm_status(&self) -> CheckpointSyncResult<CsmWorkerStatus> {
         Ok(self.csm_monitor.get_current())
     }
 
@@ -94,16 +95,33 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
             .await
     }
 
-    async fn apply_checkpoint(&self, epoch: EpochCommitment) -> anyhow::Result<()> {
-        Ok(self.chain_worker.apply_checkpoint(epoch).await?)
+    async fn apply_checkpoint(&self, epoch: EpochCommitment) -> CheckpointSyncResult<()> {
+        self.chain_worker
+            .apply_checkpoint(epoch)
+            .await
+            .map_err(|cause| CheckpointSyncError::EpochOp {
+                epoch,
+                op: "apply_checkpoint",
+                cause: cause.into(),
+            })
     }
 
-    async fn update_safe_tip(&self, tip: OLBlockCommitment) -> anyhow::Result<()> {
-        Ok(self.chain_worker.update_safe_tip(tip).await?)
+    async fn update_safe_tip(&self, tip: OLBlockCommitment) -> CheckpointSyncResult<()> {
+        self.chain_worker
+            .update_safe_tip(tip)
+            .await
+            .map_err(|cause| CheckpointSyncError::SafeTipUpdate(cause.into()))
     }
 
-    async fn finalize_epoch(&self, epoch: EpochCommitment) -> anyhow::Result<()> {
-        Ok(self.chain_worker.finalize_epoch(epoch).await?)
+    async fn finalize_epoch(&self, epoch: EpochCommitment) -> CheckpointSyncResult<()> {
+        self.chain_worker
+            .finalize_epoch(epoch)
+            .await
+            .map_err(|cause| CheckpointSyncError::EpochOp {
+                epoch,
+                op: "finalize_epoch",
+                cause: cause.into(),
+            })
     }
 
     fn publish_ol_sync_status(&self, status: OLSyncStatus) {

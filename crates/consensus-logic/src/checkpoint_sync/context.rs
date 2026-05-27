@@ -11,6 +11,8 @@ use strata_params::RollupParams;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
 use strata_status::OLSyncStatus;
 
+use crate::checkpoint_sync::errors::CheckpointSyncResult;
+
 /// Operations the checkpoint sync service needs from its environment.
 ///
 /// The concrete implementation is assembled in the binary, keeping this module
@@ -19,13 +21,16 @@ pub trait CheckpointSyncCtx: Send + Sync {
     /// Returns the rollup params.
     fn rollup_params(&self) -> &RollupParams;
 
-    /// Fetches the current L1 chain tip height, if any. `None` is a normal
-    /// pre-sync condition (btcio reader hasn't ingested its first L1 block
-    /// yet) and callers must treat it as a wait, not an error.
-    fn fetch_l1_tip_height(&self) -> impl Future<Output = anyhow::Result<Option<L1Height>>> + Send;
+    /// Fetches the current L1 chain tip height, if any. Returns `None` if L1 info is not
+    /// available.
+    fn fetch_l1_tip_height(
+        &self,
+    ) -> impl Future<Output = CheckpointSyncResult<Option<L1Height>>> + Send;
 
     /// Fetches the current CSM worker status.
-    fn fetch_csm_status(&self) -> impl Future<Output = anyhow::Result<CsmWorkerStatus>> + Send;
+    fn fetch_csm_status(
+        &self,
+    ) -> impl Future<Output = CheckpointSyncResult<CsmWorkerStatus>> + Send;
 
     /// Gets the canonical epoch commitment for a given epoch number.
     fn get_canonical_epoch_commitment(
@@ -50,19 +55,19 @@ pub trait CheckpointSyncCtx: Send + Sync {
     fn apply_checkpoint(
         &self,
         epoch: EpochCommitment,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    ) -> impl Future<Output = CheckpointSyncResult<()>> + Send;
 
     /// Updates the chain worker's safe tip.
     fn update_safe_tip(
         &self,
         tip: OLBlockCommitment,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    ) -> impl Future<Output = CheckpointSyncResult<()>> + Send;
 
     /// Finalizes an epoch in the chain worker.
     fn finalize_epoch(
         &self,
         epoch: EpochCommitment,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    ) -> impl Future<Output = CheckpointSyncResult<()>> + Send;
 
     /// Publishes an OL sync status update to the status channel.
     fn publish_ol_sync_status(&self, status: OLSyncStatus);

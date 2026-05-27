@@ -7,7 +7,7 @@ use thiserror::Error;
 
 /// Errors from the checkpoint sync service.
 #[derive(Debug, Error)]
-pub(crate) enum CheckpointSyncError {
+pub enum CheckpointSyncError {
     /// L1 canonical chain tip not yet available (pre-sync); treat as wait.
     #[error("L1 canonical chain tip not yet ingested")]
     L1TipNotReady,
@@ -41,8 +41,7 @@ pub(crate) enum CheckpointSyncError {
     #[error("sync status query failed")]
     SyncStatusQuery(#[source] anyhow::Error),
 
-    /// Failure from a per-epoch chain-worker call (apply, update_safe_tip,
-    /// finalize).
+    /// Failure from a per-epoch chain-worker call (`apply`, `finalize`).
     #[error("chain worker {op} at {epoch}")]
     EpochOp {
         epoch: EpochCommitment,
@@ -50,6 +49,10 @@ pub(crate) enum CheckpointSyncError {
         #[source]
         cause: anyhow::Error,
     },
+
+    /// Failure updating the chain worker's safe tip.
+    #[error("chain worker update_safe_tip")]
+    SafeTipUpdate(#[source] anyhow::Error),
 }
 
-pub(crate) type CheckpointSyncResult<T> = Result<T, CheckpointSyncError>;
+pub type CheckpointSyncResult<T> = Result<T, CheckpointSyncError>;
