@@ -3,7 +3,7 @@
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
@@ -79,8 +79,8 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Fetches a specific epoch summary by its commitment.
     fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary>;
 
-    /// Fetches all summaries for an epoch index.
-    fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>>;
+    /// Fetches canonical epoch summary for an epoch index.
+    fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>>;
 
     /// Merges write batches of an epoch and stores the result.
     fn merge_epoch_data(&self, epoch: &EpochCommitment) -> WorkerResult<()>;

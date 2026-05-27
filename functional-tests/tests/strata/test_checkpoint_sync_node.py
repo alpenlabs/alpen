@@ -28,6 +28,13 @@ MAX_EPOCHS_TO_SCAN = 30
 
 @flexitest.register
 class TestCheckpointSyncNode(BaseTest):
+    """
+    Tests a checkpoint syncing node by checking if the account summaries in both
+    checkpoint sync node and sequencer node match.
+    Ideally, we would have a setup where an EL receives data from a checkpoint
+    sync node and submits transactions to a sequencer and see if the updates get through.
+    """
+
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("el_ol_checkpoint_sync")
 
@@ -96,8 +103,14 @@ def check_summaries_equivalent(seq_summary: AccountEpochSummary, node_summary: A
     """
     seq_summary_d = dict(seq_summary)
     node_summary_d = dict(node_summary)
-    seq_updates = cast(list, seq_summary_d.pop("update_inputs", []))
-    node_updates = cast(list, node_summary_d.pop("update_inputs", []))
+    seq_updates = cast(list, seq_summary_d.pop("update_inputs"))
+    node_updates = cast(list, node_summary_d.pop("update_inputs"))
+
+    last_seq_update = seq_updates[-1]
+    last_node_update = node_updates[-1]
+
+    # Check the roots in last updates nodes match.
+    assert last_seq_update["final_state_root"] == last_node_update["final_state_root"]
 
     assert seq_summary_d == node_summary_d
 

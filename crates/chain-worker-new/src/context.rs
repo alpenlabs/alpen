@@ -279,24 +279,15 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .ok_or(WorkerError::MissingEpochSummary(*epoch))
     }
 
-    fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>> {
-        // Get all epoch commitments for this epoch index
-        let epoch_commitments = self
+    fn fetch_canonical_epoch_summary_at(&self, epoch: u32) -> WorkerResult<Option<EpochSummary>> {
+        let commitment = self
             .ol_checkpoint_mgr
-            .get_epoch_commitments_at_blocking(epoch)?;
-
-        // Fetch the summary for each commitment
-        let mut summaries = Vec::with_capacity(epoch_commitments.len());
-        for commitment in epoch_commitments {
-            if let Some(summary) = self
-                .ol_checkpoint_mgr
-                .get_epoch_summary_blocking(commitment)?
-            {
-                summaries.push(summary);
-            }
+            .get_canonical_epoch_commitment_at_blocking(epoch)?;
+        if let Some(com) = commitment {
+            Ok(self.ol_checkpoint_mgr.get_epoch_summary_blocking(com)?)
+        } else {
+            Ok(None)
         }
-
-        Ok(summaries)
     }
 
     fn merge_epoch_data(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
@@ -326,14 +317,10 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         // Reverse to get forward order (excluding prev_terminal which is already finalized)
         chain.reverse();
 
-        // Get base state from prev_terminal (or genesis)
-        let mut current_state = if prev_terminal.is_null() {
-            self.fetch_ol_state(OLBlockCommitment::null())?
-                .ok_or(WorkerError::MissingPreState(OLBlockCommitment::null()))?
-        } else {
-            self.fetch_ol_state(prev_terminal)?
-                .ok_or(WorkerError::MissingPreState(prev_terminal))?
-        };
+        // Fetch prev state.
+        let mut cur_state = self
+            .fetch_ol_state(prev_terminal)?
+            .ok_or(WorkerError::MissingPreState(prev_terminal))?;
 
         // Apply write batches in canonical order.
         // Every block in the canonical chain must have a write batch - a missing one
@@ -342,14 +329,14 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             let wb = self
                 .fetch_write_batch(commitment)?
                 .ok_or(WorkerError::MissingWriteBatch(commitment))?;
-            current_state
+            cur_state
                 .apply_write_batch(wb)
                 .map_err(|e| WorkerError::Unexpected(format!("failed to apply batch: {e}")))?;
         }
 
         // Store the final merged state at the terminal commitment
         self.ol_state_mgr
-            .put_toplevel_ol_state_blocking(terminal, current_state)?;
+            .put_toplevel_ol_state_blocking(terminal, cur_state)?;
 
         Ok(())
     }

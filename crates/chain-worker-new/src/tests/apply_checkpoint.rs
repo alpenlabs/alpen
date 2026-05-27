@@ -67,12 +67,12 @@ impl ChainWorkerContext for MockChainWorkerContext {
         Ok(self.checkpoint_payloads.get(epoch).cloned())
     }
 
-    fn fetch_epoch_summaries(&self, epoch: Epoch) -> WorkerResult<Vec<EpochSummary>> {
+    fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>> {
         Ok(self
             .epoch_summaries
             .get(&epoch)
-            .cloned()
-            .unwrap_or_default())
+            .and_then(|x| x.first())
+            .cloned())
     }
 
     fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLState>> {
