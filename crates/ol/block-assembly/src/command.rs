@@ -22,6 +22,9 @@ type CompleteBlockTemplateResult = Result<OLBlock, BlockAssemblyError>;
 /// Type alias for completed-template status release result.
 type ReleaseCompletedTemplateStatusResult = bool;
 
+/// Type alias for recording a persisted block result.
+type RecordPersistedBlockResult = Result<(), BlockAssemblyError>;
+
 #[derive(Debug)]
 pub(crate) enum BlockasmCommand {
     GenerateBlockTemplate {
@@ -33,7 +36,7 @@ pub(crate) enum BlockasmCommand {
         completion: CommandCompletionSender<GetBlockTemplateResult>,
     },
     CompleteBlockTemplate {
-        /// The ID of a previously generated template, used to look up the cached template.
+        /// The ID of the cached template to complete into a block.
         template_id: OLBlockId,
         data: BlockCompletionData,
         completion: CommandCompletionSender<CompleteBlockTemplateResult>,
@@ -44,6 +47,11 @@ pub(crate) enum BlockasmCommand {
         /// Block commitment stored in the completed-template status.
         block: OLBlockCommitment,
         completion: CommandCompletionSender<ReleaseCompletedTemplateStatusResult>,
+    },
+    RecordPersistedBlock {
+        /// The ID of the template that produced the persisted block.
+        template_id: OLBlockId,
+        completion: CommandCompletionSender<RecordPersistedBlockResult>,
     },
 }
 

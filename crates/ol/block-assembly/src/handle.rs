@@ -75,7 +75,10 @@ impl BlockasmHandle {
         self.send_command(command, rx).await?
     }
 
-    /// Complete specified template with completion data and return the final block.
+    /// Completes a cached template with completion data and returns the block.
+    ///
+    /// This validates the completion data and does not remove the template from the cache. Call
+    /// [`Self::record_persisted_block`] after the block is durably persisted.
     pub async fn complete_block_template(
         &self,
         template_id: OLBlockId,
@@ -103,5 +106,15 @@ impl BlockasmHandle {
             completion,
         };
         self.send_command(command, rx).await
+    }
+
+    /// Records that the block produced from this template has been persisted.
+    pub async fn record_persisted_block(&self, template_id: OLBlockId) -> BlockAssemblyResult<()> {
+        let (completion, rx) = create_completion();
+        let command = BlockasmCommand::RecordPersistedBlock {
+            template_id,
+            completion,
+        };
+        self.send_command(command, rx).await?
     }
 }

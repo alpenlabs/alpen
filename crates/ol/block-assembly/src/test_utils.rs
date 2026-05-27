@@ -1,4 +1,11 @@
 //! Test utilities for block assembly tests.
+#![cfg_attr(
+    all(not(test), feature = "test-utils"),
+    expect(
+        dead_code,
+        reason = "shared test fixture module contains helpers used selectively by crate and downstream tests"
+    )
+)]
 
 use std::{
     future::Future,
@@ -160,7 +167,8 @@ pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyCon
 pub(crate) const TEST_L1_REORG_SAFE_DEPTH: u32 = 0;
 
 /// Mock mempool provider for tests that stores transactions in memory.
-pub(crate) struct MockMempoolProvider {
+#[derive(Debug)]
+pub struct MockMempoolProvider {
     transactions: Mutex<Vec<(OLTxId, OLTransaction)>>,
     report_call_count: AtomicUsize,
     last_reported_invalid_txs: Mutex<Vec<(OLTxId, MempoolTxInvalidReason)>>,
@@ -178,7 +186,7 @@ pub(crate) enum MockMempoolFailMode {
 
 impl MockMempoolProvider {
     /// Create a new empty mock mempool provider.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             transactions: Mutex::new(Vec::new()),
             report_call_count: AtomicUsize::new(0),
@@ -205,6 +213,12 @@ impl MockMempoolProvider {
     /// Returns the most recent invalid-tx payload passed to `report_invalid_transactions`.
     pub(crate) fn last_reported_invalid_txs(&self) -> Vec<(OLTxId, MempoolTxInvalidReason)> {
         self.last_reported_invalid_txs.lock().unwrap().clone()
+    }
+}
+
+impl Default for MockMempoolProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -807,7 +821,11 @@ impl TestAccount {
 }
 
 /// Storage fixture layer for block assembly tests.
-pub(crate) struct TestStorageFixture {
+#[expect(
+    missing_debug_implementations,
+    reason = "NodeStorage does not implement Debug"
+)]
+pub struct TestStorageFixture {
     storage: Arc<NodeStorage>,
     /// Seeded L1 block ref claims. Each claim's `idx()` is the L1 height of the
     /// corresponding L1 block ref.
@@ -839,7 +857,7 @@ impl TestStorageFixture {
     }
 
     /// Returns storage handle for lower-level tests.
-    pub(crate) fn storage(&self) -> &Arc<NodeStorage> {
+    pub fn storage(&self) -> &Arc<NodeStorage> {
         &self.storage
     }
 
@@ -1103,7 +1121,11 @@ pub(crate) fn block_and_post_state_from_output(
 
 /// Builder for seeded storage fixtures used by block assembly tests.
 #[derive(Default)]
-pub(crate) struct TestStorageFixtureBuilder {
+#[expect(
+    missing_debug_implementations,
+    reason = "Test fixture input types do not all implement Debug"
+)]
+pub struct TestStorageFixtureBuilder {
     parent_slot: Option<u64>,
     l1_manifest_height_range: Option<RangeInclusive<L1Height>>,
     asm_manifest_heights: Vec<L1Height>,
@@ -1113,7 +1135,7 @@ pub(crate) struct TestStorageFixtureBuilder {
 
 impl TestStorageFixtureBuilder {
     /// Creates a new builder with default values.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
@@ -1143,7 +1165,7 @@ impl TestStorageFixtureBuilder {
     }
 
     /// Uses the slot-0 genesis parent and seeds `count` L1 manifests after it.
-    pub(crate) fn with_genesis_parent_and_l1_manifest_count(mut self, count: L1Height) -> Self {
+    pub fn with_genesis_parent_and_l1_manifest_count(mut self, count: L1Height) -> Self {
         self.parent_slot = Some(0);
         self.l1_manifest_height_range =
             Some(GENESIS_L1_MANIFEST_HEIGHT..=GENESIS_L1_MANIFEST_HEIGHT + count);
@@ -1173,7 +1195,7 @@ impl TestStorageFixtureBuilder {
     /// Builds and seeds the storage fixture.
     ///
     /// Returns `(fixture, parent_commitment)` for advanced tests that need lower layers directly.
-    pub(crate) async fn build_fixture(self) -> (Arc<TestStorageFixture>, OLBlockCommitment) {
+    pub async fn build_fixture(self) -> (Arc<TestStorageFixture>, OLBlockCommitment) {
         let fixture = TestStorageFixture::new(create_test_storage());
 
         // Setup ASM state with L1 manifests if configured.

@@ -57,12 +57,15 @@ where
     }
 
     async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
-        // Lazily clean up expired templates on every command.
-        let expired_template_ids = state.state_mut().cleanup_expired_templates();
-        for template_id in expired_template_ids {
-            state
-                .epoch_da_tracker_mut()
-                .remove_accumulated_da(template_id);
+        if !matches!(&input, BlockasmCommand::RecordPersistedBlock { .. }) {
+            // Lazily clean up expired templates on every command except the post-persist
+            // state update, which must be able to observe an already-persisted block.
+            let expired_template_ids = state.state_mut().cleanup_expired_templates();
+            for template_id in expired_template_ids {
+                state
+                    .epoch_da_tracker_mut()
+                    .remove_accumulated_da(template_id);
+            }
         }
 
         match input {
@@ -97,6 +100,14 @@ where
                     .state_mut()
                     .release_completed_template_status(parent_block_id, block);
                 _ = completion.send(released).await;
+            }
+
+            BlockasmCommand::RecordPersistedBlock {
+                template_id,
+                completion,
+            } => {
+                let result = record_persisted_block(state, template_id);
+                _ = completion.send(result).await;
             }
         }
 
@@ -199,7 +210,7 @@ fn get_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
         .get_pending_block_template_by_parent(parent_block_id)
 }
 
-/// Complete a block template with signature.
+/// Completes a cached template with a signature.
 ///
 /// The signature is provided by the caller (sequencer) via `BlockCompletionData`. The flow is:
 /// 1. Sequencer calls `GenerateBlockTemplate` to get a template with header hash
@@ -207,8 +218,9 @@ fn get_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
 /// 3. Sequencer calls `CompleteBlockTemplate` with the signature
 /// 4. This function validates the signature before completing the cached template
 ///
-/// The completed block is returned to the caller, who is responsible for submitting it
-/// to the Fork Choice Manager (FCM) and storage.
+/// The completed block is returned to the caller, who is responsible for durably storing it,
+/// recording the persisted block for the template, and submitting it to the Fork Choice Manager
+/// (FCM).
 fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
     state: &mut BlockasmServiceState<M, E, S>,
     template_id: OLBlockId,
@@ -216,7 +228,8 @@ fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
 ) -> Result<OLBlock, BlockAssemblyError> {
     let template_ref = state.state_mut().get_pending_block_template(template_id)?;
 
-    // Verify the signature before removing the template from the cache.
+    // Verify the signature before returning a completed block. Failed signatures keep the
+    // cached template retryable.
     if !check_completion_data(
         state.sequencer_predicate(),
         template_ref.header(),
@@ -225,14 +238,19 @@ fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
         return Err(BlockAssemblyError::InvalidSignature(template_id));
     }
 
-    // The signature is valid; mark the template as completed.
-    let template = state.state_mut().mark_template_completed(template_id)?;
+    Ok(template_ref.complete_block_template(completion_data))
+}
+
+/// Records that a block has been stored for a template and removes its accumulated DA entry.
+fn record_persisted_block<M: MempoolProvider, E: EpochSealingPolicy, S>(
+    state: &mut BlockasmServiceState<M, E, S>,
+    template_id: OLBlockId,
+) -> Result<(), BlockAssemblyError> {
+    state.state_mut().record_persisted_block(template_id)?;
     state
         .epoch_da_tracker_mut()
         .remove_accumulated_da(template_id);
-
-    // Apply the signature and return the completed block.
-    Ok(template.complete_block_template(completion_data))
+    Ok(())
 }
 
 /// Checks whether the sequencer signature matches the template header.
@@ -643,12 +661,21 @@ mod tests {
             template_id,
             "completed block id should match template id"
         );
+
+        let cached_template = state
+            .state_mut()
+            .get_pending_block_template(template_id)
+            .expect("template should remain cached until storage succeeds");
+        assert_eq!(cached_template.get_blockid(), template_id);
+
+        record_persisted_block(&mut state, template_id)
+            .expect("persisted block should be recorded for template after storage succeeds");
         assert!(
             matches!(
                 state.state_mut().get_pending_block_template(template_id),
                 Err(BlockAssemblyError::UnknownTemplateId(id)) if id == template_id
             ),
-            "template should be removed after successful completion"
+            "template should be removed after persisted block is recorded"
         );
     }
 
@@ -697,6 +724,22 @@ mod tests {
             template_id,
             "completed block id should match template id"
         );
+
+        let cached_template = state
+            .state_mut()
+            .get_pending_block_template(template_id)
+            .expect("template should remain cached until storage succeeds");
+        assert_eq!(cached_template.get_blockid(), template_id);
+        assert!(
+            state
+                .epoch_da_tracker()
+                .get_accumulated_da(template_id)
+                .is_some(),
+            "completion should not evict DA tracker entry before storage succeeds"
+        );
+
+        record_persisted_block(&mut state, template_id)
+            .expect("persisted block should be recorded for template after storage succeeds");
         assert!(
             matches!(
                 state.state_mut().get_pending_block_template(template_id),
@@ -721,6 +764,53 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_record_persisted_block_skips_ttl_cleanup() {
+        let (mut state, _mempool, env, sk) = build_service_state(true).await;
+        let signing_key = sk.expect("schnorr signing key should be present");
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let template = generate_block_template(&mut state, config)
+            .await
+            .expect("generation should succeed");
+        let template_id = template.get_blockid();
+
+        let completion_data = valid_completion_data(&template, signing_key);
+        complete_block_template(&mut state, template_id, completion_data)
+            .expect("valid signature should complete template");
+
+        state
+            .state_mut()
+            .set_template_created_at_for_test(template_id, Instant::now() - TEST_BLOCK_TEMPLATE_TTL)
+            .expect("template should be present before backdating");
+
+        let (completion, rx) = create_completion();
+        let cmd = BlockasmCommand::RecordPersistedBlock {
+            template_id,
+            completion,
+        };
+        BlockasmService::<_, _, _>::process_input(&mut state, cmd)
+            .await
+            .unwrap();
+        rx.await
+            .expect("completion sender should respond")
+            .expect("recording persisted block should ignore template TTL after storage succeeds");
+
+        assert!(
+            matches!(
+                state.state_mut().get_pending_block_template(template_id),
+                Err(BlockAssemblyError::UnknownTemplateId(id)) if id == template_id
+            ),
+            "template should be removed after persisted block is recorded"
+        );
+        assert!(
+            state
+                .epoch_da_tracker()
+                .get_accumulated_da(template_id)
+                .is_none(),
+            "recording persisted block should evict DA tracker entry"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_generation_after_completion_returns_completed_parent_error() {
         let (mut state, mempool, env, sk) = build_service_state(true).await;
         let signing_key = sk.expect("schnorr signing key should be present");
@@ -738,6 +828,8 @@ mod tests {
             completed.header().slot(),
             completed.header().compute_blkid(),
         );
+        record_persisted_block(&mut state, template_id)
+            .expect("persisted block should be recorded for template after storage succeeds");
 
         // If generation tries to rebuild, this fail mode makes the test fail.
         mempool.set_fail_mode(MockMempoolFailMode::GetTransactions);
@@ -771,6 +863,8 @@ mod tests {
         let completion_data = valid_completion_data(&template, signing_key);
         let completed = complete_block_template(&mut state, template_id, completion_data)
             .expect("valid signature should complete template");
+        record_persisted_block(&mut state, template_id)
+            .expect("completed template should be recorded as persisted");
         let completed_commitment = OLBlockCommitment::new(
             completed.header().slot(),
             completed.header().compute_blkid(),
@@ -815,6 +909,8 @@ mod tests {
         let completion_data = valid_completion_data(&first, signing_key);
         let completed = complete_block_template(&mut state, first_template_id, completion_data)
             .expect("valid signature should complete template");
+        record_persisted_block(&mut state, first_template_id)
+            .expect("completed template should be recorded as persisted");
         let completed_commitment = OLBlockCommitment::new(
             completed.header().slot(),
             completed.header().compute_blkid(),

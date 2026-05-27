@@ -28,6 +28,8 @@ pub trait CsmStatusReader: Send + Sync {
 pub trait FcmStorage: UnfinalizedOLBlockSource {
     async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool>;
 
+    async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool>;
+
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,

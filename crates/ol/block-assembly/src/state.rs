@@ -44,8 +44,8 @@ pub(crate) enum BlockTemplateStatus {
 /// Mutable state for block assembly service (owned by service task).
 ///
 /// Manages pending block templates that have been generated but not yet completed with a
-/// signature. Templates are created by `GenerateBlockTemplate` and marked completed when
-/// `CompleteBlockTemplate` is called with a valid signature.
+/// signature. Templates are created by `GenerateBlockTemplate` and recorded when
+/// `CompleteBlockTemplate` has produced a durably persisted block.
 ///
 /// Templates expire after a configurable TTL. Expired entries are cleaned up during insertion
 /// and are treated as absent during lookups.
@@ -54,7 +54,7 @@ pub(crate) enum BlockTemplateStatus {
 /// 1. Template created via `generate_block_template()` and stored here
 /// 2. Template retrieved via `get_pending_block_template()` for signing
 /// 3. Template copied for signature validation without cache mutation
-/// 4. Template marked `Completed` after signature validation
+/// 4. Template recorded after its block is persisted
 /// 5. Template expires and is cleaned up if never completed
 #[derive(Debug)]
 pub(crate) struct BlockAssemblyState {
@@ -192,15 +192,14 @@ impl BlockAssemblyState {
             ))
     }
 
-    /// Marks a pending template as completed.
-    pub(crate) fn mark_template_completed(
+    /// Records that the block produced from a pending template has been persisted.
+    pub(crate) fn record_persisted_block(
         &mut self,
         template_id: OLBlockId,
     ) -> Result<FullBlockTemplate, BlockAssemblyError> {
         let cached = self
             .pending_templates
             .get(&template_id)
-            .filter(|cached| cached.created_at.elapsed() < self.ttl)
             .ok_or(BlockAssemblyError::UnknownTemplateId(template_id))?;
 
         let template = cached.template.clone();
@@ -526,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_template_completed_sets_completed_status() {
+    fn record_persisted_block_sets_completed_status() {
         let mut state = BlockAssemblyState::new(TEST_BLOCK_TEMPLATE_TTL);
         let template = create_test_template();
         let id = template.get_blockid();
@@ -534,10 +533,10 @@ mod tests {
         let block = template.header().compute_block_commitment();
 
         state.insert_template(id, template).unwrap();
-        let committed = state.mark_template_completed(id).unwrap();
+        let committed = state.record_persisted_block(id).unwrap();
         assert_eq!(committed.get_blockid(), id);
 
-        assert!(state.mark_template_completed(id).is_err());
+        assert!(state.record_persisted_block(id).is_err());
 
         // Verify parent lookup fails for signable templates, but the completed tombstone remains.
         assert!(state.get_pending_block_template_by_parent(parent).is_err());
@@ -557,7 +556,7 @@ mod tests {
         let block = template.header().compute_block_commitment();
 
         state.insert_template(id, template).unwrap();
-        state.mark_template_completed(id).unwrap();
+        state.record_persisted_block(id).unwrap();
 
         let replacement = create_test_template_with_parent(parent);
         let replacement_id = replacement.get_blockid();
@@ -592,7 +591,7 @@ mod tests {
         let block = template.header().compute_block_commitment();
 
         state.insert_template(id, template).unwrap();
-        state.mark_template_completed(id).unwrap();
+        state.record_persisted_block(id).unwrap();
 
         assert!(
             state.release_completed_template_status(parent, block),
@@ -628,7 +627,7 @@ mod tests {
             OLBlockCommitment::new(block.slot(), OLBlockId::from(Buf32::from([0x55; 32])));
 
         state.insert_template(id, template).unwrap();
-        state.mark_template_completed(id).unwrap();
+        state.record_persisted_block(id).unwrap();
 
         assert!(
             !state.release_completed_template_status(parent, other_block),
@@ -671,7 +670,7 @@ mod tests {
         let block = template.header().compute_block_commitment();
 
         state.insert_template(id, template).unwrap();
-        state.mark_template_completed(id).unwrap();
+        state.record_persisted_block(id).unwrap();
 
         state.prune_completed_template_statuses_for_parent(block);
 
@@ -690,7 +689,7 @@ mod tests {
         let block = template.header().compute_block_commitment();
 
         state.insert_template(id, template).unwrap();
-        state.mark_template_completed(id).unwrap();
+        state.record_persisted_block(id).unwrap();
 
         let parent_commitment = OLBlockCommitment::new(block.slot().saturating_sub(1), parent);
         state.prune_completed_template_statuses_for_parent(parent_commitment);
@@ -720,7 +719,7 @@ mod tests {
             let id = template.get_blockid();
             let block = template.header().compute_block_commitment();
             state.insert_template(id, template).unwrap();
-            state.mark_template_completed(id).unwrap();
+            state.record_persisted_block(id).unwrap();
             completed.push((parent, block));
         }
 
