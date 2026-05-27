@@ -12,6 +12,9 @@ pub struct DaWitness {
 
     /// Private bytecodes omitted from the current DA blob because they were
     /// already known locally from prior DA publication.
+    ///
+    /// TODO(STR-1907): replace this private witness path with an authenticated
+    /// prior-publication proof once bytecode DA dedupe is protocol-bound.
     known_bytecodes: Vec<DaBytecodeWitness>,
 }
 
@@ -65,9 +68,10 @@ impl ArchivedDaWitness {
 /// EVM bytecode, so the host supplies omitted bytecodes here and the guest
 /// re-hashes them before accepting the account diff.
 ///
-/// This proves bytecode identity, not prior L1 publication. The proper future
-/// protocol fix is to prove membership in an authenticated published-bytecode
-/// set, or include explicit prior blob inclusion for the omitted bytecode.
+/// This proves bytecode identity, not prior L1 publication.
+///
+/// TODO(STR-1907): prove membership in an authenticated published-bytecode set,
+/// or include explicit prior blob inclusion for the omitted bytecode.
 #[derive(Clone, Debug, Eq, PartialEq, Archive, Deserialize, Serialize)]
 #[rkyv(derive(Debug))]
 pub struct DaBytecodeWitness {

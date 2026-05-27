@@ -230,9 +230,11 @@ fn verify_deployed_bytecodes(
     // NOTE: known bytecodes are private reconstruction witness data for bytecodes
     // deduped from the current L1 blob. The guest accepts them only after
     // recomputing the EVM code hash, which proves identity for the account diff
-    // but not prior L1 publication. A future protocol-level solution should
-    // verify membership in an authenticated published-bytecode set, or verify
-    // explicit inclusion in the earlier DA blob that first carried the bytes.
+    // but not prior L1 publication.
+    //
+    // TODO(STR-1907): replace this with membership in an authenticated
+    // published-bytecode set, or explicit inclusion in the earlier DA blob that
+    // first carried the bytes.
     for bytecode in known_bytecodes {
         let code_hash = B256::from(*bytecode.code_hash());
         let computed = keccak256(bytecode.bytecode());

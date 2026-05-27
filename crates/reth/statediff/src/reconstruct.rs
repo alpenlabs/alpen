@@ -24,6 +24,8 @@ use crate::{
 pub enum ReconstructError {
     #[error("MPT: {0}")]
     Mpt(#[from] strata_mpt::Error),
+    #[error("sparse MPT: {0}")]
+    SparseMpt(#[from] rsp_mpt::Error),
     #[error("DA apply: {0}")]
     Da(#[from] strata_da_framework::DaError),
 }
@@ -270,10 +272,8 @@ pub fn apply_batch_state_diff_to_ethereum_state(
 
         match change {
             AccountChange::Created(account_diff) | AccountChange::Updated(account_diff) => {
-                let current: Option<StateAccount> = state
-                    .state_trie
-                    .get_rlp(hashed_addr.as_slice())
-                    .unwrap_or_default();
+                let current: Option<StateAccount> =
+                    state.state_trie.get_rlp(hashed_addr.as_slice())?;
 
                 let mut snapshot = current
                     .as_ref()
@@ -302,14 +302,10 @@ pub fn apply_batch_state_diff_to_ethereum_state(
                         let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
                         match slot_value {
                             Some(v) if !v.is_zero() => {
-                                acc_storage_trie
-                                    .insert_rlp(&slot_trie_path, *v)
-                                    .expect("storage trie insert");
+                                acc_storage_trie.insert_rlp(&slot_trie_path, *v)?;
                             }
                             _ => {
-                                acc_storage_trie
-                                    .delete(&slot_trie_path)
-                                    .expect("storage trie delete");
+                                acc_storage_trie.delete(&slot_trie_path)?;
                             }
                         }
                     }
@@ -318,14 +314,10 @@ pub fn apply_batch_state_diff_to_ethereum_state(
 
                 state
                     .state_trie
-                    .insert_rlp(hashed_addr.as_slice(), state_account)
-                    .expect("state trie insert");
+                    .insert_rlp(hashed_addr.as_slice(), state_account)?;
             }
             AccountChange::Deleted => {
-                state
-                    .state_trie
-                    .delete(hashed_addr.as_slice())
-                    .expect("state trie delete");
+                state.state_trie.delete(hashed_addr.as_slice())?;
                 state.storage_tries.remove(&hashed_addr);
             }
         }
@@ -337,10 +329,7 @@ pub fn apply_batch_state_diff_to_ethereum_state(
         }
 
         let hashed_addr: B256 = keccak(address).into();
-        let current: Option<StateAccount> = state
-            .state_trie
-            .get_rlp(hashed_addr.as_slice())
-            .unwrap_or_default();
+        let current: Option<StateAccount> = state.state_trie.get_rlp(hashed_addr.as_slice())?;
 
         if let Some(mut state_account) = current {
             let acc_storage_trie = state.storage_tries.entry(hashed_addr).or_default();
@@ -348,22 +337,17 @@ pub fn apply_batch_state_diff_to_ethereum_state(
                 let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
                 match slot_value {
                     Some(v) if !v.is_zero() => {
-                        acc_storage_trie
-                            .insert_rlp(&slot_trie_path, *v)
-                            .expect("storage-only insert");
+                        acc_storage_trie.insert_rlp(&slot_trie_path, *v)?;
                     }
                     _ => {
-                        acc_storage_trie
-                            .delete(&slot_trie_path)
-                            .expect("storage-only delete");
+                        acc_storage_trie.delete(&slot_trie_path)?;
                     }
                 }
             }
             state_account.storage_root = acc_storage_trie.hash();
             state
                 .state_trie
-                .insert_rlp(hashed_addr.as_slice(), state_account)
-                .expect("state trie insert (storage-only)");
+                .insert_rlp(hashed_addr.as_slice(), state_account)?;
         }
     }
 
@@ -886,5 +870,38 @@ mod tests {
             canonical_state_root(&expected_state).unwrap(),
             "ethereum-state apply must match canonical post-state root"
         );
+    }
+
+    #[test]
+    fn apply_to_ethereum_state_returns_mpt_error_for_unresolved_state_trie() {
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+
+        let address = addr(0xC1);
+        let unresolved = hash(0xFE);
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            None,
+            Some(snapshot(500, 1, hash(0x55))),
+        );
+        let diff = roundtrip_batch_diff(&[block]);
+
+        let mut state = EthereumState::from_proofs(unresolved, &Default::default()).unwrap();
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            apply_batch_state_diff_to_ethereum_state(&mut state, &diff)
+        }));
+
+        assert!(result.is_ok(), "unresolved sparse trie must not panic");
+        let err = result
+            .unwrap()
+            .expect_err("unresolved sparse trie must return an MPT error");
+        assert!(matches!(
+            err,
+            ReconstructError::SparseMpt(rsp_mpt::Error::NodeNotResolved(digest))
+                if digest == unresolved
+        ));
     }
 }

@@ -38,11 +38,11 @@ pub(super) fn compute_wtxids_root(txs: &[Transaction]) -> [u8; 32] {
         "wtxids root requires at least the coinbase tx"
     );
 
-    // NOTE: DA reveal txs are witness spends. If commit txs are also guaranteed
-    // to spend post-SegWit inputs, every DA block referenced here has witness
-    // data and this root matches the L1 block ref root committed by ASM.
-    // Without that funding-input guarantee, commit-only legacy blocks would
-    // require mirroring ASM's fallback to the txid merkle root.
+    // NOTE: DA reveal txs are witness spends, and Alpen DA commit tx funding is
+    // expected to spend post-SegWit inputs. Under that writer invariant, every
+    // DA block referenced here has witness data and this root matches the L1
+    // block ref root committed by ASM. If a future writer allows legacy-input
+    // commit funding, commit-only blocks must mirror ASM's txid-root fallback.
     let leaves: Vec<[u8; 32]> = txs
         .iter()
         .enumerate()

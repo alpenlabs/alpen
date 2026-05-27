@@ -22,7 +22,12 @@ class TestCrashCsmEvent(CrashTest):
     def main(self, ctx):
         strata = self.get_strata()
         bitcoin = self.get_service(ServiceType.Bitcoin)
-        strata.wait_for_rpc_ready(timeout=10)
+        rpc = strata.wait_for_rpc_ready(timeout=10)
+
+        # Let normal OL block production settle before arming the CSM bail.
+        # This keeps the test focused on CSM-event recovery instead of racing
+        # the first post-genesis block's startup indexing work.
+        strata.wait_for_additional_blocks(2, rpc)
 
         def mine_l1_blocks_to_trigger_csm() -> None:
             btc_rpc = bitcoin.create_rpc()

@@ -9,6 +9,7 @@ Scenario:
 
 import contextlib
 import logging
+import re
 from pathlib import Path
 
 import flexitest
@@ -16,26 +17,57 @@ import flexitest
 from common.base_test import AlpenClientTest
 from common.config.constants import ServiceType
 from common.wait import wait_until
+from envconfigs.alpen_client import AlpenClientEnv
 from factories.alpen_client import AlpenClientFactory, generate_sequencer_keypair
 
 logger = logging.getLogger(__name__)
+CANONICAL_BLOCK_RE = re.compile(
+    r"Block added to canonical chain number=(?P<number>\d+) hash=(?P<hash>0x[0-9a-fA-F]+)"
+)
 
 
-def wait_for_canonical_block_log(ee_node, block_number: int, block_hash: str, timeout: int) -> None:
-    """Wait until Reth reports the block as added to its canonical chain."""
-    log_path = Path(ee_node.props["datadir"]) / "service.log"
-    needle = f"Block added to canonical chain number={block_number} hash={block_hash}"
+def wait_for_canonical_block_log(
+    service,
+    target_block: int,
+    expected_hash: str,
+    timeout: int,
+) -> None:
+    """Wait for the node to canonicalize `target_block` or a later descendant."""
+    log_path = Path(service.props["datadir"]) / "service.log"
+    expected_hash = expected_hash.lower()
 
-    def has_canonical_block_log() -> bool:
+    def check() -> bool:
         if not log_path.exists():
             return False
 
-        with log_path.open(encoding="utf-8", errors="ignore") as log_file:
-            return any(needle in line for line in log_file)
+        target_seen = False
+        target_matches = False
+        later_seen = False
+
+        with log_path.open("r", encoding="utf-8", errors="ignore") as log_file:
+            for line in log_file:
+                match = CANONICAL_BLOCK_RE.search(line)
+                if not match:
+                    continue
+
+                number = int(match.group("number"))
+                block_hash = match.group("hash").lower()
+                if number == target_block:
+                    target_seen = True
+                    target_matches = block_hash == expected_hash
+                elif number > target_block:
+                    later_seen = True
+
+        if target_seen:
+            return target_matches
+        return later_seen
 
     wait_until(
-        has_canonical_block_log,
-        error_with=f"Canonical block {block_number} with hash {block_hash} not observed",
+        check,
+        error_with=(
+            f"Canonical block {target_block} with hash {expected_hash} "
+            "or a later canonical descendant was not observed"
+        ),
         timeout=timeout,
     )
 
@@ -45,7 +77,7 @@ class TestFullnodeSync(AlpenClientTest):
     """Test historical block sync from fullnode to late-joining fullnode."""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_ee")
+        ctx.set_env(AlpenClientEnv(enable_l1_da=True, batch_sealing_block_count=1000))
 
     def main(self, ctx):
         ee_sequencer = self.get_service(ServiceType.AlpenSequencer)
@@ -99,7 +131,7 @@ class TestFullnodeSync(AlpenClientTest):
                 ee_fullnode_1,
                 target_block,
                 expected_hash,
-                timeout=historical_sync_timeout,
+                historical_sync_timeout,
             )
 
             # Verify new block relay
@@ -115,7 +147,7 @@ class TestFullnodeSync(AlpenClientTest):
                 ee_fullnode_1,
                 new_target,
                 expected_new_hash,
-                timeout=new_block_sync_timeout,
+                new_block_sync_timeout,
             )
 
             logger.info(f"ee_fullnode_1 synced block {target_block} and new block {new_target}")

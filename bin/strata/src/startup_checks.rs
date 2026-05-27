@@ -319,9 +319,10 @@ mod tests {
     use bitcoin::{BlockHash, Network, Work, hashes::Hash};
     use bitcoind_async_client::corepc_types::model::GetBlockchainInfo;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::traits::BlockStatus;
+    use strata_db_types::{MmrId, traits::BlockStatus};
     use strata_identifiers::{Buf32, L1BlockId};
     use strata_ol_params::OLParams;
+    use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use strata_storage::{NodeStorage, create_node_storage};
     use threadpool::ThreadPool;
 
@@ -552,6 +553,23 @@ mod tests {
             .expect("test: genesis epoch summary should exist");
 
         assert_eq!(commitment, genesis_commitment);
+    }
+
+    #[test]
+    fn test_l1_block_refs_mmr_prefilled_at_ol_genesis() {
+        let (storage, _) = setup_storage_with_genesis();
+        let handle = storage.mmr_index().get_handle(MmrId::L1BlockRefs);
+
+        assert_eq!(
+            handle
+                .get_num_leaves_blocking()
+                .expect("test: get leaf count"),
+            1
+        );
+        assert_eq!(
+            handle.get_leaf_blocking(0).expect("test: get leaf"),
+            Some(MMR_SENTINEL_DUMMY_LEAF_HASH)
+        );
     }
 
     #[test]
