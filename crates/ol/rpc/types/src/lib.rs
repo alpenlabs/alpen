@@ -14,11 +14,16 @@ mod provider;
 mod snark_acct_update;
 mod tx;
 
-pub use account_state::RpcSnarkAccountState;
+pub use account_state::{
+    RpcAccountChange, RpcAccountChangeType, RpcAccountSnarkSummary, RpcAccountState,
+    RpcAccountTypeData, RpcBlockAccountChanges, RpcSnarkAccountState,
+};
 pub use account_summary::{
     RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMessageEntry, RpcUpdateInputData,
 };
-pub use block::{RpcBlockEntry, RpcBlockHeaderEntry};
+pub use block::{
+    RpcBlockEntry, RpcBlockHeaderEntry, RpcOLBlockDetail, RpcOLBlockSummary, RpcOLL1UpdateSummary,
+};
 pub use blocktag::OLBlockOrTag;
 pub use chain_status::{RpcOLBlockInfo, RpcOLChainStatus};
 pub use checkpoint::{RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref};
@@ -26,6 +31,7 @@ pub use duty::*;
 pub use provider::OLRpcProvider;
 pub use snark_acct_update::RpcSnarkAccountUpdate;
 pub use tx::{
-    RpcGenericAccountMessage, RpcOLTransaction, RpcTransactionPayload, RpcTxConstraints,
-    RpcTxConversionError,
+    RpcGenericAccountMessage, RpcOLTransaction, RpcOLTxDetail, RpcOLTxTypeData, RpcSauTxSummary,
+    RpcSentMessageEffect, RpcSentTransfer, RpcTransactionPayload, RpcTxConstraints,
+    RpcTxConversionError, RpcTxEffects,
 };

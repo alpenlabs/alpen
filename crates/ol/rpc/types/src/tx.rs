@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use ssz::Decode;
-use strata_acct_types::AccountId;
+use strata_acct_types::{AccountId, SentMessage, SentTransfer, TxEffects};
+use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::{
     ClaimList, OLTransaction, OLTransactionData, ProofSatisfierList, SauTxLedgerRefs,
     SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
@@ -154,6 +155,213 @@ pub enum RpcTxConversionError {
     /// Message payload data exceeds SSZ limits.
     #[error("invalid message payload: {0}")]
     InvalidMessagePayload(#[from] strata_acct_types::MsgPayloadError),
+}
+
+/// Decoded view of a transaction included in a block.
+///
+/// Returned by `strata_getBlockTransactions`. Carries the computed txid, the
+/// target account (if any), constraints, effects, and tagged
+/// [`RpcOLTxTypeData`] with any payload-type-specific fields inline.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcOLTxDetail {
+    /// Computed transaction ID (tree hash of `OLTransactionData`).
+    txid: OLTxId,
+    /// Target account, or `None` if this transaction type carries no target.
+    target: Option<HexBytes32>,
+    /// Inclusion constraints.
+    constraints: RpcTxConstraints,
+    /// Effects produced when this transaction is applied.
+    effects: RpcTxEffects,
+    /// Payload-type discriminator with type-specific fields inline.
+    #[serde(flatten)]
+    type_data: RpcOLTxTypeData,
+}
+
+impl RpcOLTxDetail {
+    pub fn txid(&self) -> OLTxId {
+        self.txid
+    }
+
+    pub fn target(&self) -> Option<&HexBytes32> {
+        self.target.as_ref()
+    }
+
+    pub fn constraints(&self) -> &RpcTxConstraints {
+        &self.constraints
+    }
+
+    pub fn effects(&self) -> &RpcTxEffects {
+        &self.effects
+    }
+
+    pub fn type_data(&self) -> &RpcOLTxTypeData {
+        &self.type_data
+    }
+}
+
+impl From<&OLTransaction> for RpcOLTxDetail {
+    fn from(tx: &OLTransaction) -> Self {
+        let txid = tx.compute_txid();
+        let data = tx.data();
+        let type_data = match data.payload() {
+            TransactionPayload::GenericAccountMessage(_) => RpcOLTxTypeData::GenericAccountMessage,
+            TransactionPayload::SnarkAccountUpdate(sau_payload) => {
+                RpcOLTxTypeData::SnarkAccountUpdate(RpcSauTxSummary::from(sau_payload))
+            }
+        };
+        let target = tx.target().map(|a| HexBytes32::from(<[u8; 32]>::from(a)));
+        let constraints = RpcTxConstraints::from(data.constraints().clone());
+        let effects = RpcTxEffects::from(data.effects());
+        Self {
+            txid,
+            target,
+            constraints,
+            effects,
+            type_data,
+        }
+    }
+}
+
+/// Payload-type discriminator for [`RpcOLTxDetail`].
+///
+/// Mirrors the on-chain [`TransactionPayload`] enum and carries any
+/// type-specific summary data inline, so the wire format is self-describing.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RpcOLTxTypeData {
+    GenericAccountMessage,
+    SnarkAccountUpdate(RpcSauTxSummary),
+}
+
+/// Summary of transfers and messages produced by a transaction.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcTxEffects {
+    transfers: Vec<RpcSentTransfer>,
+    messages: Vec<RpcSentMessageEffect>,
+}
+
+impl RpcTxEffects {
+    pub fn transfers(&self) -> &[RpcSentTransfer] {
+        &self.transfers
+    }
+
+    pub fn messages(&self) -> &[RpcSentMessageEffect] {
+        &self.messages
+    }
+}
+
+impl From<&TxEffects> for RpcTxEffects {
+    fn from(effects: &TxEffects) -> Self {
+        Self {
+            transfers: effects
+                .transfers_iter()
+                .map(RpcSentTransfer::from)
+                .collect(),
+            messages: effects
+                .messages_iter()
+                .map(RpcSentMessageEffect::from)
+                .collect(),
+        }
+    }
+}
+
+/// Transfer effect: value sent to a destination account.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcSentTransfer {
+    dest: HexBytes32,
+    value_sats: u64,
+}
+
+impl RpcSentTransfer {
+    pub fn dest(&self) -> &HexBytes32 {
+        &self.dest
+    }
+
+    pub fn value_sats(&self) -> u64 {
+        self.value_sats
+    }
+}
+
+impl From<&SentTransfer> for RpcSentTransfer {
+    fn from(xfr: &SentTransfer) -> Self {
+        Self {
+            dest: HexBytes32::from(<[u8; 32]>::from(xfr.dest())),
+            value_sats: xfr.value().to_sat(),
+        }
+    }
+}
+
+/// Message effect: payload sent to a destination account with optional value.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcSentMessageEffect {
+    dest: HexBytes32,
+    value_sats: u64,
+    data: HexBytes,
+}
+
+impl RpcSentMessageEffect {
+    pub fn dest(&self) -> &HexBytes32 {
+        &self.dest
+    }
+
+    pub fn value_sats(&self) -> u64 {
+        self.value_sats
+    }
+
+    pub fn data(&self) -> &HexBytes {
+        &self.data
+    }
+}
+
+impl From<&SentMessage> for RpcSentMessageEffect {
+    fn from(msg: &SentMessage) -> Self {
+        let payload = msg.payload();
+        Self {
+            dest: HexBytes32::from(<[u8; 32]>::from(msg.dest())),
+            value_sats: payload.value().to_sat(),
+            data: HexBytes(payload.data().to_vec()),
+        }
+    }
+}
+
+/// SAU-specific summary fields extracted from a snark account update payload.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcSauTxSummary {
+    seq_no: u64,
+    new_next_msg_idx: u64,
+    inner_state_root: HexBytes32,
+}
+
+impl RpcSauTxSummary {
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
+
+    pub fn new_next_msg_idx(&self) -> u64 {
+        self.new_next_msg_idx
+    }
+
+    pub fn inner_state_root(&self) -> &HexBytes32 {
+        &self.inner_state_root
+    }
+}
+
+impl From<&SauTxPayload> for RpcSauTxSummary {
+    fn from(payload: &SauTxPayload) -> Self {
+        let update = payload.operation().update();
+        let proof_state = update.proof_state();
+        Self {
+            seq_no: update.seq_no(),
+            new_next_msg_idx: proof_state.new_next_msg_idx(),
+            inner_state_root: HexBytes32::from(proof_state.inner_state_root().0),
+        }
+    }
 }
 
 impl TryFrom<RpcOLTransaction> for OLTransaction {
