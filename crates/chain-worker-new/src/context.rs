@@ -17,8 +17,12 @@ use strata_db_types::{
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites},
 };
 use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
+use strata_msg_fmt::{Msg, MsgRef};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_new::{
+    OLBlock, OLBlockHeader, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
+    SnarkAccountUpdateLogData,
+};
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
@@ -191,7 +195,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         self.ol_state_mgr
             .put_write_batch_blocking(commitment, wb.clone())?;
 
-        let writes = build_indexing_writes(commitment, output);
+        let writes = build_indexing_writes(commitment, output)?;
         match self
             .ol_state_indexing_mgr
             .apply_block_indexing_blocking(epoch, commitment, writes)
@@ -354,14 +358,19 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
 /// Builds an [`IndexingWrites`] payload from a block-execution output.
 ///
-/// Reads everything from the block's [`IndexerWrites`]: account-creation
-/// events, snark-account update records (each tagged with the block's
-/// commitment + final state root), and inbox-message writes (encoded as SSZ
-/// bytes). Per-account vecs preserve insertion order.
+/// Reads account-creation events, snark-account update records (each tagged with the block's
+/// commitment + final state root), and inbox-message writes (encoded as SSZ bytes) from the
+/// block's [`IndexerWrites`]. Per-account vecs preserve insertion order.
+///
+/// Each snark-account update's `extra_data` is sourced from the emitted
+/// [`SnarkAccountUpdateLogData`] logs rather than from the state-accessor layer. Every tracked
+/// snark state update corresponds to exactly one such log (both are produced together when an
+/// update transaction is processed), so the ordered updates are paired 1:1 with the ordered
+/// snark-update logs.
 fn build_indexing_writes(
     commitment: OLBlockCommitment,
     output: &OLBlockExecutionOutput,
-) -> IndexingWrites {
+) -> WorkerResult<IndexingWrites> {
     let indexer_writes = output.indexer_writes();
 
     let created_accounts: Vec<AccountId> = indexer_writes
@@ -370,14 +379,30 @@ fn build_indexing_writes(
         .map(|c| c.account_id())
         .collect();
 
+    let snark_updates = indexer_writes.snark_state_updates();
+    let snark_update_logs = collect_snark_update_logs(output.logs())?;
+    if snark_updates.len() != snark_update_logs.len() {
+        return Err(WorkerError::SnarkUpdateLogCountMismatch {
+            expected: snark_updates.len(),
+            found: snark_update_logs.len(),
+        });
+    }
+
     let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
-    for update in indexer_writes.snark_state_updates() {
+    for (update, log) in snark_updates.iter().zip(snark_update_logs.iter()) {
+        // The paired log must describe the same state transition as the tracked update.
+        if log.new_msg_idx() != update.next_read_idx() {
+            return Err(WorkerError::SnarkUpdateLogMismatch {
+                expected: update.next_read_idx(),
+                found: log.new_msg_idx(),
+            });
+        }
         let meta = AccountUpdateMeta::new(commitment, update.state());
         let record = AccountUpdateRecord::new(
             Some(meta),
             *update.seqno().inner(),
             update.next_read_idx(),
-            update.extra_data().map(<[u8]>::to_vec),
+            Some(log.extra_data().to_vec()),
         );
         account_updates
             .entry(update.account_id())
@@ -395,7 +420,26 @@ fn build_indexing_writes(
             .push(record);
     }
 
-    IndexingWrites::new(created_accounts, account_updates, account_inbox_writes)
+    Ok(IndexingWrites::new(
+        created_accounts,
+        account_updates,
+        account_inbox_writes,
+    ))
+}
+
+/// Decodes the [`SnarkAccountUpdateLogData`] logs from `logs`, in emission order, skipping logs
+/// of other types.
+fn collect_snark_update_logs<'a>(
+    logs: impl IntoIterator<Item = &'a OLLog>,
+) -> WorkerResult<Vec<SnarkAccountUpdateLogData>> {
+    let mut out = Vec::new();
+    for log in logs {
+        let msg = MsgRef::try_from(log.payload())?;
+        if msg.ty() == SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID {
+            out.push(SnarkAccountUpdateLogData::try_decode_log(&msg)?);
+        }
+    }
+    Ok(out)
 }
 
 /// Applies snark inbox writes to the MMR proof index.
@@ -482,10 +526,13 @@ fn index_l1_block_ref_mmr_writes(
 mod tests {
     use std::sync::Arc;
 
-    use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
+    use strata_acct_types::{AccountSerial, BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_db_store_sled::{MmrIndexDb, SledDbConfig};
     use strata_identifiers::Buf32;
-    use strata_ol_state_support_types::{InboxMessageWrite, IndexerWrites, L1BlockRecordWrite};
+    use strata_ol_state_support_types::{
+        InboxMessageWrite, IndexerWrites, L1BlockRecordWrite, SnarkAcctStateUpdate,
+    };
+    use strata_snark_acct_types::Seqno;
 
     use super::*;
 
@@ -511,7 +558,74 @@ mod tests {
             indexer_writes.push_inbox_message(InboxMessageWrite::new(account_id, entry, index));
         }
 
-        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes)
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes, vec![])
+    }
+
+    #[test]
+    fn test_build_indexing_writes_sources_extra_data_from_logs() {
+        let account_id = AccountId::from([7u8; 32]);
+        let serial = AccountSerial::from(7u32);
+        let state = Hash::from([9u8; 32]);
+        let next_read_idx = 3u64;
+        let seqno = Seqno::from(5);
+        let extra = vec![0xaau8, 0xbb, 0xcc];
+
+        let mut indexer_writes = IndexerWrites::new();
+        indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
+            account_id,
+            state,
+            next_read_idx,
+            seqno,
+        ));
+
+        // The matching log carries the extra_data that must end up in the index record.
+        let log_data = SnarkAccountUpdateLogData::new(next_read_idx, extra.clone()).unwrap();
+        let log = OLLog::new(serial, log_data.encode_log().unwrap());
+
+        let output = OLBlockExecutionOutput::new(
+            Buf32::zero(),
+            WriteBatch::default(),
+            indexer_writes,
+            vec![log],
+        );
+
+        let writes = build_indexing_writes(OLBlockCommitment::null(), &output).unwrap();
+
+        let records = writes
+            .account_updates()
+            .get(&account_id)
+            .expect("account update should be present");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].extra_data(), Some(extra.as_slice()));
+        assert_eq!(records[0].next_inbox_idx(), next_read_idx);
+    }
+
+    #[test]
+    fn test_build_indexing_writes_rejects_missing_log() {
+        // A tracked snark update with no corresponding emitted log is a correlation failure.
+        let mut indexer_writes = IndexerWrites::new();
+        indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
+            AccountId::from([1u8; 32]),
+            Hash::from([0u8; 32]),
+            0,
+            Seqno::from(1),
+        ));
+
+        let output = OLBlockExecutionOutput::new(
+            Buf32::zero(),
+            WriteBatch::default(),
+            indexer_writes,
+            vec![],
+        );
+
+        let err = build_indexing_writes(OLBlockCommitment::null(), &output).unwrap_err();
+        assert!(matches!(
+            err,
+            WorkerError::SnarkUpdateLogCountMismatch {
+                expected: 1,
+                found: 0
+            }
+        ));
     }
 
     fn output_with_l1_block_records(
@@ -522,7 +636,7 @@ mod tests {
             indexer_writes.push_l1_block_record(write);
         }
 
-        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes)
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes, vec![])
     }
 
     fn l1_block_record_write(height: u32, seed: u8) -> L1BlockRecordWrite {

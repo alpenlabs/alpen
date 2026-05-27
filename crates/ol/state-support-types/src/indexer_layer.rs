@@ -104,15 +104,14 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMu
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStateMut<S> {
     fn set_proof_state(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
-        let op = SAStateSetOp::new(self.account_id, state, next_read_idx, seqno);
+        let update = SnarkAcctStateUpdate::new(self.account_id, state, next_read_idx, seqno);
 
         // Pass through to inner.
         self.inner.set_proof_state(state, next_read_idx, seqno);
         self.modified = true;
 
         // Track the write.
-        self.writes
-            .push_snark_acct_update(SnarkAcctStateUpdate::DirectSet(op));
+        self.writes.push_snark_acct_update(update);
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> StateResult<()> {
@@ -1080,8 +1079,6 @@ mod tests {
 
     #[test]
     fn test_tracks_direct_set() {
-        use crate::SnarkAcctStateUpdate;
-
         let account_id = test_account_id(1);
         let (state, _) =
             setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
@@ -1093,9 +1090,11 @@ mod tests {
         let seqno = Seqno::from(10);
         indexer
             .update_account(account_id, |acct| {
-                acct.as_snark_account_mut()
-                    .unwrap()
-                    .set_proof_state(new_hash, next_read_idx, seqno);
+                acct.as_snark_account_mut().unwrap().set_proof_state(
+                    new_hash,
+                    next_read_idx,
+                    seqno,
+                );
             })
             .unwrap();
 
@@ -1103,15 +1102,11 @@ mod tests {
         let (_, writes) = indexer.into_parts();
         assert_eq!(writes.snark_state_updates().len(), 1);
 
-        match &writes.snark_state_updates()[0] {
-            SnarkAcctStateUpdate::DirectSet(s) => {
-                assert_eq!(s.account_id(), account_id);
-                assert_eq!(s.state(), new_hash.0);
-                assert_eq!(s.next_read_idx(), next_read_idx);
-                assert_eq!(s.seqno(), seqno);
-            }
-            _ => panic!("expected DirectSet variant"),
-        }
+        let update = &writes.snark_state_updates()[0];
+        assert_eq!(update.account_id(), account_id);
+        assert_eq!(update.state(), new_hash);
+        assert_eq!(update.next_read_idx(), next_read_idx);
+        assert_eq!(update.seqno(), seqno);
     }
 
     #[test]
@@ -1126,9 +1121,11 @@ mod tests {
             let hash = test_hash(i);
             indexer
                 .update_account(account_id, |acct| {
-                    acct.as_snark_account_mut()
-                        .unwrap()
-                        .set_proof_state(hash, i as u64, Seqno::from(i as u64));
+                    acct.as_snark_account_mut().unwrap().set_proof_state(
+                        hash,
+                        i as u64,
+                        Seqno::from(i as u64),
+                    );
                 })
                 .unwrap();
         }
@@ -1146,8 +1143,6 @@ mod tests {
 
     #[test]
     fn test_tracks_state_updates_across_accounts() {
-        use crate::SnarkAcctStateUpdate;
-
         let account_id_1 = test_account_id(1);
         let account_id_2 = test_account_id(2);
 
@@ -1170,21 +1165,25 @@ mod tests {
 
         let mut indexer = IndexerState::new(state);
 
-        // Update proof state for first account (DirectSet)
+        // Update proof state for first account.
         indexer
             .update_account(account_id_1, |acct| {
-                acct.as_snark_account_mut()
-                    .unwrap()
-                    .set_proof_state(test_hash(1), 0, Seqno::from(1));
+                acct.as_snark_account_mut().unwrap().set_proof_state(
+                    test_hash(1),
+                    0,
+                    Seqno::from(1),
+                );
             })
             .unwrap();
 
         // Update proof state for second account
         indexer
             .update_account(account_id_2, |acct| {
-                acct.as_snark_account_mut()
-                    .unwrap()
-                    .set_proof_state(test_hash(2), 0, Seqno::from(1));
+                acct.as_snark_account_mut().unwrap().set_proof_state(
+                    test_hash(2),
+                    0,
+                    Seqno::from(1),
+                );
             })
             .unwrap();
 
@@ -1192,21 +1191,11 @@ mod tests {
         let (_, writes) = indexer.into_parts();
         assert_eq!(writes.snark_state_updates().len(), 2);
 
-        // First should be DirectSet for account_id_1
-        match &writes.snark_state_updates()[0] {
-            SnarkAcctStateUpdate::DirectSet(s) => {
-                assert_eq!(s.account_id(), account_id_1);
-            }
-            _ => panic!("expected DirectSet variant"),
-        }
+        // First update is for account_id_1.
+        assert_eq!(writes.snark_state_updates()[0].account_id(), account_id_1);
 
-        // Second should be DirectSet for account_id_2
-        match &writes.snark_state_updates()[1] {
-            SnarkAcctStateUpdate::DirectSet(s) => {
-                assert_eq!(s.account_id(), account_id_2);
-            }
-            _ => panic!("expected DirectSet variant"),
-        }
+        // Second update is for account_id_2.
+        assert_eq!(writes.snark_state_updates()[1].account_id(), account_id_2);
     }
 
     #[test]
@@ -1222,9 +1211,11 @@ mod tests {
         // Add a proof state write
         indexer
             .update_account(account_id, |acct| {
-                acct.as_snark_account_mut()
-                    .unwrap()
-                    .set_proof_state(test_hash(1), 0, Seqno::from(1));
+                acct.as_snark_account_mut().unwrap().set_proof_state(
+                    test_hash(1),
+                    0,
+                    Seqno::from(1),
+                );
             })
             .unwrap();
 
