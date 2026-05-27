@@ -17,7 +17,7 @@ use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use crate::{
     BlockInfo, EpochInfo,
     assembly::{BlockComponents, CompletedBlock},
-    execute_block_batch_preseal,
+    execute_block_batch_predrain,
     test_utils::*,
     verification::{EpochExecExpectations, verify_epoch_with_diff},
 };
@@ -27,7 +27,7 @@ const GENESIS_TIMESTAMP: u64 = 1_000_000;
 const SLOT_TIMESTAMP_STEP: u64 = 1_000;
 
 #[test]
-fn test_preseal_round_trip_with_deposit_manifest() {
+fn test_epoch_root_round_trip_with_deposit_manifest() {
     let fixture_builder = OLStfFixture::builder();
     let snark_acct_serial = fixture_builder.next_account_serial();
     let fixture = fixture_builder
@@ -56,7 +56,7 @@ fn test_preseal_round_trip_with_deposit_manifest() {
 }
 
 #[test]
-fn test_preseal_round_trip_with_limbo_deposit_manifest() {
+fn test_epoch_root_round_trip_with_limbo_deposit_manifest() {
     let fixture = OLStfFixture::builder()
         .with_genesis_manifest(make_empty_manifest(1, 0))
         .execute_genesis();
@@ -166,13 +166,13 @@ fn rebuild_da_blob(
     prev_terminal_header: &OLBlockHeader,
 ) -> Vec<u8> {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
-    execute_block_batch_preseal(
+    execute_block_batch_predrain(
         &mut da,
         blocks,
         prev_terminal_header,
         BridgeParams::default(),
     )
-    .expect("execute_block_batch_preseal");
+    .expect("execute_block_batch_predrain");
     da.take_completed_epoch_da_blob()
         .expect("finalize DA")
         .expect("DA blob")

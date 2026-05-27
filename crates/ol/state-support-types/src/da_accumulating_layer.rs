@@ -524,8 +524,9 @@ impl EpochDaAccumulator {
 
 /// State accessor that accumulates DA-covered writes for a single epoch.
 ///
-/// This wrapper should only be used for preseal execution; epoch sealing
-/// updates derived from L1 must be applied on a non-DA tracking accessor.
+/// This wrapper should only be used for pre-drain execution (the per-block
+/// phases up to but excluding the epoch-terminal drain); the drain effects
+/// derived from L1 manifests must be applied on a non-DA tracking accessor.
 #[derive(Debug)]
 pub struct DaAccumulatingState<S: IStateAccessor> {
     /// Wrapped state accessor.
