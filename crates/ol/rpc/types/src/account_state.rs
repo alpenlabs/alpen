@@ -183,3 +183,41 @@ impl RpcAccountSnarkSummary {
         &self.update_vk
     }
 }
+
+/// Paginated response for `strata_listAccounts`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcAccountListPage {
+    /// Accounts in ascending account-id order.
+    accounts: Vec<RpcAccountEntry>,
+    /// Total number of accounts on the ledger at the queried block.
+    total: u64,
+    /// Last account ID in this page, or `None` if this is the last page.
+    next_cursor: Option<HexBytes32>,
+}
+
+impl RpcAccountListPage {
+    pub fn new(
+        accounts: Vec<RpcAccountEntry>,
+        total: u64,
+        next_cursor: Option<HexBytes32>,
+    ) -> Self {
+        Self {
+            accounts,
+            total,
+            next_cursor,
+        }
+    }
+
+    pub fn accounts(&self) -> &[RpcAccountEntry] {
+        &self.accounts
+    }
+
+    pub fn total(&self) -> u64 {
+        self.total
+    }
+
+    pub fn next_cursor(&self) -> Option<&HexBytes32> {
+        self.next_cursor.as_ref()
+    }
+}

@@ -126,8 +126,17 @@ pub trait OLFullNodeRpc {
     /// `block_or_tag` accepts the same forms as `getSnarkAccountState`:
     /// `"latest"`, `"confirmed"`, `"finalized"`, a slot number, or a block ID
     /// (`0x...`).
+    ///
+    /// Results are paginated in ascending account-id order. `cursor` is the
+    /// `next_cursor` returned by the previous page, or `None` for the first
+    /// page. `limit` must be greater than zero and within the server page cap.
     #[method(name = "listAccounts")]
-    async fn list_accounts(&self, block_or_tag: OLBlockOrTag) -> RpcResult<Vec<RpcAccountEntry>>;
+    async fn list_accounts(
+        &self,
+        block_or_tag: OLBlockOrTag,
+        cursor: Option<HexBytes32>,
+        limit: u64,
+    ) -> RpcResult<RpcAccountListPage>;
 }
 
 /// OL RPC methods served by sequencer node for sequencer signer.
