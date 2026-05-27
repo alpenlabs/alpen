@@ -9,10 +9,24 @@ use argh::FromArgs;
 use crate::cmd::{
     broadcaster::{GetBroadcasterSummaryArgs, GetBroadcasterTxArgs},
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
+    checkpoint_proof::{DeleteCheckpointProofArgs, GetCheckpointProofArgs},
     client_state::GetClientStateUpdateArgs,
+    ee_prover_task::{
+        EeAbandonProverTaskArgs, EeAbandonProverTasksArgs, EeBackfillProverTaskRawArgs,
+        EeDeleteProverTaskArgs, EeGetProverTaskArgs, EeGetProverTasksSummaryArgs,
+        EeResetProverTaskArgs,
+    },
+    ee_receipts::{
+        EeDeleteAcctProofArgs, EeDeleteChunkReceiptArgs, EeGetAcctProofArgs, EeGetChunkReceiptArgs,
+    },
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
     ol::{GetOLBlockArgs, GetOLSummaryArgs},
     ol_state::{GetOLStateArgs, RevertOLStateArgs},
+    prover_task::{
+        AbandonProverTaskArgs, AbandonProverTasksArgs, BackfillCheckpointProofTaskArgs,
+        BackfillProverTaskRawArgs, DeleteProverTaskArgs, GetProverTaskArgs,
+        GetProverTasksSummaryArgs, ResetProverTaskArgs,
+    },
     syncinfo::GetSyncinfoArgs,
     writer::{GetWriterPayloadArgs, GetWriterSummaryArgs},
 };
@@ -21,7 +35,10 @@ use crate::cmd::{
 #[derive(FromArgs)]
 /// Inspect, repair and roll back an Strata node's database while the node is offline.
 pub(crate) struct Cli {
-    /// node data directory (same as `--datadir` used by the node).
+    /// data directory of the node whose DB is being inspected. For
+    /// `ee-*` subcommands, point this at the alpen-client's `--datadir`
+    /// instead of the strata node's — each invocation is standalone and
+    /// opens exactly one sled.
     #[argh(option, short = 'd', default = "PathBuf::from(\"data\")")]
     pub(crate) datadir: PathBuf,
 
@@ -48,6 +65,27 @@ pub(crate) enum Command {
     GetSyncinfo(GetSyncinfoArgs),
     GetOLState(GetOLStateArgs),
     RevertOLState(RevertOLStateArgs),
+    GetProverTask(GetProverTaskArgs),
+    GetProverTasksSummary(GetProverTasksSummaryArgs),
+    AbandonProverTask(AbandonProverTaskArgs),
+    AbandonProverTasks(AbandonProverTasksArgs),
+    ResetProverTask(ResetProverTaskArgs),
+    DeleteProverTask(DeleteProverTaskArgs),
+    GetCheckpointProof(GetCheckpointProofArgs),
+    DeleteCheckpointProof(DeleteCheckpointProofArgs),
+    BackfillCheckpointProofTask(BackfillCheckpointProofTaskArgs),
+    BackfillProverTaskRaw(BackfillProverTaskRawArgs),
+    EeGetProverTask(EeGetProverTaskArgs),
+    EeGetProverTasksSummary(EeGetProverTasksSummaryArgs),
+    EeAbandonProverTask(EeAbandonProverTaskArgs),
+    EeAbandonProverTasks(EeAbandonProverTasksArgs),
+    EeResetProverTask(EeResetProverTaskArgs),
+    EeDeleteProverTask(EeDeleteProverTaskArgs),
+    EeBackfillProverTaskRaw(EeBackfillProverTaskRawArgs),
+    EeGetChunkReceipt(EeGetChunkReceiptArgs),
+    EeDeleteChunkReceipt(EeDeleteChunkReceiptArgs),
+    EeGetAcctProof(EeGetAcctProofArgs),
+    EeDeleteAcctProof(EeDeleteAcctProofArgs),
 }
 
 /// Output format

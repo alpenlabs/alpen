@@ -23,7 +23,6 @@ debug-utils = [
   "strata-ol-sequencer?/debug-utils",
 ]
 prover = [
-  "dep:borsh",
   "dep:strata-ol-state-support-types",
   "dep:strata-ol-stf",
   "dep:strata-paas",
@@ -95,7 +94,6 @@ argh.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-borsh = { workspace = true, optional = true }
 format_serde_error.workspace = true
 http.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }

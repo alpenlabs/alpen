@@ -14661,7 +14661,6 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "bitcoind-async-client",
- "borsh",
  "format_serde_error",
  "http 1.4.0",
  "jsonrpsee",
@@ -15605,6 +15604,7 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
  "strata-ol-state-types",
+ "strata-paas",
  "strata-primitives",
  "strata-state",
  "strata-test-utils",
@@ -15648,10 +15648,14 @@ dependencies = [
 name = "strata-dbtool"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alpen-ee-common",
+ "alpen-ee-database",
  "argh",
  "hex",
  "serde",
  "serde_json",
+ "sled",
+ "strata-acct-types",
  "strata-asm-logs",
  "strata-asm-proto-checkpoint-types",
  "strata-checkpoint-types",
@@ -15663,8 +15667,11 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",
+ "strata-paas",
  "strata-primitives",
  "tracing-subscriber 0.3.23",
+ "typed-sled",
+ "zkaleido",
 ]
 
 [[package]]

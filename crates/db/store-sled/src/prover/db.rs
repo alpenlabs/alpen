@@ -19,11 +19,14 @@ define_sled_database!(
 
 impl CheckpointProofDatabase for ProofDBSled {
     fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptWithMetadata) -> DbResult<()> {
-        if self.checkpoint_proof_tree.get(&epoch)?.is_some() {
-            return Err(DbError::EntryAlreadyExists);
-        }
+        // Upsert: a re-prove for the same epoch attests to the same statement,
+        // so overwriting is safe and lets the receipt hook be idempotent.
+        // Refusing the write would only turn "we already have a valid proof"
+        // into a confusing PermanentFailure on the prover task. Matches the EE
+        // side's `put_acct_proof`.
+        let old = self.checkpoint_proof_tree.get(&epoch)?;
         self.checkpoint_proof_tree
-            .compare_and_swap(epoch, None, Some(proof))?;
+            .compare_and_swap(epoch, old, Some(proof))?;
         Ok(())
     }
 
@@ -61,6 +64,13 @@ impl ProverTaskDatabase for ProofDBSled {
         Ok(())
     }
 
+    fn delete_task(&self, key: Vec<u8>) -> DbResult<bool> {
+        let old = self.prover_task_tree.get(&key)?;
+        let existed = old.is_some();
+        self.prover_task_tree.compare_and_swap(key, old, None)?;
+        Ok(existed)
+    }
+
     fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
         let mut out = Vec::new();
         for item in self.prover_task_tree.iter() {
@@ -81,6 +91,14 @@ impl ProverTaskDatabase for ProofDBSled {
             if record.status().is_unfinished() {
                 out.push((key, record));
             }
+        }
+        Ok(out)
+    }
+
+    fn list_all_tasks(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
+        let mut out = Vec::new();
+        for item in self.prover_task_tree.iter() {
+            out.push(item?);
         }
         Ok(out)
     }

@@ -15,13 +15,15 @@ pub struct BatchId {
 }
 
 impl fmt::Display for BatchId {
+    /// Emits `<prev_block_hex>:<last_block_hex>` with full 32-byte hashes.
+    ///
+    /// `Buf32`'s `Display` impl truncates to a `prefix..suffix` form, which
+    /// is fine for at-a-glance logs but lossy if you ever want to round-trip
+    /// the id (e.g. paste it into `strata-dbtool ee-get-acct-proof`). The
+    /// `{:x}` formatter on each half uses `LowerHex`, which is the full
+    /// hex form, so the rendered string is directly parseable.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "BatchId(prev_block={}, last_block={})",
-            self.prev_block(),
-            self.last_block()
-        )
+        write!(f, "{:x}:{:x}", self.prev_block(), self.last_block())
     }
 }
 

@@ -489,11 +489,24 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Upsert a record — overwrites any existing entry under the key.
     fn put_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()>;
 
+    /// Removes a task record. Returns `true` if the key existed prior to the
+    /// call, `false` otherwise.
+    ///
+    /// Intended for offline admin tooling (e.g. `strata-dbtool`) — the
+    /// runtime task lifecycle is driven by status transitions, not deletion.
+    fn delete_task(&self, key: Vec<u8>) -> DbResult<bool>;
+
     /// All records where `status` is retriable and `retry_after_secs <= now_secs`.
     fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
     /// All records whose status is not yet terminal (Pending / Proving).
     fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
+
+    /// Every record in the store, in implementation-defined order.
+    ///
+    /// Intended for offline admin tooling — the runtime path uses the
+    /// filtered iterators above to avoid scanning terminal entries.
+    fn list_all_tasks(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
     /// Number of records in the store.
     fn count_tasks(&self) -> DbResult<usize>;
@@ -506,9 +519,12 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
 /// (no shared enum, no opaque-byte scheme). Future EE chunk / EE acct
 /// proofs will be `EeChunkProofDatabase`, `EeAcctProofDatabase`, etc.
 pub trait CheckpointProofDatabase: Send + Sync + 'static {
-    /// Inserts a checkpoint proof for the given epoch.
+    /// Upserts a checkpoint proof for the given epoch.
     ///
-    /// Returns `Ok(())` on success, or an error on failure.
+    /// Overwrites any existing proof for the same epoch. Re-proves attest to
+    /// the same statement, so overwriting is safe and keeps the receipt hook
+    /// idempotent — refusing the write would surface as a spurious storage
+    /// error on the prover task.
     fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptWithMetadata) -> DbResult<()>;
 
     /// Retrieves the checkpoint proof for the given epoch.
