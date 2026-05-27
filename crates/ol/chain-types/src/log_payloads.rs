@@ -40,10 +40,10 @@ pub enum LogDecodeError {
 
 /// A typed orchestration-layer log payload.
 ///
-/// Each implementor carries a [`TypeId`] that tags it within an [`OLLog`](crate::OLLog)
-/// payload, encoded using the `strata_msg_fmt` envelope (type prefix + SSZ body). This lets
-/// consumers parse a log payload once and dispatch on its type id rather than guessing the
-/// concrete type from the raw bytes.
+/// Each impl carries a [`TypeId`] that tags it within an [`OLLog`](crate::OLLog) payload, encoded
+/// using the `strata_msg_fmt` envelope (type prefix + SSZ body). This lets consumers parse a log
+/// payload once and dispatch on its type id rather than guessing the concrete type from the raw
+/// bytes.
 pub trait OLLogType: Codec {
     /// The msg-fmt type id identifying this log payload.
     const LOG_TYPE_ID: TypeId;
