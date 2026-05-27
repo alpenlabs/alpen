@@ -9,7 +9,7 @@ use strata_codec::decode_buf_exact;
 use strata_identifiers::{Buf64, OLBlockCommitment, SubjectId};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{
-    OLAsmManifestContainer, OLBlock, OLBlockHeader, SignedOLBlockHeader,
+    OLBlock, OLBlockHeader, SignedOLBlockHeader,
 };
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
@@ -89,11 +89,11 @@ fn assert_epoch_root_round_trip(
 
     // The DA blob excludes the terminal drain effects; the epoch's manifests
     // are replayed (buffer + drain) on the verify side to reproduce them.
-    let manifests = terminal
+    let manifests: Vec<_> = terminal
         .body()
         .manifests()
-        .cloned()
-        .unwrap_or_else(|| OLAsmManifestContainer::new(vec![]).expect("empty manifests"));
+        .map(|mc| mc.manifests().to_vec())
+        .unwrap_or_default();
 
     let da_blob = rebuild_da_blob(pre_epoch_state, epoch_blocks, genesis.header());
     let payload: OLDaPayloadV1 = decode_buf_exact(&da_blob).expect("decode DA payload");

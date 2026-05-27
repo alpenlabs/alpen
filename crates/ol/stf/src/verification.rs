@@ -9,7 +9,8 @@ use strata_identifiers::Buf32;
 use strata_ledger_types::*;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
-    MAX_LOGS_PER_BLOCK, OLAsmManifestContainer, OLBlockBody, OLBlockHeader, OLLog, OLTxSegment,
+    AsmManifest, MAX_LOGS_PER_BLOCK, OLAsmManifestContainer, OLBlockBody, OLBlockHeader, OLLog,
+    OLTxSegment,
 };
 use strata_ol_da::DaScheme;
 use tracing::error;
@@ -191,7 +192,7 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
 
     // 4. Buffer any manifests carried by this block (allowed in any block).
     if let Some(manifest_container) = body.manifests() {
-        manifest_processing::buffer_block_manifests(state, manifest_container)?;
+        manifest_processing::buffer_block_manifests(state, manifest_container.manifests())?;
     }
 
     // 5. For non-terminal blocks, the header state root reflects the state
@@ -373,7 +374,7 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,
     diff: D::Diff,
-    manifests: &OLAsmManifestContainer,
+    manifests: &[AsmManifest],
     exp: &EpochExecExpectations,
 ) -> ExecResult<()> {
     // 1. Apply the initial processing by calling process_epoch_initial.
@@ -494,7 +495,7 @@ mod tests {
             .expect("state-changing epoch diff should apply");
         let output = ExecOutputBuffer::new_empty();
         let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
-        manifest_processing::buffer_block_manifests(&mut expected_state, manifests)
+        manifest_processing::buffer_block_manifests(&mut expected_state, manifests.manifests())
             .expect("manifest buffering should succeed");
         manifest_processing::process_epoch_terminal(&mut expected_state, &term_ctx)
             .expect("epoch terminal processing should succeed");
@@ -616,7 +617,7 @@ mod tests {
             &mut state,
             &epoch_info,
             diff,
-            &manifests,
+            manifests.manifests(),
             &exp,
         );
         assert!(matches!(
@@ -653,7 +654,7 @@ mod tests {
             &mut state,
             &epoch_info,
             OLDaPayloadV1::new(state_diff),
-            &manifests,
+            manifests.manifests(),
             &exp,
         )
         .expect("matching post-epoch root should verify");

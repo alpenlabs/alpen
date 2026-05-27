@@ -13,7 +13,6 @@ use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_chain_types_new::OLAsmManifestContainer;
 use strata_ol_msg_types::{DEPOSIT_MSG_TYPE_ID, DepositMsgData};
 use tracing::{debug, info, trace, warn};
 
@@ -24,7 +23,7 @@ use crate::{
     errors::{ExecError, ExecResult},
 };
 
-/// Buffers the ASM logs carried by the manifests in a block into the intraepoch
+/// Buffers the ASM logs carried by a sequence of manifests into the intraepoch
 /// state for later processing at the epoch terminal.
 ///
 /// Manifests may be included in any block within an epoch; this does not imply
@@ -34,24 +33,29 @@ use crate::{
 /// is applied eagerly here. The ASM-log *effects* are deferred to
 /// [`process_epoch_terminal`].
 ///
+/// Accepts a plain slice rather than the per-block
+/// [`OLAsmManifestContainer`](strata_ol_chain_types_new::OLAsmManifestContainer)
+/// so callers replaying a whole epoch (e.g. checkpoint proving) are not bound
+/// by the per-block `MAX_SEALING_MANIFEST_COUNT` limit.
+///
 /// NOTE: This does not apply any log effects, advance the epoch, or emit OL
 /// logs.
 #[tracing::instrument(
     skip_all,
     fields(
-        manifest_count = mf_cont.manifests().len(),
+        manifest_count = manifests.len(),
         epoch = state.cur_epoch(),
     ),
 )]
 pub fn buffer_block_manifests<S: IStateAccessorMut>(
     state: &mut S,
-    mf_cont: &OLAsmManifestContainer,
+    manifests: &[AsmManifest],
 ) -> ExecResult<()> {
     // The state's last seen height is the running cursor; new manifests are
     // strictly after it, regardless of which block in the epoch they arrive in.
     let orig_l1_height = state.last_l1_height();
 
-    for (i, mf) in mf_cont.manifests().iter().enumerate() {
+    for (i, mf) in manifests.iter().enumerate() {
         let real_height = next_manifest_height(orig_l1_height, i)?;
         if mf.height() != real_height {
             warn!(
