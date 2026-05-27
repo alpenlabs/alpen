@@ -200,12 +200,12 @@ impl OLClient for RpcOLClient {
                             .map(MessageEntry::try_from)
                             .collect::<Result<_, _>>()
                             .map_err(|e| OLClientError::rpc(e.to_string()))?;
-                        Ok(EpochUpdateOp {
-                            seq_no: u.seq_no,
-                            extra_data: u.extra_data.0.clone(),
+                        Ok(EpochUpdateOp::new(
+                            u.seq_no,
+                            u.extra_data.0.clone(),
                             messages,
-                            final_state_root: u.final_state_root.as_ref().map(|root| root.0.into()),
-                        })
+                            u.final_state_root.as_ref().map(|root| root.0.into()),
+                        ))
                     })
                     .collect::<Result<_, OLClientError>>()?;
 

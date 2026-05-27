@@ -163,16 +163,16 @@ pub(crate) fn apply_epoch_operations(
     epoch_operations: &[EpochUpdateOp],
 ) -> Result<()> {
     for op in epoch_operations {
-        if op.final_state_root.is_none() {
+        if op.final_state_root().is_none() {
             warn!(
-                seq_no = op.seq_no,
+                seq_no = op.seq_no(),
                 "applying update without post-state check"
             );
         }
         let manifest = UpdateManifest::new(
-            op.final_state_root,
-            op.extra_data.clone(),
-            op.messages.clone(),
+            op.final_state_root(),
+            op.extra_data().to_vec(),
+            op.messages().to_vec(),
         );
 
         process_update_unconditionally::<EvmExecutionEnvironment>(

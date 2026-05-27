@@ -22,9 +22,10 @@ use strata_status::OLSyncStatus;
 
 use crate::checkpoint_sync::{
     context::CheckpointSyncCtx,
-    errors::CheckpointSyncError,
-    service::{find_and_apply_unapplied_epochs, scan_unapplied_epochs},
-    state::{CheckpointSyncState, InnerState},
+    errors::{CheckpointSyncError, CheckpointSyncResult},
+    state::{
+        find_and_apply_unapplied_epochs, scan_unapplied_epochs, CheckpointSyncState, InnerState,
+    },
 };
 
 fn make_buf32(v: u8) -> Buf32 {
@@ -172,11 +173,11 @@ impl CheckpointSyncCtx for MockCtx {
         &self.rollup_params
     }
 
-    async fn fetch_l1_tip_height(&self) -> anyhow::Result<Option<L1Height>> {
+    async fn fetch_l1_tip_height(&self) -> CheckpointSyncResult<Option<L1Height>> {
         Ok(Some(self.l1_tip_height))
     }
 
-    async fn fetch_csm_status(&self) -> anyhow::Result<CsmWorkerStatus> {
+    async fn fetch_csm_status(&self) -> CheckpointSyncResult<CsmWorkerStatus> {
         Ok(self.csm_status.clone())
     }
 
@@ -195,7 +196,7 @@ impl CheckpointSyncCtx for MockCtx {
         Ok(self.epoch_summaries.lock().unwrap().get(&epoch).copied())
     }
 
-    async fn apply_checkpoint(&self, epoch: EpochCommitment) -> anyhow::Result<()> {
+    async fn apply_checkpoint(&self, epoch: EpochCommitment) -> CheckpointSyncResult<()> {
         self.applied_epochs.lock().unwrap().push(epoch);
 
         // Mimic the real chain worker writing the summary after reconstruction,
@@ -212,12 +213,12 @@ impl CheckpointSyncCtx for MockCtx {
         Ok(())
     }
 
-    async fn update_safe_tip(&self, tip: OLBlockCommitment) -> anyhow::Result<()> {
+    async fn update_safe_tip(&self, tip: OLBlockCommitment) -> CheckpointSyncResult<()> {
         self.safe_tips.lock().unwrap().push(tip);
         Ok(())
     }
 
-    async fn finalize_epoch(&self, epoch: EpochCommitment) -> anyhow::Result<()> {
+    async fn finalize_epoch(&self, epoch: EpochCommitment) -> CheckpointSyncResult<()> {
         self.finalized_epochs.lock().unwrap().push(epoch);
         Ok(())
     }
