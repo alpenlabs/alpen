@@ -3,7 +3,7 @@
 //! This module contains the verification state types used during update
 //! processing in SNARK proofs.
 
-use strata_acct_types::{BitcoinAmount, Hash};
+use strata_acct_types::Hash;
 use strata_ee_acct_types::{
     EeAccountState, EnvError, EnvProgramResult, EnvResult, ExecutionEnvironment, PendingInputEntry,
     UpdateExtraData,
@@ -88,18 +88,6 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     /// Current verified chain tip.
     cur_verified_exec_blkid: Hash,
 
-    /// Tracks the total value sent in this update.
-    ///
-    /// Not sure why we're doing this after all.
-    total_val_sent: BitcoinAmount,
-
-    /// Tracks current balance.
-    ///
-    /// This is the snark account's balance on the orchestration layer, as an
-    /// additional check to ensure we don't permit invalid updates.  It is still
-    /// incremented when we receive messages we don't understand.
-    cur_balance: BitcoinAmount,
-
     /// Outputs we expect to have.
     expected_outputs: UpdateOutputs,
 
@@ -129,8 +117,6 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             ee,
             chunk_predicate_key,
             cur_verified_exec_blkid: state.last_exec_blkid(),
-            total_val_sent: 0.into(),
-            cur_balance: state.tracked_balance(),
             expected_outputs,
             accumulated_outputs: UpdateOutputs::new_empty(),
             input_chunks,
@@ -152,21 +138,6 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
         self.cur_verified_exec_blkid
     }
 
-    pub fn cur_balance(&self) -> BitcoinAmount {
-        self.cur_balance
-    }
-
-    /// Increases our verification state tracked balance.
-    ///
-    /// This is intended for when we accept a message.
-    pub fn accept_funds(&mut self, amt: BitcoinAmount) -> EnvResult<()> {
-        self.cur_balance = self
-            .cur_balance
-            .checked_add(amt)
-            .ok_or(EnvError::BalanceOverflow)?;
-        Ok(())
-    }
-
     /// Returns the raw partial pre-state.
     pub fn raw_partial_pre_state(&self) -> &'a [u8] {
         self.raw_partial_pre_state
@@ -181,22 +152,6 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// If this results in overflowing buffers, then returns an error and leaves
     /// us in a dirty state where we should abort anyways.
     pub(crate) fn merge_new_outputs(&mut self, outputs: &ExecOutputs) -> EnvResult<()> {
-        // Annoying thing to do checked summation.
-        let sent_now = BitcoinAmount::sum(
-            outputs.output_transfers().iter().map(|e| e.value()).chain(
-                outputs
-                    .output_messages()
-                    .iter()
-                    .map(|e| e.payload().value()),
-            ),
-        );
-
-        // Update the balance before anything else, throw an error for insufficient funds.
-        self.cur_balance = self
-            .cur_balance
-            .checked_sub(sent_now)
-            .ok_or(EnvError::InsufficientFunds)?;
-
         // Just merge the entries into the buffer. This is a little more
         // complicated than it really is because we have to convert between two
         // sets of similar types that are separately defined to avoid semantic
@@ -218,12 +173,6 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
                     .map(|e| OutputMessage::new(e.dest(), e.payload().clone())),
             )
             .map_err(|_| EnvError::OutputOverflow)?;
-
-        // Finally update the total_val_sent field.
-        self.total_val_sent = self
-            .total_val_sent
-            .checked_add(sent_now)
-            .ok_or(EnvError::OutputOverflow)?;
 
         Ok(())
     }
@@ -324,8 +273,6 @@ impl<'a, E: ExecutionEnvironment> Clone for EeVerificationState<'a, E> {
             ee: self.ee,
             chunk_predicate_key: self.chunk_predicate_key,
             cur_verified_exec_blkid: self.cur_verified_exec_blkid,
-            total_val_sent: self.total_val_sent,
-            cur_balance: self.cur_balance,
             expected_outputs: self.expected_outputs.clone(),
             accumulated_outputs: self.accumulated_outputs.clone(),
             input_chunks: self.input_chunks,

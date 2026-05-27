@@ -12,7 +12,6 @@
 //! (d) pubvals SSZ commit.
 
 use ssz::Encode;
-use strata_acct_types::BitcoinAmount;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
 use strata_ee_acct_types::{EeAccountState, ExecBlock, ExecHeader, UpdateExtraData};
@@ -54,13 +53,8 @@ fn prepare_input() -> EeAcctProofInput {
         .expect("decode tip block")
         .get_header()
         .get_state_root();
-    let initial_state = EeAccountState::new(
-        parent_blkid,
-        parent_state_root,
-        BitcoinAmount::from_sat(0),
-        Vec::new(),
-        Vec::new(),
-    );
+    let initial_state =
+        EeAccountState::new(parent_blkid, parent_state_root, Vec::new(), Vec::new());
     let pre_root = initial_state.compute_state_root();
 
     // 3. Post-state: same EE account but tip advanced to the chunk's output. This is what the acct
