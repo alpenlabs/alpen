@@ -13,8 +13,9 @@ use alpen_reth_node::{
     AlpenBuiltPayload, AlpenEngineTypes, AlpenPayloadAttributes, AlpenPayloadBuilderAttributes,
 };
 use eyre::{eyre, Context};
-use reth_node_builder::{ConsensusEngineHandle, PayloadBuilderAttributes};
+use reth_node_builder::{ConsensusEngineHandle, PayloadBuilderAttributes, PayloadKind};
 use reth_payload_builder::{PayloadBuilderError, PayloadBuilderHandle};
+use tokio::time::sleep;
 use tracing::{debug, info, warn};
 
 const MISSING_PARENT_RETRY_DELAY_MS: u64 = 250;
@@ -61,7 +62,7 @@ async fn sleep_before_missing_parent_retry(
         );
     }
 
-    tokio::time::sleep(Duration::from_millis(MISSING_PARENT_RETRY_DELAY_MS)).await;
+    sleep(Duration::from_millis(MISSING_PARENT_RETRY_DELAY_MS)).await;
 }
 
 #[derive(Debug)]
@@ -223,7 +224,7 @@ impl PayloadBuilderEngine for AlpenRethPayloadEngine {
             let resolve_started = Instant::now();
             match self
                 .payload_builder_handle
-                .resolve_kind(payload_id, reth_node_builder::PayloadKind::WaitForPending)
+                .resolve_kind(payload_id, PayloadKind::WaitForPending)
                 .await
             {
                 Some(Ok(payload)) => {
