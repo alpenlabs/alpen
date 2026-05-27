@@ -187,6 +187,24 @@ strata-dbtool get-ol-summary <slot_from> [OPTIONS]
 strata-dbtool get-ol-summary 100
 ```
 
+### `get-ol-blocks-at-slot`
+Shows all OL block IDs stored for a slot.
+
+```bash
+strata-dbtool get-ol-blocks-at-slot <slot> [OPTIONS]
+```
+
+**Arguments:**
+- `slot` - OL slot
+
+**Options:**
+- `-o, --output-format <format>` - Output format (default: porcelain)
+
+**Example:**
+```bash
+strata-dbtool get-ol-blocks-at-slot 100
+```
+
 ### `get-ol-block`
 Shows detailed information about a specific OL block.
 
