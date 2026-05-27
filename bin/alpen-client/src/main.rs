@@ -596,7 +596,7 @@ fn main() {
                     BtcClient::new(
                         btc_url.clone(),
                         Auth::UserPass(btc_user.clone(), btc_pass.clone()),
-                        Some(ext.btcio_retry_count.into()),
+                        Some(ext.btcio_retry_count),
                         Some(ext.btcio_retry_interval),
                         None,
                     )

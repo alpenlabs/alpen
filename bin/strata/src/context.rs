@@ -378,7 +378,7 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, Ini
     let btc_rpc = Client::new(
         config.rpc_url.clone(),
         auth,
-        config.retry_count.map(u16::from),
+        config.retry_count,
         config.retry_interval,
         None,
     )
