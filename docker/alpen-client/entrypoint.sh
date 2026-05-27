@@ -31,7 +31,7 @@ exec alpen-client \
     --http \
     --http.addr 0.0.0.0 \
     --http.port "${HTTP_PORT:-8545}" \
-    --http.api "${HTTP_API:-eth,alpen,net,web3,txpool,admin,debug}" \
+    --http.api "${HTTP_API:-eth,net,web3,txpool,admin,debug}" \
     --ws \
     --ws.addr 0.0.0.0 \
     --ws.port "${WS_PORT:-8546}" \
