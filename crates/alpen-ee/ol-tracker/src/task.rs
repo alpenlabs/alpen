@@ -162,6 +162,18 @@ pub(crate) fn apply_epoch_operations(
     state: &mut EeAccountState,
     epoch_operations: &[EpochUpdateOp],
 ) -> Result<()> {
+    // Check that the last update has state root present
+    match epoch_operations {
+        [] => return Ok(()),
+        [.., last] => {
+            if last.final_state_root().is_none() {
+                return Err(OLTrackerError::Other(
+                    "last update's state root in an epoch is expected to be present".to_string(),
+                ));
+            }
+        }
+    };
+
     for op in epoch_operations {
         if op.final_state_root().is_none() {
             warn!(
