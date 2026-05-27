@@ -712,12 +712,13 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
 
     for log in ol_logs {
         let serial = log.account_serial();
-        let log_data: SnarkAccountUpdateLogData =
-            decode_buf_exact(log.payload()).inspect_err(|e| {
-                info!(format!(
-                    "non-snark update log for serial {serial:?} in checkpoint logs. Ignoring."
-                ));
-            })?;
+        let Ok(log_data) = decode_buf_exact::<SnarkAccountUpdateLogData>(log.payload()) else {
+            info!(
+                ?serial,
+                "non-snark update log for account in checkpoint logs. Ignoring."
+            );
+            continue;
+        };
 
         let account_id = state
             .find_account_id_by_serial(serial)
