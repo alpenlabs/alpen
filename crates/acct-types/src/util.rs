@@ -1,6 +1,6 @@
 //! Various utilities.
 
-use digest::{Digest, generic_array::GenericArray};
+use digest::{Digest, Output};
 use sha2::Sha256;
 use strata_codec::{Codec, CodecError, Encoder};
 
@@ -19,7 +19,7 @@ impl<D: Digest> Encoder for DigestEnc<D> {
 /// encoding into a buffer.
 fn compute_codec_digest<T: Codec, D: Digest>(
     v: &T,
-) -> Result<GenericArray<u8, D::OutputSize>, CodecError> {
+) -> Result<Output<D>, CodecError> {
     let mut enc = DigestEnc { digest: D::new() };
     v.encode(&mut enc)?;
     Ok(enc.digest.finalize())
