@@ -58,6 +58,23 @@ pub enum WorkerError {
     #[error("database failure: {0}")]
     Database(#[from] DbError),
 
+    /// A log payload was not a well-formed msg-fmt envelope.
+    #[error("malformed OL log envelope: {0}")]
+    MalformedLogEnvelope(#[from] strata_msg_fmt::Error),
+
+    /// A snark-account update log failed to decode while sourcing index `extra_data`.
+    #[error("failed to decode snark-account update log: {0}")]
+    SnarkUpdateLogDecode(#[from] strata_ol_chain_types_new::LogDecodeError),
+
+    /// The emitted snark-account update logs could not be paired 1:1 with the tracked snark
+    /// state updates when sourcing index `extra_data`.
+    #[error("snark update log/index count mismatch (expected {expected}, got {found})")]
+    SnarkUpdateLogCountMismatch { expected: usize, found: usize },
+
+    /// A snark-account update log did not line up with its tracked state update.
+    #[error("snark update log next_read_idx mismatch (expected {expected}, got {found})")]
+    SnarkUpdateLogMismatch { expected: u64, found: u64 },
+
     /// Missing a required dependency for operation.
     #[error("missing required dependency: {0}")]
     MissingDependency(&'static str),

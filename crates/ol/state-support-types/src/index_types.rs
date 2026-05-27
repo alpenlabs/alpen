@@ -53,9 +53,13 @@ impl InboxMessageWrite {
 // Snark state update tracking
 // ============================================================================
 
-/// A direct set via `set_proof_state_directly`.
+/// A tracked snark account state update, recorded for each `set_proof_state` call.
+///
+/// Extra data associated with the update is no longer tracked here; it is sourced from the
+/// emitted [`SnarkAccountUpdateLogData`](strata_ol_chain_types_new::SnarkAccountUpdateLogData)
+/// logs at indexing time.
 #[derive(Clone, Debug)]
-pub struct SAStateSetOp {
+pub struct SnarkAcctStateUpdate {
     /// The account whose state was updated.
     account_id: AccountId,
 
@@ -69,7 +73,7 @@ pub struct SAStateSetOp {
     seqno: Seqno,
 }
 
-impl SAStateSetOp {
+impl SnarkAcctStateUpdate {
     pub fn new(account_id: AccountId, state: Hash, next_read_idx: u64, seqno: Seqno) -> Self {
         Self {
             account_id,
@@ -79,131 +83,24 @@ impl SAStateSetOp {
         }
     }
 
-    pub fn account_id(&self) -> AccountId {
-        self.account_id
-    }
-
-    pub fn state(&self) -> [u8; 32] {
-        self.state.into()
-    }
-
-    pub fn next_read_idx(&self) -> u64 {
-        self.next_read_idx
-    }
-
-    pub fn seqno(&self) -> Seqno {
-        self.seqno
-    }
-}
-
-/// An update via `update_inner_state` with extra data for DA.
-#[derive(Clone, Debug)]
-pub struct SAStateUpdateOp {
-    /// The account whose state was updated.
-    account_id: AccountId,
-
-    /// The new inner state root.
-    inner_state: Hash,
-
-    /// The next read index.
-    next_read_idx: u64,
-
-    /// The seqno after the update.
-    seqno: Seqno,
-
-    /// The extra data associated with this update (for DA).
-    extra_data: Vec<u8>,
-}
-
-impl SAStateUpdateOp {
-    pub fn new(
-        account_id: AccountId,
-        inner_state: Hash,
-        next_read_idx: u64,
-        seqno: Seqno,
-        extra_data: Vec<u8>,
-    ) -> Self {
-        Self {
-            account_id,
-            inner_state,
-            next_read_idx,
-            seqno,
-            extra_data,
-        }
-    }
-
-    pub fn account_id(&self) -> AccountId {
-        self.account_id
-    }
-
-    pub fn inner_state(&self) -> [u8; 32] {
-        self.inner_state.into()
-    }
-
-    pub fn next_read_idx(&self) -> u64 {
-        self.next_read_idx
-    }
-
-    pub fn seqno(&self) -> Seqno {
-        self.seqno
-    }
-
-    pub fn extra_data(&self) -> &[u8] {
-        &self.extra_data
-    }
-}
-
-/// A tracked snark account state update.
-///
-/// This captures both `set_proof_state_directly` and `update_inner_state` calls.
-#[derive(Clone, Debug)]
-pub enum SnarkAcctStateUpdate {
-    /// A direct set via `set_proof_state_directly`.
-    DirectSet(SAStateSetOp),
-
-    /// An update via `update_inner_state` with extra data for DA.
-    Update(SAStateUpdateOp),
-}
-
-impl SnarkAcctStateUpdate {
     /// Returns the account ID for this update.
     pub fn account_id(&self) -> AccountId {
-        match self {
-            Self::DirectSet(s) => s.account_id,
-            Self::Update(s) => s.account_id,
-        }
+        self.account_id
     }
 
     /// Returns the state hash for this update.
     pub fn state(&self) -> Hash {
-        match self {
-            Self::DirectSet(s) => s.state,
-            Self::Update(s) => s.inner_state,
-        }
+        self.state
     }
 
     /// Returns the next read index for this update.
     pub fn next_read_idx(&self) -> u64 {
-        match self {
-            Self::DirectSet(s) => s.next_read_idx,
-            Self::Update(s) => s.next_read_idx,
-        }
+        self.next_read_idx
     }
 
     /// Returns the seqno for this update.
     pub fn seqno(&self) -> Seqno {
-        match self {
-            Self::DirectSet(s) => s.seqno,
-            Self::Update(s) => s.seqno,
-        }
-    }
-
-    /// Returns the extra data for this update.
-    pub fn extra_data(&self) -> Option<&[u8]> {
-        match self {
-            Self::DirectSet(_) => None,
-            Self::Update(u) => Some(u.extra_data()),
-        }
+        self.seqno
     }
 }
 

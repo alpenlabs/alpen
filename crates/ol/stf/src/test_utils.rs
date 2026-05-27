@@ -69,14 +69,14 @@ use strata_acct_types::{
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
-use strata_codec::{Codec, VarVec, decode_buf_exact, encode_to_vec};
+use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
     AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
     SubjectIdBytes, WtxidsRoot,
 };
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
-use strata_msg_fmt::{Msg, OwnedMsg};
+use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::*;
 use strata_ol_msg_types::{
@@ -1512,17 +1512,20 @@ impl FixtureGenesisOutput {
     }
 
     /// Finds and decodes a typed log emitted by `serial`.
-    pub fn find_typed_log<T: Codec>(&self, serial: AccountSerial) -> Option<T> {
+    pub fn find_typed_log<T: OLLogType>(&self, serial: AccountSerial) -> Option<T> {
         self.output
             .outputs()
             .logs()
             .iter()
-            .find(|l| l.account_serial() == serial)
-            .and_then(|l| decode_buf_exact::<T>(l.payload()).ok())
+            .filter(|l| l.account_serial() == serial)
+            .find_map(|l| {
+                let msg = MsgRef::try_from(l.payload()).ok()?;
+                T::try_decode_log(&msg).ok()
+            })
     }
 
     /// Decodes the typed log emitted by `serial`, panicking if it is missing.
-    pub fn expect_typed_log<T: Codec>(&self, serial: AccountSerial) -> T {
+    pub fn expect_typed_log<T: OLLogType>(&self, serial: AccountSerial) -> T {
         self.find_typed_log(serial).unwrap_or_else(|| {
             panic!(
                 "expected log of type {} for account serial {serial:?}",
@@ -1549,13 +1552,16 @@ impl FixtureBlockOutput {
     }
 
     /// Finds and decodes a typed log emitted by `serial`.
-    pub fn find_typed_log<T: Codec>(&self, serial: AccountSerial) -> Option<T> {
+    pub fn find_typed_log<T: OLLogType>(&self, serial: AccountSerial) -> Option<T> {
         self.output
             .outputs()
             .logs()
             .iter()
-            .find(|l| l.account_serial() == serial)
-            .and_then(|l| decode_buf_exact::<T>(l.payload()).ok())
+            .filter(|l| l.account_serial() == serial)
+            .find_map(|l| {
+                let msg = MsgRef::try_from(l.payload()).ok()?;
+                T::try_decode_log(&msg).ok()
+            })
     }
 
     /// Returns true if any emitted log uses `serial`.
@@ -1568,7 +1574,7 @@ impl FixtureBlockOutput {
     }
 
     /// Finds and decodes a typed log emitted by `serial`, failing if missing.
-    pub fn expect_typed_log<T: Codec>(&self, serial: AccountSerial) -> T {
+    pub fn expect_typed_log<T: OLLogType>(&self, serial: AccountSerial) -> T {
         self.find_typed_log(serial).unwrap_or_else(|| {
             panic!(
                 "fixture block output should contain typed log {} from account serial {:?}",
