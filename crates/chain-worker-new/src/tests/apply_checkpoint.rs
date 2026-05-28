@@ -19,8 +19,12 @@ use std::collections::{HashMap, HashSet};
 
 use strata_acct_types::AccountId;
 use strata_asm_common::AsmManifest;
-use strata_asm_proto_checkpoint_types::CheckpointPayload;
+use strata_asm_proto_checkpoint_types::{
+    CheckpointPayload, CheckpointSidecar, OLLog, SimpleWithdrawalIntentLogData,
+    TerminalHeaderComplement,
+};
 use strata_checkpoint_types::EpochSummary;
+use strata_codec::encode_to_vec;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
@@ -211,6 +215,70 @@ fn test_apply_checkpoint_snark_multi_update_and_deposit() {
         built.full_sync_indexer_writes().snark_state_updates().len(),
         2,
         "full sync should produce one snark record per update tx"
+    );
+}
+
+#[test]
+fn test_apply_checkpoint_skips_non_snark_log_in_sidecar() {
+    let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
+
+    let payload = built.checkpoint_payload.clone();
+    let sidecar = payload.sidecar();
+    let snark_serial = sidecar
+        .ol_logs()
+        .first()
+        .expect("snark-multi-update has at least one log")
+        .account_serial();
+    let withdrawal_log = OLLog::new(
+        snark_serial,
+        encode_to_vec(
+            &SimpleWithdrawalIntentLogData::new(100_000_000, b"bc1qbogusdest".to_vec(), 0)
+                .expect("withdrawal log data"),
+        )
+        .expect("encode withdrawal log"),
+    );
+
+    let mut spliced_logs: Vec<OLLog> = sidecar.ol_logs().to_vec();
+    spliced_logs.push(withdrawal_log);
+
+    let complement = sidecar.terminal_header_complement();
+    let spliced_sidecar = CheckpointSidecar::new(
+        sidecar.ol_state_diff().to_vec(),
+        spliced_logs,
+        TerminalHeaderComplement::new(
+            complement.timestamp(),
+            *complement.parent_blkid(),
+            *complement.body_root(),
+            *complement.logs_root(),
+        ),
+    )
+    .expect("rebuild sidecar with spliced log");
+    let spliced_payload = CheckpointPayload::new(
+        *payload.new_tip(),
+        spliced_sidecar,
+        payload.proof().to_vec(),
+    )
+    .expect("rebuild payload");
+
+    let mut built_with_extra = built;
+    built_with_extra.checkpoint_payload = spliced_payload;
+    let (ctx, epoch) = mock_for(&built_with_extra);
+
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built_with_extra, &artifacts);
+
+    // The extra non-snark log must not produce a snark record.
+    assert_eq!(
+        artifacts
+            .output
+            .indexer_writes()
+            .snark_state_updates()
+            .len(),
+        built_with_extra
+            .full_sync_indexer_writes()
+            .snark_state_updates()
+            .len(),
+        "non-snark log must be skipped during snark-record reconstruction"
     );
 }
 
