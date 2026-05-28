@@ -12,7 +12,7 @@ use zkaleido::{ExecutionSummary, ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram
 const START_BLOCK: u64 = 1;
 const END_BLOCK: u64 = 4;
 
-fn prepare_input() -> EvmEeProofInput {
+pub(super) fn prepare_input() -> EvmEeProofInput {
     info!(
         "Preparing input for EVM EE STF from saved fixture range {}..={}",
         START_BLOCK, END_BLOCK
@@ -30,9 +30,11 @@ pub(crate) fn gen_perf_report(host: &impl ZkVmHost) -> (String, ExecutionSummary
     (EvmEeProgram::name(), summary)
 }
 
-pub(crate) fn gen_proof(host: &impl ZkVmHost) -> (String, ProofReceiptWithMetadata) {
+pub(crate) fn prove_with_input(
+    input: &EvmEeProofInput,
+    host: &impl ZkVmHost,
+) -> (String, ProofReceiptWithMetadata) {
     info!("Generating proof for EVM EE STF");
-    let input = prepare_input();
     let receipt = <EvmEeProgram as ZkVmProgram>::prove(&input, host).expect("evm-ee-stf proving");
     (EvmEeProgram::name(), receipt)
 }
