@@ -197,11 +197,14 @@ where
             Some((commitment, _)) => commitment.height(),
             None => return Ok(Vec::new()),
         };
-        let end_height = asm_tip_height.min(start_height.saturating_add(max_count - 1));
 
-        if start_height > end_height {
+        // Only include manifests buried below `l1_reorg_safe_depth`. Anything shallower could
+        // still reorg on L1 and would propagate the reorg into OL.
+        let buried_tip = asm_tip_height.saturating_sub(self.l1_reorg_safe_depth);
+        if start_height > buried_tip {
             return Ok(Vec::new());
         }
+        let end_height = buried_tip.min(start_height.saturating_add(max_count - 1));
 
         let mut manifests = Vec::new();
         for height in start_height..=end_height {
