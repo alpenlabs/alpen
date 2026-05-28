@@ -8,6 +8,7 @@ members = [
   "crates/alpen-ee/common",
   "crates/alpen-ee/config",
   "crates/alpen-ee/da",
+  "crates/alpen-ee/da-types",
   "crates/alpen-ee/database",
   "crates/alpen-ee/engine",
   "crates/alpen-ee/genesis",
@@ -141,6 +142,7 @@ alpen-ee-block-assembly = { path = "crates/alpen-ee/block-assembly" }
 alpen-ee-common = { path = "crates/alpen-ee/common" }
 alpen-ee-config = { path = "crates/alpen-ee/config" }
 alpen-ee-da = { path = "crates/alpen-ee/da" }
+alpen-ee-da-types = { path = "crates/alpen-ee/da-types" }
 alpen-ee-database = { path = "crates/alpen-ee/database", default-features = false }
 alpen-ee-engine = { path = "crates/alpen-ee/engine" }
 alpen-ee-exec-chain = { path = "crates/alpen-ee/exec-chain" }

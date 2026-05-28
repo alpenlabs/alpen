@@ -1,10 +1,8 @@
 //! Error types for EE DA proof verification.
 
+use alpen_ee_da_types::{DaParseError, EvmHeaderSummary};
 use alpen_reth_statediff::ReconstructError;
 use strata_codec::CodecError;
-use strata_l1_envelope_fmt::errors::EnvelopeParseError;
-
-use super::blob::EvmHeaderSummary;
 
 /// Errors raised while verifying EE DA witness data.
 #[derive(Debug, thiserror::Error)]
@@ -28,32 +26,13 @@ pub enum DaVerificationError {
         expected: [u8; 32],
         computed: [u8; 32],
     },
-    #[error("DA witness has no commit transaction")]
-    MissingCommit,
-    #[error("DA witness has multiple commit transactions")]
-    MultipleCommits,
-    #[error("DA commit OP_RETURN marker is malformed")]
-    MalformedCommitMarker,
+    /// Errors from commit/reveal extraction shared with the host builder.
+    #[error("DA parse failure: {0}")]
+    Parse(#[from] DaParseError),
     #[error("DA commit OP_RETURN magic mismatch: expected {expected:?}, got {actual:?}")]
     CommitMagicMismatch { expected: [u8; 4], actual: [u8; 4] },
     #[error("DA commit OP_RETURN version mismatch: expected {expected}, got {actual}")]
     CommitVersionMismatch { expected: u32, actual: u32 },
-    #[error("DA reveal tx has no inputs")]
-    RevealMissingInputs,
-    #[error("DA reveal tx witness has no tapscript leaf")]
-    RevealMissingLeafScript,
-    #[error("DA reveal tx does not spend the DA commit tx")]
-    RevealWrongCommit,
-    #[error("DA reveal spends commit output 0, which is the OP_RETURN marker")]
-    RevealSpendsMarker,
-    #[error("duplicate DA reveal for commit output {0}")]
-    DuplicateReveal(u32),
-    #[error("unexpected DA reveal for commit output {0}")]
-    UnexpectedReveal(u32),
-    #[error("missing DA reveal for commit output {0}")]
-    MissingReveal(u32),
-    #[error("DA reveal envelope parse failed: {0}")]
-    RevealEnvelope(#[from] EnvelopeParseError),
     #[error("DA blocks present but raw_partial_pre_state is empty")]
     MissingPartialPreState,
     #[error("partial pre-state decode failed: {0}")]

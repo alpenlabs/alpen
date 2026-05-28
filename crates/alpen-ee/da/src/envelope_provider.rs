@@ -3,9 +3,11 @@
 use std::{collections::HashMap, fmt, sync::Arc};
 
 use alpen_ee_common::{
-    prepare_da_chunks, BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockInfo,
-    L1DaBlockRef, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES,
+    BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockInfo, L1DaBlockRef,
 };
+use alpen_ee_da_types::{DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
+
+use crate::chunking::prepare_da_chunks;
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
 use bitcoin::{hashes::Hash as _, Block, BlockHash, Txid, Wtxid};
@@ -312,7 +314,7 @@ fn compute_wtxids_root(block: &Block) -> eyre::Result<WtxidsRoot> {
 mod tests {
     use std::sync::Arc;
 
-    use alpen_ee_common::DaBlob;
+    use alpen_ee_da_types::DaBlob;
     use async_trait::async_trait;
     use bitcoin::{
         absolute::LockTime,

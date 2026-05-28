@@ -35,7 +35,8 @@ alloy-rlp.workspace = true
 alpen-chainspec.workspace = true
 alpen-ee-common.workspace = true
 alpen-ee-config.workspace = true
-alpen-ee-da = { workspace = true, optional = true }
+alpen-ee-da = { workspace = true, optional = true, features = ["runtime"] }
+alpen-ee-da-types.workspace = true
 alpen-ee-database.workspace = true
 alpen-ee-engine.workspace = true
 alpen-ee-exec-chain = { workspace = true, optional = true }
@@ -56,7 +57,6 @@ strata-btcio = { workspace = true, optional = true }
 strata-codec.workspace = true
 strata-common = { workspace = true, features = ["async"] }
 strata-config = { workspace = true, optional = true }
-strata-crypto.workspace = true
 strata-db-types.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
@@ -64,7 +64,6 @@ strata-ee-chain-types.workspace = true
 strata-ee-chunk-runtime.workspace = true
 strata-evm-ee.workspace = true
 strata-identifiers.workspace = true
-strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
 strata-logging.workspace = true
 strata-ol-rpc-api = { workspace = true, features = ["client"] }

@@ -570,7 +570,7 @@ fn build_unfiltered_batch_state_diff(
 }
 
 async fn build_known_bytecode_witnesses(
-    blob: &alpen_ee_common::DaBlob,
+    blob: &alpen_ee_da_types::DaBlob,
     unfiltered_state_diff: &BatchStateDiff,
     bytecode_store: &impl AccessedStateStore,
 ) -> ProverResult<Vec<DaBytecodeWitness>> {

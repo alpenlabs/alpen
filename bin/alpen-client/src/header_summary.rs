@@ -11,7 +11,8 @@
 //! is assembled. The generic DA providers that consume it live in
 //! [`alpen_ee_da`].
 
-use alpen_ee_common::{EvmHeaderSummary, HeaderSummaryProvider};
+use alpen_ee_common::HeaderSummaryProvider;
+use alpen_ee_da_types::EvmHeaderSummary;
 
 /// [`HeaderSummaryProvider`] backed by a Reth [`HeaderProvider`](reth_provider::HeaderProvider).
 pub(crate) struct RethHeaderSummaryProvider<P> {

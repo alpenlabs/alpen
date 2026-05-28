@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use alloy_primitives::{Address, Bytes, U256, keccak256};
+use alpen_ee_da_types::{DA_BLOB_VERSION, DaBlob, EvmHeaderSummary};
 use alpen_reth_statediff::{
     AccountChange, AccountDiff, BatchStateDiff, apply_batch_state_diff_to_ethereum_state,
 };
@@ -32,10 +33,7 @@ use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams,
 };
 
-use super::{
-    DaBlob, DaVerificationError, EvmHeaderSummary, constants::DA_BLOB_VERSION,
-    inclusion::l1_block_ref_commitment, verify_da_witness,
-};
+use super::{l1_block_ref_commitment, verify_da_witness, DaVerificationError};
 
 const MAGIC: [u8; 4] = *b"ALPN";
 
@@ -337,7 +335,7 @@ fn verify_da_blob_metadata_rejects_known_bytecode_hash_mismatch() {
     let da_bytes = rkyv::to_bytes::<RkyvError>(&witness).unwrap();
     let archived_da = rkyv::access::<ArchivedDaWitness, RkyvError>(&da_bytes).unwrap();
 
-    let err = super::blob::verify_da_blob_metadata(
+    let err = super::verify_da_blob_metadata(
         &blob,
         &transition,
         &pub_params,

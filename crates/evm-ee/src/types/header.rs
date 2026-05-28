@@ -1,6 +1,7 @@
 //! EVM block header implementation.
 
 use alloy_consensus::Header;
+use alpen_ee_da_types::EvmHeaderSummary;
 use strata_codec::{Codec, CodecError, encode_to_vec};
 use strata_ee_acct_types::ExecHeader;
 use strata_ee_chain_types::ExecHeaderSummary;
@@ -15,21 +16,6 @@ use crate::codec_shims::{decode_rlp_with_length, encode_rlp_with_length};
 #[derive(Clone, Debug)]
 pub struct EvmHeader {
     header: Header,
-}
-
-/// EVM header fields committed through the generic [`ExecHeaderSummary`].
-///
-/// NOTE: This mirrors `alpen_ee_common::EvmHeaderSummary`. The duplication
-/// avoids making the core EVM EE proof types depend on `alpen-ee/common` for
-/// one small codec payload. If more shared types appear in future,
-/// move them into a small common EE types crate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Codec)]
-struct EvmHeaderSummaryPayload {
-    block_num: u64,
-    timestamp: u64,
-    base_fee: u64,
-    gas_used: u64,
-    gas_limit: u64,
 }
 
 impl EvmHeader {
@@ -65,7 +51,7 @@ impl ExecHeader for EvmHeader {
     }
 
     fn get_exec_header_summary(&self) -> ExecHeaderSummary {
-        let payload = EvmHeaderSummaryPayload {
+        let payload = EvmHeaderSummary {
             block_num: self.header.number,
             timestamp: self.header.timestamp,
             base_fee: self

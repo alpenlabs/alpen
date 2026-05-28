@@ -1,32 +1,24 @@
 //! Host-side helpers for assembling the DA witness consumed by the EE acct proof.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use alloy_primitives::{keccak256, B256};
-use alpen_ee_common::{reassemble_da_blob, DaBlob};
+use alloy_primitives::{B256, keccak256};
+use alpen_ee_da_types::{
+    DaBlob, bitcoin_inclusion_proof, bitcoin_merkle_root_from_leaves, extract_da_chunks,
+    reassemble_da_blob,
+};
 use alpen_reth_statediff::{AccountChange, BatchStateDiff};
-use bitcoin::{hashes::Hash as _, opcodes::all::OP_RETURN, script::Instruction, Transaction, Txid};
-use strata_crypto::hash::sha256d;
+use bitcoin::{Transaction, hashes::Hash as _};
 use strata_ee_acct_runtime::{BitcoinMerkleProof, DaBytecodeWitness};
-use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 
 /// Builds a wtxid-to-witness-root inclusion proof for the transaction at
 /// position `idx` within `txs`.
 ///
 /// Per BIP-141, the coinbase wtxid leaf is 32 zero bytes.
 pub(super) fn build_wtxid_inclusion_proof(txs: &[Transaction], idx: usize) -> BitcoinMerkleProof {
-    let leaves: Vec<[u8; 32]> = txs
-        .iter()
-        .enumerate()
-        .map(|(i, tx)| {
-            if i == 0 {
-                [0u8; 32]
-            } else {
-                tx.compute_wtxid().to_byte_array()
-            }
-        })
-        .collect();
-    build_inclusion_proof(&leaves, idx as u32)
+    let leaves = wtxid_leaves(txs);
+    let siblings = bitcoin_inclusion_proof(&leaves, idx as u32);
+    BitcoinMerkleProof::new(siblings, idx as u32)
 }
 
 /// Computes the BIP-141 witness transaction Merkle root for a block's tx list.
@@ -43,8 +35,13 @@ pub(super) fn compute_wtxids_root(txs: &[Transaction]) -> [u8; 32] {
     // DA block referenced here has witness data and this root matches the L1
     // block ref root committed by ASM. If a future writer allows legacy-input
     // commit funding, commit-only blocks must mirror ASM's txid-root fallback.
-    let leaves: Vec<[u8; 32]> = txs
-        .iter()
+    let leaves = wtxid_leaves(txs);
+    bitcoin_merkle_root_from_leaves(&leaves)
+}
+
+/// Returns wtxid leaves for `txs`, zeroing the coinbase leaf per BIP-141.
+fn wtxid_leaves(txs: &[Transaction]) -> Vec<[u8; 32]> {
+    txs.iter()
         .enumerate()
         .map(|(i, tx)| {
             if i == 0 {
@@ -53,13 +50,13 @@ pub(super) fn compute_wtxids_root(txs: &[Transaction]) -> [u8; 32] {
                 tx.compute_wtxid().to_byte_array()
             }
         })
-        .collect();
-    merkle_root(&leaves)
+        .collect()
 }
 
 /// Reassembles this batch's DA blob from its included commit/reveal transactions.
 pub(super) fn reassemble_da_blob_from_txs(txs: &[Transaction]) -> eyre::Result<DaBlob> {
-    let chunks = extract_da_chunks(txs)?;
+    let chunks =
+        extract_da_chunks(txs.iter()).map_err(|e| eyre::eyre!("extract DA chunks: {e}"))?;
     reassemble_da_blob(&chunks).map_err(|e| eyre::eyre!("reassemble DA blob: {e}"))
 }
 
@@ -125,186 +122,20 @@ pub(super) fn known_bytecodes_from_unfiltered_diff(
     (known_bytecodes, unresolved)
 }
 
-fn extract_da_chunks(txs: &[Transaction]) -> eyre::Result<Vec<Vec<u8>>> {
-    let mut commit: Option<&Transaction> = None;
-    let mut non_commit_txs = Vec::new();
-
-    for tx in txs {
-        if commit_marker_payload(tx)?.is_some() {
-            if commit.replace(tx).is_some() {
-                return Err(eyre::eyre!("multiple DA commit transactions in witness"));
-            }
-        } else {
-            non_commit_txs.push(tx);
-        }
-    }
-
-    let commit = commit.ok_or_else(|| eyre::eyre!("missing DA commit transaction in witness"))?;
-    let commit_txid = commit.compute_txid();
-    let last_reveal_vout = last_commit_reveal_vout(commit);
-
-    let mut chunks_by_vout = BTreeMap::new();
-    for tx in non_commit_txs {
-        let (vout, chunk) = extract_reveal_chunk(tx, commit_txid)?;
-        if vout > last_reveal_vout {
-            return Err(eyre::eyre!("unexpected DA reveal for commit output {vout}"));
-        }
-        if chunks_by_vout.insert(vout, chunk).is_some() {
-            return Err(eyre::eyre!("duplicate DA reveal for commit output {vout}"));
-        }
-    }
-
-    for expected_vout in 1..=last_reveal_vout {
-        if !chunks_by_vout.contains_key(&expected_vout) {
-            return Err(eyre::eyre!(
-                "missing DA reveal for commit output {expected_vout}"
-            ));
-        }
-    }
-
-    Ok(chunks_by_vout.into_values().collect())
-}
-
-fn last_commit_reveal_vout(commit: &Transaction) -> u32 {
-    commit
-        .output
-        .iter()
-        .enumerate()
-        .skip(1)
-        .take_while(|(_, output)| output.script_pubkey.is_p2tr())
-        .map(|(idx, _)| idx as u32)
-        .last()
-        .unwrap_or(0)
-}
-
-fn commit_marker_payload(tx: &Transaction) -> eyre::Result<Option<[u8; 8]>> {
-    let Some(first_output) = tx.output.first() else {
-        return Ok(None);
-    };
-    let mut instructions = first_output.script_pubkey.instructions();
-    let Some(Ok(Instruction::Op(OP_RETURN))) = instructions.next() else {
-        return Ok(None);
-    };
-    let Some(Ok(Instruction::PushBytes(push))) = instructions.next() else {
-        return Err(eyre::eyre!("malformed DA commit marker"));
-    };
-    if instructions.next().is_some() || push.as_bytes().len() != 8 {
-        return Err(eyre::eyre!("malformed DA commit marker"));
-    }
-
-    let mut payload = [0u8; 8];
-    payload.copy_from_slice(push.as_bytes());
-    Ok(Some(payload))
-}
-
-fn extract_reveal_chunk(reveal: &Transaction, commit_txid: Txid) -> eyre::Result<(u32, Vec<u8>)> {
-    let input = reveal
-        .input
-        .first()
-        .ok_or_else(|| eyre::eyre!("DA reveal tx has no inputs"))?;
-    if input.previous_output.txid != commit_txid {
-        return Err(eyre::eyre!("DA reveal tx does not spend the DA commit tx"));
-    }
-    let vout = input.previous_output.vout;
-    if vout == 0 {
-        return Err(eyre::eyre!("DA reveal spends commit output 0"));
-    }
-
-    let leaf = input
-        .witness
-        .taproot_leaf_script()
-        .ok_or_else(|| eyre::eyre!("DA reveal tx witness has no tapscript leaf"))?;
-    let script = leaf.script.into();
-    let chunk = parse_envelope_payload(&script)?;
-
-    Ok((vout, chunk))
-}
-
-fn build_inclusion_proof(leaves: &[[u8; 32]], idx: u32) -> BitcoinMerkleProof {
-    assert!(
-        (idx as usize) < leaves.len(),
-        "idx {idx} out of bounds for {} leaves",
-        leaves.len()
-    );
-
-    let mut cur_level = leaves.to_vec();
-    let mut cur_idx = idx;
-    let depth = (usize::BITS - cur_level.len().leading_zeros()) as usize;
-    let mut siblings = Vec::with_capacity(depth);
-
-    while cur_level.len() > 1 {
-        if cur_level.len() % 2 == 1 {
-            cur_level.push(*cur_level.last().expect("non-empty level"));
-        }
-
-        siblings.push(cur_level[(cur_idx ^ 1) as usize]);
-
-        cur_level = cur_level
-            .chunks(2)
-            .map(|pair| {
-                let mut preimage = [0u8; 64];
-                preimage[..32].copy_from_slice(&pair[0]);
-                preimage[32..].copy_from_slice(&pair[1]);
-                *sha256d(&preimage).as_ref()
-            })
-            .collect();
-        cur_idx >>= 1;
-    }
-
-    BitcoinMerkleProof::new(siblings, idx)
-}
-
-fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
-    let mut cur_level = leaves.to_vec();
-    while cur_level.len() > 1 {
-        if cur_level.len() % 2 == 1 {
-            cur_level.push(*cur_level.last().expect("non-empty level"));
-        }
-
-        cur_level = cur_level
-            .chunks(2)
-            .map(|pair| {
-                let mut preimage = [0u8; 64];
-                preimage[..32].copy_from_slice(&pair[0]);
-                preimage[32..].copy_from_slice(&pair[1]);
-                *sha256d(&preimage).as_ref()
-            })
-            .collect();
-    }
-
-    cur_level[0]
-}
-
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Address, Bytes, U256};
+    use alpen_ee_da_types::{EvmHeaderSummary, bitcoin_merkle_root};
     use alpen_reth_statediff::{AccountDiff, BatchStateDiff};
     use bitcoin::{
-        absolute::LockTime, transaction::Version, Amount, OutPoint, ScriptBuf, Sequence,
-        Transaction, TxIn, TxOut, Witness,
+        Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+        absolute::LockTime, transaction::Version,
     };
 
     use super::*;
 
-    fn hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
-        let mut preimage = [0u8; 64];
-        preimage[..32].copy_from_slice(&left);
-        preimage[32..].copy_from_slice(&right);
-        *sha256d(&preimage).as_ref()
-    }
-
     fn compute_root(leaf: [u8; 32], proof: &BitcoinMerkleProof) -> [u8; 32] {
-        let mut cur = leaf;
-        let mut pos = proof.position();
-        for sibling in proof.siblings() {
-            cur = if pos & 1 == 0 {
-                hash_pair(cur, *sibling)
-            } else {
-                hash_pair(*sibling, cur)
-            };
-            pos >>= 1;
-        }
-        cur
+        bitcoin_merkle_root(leaf, proof.siblings(), proof.position())
     }
 
     fn make_dummy_tx(nonce: u8) -> Transaction {
@@ -324,35 +155,11 @@ mod tests {
         }
     }
 
-    fn naive_merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
-        let mut cur = leaves.to_vec();
-        while cur.len() > 1 {
-            if cur.len() % 2 == 1 {
-                cur.push(*cur.last().expect("non-empty level"));
-            }
-            cur = cur
-                .chunks(2)
-                .map(|pair| hash_pair(pair[0], pair[1]))
-                .collect();
-        }
-        cur[0]
-    }
-
     #[test]
     fn wtxid_inclusion_proof_matches_naive_root_with_coinbase_zeroed() {
         let txs: Vec<Transaction> = (0..5).map(make_dummy_tx).collect();
-        let leaves: Vec<[u8; 32]> = txs
-            .iter()
-            .enumerate()
-            .map(|(idx, tx)| {
-                if idx == 0 {
-                    [0u8; 32]
-                } else {
-                    tx.compute_wtxid().to_byte_array()
-                }
-            })
-            .collect();
-        let expected_root = naive_merkle_root(&leaves);
+        let leaves = wtxid_leaves(&txs);
+        let expected_root = bitcoin_merkle_root_from_leaves(&leaves);
 
         for (idx, leaf) in leaves.iter().enumerate().skip(1) {
             let proof = build_wtxid_inclusion_proof(&txs, idx);
@@ -363,19 +170,8 @@ mod tests {
     #[test]
     fn compute_wtxids_root_matches_naive_root_with_coinbase_zeroed() {
         let txs: Vec<Transaction> = (0..5).map(make_dummy_tx).collect();
-        let leaves: Vec<[u8; 32]> = txs
-            .iter()
-            .enumerate()
-            .map(|(idx, tx)| {
-                if idx == 0 {
-                    [0u8; 32]
-                } else {
-                    tx.compute_wtxid().to_byte_array()
-                }
-            })
-            .collect();
-
-        assert_eq!(compute_wtxids_root(&txs), naive_merkle_root(&leaves));
+        let leaves = wtxid_leaves(&txs);
+        assert_eq!(compute_wtxids_root(&txs), bitcoin_merkle_root_from_leaves(&leaves));
     }
 
     #[test]
@@ -397,7 +193,7 @@ mod tests {
 
         let blob = DaBlob {
             update_seq_no: 7,
-            evm_header: alpen_ee_common::EvmHeaderSummary {
+            evm_header: EvmHeaderSummary {
                 block_num: 10,
                 timestamp: 1_700_000_000,
                 base_fee: 100,
