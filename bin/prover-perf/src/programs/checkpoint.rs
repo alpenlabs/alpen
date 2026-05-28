@@ -21,12 +21,12 @@ use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
 use strata_ol_stf::test_utils::{build_empty_chain, make_genesis_state};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use tracing::info;
-use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
+use zkaleido::{ExecutionSummary, ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram};
 
 const SLOTS_PER_EPOCH: u64 = 9;
 const NUM_BLOCKS: usize = 10;
 
-fn prepare_checkpoint_input() -> CheckpointProverInput {
+fn prepare_input() -> CheckpointProverInput {
     let mut state = make_genesis_state();
     let mut blocks = build_empty_chain(&mut state, NUM_BLOCKS, SLOTS_PER_EPOCH)
         .expect("build_empty_chain should succeed");
@@ -75,10 +75,18 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
 
 pub(crate) fn gen_perf_report(host: &impl ZkVmHost) -> (String, ExecutionSummary) {
     info!("Generating execution summary for Checkpoint");
-    let input = prepare_checkpoint_input();
+    let input = prepare_input();
     let summary =
         <CheckpointProgram as ZkVmProgram>::execute(&input, host).expect("checkpoint execution");
     (CheckpointProgram::name(), summary)
+}
+
+pub(crate) fn gen_proof(host: &impl ZkVmHost) -> (String, ProofReceiptWithMetadata) {
+    info!("Generating proof for Checkpoint");
+    let input = prepare_input();
+    let receipt =
+        <CheckpointProgram as ZkVmProgram>::prove(&input, host).expect("checkpoint proving");
+    (CheckpointProgram::name(), receipt)
 }
 
 #[cfg(test)]
@@ -87,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_checkpoint_native_execution() {
-        let input = prepare_checkpoint_input();
+        let input = prepare_input();
         let output = CheckpointProgram::execute(&input).unwrap();
         dbg!(output);
     }
