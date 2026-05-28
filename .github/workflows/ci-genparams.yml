@@ -69,6 +69,11 @@ jobs:
       - name: Pull datatool image
         run: docker pull "${DATATOOL_REPO}:${{ inputs.commit }}"
 
+      - name: Verify chainspec
+        run: |
+          echo "Chain config: ${{ inputs.chain_config }}"
+          python3 -c "import json; d=json.load(open('${{ inputs.chain_config }}')); print(f'chainId: {d[\"config\"][\"chainId\"]}')"
+
       - name: Generate params
         env:
           DEPLOY_ENV: ${{ inputs.env }}
