@@ -17,7 +17,7 @@ on:
         type: choice
         options:
           - staging-v2
-          - testnet-prod
+          - prod
       commit:
         description: "Alpen commit short SHA (must have a successful CI — Build and Push Images run)"
         required: true
@@ -34,9 +34,6 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  # Datatool images live in the shared ECR account (496607027995), not in
-  # per-environment accounts. Hardcoded because the shared registry is
-  # constant and avoids cross-account pull complexity.
   DATATOOL_REPO: 496607027995.dkr.ecr.us-east-1.amazonaws.com/strata/strata-datatool
 
 concurrency:
@@ -44,69 +41,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Pull the datatool image from the shared ECR registry.
-  # Uses the 'prod' environment because SHARED_ECR_ROLE_ARN lives there and
-  # grants access to the 496607027995 account where datatool images are pushed
-  # by ci-build. Per-environment accounts (e.g. testnet1_staging / 888577024788)
-  # do not host datatool images.
-  # ---------------------------------------------------------------------------
-  pull-datatool:
-    name: Pull datatool image
+  generate-params:
+    name: Generate params (${{ inputs.env }}, ${{ inputs.commit }})
     runs-on: ubuntu-latest
-    environment: prod
+    environment: ${{ inputs.env }}
     permissions:
       contents: read
       id-token: write
-    steps:
-      - name: Configure AWS credentials (shared ECR)
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
-        with:
-          role-to-assume: ${{ secrets.SHARED_ECR_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to shared ECR
-        uses: aws-actions/amazon-ecr-login@19d944daaa35f0fa1d3f7f8af1d3f2e5de25c5b7 # v2
-        with:
-          mask-password: "true"
-
-      - name: Pull and save datatool image
-        run: |
-          docker pull "${DATATOOL_REPO}:${{ inputs.commit }}"
-          docker save "${DATATOOL_REPO}:${{ inputs.commit }}" -o /tmp/datatool.tar
-
-      - name: Upload datatool image
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: datatool-image
-          path: /tmp/datatool.tar
-          retention-days: 1
-
-  # ---------------------------------------------------------------------------
-  # Generate params using the deployment environment's BTC RPC secrets.
-  # ---------------------------------------------------------------------------
-  generate-params:
-    name: Generate params (${{ inputs.env }}, ${{ inputs.commit }})
-    needs: [pull-datatool]
-    runs-on: ubuntu-latest
-    # TODO: switch to ${{ inputs.env }} once per-env GitHub environments are created
-    environment: testnet1_staging
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
           persist-credentials: false
 
-      - name: Download datatool image
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
         with:
-          name: datatool-image
-          path: /tmp
+          role-to-assume: ${{ secrets.SHARED_ECR_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Load datatool image
-        run: docker load -i /tmp/datatool.tar
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@19d944daaa35f0fa1d3f7f8af1d3f2e5de25c5b7 # v2
+        with:
+          mask-password: "true"
+
+      - name: Pull datatool image
+        run: docker pull "${DATATOOL_REPO}:${{ inputs.commit }}"
 
       - name: Generate params
         env:
@@ -114,9 +75,9 @@ jobs:
           COMMIT: ${{ inputs.commit }}
           GENESIS_L1_HEIGHT: ${{ inputs.genesis_l1_height }}
           CHAIN_CONFIG: ${{ inputs.chain_config }}
-          BTC_RPC_URL: ${{ secrets.PARAM_BTC_RPC_URL }}
-          BTC_RPC_USER: ${{ secrets.PARAM_BTC_RPC_USER }}
-          BTC_RPC_PASSWORD: ${{ secrets.PARAM_BTC_RPC_PASSWORD }}
+          BTC_RPC_URL: ${{ secrets.PARAMS_BTC_RPC_URL }}
+          BTC_RPC_USER: ${{ secrets.PARAMS_BTC_RPC_USER }}
+          BTC_RPC_PASSWORD: ${{ secrets.PARAMS_BTC_RPC_PASSWORD }}
         run: .github/params/generate-params.sh
 
       - name: rollup-params.json
