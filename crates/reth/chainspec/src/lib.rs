@@ -9,6 +9,7 @@ use reth_cli::chainspec::ChainSpecParser;
 pub const DEFAULT_CHAIN_SPEC: &str = include_str!("res/testnet-chain.json");
 pub const DEVNET_CHAIN_SPEC: &str = include_str!("res/devnet-chain.json");
 pub const DEV_CHAIN_SPEC: &str = include_str!("res/alpen-dev-chain.json");
+pub const TESTNET3_CHAIN_SPEC: &str = include_str!("res/testnet3-chain.json");
 
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
@@ -17,7 +18,7 @@ pub struct AlpenChainSpecParser;
 impl ChainSpecParser for AlpenChainSpecParser {
     type ChainSpec = ChainSpec;
 
-    const SUPPORTED_CHAINS: &'static [&'static str] = &["dev", "devnet", "testnet"];
+    const SUPPORTED_CHAINS: &'static [&'static str] = &["dev", "devnet", "testnet", "testnet3"];
 
     fn parse(s: &str) -> eyre::Result<Arc<Self::ChainSpec>> {
         chain_value_parser(s)
@@ -29,6 +30,7 @@ pub fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> 
         "testnet" => parse_chain_spec(DEFAULT_CHAIN_SPEC)?,
         "devnet" => parse_chain_spec(DEVNET_CHAIN_SPEC)?,
         "dev" => parse_chain_spec(DEV_CHAIN_SPEC)?,
+        "testnet3" => parse_chain_spec(TESTNET3_CHAIN_SPEC)?,
         _ => {
             // try to read json from path first
             let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
