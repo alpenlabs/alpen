@@ -60,18 +60,36 @@ pub async fn run_sp1_prove_programs(programs: &[GuestProgram]) -> Vec<(String, P
 
     let mut reports = Vec::with_capacity(programs.len());
     for program in programs {
-        let cfg = SP1HostConfig::default();
-        let started_at = Instant::now();
-        let (name, receipt): (String, ProofReceiptWithMetadata) = match program {
+        let total_started_at = Instant::now();
+        let (name, receipt, prepare_duration, prove_duration): (
+            String,
+            ProofReceiptWithMetadata,
+            _,
+            _,
+        ) = match program {
             GuestProgram::AlpenAcct | GuestProgram::AlpenChunk => {
-                unreachable!("prove mode is validated to checkpoint-only before execution")
+                unreachable!("prove mode rejects unsupported programs before execution")
             }
-            GuestProgram::Checkpoint => checkpoint::gen_proof(&**checkpoint_host(cfg).await),
+            GuestProgram::Checkpoint => {
+                let prepare_started_at = Instant::now();
+                let input = checkpoint::prepare_input();
+                let prepare_duration = prepare_started_at.elapsed();
+
+                let cfg = SP1HostConfig::default();
+                let host = checkpoint_host(cfg).await;
+                let prove_started_at = Instant::now();
+                let (name, receipt) = checkpoint::prove_with_input(&input, &**host);
+                let prove_duration = prove_started_at.elapsed();
+
+                (name, receipt, prepare_duration, prove_duration)
+            }
         };
         reports.push((
             name,
             ProofSummary {
-                duration: started_at.elapsed(),
+                prepare_duration,
+                prove_duration,
+                total_duration: total_started_at.elapsed(),
                 proof_bytes: receipt.receipt().proof().as_bytes().len(),
                 proof_type: format!("{:?}", receipt.metadata().proof_type()),
             },

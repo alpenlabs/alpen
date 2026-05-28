@@ -26,7 +26,7 @@ use zkaleido::{ExecutionSummary, ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram
 const SLOTS_PER_EPOCH: u64 = 9;
 const NUM_BLOCKS: usize = 10;
 
-fn prepare_input() -> CheckpointProverInput {
+pub(super) fn prepare_input() -> CheckpointProverInput {
     let mut state = make_genesis_state();
     let mut blocks = build_empty_chain(&mut state, NUM_BLOCKS, SLOTS_PER_EPOCH)
         .expect("build_empty_chain should succeed");
@@ -81,11 +81,13 @@ pub(crate) fn gen_perf_report(host: &impl ZkVmHost) -> (String, ExecutionSummary
     (CheckpointProgram::name(), summary)
 }
 
-pub(crate) fn gen_proof(host: &impl ZkVmHost) -> (String, ProofReceiptWithMetadata) {
+pub(crate) fn prove_with_input(
+    input: &CheckpointProverInput,
+    host: &impl ZkVmHost,
+) -> (String, ProofReceiptWithMetadata) {
     info!("Generating proof for Checkpoint");
-    let input = prepare_input();
     let receipt =
-        <CheckpointProgram as ZkVmProgram>::prove(&input, host).expect("checkpoint proving");
+        <CheckpointProgram as ZkVmProgram>::prove(input, host).expect("checkpoint proving");
     (CheckpointProgram::name(), receipt)
 }
 
