@@ -197,7 +197,7 @@ fn spawn_csm_listener(
         // Get the latest ASM state as fallback
         let (latest_block, _) = storage
             .asm()
-            .fetch_most_recent_state()?
+            .fetch_most_recent_state_blocking()?
             .expect("No ASM state available");
         latest_block
     };

@@ -188,8 +188,13 @@ impl OLRpcProvider for NodeRpcProvider {
         self.status_channel.get_ol_sync_status()
     }
 
-    fn get_l1_tip_height(&self) -> Option<L1Height> {
-        Some(self.status_channel.get_l1_status().cur_height)
+    async fn get_l1_tip_height(&self) -> DbResult<Option<L1Height>> {
+        Ok(self
+            .storage
+            .asm()
+            .fetch_most_recent_state_async()
+            .await?
+            .map(|(commit, _)| commit.height()))
     }
 
     async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {

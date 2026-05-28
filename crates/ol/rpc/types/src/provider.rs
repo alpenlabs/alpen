@@ -94,7 +94,7 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     fn get_ol_sync_status(&self) -> Option<OLSyncStatus>;
 
     /// Get current L1 tip height.
-    fn get_l1_tip_height(&self) -> Option<L1Height>;
+    async fn get_l1_tip_height(&self) -> DbResult<Option<L1Height>>;
 
     /// Submit a transaction to the mempool.
     async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId>;

@@ -73,7 +73,7 @@ impl WorkerContext for AsmWorkerCtx {
 
     fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, WorkerAsmState)>> {
         self.asmman
-            .fetch_most_recent_state()
+            .fetch_most_recent_state_blocking()
             .map_err(conv_db_err)
             .map(|state| state.map(|(block, state)| (block, storage_to_worker_state(state))))
     }

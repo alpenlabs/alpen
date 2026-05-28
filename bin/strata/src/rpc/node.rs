@@ -757,7 +757,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         let confirmation_status = if let Some(obs) = l1_ref {
             let l1_reference = RpcCheckpointL1Ref::new(obs.l1_commitment, obs.txid, obs.wtxid);
             let observed_height = obs.l1_commitment.height();
-            let Some(tip) = self.provider.get_l1_tip_height() else {
+            let Some(tip) = self.provider.get_l1_tip_height().await.map_err(db_error)? else {
                 return Err(internal_error(
                     "L1 tip height unavailable while constructing checkpoint info",
                 ));

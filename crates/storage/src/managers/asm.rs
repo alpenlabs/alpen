@@ -25,8 +25,17 @@ impl AsmStateManager {
     }
 
     /// Returns [`AsmState`] that corresponds to the "highest" block.
-    pub fn fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+    pub fn fetch_most_recent_state_blocking(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
         self.ops.get_latest_asm_state_blocking()
+    }
+
+    /// Returns [`AsmState`] that corresponds to the "highest" block.
+    pub async fn fetch_most_recent_state_async(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+        self.ops.get_latest_asm_state_async().await
     }
 
     /// Returns [`AsmState`] that corresponds to passed block.
