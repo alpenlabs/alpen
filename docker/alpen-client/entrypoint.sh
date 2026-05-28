@@ -11,7 +11,9 @@ if [ "${1-}" = "help" ] || [ "${1-}" = "--help" ] || [ "${1-}" = "-h" ]; then
 fi
 
 # Build command from environment variables.
+# Set SEQUENCER_MODE=true to run as sequencer (default: fullnode).
 
+SEQUENCER_MODE="${SEQUENCER_MODE:-false}"
 SEQUENCER_PUBKEY="${SEQUENCER_PUBKEY:?SEQUENCER_PUBKEY must be set}"
 CHAIN_SPEC="${CHAIN_SPEC:-dev}"
 EE_DA_MAGIC_BYTES="${EE_DA_MAGIC_BYTES:-ALPN}"
@@ -29,8 +31,13 @@ else
         "$@"
 fi
 
+SEQUENCER_FLAG=""
+if [ "${SEQUENCER_MODE}" = "true" ]; then
+    SEQUENCER_FLAG="--sequencer"
+fi
+
 exec alpen-client \
-    --sequencer \
+    ${SEQUENCER_FLAG} \
     --sequencer-pubkey "${SEQUENCER_PUBKEY}" \
     --custom-chain "${CHAIN_SPEC}" \
     --datadir "${DATADIR:-/app/data}" \
