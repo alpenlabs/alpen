@@ -151,8 +151,13 @@ pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) ->
 /// Uses unit types for mempool and state provider since
 /// proof generation only requires storage access.
 pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyContext<(), ()> {
-    BlockAssemblyContext::new(storage, (), ())
+    BlockAssemblyContext::new(storage, (), (), TEST_L1_REORG_SAFE_DEPTH)
 }
+
+/// Default `l1_reorg_safe_depth` used in block-assembly tests that don't exercise
+/// the buried-manifest filtering directly. Zero preserves pre-filtering behavior:
+/// the buried tip equals the ASM tip, so all available manifests are eligible.
+pub(crate) const TEST_L1_REORG_SAFE_DEPTH: u32 = 0;
 
 /// Mock mempool provider for tests that stores transactions in memory.
 pub(crate) struct MockMempoolProvider {
@@ -1414,7 +1419,12 @@ pub(crate) fn create_test_block_assembly_context(
 ) -> (BlockAssemblyContextImpl, Arc<MockMempoolProvider>) {
     let mempool_provider = Arc::new(MockMempoolProvider::new());
     let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
-    let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider);
+    let ctx = BlockAssemblyContext::new(
+        storage,
+        mempool_provider.clone(),
+        state_provider,
+        TEST_L1_REORG_SAFE_DEPTH,
+    );
     (ctx, mempool_provider)
 }
 

@@ -54,7 +54,7 @@ async fn test_missing_parent_fails() {
 async fn test_state_provider_failure_propagates() {
     let storage = create_test_storage();
     let mempool = Arc::new(MockMempoolProvider::new());
-    let ctx = BlockAssemblyContext::new(storage, mempool, FailingStateProvider);
+    let ctx = BlockAssemblyContext::new(storage, mempool, FailingStateProvider, 0);
     let config = BlockGenerationConfig::new(OLBlockCommitment::new(
         1,
         OLBlockId::from(Buf32::from([7; 32])),

@@ -117,23 +117,34 @@ pub struct BlockAssemblyContext<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     state_provider: S,
+    /// L1 reorg safe depth: only manifests at or below `asm_tip - l1_reorg_safe_depth` are
+    /// considered buried enough to include in OL blocks. Prevents L1 reorgs from cascading
+    /// into OL reorgs.
+    l1_reorg_safe_depth: u32,
 }
 
 impl<M, S> Debug for BlockAssemblyContext<M, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BlockAssemblyContext")
             .field("storage", &"<NodeStorage>")
+            .field("l1_reorg_safe_depth", &self.l1_reorg_safe_depth)
             .finish_non_exhaustive()
     }
 }
 
 impl<M, S> BlockAssemblyContext<M, S> {
     /// Create a new block assembly context.
-    pub fn new(storage: Arc<NodeStorage>, mempool_provider: M, state_provider: S) -> Self {
+    pub fn new(
+        storage: Arc<NodeStorage>,
+        mempool_provider: M,
+        state_provider: S,
+        l1_reorg_safe_depth: u32,
+    ) -> Self {
         Self {
             storage,
             mempool_provider,
             state_provider,
+            l1_reorg_safe_depth,
         }
     }
 }

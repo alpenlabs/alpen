@@ -34,6 +34,7 @@ where
     state_provider: P,
     sequencer_config: SequencerConfig,
     sequencer_predicate: PredicateKey,
+    l1_reorg_safe_depth: u32,
     command_buffer_size: usize,
 }
 
@@ -43,6 +44,10 @@ where
     E: EpochSealingPolicy,
     P: StateProvider,
 {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "builder collects unrelated service inputs"
+    )]
     pub fn new(
         blockasm_config: Arc<BlockAssemblyConfig>,
         storage: Arc<NodeStorage>,
@@ -51,6 +56,7 @@ where
         state_provider: P,
         sequencer_config: SequencerConfig,
         sequencer_predicate: PredicateKey,
+        l1_reorg_safe_depth: u32,
     ) -> Self {
         Self {
             blockasm_config,
@@ -60,6 +66,7 @@ where
             state_provider,
             sequencer_config,
             sequencer_predicate,
+            l1_reorg_safe_depth,
             command_buffer_size: 64,
         }
     }
@@ -86,6 +93,7 @@ where
             self.storage,
             self.mempool_provider,
             self.state_provider,
+            self.l1_reorg_safe_depth,
         ));
 
         let state = BlockasmServiceState::new(
