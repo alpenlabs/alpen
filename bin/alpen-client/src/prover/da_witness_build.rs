@@ -2,13 +2,13 @@
 
 use std::collections::BTreeSet;
 
-use alloy_primitives::{B256, keccak256};
+use alloy_primitives::{keccak256, B256};
 use alpen_ee_da_types::{
-    DaBlob, bitcoin_inclusion_proof, bitcoin_merkle_root_from_leaves, extract_da_chunks,
-    reassemble_da_blob,
+    bitcoin_inclusion_proof, bitcoin_merkle_root_from_leaves, extract_da_chunks,
+    reassemble_da_blob, DaBlob,
 };
 use alpen_reth_statediff::{AccountChange, BatchStateDiff};
-use bitcoin::{Transaction, hashes::Hash as _};
+use bitcoin::{hashes::Hash as _, Transaction};
 use strata_ee_acct_runtime::{BitcoinMerkleProof, DaBytecodeWitness};
 
 /// Builds a wtxid-to-witness-root inclusion proof for the transaction at
@@ -125,11 +125,11 @@ pub(super) fn known_bytecodes_from_unfiltered_diff(
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Address, Bytes, U256};
-    use alpen_ee_da_types::{EvmHeaderSummary, bitcoin_merkle_root};
+    use alpen_ee_da_types::{bitcoin_merkle_root, EvmHeaderSummary};
     use alpen_reth_statediff::{AccountDiff, BatchStateDiff};
     use bitcoin::{
-        Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
-        absolute::LockTime, transaction::Version,
+        absolute::LockTime, transaction::Version, Amount, OutPoint, ScriptBuf, Sequence,
+        Transaction, TxIn, TxOut, Witness,
     };
 
     use super::*;
@@ -171,7 +171,10 @@ mod tests {
     fn compute_wtxids_root_matches_naive_root_with_coinbase_zeroed() {
         let txs: Vec<Transaction> = (0..5).map(make_dummy_tx).collect();
         let leaves = wtxid_leaves(&txs);
-        assert_eq!(compute_wtxids_root(&txs), bitcoin_merkle_root_from_leaves(&leaves));
+        assert_eq!(
+            compute_wtxids_root(&txs),
+            bitcoin_merkle_root_from_leaves(&leaves)
+        );
     }
 
     #[test]

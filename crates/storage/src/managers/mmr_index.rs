@@ -326,11 +326,10 @@ impl MmrIndexHandle {
     /// retries: callers can re-run their indexing pass without checking whether
     /// each leaf was already written.
     ///
-    /// - `expected_idx < leaf_count`: slot occupied — succeeds if the stored
-    ///   hash matches, else [`DbError::MmrLeafHashMismatch`].
+    /// - `expected_idx < leaf_count`: slot occupied — succeeds if the stored hash matches, else
+    ///   [`DbError::MmrLeafHashMismatch`].
     /// - `expected_idx == leaf_count`: appends.
-    /// - `expected_idx > leaf_count`: [`DbError::MmrIndexOutOfRange`] (MMRs
-    ///   cannot have gaps).
+    /// - `expected_idx > leaf_count`: [`DbError::MmrIndexOutOfRange`] (MMRs cannot have gaps).
     pub fn idempotent_append_leaf_with_preimage_blocking(
         &self,
         expected_idx: u64,

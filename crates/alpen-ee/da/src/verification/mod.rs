@@ -15,13 +15,13 @@ use std::collections::BTreeSet;
 use alloy_primitives::keccak256;
 use alpen_ee_da_types::{
     bitcoin_merkle_root, commit_marker_payload, extract_da_chunks as parse_da_chunks,
-    reassemble_da_blob, DaBlob, DaParseError, EvmHeaderSummary, DA_BLOB_VERSION,
-    EE_DA_MAGIC_BYTES,
+    reassemble_da_blob, DaBlob, DaParseError, EvmHeaderSummary, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES,
 };
 use alpen_reth_statediff::{
     apply_batch_state_diff_to_ethereum_state, AccountChange, BatchStateDiff,
 };
 use bitcoin::{consensus::deserialize as btc_deserialize, hashes::Hash as _, Transaction};
+pub use error::{DaVerificationError, DaVerificationResult};
 use revm_primitives::{B256, KECCAK_EMPTY};
 use ssz::Decode;
 use strata_codec::decode_buf_exact;
@@ -33,22 +33,23 @@ use strata_ee_chain_types::ChunkTransition;
 use strata_evm_ee::EvmPartialState;
 use strata_snark_acct_types::{l1_block_ref_leaf_hash, LedgerRefs, UpdateProofPubParams};
 
-pub use error::DaVerificationError;
-
 /// Runs DA correctness checks for the outer proof.
 ///
-/// Returns the reassembled blob if any DA witness blocks were present; `None`
-/// when both the witness and the chunk list are empty (an update that touched
-/// no batches).
+/// An update with no DA witness blocks AND no chunks is treated as a valid
+/// empty-update no-op; any other combination of emptiness is an error. The
+/// reassembled blob is verified against the chunk public values internally
+/// (header summary, deployed bytecodes, state-diff applied to the partial
+/// pre-state matches the last chunk's `tip_state_root`). there is no
+/// downstream consumer for the blob itself, so nothing is returned.
 pub fn verify_da_witness(
     ee_input: &ArchivedEePrivateInput,
     da_witness: &ArchivedDaWitness,
     pub_params: &UpdateProofPubParams,
     expected_pre_state_root: [u8; 32],
-) -> Result<Option<DaBlob>, DaVerificationError> {
+) -> DaVerificationResult {
     if da_witness.blocks().is_empty() {
         return if ee_input.chunks().is_empty() {
-            Ok(None)
+            Ok(())
         } else {
             Err(DaVerificationError::MissingDaWitness)
         };
@@ -74,21 +75,19 @@ pub fn verify_da_witness(
     }
     verify_state_diff_against_chunks(raw_pre_state, expected_pre_state_root, &blob, &last_chunk)?;
 
-    Ok(Some(blob))
+    Ok(())
 }
 
 fn decode_last_chunk_transition(
     ee_input: &ArchivedEePrivateInput,
-) -> Result<ChunkTransition, DaVerificationError> {
+) -> DaVerificationResult<ChunkTransition> {
     let chunks = ee_input.chunks();
     let last = chunks.last().ok_or(DaVerificationError::NoChunks)?;
     ChunkTransition::from_ssz_bytes(last.chunk_transition_ssz())
         .map_err(DaVerificationError::LastChunkDecode)
 }
 
-// ---------------------------------------------------------------------------
 // L1 inclusion checks
-// ---------------------------------------------------------------------------
 
 fn bitcoin_merkle_root_from_archived_proof(
     leaf_hash: [u8; 32],
@@ -98,10 +97,7 @@ fn bitcoin_merkle_root_from_archived_proof(
 }
 
 /// Public ledger-ref entry hash for an L1 block ref.
-pub(crate) fn l1_block_ref_commitment(
-    block_hash: &[u8; 32],
-    wtxids_root: &[u8; 32],
-) -> [u8; 32] {
+pub(crate) fn l1_block_ref_commitment(block_hash: &[u8; 32], wtxids_root: &[u8; 32]) -> [u8; 32] {
     l1_block_ref_leaf_hash(block_hash, wtxids_root)
 }
 
@@ -109,7 +105,7 @@ pub(crate) fn l1_block_ref_commitment(
 fn verify_block_witness(
     block: &ArchivedDaBlockWitness,
     ledger_refs: &LedgerRefs,
-) -> Result<Vec<Transaction>, DaVerificationError> {
+) -> DaVerificationResult<Vec<Transaction>> {
     verify_l1_ref_binding(block, ledger_refs)?;
 
     if block.txs().is_empty() {
@@ -140,7 +136,7 @@ fn verify_block_witness(
 fn verify_l1_ref_binding(
     block: &ArchivedDaBlockWitness,
     ledger_refs: &LedgerRefs,
-) -> Result<(), DaVerificationError> {
+) -> DaVerificationResult {
     let inclusion = block.inclusion();
     let idx = u64::from(inclusion.l1_block_height());
     let expected_hash = l1_block_ref_commitment(inclusion.l1_block_hash(), inclusion.wtxids_root());
@@ -156,15 +152,13 @@ fn verify_l1_ref_binding(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // DA blob extraction + commit marker verification
-// ---------------------------------------------------------------------------
 
 /// Extracts ordered DA chunks from included txs and verifies the commit
 /// marker matches the proof's expected magic + version.
 fn extract_and_verify_da_chunks<'a>(
     txs: impl Iterator<Item = &'a Transaction>,
-) -> Result<Vec<Vec<u8>>, DaVerificationError> {
+) -> DaVerificationResult<Vec<Vec<u8>>> {
     let txs: Vec<&Transaction> = txs.collect();
     let chunks = parse_da_chunks(txs.iter().copied())?;
     let commit = txs
@@ -176,7 +170,7 @@ fn extract_and_verify_da_chunks<'a>(
     Ok(chunks)
 }
 
-fn verify_commit_marker(commit: &Transaction) -> Result<(), DaVerificationError> {
+fn verify_commit_marker(commit: &Transaction) -> DaVerificationResult {
     let payload = commit_marker_payload(commit)?
         .ok_or(DaVerificationError::Parse(DaParseError::MissingCommit))?;
     let actual_magic: [u8; 4] = payload[..4]
@@ -203,16 +197,14 @@ fn verify_commit_marker(commit: &Transaction) -> Result<(), DaVerificationError>
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // Blob metadata + bytecode + state-diff verification
-// ---------------------------------------------------------------------------
 
 fn verify_da_blob_metadata(
     blob: &DaBlob,
     last_chunk: &ChunkTransition,
     pub_params: &UpdateProofPubParams,
     known_bytecodes: &[ArchivedDaBytecodeWitness],
-) -> Result<(), DaVerificationError> {
+) -> DaVerificationResult {
     let expected_seq_no = pub_params.seq_no();
     if blob.update_seq_no != expected_seq_no {
         return Err(DaVerificationError::UpdateSeqNoMismatch {
@@ -237,7 +229,7 @@ fn verify_da_blob_metadata(
 fn verify_deployed_bytecodes(
     diff: &BatchStateDiff,
     known_bytecodes: &[ArchivedDaBytecodeWitness],
-) -> Result<(), DaVerificationError> {
+) -> DaVerificationResult {
     let mut available_code_hashes = BTreeSet::new();
 
     for (code_hash, bytecode) in &diff.deployed_bytecodes {
@@ -300,7 +292,7 @@ fn verify_state_diff_against_chunks(
     expected_pre_state_root: [u8; 32],
     blob: &DaBlob,
     last_chunk: &ChunkTransition,
-) -> Result<(), DaVerificationError> {
+) -> DaVerificationResult {
     let mut pre_state: EvmPartialState =
         decode_buf_exact(raw_pre_state).map_err(DaVerificationError::PartialPreStateDecode)?;
     let actual_pre_state_root = pre_state.ethereum_state().state_root().0;

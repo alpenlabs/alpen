@@ -61,18 +61,18 @@ bitcoin = { workspace = true, optional = true }
 strata-codec = { workspace = true, optional = true }
 
 # Runtime-only deps (enabled by `runtime` feature):
+alloy-primitives = { workspace = true, optional = true }
 alpen-ee-common = { workspace = true, optional = true }
 alpen-ee-database = { workspace = true, optional = true }
 alpen-reth-db = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+bitcoind-async-client = { workspace = true, optional = true }
+eyre = { workspace = true, optional = true }
 strata-btc-types = { workspace = true, optional = true }
 strata-btcio = { workspace = true, optional = true }
 strata-db-types = { workspace = true, optional = true }
 strata-identifiers = { workspace = true, optional = true }
 strata-l1-txfmt = { workspace = true, optional = true }
-alloy-primitives = { workspace = true, optional = true }
-async-trait = { workspace = true, optional = true }
-bitcoind-async-client = { workspace = true, optional = true }
-eyre = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 
 # Verification-only deps (enabled by `verification` feature):

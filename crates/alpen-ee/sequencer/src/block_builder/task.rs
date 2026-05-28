@@ -236,8 +236,7 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .await
         .context("block_builder: submit new exec block")?;
 
-    // TODO(STR-1907): replace the payload-builder missing-parent retry with an explicit
-    // Reth import/canonicalization acknowledgement before advancing the local chain tracker.
+    // TODO: should this wait for block
 
     Ok((blockhash, next_block_target))
 }

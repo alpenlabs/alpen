@@ -4,6 +4,11 @@ use alpen_ee_da_types::{DaParseError, EvmHeaderSummary};
 use alpen_reth_statediff::ReconstructError;
 use strata_codec::CodecError;
 
+/// Result type used throughout DA verification. Defaults the success type to
+/// `()` for the common "verify and return nothing" case; pass a type parameter
+/// for helpers that produce data along the way (e.g. decoded chunk transitions).
+pub type DaVerificationResult<T = ()> = Result<T, DaVerificationError>;
+
 /// Errors raised while verifying EE DA witness data.
 #[derive(Debug, thiserror::Error)]
 pub enum DaVerificationError {

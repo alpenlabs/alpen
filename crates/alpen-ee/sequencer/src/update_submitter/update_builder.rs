@@ -1,6 +1,6 @@
 use alpen_ee_common::{
     build_ledger_refs_from_da, Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef,
-    ProofId, SequencerOLClient,
+    ProofId,
 };
 use eyre::{eyre, OptionExt, Result};
 use futures::{future::try_join_all, FutureExt};
@@ -20,7 +20,6 @@ pub(super) async fn build_update_from_batch(
     batch: &Batch,
     da_refs: &[L1DaBlockRef],
     proof_id: &ProofId,
-    _ol_client: &(impl SequencerOLClient + Send + Sync),
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
 ) -> Result<SnarkAccountUpdate> {

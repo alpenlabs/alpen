@@ -6,8 +6,6 @@ use alpen_ee_common::{
     BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockInfo, L1DaBlockRef,
 };
 use alpen_ee_da_types::{DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
-
-use crate::chunking::prepare_da_chunks;
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
 use bitcoin::{hashes::Hash as _, Block, BlockHash, Txid, Wtxid};
@@ -21,6 +19,8 @@ use strata_db_types::types::{
 use strata_identifiers::{Buf32, L1BlockCommitment, L1Height, WtxidsRoot};
 use strata_l1_txfmt::MagicBytes;
 use tracing::*;
+
+use crate::chunking::prepare_da_chunks;
 
 /// Per-block accumulator: commit (when present) plus reveals tagged with
 /// their commit-output vout for stable ordering.

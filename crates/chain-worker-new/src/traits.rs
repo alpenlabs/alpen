@@ -84,4 +84,9 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     ///
     /// This means we have to load fewer write batches when reconstructing state.
     fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()>;
+
+    /// Seeds the DB-side L1 block refs MMR mirror with sentinel leaves matching
+    /// the in-state MMR's genesis prefill. Called once at chain worker init.
+    /// Idempotent across restarts.
+    fn prefill_l1_block_refs_mmr(&self) -> WorkerResult<()>;
 }

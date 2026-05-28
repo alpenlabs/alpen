@@ -103,12 +103,12 @@ pub fn last_commit_reveal_vout(commit: &Transaction) -> u32 {
 /// commit transaction's vout-0 output, if present.
 ///
 /// Returns:
-/// - `Ok(Some([u8; 8]))` if the first output is a well-formed OP_RETURN with
-///   exactly 8 pushed bytes (`magic_bytes || version_be_u32`).
-/// - `Ok(None)` if the first output is missing or not an OP_RETURN (i.e. this
-///   isn't a commit transaction).
-/// - `Err(MalformedCommitMarker)` if the OP_RETURN exists but has the wrong
-///   shape (extra ops, wrong push size, etc.).
+/// - `Ok(Some([u8; 8]))` if the first output is a well-formed OP_RETURN with exactly 8 pushed bytes
+///   (`magic_bytes || version_be_u32`).
+/// - `Ok(None)` if the first output is missing or not an OP_RETURN (i.e. this isn't a commit
+///   transaction).
+/// - `Err(MalformedCommitMarker)` if the OP_RETURN exists but has the wrong shape (extra ops, wrong
+///   push size, etc.).
 pub fn commit_marker_payload(tx: &Transaction) -> Result<Option<[u8; 8]>, DaParseError> {
     let Some(first_output) = tx.output.first() else {
         return Ok(None);

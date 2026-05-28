@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 
-use alloy_primitives::{Address, Bytes, U256, keccak256};
-use alpen_ee_da_types::{DA_BLOB_VERSION, DaBlob, EvmHeaderSummary};
+use alloy_primitives::{keccak256, Address, Bytes, U256};
+use alpen_ee_da_types::{DaBlob, EvmHeaderSummary, DA_BLOB_VERSION};
 use alpen_reth_statediff::{
-    AccountChange, AccountDiff, BatchStateDiff, apply_batch_state_diff_to_ethereum_state,
+    apply_batch_state_diff_to_ethereum_state, AccountChange, AccountDiff, BatchStateDiff,
 };
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
     absolute::LockTime,
     consensus::serialize,
     hashes::Hash as _,
@@ -16,6 +15,7 @@ use bitcoin::{
     secp256k1::SECP256K1,
     taproot::{ControlBlock, LeafVersion, TaprootBuilder},
     transaction::Version,
+    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
 use rkyv::rancor::Error as RkyvError;
 use rsp_mpt::EthereumState;
@@ -391,11 +391,8 @@ fn verify_da_witness_accepts_valid_commit_reveal_round_trip() {
     let archived_ee = rkyv::access::<ArchivedEePrivateInput, RkyvError>(&ee_bytes).unwrap();
     let archived_da = rkyv::access::<ArchivedDaWitness, RkyvError>(&da_bytes).unwrap();
 
-    let blob = verify_da_witness(archived_ee, archived_da, &pub_params, expected_pre_root)
-        .expect("valid DA witness must verify")
-        .expect("non-empty witness must produce DA blob");
-
-    assert_eq!(blob.update_seq_no, pub_params.seq_no());
+    verify_da_witness(archived_ee, archived_da, &pub_params, expected_pre_root)
+        .expect("valid DA witness must verify");
 }
 
 #[test]

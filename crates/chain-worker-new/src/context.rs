@@ -15,6 +15,7 @@ use strata_db_types::{
 use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_params::OLParams;
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
@@ -67,6 +68,11 @@ pub struct ChainWorkerContextImpl {
     /// Rollup params
     params: Arc<Params>,
 
+    /// OL genesis params. Source of truth for the genesis L1 height used to
+    /// prefill the L1 block refs MMR mirror (matches the in-state MMR which is
+    /// seeded from `OLParams.last_l1_block.height()` at OL genesis).
+    ol_params: Arc<OLParams>,
+
     /// Runtime handle
     handle: Handle,
 }
@@ -84,6 +90,7 @@ impl ChainWorkerContextImpl {
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             params: nodectx.params().clone(),
+            ol_params: nodectx.ol_params().clone(),
             handle: nodectx.executor().handle().clone(),
         }
     }
@@ -180,11 +187,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         {
             Ok(()) => {
                 index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
-                index_l1_block_ref_mmr_writes(
-                    &self.mmr_index_mgr,
-                    output,
-                    self.params.rollup.genesis_l1_view.blk.height() as u64,
-                )?;
+                index_l1_block_ref_mmr_writes(&self.mmr_index_mgr, output)?;
             }
             Err(DbError::BlockIndexingConflict {
                 attempted,
@@ -192,11 +195,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
                 ..
             }) if attempted == commitment && last_applied == commitment => {
                 index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
-                index_l1_block_ref_mmr_writes(
-                    &self.mmr_index_mgr,
-                    output,
-                    self.params.rollup.genesis_l1_view.blk.height() as u64,
-                )?;
+                index_l1_block_ref_mmr_writes(&self.mmr_index_mgr, output)?;
                 debug!(%commitment, "block indexing already applied; treating as retry");
             }
             Err(e) => return Err(e.into()),
@@ -333,6 +332,13 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
         Ok(())
     }
+
+    fn prefill_l1_block_refs_mmr(&self) -> WorkerResult<()> {
+        // Same source as the in-state MMR's genesis prefill so the two MMRs
+        // stay byte-identical from leaf 0.
+        let genesis_l1_height = self.ol_params.last_l1_block.height() as u64;
+        prefill_l1_block_refs_mmr_blocking(&self.mmr_index_mgr, genesis_l1_height)
+    }
 }
 
 /// Builds an [`IndexingWrites`] payload from a block-execution output.
@@ -407,16 +413,13 @@ fn index_inbox_mmr_writes(
     Ok(())
 }
 
-/// Applies terminal-block L1 block ref writes to the MMR proof index.
+/// Seeds the L1 block refs MMR mirror with sentinel leaves for indices
+/// `0..=genesis_l1_height`, matching the in-state MMR's genesis prefill.
 ///
-/// The in-state accumulator stores only MMR peaks. Block assembly needs the
-/// historical nodes to prove reduced `{block_hash, wtxids_root}` refs in later
-/// snark-account updates, so the chain worker mirrors each accepted manifest
-/// append into the DB-side proof index. The operation is idempotent for
-/// crash-restart retries.
-fn index_l1_block_ref_mmr_writes(
+/// Run once at chain worker initialization. Idempotent: no-op if the mirror
+/// already contains the expected leaves (crash-restart safe).
+pub(crate) fn prefill_l1_block_refs_mmr_blocking(
     mmr_index_mgr: &MmrIndexManager,
-    output: &OLBlockExecutionOutput,
     genesis_l1_height: u64,
 ) -> WorkerResult<()> {
     let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
@@ -429,7 +432,24 @@ fn index_l1_block_ref_mmr_writes(
             )));
         }
     }
+    Ok(())
+}
 
+/// Applies terminal-block L1 block ref writes to the MMR proof index.
+///
+/// The in-state accumulator stores only MMR peaks. Block assembly needs the
+/// historical nodes to prove reduced `{block_hash, wtxids_root}` refs in later
+/// snark-account updates, so the chain worker mirrors each accepted manifest
+/// append into the DB-side proof index. The operation is idempotent for
+/// crash-restart retries.
+///
+/// Assumes the mirror has already been seeded via
+/// [`prefill_l1_block_refs_mmr_blocking`] at chain worker initialization.
+fn index_l1_block_ref_mmr_writes(
+    mmr_index_mgr: &MmrIndexManager,
+    output: &OLBlockExecutionOutput,
+) -> WorkerResult<()> {
+    let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
     for write in output.indexer_writes().manifests() {
         let expected_idx = write.height as u64;
         let block_hash = *write.manifest.blkid().as_ref();
@@ -600,12 +620,13 @@ mod tests {
     }
 
     #[test]
-    fn index_l1_block_ref_mmr_writes_prefills_genesis_and_stores_refs() {
+    fn prefill_then_index_seeds_genesis_and_stores_refs() {
         let mmr_index_mgr = setup_mmr_index_manager();
         let first_real = manifest_write(1, 10);
         let output = output_with_manifests([first_real.clone()]);
 
-        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output, 0).unwrap();
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
 
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
         assert_eq!(handle.get_num_leaves_blocking().unwrap(), 2);
@@ -617,14 +638,27 @@ mod tests {
     }
 
     #[test]
+    fn prefill_is_idempotent_across_repeated_calls() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+
+        // Multiple invocations must not append duplicate sentinels.
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 3).unwrap();
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 3).unwrap();
+
+        let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 4);
+    }
+
+    #[test]
     fn index_l1_block_ref_mmr_writes_is_idempotent() {
         let mmr_index_mgr = setup_mmr_index_manager();
         let first_real = manifest_write(1, 10);
         let second_real = manifest_write(2, 20);
         let output = output_with_manifests([first_real.clone(), second_real.clone()]);
 
-        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output, 0).unwrap();
-        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output, 0).unwrap();
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
 
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
         assert_eq!(handle.get_num_leaves_blocking().unwrap(), 3);
@@ -638,12 +672,12 @@ mod tests {
         let first_real = manifest_write(1, 10);
         let conflicting_first_real = manifest_write(1, 11);
 
-        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output_with_manifests([first_real]), 0)
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output_with_manifests([first_real]))
             .unwrap();
         let err = index_l1_block_ref_mmr_writes(
             &mmr_index_mgr,
             &output_with_manifests([conflicting_first_real]),
-            0,
         )
         .unwrap_err();
 
