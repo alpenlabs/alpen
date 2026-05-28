@@ -4,7 +4,6 @@
 # environment; dynamic values (VKs, genesis L1 view, genesis_ol_blkid) are
 # filled in by datatool.
 #
-# Replaces the old VK-only generation that built datatool from source.
 # Ref: STR-3635
 
 name: CI — Generate Params
@@ -35,42 +34,78 @@ on:
 
 env:
   AWS_REGION: us-east-1
+  # Datatool images live in the shared ECR account (496607027995), not in
+  # per-environment accounts. Hardcoded because the shared registry is
+  # constant and avoids cross-account pull complexity.
+  DATATOOL_REPO: 496607027995.dkr.ecr.us-east-1.amazonaws.com/strata/strata-datatool
 
 concurrency:
   group: ci-genparams-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  generate-params:
-    name: Generate params (${{ inputs.env }}, ${{ inputs.commit }})
+  # ---------------------------------------------------------------------------
+  # Pull the datatool image from the shared ECR registry.
+  # Uses the 'prod' environment because SHARED_ECR_ROLE_ARN lives there and
+  # grants access to the 496607027995 account where datatool images are pushed
+  # by ci-build. Per-environment accounts (e.g. testnet1_staging / 888577024788)
+  # do not host datatool images.
+  # ---------------------------------------------------------------------------
+  pull-datatool:
+    name: Pull datatool image
     runs-on: ubuntu-latest
-    environment: testnet1_staging
+    environment: prod
     permissions:
       contents: read
       id-token: write
+    steps:
+      - name: Configure AWS credentials (shared ECR)
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
+        with:
+          role-to-assume: ${{ secrets.SHARED_ECR_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to shared ECR
+        uses: aws-actions/amazon-ecr-login@19d944daaa35f0fa1d3f7f8af1d3f2e5de25c5b7 # v2
+        with:
+          mask-password: "true"
+
+      - name: Pull and save datatool image
+        run: |
+          docker pull "${DATATOOL_REPO}:${{ inputs.commit }}"
+          docker save "${DATATOOL_REPO}:${{ inputs.commit }}" -o /tmp/datatool.tar
+
+      - name: Upload datatool image
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: datatool-image
+          path: /tmp/datatool.tar
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Generate params using the deployment environment's BTC RPC secrets.
+  # ---------------------------------------------------------------------------
+  generate-params:
+    name: Generate params (${{ inputs.env }}, ${{ inputs.commit }})
+    needs: [pull-datatool]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
           persist-credentials: false
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
+      - name: Download datatool image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
         with:
-          role-to-assume: ${{ secrets.AWS_ECR_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
+          name: datatool-image
+          path: /tmp
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@19d944daaa35f0fa1d3f7f8af1d3f2e5de25c5b7 # v2
-        with:
-          mask-password: "true"
-
-      - name: Pull datatool image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          docker pull "${ECR_REGISTRY}/strata/strata-datatool:${{ inputs.commit }}"
+      - name: Load datatool image
+        run: docker load -i /tmp/datatool.tar
 
       - name: Generate params
         env:
