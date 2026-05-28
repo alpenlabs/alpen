@@ -44,6 +44,7 @@ jobs:
   generate-params:
     name: Generate params (${{ inputs.env }}, ${{ inputs.commit }})
     runs-on: ubuntu-latest
+    environment: ${{ inputs.env }}
     permissions:
       contents: read
       id-token: write
@@ -56,7 +57,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
         with:
-          role-to-assume: ${{ secrets.AWS_ECR_ROLE }}
+          role-to-assume: ${{ vars.SHARED_ECR_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
