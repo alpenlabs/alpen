@@ -25,3 +25,19 @@ pub struct BlockStatusResponse {
     /// L1 finalization status.
     pub status: BlockStatus,
 }
+
+/// Response for `alpen_getChunkProofCoverage`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChunkProofCoverageResponse {
+    /// First requested EE block number.
+    pub start_block: u64,
+
+    /// Last requested EE block number.
+    pub end_block: u64,
+
+    /// True when proof-ready chunks cover every block in the requested range.
+    pub covered: bool,
+
+    /// First requested block not yet covered by a proof-ready chunk.
+    pub first_uncovered_block: Option<u64>,
+}
