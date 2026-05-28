@@ -13,7 +13,6 @@ from pathlib import Path
 import flexitest
 
 from common.base_test import BaseTest
-from common.config.constants import ServiceType
 from common.datatool import run_datatool
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -82,35 +81,55 @@ def generate_raw_params(tmpdir):
     asm_path = Path(tmpdir) / "asm-params.json"
 
     dummy_seq_pk = "ab" * 32
-    run_datatool([
-        "genparams",
-        "--genesis-l1-view-file", str(GENESIS_L1_VIEW),
-        "--name", "ALPN",
-        "--seq-pk", dummy_seq_pk,
-        "--checkpoint-predicate", "bip340-schnorr-test",
-        "-o", str(rollup_path),
-    ])
+    run_datatool(
+        [
+            "genparams",
+            "--genesis-l1-view-file",
+            str(GENESIS_L1_VIEW),
+            "--name",
+            "ALPN",
+            "--seq-pk",
+            dummy_seq_pk,
+            "--checkpoint-predicate",
+            "bip340-schnorr-test",
+            "-o",
+            str(rollup_path),
+        ]
+    )
 
-    run_datatool([
-        "gen-ol-params",
-        "--genesis-l1-view-file", str(GENESIS_L1_VIEW),
-        "--alpen-predicate", "bip340-schnorr-test",
-        "-o", str(ol_path),
-    ])
+    run_datatool(
+        [
+            "gen-ol-params",
+            "--genesis-l1-view-file",
+            str(GENESIS_L1_VIEW),
+            "--alpen-predicate",
+            "bip340-schnorr-test",
+            "-o",
+            str(ol_path),
+        ]
+    )
 
     assert ol_path.exists(), f"ol-params not generated at {ol_path}"
 
     # gen-asm-params requires at least one operator key
     dummy_op_pk = "02" + "ab" * 32
-    run_datatool([
-        "gen-asm-params",
-        "--genesis-l1-view-file", str(GENESIS_L1_VIEW),
-        "--ol-params", str(ol_path),
-        "--checkpoint-predicate", "bip340-schnorr-test",
-        "--name", "ALPN",
-        "--op-pk", dummy_op_pk,
-        "-o", str(asm_path),
-    ])
+    run_datatool(
+        [
+            "gen-asm-params",
+            "--genesis-l1-view-file",
+            str(GENESIS_L1_VIEW),
+            "--ol-params",
+            str(ol_path),
+            "--checkpoint-predicate",
+            "bip340-schnorr-test",
+            "--name",
+            "ALPN",
+            "--op-pk",
+            dummy_op_pk,
+            "-o",
+            str(asm_path),
+        ]
+    )
 
     assert asm_path.exists(), f"asm-params not generated at {asm_path}"
 
@@ -155,8 +174,11 @@ class TestParamsTemplateDrift(BaseTest):
                     placeholder_keys = collect_placeholder_keys(tpl_data)
 
                     # For non-placeholder fields, compare exact key structure
-                    comparable_raw = {k for k in raw_keys
-                                      if not any(k.startswith(p + ".") or k == p for p in placeholder_keys)}
+                    comparable_raw = {
+                        k
+                        for k in raw_keys
+                        if not any(k.startswith(p + ".") or k == p for p in placeholder_keys)
+                    }
                     comparable_tpl = tpl_keys - placeholder_keys
 
                     missing_in_template = comparable_raw - comparable_tpl
@@ -165,20 +187,18 @@ class TestParamsTemplateDrift(BaseTest):
                     # For placeholder fields, just verify top-level key exists in raw
                     missing_placeholders = placeholder_keys - raw_keys
 
+                    tag = f"{env_name}/{param_name}.json"
                     if missing_in_template:
                         errors.append(
-                            f"{env_name}/{param_name}.json: datatool added fields not in template:\n"
-                            f"  {sorted(missing_in_template)}"
+                            f"{tag}: new fields in datatool:\n  {sorted(missing_in_template)}"
                         )
                     if extra_in_template:
                         errors.append(
-                            f"{env_name}/{param_name}.json: template has fields not in datatool output:\n"
-                            f"  {sorted(extra_in_template)}"
+                            f"{tag}: removed from datatool:\n  {sorted(extra_in_template)}"
                         )
                     if missing_placeholders:
                         errors.append(
-                            f"{env_name}/{param_name}.json: placeholder keys missing from datatool output:\n"
-                            f"  {sorted(missing_placeholders)}"
+                            f"{tag}: placeholder key gone:\n  {sorted(missing_placeholders)}"
                         )
 
             if errors:

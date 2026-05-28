@@ -39,7 +39,7 @@ CHAIN_CONFIG_ABS="$(cd "$(dirname "${CHAIN_CONFIG}")" && pwd)/$(basename "${CHAI
 mkdir -p "${OUTPUT_DIR}"
 WORK_DIR=$(mktemp -d)
 chmod 777 "${WORK_DIR}"
-trap "rm -rf ${WORK_DIR}" EXIT
+trap 'rm -rf "${WORK_DIR}"' EXIT
 
 echo "=== Reading keys from templates ==="
 python3 "${SCRIPT_DIR}/params-helper.py" extract-keys \
