@@ -72,6 +72,10 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
     ) -> BlockAssemblyResult<Option<Arc<Self::State>>>;
 
     /// Fetch ASM manifests from `start_height`, returning at most `max_count` in ascending order.
+    ///
+    /// Implementations must restrict results to manifests buried deeply enough on L1 that
+    /// a reorg cannot rewrite them; shallow manifests must be excluded so an L1 reorg
+    /// cannot cascade into an OL reorg.
     async fn fetch_asm_manifests_from(
         &self,
         start_height: L1Height,
@@ -198,9 +202,16 @@ where
             None => return Ok(Vec::new()),
         };
 
-        // Only include manifests buried below `l1_reorg_safe_depth`. Anything shallower could
-        // still reorg on L1 and would propagate the reorg into OL.
+        // Only include manifests buried at least `l1_reorg_safe_depth` below the ASM tip.
+        // Anything shallower could still reorg on L1 and would propagate the reorg into OL.
         let buried_tip = asm_tip_height.saturating_sub(self.l1_reorg_safe_depth);
+        debug!(
+            %asm_tip_height,
+            %buried_tip,
+            %start_height,
+            l1_reorg_safe_depth = self.l1_reorg_safe_depth,
+            "fetching asm manifests"
+        );
         if start_height > buried_tip {
             return Ok(Vec::new());
         }
