@@ -9,6 +9,11 @@ use strata_snark_acct_types::{LedgerRefs, l1_block_ref_leaf_hash};
 
 use super::error::DaVerificationError;
 
+/// Hashes one Bitcoin merkle-tree level as `SHA256(SHA256(left || right))`.
+///
+/// Bitcoin uses double-SHA-256 for wtxids and merkle-pair hashing; see
+/// BIP-141 for the wtxid / witness-root commitment this verifier targets:
+/// <https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#commitment-structure>.
 fn bitcoin_hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
     let mut pair = [0u8; 64];
     pair[..32].copy_from_slice(&left);

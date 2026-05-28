@@ -32,12 +32,16 @@ impl L1BlockRef {
             .try_into()
             .expect("snark-acct-types: FixedBytes<32> is always 32 bytes")
     }
+
+    /// Computes the canonical OL L1 block refs MMR leaf hash.
+    pub fn leaf_hash(&self) -> [u8; 32] {
+        <L1BlockRef as TreeHash>::tree_hash_root(self).into_inner()
+    }
 }
 
 /// Computes the canonical OL L1 block refs MMR leaf hash.
 pub fn l1_block_ref_leaf_hash(block_hash: &[u8; 32], wtxids_root: &[u8; 32]) -> [u8; 32] {
-    let l1_block_ref = L1BlockRef::new(*block_hash, *wtxids_root);
-    <L1BlockRef as TreeHash>::tree_hash_root(&l1_block_ref).into_inner()
+    L1BlockRef::new(*block_hash, *wtxids_root).leaf_hash()
 }
 
 impl UpdateStateData {
@@ -231,6 +235,9 @@ mod tests {
     fn l1_block_ref_leaf_hash_matches_pinned_root() {
         let block_hash = [1u8; 32];
         let wtxids_root = [2u8; 32];
+        // Captured from `l1_block_ref_leaf_hash(&[1u8; 32], &[2u8; 32])` on a
+        // known-good run; pinned here so any change to the `L1BlockRef` SSZ
+        // TreeHash layout (field order, types, container shape) trips this test.
         let expected = [
             248, 24, 175, 211, 122, 109, 195, 188, 146, 251, 68, 115, 16, 17, 39, 112, 6, 219, 78,
             250, 110, 144, 35, 205, 116, 104, 192, 35, 53, 210, 42, 77,

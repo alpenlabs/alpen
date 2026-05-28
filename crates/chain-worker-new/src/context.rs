@@ -18,14 +18,14 @@ use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
-use strata_snark_acct_types::{L1BlockRef, l1_block_ref_leaf_hash};
+use strata_snark_acct_types::L1BlockRef;
 use strata_status::StatusChannel;
 use strata_storage::{
     MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
     OLStateManager,
 };
 use tokio::{runtime::Handle, sync::watch};
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::{
     errors::{WorkerError, WorkerResult},
@@ -394,45 +394,14 @@ fn index_inbox_mmr_writes(
     for write in output.indexer_writes().inbox_messages() {
         let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(write.entry()).into();
         let entry_bytes = write.entry().as_ssz_bytes();
-        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(write.account_id()));
-        let leaf_count = handle.get_num_leaves_blocking()?;
-
-        if write.index() < leaf_count {
-            let Some(existing_hash) = handle.get_leaf_blocking(write.index())? else {
-                return Err(
-                    DbError::MmrLeafNotFoundForAccount(write.index(), write.account_id()).into(),
-                );
-            };
-
-            if existing_hash != expected_hash {
-                return Err(DbError::MmrLeafHashMismatch {
-                    idx: write.index(),
-                    expected: expected_hash,
-                    got: existing_hash,
-                }
-                .into());
-            }
-
-            continue;
-        }
-
-        if write.index() > leaf_count {
-            return Err(DbError::MmrIndexOutOfRange {
-                requested: write.index(),
-                cur: leaf_count,
-            }
-            .into());
-        }
-
-        let appended_idx = handle.append_leaf_with_preimage_blocking(expected_hash, entry_bytes)?;
-        if appended_idx != write.index() {
-            return Err(WorkerError::Unexpected(format!(
-                "snark inbox MMR append index mismatch for account {}: expected {}, got {}",
-                write.account_id(),
-                write.index(),
-                appended_idx
-            )));
-        }
+        let account_id = write.account_id();
+        let idx = write.index();
+        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
+        handle
+            .idempotent_append_leaf_with_preimage_blocking(idx, expected_hash, entry_bytes)
+            .inspect_err(|e| {
+                error!(%account_id, idx, %e, "snark inbox MMR write failed");
+            })?;
     }
 
     Ok(())
@@ -451,12 +420,8 @@ fn index_l1_block_ref_mmr_writes(
     genesis_l1_height: u64,
 ) -> WorkerResult<()> {
     let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-    let prefill_count = genesis_l1_height
-        .checked_add(1)
-        .ok_or_else(|| WorkerError::Unexpected("genesis L1 height overflow".to_owned()))?;
-
     let leaf_count = handle.get_num_leaves_blocking()?;
-    for expected_idx in leaf_count..prefill_count {
+    for expected_idx in leaf_count..=genesis_l1_height {
         let appended_idx = handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
         if appended_idx != expected_idx {
             return Err(WorkerError::Unexpected(format!(
@@ -469,45 +434,16 @@ fn index_l1_block_ref_mmr_writes(
         let expected_idx = write.height as u64;
         let block_hash = *write.manifest.blkid().as_ref();
         let wtxids_root = *write.manifest.wtxids_root().as_ref();
-        let expected_hash: Hash = l1_block_ref_leaf_hash(&block_hash, &wtxids_root).into();
-        let preimage = L1BlockRef::new(block_hash, wtxids_root).as_ssz_bytes();
 
-        let leaf_count = handle.get_num_leaves_blocking()?;
-        if expected_idx < leaf_count {
-            let Some(existing_hash) = handle.get_leaf_blocking(expected_idx)? else {
-                return Err(DbError::MmrNodeNotFound(strata_db_types::NodePos::new(
-                    0,
-                    expected_idx,
-                ))
-                .into());
-            };
+        let l1_block_ref = L1BlockRef::new(block_hash, wtxids_root);
+        let expected_hash: Hash = l1_block_ref.leaf_hash().into();
+        let preimage = l1_block_ref.as_ssz_bytes();
 
-            if existing_hash != expected_hash {
-                return Err(DbError::MmrLeafHashMismatch {
-                    idx: expected_idx,
-                    expected: expected_hash,
-                    got: existing_hash,
-                }
-                .into());
-            }
-
-            continue;
-        }
-
-        if expected_idx > leaf_count {
-            return Err(DbError::MmrIndexOutOfRange {
-                requested: expected_idx,
-                cur: leaf_count,
-            }
-            .into());
-        }
-
-        let appended_idx = handle.append_leaf_with_preimage_blocking(expected_hash, preimage)?;
-        if appended_idx != expected_idx {
-            return Err(WorkerError::Unexpected(format!(
-                "L1 block refs MMR append index mismatch: expected {expected_idx}, got {appended_idx}"
-            )));
-        }
+        handle
+            .idempotent_append_leaf_with_preimage_blocking(expected_idx, expected_hash, preimage)
+            .inspect_err(|e| {
+                error!(idx = expected_idx, %e, "L1 block refs MMR write failed");
+            })?;
     }
 
     Ok(())
@@ -597,8 +533,9 @@ mod tests {
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
         let block_hash = *write.manifest.blkid().as_ref();
         let wtxids_root = *write.manifest.wtxids_root().as_ref();
-        let expected_hash: Hash = l1_block_ref_leaf_hash(&block_hash, &wtxids_root).into();
-        let expected_preimage = L1BlockRef::new(block_hash, wtxids_root).as_ssz_bytes();
+        let l1_block_ref = L1BlockRef::new(block_hash, wtxids_root);
+        let expected_hash: Hash = l1_block_ref.leaf_hash().into();
+        let expected_preimage = l1_block_ref.as_ssz_bytes();
 
         assert_eq!(
             handle.get_leaf_blocking(index).unwrap(),

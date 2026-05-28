@@ -5,11 +5,12 @@
 
 use std::{fmt, iter};
 
-use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64, StrataHasher};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_ol_state_types::WriteBatch;
+use strata_snark_acct_types::l1_block_ref_leaf_hash;
 
 /// Helper trait for computing the state root after hypothetically applying a
 /// write batch, without requiring `Clone` on the state itself.
@@ -244,9 +245,6 @@ where
             .l1_block_refs_mmr
             .clone()
             .unwrap_or_else(|| self.base.l1_block_refs_mmr().clone());
-
-        use strata_acct_types::StrataHasher;
-        use strata_snark_acct_types::l1_block_ref_leaf_hash;
 
         let l1_block_ref_hash =
             l1_block_ref_leaf_hash(mf.blkid().as_ref(), mf.wtxids_root().as_ref());
