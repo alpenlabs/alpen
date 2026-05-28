@@ -4,6 +4,7 @@ use std::time::Instant;
 mod alpen_acct;
 mod alpen_chunk;
 mod checkpoint;
+mod evm_ee_stf;
 
 #[cfg(feature = "sp1")]
 use zkaleido::{ExecutionSummary, ProofReceiptWithMetadata};
@@ -17,6 +18,7 @@ pub enum GuestProgram {
     AlpenAcct,
     AlpenChunk,
     Checkpoint,
+    EvmEeStf,
 }
 
 impl FromStr for GuestProgram {
@@ -27,6 +29,7 @@ impl FromStr for GuestProgram {
             "alpen-acct" => Ok(GuestProgram::AlpenAcct),
             "alpen-chunk" => Ok(GuestProgram::AlpenChunk),
             "checkpoint" => Ok(GuestProgram::Checkpoint),
+            "evm-ee-stf" => Ok(GuestProgram::EvmEeStf),
             _ => Err(format!("unknown program: {s}")),
         }
     }
@@ -36,7 +39,9 @@ impl FromStr for GuestProgram {
 /// [`ExecutionSummary`] (cycles, gas, public values).
 #[cfg(feature = "sp1")]
 pub async fn run_sp1_execute_programs(programs: &[GuestProgram]) -> Vec<(String, ExecutionSummary)> {
-    use strata_zkvm_hosts::sp1::{alpen_acct_host, alpen_chunk_host, checkpoint_host};
+    use strata_zkvm_hosts::sp1::{
+        alpen_acct_host, alpen_chunk_host, checkpoint_host, evm_ee_stf_host,
+    };
     use zkaleido_sp1_host::SP1HostConfig;
     let mut reports = Vec::with_capacity(programs.len());
     for program in programs {
@@ -47,6 +52,7 @@ pub async fn run_sp1_execute_programs(programs: &[GuestProgram]) -> Vec<(String,
                 alpen_chunk::gen_perf_report(&**alpen_chunk_host(cfg).await)
             }
             GuestProgram::Checkpoint => checkpoint::gen_perf_report(&**checkpoint_host(cfg).await),
+            GuestProgram::EvmEeStf => evm_ee_stf::gen_perf_report(&**evm_ee_stf_host(cfg).await),
         };
         reports.push(report);
     }
@@ -55,7 +61,7 @@ pub async fn run_sp1_execute_programs(programs: &[GuestProgram]) -> Vec<(String,
 
 #[cfg(feature = "sp1")]
 pub async fn run_sp1_prove_programs(programs: &[GuestProgram]) -> Vec<(String, ProofSummary)> {
-    use strata_zkvm_hosts::sp1::checkpoint_host;
+    use strata_zkvm_hosts::sp1::{checkpoint_host, evm_ee_stf_host};
     use zkaleido_sp1_host::SP1HostConfig;
 
     let mut reports = Vec::with_capacity(programs.len());
@@ -67,6 +73,7 @@ pub async fn run_sp1_prove_programs(programs: &[GuestProgram]) -> Vec<(String, P
                 unreachable!("prove mode is validated to checkpoint-only before execution")
             }
             GuestProgram::Checkpoint => checkpoint::gen_proof(&**checkpoint_host(cfg).await),
+            GuestProgram::EvmEeStf => evm_ee_stf::gen_proof(&**evm_ee_stf_host(cfg).await),
         };
         reports.push((
             name,

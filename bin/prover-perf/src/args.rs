@@ -72,12 +72,9 @@ pub fn validate_mode_programs(mode: PerfMode, programs: &[GuestProgram]) -> Resu
     if mode == PerfMode::Prove
         && programs
             .iter()
-            .any(|program| !matches!(program, GuestProgram::Checkpoint))
+            .any(|program| !matches!(program, GuestProgram::Checkpoint | GuestProgram::EvmEeStf))
     {
-        return Err(
-            "prove mode currently supports only `checkpoint`; use `--programs checkpoint`"
-                .to_string(),
-        );
+        return Err("prove mode currently supports only `checkpoint` and `evm-ee-stf`".to_string());
     }
 
     Ok(())

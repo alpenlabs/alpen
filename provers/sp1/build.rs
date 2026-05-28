@@ -32,6 +32,7 @@ struct VkHashes {
 const CHECKPOINT: &str = "guest-checkpoint";
 const ALPEN_CHUNK: &str = "guest-alpen-chunk";
 const ALPEN_ACCT: &str = "guest-alpen-acct";
+const EVM_EE_STF: &str = "guest-evm-ee-stf";
 
 /// Returns a map of program dependencies.
 ///
@@ -45,7 +46,7 @@ fn get_program_dependencies() -> HashMap<&'static str, Vec<&'static str>> {
 
 fn main() {
     // List of guest programs to build
-    let guest_programs = [CHECKPOINT, ALPEN_CHUNK, ALPEN_ACCT];
+    let guest_programs = [CHECKPOINT, ALPEN_CHUNK, ALPEN_ACCT, EVM_EE_STF];
 
     // HashSet to keep track of programs that have been built
     let mut built_programs = HashSet::new();
