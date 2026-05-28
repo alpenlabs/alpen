@@ -70,7 +70,7 @@ pub async fn run_sp1_prove_programs(programs: &[GuestProgram]) -> Vec<(String, P
         let started_at = Instant::now();
         let (name, receipt): (String, ProofReceiptWithMetadata) = match program {
             GuestProgram::AlpenAcct | GuestProgram::AlpenChunk => {
-                unreachable!("prove mode is validated to checkpoint-only before execution")
+                unreachable!("prove mode rejects unsupported programs before execution")
             }
             GuestProgram::Checkpoint => checkpoint::gen_proof(&**checkpoint_host(cfg).await),
             GuestProgram::EvmEeStf => evm_ee_stf::gen_proof(&**evm_ee_stf_host(cfg).await),
