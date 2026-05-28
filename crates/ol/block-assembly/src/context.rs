@@ -20,6 +20,7 @@ use strata_ol_state_support_types::IComputeStateRootWithWrites;
 use strata_ol_state_types::IStateBatchApplicable;
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
+use tracing::debug;
 
 use crate::{BlockAssemblyError, BlockAssemblyResult, MempoolProvider};
 
@@ -121,9 +122,8 @@ pub struct BlockAssemblyContext<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     state_provider: S,
-    /// L1 reorg safe depth: only manifests at or below `asm_tip - l1_reorg_safe_depth` are
-    /// considered buried enough to include in OL blocks. Prevents L1 reorgs from cascading
-    /// into OL reorgs.
+    /// Minimum L1 confirmations a manifest needs before it can be included in an OL block.
+    /// Prevents L1 reorgs from cascading into OL reorgs.
     l1_reorg_safe_depth: u32,
 }
 
@@ -202,9 +202,10 @@ where
             None => return Ok(Vec::new()),
         };
 
-        // Only include manifests buried at least `l1_reorg_safe_depth` below the ASM tip.
-        // Anything shallower could still reorg on L1 and would propagate the reorg into OL.
-        let buried_tip = asm_tip_height.saturating_sub(self.l1_reorg_safe_depth);
+        // A manifest at height `h` is buried iff it has at least `safe_depth` confirmations
+        // on L1: `asm_tip - h + 1 >= safe_depth`, i.e. `h <= asm_tip - (safe_depth - 1)`.
+        let safe_depth = self.l1_reorg_safe_depth.max(1);
+        let buried_tip = asm_tip_height.saturating_sub(safe_depth - 1);
         debug!(
             %asm_tip_height,
             %buried_tip,

@@ -2,7 +2,7 @@
 //! [`BlockAssemblyAnchorContext::fetch_asm_manifests_from`].
 //!
 //! The filter prevents L1 reorgs from cascading into OL by only sourcing manifests
-//! at or below `asm_tip - l1_reorg_safe_depth`.
+//! with at least `l1_reorg_safe_depth` L1 confirmations.
 
 use std::sync::Arc;
 
@@ -33,7 +33,7 @@ async fn build_ctx(asm_tip: u32, l1_reorg_safe_depth: u32) -> BlockAssemblyConte
 
 #[tokio::test(flavor = "multi_thread")]
 async fn returns_only_buried_manifests() {
-    // ASM tip = 10, depth = 3 -> buried tip = 7. Caller asks from height 1.
+    // ASM tip = 10, depth = 3 -> buried tip = 8 (height 8 has 3 confirmations).
     let ctx = build_ctx(10, 3).await;
     let manifests = ctx
         .fetch_asm_manifests_from(1, MAX_COUNT)
@@ -41,7 +41,7 @@ async fn returns_only_buried_manifests() {
         .expect("fetch should succeed");
 
     let heights: Vec<u32> = manifests.iter().map(|m| m.height()).collect();
-    assert_eq!(heights, (1..=7).collect::<Vec<_>>());
+    assert_eq!(heights, (1..=8).collect::<Vec<_>>());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -57,7 +57,7 @@ async fn empty_when_tip_not_yet_buried() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn max_count_is_binding_cap() {
-    // ASM tip = 100, depth = 3 -> buried tip = 97. max_count = 4 caps before buried tip.
+    // ASM tip = 100, depth = 3 -> buried tip = 98. max_count = 4 caps before buried tip.
     let ctx = build_ctx(100, 3).await;
     let manifests = ctx
         .fetch_asm_manifests_from(1, 4)
@@ -70,7 +70,7 @@ async fn max_count_is_binding_cap() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn empty_when_start_past_buried_tip() {
-    // ASM tip = 5, depth = 3 -> buried tip = 2. Asking from 4 returns empty.
+    // ASM tip = 5, depth = 3 -> buried tip = 3. Asking from 4 returns empty.
     let ctx = build_ctx(5, 3).await;
     let manifests = ctx
         .fetch_asm_manifests_from(4, MAX_COUNT)
