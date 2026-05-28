@@ -114,9 +114,9 @@ jobs:
           COMMIT: ${{ inputs.commit }}
           GENESIS_L1_HEIGHT: ${{ inputs.genesis_l1_height }}
           CHAIN_CONFIG: ${{ inputs.chain_config }}
-          BTC_RPC_URL: ${{ secrets.PARAMS_BTC_RPC_URL }}
-          BTC_RPC_USER: ${{ secrets.PARAMS_BTC_RPC_USER }}
-          BTC_RPC_PASSWORD: ${{ secrets.PARAMS_BTC_RPC_PASSWORD }}
+          BTC_RPC_URL: ${{ secrets.PARAM_BTC_RPC_URL }}
+          BTC_RPC_USER: ${{ secrets.PARAM_BTC_RPC_USER }}
+          BTC_RPC_PASSWORD: ${{ secrets.PARAM_BTC_RPC_PASSWORD }}
         run: .github/params/generate-params.sh
 
       - name: rollup-params.json
