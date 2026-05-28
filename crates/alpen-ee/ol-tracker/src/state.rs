@@ -25,6 +25,11 @@ impl OLTrackerState {
 }
 
 impl OLTrackerState {
+    /// Returns the confirmed EE account state.
+    pub(crate) fn best_account_state(&self) -> &EeAccountStateAtEpoch {
+        &self.confirmed
+    }
+
     /// Returns the best EE account state.
     pub fn best_ee_state(&self) -> &EeAccountState {
         self.confirmed.ee_state()
@@ -33,6 +38,11 @@ impl OLTrackerState {
     /// Returns the best OL block commitment.
     pub fn best_ol_epoch(&self) -> &EpochCommitment {
         self.confirmed.epoch_commitment()
+    }
+
+    /// Returns the finalized OL epoch commitment.
+    pub(crate) fn finalized_ol_epoch(&self) -> &EpochCommitment {
+        self.finalized.epoch_commitment()
     }
 
     /// Returns the consensus heads derived from confirmed and finalized states.

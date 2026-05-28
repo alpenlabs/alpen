@@ -16,7 +16,7 @@ use crate::{
     error::OLTrackerError,
     reorg::handle_reorg,
     state::OLTrackerState,
-    task::{handle_extend_ee_state, track_ol_state, TrackOLAction},
+    task::{handle_extend_ee_state, handle_refresh_finalized, track_ol_state, TrackOLAction},
 };
 
 /// OL tracker service marker type.
@@ -120,6 +120,19 @@ where
                 debug!(?epoch_operations, ?chain_status, "received track action");
                 if let Err(error) = handle_extend_ee_state(
                     &epoch_operations,
+                    &chain_status,
+                    &mut state.tracker_state,
+                    state.storage.as_ref(),
+                )
+                .await
+                {
+                    return handle_tracker_error(error);
+                }
+                state.notify_watchers();
+            }
+            Ok(TrackOLAction::RefreshFinalized(chain_status)) => {
+                debug!(?chain_status, "received finalized refresh action");
+                if let Err(error) = handle_refresh_finalized(
                     &chain_status,
                     &mut state.tracker_state,
                     state.storage.as_ref(),
