@@ -7,7 +7,9 @@ use crate::args::{EvalArgs, PerfMode};
 
 #[derive(Debug, Clone)]
 pub struct ProofSummary {
-    pub duration: Duration,
+    pub prepare_duration: Duration,
+    pub prove_duration: Duration,
+    pub total_duration: Duration,
     pub proof_bytes: usize,
     pub proof_type: String,
 }
@@ -50,16 +52,31 @@ pub fn format_execute_results(results: &[(String, ExecutionSummary)], host_name:
 pub fn format_prove_results(results: &[(String, ProofSummary)], host_name: String) -> String {
     let mut table_text = String::new();
     table_text.push('\n');
-    table_text.push_str("| program                | proof type | proof bytes | duration ms |\n");
-    table_text.push_str("|------------------------|------------|-------------|-------------|");
+    table_text.push_str(
+        "| program                | proof type | proof bytes | prepare ms | prove ms | total ms |\n",
+    );
+    table_text.push_str(
+        "|------------------------|------------|-------------|------------|----------|----------|",
+    );
 
     for (name, summary) in results.iter() {
         table_text.push_str(&format!(
-            "\n| {:<22} | {:<10} | {:>11} | {:>11} |",
+            "\n| {:<22} | {:<10} | {:>11} | {:>10} | {:>8} | {:>8} |",
             name,
             summary.proof_type,
             summary.proof_bytes.to_formatted_string(&Locale::en),
-            summary.duration.as_millis().to_formatted_string(&Locale::en)
+            summary
+                .prepare_duration
+                .as_millis()
+                .to_formatted_string(&Locale::en),
+            summary
+                .prove_duration
+                .as_millis()
+                .to_formatted_string(&Locale::en),
+            summary
+                .total_duration
+                .as_millis()
+                .to_formatted_string(&Locale::en)
         ));
     }
     table_text.push('\n');
