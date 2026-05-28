@@ -193,9 +193,9 @@ if [ "${MODE}" = "sequencer" ]; then
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genxpriv "${OPERATOR_KEY}"
         echo "generated ${OPERATOR_KEY}"
     fi
-    OPERATOR_XPRIV=$(cat "${OPERATOR_KEY}")
+    OPERATOR_PK=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genoppubkey -f "${OPERATOR_KEY}")
 
-    SEQ_XPUB=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genseqpubkey -f "${SEQ_ROOT_KEY}")
+    SEQ_PK=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genseqpubkey -f "${SEQ_ROOT_KEY}")
 
     GENESIS_L1_VIEW="${OUTPUT_DIR}/genesis-l1-view.json"
     if [ ! -f "${GENESIS_L1_VIEW}" ]; then
@@ -242,8 +242,8 @@ GEOF
             genparams \
             -o "${ROLLUP_PARAMS}" \
             -n ALPN \
-            -s "${SEQ_XPUB}" \
-            -b "${OPERATOR_XPRIV}" \
+            -s "${SEQ_PK}" \
+            -b "${OPERATOR_PK}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --proof-timeout 30 \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
@@ -270,8 +270,8 @@ GEOF
             gen-asm-params \
             -o "${ASM_PARAMS}" \
             -n ALPN \
-            -s "${SEQ_XPUB}" \
-            -b "${OPERATOR_XPRIV}" \
+            -s "${SEQ_PK}" \
+            -b "${OPERATOR_PK}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
             --ol-params "${OL_PARAMS}" \

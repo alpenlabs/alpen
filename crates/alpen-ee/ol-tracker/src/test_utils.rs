@@ -1,7 +1,6 @@
 use alpen_ee_common::{
     EeAccountStateAtEpoch, MockOLClient, MockStorage, OLBlockOrEpoch, OLClientError, OLEpochSummary,
 };
-use strata_acct_types::BitcoinAmount;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
 
@@ -20,13 +19,7 @@ pub(crate) fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
 }
 
 pub(crate) fn make_ee_state(last_exec_blkid: [u8; 32]) -> EeAccountState {
-    EeAccountState::new(
-        last_exec_blkid.into(),
-        [0u8; 32].into(),
-        BitcoinAmount::zero(),
-        vec![],
-        vec![],
-    )
+    EeAccountState::new(last_exec_blkid.into(), [0u8; 32].into(), vec![], vec![])
 }
 
 pub(crate) fn make_state_at_epoch(

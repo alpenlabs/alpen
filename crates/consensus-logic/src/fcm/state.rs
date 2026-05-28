@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, sync::Arc, time};
 
 use anyhow::anyhow;
+use metrics::{counter, gauge};
 use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
@@ -60,6 +61,7 @@ impl<C: FcmContext> FcmServiceState<C> {
         self.inner_state
             .epochs_pending_finalization
             .push_back(epoch);
+        self.record_pending_epochs();
 
         true
     }
@@ -83,7 +85,7 @@ impl<C: FcmContext> FcmServiceState<C> {
     ) -> anyhow::Result<()> {
         self.inner_state.cur_best_block = block;
         self.inner_state.cur_olstate = state;
-        metrics::gauge!("strata_ol_tip_slot").set(block.slot() as f64);
+        gauge!("strata_ol_tip_slot").set(block.slot() as f64);
         self.ctx().update_safe_tip(block).await
     }
 
@@ -127,6 +129,10 @@ impl<C: FcmContext> FcmServiceState<C> {
         // Clear out old pending entries.
         self.clear_pending_epochs(epoch)?;
 
+        counter!("strata_fcm_epochs_finalized_total").increment(1);
+        gauge!("strata_fcm_finalized_epoch").set(epoch.epoch() as f64);
+        gauge!("strata_fcm_finalized_slot").set(epoch.last_slot() as f64);
+
         Ok(())
     }
 
@@ -140,7 +146,13 @@ impl<C: FcmContext> FcmServiceState<C> {
                 .pop_front()
                 .ok_or(anyhow!("pop on empty epoch_pending dequeue"))?;
         }
+        self.record_pending_epochs();
         Ok(())
+    }
+
+    fn record_pending_epochs(&self) {
+        gauge!("strata_fcm_pending_epochs")
+            .set(self.inner_state.epochs_pending_finalization.len() as f64);
     }
 
     pub(crate) async fn get_block_slot(&self, blkid: OLBlockId) -> anyhow::Result<u64> {
@@ -256,6 +268,10 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
         .ok_or(Error::MissingOLState(tip_blkid))?;
 
     let fcm_inner = FcmInnerState::new(chain_tracker, cur_tip_block, ol_state);
+    gauge!("strata_ol_tip_slot").set(cur_tip_block.slot() as f64);
+    gauge!("strata_fcm_finalized_epoch").set(finalized_epoch.epoch() as f64);
+    gauge!("strata_fcm_finalized_slot").set(finalized_epoch.last_slot() as f64);
+    gauge!("strata_fcm_pending_epochs").set(0.0);
 
     // Actually assemble the forkchoice manager state.
     Ok(FcmServiceState::new(

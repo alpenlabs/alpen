@@ -19,9 +19,11 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockEntry,
+    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
+    RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
-    RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
+    RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary, RpcOLChainStatus, RpcOLTransaction,
+    RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -194,6 +196,47 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .ok_or_else(|| {
                 not_found_error(format!("No epoch commitment found for epoch {}", epoch - 1))
             })
+    }
+
+    /// Resolves an [`OLBlockOrTag`] to a concrete [`OLBlockCommitment`].
+    ///
+    /// `Latest`, `Confirmed`, and `Finalized` come from the OL sync status.
+    /// `OLBlockId` requires fetching the block to read its slot. `Slot` looks
+    /// up the canonical block at that slot.
+    async fn resolve_block_or_tag(
+        &self,
+        block_or_tag: OLBlockOrTag,
+    ) -> RpcResult<OLBlockCommitment> {
+        Ok(match block_or_tag {
+            OLBlockOrTag::Latest => {
+                self.provider
+                    .get_ol_sync_status()
+                    .ok_or_else(|| internal_error("OL sync status not available"))?
+                    .tip
+            }
+            OLBlockOrTag::Confirmed => self
+                .provider
+                .get_ol_sync_status()
+                .ok_or_else(|| internal_error("OL sync status not available"))?
+                .confirmed_epoch
+                .to_block_commitment(),
+            OLBlockOrTag::Finalized => self
+                .provider
+                .get_ol_sync_status()
+                .ok_or_else(|| internal_error("OL sync status not available"))?
+                .finalized_epoch
+                .to_block_commitment(),
+            OLBlockOrTag::OLBlockId(block_id) => {
+                let block = self.get_block(block_id).await?;
+                OLBlockCommitment::new(block.header().slot(), block_id)
+            }
+            OLBlockOrTag::Slot(slot) => self
+                .provider
+                .get_canonical_block_at(slot)
+                .await
+                .map_err(db_error)?
+                .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?,
+        })
     }
 
     /// Walks the canonical chain backwards from `end_slot` to `start_slot`,
@@ -859,49 +902,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         account_id: AccountId,
         block_or_tag: OLBlockOrTag,
     ) -> RpcResult<Option<RpcSnarkAccountState>> {
-        // Resolve block_or_tag to a block commitment
-        let block_commitment = match block_or_tag {
-            OLBlockOrTag::Latest => {
-                let chain_sync_status = self
-                    .provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?;
-                chain_sync_status.tip
-            }
-            OLBlockOrTag::Confirmed => {
-                let chain_sync_status = self
-                    .provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?;
-                // TODO: STR-2420 Address this incorrect use of prev_epoch as confirmed epoch
-                chain_sync_status.prev_epoch.to_block_commitment()
-            }
-            OLBlockOrTag::Finalized => {
-                let chain_sync_status = self
-                    .provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?;
-                chain_sync_status.finalized_epoch.to_block_commitment()
-            }
-            OLBlockOrTag::OLBlockId(block_id) => {
-                let block = self
-                    .provider
-                    .get_block_data(block_id)
-                    .await
-                    .map_err(|e| {
-                        error!(?e, %block_id, "Failed to get block data");
-                        db_error(e)
-                    })?
-                    .ok_or_else(|| not_found_error(format!("Block {block_id} not found")))?;
-                OLBlockCommitment::new(block.header().slot(), block_id)
-            }
-            OLBlockOrTag::Slot(slot) => self
-                .provider
-                .get_canonical_block_at(slot)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?,
-        };
+        let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
 
         // Get OL state at the resolved block
         let ol_state = self
@@ -941,7 +942,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
     }
 }
 
-const MAX_RAW_BLOCKS_RANGE: usize = 5000; // FIXME: make this configurable
+const MAX_RAW_BLOCKS_RANGE: usize = 5000;
 
 #[async_trait]
 impl<P: OLRpcProvider> OLSubmitRpcServer for OLRpcServer<P> {
@@ -1067,5 +1068,106 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         entries.reverse();
 
         Ok(entries)
+    }
+
+    async fn get_block_by_slot(&self, slot: u64) -> RpcResult<Option<RpcOLBlockDetail>> {
+        let Some(blkid) = self.get_canonical_block_at_height(slot).await? else {
+            return Ok(None);
+        };
+        let block = self.get_block(blkid).await?;
+        Ok(Some(RpcOLBlockDetail::from(&block)))
+    }
+
+    async fn get_recent_blocks(&self, count: u64) -> RpcResult<Vec<RpcOLBlockSummary>> {
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        if count as usize > self.max_headers_range {
+            return Err(invalid_params_error(format!(
+                "count {} exceeds max_headers_range {}",
+                count, self.max_headers_range
+            )));
+        }
+
+        // Walk parents from the sync-status tip directly so we read a consistent
+        // chain anchored to the tip we observed (rather than re-resolving the
+        // canonical block at the tip slot, which costs an extra DB hit and could
+        // disagree with the snapshot if a reorg races us).
+        let mut cur_blkid = *self
+            .provider
+            .get_ol_sync_status()
+            .ok_or_else(|| internal_error("OL sync status not available"))?
+            .tip
+            .blkid();
+
+        let mut summaries = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            let block = self.get_block(cur_blkid).await?;
+            let header = block.header();
+            summaries.push(RpcOLBlockSummary::from(&block));
+            if header.slot() == 0 {
+                break;
+            }
+            cur_blkid = *header.parent_blkid();
+        }
+        summaries.reverse();
+        Ok(summaries)
+    }
+
+    async fn get_block_transactions(&self, slot: u64) -> RpcResult<Vec<RpcOLTxDetail>> {
+        let blkid = self
+            .get_canonical_block_at_height(slot)
+            .await?
+            .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?;
+        let block = self.get_block(blkid).await?;
+        let txs = block
+            .body()
+            .tx_segment()
+            .map(|seg| seg.txs().iter().map(RpcOLTxDetail::from).collect())
+            .unwrap_or_default();
+        Ok(txs)
+    }
+
+    async fn get_block_account_changes(&self, slot: u64) -> RpcResult<RpcBlockAccountChanges> {
+        let block_commitment = self
+            .provider
+            .get_canonical_block_at(slot)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?;
+        let write_batch = self
+            .provider
+            .get_ol_write_batch(block_commitment)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                not_found_error(format!(
+                    "No OL write batch found for block {block_commitment}"
+                ))
+            })?;
+        let created_accounts: HashSet<AccountId> = write_batch
+            .ledger()
+            .new_accounts()
+            .iter()
+            .copied()
+            .collect();
+        let changes = write_batch
+            .ledger()
+            .iter_accounts()
+            .map(|(id, state)| {
+                let change_type = if created_accounts.contains(id) {
+                    RpcAccountChangeType::Created
+                } else {
+                    RpcAccountChangeType::Updated
+                };
+                RpcAccountChange::new(*id, change_type, RpcAccountState::from(state))
+            })
+            .collect();
+
+        Ok(RpcBlockAccountChanges::new(
+            slot,
+            block_commitment.blkid,
+            changes,
+        ))
     }
 }

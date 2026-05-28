@@ -305,6 +305,21 @@ pub enum OLMempoolRejectReason {
 }
 
 impl OLMempoolRejectReason {
+    /// Returns the stable label value for metrics.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MempoolFull => "mempool_full",
+            Self::AccountDoesNotExist => "account_does_not_exist",
+            Self::AccountTypeMismatch => "account_type_mismatch",
+            Self::TransactionTooLarge => "transaction_too_large",
+            Self::UsedSequenceNumber => "used_sequence_number",
+            Self::SequenceNumberGap => "sequence_number_gap",
+            Self::TransactionExpired => "transaction_expired",
+            Self::TransactionNotMature => "transaction_not_mature",
+            Self::Duplicate => "duplicate",
+        }
+    }
+
     /// Try to extract a rejection reason from an [`OLMempoolError`].
     ///
     /// Returns `Some(reason)` if the error represents a transaction rejection

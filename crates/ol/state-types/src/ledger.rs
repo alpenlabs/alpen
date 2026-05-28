@@ -96,6 +96,16 @@ impl TsnlAccountEntry {
     fn new(id: AccountId, state: OLAccountState) -> Self {
         Self { id, state }
     }
+
+    /// Returns the account ID.
+    pub fn id(&self) -> AccountId {
+        self.id
+    }
+
+    /// Returns the account state.
+    pub fn state(&self) -> &OLAccountState {
+        &self.state
+    }
 }
 
 #[cfg(test)]

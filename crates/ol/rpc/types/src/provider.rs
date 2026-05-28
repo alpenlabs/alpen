@@ -17,7 +17,7 @@ use strata_db_types::{
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 use strata_ol_mempool::OLMempoolResult;
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment};
 use strata_status::OLSyncStatus;
 
@@ -35,6 +35,12 @@ pub trait OLRpcProvider: Send + Sync + 'static {
         &self,
         commitment: OLBlockCommitment,
     ) -> DbResult<Option<Arc<OLState>>>;
+
+    /// Get the OL state writes produced by a block.
+    async fn get_ol_write_batch(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> DbResult<Option<WriteBatch<OLAccountState>>>;
 
     /// Get the canonical epoch commitment for the given epoch.
     async fn get_canonical_epoch_commitment_at(

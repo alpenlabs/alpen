@@ -17,28 +17,28 @@ flowchart LR
         L1Block[L1Block]
         AsmOut[AnchorState + AsmManifest]
     end
-    
+
     subgraph OL[OL STF]
         OLState[OLState]
         OLBlock[OLBlock]
         OLOut[OLState + OLLogs]
     end
-    
+
     subgraph EE[EE STF]
         EEState[EEState]
         ExecBlock[ExecBlock]
         EEOut[EEState + EEUpdate]
     end
-    
+
     L1Block --> AnchorState
     AnchorState --> AsmOut
-    
+
     OLBlock --> OLState
     OLState --> OLOut
-    
+
     ExecBlock --> EEState
     EEState --> EEOut
-    
+
     AsmOut -.->|AsmManifest| OLBlock
     EEOut -.->|EEUpdate| OLBlock
 ```
@@ -58,7 +58,7 @@ The OL block contains the `AsmManifest` (from ASM) and `EEUpdate` (from EE), orc
 Bitcoin serves as the data availability and settlement layer. Protocol transactions are tagged with SPS-50 headers for recognition by the ASM.
 
 - **Bitcoin Blocks**: Source of truth for L1 state and, hence, for everything actually.
-- **SPS-50 Tagged Transactions**: All protocol transactions use standardized headers (magic, subprotocol ID, tx_type, aux data)
+- **SPS-50 Tagged Transactions**: Protocol transactions generally use standardized headers (magic, subprotocol ID, tx_type, aux data). Some EE DA transactions use the SPS-51 chunked-envelope path instead, where a compact commit `OP_RETURN` plus taproot reveal scripts carries the payload to reduce fee overhead.
 
 #### ASM Layer (Anchor State Machine)
 
@@ -69,6 +69,8 @@ ASM is the core of the Strata protocol, functioning as a "virtual smart contract
 - **Subprotocols**: Modular components (Bridge V1, Checkpoint, Admin, Debug) with defined IDs
 - **Moho Framework**: Upgradeable proof mechanism wrapping ASM transitions
 - **Export State**: Accumulator for bridge proofs and operator claims
+
+The ASM implementation is consumed through the `strata-asm-*` workspace dependencies pinned in the root `Cargo.toml`.
 
 **Subprotocol IDs:**
 
@@ -99,46 +101,30 @@ The EE provides EVM execution, decoupled from OL. Currently implemented via Alpe
 - **OL Tracker**: Tracks finalized OL state from EE perspective
 - **Package Chain**: Off-chain interface between OL and EE
 
-## Binary Crates (bin/)
+## Workspace Crates
 
-| Binary | Description |
-|--------|-------------|
-| `strata` | OL (Strata) client |
-| `alpen-client` | EE client with OL tracking and payload building (embeds Reth) |
-| `prover-client` | Validity proof generation (`checkpoint`, `cl-stf`, `evm-ee` proofs) |
-| `strata-sequencer-client` | Lightweight signing client for sequencer duties |
-| `alpen-cli` | End-user wallet CLI for deposits, withdrawals, L2 transactions |
-| `strata-dbtool` | Database inspection and debugging utility |
-| `strata-test-cli` | Bridge and transaction testing utilities |
-| `datatool` | Development utility for test data and key generation |
-| `prover-perf` | Performance benchmarking for proof systems |
+Crate tables list repository paths. Package names usually carry a `strata-*` or `alpen-*` prefix in `Cargo.toml`.
 
-## Library Crates (crates/)
+### Binary Crates (`bin/`)
 
-### ASM Domain (`crates/asm/`, `crates/asm-types/`)
+| Path | Binary target | Description |
+|------|---------------|-------------|
+| `bin/strata` | `strata` | OL (Strata) client, sequencer, RPC, and prover entrypoint |
+| `bin/strata-signer` | `strata-signer` | Detached signer for OL sequencer duties |
+| `bin/alpen-client` | `alpen-client` | EE client with OL tracking and payload building, embedding Alpen Reth |
+| `bin/alpen-cli` | `alpen` | End-user wallet CLI for deposits, withdrawals, L2 transactions, and bridge tooling |
+| `bin/strata-dbtool` | `strata-dbtool` | Database inspection and debugging utility |
+| `bin/strata-test-cli` | `strata-test-cli` | Bridge, ASM, and transaction testing utility |
+| `bin/datatool` | `strata-datatool` | Development utility for test data and key generation |
+| `bin/prover-perf` | `strata-provers-perf` | Performance benchmarking for proof systems |
 
-Core Anchor State Machine implementation.
+The workspace default members include the main runtime and testing binaries, but not every workspace crate. Check root `Cargo.toml` before assuming a crate is built by default.
 
-| Crate | Description |
-|-------|-------------|
-| `asm/common` | Core ASM types, state, subprotocol traits, aux data handling |
-| `asm/stf` | ASM state transition function and processing stages |
-| `asm/subprotocols/bridge-v1` | Bridge subprotocol: deposits, withdrawals, operators |
-| `asm/subprotocols/checkpoint` | Checkpoint verification subprotocol |
-| `asm/subprotocols/admin` | Administrative operations and upgrades |
-| `asm/subprotocols/debug-v1` | Debug subprotocol for testing |
-| `asm/txs/bridge-v1` | Bridge transaction parsing (deposit, withdrawal, slash, unstake) |
-| `asm/txs/checkpoint` | Checkpoint transaction parsing |
-| `asm/txs/admin` | Admin transaction parsing |
-| `asm/logs` | ASM log types (deposit, checkpoint, export, forced inclusion) |
-| `asm/worker` | ASM worker handle pattern implementation |
-| `asm/manifest-types` | L1 block manifest structures (SSZ) |
-| `asm/moho-program` | Moho proof program interface |
-| `asm/msgs/bridge` | Bridge inter-subprotocol messages |
-| `asm/msgs/checkpoint` | Checkpoint inter-subprotocol messages |
-| `asm/spec` | Production ASM specification |
-| `asm/spec-debug` | Debug ASM specification |
-| `asm-types` | Shared ASM type definitions used outside the ASM STF |
+## Library Crates
+
+### ASM Domain
+
+Core ASM code is imported from the `alpenlabs/asm` git dependency family (`strata-asm-*`) pinned in root `Cargo.toml`. Local crates consume ASM manifests, logs, parameters, subprotocol transaction types, and the ASM worker.
 
 ### OL Domain (`crates/ol/`, `crates/ol-chain-types/`, `crates/ol-chainstate-types/`)
 
@@ -154,7 +140,18 @@ Orchestration Layer implementation.
 | `ol/block-assembly` | OL block construction |
 | `ol/mempool` | Transaction mempool |
 | `ol/state-support-types` | State access layers (batch diff, indexer, write tracking) |
+| `ol/state-provider` | OL state provider traits and implementations |
+| `ol/genesis` | OL genesis state construction |
+| `ol/params` | OL parameter types |
+| `ol/checkpoint` | OL checkpoint builder service |
+| `ol/sequencer` | OL sequencing helpers and state |
+| `ol/rpc/api` | OL JSON-RPC API traits and client/server glue |
+| `ol/rpc/types` | OL RPC request and response types |
+| `ol-chain-types` | Legacy OL chain types still used by storage and compatibility paths |
 | `ol-chainstate-types` | OL chainstate type definitions |
+| `bridge-types` | Bridge operation and message types shared with OL/EE |
+| `ledger-types` | Ledger entry and account ledger types |
+| `checkpoint-types` | Checkpoint and batch types |
 
 ### EE Domain (`crates/alpen-ee/`, `crates/evm-ee/`, `crates/evmexec/`, `crates/eectl/`, `crates/ee-*`, `crates/simple-ee/`)
 
@@ -169,14 +166,19 @@ Execution Environment implementation.
 | `alpen-ee/database` | EE-specific storage (SledDB) |
 | `alpen-ee/common` | Shared EE types and traits |
 | `alpen-ee/config` | EE configuration |
+| `alpen-ee/da` | EE data availability payload and inclusion helpers |
 | `alpen-ee/genesis` | EE genesis state |
 | `alpen-ee/block-assembly` | EE block and package assembly |
+| `alpen-ee/rpc/api` | Alpen EE RPC API traits |
+| `alpen-ee/rpc/server` | Alpen EE RPC server implementation |
+| `alpen-ee/rpc/types` | Alpen EE RPC wire types |
 | `evm-ee` | EVM execution environment integration |
 | `evmexec` | EVM execution logic |
 | `eectl` | EE controller |
 | `ee-acct-types` | EE account types (SSZ) |
 | `ee-acct-runtime` | EE account runtime |
 | `ee-chain-types` | EE chain types (SSZ) |
+| `ee-chunk-runtime` | EE chunk proof runtime |
 | `simple-ee` | Minimal EE implementation for tests and tooling |
 
 ### DA Framework (`crates/da-framework/`)
@@ -198,8 +200,6 @@ Fundamental types and shared utilities.
 | Crate | Description |
 |-------|-------------|
 | `primitives` | Core primitive types |
-| `identifiers` | Block IDs, transaction IDs, account IDs (SSZ) |
-| `crypto` | Cryptographic operations |
 | `params` | Network parameters |
 | `config` | Configuration types |
 | `common` | Shared helpers, traits, and utilities |
@@ -209,14 +209,16 @@ Fundamental types and shared utilities.
 | `status` | Shared status types for services and APIs |
 | `cli-common` | Shared CLI argument and output helpers |
 | `paas` | Prover-as-a-Service task orchestration framework |
+| `node-context` | Runtime context shared by node services |
+| `strata-signer` | Detached signer library used by `bin/strata-signer` |
 
 ### Bitcoin Types & IO
 
 | Crate | Description |
 |-------|-------------|
-| `btc-types` | Bitcoin types (blocks, transactions, params) |
-| `btc-verification` | Bitcoin header and PoW verification |
 | `btcio` | Bitcoin I/O (reader, writer, broadcaster) |
+
+Bitcoin primitive types, header verification, and related helpers are provided through pinned workspace dependencies from `alpenlabs/strata-common` and `alpenlabs/asm` git dependency family.
 
 ### Storage & State
 
@@ -234,11 +236,8 @@ Fundamental types and shared utilities.
 |-------|-------------|
 | `acct-types` | Account types and messages (SSZ) |
 | `snark-acct-types` | Snark account types (SSZ) |
+| `snark-acct-runtime` | Snark account runtime |
 | `snark-acct-sys` | Snark account system logic |
-| `ledger-types` | Ledger entry types |
-| `bridge-types` | Bridge operation types |
-| `checkpoint-types` | Checkpoint and batch types |
-| `checkpoint-types-ssz` | SSZ containers for checkpoint types |
 | `csm-types` | Client state machine type definitions |
 
 ### Proof Domain (`crates/proof-impl/`, `crates/zkvm/`)
@@ -248,9 +247,17 @@ Zero-knowledge proof generation.
 | Crate | Description |
 |-------|-------------|
 | `proof-impl/checkpoint` | Checkpoint proof implementation |
-| `proof-impl/cl-stf` | Orchestration layer STF proof |
 | `proof-impl/evm-ee-stf` | EE Layer STF proof |
+| `proof-impl/alpen-chunk` | Alpen chunk proof implementation |
+| `proof-impl/alpen-acct` | Alpen account proof implementation |
+| `prover-core` | Shared prover coordination primitives |
 | `zkvm/hosts` | ZKVM host implementations (SP1, RISC0, Native) |
+| `provers/sp1` | SP1 guest builder support |
+| `provers/sp1/guest-checkpoint` | SP1 checkpoint proof guest |
+| `provers/sp1/guest-alpen-chunk` | SP1 Alpen chunk proof guest |
+| `provers/sp1/guest-alpen-acct` | SP1 Alpen account proof guest |
+
+The SP1 guest packages are local manifests used by the guest builder, but they are not root workspace members.
 
 ### Reth Integration (`crates/reth/`)
 
@@ -274,11 +281,11 @@ RPC APIs, types, and helpers.
 
 | Crate | Description |
 |-------|-------------|
+| `rpc/api` | Shared top-level RPC API definitions |
+| `rpc/types` | Shared top-level RPC wire types |
 | `rpc/utils` | RPC helper utilities |
-| `rpc/bridge-api` | Bridge RPC API definitions |
-| `rpc/prover-client-api` | Prover client RPC API definitions |
-| `ol/rpc/api` | New RPC API surface |
-| `ol/rpc/types` | New RPC type definitions |
+| `rpc/open-rpc` | OpenRPC specification model types |
+| `rpc/open-rpc-macros` | OpenRPC derive/proc-macro support |
 
 ### Service Crates
 
@@ -286,6 +293,7 @@ Worker patterns and service infrastructure.
 
 | Crate | Description |
 |-------|-------------|
+| `chain-worker` | Legacy chain worker implementation |
 | `chain-worker-new` | Chain worker implementation for new OL types |
 | `csm-worker` | Client state machine worker |
 | `chainexec` | Chain execution context |
@@ -299,12 +307,12 @@ Worker patterns and service infrastructure.
 | Crate | Description |
 |-------|-------------|
 | `test-utils` | Shared test helpers |
-| `test-utils/btc` | Bitcoin test utilities |
 | `test-utils/btcio` | Bitcoin I/O test utilities |
 | `test-utils/evm-ee` | EVM EE test utilities |
 | `test-utils/l2` | L2 integration test utilities |
 | `test-utils/ssz` | SSZ test utilities |
 | `db/tests` | Database-focused test fixtures and helpers |
+| `benches` | Criterion benchmarks for database paths |
 
 ## Development Commands
 
@@ -357,24 +365,6 @@ just lint
 
 # Pre-PR checks (includes tests, docs, linting)
 just pr
-```
-
-### Docker
-
-```bash
-just docker-up    # Start environment
-just docker-down  # Stop environment
-just docker       # Full restart
-```
-
-### Prover Operations
-
-```bash
-just prover-eval   # Generate performance reports
-just prover-clean  # Clean proof artifacts
-
-# Debug proof generation
-ZKVM_MOCK=1 ZKVM_PROFILING=1 cargo run --bin prover-client
 ```
 
 ## Engineering Best Practices
@@ -592,14 +582,6 @@ Best practices:
 - Use descriptive test names: `test_deposit_with_invalid_amount_fails`
 - Prefer `assert_eq!` over `assert!` for better error messages
 
-### Integration Tests
-
-```bash
-just test-int
-```
-
-Cross-component interaction testing in `tests/` directories.
-
 ### Functional Tests
 
 Located in `functional-tests/`. Uses `uv` for dependency management.
@@ -621,16 +603,7 @@ uv run python entry.py
 If the functional tests fail, you can find the logs in the `_dd` directory inside the functional tests directory.
 The datadir will be the outputted by the test framework and will be named after the test run.
 
-### Prover Tests
-
-Prover functional tests are being migrated as the prover submodule architecture stabilizes.
-
 ## Configuration
-
-### Rust Toolchain
-
-- **Toolchain**: Updates monthly to the latest nightly on the first day of the month (see `rust-toolchain.toml`)
-- **Components**: cargo, clippy, rustfmt, rust-analyzer, rust-docs, rust-src, rust-std
 
 ### Key Dependencies
 
@@ -668,6 +641,7 @@ Key SPS (Strata Protocol Specification) documents:
 | SPS-ol-da-structure | Data Availability Structure | OL data availability structure |
 
 Full specification index available in the team Notion workspace.
+If you have the Notion MCP/connector enabled, access it by searching the team workspace for the SPS number or the "Strata Protocol Specification" index.
 
 ## Important Notes
 

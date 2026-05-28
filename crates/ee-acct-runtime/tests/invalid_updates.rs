@@ -375,7 +375,6 @@ fn test_deposit_mismatch_in_chunk() {
     let initial_state = strata_ee_acct_types::EeAccountState::new(
         Hash::new([0u8; 32]),
         Hash::zero(),
-        BitcoinAmount::from(0u64),
         vec![PendingInputEntry::Deposit(deposit)],
         Vec::new(),
     );
@@ -425,7 +424,6 @@ fn test_input_count_mismatch() {
     let initial_state = strata_ee_acct_types::EeAccountState::new(
         Hash::new([0u8; 32]),
         Hash::zero(),
-        BitcoinAmount::from(0u64),
         Vec::new(),
         Vec::new(),
     );

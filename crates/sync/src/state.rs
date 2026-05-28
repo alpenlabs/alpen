@@ -1,3 +1,4 @@
+use metrics::gauge;
 use strata_consensus_logic::unfinalized_tracker::UnfinalizedBlockTracker;
 use strata_ol_chain_types::{L2BlockId, L2Header, SignedL2BlockHeader};
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
@@ -33,6 +34,7 @@ impl L2SyncState {
             .chain_tip_blocks_iter()
             .max_by_key(|bc| bc.slot())
             .expect("sync: picking new tip");
+        gauge!("strata_l2_sync_tip_slot").set(self.tip_block.slot() as f64);
 
         Ok(())
     }
@@ -42,6 +44,8 @@ impl L2SyncState {
         epoch: EpochCommitment,
     ) -> Result<(), L2SyncError> {
         self.tracker.update_finalized_epoch(&epoch)?;
+        gauge!("strata_l2_finalized_slot").set(epoch.last_slot() as f64);
+        gauge!("strata_l2_finalized_epoch").set(epoch.epoch() as f64);
         Ok(())
     }
 
@@ -94,6 +98,9 @@ pub(crate) async fn initialize_from_db(
         .expect("sync: missing init chain tip");
 
     debug!(?tip_block, "sync state initialized");
+    gauge!("strata_l2_sync_tip_slot").set(tip_block.slot() as f64);
+    gauge!("strata_l2_finalized_slot").set(finalized_epoch.last_slot() as f64);
+    gauge!("strata_l2_finalized_epoch").set(finalized_epoch.epoch() as f64);
 
     let state = L2SyncState { tip_block, tracker };
 

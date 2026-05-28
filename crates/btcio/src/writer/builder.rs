@@ -376,7 +376,7 @@ pub(crate) fn choose_utxos(
 ) -> Result<(Vec<ListUnspentItem>, u64), EnvelopeError> {
     let mut bigger_utxos: Vec<&ListUnspentItem> = utxos
         .iter()
-        .filter(|utxo| utxo.amount.to_sat() >= amount as i64)
+        .filter(|utxo| utxo.amount.to_sat() >= amount)
         .collect();
     let mut sum: u64 = 0;
 
@@ -387,13 +387,13 @@ pub(crate) fn choose_utxos(
         // single utxo will be enough
         // so return the transaction
         let utxo = bigger_utxos[0];
-        sum += utxo.amount.to_sat() as u64;
+        sum += utxo.amount.to_sat();
 
         Ok((vec![utxo.clone()], sum))
     } else {
         let mut smaller_utxos: Vec<&ListUnspentItem> = utxos
             .iter()
-            .filter(|utxo| utxo.amount.to_sat() < amount as i64)
+            .filter(|utxo| utxo.amount.to_sat() < amount)
             .collect();
 
         // sort vec by amount (large first)
@@ -402,7 +402,7 @@ pub(crate) fn choose_utxos(
         let mut chosen_utxos: Vec<ListUnspentItem> = vec![];
 
         for utxo in smaller_utxos {
-            sum += utxo.amount.to_sat() as u64;
+            sum += utxo.amount.to_sat();
             chosen_utxos.push(utxo.clone());
 
             if sum >= amount {
@@ -439,9 +439,7 @@ fn build_commit_transaction(
 
     let utxos: Vec<ListUnspentItem> = utxos
         .iter()
-        .filter(|utxo| {
-            utxo.spendable && utxo.solvable && utxo.amount.to_sat() > BITCOIN_DUST_LIMIT as i64
-        })
+        .filter(|utxo| utxo.spendable && utxo.solvable && utxo.amount.to_sat() > BITCOIN_DUST_LIMIT)
         .cloned()
         .collect();
 
@@ -670,7 +668,7 @@ mod tests {
     use bitcoin::{
         absolute::LockTime, script, secp256k1::constants::SCHNORR_SIGNATURE_SIZE,
         taproot::ControlBlock, transaction::Version, Address, Network, OutPoint, ScriptBuf,
-        Sequence, SignedAmount, Transaction, TxIn, TxOut, Witness,
+        Sequence, Transaction, TxIn, TxOut, Witness,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
     use strata_l1_txfmt::{MagicBytes, TagData, TagDataRef};
@@ -700,7 +698,7 @@ mod tests {
                 vout: 0,
                 address: address.as_unchecked().clone(),
                 script_pubkey: ScriptBuf::new(),
-                amount: SignedAmount::from_btc(100.0).unwrap(),
+                amount: Amount::from_btc(100.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
                 solvable: true,
@@ -717,7 +715,7 @@ mod tests {
                 vout: 0,
                 address: address.as_unchecked().clone(),
                 script_pubkey: ScriptBuf::new(),
-                amount: SignedAmount::from_btc(50.0).unwrap(),
+                amount: Amount::from_btc(50.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
                 solvable: true,
@@ -734,7 +732,7 @@ mod tests {
                 vout: 0,
                 address: address.as_unchecked().clone(),
                 script_pubkey: ScriptBuf::new(),
-                amount: SignedAmount::from_btc(10.0).unwrap(),
+                amount: Amount::from_btc(10.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
                 solvable: true,
@@ -799,7 +797,7 @@ mod tests {
         }];
 
         let outputs = vec![TxOut {
-            value: utxo.amount.to_unsigned().unwrap(),
+            value: utxo.amount,
             script_pubkey: utxo.address.clone().assume_checked().script_pubkey(),
         }];
 

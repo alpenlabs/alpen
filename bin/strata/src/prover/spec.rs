@@ -4,10 +4,10 @@
 //! as an [`EpochCommitment`] and fetches the proof input from local
 //! [`NodeStorage`] without any RPC round-trip.
 
-use std::{fmt, sync::Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use borsh::{BorshDeserialize, BorshSerialize, io::Error as BorshIoError};
+pub(crate) use strata_checkpoint_types::CheckpointProofTask as CheckpointTask;
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_stf::execute_block_batch_preseal;
@@ -18,34 +18,6 @@ use tokio::task::spawn_blocking;
 use tracing::debug;
 
 use super::errors::ProverError;
-
-/// Task identifier for checkpoint proofs.
-///
-/// Newtype over [`EpochCommitment`] so we can attach the byte-encoding and
-/// display bounds that [`strata_paas::TaskKey`] requires without polluting
-/// the domain type.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub(crate) struct CheckpointTask(pub EpochCommitment);
-
-impl fmt::Display for CheckpointTask {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<CheckpointTask> for Vec<u8> {
-    fn from(task: CheckpointTask) -> Self {
-        borsh::to_vec(&task).expect("CheckpointTask borsh-serializable")
-    }
-}
-
-impl TryFrom<Vec<u8>> for CheckpointTask {
-    type Error = BorshIoError;
-
-    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        borsh::from_slice(&bytes)
-    }
-}
 
 /// Proof specification for integrated checkpoint proving.
 #[derive(Clone)]

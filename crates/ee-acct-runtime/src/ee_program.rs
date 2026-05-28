@@ -107,13 +107,10 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
     fn verify_coinput<'a>(
         &self,
         _state: &Self::State,
-        vstate: &mut Self::VState<'a>,
-        msg: &InputMessage<Self::Msg>,
+        _vstate: &mut Self::VState<'a>,
+        _msg: &InputMessage<Self::Msg>,
         coinput: &[u8],
     ) -> ProgramResult<(), Self::Error> {
-        // Update balance bookkeeping.
-        vstate.accept_funds(msg.meta().value())?;
-
         // For both Valid and Unknown messages, require empty coinput.
         // We don't need any message coinputs for the EE right now.
         if !coinput.is_empty() {
@@ -161,8 +158,7 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
     }
 }
 
-/// Processes a single input message, updating tracked balance and applying
-/// decoded message effects.
+/// Processes a single input message, applying decoded message effects.
 ///
 /// This is the shared logic used by both the [`SnarkAccountProgram`]
 /// implementation and block assembly.
@@ -170,11 +166,6 @@ pub(crate) fn process_input_message(
     state: &mut EeAccountState,
     msg: &InputMessage<DecodedEeMessageData>,
 ) -> ProgramResult<(), EnvError> {
-    // Add value to tracked balance, always do this.
-    if !msg.meta().value().is_zero() {
-        state.add_tracked_balance(msg.meta().value());
-    }
-
     // If we recognize it, then we have to do something with it.
     if let Some(decoded_msg) = msg.message() {
         apply_decoded_message(state, decoded_msg, msg.meta().value())?;

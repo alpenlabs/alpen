@@ -1,4 +1,4 @@
-use std::{fmt, path::PathBuf, time::Duration};
+use std::{fmt, net::IpAddr, path::PathBuf, time::Duration};
 
 use bitcoin::Network;
 use serde::{Deserialize, Serialize};
@@ -343,7 +343,7 @@ pub struct BitcoindConfig {
     pub rpc_password: String,
     pub network: Network,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub retry_count: Option<u8>,
+    pub retry_count: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_interval: Option<u64>,
 }
@@ -436,6 +436,16 @@ pub struct LoggingConfig {
     /// Use JSON format for logs instead of compact format.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub json_format: Option<bool>,
+
+    /// Host for the Prometheus `/metrics` HTTP endpoint.
+    ///
+    /// Defaults to `127.0.0.1` when `metrics_port` is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metrics_host: Option<IpAddr>,
+
+    /// Port for the Prometheus `/metrics` HTTP endpoint. Disabled if not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metrics_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -732,6 +742,23 @@ mod test {
         let with_deadline: ProverConfig = toml::from_str(r#"sp1_proof_deadline_secs = 3600"#)
             .expect("prover config with deadline should parse");
         assert_eq!(with_deadline.sp1_proof_deadline_secs, Some(3600));
+    }
+
+    #[test]
+    fn test_logging_config_metrics_port_defaults_and_parses() {
+        let default_config: LoggingConfig =
+            toml::from_str("").expect("empty logging config parses");
+        assert_eq!(default_config.metrics_port, None);
+
+        let config: LoggingConfig = toml::from_str(
+            r#"
+            metrics_host = "0.0.0.0"
+            metrics_port = 9615
+        "#,
+        )
+        .expect("metrics config should parse");
+        assert_eq!(config.metrics_host, Some(IpAddr::from([0, 0, 0, 0])));
+        assert_eq!(config.metrics_port, Some(9615));
     }
 
     #[test]

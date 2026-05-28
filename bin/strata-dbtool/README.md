@@ -31,7 +31,7 @@ strata-dbtool [OPTIONS] <COMMAND>
 
 ### Global Options
 
-- `-d, --datadir <path>` - Node data directory (default: `data`)
+- `-d, --datadir <path>` - Data directory of the node whose DB is being inspected (default: `data`). For `ee-*` subcommands, point this at the alpen-client's `--datadir` instead of the strata node's — each invocation is standalone and opens exactly one sled.
 
 ## Commands
 
@@ -338,6 +338,216 @@ strata-dbtool revert-ol-state --force 858c390aaaabd7c457cb24c955d06fb9de0f6666d0
 Execute revert with block deletion:
 ```bash
 strata-dbtool revert-ol-state -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
+```
+
+## Prover Task Admin
+
+> [!WARNING]
+>
+> These commands mutate the prover-task store and the checkpoint-proof receipt
+> store. Stop the node before using them — concurrent writes from a running
+> prover will conflict with these edits and may corrupt state.
+
+Every mutating subcommand is a **dry run** unless `-f, --force` is passed —
+the same UX as `revert-ol-state`. Without `--force`, the command prints
+what *would* happen and a `Use --force to execute these changes.` hint;
+with `--force`, the mutation actually lands.
+
+### Semantics — `abandon` vs `reset` vs `delete`
+
+| Verb       | Final status                                    | When to use                                               |
+|------------|-------------------------------------------------|-----------------------------------------------------------|
+| `abandon`  | `PermanentFailure { error: "abandoned via dbtool" }` | Stop the recovery scanner from respawning a stuck task while keeping an audit trail. |
+| `reset`    | `Pending` (retry-after cleared)                 | Force a fresh prove attempt — drops accumulated retry count. |
+| `delete`   | row removed                                     | Prefer `abandon` unless you really want no trace left.    |
+| `backfill` | `Pending` (newly inserted)                      | Queue a proof request "from outside" — e.g. for an epoch the node never picked up. |
+
+### `get-prover-task`
+Fetch a single prover task record by its hex-encoded key.
+
+```bash
+strata-dbtool get-prover-task <key_hex> [OPTIONS]
+```
+
+### `get-prover-tasks-summary`
+Aggregate counts by status, plus a bounded slice of matching entries.
+
+```bash
+strata-dbtool get-prover-tasks-summary [--status <filter>] [--limit <n>] [OPTIONS]
+```
+
+**Options:**
+- `--status <filter>` — one of `all` (default), `pending`, `proving`, `completed`, `transient-failure`, `permanent-failure`, `unfinished`, `terminal`
+- `--limit <n>` — maximum entries to include in the output (default: 20)
+
+### `abandon-prover-task`
+Mark a single task as `PermanentFailure { error: "abandoned via dbtool" }`.
+
+```bash
+strata-dbtool abandon-prover-task <key_hex> --force
+```
+
+### `abandon-prover-tasks`
+Bulk-abandon every `Pending` or `Proving` task. Without `--force`, prints
+the change set as a dry run.
+
+```bash
+strata-dbtool abandon-prover-tasks --all-unfinished --force
+```
+
+### `reset-prover-task`
+Flip a task back to `Pending` and clear its retry-after timestamp.
+
+```bash
+strata-dbtool reset-prover-task <key_hex> --force
+```
+
+### `delete-prover-task`
+Hard-delete a task row.
+
+```bash
+strata-dbtool delete-prover-task <key_hex> --force
+```
+
+### `backfill-checkpoint-proof-task`
+Queue a fresh `Pending` checkpoint-proof task for an epoch. Resolves the
+canonical commitment at the epoch and constructs the task key via the shared
+`CheckpointProofTask` encoding, so the running node will pick the task up on
+its next startup-recovery pass.
+
+```bash
+strata-dbtool backfill-checkpoint-proof-task <epoch> --force
+```
+
+### `backfill-prover-task-raw`
+Insert a `Pending` task record under a caller-provided raw key. Escape hatch
+for proof kinds without a typed helper.
+
+```bash
+strata-dbtool backfill-prover-task-raw <key_hex> --force
+```
+
+### `get-checkpoint-proof`
+Fetch the stored proof receipt for an OL checkpoint epoch.
+
+```bash
+strata-dbtool get-checkpoint-proof <epoch> [OPTIONS]
+```
+
+### `delete-checkpoint-proof`
+Delete the stored proof receipt for an epoch. Operates on the canonical
+commitment at that epoch. Use case: force a re-prove after a guest-program
+upgrade.
+
+```bash
+strata-dbtool delete-checkpoint-proof <epoch> --force
+```
+
+## EE Prover Task & Receipt Admin
+
+> [!WARNING]
+>
+> These commands mutate the EE prover store under the **alpen-client**
+> datadir (not the strata node's). Stop the alpen-client before using
+> them — concurrent writes from a running chunk/acct prover will conflict
+> with these edits and may corrupt state.
+
+The alpen-client maintains a separate sled instance for prover-side
+persistence — shared task tree (chunk + acct), chunk-receipt store, and
+typed acct-proof store. For every `ee-*` subcommand, point `-d`/`--datadir`
+at the alpen-client's `--datadir` (the strata node's `-d` is never used
+by these commands).
+
+### Which surface to use
+
+| Concern              | Lives in              | Subcommand prefix |
+|----------------------|-----------------------|--------------------|
+| OL checkpoint proofs | strata node datadir   | (no prefix)        |
+| EE chunk proofs      | alpen-client datadir  | `ee-*` (`--kind chunk`) |
+| EE acct/batch proofs | alpen-client datadir  | `ee-*` (`--kind acct`)  |
+
+Chunk and acct tasks share one tree, disambiguated by a single-byte
+**kind tag** at the start of every task key (`b'c'` for chunk, `b'a'`
+for acct). The `--kind` filter on the summary and bulk-abandon commands
+selects on that tag; single-key commands operate on opaque keys, so the
+kind comes from whatever the key starts with.
+
+### `ee-get-prover-task`
+Fetch a single EE prover task record by its hex-encoded key.
+
+```bash
+strata-dbtool ee-get-prover-task <key_hex> [OPTIONS]
+```
+
+### `ee-get-prover-tasks-summary`
+Aggregate counts by status, plus a bounded slice of matching entries.
+
+```bash
+strata-dbtool ee-get-prover-tasks-summary [--status <filter>] [--kind <kind>] [--limit <n>] [OPTIONS]
+```
+
+**Options:**
+- `--status <filter>` — same set as the OL summary command (`all`, `pending`, …, `terminal`).
+- `--kind <kind>` — one of `all` (default), `chunk`, `acct`.
+
+### `ee-abandon-prover-task`
+Mark a single EE task as `PermanentFailure { error: "abandoned via dbtool" }`.
+
+```bash
+strata-dbtool ee-abandon-prover-task <key_hex> --force
+```
+
+### `ee-abandon-prover-tasks`
+Bulk-abandon every `Pending`/`Proving` EE task, optionally restricted by
+kind. Without `--force`, prints the change set as a dry run.
+
+```bash
+strata-dbtool ee-abandon-prover-tasks --all-unfinished [--kind <kind>] --force
+```
+
+### `ee-reset-prover-task`
+Flip an EE task back to `Pending` and clear its retry-after timestamp.
+
+```bash
+strata-dbtool ee-reset-prover-task <key_hex> --force
+```
+
+### `ee-delete-prover-task`
+Hard-delete an EE task record.
+
+```bash
+strata-dbtool ee-delete-prover-task <key_hex> --force
+```
+
+### `ee-backfill-prover-task-raw`
+Insert a `Pending` EE task record under a caller-provided raw key. EE
+task keys come from the chunk/acct spec encodings; raw is the only
+supported backfill path (no typed equivalent of `backfill-checkpoint-proof-task`).
+
+```bash
+strata-dbtool ee-backfill-prover-task-raw <key_hex> --force
+```
+
+### `ee-get-chunk-receipt` / `ee-delete-chunk-receipt`
+Inspect or remove a stored chunk-proof receipt by its task key. Use
+case: drop a stale receipt after a guest-program upgrade so the chunk
+prover re-proves it.
+
+```bash
+strata-dbtool ee-get-chunk-receipt <key_hex> [OPTIONS]
+strata-dbtool ee-delete-chunk-receipt <key_hex> --force
+```
+
+### `ee-get-acct-proof` / `ee-delete-acct-proof`
+Inspect or remove a stored acct/batch proof. The batch id is passed as
+`<prev_block_hex>:<last_block_hex>` (each 32 bytes, optional `0x`
+prefix), which is exactly what `BatchId::Display` emits — copy a
+`%batch_id` field straight from the alpen-client's logs. Delete also
+clears the secondary `ProofId → BatchId` index.
+
+```bash
+strata-dbtool ee-get-acct-proof <prev_block>:<last_block> [OPTIONS]
+strata-dbtool ee-delete-acct-proof <prev_block>:<last_block> --force
 ```
 
 ## Output Formats

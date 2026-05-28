@@ -91,6 +91,7 @@ class LoggingConfig:
     log_dir: str | None = field(default=None)
     log_file_prefix: str | None = field(default=None)
     json_format: bool | None = field(default=None)
+    metrics_host: str | None = field(default=None)
     metrics_port: int | None = field(default=None)
 
 

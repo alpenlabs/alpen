@@ -88,12 +88,12 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 
         let spendable_utxo_count = utxos
             .iter()
-            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT as i64)
+            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
             .count();
 
-        let spendable_value_sats: i64 = utxos
+        let spendable_value_sats: u64 = utxos
             .iter()
-            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT as i64)
+            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
             .map(|u| u.amount.to_sat())
             .sum();
 

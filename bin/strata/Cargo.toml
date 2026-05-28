@@ -23,7 +23,6 @@ debug-utils = [
   "strata-ol-sequencer?/debug-utils",
 ]
 prover = [
-  "dep:borsh",
   "dep:strata-ol-state-support-types",
   "dep:strata-ol-stf",
   "dep:strata-paas",
@@ -63,6 +62,7 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-logging.workspace = true
+strata-metrics.workspace = true
 strata-node-context.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }
 strata-ol-chain-types-new.workspace = true
@@ -94,7 +94,6 @@ argh.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-borsh = { workspace = true, optional = true }
 format_serde_error.workspace = true
 http.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }

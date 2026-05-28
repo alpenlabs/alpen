@@ -7,7 +7,6 @@
 
 use rsp_primitives::genesis::Genesis;
 use ssz::Encode;
-use strata_acct_types::BitcoinAmount;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{DaWitness, EePrivateInput};
 use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
@@ -22,13 +21,7 @@ fn prepare_input() -> EeAcctProofInput {
     info!("Preparing input for Alpen Acct (zero chunks)");
 
     let initial_blkid = Hash::zero();
-    let initial_state = EeAccountState::new(
-        initial_blkid,
-        Hash::zero(),
-        BitcoinAmount::from_sat(0),
-        Vec::new(),
-        Vec::new(),
-    );
+    let initial_state = EeAccountState::new(initial_blkid, Hash::zero(), Vec::new(), Vec::new());
     let state_root = initial_state.compute_state_root();
 
     let extra_data =
