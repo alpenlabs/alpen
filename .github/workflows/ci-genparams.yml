@@ -89,7 +89,8 @@ jobs:
     name: Generate params (${{ inputs.env }}, ${{ inputs.commit }})
     needs: [pull-datatool]
     runs-on: ubuntu-latest
-    environment: ${{ inputs.env }}
+    # TODO: switch to ${{ inputs.env }} once per-env GitHub environments are created
+    environment: testnet1_staging
     permissions:
       contents: read
     steps:
