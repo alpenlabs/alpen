@@ -173,11 +173,9 @@ impl ArchivedDaTxWitness {
     }
 }
 
-/// Bitcoin Merkle inclusion proof.
-///
-/// `siblings` is ordered leaf-first. `position` is the leaf index in the
-/// bottom layer; bit `i` selects whether `siblings[i]` is on the left or right
-/// of the running hash at level `i`.
+/// Bitcoin Merkle inclusion proof: leaf-first `siblings` plus the leaf
+/// `position`, interpreted by
+/// [`compute_bitcoin_merkle_root_from_proof`](crate::compute_bitcoin_merkle_root_from_proof).
 #[derive(Clone, Debug, Default, Archive, Deserialize, Serialize)]
 #[rkyv(derive(Debug))]
 pub struct BitcoinMerkleProof {

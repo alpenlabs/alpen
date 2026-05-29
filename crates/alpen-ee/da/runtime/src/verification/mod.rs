@@ -14,10 +14,10 @@ use std::collections::BTreeSet;
 
 use alloy_primitives::{keccak256, B256};
 use alpen_ee_da_types::{
-    bitcoin_merkle_root, commit_marker_payload, extract_da_chunks as parse_da_chunks,
-    reassemble_da_blob, ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness, ArchivedDaWitness,
-    ArchivedDedupWitness, DaBlob, DaParseError, EvmHeaderSummary, DA_BLOB_VERSION,
-    EE_DA_MAGIC_BYTES,
+    compute_bitcoin_merkle_root_from_proof, extract_da_chunks as parse_da_chunks,
+    read_commit_marker_payload, reassemble_da_blob, ArchivedBitcoinMerkleProof,
+    ArchivedDaBlockWitness, ArchivedDaWitness, ArchivedDedupWitness, DaBlob, DaParseError,
+    EvmHeaderSummary, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES,
 };
 use alpen_reth_statediff::{
     apply_batch_state_diff_to_ethereum_state, AccountChange, BatchStateDiff,
@@ -97,7 +97,7 @@ fn bitcoin_merkle_root_from_archived_proof(
     leaf_hash: [u8; 32],
     proof: &ArchivedBitcoinMerkleProof,
 ) -> [u8; 32] {
-    bitcoin_merkle_root(leaf_hash, proof.siblings(), proof.position())
+    compute_bitcoin_merkle_root_from_proof(leaf_hash, proof.siblings(), proof.position())
 }
 
 /// Public ledger-ref entry hash for an L1 block ref.
@@ -168,14 +168,14 @@ fn extract_and_verify_da_chunks<'a>(
     let commit = txs
         .iter()
         .copied()
-        .find(|tx| commit_marker_payload(tx).ok().flatten().is_some())
+        .find(|tx| read_commit_marker_payload(tx).ok().flatten().is_some())
         .ok_or(DaVerificationError::Parse(DaParseError::MissingCommit))?;
     verify_commit_marker(commit)?;
     Ok(chunks)
 }
 
 fn verify_commit_marker(commit: &Transaction) -> DaVerificationResult {
-    let payload = commit_marker_payload(commit)?
+    let payload = read_commit_marker_payload(commit)?
         .ok_or(DaVerificationError::Parse(DaParseError::MissingCommit))?;
     let actual_magic: [u8; 4] = payload[..4]
         .try_into()

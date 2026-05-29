@@ -69,7 +69,7 @@ impl<'a, D: ?Sized, B> DaDedupResolver<'a, D, B> {
 #[async_trait]
 impl<D, B> DedupWitnessResolver for DaDedupResolver<'_, D, B>
 where
-    D: StateDiffProvider + Sync + ?Sized,
+    D: StateDiffProvider + ?Sized,
     B: AccessedStateStore,
 {
     async fn resolve_bytecode_preimages(
@@ -172,7 +172,7 @@ fn bytecode_preimages_from_batch_diff(
 /// block by block — the same way the publish path aggregates it.
 fn build_batch_state_diff(
     block_hashes: &[B256],
-    state_diff_provider: &(impl StateDiffProvider + Sync + ?Sized),
+    state_diff_provider: &(impl StateDiffProvider + ?Sized),
 ) -> Result<BatchStateDiff, DaWitnessBuildError> {
     let mut builder = BatchBuilder::new();
 

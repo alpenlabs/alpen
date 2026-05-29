@@ -7,7 +7,7 @@
 
 use alpen_ee_common::L1DaBlockRef;
 use alpen_ee_da_types::{
-    bitcoin_inclusion_proof, extract_da_chunks, reassemble_da_blob, wtxid_leaves,
+    compute_bitcoin_inclusion_proof, extract_da_chunks, reassemble_da_blob, wtxid_leaves,
     wtxids_root_from_txs, BitcoinMerkleProof, DaBlob, DaBlockWitness, DaTxWitness,
     L1DaBlockInclusion,
 };
@@ -101,7 +101,7 @@ pub(crate) async fn collect_l1_inclusion_blocks(
 /// [`wtxid_leaves`](alpen_ee_da_types::wtxid_leaves)).
 pub(crate) fn build_wtxid_inclusion_proof(txs: &[Transaction], idx: usize) -> BitcoinMerkleProof {
     let leaves = wtxid_leaves(txs);
-    let siblings = bitcoin_inclusion_proof(&leaves, idx as u32);
+    let siblings = compute_bitcoin_inclusion_proof(&leaves, idx as u32);
     BitcoinMerkleProof::new(siblings, idx as u32)
 }
 
@@ -115,7 +115,9 @@ pub(crate) fn reassemble_da_blob_from_txs(
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_da_types::{bitcoin_merkle_root, bitcoin_merkle_root_from_leaves};
+    use alpen_ee_da_types::{
+        compute_bitcoin_merkle_root_from_leaves, compute_bitcoin_merkle_root_from_proof,
+    };
     use bitcoin::{
         absolute::LockTime, transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, TxIn,
         TxOut, Witness,
@@ -124,7 +126,7 @@ mod tests {
     use super::*;
 
     fn compute_root(leaf: [u8; 32], proof: &BitcoinMerkleProof) -> [u8; 32] {
-        bitcoin_merkle_root(leaf, proof.siblings(), proof.position())
+        compute_bitcoin_merkle_root_from_proof(leaf, proof.siblings(), proof.position())
     }
 
     fn make_dummy_tx(nonce: u8) -> Transaction {
@@ -148,7 +150,7 @@ mod tests {
     fn wtxid_inclusion_proof_matches_naive_root_with_coinbase_zeroed() {
         let txs: Vec<Transaction> = (0..5).map(make_dummy_tx).collect();
         let leaves = wtxid_leaves(&txs);
-        let expected_root = bitcoin_merkle_root_from_leaves(&leaves);
+        let expected_root = compute_bitcoin_merkle_root_from_leaves(&leaves);
 
         for (idx, leaf) in leaves.iter().enumerate().skip(1) {
             let proof = build_wtxid_inclusion_proof(&txs, idx);

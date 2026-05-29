@@ -158,7 +158,7 @@ pub(crate) struct AcctSpec {
     batch_storage: Arc<dyn BatchStorage>,
     storage: Arc<EeNodeStorage>,
     btc_client: Arc<BtcClient>,
-    state_diff_provider: Arc<dyn StateDiffProvider + Send + Sync>,
+    state_diff_provider: Arc<dyn StateDiffProvider>,
     range_witness_fn: Arc<AcctRangeWitnessFn>,
     genesis: Genesis,
 }
@@ -169,7 +169,7 @@ impl AcctSpec {
         batch_storage: Arc<dyn BatchStorage>,
         storage: Arc<EeNodeStorage>,
         btc_client: Arc<BtcClient>,
-        state_diff_provider: Arc<dyn StateDiffProvider + Send + Sync>,
+        state_diff_provider: Arc<dyn StateDiffProvider>,
         range_witness_fn: Arc<AcctRangeWitnessFn>,
         genesis: Genesis,
     ) -> Self {

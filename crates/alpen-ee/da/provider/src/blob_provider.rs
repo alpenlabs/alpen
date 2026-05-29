@@ -70,7 +70,7 @@ impl<S, D, H> StateDiffBlobProvider<S, D, H> {
 impl<S, D, H> DaBlobSource for StateDiffBlobProvider<S, D, H>
 where
     S: BatchStorage,
-    D: StateDiffProvider + Send + Sync,
+    D: StateDiffProvider,
     H: HeaderSummaryProvider,
 {
     async fn get_blob(&self, batch_id: BatchId) -> eyre::Result<DaBlob> {

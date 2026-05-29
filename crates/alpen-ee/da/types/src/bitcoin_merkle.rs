@@ -9,19 +9,20 @@ use bitcoin::{hashes::Hash as _, Transaction};
 use strata_crypto::hash::sha256d;
 
 /// Hashes one Bitcoin merkle-tree level as `SHA256(SHA256(left || right))`.
-pub fn bitcoin_hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
+pub fn hash_pair_sha256d(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
     let mut pair = [0u8; 64];
     pair[..32].copy_from_slice(&left);
     pair[32..].copy_from_slice(&right);
     sha256d(&pair).0
 }
 
-/// Computes a Bitcoin-style Merkle root from a leaf and inclusion path.
+/// Recomputes a Bitcoin-style Merkle root from a leaf and its inclusion path.
 ///
 /// `siblings` is ordered leaf-first. `position` is the leaf index in the
 /// bottom layer; bit `i` selects whether `siblings[i]` is on the left or right
-/// of the running hash at level `i`.
-pub fn bitcoin_merkle_root(
+/// of the running hash at level `i`. Comparing the result against a known root
+/// is how an inclusion proof is verified.
+pub fn compute_bitcoin_merkle_root_from_proof(
     leaf_hash: [u8; 32],
     siblings: &[[u8; 32]],
     mut position: u32,
@@ -30,9 +31,9 @@ pub fn bitcoin_merkle_root(
 
     for sibling in siblings {
         root = if position & 1 == 0 {
-            bitcoin_hash_pair(root, *sibling)
+            hash_pair_sha256d(root, *sibling)
         } else {
-            bitcoin_hash_pair(*sibling, root)
+            hash_pair_sha256d(*sibling, root)
         };
         position >>= 1;
     }
@@ -47,7 +48,7 @@ pub fn bitcoin_merkle_root(
 /// # Panics
 ///
 /// Panics if `leaves` is empty.
-pub fn bitcoin_merkle_root_from_leaves(leaves: &[[u8; 32]]) -> [u8; 32] {
+pub fn compute_bitcoin_merkle_root_from_leaves(leaves: &[[u8; 32]]) -> [u8; 32] {
     assert!(!leaves.is_empty(), "merkle root requires at least one leaf");
     let mut cur_level = leaves.to_vec();
     while cur_level.len() > 1 {
@@ -56,7 +57,7 @@ pub fn bitcoin_merkle_root_from_leaves(leaves: &[[u8; 32]]) -> [u8; 32] {
         }
         cur_level = cur_level
             .chunks(2)
-            .map(|pair| bitcoin_hash_pair(pair[0], pair[1]))
+            .map(|pair| hash_pair_sha256d(pair[0], pair[1]))
             .collect();
     }
     cur_level[0]
@@ -64,12 +65,12 @@ pub fn bitcoin_merkle_root_from_leaves(leaves: &[[u8; 32]]) -> [u8; 32] {
 
 /// Builds the leaf-first sibling path proving inclusion of `leaves[idx]` in
 /// the Bitcoin merkle root of `leaves` (using the same odd-duplication rule
-/// as [`bitcoin_merkle_root_from_leaves`]).
+/// as [`compute_bitcoin_merkle_root_from_leaves`]).
 ///
 /// # Panics
 ///
 /// Panics if `idx >= leaves.len()`.
-pub fn bitcoin_inclusion_proof(leaves: &[[u8; 32]], idx: u32) -> Vec<[u8; 32]> {
+pub fn compute_bitcoin_inclusion_proof(leaves: &[[u8; 32]], idx: u32) -> Vec<[u8; 32]> {
     assert!(
         (idx as usize) < leaves.len(),
         "idx {idx} out of bounds for {} leaves",
@@ -90,7 +91,7 @@ pub fn bitcoin_inclusion_proof(leaves: &[[u8; 32]], idx: u32) -> Vec<[u8; 32]> {
 
         cur_level = cur_level
             .chunks(2)
-            .map(|pair| bitcoin_hash_pair(pair[0], pair[1]))
+            .map(|pair| hash_pair_sha256d(pair[0], pair[1]))
             .collect();
         cur_idx >>= 1;
     }
@@ -123,7 +124,7 @@ pub fn wtxids_root_from_txs(txs: &[Transaction]) -> [u8; 32] {
         !txs.is_empty(),
         "wtxids root requires at least the coinbase tx"
     );
-    bitcoin_merkle_root_from_leaves(&wtxid_leaves(txs))
+    compute_bitcoin_merkle_root_from_leaves(&wtxid_leaves(txs))
 }
 
 #[cfg(test)]
@@ -140,30 +141,36 @@ mod tests {
     }
 
     #[test]
-    fn bitcoin_merkle_root_with_empty_path_is_leaf() {
+    fn merkle_root_from_proof_with_empty_path_is_leaf() {
         let leaf = [0xAA; 32];
-        assert_eq!(bitcoin_merkle_root(leaf, &[], 0), leaf);
+        assert_eq!(compute_bitcoin_merkle_root_from_proof(leaf, &[], 0), leaf);
     }
 
     #[test]
-    fn bitcoin_merkle_root_respects_position_bits() {
+    fn merkle_root_from_proof_respects_position_bits() {
         let left = [0x00; 32];
         let right = [0x11; 32];
         let expected = hex32("127e4900feebf53bb61ecc03d9a628da770e4f8ef65cfd6d40852cd9a553b3d5");
 
-        assert_eq!(bitcoin_merkle_root(left, &[right], 0), expected);
-        assert_eq!(bitcoin_merkle_root(right, &[left], 1), expected);
+        assert_eq!(
+            compute_bitcoin_merkle_root_from_proof(left, &[right], 0),
+            expected
+        );
+        assert_eq!(
+            compute_bitcoin_merkle_root_from_proof(right, &[left], 1),
+            expected
+        );
     }
 
     #[test]
     fn inclusion_proof_matches_built_root() {
         let leaves: Vec<[u8; 32]> = (0u8..5).map(|i| [i; 32]).collect();
-        let root = bitcoin_merkle_root_from_leaves(&leaves);
+        let root = compute_bitcoin_merkle_root_from_leaves(&leaves);
 
         for (idx, leaf) in leaves.iter().enumerate() {
-            let siblings = bitcoin_inclusion_proof(&leaves, idx as u32);
+            let siblings = compute_bitcoin_inclusion_proof(&leaves, idx as u32);
             assert_eq!(
-                bitcoin_merkle_root(*leaf, &siblings, idx as u32),
+                compute_bitcoin_merkle_root_from_proof(*leaf, &siblings, idx as u32),
                 root,
                 "idx={idx}"
             );

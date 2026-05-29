@@ -37,11 +37,18 @@ pub enum DaParseError {
     RevealEnvelope(#[from] EnvelopeParseError),
 }
 
-/// Extracts and orders DA payload chunks from a set of L1 transactions.
+/// Extracts and orders the DA payload chunks carried by a single DA blob.
 ///
-/// Returns the chunks in commit-output order. Caller is responsible for
-/// checking the commit marker's magic bytes / version against its own expected
-/// values; this parser is format-agnostic.
+/// `txs` must be exactly the transactions that make up one DA blob: its single
+/// commit transaction plus the reveal transactions spending that commit. This
+/// is *not* a block scanner that finds arbitrary blobs, handling exactly one
+/// blob is the required behaviour, so more than one commit is a
+/// [`DaParseError::MultipleCommits`], and every reveal must spend the one
+/// commit (and not its OP_RETURN marker output).
+///
+/// Returns the chunks in commit-output (vout) order. The caller checks the
+/// commit marker's magic bytes / version against its own expected values; this
+/// parser is format-agnostic.
 pub fn extract_da_chunks<'a>(
     txs: impl Iterator<Item = &'a Transaction>,
 ) -> Result<Vec<Vec<u8>>, DaParseError> {
@@ -49,7 +56,7 @@ pub fn extract_da_chunks<'a>(
     let mut non_commit_txs = Vec::new();
 
     for tx in txs {
-        if commit_marker_payload(tx)?.is_some() {
+        if read_commit_marker_payload(tx)?.is_some() {
             if commit.replace(tx).is_some() {
                 return Err(DaParseError::MultipleCommits);
             }
@@ -65,7 +72,9 @@ pub fn extract_da_chunks<'a>(
     let mut chunks_by_vout = BTreeMap::new();
     for tx in non_commit_txs {
         let (vout, chunk) = extract_reveal_chunk(tx, commit_txid)?;
-        if vout > last_reveal_vout {
+        // A reveal beyond the contiguous P2TR run or any reveal at all when
+        // the commit has no reveal outputs, is unexpected.
+        if !matches!(last_reveal_vout, Some(last) if vout <= last) {
             return Err(DaParseError::UnexpectedReveal(vout));
         }
         if chunks_by_vout.insert(vout, chunk).is_some() {
@@ -73,21 +82,23 @@ pub fn extract_da_chunks<'a>(
         }
     }
 
-    for expected_vout in 1..=last_reveal_vout {
-        if !chunks_by_vout.contains_key(&expected_vout) {
-            return Err(DaParseError::MissingReveal(expected_vout));
+    if let Some(last_reveal_vout) = last_reveal_vout {
+        for expected_vout in 1..=last_reveal_vout {
+            if !chunks_by_vout.contains_key(&expected_vout) {
+                return Err(DaParseError::MissingReveal(expected_vout));
+            }
         }
     }
 
     Ok(chunks_by_vout.into_values().collect())
 }
 
-/// Vout of the last P2TR reveal output on a commit transaction.
+/// Vout of the last contiguous P2TR reveal output on a commit transaction, or
+/// `None` if it has no reveal outputs.
 ///
 /// Scans outputs starting at vout 1 (vout 0 is the OP_RETURN marker) and
-/// returns the last contiguous P2TR vout. Returns 0 if there are no reveal
-/// outputs.
-pub fn last_commit_reveal_vout(commit: &Transaction) -> u32 {
+/// returns the last vout of the contiguous P2TR run.
+fn last_commit_reveal_vout(commit: &Transaction) -> Option<u32> {
     commit
         .output
         .iter()
@@ -96,7 +107,6 @@ pub fn last_commit_reveal_vout(commit: &Transaction) -> u32 {
         .take_while(|(_, output)| output.script_pubkey.is_p2tr())
         .map(|(idx, _)| idx as u32)
         .last()
-        .unwrap_or(0)
 }
 
 /// Reads the 8-byte OP_RETURN marker payload (`magic || version`) from a
@@ -109,7 +119,7 @@ pub fn last_commit_reveal_vout(commit: &Transaction) -> u32 {
 ///   transaction).
 /// - `Err(MalformedCommitMarker)` if the OP_RETURN exists but has the wrong shape (extra ops, wrong
 ///   push size, etc.).
-pub fn commit_marker_payload(tx: &Transaction) -> Result<Option<[u8; 8]>, DaParseError> {
+pub fn read_commit_marker_payload(tx: &Transaction) -> Result<Option<[u8; 8]>, DaParseError> {
     let Some(first_output) = tx.output.first() else {
         return Ok(None);
     };
@@ -133,7 +143,7 @@ pub fn commit_marker_payload(tx: &Transaction) -> Result<Option<[u8; 8]>, DaPars
 ///
 /// The reveal must spend a non-zero output of the named commit tx; the chunk
 /// payload is parsed from the tapscript leaf via [`parse_envelope_payload`].
-pub fn extract_reveal_chunk(
+fn extract_reveal_chunk(
     reveal: &Transaction,
     commit_txid: Txid,
 ) -> Result<(u32, Vec<u8>), DaParseError> {
