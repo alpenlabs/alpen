@@ -3,14 +3,14 @@ use strata_identifiers::{EpochCommitment, Hash};
 
 /// One snark-account update as fetched by the alpen-client OL tracker.
 ///
-/// `final_state_root` is `None` when the source is a checkpoint-sync node:
-/// only the terminal epoch state root is recoverable from DA, not per-update.
+/// `new_state_root` is `None` for intermediate updates fetched from a
+/// checkpoint-sync source.
 #[derive(Clone, Debug)]
 pub struct EpochUpdateOp {
     seq_no: u64,
     extra_data: Vec<u8>,
     messages: Vec<MessageEntry>,
-    final_state_root: Option<Hash>,
+    new_state_root: Option<Hash>,
 }
 
 impl EpochUpdateOp {
@@ -18,13 +18,13 @@ impl EpochUpdateOp {
         seq_no: u64,
         extra_data: Vec<u8>,
         messages: Vec<MessageEntry>,
-        final_state_root: Option<Hash>,
+        new_state_root: Option<Hash>,
     ) -> Self {
         Self {
             seq_no,
             extra_data,
             messages,
-            final_state_root,
+            new_state_root,
         }
     }
 
@@ -40,8 +40,8 @@ impl EpochUpdateOp {
         &self.messages
     }
 
-    pub fn final_state_root(&self) -> Option<Hash> {
-        self.final_state_root
+    pub fn new_state_root(&self) -> Option<Hash> {
+        self.new_state_root
     }
 }
 
@@ -49,20 +49,27 @@ impl EpochUpdateOp {
 pub struct OLEpochSummary {
     epoch: EpochCommitment,
     prev: EpochCommitment,
+    final_state_root: Hash,
     updates: Vec<EpochUpdateOp>,
 }
 
 impl OLEpochSummary {
-    pub fn new(epoch: EpochCommitment, prev: EpochCommitment, updates: Vec<EpochUpdateOp>) -> Self {
+    pub fn new(
+        epoch: EpochCommitment,
+        prev: EpochCommitment,
+        final_state_root: Hash,
+        updates: Vec<EpochUpdateOp>,
+    ) -> Self {
         Self {
             epoch,
             prev,
+            final_state_root,
             updates,
         }
     }
 
-    pub fn into_parts(self) -> (EpochCommitment, EpochCommitment, Vec<EpochUpdateOp>) {
-        (self.epoch, self.prev, self.updates)
+    pub fn into_parts(self) -> (EpochCommitment, EpochCommitment, Hash, Vec<EpochUpdateOp>) {
+        (self.epoch, self.prev, self.final_state_root, self.updates)
     }
 
     pub fn epoch(&self) -> &EpochCommitment {
@@ -71,6 +78,10 @@ impl OLEpochSummary {
 
     pub fn prev_epoch(&self) -> &EpochCommitment {
         &self.prev
+    }
+
+    pub fn final_state_root(&self) -> Hash {
+        self.final_state_root
     }
 
     pub fn updates(&self) -> &[EpochUpdateOp] {

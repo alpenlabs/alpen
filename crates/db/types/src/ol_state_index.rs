@@ -139,18 +139,18 @@ impl AccountCreatedRecord {
 /// Metadata for an account update.
 ///
 /// `block_commitment` is `None` on checkpoint-sync rows (no per-block
-/// attribution available). `final_state_root` is always present.
+/// attribution available). `new_state_root` is always present.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AccountUpdateMeta {
     block_commitment: Option<OLBlockCommitment>,
-    final_state_root: Hash,
+    new_state_root: Hash,
 }
 
 impl AccountUpdateMeta {
-    pub fn new(block_commitment: Option<OLBlockCommitment>, final_state_root: Hash) -> Self {
+    pub fn new(block_commitment: Option<OLBlockCommitment>, new_state_root: Hash) -> Self {
         Self {
             block_commitment,
-            final_state_root,
+            new_state_root,
         }
     }
 
@@ -158,8 +158,8 @@ impl AccountUpdateMeta {
         self.block_commitment.as_ref()
     }
 
-    pub fn final_state_root(&self) -> Hash {
-        self.final_state_root
+    pub fn new_state_root(&self) -> Hash {
+        self.new_state_root
     }
 }
 

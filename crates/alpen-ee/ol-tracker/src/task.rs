@@ -4,8 +4,9 @@ use alpen_ee_common::{
 use strata_ee_acct_runtime::process_update_unconditionally;
 use strata_ee_acct_types::EeAccountState;
 use strata_evm_ee::EvmExecutionEnvironment;
-use strata_identifiers::EpochCommitment;
+use strata_identifiers::{EpochCommitment, Hash};
 use strata_predicate::PredicateKey;
+use strata_snark_acct_runtime::IInnerState;
 use strata_snark_acct_types::UpdateManifest;
 use tracing::{debug, error, info, warn};
 
@@ -18,6 +19,7 @@ use crate::{
 #[derive(Debug)]
 pub(crate) struct OLEpochOperations {
     pub epoch: EpochCommitment,
+    pub final_state_root: Hash,
     pub operations: Vec<EpochUpdateOp>,
 }
 
@@ -141,6 +143,7 @@ pub(crate) async fn track_ol_state(
 
             epoch_operations.push(OLEpochOperations {
                 epoch: *epoch_summary.epoch(),
+                final_state_root: epoch_summary.final_state_root(),
                 operations: epoch_summary.updates().to_vec(),
             });
 
@@ -161,28 +164,21 @@ pub(crate) async fn track_ol_state(
 pub(crate) fn apply_epoch_operations(
     state: &mut EeAccountState,
     epoch_operations: &[EpochUpdateOp],
+    final_state_root: Hash,
 ) -> Result<()> {
-    // Check that the last update has state root present
-    match epoch_operations {
-        [] => return Ok(()),
-        [.., last] => {
-            if last.final_state_root().is_none() {
-                return Err(OLTrackerError::Other(
-                    "last update's state root in an epoch is expected to be present".to_string(),
-                ));
-            }
-        }
-    };
+    if epoch_operations.is_empty() {
+        return Ok(());
+    }
 
     for op in epoch_operations {
-        if op.final_state_root().is_none() {
+        if op.new_state_root().is_none() {
             warn!(
                 seq_no = op.seq_no(),
                 "applying update without post-state check"
             );
         }
         let manifest = UpdateManifest::new(
-            op.final_state_root(),
+            op.new_state_root(),
             op.extra_data().to_vec(),
             op.messages().to_vec(),
         );
@@ -193,6 +189,13 @@ pub(crate) fn apply_epoch_operations(
             PredicateKey::always_accept(),
         )
         .map_err(|e| OLTrackerError::Other(e.to_string()))?;
+    }
+
+    let observed = state.compute_state_root();
+    if observed != final_state_root {
+        return Err(OLTrackerError::Other(format!(
+            "epoch terminal state root mismatch: observed {observed} expected {final_state_root}"
+        )));
     }
 
     Ok(())
@@ -218,13 +221,14 @@ pub(crate) async fn handle_extend_ee_state<TStorage: Storage>(
     for epoch_op in epoch_operations {
         let OLEpochOperations {
             epoch: ol_epoch,
+            final_state_root,
             operations,
         } = epoch_op;
 
         let mut ee_state = state.best_ee_state().clone();
 
         // 1. Apply all operations in the epoch to update local ee account state.
-        apply_epoch_operations(&mut ee_state, operations).map_err(|error| {
+        apply_epoch_operations(&mut ee_state, operations, *final_state_root).map_err(|error| {
             error!(
                 epoch = %ol_epoch.epoch(),
                 %error,
@@ -283,13 +287,15 @@ mod tests {
             let mut state = EeAccountState::new(Hash::new([0u8; 32]), Hash::zero(), vec![], vec![]);
             let operations: Vec<EpochUpdateOp> = vec![];
 
-            let result = apply_epoch_operations(&mut state, &operations);
+            let result = apply_epoch_operations(&mut state, &operations, Hash::default());
 
             assert!(result.is_ok());
         }
     }
 
     mod track_ol_state_tests {
+        use strata_acct_types::Hash;
+
         use super::*;
 
         #[tokio::test]
@@ -606,6 +612,7 @@ mod tests {
                     Ok(OLEpochSummary::new(
                         make_epoch_commitment(3, 30, 103),
                         make_epoch_commitment(2, 20, 102),
+                        Hash::default(),
                         vec![],
                     ))
                 });
@@ -617,6 +624,7 @@ mod tests {
                     Ok(OLEpochSummary::new(
                         make_epoch_commitment(4, 40, 104),
                         make_epoch_commitment(3, 30, 103),
+                        Hash::default(),
                         vec![],
                     ))
                 });
@@ -629,6 +637,7 @@ mod tests {
                         make_epoch_commitment(5, 50, 105),
                         make_epoch_commitment(4, 40, 199), /* Discontinuity: prev doesn't match
                                                             * epoch 4 */
+                        Hash::default(),
                         vec![],
                     ))
                 });

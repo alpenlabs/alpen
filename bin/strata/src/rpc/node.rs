@@ -389,7 +389,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     pending.push(Pending {
                         block_commitment,
                         seq_no: r.seq_no(),
-                        final_state_root: meta.final_state_root(),
+                        final_state_root: meta.new_state_root(),
                         extra_data,
                         cursor_start: prev_cursor,
                         cursor_end: next_cursor,
@@ -572,6 +572,11 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .get_account_state(&account_id)
             .ok_or_else(|| not_found_error(format!("Account {account_id} not found")))?;
 
+        let snark_state = account_state.as_snark_account().map_err(|_| {
+            invalid_params_error(format!("Account {account_id} is not a snark account"))
+        })?;
+        let final_state_root: HexBytes32 = snark_state.inner_state_root().0.into();
+
         let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
 
         let updates = if let Some(records) = self
@@ -603,7 +608,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
             struct Pending {
                 seq_no: u64,
-                final_state_root: Option<Hash>,
+                new_state_root: Option<Hash>,
                 extra_data: Vec<u8>,
                 cursor_start: u64,
                 cursor_end: u64,
@@ -615,7 +620,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 let cursor_end = r.next_inbox_idx();
                 cursor = cursor_end;
 
-                let final_state_root = r.update_meta().map(|m| m.final_state_root());
+                let new_state_root = r.update_meta().map(|m| m.new_state_root());
                 let extra_data = r
                     .extra_data()
                     .ok_or_else(|| {
@@ -628,7 +633,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
                 pending.push(Pending {
                     seq_no: r.seq_no(),
-                    final_state_root,
+                    new_state_root,
                     extra_data,
                     cursor_start,
                     cursor_end,
@@ -662,7 +667,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 out.push(RpcUpdateInputData {
                     seq_no: p.seq_no,
                     next_inbox_msg_idx: p.cursor_end,
-                    final_state_root: p.final_state_root.map(|root| root.0.into()),
+                    new_state_root: p.new_state_root.map(|root| root.0.into()),
                     extra_data: p.extra_data.into(),
                     messages: messages.into_iter().map(Into::into).collect(),
                 });
@@ -676,6 +681,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             epoch_commitment,
             prev_epoch_commitment,
             account_state.balance().to_sat(),
+            final_state_root,
             updates,
         ))
     }

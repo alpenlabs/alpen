@@ -1376,6 +1376,7 @@ dependencies = [
  "strata-identifiers",
  "strata-predicate",
  "strata-service",
+ "strata-snark-acct-runtime",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
  "tokio",

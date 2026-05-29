@@ -97,27 +97,21 @@ class TestCheckpointSyncNode(BaseTest):
 
 def check_summaries_equivalent(seq_summary: AccountEpochSummary, node_summary: AccountEpochSummary):
     """Checks that the two summaries match. The checkpoint-sync node may report
-    `final_state_root=None` for non-terminal updates within a multi-update epoch
-    (the DA reconstruction only recovers terminal-per-account roots); when
-    present, the root must match the sequencer's.
+    `new_state_root=None` for non-terminal updates within a multi-update epoch
+    (DA reconstruction only recovers terminal-per-account roots); when present,
+    the root must match the sequencer's.
     """
     seq_summary_d = dict(seq_summary)
     node_summary_d = dict(node_summary)
     seq_updates = cast(list, seq_summary_d.pop("update_inputs"))
     node_updates = cast(list, node_summary_d.pop("update_inputs"))
 
-    last_seq_update = seq_updates[-1]
-    last_node_update = node_updates[-1]
-
-    # Check the roots in last updates nodes match.
-    assert last_seq_update["final_state_root"] == last_node_update["final_state_root"]
-
     assert seq_summary_d == node_summary_d
 
     for su, nu in zip(seq_updates, node_updates, strict=True):
-        s_root = su.pop("final_state_root")
-        n_root = nu.pop("final_state_root")
-        assert n_root is None or n_root == s_root, "final_state_root if present must match"
+        s_root = su.pop("new_state_root")
+        n_root = nu.pop("new_state_root")
+        assert n_root is None or n_root == s_root, "new_state_root if present must match"
         assert su == nu
 
 

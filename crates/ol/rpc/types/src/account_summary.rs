@@ -17,6 +17,8 @@ pub struct RpcAccountEpochSummary {
     prev_epoch_commitment: EpochCommitment,
     /// Balance of account at the end of this epoch in sats.
     balance: u64,
+    /// Account's state root at the end of this epoch.
+    final_state_root: HexBytes32,
     /// Update inputs for this epoch if present
     update_inputs: Vec<RpcUpdateInputData>,
 }
@@ -27,12 +29,14 @@ impl RpcAccountEpochSummary {
         epoch_commitment: EpochCommitment,
         prev_epoch_commitment: EpochCommitment,
         balance: u64,
+        final_state_root: HexBytes32,
         update_inputs: Vec<RpcUpdateInputData>,
     ) -> Self {
         Self {
             epoch_commitment,
             prev_epoch_commitment,
             balance,
+            final_state_root,
             update_inputs,
         }
     }
@@ -47,6 +51,10 @@ impl RpcAccountEpochSummary {
 
     pub fn balance(&self) -> u64 {
         self.balance
+    }
+
+    pub fn final_state_root(&self) -> &HexBytes32 {
+        &self.final_state_root
     }
 
     pub fn update_inputs(&self) -> &[RpcUpdateInputData] {
@@ -147,9 +155,9 @@ pub struct RpcUpdateInputData {
     pub seq_no: u64,
     /// Inbox cursor after this update.
     pub next_inbox_msg_idx: u64,
-    /// Final inner state root after this update. `None` for checkpoint-sync
-    /// sources: DA only carries the terminal epoch state, not per-update.
-    pub final_state_root: Option<HexBytes32>,
+    /// Inner state root after this update. `None` for checkpoint-sync
+    /// sources on intermediate updates.
+    pub new_state_root: Option<HexBytes32>,
     /// Extra data posted with this update.
     pub extra_data: HexBytes,
     /// Account inbox messages processed in this update.
@@ -162,7 +170,7 @@ impl From<UpdateInputData> for RpcUpdateInputData {
         Self {
             seq_no: value.seq_no,
             next_inbox_msg_idx: proof_state.next_inbox_msg_idx(),
-            final_state_root: Some(proof_state.inner_state().0.into()),
+            new_state_root: Some(proof_state.inner_state().0.into()),
             extra_data: value.update_state.extra_data.to_vec().into(),
             messages: value.messages.into_iter().map(Into::into).collect(),
         }
