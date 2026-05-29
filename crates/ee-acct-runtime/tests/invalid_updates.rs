@@ -38,7 +38,7 @@ fn test_mismatched_coinput_count() {
     let message = create_deposit_message(dest, value, source, 1);
 
     let (operation, _coinputs, _snark_priv) =
-        build_update_operation(1, vec![message], &[], &initial_state, &snark_state, &ee);
+        build_update_operation(vec![message], &[], &initial_state, &snark_state, &ee);
 
     // Too many coinputs
     let wrong_coinputs = [vec![], vec![]];
@@ -74,7 +74,7 @@ fn test_nonempty_coinput_rejected() {
     let message = create_deposit_message(dest, value, source, 1);
 
     let (operation, _coinputs, _snark_priv) =
-        build_update_operation(1, vec![message], &[], &initial_state, &snark_state, &ee);
+        build_update_operation(vec![message], &[], &initial_state, &snark_state, &ee);
 
     // Non-empty coinput should be rejected (EE requires empty coinputs)
     let nonempty_coinputs = vec![vec![1, 2, 3]];
@@ -170,7 +170,7 @@ fn test_builder_rejects_wrong_parent() {
     let predicate_key = PredicateKey::always_accept();
     let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
     let mut builder =
-        UpdateBuilder::new(1, snark_state, initial_state, vinput).expect("create builder");
+        UpdateBuilder::new(snark_state, initial_state, vinput).expect("create builder");
 
     // Chunk with wrong parent
     let wrong_parent = Hash::new([0xCC; 32]);
@@ -197,7 +197,7 @@ fn test_builder_rejects_wrong_deposit() {
     let predicate_key = PredicateKey::always_accept();
     let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
     let mut builder =
-        UpdateBuilder::new(1, snark_state, initial_state, vinput).expect("create builder");
+        UpdateBuilder::new(snark_state, initial_state, vinput).expect("create builder");
 
     builder.add_messages(vec![message]).expect("add messages");
 
@@ -236,7 +236,7 @@ fn test_builder_advances_tip() {
     let predicate_key = PredicateKey::always_accept();
     let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
     let mut builder =
-        UpdateBuilder::new(1, snark_state, initial_state, vinput).expect("create builder");
+        UpdateBuilder::new(snark_state, initial_state, vinput).expect("create builder");
 
     builder
         .add_messages(vec![msg1, msg2])
