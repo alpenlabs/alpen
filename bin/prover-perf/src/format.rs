@@ -95,3 +95,34 @@ pub fn format_results_for_mode(
         PerfMode::Prove => format_prove_results(prove_results, host_name),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn format_prove_results_includes_timing_breakdown_columns() {
+        let text = format_prove_results(
+            &[(
+                "EVM EE STF".to_string(),
+                ProofSummary {
+                    prepare_duration: Duration::from_millis(8),
+                    prove_duration: Duration::from_millis(3220),
+                    total_duration: Duration::from_millis(13677),
+                    proof_bytes: 1_272_546,
+                    proof_type: "Compressed".to_string(),
+                },
+            )],
+            "SP1".to_string(),
+        );
+
+        assert!(text.contains("prepare ms"));
+        assert!(text.contains("prove ms"));
+        assert!(text.contains("total ms"));
+        assert!(text.contains("EVM EE STF"));
+        assert!(text.contains("Compressed"));
+        assert!(text.contains("1,272,546"));
+    }
+}

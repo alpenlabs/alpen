@@ -79,10 +79,10 @@ pub async fn run_sp1_prove_programs(programs: &[GuestProgram]) -> Vec<(String, P
             GuestProgram::Checkpoint => {
                 let prepare_started_at = Instant::now();
                 let input = checkpoint::prepare_input();
-                let prepare_duration = prepare_started_at.elapsed();
 
                 let cfg = SP1HostConfig::default();
                 let host = checkpoint_host(cfg).await;
+                let prepare_duration = prepare_started_at.elapsed();
                 let prove_started_at = Instant::now();
                 let (name, receipt) = checkpoint::prove_with_input(&input, &**host);
                 let prove_duration = prove_started_at.elapsed();
@@ -92,10 +92,10 @@ pub async fn run_sp1_prove_programs(programs: &[GuestProgram]) -> Vec<(String, P
             GuestProgram::EvmEeStf => {
                 let prepare_started_at = Instant::now();
                 let input = evm_ee_stf::prepare_input();
-                let prepare_duration = prepare_started_at.elapsed();
 
                 let cfg = SP1HostConfig::default();
                 let host = evm_ee_stf_host(cfg).await;
+                let prepare_duration = prepare_started_at.elapsed();
                 let prove_started_at = Instant::now();
                 let (name, receipt) = evm_ee_stf::prove_with_input(&input, &**host);
                 let prove_duration = prove_started_at.elapsed();
