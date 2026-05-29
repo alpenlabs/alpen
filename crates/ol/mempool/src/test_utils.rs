@@ -79,7 +79,7 @@ pub(crate) fn create_test_snark_update() -> SnarkAccountUpdate {
     let ledger_refs = strata_snark_acct_types::LedgerRefs::new(
         operation
             .ledger_refs()
-            .asm_history_proofs()
+            .l1_block_ref_claims()
             .map(|c| c.claims.iter().cloned().collect())
             .unwrap_or_default(),
     );
@@ -340,7 +340,7 @@ pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
     let ledger_refs = strata_snark_acct_types::LedgerRefs::new(
         operation_data
             .ledger_refs()
-            .asm_history_proofs()
+            .l1_block_ref_claims()
             .map(|c| c.claims.iter().cloned().collect())
             .unwrap_or_default(),
     );

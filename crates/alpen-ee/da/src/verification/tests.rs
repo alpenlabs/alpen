@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use alloy_primitives::{keccak256, Address, Bytes, U256};
-use alpen_ee_da_types::{DaBlob, EvmHeaderSummary, DA_BLOB_VERSION};
+use alpen_ee_da_types::{DaBlob, DaParseError, EvmHeaderSummary, DA_BLOB_VERSION};
 use alpen_reth_statediff::{
     apply_batch_state_diff_to_ethereum_state, AccountChange, AccountDiff, BatchStateDiff,
 };
@@ -77,6 +77,10 @@ fn commit_tx() -> Transaction {
 }
 
 fn reveal_tx(commit_txid: Txid, chunk: &[u8]) -> Transaction {
+    reveal_tx_spending_vout(commit_txid, 1, chunk)
+}
+
+fn reveal_tx_spending_vout(commit_txid: Txid, vout: u32, chunk: &[u8]) -> Transaction {
     let secret_bytes = [0x42u8; 32];
     let key_pair = UntweakedKeypair::from_seckey_slice(SECP256K1, &secret_bytes).unwrap();
     let pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
@@ -107,7 +111,7 @@ fn reveal_tx(commit_txid: Txid, chunk: &[u8]) -> Transaction {
         input: vec![TxIn {
             previous_output: OutPoint {
                 txid: commit_txid,
-                vout: 1,
+                vout,
             },
             script_sig: ScriptBuf::new(),
             sequence: Sequence::MAX,
@@ -124,6 +128,59 @@ fn archive_inputs(ee_input: &EePrivateInput, da_witness: &DaWitness) -> (Vec<u8>
     let ee_bytes = rkyv::to_bytes::<RkyvError>(ee_input).unwrap().to_vec();
     let da_bytes = rkyv::to_bytes::<RkyvError>(da_witness).unwrap().to_vec();
     (ee_bytes, da_bytes)
+}
+
+fn run_verify_da_witness(
+    ee_input: &EePrivateInput,
+    da_witness: &DaWitness,
+    pub_params: &UpdateProofPubParams,
+    expected_pre_root: [u8; 32],
+) -> Result<(), DaVerificationError> {
+    let (ee_bytes, da_bytes) = archive_inputs(ee_input, da_witness);
+    let archived_ee = rkyv::access::<ArchivedEePrivateInput, RkyvError>(&ee_bytes).unwrap();
+    let archived_da = rkyv::access::<ArchivedDaWitness, RkyvError>(&da_bytes).unwrap();
+
+    verify_da_witness(archived_ee, archived_da, pub_params, expected_pre_root)
+}
+
+fn rebuild_pub_params(
+    seq_no: u64,
+    height: u32,
+    block_hash: [u8; 32],
+    wtxids_root: [u8; 32],
+) -> UpdateProofPubParams {
+    let ledger_ref_hash = l1_block_ref_commitment(&block_hash, &wtxids_root);
+    let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(height as u64, ledger_ref_hash)]);
+
+    UpdateProofPubParams::new(
+        seq_no,
+        ProofState::new(Hash::zero(), 0),
+        ProofState::new(Hash::zero(), 0),
+        Vec::new(),
+        ledger_refs,
+        UpdateOutputs::new_empty(),
+        Vec::new(),
+    )
+}
+
+fn rebuild_ee_input(
+    raw_partial_pre_state: &[u8],
+    tip_state_root: [u8; 32],
+    header: EvmHeaderSummary,
+) -> EePrivateInput {
+    let transition = ChunkTransition::new(
+        Hash::from([1; 32]),
+        Hash::from([2; 32]),
+        Hash::from(tip_state_root),
+        ExecHeaderSummary::new(encode_to_vec(&header).unwrap()),
+        ExecInputs::new_empty(),
+        ExecOutputs::new_empty(),
+    );
+    EePrivateInput::new(
+        Vec::new(),
+        raw_partial_pre_state.to_vec(),
+        vec![ChunkInput::new(transition, Vec::new())],
+    )
 }
 
 fn valid_fixture() -> (EePrivateInput, DaWitness, UpdateProofPubParams, [u8; 32]) {
@@ -160,22 +217,8 @@ fn valid_fixture() -> (EePrivateInput, DaWitness, UpdateProofPubParams, [u8; 32]
     let wtxids_root = hash_pair(commit_wtxid, reveal_wtxid);
     let block_hash = [0x44; 32];
     let height = 42;
-    let ledger_ref_hash = l1_block_ref_commitment(&block_hash, &wtxids_root);
-    let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(height as u64, ledger_ref_hash)]);
 
-    let transition = ChunkTransition::new(
-        Hash::from([1; 32]),
-        Hash::from([2; 32]),
-        Hash::from(pre_root),
-        ExecHeaderSummary::new(encode_to_vec(&header).unwrap()),
-        ExecInputs::new_empty(),
-        ExecOutputs::new_empty(),
-    );
-    let ee_input = EePrivateInput::new(
-        Vec::new(),
-        raw_pre_state,
-        vec![ChunkInput::new(transition, Vec::new())],
-    );
+    let ee_input = rebuild_ee_input(&raw_pre_state, pre_root, header);
 
     let da_witness = DaWitness::new(vec![DaBlockWitness::new(
         L1DaBlockInclusion::new(height, block_hash, wtxids_root),
@@ -191,15 +234,7 @@ fn valid_fixture() -> (EePrivateInput, DaWitness, UpdateProofPubParams, [u8; 32]
         ],
     )]);
 
-    let pub_params = UpdateProofPubParams::new(
-        blob.update_seq_no,
-        ProofState::new(Hash::zero(), 0),
-        ProofState::new(Hash::zero(), 0),
-        Vec::new(),
-        ledger_refs,
-        UpdateOutputs::new_empty(),
-        Vec::new(),
-    );
+    let pub_params = rebuild_pub_params(blob.update_seq_no, height, block_hash, wtxids_root);
 
     (ee_input, da_witness, pub_params, pre_root)
 }
@@ -393,6 +428,173 @@ fn verify_da_witness_accepts_valid_commit_reveal_round_trip() {
 
     verify_da_witness(archived_ee, archived_da, &pub_params, expected_pre_root)
         .expect("valid DA witness must verify");
+}
+
+#[test]
+fn verify_da_witness_rejects_update_seq_no_mismatch() {
+    let (ee_input, da_witness, pub_params, expected_pre_root) = valid_fixture();
+    let block = da_witness.blocks().first().unwrap();
+    let bad_pub_params = rebuild_pub_params(
+        pub_params.seq_no() + 1,
+        block.inclusion().l1_block_height(),
+        *block.inclusion().l1_block_hash(),
+        *block.inclusion().wtxids_root(),
+    );
+
+    let err = run_verify_da_witness(&ee_input, &da_witness, &bad_pub_params, expected_pre_root)
+        .expect_err("DA blob seq_no must match public proof params");
+
+    assert!(matches!(
+        err,
+        DaVerificationError::UpdateSeqNoMismatch {
+            expected: 8,
+            actual: 7
+        }
+    ));
+}
+
+#[test]
+fn verify_da_witness_rejects_evm_header_mismatch() {
+    let (ee_input, da_witness, pub_params, expected_pre_root) = valid_fixture();
+    let wrong_header = EvmHeaderSummary {
+        block_num: 11,
+        timestamp: 1_700_000_000,
+        base_fee: 100,
+        gas_used: 21_000,
+        gas_limit: 30_000_000,
+    };
+    let bad_ee_input = rebuild_ee_input(
+        ee_input.raw_partial_pre_state(),
+        expected_pre_root,
+        wrong_header,
+    );
+
+    let err = run_verify_da_witness(&bad_ee_input, &da_witness, &pub_params, expected_pre_root)
+        .expect_err("DA blob header must match the last chunk public header summary");
+
+    assert!(matches!(err, DaVerificationError::EvmHeaderMismatch { .. }));
+}
+
+#[test]
+fn verify_da_witness_rejects_state_root_mismatch() {
+    let (ee_input, da_witness, pub_params, expected_pre_root) = valid_fixture();
+    let mut wrong_tip_state_root = expected_pre_root;
+    wrong_tip_state_root[0] ^= 1;
+    let header = EvmHeaderSummary {
+        block_num: 10,
+        timestamp: 1_700_000_000,
+        base_fee: 100,
+        gas_used: 21_000,
+        gas_limit: 30_000_000,
+    };
+    let bad_ee_input = rebuild_ee_input(
+        ee_input.raw_partial_pre_state(),
+        wrong_tip_state_root,
+        header,
+    );
+
+    let err = run_verify_da_witness(&bad_ee_input, &da_witness, &pub_params, expected_pre_root)
+        .expect_err("post-apply state root must match the last chunk tip_state_root");
+
+    assert!(matches!(err, DaVerificationError::StateRootMismatch { .. }));
+}
+
+#[test]
+fn verify_da_witness_rejects_missing_reveal() {
+    let (ee_input, da_witness, pub_params, expected_pre_root) = valid_fixture();
+    let block = da_witness.blocks().first().unwrap();
+    let commit_tx = &block.txs()[0];
+    let da_witness = DaWitness::new(vec![DaBlockWitness::new(
+        L1DaBlockInclusion::new(
+            block.inclusion().l1_block_height(),
+            *block.inclusion().l1_block_hash(),
+            *block.inclusion().wtxids_root(),
+        ),
+        vec![DaTxWitness::new(
+            commit_tx.raw_tx().to_vec(),
+            commit_tx.wtxid_inclusion_proof().clone(),
+        )],
+    )]);
+
+    let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
+        .expect_err("commit output 1 must have a matching reveal");
+
+    assert!(matches!(
+        err,
+        DaVerificationError::Parse(DaParseError::MissingReveal(1))
+    ));
+}
+
+#[test]
+fn verify_da_witness_rejects_duplicate_reveal() {
+    let (ee_input, da_witness, pub_params, expected_pre_root) = valid_fixture();
+    let block = da_witness.blocks().first().unwrap();
+    let commit_tx = &block.txs()[0];
+    let reveal_tx = &block.txs()[1];
+    let duplicate_reveal = DaTxWitness::new(
+        reveal_tx.raw_tx().to_vec(),
+        reveal_tx.wtxid_inclusion_proof().clone(),
+    );
+    let da_witness = DaWitness::new(vec![DaBlockWitness::new(
+        L1DaBlockInclusion::new(
+            block.inclusion().l1_block_height(),
+            *block.inclusion().l1_block_hash(),
+            *block.inclusion().wtxids_root(),
+        ),
+        vec![
+            DaTxWitness::new(
+                commit_tx.raw_tx().to_vec(),
+                commit_tx.wtxid_inclusion_proof().clone(),
+            ),
+            DaTxWitness::new(
+                reveal_tx.raw_tx().to_vec(),
+                reveal_tx.wtxid_inclusion_proof().clone(),
+            ),
+            duplicate_reveal,
+        ],
+    )]);
+
+    let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
+        .expect_err("two reveals for the same commit output must fail");
+
+    assert!(matches!(
+        err,
+        DaVerificationError::Parse(DaParseError::DuplicateReveal(1))
+    ));
+}
+
+#[test]
+fn verify_da_witness_rejects_reveal_spending_marker_vout() {
+    let (ee_input, _, pub_params, expected_pre_root) = valid_fixture();
+    let commit = commit_tx();
+    let reveal = reveal_tx_spending_vout(commit.compute_txid(), 0, &[0xaa]);
+    let commit_wtxid = commit.compute_wtxid().to_byte_array();
+    let reveal_wtxid = reveal.compute_wtxid().to_byte_array();
+    let wtxids_root = hash_pair(commit_wtxid, reveal_wtxid);
+    let block_hash = [0x45; 32];
+    let height = 43;
+    let da_witness = DaWitness::new(vec![DaBlockWitness::new(
+        L1DaBlockInclusion::new(height, block_hash, wtxids_root),
+        vec![
+            DaTxWitness::new(
+                serialize(&commit),
+                BitcoinMerkleProof::new(vec![reveal_wtxid], 0),
+            ),
+            DaTxWitness::new(
+                serialize(&reveal),
+                BitcoinMerkleProof::new(vec![commit_wtxid], 1),
+            ),
+        ],
+    )]);
+    let pub_params = rebuild_pub_params(pub_params.seq_no(), height, block_hash, wtxids_root);
+
+    let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
+        .expect_err("a reveal cannot spend the commit OP_RETURN marker output");
+
+    assert!(matches!(
+        err,
+        DaVerificationError::Parse(DaParseError::RevealSpendsMarker)
+    ));
 }
 
 #[test]

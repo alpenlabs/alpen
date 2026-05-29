@@ -64,7 +64,7 @@ fn build_snark_acct_update_data(
 }
 
 fn convert_sau_ledger_refs(sau_refs: &SauTxLedgerRefs) -> LedgerRefs {
-    match sau_refs.asm_history_proofs() {
+    match sau_refs.l1_block_ref_claims() {
         Some(claim_list) => LedgerRefs::new(claim_list.claims().to_vec()),
         None => LedgerRefs::new_empty(),
     }

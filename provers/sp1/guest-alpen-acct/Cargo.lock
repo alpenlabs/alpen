@@ -515,6 +515,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-da"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alpen-ee-da-types",
+ "alpen-reth-statediff",
+ "bitcoin",
+ "revm-primitives",
+ "ssz",
+ "strata-codec",
+ "strata-ee-acct-runtime",
+ "strata-ee-chain-types",
+ "strata-evm-ee",
+ "strata-snark-acct-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "alpen-ee-da-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-reth-statediff",
+ "bitcoin",
+ "strata-codec",
+ "strata-crypto",
+ "strata-l1-envelope-fmt",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "alpen-reth-evm"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -5245,6 +5275,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-consensus",
  "alloy-rlp",
+ "alpen-ee-da-types",
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "bincode",
@@ -5416,26 +5447,18 @@ dependencies = [
 name = "strata-proofimpl-alpen-acct"
 version = "0.1.0"
 dependencies = [
- "alloy-primitives",
- "alpen-reth-statediff",
- "bitcoin",
+ "alpen-ee-da",
  "k256",
  "reth-chainspec",
- "revm-primitives",
  "rkyv",
  "rsp-primitives",
- "sha2",
  "ssz",
- "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
- "strata-ee-chain-types",
  "strata-evm-ee",
- "strata-l1-envelope-fmt",
  "strata-predicate",
  "strata-snark-acct-runtime",
  "strata-snark-acct-types",
- "thiserror 2.0.18",
  "zkaleido",
  "zkaleido-native-adapter",
 ]

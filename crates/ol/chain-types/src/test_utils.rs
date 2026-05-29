@@ -167,7 +167,7 @@ pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
                         .try_into()
                         .expect("messages must fit within SSZ max length"),
                     ledger_refs: SauTxLedgerRefs {
-                        asm_history_proofs: ssz_types::Optional::None,
+                        l1_block_ref_claims: ssz_types::Optional::None,
                     },
                 },
             },
