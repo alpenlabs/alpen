@@ -15,7 +15,9 @@ use std::collections::BTreeSet;
 use alloy_primitives::keccak256;
 use alpen_ee_da_types::{
     bitcoin_merkle_root, commit_marker_payload, extract_da_chunks as parse_da_chunks,
-    reassemble_da_blob, DaBlob, DaParseError, EvmHeaderSummary, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES,
+    reassemble_da_blob, ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness,
+    ArchivedDaBytecodeWitness, ArchivedDaWitness, DaBlob, DaParseError, EvmHeaderSummary,
+    DA_BLOB_VERSION, EE_DA_MAGIC_BYTES,
 };
 use alpen_reth_statediff::{
     apply_batch_state_diff_to_ethereum_state, AccountChange, BatchStateDiff,
@@ -25,10 +27,7 @@ pub use error::{DaVerificationError, DaVerificationResult};
 use revm_primitives::{B256, KECCAK_EMPTY};
 use ssz::Decode;
 use strata_codec::decode_buf_exact;
-use strata_ee_acct_runtime::{
-    ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness, ArchivedDaBytecodeWitness,
-    ArchivedDaWitness, ArchivedEePrivateInput,
-};
+use strata_ee_acct_runtime::ArchivedEePrivateInput;
 use strata_ee_chain_types::ChunkTransition;
 use strata_evm_ee::EvmPartialState;
 use strata_snark_acct_types::{l1_block_ref_leaf_hash, LedgerRefs, UpdateProofPubParams};

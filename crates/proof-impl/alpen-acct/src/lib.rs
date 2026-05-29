@@ -2,11 +2,12 @@
 
 use std::sync::Arc;
 
-use alpen_ee_da::verification::verify_da_witness;
+use alpen_ee_da_runtime::verification::verify_da_witness;
+use alpen_ee_da_types::ArchivedDaWitness;
 use reth_chainspec::ChainSpec;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
-use strata_ee_acct_runtime::{ArchivedDaWitness, ArchivedEePrivateInput};
+use strata_ee_acct_runtime::ArchivedEePrivateInput;
 use strata_ee_acct_types::EeAccountState;
 use strata_evm_ee::EvmExecutionEnvironment;
 use strata_predicate::PredicateKey;

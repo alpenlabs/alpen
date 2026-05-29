@@ -5,10 +5,11 @@
 //! minimal account-proof path rather than pretending an empty DA witness is
 //! valid for an executed chunk.
 
+use alpen_ee_da_types::DaWitness;
 use rsp_primitives::genesis::Genesis;
 use ssz::Encode;
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::{DaWitness, EePrivateInput};
+use strata_ee_acct_runtime::EePrivateInput;
 use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
 use strata_identifiers::Hash;
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};

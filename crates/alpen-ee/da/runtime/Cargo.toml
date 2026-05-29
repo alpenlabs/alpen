@@ -1,0 +1,35 @@
+[package]
+edition = "2021"
+name = "alpen-ee-da-runtime"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[features]
+# Off by default: the guest/proof side links only the verifier. The host-side
+# prover enables `builders` to construct DA witnesses.
+default = []
+builders = []
+
+[dependencies]
+alpen-ee-da-types.workspace = true
+alpen-reth-statediff.workspace = true
+
+alloy-primitives.workspace = true
+bitcoin.workspace = true
+revm-primitives.workspace = true
+ssz.workspace = true
+strata-codec.workspace = true
+strata-ee-acct-runtime.workspace = true
+strata-ee-chain-types.workspace = true
+strata-evm-ee.workspace = true
+strata-snark-acct-types.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+rkyv.workspace = true
+rsp-mpt.workspace = true
+sha2.workspace = true
+strata-acct-types.workspace = true
+strata-l1-envelope-fmt.workspace = true

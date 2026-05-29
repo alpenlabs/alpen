@@ -7,6 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+alpen-ee-da-types.workspace = true
 ssz.workspace = true
 zkaleido.workspace = true
 

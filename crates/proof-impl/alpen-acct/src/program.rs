@@ -1,8 +1,9 @@
+use alpen_ee_da_types::DaWitness;
 use k256::schnorr::SigningKey;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
 use ssz::Decode;
-use strata_ee_acct_runtime::{DaWitness, EePrivateInput};
+use strata_ee_acct_runtime::EePrivateInput;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_snark_acct_runtime::PrivateInput as UpdatePrivateInput;
 use strata_snark_acct_types::UpdateProofPubParams;
@@ -121,10 +122,11 @@ impl EeAcctProgram {
 
 #[cfg(test)]
 mod tests {
+    use alpen_ee_da_types::DaWitness;
     use rsp_primitives::genesis::Genesis;
     use ssz::Encode;
     use strata_codec::encode_to_vec;
-    use strata_ee_acct_runtime::{DaWitness, EePrivateInput};
+    use strata_ee_acct_runtime::EePrivateInput;
     use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
     use strata_identifiers::Hash;
     use strata_predicate::{PredicateKey, PredicateTypeId};

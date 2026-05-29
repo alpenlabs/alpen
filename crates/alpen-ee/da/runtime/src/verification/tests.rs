@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 
 use alloy_primitives::{keccak256, Address, Bytes, U256};
-use alpen_ee_da_types::{DaBlob, DaParseError, EvmHeaderSummary, DA_BLOB_VERSION};
+use alpen_ee_da_types::{
+    ArchivedDaWitness, BitcoinMerkleProof, DaBlob, DaBlockWitness, DaBytecodeWitness, DaParseError,
+    DaTxWitness, DaWitness, EvmHeaderSummary, L1DaBlockInclusion, DA_BLOB_VERSION,
+};
 use alpen_reth_statediff::{
     apply_batch_state_diff_to_ethereum_state, AccountChange, AccountDiff, BatchStateDiff,
 };
@@ -22,10 +25,7 @@ use rsp_mpt::EthereumState;
 use sha2::{Digest, Sha256};
 use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::{
-    ArchivedDaWitness, ArchivedEePrivateInput, BitcoinMerkleProof, ChunkInput, DaBlockWitness,
-    DaBytecodeWitness, DaTxWitness, DaWitness, EePrivateInput, L1DaBlockInclusion,
-};
+use strata_ee_acct_runtime::{ArchivedEePrivateInput, ChunkInput, EePrivateInput};
 use strata_ee_chain_types::{ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs};
 use strata_evm_ee::EvmPartialState;
 use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;

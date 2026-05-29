@@ -5,6 +5,7 @@
 //! for the wtxid / witness-root commitment these helpers target:
 //! <https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#commitment-structure>.
 
+use bitcoin::{hashes::Hash as _, Transaction};
 use strata_crypto::hash::sha256d;
 
 /// Hashes one Bitcoin merkle-tree level as `SHA256(SHA256(left || right))`.
@@ -95,6 +96,34 @@ pub fn bitcoin_inclusion_proof(leaves: &[[u8; 32]], idx: u32) -> Vec<[u8; 32]> {
     }
 
     siblings
+}
+
+/// Returns the BIP-141 wtxid leaves for `txs`, zeroing the coinbase leaf
+/// (leaf 0) per the witness-commitment rule.
+pub fn wtxid_leaves(txs: &[Transaction]) -> Vec<[u8; 32]> {
+    txs.iter()
+        .enumerate()
+        .map(|(i, tx)| {
+            if i == 0 {
+                [0u8; 32]
+            } else {
+                tx.compute_wtxid().to_byte_array()
+            }
+        })
+        .collect()
+}
+
+/// Computes the BIP-141 witness transaction Merkle root for a block's tx list.
+///
+/// # Panics
+///
+/// Panics if `txs` is empty; the list must contain at least the coinbase tx.
+pub fn wtxids_root_from_txs(txs: &[Transaction]) -> [u8; 32] {
+    assert!(
+        !txs.is_empty(),
+        "wtxids root requires at least the coinbase tx"
+    );
+    bitcoin_merkle_root_from_leaves(&wtxid_leaves(txs))
 }
 
 #[cfg(test)]

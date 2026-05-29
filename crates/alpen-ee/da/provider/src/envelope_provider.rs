@@ -5,10 +5,10 @@ use std::{collections::HashMap, fmt, sync::Arc};
 use alpen_ee_common::{
     BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockInfo, L1DaBlockRef,
 };
-use alpen_ee_da_types::{DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
+use alpen_ee_da_types::{wtxids_root_from_txs, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
-use bitcoin::{hashes::Hash as _, Block, BlockHash, Txid, Wtxid};
+use bitcoin::{Block, BlockHash, Txid, Wtxid};
 use bitcoind_async_client::{traits::Reader, Client as BtcClient};
 use eyre::{bail, ensure};
 use strata_btc_types::{BlockHashExt, Buf32BitcoinExt};
@@ -302,12 +302,13 @@ fn compute_wtxids_root(block: &Block) -> eyre::Result<WtxidsRoot> {
     // DA block referenced here has witness data and the witness root matches the
     // L1 block ref root committed by ASM. If a future writer allows legacy-input
     // commit funding, commit-only blocks must mirror ASM's txid-root fallback.
-    let root = block
-        .witness_root()
-        .ok_or_else(|| eyre::eyre!("cannot compute wtxids root for empty block"))?;
-    Ok(WtxidsRoot::from(Buf32::from(
-        root.as_raw_hash().to_byte_array(),
-    )))
+    //
+    // Uses the same `wtxids_root_from_txs` primitive as the proof-side verifier
+    // and the host witness builder, so the produced ref matches what the guest
+    // recomputes during verification.
+    Ok(WtxidsRoot::from(Buf32::from(wtxids_root_from_txs(
+        &block.txdata,
+    ))))
 }
 
 #[cfg(test)]

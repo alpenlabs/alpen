@@ -9,13 +9,19 @@
 pub mod blob;
 pub mod merkle;
 pub mod parse;
+pub mod witness;
 
 pub use blob::{reassemble_da_blob, DaBlob, EvmHeaderSummary, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
 pub use merkle::{
     bitcoin_hash_pair, bitcoin_inclusion_proof, bitcoin_merkle_root,
-    bitcoin_merkle_root_from_leaves,
+    bitcoin_merkle_root_from_leaves, wtxid_leaves, wtxids_root_from_txs,
 };
 pub use parse::{
     commit_marker_payload, extract_da_chunks, extract_reveal_chunk, last_commit_reveal_vout,
     DaParseError,
+};
+pub use witness::{
+    ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness, ArchivedDaBytecodeWitness,
+    ArchivedDaTxWitness, ArchivedDaWitness, ArchivedL1DaBlockInclusion, BitcoinMerkleProof,
+    DaBlockWitness, DaBytecodeWitness, DaTxWitness, DaWitness, L1DaBlockInclusion,
 };

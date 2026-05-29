@@ -1,63 +1,47 @@
 //! Host-side helpers for assembling the DA witness consumed by the EE acct proof.
+//!
+//! These builders construct the [`DaWitness`](alpen_ee_da_types::DaWitness) and
+//! its parts; the [`verification`](crate::verification) module verifies the
+//! result. Gated behind the `builders` feature so guest/proof builds link only
+//! the verifier.
 
 use std::collections::BTreeSet;
 
 use alloy_primitives::{keccak256, B256};
 use alpen_ee_da_types::{
-    bitcoin_inclusion_proof, bitcoin_merkle_root_from_leaves, extract_da_chunks,
-    reassemble_da_blob, DaBlob,
+    bitcoin_inclusion_proof, extract_da_chunks, reassemble_da_blob, wtxid_leaves,
+    BitcoinMerkleProof, DaBlob, DaBytecodeWitness, DaParseError,
 };
 use alpen_reth_statediff::{AccountChange, BatchStateDiff};
-use bitcoin::{hashes::Hash as _, Transaction};
-use strata_ee_acct_runtime::{BitcoinMerkleProof, DaBytecodeWitness};
+use bitcoin::Transaction;
+use strata_codec::CodecError;
+
+/// Error raised while reassembling a DA blob from witnessed transactions.
+#[derive(Debug, thiserror::Error)]
+pub enum WitnessBuildError {
+    /// Commit/reveal extraction from the witnessed transactions failed.
+    #[error("extract DA chunks: {0}")]
+    Parse(#[from] DaParseError),
+    /// Decoding the reassembled chunk payloads into a [`DaBlob`] failed.
+    #[error("reassemble DA blob: {0}")]
+    Reassembly(CodecError),
+}
 
 /// Builds a wtxid-to-witness-root inclusion proof for the transaction at
 /// position `idx` within `txs`.
 ///
-/// Per BIP-141, the coinbase wtxid leaf is 32 zero bytes.
-pub(super) fn build_wtxid_inclusion_proof(txs: &[Transaction], idx: usize) -> BitcoinMerkleProof {
+/// Per BIP-141, the coinbase wtxid leaf is 32 zero bytes (see
+/// [`wtxid_leaves`](alpen_ee_da_types::wtxid_leaves)).
+pub fn build_wtxid_inclusion_proof(txs: &[Transaction], idx: usize) -> BitcoinMerkleProof {
     let leaves = wtxid_leaves(txs);
     let siblings = bitcoin_inclusion_proof(&leaves, idx as u32);
     BitcoinMerkleProof::new(siblings, idx as u32)
 }
 
-/// Computes the BIP-141 witness transaction Merkle root for a block's tx list.
-///
-/// Per BIP-141, the coinbase wtxid leaf is 32 zero bytes.
-pub(super) fn compute_wtxids_root(txs: &[Transaction]) -> [u8; 32] {
-    assert!(
-        !txs.is_empty(),
-        "wtxids root requires at least the coinbase tx"
-    );
-
-    // NOTE: DA reveal txs are witness spends, and Alpen DA commit tx funding is
-    // expected to spend post-SegWit inputs. Under that writer invariant, every
-    // DA block referenced here has witness data and this root matches the L1
-    // block ref root committed by ASM. If a future writer allows legacy-input
-    // commit funding, commit-only blocks must mirror ASM's txid-root fallback.
-    let leaves = wtxid_leaves(txs);
-    bitcoin_merkle_root_from_leaves(&leaves)
-}
-
-/// Returns wtxid leaves for `txs`, zeroing the coinbase leaf per BIP-141.
-fn wtxid_leaves(txs: &[Transaction]) -> Vec<[u8; 32]> {
-    txs.iter()
-        .enumerate()
-        .map(|(i, tx)| {
-            if i == 0 {
-                [0u8; 32]
-            } else {
-                tx.compute_wtxid().to_byte_array()
-            }
-        })
-        .collect()
-}
-
 /// Reassembles this batch's DA blob from its included commit/reveal transactions.
-pub(super) fn reassemble_da_blob_from_txs(txs: &[Transaction]) -> eyre::Result<DaBlob> {
-    let chunks =
-        extract_da_chunks(txs.iter()).map_err(|e| eyre::eyre!("extract DA chunks: {e}"))?;
-    reassemble_da_blob(&chunks).map_err(|e| eyre::eyre!("reassemble DA blob: {e}"))
+pub fn reassemble_da_blob_from_txs(txs: &[Transaction]) -> Result<DaBlob, WitnessBuildError> {
+    let chunks = extract_da_chunks(txs.iter())?;
+    reassemble_da_blob(&chunks).map_err(WitnessBuildError::Reassembly)
 }
 
 /// Returns account code hashes referenced by the blob but absent from the current blob bytecodes.
@@ -65,7 +49,7 @@ pub(super) fn reassemble_da_blob_from_txs(txs: &[Transaction]) -> eyre::Result<D
 /// These are the hashes affected by DA bytecode dedupe: the account diff still
 /// advertises a `code_hash`, but the current L1 blob no longer carries the
 /// matching bytecode bytes.
-pub(super) fn deduped_account_code_hashes(blob: &DaBlob) -> Vec<B256> {
+pub fn deduped_account_code_hashes(blob: &DaBlob) -> Vec<B256> {
     let empty_code_hash = keccak256([]);
     let mut missing = BTreeSet::new();
 
@@ -103,7 +87,11 @@ pub(super) fn deduped_account_code_hashes(blob: &DaBlob) -> Vec<B256> {
 /// bytes to prove they match the account diff's `code_hash`, but the proper
 /// future solution is an authenticated prior-publication proof for omitted
 /// bytecodes.
-pub(super) fn known_bytecodes_from_unfiltered_diff(
+///
+/// Returns the resolved witnesses plus the code hashes that were not found in
+/// `unfiltered_state_diff` and must be resolved by the caller from another
+/// source (e.g. the node bytecode store).
+pub fn known_bytecodes_from_unfiltered_diff(
     blob: &DaBlob,
     unfiltered_state_diff: &BatchStateDiff,
 ) -> (Vec<DaBytecodeWitness>, Vec<B256>) {
@@ -125,11 +113,13 @@ pub(super) fn known_bytecodes_from_unfiltered_diff(
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Address, Bytes, U256};
-    use alpen_ee_da_types::{bitcoin_merkle_root, EvmHeaderSummary};
-    use alpen_reth_statediff::{AccountDiff, BatchStateDiff};
+    use alpen_ee_da_types::{
+        bitcoin_merkle_root, bitcoin_merkle_root_from_leaves, EvmHeaderSummary,
+    };
+    use alpen_reth_statediff::AccountDiff;
     use bitcoin::{
-        absolute::LockTime, transaction::Version, Amount, OutPoint, ScriptBuf, Sequence,
-        Transaction, TxIn, TxOut, Witness,
+        absolute::LockTime, transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, TxIn,
+        TxOut, Witness,
     };
 
     use super::*;
@@ -165,16 +155,6 @@ mod tests {
             let proof = build_wtxid_inclusion_proof(&txs, idx);
             assert_eq!(compute_root(*leaf, &proof), expected_root, "idx={idx}");
         }
-    }
-
-    #[test]
-    fn compute_wtxids_root_matches_naive_root_with_coinbase_zeroed() {
-        let txs: Vec<Transaction> = (0..5).map(make_dummy_tx).collect();
-        let leaves = wtxid_leaves(&txs);
-        assert_eq!(
-            compute_wtxids_root(&txs),
-            bitcoin_merkle_root_from_leaves(&leaves)
-        );
     }
 
     #[test]

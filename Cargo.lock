@@ -1072,7 +1072,8 @@ dependencies = [
  "alpen-chainspec",
  "alpen-ee-common",
  "alpen-ee-config",
- "alpen-ee-da",
+ "alpen-ee-da-provider",
+ "alpen-ee-da-runtime",
  "alpen-ee-da-types",
  "alpen-ee-database",
  "alpen-ee-engine",
@@ -1209,7 +1210,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "alpen-ee-da"
+name = "alpen-ee-da-provider"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
@@ -1222,29 +1223,41 @@ dependencies = [
  "bitcoin",
  "bitcoind-async-client",
  "eyre",
+ "strata-btc-types",
+ "strata-btcio",
+ "strata-codec",
+ "strata-db-store-sled",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
+ "strata-storage",
+ "threadpool",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "alpen-ee-da-runtime"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alpen-ee-da-types",
+ "alpen-reth-statediff",
+ "bitcoin",
  "revm-primitives",
  "rkyv",
  "rsp-mpt",
  "sha2",
  "ssz",
  "strata-acct-types",
- "strata-btc-types",
- "strata-btcio",
  "strata-codec",
- "strata-db-store-sled",
- "strata-db-types",
  "strata-ee-acct-runtime",
  "strata-ee-chain-types",
  "strata-evm-ee",
- "strata-identifiers",
  "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
  "strata-snark-acct-types",
- "strata-storage",
  "thiserror 2.0.18",
- "threadpool",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -1253,6 +1266,8 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-reth-statediff",
  "bitcoin",
+ "rkyv",
+ "rkyv_impl",
  "strata-codec",
  "strata-crypto",
  "strata-l1-envelope-fmt",
@@ -16525,7 +16540,8 @@ dependencies = [
 name = "strata-proofimpl-alpen-acct"
 version = "0.1.0"
 dependencies = [
- "alpen-ee-da",
+ "alpen-ee-da-runtime",
+ "alpen-ee-da-types",
  "k256",
  "reth-chainspec",
  "rkyv",
@@ -16637,6 +16653,7 @@ dependencies = [
 name = "strata-provers-perf"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alpen-ee-da-types",
  "anyhow",
  "argh",
  "num-format",

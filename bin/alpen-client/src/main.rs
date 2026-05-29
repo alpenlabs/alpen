@@ -79,7 +79,7 @@ use tracing::{error, info};
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
     pub(super) use alpen_ee_common::{ChunkWitnessExtractFn, ChunkWitnessRecord};
-    pub(super) use alpen_ee_da::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
+    pub(super) use alpen_ee_da_provider::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
     pub(super) use alpen_reth_witness::RangeWitnessExtractor;
     pub(super) use strata_paas::{
         ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig, TaskStore,

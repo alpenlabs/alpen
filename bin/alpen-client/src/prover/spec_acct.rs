@@ -17,6 +17,13 @@ use alpen_ee_common::{
     build_ledger_refs_from_da, AccessedStateStore, BatchId, BatchStatus, BatchStorage,
     ExecBlockStorage, L1DaBlockRef, Storage,
 };
+use alpen_ee_da_runtime::builders::{
+    build_wtxid_inclusion_proof, known_bytecodes_from_unfiltered_diff, reassemble_da_blob_from_txs,
+};
+use alpen_ee_da_types::{
+    wtxids_root_from_txs, DaBlockWitness, DaBytecodeWitness, DaTxWitness, DaWitness,
+    L1DaBlockInclusion,
+};
 use alpen_ee_database::EeNodeStorage;
 use alpen_reth_db::StateDiffProvider;
 use alpen_reth_statediff::{BatchBuilder, BatchStateDiff};
@@ -28,10 +35,7 @@ use rsp_primitives::genesis::Genesis;
 use ssz::{Decode, Encode as _};
 use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::{
-    ChunkInput, DaBlockWitness, DaBytecodeWitness, DaTxWitness, DaWitness, EePrivateInput,
-    L1DaBlockInclusion,
-};
+use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
 use strata_ee_acct_types::UpdateExtraData;
 use strata_ee_chain_types::ChunkTransition;
 use strata_identifiers::{Buf32, WtxidsRoot};
@@ -44,13 +48,7 @@ use strata_snark_acct_types::{
 };
 use tokio::task;
 
-use super::{
-    da_witness_build::{
-        build_wtxid_inclusion_proof, compute_wtxids_root, known_bytecodes_from_unfiltered_diff,
-        reassemble_da_blob_from_txs,
-    },
-    ChunkTask,
-};
+use super::ChunkTask;
 
 pub(crate) type AcctRangeWitnessFn =
     dyn Fn(B256, B256) -> eyre::Result<RangeWitnessData> + Send + Sync;
@@ -497,7 +495,7 @@ async fn build_da_witness(
                 "L1 block {block_hash} has no transactions"
             )));
         }
-        let computed_wtxids_root = compute_wtxids_root(&block.txdata);
+        let computed_wtxids_root = wtxids_root_from_txs(&block.txdata);
         if computed_wtxids_root != *da_ref.block.wtxids_root().as_ref() {
             let computed_wtxids_root = WtxidsRoot::from(Buf32::from(computed_wtxids_root));
             return Err(PaasError::PermanentFailure(format!(
