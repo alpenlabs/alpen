@@ -24,7 +24,7 @@ use strata_asm_common::{
 };
 use strata_asm_manifest_types::AsmManifest;
 use strata_btc_verification::L1Anchor;
-use strata_codec::{decode_buf_exact, encode_to_vec};
+use strata_codec::encode_to_vec;
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{DbError, MmrId};
@@ -34,12 +34,12 @@ use strata_identifiers::{
 };
 use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::*;
-use strata_msg_fmt::{Msg, OwnedMsg};
+use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
 use strata_ol_chain_types_new::{
     ClaimList, OLBlock, OLBlockBody, OLLog, OLTransaction, OLTransactionData, OLTxSegment,
     ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData, SauTxPayload, SauTxProofState,
-    SauTxUpdateData, SignedOLBlockHeader, SimpleWithdrawalIntentLogData, TransactionPayload,
-    TxProofs, test_utils as ol_test_utils,
+    LogDecodeError, OLLogType, SauTxUpdateData, SignedOLBlockHeader, SimpleWithdrawalIntentLogData,
+    TransactionPayload, TxProofs, test_utils as ol_test_utils,
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
@@ -48,7 +48,7 @@ use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLState};
 use strata_ol_stf::{
-    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BlockComponents, BlockContext, BlockInfo,
+    BRIDGE_GATEWAY_ACCT_ID, BlockComponents, BlockContext, BlockInfo,
     construct_block as stf_construct_block,
 };
 use strata_predicate::PredicateKey;
@@ -1465,16 +1465,27 @@ pub(crate) fn template_state_root(template: &FullBlockTemplate) -> Hash {
     *template.header().state_root()
 }
 
-/// Returns decoded withdrawal intent logs from accumulated DA logs.
-pub(crate) fn withdrawal_intents(
+/// Extracts withdrawal intent logs from accumulated DA logs, selecting them by their msg-fmt log
+/// type id rather than the emitting account.
+///
+/// Returns each matching log's source [`AccountSerial`] paired with the decode result of its body,
+/// so callers can assert on both the originating account and the decoded payload (or surface a
+/// decode failure). Logs whose type id is not a withdrawal intent are skipped.
+pub(crate) fn extract_withdrawal_intents(
     output: &ConstructBlockOutput<MemoryStateBaseLayer>,
-) -> Vec<SimpleWithdrawalIntentLogData> {
+) -> Vec<(AccountSerial, Result<SimpleWithdrawalIntentLogData, LogDecodeError>)> {
     output
         .accumulated_da
         .logs()
         .iter()
-        .filter(|log| log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
-        .filter_map(|log| decode_buf_exact::<SimpleWithdrawalIntentLogData>(log.payload()).ok())
+        .filter_map(|log| {
+            let msg = MsgRef::try_from(log.payload()).ok()?;
+            match SimpleWithdrawalIntentLogData::try_decode_log(&msg) {
+                // A type mismatch just means this log isn't a withdrawal intent; skip it.
+                Err(LogDecodeError::TypeMismatch(..)) => None,
+                result => Some((log.account_serial(), result)),
+            }
+        })
         .collect()
 }
 
