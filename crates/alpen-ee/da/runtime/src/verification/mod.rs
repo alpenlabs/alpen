@@ -206,7 +206,7 @@ fn verify_da_blob_metadata(
     pub_params: &UpdateProofPubParams,
     dedup_da_witness: &ArchivedDedupWitness,
 ) -> DaVerificationResult {
-    let expected_seq_no = pub_params.seq_no();
+    let expected_seq_no = *pub_params.seq_no().inner();
     if blob.update_seq_no != expected_seq_no {
         return Err(DaVerificationError::UpdateSeqNoMismatch {
             expected: expected_seq_no,

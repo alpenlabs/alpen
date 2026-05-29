@@ -22,10 +22,7 @@ use strata_snark_acct_runtime::{
     ArchivedPrivateInput as ArchivedSnarkPrivateInput, Coinput, IInnerState, InputMessage,
     PrivateInput as SnarkPrivateInput, ProgramResult, SnarkAccountProgram,
 };
-use strata_snark_acct_types::{
-    ProofState, SnarkAccountState, UpdateManifest, UpdateOperationData, UpdateOutputs,
-    UpdateProofPubParams,
-};
+use strata_snark_acct_types::*;
 
 /// Serializes an [`EePrivateInput`] and a [`SnarkPrivateInput`] with rkyv, then
 /// calls `f` with the archived references.
@@ -132,7 +129,7 @@ pub fn verify_update(
     let post_root = post_state.compute_state_root();
 
     let pub_params = UpdateProofPubParams::new(
-        operation.seq_no(),
+        Seqno::new(operation.seq_no()),
         ProofState::new(pre_root, 0),
         ProofState::new(post_root, operation.processed_messages().len() as u64),
         operation.processed_messages().to_vec(),
@@ -204,7 +201,6 @@ pub(crate) fn create_deposit_message(
 /// Accepts messages and chunk transitions. The builder validates chunks
 /// against its internal pending input tracking.
 pub(crate) fn build_update_operation(
-    seq_no: u64,
     messages: Vec<MessageEntry>,
     chunks: &[ChunkTransition],
     initial_state: &EeAccountState,
@@ -214,9 +210,8 @@ pub(crate) fn build_update_operation(
     let predicate_key = PredicateKey::always_accept();
     let vinput = EeVerificationInput::new(ee, &predicate_key, &[], &[]);
 
-    let mut builder =
-        UpdateBuilder::new(seq_no, snark_state.clone(), initial_state.clone(), vinput)
-            .expect("create builder");
+    let mut builder = UpdateBuilder::new(snark_state.clone(), initial_state.clone(), vinput)
+        .expect("create builder");
 
     builder.add_messages(messages).expect("add messages");
 
@@ -306,7 +301,7 @@ pub(crate) fn verify_with_chunks(
     let post_root = post_state.compute_state_root();
 
     let pub_params = UpdateProofPubParams::new(
-        operation.seq_no(),
+        Seqno::new(operation.seq_no()),
         ProofState::new(pre_root, 0),
         ProofState::new(post_root, operation.processed_messages().len() as u64),
         operation.processed_messages().to_vec(),

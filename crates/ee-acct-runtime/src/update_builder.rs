@@ -11,7 +11,7 @@ use strata_ee_acct_types::{
 use strata_ee_chain_types::ChunkTransition;
 use strata_snark_acct_runtime::{PrivateInput, UpdateBuilder as GenericUpdateBuilder};
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, OutputTransfer, SnarkAccountState, UpdateOperationData,
+    LedgerRefs, OutputMessage, OutputTransfer, Seqno, SnarkAccountState, UpdateOperationData,
     UpdateOutputs,
 };
 
@@ -30,9 +30,6 @@ use crate::{
 #[expect(missing_debug_implementations, reason = "E may not implement Debug")]
 pub struct UpdateBuilder<'i, E: ExecutionEnvironment> {
     inner: GenericUpdateBuilder<'i, EeSnarkAccountProgram<E>>,
-
-    /// Seqno of the update we're proving.
-    seq_no: u64,
 
     /// Current chain tip, advanced as chunks are accepted.
     cur_tip_blkid: Hash,
@@ -57,7 +54,6 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
     /// Initializes with an empty message set. Messages are added incrementally
     /// via [`Self::add_message`] or [`Self::add_messages`].
     pub fn new(
-        seq_no: u64,
         snark_state: SnarkAccountState,
         initial_state: EeAccountState,
         vinput: EeVerificationInput<'i, E>,
@@ -79,13 +75,21 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
 
         Ok(Self {
             inner,
-            seq_no,
             cur_tip_blkid,
             cur_tip_state_root,
             pending_inputs,
             inputs_consumed: 0,
             fincls_processed: 0,
         })
+    }
+
+    /// Overrides the seqno that the finalized update will be tagged with.
+    ///
+    /// By default the inner builder uses the snark account state's expected
+    /// next seqno; set this to build an update bound to a different seqno
+    /// (e.g. when constructing a sequence of updates ahead of submission).
+    pub fn set_override_seq_no(&mut self, seq_no: Option<Seqno>) {
+        self.inner.set_override_seq_no(seq_no);
     }
 
     /// Returns the current account state.
@@ -247,9 +251,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             self.fincls_processed as u32,
         );
 
-        let (op, coinputs) = self
-            .inner
-            .build_operation_data_unverified(self.seq_no, extra_data)?;
+        let (op, coinputs) = self.inner.build_operation_data_unverified(extra_data)?;
         Ok((op, coinputs))
     }
 

@@ -11,7 +11,8 @@ use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_ID;
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, ProofState, UpdateOperationData, UpdateOutputs, UpdateProofPubParams,
+    LedgerRefs, OutputMessage, ProofState, Seqno, UpdateOperationData, UpdateOutputs,
+    UpdateProofPubParams,
 };
 
 /// Deterministic BIP-340 signing key whose verifying key matches the
@@ -70,7 +71,7 @@ pub(crate) fn build_snark_withdrawal_json(
     //
     // The mock withdrawal does not advance the snark account's inner state
     // or inbox index, so `cur_state == new_state == proof_state`.
-    let claim_ssz = sign_claim_ssz(seq_no, &proof_state, &proof_state, &outputs);
+    let claim_ssz = sign_claim_ssz(Seqno::new(seq_no), &proof_state, &proof_state, &outputs);
     let signature = bip340_test_sign(&claim_ssz);
     let update_proof_hex = hex::encode(signature);
 
@@ -99,7 +100,7 @@ pub(crate) fn build_snark_withdrawal_json(
 /// Reconstructs the `UpdateProofPubParams` claim the OL builds in
 /// `snark_acct_sys::compute_update_claim` and returns its SSZ encoding.
 fn sign_claim_ssz(
-    seq_no: u64,
+    seq_no: Seqno,
     cur_state: &ProofState,
     new_state: &ProofState,
     outputs: &UpdateOutputs,
@@ -320,7 +321,7 @@ mod tests {
                 .expect("withdrawal message payload bytes must fit within SSZ max length");
         let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
         let outputs = UpdateOutputs::new(vec![], vec![output_message]);
-        let claim_ssz = sign_claim_ssz(seq_no, &proof_state, &proof_state, &outputs);
+        let claim_ssz = sign_claim_ssz(Seqno::new(seq_no), &proof_state, &proof_state, &outputs);
 
         let proof_hex = json["payload"]["update_proof"].as_str().unwrap();
         let proof_bytes = hex::decode(proof_hex).unwrap();

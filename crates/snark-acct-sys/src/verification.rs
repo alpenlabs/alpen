@@ -165,7 +165,7 @@ fn compute_update_claim(
     let outputs = effects_to_update_outputs(update.effects());
 
     let pub_params = UpdateProofPubParams::new(
-        *update.seq_no().inner(),
+        update.seq_no(),
         cur_state,
         update.new_proof_state().clone(),
         update.processed_messages().to_vec(),

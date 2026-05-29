@@ -34,7 +34,7 @@ use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStor
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
 use strata_snark_acct_types::{
-    OutputMessage, OutputTransfer, ProofState, UpdateOutputs, UpdateProofPubParams,
+    OutputMessage, OutputTransfer, ProofState, Seqno, UpdateOutputs, UpdateProofPubParams,
 };
 use tokio::task;
 
@@ -214,9 +214,6 @@ impl ProofSpec for AcctSpec {
                 PaasError::PermanentFailure(format!("batch {batch_id} not in storage"))
             })?;
         let da_refs = da_refs_from_status(batch_id, status)?;
-        let update_seq_no = batch.update_seq_no().ok_or_else(|| {
-            PaasError::PermanentFailure(format!("batch {batch_id} has no update seq_no"))
-        })?;
 
         // 3. Previous EE account state.
         //
@@ -394,8 +391,12 @@ impl ProofSpec for AcctSpec {
             .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
         let ledger_refs = build_ledger_refs_from_da(&da_refs);
 
+        let seq_no = batch.update_seq_no().ok_or_else(|| {
+            PaasError::TransientFailure(format!("batch {batch_id} has no assigned update seq_no"))
+        })?;
+
         let pub_params = UpdateProofPubParams::new(
-            update_seq_no,
+            Seqno::new(seq_no),
             cur_state,
             new_state,
             messages,

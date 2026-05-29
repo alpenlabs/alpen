@@ -30,7 +30,7 @@ use strata_ee_chain_types::{ChunkTransition, ExecHeaderSummary, ExecInputs, Exec
 use strata_evm_ee::EvmPartialState;
 use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
 use strata_snark_acct_types::{
-    AccumulatorClaim, LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams,
+    AccumulatorClaim, LedgerRefs, ProofState, Seqno, UpdateOutputs, UpdateProofPubParams,
 };
 
 use super::{verify_da_witness, DaVerificationError};
@@ -153,7 +153,7 @@ fn rebuild_pub_params(
     let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(height as u64, ledger_ref_hash)]);
 
     UpdateProofPubParams::new(
-        seq_no,
+        Seqno::new(seq_no),
         ProofState::new(Hash::zero(), 0),
         ProofState::new(Hash::zero(), 0),
         Vec::new(),
@@ -318,7 +318,7 @@ fn verify_da_witness_accepts_deduped_bytecode_from_private_witness() {
         DedupWitness::new(vec![BytecodePreimage::new(bytecode.to_vec())]),
     );
     let pub_params = UpdateProofPubParams::new(
-        blob.update_seq_no,
+        Seqno::new(blob.update_seq_no),
         ProofState::new(Hash::zero(), 0),
         ProofState::new(Hash::zero(), 0),
         Vec::new(),
@@ -365,7 +365,7 @@ fn verify_da_blob_metadata_rejects_missing_deployed_bytecode() {
         ExecOutputs::new_empty(),
     );
     let pub_params = UpdateProofPubParams::new(
-        blob.update_seq_no,
+        Seqno::new(blob.update_seq_no),
         ProofState::new(Hash::zero(), 0),
         ProofState::new(Hash::zero(), 0),
         Vec::new(),
@@ -408,7 +408,7 @@ fn verify_da_witness_rejects_empty_witness_for_non_empty_batch() {
     );
     let da_witness = DaWitness::empty();
     let pub_params = UpdateProofPubParams::new(
-        1,
+        Seqno::new(1),
         ProofState::new(Hash::zero(), 0),
         ProofState::new(Hash::zero(), 0),
         Vec::new(),
@@ -442,7 +442,7 @@ fn verify_da_witness_rejects_update_seq_no_mismatch() {
     let (ee_input, da_witness, pub_params, expected_pre_root) = valid_fixture();
     let block = da_witness.blocks().first().unwrap();
     let bad_pub_params = rebuild_pub_params(
-        pub_params.seq_no() + 1,
+        *pub_params.seq_no().inner() + 1,
         block.inclusion().l1_block_height(),
         *block.inclusion().l1_block_hash(),
         *block.inclusion().wtxids_root(),
@@ -605,7 +605,8 @@ fn verify_da_witness_rejects_reveal_spending_marker_vout() {
         )],
         DedupWitness::empty(),
     );
-    let pub_params = rebuild_pub_params(pub_params.seq_no(), height, block_hash, wtxids_root);
+    let pub_params =
+        rebuild_pub_params(*pub_params.seq_no().inner(), height, block_hash, wtxids_root);
 
     let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
         .expect_err("a reveal cannot spend the commit OP_RETURN marker output");

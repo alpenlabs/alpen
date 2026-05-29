@@ -14,7 +14,7 @@ use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
 use strata_identifiers::Hash;
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{IInnerState, PrivateInput as UpdatePrivateInput};
-use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams};
+use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno, UpdateOutputs, UpdateProofPubParams};
 use tracing::info;
 use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
 
@@ -30,7 +30,7 @@ fn prepare_input() -> EeAcctProofInput {
     let extra_data_bytes = encode_to_vec(&extra_data).expect("encode extra data");
 
     let pub_params = UpdateProofPubParams::new(
-        0,
+        Seqno::zero(),
         ProofState::new(state_root, 0),
         ProofState::new(state_root, 0),
         vec![],
