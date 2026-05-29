@@ -14,23 +14,15 @@ use std::{fmt, sync::Arc};
 
 use alloy_primitives::B256;
 use alpen_ee_common::{
-    build_ledger_refs_from_da, AccessedStateStore, BatchId, BatchStatus, BatchStorage,
-    ExecBlockStorage, L1DaBlockRef, Storage,
+    build_ledger_refs_from_da, BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef,
+    Storage,
 };
-use alpen_ee_da_runtime::builders::{
-    build_wtxid_inclusion_proof, known_bytecodes_from_unfiltered_diff, reassemble_da_blob_from_txs,
-};
-use alpen_ee_da_types::{
-    wtxids_root_from_txs, DaBlockWitness, DaBytecodeWitness, DaTxWitness, DaWitness,
-    L1DaBlockInclusion,
-};
+use alpen_ee_da_runtime::builders::{build_da_witness, DaDedupResolver, DaWitnessBuildError};
 use alpen_ee_database::EeNodeStorage;
 use alpen_reth_db::StateDiffProvider;
-use alpen_reth_statediff::{BatchBuilder, BatchStateDiff};
 use alpen_reth_witness::RangeWitnessData;
 use async_trait::async_trait;
-use bitcoin::{consensus::serialize as btc_serialize, hashes::Hash as _};
-use bitcoind_async_client::{traits::Reader, Client as BtcClient};
+use bitcoind_async_client::Client as BtcClient;
 use rsp_primitives::genesis::Genesis;
 use ssz::{Decode, Encode as _};
 use strata_acct_types::Hash;
@@ -38,9 +30,7 @@ use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
 use strata_ee_acct_types::UpdateExtraData;
 use strata_ee_chain_types::ChunkTransition;
-use strata_identifiers::{Buf32, WtxidsRoot};
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStore};
-use strata_primitives::l1::L1BlockIdBitcoinExt;
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
 use strata_snark_acct_types::{
@@ -422,21 +412,22 @@ impl ProofSpec for AcctSpec {
             .map(|_| Coinput::new(Vec::new()))
             .collect();
 
-        let update_private_input =
+        let snark_acct_private_input =
             UpdatePrivateInput::new(pub_params, pre_ee_state.as_ssz_bytes(), coinputs);
+        let da_dedup_resolver = DaDedupResolver::new(&*self.state_diff_provider, &*self.storage);
         let da_witness = build_da_witness(
             &da_refs,
             &batch_block_hashes,
             &*self.btc_client,
-            &*self.state_diff_provider,
-            &*self.storage,
+            &da_dedup_resolver,
         )
-        .await?;
+        .await
+        .map_err(map_witness_build_err)?;
 
         Ok(EeAcctProofInput {
             genesis: self.genesis.clone(),
             ee_private_input,
-            update_private_input,
+            snark_acct_private_input,
             da_witness,
         })
     }
@@ -465,131 +456,23 @@ fn da_refs_from_status(batch_id: BatchId, status: BatchStatus) -> ProverResult<V
     }
 }
 
-/// Builds raw DA transaction witnesses from the L1 blocks referenced by batch DA refs.
-async fn build_da_witness(
-    da_refs: &[L1DaBlockRef],
-    batch_block_hashes: &[Hash],
-    btc: &(impl Reader + Sync),
-    state_diff_provider: &(impl StateDiffProvider + Sync + ?Sized),
-    bytecode_store: &impl AccessedStateStore,
-) -> ProverResult<DaWitness> {
-    if da_refs.is_empty() {
-        return Err(PaasError::PermanentFailure(
-            "non-genesis batch has no DA refs".to_string(),
-        ));
-    }
-
-    let mut sorted: Vec<&L1DaBlockRef> = da_refs.iter().collect();
-    sorted.sort_by_key(|r| r.block.height());
-
-    let mut blocks = Vec::with_capacity(sorted.len());
-    let mut included_txs = Vec::new();
-    for da_ref in sorted {
-        let block_hash = da_ref.block.blkid().to_block_hash();
-        let block = btc
-            .get_block(&block_hash)
-            .await
-            .map_err(|e| PaasError::Storage(format!("get_block({block_hash}): {e}")))?;
-        if block.txdata.is_empty() {
-            return Err(PaasError::PermanentFailure(format!(
-                "L1 block {block_hash} has no transactions"
-            )));
+/// Maps a [`DaWitnessBuildError`] from the DA-runtime builder onto the prover's
+/// retry-aware error categories.
+fn map_witness_build_err(err: DaWitnessBuildError) -> PaasError {
+    use DaWitnessBuildError as E;
+    let message = err.to_string();
+    match err {
+        E::GetBlock { .. } | E::StateDiffProvider { .. } | E::BytecodeStore { .. } => {
+            PaasError::Storage(message)
         }
-        let computed_wtxids_root = wtxids_root_from_txs(&block.txdata);
-        if computed_wtxids_root != *da_ref.block.wtxids_root().as_ref() {
-            let computed_wtxids_root = WtxidsRoot::from(Buf32::from(computed_wtxids_root));
-            return Err(PaasError::PermanentFailure(format!(
-                "L1 block {block_hash} wtxids_root mismatch: DA ref has {}, fetched block has {}",
-                da_ref.block.wtxids_root(),
-                computed_wtxids_root,
-            )));
-        }
-
-        let mut txs = Vec::with_capacity(da_ref.txns.len());
-        for (txid, wtxid) in &da_ref.txns {
-            let pos = block
-                .txdata
-                .iter()
-                .position(|tx| {
-                    tx.compute_txid().to_byte_array() == txid.to_byte_array()
-                        && tx.compute_wtxid().to_byte_array() == wtxid.to_byte_array()
-                })
-                .ok_or_else(|| {
-                    PaasError::PermanentFailure(format!(
-                        "DA tx {txid}/{wtxid} not found in L1 block {block_hash}"
-                    ))
-                })?;
-            let proof = build_wtxid_inclusion_proof(&block.txdata, pos);
-            let tx = block.txdata[pos].clone();
-            txs.push(DaTxWitness::new(btc_serialize(&tx), proof));
-            included_txs.push(tx);
-        }
-
-        blocks.push(DaBlockWitness::new(
-            L1DaBlockInclusion::new(
-                da_ref.block.height(),
-                *da_ref.block.blkid().as_ref(),
-                *da_ref.block.wtxids_root().as_ref(),
-            ),
-            txs,
-        ));
+        E::StateDiffMissing(_) | E::BytecodeMissing(_) => PaasError::TransientFailure(message),
+        E::EmptyDaRefs
+        | E::BlockHasNoTransactions(_)
+        | E::WtxidsRootMismatch { .. }
+        | E::DaTxNotFound { .. }
+        | E::Parse(_)
+        | E::Reassembly(_) => PaasError::PermanentFailure(message),
     }
-
-    let blob = reassemble_da_blob_from_txs(&included_txs)
-        .map_err(|e| PaasError::PermanentFailure(format!("reassemble DA witness blob: {e}")))?;
-    let unfiltered_state_diff =
-        build_unfiltered_batch_state_diff(batch_block_hashes, state_diff_provider)?;
-    let known_bytecodes =
-        build_known_bytecode_witnesses(&blob, &unfiltered_state_diff, bytecode_store).await?;
-
-    Ok(DaWitness::new_with_known_bytecodes(blocks, known_bytecodes))
-}
-
-fn build_unfiltered_batch_state_diff(
-    block_hashes: &[Hash],
-    state_diff_provider: &(impl StateDiffProvider + Sync + ?Sized),
-) -> ProverResult<BatchStateDiff> {
-    let mut builder = BatchBuilder::new();
-
-    for block_hash in block_hashes {
-        let b256 = B256::from(block_hash.0);
-        let block_diff = state_diff_provider
-            .get_state_diff_by_hash(b256)
-            .map_err(|e| PaasError::Storage(format!("get_state_diff_by_hash({b256:?}): {e}")))?
-            .ok_or_else(|| {
-                PaasError::TransientFailure(format!(
-                    "state diff missing for block {block_hash:?} while building DA witness"
-                ))
-            })?;
-        builder.apply_block(&block_diff);
-    }
-
-    Ok(builder.build())
-}
-
-async fn build_known_bytecode_witnesses(
-    blob: &alpen_ee_da_types::DaBlob,
-    unfiltered_state_diff: &BatchStateDiff,
-    bytecode_store: &impl AccessedStateStore,
-) -> ProverResult<Vec<DaBytecodeWitness>> {
-    let (mut known_bytecodes, unresolved) =
-        known_bytecodes_from_unfiltered_diff(blob, unfiltered_state_diff);
-
-    for code_hash in unresolved {
-        let storage_key = Hash::from(code_hash.0);
-        let bytecode = bytecode_store
-            .get_bytecode(storage_key)
-            .await
-            .map_err(|e| PaasError::Storage(format!("get_bytecode({storage_key:?}): {e}")))?
-            .ok_or_else(|| {
-                PaasError::TransientFailure(format!(
-                    "missing deduped bytecode {storage_key:?} while building DA witness"
-                ))
-            })?;
-        known_bytecodes.push(DaBytecodeWitness::new(code_hash.0, bytecode));
-    }
-
-    Ok(known_bytecodes)
 }
 
 /// Decodes a `ChunkInput`'s transition bytes. `PermanentFailure` on malformed.

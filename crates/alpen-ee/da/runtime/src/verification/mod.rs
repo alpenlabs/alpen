@@ -12,19 +12,19 @@ mod tests;
 
 use std::collections::BTreeSet;
 
-use alloy_primitives::keccak256;
+use alloy_primitives::{keccak256, B256};
 use alpen_ee_da_types::{
     bitcoin_merkle_root, commit_marker_payload, extract_da_chunks as parse_da_chunks,
-    reassemble_da_blob, ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness,
-    ArchivedDaBytecodeWitness, ArchivedDaWitness, DaBlob, DaParseError, EvmHeaderSummary,
-    DA_BLOB_VERSION, EE_DA_MAGIC_BYTES,
+    reassemble_da_blob, ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness, ArchivedDaWitness,
+    ArchivedDedupWitness, DaBlob, DaParseError, EvmHeaderSummary, DA_BLOB_VERSION,
+    EE_DA_MAGIC_BYTES,
 };
 use alpen_reth_statediff::{
     apply_batch_state_diff_to_ethereum_state, AccountChange, BatchStateDiff,
 };
 use bitcoin::{consensus::deserialize as btc_deserialize, hashes::Hash as _, Transaction};
 pub use error::{DaVerificationError, DaVerificationResult};
-use revm_primitives::{B256, KECCAK_EMPTY};
+use revm_primitives::KECCAK_EMPTY;
 use ssz::Decode;
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_runtime::ArchivedEePrivateInput;
@@ -66,7 +66,12 @@ pub fn verify_da_witness(
     let encoded_chunks = extract_and_verify_da_chunks(included_txs.iter())?;
     let blob = reassemble_da_blob(&encoded_chunks).map_err(DaVerificationError::Reassembly)?;
     let last_chunk = decode_last_chunk_transition(ee_input)?;
-    verify_da_blob_metadata(&blob, &last_chunk, pub_params, da_witness.known_bytecodes())?;
+    verify_da_blob_metadata(
+        &blob,
+        &last_chunk,
+        pub_params,
+        da_witness.dedup_da_witness(),
+    )?;
 
     let raw_pre_state = ee_input.raw_partial_pre_state();
     if raw_pre_state.is_empty() {
@@ -202,7 +207,7 @@ fn verify_da_blob_metadata(
     blob: &DaBlob,
     last_chunk: &ChunkTransition,
     pub_params: &UpdateProofPubParams,
-    known_bytecodes: &[ArchivedDaBytecodeWitness],
+    dedup_da_witness: &ArchivedDedupWitness,
 ) -> DaVerificationResult {
     let expected_seq_no = pub_params.seq_no();
     if blob.update_seq_no != expected_seq_no {
@@ -222,15 +227,36 @@ fn verify_da_blob_metadata(
         });
     }
 
-    verify_deployed_bytecodes(&blob.state_diff, known_bytecodes)
+    verify_deployed_bytecodes(&blob.state_diff, dedup_da_witness)
+}
+
+/// Collects the code hashes the dedup witness vouches for.
+///
+/// DA dedup lets the published blob omit data an earlier batch already carried;
+/// the dedup witness resupplies it so the guest can still check account diffs
+/// that reference it. Today that is bytecode preimages — each contributes
+/// `keccak256(bytes)`. Future dedup kinds (account/storage serials) extend this
+/// with their own membership-checked contributions.
+///
+/// NOTE: a bytecode preimage proves identity (the bytes hash to the referenced
+/// code hash), not that the bytes were published on L1 before.
+/// TODO(STR-1907): verify prior publication via a membership proof against an
+/// authenticated published-bytecode set.
+fn dedup_witness_code_hashes(dedup_da_witness: &ArchivedDedupWitness) -> BTreeSet<B256> {
+    dedup_da_witness
+        .deduped_bytecode_preimages()
+        .iter()
+        .map(|preimage| keccak256(preimage.bytecode()))
+        .collect()
 }
 
 fn verify_deployed_bytecodes(
     diff: &BatchStateDiff,
-    known_bytecodes: &[ArchivedDaBytecodeWitness],
+    dedup_da_witness: &ArchivedDedupWitness,
 ) -> DaVerificationResult {
     let mut available_code_hashes = BTreeSet::new();
 
+    // Bytecodes carried inline in the blob: re-derive and check their hash.
     for (code_hash, bytecode) in &diff.deployed_bytecodes {
         let computed = keccak256(bytecode.as_ref());
         if computed != *code_hash {
@@ -242,25 +268,9 @@ fn verify_deployed_bytecodes(
         available_code_hashes.insert(*code_hash);
     }
 
-    // NOTE: known bytecodes are private reconstruction witness data for
-    // bytecodes deduped from the current L1 blob. The guest accepts them only
-    // after recomputing the EVM code hash, which proves identity for the
-    // account diff but not prior L1 publication.
-    //
-    // TODO(STR-1907): replace this with membership in an authenticated
-    // published-bytecode set, or explicit inclusion in the earlier DA blob
-    // that first carried the bytes.
-    for bytecode in known_bytecodes {
-        let code_hash = B256::from(*bytecode.code_hash());
-        let computed = keccak256(bytecode.bytecode());
-        if computed != code_hash {
-            return Err(DaVerificationError::KnownBytecodeHashMismatch {
-                expected: code_hash.0,
-                computed: computed.0,
-            });
-        }
-        available_code_hashes.insert(code_hash);
-    }
+    // Bytecodes the blob deduped against earlier batches: vouched for by the
+    // dedup witness.
+    available_code_hashes.extend(dedup_witness_code_hashes(dedup_da_witness));
 
     for change in diff.accounts.values() {
         let account_diff = match change {

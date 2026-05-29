@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use alloy_primitives::{keccak256, Address, Bytes, U256};
 use alpen_ee_da_types::{
-    ArchivedDaWitness, BitcoinMerkleProof, DaBlob, DaBlockWitness, DaBytecodeWitness, DaParseError,
-    DaTxWitness, DaWitness, EvmHeaderSummary, L1DaBlockInclusion, DA_BLOB_VERSION,
+    ArchivedDaWitness, BitcoinMerkleProof, BytecodePreimage, DaBlob, DaBlockWitness, DaParseError,
+    DaTxWitness, DaWitness, DedupWitness, EvmHeaderSummary, L1DaBlockInclusion, DA_BLOB_VERSION,
 };
 use alpen_reth_statediff::{
     apply_batch_state_diff_to_ethereum_state, AccountChange, AccountDiff, BatchStateDiff,
@@ -220,19 +220,22 @@ fn valid_fixture() -> (EePrivateInput, DaWitness, UpdateProofPubParams, [u8; 32]
 
     let ee_input = rebuild_ee_input(&raw_pre_state, pre_root, header);
 
-    let da_witness = DaWitness::new(vec![DaBlockWitness::new(
-        L1DaBlockInclusion::new(height, block_hash, wtxids_root),
-        vec![
-            DaTxWitness::new(
-                serialize(&commit),
-                BitcoinMerkleProof::new(vec![reveal_wtxid], 0),
-            ),
-            DaTxWitness::new(
-                serialize(&reveal),
-                BitcoinMerkleProof::new(vec![commit_wtxid], 1),
-            ),
-        ],
-    )]);
+    let da_witness = DaWitness::new(
+        vec![DaBlockWitness::new(
+            L1DaBlockInclusion::new(height, block_hash, wtxids_root),
+            vec![
+                DaTxWitness::new(
+                    serialize(&commit),
+                    BitcoinMerkleProof::new(vec![reveal_wtxid], 0),
+                ),
+                DaTxWitness::new(
+                    serialize(&reveal),
+                    BitcoinMerkleProof::new(vec![commit_wtxid], 1),
+                ),
+            ],
+        )],
+        DedupWitness::empty(),
+    );
 
     let pub_params = rebuild_pub_params(blob.update_seq_no, height, block_hash, wtxids_root);
 
@@ -298,7 +301,7 @@ fn verify_da_witness_accepts_deduped_bytecode_from_private_witness() {
         raw_pre_state,
         vec![ChunkInput::new(transition, Vec::new())],
     );
-    let da_witness = DaWitness::new_with_known_bytecodes(
+    let da_witness = DaWitness::new(
         vec![DaBlockWitness::new(
             L1DaBlockInclusion::new(height, block_hash, wtxids_root),
             vec![
@@ -312,7 +315,7 @@ fn verify_da_witness_accepts_deduped_bytecode_from_private_witness() {
                 ),
             ],
         )],
-        vec![DaBytecodeWitness::new(code_hash.0, bytecode.to_vec())],
+        DedupWitness::new(vec![BytecodePreimage::new(bytecode.to_vec())]),
     );
     let pub_params = UpdateProofPubParams::new(
         blob.update_seq_no,
@@ -332,7 +335,7 @@ fn verify_da_witness_accepts_deduped_bytecode_from_private_witness() {
 }
 
 #[test]
-fn verify_da_blob_metadata_rejects_known_bytecode_hash_mismatch() {
+fn verify_da_blob_metadata_rejects_missing_deployed_bytecode() {
     let header = EvmHeaderSummary {
         block_num: 10,
         timestamp: 1_700_000_000,
@@ -340,10 +343,18 @@ fn verify_da_blob_metadata_rejects_known_bytecode_hash_mismatch() {
         gas_used: 21_000,
         gas_limit: 30_000_000,
     };
+    // An account references a code hash that is neither published in the blob nor
+    // supplied as a preimage, so verification must reject it.
+    let code_hash = keccak256([0x60, 0x80]);
+    let mut state_diff = BatchStateDiff::new();
+    state_diff.accounts.insert(
+        Address::from([0x11; 20]),
+        AccountChange::Created(AccountDiff::new_created(U256::ZERO, 1, code_hash)),
+    );
     let blob = DaBlob {
         update_seq_no: 7,
         evm_header: header,
-        state_diff: BatchStateDiff::new(),
+        state_diff,
     };
     let transition = ChunkTransition::new(
         Hash::from([1; 32]),
@@ -362,11 +373,7 @@ fn verify_da_blob_metadata_rejects_known_bytecode_hash_mismatch() {
         UpdateOutputs::new_empty(),
         Vec::new(),
     );
-    let expected_hash = keccak256([0x60, 0x80]);
-    let witness = DaWitness::new_with_known_bytecodes(
-        Vec::new(),
-        vec![DaBytecodeWitness::new(expected_hash.0, vec![0x61, 0x80])],
-    );
+    let witness = DaWitness::new(Vec::new(), DedupWitness::empty());
     let da_bytes = rkyv::to_bytes::<RkyvError>(&witness).unwrap();
     let archived_da = rkyv::access::<ArchivedDaWitness, RkyvError>(&da_bytes).unwrap();
 
@@ -374,13 +381,13 @@ fn verify_da_blob_metadata_rejects_known_bytecode_hash_mismatch() {
         &blob,
         &transition,
         &pub_params,
-        archived_da.known_bytecodes(),
+        archived_da.dedup_da_witness(),
     )
-    .expect_err("known bytecode witness must hash to its claimed code hash");
+    .expect_err("account code hash with no published or witnessed bytecode must fail");
 
     assert!(matches!(
         err,
-        DaVerificationError::KnownBytecodeHashMismatch { .. }
+        DaVerificationError::MissingDeployedBytecode(_)
     ));
 }
 
@@ -504,17 +511,20 @@ fn verify_da_witness_rejects_missing_reveal() {
     let (ee_input, da_witness, pub_params, expected_pre_root) = valid_fixture();
     let block = da_witness.blocks().first().unwrap();
     let commit_tx = &block.txs()[0];
-    let da_witness = DaWitness::new(vec![DaBlockWitness::new(
-        L1DaBlockInclusion::new(
-            block.inclusion().l1_block_height(),
-            *block.inclusion().l1_block_hash(),
-            *block.inclusion().wtxids_root(),
-        ),
-        vec![DaTxWitness::new(
-            commit_tx.raw_tx().to_vec(),
-            commit_tx.wtxid_inclusion_proof().clone(),
+    let da_witness = DaWitness::new(
+        vec![DaBlockWitness::new(
+            L1DaBlockInclusion::new(
+                block.inclusion().l1_block_height(),
+                *block.inclusion().l1_block_hash(),
+                *block.inclusion().wtxids_root(),
+            ),
+            vec![DaTxWitness::new(
+                commit_tx.raw_tx().to_vec(),
+                commit_tx.wtxid_inclusion_proof().clone(),
+            )],
         )],
-    )]);
+        DedupWitness::empty(),
+    );
 
     let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
         .expect_err("commit output 1 must have a matching reveal");
@@ -535,24 +545,27 @@ fn verify_da_witness_rejects_duplicate_reveal() {
         reveal_tx.raw_tx().to_vec(),
         reveal_tx.wtxid_inclusion_proof().clone(),
     );
-    let da_witness = DaWitness::new(vec![DaBlockWitness::new(
-        L1DaBlockInclusion::new(
-            block.inclusion().l1_block_height(),
-            *block.inclusion().l1_block_hash(),
-            *block.inclusion().wtxids_root(),
-        ),
-        vec![
-            DaTxWitness::new(
-                commit_tx.raw_tx().to_vec(),
-                commit_tx.wtxid_inclusion_proof().clone(),
+    let da_witness = DaWitness::new(
+        vec![DaBlockWitness::new(
+            L1DaBlockInclusion::new(
+                block.inclusion().l1_block_height(),
+                *block.inclusion().l1_block_hash(),
+                *block.inclusion().wtxids_root(),
             ),
-            DaTxWitness::new(
-                reveal_tx.raw_tx().to_vec(),
-                reveal_tx.wtxid_inclusion_proof().clone(),
-            ),
-            duplicate_reveal,
-        ],
-    )]);
+            vec![
+                DaTxWitness::new(
+                    commit_tx.raw_tx().to_vec(),
+                    commit_tx.wtxid_inclusion_proof().clone(),
+                ),
+                DaTxWitness::new(
+                    reveal_tx.raw_tx().to_vec(),
+                    reveal_tx.wtxid_inclusion_proof().clone(),
+                ),
+                duplicate_reveal,
+            ],
+        )],
+        DedupWitness::empty(),
+    );
 
     let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
         .expect_err("two reveals for the same commit output must fail");
@@ -573,19 +586,22 @@ fn verify_da_witness_rejects_reveal_spending_marker_vout() {
     let wtxids_root = hash_pair(commit_wtxid, reveal_wtxid);
     let block_hash = [0x45; 32];
     let height = 43;
-    let da_witness = DaWitness::new(vec![DaBlockWitness::new(
-        L1DaBlockInclusion::new(height, block_hash, wtxids_root),
-        vec![
-            DaTxWitness::new(
-                serialize(&commit),
-                BitcoinMerkleProof::new(vec![reveal_wtxid], 0),
-            ),
-            DaTxWitness::new(
-                serialize(&reveal),
-                BitcoinMerkleProof::new(vec![commit_wtxid], 1),
-            ),
-        ],
-    )]);
+    let da_witness = DaWitness::new(
+        vec![DaBlockWitness::new(
+            L1DaBlockInclusion::new(height, block_hash, wtxids_root),
+            vec![
+                DaTxWitness::new(
+                    serialize(&commit),
+                    BitcoinMerkleProof::new(vec![reveal_wtxid], 0),
+                ),
+                DaTxWitness::new(
+                    serialize(&reveal),
+                    BitcoinMerkleProof::new(vec![commit_wtxid], 1),
+                ),
+            ],
+        )],
+        DedupWitness::empty(),
+    );
     let pub_params = rebuild_pub_params(pub_params.seq_no(), height, block_hash, wtxids_root);
 
     let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
@@ -601,14 +617,17 @@ fn verify_da_witness_rejects_reveal_spending_marker_vout() {
 fn verify_da_witness_rejects_unclaimed_l1_ref() {
     let (ee_input, mut da_witness, pub_params, expected_pre_root) = valid_fixture();
     let block = da_witness.blocks().first().unwrap();
-    da_witness = DaWitness::new(vec![DaBlockWitness::new(
-        L1DaBlockInclusion::new(
-            block.inclusion().l1_block_height() + 1,
-            *block.inclusion().l1_block_hash(),
-            *block.inclusion().wtxids_root(),
-        ),
-        block.txs().to_vec(),
-    )]);
+    da_witness = DaWitness::new(
+        vec![DaBlockWitness::new(
+            L1DaBlockInclusion::new(
+                block.inclusion().l1_block_height() + 1,
+                *block.inclusion().l1_block_hash(),
+                *block.inclusion().wtxids_root(),
+            ),
+            block.txs().to_vec(),
+        )],
+        DedupWitness::empty(),
+    );
     let (ee_bytes, da_bytes) = archive_inputs(&ee_input, &da_witness);
     let archived_ee = rkyv::access::<ArchivedEePrivateInput, RkyvError>(&ee_bytes).unwrap();
     let archived_da = rkyv::access::<ArchivedDaWitness, RkyvError>(&da_bytes).unwrap();
@@ -628,23 +647,26 @@ fn verify_da_witness_rejects_bad_wtxid_root() {
     let block = da_witness.blocks().first().unwrap();
     let commit_tx = &block.txs()[0];
     let reveal_tx = &block.txs()[1];
-    da_witness = DaWitness::new(vec![DaBlockWitness::new(
-        L1DaBlockInclusion::new(
-            block.inclusion().l1_block_height(),
-            *block.inclusion().l1_block_hash(),
-            *block.inclusion().wtxids_root(),
-        ),
-        vec![
-            DaTxWitness::new(
-                commit_tx.raw_tx().to_vec(),
-                commit_tx.wtxid_inclusion_proof().clone(),
+    da_witness = DaWitness::new(
+        vec![DaBlockWitness::new(
+            L1DaBlockInclusion::new(
+                block.inclusion().l1_block_height(),
+                *block.inclusion().l1_block_hash(),
+                *block.inclusion().wtxids_root(),
             ),
-            DaTxWitness::new(
-                reveal_tx.raw_tx().to_vec(),
-                BitcoinMerkleProof::new(vec![[0x99; 32]], 1),
-            ),
-        ],
-    )]);
+            vec![
+                DaTxWitness::new(
+                    commit_tx.raw_tx().to_vec(),
+                    commit_tx.wtxid_inclusion_proof().clone(),
+                ),
+                DaTxWitness::new(
+                    reveal_tx.raw_tx().to_vec(),
+                    BitcoinMerkleProof::new(vec![[0x99; 32]], 1),
+                ),
+            ],
+        )],
+        DedupWitness::empty(),
+    );
     let (ee_bytes, da_bytes) = archive_inputs(&ee_input, &da_witness);
     let archived_ee = rkyv::access::<ArchivedEePrivateInput, RkyvError>(&ee_bytes).unwrap();
     let archived_da = rkyv::access::<ArchivedDaWitness, RkyvError>(&da_bytes).unwrap();

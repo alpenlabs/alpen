@@ -3,6 +3,8 @@
 use rkyv::{Archive, Deserialize, Serialize};
 use rkyv_impl::archive_impl;
 
+use crate::dedup_witness::{ArchivedDedupWitness, DedupWitness};
+
 /// Top-level DA witness bundle for one EE batch.
 #[derive(Clone, Debug, Default, Archive, Deserialize, Serialize)]
 #[rkyv(derive(Debug))]
@@ -10,29 +12,15 @@ pub struct DaWitness {
     /// One per L1 block holding DA commit/reveal transactions for this batch.
     blocks: Vec<DaBlockWitness>,
 
-    /// Private bytecodes omitted from the current DA blob because they were
-    /// already known locally from prior DA publication.
-    ///
-    /// TODO(STR-1907): replace this private witness path with an authenticated
-    /// prior-publication proof once bytecode DA dedupe is protocol-bound.
-    known_bytecodes: Vec<DaBytecodeWitness>,
+    /// Supplementary witness resolving blob references not carried inline.
+    dedup_da_witness: DedupWitness,
 }
 
 impl DaWitness {
-    pub fn new(blocks: Vec<DaBlockWitness>) -> Self {
+    pub fn new(blocks: Vec<DaBlockWitness>, dedup_da_witness: DedupWitness) -> Self {
         Self {
             blocks,
-            known_bytecodes: Vec::new(),
-        }
-    }
-
-    pub fn new_with_known_bytecodes(
-        blocks: Vec<DaBlockWitness>,
-        known_bytecodes: Vec<DaBytecodeWitness>,
-    ) -> Self {
-        Self {
-            blocks,
-            known_bytecodes,
+            dedup_da_witness,
         }
     }
 
@@ -44,8 +32,8 @@ impl DaWitness {
         &self.blocks
     }
 
-    pub fn known_bytecodes(&self) -> &[DaBytecodeWitness] {
-        &self.known_bytecodes
+    pub fn dedup_da_witness(&self) -> &DedupWitness {
+        &self.dedup_da_witness
     }
 }
 
@@ -54,54 +42,8 @@ impl ArchivedDaWitness {
         &self.blocks
     }
 
-    pub fn known_bytecodes(&self) -> &[ArchivedDaBytecodeWitness] {
-        &self.known_bytecodes
-    }
-}
-
-/// Private witness bytecode keyed by the EVM code hash it must match.
-///
-/// NOTE: this is a pragmatic bridge for cross-batch bytecode DA dedupe. The
-/// public DA blob may omit a bytecode when its hash was already published in an
-/// earlier batch, but a later account diff can still set that same `code_hash`.
-/// The acct guest needs the bytes to verify that the code hash refers to real
-/// EVM bytecode, so the host supplies omitted bytecodes here and the guest
-/// re-hashes them before accepting the account diff.
-///
-/// This proves bytecode identity, not prior L1 publication.
-///
-/// TODO(STR-1907): prove membership in an authenticated published-bytecode set,
-/// or include explicit prior blob inclusion for the omitted bytecode.
-#[derive(Clone, Debug, Eq, PartialEq, Archive, Deserialize, Serialize)]
-#[rkyv(derive(Debug))]
-pub struct DaBytecodeWitness {
-    code_hash: [u8; 32],
-    bytecode: Vec<u8>,
-}
-
-impl DaBytecodeWitness {
-    pub fn new(code_hash: [u8; 32], bytecode: Vec<u8>) -> Self {
-        Self {
-            code_hash,
-            bytecode,
-        }
-    }
-
-    pub fn code_hash(&self) -> &[u8; 32] {
-        &self.code_hash
-    }
-}
-
-#[archive_impl]
-impl DaBytecodeWitness {
-    pub fn bytecode(&self) -> &[u8] {
-        &self.bytecode
-    }
-}
-
-impl ArchivedDaBytecodeWitness {
-    pub fn code_hash(&self) -> &[u8; 32] {
-        &self.code_hash
+    pub fn dedup_da_witness(&self) -> &ArchivedDedupWitness {
+        &self.dedup_da_witness
     }
 }
 
@@ -271,6 +213,7 @@ mod tests {
     use rkyv::rancor::Error as RkyvError;
 
     use super::*;
+    use crate::dedup_witness::BytecodePreimage;
 
     #[test]
     fn da_witness_empty_roundtrips_through_rkyv() {
@@ -280,7 +223,10 @@ mod tests {
         let archived = rkyv::access::<ArchivedDaWitness, RkyvError>(&bytes).unwrap();
 
         assert!(archived.blocks().is_empty());
-        assert!(archived.known_bytecodes().is_empty());
+        assert!(archived
+            .dedup_da_witness()
+            .deduped_bytecode_preimages()
+            .is_empty());
     }
 
     #[test]
@@ -289,7 +235,7 @@ mod tests {
         let proof = BitcoinMerkleProof::new(vec![[0x33; 32]], 7);
         let tx = DaTxWitness::new(vec![0x44, 0x55], proof);
         let block = DaBlockWitness::new(inclusion, vec![tx]);
-        let witness = DaWitness::new(vec![block]);
+        let witness = DaWitness::new(vec![block], DedupWitness::empty());
 
         let bytes = rkyv::to_bytes::<RkyvError>(&witness).unwrap();
         let archived = rkyv::access::<ArchivedDaWitness, RkyvError>(&bytes).unwrap();
@@ -308,16 +254,15 @@ mod tests {
 
     #[test]
     fn da_witness_with_known_bytecode_roundtrips_through_rkyv() {
-        let bytecode = DaBytecodeWitness::new([0x55; 32], vec![0x60, 0x80]);
-        let witness = DaWitness::new_with_known_bytecodes(Vec::new(), vec![bytecode]);
+        let preimage = BytecodePreimage::new(vec![0x60, 0x80]);
+        let witness = DaWitness::new(Vec::new(), DedupWitness::new(vec![preimage]));
 
         let bytes = rkyv::to_bytes::<RkyvError>(&witness).unwrap();
         let archived = rkyv::access::<ArchivedDaWitness, RkyvError>(&bytes).unwrap();
 
         assert!(archived.blocks().is_empty());
-        assert_eq!(archived.known_bytecodes().len(), 1);
-        let bytecode = &archived.known_bytecodes()[0];
-        assert_eq!(bytecode.code_hash(), &[0x55; 32]);
-        assert_eq!(bytecode.bytecode(), &[0x60, 0x80]);
+        let preimages = archived.dedup_da_witness().deduped_bytecode_preimages();
+        assert_eq!(preimages.len(), 1);
+        assert_eq!(preimages[0].bytecode(), &[0x60, 0x80]);
     }
 }

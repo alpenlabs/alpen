@@ -10,14 +10,29 @@ workspace = true
 # Off by default: the guest/proof side links only the verifier. The host-side
 # prover enables `builders` to construct DA witnesses.
 default = []
-builders = []
+builders = [
+  "dep:alpen-ee-common",
+  "dep:alpen-reth-db",
+  "dep:async-trait",
+  "dep:bitcoind-async-client",
+  "dep:strata-acct-types",
+  "dep:strata-identifiers",
+  "dep:strata-primitives",
+]
 
 [dependencies]
+alpen-ee-common = { workspace = true, optional = true }
 alpen-ee-da-types.workspace = true
+alpen-reth-db = { workspace = true, optional = true }
 alpen-reth-statediff.workspace = true
 
 alloy-primitives.workspace = true
+async-trait = { workspace = true, optional = true }
 bitcoin.workspace = true
+bitcoind-async-client = { workspace = true, optional = true }
+strata-acct-types = { workspace = true, optional = true }
+strata-identifiers = { workspace = true, optional = true }
+strata-primitives = { workspace = true, optional = true }
 revm-primitives.workspace = true
 ssz.workspace = true
 strata-codec.workspace = true

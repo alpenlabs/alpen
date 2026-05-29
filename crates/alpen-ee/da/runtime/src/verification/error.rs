@@ -74,11 +74,4 @@ pub enum DaVerificationError {
         expected: [u8; 32],
         computed: [u8; 32],
     },
-    #[error(
-        "DA witness known bytecode hash mismatch: expected={expected:?}, computed={computed:?}"
-    )]
-    KnownBytecodeHashMismatch {
-        expected: [u8; 32],
-        computed: [u8; 32],
-    },
 }

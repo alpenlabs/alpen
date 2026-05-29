@@ -50,7 +50,6 @@ alpen-reth-db.workspace = true
 alpen-reth-evm = { workspace = true, optional = true }
 alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
-alpen-reth-statediff.workspace = true
 alpen-reth-witness.workspace = true
 bitcoind-async-client = { workspace = true, optional = true }
 ssz.workspace = true
@@ -88,7 +87,6 @@ alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
 anyhow.workspace = true
 async-trait.workspace = true
-bitcoin.workspace = true
 clap.workspace = true
 eyre.workspace = true
 http.workspace = true

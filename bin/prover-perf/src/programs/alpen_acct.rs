@@ -39,7 +39,7 @@ fn prepare_input() -> EeAcctProofInput {
         extra_data_bytes,
     );
 
-    let update_private_input =
+    let snark_acct_private_input =
         UpdatePrivateInput::new(pub_params, initial_state.as_ssz_bytes(), Vec::new());
 
     let ee_private_input = EePrivateInput::new(Vec::new(), Vec::new(), Vec::new());
@@ -47,7 +47,7 @@ fn prepare_input() -> EeAcctProofInput {
     EeAcctProofInput {
         genesis: Genesis::Mainnet,
         ee_private_input,
-        update_private_input,
+        snark_acct_private_input,
         da_witness: DaWitness::empty(),
     }
 }
