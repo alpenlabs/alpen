@@ -268,11 +268,10 @@ pub(crate) fn start_strata_services(
         nodectx.status_channel().as_ref(),
     )?;
 
-    // Mempool and the OL checkpoint builder are sequencer-only: a checkpoint-sync
-    // fullnode never has the OL block bodies they walk through, so launching them
-    // would kill the node on the first epoch summary the chain worker writes.
     let is_sequencer = nodectx.config().client.is_sequencer;
 
+    // Checkpoint sync nodes do not have mempool, so start mempool for sequencer node only.
+    // NOTE: When there are nodes supporting mempool the if condition needs to change.
     let mempool_handle = if is_sequencer {
         Some(Arc::new(start_mempool(&nodectx)?))
     } else {

@@ -470,10 +470,9 @@ fn collect_snark_update_logs<'a>(
 
 /// Builds an [`IndexingWrites`] payload for a DA-reconstructed epoch.
 ///
-/// Like [`build_indexing_writes`] but with no per-block attribution: update
-/// records carry `block_commitment: None`, and inbox records carry
-/// `block_commitment: None`. The terminal-per-account state root is recorded
-/// when available.
+/// Like [`build_indexing_writes`] but with no per-block attribution and no
+/// per-update state root: update records carry `update_meta: None`. The
+/// post-epoch root lives on the epoch summary.
 pub(crate) fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) -> IndexingWrites {
     let indexer_writes = output.indexer_writes();
 
@@ -485,13 +484,8 @@ pub(crate) fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) 
 
     let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
     for update in indexer_writes.snark_state_updates() {
-        // `state()` is `Some` only for terminal-per-account records (set by
-        // `set_terminal_state_roots`); non-terminal CSS records are `None`.
-        let update_meta = update
-            .state()
-            .map(|root| AccountUpdateMeta::new(None, root));
         let record = AccountUpdateRecord::new(
-            update_meta,
+            None,
             *update.seqno().inner(),
             update.next_read_idx(),
             update.extra_data().map(<[u8]>::to_vec),

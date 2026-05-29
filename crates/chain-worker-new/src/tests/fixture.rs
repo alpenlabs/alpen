@@ -1,7 +1,7 @@
 //! Epoch-building fixtures for checkpoint-sync consistency tests.
 //!
 //! [`build_epoch`] constructs one OL epoch (epoch 1, built on the genesis
-//! epoch 0), runs it through the full-sync STF to capture reference values,
+//! epoch 0), runs it through the block-sync STF to capture reference values,
 //! and derives the checkpoint payload a checkpoint-sync run would consume.
 //! The resulting [`BuiltEpoch`] lets a test compare both reconstruction paths.
 
@@ -65,23 +65,23 @@ pub struct BuiltEpoch {
     pub manifests_by_height: Vec<(u32, AsmManifest)>,
     /// Checkpoint payload a checkpoint-sync run consumes to reconstruct.
     pub checkpoint_payload: CheckpointPayload,
-    /// Epoch final state root produced by full-sync execution.
-    pub full_sync_state_root: Buf32,
-    /// Epoch summary produced by full-sync execution.
-    pub full_sync_summary: EpochSummary,
-    /// Merged indexer writes captured by full-sync execution.
-    full_sync_indexer_writes: IndexerWrites,
+    /// Epoch final state root produced by block-sync execution.
+    pub block_sync_state_root: Buf32,
+    /// Epoch summary produced by block-sync execution.
+    pub block_sync_summary: EpochSummary,
+    /// Merged indexer writes captured by block-sync execution.
+    block_sync_indexer_writes: IndexerWrites,
 }
 
 impl BuiltEpoch {
-    /// Returns the indexer writes captured by full-sync execution.
-    pub fn full_sync_indexer_writes(&self) -> &IndexerWrites {
-        &self.full_sync_indexer_writes
+    /// Returns the indexer writes captured by block-sync execution.
+    pub fn block_sync_indexer_writes(&self) -> &IndexerWrites {
+        &self.block_sync_indexer_writes
     }
 }
 
 /// Builds one OL epoch of the given shape and the reference values needed to
-/// compare full-sync against checkpoint-sync reconstruction.
+/// compare block-sync against checkpoint-sync reconstruction.
 pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
     let mut state = make_genesis_state();
     let snark_serial = seed_accounts(&mut state);
@@ -124,10 +124,10 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
     let terminal_block = blocks.last().expect("epoch has a terminal block").clone();
     let terminal_header = terminal_block.header().clone();
 
-    // Run the epoch through the full-sync STF to capture reference values.
+    // Run the epoch through the block-sync STF to capture reference values.
     let pre_epoch_layer = MemoryStateBaseLayer::new(pre_epoch_state.clone());
-    let (full_sync_state, full_sync_state_root, full_sync_indexer_writes) =
-        run_full_sync(&pre_epoch_layer, &blocks, genesis.header());
+    let (block_sync_state, block_sync_state_root, block_sync_indexer_writes) =
+        run_block_sync(&pre_epoch_layer, &blocks, genesis.header());
 
     // Genesis commitment / summary for epoch 0.
     let genesis_commitment =
@@ -155,17 +155,17 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
     );
 
     // Full-sync epoch summary, sourced the way `build_epoch_summary` does.
-    let post_epoch_state = &full_sync_state;
+    let post_epoch_state = &block_sync_state;
     let post_epoch_l1 = L1BlockCommitment::new(
         post_epoch_state.epoch_state().last_l1_height(),
         *post_epoch_state.epoch_state().last_l1_blkid(),
     );
-    let full_sync_summary = EpochSummary::new(
+    let block_sync_summary = EpochSummary::new(
         terminal_header.epoch(),
         terminal_commitment,
         genesis_commitment,
         post_epoch_l1,
-        full_sync_state_root,
+        block_sync_state_root,
     );
 
     // DA blob and per-update OL logs the checkpoint payload carries.
@@ -182,9 +182,9 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
         pre_epoch_state,
         manifests_by_height: vec![(TERMINAL_L1_HEIGHT, terminal_manifest)],
         checkpoint_payload,
-        full_sync_state_root,
-        full_sync_summary,
-        full_sync_indexer_writes,
+        block_sync_state_root,
+        block_sync_summary,
+        block_sync_indexer_writes,
     }
 }
 
@@ -211,12 +211,12 @@ fn assemble_checkpoint_payload(
     CheckpointPayload::new(tip, sidecar, Vec::new()).expect("build checkpoint payload")
 }
 
-/// Runs the epoch's blocks through the full-sync STF, accumulating the write
+/// Runs the epoch's blocks through the block-sync STF, accumulating the write
 /// batch and indexer writes across all blocks into a single pass.
 ///
 /// Returns the post-epoch toplevel state, its state root, and the merged
 /// indexer writes.
-fn run_full_sync(
+fn run_block_sync(
     pre_epoch_state: &MemoryStateBaseLayer,
     blocks: &[OLBlock],
     genesis_header: &OLBlockHeader,
@@ -232,7 +232,7 @@ fn run_full_sync(
             Some(&prev_header),
             block.body(),
         )
-        .expect("full-sync verify_block");
+        .expect("block-sync verify_block");
         prev_header = block.header().clone();
     }
 
@@ -242,10 +242,10 @@ fn run_full_sync(
     let mut new_state = pre_epoch_state.clone();
     new_state
         .apply_write_batch(write_batch)
-        .expect("apply full-sync write batch");
+        .expect("apply block-sync write batch");
     let state_root = new_state
         .compute_state_root()
-        .expect("full-sync state root");
+        .expect("block-sync state root");
 
     (new_state.into_inner(), state_root, indexer_writes)
 }
