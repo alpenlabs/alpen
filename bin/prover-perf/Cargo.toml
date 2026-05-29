@@ -59,7 +59,6 @@ strata-predicate.workspace = true
 default = ["sp1"]
 sp1 = [
   "zkaleido-sp1-host/perf",
-  "zkaleido-sp1-host/cuda",
   "strata-zkvm-hosts/sp1-builder",
   "dep:zkaleido-sp1-host",
   "dep:strata-sp1-guest-builder",
