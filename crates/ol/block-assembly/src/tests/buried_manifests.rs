@@ -4,14 +4,10 @@
 //! The filter prevents L1 reorgs from cascading into OL by only sourcing manifests
 //! with at least `l1_reorg_safe_depth` L1 confirmations.
 
-use std::sync::Arc;
-
-use strata_ol_state_provider::OLStateManagerProviderImpl;
-
 use crate::{
-    context::{BlockAssemblyAnchorContext, BlockAssemblyContext},
+    context::BlockAssemblyAnchorContext,
     test_utils::{
-        BlockAssemblyContextImpl, MockMempoolProvider, create_test_storage,
+        BlockAssemblyContextImpl, create_test_block_assembly_context, create_test_storage,
         setup_asm_state_with_l1_manifests,
     },
 };
@@ -21,14 +17,8 @@ const MAX_COUNT: u32 = 100;
 async fn build_ctx(asm_tip: u32, l1_reorg_safe_depth: u32) -> BlockAssemblyContextImpl {
     let storage = create_test_storage();
     setup_asm_state_with_l1_manifests(storage.as_ref(), 1, asm_tip).await;
-    let mempool_provider = Arc::new(MockMempoolProvider::new());
-    let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
-    BlockAssemblyContext::new(
-        storage,
-        mempool_provider,
-        state_provider,
-        l1_reorg_safe_depth,
-    )
+    let (ctx, _) = create_test_block_assembly_context(storage, l1_reorg_safe_depth);
+    ctx
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -81,7 +71,8 @@ async fn empty_when_start_past_buried_tip() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn depth_zero_returns_through_tip() {
-    // depth = 0 means buried tip == asm tip; the filter is a no-op.
+    // depth = 0 is clamped to 1; the asm tip itself has 1 confirmation, so every
+    // manifest from genesis through the tip is eligible.
     let ctx = build_ctx(5, 0).await;
     let manifests = ctx
         .fetch_asm_manifests_from(1, MAX_COUNT)

@@ -122,8 +122,6 @@ pub struct BlockAssemblyContext<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     state_provider: S,
-    /// Minimum L1 confirmations a manifest needs before it can be included in an OL block.
-    /// Prevents L1 reorgs from cascading into OL reorgs.
     l1_reorg_safe_depth: u32,
 }
 

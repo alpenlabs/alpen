@@ -708,7 +708,7 @@ pub(crate) fn generate_message_entries(
 /// Creates and stores ASM manifests for L1 blocks from height `start` to `end` (inclusive),
 /// and stores an ASM state at the highest L1 block.
 ///
-/// Returns the L1BlockCommitment for the highest block.
+/// Returns the `L1BlockCommitment` for the highest block.
 pub(crate) async fn setup_asm_state_with_l1_manifests(
     storage: &NodeStorage,
     start: L1Height,
@@ -880,7 +880,8 @@ impl TestEnv {
         fixture: Arc<TestStorageFixture>,
         parent_commitment: OLBlockCommitment,
     ) -> Self {
-        let (ctx, mempool) = create_test_block_assembly_context(fixture.storage().clone());
+        let (ctx, mempool) =
+            create_test_block_assembly_context(fixture.storage().clone(), TEST_L1_REORG_SAFE_DEPTH);
         Self {
             fixture,
             ctx: Arc::new(ctx),
@@ -1416,6 +1417,7 @@ fn build_inbox_claims_for_messages(
 /// Returns the context. Use `ctx.mempool_provider()` to add transactions to the mock mempool.
 pub(crate) fn create_test_block_assembly_context(
     storage: Arc<NodeStorage>,
+    l1_reorg_safe_depth: u32,
 ) -> (BlockAssemblyContextImpl, Arc<MockMempoolProvider>) {
     let mempool_provider = Arc::new(MockMempoolProvider::new());
     let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
@@ -1423,7 +1425,7 @@ pub(crate) fn create_test_block_assembly_context(
         storage,
         mempool_provider.clone(),
         state_provider,
-        TEST_L1_REORG_SAFE_DEPTH,
+        l1_reorg_safe_depth,
     );
     (ctx, mempool_provider)
 }
