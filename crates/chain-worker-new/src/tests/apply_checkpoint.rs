@@ -1,13 +1,13 @@
 //! Cross-mode consistency tests for checkpoint-sync epoch reconstruction.
 //!
-//! Each test runs one epoch two ways — full sync (block-by-block STF) and
+//! Each test runs one epoch two ways — block sync (block-by-block STF) and
 //! checkpoint sync ([`apply_checkpoint_epoch`]) — and asserts the generated
 //! values match. The comparison has three tiers:
 //!
 //! - Tier 1, byte-identical (consensus): toplevel state, state root, summary.
 //! - Tier 2, equal modulo a documented mode difference at the [`IndexerWrites`] layer: snark update
 //!   records are rebuilt from the checkpoint sidecar's `ol_logs` so the per-account sequence
-//!   matches full sync.
+//!   matches block sync.
 //! - Tier 3, not compared: per-block write batches (checkpoint sync has none).
 //!
 //! Note: the `Some` vs `None` block-attribution difference between sync modes
@@ -15,7 +15,7 @@
 //! attributed `IndexingWrites` written to the indexing store. That conversion
 //! is not covered here.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use strata_acct_types::AccountId;
 use strata_asm_common::AsmManifest;
@@ -28,7 +28,7 @@ use strata_codec::encode_to_vec;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate};
+use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
 
 use super::fixture::{BuiltEpoch, EpochShape, build_epoch};
@@ -212,9 +212,12 @@ fn test_apply_checkpoint_snark_multi_update_and_deposit() {
         "checkpoint sync should produce one snark record per ol_logs entry"
     );
     assert_eq!(
-        built.full_sync_indexer_writes().snark_state_updates().len(),
+        built
+            .block_sync_indexer_writes()
+            .snark_state_updates()
+            .len(),
         2,
-        "full sync should produce one snark record per update tx"
+        "block sync should produce one snark record per update tx"
     );
 }
 
@@ -275,64 +278,11 @@ fn test_apply_checkpoint_skips_non_snark_log_in_sidecar() {
             .snark_state_updates()
             .len(),
         built_with_extra
-            .full_sync_indexer_writes()
+            .block_sync_indexer_writes()
             .snark_state_updates()
             .len(),
         "non-snark log must be skipped during snark-record reconstruction"
     );
-}
-
-#[test]
-fn test_apply_checkpoint_sets_terminal_root_per_account() {
-    // Multi-update-per-account epoch: the last update for each account must
-    // carry `Some(root)` matching the full-sync run; non-terminal updates
-    // carry `None`.
-    let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
-    let (ctx, epoch) = mock_for(&built);
-
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
-
-    let cp_updates = artifacts.output.indexer_writes().snark_state_updates();
-    let fs_updates = built.full_sync_indexer_writes().snark_state_updates();
-
-    let last_idx = |updates: &[SnarkAcctStateUpdate]| {
-        let mut m: HashMap<_, usize> = HashMap::new();
-        for (i, u) in updates.iter().enumerate() {
-            m.insert(u.account_id(), i);
-        }
-        m
-    };
-    let cp_last = last_idx(cp_updates);
-    let fs_last = last_idx(fs_updates);
-
-    assert_eq!(
-        cp_last.keys().collect::<HashSet<_>>(),
-        fs_last.keys().collect::<HashSet<_>>(),
-        "same set of touched accounts on both sides"
-    );
-
-    for (account_id, cp_idx) in &cp_last {
-        let cp_root = cp_updates[*cp_idx].state();
-        let fs_root = fs_updates[fs_last[account_id]].state();
-        assert_eq!(
-            cp_root, fs_root,
-            "terminal root must match full-sync for account {account_id}"
-        );
-        assert!(
-            cp_root.is_some(),
-            "terminal-per-account root must be present"
-        );
-    }
-
-    for (i, u) in cp_updates.iter().enumerate() {
-        if cp_last[&u.account_id()] == i {
-            continue;
-        }
-        assert!(
-            u.state().is_none(),
-            "non-terminal checkpoint-sync record must have no state root"
-        );
-    }
 }
 
 #[test]
@@ -371,38 +321,38 @@ fn test_apply_checkpoint_missing_payload() {
     assert!(matches!(err, WorkerError::MissingCheckpointPayload(_)));
 }
 
-/// Asserts the checkpoint-reconstructed artifacts match the full-sync run.
+/// Asserts the checkpoint-reconstructed artifacts match the block-sync run.
 fn assert_consistent(built: &BuiltEpoch, artifacts: &AppliedEpochArtifacts) {
     // Tier 1 — byte-identical: state root, toplevel state, summary.
     assert_eq!(
         artifacts.output.computed_state_root(),
-        &built.full_sync_state_root,
-        "reconstructed state root must equal full-sync root"
+        &built.block_sync_state_root,
+        "reconstructed state root must equal block-sync root"
     );
     assert_eq!(
         MemoryStateBaseLayer::new(artifacts.new_state.clone())
             .compute_state_root()
             .expect("reconstructed root"),
-        built.full_sync_state_root,
-        "reconstructed state must hash to the full-sync root"
+        built.block_sync_state_root,
+        "reconstructed state must hash to the block-sync root"
     );
     assert_eq!(
-        &artifacts.summary, &built.full_sync_summary,
-        "reconstructed epoch summary must equal the full-sync summary"
+        &artifacts.summary, &built.block_sync_summary,
+        "reconstructed epoch summary must equal the block-sync summary"
     );
 
     // Tier 2 — equal modulo documented mode differences.
     assert_indexer_writes_consistent(
-        built.full_sync_indexer_writes(),
+        built.block_sync_indexer_writes(),
         artifacts.output.indexer_writes(),
     );
 }
 
-/// Compares full-sync vs checkpoint-sync [`IndexerWrites`] under the tier-2
+/// Compares block-sync vs checkpoint-sync [`IndexerWrites`] under the tier-2
 /// rules.
-fn assert_indexer_writes_consistent(full_sync: &IndexerWrites, checkpoint: &IndexerWrites) {
+fn assert_indexer_writes_consistent(block_sync: &IndexerWrites, checkpoint: &IndexerWrites) {
     // Created accounts: same set.
-    let mut fs_created: Vec<_> = full_sync
+    let mut bs_created: Vec<_> = block_sync
         .created_accounts()
         .iter()
         .map(|c| c.account_id())
@@ -412,16 +362,16 @@ fn assert_indexer_writes_consistent(full_sync: &IndexerWrites, checkpoint: &Inde
         .iter()
         .map(|c| c.account_id())
         .collect();
-    fs_created.sort();
+    bs_created.sort();
     cp_created.sort();
     assert_eq!(
-        fs_created, cp_created,
+        bs_created, cp_created,
         "created accounts must match across sync modes"
     );
 
     // Inbox messages: same set of (account, MMR index, entry). MMR index is
     // included because DA reconstruction must preserve message positions.
-    let mut fs_inbox: Vec<_> = full_sync
+    let mut fs_inbox: Vec<_> = block_sync
         .inbox_messages()
         .iter()
         .map(|w| (w.account_id(), w.index(), w.entry().clone()))
@@ -441,7 +391,7 @@ fn assert_indexer_writes_consistent(full_sync: &IndexerWrites, checkpoint: &Inde
     // Manifests: same set of (L1 height, manifest). Both paths emit manifest
     // writes for the same L1 heights; this catches a checkpoint-sync bug that
     // drops or reorders them.
-    let mut fs_manifests: Vec<_> = full_sync
+    let mut fs_manifests: Vec<_> = block_sync
         .manifests()
         .iter()
         .map(|m| (m.height, m.manifest.clone()))
@@ -460,12 +410,12 @@ fn assert_indexer_writes_consistent(full_sync: &IndexerWrites, checkpoint: &Inde
 
     // Snark updates: per-account ordered sequence equality. Checkpoint sync now
     // rebuilds per-update records from the sidecar's `ol_logs`, so the record
-    // count and order must match full sync.
+    // count and order must match block sync.
     //
     // `state` (inner state root) is deliberately not compared: checkpoint sync
     // has no per-update intermediate roots on chain, so the records carry a
     // sentinel `Hash::default()`.
-    let fs_snark = group_snark_by_account(full_sync);
+    let fs_snark = group_snark_by_account(block_sync);
     let cp_snark = group_snark_by_account(checkpoint);
     assert_eq!(
         fs_snark, cp_snark,
@@ -475,7 +425,7 @@ fn assert_indexer_writes_consistent(full_sync: &IndexerWrites, checkpoint: &Inde
     // Predicate-key updates: same sequence. No current fixture shape exercises
     // a non-empty case (a future `EePredicateUpdate` shape will); this guards
     // against a regression that spuriously emits one under either mode.
-    let fs_pred: Vec<_> = full_sync
+    let fs_pred: Vec<_> = block_sync
         .predicate_key_updates()
         .iter()
         .map(|u| (u.account_id(), u.new_vk().clone()))

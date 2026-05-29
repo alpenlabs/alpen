@@ -178,7 +178,7 @@ impl ChainWorkerServiceState {
 
         // Handle epoch terminal if needed
         debug!(slot=%block.header().slot(), is_terminal=%block.header().is_terminal(), "Checking if block is terminal");
-        let completed_epoch = if block.header().is_terminal() {
+        let sealed_epoch = if block.header().is_terminal() {
             Some(self.handle_terminal_block_exec_post_ops(&block, &output, &new_state)?)
             // TODO: it seems to be done for each block at the moment. Ideally we would do it just
             // here.
@@ -192,7 +192,7 @@ impl ChainWorkerServiceState {
         // Merge the epoch's write batches into the terminal state. Must run
         // after persist_execution_output, since the merge reads every block's
         // write batch including the terminal block's, stored just above.
-        if let Some(epoch) = completed_epoch {
+        if let Some(epoch) = sealed_epoch {
             self.ctx.merge_epoch_data(&epoch)?;
         }
 
@@ -484,10 +484,7 @@ pub(crate) fn apply_checkpoint_epoch(
 
     verify_snark_seqno_invariant(&new_state, &derived_seqnos)?;
 
-    // Fill in the terminal-per-account state root on the last record of each
-    // account using the now-reconstructed state.
-    let with_terminal_roots = set_terminal_state_roots(rebuilt_snark_updates, &new_state)?;
-    indexer_writes.set_snark_acct_state_updates(with_terminal_roots);
+    indexer_writes.set_snark_acct_state_updates(rebuilt_snark_updates);
     let final_state_root = new_state
         .compute_state_root()
         .map_err(|e| WorkerError::Unexpected(format!("compute final state root {epoch}: {e}")))?;
@@ -748,46 +745,6 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
     }
 
     Ok((records, next_seqno))
-}
-
-/// Sets `inner_state` on the last update per account using the terminal root
-/// read from `new_state`. Non-terminal records keep `None` (CSS cannot
-/// recover their intermediate roots).
-///
-/// Returns [`WorkerError::MissingSnarkAccountForLog`] if `new_state` has no
-/// snark account for an account that produced an update during the epoch:
-/// that combination implies state divergence between the OL logs and the
-/// reconstructed post-state.
-fn set_terminal_state_roots(
-    updates: Vec<SnarkAcctStateUpdate>,
-    new_state: &MemoryStateBaseLayer,
-) -> WorkerResult<Vec<SnarkAcctStateUpdate>> {
-    let mut last_idx_per_account: HashMap<AccountId, usize> = HashMap::new();
-    for (i, u) in updates.iter().enumerate() {
-        last_idx_per_account.insert(u.account_id(), i);
-    }
-
-    let mut out = updates;
-    for (account_id, idx) in last_idx_per_account {
-        let account_state = new_state
-            .get_account_state(account_id)
-            .map_err(|e| WorkerError::Unexpected(format!("read terminal state {account_id}: {e}")))?
-            .ok_or(WorkerError::MissingSnarkAccountForLog(account_id))?;
-        let snark_state = account_state
-            .as_snark_account()
-            .map_err(|_| WorkerError::MissingSnarkAccountForLog(account_id))?;
-        let root = snark_state.inner_state_root();
-        if let SnarkAcctStateUpdate::Update(op) = &out[idx] {
-            out[idx] = SnarkAcctStateUpdate::Update(SAStateUpdateOp::new(
-                op.account_id(),
-                Some(root),
-                op.next_read_idx(),
-                op.seqno(),
-                op.extra_data().to_vec(),
-            ));
-        }
-    }
-    Ok(out)
 }
 
 /// The values produced by reconstructing one epoch from its checkpoint,
