@@ -82,3 +82,33 @@ pub fn validate_mode_programs(mode: PerfMode, programs: &[GuestProgram]) -> Resu
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_mode_accepts_known_values_case_insensitively() {
+        assert_eq!(parse_mode("execute").unwrap(), PerfMode::Execute);
+        assert_eq!(parse_mode("PrOvE").unwrap(), PerfMode::Prove);
+    }
+
+    #[test]
+    fn parse_mode_rejects_unknown_values() {
+        assert_eq!(parse_mode("gpu").unwrap_err(), "unknown mode: gpu");
+    }
+
+    #[test]
+    fn validate_mode_programs_rejects_non_checkpoint_prove_targets() {
+        let err = validate_mode_programs(PerfMode::Prove, &[GuestProgram::AlpenChunk]).unwrap_err();
+        assert_eq!(
+            err,
+            "prove mode currently supports only `checkpoint`; use `--programs checkpoint`"
+        );
+    }
+
+    #[test]
+    fn validate_mode_programs_accepts_execute_mode_for_any_program() {
+        validate_mode_programs(PerfMode::Execute, &[GuestProgram::AlpenAcct]).unwrap();
+    }
+}
