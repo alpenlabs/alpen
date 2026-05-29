@@ -239,7 +239,7 @@ impl ProofSpec for ChunkSpec {
         // and the witness block count must match it, so the loop below always
         // overwrites these with the terminal block's verified metadata.
         let mut tip_state_root = Hash::zero();
-        let mut tip_exec_header_summary = ExecHeaderSummary::new(Vec::new());
+        let mut tip_exec_header_summary = ExecHeaderSummary::new_empty();
 
         for (block_hash, alloy_block) in block_hashes.iter().zip(&alloy_blocks) {
             // Authoritative inputs/outputs from ExecBlockRecord.

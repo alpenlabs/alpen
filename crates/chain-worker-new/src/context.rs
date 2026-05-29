@@ -6,7 +6,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ssz::Encode;
-use strata_acct_types::{MessageEntry, tree_hash::TreeHash};
+use strata_acct_types::{L1BlockRecord, MessageEntry, tree_hash::TreeHash};
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
@@ -19,7 +19,6 @@ use strata_ol_params::OLParams;
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
-use strata_snark_acct_types::L1BlockRef;
 use strata_status::StatusChannel;
 use strata_storage::{
     MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
@@ -455,7 +454,7 @@ fn index_l1_block_ref_mmr_writes(
         let block_hash = *write.manifest.blkid().as_ref();
         let wtxids_root = *write.manifest.wtxids_root().as_ref();
 
-        let l1_block_ref = L1BlockRef::new(block_hash, wtxids_root);
+        let l1_block_ref = L1BlockRecord::new(block_hash, wtxids_root);
         let expected_hash: Hash = l1_block_ref.leaf_hash().into();
         let preimage = l1_block_ref.as_ssz_bytes();
 
@@ -553,7 +552,7 @@ mod tests {
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
         let block_hash = *write.manifest.blkid().as_ref();
         let wtxids_root = *write.manifest.wtxids_root().as_ref();
-        let l1_block_ref = L1BlockRef::new(block_hash, wtxids_root);
+        let l1_block_ref = L1BlockRecord::new(block_hash, wtxids_root);
         let expected_hash: Hash = l1_block_ref.leaf_hash().into();
         let expected_preimage = l1_block_ref.as_ssz_bytes();
 

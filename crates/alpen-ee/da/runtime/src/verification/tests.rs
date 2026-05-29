@@ -23,7 +23,7 @@ use bitcoin::{
 use rkyv::rancor::Error as RkyvError;
 use rsp_mpt::EthereumState;
 use sha2::{Digest, Sha256};
-use strata_acct_types::Hash;
+use strata_acct_types::{l1_block_record_leaf_hash, Hash};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ArchivedEePrivateInput, ChunkInput, EePrivateInput};
 use strata_ee_chain_types::{ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs};
@@ -33,7 +33,7 @@ use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams,
 };
 
-use super::{l1_block_ref_commitment, verify_da_witness, DaVerificationError};
+use super::{verify_da_witness, DaVerificationError};
 
 const MAGIC: [u8; 4] = *b"ALPN";
 
@@ -149,7 +149,7 @@ fn rebuild_pub_params(
     block_hash: [u8; 32],
     wtxids_root: [u8; 32],
 ) -> UpdateProofPubParams {
-    let ledger_ref_hash = l1_block_ref_commitment(&block_hash, &wtxids_root);
+    let ledger_ref_hash = l1_block_record_leaf_hash(&block_hash, &wtxids_root);
     let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(height as u64, ledger_ref_hash)]);
 
     UpdateProofPubParams::new(
@@ -172,7 +172,7 @@ fn rebuild_ee_input(
         Hash::from([1; 32]),
         Hash::from([2; 32]),
         Hash::from(tip_state_root),
-        ExecHeaderSummary::new(encode_to_vec(&header).unwrap()),
+        ExecHeaderSummary::from_vec(encode_to_vec(&header).unwrap()).unwrap(),
         ExecInputs::new_empty(),
         ExecOutputs::new_empty(),
     );
@@ -285,14 +285,14 @@ fn verify_da_witness_accepts_deduped_bytecode_from_private_witness() {
     let wtxids_root = hash_pair(commit_wtxid, reveal_wtxid);
     let block_hash = [0x44; 32];
     let height = 42;
-    let ledger_ref_hash = l1_block_ref_commitment(&block_hash, &wtxids_root);
+    let ledger_ref_hash = l1_block_record_leaf_hash(&block_hash, &wtxids_root);
     let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(height as u64, ledger_ref_hash)]);
 
     let transition = ChunkTransition::new(
         Hash::from([1; 32]),
         Hash::from([2; 32]),
         Hash::from(post_root),
-        ExecHeaderSummary::new(encode_to_vec(&header).unwrap()),
+        ExecHeaderSummary::from_vec(encode_to_vec(&header).unwrap()).unwrap(),
         ExecInputs::new_empty(),
         ExecOutputs::new_empty(),
     );
@@ -360,7 +360,7 @@ fn verify_da_blob_metadata_rejects_missing_deployed_bytecode() {
         Hash::from([1; 32]),
         Hash::from([2; 32]),
         Hash::from([3; 32]),
-        ExecHeaderSummary::new(encode_to_vec(&header).unwrap()),
+        ExecHeaderSummary::from_vec(encode_to_vec(&header).unwrap()).unwrap(),
         ExecInputs::new_empty(),
         ExecOutputs::new_empty(),
     );
@@ -397,7 +397,7 @@ fn verify_da_witness_rejects_empty_witness_for_non_empty_batch() {
         Hash::from([1; 32]),
         Hash::from([2; 32]),
         Hash::from([3; 32]),
-        ExecHeaderSummary::new(Vec::new()),
+        ExecHeaderSummary::new_empty(),
         ExecInputs::new_empty(),
         ExecOutputs::new_empty(),
     );

@@ -160,7 +160,7 @@ impl ExecHeader for SimpleHeader {
     }
 
     fn get_exec_header_summary(&self) -> ExecHeaderSummary {
-        ExecHeaderSummary::new(Vec::new())
+        ExecHeaderSummary::new_empty()
     }
 
     fn compute_block_id(&self) -> Hash {

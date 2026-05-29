@@ -15,7 +15,6 @@ builders = [
   "dep:alpen-reth-db",
   "dep:async-trait",
   "dep:bitcoind-async-client",
-  "dep:strata-acct-types",
   "dep:strata-identifiers",
   "dep:strata-primitives",
 ]
@@ -30,7 +29,7 @@ alloy-primitives.workspace = true
 async-trait = { workspace = true, optional = true }
 bitcoin.workspace = true
 bitcoind-async-client = { workspace = true, optional = true }
-strata-acct-types = { workspace = true, optional = true }
+strata-acct-types.workspace = true
 strata-identifiers = { workspace = true, optional = true }
 strata-primitives = { workspace = true, optional = true }
 revm-primitives.workspace = true
@@ -46,5 +45,4 @@ thiserror.workspace = true
 rkyv.workspace = true
 rsp-mpt.workspace = true
 sha2.workspace = true
-strata-acct-types.workspace = true
 strata-l1-envelope-fmt.workspace = true

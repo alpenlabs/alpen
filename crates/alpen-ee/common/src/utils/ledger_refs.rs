@@ -7,28 +7,23 @@
 //! match the prover-committed pub-params SSZ and Groth16 verification
 //! will fail.
 
-use strata_snark_acct_types::{l1_block_ref_leaf_hash, AccumulatorClaim, LedgerRefs};
+use strata_acct_types::{l1_block_record_leaf_hash, AccumulatorClaim};
+use strata_snark_acct_types::LedgerRefs;
 
 use crate::types::batch::L1DaBlockRef;
 
-/// Computes the public ledger-ref entry hash for an L1 block ref.
-///
-/// The MMR index is the L1 block height; the entry hash commits to the
-/// Bitcoin block hash and that block's witness-transaction Merkle root.
-pub fn l1_block_ref_commitment(block_hash: &[u8; 32], wtxids_root: &[u8; 32]) -> [u8; 32] {
-    l1_block_ref_leaf_hash(block_hash, wtxids_root)
-}
-
 /// Builds canonical [`LedgerRefs`] from `da_refs`.
 ///
-/// Uses the raw L1 height as the MMR leaf index, then sorts and dedups by
-/// index because multiple DA txns from the same batch may land in one L1 block.
+/// Uses the raw L1 height as the MMR leaf index, and commits each entry to its
+/// `{block_hash, wtxids_root}` via [`l1_block_record_leaf_hash`]; then sorts and
+/// dedups by index because multiple DA txns from the same batch may land in one
+/// L1 block.
 pub fn build_ledger_refs_from_da(da_refs: &[L1DaBlockRef]) -> LedgerRefs {
     let mut l1_block_refs: Vec<AccumulatorClaim> = da_refs
         .iter()
         .map(|da_ref| {
             let height = da_ref.block.height();
-            let entry_hash = l1_block_ref_commitment(
+            let entry_hash = l1_block_record_leaf_hash(
                 da_ref.block.blkid().as_ref(),
                 da_ref.block.wtxids_root().as_ref(),
             );
@@ -70,7 +65,7 @@ mod tests {
         assert_eq!(claims[0].idx(), 7);
         assert_eq!(
             claims[0].entry_hash().as_ref(),
-            l1_block_ref_commitment(&[1; 32], &[2; 32]).as_slice()
+            l1_block_record_leaf_hash(&[1; 32], &[2; 32]).as_slice()
         );
     }
 

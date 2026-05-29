@@ -1,16 +1,27 @@
 //! Chunk types exposed to the EE account.
 
+use ssz_types::{Error as SszError, VariableList};
 use strata_acct_types::Hash;
 
 use crate::{ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs};
 
 impl ExecHeaderSummary {
-    pub fn new(opaque_bytes: Vec<u8>) -> Self {
-        Self {
-            opaque_bytes: opaque_bytes
-                .try_into()
-                .expect("exec header summary must fit within SSZ max length"),
-        }
+    /// Creates a summary from an already-bounded opaque byte list.
+    pub fn new(opaque_bytes: VariableList<u8, 1024>) -> Self {
+        Self { opaque_bytes }
+    }
+
+    /// Creates a summary from raw bytes, returning an error if they exceed the
+    /// SSZ bound (`MAX_EXEC_HEADER_SUMMARY_BYTES` = 1024).
+    pub fn from_vec(opaque_bytes: Vec<u8>) -> Result<Self, SszError> {
+        Ok(Self {
+            opaque_bytes: opaque_bytes.try_into()?,
+        })
+    }
+
+    /// Creates an empty summary.
+    pub fn new_empty() -> Self {
+        Self::from_vec(Vec::new()).expect("empty opaque bytes fit the SSZ bound")
     }
 
     pub fn opaque_bytes(&self) -> &[u8] {

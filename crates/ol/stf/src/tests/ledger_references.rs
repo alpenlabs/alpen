@@ -1,13 +1,15 @@
 //! Tests for ledger references (referencing ASM manifests)
 
 use ssz_primitives::FixedBytes;
-use strata_acct_types::{AccountId, AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof};
+use strata_acct_types::{
+    AccountId, AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof,
+    l1_block_record_leaf_hash,
+};
 use strata_asm_common::AsmManifest;
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
     OLTransaction, ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
 };
-use strata_snark_acct_types::l1_block_ref_leaf_hash;
 
 use crate::{errors::ExecError, test_utils::*};
 
@@ -22,7 +24,7 @@ fn execute_manifest_block_with_tracker(
     let mut manifest_tracker = ManifestMmrTracker::new();
 
     let l1_block_ref_hash =
-        l1_block_ref_leaf_hash(manifest.blkid().as_ref(), manifest.wtxids_root().as_ref());
+        l1_block_record_leaf_hash(manifest.blkid().as_ref(), manifest.wtxids_root().as_ref());
 
     fixture
         .child_block()
@@ -197,7 +199,7 @@ fn test_snark_update_rejects_proof_for_wrong_ledger_reference_claim() {
 
     let manifest1 = make_empty_manifest(1, 1);
     let manifest1_hash =
-        l1_block_ref_leaf_hash(manifest1.blkid().as_ref(), manifest1.wtxids_root().as_ref());
+        l1_block_record_leaf_hash(manifest1.blkid().as_ref(), manifest1.wtxids_root().as_ref());
     let manifest2 = make_empty_manifest(2, 2);
 
     fixture

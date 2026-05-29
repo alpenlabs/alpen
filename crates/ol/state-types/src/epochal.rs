@@ -2,11 +2,10 @@
 //!
 //! This can be completely omitted from DA.
 
-use strata_acct_types::{BitcoinAmount, Mmr64, StrataHasher};
+use strata_acct_types::{BitcoinAmount, Mmr64, StrataHasher, l1_block_record_leaf_hash};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 use strata_merkle::Mmr;
-use strata_snark_acct_types::l1_block_ref_leaf_hash;
 
 use crate::ssz_generated::ssz::state::EpochalState;
 
@@ -65,7 +64,7 @@ impl EpochalState {
         );
 
         let l1_block_ref_hash =
-            l1_block_ref_leaf_hash(mf.blkid().as_ref(), mf.wtxids_root().as_ref());
+            l1_block_record_leaf_hash(mf.blkid().as_ref(), mf.wtxids_root().as_ref());
 
         Mmr::<StrataHasher>::add_leaf(&mut self.l1_block_refs_mmr, l1_block_ref_hash)
             .expect("ol/state: MMR capacity exceeded");

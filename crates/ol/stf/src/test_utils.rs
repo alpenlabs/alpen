@@ -1651,7 +1651,7 @@ impl ManifestMmrTracker {
 
     /// Adds a manifest's L1 block ref to the tracker and returns a proof for it.
     pub fn add_manifest(&mut self, manifest: &AsmManifest) -> (u64, RawMerkleProof) {
-        let hash = strata_snark_acct_types::l1_block_ref_leaf_hash(
+        let hash = strata_acct_types::l1_block_record_leaf_hash(
             manifest.blkid().as_ref(),
             manifest.wtxids_root().as_ref(),
         );

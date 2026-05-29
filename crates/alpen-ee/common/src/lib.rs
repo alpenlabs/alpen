@@ -53,5 +53,5 @@ pub use types::{
 pub use utils::{
     clock::{Clock, SystemClock},
     conversions::sats_to_gwei,
-    ledger_refs::{build_ledger_refs_from_da, l1_block_ref_commitment},
+    ledger_refs::build_ledger_refs_from_da,
 };

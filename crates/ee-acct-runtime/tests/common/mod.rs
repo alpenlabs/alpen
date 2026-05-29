@@ -257,7 +257,7 @@ pub(crate) fn simple_chunk(
 }
 
 pub(crate) fn empty_exec_header_summary() -> ExecHeaderSummary {
-    ExecHeaderSummary::new(Vec::new())
+    ExecHeaderSummary::new_empty()
 }
 
 /// Creates a [`ChunkTransition`] for testing (thin wrapper).

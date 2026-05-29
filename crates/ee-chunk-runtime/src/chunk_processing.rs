@@ -402,7 +402,7 @@ mod tests {
             prev_blkid,
             tip_blkid,
             tip_state_root,
-            ExecHeaderSummary::new(vec![1]),
+            ExecHeaderSummary::from_vec(vec![1]).unwrap(),
             inputs.clone(),
             outputs.clone(),
         );

@@ -61,7 +61,8 @@ impl ExecHeader for EvmHeader {
             gas_used: self.header.gas_used,
             gas_limit: self.header.gas_limit,
         };
-        ExecHeaderSummary::new(encode_to_vec(&payload).expect("encode EVM header summary"))
+        ExecHeaderSummary::from_vec(encode_to_vec(&payload).expect("encode EVM header summary"))
+            .expect("exec header summary fits the SSZ bound")
     }
 
     fn compute_block_id(&self) -> Hash {

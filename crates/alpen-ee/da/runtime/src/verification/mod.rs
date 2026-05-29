@@ -26,11 +26,12 @@ use bitcoin::{consensus::deserialize as btc_deserialize, hashes::Hash as _, Tran
 pub use error::{DaVerificationError, DaVerificationResult};
 use revm_primitives::KECCAK_EMPTY;
 use ssz::Decode;
+use strata_acct_types::l1_block_record_leaf_hash;
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_runtime::ArchivedEePrivateInput;
 use strata_ee_chain_types::ChunkTransition;
 use strata_evm_ee::EvmPartialState;
-use strata_snark_acct_types::{l1_block_ref_leaf_hash, LedgerRefs, UpdateProofPubParams};
+use strata_snark_acct_types::{LedgerRefs, UpdateProofPubParams};
 
 /// Runs DA correctness checks for the outer proof.
 ///
@@ -100,11 +101,6 @@ fn bitcoin_merkle_root_from_archived_proof(
     compute_bitcoin_merkle_root_from_proof(leaf_hash, proof.siblings(), proof.position())
 }
 
-/// Public ledger-ref entry hash for an L1 block ref.
-pub(crate) fn l1_block_ref_commitment(block_hash: &[u8; 32], wtxids_root: &[u8; 32]) -> [u8; 32] {
-    l1_block_ref_leaf_hash(block_hash, wtxids_root)
-}
-
 /// Verifies every witnessed DA transaction in one L1 block.
 fn verify_block_witness(
     block: &ArchivedDaBlockWitness,
@@ -143,7 +139,8 @@ fn verify_l1_ref_binding(
 ) -> DaVerificationResult {
     let inclusion = block.inclusion();
     let idx = u64::from(inclusion.l1_block_height());
-    let expected_hash = l1_block_ref_commitment(inclusion.l1_block_hash(), inclusion.wtxids_root());
+    let expected_hash =
+        l1_block_record_leaf_hash(inclusion.l1_block_hash(), inclusion.wtxids_root());
 
     let found = ledger_refs
         .l1_block_refs()

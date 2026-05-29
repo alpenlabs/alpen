@@ -16,7 +16,7 @@ use bitcoin::Network;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
 use strata_acct_types::{
     AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, MsgPayload,
-    tree_hash::TreeHash,
+    l1_block_record_leaf_hash, tree_hash::TreeHash,
 };
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
@@ -1370,7 +1370,7 @@ fn setup_manifests_in_state_and_storage(
     let mut claims = Vec::with_capacity(manifests.len());
     for manifest in manifests {
         let l1_block_ref_hash: Hash =
-            l1_block_ref_leaf_hash(manifest.blkid().as_ref(), manifest.wtxids_root().as_ref())
+            l1_block_record_leaf_hash(manifest.blkid().as_ref(), manifest.wtxids_root().as_ref())
                 .into();
         let leaf_idx = mmr_handle.append_leaf_blocking(l1_block_ref_hash).unwrap();
 
