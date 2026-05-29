@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_worker::{AsmState as WorkerAsmState, WorkerContext, WorkerError, WorkerResult};
+use strata_btc_types::L1BlockIdBitcoinExt;
+use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_db_types::DbError;
 use strata_identifiers::Hash;
 use strata_primitives::prelude::*;
@@ -45,30 +47,16 @@ impl AsmWorkerCtx {
 
 impl WorkerContext for AsmWorkerCtx {
     fn get_l1_block(&self, blockid: &L1BlockId) -> WorkerResult<bitcoin::Block> {
-        // With ASM manifests, we don't store height in the manifest anymore
-        // We need to search the canonical chain to find the height
-        let tip_opt = self.l1man.get_canonical_chain_tip().map_err(conv_db_err)?;
-        let Some((tip_height, _)) = tip_opt else {
-            return Err(WorkerError::MissingL1Block(*blockid));
-        };
-
-        // Search backwards from tip to find the block
-        for height in (0..=tip_height).rev() {
-            if let Some(bid) = self
-                .l1man
-                .get_canonical_blockid_at_height(height)
-                .map_err(conv_db_err)?
-            {
-                if bid == *blockid {
-                    return self
-                        .handle
-                        .block_on(self.bitcoin_client.get_block_at(height.into()))
-                        .map_err(|_| WorkerError::MissingL1Block(*blockid));
-                }
-            }
-        }
-
-        Err(WorkerError::MissingL1Block(*blockid))
+        let hash = blockid.to_block_hash();
+        let backoff = ExponentialBackoff::new(200, 15, 10);
+        retry_with_backoff("asm_get_l1_block", 10, &backoff, || {
+            self.handle
+                .block_on(self.bitcoin_client.get_block(&hash))
+                .map_err(|e| {
+                    tracing::warn!(%blockid, ?e, "failed to fetch L1 block for ASM");
+                    WorkerError::MissingL1Block(*blockid)
+                })
+        })
     }
 
     fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, WorkerAsmState)>> {
