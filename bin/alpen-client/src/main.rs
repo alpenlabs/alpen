@@ -1,6 +1,8 @@
 //! Reth node for the Alpen codebase.
 
 mod dummy_ol_client;
+#[cfg(feature = "sequencer")]
+mod gas_data_provider;
 mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
@@ -481,8 +483,12 @@ fn main() {
                 use alpen_ee_sequencer::{
                     backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
                     create_batch_builder, create_batch_lifecycle_task,
-                    create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
+                    create_update_submitter_task, BlockCountDataProvider, ComposedDataProvider,
+                    FixedBlockCountSealing, MaxGasSealing, OrSealing,
                 };
+
+                use crate::gas_data_provider::RethGasDataProvider;
+
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
                     node.beacon_engine_handle.clone(),
@@ -507,9 +513,17 @@ fn main() {
 
                 let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
 
-                let batch_sealing_policy =
-                    FixedBlockCountSealing::new(ext.batch_sealing_block_count);
-                let block_data_provider = Arc::new(BlockCountDataProvider);
+                // u64::MAX effectively disables the gas policy while keeping a
+                // single monomorphic code path (no dyn / enum branching).
+                let batch_gas_limit = ext.batch_sealing_gas_limit.unwrap_or(u64::MAX);
+                let batch_sealing_policy = OrSealing::new(
+                    FixedBlockCountSealing::new(ext.batch_sealing_block_count),
+                    MaxGasSealing::new(batch_gas_limit),
+                );
+                let block_data_provider = Arc::new(ComposedDataProvider::new(
+                    BlockCountDataProvider,
+                    RethGasDataProvider::new(node.provider.clone()),
+                ));
 
                 // Chunk-spanning witness extractor. Single producer of
                 // `ChunkWitnessRecord`: the background `chunk_witness_task`
@@ -1022,6 +1036,13 @@ pub struct AdditionalConfig {
     /// Lower values seal batches more frequently (useful for testing).
     #[arg(long, default_value = "100")]
     pub batch_sealing_block_count: u64,
+
+    /// Cumulative gas limit per batch before sealing.
+    /// When set, a batch is sealed when either the block count or the gas
+    /// limit is reached (whichever comes first). When omitted, only the
+    /// block count policy is used.
+    #[arg(long, required = false)]
+    pub batch_sealing_gas_limit: Option<u64>,
 
     /// Bridge denomination in satoshis (1 BTC default).
     #[arg(long, default_value_t = DEFAULT_DENOMINATION_SATS)]
