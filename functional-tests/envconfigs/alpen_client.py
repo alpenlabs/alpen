@@ -159,6 +159,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             ol_submit_endpoint=ol_submit_endpoint,
             ol_submit_token=ol_submit_token,
             da_config=da_config,
+            batch_sealing_block_count=batch_sealing_block_count,
             dev_track_latest_epoch=dev_track_latest_epoch,
         )
         sequencer.wait_for_ready(timeout=60)

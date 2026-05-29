@@ -36,6 +36,7 @@ const PROVER_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 /// Default end-to-end deadline applied to the SP1 prover network when
 /// `ProverConfig::sp1_proof_deadline_secs` is not set. Chosen to comfortably
 /// cover checkpoint proofs while still failing fast on stuck requests.
+#[cfg(feature = "sp1")]
 const DEFAULT_SP1_DEADLINE_SECS: u64 = 4 * 60 * 60;
 
 /// Starts the integrated prover service.

@@ -175,7 +175,15 @@ async fn process_ready_batches(
         };
 
         let seq_no = update.operation().seq_no();
+        let outputs = update.operation().outputs();
         let l1_ref_count = update.operation().ledger_refs().l1_block_refs().len();
+        let output_transfer_count = outputs.transfers().len();
+        let output_message_count = outputs.messages().len();
+        let output_message_value_sats: u64 = outputs
+            .messages()
+            .iter()
+            .map(|message| message.payload().value().to_sat())
+            .sum();
         let txid = ol_client.submit_update(update).await?;
 
         info!(
@@ -188,7 +196,10 @@ async fn process_ready_batches(
             prev_block = %batch.prev_block(),
             last_block = %batch.last_block(),
             l1_ref_count,
-            "Submitted update for batch"
+            output_transfer_count,
+            output_message_count,
+            output_message_value_sats,
+            "submitted snark update to OL"
         );
 
         batch_idx += 1;

@@ -301,6 +301,13 @@ def main(argv: list[str]) -> int:
         ),
         # Alpen-client (EE) environments
         "alpen_ee": AlpenClientEnv(enable_l1_da=True),
+        # EEST needs the externally observable OL/EE path, not a
+        # test-only client surface.
+        "alpen_eest": EeOLEnv(
+            fullnode_count=0,
+            pre_generate_blocks=110,
+            batch_sealing_block_count=5,
+        ),
         "alpen_ee_discovery": AlpenClientEnv(
             enable_discovery=True, pure_discovery=True, enable_l1_da=True
         ),
