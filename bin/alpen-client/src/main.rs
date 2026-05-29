@@ -513,6 +513,25 @@ fn main() {
 
                 let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
 
+                // Validate --batch-sealing-gas-limit if configured.
+                //
+                // EIP-1559 lets the per-block gas limit drift from genesis by
+                // ±1/1024 per block, so the actual block gas limit at runtime
+                // may be slightly higher than genesis. We use 2× the genesis
+                // gas limit as a conservative floor to accommodate this drift
+                // while still catching obvious misconfigurations.
+                if let Some(configured) = ext.batch_sealing_gas_limit {
+                    let min_batch_gas = ext.custom_chain.genesis().gas_limit.saturating_mul(2);
+                    eyre::ensure!(
+                        configured >= min_batch_gas,
+                        "--batch-sealing-gas-limit ({configured}) is below the minimum \
+                         ({min_batch_gas}, 2× genesis block gas limit {}). A single block \
+                         can use up to the per-block gas limit, so the batch budget must \
+                         be large enough to always fit at least one block.",
+                        ext.custom_chain.genesis().gas_limit,
+                    );
+                }
+
                 // u64::MAX effectively disables the gas policy while keeping a
                 // single monomorphic code path (no dyn / enum branching).
                 let batch_gas_limit = ext.batch_sealing_gas_limit.unwrap_or(u64::MAX);
