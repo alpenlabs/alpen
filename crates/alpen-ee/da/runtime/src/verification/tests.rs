@@ -605,8 +605,12 @@ fn verify_da_witness_rejects_reveal_spending_marker_vout() {
         )],
         DedupWitness::empty(),
     );
-    let pub_params =
-        rebuild_pub_params(*pub_params.seq_no().inner(), height, block_hash, wtxids_root);
+    let pub_params = rebuild_pub_params(
+        *pub_params.seq_no().inner(),
+        height,
+        block_hash,
+        wtxids_root,
+    );
 
     let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
         .expect_err("a reveal cannot spend the commit OP_RETURN marker output");
