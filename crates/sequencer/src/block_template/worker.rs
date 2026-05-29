@@ -206,14 +206,7 @@ fn generate_block_template_inner(
     let _guard = asm_span.enter();
 
     // Actually put the template together.
-    let (header, body, accessory) = prepare_block(
-        parent,
-        ts,
-        config.epoch_gas_limit(),
-        storage,
-        engine,
-        params,
-    )?;
+    let (header, body, accessory) = prepare_block(parent, ts, storage, engine, params)?;
 
     Ok(FullBlockTemplate::new(header, body, accessory))
 }

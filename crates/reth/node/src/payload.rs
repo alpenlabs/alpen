@@ -22,30 +22,12 @@ pub struct AlpenPayloadAttributes {
     /// Original Ethereum payload attributes
     #[serde(flatten)]
     pub inner: EthPayloadAttributes,
-    // additional custom fields for strata
-    /// Optional cumulative gas limit for blocks
-    pub batch_gas_limit: Option<u64>,
-}
-
-impl AlpenPayloadBuilderAttributes {
-    pub(crate) fn batch_gas_limit(&self) -> Option<u64> {
-        self.batch_gas_limit
-    }
 }
 
 impl AlpenPayloadAttributes {
     pub fn new_from_eth(payload_attributes: EthPayloadAttributes) -> Self {
         Self {
             inner: payload_attributes,
-            // more fields here
-            batch_gas_limit: None,
-        }
-    }
-
-    pub fn new(payload_attributes: EthPayloadAttributes, batch_gas_limit: Option<u64>) -> Self {
-        Self {
-            inner: payload_attributes,
-            batch_gas_limit,
         }
     }
 }
@@ -68,7 +50,6 @@ impl PayloadAttributes for AlpenPayloadAttributes {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlpenPayloadBuilderAttributes {
     pub(crate) inner: EthPayloadBuilderAttributes,
-    pub(crate) batch_gas_limit: Option<u64>,
 }
 
 impl PayloadBuilderAttributes for AlpenPayloadBuilderAttributes {
@@ -82,7 +63,6 @@ impl PayloadBuilderAttributes for AlpenPayloadBuilderAttributes {
     ) -> Result<Self, Infallible> {
         Ok(Self {
             inner: EthPayloadBuilderAttributes::new(parent, attributes.inner),
-            batch_gas_limit: attributes.batch_gas_limit,
         })
     }
 

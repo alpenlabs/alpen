@@ -126,17 +126,14 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             })
             .collect::<Result<_, EngineError>>()?;
 
-        let payload_attributes = AlpenPayloadAttributes::new(
-            PayloadAttributes {
-                // evm expects timestamp in seconds
-                timestamp: payload_env.timestamp() / 1000,
-                prev_randao: B256::ZERO,
-                withdrawals: Some(withdrawals),
-                parent_beacon_block_root: Some(Default::default()),
-                suggested_fee_recipient: COINBASE_ADDRESS,
-            },
-            payload_env.batch_gas_limit(),
-        );
+        let payload_attributes = AlpenPayloadAttributes::new_from_eth(PayloadAttributes {
+            // evm expects timestamp in seconds
+            timestamp: payload_env.timestamp() / 1000,
+            prev_randao: B256::ZERO,
+            withdrawals: Some(withdrawals),
+            parent_beacon_block_root: Some(Default::default()),
+            suggested_fee_recipient: COINBASE_ADDRESS,
+        });
 
         let fcs = ForkchoiceState {
             head_block_hash: prev_block.block_hash(),
@@ -598,7 +595,7 @@ mod tests {
         let safe_l1_block = Buf32(FixedBytes::<32>::random().into());
         let prev_l2_block = Buf32(FixedBytes::<32>::random().into()).into();
 
-        let payload_env = PayloadEnv::new(timestamp, prev_l2_block, safe_l1_block, el_ops, None);
+        let payload_env = PayloadEnv::new(timestamp, prev_l2_block, safe_l1_block, el_ops);
 
         let result = rpc_exec_engine_inner
             .build_block_from_mempool(payload_env, evm_l2_block)
