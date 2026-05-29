@@ -14,8 +14,8 @@ pub mod github;
 pub mod programs;
 
 use anyhow::Result;
-use args::{EvalArgs, PerfMode, parse_mode, parse_programs, validate_mode_programs};
-use format::{ProofSummary, format_header, format_results_for_mode};
+use args::{parse_mode, parse_programs, validate_mode_programs, EvalArgs, PerfMode};
+use format::{format_header, format_results_for_mode, ProofSummary};
 use github::{format_github_message, post_to_github_pr};
 #[cfg(feature = "sp1")]
 use zkaleido::ExecutionSummary;

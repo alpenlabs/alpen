@@ -1,5 +1,4 @@
-use std::str::FromStr;
-use std::time::Instant;
+use std::{str::FromStr, time::Instant};
 
 mod alpen_acct;
 mod alpen_chunk;
@@ -35,7 +34,9 @@ impl FromStr for GuestProgram {
 /// Runs SP1 programs and pairs each program's name with its
 /// [`ExecutionSummary`] (cycles, gas, public values).
 #[cfg(feature = "sp1")]
-pub async fn run_sp1_execute_programs(programs: &[GuestProgram]) -> Vec<(String, ExecutionSummary)> {
+pub async fn run_sp1_execute_programs(
+    programs: &[GuestProgram],
+) -> Vec<(String, ExecutionSummary)> {
     use strata_zkvm_hosts::sp1::{alpen_acct_host, alpen_chunk_host, checkpoint_host};
     use zkaleido_sp1_host::SP1HostConfig;
     let mut reports = Vec::with_capacity(programs.len());
@@ -73,10 +74,10 @@ pub async fn run_sp1_prove_programs(programs: &[GuestProgram]) -> Vec<(String, P
             GuestProgram::Checkpoint => {
                 let prepare_started_at = Instant::now();
                 let input = checkpoint::prepare_input();
-                let prepare_duration = prepare_started_at.elapsed();
 
                 let cfg = SP1HostConfig::default();
                 let host = checkpoint_host(cfg).await;
+                let prepare_duration = prepare_started_at.elapsed();
                 let prove_started_at = Instant::now();
                 let (name, receipt) = checkpoint::prove_with_input(&input, &**host);
                 let prove_duration = prove_started_at.elapsed();

@@ -95,3 +95,34 @@ pub fn format_results_for_mode(
         PerfMode::Prove => format_prove_results(prove_results, host_name),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn format_prove_results_includes_timing_breakdown_columns() {
+        let text = format_prove_results(
+            &[(
+                "Checkpoint".to_string(),
+                ProofSummary {
+                    prepare_duration: Duration::from_millis(12),
+                    prove_duration: Duration::from_millis(34),
+                    total_duration: Duration::from_millis(46),
+                    proof_bytes: 356,
+                    proof_type: "Groth16".to_string(),
+                },
+            )],
+            "SP1".to_string(),
+        );
+
+        assert!(text.contains("prepare ms"));
+        assert!(text.contains("prove ms"));
+        assert!(text.contains("total ms"));
+        assert!(text.contains("Checkpoint"));
+        assert!(text.contains("Groth16"));
+        assert!(text.contains("356"));
+    }
+}
