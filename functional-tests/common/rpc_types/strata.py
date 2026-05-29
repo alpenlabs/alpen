@@ -56,7 +56,7 @@ class ProofState(TypedDict):
 class EpochUpdateData(TypedDict):
     seq_no: int
     next_inbox_msg_idx: int
-    final_state_root: HexBytes32 | None
+    new_state_root: HexBytes32 | None
     extra_data: HexBytes
     messages: list[MessageEntry]
 
@@ -65,4 +65,5 @@ class AccountEpochSummary(TypedDict):
     epoch_commitment: EpochCommitment
     prev_epoch_commitment: EpochCommitment
     balance: int
+    final_state_root: HexBytes32
     update_inputs: list[EpochUpdateData]

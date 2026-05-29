@@ -204,7 +204,7 @@ impl OLClient for RpcOLClient {
                             u.seq_no,
                             u.extra_data.0.clone(),
                             messages,
-                            u.final_state_root.as_ref().map(|root| root.0.into()),
+                            u.new_state_root.as_ref().map(|root| root.0.into()),
                         ))
                     })
                     .collect::<Result<_, OLClientError>>()?;
@@ -212,6 +212,7 @@ impl OLClient for RpcOLClient {
                 Ok(OLEpochSummary::new(
                     epoch_summary.epoch_commitment(),
                     epoch_summary.prev_epoch_commitment(),
+                    Hash::from(epoch_summary.final_state_root().0),
                     updates,
                 ))
             },

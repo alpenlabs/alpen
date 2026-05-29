@@ -537,12 +537,12 @@ fn rpc_update_to_input(update: RpcUpdateInputData) -> UpdateInputData {
                 .expect("message payload bytes must fit within SSZ max length")
         })
         .collect();
-    let final_state_root = update
-        .final_state_root
-        .expect("test fixtures populate final_state_root")
+    let new_state_root = update
+        .new_state_root
+        .expect("test fixtures populate new_state_root")
         .0
         .into();
-    let proof_state = ProofState::new(final_state_root, update.next_inbox_msg_idx);
+    let proof_state = ProofState::new(new_state_root, update.next_inbox_msg_idx);
     UpdateInputData::new(
         update.seq_no,
         messages,
@@ -2199,12 +2199,11 @@ async fn epoch_summary_non_snark_account() {
         .with_epoch_commitment(0, epoch0_commit);
     let rpc = make_rpc(provider);
 
-    let summary = rpc
+    let err = rpc
         .get_acct_epoch_summary(account_id, 0)
         .await
-        .expect("non-snark");
-    assert_eq!(summary.balance(), 0);
-    assert!(summary.update_inputs().is_empty());
+        .expect_err("non-snark account should error");
+    assert!(err.message().contains("not a snark account"));
 }
 
 #[tokio::test]

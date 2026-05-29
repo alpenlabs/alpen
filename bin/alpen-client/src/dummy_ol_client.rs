@@ -66,7 +66,12 @@ impl OLClient for DummyOLClient {
                 self.slot_to_block_commitment(prev_epoch as u64).blkid,
             )
         };
-        Ok(OLEpochSummary::new(commitment, prev, vec![]))
+        Ok(OLEpochSummary::new(
+            commitment,
+            prev,
+            Hash::default(),
+            vec![],
+        ))
     }
 }
 
