@@ -16,9 +16,8 @@ class EeOLCheckpointSyncEnv(EeOLEnv):
     """`el_ol` plus a checkpoint-sync Strata node.
 
     The checkpoint-sync node reconstructs OL state from L1-buried checkpoints
-    instead of executing OL blocks. The EE node stays wired to the sequencer
-    (it must submit updates there); the test compares the checkpoint-sync
-    node's reconstructed OL state against the sequencer's.
+    instead of executing OL blocks. The EE node reads OL state from the
+    checkpoint-sync node and submits transactions to the sequencer.
     """
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
@@ -32,7 +31,7 @@ class EeOLCheckpointSyncEnv(EeOLEnv):
             ectx,
             self.alpen_env_params,
             bitcoin_service=bitcoin,
-            ol_endpoint=sequencer.props["rpc_url"],
+            ol_endpoint=checkpoint_node.props["rpc_url"],
             ol_submit_endpoint=sequencer.props["submit_rpc_url"],
             ol_submit_token=sequencer.props["submit_rpc_token"],
         )
