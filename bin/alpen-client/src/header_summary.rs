@@ -9,7 +9,7 @@
 //! This adapter lives in the binary crate because it depends on
 //! `reth_provider::HeaderProvider`, which is only available where the Reth node
 //! is assembled. The generic DA providers that consume it live in
-//! [`alpen_ee_da`].
+//! `alpen-ee-da-provider`.
 
 use alpen_ee_common::HeaderSummaryProvider;
 use alpen_ee_da_types::EvmHeaderSummary;

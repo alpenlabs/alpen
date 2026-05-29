@@ -2,9 +2,9 @@
 //! [`verification`](crate::verification) module checks. Gated behind the
 //! `builders` feature so guest/proof builds link only the verifier.
 //!
-//! - [`inclusion`] — the generic L1 byte-blob inclusion layer (walking the batch's L1 blocks, wtxid
+//! - `inclusion` — the generic L1 byte-blob inclusion layer (walking the batch's L1 blocks, wtxid
 //!   proofs, blob reassembly), execution-environment agnostic.
-//! - [`dedup`] — the EVM bytecode-dedup layer: which bytecodes the blob omits, resolving their
+//! - `dedup` — the EVM bytecode-dedup layer: which bytecodes the blob omits, resolving their
 //!   preimages, and the [`DedupWitnessResolver`] seam that produces the
 //!   [`DedupWitness`](alpen_ee_da_types::DedupWitness).
 //! - [`build_da_witness`] — the single entry point that orchestrates the two into a [`DaWitness`].
