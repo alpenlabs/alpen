@@ -5,8 +5,6 @@ use std::fmt::Debug;
 use async_trait::async_trait;
 use strata_acct_types::Hash;
 
-use super::Accumulator;
-
 /// Core trait that defines the types for a batching strategy.
 ///
 /// The `BatchPolicy` trait allows different batching strategies to be implemented
@@ -38,9 +36,11 @@ pub trait BatchSealingPolicy<P: BatchPolicy>: Send + Sync {
     /// adding this block. The block will then become the first block of
     /// the next batch.
     ///
-    /// This is called with the current accumulator state and the data for
-    /// the block about to be added.
-    fn would_exceed(&self, accumulator: &Accumulator<P>, block_data: &P::BlockData) -> bool;
+    /// # Arguments
+    ///
+    /// * `value` - The accumulated policy-specific value
+    /// * `block_data` - Data for the block about to be added
+    fn would_exceed(&self, value: &P::AccumulatedValue, block_data: &P::BlockData) -> bool;
 }
 
 /// Trait to fetch processed block data for batch sealing.

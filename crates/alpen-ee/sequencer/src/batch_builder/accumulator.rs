@@ -2,7 +2,7 @@
 
 use alpen_ee_common::BlockNumHash;
 
-use super::BatchPolicy;
+use super::{BatchPolicy, BatchSealingPolicy};
 
 /// Accumulates blocks and policy-specific value for the pending batch.
 #[derive(Debug)]
@@ -60,6 +60,15 @@ impl<P: BatchPolicy> Accumulator<P> {
     /// Access the accumulated value.
     pub fn value(&self) -> &P::AccumulatedValue {
         &self.value
+    }
+
+    /// Check if adding a block would exceed the sealing policy threshold.
+    pub fn would_exceed(
+        &self,
+        policy: &impl BatchSealingPolicy<P>,
+        block_data: &P::BlockData,
+    ) -> bool {
+        policy.would_exceed(self.value(), block_data)
     }
 
     /// Reset accumulator for a new batch.

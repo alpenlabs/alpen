@@ -70,7 +70,9 @@ mod accumulator;
 mod block_count;
 mod canonical;
 mod ctx;
+mod gas_limit;
 mod handle;
+mod or_policy;
 mod reorg;
 mod state;
 mod task;
@@ -81,6 +83,8 @@ pub use block_count::{
     BlockCountData, BlockCountDataProvider, BlockCountPolicy, BlockCountValue,
     FixedBlockCountSealing,
 };
+pub use gas_limit::{GasBlockData, GasLimitPolicy, GasValue, MaxGasSealing};
 pub use handle::{create_batch_builder, BatchBuilderHandle};
+pub use or_policy::{ComposedDataProvider, ComposedPolicy, OrSealing};
 pub use state::{init_batch_builder_state, BatchBuilderState};
 pub use traits::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
