@@ -88,8 +88,8 @@ class TestFullnodeSync(AlpenClientTest):
 
         # Wait for initial sync
         logger.info("Waiting for initial sync...")
-        ee_sequencer.wait_for_peers(1, timeout=60)
-        ee_fullnode_0.wait_for_peers(1, timeout=60)
+        ee_sequencer.wait_for_peers(1, timeout=30)
+        ee_fullnode_0.wait_for_peers(1, timeout=30)
 
         # Produce blocks
         initial_block = ee_sequencer.get_block_number()
@@ -119,7 +119,7 @@ class TestFullnodeSync(AlpenClientTest):
             fn0_rpc = ee_fullnode_0.create_rpc()
             fn0_rpc.admin_addPeer(ee_fullnode_1.get_enode())
 
-            ee_fullnode_1.wait_for_peers(1, timeout=60)
+            ee_fullnode_1.wait_for_peers(1, timeout=30)
 
             # Verify historical sync
             historical_sync_timeout = ee_fullnode_1.get_block_wait_timeout(

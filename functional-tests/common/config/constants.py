@@ -42,7 +42,7 @@ DEFAULT_EE_BLOCK_TIME_MS = 1_000
 # Debug Reth payload import can spend several seconds validating state roots
 # after DA/prover tasks are enabled, so wait budgets are intentionally looser
 # than the sequencer's target block cadence.
-DEFAULT_EE_BLOCK_WAIT_SECONDS = 20.0
+DEFAULT_EE_BLOCK_WAIT_SECONDS = 10.0
 DEFAULT_BLOCK_WAIT_SLACK_SECONDS = 5
 
 # =============================================================================
