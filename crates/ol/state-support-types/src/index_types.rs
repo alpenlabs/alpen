@@ -56,8 +56,7 @@ impl InboxMessageWrite {
 /// A tracked snark account state update, recorded for each `set_proof_state` call.
 ///
 /// Extra data associated with the update is no longer tracked here; it is sourced from the
-/// emitted [`SnarkAccountUpdateLogData`](strata_ol_chain_types_new::SnarkAccountUpdateLogData)
-/// logs at indexing time.
+/// emitted `SnarkAccountUpdateLogData` logs at indexing time.
 #[derive(Clone, Debug)]
 pub struct SnarkAcctStateUpdate {
     /// The account whose state was updated.
