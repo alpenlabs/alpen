@@ -317,7 +317,7 @@ fn verify_state_diff_against_chunks(
     let computed: [u8; 32] = pre_state.ethereum_state().state_root().0;
     let expected: [u8; 32] = last_chunk.tip_state_root().0;
     if computed != expected {
-        return Err(DaVerificationError::StateRootMismatch { computed, expected });
+        return Err(DaVerificationError::PostApplyStateRootMismatch { computed, expected });
     }
     Ok(())
 }

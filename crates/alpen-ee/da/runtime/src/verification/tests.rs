@@ -503,7 +503,10 @@ fn verify_da_witness_rejects_state_root_mismatch() {
     let err = run_verify_da_witness(&bad_ee_input, &da_witness, &pub_params, expected_pre_root)
         .expect_err("post-apply state root must match the last chunk tip_state_root");
 
-    assert!(matches!(err, DaVerificationError::StateRootMismatch { .. }));
+    assert!(matches!(
+        err,
+        DaVerificationError::PostApplyStateRootMismatch { .. }
+    ));
 }
 
 #[test]

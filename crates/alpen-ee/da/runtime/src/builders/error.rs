@@ -10,19 +10,22 @@ use strata_codec::CodecError;
 /// and carries enough categorization for the prover to map onto its own
 /// retry semantics: provider/store read failures vs. genuinely missing data
 /// vs. structurally inconsistent inputs.
+///
+/// Message convention matches the verifier's `DaVerificationError`: parameters
+/// go in parens, never after a colon.
 #[derive(Debug, thiserror::Error)]
 pub enum DaWitnessBuildError {
     /// A non-genesis batch referenced no DA blocks.
     #[error("non-genesis batch has no DA refs")]
     EmptyDaRefs,
     /// Reading an L1 block from the Bitcoin backend failed.
-    #[error("get_block({block}): {error}")]
+    #[error("L1 block fetch failed for {block} ({error})")]
     GetBlock { block: String, error: String },
     /// A referenced L1 block carried no transactions.
     #[error("L1 block {0} has no transactions")]
     BlockHasNoTransactions(String),
     /// A fetched L1 block's wtxids root disagreed with its DA ref.
-    #[error("L1 block {block} wtxids_root mismatch: DA ref has {expected}, fetched block has {computed}")]
+    #[error("L1 block {block} wtxids_root mismatch (DA ref has {expected}, fetched block has {computed})")]
     WtxidsRootMismatch {
         block: String,
         expected: String,
@@ -36,19 +39,19 @@ pub enum DaWitnessBuildError {
         block: String,
     },
     /// Commit/reveal extraction from the witnessed transactions failed.
-    #[error("extract DA chunks: {0}")]
+    #[error("extract DA chunks ({0})")]
     Parse(#[from] DaParseError),
     /// Decoding the reassembled chunk payloads into a `DaBlob` failed.
-    #[error("reassemble DA blob: {0}")]
+    #[error("reassemble DA blob ({0})")]
     Reassembly(CodecError),
     /// The state-diff provider failed to read a block's diff.
-    #[error("get_state_diff_by_hash({block}): {error}")]
+    #[error("state-diff read failed for block {block} ({error})")]
     StateDiffProvider { block: String, error: String },
     /// A batch block has no state diff available.
     #[error("state diff missing for block {0} while building DA witness")]
     StateDiffMissing(String),
     /// The bytecode store failed to read a code hash.
-    #[error("get_bytecode({hash}): {error}")]
+    #[error("bytecode read failed for {hash} ({error})")]
     BytecodeStore { hash: String, error: String },
     /// A deduped bytecode preimage could not be found in any source.
     #[error("missing deduped bytecode {0} while building DA witness")]
