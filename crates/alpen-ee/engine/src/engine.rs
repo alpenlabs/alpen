@@ -52,11 +52,7 @@ impl ExecutionEngine for AlpenRethExecEngine {
                             alloy_rpc_types_engine::PayloadStatusEnum::Syncing.as_str(),
                         ))
                     }
-                    alloy_rpc_types_engine::PayloadStatusEnum::Accepted => {
-                        Err(ExecutionEngineError::engine_syncing(
-                            alloy_rpc_types_engine::PayloadStatusEnum::Accepted.as_str(),
-                        ))
-                    }
+                    alloy_rpc_types_engine::PayloadStatusEnum::Accepted => Ok(()),
                 });
 
             match result {
@@ -257,30 +253,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn submit_payload_retries_accepted_status_until_valid() {
+    async fn submit_payload_treats_accepted_status_as_success() {
         let (tx, mut rx) = unbounded_channel();
         let engine = AlpenRethExecEngine::new(ConsensusEngineHandle::new(tx));
         let attempts = Arc::new(AtomicUsize::new(0));
         let attempts_clone = attempts.clone();
 
         let responder = tokio::spawn(async move {
-            let mut should_accept = true;
-            while let Some(message) = rx.recv().await {
-                let BeaconEngineMessage::NewPayload { tx, .. } = message else {
-                    panic!("expected new payload message");
-                };
-                attempts_clone.fetch_add(1, Ordering::SeqCst);
-
-                if should_accept {
-                    should_accept = false;
-                    tx.send(Ok(PayloadStatus::from_status(PayloadStatusEnum::Accepted)))
-                        .expect("receiver should still be alive");
-                } else {
-                    tx.send(Ok(PayloadStatus::from_status(PayloadStatusEnum::Valid)))
-                        .expect("receiver should still be alive");
-                    break;
-                }
-            }
+            let Some(BeaconEngineMessage::NewPayload { tx, .. }) = rx.recv().await else {
+                panic!("expected new payload message");
+            };
+            attempts_clone.fetch_add(1, Ordering::SeqCst);
+            tx.send(Ok(PayloadStatus::from_status(PayloadStatusEnum::Accepted)))
+                .expect("receiver should still be alive");
         });
 
         tokio::time::timeout(
@@ -289,10 +274,10 @@ mod tests {
         )
         .await
         .expect("submit payload should finish within the timeout")
-        .expect("accepted status should retry and then succeed");
+        .expect("accepted status should be treated as a non-fatal success");
 
         responder.await.expect("responder task should complete");
-        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
