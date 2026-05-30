@@ -1,12 +1,13 @@
 use std::future::Future;
 
+use alloy_consensus::BlockHeader;
 use alloy_primitives::B256;
 use alloy_rpc_types_engine::ForkchoiceState;
 use alpen_ee_common::{BlockNumHash, ConsensusHeads, ExecutionEngine};
 use reth_node_builder::NodeTypesWithDB;
 use reth_provider::{
     providers::{BlockchainProvider, ProviderNodeTypes},
-    BlockHashReader, BlockNumReader, ProviderResult,
+    BlockHashReader, BlockNumReader, HeaderProvider, ProviderResult,
 };
 use tokio::{select, sync::watch};
 use tracing::{error, warn};
@@ -14,6 +15,8 @@ use tracing::{error, warn};
 #[cfg_attr(test, mockall::automock)]
 trait CanonicalChainReader {
     fn is_in_canonical_chain(&self, blockhash: B256) -> ProviderResult<bool>;
+    fn block_number(&self, blockhash: B256) -> ProviderResult<Option<u64>>;
+    fn parent_hash(&self, blockhash: B256) -> ProviderResult<Option<B256>>;
 }
 
 struct RethCanonicalChainReader<'a, N: NodeTypesWithDB + ProviderNodeTypes> {
@@ -30,7 +33,7 @@ impl<'a, N: NodeTypesWithDB + ProviderNodeTypes> CanonicalChainReader
     for RethCanonicalChainReader<'a, N>
 {
     fn is_in_canonical_chain(&self, blockhash: B256) -> ProviderResult<bool> {
-        let Some(block_number) = self.provider.block_number(blockhash)? else {
+        let Some(block_number) = self.block_number(blockhash)? else {
             return Ok(false);
         };
         let Some(canonical_blockhash) = self.provider.block_hash(block_number)? else {
@@ -38,6 +41,45 @@ impl<'a, N: NodeTypesWithDB + ProviderNodeTypes> CanonicalChainReader
         };
         Ok(blockhash == canonical_blockhash)
     }
+
+    fn block_number(&self, blockhash: B256) -> ProviderResult<Option<u64>> {
+        self.provider.block_number(blockhash)
+    }
+
+    fn parent_hash(&self, blockhash: B256) -> ProviderResult<Option<B256>> {
+        Ok(self
+            .provider
+            .header(blockhash)?
+            .map(|header| header.parent_num_hash().hash))
+    }
+}
+
+fn is_ancestor_of(
+    descendant: B256,
+    ancestor: B256,
+    reader: &impl CanonicalChainReader,
+) -> ProviderResult<bool> {
+    let Some(mut current_number) = reader.block_number(descendant)? else {
+        return Ok(false);
+    };
+    let Some(ancestor_number) = reader.block_number(ancestor)? else {
+        return Ok(false);
+    };
+
+    if ancestor_number > current_number {
+        return Ok(false);
+    }
+
+    let mut current_hash = descendant;
+    while current_number > ancestor_number {
+        let Some(parent_hash) = reader.parent_hash(current_hash)? else {
+            return Ok(false);
+        };
+        current_hash = parent_hash;
+        current_number -= 1;
+    }
+
+    Ok(current_hash == ancestor)
 }
 
 fn forkchoice_state_from_consensus_with_reader(
@@ -48,7 +90,8 @@ fn forkchoice_state_from_consensus_with_reader(
     let safe_block_hash = B256::from_slice(consensus_state.confirmed().as_slice());
     let finalized_block_hash = B256::from_slice(consensus_state.finalized().as_slice());
 
-    let head_block_hash = if reader.is_in_canonical_chain(safe_block_hash)? {
+    let switching_to_ol_fork = !reader.is_in_canonical_chain(safe_block_hash)?;
+    let head_block_hash = if !switching_to_ol_fork {
         head_block_hash
     } else {
         // Safe block is not in canonical chain on reth.
@@ -59,15 +102,25 @@ fn forkchoice_state_from_consensus_with_reader(
         safe_block_hash
     };
 
-    let finalized_block_hash =
-        if finalized_block_hash.is_zero() || reader.is_in_canonical_chain(finalized_block_hash)? {
+    let finalized_block_hash = if finalized_block_hash.is_zero() {
+        B256::ZERO
+    } else if switching_to_ol_fork {
+        if is_ancestor_of(head_block_hash, finalized_block_hash, reader)? {
             finalized_block_hash
         } else {
-            // Reth rejects forkchoice updates with a non-canonical finalized hash as
-            // `invalid forkchoice state`. Drop the finalized pointer until this node has
-            // canonicalized the same block locally.
+            // If this update is switching to OL's fork, preserve finalized only when it is
+            // on that chosen fork. A finalized hash from any other branch is inconsistent with
+            // the requested head and still needs to be cleared.
             B256::ZERO
-        };
+        }
+    } else if reader.is_in_canonical_chain(finalized_block_hash)? {
+        finalized_block_hash
+    } else {
+        // Reth rejects forkchoice updates with a non-canonical finalized hash as
+        // `invalid forkchoice state`. Drop the finalized pointer until this node has
+        // canonicalized the same block locally.
+        B256::ZERO
+    };
 
     Ok(ForkchoiceState {
         head_block_hash,
@@ -223,10 +276,20 @@ mod tests {
             .with(eq(b256_from_u8(3)))
             .return_once(|_| Ok(false));
         reader
-            .expect_is_in_canonical_chain()
+            .expect_block_number()
             .once()
             .with(eq(b256_from_u8(4)))
-            .return_once(|_| Ok(true));
+            .return_once(|_| Ok(Some(4)));
+        reader
+            .expect_block_number()
+            .once()
+            .with(eq(b256_from_u8(3)))
+            .return_once(|_| Ok(Some(5)));
+        reader
+            .expect_parent_hash()
+            .once()
+            .with(eq(b256_from_u8(3)))
+            .return_once(|_| Ok(Some(b256_from_u8(4))));
 
         let state =
             forkchoice_state_from_consensus_with_reader(&heads, current_head, &reader).unwrap();
@@ -278,6 +341,86 @@ mod tests {
 
         assert_eq!(state.head_block_hash, current_head);
         assert_eq!(state.safe_block_hash, b256_from_u8(7));
+        assert_eq!(state.finalized_block_hash, B256::ZERO);
+    }
+
+    #[test]
+    fn forkchoice_keeps_noncanonical_finalized_when_switching_to_same_ol_fork() {
+        let mut reader = MockCanonicalChainReader::new();
+        let heads = consensus_heads(8, 6);
+        let current_head = b256_from_u8(9);
+
+        reader
+            .expect_is_in_canonical_chain()
+            .once()
+            .with(eq(b256_from_u8(8)))
+            .return_once(|_| Ok(false));
+        reader
+            .expect_block_number()
+            .once()
+            .with(eq(b256_from_u8(8)))
+            .return_once(|_| Ok(Some(8)));
+        reader
+            .expect_block_number()
+            .once()
+            .with(eq(b256_from_u8(6)))
+            .return_once(|_| Ok(Some(6)));
+        reader
+            .expect_parent_hash()
+            .once()
+            .with(eq(b256_from_u8(8)))
+            .return_once(|_| Ok(Some(b256_from_u8(7))));
+        reader
+            .expect_parent_hash()
+            .once()
+            .with(eq(b256_from_u8(7)))
+            .return_once(|_| Ok(Some(b256_from_u8(6))));
+
+        let state =
+            forkchoice_state_from_consensus_with_reader(&heads, current_head, &reader).unwrap();
+
+        assert_eq!(state.head_block_hash, b256_from_u8(8));
+        assert_eq!(state.safe_block_hash, b256_from_u8(8));
+        assert_eq!(state.finalized_block_hash, b256_from_u8(6));
+    }
+
+    #[test]
+    fn forkchoice_drops_finalized_from_different_noncanonical_fork() {
+        let mut reader = MockCanonicalChainReader::new();
+        let heads = consensus_heads(8, 5);
+        let current_head = b256_from_u8(9);
+
+        reader
+            .expect_is_in_canonical_chain()
+            .once()
+            .with(eq(b256_from_u8(8)))
+            .return_once(|_| Ok(false));
+        reader
+            .expect_block_number()
+            .once()
+            .with(eq(b256_from_u8(8)))
+            .return_once(|_| Ok(Some(8)));
+        reader
+            .expect_block_number()
+            .once()
+            .with(eq(b256_from_u8(5)))
+            .return_once(|_| Ok(Some(6)));
+        reader
+            .expect_parent_hash()
+            .once()
+            .with(eq(b256_from_u8(8)))
+            .return_once(|_| Ok(Some(b256_from_u8(7))));
+        reader
+            .expect_parent_hash()
+            .once()
+            .with(eq(b256_from_u8(7)))
+            .return_once(|_| Ok(Some(b256_from_u8(6))));
+
+        let state =
+            forkchoice_state_from_consensus_with_reader(&heads, current_head, &reader).unwrap();
+
+        assert_eq!(state.head_block_hash, b256_from_u8(8));
+        assert_eq!(state.safe_block_hash, b256_from_u8(8));
         assert_eq!(state.finalized_block_hash, B256::ZERO);
     }
 }
