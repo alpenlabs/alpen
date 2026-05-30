@@ -341,7 +341,56 @@ pub trait ExecWorkerContext {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use strata_ol_chain_types::L2BlockId;
+    use strata_primitives::buf::Buf32;
+    use strata_state::exec_update::{ExecUpdate, UpdateInput, UpdateOutput};
+
     use super::*;
+    use crate::{
+        engine::{BlockStatus, ExecEngineCtl, L2BlockRef, PayloadStatus},
+        messages::{ExecPayloadData, PayloadEnv},
+    };
+
+    #[derive(Debug)]
+    struct TestExecEngine {
+        submit_status: BlockStatus,
+    }
+
+    impl ExecEngineCtl for TestExecEngine {
+        fn submit_payload(&self, _payload: ExecPayloadData) -> EngineResult<BlockStatus> {
+            Ok(self.submit_status)
+        }
+
+        fn prepare_payload(&self, _env: PayloadEnv) -> EngineResult<u64> {
+            unimplemented!("not needed in this test")
+        }
+
+        fn get_payload_status(&self, _id: u64) -> EngineResult<PayloadStatus> {
+            unimplemented!("not needed in this test")
+        }
+
+        fn update_head_block(&self, _id: L2BlockId) -> EngineResult<()> {
+            unimplemented!("not needed in this test")
+        }
+
+        fn update_safe_block(&self, _id: L2BlockId) -> EngineResult<()> {
+            unimplemented!("not needed in this test")
+        }
+
+        fn update_finalized_block(&self, _id: L2BlockId) -> EngineResult<()> {
+            unimplemented!("not needed in this test")
+        }
+
+        fn check_block_exists<'a>(&self, _id_ref: L2BlockRef<'a>) -> EngineResult<bool> {
+            unimplemented!("not needed in this test")
+        }
+    }
+
+    fn dummy_block_commitment(slot: u64) -> L2BlockCommitment {
+        L2BlockCommitment::new(slot, L2BlockId::from(Buf32::from([slot as u8; 32])))
+    }
 
     #[test]
     fn test_find_last_match() {
@@ -358,5 +407,26 @@ mod tests {
             find_last_match((0, 5), |_| Err(EngineError::Other(error_message.into()))),
             Err(err) if err.to_string().contains(error_message)
         ));
+    }
+
+    #[test]
+    fn try_exec_el_payload_treats_syncing_as_non_fatal() {
+        let engine = Arc::new(TestExecEngine {
+            submit_status: BlockStatus::Syncing,
+        });
+        let mut state = ExecWorkerState::new(engine, (), dummy_block_commitment(1), dummy_block_commitment(0));
+        let block = dummy_block_commitment(1);
+        let payload = ExecPayloadData::new(
+            ExecUpdate::new(
+                UpdateInput::new(0, vec![], Buf32::zero(), vec![]),
+                UpdateOutput::new_from_state(Buf32::zero()),
+            ),
+            vec![],
+            vec![],
+        );
+
+        let result = state.try_exec_el_payload(&block, &payload);
+
+        assert!(result.is_ok());
     }
 }
