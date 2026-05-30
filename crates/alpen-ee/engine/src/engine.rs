@@ -154,11 +154,14 @@ mod tests {
     async fn submit_payload_maps_invalid_payload_status_to_invalid_payload_error() {
         let (tx, mut rx) = unbounded_channel();
         let engine = AlpenRethExecEngine::new(ConsensusEngineHandle::new(tx));
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
 
         let responder = tokio::spawn(async move {
             let Some(BeaconEngineMessage::NewPayload { tx, .. }) = rx.recv().await else {
                 panic!("expected new payload message");
             };
+            attempts_clone.fetch_add(1, Ordering::SeqCst);
             tx.send(Ok(PayloadStatus::from_status(PayloadStatusEnum::Invalid {
                 validation_error: "invalid block".into(),
             })))
@@ -168,6 +171,7 @@ mod tests {
         let result = engine.submit_payload(dummy_payload()).await;
 
         responder.await.expect("responder task should complete");
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
 
         match result {
             Err(ExecutionEngineError::InvalidPayload(msg)) => {
@@ -247,6 +251,83 @@ mod tests {
         .await
         .expect("submit payload should finish within the timeout")
         .expect("syncing status should retry and then succeed");
+
+        responder.await.expect("responder task should complete");
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn submit_payload_retries_accepted_status_until_valid() {
+        let (tx, mut rx) = unbounded_channel();
+        let engine = AlpenRethExecEngine::new(ConsensusEngineHandle::new(tx));
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+
+        let responder = tokio::spawn(async move {
+            let mut should_accept = true;
+            while let Some(message) = rx.recv().await {
+                let BeaconEngineMessage::NewPayload { tx, .. } = message else {
+                    panic!("expected new payload message");
+                };
+                attempts_clone.fetch_add(1, Ordering::SeqCst);
+
+                if should_accept {
+                    should_accept = false;
+                    tx.send(Ok(PayloadStatus::from_status(PayloadStatusEnum::Accepted)))
+                        .expect("receiver should still be alive");
+                } else {
+                    tx.send(Ok(PayloadStatus::from_status(PayloadStatusEnum::Valid)))
+                        .expect("receiver should still be alive");
+                    break;
+                }
+            }
+        });
+
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            engine.submit_payload(dummy_payload()),
+        )
+        .await
+        .expect("submit payload should finish within the timeout")
+        .expect("accepted status should retry and then succeed");
+
+        responder.await.expect("responder task should complete");
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn submit_payload_retries_communication_error_until_valid() {
+        let (tx, mut rx) = unbounded_channel();
+        let engine = AlpenRethExecEngine::new(ConsensusEngineHandle::new(tx));
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+
+        let responder = tokio::spawn(async move {
+            let mut should_drop_response = true;
+            while let Some(message) = rx.recv().await {
+                let BeaconEngineMessage::NewPayload { tx, .. } = message else {
+                    panic!("expected new payload message");
+                };
+                attempts_clone.fetch_add(1, Ordering::SeqCst);
+
+                if should_drop_response {
+                    should_drop_response = false;
+                    drop(tx);
+                } else {
+                    tx.send(Ok(PayloadStatus::from_status(PayloadStatusEnum::Valid)))
+                        .expect("receiver should still be alive");
+                    break;
+                }
+            }
+        });
+
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            engine.submit_payload(dummy_payload()),
+        )
+        .await
+        .expect("submit payload should finish within the timeout")
+        .expect("communication error should retry and then succeed");
 
         responder.await.expect("responder task should complete");
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
