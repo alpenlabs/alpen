@@ -161,7 +161,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
                 // without a payload id while the engine is still backfilling.
                 return Err(EngineError::Other(
                     "engine syncing while preparing payload".into(),
-                ))
+                ));
             }
             PayloadStatusEnum::Invalid { validation_error } => {
                 return Err(EngineError::Other(format!(
@@ -521,6 +521,26 @@ mod tests {
         }
     }
 
+    fn random_payload_build_inputs() -> (PayloadEnv, EVML2Block) {
+        let el_payload = random_el_payload();
+
+        let mut arb = strata_test_utils::ArbitraryGenerator::new();
+        let l2block: L2Block = arb.generate();
+        let accessory = L2BlockAccessory::new(borsh::to_vec(&el_payload).unwrap(), 0);
+        let l2block_bundle = L2BlockBundle::new(l2block, accessory);
+
+        let evm_l2_block = EVML2Block::try_extract(&l2block_bundle).unwrap();
+
+        let timestamp = 0;
+        let el_ops = vec![];
+        let safe_l1_block = Buf32(FixedBytes::<32>::random().into());
+        let prev_l2_block = Buf32(FixedBytes::<32>::random().into()).into();
+
+        let payload_env = PayloadEnv::new(timestamp, prev_l2_block, safe_l1_block, el_ops, None);
+
+        (payload_env, evm_l2_block)
+    }
+
     #[tokio::test]
     async fn test_update_block_state_success() {
         let mut mock_client = MockEngineRpc::new();
@@ -601,23 +621,9 @@ mod tests {
                     .with_payload_id(PayloadId::new([1u8; 8])))
             });
 
-        let el_payload = random_el_payload();
-
-        let mut arb = strata_test_utils::ArbitraryGenerator::new();
-        let l2block: L2Block = arb.generate();
-        let accessory = L2BlockAccessory::new(borsh::to_vec(&el_payload).unwrap(), 0);
-        let l2block_bundle = L2BlockBundle::new(l2block, accessory);
-
-        let evm_l2_block = EVML2Block::try_extract(&l2block_bundle).unwrap();
+        let (payload_env, evm_l2_block) = random_payload_build_inputs();
 
         let rpc_exec_engine_inner = RpcExecEngineInner::new(mock_client, head_block_hash);
-
-        let timestamp = 0;
-        let el_ops = vec![];
-        let safe_l1_block = Buf32(FixedBytes::<32>::random().into());
-        let prev_l2_block = Buf32(FixedBytes::<32>::random().into()).into();
-
-        let payload_env = PayloadEnv::new(timestamp, prev_l2_block, safe_l1_block, el_ops, None);
 
         let result = rpc_exec_engine_inner
             .build_block_from_mempool(payload_env, evm_l2_block)
@@ -644,23 +650,9 @@ mod tests {
             .expect_fork_choice_updated_v3()
             .returning(move |_, _| Ok(ForkchoiceUpdated::from_status(PayloadStatusEnum::Syncing)));
 
-        let el_payload = random_el_payload();
-
-        let mut arb = strata_test_utils::ArbitraryGenerator::new();
-        let l2block: L2Block = arb.generate();
-        let accessory = L2BlockAccessory::new(borsh::to_vec(&el_payload).unwrap(), 0);
-        let l2block_bundle = L2BlockBundle::new(l2block, accessory);
-
-        let evm_l2_block = EVML2Block::try_extract(&l2block_bundle).unwrap();
+        let (payload_env, evm_l2_block) = random_payload_build_inputs();
 
         let rpc_exec_engine_inner = RpcExecEngineInner::new(mock_client, head_block_hash);
-
-        let timestamp = 0;
-        let el_ops = vec![];
-        let safe_l1_block = Buf32(FixedBytes::<32>::random().into());
-        let prev_l2_block = Buf32(FixedBytes::<32>::random().into()).into();
-
-        let payload_env = PayloadEnv::new(timestamp, prev_l2_block, safe_l1_block, el_ops, None);
 
         let result = rpc_exec_engine_inner
             .build_block_from_mempool(payload_env, evm_l2_block)
@@ -669,6 +661,79 @@ mod tests {
         assert!(matches!(
             result,
             Err(EngineError::Other(msg)) if msg == "engine syncing while preparing payload"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_build_block_from_mempool_returns_invalid_status_error() {
+        let mut mock_client = MockEngineRpc::new();
+        let head_block_hash = B256::random();
+
+        mock_client
+            .expect_fork_choice_updated_v3()
+            .returning(move |_, _| {
+                Ok(ForkchoiceUpdated::from_status(PayloadStatusEnum::Invalid {
+                    validation_error: "bad attributes".into(),
+                }))
+            });
+
+        let (payload_env, evm_l2_block) = random_payload_build_inputs();
+
+        let rpc_exec_engine_inner = RpcExecEngineInner::new(mock_client, head_block_hash);
+
+        let result = rpc_exec_engine_inner
+            .build_block_from_mempool(payload_env, evm_l2_block)
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(EngineError::Other(msg)) if msg == "payload build request rejected: bad attributes"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_build_block_from_mempool_returns_accepted_status_error() {
+        let mut mock_client = MockEngineRpc::new();
+        let head_block_hash = B256::random();
+
+        mock_client
+            .expect_fork_choice_updated_v3()
+            .returning(move |_, _| Ok(ForkchoiceUpdated::from_status(PayloadStatusEnum::Accepted)));
+
+        let (payload_env, evm_l2_block) = random_payload_build_inputs();
+
+        let rpc_exec_engine_inner = RpcExecEngineInner::new(mock_client, head_block_hash);
+
+        let result = rpc_exec_engine_inner
+            .build_block_from_mempool(payload_env, evm_l2_block)
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(EngineError::Other(msg)) if msg == "unexpected ACCEPTED status while preparing payload"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_build_block_from_mempool_rejects_missing_payload_id_for_valid_status() {
+        let mut mock_client = MockEngineRpc::new();
+        let head_block_hash = B256::random();
+
+        mock_client
+            .expect_fork_choice_updated_v3()
+            .returning(move |_, _| Ok(ForkchoiceUpdated::from_status(PayloadStatusEnum::Valid)));
+
+        let (payload_env, evm_l2_block) = random_payload_build_inputs();
+
+        let rpc_exec_engine_inner = RpcExecEngineInner::new(mock_client, head_block_hash);
+
+        let result = rpc_exec_engine_inner
+            .build_block_from_mempool(payload_env, evm_l2_block)
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(EngineError::Other(msg)) if msg == "payload_id missing"
         ));
     }
 
