@@ -32,7 +32,9 @@ fn map_forkchoice_error(err: BeaconForkChoiceUpdateError) -> ExecutionEngineErro
         BeaconForkChoiceUpdateError::EngineUnavailable => {
             ExecutionEngineError::communication(err.to_string())
         }
-        BeaconForkChoiceUpdateError::Internal(_) => ExecutionEngineError::communication(err.to_string()),
+        BeaconForkChoiceUpdateError::Internal(_) => {
+            ExecutionEngineError::communication(err.to_string())
+        }
         BeaconForkChoiceUpdateError::ForkchoiceUpdateError(_) => {
             ExecutionEngineError::fork_choice_update(err.to_string())
         }
@@ -107,9 +109,10 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
         Arc,
     };
+    use std::time::Duration;
 
     use alloy_primitives::B256;
-    use alloy_rpc_types_engine::ForkchoiceState;
+    use alloy_rpc_types_engine::{ForkchoiceState, PayloadStatus, PayloadStatusEnum};
     use alpen_ee_common::ExecutionEngineError;
     use reth_node_builder::{BeaconEngineMessage, OnForkChoiceUpdated};
     use tokio::sync::mpsc::unbounded_channel;
@@ -131,7 +134,7 @@ mod tests {
                 attempts_clone.fetch_add(1, Ordering::SeqCst);
                 tx.send(Ok(OnForkChoiceUpdated::invalid_state()))
                     .expect("receiver should still be alive");
-            };
+            }
         });
 
         let err = engine
@@ -168,19 +171,24 @@ mod tests {
         let attempts_clone = attempts.clone();
 
         let responder = tokio::spawn(async move {
-            let mut seen_retry = false;
+            let mut should_fail = true;
             while let Some(message) = rx.recv().await {
                 let BeaconEngineMessage::ForkchoiceUpdated { tx, .. } = message else {
                     panic!("expected forkchoice update message");
                 };
-                let current_attempt = attempts_clone.fetch_add(1, Ordering::SeqCst) + 1;
-                drop(tx);
-                if current_attempt >= 2 {
-                    seen_retry = true;
+                attempts_clone.fetch_add(1, Ordering::SeqCst);
+
+                if should_fail {
+                    should_fail = false;
+                    drop(tx);
+                } else {
+                    tx.send(Ok(OnForkChoiceUpdated::valid(PayloadStatus::from_status(
+                        PayloadStatusEnum::Valid,
+                    ))))
+                    .expect("receiver should still be alive");
                     break;
                 }
             }
-            seen_retry
         });
 
         let update_task = tokio::spawn({
@@ -196,15 +204,15 @@ mod tests {
             }
         });
 
-        tokio::time::sleep(std::time::Duration::from_millis(1700)).await;
-
-        update_task.abort();
-        let _ = update_task.await;
-
-        assert!(responder.await.expect("responder task should complete"));
+        tokio::time::timeout(Duration::from_secs(5), update_task)
+            .await
+            .expect("update task should finish within the timeout")
+            .expect("update task should complete")
+            .expect("retryable engine-unavailable errors should succeed after a retry");
+        responder.await.expect("responder task should complete");
         assert!(
-            attempts.load(Ordering::SeqCst) >= 2,
-            "retryable engine-unavailable errors should trigger at least one retry"
+            attempts.load(Ordering::SeqCst) == 2,
+            "retryable engine-unavailable errors should perform exactly one retry in this test"
         );
     }
 }
