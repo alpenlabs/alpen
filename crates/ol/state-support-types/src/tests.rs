@@ -102,8 +102,8 @@ fn test_combined_manifest_tracking() {
 
     // Verify IndexerState captured the record write
     let (_, indexer_writes) = indexer.into_parts();
-    assert_eq!(indexer_writes.manifests().len(), 1);
-    assert_eq!(indexer_writes.manifests()[0].height, height);
+    assert_eq!(indexer_writes.l1_block_records().len(), 1);
+    assert_eq!(indexer_writes.l1_block_records()[0].height, height);
 }
 
 /// Test balance modifications through combined layers.

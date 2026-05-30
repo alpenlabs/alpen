@@ -469,7 +469,7 @@ where
 
     fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
         // Track the L1 block record write.
-        self.writes.push_manifest(ManifestWrite {
+        self.writes.push_l1_block_record(L1BlockRecordWrite {
             height,
             record: rec.clone(),
         });
@@ -772,7 +772,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tracks_manifest_writes() {
+    fn test_tracks_l1_block_record_writes() {
         let state = create_test_base_layer();
         let mut indexer = IndexerState::new(state);
 
@@ -786,8 +786,8 @@ mod tests {
 
         // Verify the write was tracked
         let (_, writes) = indexer.into_parts();
-        assert_eq!(writes.manifests().len(), 1);
-        assert_eq!(writes.manifests()[0].height, height);
+        assert_eq!(writes.l1_block_records().len(), 1);
+        assert_eq!(writes.l1_block_records()[0].height, height);
     }
 
     // =========================================================================
@@ -1047,7 +1047,7 @@ mod tests {
 
         assert!(indexer.writes().is_empty());
         assert!(indexer.writes().inbox_messages().is_empty());
-        assert!(indexer.writes().manifests().is_empty());
+        assert!(indexer.writes().l1_block_records().is_empty());
     }
 
     #[test]

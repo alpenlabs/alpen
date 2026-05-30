@@ -449,7 +449,7 @@ fn index_l1_block_ref_mmr_writes(
     output: &OLBlockExecutionOutput,
 ) -> WorkerResult<()> {
     let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-    for write in output.indexer_writes().manifests() {
+    for write in output.indexer_writes().l1_block_records() {
         let expected_idx = write.height as u64;
         let l1_block_ref = &write.record;
         let expected_hash: Hash = l1_block_ref.leaf_hash().into();
@@ -472,7 +472,7 @@ mod tests {
     use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_db_store_sled::{MmrIndexDb, SledDbConfig};
     use strata_identifiers::Buf32;
-    use strata_ol_state_support_types::{InboxMessageWrite, IndexerWrites, ManifestWrite};
+    use strata_ol_state_support_types::{InboxMessageWrite, IndexerWrites, L1BlockRecordWrite};
 
     use super::*;
 
@@ -501,20 +501,20 @@ mod tests {
         OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes)
     }
 
-    fn output_with_manifests(
-        writes: impl IntoIterator<Item = ManifestWrite>,
+    fn output_with_l1_block_records(
+        writes: impl IntoIterator<Item = L1BlockRecordWrite>,
     ) -> OLBlockExecutionOutput {
         let mut indexer_writes = IndexerWrites::new();
         for write in writes {
-            indexer_writes.push_manifest(write);
+            indexer_writes.push_l1_block_record(write);
         }
 
         OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes)
     }
 
-    fn manifest_write(height: u32, seed: u8) -> ManifestWrite {
+    fn l1_block_record_write(height: u32, seed: u8) -> L1BlockRecordWrite {
         let record = L1BlockRecord::new([seed; 32], [seed.wrapping_add(1); 32]);
-        ManifestWrite { height, record }
+        L1BlockRecordWrite { height, record }
     }
 
     fn assert_mmr_entry(
@@ -536,7 +536,7 @@ mod tests {
     fn assert_l1_block_ref_entry(
         mmr_index_mgr: &MmrIndexManager,
         index: u64,
-        write: &ManifestWrite,
+        write: &L1BlockRecordWrite,
     ) {
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
         let l1_block_ref = &write.record;
@@ -608,8 +608,8 @@ mod tests {
     #[test]
     fn prefill_then_index_seeds_genesis_and_stores_refs() {
         let mmr_index_mgr = setup_mmr_index_manager();
-        let first_real = manifest_write(1, 10);
-        let output = output_with_manifests([first_real.clone()]);
+        let first_real = l1_block_record_write(1, 10);
+        let output = output_with_l1_block_records([first_real.clone()]);
 
         prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
         index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
@@ -638,9 +638,9 @@ mod tests {
     #[test]
     fn index_l1_block_ref_mmr_writes_is_idempotent() {
         let mmr_index_mgr = setup_mmr_index_manager();
-        let first_real = manifest_write(1, 10);
-        let second_real = manifest_write(2, 20);
-        let output = output_with_manifests([first_real.clone(), second_real.clone()]);
+        let first_real = l1_block_record_write(1, 10);
+        let second_real = l1_block_record_write(2, 20);
+        let output = output_with_l1_block_records([first_real.clone(), second_real.clone()]);
 
         prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
         index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
@@ -655,15 +655,15 @@ mod tests {
     #[test]
     fn index_l1_block_ref_mmr_writes_rejects_existing_hash_mismatch() {
         let mmr_index_mgr = setup_mmr_index_manager();
-        let first_real = manifest_write(1, 10);
-        let conflicting_first_real = manifest_write(1, 11);
+        let first_real = l1_block_record_write(1, 10);
+        let conflicting_first_real = l1_block_record_write(1, 11);
 
         prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
-        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output_with_manifests([first_real]))
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output_with_l1_block_records([first_real]))
             .unwrap();
         let err = index_l1_block_ref_mmr_writes(
             &mmr_index_mgr,
-            &output_with_manifests([conflicting_first_real]),
+            &output_with_l1_block_records([conflicting_first_real]),
         )
         .unwrap_err();
 
