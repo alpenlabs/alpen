@@ -714,12 +714,14 @@ mod tests {
             vec![],
         );
 
-        mock_client.expect_new_payload_v4().returning(move |_, _, _, _| {
-            Ok(PayloadStatus {
-                status: PayloadStatusEnum::Accepted,
-                latest_valid_hash: None,
-            })
-        });
+        mock_client
+            .expect_new_payload_v4()
+            .returning(move |_, _, _, _| {
+                Ok(PayloadStatus {
+                    status: PayloadStatusEnum::Accepted,
+                    latest_valid_hash: None,
+                })
+            });
 
         let rpc_exec_engine_inner = RpcExecEngineInner::new(mock_client, head_block_hash);
 

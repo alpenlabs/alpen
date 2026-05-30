@@ -414,7 +414,12 @@ mod tests {
         let engine = Arc::new(TestExecEngine {
             submit_status: BlockStatus::Syncing,
         });
-        let mut state = ExecWorkerState::new(engine, (), dummy_block_commitment(1), dummy_block_commitment(0));
+        let mut state = ExecWorkerState::new(
+            engine,
+            (),
+            dummy_block_commitment(1),
+            dummy_block_commitment(0),
+        );
         let block = dummy_block_commitment(1);
         let payload = ExecPayloadData::new(
             ExecUpdate::new(
@@ -428,5 +433,33 @@ mod tests {
         let result = state.try_exec_el_payload(&block, &payload);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn try_exec_el_payload_treats_invalid_as_fatal() {
+        let engine = Arc::new(TestExecEngine {
+            submit_status: BlockStatus::Invalid,
+        });
+        let mut state = ExecWorkerState::new(
+            engine,
+            (),
+            dummy_block_commitment(1),
+            dummy_block_commitment(0),
+        );
+        let block = dummy_block_commitment(1);
+        let payload = ExecPayloadData::new(
+            ExecUpdate::new(
+                UpdateInput::new(0, vec![], Buf32::zero(), vec![]),
+                UpdateOutput::new_from_state(Buf32::zero()),
+            ),
+            vec![],
+            vec![],
+        );
+
+        let result = state.try_exec_el_payload(&block, &payload);
+
+        assert!(
+            matches!(result, Err(EngineError::InvalidPayload(err_block)) if err_block == block)
+        );
     }
 }
