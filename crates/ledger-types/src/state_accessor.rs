@@ -1,5 +1,4 @@
-use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
-use strata_asm_manifest_types::AsmManifest;
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
 use crate::{
@@ -95,10 +94,10 @@ pub trait IStateAccessorMut: IStateAccessor {
     /// Sets the current epoch.
     fn set_cur_epoch(&mut self, epoch: u32);
 
-    /// Appends an accepted ASM manifest's L1 block ref to the accumulator.
+    /// Appends an accepted [`L1BlockRecord`] to the accumulator.
     ///
     /// This also updates the last L1 block height and ID.
-    fn append_l1_block_ref_from_manifest(&mut self, height: L1Height, mf: AsmManifest);
+    fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord);
 
     /// Sets the field for the epoch that the ASM considers to be finalized.
     ///

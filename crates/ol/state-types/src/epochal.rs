@@ -2,10 +2,8 @@
 //!
 //! This can be completely omitted from DA.
 
-use strata_acct_types::{BitcoinAmount, Mmr64, StrataHasher, l1_block_record_leaf_hash};
-use strata_asm_manifest_types::AsmManifest;
-use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
-use strata_merkle::Mmr;
+use strata_acct_types::{BitcoinAmount, L1BlockRecord, Mmr64, append_l1_block_rec_to_mmr};
+use strata_identifiers::{Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 
 use crate::ssz_generated::ssz::state::EpochalState;
 
@@ -47,28 +45,25 @@ impl EpochalState {
         self.last_l1_block.height()
     }
 
-    /// Appends an accepted ASM manifest's L1 block ref to the accumulator.
+    /// Appends an accepted [`L1BlockRecord`] to the accumulator.
     ///
     /// This also updates the last L1 block height and ID.
     ///
     /// The MMR is height-indexed: the leaf for an L1 block at height `h` lives
     /// at MMR index `h`. The MMR is prefilled with dummy-hash entries up to
-    /// `genesis_l1_height` at genesis, so callers must append accepted
-    /// manifests with strictly contiguous heights matching the next available
-    /// MMR index.
-    pub fn append_l1_block_ref_from_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+    /// `genesis_l1_height` at genesis, so callers must append accepted records
+    /// with strictly contiguous heights matching the next available MMR index.
+    pub fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
         debug_assert_eq!(
             self.l1_block_refs_mmr.num_entries(),
             height as u64,
             "ol/state: L1 height must equal next MMR index"
         );
 
-        let l1_block_ref_hash =
-            l1_block_record_leaf_hash(mf.blkid().as_ref(), mf.wtxids_root().as_ref());
+        append_l1_block_rec_to_mmr(&mut self.l1_block_refs_mmr, &rec);
 
-        Mmr::<StrataHasher>::add_leaf(&mut self.l1_block_refs_mmr, l1_block_ref_hash)
-            .expect("ol/state: MMR capacity exceeded");
-        self.last_l1_block = L1BlockCommitment::new(height, *mf.blkid());
+        let blkid = L1BlockId::from(Buf32::from(rec.block_hash()));
+        self.last_l1_block = L1BlockCommitment::new(height, blkid);
     }
 
     /// Gets the field for the epoch that the ASM considers to be valid.

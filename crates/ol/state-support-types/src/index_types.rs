@@ -5,8 +5,7 @@
 // TODO make the field names here more consistent, which should also reflect in
 // the spec and state accessor fn/arg names
 
-use strata_acct_types::{AccountId, Hash, MessageEntry};
-use strata_asm_manifest_types::AsmManifest;
+use strata_acct_types::{AccountId, Hash, L1BlockRecord, MessageEntry};
 use strata_identifiers::L1Height;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
@@ -240,14 +239,14 @@ impl PredicateKeyUpdate {
 // Manifest tracking
 // ============================================================================
 
-/// A tracked manifest write.
+/// A tracked L1 block record write.
 #[derive(Clone, Debug)]
 pub struct ManifestWrite {
-    /// The L1 block height associated with the manifest.
+    /// The L1 block height associated with the record.
     pub height: L1Height,
 
-    /// The manifest that was appended.
-    pub manifest: AsmManifest,
+    /// The L1 block record that was appended.
+    pub record: L1BlockRecord,
 }
 
 // ============================================================================

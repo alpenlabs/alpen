@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use bitcoin::Network;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
 use strata_acct_types::{
-    AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, MsgPayload,
-    l1_block_record_leaf_hash, tree_hash::TreeHash,
+    AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, Hash, L1BlockRecord, MessageEntry,
+    MsgPayload, l1_block_record_leaf_hash, tree_hash::TreeHash,
 };
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
@@ -1375,7 +1375,8 @@ fn setup_manifests_in_state_and_storage(
         let leaf_idx = mmr_handle.append_leaf_blocking(l1_block_ref_hash).unwrap();
 
         let height = manifest.height();
-        state.append_l1_block_ref_from_manifest(height, manifest);
+        let rec = L1BlockRecord::new(*manifest.blkid().as_ref(), *manifest.wtxids_root().as_ref());
+        state.append_l1_block_rec(height, rec);
 
         debug_assert_eq!(
             leaf_idx, height as u64,

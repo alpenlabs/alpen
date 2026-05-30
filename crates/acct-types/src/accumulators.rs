@@ -1,9 +1,13 @@
 //! Types relating to accumulators and making proofs against them.
 
 use strata_identifiers::{Hash, RBuf32};
+use strata_merkle::Mmr;
 use tree_hash::TreeHash;
 
-use crate::{AccumulatorClaim, L1BlockRecord};
+use crate::{
+    AccumulatorClaim, L1BlockRecord,
+    mmr::{Mmr64, StrataHasher},
+};
 
 impl AccumulatorClaim {
     /// Creates a new accumulator claim.
@@ -57,6 +61,16 @@ impl L1BlockRecord {
 /// `{block_hash, wtxids_root}`.
 pub fn l1_block_record_leaf_hash(block_hash: &[u8; 32], wtxids_root: &[u8; 32]) -> [u8; 32] {
     L1BlockRecord::new(*block_hash, *wtxids_root).leaf_hash()
+}
+
+/// Appends an [`L1BlockRecord`]'s leaf into the OL L1 block refs MMR.
+///
+/// Centralizes how an [`L1BlockRecord`] becomes an MMR leaf so that the
+/// canonical state and the write-batch (diff) path always commit to
+/// identical leaves.
+pub fn append_l1_block_rec_to_mmr(mmr: &mut Mmr64, rec: &L1BlockRecord) {
+    Mmr::<StrataHasher>::add_leaf(mmr, rec.leaf_hash())
+        .expect("acct-types: L1 block refs MMR capacity exceeded");
 }
 
 #[cfg(test)]

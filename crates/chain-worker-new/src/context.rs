@@ -6,7 +6,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ssz::Encode;
-use strata_acct_types::{L1BlockRecord, MessageEntry, tree_hash::TreeHash};
+use strata_acct_types::{MessageEntry, tree_hash::TreeHash};
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
@@ -451,10 +451,7 @@ fn index_l1_block_ref_mmr_writes(
     let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
     for write in output.indexer_writes().manifests() {
         let expected_idx = write.height as u64;
-        let block_hash = *write.manifest.blkid().as_ref();
-        let wtxids_root = *write.manifest.wtxids_root().as_ref();
-
-        let l1_block_ref = L1BlockRecord::new(block_hash, wtxids_root);
+        let l1_block_ref = &write.record;
         let expected_hash: Hash = l1_block_ref.leaf_hash().into();
         let preimage = l1_block_ref.as_ssz_bytes();
 
@@ -472,10 +469,9 @@ fn index_l1_block_ref_mmr_writes(
 mod tests {
     use std::sync::Arc;
 
-    use strata_acct_types::{BitcoinAmount, MsgPayload};
-    use strata_asm_manifest_types::AsmManifest;
+    use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_db_store_sled::{MmrIndexDb, SledDbConfig};
-    use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
+    use strata_identifiers::Buf32;
     use strata_ol_state_support_types::{InboxMessageWrite, IndexerWrites, ManifestWrite};
 
     use super::*;
@@ -517,15 +513,8 @@ mod tests {
     }
 
     fn manifest_write(height: u32, seed: u8) -> ManifestWrite {
-        let manifest = AsmManifest::new(
-            height,
-            L1BlockId::from(Buf32::from([seed; 32])),
-            WtxidsRoot::from(Buf32::from([seed.wrapping_add(1); 32])),
-            vec![],
-        )
-        .expect("test manifest should be valid");
-
-        ManifestWrite { height, manifest }
+        let record = L1BlockRecord::new([seed; 32], [seed.wrapping_add(1); 32]);
+        ManifestWrite { height, record }
     }
 
     fn assert_mmr_entry(
@@ -550,9 +539,7 @@ mod tests {
         write: &ManifestWrite,
     ) {
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-        let block_hash = *write.manifest.blkid().as_ref();
-        let wtxids_root = *write.manifest.wtxids_root().as_ref();
-        let l1_block_ref = L1BlockRecord::new(block_hash, wtxids_root);
+        let l1_block_ref = &write.record;
         let expected_hash: Hash = l1_block_ref.leaf_hash().into();
         let expected_preimage = l1_block_ref.as_ssz_bytes();
 

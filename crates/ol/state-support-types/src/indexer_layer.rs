@@ -7,7 +7,6 @@
 use std::fmt;
 
 use strata_acct_types::*;
-use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_predicate::PredicateKey;
@@ -468,15 +467,15 @@ where
         self.inner.set_cur_epoch(epoch);
     }
 
-    fn append_l1_block_ref_from_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        // Track the manifest write.
+    fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
+        // Track the L1 block record write.
         self.writes.push_manifest(ManifestWrite {
             height,
-            manifest: mf.clone(),
+            record: rec.clone(),
         });
 
         // Pass through to inner.
-        self.inner.append_l1_block_ref_from_manifest(height, mf);
+        self.inner.append_l1_block_rec(height, rec);
     }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
@@ -529,9 +528,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::BitcoinAmount;
-    use strata_asm_manifest_types::AsmManifest;
-    use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
+    use strata_acct_types::{BitcoinAmount, L1BlockRecord};
+    use strata_identifiers::L1Height;
     use strata_ledger_types::*;
     use strata_predicate::PredicateKey;
     use strata_snark_acct_types::Seqno;
@@ -778,16 +776,13 @@ mod tests {
         let state = create_test_base_layer();
         let mut indexer = IndexerState::new(state);
 
-        // Create a test manifest. The base layer is built from a default
+        // Create a test L1 block record. The base layer is built from a default
         // genesis (L1 height 0), so the next valid contiguous height is 1.
         let height = L1Height::from(1u32);
-        let l1_blkid = L1BlockId::from(Buf32::from([1u8; 32]));
-        let wtxids_root = WtxidsRoot::from(Buf32::from([2u8; 32]));
-        let manifest =
-            AsmManifest::new(height, l1_blkid, wtxids_root, vec![]).expect("valid test manifest");
+        let record = L1BlockRecord::new([1u8; 32], [2u8; 32]);
 
-        // Append the manifest
-        indexer.append_l1_block_ref_from_manifest(height, manifest.clone());
+        // Append the record
+        indexer.append_l1_block_rec(height, record);
 
         // Verify the write was tracked
         let (_, writes) = indexer.into_parts();

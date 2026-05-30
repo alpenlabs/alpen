@@ -515,7 +515,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "alpen-ee-da"
+name = "alpen-ee-da-runtime"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
@@ -524,6 +524,7 @@ dependencies = [
  "bitcoin",
  "revm-primitives",
  "ssz",
+ "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-chain-types",
@@ -538,6 +539,8 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-reth-statediff",
  "bitcoin",
+ "rkyv",
+ "rkyv_impl",
  "strata-codec",
  "strata-crypto",
  "strata-l1-envelope-fmt",
@@ -5447,7 +5450,8 @@ dependencies = [
 name = "strata-proofimpl-alpen-acct"
 version = "0.1.0"
 dependencies = [
- "alpen-ee-da",
+ "alpen-ee-da-runtime",
+ "alpen-ee-da-types",
  "k256",
  "reth-chainspec",
  "rkyv",

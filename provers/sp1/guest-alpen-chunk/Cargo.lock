@@ -520,6 +520,8 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-reth-statediff",
  "bitcoin",
+ "rkyv",
+ "rkyv_impl",
  "strata-codec",
  "strata-crypto",
  "strata-l1-envelope-fmt",

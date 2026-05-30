@@ -6,7 +6,7 @@ use std::{
     mem::take,
 };
 
-use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, Mmr64};
+use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, L1BlockRecord, Mmr64};
 use strata_asm_proto_checkpoint_types::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
     CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
@@ -748,12 +748,8 @@ where
         self.inner.set_cur_epoch(epoch);
     }
 
-    fn append_l1_block_ref_from_manifest(
-        &mut self,
-        height: L1Height,
-        mf: strata_asm_manifest_types::AsmManifest,
-    ) {
-        self.inner.append_l1_block_ref_from_manifest(height, mf);
+    fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
+        self.inner.append_l1_block_rec(height, rec);
     }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {

@@ -2360,12 +2360,10 @@ name = "strata-ol-state-support-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
- "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-types",
  "strata-da-framework",
  "strata-identifiers",
  "strata-ledger-types",
- "strata-merkle",
  "strata-ol-da",
  "strata-ol-state-types",
  "strata-predicate",
@@ -2383,7 +2381,6 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",
- "strata-asm-manifest-types",
  "strata-codec",
  "strata-codec-utils 0.1.0",
  "strata-identifiers",
