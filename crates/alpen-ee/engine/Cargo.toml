@@ -28,4 +28,7 @@ strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
 
+alloy-consensus.workspace = true
 mockall.workspace = true
+reth-ethereum-engine-primitives.workspace = true
+reth-primitives.workspace = true
