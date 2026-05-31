@@ -6,7 +6,10 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ssz::Encode;
-use strata_acct_types::{MessageEntry, tree_hash::TreeHash};
+use strata_acct_types::{
+    MessageEntry,
+    tree_hash::{Sha256Hasher, TreeHash},
+};
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
@@ -406,7 +409,8 @@ fn index_inbox_mmr_writes(
     output: &OLBlockExecutionOutput,
 ) -> WorkerResult<()> {
     for write in output.indexer_writes().inbox_messages() {
-        let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(write.entry()).into();
+        let expected_hash: Hash =
+            <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(write.entry()).into();
         let entry_bytes = write.entry().as_ssz_bytes();
         let account_id = write.account_id();
         let idx = write.index();
@@ -533,7 +537,8 @@ mod tests {
         entry: &MessageEntry,
     ) {
         let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
-        let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(entry).into();
+        let expected_hash: Hash =
+            <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(entry).into();
 
         assert_eq!(
             handle.get_leaf_blocking(index).unwrap(),

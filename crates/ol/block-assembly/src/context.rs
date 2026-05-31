@@ -7,7 +7,8 @@ use std::{
 
 use async_trait::async_trait;
 use strata_acct_types::{
-    AccountId, AccumulatorClaim, MessageEntry, RawMerkleProof, tree_hash::TreeHash,
+    AccountId, AccumulatorClaim, MessageEntry, RawMerkleProof,
+    tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
@@ -280,7 +281,9 @@ where
             .get_handle(MmrId::SnarkMsgInbox(target));
         let expected_hashes: Vec<Hash> = messages
             .iter()
-            .map(|message| <MessageEntry as TreeHash>::tree_hash_root(message).into())
+            .map(|message| {
+                <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(message).into()
+            })
             .collect();
         let merkle_proofs = mmr_handle
             .generate_proofs_for(start_idx, &expected_hashes, at_leaf_count)

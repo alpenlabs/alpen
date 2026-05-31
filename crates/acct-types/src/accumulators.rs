@@ -2,7 +2,7 @@
 
 use strata_identifiers::{Hash, RBuf32};
 use strata_merkle::Mmr;
-use tree_hash::TreeHash;
+use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::{
     AccumulatorClaim, L1BlockRecord,
@@ -53,7 +53,7 @@ impl L1BlockRecord {
 
     /// Computes the canonical OL L1 block refs MMR leaf hash.
     pub fn leaf_hash(&self) -> [u8; 32] {
-        <L1BlockRecord as TreeHash>::tree_hash_root(self).into_inner()
+        <L1BlockRecord as TreeHash>::tree_hash_root::<Sha256Hasher>(self).into_inner()
     }
 }
 

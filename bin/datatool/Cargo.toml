@@ -39,6 +39,7 @@ alloy-primitives.workspace = true
 anyhow.workspace = true
 argh.workspace = true
 bitcoin = { workspace = true, features = ["std"] }
+bitcoin-bosd.workspace = true
 bitcoind-async-client = { workspace = true, optional = true }
 rand_core.workspace = true
 reth-chainspec.workspace = true

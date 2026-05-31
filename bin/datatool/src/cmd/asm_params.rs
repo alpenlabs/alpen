@@ -3,6 +3,7 @@
 use std::{fs, num::NonZero, str::FromStr};
 
 use bitcoin::{secp256k1::PublicKey, XOnlyPublicKey};
+use bitcoin_bosd::Descriptor;
 use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
     ConfirmationDepths, SubprotocolInstance,
@@ -34,6 +35,12 @@ const DEFAULT_RECOVERY_DELAY: u16 = 1_008;
 
 /// The default operator fee in sats (0.5 BTC).
 const DEFAULT_OPERATOR_FEE: u64 = 50_000_000;
+
+/// The default safe harbour address, a hex-encoded BOSD descriptor.
+///
+/// This is a placeholder; the safe harbour is deactivated at init and the admin
+/// multisig toggles activation and sets the operational address later.
+const DEFAULT_SAFE_HARBOUR_ADDRESS: &str = "03671041727b982843f7e3db4669c2f542e05096fb";
 
 /// The default confirmation depth for admin subprotocol.
 const DEFAULT_CONFIRMATION_DEPTH: u16 = 144;
@@ -147,6 +154,13 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     let operators: Vec<EvenPublicKey> = pubkeys.into_iter().map(EvenPublicKey::from).collect();
 
+    let safe_harbour_address = Descriptor::from_str(
+        cmd.safe_harbour_address
+            .as_deref()
+            .unwrap_or(DEFAULT_SAFE_HARBOUR_ADDRESS),
+    )
+    .map_err(|e| anyhow::anyhow!("invalid safe harbour address descriptor: {e}"))?;
+
     let bridge = BridgeV1InitConfig {
         operators,
         denomination: BitcoinAmount::from_sat(deposit_sats),
@@ -155,6 +169,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
             .unwrap_or(DEFAULT_ASSIGNMENT_DURATION),
         operator_fee: BitcoinAmount::from_sat(cmd.operator_fee.unwrap_or(DEFAULT_OPERATOR_FEE)),
         recovery_delay: cmd.recovery_delay.unwrap_or(DEFAULT_RECOVERY_DELAY),
+        safe_harbour_address,
     };
 
     // Assemble ASM params.

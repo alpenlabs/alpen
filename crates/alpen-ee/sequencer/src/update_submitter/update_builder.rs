@@ -65,7 +65,7 @@ fn build_update_operation(
     let (inner_state, new_tip_blkid, new_tip_state_root, next_inbox_msg_idx) = {
         let last_block = blocks.last().ok_or_eyre("blocks cannot be empty")?;
         let inner_state: Hash =
-            TreeHash::<Sha256Hasher>::tree_hash_root(last_block.account_state())
+            TreeHash::tree_hash_root::<Sha256Hasher>(last_block.account_state())
                 .0
                 .into();
         let new_tip_blkid = last_block.package().exec_blkid();

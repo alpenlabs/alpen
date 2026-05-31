@@ -300,6 +300,12 @@ pub(crate) struct SubcAsmParams {
         description = "confirmation depth for admin subprotocol (default 100)"
     )]
     pub(crate) max_seqno_gap: Option<NonZero<u8>>,
+
+    #[argh(
+        option,
+        description = "bridge safe harbour address as a hex-encoded BOSD descriptor (deactivated at init; default placeholder)"
+    )]
+    pub(crate) safe_harbour_address: Option<String>,
 }
 
 /// Generate an OL params file from inputs.
