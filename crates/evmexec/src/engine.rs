@@ -259,7 +259,9 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             PayloadStatusEnum::Valid => EngineResult::Ok(BlockStatus::Valid),
             PayloadStatusEnum::Syncing => EngineResult::Ok(BlockStatus::Syncing),
             PayloadStatusEnum::Invalid { .. } => EngineResult::Ok(BlockStatus::Invalid),
-            PayloadStatusEnum::Accepted => EngineResult::Err(EngineError::Unimplemented), // TODO
+            // Engine API uses ACCEPTED for payloads that passed basic checks but were not fully
+            // validated yet. In the eectl contract this is a non-fatal, non-invalid outcome.
+            PayloadStatusEnum::Accepted => EngineResult::Ok(BlockStatus::Syncing),
         }
     }
 
@@ -678,6 +680,54 @@ mod tests {
         let result = rpc_exec_engine_inner.submit_new_payload(payload_data).await;
 
         assert!(matches!(result, EngineResult::Ok(BlockStatus::Valid)));
+    }
+
+    #[tokio::test]
+    async fn test_submit_new_payload_maps_accepted_to_syncing() {
+        let mut mock_client = MockEngineRpc::new();
+        let head_block_hash = B256::random();
+
+        let el_payload = ElPayload {
+            base_fee_per_gas: Buf32(FixedBytes::<32>::from(U256::from(10)).into()),
+            parent_hash: Default::default(),
+            fee_recipient: Default::default(),
+            state_root: Default::default(),
+            receipts_root: Default::default(),
+            logs_bloom: [0u8; 256],
+            prev_randao: Default::default(),
+            block_number: Default::default(),
+            gas_limit: Default::default(),
+            gas_used: Default::default(),
+            timestamp: Default::default(),
+            extra_data: Default::default(),
+            block_hash: Default::default(),
+            transactions: Default::default(),
+        };
+        let accessory_data = borsh::to_vec(&el_payload).unwrap();
+
+        let update_input = make_update_input_from_payload_and_ops(el_payload, &[]).unwrap();
+        let update_output = UpdateOutput::new_from_state(Buf32::zero());
+
+        let payload_data = ExecPayloadData::new(
+            ExecUpdate::new(update_input, update_output),
+            accessory_data,
+            vec![],
+        );
+
+        mock_client
+            .expect_new_payload_v4()
+            .returning(move |_, _, _, _| {
+                Ok(PayloadStatus {
+                    status: PayloadStatusEnum::Accepted,
+                    latest_valid_hash: None,
+                })
+            });
+
+        let rpc_exec_engine_inner = RpcExecEngineInner::new(mock_client, head_block_hash);
+
+        let result = rpc_exec_engine_inner.submit_new_payload(payload_data).await;
+
+        assert!(matches!(result, EngineResult::Ok(BlockStatus::Syncing)));
     }
 
     #[test]
