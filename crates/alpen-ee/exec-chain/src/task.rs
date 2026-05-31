@@ -46,6 +46,10 @@ pub(crate) async fn handle_new_block<TStorage: ExecBlockStorage>(
             .map_err(|_| ChainTrackerError::PreconfChannelClosed)?;
     }
 
+    if let Some(finalized) = state.pending_finalized_blockhash() {
+        handle_finalized_update(state, finalized, storage, preconf_tx).await?;
+    }
+
     Ok(())
 }
 
@@ -61,6 +65,15 @@ pub(crate) async fn handle_ol_update<TStorage: ExecBlockStorage>(
     // we only care about reorgs on the finalized state
     let finalized = *status.finalized();
 
+    handle_finalized_update(state, finalized, storage, preconf_tx).await
+}
+
+async fn handle_finalized_update<TStorage: ExecBlockStorage>(
+    state: &mut ExecChainState,
+    finalized: Hash,
+    storage: &TStorage,
+    preconf_tx: &watch::Sender<BlockNumHash>,
+) -> Result<(), ChainTrackerError> {
     if finalized == state.finalized_blockhash() {
         // no need to do anything
         return Ok(());
@@ -76,6 +89,7 @@ pub(crate) async fn handle_ol_update<TStorage: ExecBlockStorage>(
         state
             .prune_finalized(finalized)
             .expect("finalized exists in unfinalized blocks");
+        state.clear_pending_finalized();
         let new_best = state.tip_blockhash();
 
         if prev_best != new_best {
@@ -90,7 +104,8 @@ pub(crate) async fn handle_ol_update<TStorage: ExecBlockStorage>(
 
     if state.contains_orphan_block(&finalized) {
         // finalized block is a known but unconnected block
-        // TODO: store the finalized state and retry later
+        // Keep it around so future parent arrivals can retry finalization.
+        state.set_pending_finalized(finalized);
         return Ok(());
     }
 
@@ -154,5 +169,52 @@ mod tests {
         assert_eq!(state.finalized_blockhash(), hash3);
         assert_eq!(state.finalized_blocknum(), 3);
         assert_eq!(state.tip_blockhash(), hash3);
+    }
+
+    #[tokio::test]
+    async fn handle_new_block_retries_pending_orphan_finalized_head() {
+        let hash0 = hash_from_u8(0);
+        let hash1 = hash_from_u8(1);
+        let hash2 = hash_from_u8(2);
+
+        let block0 = create_exec_block(0, Hash::default(), hash0, 0);
+        let block1 = create_exec_block(1, hash0, hash1, 1);
+        let block2 = create_exec_block(2, hash1, hash2, 2);
+
+        let mut state = ExecChainState::new_empty(block0);
+        state.append_block(block2).unwrap();
+
+        let (preconf_tx, _preconf_rx) = watch::channel(state.tip_blocknumhash());
+        let mut storage = MockExecBlockStorage::new();
+
+        let heads = ConsensusHeads {
+            confirmed: hash2,
+            confirmed_epoch: 1,
+            finalized: hash2,
+            finalized_epoch: 1,
+        };
+
+        handle_ol_update(&mut state, heads, &storage, &preconf_tx)
+            .await
+            .unwrap();
+        assert_eq!(state.pending_finalized_blockhash(), Some(hash2));
+
+        storage
+            .expect_get_exec_block()
+            .withf(move |hash| *hash == hash1)
+            .times(1)
+            .returning(move |_| Ok(Some(block1.clone())));
+        storage
+            .expect_extend_finalized_chain()
+            .withf(move |hash| *hash == hash2)
+            .times(1)
+            .returning(|_| Ok(()));
+
+        handle_new_block(&mut state, hash1, &storage, &preconf_tx)
+            .await
+            .unwrap();
+
+        assert_eq!(state.finalized_blockhash(), hash2);
+        assert_eq!(state.finalized_blocknum(), 2);
     }
 }

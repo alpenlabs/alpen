@@ -37,6 +37,12 @@ where
 
     builder.launch_async("exec_chain", executor).await?;
 
+    let initial_update = consensus_watcher.borrow_and_update().clone();
+    handle
+        .new_consensus_state(initial_update)
+        .await
+        .map_err(|err| anyhow::anyhow!("failed to send initial consensus state: {err:?}"))?;
+
     // Spawn consensus forwarder: bridges watch channel -> command channel.
     let forwarder_handle = handle.clone();
     tokio::spawn(async move {
