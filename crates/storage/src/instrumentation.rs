@@ -5,9 +5,6 @@ pub(crate) mod components {
     /// L1Database operations. Fields: blkid, height
     pub(crate) const STORAGE_L1: &str = "storage:l1";
 
-    /// L2Database operations. Fields: blkid, height
-    pub(crate) const STORAGE_L2: &str = "storage:l2";
-
     /// OLDatabase operations. Fields: blkid, slot
     pub(crate) const STORAGE_OL: &str = "storage:ol";
 
@@ -16,12 +13,6 @@ pub(crate) mod components {
 
     /// AsmDatabase operations. Fields: blkid, height
     pub(crate) const STORAGE_ASM: &str = "storage:asm";
-
-    /// CheckpointDatabase operations. Fields: epoch, checkpoint_id
-    pub(crate) const STORAGE_CHECKPOINT: &str = "storage:checkpoint";
-
-    /// ChainStateDatabase operations. Fields: chain_id, state_root
-    pub(crate) const STORAGE_CHAINSTATE: &str = "storage:chainstate";
 
     /// ClientStateDatabase operations. Fields: client_id, state_version
     pub(crate) const STORAGE_CLIENT_STATE: &str = "storage:client_state";

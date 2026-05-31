@@ -22,12 +22,6 @@ use strata_db_types::traits::L1Database;
     clippy::allow_attributes,
     reason = "used for benchmarking"
 )]
-use strata_ol_chain_types as _;
-#[allow(
-    unused_imports,
-    clippy::allow_attributes,
-    reason = "used for benchmarking"
-)]
 use strata_primitives as _;
 #[allow(
     unused_imports,

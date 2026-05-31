@@ -997,7 +997,6 @@ dependencies = [
  "strata-asm-manifest-types",
  "strata-db-store-sled",
  "strata-db-types",
- "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
  "tempfile",
@@ -15173,30 +15172,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-chain-worker"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "strata-chainexec",
- "strata-chaintsn",
- "strata-checkpoint-types",
- "strata-eectl",
- "strata-identifiers",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "strata-service",
- "strata-status",
- "strata-storage",
- "strata-tasks",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "strata-chain-worker-new"
 version = "0.1.0"
 dependencies = [
@@ -15225,42 +15200,6 @@ dependencies = [
  "tokio",
  "tracing",
  "typed-sled",
-]
-
-[[package]]
-name = "strata-chainexec"
-version = "0.1.0"
-dependencies = [
- "strata-chaintsn",
- "strata-identifiers",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-chaintsn"
-version = "0.3.0-alpha.1"
-dependencies = [
- "bitcoin",
- "rand_chacha 0.3.1",
- "rand_core 0.6.4",
- "strata-asm-common",
- "strata-asm-logs",
- "strata-btc-verification",
- "strata-checkpoint-types",
- "strata-identifiers",
- "strata-ol-bridge-types",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-predicate",
- "strata-primitives",
- "strata-state",
- "thiserror 2.0.18",
- "tracing",
 ]
 
 [[package]]
@@ -15378,7 +15317,6 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "bitcoind-async-client",
- "borsh",
  "metrics",
  "rand 0.8.5",
  "serde",
@@ -15389,23 +15327,15 @@ dependencies = [
  "strata-asm-spec-debug",
  "strata-asm-worker",
  "strata-btc-types",
- "strata-chain-worker",
- "strata-chainexec",
- "strata-chaintsn",
- "strata-checkpoint-types",
  "strata-common",
  "strata-csm-types",
  "strata-csm-worker",
- "strata-db-store-sled",
  "strata-db-types",
- "strata-eectl",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-merkle",
  "strata-node-context",
- "strata-ol-chain-types",
  "strata-ol-chain-types-new",
- "strata-ol-chainstate-types",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
@@ -15417,12 +15347,9 @@ dependencies = [
  "strata-status",
  "strata-storage",
  "strata-tasks",
- "strata-test-utils-l2",
  "thiserror 2.0.18",
- "threadpool",
  "tokio",
  "tracing",
- "zkaleido",
 ]
 
 [[package]]
@@ -15572,9 +15499,7 @@ dependencies = [
  "strata-db-tests",
  "strata-db-types",
  "strata-identifiers",
- "strata-ol-chain-types",
  "strata-ol-chain-types-new",
- "strata-ol-chainstate-types",
  "strata-ol-state-types",
  "strata-paas",
  "strata-primitives",
@@ -15600,9 +15525,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-l1-txfmt",
- "strata-ol-chain-types",
  "strata-ol-chain-types-new",
- "strata-ol-chainstate-types",
  "strata-ol-state-types",
  "strata-paas",
  "strata-primitives",
@@ -15619,7 +15542,6 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
- "parking_lot 0.12.5",
  "proptest",
  "serde",
  "serde_json",
@@ -15631,9 +15553,7 @@ dependencies = [
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-merkle",
- "strata-ol-chain-types",
  "strata-ol-chain-types-new",
- "strata-ol-chainstate-types",
  "strata-ol-state-types",
  "strata-paas",
  "strata-primitives",
@@ -15665,7 +15585,6 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
- "strata-ol-chain-types",
  "strata-ol-chain-types-new",
  "strata-paas",
  "strata-primitives",
@@ -15749,24 +15668,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-eectl"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "strata-common",
- "strata-db-types",
- "strata-identifiers",
- "strata-ol-chain-types",
- "strata-primitives",
- "strata-state",
- "strata-status",
- "strata-tasks",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "strata-evm-ee"
 version = "0.1.0"
 dependencies = [
@@ -15799,41 +15700,6 @@ dependencies = [
  "strata-ol-bridge-types",
  "strata-ol-msg-types",
  "strata-primitives",
-]
-
-[[package]]
-name = "strata-evmexec"
-version = "0.3.0-alpha.1"
-dependencies = [
- "alloy-eips",
- "alloy-rpc-types",
- "alpen-reth-evm",
- "alpen-reth-node",
- "anyhow",
- "arbitrary",
- "borsh",
- "jsonrpsee",
- "jsonrpsee-http-client",
- "mockall",
- "rand 0.8.5",
- "reth-primitives",
- "reth-rpc-api",
- "reth-rpc-layer",
- "revm-primitives",
- "strata-db-types",
- "strata-eectl",
- "strata-ol-bridge-types",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "strata-state",
- "strata-storage",
- "strata-test-utils",
- "thiserror 2.0.18",
- "tokio",
- "tower 0.5.3",
- "tracing",
 ]
 
 [[package]]
@@ -16058,23 +15924,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-ol-chain-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "arbitrary",
- "borsh",
- "serde",
- "strata-asm-common",
- "strata-crypto",
- "strata-params",
- "strata-primitives",
- "strata-state",
- "strata-test-utils",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
 name = "strata-ol-chain-types-new"
 version = "0.1.0"
 dependencies = [
@@ -16097,19 +15946,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tree_hash 0.15.0",
  "tree_hash_derive 0.15.0",
-]
-
-[[package]]
-name = "strata-ol-chainstate-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "arbitrary",
- "borsh",
- "strata-crypto",
- "strata-identifiers",
- "strata-ol-bridge-types",
- "strata-primitives",
- "strata-state",
 ]
 
 [[package]]
@@ -16295,8 +16131,6 @@ dependencies = [
  "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-txs",
  "strata-asm-proto-checkpoint-types",
- "strata-chainexec",
- "strata-chaintsn",
  "strata-codec",
  "strata-codec-utils 0.1.0",
  "strata-common",
@@ -16566,6 +16400,7 @@ dependencies = [
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "bincode",
+ "borsh",
  "reth-chainspec",
  "reth-evm",
  "reth-evm-ethereum",
@@ -16578,7 +16413,6 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-ol-bridge-types",
- "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
  "zkaleido",
@@ -16639,81 +16473,6 @@ dependencies = [
  "tracing",
  "zkaleido",
  "zkaleido-sp1-host",
-]
-
-[[package]]
-name = "strata-rpc-api"
-version = "0.3.0-alpha.1"
-dependencies = [
- "jsonrpsee",
- "strata-checkpoint-types",
- "strata-csm-types",
- "strata-ol-bridge-types",
- "strata-primitives",
- "strata-rpc-types",
-]
-
-[[package]]
-name = "strata-rpc-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "bitcoin",
- "hex",
- "jsonrpsee",
- "serde",
- "serde_json",
- "strata-asm-proto-bridge-v1",
- "strata-btc-types",
- "strata-checkpoint-types",
- "strata-csm-types",
- "strata-db-types",
- "strata-ol-bridge-types",
- "strata-ol-chain-types",
- "strata-primitives",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-rpc-utils"
-version = "0.3.0-alpha.1"
-dependencies = [
- "jsonrpsee",
-]
-
-[[package]]
-name = "strata-sequencer"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "bitcoin",
- "borsh",
- "serde",
- "strata-asm-common",
- "strata-asm-logs",
- "strata-chainexec",
- "strata-chaintsn",
- "strata-checkpoint-types",
- "strata-common",
- "strata-consensus-logic",
- "strata-crypto",
- "strata-csm-types",
- "strata-db-types",
- "strata-eectl",
- "strata-identifiers",
- "strata-key-derivation",
- "strata-msg-fmt",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "strata-state",
- "strata-status",
- "strata-storage",
- "strata-tasks",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "zeroize",
 ]
 
 [[package]]
@@ -16870,8 +16629,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "strata-csm-types",
  "strata-identifiers",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
  "strata-primitives",
  "thiserror 2.0.18",
  "tokio",
@@ -16894,9 +16651,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-merkle",
- "strata-ol-chain-types",
  "strata-ol-chain-types-new",
- "strata-ol-chainstate-types",
  "strata-ol-state-types",
  "strata-paas",
  "strata-primitives",
@@ -16916,27 +16671,6 @@ dependencies = [
  "paste",
  "thiserror 2.0.18",
  "threadpool",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "strata-sync"
-version = "0.3.0-alpha.1"
-dependencies = [
- "async-trait",
- "borsh",
- "futures",
- "metrics",
- "strata-common",
- "strata-consensus-logic",
- "strata-db-types",
- "strata-ol-chain-types",
- "strata-primitives",
- "strata-rpc-api",
- "strata-status",
- "strata-storage",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -17067,42 +16801,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-test-utils-evm-ee"
-version = "0.3.0-alpha.1"
-dependencies = [
- "bitcoin",
- "serde_json",
- "strata-asm-common",
- "strata-chainexec",
- "strata-chaintsn",
- "strata-identifiers",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-primitives",
- "strata-proofimpl-evm-ee-stf",
- "strata-test-utils-btc",
- "strata-test-utils-l2",
-]
-
-[[package]]
 name = "strata-test-utils-l2"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
- "borsh",
  "k256",
  "rand 0.8.5",
  "ssz",
  "strata-asm-common",
  "strata-asm-proto-checkpoint-txs",
  "strata-asm-proto-checkpoint-types",
- "strata-checkpoint-types",
- "strata-consensus-logic",
  "strata-crypto",
  "strata-identifiers",
  "strata-merkle",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
  "strata-params",
  "strata-predicate",
  "strata-primitives",

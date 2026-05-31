@@ -336,21 +336,13 @@ async fn handle_new_block<C: FcmContext>(
         Err(e) => {
             warn!(err = ?e, "failed to compute CL STF");
 
-            // Specifically state transition errors we want to handle
-            // specially so that we can remember to not accept the block again.
-            if let Some(Error::InvalidStateTsn(inv_blkid, _)) = e.downcast_ref() {
-                warn!(
-                    ?blkid,
-                    ?inv_blkid,
-                    "invalid block on seemingly good fork, rejecting block"
-                );
-
-                Ok(false)
-            } else {
-                // Everything else we should fail on, signalling indeterminate
-                // status for the block.
-                Err(e)
-            }
+            // TODO(STR-2170): the legacy chain worker surfaced a typed
+            // `InvalidStateTsn` error that let us reject a bad block and remember
+            // not to retry it (returning `Ok(false)`). The new OL STF path does
+            // not yet expose such a detectable error, so for now we propagate all
+            // apply failures. Restore block rejection once the OL chain worker
+            // exposes an invalid-transition error to match on here.
+            Err(e)
         }
     };
 

@@ -12,7 +12,6 @@ use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId, Slot,
 };
-use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_paas::TaskRecordData;
@@ -20,13 +19,7 @@ use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
-#[expect(
-    deprecated,
-    reason = "legacy old code CheckpointEntry is retained for compatibility"
-)]
-use crate::types::CheckpointEntry;
 use crate::{
-    chainstate::ChainstateDatabase,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     ol_state_index::{AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites},
     types::{
@@ -39,21 +32,12 @@ use crate::{
 /// Common database backend interface that we can parameterize worker tasks over if
 /// parameterizing them over each individual trait gets cumbersome or if we need
 /// to use behavior that crosses different interfaces.
-#[expect(
-    deprecated,
-    reason = "legacy old code L2BlockDatabase and CheckpointDatabase are retained for compatibility"
-)]
 pub trait DatabaseBackend: Send + Sync {
     fn asm_db(&self) -> Arc<impl AsmDatabase>;
     fn l1_db(&self) -> Arc<impl L1Database>;
-    #[deprecated(note = "use `ol_block_db()` for OL/EE-decoupled block storage")]
-    fn l2_db(&self) -> Arc<impl L2BlockDatabase>;
     fn client_state_db(&self) -> Arc<impl ClientStateDatabase>;
     fn ol_block_db(&self) -> Arc<impl OLBlockDatabase>;
-    fn chain_state_db(&self) -> Arc<impl ChainstateDatabase>;
     fn ol_state_db(&self) -> Arc<impl OLStateDatabase>;
-    #[deprecated(note = "use `ol_checkpoint_db()` for OL/EE-decoupled checkpoint storage")]
-    fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
     fn ol_checkpoint_db(&self) -> Arc<impl OLCheckpointDatabase>;
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn checkpoint_proof_db(&self) -> Arc<impl CheckpointProofDatabase>;
@@ -165,38 +149,6 @@ pub trait ClientStateDatabase: Send + Sync + 'static {
     ) -> DbResult<Vec<(L1BlockCommitment, ClientUpdateOutput)>>;
 }
 
-/// L2 data store for CL blocks.  Does not store anything about what we think
-/// the L2 chain tip is, that's controlled by the consensus state.
-#[deprecated(note = "use `OLBlockDatabase` for OL/EE-decoupled block storage")]
-pub trait L2BlockDatabase: Send + Sync + 'static {
-    /// Stores an L2 block, does not care about the block height of the L2
-    /// block.  Also sets the block's status to "unchecked".
-    fn put_block_data(&self, block: L2BlockBundle) -> DbResult<()>;
-
-    /// Tries to delete an L2 block from the store, returning if it really
-    /// existed or not.  This should only be used for blocks well before some
-    /// buried L1 finalization horizon.
-    fn del_block_data(&self, id: L2BlockId) -> DbResult<bool>;
-
-    /// Sets the block's validity status.
-    fn set_block_status(&self, id: L2BlockId, status: BlockStatus) -> DbResult<()>;
-
-    /// Gets the L2 block by its ID, if we have it.
-    fn get_block_data(&self, id: L2BlockId) -> DbResult<Option<L2BlockBundle>>;
-
-    /// Gets the L2 block IDs that we have at some height, in case there's more
-    /// than one on competing forks.
-    // TODO do we even want to permit this as being a possible thing?
-    fn get_blocks_at_height(&self, idx: u64) -> DbResult<Vec<L2BlockId>>;
-
-    /// Gets the validity status of a block.
-    fn get_block_status(&self, id: L2BlockId) -> DbResult<Option<BlockStatus>>;
-
-    /// Returns the latest valid L2 block ID, or `None` at genesis or when no valid block exists.
-    // TODO do we even want to permit this as being a possible thing?
-    fn get_tip_block(&self) -> DbResult<L2BlockId>;
-}
-
 /// Gets the status of a block.
 #[derive(
     Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, BorshSerialize, BorshDeserialize, Serialize,
@@ -211,72 +163,6 @@ pub enum BlockStatus {
     /// Block is invalid, for no particular reason.  We'd have to look somewhere
     /// else for that.
     Invalid,
-}
-
-/// Database for checkpoint data.
-// TODO: Remove when we switch to using OL checkpoint database in all relevant places.
-#[deprecated(note = "use `OLCheckpointDatabase` for OL/EE-decoupled checkpoint storage")]
-pub trait CheckpointDatabase: Send + Sync + 'static {
-    /// Inserts an epoch summary retrievable by its epoch commitment.
-    ///
-    /// Fails if there's already an entry there.
-    fn insert_epoch_summary(&self, epoch: EpochSummary) -> DbResult<()>;
-
-    /// Gets an epoch summary given an epoch commitment.
-    fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>>;
-
-    /// Gets all commitments for an epoch.  This makes no guarantees about ordering.
-    fn get_epoch_commitments_at(&self, epoch: u64) -> DbResult<Vec<EpochCommitment>>;
-
-    /// Gets the index of the last epoch that we have a summary for, if any.
-    fn get_last_summarized_epoch(&self) -> DbResult<Option<u64>>;
-
-    /// Delete a specific epoch summary by epoch commitment.
-    ///
-    /// Returns true if the epoch summary existed and was deleted, false otherwise.
-    fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool>;
-
-    /// Delete epoch summaries from the specified epoch onwards (inclusive).
-    ///
-    /// This method deletes all epoch summaries with epoch index >= start_epoch.
-    /// Returns a vector of deleted epoch indices.
-    fn del_epoch_summaries_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
-
-    /// Store a [`CheckpointEntry`]
-    ///
-    /// `batchidx` for the Checkpoint is expected to increase monotonically and
-    /// correspond to the value of `cur_epoch` in
-    /// [`strata_ol_chainstate_types::Chainstate`].
-    #[expect(
-        deprecated,
-        reason = "legacy old code CheckpointEntry is retained for compatibility"
-    )]
-    fn put_checkpoint(&self, epoch: u64, entry: CheckpointEntry) -> DbResult<()>;
-
-    /// Get a [`CheckpointEntry`] by its index.
-    #[expect(
-        deprecated,
-        reason = "legacy old code CheckpointEntry is retained for compatibility"
-    )]
-    fn get_checkpoint(&self, epoch: u64) -> DbResult<Option<CheckpointEntry>>;
-
-    /// Get last written checkpoint index.
-    fn get_last_checkpoint_idx(&self) -> DbResult<Option<u64>>;
-
-    /// Delete a specific checkpoint by epoch index.
-    ///
-    /// Returns true if the checkpoint existed and was deleted, false otherwise.
-    fn del_checkpoint(&self, epoch: u64) -> DbResult<bool>;
-
-    /// Delete checkpoint entries from the specified epoch onwards (inclusive).
-    ///
-    /// This method deletes all checkpoints with epoch index >= start_epoch.
-    /// Returns a vector of deleted epoch indices.
-    fn del_checkpoints_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
-
-    /// Get the next checkpoint index that has PendingProof status.
-    /// Returns the lowest index checkpoint that still needs proof generation.
-    fn get_next_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>>;
 }
 
 /// Database for OL checkpoint data.
