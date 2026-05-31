@@ -1,9 +1,6 @@
 //! Container for chain status.
 
-use std::sync::Arc;
-
 use strata_identifiers::Epoch;
-use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment, prelude::*};
 
 /// Type alias for ChainSyncStatus that indicates this is OL specific even though the field types
@@ -83,27 +80,19 @@ impl ChainSyncStatus {
     }
 }
 
-/// Published to the FCM status including chainstate.
+/// Published to the FCM status.
 #[derive(Debug, Clone)]
 pub struct ChainSyncStatusUpdate {
     new_status: ChainSyncStatus,
-    new_tl_chainstate: Arc<Chainstate>,
 }
 
 impl ChainSyncStatusUpdate {
-    pub fn new(new_status: ChainSyncStatus, new_tl_chainstate: Arc<Chainstate>) -> Self {
-        Self {
-            new_status,
-            new_tl_chainstate,
-        }
+    pub fn new(new_status: ChainSyncStatus) -> Self {
+        Self { new_status }
     }
 
     pub fn new_status(&self) -> ChainSyncStatus {
         self.new_status
-    }
-
-    pub fn new_tl_chainstate(&self) -> &Arc<Chainstate> {
-        &self.new_tl_chainstate
     }
 
     /// Returns the current epoch.

@@ -40,13 +40,6 @@ use strata_db_types as _;
     clippy::allow_attributes,
     reason = "used for benchmarking"
 )]
-use strata_ol_chain_types as _;
-#[cfg(feature = "db")]
-#[allow(
-    unused_imports,
-    clippy::allow_attributes,
-    reason = "used for benchmarking"
-)]
 use strata_primitives as _;
 #[cfg(feature = "db")]
 #[allow(
