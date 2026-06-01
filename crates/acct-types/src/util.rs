@@ -17,9 +17,7 @@ impl<D: Digest> Encoder for DigestEnc<D> {
 
 /// Computes the hash of a codec-encodable type, without materializing the whole
 /// encoding into a buffer.
-fn compute_codec_digest<T: Codec, D: Digest>(
-    v: &T,
-) -> Result<Output<D>, CodecError> {
+fn compute_codec_digest<T: Codec, D: Digest>(v: &T) -> Result<Output<D>, CodecError> {
     let mut enc = DigestEnc { digest: D::new() };
     v.encode(&mut enc)?;
     Ok(enc.digest.finalize())
