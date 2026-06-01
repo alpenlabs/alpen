@@ -34,13 +34,100 @@ pub async fn get_fee_rate(
     user_provided_sats_per_vb: Option<u64>,
     signet_backend: &dyn SignetBackend,
 ) -> FeeRate {
-    match user_provided_sats_per_vb {
+    let fee_rate = match user_provided_sats_per_vb {
         Some(fr) => FeeRate::from_sat_per_vb(fr).expect("valid fee rate"),
         None => signet_backend
             .get_fee_rate(1)
             .await
             .expect("valid fee rate")
             .unwrap_or(FeeRate::BROADCAST_MIN),
+    };
+
+    fee_rate.max(FeeRate::BROADCAST_MIN)
+}
+
+#[cfg(test)]
+mod tests {
+    use async_trait::async_trait;
+    use bdk_wallet::{
+        bitcoin::{FeeRate, Transaction},
+        chain::{
+            spk_client::{FullScanRequestBuilder, SyncRequestBuilder},
+            CheckPoint,
+        },
+        KeychainKind,
+    };
+    use terrors::OneOf;
+
+    use super::{
+        backend::{BroadcastTxError, GetFeeRateError, InvalidFee, ScanError, UpdateSender},
+        get_fee_rate, SignetBackend, SyncError,
+    };
+
+    #[derive(Debug)]
+    struct TestSignetBackend {
+        fee_rate: Option<FeeRate>,
+    }
+
+    #[async_trait]
+    impl SignetBackend for TestSignetBackend {
+        async fn sync_wallet(
+            &self,
+            _req: SyncRequestBuilder<(KeychainKind, u32)>,
+            _last_cp: CheckPoint,
+            _send_update: UpdateSender,
+        ) -> Result<(), SyncError> {
+            unimplemented!("not needed for fee rate tests")
+        }
+
+        async fn scan_wallet(
+            &self,
+            _req: FullScanRequestBuilder<KeychainKind>,
+            _last_cp: CheckPoint,
+            _send_update: UpdateSender,
+        ) -> Result<(), ScanError> {
+            unimplemented!("not needed for fee rate tests")
+        }
+
+        async fn broadcast_tx(&self, _tx: &Transaction) -> Result<(), BroadcastTxError> {
+            unimplemented!("not needed for fee rate tests")
+        }
+
+        async fn get_fee_rate(
+            &self,
+            _target: u16,
+        ) -> Result<Option<FeeRate>, OneOf<(InvalidFee, GetFeeRateError)>> {
+            Ok(self.fee_rate)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_fee_rate_clamps_backend_zero_to_broadcast_minimum() {
+        let backend = TestSignetBackend {
+            fee_rate: Some(FeeRate::ZERO),
+        };
+
+        let fee_rate = get_fee_rate(None, &backend).await;
+
+        assert_eq!(fee_rate, FeeRate::BROADCAST_MIN);
+    }
+
+    #[tokio::test]
+    async fn test_get_fee_rate_uses_broadcast_minimum_when_backend_has_no_estimate() {
+        let backend = TestSignetBackend { fee_rate: None };
+
+        let fee_rate = get_fee_rate(None, &backend).await;
+
+        assert_eq!(fee_rate, FeeRate::BROADCAST_MIN);
+    }
+
+    #[tokio::test]
+    async fn test_get_fee_rate_clamps_user_zero_to_broadcast_minimum() {
+        let backend = TestSignetBackend { fee_rate: None };
+
+        let fee_rate = get_fee_rate(Some(0), &backend).await;
+
+        assert_eq!(fee_rate, FeeRate::BROADCAST_MIN);
     }
 }
 
