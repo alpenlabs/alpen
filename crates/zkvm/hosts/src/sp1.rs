@@ -58,3 +58,9 @@ define_host!(
     GUEST_ALPEN_ACCT_ELF,
     "guest-alpen-acct.elf"
 );
+define_host!(
+    evm_ee_stf_host,
+    EVM_EE_STF_HOST,
+    GUEST_EVM_EE_STF_ELF,
+    "guest-evm-ee-stf.elf"
+);

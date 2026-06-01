@@ -15,6 +15,7 @@ zkaleido.workspace = true
 strata-proofimpl-alpen-acct.workspace = true
 strata-proofimpl-alpen-chunk.workspace = true
 strata-proofimpl-checkpoint.workspace = true
+strata-proofimpl-evm-ee-stf.workspace = true
 
 strata-acct-types.workspace = true
 strata-bridge-params.workspace = true
@@ -32,6 +33,7 @@ strata-ol-da.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
+strata-test-utils-evm-ee.workspace = true
 strata-zkvm-hosts.workspace = true
 
 reth-chainspec.workspace = true
