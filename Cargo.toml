@@ -333,7 +333,7 @@ revm = { version = "31.0.1", features = [
   "serde",
   "bn",
 ], default-features = false }
-revm-primitives = { version = "21.0.2", features = [
+revm-primitives = { version = "23.0.0", features = [
   "std",
   "serde",
 ], default-features = false }
