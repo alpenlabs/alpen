@@ -300,7 +300,7 @@ impl OLTransactionData {
 
     /// Computes the txid.
     pub fn compute_txid(&self) -> OLTxId {
-        let txid_raw = <Self as TreeHash<Sha256Hasher>>::tree_hash_root(self);
+        let txid_raw = <Self as TreeHash>::tree_hash_root::<Sha256Hasher>(self);
         OLTxId::from(Buf32::from(txid_raw.0))
     }
 }

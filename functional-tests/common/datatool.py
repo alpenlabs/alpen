@@ -76,6 +76,17 @@ def get_operator_pubkeys(datadir, operator_fname) -> list[str]:
     return [pubkey]
 
 
+def p2tr_bosd_from_compressed_pubkey(pubkey: str) -> str:
+    """Builds a P2TR BOSD descriptor from a compressed public key."""
+    pubkey = pubkey.strip().lower()
+    if len(pubkey) != 66 or pubkey[:2] not in ("02", "03"):
+        raise ValueError(f"invalid compressed public key: {pubkey}")
+
+    xonly_pubkey = pubkey[2:]
+    bytes.fromhex(xonly_pubkey)
+    return f"04{xonly_pubkey}"
+
+
 @dataclass
 class RollupParamsArtifacts:
     params_path: Path
@@ -218,6 +229,8 @@ def generate_asm_params(
     admin_confirmation_depth: int | None = None,
 ) -> Path:
     params_path = datadir / "asm-params.json"
+    if not operator_pubkeys:
+        raise RuntimeError("gen-asm-params requires at least one operator pubkey")
 
     args = [
         "gen-asm-params",
@@ -227,6 +240,8 @@ def generate_asm_params(
         "ALPN",
         "--genesis-l1-height",
         str(genesis_l1_height),
+        "--safe-harbour-address",
+        p2tr_bosd_from_compressed_pubkey(operator_pubkeys[0]),
         "-o",
         str(params_path),
     ]

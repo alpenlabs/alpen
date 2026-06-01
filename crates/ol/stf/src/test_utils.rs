@@ -64,7 +64,8 @@ use ssz_primitives::FixedBytes;
 use ssz_types::VariableList;
 use strata_acct_types::{
     AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
-    RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects, tree_hash::TreeHash,
+    RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
+    tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
@@ -1580,7 +1581,7 @@ impl InboxMmrTracker {
 
     /// Adds a message entry to the tracker and returns a raw merkle proof for it.
     pub fn add_message(&mut self, entry: &MessageEntry) -> RawMerkleProof {
-        let hash = <MessageEntry as TreeHash>::tree_hash_root(entry);
+        let hash = <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(entry);
 
         let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
             &mut self.mmr,

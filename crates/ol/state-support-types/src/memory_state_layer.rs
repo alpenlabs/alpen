@@ -119,7 +119,7 @@ impl IStateAccessor for MemoryStateBaseLayer {
     }
 
     fn compute_state_root(&self) -> StateResult<Buf32> {
-        Ok(TreeHash::<Sha256Hasher>::tree_hash_root(&self.state).into())
+        Ok(TreeHash::tree_hash_root::<Sha256Hasher>(&self.state).into())
     }
 }
 
@@ -229,7 +229,7 @@ impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
             state.apply_write_batch(wb.clone())?;
         }
 
-        Ok(TreeHash::<Sha256Hasher>::tree_hash_root(&state).into())
+        Ok(TreeHash::tree_hash_root::<Sha256Hasher>(&state).into())
     }
 }
 

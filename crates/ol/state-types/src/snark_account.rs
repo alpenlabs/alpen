@@ -1,4 +1,7 @@
-use strata_acct_types::{Hash, MessageEntry, Mmr64, StrataHasher, tree_hash::TreeHash};
+use strata_acct_types::{
+    Hash, MessageEntry, Mmr64, StrataHasher,
+    tree_hash::{Sha256Hasher, TreeHash},
+};
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, Mmr, Mmr64B32};
 use strata_predicate::PredicateKey;
@@ -77,7 +80,7 @@ impl ISnarkAccountStateMut for OLSnarkAccountState {
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> StateResult<()> {
-        let hash = <MessageEntry as TreeHash>::tree_hash_root(&entry);
+        let hash = <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(&entry);
         Mmr::<StrataHasher>::add_leaf(&mut self.inbox_mmr, hash.into_inner())
             .expect("ol/state: mmr add_leaf");
         Ok(())

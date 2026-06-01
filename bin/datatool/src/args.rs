@@ -291,6 +291,12 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
+        description = "required P2TR BOSD descriptor for the safe harbour emergency sweep address"
+    )]
+    pub(crate) safe_harbour_address: String,
+
+    #[argh(
+        option,
         description = "confirmation depth for admin subprotocol (default 144)"
     )]
     pub(crate) confirmation_depth: Option<u16>,
