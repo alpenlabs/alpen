@@ -104,11 +104,6 @@ pub struct ClientConfig {
     #[serde(default = "default_p2p_port")]
     pub p2p_port: u16,
 
-    /// OL peer endpoint to sync from.
-    /// NOTE: Currently unused. non-sequencer nodes sync from L1 checkpoints, not from a
-    /// peer RPC. Retained for config compatibility.
-    pub sync_endpoint: Option<String>,
-
     /// How many l2 blocks to fetch at once while syncing.
     pub l2_blocks_fetch_limit: u64,
 
@@ -498,7 +493,6 @@ mod test {
             submit_rpc_port = 8435
             submit_rpc_bearer_token = "dev-only-submit-token"
             l2_blocks_fetch_limit = 1_000
-            sync_endpoint = "9.9.9.9:8432"
             datadir = "/path/to/data/directory"
             sequencer_bitcoin_address = "some_addr"
             sequencer_key = "/path/to/sequencer_key"
@@ -603,7 +597,6 @@ mod test {
             l2_blocks_fetch_limit = 1_000
             datadir = "/path/to/data/directory"
             sequencer_bitcoin_address = "some_addr"
-            sync_endpoint = "9.9.9.9:8432"
             seq_pubkey = "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"
             db_retry_count = 5
 
