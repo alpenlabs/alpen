@@ -2,7 +2,7 @@
     "nonce": "0x42",
     "timestamp": "0x0",
     "extraData": "0x5343",
-    "gasLimit": "0x1c9c380",
+    "gasLimit": "0x2255100",
     "difficulty": "0x0",
     "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "coinbase": "0x0000000000000000000000000000000000000000",
@@ -32,6 +32,7 @@
         "shanghaiTime": 0,
         "cancunTime": 0,
         "pragueTime": 0,
+        "osakaTime": 0,
         "mergeNetsplitBlock": 0
     }
 }
