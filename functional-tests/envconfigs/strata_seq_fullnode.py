@@ -79,7 +79,6 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
             bitcoind_config,
             genesis_l1.blk.height,
             is_sequencer=False,
-            config_overrides={"client.sync_endpoint": sequencer.props["rpc_url"]},
         )
         fullnode = fullnode_result.service
         fullnode.wait_for_ready(timeout=20)
