@@ -12,7 +12,7 @@ use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
-use strata_ol_stf::execute_block_batch_preseal;
+use strata_ol_stf::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
@@ -389,7 +389,7 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
 
     let mut da_state = DaAccumulatingState::new(ol_state);
 
-    let logs = execute_block_batch_preseal(
+    let logs = execute_block_batch_predrain(
         &mut da_state,
         &epoch_blocks,
         &prev_terminal_header,

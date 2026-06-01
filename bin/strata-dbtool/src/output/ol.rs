@@ -73,7 +73,7 @@ impl<'a> Formattable for OLBlockInfo<'a> {
             format!("{:?}", self.header_state_root),
         ));
 
-        // Manifest info (from terminal block l1_update, if present).
+        // Manifest info (from the block's ASM manifests, if present).
         for (height, blkid) in &self.manifests {
             output.push(porcelain_field(
                 &format!("ol_block.manifests.{height}.blkid"),

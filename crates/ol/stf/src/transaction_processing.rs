@@ -146,12 +146,11 @@ fn process_update_tx<S: IStateAccessorMut>(
             .seq_no()
             .checked_add(1)
             .ok_or(ExecError::MaxSeqNumberReached { account_id: target })?;
-        acct_tstate.update_inner_state(
+        acct_tstate.set_proof_state(
             upd.proof_state().inner_state_root(),
             upd.proof_state().new_next_msg_idx(),
             new_seqno.into(),
-            upd.extra_data(),
-        )?;
+        );
 
         Ok(())
     })??;

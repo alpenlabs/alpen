@@ -10,7 +10,7 @@ use strata_acct_types::{
 };
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
-use strata_ol_state_types::WriteBatch;
+use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
 
 /// Helper trait for computing the state root after hypothetically applying a
 /// write batch, without requiring `Clone` on the state itself.
@@ -148,6 +148,40 @@ where
             .unwrap_or_else(|| self.base.l1_block_refs_mmr())
     }
 
+    // ===== Intraepoch state methods =====
+
+    fn pending_asm_logs_len(&self) -> usize {
+        let base_len = if self.batch.intraepoch_writes().reset {
+            0
+        } else {
+            self.base.pending_asm_logs_len()
+        };
+        base_len
+            + self
+                .batch
+                .intraepoch_writes()
+                .appended_pending_asm_logs
+                .len()
+    }
+
+    fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
+        let iw = self.batch.intraepoch_writes();
+        let base_len = if iw.reset {
+            0
+        } else {
+            self.base.pending_asm_logs_len()
+        };
+        if idx < base_len {
+            self.base.get_pending_asm_log(idx)
+        } else {
+            iw.appended_pending_asm_logs.get(idx - base_len).cloned()
+        }
+    }
+
+    fn pending_asm_logs_full(&self) -> bool {
+        self.pending_asm_logs_len() as u64 == MAX_PENDING_ASM_LOGS
+    }
+
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
@@ -229,16 +263,9 @@ where
         self.batch.epochal_writes_mut().cur_epoch = Some(epoch);
     }
 
-    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
-        self.batch.epochal_writes_mut().asm_recorded_epoch = Some(epoch);
-    }
-
-    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
-        self.batch.epochal_writes_mut().total_ledger_balance = Some(amt);
-    }
-
     fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
-        // Get the current MMR from the pending batch or base, append, and store it back.
+        // For append_manifest, we need to get the current MMR (from batch or
+        // base), clone it, append, and store back.
         let mut mmr = self
             .batch
             .epochal_writes()
@@ -253,6 +280,31 @@ where
         ew.l1_block_refs_mmr = Some(mmr);
         ew.last_l1_blkid = Some(blkid);
         ew.last_l1_height = Some(height);
+    }
+
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+        self.batch.epochal_writes_mut().asm_recorded_epoch = Some(epoch);
+    }
+
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+        self.batch.epochal_writes_mut().total_ledger_balance = Some(amt);
+    }
+
+    fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
+        if self.pending_asm_logs_full() {
+            return Err(StateError::PendingAsmLogsFull);
+        }
+        self.batch
+            .intraepoch_writes_mut()
+            .appended_pending_asm_logs
+            .push(entry);
+        Ok(())
+    }
+
+    fn reset_intraepoch_state(&mut self) {
+        let iw = self.batch.intraepoch_writes_mut();
+        iw.reset = true;
+        iw.appended_pending_asm_logs.clear();
     }
 
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
@@ -602,5 +654,125 @@ mod tests {
         let result = tracking.update_account(nonexistent_id, |_acct: &mut OLAccountState| {});
 
         assert!(matches!(result, Err(StateError::MissingAccount(_))));
+    }
+
+    // =========================================================================
+    // Intraepoch pending ASM log bookkeeping
+    // =========================================================================
+
+    fn pending_log(tag: u8) -> PendingAsmLog {
+        let entry = strata_asm_manifest_types::AsmLogEntry::from_raw(vec![tag])
+            .expect("bytes within capacity");
+        PendingAsmLog::new(L1Height::from(tag as u32), entry)
+    }
+
+    fn seed_base_with_pending(count: usize) -> MemoryStateBaseLayer {
+        let mut base = create_test_base_layer();
+        for i in 0..count {
+            base.try_append_pending_asm_log(pending_log(i as u8))
+                .expect("base append");
+        }
+        base
+    }
+
+    #[test]
+    fn test_append_visible_through_tracking_layer() {
+        let base = seed_base_with_pending(2);
+        let diff = BatchDiffState::new(&base, &[]);
+        let mut tracking = WriteTrackingState::new_empty(&diff);
+
+        assert_eq!(tracking.pending_asm_logs_len(), 2);
+        tracking
+            .try_append_pending_asm_log(pending_log(42))
+            .expect("append");
+
+        assert_eq!(tracking.pending_asm_logs_len(), 3);
+        assert_eq!(
+            tracking.get_pending_asm_log(0).unwrap().height(),
+            L1Height::from(0u32)
+        );
+        assert_eq!(
+            tracking.get_pending_asm_log(1).unwrap().height(),
+            L1Height::from(1u32)
+        );
+        assert_eq!(
+            tracking.get_pending_asm_log(2).unwrap().height(),
+            L1Height::from(42u32)
+        );
+        assert!(tracking.get_pending_asm_log(3).is_none());
+    }
+
+    #[test]
+    fn test_reset_hides_base_entries() {
+        let base = seed_base_with_pending(3);
+        let diff = BatchDiffState::new(&base, &[]);
+        let mut tracking = WriteTrackingState::new_empty(&diff);
+
+        assert_eq!(tracking.pending_asm_logs_len(), 3);
+        tracking.reset_intraepoch_state();
+        assert_eq!(tracking.pending_asm_logs_len(), 0);
+        assert!(tracking.get_pending_asm_log(0).is_none());
+
+        tracking
+            .try_append_pending_asm_log(pending_log(7))
+            .expect("append after reset");
+        assert_eq!(tracking.pending_asm_logs_len(), 1);
+        assert_eq!(
+            tracking.get_pending_asm_log(0).unwrap().height(),
+            L1Height::from(7u32)
+        );
+        // Base entries must remain untouched.
+        assert_eq!(base.pending_asm_logs_len(), 3);
+    }
+
+    #[test]
+    fn test_reset_clears_prior_batch_appends() {
+        let base = seed_base_with_pending(1);
+        let diff = BatchDiffState::new(&base, &[]);
+        let mut tracking = WriteTrackingState::new_empty(&diff);
+
+        tracking
+            .try_append_pending_asm_log(pending_log(10))
+            .expect("append before reset");
+        assert_eq!(tracking.pending_asm_logs_len(), 2);
+
+        tracking.reset_intraepoch_state();
+        assert_eq!(tracking.pending_asm_logs_len(), 0);
+
+        tracking
+            .try_append_pending_asm_log(pending_log(20))
+            .expect("append after reset");
+        assert_eq!(tracking.pending_asm_logs_len(), 1);
+        assert_eq!(
+            tracking.get_pending_asm_log(0).unwrap().height(),
+            L1Height::from(20u32)
+        );
+    }
+
+    #[test]
+    fn test_append_returns_full_at_capacity() {
+        use strata_ol_state_types::MAX_PENDING_ASM_LOGS;
+
+        let base = create_test_base_layer();
+        let diff = BatchDiffState::new(&base, &[]);
+        let mut tracking = WriteTrackingState::new_empty(&diff);
+
+        // Pre-load batch up to MAX-1 to keep the test cheap; the capacity check
+        // doesn't depend on actually pushing MAX entries since we manipulate the
+        // batch state directly.
+        for i in 0..(MAX_PENDING_ASM_LOGS - 1) {
+            tracking
+                .try_append_pending_asm_log(pending_log((i & 0xff) as u8))
+                .expect("append within capacity");
+        }
+        assert!(!tracking.pending_asm_logs_full());
+
+        tracking
+            .try_append_pending_asm_log(pending_log(0))
+            .expect("final slot");
+        assert!(tracking.pending_asm_logs_full());
+
+        let overflow = tracking.try_append_pending_asm_log(pending_log(0));
+        assert!(matches!(overflow, Err(StateError::PendingAsmLogsFull)));
     }
 }

@@ -13,7 +13,7 @@ use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::errors::DbError;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
 };
@@ -249,7 +249,7 @@ impl ChainWorkerServiceState {
         let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
 
         // Execute and extract outputs
-        let (write_batch, indexer_writes) = run_stf_verification(
+        let (write_batch, indexer_writes, logs) = run_stf_verification(
             &parent_state,
             block,
             parent_header,
@@ -271,7 +271,7 @@ impl ChainWorkerServiceState {
         let computed_state_root = *block.header().state_root();
 
         Ok((
-            OLBlockExecutionOutput::new(computed_state_root, write_batch, indexer_writes),
+            OLBlockExecutionOutput::new(computed_state_root, write_batch, indexer_writes, logs),
             new_state,
         ))
     }
@@ -350,15 +350,10 @@ impl ChainWorkerServiceState {
     }
 }
 
-impl ServiceState for ChainWorkerServiceState {
-    fn name(&self) -> &str {
-        "chain_worker_new"
-    }
-}
-
 /// Runs the STF verification on a block.
 ///
-/// This is a pure function that builds the state stack and executes the STF.
+/// This is a pure function that builds the state stack, executes the STF, and returns the write
+/// batch, indexer writes, and emitted logs.
 #[instrument(
     skip_all,
     fields(
@@ -373,12 +368,12 @@ fn run_stf_verification(
     block: &OLBlock,
     parent_header: Option<&OLBlockHeader>,
     bridge_params: BridgeParams,
-) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites)> {
+) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites, Vec<OLLog>)> {
     // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
     let tracking_state = WriteTrackingState::new_empty(parent_state);
     let mut indexer_state = IndexerState::new(tracking_state);
 
-    verify_block(
+    let logs = verify_block(
         &mut indexer_state,
         block.header(),
         parent_header,
@@ -390,7 +385,13 @@ fn run_stf_verification(
     let (tracking_state, indexer_writes) = indexer_state.into_parts();
     let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
 
-    Ok((write_batch, indexer_writes))
+    Ok((write_batch, indexer_writes, logs))
+}
+
+impl ServiceState for ChainWorkerServiceState {
+    fn name(&self) -> &str {
+        "chain_worker_new"
+    }
 }
 
 /// Builds the [`EpochSummary`] for a completed epoch from the terminal block,
@@ -465,7 +466,8 @@ mod tests {
         assert!(terminal_batch.epochal_writes().last_l1_blkid.is_none());
 
         let state_root = Buf32::from([9u8; 32]);
-        let output = OLBlockExecutionOutput::new(state_root, terminal_batch, IndexerWrites::new());
+        let output =
+            OLBlockExecutionOutput::new(state_root, terminal_batch, IndexerWrites::new(), vec![]);
 
         let mut flags = BlockFlags::zero();
         flags.set_is_terminal(true);

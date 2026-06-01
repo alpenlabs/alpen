@@ -462,7 +462,7 @@ fn ol_state_with_snark_account_and_inbox_entries(
     state
         .update_account(account_id, |acct| {
             let s = acct.as_snark_account_mut().unwrap();
-            s.set_proof_state_directly(Hash::zero(), next_inbox_msg_idx, Seqno::from(seq_no));
+            s.set_proof_state(Hash::zero(), next_inbox_msg_idx, Seqno::from(seq_no));
             for message in inbox_messages {
                 s.insert_inbox_message(message.clone()).unwrap();
             }
@@ -2908,7 +2908,7 @@ async fn get_block_by_slot_returns_decoded_detail() {
     assert_eq!(detail.header().epoch(), 1);
     assert_eq!(detail.header().blkid(), blkid);
     assert_eq!(detail.tx_count(), 0);
-    assert!(detail.l1_update().is_none());
+    assert!(detail.manifests().is_none());
 }
 
 #[tokio::test]
