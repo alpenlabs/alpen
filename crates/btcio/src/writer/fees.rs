@@ -90,12 +90,6 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
     config: &WriterConfig,
 ) -> anyhow::Result<u64> {
     let fee_rate = match config.fee_policy() {
-        // NOTE(STR-2545, STR-2433): fee estimation is currently being doubled since we don't fully
-        //                           support fee bumping ostensive mechanisms for making sure
-        //                           transactions confirm in a timely manner. This is a temporary
-        //                           measure until we implement more robust fee bumping strategies,
-        //                           at which point we can remove the doubling and rely on the fee
-        //                           policies to provide accurate fee rates.
         // NOTE(STR-2018): ensure fee is at least 1 sat/vB to avoid zero fee transactions.
         //                 This will be revised once we support sub 1 sat/vB fee rates.
         FeePolicy::BitcoinD { conf_target } => {
@@ -103,7 +97,7 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
                 .estimate_smart_fee(*conf_target)
                 .await
                 .context("failed to estimate smart fee")?;
-            u64::max(fee_estimate, 1) * 2
+            u64::max(fee_estimate, 1)
         }
         FeePolicy::MempoolExplorer {
             policy,
@@ -113,7 +107,7 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
             let fee_estimate =
                 resolve_mempool_fee_rate(client, mempool_base_url, *fallback_conf_target, *policy)
                     .await?;
-            u64::max(fee_estimate, 1) * 2
+            u64::max(fee_estimate, 1)
         }
         FeePolicy::Fixed { fee_rate } => *fee_rate,
     };
@@ -264,8 +258,7 @@ mod tests {
             .await
             .expect("mempool fee lookup should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, 7 * 2);
+        assert_eq!(fee_rate, 7);
     }
 
     #[tokio::test]
@@ -282,8 +275,7 @@ mod tests {
             .await
             .expect("mempool fee lookup should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, 4 * 2);
+        assert_eq!(fee_rate, 4);
     }
 
     #[tokio::test]
@@ -296,8 +288,7 @@ mod tests {
             .await
             .expect("smart fee fallback should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, 3 * 2);
+        assert_eq!(fee_rate, 3);
     }
 
     #[tokio::test]
@@ -310,8 +301,7 @@ mod tests {
             .await
             .expect("smart fee fallback should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, 3 * 2);
+        assert_eq!(fee_rate, 3);
     }
 
     #[tokio::test]
@@ -336,7 +326,6 @@ mod tests {
             .await
             .expect("smart fee lookup should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, 3 * 2);
+        assert_eq!(fee_rate, 3);
     }
 }

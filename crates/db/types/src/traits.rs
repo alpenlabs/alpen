@@ -31,7 +31,7 @@ use crate::{
     ol_state_index::{AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites},
     types::{
         BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry, L1PayloadIntentIndex, L1TxEntry,
-        MempoolTxData,
+        MempoolTxData, TxNodeId, TxNodeRecord,
     },
     DbResult, RawMmrId,
 };
@@ -572,6 +572,15 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 
     /// Get last broadcast entry
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
+
+    /// Stores a logical transaction replacement-chain record.
+    fn put_tx_node(&self, node_id: TxNodeId, record: TxNodeRecord) -> DbResult<()>;
+
+    /// Fetches a logical transaction replacement-chain record by id.
+    fn get_tx_node(&self, node_id: TxNodeId) -> DbResult<Option<TxNodeRecord>>;
+
+    /// Fetches all logical transaction replacement-chain records.
+    fn get_all_tx_nodes(&self) -> DbResult<Vec<TxNodeRecord>>;
 }
 
 /// Storage for chunked envelope entries.

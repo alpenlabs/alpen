@@ -1,12 +1,16 @@
 #![expect(deprecated, reason = "legacy old code is retained for compatibility")] // I have no idea how to make clippy be happy with precise expects in this module
 //! Module for database local types
 
-use std::fmt;
+use std::{
+    fmt,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use arbitrary::Arbitrary;
 use bitcoin::{
     consensus::{self, deserialize, serialize},
-    Transaction,
+    hashes::{sha256, Hash},
+    Amount, FeeRate, Transaction,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -26,6 +30,291 @@ pub type L1TxId = RBuf32;
 
 /// Bitcoin witness transaction ID displayed in Bitcoin byte order.
 pub type L1WtxId = RBuf32;
+
+/// Bitcoin block hash displayed in Bitcoin byte order.
+pub type L1BlockHash = RBuf32;
+
+/// Deterministic identifier for one logical writer transaction replacement chain.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+)]
+pub struct TxNodeId(pub Buf32);
+
+impl TxNodeId {
+    /// Derives a stable id from the logical transaction kind.
+    pub fn from_kind(kind: &TxNodeKind) -> Self {
+        const DOMAIN: &[u8] = b"alpen.btcio.tx-node.v1";
+
+        let mut bytes = Vec::with_capacity(DOMAIN.len() + 64);
+        bytes.extend_from_slice(DOMAIN);
+        bytes.extend_from_slice(
+            &borsh::to_vec(kind).expect("tx-node kind serialization cannot fail"),
+        );
+
+        Self(Buf32(sha256::Hash::hash(&bytes).to_byte_array()))
+    }
+}
+
+/// Logical BTCIO writer transaction kind.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub enum TxNodeKind {
+    /// Commit transaction for a single-envelope payload row.
+    SingleEnvelopeCommit { payload_idx: u64 },
+    /// Reveal transaction for a single-envelope payload row.
+    SingleEnvelopeReveal { payload_idx: u64 },
+    /// Commit transaction for a chunked-envelope row.
+    ChunkedEnvelopeCommit { envelope_idx: u64 },
+    /// One reveal transaction for a chunked-envelope row.
+    ChunkedEnvelopeReveal { envelope_idx: u64, reveal_idx: u32 },
+}
+
+/// Replacement-attempt lifecycle within a logical transaction node.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+)]
+pub enum TxAttemptStatus {
+    /// The attempt is the currently broadcastable transaction.
+    Active,
+    /// The attempt has been superseded by another txid.
+    Replaced,
+    /// The attempt was abandoned before becoming active.
+    Discarded,
+    /// The attempt is waiting for an external reveal signature.
+    PendingSignature,
+}
+
+/// One concrete transaction attempt in a logical replacement chain.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct TxAttempt {
+    pub attempt_no: u32,
+    pub raw_tx: Vec<u8>,
+    pub txid: L1TxId,
+    pub wtxid: L1WtxId,
+    pub fee_rate_sat_vb: u64,
+    pub fee_sats: u64,
+    pub created_at_unix_secs: u64,
+    pub first_published_l1_height: Option<L1Height>,
+    pub status: TxAttemptStatus,
+    pub replaced_by: Option<L1TxId>,
+}
+
+impl TxAttempt {
+    /// Creates an active attempt for a transaction.
+    pub fn active(tx: &Transaction, fee_rate: FeeRate, fee_sats: Amount, attempt_no: u32) -> Self {
+        Self::new(tx, fee_rate, fee_sats, attempt_no, TxAttemptStatus::Active)
+    }
+
+    /// Creates an attempt that is waiting for an external reveal signature.
+    pub fn pending_signature(
+        tx: &Transaction,
+        fee_rate: FeeRate,
+        fee_sats: Amount,
+        attempt_no: u32,
+    ) -> Self {
+        Self::new(
+            tx,
+            fee_rate,
+            fee_sats,
+            attempt_no,
+            TxAttemptStatus::PendingSignature,
+        )
+    }
+
+    /// Creates an attempt for a transaction with the provided status.
+    pub fn new(
+        tx: &Transaction,
+        fee_rate: FeeRate,
+        fee_sats: Amount,
+        attempt_no: u32,
+        status: TxAttemptStatus,
+    ) -> Self {
+        Self {
+            attempt_no,
+            raw_tx: serialize(tx),
+            txid: L1TxId::from(tx.compute_txid().to_byte_array()),
+            wtxid: L1WtxId::from(tx.compute_wtxid().to_byte_array()),
+            fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
+            fee_sats: fee_sats.to_sat(),
+            created_at_unix_secs: unix_secs_now(),
+            first_published_l1_height: None,
+            status,
+            replaced_by: None,
+        }
+    }
+
+    /// Deserializes the raw transaction for this attempt.
+    pub fn try_to_tx(&self) -> Result<Transaction, consensus::encode::Error> {
+        deserialize(&self.raw_tx)
+    }
+
+    fn refresh_tx(&mut self, tx: &Transaction, fee_rate: FeeRate, fee_sats: Amount) {
+        self.raw_tx = serialize(tx);
+        self.txid = L1TxId::from(tx.compute_txid().to_byte_array());
+        self.wtxid = L1WtxId::from(tx.compute_wtxid().to_byte_array());
+        self.fee_rate_sat_vb = fee_rate.to_sat_per_vb_ceil();
+        self.fee_sats = fee_sats.to_sat();
+    }
+}
+
+/// Persistent replacement-chain record for one logical writer transaction.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct TxNodeRecord {
+    pub node_id: TxNodeId,
+    pub kind: TxNodeKind,
+    pub active_txid: L1TxId,
+    pub attempts: Vec<TxAttempt>,
+    pub terminal_error: Option<TerminalError>,
+}
+
+impl TxNodeRecord {
+    /// Creates a replacement-chain record from its first active attempt.
+    pub fn new(kind: TxNodeKind, first_attempt: TxAttempt) -> Self {
+        let node_id = TxNodeId::from_kind(&kind);
+        let active_txid = first_attempt.txid;
+        Self {
+            node_id,
+            kind,
+            active_txid,
+            attempts: vec![first_attempt],
+            terminal_error: None,
+        }
+    }
+
+    /// Replaces the chain with a fresh initial attempt for the same logical node.
+    pub fn replace_initial_attempt(&mut self, mut attempt: TxAttempt) {
+        attempt.attempt_no = 0;
+        self.active_txid = attempt.txid;
+        self.attempts = vec![attempt];
+        self.terminal_error = None;
+    }
+
+    /// Returns the active attempt.
+    pub fn active_attempt(&self) -> Option<&TxAttempt> {
+        self.attempts
+            .iter()
+            .find(|attempt| attempt.txid == self.active_txid)
+    }
+
+    /// Returns the mutable active attempt.
+    pub fn active_attempt_mut(&mut self) -> Option<&mut TxAttempt> {
+        let active_txid = self.active_txid;
+        self.attempts
+            .iter_mut()
+            .find(|attempt| attempt.txid == active_txid)
+    }
+
+    /// Returns the pending externally-signed replacement attempt, if any.
+    pub fn pending_signature_attempt(&self) -> Option<&TxAttempt> {
+        self.attempts
+            .iter()
+            .rev()
+            .find(|attempt| attempt.status == TxAttemptStatus::PendingSignature)
+    }
+
+    /// Appends a replacement attempt and marks the previous active attempt as replaced.
+    pub fn append_replacement(&mut self, mut replacement: TxAttempt) {
+        let previous_active = self.active_txid;
+        if let Some(active) = self.active_attempt_mut() {
+            active.status = TxAttemptStatus::Replaced;
+            active.replaced_by = Some(replacement.txid);
+        }
+        replacement.status = TxAttemptStatus::Active;
+        self.active_txid = replacement.txid;
+        self.attempts.push(replacement);
+
+        debug_assert_ne!(self.active_txid, previous_active);
+    }
+
+    /// Appends a replacement attempt that still needs an external signature.
+    pub fn append_pending_signature_replacement(&mut self, mut replacement: TxAttempt) {
+        replacement.status = TxAttemptStatus::PendingSignature;
+        self.attempts
+            .retain(|attempt| attempt.status != TxAttemptStatus::PendingSignature);
+        self.attempts.push(replacement);
+    }
+
+    /// Activates the current pending-signature attempt after the final witness is attached.
+    pub fn activate_pending_signature(
+        &mut self,
+        signed_tx: &Transaction,
+        fee_rate: FeeRate,
+        fee_sats: Amount,
+    ) -> bool {
+        let Some(pending_idx) = self
+            .attempts
+            .iter()
+            .position(|attempt| attempt.status == TxAttemptStatus::PendingSignature)
+        else {
+            return false;
+        };
+
+        let previous_active_txid = self.active_txid;
+        self.attempts[pending_idx].refresh_tx(signed_tx, fee_rate, fee_sats);
+        let active_txid = self.attempts[pending_idx].txid;
+
+        if let Some(active_idx) = self
+            .attempts
+            .iter()
+            .position(|attempt| attempt.txid == previous_active_txid)
+        {
+            self.attempts[active_idx].status = TxAttemptStatus::Replaced;
+            self.attempts[active_idx].replaced_by = Some(active_txid);
+        }
+
+        self.attempts[pending_idx].status = TxAttemptStatus::Active;
+        self.active_txid = active_txid;
+        true
+    }
+
+    /// Discards any unsigned pending-signature replacement attempts.
+    pub fn discard_pending_signature_replacement(&mut self) -> bool {
+        let mut discarded = false;
+        for attempt in &mut self.attempts {
+            if attempt.status == TxAttemptStatus::PendingSignature {
+                attempt.status = TxAttemptStatus::Discarded;
+                discarded = true;
+            }
+        }
+        discarded
+    }
+
+    /// Marks the replacement chain permanently terminal.
+    pub fn set_terminal_error(&mut self, error: TerminalError) {
+        self.terminal_error = Some(error);
+    }
+}
+
+/// Terminal reason that prevents further fee bumping for a logical transaction.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+)]
+pub enum TerminalError {
+    MaxAttemptsReached,
+    AboveMaxFeeRate,
+    Bip125FeeRuleUnsatisfiable,
+    WalletInsufficient,
+    ReplacementWouldDustOutput,
+    UnsupportedRbfKind,
+    SignerTimeout,
+}
+
+fn unix_secs_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time is after Unix epoch")
+        .as_secs()
+}
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
@@ -163,15 +452,16 @@ pub enum L1BundleStatus {
 
 /// This is the entry that gets saved to the database corresponding to a bitcoin transaction that
 /// the broadcaster will publish and watches for until finalization
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Serialize, Deserialize)]
 pub struct L1TxEntry {
     /// Raw serialized transaction. This is basically `consensus::serialize()` of [`Transaction`]
     tx_raw: Vec<u8>,
 
     /// The status of the transaction in bitcoin
     pub status: L1TxStatus,
+
+    /// Optional metadata used by writer-side RBF replacement logic.
+    pub rbf: Option<L1TxRbfInfo>,
 }
 
 impl L1TxEntry {
@@ -180,6 +470,29 @@ impl L1TxEntry {
         Self {
             tx_raw: serialize(tx),
             status: L1TxStatus::Unpublished,
+            rbf: None,
+        }
+    }
+
+    /// Create a new writer-owned [`L1TxEntry`] with RBF metadata.
+    pub fn from_tx_with_fee_rate(tx: &Transaction, fee_rate: FeeRate) -> Self {
+        Self {
+            tx_raw: serialize(tx),
+            status: L1TxStatus::Unpublished,
+            rbf: Some(L1TxRbfInfo {
+                first_published_l1_height: None,
+                fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
+                bump_count: 0,
+            }),
+        }
+    }
+
+    /// Creates an entry from persisted raw transaction bytes and metadata.
+    pub fn from_raw_parts(tx_raw: Vec<u8>, status: L1TxStatus, rbf: Option<L1TxRbfInfo>) -> Self {
+        Self {
+            tx_raw,
+            status,
+            rbf,
         }
     }
 
@@ -199,12 +512,39 @@ impl L1TxEntry {
     }
 
     pub fn is_valid(&self) -> bool {
-        !matches!(self.status, L1TxStatus::InvalidInputs)
+        !matches!(
+            self.status,
+            L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. }
+        )
     }
 
     pub fn is_finalized(&self) -> bool {
         matches!(self.status, L1TxStatus::Finalized { .. })
     }
+}
+
+/// RBF metadata for one concrete broadcast transaction.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+)]
+pub struct L1TxRbfInfo {
+    /// L1 height where this transaction was first observed as published.
+    pub first_published_l1_height: Option<L1Height>,
+
+    /// Fee rate used to construct this transaction in sat/vB.
+    pub fee_rate_sat_vb: u64,
+
+    /// Number of replacements already made for this logical writer transaction.
+    pub bump_count: u32,
 }
 
 /// The possible statuses of a publishable transaction
@@ -224,7 +564,7 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Confirmed {
         confirmations: u64,
-        block_hash: Buf32,
+        block_hash: L1BlockHash,
         block_height: L1Height,
     },
 
@@ -233,12 +573,18 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Finalized {
         confirmations: u64,
-        block_hash: Buf32,
+        block_hash: L1BlockHash,
         block_height: L1Height,
     },
 
     /// The transaction is not included in L1 because it's inputs were invalid
     InvalidInputs,
+
+    /// The transaction has been superseded by an RBF replacement.
+    Replaced {
+        /// Replacement transaction id.
+        by: L1TxId,
+    },
 }
 
 impl fmt::Display for L1TxStatus {
@@ -267,6 +613,7 @@ impl fmt::Display for L1TxStatus {
                 )
             }
             Self::InvalidInputs => f.write_str("invalid_inputs"),
+            Self::Replaced { by } => write!(f, "replaced_by({by})"),
         }
     }
 }
@@ -546,6 +893,10 @@ impl fmt::Display for ChunkedEnvelopeStatus {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::{
+        absolute::LockTime, transaction::Version, OutPoint, ScriptBuf, Sequence, TxIn, TxOut,
+        Witness,
+    };
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
@@ -556,6 +907,23 @@ mod tests {
 
     use super::*;
 
+    fn tx_with_output(value: u64) -> Transaction {
+        Transaction {
+            version: Version(2),
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(value),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        }
+    }
+
     #[test]
     fn check_serde_of_l1txstatus() {
         let test_cases: Vec<(L1TxStatus, &str)> = vec![
@@ -564,7 +932,7 @@ mod tests {
             (
                 L1TxStatus::Confirmed {
                     confirmations: 10,
-                    block_hash: Buf32::zero(),
+                    block_hash: L1BlockHash::zero(),
                     block_height: 42,
                 },
                 r#"{"status":"Confirmed","confirmations":10,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
@@ -572,12 +940,16 @@ mod tests {
             (
                 L1TxStatus::Finalized {
                     confirmations: 100,
-                    block_hash: Buf32::zero(),
+                    block_hash: L1BlockHash::zero(),
                     block_height: 42,
                 },
                 r#"{"status":"Finalized","confirmations":100,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
             ),
             (L1TxStatus::InvalidInputs, r#"{"status":"InvalidInputs"}"#),
+            (
+                L1TxStatus::Replaced { by: L1TxId::zero() },
+                r#"{"status":"Replaced","by":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
+            ),
         ];
 
         // check serialization and deserialization
@@ -594,7 +966,7 @@ mod tests {
     fn display_l1txstatus_uses_log_friendly_format() {
         let status = L1TxStatus::Confirmed {
             confirmations: 12,
-            block_hash: Buf32::zero(),
+            block_hash: L1BlockHash::zero(),
             block_height: 42,
         };
 
@@ -643,6 +1015,102 @@ mod tests {
     }
 
     #[test]
+    fn pending_signature_replacement_keeps_previous_attempt_active() {
+        let fee_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let initial = TxAttempt::active(&tx_with_output(1_000), fee_rate, Amount::from_sat(100), 0);
+        let initial_txid = initial.txid;
+        let mut record =
+            TxNodeRecord::new(TxNodeKind::SingleEnvelopeReveal { payload_idx: 7 }, initial);
+        let replacement =
+            TxAttempt::pending_signature(&tx_with_output(900), fee_rate, Amount::from_sat(200), 1);
+        let replacement_txid = replacement.txid;
+
+        record.append_pending_signature_replacement(replacement);
+
+        assert_eq!(record.active_txid, initial_txid);
+        assert_eq!(
+            record.active_attempt().map(|attempt| attempt.status),
+            Some(TxAttemptStatus::Active)
+        );
+        assert_eq!(
+            record
+                .pending_signature_attempt()
+                .map(|attempt| attempt.txid),
+            Some(replacement_txid)
+        );
+        assert_eq!(record.attempts[0].replaced_by, None);
+    }
+
+    #[test]
+    fn pending_signature_attempt_becomes_active_after_signature() {
+        let fee_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let initial = TxAttempt::active(&tx_with_output(1_000), fee_rate, Amount::from_sat(100), 0);
+        let mut record =
+            TxNodeRecord::new(TxNodeKind::SingleEnvelopeReveal { payload_idx: 7 }, initial);
+        let unsigned = tx_with_output(900);
+        let replacement =
+            TxAttempt::pending_signature(&unsigned, fee_rate, Amount::from_sat(200), 1);
+        record.append_pending_signature_replacement(replacement);
+
+        let mut signed = unsigned;
+        signed.input[0].witness.push([1u8; 64]);
+        let activated = record.activate_pending_signature(
+            &signed,
+            FeeRate::from_sat_per_vb(3).expect("valid fee rate"),
+            Amount::from_sat(300),
+        );
+
+        let active = record.active_attempt().expect("active attempt");
+        assert!(activated);
+        assert_eq!(active.status, TxAttemptStatus::Active);
+        assert_eq!(active.fee_rate_sat_vb, 3);
+        assert_eq!(active.fee_sats, 300);
+        assert_eq!(
+            active.wtxid,
+            L1WtxId::from(signed.compute_wtxid().to_byte_array())
+        );
+        assert_eq!(record.attempts[0].status, TxAttemptStatus::Replaced);
+        assert_eq!(record.attempts[0].replaced_by, Some(active.txid));
+    }
+
+    #[test]
+    fn pending_signature_attempt_can_be_discarded() {
+        let fee_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let initial = TxAttempt::active(&tx_with_output(1_000), fee_rate, Amount::from_sat(100), 0);
+        let initial_txid = initial.txid;
+        let mut record =
+            TxNodeRecord::new(TxNodeKind::SingleEnvelopeReveal { payload_idx: 7 }, initial);
+        let replacement =
+            TxAttempt::pending_signature(&tx_with_output(900), fee_rate, Amount::from_sat(200), 1);
+        record.append_pending_signature_replacement(replacement);
+
+        assert!(record.discard_pending_signature_replacement());
+
+        assert_eq!(record.active_txid, initial_txid);
+        assert_eq!(record.pending_signature_attempt(), None);
+        assert_eq!(record.attempts[1].status, TxAttemptStatus::Discarded);
+    }
+
+    #[test]
+    fn replace_initial_attempt_clears_terminal_errors() {
+        let fee_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let initial = TxAttempt::active(&tx_with_output(1_000), fee_rate, Amount::from_sat(100), 0);
+        let mut record =
+            TxNodeRecord::new(TxNodeKind::SingleEnvelopeCommit { payload_idx: 7 }, initial);
+        record.set_terminal_error(TerminalError::WalletInsufficient);
+
+        let fresh = TxAttempt::active(&tx_with_output(900), fee_rate, Amount::from_sat(120), 3);
+        let fresh_txid = fresh.txid;
+        record.replace_initial_attempt(fresh);
+
+        assert_eq!(record.active_txid, fresh_txid);
+        assert_eq!(record.terminal_error, None);
+        assert_eq!(record.attempts.len(), 1);
+        assert_eq!(record.attempts[0].attempt_no, 0);
+        assert_eq!(record.attempts[0].status, TxAttemptStatus::Active);
+    }
+
+    #[test]
     fn display_chunked_envelope_entry_includes_commit_and_reveals() {
         let commit_bytes = bytes_from_start(0x01);
         let commit_witness_bytes = bytes_from_start(0x21);
@@ -655,7 +1123,7 @@ mod tests {
             commit_txid: L1TxId::from(commit_bytes),
             commit_wtxid: L1WtxId::from(commit_witness_bytes),
             reveals: vec![RevealTxMeta {
-                vout_index: 0,
+                vout_index: 1,
                 txid: L1TxId::from(reveal_bytes),
                 wtxid: L1WtxId::from(reveal_witness_bytes),
                 tx_bytes: Vec::new(),
