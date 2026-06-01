@@ -1,7 +1,7 @@
 //! L1 block formatting implementations
 
 use strata_identifiers::L1Height;
-use strata_ol_chain_types::AsmManifest;
+use strata_ol_chain_types_new::AsmManifest;
 use strata_primitives::l1::L1BlockId;
 
 use super::{helpers::porcelain_field, traits::Formattable};

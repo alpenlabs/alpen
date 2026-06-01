@@ -1,95 +1,22 @@
 //! L2/rollup related test utilities for the Alpen codebase.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use bitcoin::{
     hashes::Hash,
     params::Params as BitcoinParams,
     secp256k1::{SecretKey, SECP256K1},
     Amount, CompactTarget, XOnlyPublicKey,
 };
-use borsh::to_vec;
 use rand::{rngs::StdRng, SeedableRng};
-use strata_checkpoint_types::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
-use strata_consensus_logic::genesis::make_l2_genesis;
 use strata_crypto::EvenSecretKey;
-use strata_ol_chain_types::{
-    L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader, L2Header,
-    SignedL2BlockHeader,
-};
-use strata_ol_chainstate_types::Chainstate;
 use strata_params::{CredRule, Params, ProofPublishMode, RollupParams, SyncParams};
 use strata_predicate::PredicateKey;
 use strata_primitives::{
-    buf::{Buf32, Buf64},
+    buf::Buf32,
     constants::TIMESTAMPS_FOR_MEDIAN,
     l1::{BtcParams, GenesisL1View, L1BlockCommitment},
     L1BlockId,
 };
-use strata_test_utils::ArbitraryGenerator;
 use strata_test_utils_btc::BtcMainnetSegment;
-
-/// Generates a sequence of L2 block bundles starting from an optional parent block.
-///
-/// # Arguments
-///
-/// * `parent` - An optional [`SignedL2BlockHeader`] representing the parent block to build upon. If
-///   `None`, the genesis or default starting point is assumed.
-/// * `blocks_num` - The number of L2 blocks to generate.
-///
-/// # Returns
-///
-/// A vector containing [`L2BlockBundle`] instances forming the generated L2 chain.
-pub fn gen_l2_chain(parent: Option<SignedL2BlockHeader>, blocks_num: usize) -> Vec<L2BlockBundle> {
-    let mut blocks = Vec::new();
-    let mut parent = match parent {
-        Some(p) => p,
-        None => {
-            let p = gen_block(None);
-            blocks.push(p.clone());
-            p.header().clone()
-        }
-    };
-
-    for _ in 0..blocks_num {
-        let block = gen_block(Some(&parent));
-        blocks.push(block.clone());
-        parent = block.header().clone()
-    }
-
-    blocks
-}
-
-fn gen_block(parent: Option<&SignedL2BlockHeader>) -> L2BlockBundle {
-    let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
-    let header: L2BlockHeader = arb.generate();
-    let body: L2BlockBody = arb.generate();
-    let accessory: L2BlockAccessory = arb.generate();
-
-    let current_timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
-
-    let block_idx = parent.map(|h| h.slot() + 1).unwrap_or(0);
-    let prev_block = parent.map(|h| h.get_blockid()).unwrap_or_default();
-    let timestamp = parent
-        .map(|h| h.timestamp() + 100)
-        .unwrap_or(current_timestamp);
-
-    let header = L2BlockHeader::new(
-        block_idx,
-        parent.map(|h| h.epoch()).unwrap_or(0),
-        timestamp,
-        prev_block,
-        &body,
-        *header.state_root(),
-    );
-    let empty_sig = Buf64::zero();
-    let signed_header = SignedL2BlockHeader::new(header, empty_sig);
-    let block = L2Block::new(signed_header, body);
-    L2BlockBundle::new(block, accessory)
-}
 
 /// Generates consensus [`Params`].
 ///
@@ -214,22 +141,4 @@ fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> XOnlyPublicKey {
 pub fn get_test_operator_secret_key() -> SecretKey {
     let mut rng = StdRng::seed_from_u64(0);
     SecretKey::new(&mut rng)
-}
-
-/// Gets the genesis [`Chainstate`] from consensus [`Params`] and test btc segment.
-pub fn get_genesis_chainstate(params: &Params) -> (L2BlockBundle, Chainstate) {
-    make_l2_genesis(params)
-}
-
-/// Generates random valid [`SignedCheckpoint`].
-pub fn get_test_signed_checkpoint() -> SignedCheckpoint {
-    let chstate: Chainstate = ArbitraryGenerator::new_with_size(1 << 12).generate();
-    SignedCheckpoint::new(
-        Checkpoint::new(
-            ArbitraryGenerator::new().generate(),
-            ArbitraryGenerator::new().generate(),
-            CheckpointSidecar::new(to_vec(&chstate).unwrap()),
-        ),
-        ArbitraryGenerator::new().generate(),
-    )
 }

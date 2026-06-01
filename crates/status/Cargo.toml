@@ -9,8 +9,6 @@ workspace = true
 [dependencies]
 strata-csm-types.workspace = true
 strata-identifiers.workspace = true
-strata-ol-chain-types.workspace = true
-strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
 
 thiserror.workspace = true

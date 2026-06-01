@@ -9,15 +9,11 @@ pub mod ops;
 use std::sync::Arc;
 
 use anyhow::Context;
-#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub use managers::{
     asm::AsmStateManager,
-    chainstate::ChainstateManager,
-    checkpoint::CheckpointDbManager,
     checkpoint_proof::CheckpointProofDbManager,
     client_state::ClientStateManager,
     l1::L1BlockManager,
-    l2::L2BlockManager,
     mempool::MempoolDbManager,
     mmr_index::{MmrAppendRequest, MmrIndexHandle, MmrIndexManager, MmrStateView},
     ol::OLBlockManager,
@@ -46,17 +42,8 @@ pub struct NodeStorage {
 
     asm_state_manager: Arc<AsmStateManager>,
     l1_block_manager: Arc<L1BlockManager>,
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    l2_block_manager: Arc<L2BlockManager>,
-
-    chainstate_manager: Arc<ChainstateManager>,
 
     client_state_manager: Arc<ClientStateManager>,
-
-    // TODO maybe move this into a different one?
-    // update: probably not, would require moving data around
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    checkpoint_manager: Arc<CheckpointDbManager>,
 
     ol_block_manager: Arc<OLBlockManager>,
     mmr_index_manager: Arc<MmrIndexManager>,
@@ -76,10 +63,7 @@ impl Clone for NodeStorage {
             pool: self.pool.clone(),
             asm_state_manager: self.asm_state_manager.clone(),
             l1_block_manager: self.l1_block_manager.clone(),
-            l2_block_manager: self.l2_block_manager.clone(),
-            chainstate_manager: self.chainstate_manager.clone(),
             client_state_manager: self.client_state_manager.clone(),
-            checkpoint_manager: self.checkpoint_manager.clone(),
             ol_block_manager: self.ol_block_manager.clone(),
             mmr_index_manager: self.mmr_index_manager.clone(),
             mempool_db_manager: self.mempool_db_manager.clone(),
@@ -112,24 +96,8 @@ impl NodeStorage {
         &self.l1_block_manager
     }
 
-    #[deprecated(note = "use `ol_block()` for OL/EE-decoupled block storage")]
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    pub fn l2(&self) -> &Arc<L2BlockManager> {
-        &self.l2_block_manager
-    }
-
-    pub fn chainstate(&self) -> &Arc<ChainstateManager> {
-        &self.chainstate_manager
-    }
-
     pub fn client_state(&self) -> &Arc<ClientStateManager> {
         &self.client_state_manager
-    }
-
-    #[deprecated(note = "use `ol_checkpoint()` for OL/EE-decoupled checkpoint storage")]
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    pub fn checkpoint(&self) -> &Arc<CheckpointDbManager> {
-        &self.checkpoint_manager
     }
 
     pub fn mmr_index(&self) -> &Arc<MmrIndexManager> {
@@ -178,12 +146,7 @@ pub fn create_node_storage(
     // Extract database references
     let asm_db = db.asm_db();
     let l1_db = db.l1_db();
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let l2_db = db.l2_db();
-    let chainstate_db = db.chain_state_db();
     let client_state_db = db.client_state_db();
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let checkpoint_db = db.checkpoint_db();
     let ol_block_db = db.ol_block_db();
     let mempool_db = db.mempool_db();
     let ol_state_db = db.ol_state_db();
@@ -195,16 +158,10 @@ pub fn create_node_storage(
 
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), l2_db));
-    let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), chainstate_db));
 
     let client_state_manager = Arc::new(
         ClientStateManager::new(pool.clone(), client_state_db).context("open client state")?,
     );
-
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
     let ol_block_manager = Arc::new(OLBlockManager::new(pool.clone(), ol_block_db));
     let mmr_index_manager = Arc::new(MmrIndexManager::new(pool.clone(), mmr_index_db));
@@ -224,10 +181,7 @@ pub fn create_node_storage(
         pool,
         asm_state_manager: asm_manager,
         l1_block_manager,
-        l2_block_manager,
-        chainstate_manager,
         client_state_manager,
-        checkpoint_manager,
         ol_block_manager,
         mmr_index_manager,
         mempool_db_manager,

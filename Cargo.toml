@@ -17,9 +17,6 @@ members = [
   "crates/alpen-ee/rpc/types",
   "crates/alpen-ee/sequencer",
   "crates/btcio",
-  "crates/chainexec",
-  "crates/chaintsn",
-  "crates/chain-worker",
   "crates/chain-worker-new",
   "crates/checkpoint-types",
   "crates/cli-common",
@@ -37,9 +34,7 @@ members = [
   "crates/ee-acct-types",
   "crates/ee-chain-types",
   "crates/ee-chunk-runtime",
-  "crates/eectl",
   "crates/evm-ee",
-  "crates/evmexec",
   "crates/key-derivation",
   "crates/ledger-types",
   "crates/mpt",
@@ -58,7 +53,6 @@ members = [
   "crates/ol/state-support-types",
   "crates/ol/state-types",
   "crates/ol/stf",
-  "crates/ol-chainstate-types",
   "crates/paas",
   "crates/prover-core",
   "crates/params",
@@ -76,12 +70,8 @@ members = [
   "crates/reth/node",
   "crates/reth/rpc",
   "crates/reth/witness",
-  "crates/rpc/api",
   "crates/rpc/open-rpc",
   "crates/rpc/open-rpc-macros",
-  "crates/rpc/types",
-  "crates/rpc/utils",
-  "crates/sequencer",
   "crates/simple-ee",
   "crates/snark-acct-runtime",
   "crates/snark-acct-sys",
@@ -90,9 +80,7 @@ members = [
   "crates/status",
   "crates/storage",
   "crates/storage-common",
-  "crates/sync",
   "crates/test-utils/btcio",
-  "crates/test-utils/evm-ee",
   "crates/test-utils/l2",
   "crates/test-utils/ssz",
   "crates/test-utils/test-utils",
@@ -162,10 +150,7 @@ alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
 strata-bridge-params = { path = "crates/bridge-params" }
 strata-btcio = { path = "crates/btcio" }
-strata-chain-worker = { path = "crates/chain-worker" }
 strata-chain-worker-new = { path = "crates/chain-worker-new" }
-strata-chainexec = { path = "crates/chainexec" }
-strata-chaintsn = { path = "crates/chaintsn" }
 strata-checkpoint-types = { path = "crates/checkpoint-types" }
 strata-cli-common = { path = "crates/cli-common" }
 strata-codec-utils = { path = "crates/codec-utils" }
@@ -182,18 +167,14 @@ strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
 strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-ee-chunk-runtime = { path = "crates/ee-chunk-runtime" }
-strata-eectl = { path = "crates/eectl" }
 strata-evm-ee = { path = "crates/evm-ee" }
-strata-evmexec = { path = "crates/evmexec" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-ledger-types = { path = "crates/ledger-types" }
 strata-mpt = { path = "crates/mpt" }
 strata-node-context = { path = "crates/node-context" }
 strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-bridge-types = { path = "crates/bridge-types" }
-strata-ol-chain-types = { path = "crates/ol-chain-types" }
 strata-ol-chain-types-new = { path = "crates/ol/chain-types" }
-strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
 strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
 strata-ol-da = { path = "crates/ol/da" }
 strata-ol-genesis = { path = "crates/ol/genesis" }
@@ -217,10 +198,6 @@ strata-proofimpl-alpen-chunk = { path = "crates/proof-impl/alpen-chunk" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-prover-core = { path = "crates/prover-core" }
-strata-rpc-api = { path = "crates/rpc/api" }
-strata-rpc-types = { path = "crates/rpc/types" }
-strata-rpc-utils = { path = "crates/rpc/utils" }
-strata-sequencer = { path = "crates/sequencer" }
 strata-simple-ee = { path = "crates/simple-ee" }
 strata-snark-acct-runtime = { path = "crates/snark-acct-runtime" }
 strata-snark-acct-sys = { path = "crates/snark-acct-sys" }
@@ -229,10 +206,8 @@ strata-state = { path = "crates/state" }
 strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }
 strata-storage-common = { path = "crates/storage-common" }
-strata-sync = { path = "crates/sync" }
 strata-test-utils = { path = "crates/test-utils/test-utils" }
 strata-test-utils-btcio = { path = "crates/test-utils/btcio" }
-strata-test-utils-evm-ee = { path = "crates/test-utils/evm-ee" }
 strata-test-utils-l2 = { path = "crates/test-utils/l2" }
 strata-test-utils-ssz = { path = "crates/test-utils/ssz" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
@@ -248,10 +223,10 @@ strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag =
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
 strata-logging = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc22" }
-strata-metrics = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc22" }
 strata-merkle = { git = "https://github.com/alpenlabs/strata-common", features = [
   "legacy_compact",
 ], tag = "v0.1.0-alpha-rc21" }
+strata-metrics = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc22" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
 strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
 strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }

@@ -2,15 +2,12 @@
 
 pub mod asm;
 pub mod broadcaster;
-pub mod chain_state;
-pub mod checkpoint;
 pub mod chunked_envelope;
 pub mod client_state;
 mod config;
 mod init;
 mod instrumentation;
 pub mod l1;
-pub mod l2;
 pub mod macros;
 pub mod mempool;
 pub mod mmr_index;
@@ -29,13 +26,10 @@ use std::{path::Path, sync::Arc};
 // Re-exports
 pub use asm::AsmDBSled;
 use broadcaster::db::L1BroadcastDBSled;
-use chain_state::db::ChainstateDBSled;
-use checkpoint::db::CheckpointDBSled;
 use chunked_envelope::db::L1ChunkedEnvelopeDBSled;
 use client_state::db::ClientStateDBSled;
 pub use config::SledDbConfig;
 use l1::db::L1DBSled;
-use l2::db::L2DBSled;
 use mempool::db::MempoolDBSled;
 pub use mmr_index::MmrIndexDb;
 use ol::db::OLBlockDBSled;
@@ -43,15 +37,13 @@ use ol_checkpoint::db::OLCheckpointDBSled;
 use ol_state::db::OLStateDBSled;
 use ol_state_index::db::OLStateIndexingDBSled;
 use rkyv as _;
-#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{
     DbResult,
-    chainstate::ChainstateDatabase,
     traits::{
-        AsmDatabase, CheckpointDatabase, CheckpointProofDatabase, ClientStateDatabase,
-        DatabaseBackend, L1BroadcastDatabase, L1ChunkedEnvelopeDatabase, L1Database,
-        L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase, OLCheckpointDatabase,
-        OLStateDatabase, OLStateIndexingDatabase, ProverTaskDatabase,
+        AsmDatabase, CheckpointProofDatabase, ClientStateDatabase, DatabaseBackend,
+        L1BroadcastDatabase, L1ChunkedEnvelopeDatabase, L1Database, L1WriterDatabase,
+        MempoolDatabase, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
+        OLStateIndexingDatabase, ProverTaskDatabase,
     },
 };
 use typed_sled::SledDb;
@@ -81,13 +73,10 @@ pub fn open_sled_backend(
 pub struct SledBackend {
     asm_db: Arc<AsmDBSled>,
     l1_db: Arc<L1DBSled>,
-    l2_db: Arc<L2DBSled>,
     client_state_db: Arc<ClientStateDBSled>,
-    chain_state_db: Arc<ChainstateDBSled>,
     ol_block_db: Arc<OLBlockDBSled>,
     ol_state_db: Arc<OLStateDBSled>,
     ol_checkpoint_db: Arc<OLCheckpointDBSled>,
-    checkpoint_db: Arc<CheckpointDBSled>,
     writer_db: Arc<L1WriterDBSled>,
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
@@ -104,14 +93,11 @@ impl SledBackend {
 
         let asm_db = Arc::new(AsmDBSled::new(db_ref.clone(), config_ref.clone())?);
         let l1_db = Arc::new(L1DBSled::new(db_ref.clone(), config_ref.clone())?);
-        let l2_db = Arc::new(L2DBSled::new(db_ref.clone(), config_ref.clone())?);
         let client_state_db = Arc::new(ClientStateDBSled::new(db_ref.clone(), config_ref.clone())?);
-        let chain_state_db = Arc::new(ChainstateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let ol_block_db = Arc::new(OLBlockDBSled::new(db_ref.clone(), config_ref.clone())?);
         let ol_state_db = Arc::new(OLStateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let ol_checkpoint_db =
             Arc::new(OLCheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
-        let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
         let mmr_index_db = Arc::new(MmrIndexDb::new(db_ref.clone(), config_ref.clone())?);
@@ -128,13 +114,10 @@ impl SledBackend {
         Ok(Self {
             asm_db,
             l1_db,
-            l2_db,
             client_state_db,
-            chain_state_db,
             ol_block_db,
             ol_state_db,
             ol_checkpoint_db,
-            checkpoint_db,
             writer_db,
             prover_db,
             broadcast_db,
@@ -155,17 +138,8 @@ impl DatabaseBackend for SledBackend {
         self.l1_db.clone()
     }
 
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    fn l2_db(&self) -> Arc<impl L2BlockDatabase> {
-        self.l2_db.clone()
-    }
-
     fn client_state_db(&self) -> Arc<impl ClientStateDatabase> {
         self.client_state_db.clone()
-    }
-
-    fn chain_state_db(&self) -> Arc<impl ChainstateDatabase> {
-        self.chain_state_db.clone()
     }
 
     fn ol_block_db(&self) -> Arc<impl OLBlockDatabase> {
@@ -174,11 +148,6 @@ impl DatabaseBackend for SledBackend {
 
     fn ol_state_db(&self) -> Arc<impl OLStateDatabase> {
         self.ol_state_db.clone()
-    }
-
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase> {
-        self.checkpoint_db.clone()
     }
 
     fn ol_checkpoint_db(&self) -> Arc<impl OLCheckpointDatabase> {
