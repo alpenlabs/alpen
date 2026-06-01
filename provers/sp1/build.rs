@@ -32,6 +32,7 @@ struct VkHashes {
 const CHECKPOINT: &str = "guest-checkpoint";
 const ALPEN_CHUNK: &str = "guest-alpen-chunk";
 const ALPEN_ACCT: &str = "guest-alpen-acct";
+const EVM_EE_STF: &str = "guest-evm-ee-stf";
 
 /// Returns a map of program dependencies.
 ///
@@ -45,7 +46,7 @@ fn get_program_dependencies() -> HashMap<&'static str, Vec<&'static str>> {
 
 fn main() {
     // List of guest programs to build
-    let guest_programs = [CHECKPOINT, ALPEN_CHUNK, ALPEN_ACCT];
+    let guest_programs = [CHECKPOINT, ALPEN_CHUNK, ALPEN_ACCT, EVM_EE_STF];
 
     // HashSet to keep track of programs that have been built
     let mut built_programs = HashSet::new();
@@ -213,7 +214,10 @@ fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
 
     if !is_cache_valid(&elf_hash, &paths) {
         // Cache is invalid, need to generate the verifying key.
-        let client = ProverClient::from_env();
+        // Build-time VK generation should stay on the local CPU path. It runs inside a Cargo
+        // build script, not inside the runtime proving environment, so inheriting SP1_PROVER=cuda
+        // can panic while the CUDA client tries to spawn async work without a Tokio runtime.
+        let client = ProverClient::builder().cpu().build();
         let pk = client
             .setup(elf.clone().into())
             .map_err(|e| format!("Failed to set up proving key: {e}"))?;

@@ -5,6 +5,8 @@ use serde_json::json;
 
 use crate::args::EvalArgs;
 
+const BASE_URL: &str = "https://api.github.com/repos/alpenlabs/alpen";
+
 /// Posts the message to the PR on the github.
 ///
 /// Updates an existing previous comment (if there is one) or posts a new comment.
@@ -14,7 +16,6 @@ pub async fn post_to_github_pr(
 ) -> Result<(), Box<dyn error::Error>> {
     let client = Client::new();
 
-    const BASE_URL: &str = "https://api.github.com/repos/alpenlabs/strata";
     let comments_url = format!("{}/issues/{}/comments", BASE_URL, &args.pr_number);
 
     // Get all comments on the PR
@@ -76,4 +77,14 @@ pub fn format_github_message(results_text: &[String]) -> String {
     }
 
     formatted_message
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BASE_URL;
+
+    #[test]
+    fn github_base_url_targets_alpen_repo() {
+        assert_eq!(BASE_URL, "https://api.github.com/repos/alpenlabs/alpen");
+    }
 }
