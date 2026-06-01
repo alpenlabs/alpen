@@ -162,9 +162,33 @@ impl OLLogType for SnarkAccountUpdateLogData {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use strata_codec::{decode_buf_exact, encode_to_vec};
 
     use super::*;
+
+    fn withdrawal_strategy() -> impl Strategy<Value = SimpleWithdrawalIntentLogData> {
+        (
+            any::<u64>(),
+            prop::collection::vec(any::<u8>(), 0..=MAX_DEST_BYTES as usize),
+            any::<u32>(),
+        )
+            .prop_map(|(amt, dest, selected_operator)| {
+                SimpleWithdrawalIntentLogData::new(amt, dest, selected_operator)
+                    .expect("dest within bounds")
+            })
+    }
+
+    fn snark_update_strategy() -> impl Strategy<Value = SnarkAccountUpdateLogData> {
+        (
+            any::<u64>(),
+            prop::collection::vec(any::<u8>(), 0..=MAX_EXTRA_DATA_BYTES as usize),
+        )
+            .prop_map(|(new_msg_idx, extra_data)| {
+                SnarkAccountUpdateLogData::new(new_msg_idx, extra_data)
+                    .expect("extra data within bounds")
+            })
+    }
 
     #[test]
     fn test_simple_withdrawal_intent_log_data_codec() {
@@ -337,5 +361,61 @@ mod tests {
 
         assert_eq!(decoded.new_msg_idx, 0);
         assert_eq!(decoded.extra_data.as_ref(), b"test");
+    }
+
+    proptest! {
+        #[test]
+        fn test_withdrawal_log_envelope_round_trip(log_data in withdrawal_strategy()) {
+            let encoded = log_data.encode_log().expect("encode_log should succeed");
+
+            let msg = MsgRef::try_from(encoded.as_slice()).expect("envelope should parse");
+            prop_assert_eq!(msg.ty(), SIMPLE_WITHDRAWAL_INTENT_LOG_TYPE_ID);
+
+            let decoded = SimpleWithdrawalIntentLogData::try_decode_log(&msg)
+                .expect("try_decode_log should succeed");
+            prop_assert_eq!(decoded, log_data);
+        }
+
+        #[test]
+        fn test_snark_update_log_envelope_round_trip(log_data in snark_update_strategy()) {
+            let encoded = log_data.encode_log().expect("encode_log should succeed");
+
+            let msg = MsgRef::try_from(encoded.as_slice()).expect("envelope should parse");
+            prop_assert_eq!(msg.ty(), SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID);
+
+            let decoded = SnarkAccountUpdateLogData::try_decode_log(&msg)
+                .expect("try_decode_log should succeed");
+            prop_assert_eq!(decoded, log_data);
+        }
+
+        /// Decoding a withdrawal envelope as a snark update (and vice versa) reports a type
+        /// mismatch rather than a spurious decode.
+        #[test]
+        fn test_withdrawal_log_decode_type_mismatch(log_data in withdrawal_strategy()) {
+            let encoded = log_data.encode_log().expect("encode_log should succeed");
+            let msg = MsgRef::try_from(encoded.as_slice()).expect("envelope should parse");
+
+            let err = SnarkAccountUpdateLogData::try_decode_log(&msg)
+                .expect_err("decoding as the wrong type should fail");
+            prop_assert!(matches!(
+                err,
+                LogDecodeError::TypeMismatch(SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, ty)
+                    if ty == SIMPLE_WITHDRAWAL_INTENT_LOG_TYPE_ID
+            ));
+        }
+
+        #[test]
+        fn test_snark_update_log_decode_type_mismatch(log_data in snark_update_strategy()) {
+            let encoded = log_data.encode_log().expect("encode_log should succeed");
+            let msg = MsgRef::try_from(encoded.as_slice()).expect("envelope should parse");
+
+            let err = SimpleWithdrawalIntentLogData::try_decode_log(&msg)
+                .expect_err("decoding as the wrong type should fail");
+            prop_assert!(matches!(
+                err,
+                LogDecodeError::TypeMismatch(SIMPLE_WITHDRAWAL_INTENT_LOG_TYPE_ID, ty)
+                    if ty == SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID
+            ));
+        }
     }
 }
