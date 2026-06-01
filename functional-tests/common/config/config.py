@@ -154,6 +154,14 @@ class EpochSealingConfig:
     def new_fixed_slot(cls, slots: int):
         return cls("FixedSlot", slots)
 
+    def next_terminal_slot_after(self, slot: int) -> int:
+        """Returns the next terminal slot strictly after ``slot``."""
+        if self.policy != "FixedSlot":
+            raise ValueError(f"unsupported epoch sealing policy: {self.policy}")
+        if self.slots_per_epoch is None or self.slots_per_epoch <= 0:
+            raise ValueError(f"invalid slots_per_epoch: {self.slots_per_epoch!r}")
+        return ((slot // self.slots_per_epoch) + 1) * self.slots_per_epoch
+
 
 @dataclass
 class StrataConfig:
