@@ -157,7 +157,7 @@ impl OLBlockBody {
         Self::new(tx_segment, None)
     }
 
-    // TODO convert to builder?
+    // TODO(STR-3677): convert to builder?
     pub fn set_l1_update(&mut self, l1_update: OLL1Update) {
         self.l1_update = Some(l1_update).into();
     }

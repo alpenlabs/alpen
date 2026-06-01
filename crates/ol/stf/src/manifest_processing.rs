@@ -74,7 +74,7 @@ pub fn process_block_manifests<S: IStateAccessorMut>(
     }
 
     if let Some((_last_height, _last_mf)) = last {
-        // TODO this is where we would update the header, if we want to keep
+        // TODO(STR-3677): this is where we would update the header, if we want to keep
         // that as defined in the spec
     }
 
@@ -242,7 +242,7 @@ fn process_deposit_log<S: IStateAccessorMut>(
     );
 
     // Deliver the deposit message to the target account.
-    // TODO need to tweak this a bit to deal with the changes to epoch contexts
+    // TODO(STR-3677): need to tweak this a bit to deal with the changes to epoch contexts
     account_processing::process_message(
         state,
         BRIDGE_GATEWAY_ACCT_ID,

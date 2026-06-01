@@ -2,7 +2,7 @@
 //!
 //! This module contains types that capture operations performed on state
 //! for later use by indexers. These are produced by the `IndexerState` layer.
-// TODO make the field names here more consistent, which should also reflect in
+// TODO(STR-3677): make the field names here more consistent, which should also reflect in
 // the spec and state accessor fn/arg names
 
 use strata_acct_types::{AccountId, Hash, L1BlockRecord, MessageEntry};

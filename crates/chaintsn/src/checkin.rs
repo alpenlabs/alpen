@@ -81,7 +81,7 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
 
     // Validate the new blocks actually extend the tip.  This is what we have to tweak to make
     // more complicated to check the PoW.
-    // FIXME: This check is just redundant.
+    // FIXME(STR-2170): This check is just redundant.
     if new_tip_height <= l1v.safe_height() {
         return Err(TsnError::L1SegNotExtend);
     }

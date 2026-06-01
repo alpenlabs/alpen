@@ -62,7 +62,7 @@ pub(crate) fn bridge_context_call(
             PrecompileError::Fatal("Failed to reset BRIDGEOUT_ADDRESS account balance".into())
         })?;
 
-    // TODO: Properly calculate and deduct gas for the bridge out operation
+    // TODO(STR-3676): Properly calculate and deduct gas for the bridge out operation
     let gas_cost = 0;
 
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))

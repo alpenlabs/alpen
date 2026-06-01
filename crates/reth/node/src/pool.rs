@@ -21,7 +21,7 @@ use tracing::{debug, info};
 #[derive(Debug, Default, Clone, Copy)]
 #[non_exhaustive]
 pub struct AlpenEthereumPoolBuilder {
-    // TODO add options for txpool args
+    // TODO(STR-3681): add options for txpool args
 }
 impl<Types, Node> PoolBuilder<Node> for AlpenEthereumPoolBuilder
 where

@@ -87,7 +87,7 @@ impl ClientState {
 
 /// A [`ClientState`] wrapper used in StatusChannel.
 /// Supplied with block to wait for genesis.
-/// TODO: to be reworked.
+/// TODO(STR-3583): to be reworked.
 #[derive(Debug, Clone, Default)]
 pub struct CheckpointState {
     pub client_state: ClientState,

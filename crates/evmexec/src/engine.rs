@@ -72,7 +72,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         fcs_partial: ForkchoiceStatePartial,
     ) -> EngineResult<BlockStatus> {
         let fork_choice_state = {
-            // FIXME: Possibly this cache lock must be hold throughout the function call?
+            // FIXME(STR-2170): Possibly this cache lock must be hold throughout the function call?
             let cache = self.state_cache.lock().await;
             ForkchoiceState {
                 head_block_hash: fcs_partial.head_block_hash.unwrap_or(cache.head_block_hash),
@@ -110,7 +110,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         payload_env: PayloadEnv,
         prev_block: EVML2Block,
     ) -> EngineResult<u64> {
-        // TODO: pass other fields from payload_env
+        // TODO(STR-2170): pass other fields from payload_env
         let withdrawals = payload_env
             .el_ops()
             .iter()
@@ -149,7 +149,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             .fork_choice_updated_v3(fcs, Some(payload_attributes))
             .await;
 
-        // TODO: correct error type
+        // TODO(STR-2170): correct error type
         let update_status = forkchoice_result.map_err(|err| EngineError::Other(err.to_string()))?;
 
         let payload_id: PayloadId = update_status
@@ -259,7 +259,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             PayloadStatusEnum::Valid => EngineResult::Ok(BlockStatus::Valid),
             PayloadStatusEnum::Syncing => EngineResult::Ok(BlockStatus::Syncing),
             PayloadStatusEnum::Invalid { .. } => EngineResult::Ok(BlockStatus::Invalid),
-            PayloadStatusEnum::Accepted => EngineResult::Err(EngineError::Unimplemented), // TODO
+            PayloadStatusEnum::Accepted => EngineResult::Err(EngineError::Unimplemented), /* TODO(STR-2170): handle accepted payload status. */
         }
     }
 

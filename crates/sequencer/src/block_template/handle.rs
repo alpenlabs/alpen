@@ -43,7 +43,7 @@ pub struct TemplateManagerHandle {
 
 impl TemplateManagerHandle {
     /// Create new instance.
-    // TODO make this not pub
+    // TODO(STR-2170): make this not pub
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn new(
         tx: mpsc::Sender<TemplateManagerRequest>,

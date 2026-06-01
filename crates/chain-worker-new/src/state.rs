@@ -175,8 +175,8 @@ impl ChainWorkerServiceState {
         if block.header().is_terminal() {
             self.handle_complete_epoch(&block, &output, &new_state)?;
             // Send the epoch commitment to receiver
-            // TODO: it seems to be done for each block at the moment. Ideally we would do it just
-            // here.
+            // TODO(STR-3673): it seems to be done for each block at the moment. Ideally we would do
+            // it just here.
         }
 
         // Persist results (including the full state)

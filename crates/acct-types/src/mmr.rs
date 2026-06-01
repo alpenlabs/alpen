@@ -1,12 +1,12 @@
 //! Concrete orchestration layer MMR types.
-// TODO move this to its own crate, why is it in acct-types?
+// TODO(STR-3608): move this to its own crate, why is it in acct-types?
 
 use strata_merkle::*;
 
 /// The basic hasher we use for all the MMR stuff.
 ///
 /// This is SHA-256 with the full 32 byte hash.
-// TODO should this be blake3 and be only 20 bytes or something?
+// TODO(STR-3608): should this be blake3 and be only 20 bytes or something?
 pub type StrataHasher = Sha256Hasher;
 
 /// Compact 64 bit merkle mountain range.

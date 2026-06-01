@@ -26,12 +26,12 @@ pub struct ExecEnvState {
     /// Deposits that have been queued by something but haven't been accepted in
     /// an update yet.  The sequencer should be processing these as soon as
     /// possible.
-    // TODO make this not pub
+    // TODO(STR-3688): make this not pub
     pub pending_deposits: StateQueue<DepositIntent>,
 
     /// Forced inclusions that have been accepted by the CL but not processed by
     /// a CL payload yet.
-    // TODO This is a stub, we don't support these yet and should assert it to
+    // TODO(STR-3688): This is a stub, we don't support these yet and should assert it to
     // be empty.
     pending_forced_incls: StateQueue<forced_inclusion::ForcedInclusion>,
 }

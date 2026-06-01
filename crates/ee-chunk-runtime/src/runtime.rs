@@ -15,7 +15,7 @@ pub fn verify_input<E: ExecutionEnvironment>(
         .try_decode_chunk_transition()
         .map_err(|_| EnvError::MalformedChainSegment)?;
 
-    // FIXME do we actually need the header or just the blkid+state?
+    // FIXME(STR-3685): do we actually need the header or just the blkid+state?
     let prev_header = input
         .try_decode_prev_header::<E>()
         .map_err(|_| EnvError::MalformedChainSegment)?;
@@ -25,7 +25,7 @@ pub fn verify_input<E: ExecutionEnvironment>(
         .map_err(|_| EnvError::MalformedChainState)?;
 
     // 2. Parse the blocks into a chunk we can execute.
-    // TODO rework borrowings here because this is really ugly
+    // TODO(STR-3685): rework borrowings here because this is really ugly
     let mut block_inputs = Vec::new();
     let mut block_outputs = Vec::new();
     for b in input.raw_chunk().blocks() {

@@ -50,7 +50,7 @@ pub struct ForkChoiceManager {
     chain_worker: Arc<ChainWorkerHandle>,
 
     /// Current best block.
-    // TODO make sure we actually want to have this
+    // TODO(STR-2170): make sure we actually want to have this
     cur_best_block: L2BlockCommitment,
 
     /// Current toplevel chainstate we can do quick validity checks of new
@@ -83,7 +83,7 @@ impl ForkChoiceManager {
         }
     }
 
-    // TODO is this right?
+    // TODO(STR-2170): is this right?
     #[expect(unused, reason = "used for fork choice manager")]
     fn finalized_tip(&self) -> &L2BlockId {
         self.chain_tracker.finalized_tip()
@@ -111,13 +111,15 @@ impl ForkChoiceManager {
     }
 
     fn get_block_slot(&self, blkid: &L2BlockId) -> anyhow::Result<u64> {
-        // FIXME this is horrible but it makes our current use case much faster, see below
+        // FIXME(STR-2170): this is horrible but it makes our current use case much faster, see
+        // below
         if blkid == self.cur_best_block.blkid() {
             return Ok(self.cur_best_block.slot());
         }
 
-        // FIXME we should have some in-memory cache of blkid->height, although now that we use the
-        // manager this is less significant because we're cloning what's already in memory
+        // FIXME(STR-2170): we should have some in-memory cache of blkid->height, although now that
+        // we use the manager this is less significant because we're cloning what's already
+        // in memory
         let block = self
             .get_block_data(blkid)?
             .ok_or(Error::MissingL2Block(*blkid))?;
@@ -401,7 +403,7 @@ pub fn tracker_task(
     params: Arc<Params>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
-    // TODO only print this if we *don't* have genesis yet, somehow
+    // TODO(STR-3580): only print this if we *don't* have genesis yet, somehow
     info!("waiting for genesis before starting forkchoice logic");
 
     let genesis_block_id = handle.block_on(async {
@@ -461,7 +463,7 @@ pub fn tracker_task(
     let confirmed_epoch = finalized_epoch;
 
     // Update status.
-    // TODO: avoid repetition from process_fc_message
+    // TODO(STR-2170): avoid repetition from process_fc_message
     let status = ChainSyncStatus {
         tip: fcm.cur_best_block,
         tip_epoch,
@@ -469,7 +471,7 @@ pub fn tracker_task(
         prev_epoch,
         confirmed_epoch,
         finalized_epoch,
-        // FIXME this is a bit convoluted, could this be simpler?
+        // FIXME(STR-2170): this is a bit convoluted, could this be simpler?
         safe_l1: fcm.cur_chainstate.l1_view().get_safe_block(),
     };
     let update = ChainSyncStatusUpdate::new(status, fcm.cur_chainstate.clone());
@@ -658,7 +660,7 @@ fn process_fc_message(
                     prev_epoch,
                     finalized_epoch,
                     confirmed_epoch,
-                    // FIXME this is a bit convoluted, could this be simpler?
+                    // FIXME(STR-2170): this is a bit convoluted, could this be simpler?
                     safe_l1: fcm_state.cur_chainstate.l1_view().get_safe_block(),
                 };
 
@@ -713,7 +715,7 @@ fn handle_new_block(
     let exec_ok = match fcm_state.try_exec_block(&bc) {
         Ok(()) => true,
         Err(err) => {
-            // TODO Need some way to distinguish an invalid block from a exec failure
+            // TODO(STR-2141): Need some way to distinguish an invalid block from a exec failure
             error!(%err, "try_exec_block failed");
             false
         }
@@ -743,7 +745,7 @@ fn handle_new_block(
         fcm_state.storage.l2(),
     )?;
 
-    // TODO make configurable
+    // TODO(STR-2170): make configurable
     let depth = 100;
 
     let tip_update = compute_tip_update(&cur_tip, best_block, depth, &fcm_state.chain_tracker)?;
@@ -885,7 +887,7 @@ fn apply_tip_update(
             // the normal logic involves in extending the chain.
             //apply_blocks(reorg.apply_iter().copied(), fcm_state)?;
 
-            // TODO any cleanup?
+            // TODO(STR-2170): any cleanup?
 
             Ok(())
         }
@@ -917,7 +919,7 @@ fn revert_chainstate_to_block(
         .into_toplevel();
     let _ = fcm_state.update_tip_block(*block, Arc::new(new_state));
 
-    // FIXME: Rollback the writes on the database that we no longer need.
+    // FIXME(STR-2140): Rollback the writes on the database that we no longer need.
 
     Ok(())
 }
@@ -1066,7 +1068,7 @@ fn handle_finish_epoch(
         epoch_final_state,
     );
 
-    // TODO convert to Display
+    // TODO(STR-2170): convert to Display
     debug!(?summary, "finishing chain epoch");
 
     fcm_state
@@ -1142,7 +1144,7 @@ fn handle_epoch_finalization(
 
     info!(?next_finalizable_epoch, "updated finalized tip");
     //trace!(?fin_report, "finalization report");
-    // TODO do something with the finalization report?
+    // TODO(STR-3580): do something with the finalization report?
 
     Ok(Some(next_finalizable_epoch))
 }

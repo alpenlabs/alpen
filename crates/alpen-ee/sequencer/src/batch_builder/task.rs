@@ -255,7 +255,7 @@ where
             // Continue execution with new state.
         }
         ReorgReport::DeepReorg => {
-            // TODO: unrecoverable error
+            // TODO(STR-3682): unrecoverable error
             return Err(eyre!("deep reorg detected"));
         }
     }

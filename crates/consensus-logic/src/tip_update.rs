@@ -170,7 +170,7 @@ pub fn compute_tip_update(
         return Ok(None);
     }
 
-    // TODO figure out if this is actually just a revert
+    // TODO(STR-2140): figure out if this is actually just a revert
 
     // Now reverse so that common ancestor is at the beginning
     down_blocks.reverse();

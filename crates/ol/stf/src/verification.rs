@@ -369,7 +369,7 @@ pub fn verify_block_structure(header: &OLBlockHeader, body: &OLBlockBody) -> Exe
 }
 
 /// Helper function to compute logs root.
-// TODO move this somewhere?
+// TODO(STR-3677): move this somewhere?
 fn compute_logs_root(logs: &[OLLog]) -> Buf32 {
     if logs.is_empty() {
         return Buf32::zero();

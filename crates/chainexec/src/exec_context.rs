@@ -22,7 +22,7 @@ pub trait ExecContext {
         blkid: &L2BlockId,
     ) -> Result<Chainstate, ExecError<Self::Error>>;
 
-    // TODO L1 manifests
+    // TODO(STR-2170): L1 manifests
 }
 
 #[derive(Debug, Error)]

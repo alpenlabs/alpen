@@ -19,7 +19,7 @@ jobs:
   mutants-test:
     name: Generate mutants on diff against default branch and test
     runs-on: ubuntu-latest
-    continue-on-error: true # FIXME: remove this if all mutants are covered
+    continue-on-error: true # FIXME(STR-3693): remove this if all mutants are covered
     strategy:
       fail-fast: false # Collect all mutants even if some are missed
       matrix:

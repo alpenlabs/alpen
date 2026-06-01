@@ -101,7 +101,7 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     input_chunks: &'a [ArchivedChunkInput],
 
     /// Partial pre-state corresponding to the last verified block.
-    // TODO use this to support DA
+    // TODO(STR-3685): use this to support DA
     raw_partial_pre_state: &'a [u8],
 }
 

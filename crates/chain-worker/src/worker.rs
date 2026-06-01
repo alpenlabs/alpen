@@ -49,7 +49,7 @@ pub struct WorkerState<W: WorkerContext> {
 
     exec_ctl_handle: ExecCtlHandle,
     // Current chain tip.
-    // TODO remove this, not needed
+    // TODO(STR-2170): remove this, not needed
     cur_tip: L2BlockCommitment,
     // Previous epoch that we're building upon.
     // prev_epoch: Option<EpochCommitment>,
@@ -210,7 +210,7 @@ impl<W: WorkerContext> WorkerState<W> {
             *epoch_final_state,
         );
 
-        // TODO convert to Display
+        // TODO(STR-2170): convert to Display
         debug!(?summary, "completed chain epoch");
 
         self.context.store_summary(summary)?;

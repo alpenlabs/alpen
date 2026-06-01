@@ -51,7 +51,7 @@ impl ExecEngineCtl for StubController {
     }
 
     fn prepare_payload(&self, _env: PayloadEnv) -> EngineResult<u64> {
-        // TODO do something with the payloads to make the status more believable
+        // TODO(STR-3682): do something with the payloads to make the status more believable
         let mut state = self.state.lock().unwrap();
         let idx = state.next_idx;
         state.next_idx += 1;
@@ -70,7 +70,7 @@ impl ExecEngineCtl for StubController {
         if *created_at + self.payload_prep_dur > now {
             Ok(PayloadStatus::Working)
         } else {
-            // TODO make up a more plausible payload
+            // TODO(STR-3682): make up a more plausible payload
             let exec = ExecPayloadData::new(
                 ExecUpdate::new(
                     UpdateInput::new(0, vec![], Buf32::zero(), Vec::new()),

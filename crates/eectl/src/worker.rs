@@ -107,7 +107,7 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
         // Construct the exec payload and just make the call.  This blocks until
         // it gets back to us, which kinda sucks, but we're working on it!
         //
-        // TODO this needs to be refactored since we might not always be able to
+        // TODO(STR-3682): this needs to be refactored since we might not always be able to
         // get this data from the block itself
         // let _exec_hash = bundle.header().exec_payload_hash();
         // let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
@@ -125,7 +125,7 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
 
     /// Sync missing blocks in EL using payloads stored in L2 block database.
     ///
-    /// TODO: retry on network errors
+    /// TODO(STR-3680): retry on network errors
     pub fn sync_missing_blocks_to_el(
         &mut self,
         context: &impl ExecWorkerContext,
@@ -243,7 +243,7 @@ pub fn worker_task_inner<E: ExecEngineCtl>(
             ExecCommand::NewBlock(block, completion) => {
                 debug!("new block here");
                 let payload = context.fetch_exec_payload(&block, &state.exec_env_id)?;
-                // TODO figure out how to call the engine with the payload we got
+                // TODO(STR-3682): figure out how to call the engine with the payload we got
                 match payload {
                     Some(payload) => {
                         let res = state.try_exec_el_payload(&block, &payload);
@@ -285,7 +285,7 @@ pub(crate) fn worker_task<E: ExecEngineCtl + Sync + Send + 'static>(
 ) -> anyhow::Result<()> {
     info!("waiting until genesis");
 
-    // TODO(QQ): maybe expose better waiting for L2 genesis through status channel.
+    // TODO(STR-3682): maybe expose better waiting for L2 genesis through status channel.
     let genesis_block_id = handle.block_on(async {
         while context.fetch_blkid_at_height(0).unwrap().is_none() {
             time::sleep(time::Duration::from_secs(1)).await;
@@ -314,7 +314,7 @@ pub(crate) fn worker_task<E: ExecEngineCtl + Sync + Send + 'static>(
 }
 
 /// ID of the execution env we're watching.
-// TODO make this be an account ID or something
+// TODO(STR-3682): make this be an account ID or something
 pub type ExecEnvId = ();
 
 /// Context for exec worker.

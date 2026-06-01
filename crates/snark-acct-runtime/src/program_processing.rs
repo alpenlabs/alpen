@@ -43,7 +43,7 @@ pub fn verify_and_process_update<'i, P: SnarkAccountProgramVerification>(
         });
     }
 
-    // TODO maybe we should remove the inbox indexes from the pub params?
+    // TODO(STR-3685): maybe we should remove the inbox indexes from the pub params?
     if update.cur_state().next_inbox_msg_idx() + msg_count as u64
         != update.new_state().next_inbox_msg_idx()
     {

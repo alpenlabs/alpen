@@ -17,7 +17,7 @@ use tokio::time;
 use tracing::warn;
 
 // Borrowed from old binary (bin/strata-client/src/main.rs).
-// TODO: these might need to come from config.
+// TODO(STR-3050): these might need to come from config.
 #[cfg(feature = "sequencer")]
 const SEQ_ADDR_GENERATION_TIMEOUT: u64 = 10; // seconds
 #[cfg(feature = "sequencer")]

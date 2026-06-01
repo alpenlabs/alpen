@@ -189,7 +189,7 @@ fn generate_block_template_inner(
 
     let parent_ts = parent.header().timestamp();
 
-    // TODO get and use chainstate
+    // TODO(STR-2170): get and use chainstate
 
     // next slot idx
     let slot = parent.header().slot() + 1;

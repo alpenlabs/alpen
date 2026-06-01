@@ -16,7 +16,7 @@ use tracing::{error, warn};
 
 use crate::checkpoint::CheckpointHandle;
 
-// FIXME WHAT DO THESE FIELDS REPRESENT????????
+// FIXME(STR-2170): WHAT DO THESE FIELDS REPRESENT????????
 #[derive(Debug, PartialEq, Eq)]
 struct CheckpointExpiry(u64, Instant);
 

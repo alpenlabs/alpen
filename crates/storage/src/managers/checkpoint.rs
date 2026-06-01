@@ -68,12 +68,12 @@ impl CheckpointDbManager {
     }
 
     pub async fn get_last_summarized_epoch(&self) -> DbResult<Option<u64>> {
-        // TODO cache this?
+        // TODO(STR-3679): cache this?
         self.ops.get_last_summarized_epoch_async().await
     }
 
     pub fn get_last_summarized_epoch_blocking(&self) -> DbResult<Option<u64>> {
-        // TODO cache this?
+        // TODO(STR-3679): cache this?
         self.ops.get_last_summarized_epoch_blocking()
     }
 

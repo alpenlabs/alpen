@@ -69,5 +69,5 @@ pub trait ChainstateDatabase: Send + Sync + 'static {
         wb_ids: Vec<WriteBatchId>,
     ) -> DbResult<()>;
 
-    // TODO add accessor functions for fetching bulk state values
+    // TODO(STR-2653): add accessor functions for fetching bulk state values
 }

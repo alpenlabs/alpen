@@ -1,4 +1,4 @@
-// TODO this all needs to be reworked to just follow what the FCM state
+// TODO(STR-2170): this all needs to be reworked to just follow what the FCM state
 // publishing is, waiting for that to be ready before getting started
 
 use anyhow::{Context, Result};
@@ -16,7 +16,7 @@ pub fn fetch_init_fork_choice_state(
     storage: &NodeStorage,
     rollup_params: &RollupParams,
 ) -> Result<B256> {
-    // TODO switch these logs to debug
+    // TODO(STR-2170): switch these logs to debug
     match get_last_chainstate(storage)? {
         Some(chs) => {
             let slot = chs.state().chain_tip_slot();

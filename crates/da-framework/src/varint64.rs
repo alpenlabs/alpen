@@ -3,7 +3,7 @@
 //! Provides compact LEB128-style encoding for both signed and unsigned values
 //! where small values (the common case) use fewer bytes.
 //!
-//! TODO: Eventually move to strata-codec and reconcile with its VarInt type.
+//! TODO(STR-2148): Eventually move to strata-codec and reconcile with its VarInt type.
 
 use crate::{Codec, CodecError, Decoder, Encoder};
 

@@ -49,7 +49,7 @@ impl SubjectDepositData {
 impl ExecOutputs {
     fn new(output_transfers: Vec<OutputTransfer>, output_messages: Vec<OutputMessage>) -> Self {
         Self {
-            // TODO propagate up the bounds checks here
+            // TODO(STR-2172): propagate up the bounds checks here
             output_transfers: output_transfers
                 .try_into()
                 .expect("output_transfers should not exceed capacity"),
@@ -70,7 +70,7 @@ impl ExecOutputs {
 
     /// Adds a transfer output.
     pub fn add_transfer(&mut self, t: OutputTransfer) {
-        // FIXME remove expect
+        // FIXME(STR-2172): remove expect
         self.output_transfers
             .push(t)
             .expect("chain/io: output_transfers list at capacity");
@@ -82,7 +82,7 @@ impl ExecOutputs {
 
     /// Adds a message output.
     pub fn add_message(&mut self, m: OutputMessage) {
-        // FIXME remove expect
+        // FIXME(STR-2172): remove expect
         self.output_messages
             .push(m)
             .expect("chain/io: output_messages list at capacity");

@@ -16,7 +16,7 @@ pub fn process_epoch_initial<S: IStateAccessor>(
     context: &EpochInitialContext,
 ) -> ExecResult<()> {
     // 1. Check that this is the first block of the epoch.
-    // TODO maybe we actually do this implicitly?
+    // TODO(STR-3677): maybe we actually do this implicitly?
 
     // 2. Make sure the state's epoch matches the block.
     let state_cur_epoch = state.cur_epoch();
@@ -32,7 +32,7 @@ pub fn process_epoch_initial<S: IStateAccessor>(
     // For genesis block (epoch 0), there is no previous terminal
     if state_cur_epoch > 0 {
         let _prev_ec = EpochCommitment::from_terminal(state_cur_epoch - 1, context.prev_terminal());
-        // TODO insert into MMR
+        // TODO(STR-3677): insert into MMR
     }
 
     Ok(())
@@ -48,7 +48,7 @@ pub fn process_block_start<S: IStateAccessorMut>(
 ) -> ExecResult<()> {
     // 1. Make sure that our epoch matches what we expect it to be based on the
     // previous header.
-    // FIXME we already basically do this in verify_header_continuity, should we
+    // FIXME(STR-3677): we already basically do this in verify_header_continuity, should we
     // also error out on this when constructing blocks?
     let header_epoch = context.epoch();
     if let Some(ph) = context.parent_header() {

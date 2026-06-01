@@ -15,7 +15,7 @@ pub const WITHDRAWAL_REJECTION_MSG_TYPE_ID: u16 = 0x05;
 /// Maximum length for withdrawal destination descriptor.
 pub const MAX_WITHDRAWAL_DESC_LEN: u32 = 255;
 
-// TODO: allow users to specify operator fee
+// TODO(STR-580): allow users to specify operator fee
 pub const DEFAULT_OPERATOR_FEE: u32 = 0;
 
 /// Bounded [`VarVec`] holding destination descriptor.

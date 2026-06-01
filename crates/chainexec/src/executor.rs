@@ -91,7 +91,7 @@ fn try_execute_block_inner<E>(
     // need after.
     let post_state_epoch = state_acc.cur_epoch();
 
-    // TODO when we split out the check in phase, we can maybe do that here
+    // TODO(STR-2170): when we split out the check in phase, we can maybe do that here
 
     // Sanity checks.
     assert!(
@@ -101,7 +101,7 @@ fn try_execute_block_inner<E>(
     );
 
     // Verify state root matches.
-    // TODO move this check somewhere else where we have more context
+    // TODO(STR-2170): move this check somewhere else where we have more context
     /*
         if *header.state_root() != computed_sr {
             warn!(block_sr = %header.state_root(), %computed_sr, "state root mismatch");

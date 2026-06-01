@@ -104,7 +104,7 @@ pub trait AccountTypeState {
     /// Account type ID.
     const ID: AccountTypeId;
 
-    // TODO decoding
+    // TODO(STR-3685): decoding
 }
 
 #[cfg(test)]
