@@ -23,9 +23,7 @@ use strata_status::OLSyncStatus;
 use crate::checkpoint_sync::{
     context::CheckpointSyncCtx,
     errors::{CheckpointSyncError, CheckpointSyncResult},
-    state::{
-        find_and_apply_unapplied_epochs, scan_unapplied_epochs, CheckpointSyncState, InnerState,
-    },
+    state::{find_and_apply_unapplied_epochs, scan_unapplied_epochs, CheckpointSyncState},
 };
 
 fn make_buf32(v: u8) -> Buf32 {
@@ -393,12 +391,11 @@ async fn handle_skips_when_finalized_unchanged() {
             .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
             .with_csm_finalized(Some(epoch1)),
     );
-    let inner = InnerState::new(Some(epoch1));
-    let mut state = CheckpointSyncState::new(ctx.clone(), inner);
+    let mut state = CheckpointSyncState::new(ctx.clone(), Some(epoch1));
 
     state.handle_new_client_state().await.unwrap();
 
-    // No-op: inner state unchanged, no recorder activity.
+    // No-op: state unchanged, no recorder activity.
     assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
     assert!(ctx.applied_epochs.lock().unwrap().is_empty());
     assert!(ctx.safe_tips.lock().unwrap().is_empty());
@@ -425,8 +422,7 @@ async fn handle_errors_on_chain_hole_leaves_state_unadvanced() {
             .add_epoch(epoch3, make_l1_ref(130), None)
             .with_csm_finalized(Some(epoch3)),
     );
-    let inner = InnerState::new(Some(epoch1));
-    let mut state = CheckpointSyncState::new(ctx.clone(), inner);
+    let mut state = CheckpointSyncState::new(ctx.clone(), Some(epoch1));
 
     let err = state.handle_new_client_state().await.unwrap_err();
     assert!(matches!(err, CheckpointSyncError::MissingPredecessor(2)));

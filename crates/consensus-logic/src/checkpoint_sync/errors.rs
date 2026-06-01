@@ -1,5 +1,6 @@
 //! Error types for the checkpoint sync service.
 
+use strata_chain_worker_new::WorkerError;
 use strata_db_types::DbError;
 use strata_identifiers::Epoch;
 use strata_primitives::EpochCommitment;
@@ -18,7 +19,7 @@ pub enum CheckpointSyncError {
 
     /// A finalized epoch's checkpoint is not buried deep enough to be
     /// reorg-safe, despite a descendant epoch being finalized.
-    #[error("epoch {epoch} not reorg-safe: buried {depth} blocks, need {required}")]
+    #[error("epoch {epoch} not reorg-safe (buried {depth} blocks, need {required})")]
     NotReorgSafe {
         epoch: EpochCommitment,
         depth: u32,
@@ -37,22 +38,18 @@ pub enum CheckpointSyncError {
     #[error("db: {0}")]
     Db(#[from] DbError),
 
-    /// Failure querying sync status (CSM status, L1 tip height).
-    #[error("sync status query failed")]
-    SyncStatusQuery(#[source] anyhow::Error),
-
     /// Failure from a per-epoch chain-worker call (`apply`, `finalize`).
-    #[error("chain worker {op} at {epoch}")]
+    #[error("chain worker {op} at {epoch}: {cause}")]
     EpochOp {
         epoch: EpochCommitment,
         op: &'static str,
         #[source]
-        cause: anyhow::Error,
+        cause: WorkerError,
     },
 
     /// Failure updating the chain worker's safe tip.
-    #[error("chain worker update_safe_tip")]
-    SafeTipUpdate(#[source] anyhow::Error),
+    #[error("chain worker update_safe_tip: {0}")]
+    SafeTipUpdate(#[source] WorkerError),
 }
 
 pub type CheckpointSyncResult<T> = Result<T, CheckpointSyncError>;

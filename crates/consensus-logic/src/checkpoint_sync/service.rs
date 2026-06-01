@@ -4,6 +4,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
+use strata_primitives::EpochCommitment;
 use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
 use strata_tasks::TaskExecutor;
 use tokio::sync::watch;
@@ -15,7 +16,7 @@ use crate::checkpoint_sync::{
     input::{CheckpointSyncEvent, CheckpointSyncInput},
     state::{
         build_ol_sync_status, find_and_apply_unapplied_epochs, refinalize_applied_epoch,
-        CheckpointSyncState, InnerState,
+        CheckpointSyncState,
     },
 };
 
@@ -40,7 +41,7 @@ pub type CssServiceHandle = ServiceMonitor<CheckpointSyncStatus>;
 
 impl<C> Service for CheckpointSyncService<C>
 where
-    C: CheckpointSyncCtx + 'static,
+    C: CheckpointSyncCtx,
 {
     type Msg = CheckpointSyncEvent;
     type State = CheckpointSyncState<C>;
@@ -57,7 +58,7 @@ where
 
 impl<C> AsyncService for CheckpointSyncService<C>
 where
-    C: CheckpointSyncCtx + 'static,
+    C: CheckpointSyncCtx,
 {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
@@ -98,16 +99,16 @@ where
 ///
 /// Takes the context and raw service inputs directly so this module needs no
 /// dependency on `NodeContext`; the binary assembles `ctx`.
-pub async fn start_css_service<C: CheckpointSyncCtx + 'static>(
+pub async fn start_css<C: CheckpointSyncCtx>(
     ctx: Arc<C>,
     checkpoint_state_rx: watch::Receiver<CheckpointState>,
     texec: Arc<TaskExecutor>,
 ) -> anyhow::Result<ServiceMonitor<CheckpointSyncStatus>> {
     info!("initializing checkpoint sync service");
-    let inner_state = initialize_css_inner_state(ctx.as_ref()).await?;
+    let last_finalized_and_applied = initialize_css_inner_state(ctx.as_ref()).await?;
 
     // Publish initial OL sync status so the RPC is populated from startup.
-    match inner_state.last_finalized_and_applied() {
+    match last_finalized_and_applied {
         Some(epoch) => {
             info!(%epoch, "resuming from last finalized epoch");
             let status = build_ol_sync_status(ctx.as_ref(), epoch).await?;
@@ -118,7 +119,7 @@ pub async fn start_css_service<C: CheckpointSyncCtx + 'static>(
         }
     }
 
-    let state = CheckpointSyncState::new(ctx, inner_state);
+    let state = CheckpointSyncState::new(ctx, last_finalized_and_applied);
     let input = CheckpointSyncInput::new(checkpoint_state_rx);
 
     let service_monitor = ServiceBuilder::<CheckpointSyncService<C>, CheckpointSyncInput>::new()
@@ -130,7 +131,7 @@ pub async fn start_css_service<C: CheckpointSyncCtx + 'static>(
     Ok(service_monitor)
 }
 
-/// Catches up on any unapplied finalized epochs at startup and returns the
+/// Initializes css state by catching up on any unapplied finalized epochs at startup and returns the
 /// resulting last-applied epoch.
 ///
 /// Also re-runs finalization on the last already-applied epoch found by the
@@ -139,10 +140,10 @@ pub async fn start_css_service<C: CheckpointSyncCtx + 'static>(
 /// silently. The re-finalize is idempotent.
 async fn initialize_css_inner_state(
     ctx: &impl CheckpointSyncCtx,
-) -> CheckpointSyncResult<InnerState> {
+) -> CheckpointSyncResult<Option<EpochCommitment>> {
     let Some(cur_finalized) = ctx.fetch_csm_status().await?.last_finalized_epoch else {
         debug!("no finalized checkpoint in client state, nothing to catch up on");
-        return Ok(InnerState::new(None));
+        return Ok(None);
     };
 
     let last_applied_epoch = match find_and_apply_unapplied_epochs(ctx, cur_finalized).await {
@@ -156,11 +157,11 @@ async fn initialize_css_inner_state(
                 %epoch, depth, required,
                 "finalized checkpoint not reorg-safe at startup, deferring to next CSM update"
             );
-            return Ok(InnerState::new(None));
+            return Ok(None);
         }
         Err(CheckpointSyncError::L1TipNotReady) => {
             warn!("L1 tip not yet ready at startup, deferring to next CSM update");
-            return Ok(InnerState::new(None));
+            return Ok(None);
         }
         Err(e) => return Err(e),
     };
@@ -170,5 +171,5 @@ async fn initialize_css_inner_state(
             refinalize_applied_epoch(ctx, epoch).await?;
         }
     }
-    Ok(InnerState::new(last_applied_epoch))
+    Ok(last_applied_epoch)
 }

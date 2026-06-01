@@ -14,6 +14,14 @@ strata-asm-spec.workspace = true
 strata-asm-spec-debug = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
+<<<<<<< HEAD
+=======
+strata-chain-worker.workspace = true
+strata-chain-worker-new.workspace = true
+strata-chainexec.workspace = true
+strata-chaintsn.workspace = true
+strata-checkpoint-types.workspace = true
+>>>>>>> 9eea09e47 (chore(css): Cleanups)
 strata-common = { workspace = true, default-features = true }
 strata-csm-types.workspace = true
 strata-csm-worker.workspace = true
