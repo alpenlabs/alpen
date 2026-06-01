@@ -11,26 +11,39 @@ if [ "${1-}" = "help" ] || [ "${1-}" = "--help" ] || [ "${1-}" = "-h" ]; then
 fi
 
 # Build command from environment variables.
+# Set SEQUENCER_MODE=true to run as sequencer (default: fullnode).
 
+SEQUENCER_MODE="${SEQUENCER_MODE:-false}"
 SEQUENCER_PUBKEY="${SEQUENCER_PUBKEY:?SEQUENCER_PUBKEY must be set}"
 CHAIN_SPEC="${CHAIN_SPEC:-dev}"
-EE_DA_MAGIC_BYTES="${EE_DA_MAGIC_BYTES:-ALPN}"
-BITCOIND_RPC_URL="${BITCOIND_RPC_URL:?BITCOIND_RPC_URL must be set}"
-BITCOIND_RPC_USER="${BITCOIND_RPC_USER:?BITCOIND_RPC_USER must be set}"
-BITCOIND_RPC_PASSWORD="${BITCOIND_RPC_PASSWORD:?BITCOIND_RPC_PASSWORD must be set}"
 
 if [ "${DUMMY_OL_CLIENT:-0}" = "1" ]; then
     set -- --dummy-ol-client "$@"
 else
-    STRATA_SUBMIT_RPC_TOKEN="${STRATA_SUBMIT_RPC_TOKEN:?STRATA_SUBMIT_RPC_TOKEN must be set}"
     set -- \
         --ol-client-url "${OL_CLIENT_URL:-ws://strata:8432}" \
+        "$@"
+fi
+
+# Sequencer-only: submit URL, DA flags, and BTC credentials
+if [ "${SEQUENCER_MODE}" = "true" ]; then
+    BITCOIND_RPC_URL="${BITCOIND_RPC_URL:?BITCOIND_RPC_URL must be set}"
+    BITCOIND_RPC_USER="${BITCOIND_RPC_USER:?BITCOIND_RPC_USER must be set}"
+    BITCOIND_RPC_PASSWORD="${BITCOIND_RPC_PASSWORD:?BITCOIND_RPC_PASSWORD must be set}"
+    STRATA_SUBMIT_RPC_TOKEN="${STRATA_SUBMIT_RPC_TOKEN:?STRATA_SUBMIT_RPC_TOKEN must be set}"
+    EE_DA_MAGIC_BYTES="${EE_DA_MAGIC_BYTES:-ALPN}"
+
+    set -- \
+        --sequencer \
         --ol-submit-url "${OL_SUBMIT_URL:-ws://strata:8435}" \
+        --ee-da-magic-bytes "${EE_DA_MAGIC_BYTES}" \
+        --btc-rpc-url "${BITCOIND_RPC_URL}" \
+        --btc-rpc-user "${BITCOIND_RPC_USER}" \
+        --btc-rpc-password "${BITCOIND_RPC_PASSWORD}" \
         "$@"
 fi
 
 exec alpen-client \
-    --sequencer \
     --sequencer-pubkey "${SEQUENCER_PUBKEY}" \
     --custom-chain "${CHAIN_SPEC}" \
     --datadir "${DATADIR:-/app/data}" \
@@ -46,10 +59,6 @@ exec alpen-client \
     --authrpc.addr 0.0.0.0 \
     --authrpc.port "${AUTHRPC_PORT:-8551}" \
     --authrpc.jwtsecret "${JWT_SECRET:-/app/keys/jwt.hex}" \
-    --ee-da-magic-bytes "${EE_DA_MAGIC_BYTES}" \
-    --btc-rpc-url "${BITCOIND_RPC_URL}" \
-    --btc-rpc-user "${BITCOIND_RPC_USER}" \
-    --btc-rpc-password "${BITCOIND_RPC_PASSWORD}" \
     --l1-reorg-safe-depth "${L1_REORG_SAFE_DEPTH:-4}" \
     --batch-sealing-block-count "${BATCH_SEALING_BLOCK_COUNT:-120}" \
     --bridge-denomination "${BRIDGE_DENOMINATION:-100000000}" \
