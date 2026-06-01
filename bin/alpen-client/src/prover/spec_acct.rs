@@ -166,6 +166,10 @@ pub(crate) struct AcctSpec {
 }
 
 impl AcctSpec {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor mirrors the struct fields"
+    )]
     pub(crate) fn new(
         chunk_receipts: Arc<dyn ReceiptStore>,
         batch_storage: Arc<dyn BatchStorage>,
