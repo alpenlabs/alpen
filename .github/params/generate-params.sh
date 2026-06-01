@@ -91,6 +91,14 @@ run_datatool -- \
     -o /out/asm-params-raw.json
 echo "  asm-params-raw.json generated"
 
+# Verify raw files were actually produced
+for f in rollup-params-raw.json ol-params-raw.json asm-params-raw.json; do
+    if [ ! -s "${WORK_DIR}/${f}" ]; then
+        echo "ERROR: datatool did not produce ${f} (check BTC RPC connectivity)" >&2
+        exit 1
+    fi
+done
+
 echo ""
 echo "=== Step 2: Merge dynamic values from raw into templates ==="
 
