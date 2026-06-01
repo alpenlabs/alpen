@@ -4329,7 +4329,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -18180,7 +18180,7 @@ dependencies = [
 [[package]]
 name = "typed-sled"
 version = "0.1.1"
-source = "git+https://github.com/alpenlabs/typed-sled#63bdf02a551ba384894748c41f908783864a8fc1"
+source = "git+https://github.com/alpenlabs/typed-sled#91ec668184350b8121625942c03152aade330b4b"
 dependencies = [
  "dashmap 6.1.0",
  "rkyv",
