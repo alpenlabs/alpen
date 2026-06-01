@@ -144,7 +144,7 @@ pub fn process_ol_stf_core(
     // Execute all blocks in the batch and collect execution artifacts.
     // Header equality checks inside execution bind manifests/state commitments
     // via body_root and the final state root.
-    let EpochBatchExecution {
+    let EpochExecTrace {
         logs,
         asm_manifests_hash,
         terminal_header,
@@ -222,7 +222,7 @@ pub fn process_ol_stf_core(
 }
 
 /// Artifacts collected while executing an epoch's block batch.
-struct EpochBatchExecution {
+struct EpochExecTrace {
     /// All OL logs emitted across the batch (tx-segment plus terminal drain).
     logs: Vec<OLLog>,
 
@@ -264,7 +264,7 @@ fn execute_block_batch(
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
     bridge_params: BridgeParams,
-) -> EpochBatchExecution {
+) -> EpochExecTrace {
     let mut parent = initial_parent.clone();
     let mut logs = Vec::new();
     // Manifests may be included in any block within the epoch; collect them in
@@ -323,7 +323,7 @@ fn execute_block_batch(
 
     let asm_manifests_hash = compute_asm_manifests_hash(&epoch_manifests);
 
-    EpochBatchExecution {
+    EpochExecTrace {
         logs,
         asm_manifests_hash,
         terminal_header: parent,
