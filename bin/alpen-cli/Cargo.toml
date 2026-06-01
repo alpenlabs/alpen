@@ -54,7 +54,7 @@ sled.workspace = true
 terrors.workspace = true
 tokio.workspace = true
 zeroize.workspace = true
-zxcvbn = "3.1.0"
+zxcvbn = "3.1.1"
 
 # sha2 fails to compile on windows with the "asm" feature
 [target.'cfg(not(target_os = "windows"))'.dependencies]
