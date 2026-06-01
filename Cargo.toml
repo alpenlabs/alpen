@@ -236,7 +236,7 @@ strata-test-utils-ssz = { path = "crates/test-utils/ssz" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
-strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
+strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc24" }
 strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
   "derive",
 ], tag = "v0.1.0-alpha-rc21" }
