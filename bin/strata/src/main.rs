@@ -26,6 +26,8 @@ use crate::{
 };
 
 mod args;
+#[cfg(feature = "sequencer")]
+mod checkpoint_auth;
 mod config;
 mod context;
 mod errors;
@@ -76,12 +78,8 @@ fn main() -> Result<()> {
     // Check for db consistency, external rpc clients reachable, etc.
     run_startup_checks(&nodectx)?;
 
-    // Extract the envelope pubkey from rollup params if configured.
-    let envelope_pubkey: Option<[u8; 32]> =
-        nodectx.params().rollup.cred_rule.schnorr_key().map(|k| k.0);
-
     // Start services, and do genesis if necessary.
-    let (runctx, proof_notify) = start_strata_services(nodectx, envelope_pubkey)?;
+    let (runctx, proof_notify) = start_strata_services(nodectx)?;
 
     // Start RPC.
     start_rpc(&runctx)?;

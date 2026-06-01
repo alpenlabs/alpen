@@ -1,4 +1,4 @@
-//! CLI command for creating and broadcasting an EE predicate admin update.
+//! CLI commands for creating and broadcasting predicate admin updates.
 
 use std::{slice, str::FromStr, thread, time::Duration};
 
@@ -23,7 +23,10 @@ use bdk_wallet::{
 use serde_json::{json, Value};
 use ssz::Encode as _;
 use strata_asm_proto_admin_txs::{
-    actions::{updates::EeStfVkUpdate, MultisigAction, UpdateAction},
+    actions::{
+        updates::{EeStfVkUpdate, OlStfVkUpdate},
+        MultisigAction, UpdateAction,
+    },
     parser::SignedPayload,
     test_utils::create_signature_set,
 };
@@ -74,6 +77,43 @@ pub struct CreateEePredicateUpdateArgs {
     pub commit_output_sats: u64,
 }
 
+/// Broadcast an OL checkpoint predicate update.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "create-checkpoint-predicate-update")]
+pub struct CreateCheckpointPredicateUpdateArgs {
+    /// update sequence number (use 1 for the first update, then increment)
+    #[argh(option)]
+    pub seq_no: u64,
+
+    /// target predicate (e.g. `AlwaysAccept`, `NeverAccept`, `Sp1Groth16:<hex>`)
+    #[argh(option, from_str_fn(parse_predicate_key))]
+    pub predicate: PredicateKey,
+
+    /// admin xpriv used to sign the update action
+    #[argh(option)]
+    pub admin_xpriv: String,
+
+    /// bitcoin RPC URL
+    #[argh(option)]
+    pub btc_url: String,
+
+    /// bitcoin RPC username
+    #[argh(option)]
+    pub btc_user: String,
+
+    /// bitcoin RPC password
+    #[argh(option)]
+    pub btc_password: String,
+
+    /// fee rate in sat/vB for commit/reveal txs (default 2)
+    #[argh(option, default = "2")]
+    pub fee_rate: u64,
+
+    /// commit output value in sats (default 20000)
+    #[argh(option, default = "20_000")]
+    pub commit_output_sats: u64,
+}
+
 fn parse_predicate_key(value: &str) -> Result<PredicateKey, String> {
     serde_json::from_value(Value::String(value.to_owned())).map_err(|e| e.to_string())
 }
@@ -83,9 +123,58 @@ const MIN_REVEAL_OUTPUT_SATS: u64 = 546;
 const DEFAULT_RETRY_COUNT: usize = 5;
 const RETRY_SLEEP_MS: u64 = 200;
 
+#[derive(Clone, Copy, Debug)]
+enum PredicateUpdateTarget {
+    EeStfVk,
+    OlStfVk,
+}
+
+#[derive(Debug)]
+struct PredicateUpdateRequest {
+    seq_no: u64,
+    predicate: PredicateKey,
+    admin_xpriv: String,
+    btc_url: String,
+    btc_user: String,
+    btc_password: String,
+    fee_rate: u64,
+    commit_output_sats: u64,
+    target: PredicateUpdateTarget,
+}
+
 pub(crate) fn create_ee_predicate_update(
     args: CreateEePredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
+    create_predicate_update(PredicateUpdateRequest {
+        seq_no: args.seq_no,
+        predicate: args.predicate,
+        admin_xpriv: args.admin_xpriv,
+        btc_url: args.btc_url,
+        btc_user: args.btc_user,
+        btc_password: args.btc_password,
+        fee_rate: args.fee_rate,
+        commit_output_sats: args.commit_output_sats,
+        target: PredicateUpdateTarget::EeStfVk,
+    })
+}
+
+pub(crate) fn create_checkpoint_predicate_update(
+    args: CreateCheckpointPredicateUpdateArgs,
+) -> Result<(), DisplayedError> {
+    create_predicate_update(PredicateUpdateRequest {
+        seq_no: args.seq_no,
+        predicate: args.predicate,
+        admin_xpriv: args.admin_xpriv,
+        btc_url: args.btc_url,
+        btc_user: args.btc_user,
+        btc_password: args.btc_password,
+        fee_rate: args.fee_rate,
+        commit_output_sats: args.commit_output_sats,
+        target: PredicateUpdateTarget::OlStfVk,
+    })
+}
+
+fn create_predicate_update(args: PredicateUpdateRequest) -> Result<(), DisplayedError> {
     let (commit_tx, reveal_tx) =
         build_admin_commit_reveal_pair(&args).internal_error("failed to build admin tx pair")?;
 
@@ -115,7 +204,7 @@ pub(crate) fn create_ee_predicate_update(
 
 // TODO(STR-3191): deduplicate envelope commit/reveal transaction
 fn build_admin_commit_reveal_pair(
-    args: &CreateEePredicateUpdateArgs,
+    args: &PredicateUpdateRequest,
 ) -> anyhow::Result<(Transaction, Transaction)> {
     if args.commit_output_sats <= MIN_REVEAL_OUTPUT_SATS {
         bail!("commit_output_sats must be > {MIN_REVEAL_OUTPUT_SATS}");
@@ -124,7 +213,7 @@ fn build_admin_commit_reveal_pair(
     let xpriv = Xpriv::from_str(&args.admin_xpriv).context("invalid admin xpriv")?;
     let admin_secret_key = xpriv.private_key;
 
-    let action = build_ee_update_action(args.predicate.clone());
+    let action = build_predicate_update_action(args.predicate.clone(), args.target);
     let signed_payload = create_signed_payload(action.clone(), args.seq_no, &admin_secret_key);
 
     let envelope_bytes = signed_payload.as_ssz_bytes();
@@ -202,9 +291,15 @@ fn build_admin_commit_reveal_pair(
     Ok((commit_tx, reveal_tx))
 }
 
-fn build_ee_update_action(key: PredicateKey) -> MultisigAction {
-    let update = EeStfVkUpdate::new(key);
-    MultisigAction::Update(UpdateAction::EeStfVk(update))
+fn build_predicate_update_action(
+    key: PredicateKey,
+    target: PredicateUpdateTarget,
+) -> MultisigAction {
+    let update = match target {
+        PredicateUpdateTarget::EeStfVk => UpdateAction::EeStfVk(EeStfVkUpdate::new(key)),
+        PredicateUpdateTarget::OlStfVk => UpdateAction::OlStfVk(OlStfVkUpdate::new(key)),
+    };
+    MultisigAction::Update(update)
 }
 
 fn create_signed_payload(
