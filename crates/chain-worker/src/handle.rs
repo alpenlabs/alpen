@@ -102,5 +102,5 @@ fn convert_service_error(err: ServiceError) -> WorkerError {
 /// Shared state between the worker and the handle.
 #[derive(Debug, Clone, Default)]
 pub struct WorkerShared {
-    // TODO
+    // TODO(STR-2170): add shared worker state if this crate is kept.
 }

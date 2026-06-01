@@ -39,7 +39,7 @@ pub fn process_block(
     state.set_slot(header.slot());
     state.set_prev_block(L2BlockCommitment::new(prev_tip_slot, *prev_tip_blkid));
     advance_epoch_tracking(state)?;
-    // TODO: Fixme
+    // TODO(STR-2170): Fixme
     // if state.state_untracked().cur_epoch() != header.parent_header().epoch() {
     //     return Err(TsnError::MismatchEpoch(
     //         header.parent_header().epoch(),
@@ -62,7 +62,7 @@ pub fn process_block(
     }
 
     // After processing L1 segment, extract and add withdrawals from exec segment
-    // TODO: remove ASAP
+    // TODO(STR-2170): remove ASAP
     for intent in body.exec_segment().update().output().withdrawals() {
         state
             .state_mut_untracked()
@@ -78,7 +78,7 @@ pub fn process_block(
 /// # Caution
 ///
 /// If the checkpoint proof is empty, this function returns an `Ok(())`.
-// FIXME this does not belong here, it should be in a more general module probably
+// FIXME(STR-2170): this does not belong here, it should be in a more general module probably
 pub fn verify_checkpoint_proof(
     checkpoint: &Checkpoint,
     rollup_params: &RollupParams,
@@ -86,8 +86,8 @@ pub fn verify_checkpoint_proof(
     let checkpoint_idx = checkpoint.batch_info().epoch();
     let proof_receipt = checkpoint.construct_receipt();
 
-    // FIXME: we are accepting empty proofs for now (devnet) to reduce dependency on the prover
-    // infra.
+    // FIXME(STR-2170): we are accepting empty proofs for now (devnet) to reduce dependency on the
+    // prover infra.
     let is_empty_proof = proof_receipt.proof().is_empty();
     let allow_empty = rollup_params.proof_publish_mode.allow_empty();
 
@@ -115,7 +115,7 @@ fn advance_epoch_tracking(state: &mut impl StateAccessor) -> Result<(), TsnError
     state.set_cur_epoch(cur_epoch + 1);
     state.set_epoch_finishing_flag(false);
 
-    // TODO: remove ASAP
+    // TODO(STR-2170): remove ASAP
     // Clear pending withdrawals at the start of each new epoch
     *state.state_mut_untracked().pending_withdraws_mut() = StateQueue::new_empty();
 

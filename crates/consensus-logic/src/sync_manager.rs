@@ -137,7 +137,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let fcm_handle = executor.handle().clone();
     let st_ch = status_channel.clone();
     executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
-        // TODO this should be simplified into a builder or something
+        // TODO(STR-3673): this should be simplified into a builder or something
         fork_choice_manager::tracker_task(
             shutdown,
             fcm_handle,
@@ -269,7 +269,7 @@ fn spawn_chain_worker(
         storage.l2().clone(),
         storage.chainstate().clone(),
         storage.checkpoint().clone(),
-        0, // FIXME: Not sure what this is
+        0, // FIXME(STR-3673): Not sure what this is
     );
 
     // Use the new builder API to launch the worker and get a handle

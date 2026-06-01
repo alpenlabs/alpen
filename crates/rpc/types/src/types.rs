@@ -175,11 +175,11 @@ pub struct RpcExecUpdate {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RpcSyncStatus {
     /// Current head L2 slot known to this node
-    // TODO consolidate into using L2BlockCommitment
+    // TODO(STR-2170): consolidate into using L2BlockCommitment
     pub tip_height: u64,
 
     /// Last L2 block we've chosen as the current tip.
-    // TODO consolidate into using L2BlockCommitment
+    // TODO(STR-2170): consolidate into using L2BlockCommitment
     pub tip_block_id: L2BlockId,
 
     /// Current epoch from chainstate.
@@ -200,7 +200,7 @@ pub struct RpcSyncStatus {
     /// it's the one we've also observed, so it's behind by >~1.
     ///
     /// If you want the real one from L1, use another method.
-    // TODO which other method?
+    // TODO(STR-2170): which other method?
     #[deprecated]
     pub finalized_block_id: L2BlockId,
 }

@@ -21,7 +21,7 @@ pub enum L2SyncError {
     #[error("missing finalized block: {0}")]
     MissingFinalized(L2BlockId),
 
-    // TODO make this not a string
+    // TODO(STR-2170): make this not a string
     #[error("loading unfinalized blocks: {0}")]
     LoadUnfinalizedFailed(String),
 

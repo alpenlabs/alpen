@@ -42,7 +42,7 @@ pub fn checkpoint_worker(
 
     //let rollup_params_commitment = params.rollup().compute_hash();
 
-    // FIXME this should have special handling for genesis
+    // FIXME(STR-2170): this should have special handling for genesis
     let mut last_saved_epoch = ckman.get_last_checkpoint_blocking()?.unwrap_or_default();
 
     loop {
@@ -116,7 +116,7 @@ fn find_ready_checkpoints(
     from_epoch: u64,
     ckman: &CheckpointDbManager,
 ) -> anyhow::Result<Vec<EpochCommitment>> {
-    let epoch_at = from_epoch; // TODO make this +1 after we fix genesis
+    let epoch_at = from_epoch; // TODO(STR-2170): make this +1 after we fix genesis
     let Some(last_ready_epoch) = ckman.get_last_summarized_epoch_blocking()? else {
         warn!("no epoch summaries have been written, skipping");
         return Ok(Vec::new());
@@ -138,8 +138,8 @@ fn find_ready_checkpoints(
             warn!(epoch = %i, %ignored_count, "ignoring some summaries at epoch");
         }
 
-        // TODO: this is not actually correct although should be fine under the assumption of
-        // no-reorg.
+        // TODO(STR-2170): this is not actually correct although should be fine under the assumption
+        // of no-reorg.
         // This function should be passed the last accepted checkpoint and this should be the
         // commitment that continues the last checkpoint.
         let ec = commitments[0];
@@ -302,9 +302,9 @@ fn fetch_epoch_l2_headers(
     //
     // The break conditions are a little weird so we use a bare `loop`.
     loop {
-        // let limit = 5000; // TODO make a const
-        // TODO: we need some way to limit L2 blocks in an epoch, we can't just error like this
-        // if headers.len() >= limit {
+        // let limit = 5000; // TODO(STR-2170): make a const
+        // TODO(STR-2170): we need some way to limit L2 blocks in an epoch, we can't just error like
+        // this if headers.len() >= limit {
         //     return Err(Error::MalformedEpoch(summary.get_epoch_commitment()).into());
         // }
 

@@ -132,7 +132,7 @@ pub trait StateAccessor {
     fn set_epoch_finishing_flag(&mut self, flag: bool);
 
     // Accessors for ledger account entries.
-    // TODO
+    // TODO(STR-2170): add ledger account accessors if this crate is kept.
 }
 
 /// Provider for queries to sideloaded state like ASM manifests.

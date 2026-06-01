@@ -33,7 +33,7 @@ pub struct RollupParams {
     pub operators: Vec<XOnlyPublicKey>,
 
     /// Hardcoded EL genesis info
-    /// TODO: move elsewhere
+    /// TODO(STR-3050): move elsewhere
     pub evm_genesis_block_hash: Buf32,
     pub evm_genesis_block_state_root: Buf32,
 
@@ -73,7 +73,7 @@ impl RollupParams {
             return Err(ParamsError::NoOperators);
         }
 
-        // TODO maybe make all these be a macro?
+        // TODO(STR-3050): maybe make all these be a macro?
         if self.block_time == 0 {
             return Err(ParamsError::ZeroProperty("block_time"));
         }

@@ -46,12 +46,12 @@ pub struct L2BlockHeader {
     pub(crate) l1_segment_hash: Buf32,
 
     /// Hash of the exec segment.
-    // TODO ideally this is just the EL header hash, not the hash of the full payload
+    // TODO(STR-2170): ideally this is just the EL header hash, not the hash of the full payload
     pub(crate) exec_segment_hash: Buf32,
 
     /// State root that commits to the overall state of the rollup, commits to
     /// both the CL state and EL state.
-    // TODO figure out the structure of this
+    // TODO(STR-2170): figure out the structure of this
     pub(crate) state_root: Buf32,
 }
 

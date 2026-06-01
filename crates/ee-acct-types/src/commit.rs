@@ -17,7 +17,7 @@ impl CommitChainSegment {
     }
 
     pub fn decode(_buf: &[u8]) -> Result<Self, EnvError> {
-        // TODO
+        // TODO(STR-3685): implement decoding.
         unimplemented!()
     }
 

@@ -85,7 +85,7 @@ PROOF_ID=$(echo "$RESPONSE" | jq -r '.result[0]')
 
 echo "Got proof handle: $PROOF_ID"
 
-# TODO change to 60
+# TODO(STR-3692): change to 60
 MAX_RETRIES=6000
 # 5 minutes should be more than enough to proof a range of blocks in native mode.
 #MAX_RETRIES=60

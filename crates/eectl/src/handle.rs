@@ -116,7 +116,7 @@ impl ExecCtlInput {
 /// State shared between the handle and the worker.
 #[derive(Debug)]
 pub struct ExecShared {
-    // TODO
+    // TODO(STR-3682): add shared execution control state if needed.
 }
 
 /// Make a pair of the handle and the input that can be used while constructing the worker.

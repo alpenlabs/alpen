@@ -62,7 +62,7 @@ impl WorkerContext for ChainWorkerCtx {
     }
 
     fn fetch_header(&self, blkid: &L2BlockId) -> WorkerResult<Option<L2BlockHeader>> {
-        // FIXME make this only fetch the header
+        // FIXME(STR-3673): make this only fetch the header
         Ok(self
             .l2man
             .get_block_data_blocking(blkid)
@@ -153,12 +153,12 @@ impl WorkerContext for ChainWorkerCtx {
         let finalizing_epoch = self.fetch_summary(epoch)?;
         let cur_epoch_terminal = cur_tl.prev_epoch().to_block_commitment();
         if *finalizing_epoch.prev_terminal() != cur_epoch_terminal {
-            // TODO make this error better
+            // TODO(STR-3673): make this error better
             return Err(WorkerError::Unimplemented);
         }
 
         let epoch_blkids = Vec::new();
-        // TODO collect the blocks from this epoch back to the previous
+        // TODO(STR-3673): collect the blocks from this epoch back to the previous
 
         let mut epoch_wbids = epoch_blkids
             .into_iter()
@@ -173,11 +173,11 @@ impl WorkerContext for ChainWorkerCtx {
 }
 
 fn conv_db_err(_e: DbError) -> WorkerError {
-    // TODO fixme
+    // TODO(STR-3673): fixme
     WorkerError::Unimplemented
 }
 
-// FIXME: fix duplicate code
+// FIXME(STR-3673): fix duplicate code
 pub fn conv_blkid_to_slot_wb_id(blkid: L2BlockId) -> WriteBatchId {
     let mut buf: Buf32 = blkid.into();
     buf.as_mut_slice()[31] = 0; // last byte to distinguish slot and epoch

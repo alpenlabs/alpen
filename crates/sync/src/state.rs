@@ -13,7 +13,7 @@ pub(crate) struct L2SyncState {
     /// Height of highest unfinalized block in tracker
     tip_block: L2BlockCommitment,
 
-    // TODO make this just subscribe to FCM tip updates and go from there?
+    // TODO(STR-2170): make this just subscribe to FCM tip updates and go from there?
     tracker: UnfinalizedBlockTracker,
 }
 
@@ -28,7 +28,7 @@ impl L2SyncState {
             *block_header.parent(),
         )?;
 
-        // FIXME this isn't quite right, we should be following the fork choice manager
+        // FIXME(STR-2170): this isn't quite right, we should be following the fork choice manager
         self.tip_block = self
             .tracker
             .chain_tip_blocks_iter()
@@ -53,7 +53,7 @@ impl L2SyncState {
         self.tracker.is_seen_block(block_id)
     }
 
-    // TODO rename to slot
+    // TODO(STR-2170): rename to slot
     pub(crate) fn finalized_height(&self) -> u64 {
         self.tracker.finalized_epoch().last_slot()
     }
@@ -62,7 +62,7 @@ impl L2SyncState {
         self.tracker.finalized_epoch().last_blkid()
     }
 
-    // TODO rename to slot
+    // TODO(STR-2170): rename to slot
     pub(crate) fn tip_height(&self) -> u64 {
         self.tip_block.slot()
     }

@@ -113,7 +113,7 @@ pub trait L1Database: Send + Sync + 'static {
     /// Prune earliest blocks till height
     fn prune_to_height(&self, height: L1Height) -> DbResult<()>;
 
-    // TODO DA scraping storage
+    // TODO(STR-2653): DA scraping storage
 
     // Gets current chain tip height, blockid
     fn get_canonical_chain_tip(&self) -> DbResult<Option<(L1Height, L1BlockId)>>;
@@ -124,7 +124,8 @@ pub trait L1Database: Send + Sync + 'static {
     /// Gets the blockid at height for the current chain.
     fn get_canonical_blockid_at_height(&self, height: L1Height) -> DbResult<Option<L1BlockId>>;
 
-    // TODO: This should not exist in database level and should be handled by downstream manager.
+    // TODO(STR-2653): This should not exist in database level and should be handled by downstream
+    // manager.
     /// Returns a half-open interval of block hashes, if we have all of them
     /// present.  Otherwise, returns error.
     fn get_canonical_blockid_range(
@@ -133,7 +134,7 @@ pub trait L1Database: Send + Sync + 'static {
         end_idx: L1Height,
     ) -> DbResult<Vec<L1BlockId>>;
 
-    // TODO DA queries
+    // TODO(STR-2653): DA queries
 }
 
 /// Db for client state updates and checkpoints.
@@ -186,14 +187,14 @@ pub trait L2BlockDatabase: Send + Sync + 'static {
 
     /// Gets the L2 block IDs that we have at some height, in case there's more
     /// than one on competing forks.
-    // TODO do we even want to permit this as being a possible thing?
+    // TODO(STR-2653): do we even want to permit this as being a possible thing?
     fn get_blocks_at_height(&self, idx: u64) -> DbResult<Vec<L2BlockId>>;
 
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: L2BlockId) -> DbResult<Option<BlockStatus>>;
 
     /// Returns the latest valid L2 block ID, or `None` at genesis or when no valid block exists.
-    // TODO do we even want to permit this as being a possible thing?
+    // TODO(STR-2653): do we even want to permit this as being a possible thing?
     fn get_tip_block(&self) -> DbResult<L2BlockId>;
 }
 
@@ -214,7 +215,7 @@ pub enum BlockStatus {
 }
 
 /// Database for checkpoint data.
-// TODO: Remove when we switch to using OL checkpoint database in all relevant places.
+// TODO(STR-3678): Remove when we switch to using OL checkpoint database in all relevant places.
 #[deprecated(note = "use `OLCheckpointDatabase` for OL/EE-decoupled checkpoint storage")]
 pub trait CheckpointDatabase: Send + Sync + 'static {
     /// Inserts an epoch summary retrievable by its epoch commitment.

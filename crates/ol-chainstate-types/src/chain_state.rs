@@ -63,7 +63,7 @@ pub struct Chainstate {
 }
 
 impl Chainstate {
-    // TODO remove genesis blkid since apparently we don't need it anymore
+    // TODO(STR-2170): remove genesis blkid since apparently we don't need it anymore
     pub fn from_genesis(gdata: &GenesisStateData) -> Self {
         Self {
             cur_slot: 0,
@@ -114,7 +114,7 @@ impl Chainstate {
     /// Computes a commitment to a the chainstate.  This is super expensive
     /// because it does a bunch of hashing.
     pub fn compute_state_root(&self) -> Buf32 {
-        // FIXME this is all broken because we're doing this badly, the real
+        // FIXME(STR-2170): this is all broken because we're doing this badly, the real
         // solution is to use SSZ for all of this
         let hashed_state = HashedChainState {
             prev_block: compute_borsh_hash(&self.prev_block),
@@ -143,7 +143,7 @@ impl Chainstate {
         &self.pending_withdraws
     }
 
-    // TODO: remove ASAP
+    // TODO(STR-2170): remove ASAP
     pub fn pending_withdraws_mut(&mut self) -> &mut StateQueue<WithdrawalIntent> {
         &mut self.pending_withdraws
     }
@@ -158,9 +158,9 @@ impl Chainstate {
 }
 
 /// Hashed Chain State. This is used to compute the state root of the [`Chainstate`]
-// TODO: FIXME: Note that this is used as a temporary solution for the state root calculation
-// It should be replaced once we swap out Chainstate's type definitions with SSZ type definitions
-// which defines all of this more rigorously
+// TODO(STR-2170): FIXME: Note that this is used as a temporary solution for the state root
+// calculation It should be replaced once we swap out Chainstate's type definitions with SSZ type
+// definitions which defines all of this more rigorously
 #[derive(Debug, BorshSerialize, BorshDeserialize, Clone, Copy)]
 pub struct HashedChainState {
     pub prev_block: Buf32,

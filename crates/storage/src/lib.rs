@@ -33,7 +33,7 @@ use strata_db_types::traits::DatabaseBackend;
 pub use strata_db_types::MmrId;
 
 /// A consolidation of database managers.
-// TODO move this to its own module
+// TODO(STR-3679): move this to its own module
 #[expect(
     missing_debug_implementations,
     reason = "Some inner types don't have Debug implementation"
@@ -53,7 +53,7 @@ pub struct NodeStorage {
 
     client_state_manager: Arc<ClientStateManager>,
 
-    // TODO maybe move this into a different one?
+    // TODO(STR-3679): maybe move this into a different one?
     // update: probably not, would require moving data around
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     checkpoint_manager: Arc<CheckpointDbManager>,

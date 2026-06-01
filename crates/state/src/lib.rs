@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use strata_primitives::l1::L1BlockCommitment;
 
 /// Interface to submit blocks to CSM in blocking or async fashion.
-// TODO reverse the convention on these function names, since you can't
+// TODO(STR-3688): reverse the convention on these function names, since you can't
 // accidentally call an async fn in a blocking context
 #[async_trait]
 pub trait BlockSubmitter: Send + Sync {

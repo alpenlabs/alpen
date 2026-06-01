@@ -47,7 +47,7 @@ pub struct EnvelopeConfig {
     ///
     /// NOTE: must be higher than the dust limit.
     //
-    // TODO: Make this and all other bitcoin related values to Amount
+    // TODO(STR-3690): Make this and all other bitcoin related values to Amount
     pub reveal_amount: u64,
     /// Bitcoin network
     pub network: Network,
@@ -83,7 +83,7 @@ impl EnvelopeConfig {
     }
 }
 
-// TODO: these might need to be in rollup params
+// TODO(STR-2982): these might need to be in rollup params
 #[derive(Debug, Error)]
 pub enum EnvelopeError {
     #[error("no payload provided")]
@@ -936,5 +936,5 @@ mod tests {
         assert_ne!(unsigned.sighash, Buf32::zero());
     }
 
-    // TODO: make the tests more comprehensive
+    // TODO(STR-3691): make the tests more comprehensive
 }

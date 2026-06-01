@@ -57,7 +57,7 @@ impl<'a, N: NodeTypesWithDB + ProviderNodeTypes> BlockExistenceChecker for RethB
 /// # Returns
 ///
 /// `Ok(())` if sync completed successfully, or an error if sync failed.
-// TODO: retry on network errors
+// TODO(STR-3680): retry on network errors
 pub async fn sync_chainstate_to_engine<N, E, S>(
     storage: &S,
     provider: &BlockchainProvider<N>,

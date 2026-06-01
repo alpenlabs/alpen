@@ -54,7 +54,7 @@ impl<
                 .ok_or_else(|| eyre::eyre!("block not found for hash {:?}", block_hash))?;
             let current_block_idx: u64 = current_block.number;
 
-            // TODO: maybe put db writes in another thread
+            // TODO(STR-3649): maybe put db writes in another thread
             if let Err(err) = self
                 .db
                 .put_state_diff(block_hash, current_block_idx, &state_diff)

@@ -135,7 +135,7 @@ impl L2Segment {
             let new_state_root = post_state.compute_state_root();
 
             let header = L2BlockHeader::new(slot, 0, ts, prev_block_id, &body, new_state_root);
-            let signed_header = SignedL2BlockHeader::new(header, Buf64::zero()); // TODO: fix this
+            let signed_header = SignedL2BlockHeader::new(header, Buf64::zero()); // TODO(STR-3692): fix this
             let block = L2Block::new(signed_header, body);
 
             // Note: We need to do this double as of now.

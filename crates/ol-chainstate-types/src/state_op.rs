@@ -44,7 +44,7 @@ impl WriteBatch {
     }
 }
 
-// TODO reversiblity stuff?
+// TODO(STR-2170): reversiblity stuff?
 
 /// On a given in-memory chainstate, applies a write batch.
 ///
@@ -114,7 +114,7 @@ impl StateCache {
     // Primitive manipulation functions.
 
     // Semantic manipulation functions.
-    // TODO rework a lot of these to make them lower-level and focus more on
+    // TODO(STR-2170): rework a lot of these to make them lower-level and focus more on
     // just keeping the core invariants consistent
 
     /// Sets the current slot.
@@ -191,14 +191,14 @@ impl StateCache {
     }
 
     /// Writes a withdrawal intent into the pending withdrawals queue.
-    // TODO: remove ASAP
+    // TODO(STR-2170): remove ASAP
     pub fn insert_withdrawal_intent(&mut self, intent: WithdrawalIntent) {
         let state = self.state_mut();
         state.pending_withdraws_mut().push_back(intent);
     }
 
     /// Clears all pending withdrawals. Used at epoch start to reset for new epoch.
-    // TODO: remove ASAP
+    // TODO(STR-2170): remove ASAP
     pub fn clear_pending_withdraws(&mut self) {
         let state = self.state_mut();
         *state.pending_withdraws_mut() = StateQueue::new_empty();

@@ -70,9 +70,9 @@ pub fn init_genesis_chainstate(
     storage
         .l2()
         .set_block_status_blocking(&gid, BlockStatus::Valid)?;
-    // TODO: Status channel should probably be updated.
+    // TODO(STR-3674): Status channel should probably be updated.
 
-    // TODO make ^this be atomic so we can't accidentally not write both, or
+    // TODO(STR-3674): make ^this be atomic so we can't accidentally not write both, or
     // make it so we can overwrite the genesis chainstate if there's no other
     // states or something
 
@@ -111,7 +111,7 @@ pub fn make_l2_genesis(params: &Params) -> (L2BlockBundle, Chainstate) {
 pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     // Create a dummy exec state that we can build the rest of the genesis block
     // around and insert into the genesis state.
-    // TODO this might need to talk to the EL to do the genesus setup *properly*
+    // TODO(STR-3674): this might need to talk to the EL to do the genesus setup *properly*
     let extra_payload = create_evm_extra_payload(params.rollup.evm_genesis_block_hash);
     let geui = UpdateInput::new(0, vec![], Buf32::zero(), extra_payload);
     let genesis_update = ExecUpdate::new(
@@ -122,12 +122,12 @@ pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     // This has to be empty since everyone should have an unambiguous view of the genesis block.
     let l1_seg = L1Segment::new_empty(params.rollup().genesis_l1_view.blk.height());
 
-    // TODO this is a total stub, we have to fill it in with something
+    // TODO(STR-3674): this is a total stub, we have to fill it in with something
     let exec_seg = ExecSegment::new(genesis_update);
 
     let body = L2BlockBody::new(l1_seg, exec_seg);
 
-    // TODO stub
+    // TODO(STR-3674): stub
     let exec_payload = vec![];
     let accessory = L2BlockAccessory::new(exec_payload, 0);
 

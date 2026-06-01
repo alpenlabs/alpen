@@ -19,7 +19,7 @@ pub struct CheckpointHandle {
     db_manager: Arc<CheckpointDbManager>,
 
     /// Used to notify listeners about a checkpoint update in db.
-    // TODO what does this u64 represent?  do we want to attach additional context?
+    // TODO(STR-2170): what does this u64 represent?  do we want to attach additional context?
     update_notify_tx: broadcast::Sender<u64>,
 }
 
@@ -33,8 +33,8 @@ impl CheckpointHandle {
         }
     }
 
-    // TODO this leaks implementation details, we should construct this as we're constructing the
-    // thing that subscribes to it
+    // TODO(STR-2170): this leaks implementation details, we should construct this as we're
+    // constructing the thing that subscribes to it
     pub fn subscribe(&self) -> broadcast::Receiver<u64> {
         self.update_notify_tx.subscribe()
     }

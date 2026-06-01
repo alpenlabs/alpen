@@ -95,7 +95,7 @@ impl ChainstateManager {
         &self,
         id: StateInstanceId,
     ) -> DbResult<Arc<Chainstate>> {
-        // TODO this is slow, but we need to do it, we need to do it because we
+        // TODO(STR-3679): this is slow, but we need to do it, we need to do it because we
         // didn't have async fns until recently
         warn!("fetching instance toplevel state via async fn, bypassing cache due to limitations");
         self.ops
@@ -211,7 +211,7 @@ impl ChainstateManager {
     ) -> DbResult<()> {
         self.ops.merge_write_batches_async(id, wb_ids).await?;
 
-        // FIXME this is inefficient, but it's safer than potentially leaving
+        // FIXME(STR-3679): this is inefficient, but it's safer than potentially leaving
         // stale or messed-up data in the cache, we should have some more
         // general function for preparing a cache slot and waiting on a fn call
         // to fill it
@@ -228,7 +228,7 @@ impl ChainstateManager {
     ) -> DbResult<()> {
         self.ops.merge_write_batches_blocking(id, wb_ids)?;
 
-        // FIXME see above
+        // FIXME(STR-3679): see above
         self.tl_cache.purge_blocking(&id);
 
         Ok(())

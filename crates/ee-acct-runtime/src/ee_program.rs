@@ -98,7 +98,7 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
             vinput.ee(),
             vinput.chunk_predicate_key(),
             state,
-            ulinfo.outputs().clone(), // TODO ugh, avoid this clone
+            ulinfo.outputs().clone(), // TODO(STR-3685): ugh, avoid this clone
             vinput.input_chunks(),
             vinput.raw_partial_pre_state(),
         ))
@@ -188,12 +188,12 @@ pub(crate) fn apply_decoded_message(
         }
 
         DecodedEeMessageData::SubjTransfer(_data) => {
-            // TODO handle subject transfers
+            // TODO(STR-3685): handle subject transfers
         }
 
         DecodedEeMessageData::Commit(_data) => {
             // Just ignore this one for now because we're not handling it.
-            // TODO support this
+            // TODO(STR-3685): support this
         }
     }
 

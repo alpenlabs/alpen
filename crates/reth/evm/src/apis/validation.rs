@@ -131,7 +131,7 @@ pub fn validate_tx_env<CTX: ContextTr, Error>(
                 return Err(InvalidTransaction::EmptyAuthorizationList);
             }
         }
-        /* // TODO(EOF) EOF removed from spec.
+        /* // TODO(STR-3681): EOF removed from spec.
         TransactionType::Eip7873 => {
             // Check if EIP-7873 transaction is enabled.
             if !spec_id.is_enabled_in(SpecId::OSAKA) {

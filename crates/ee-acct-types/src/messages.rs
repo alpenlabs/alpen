@@ -23,7 +23,7 @@ pub const COMMIT_MSG_TYPE: TypeId = 0x10;
 /// Decoded possible EE account messages we want to honor.
 ///
 /// This is not intended to capture all possible message types.
-// TODO make zero copy?
+// TODO(STR-2172): make zero copy?
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DecodedEeMessageData {
     /// Deposit from L1 to a subject in the EE.
@@ -103,7 +103,7 @@ impl_type_flat_struct! {
     /// Describes a chunk a sequencer wants to stage.
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct CommitMsgData {
-        // TODO rename to new_tip_exec_blkid
+        // TODO(STR-3685): rename to new_tip_exec_blkid
         new_tip_exec_blkid: [u8; 32],
     }
 }

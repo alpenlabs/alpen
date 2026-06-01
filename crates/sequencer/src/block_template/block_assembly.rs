@@ -68,13 +68,13 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> 
     //     "fetched blocks should end at the last block of the previous epoch"
     // );
 
-    // TODO: cache
+    // TODO(STR-2170): cache
     Ok(gas_used)
 }
 
 /// Build contents for a new L2 block with the provided configuration.
 /// Needs to be signed to be a valid L2Block.
-// TODO use parent block chainstate
+// TODO(STR-2170): use parent block chainstate
 #[instrument(skip_all, fields(prev_slot = prev_block.header().slot(), prev_blkid = %prev_block.header().get_blockid()))]
 pub fn prepare_block(
     prev_block: L2BlockBundle,
@@ -92,7 +92,7 @@ pub fn prepare_block(
     let prev_global_sr = *prev_block.header().state_root();
 
     // Get the previous block's state
-    // TODO make this get the prev block slot from somewhere more reliable in
+    // TODO(STR-2170): make this get the prev block slot from somewhere more reliable in
     // case we skip slots
     let prev_blkid = prev_block.header().get_blockid();
     let prev_slot = prev_block.header().slot();
@@ -103,11 +103,11 @@ pub fn prepare_block(
     let first_block_of_epoch = prev_chstate.is_epoch_finishing();
 
     // Figure out the safe L1 blkid.
-    // FIXME this is somewhat janky, should get it from the MMR
+    // FIXME(STR-2170): this is somewhat janky, should get it from the MMR
     let safe_l1_blkid = *prev_chstate.l1_view().safe_blkid();
     debug!(%safe_l1_blkid);
 
-    // TODO Pull data from CSM state that we've observed from L1, including new
+    // TODO(STR-2170): Pull data from CSM state that we've observed from L1, including new
     // headers or any headers needed to perform a reorg if necessary.
     let l1_seg = prepare_l1_segment(
         &prev_chstate,
@@ -154,10 +154,11 @@ pub fn prepare_block(
     let fake_header = L2BlockHeader::new(slot, epoch as u64, ts, prev_blkid, &body, fake_stateroot);
 
     // Execute the block to compute the new state root, then assemble the real header.
-    // TODO do something with the write batch?  to prepare it in the database?
+    // TODO(STR-2170): do something with the write batch?  to prepare it in the database?
     let post_state = compute_post_state(prev_chstate, &fake_header, &body, params)?;
 
-    // FIXME: invalid stateroot. Remove l2blockid from ChainState or stateroot from L2Block header.
+    // FIXME(STR-2170): invalid stateroot. Remove l2blockid from ChainState or stateroot from
+    // L2Block header.
     let new_state_root = post_state.compute_state_root();
 
     let header = L2BlockHeader::new(slot, epoch as u64, ts, prev_blkid, &body, new_state_root);
@@ -224,7 +225,7 @@ fn prepare_l1_segment(
         Some(checkpoint)
     };
 
-    // TODO: some way to avoid rechecking l1 blocks already checked during previous
+    // TODO(STR-2170): some way to avoid rechecking l1 blocks already checked during previous
     // block assemblies.
     for height in cur_next_exp_height..=target_height {
         let Some(rec) = try_fetch_manifest(height, l1man)? else {
@@ -349,7 +350,7 @@ fn prepare_exec_data<E: ExecEngineCtl>(
     trace!("submitted EL payload job, waiting for completion");
 
     // Wait 2 seconds for the block to be finished.
-    // TODO Pull data from state about the new safe L1 hash, prev state roots,
+    // TODO(STR-2170): Pull data from state about the new safe L1 hash, prev state roots,
     // etc. to assemble the payload env for this block.
     let wait = time::Duration::from_millis(100);
     let timeout = time::Duration::from_millis(3000);
@@ -405,7 +406,7 @@ fn poll_status_loop<E: ExecEngineCtl>(
     Ok(None)
 }
 
-// TODO when we build the "block executor" logic we should shift this out
+// TODO(STR-2170): when we build the "block executor" logic we should shift this out
 fn compute_post_state(
     prev_chstate: Chainstate,
     header: &L2BlockHeader,
