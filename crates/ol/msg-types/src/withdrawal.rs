@@ -18,6 +18,9 @@ pub const MAX_WITHDRAWAL_DESC_LEN: u32 = 255;
 // TODO: allow users to specify operator fee
 pub const DEFAULT_OPERATOR_FEE: u32 = 0;
 
+/// Bounded [`VarVec`] holding destination descriptor.
+pub type DestDescBufVec = VarVec<u8, { MAX_WITHDRAWAL_DESC_LEN }>;
+
 /// Message data for withdrawal initiation to the bridge gateway account.
 ///
 /// This message type is sent by accounts that want to trigger a withdrawal.
@@ -34,7 +37,7 @@ pub struct WithdrawalMsgData {
     selected_operator: u32,
 
     /// Bitcoin Output Script Descriptor describing the withdrawal output.
-    dest_desc: VarVec<u8, { MAX_WITHDRAWAL_DESC_LEN }>,
+    dest_desc: DestDescBufVec,
 }
 
 impl WithdrawalMsgData {
@@ -64,7 +67,7 @@ impl WithdrawalMsgData {
     }
 
     /// Takes out the inner destination descriptor as a `VarVec`.
-    pub fn into_dest_desc(self) -> VarVec<u8, { MAX_WITHDRAWAL_DESC_LEN }> {
+    pub fn into_dest_desc(self) -> DestDescBufVec {
         self.dest_desc
     }
 
