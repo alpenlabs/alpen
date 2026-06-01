@@ -205,7 +205,7 @@ fn spawn_csm_listener(
     // Fetch historical ASM states starting from the next height.
     let max_historical_blocks = 1000;
     let nh = from_block.height() + 1;
-    let historical_states = storage.asm().get_states_from(
+    let historical_states = storage.asm().get_states_from_blocking(
         L1BlockCommitment::new(nh, Default::default()),
         max_historical_blocks,
     )?;
