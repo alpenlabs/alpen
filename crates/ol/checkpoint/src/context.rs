@@ -6,6 +6,7 @@ use std::{
 };
 
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
+use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
@@ -146,6 +147,7 @@ pub struct ProverConfig {
 /// for the prover to deliver them. Without it, returns empty proofs.
 pub(crate) struct CheckpointWorkerContextImpl {
     storage: Arc<NodeStorage>,
+    bridge_params: BridgeParams,
     /// When present, a prover is running and `get_proof` waits for proofs.
     /// When absent, `get_proof` returns empty immediately.
     prover: Option<ProverConfig>,
@@ -155,17 +157,23 @@ impl CheckpointWorkerContextImpl {
     /// Creates a new context without a prover.
     ///
     /// `get_proof` always returns empty bytes.
-    pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
+    pub(crate) fn new(storage: Arc<NodeStorage>, bridge_params: BridgeParams) -> Self {
         Self {
             storage,
+            bridge_params,
             prover: None,
         }
     }
 
     /// Creates a new context with an integrated prover.
-    pub(crate) fn with_prover(storage: Arc<NodeStorage>, prover: ProverConfig) -> Self {
+    pub(crate) fn with_prover(
+        storage: Arc<NodeStorage>,
+        bridge_params: BridgeParams,
+        prover: ProverConfig,
+    ) -> Self {
         Self {
             storage,
+            bridge_params,
             prover: Some(prover),
         }
     }
@@ -329,7 +337,8 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         &self,
         summary: &EpochSummary,
     ) -> anyhow::Result<(StateDiffRaw, Vec<OLLog>)> {
-        let (statediff, logs, terminal_header) = replay_epoch_and_compute_da(self, summary)?;
+        let (statediff, logs, terminal_header) =
+            replay_epoch_and_compute_da(self, summary, self.bridge_params)?;
         assert_terminal_commitment_matches(&terminal_header, summary.terminal())?;
         Ok((statediff, logs))
     }
@@ -364,6 +373,7 @@ fn assert_terminal_commitment_matches(
 fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     ctx: &C,
     summary: &EpochSummary,
+    bridge_params: BridgeParams,
 ) -> anyhow::Result<(Vec<u8>, Vec<OLLog>, OLBlockHeader)> {
     let epoch_blocks = collect_epoch_blocks(summary, ctx)?;
 
@@ -379,8 +389,13 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
 
     let mut da_state = DaAccumulatingState::new(ol_state);
 
-    let logs = execute_block_batch_preseal(&mut da_state, &epoch_blocks, &prev_terminal_header)
-        .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
+    let logs = execute_block_batch_preseal(
+        &mut da_state,
+        &epoch_blocks,
+        &prev_terminal_header,
+        bridge_params,
+    )
+    .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
 
     let terminal_header = epoch_blocks.ensured_last().header().clone();
 

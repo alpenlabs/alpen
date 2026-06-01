@@ -10,6 +10,7 @@ use std::{
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
+use strata_ol_params::OLParams;
 use strata_ol_state_provider::StateProvider;
 use strata_predicate::PredicateKey;
 use strata_service::ServiceState;
@@ -196,6 +197,7 @@ impl BlockAssemblyState {
 
 /// Combined state for the service (context + mutable state).
 pub(crate) struct BlockasmServiceState<M: MempoolProvider, E: EpochSealingPolicy, S> {
+    ol_params: Arc<OLParams>,
     blockasm_config: Arc<BlockAssemblyConfig>,
     sequencer_config: SequencerConfig,
     sequencer_predicate: PredicateKey,
@@ -221,6 +223,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> Debug for BlockasmServiceStat
 impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S> {
     /// Create new block assembly service state.
     pub(crate) fn new(
+        ol_params: Arc<OLParams>,
         blockasm_config: Arc<BlockAssemblyConfig>,
         sequencer_config: SequencerConfig,
         sequencer_predicate: PredicateKey,
@@ -229,6 +232,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
     ) -> Self {
         let ttl = Duration::from_secs(sequencer_config.block_template_ttl_secs);
         Self {
+            ol_params,
             blockasm_config,
             sequencer_config,
             sequencer_predicate,
@@ -237,6 +241,10 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
             state: BlockAssemblyState::new(ttl),
             epoch_da_tracker: EpochDaTracker::new_empty(),
         }
+    }
+
+    pub(crate) fn ol_params(&self) -> &OLParams {
+        &self.ol_params
     }
 
     pub(crate) fn sequencer_config(&self) -> &SequencerConfig {
@@ -302,7 +310,15 @@ where
                 .get_accumulated_da(parent_blkid.blkid)
             {
                 Some(da) => Ok(da.clone()),
-                None => rebuild_accumulated_da_upto(parent_blkid, cur_epoch, self.context()).await,
+                None => {
+                    rebuild_accumulated_da_upto(
+                        parent_blkid,
+                        cur_epoch,
+                        *self.ol_params().bridge_params(),
+                        self.context(),
+                    )
+                    .await
+                }
             }
         }
     }
@@ -361,6 +377,7 @@ mod tests {
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         let state = BlockasmServiceState::new(
+            Arc::new(OLParams::default()),
             Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
             env.sequencer_config().clone(),
             PredicateKey::always_accept(),
@@ -577,6 +594,7 @@ mod tests {
             env.sequencer_config(),
             config,
             AccumulatedDaData::new_empty(),
+            *state.ol_params().bridge_params(),
         )
         .await
         .expect("child block generation should succeed");

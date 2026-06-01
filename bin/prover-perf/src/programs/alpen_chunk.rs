@@ -6,10 +6,12 @@
 
 use std::{fs, path::PathBuf, sync::Arc};
 
+use alpen_reth_evm::evm::AlpenEvmFactory;
 use reth_primitives_traits::Block as _;
 use rsp_client_executor::io::EthClientExecutorInput;
 use serde::Deserialize;
 use strata_acct_types::Hash;
+use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{ExecBlock, ExecHeader, ExecPayload, ExecutionEnvironment};
 use strata_ee_chain_types::ExecInputs;
@@ -73,7 +75,7 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
 
     let chain_spec: Arc<reth_chainspec::ChainSpec> =
         Arc::new((&witness.genesis).try_into().unwrap());
-    let ee = EvmExecutionEnvironment::new(chain_spec);
+    let ee = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
     let exec_payload = ExecPayload::new(&header, block.get_body());
     let inputs = ExecInputs::new_empty();
     let output = ee
@@ -101,6 +103,7 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
     EeChunkProofInput {
         genesis: witness.genesis,
         private_input,
+        bridge_params: BridgeParams::default(),
     }
 }
 

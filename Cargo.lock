@@ -699,7 +699,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -1046,6 +1046,7 @@ dependencies = [
  "shrex",
  "sled",
  "strata-asm-proto-bridge-v1-txs",
+ "strata-bridge-params",
  "strata-cli-common",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -1108,6 +1109,7 @@ dependencies = [
  "rsp-primitives",
  "ssz",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-btcio",
  "strata-codec",
  "strata-common",
@@ -1420,6 +1422,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "secp256k1 0.29.1",
+ "strata-bridge-params",
  "strata-crypto",
  "strata-identifiers",
  "strata-ol-bridge-types",
@@ -2790,7 +2793,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "log",
@@ -3581,7 +3584,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7864,9 +7867,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl"
-version = "0.10.80"
+version = "0.10.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a45fa2aa886c42762255da344f0a0d313e254066c46aad76f300c3d3da62d967"
+checksum = "bf0b434746ee2832f4f0baf10137e1cabb18cbe6912c69e2e33263c45250f542"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
@@ -7901,9 +7904,9 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.116"
+version = "0.9.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f28a22dc7140cda5f096e5e7724a6962ca81a7f8bfd2979f9b18c11af56318c4"
+checksum = "158fe5b292746440aa6e7a7e690e55aeb72d41505e2804c23c6973ad0e9c9781"
 dependencies = [
  "cc",
  "libc",
@@ -9014,7 +9017,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "once_cell",
@@ -9034,7 +9037,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9047,7 +9050,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -15101,6 +15104,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-bridge-params"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "serde",
+ "serde_json",
+ "ssz",
+ "ssz_derive",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-btc-types"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc21#bb060d613880d8d4c8decd0e7544acb54e4d5a25"
@@ -15205,6 +15220,7 @@ dependencies = [
  "sled",
  "ssz",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-checkpoint-types",
  "strata-db-store-sled",
  "strata-db-types",
@@ -16008,6 +16024,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-types",
+ "strata-bridge-params",
  "strata-btc-verification",
  "strata-codec",
  "strata-common",
@@ -16121,6 +16138,7 @@ dependencies = [
  "proptest",
  "serde",
  "strata-asm-proto-checkpoint-types",
+ "strata-bridge-params",
  "strata-checkpoint-types",
  "strata-db-store-sled",
  "strata-identifiers",
@@ -16233,6 +16251,7 @@ dependencies = [
  "arbitrary",
  "serde",
  "serde_json",
+ "strata-bridge-params",
  "strata-btc-types",
  "strata-identifiers",
  "strata-predicate",
@@ -16385,6 +16404,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-proto-checkpoint-types",
+ "strata-bridge-params",
  "strata-codec",
  "strata-identifiers",
  "strata-ledger-types",
@@ -16492,11 +16512,13 @@ dependencies = [
 name = "strata-proofimpl-alpen-acct"
 version = "0.1.0"
 dependencies = [
+ "alpen-reth-evm",
  "k256",
  "reth-chainspec",
  "rkyv",
  "rsp-primitives",
  "ssz",
+ "strata-bridge-params",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
@@ -16513,6 +16535,7 @@ dependencies = [
 name = "strata-proofimpl-alpen-chunk"
 version = "0.1.0"
 dependencies = [
+ "alpen-reth-evm",
  "k256",
  "reth-chainspec",
  "reth-primitives-traits",
@@ -16523,6 +16546,7 @@ dependencies = [
  "serde_json",
  "ssz",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
@@ -16542,6 +16566,7 @@ dependencies = [
  "ssz_primitives",
  "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-types",
+ "strata-bridge-params",
  "strata-codec",
  "strata-crypto",
  "strata-da-framework",
@@ -16603,6 +16628,7 @@ dependencies = [
 name = "strata-provers-perf"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alpen-reth-evm",
  "anyhow",
  "argh",
  "num-format",
@@ -16615,6 +16641,7 @@ dependencies = [
  "sp1-sdk",
  "ssz",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-codec",
  "strata-da-framework",
  "strata-ee-acct-runtime",

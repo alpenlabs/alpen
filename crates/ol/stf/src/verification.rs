@@ -4,6 +4,7 @@
 //! assembly as they perform all of the block validation checks including
 //! outputs (corresponding with headers/checkpoints/etc).
 
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_ledger_types::*;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
@@ -155,10 +156,11 @@ pub fn verify_block<S: IStateAccessorMut>(
     header: &OLBlockHeader,
     parent_header: Option<&OLBlockHeader>,
     body: &OLBlockBody,
+    bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
 
-    let mut logs = verify_block_preseal(state, header, parent_header, body)?;
+    let mut logs = verify_block_preseal(state, header, parent_header, body, bridge_params)?;
     logs.extend(apply_block_manifests(state, header, body)?);
 
     // Verify logs size.
@@ -195,6 +197,7 @@ pub fn verify_block_preseal<S: IStateAccessorMut>(
     header: &OLBlockHeader,
     parent_header: Option<&OLBlockHeader>,
     body: &OLBlockBody,
+    bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     // 0. Do preliminary sanity checks.
     verify_header_continuity(header, parent_header)?;
@@ -216,7 +219,8 @@ pub fn verify_block_preseal<S: IStateAccessorMut>(
 
     // 3. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
-    let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
+    let basic_ctx =
+        BasicExecContext::new(block_info, &output_buffer).with_bridge_params(bridge_params);
     let tx_ctx = TxExecContext::new(&basic_ctx, parent_header);
     if let Some(tx_segment) = body.tx_segment() {
         transaction_processing::process_block_tx_segment(state, tx_segment, &tx_ctx)?;

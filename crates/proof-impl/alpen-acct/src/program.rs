@@ -1,7 +1,8 @@
 use k256::schnorr::SigningKey;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
-use ssz::Decode;
+use ssz::{Decode, Encode};
+use strata_bridge_params::BridgeParams;
 use strata_ee_acct_runtime::EePrivateInput;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_snark_acct_runtime::PrivateInput as UpdatePrivateInput;
@@ -34,6 +35,7 @@ pub struct EeAcctProofInput {
     pub genesis: Genesis,
     pub ee_private_input: EePrivateInput,
     pub update_private_input: UpdatePrivateInput,
+    pub bridge_params: BridgeParams,
 }
 
 #[derive(Debug)]
@@ -75,6 +77,7 @@ impl ZkVmProgram for EeAcctProgram {
         let upd_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.update_private_input)
             .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
         builder.write_buf(&upd_rkyv_bytes)?;
+        builder.write_buf(&input.bridge_params.as_ssz_bytes())?;
 
         builder.build()
     }
@@ -168,6 +171,7 @@ mod tests {
             genesis,
             ee_private_input,
             update_private_input,
+            bridge_params: BridgeParams::default(),
         };
 
         // Predicate is carried through but never evaluated in this

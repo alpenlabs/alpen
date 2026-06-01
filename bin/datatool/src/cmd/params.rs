@@ -78,7 +78,7 @@ pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> 
         .deposit_sats
         .map(|s| parse_abbr_amt(&s))
         .transpose()?
-        .unwrap_or(1_000_000_000);
+        .unwrap_or(100_000_000);
 
     // Parse the checkpoint verification key.
     let rollup_vk = resolve_checkpoint_predicate(cmd.checkpoint_predicate)?;

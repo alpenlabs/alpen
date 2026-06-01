@@ -2,9 +2,12 @@
 
 use std::sync::Arc;
 
+use alpen_reth_evm::evm::AlpenEvmFactory;
 use reth_chainspec::ChainSpec;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
+use ssz::Decode;
+use strata_bridge_params::BridgeParams;
 use strata_ee_chunk_runtime::ArchivedPrivateInput;
 use strata_evm_ee::EvmExecutionEnvironment;
 use zkaleido::ZkVmEnvSerde;
@@ -27,7 +30,11 @@ pub fn process_ee_chunk(zkvm: &impl ZkVmEnvSerde) {
     let input: &ArchivedPrivateInput = rkyv::access::<ArchivedPrivateInput, RkyvError>(&buf)
         .expect("failed to access rkyv archive");
 
-    let ee = EvmExecutionEnvironment::new(chain_spec);
+    let withdrawal_ssz = zkvm.read_buf();
+    let bridge_params = BridgeParams::from_ssz_bytes(&withdrawal_ssz)
+        .expect("failed to deserialize withdrawal params");
+    let evm_factory = AlpenEvmFactory::from_bridge_params(&bridge_params);
+    let ee = EvmExecutionEnvironment::new(chain_spec, evm_factory);
 
     strata_ee_chunk_runtime::verify_input(&ee, input).expect("chunk verification failed");
 
