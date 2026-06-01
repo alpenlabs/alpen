@@ -6,6 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use strata_bridge_params::BridgeParams;
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
@@ -160,6 +161,7 @@ pub(crate) async fn generate_block_template_inner<C, E>(
     sequencer_config: &SequencerConfig,
     block_generation_config: BlockGenerationConfig,
     parent_da: AccumulatedDaData,
+    bridge_params: BridgeParams,
 ) -> BlockAssemblyResult<BlockTemplateResult>
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator + MempoolProvider,
@@ -198,6 +200,7 @@ where
         block_epoch,
         mempool_txs,
         parent_da,
+        bridge_params,
     )
     .await?;
 
@@ -257,6 +260,7 @@ pub(crate) async fn construct_block<C, E>(
     block_epoch: Epoch,
     mempool_txs: Vec<(OLTxId, OLTransaction)>,
     parent_da: AccumulatedDaData,
+    bridge_params: BridgeParams,
 ) -> BlockAssemblyResult<ConstructBlockOutput<C::State>>
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator,
@@ -307,6 +311,7 @@ where
         accumulated_batch,
         mempool_txs,
         accumulated_da,
+        bridge_params,
     );
 
     // Phase 3: Seal the epoch if the policy says so or the checkpoint payload is near the
@@ -431,6 +436,7 @@ where
     skip_all,
     fields(component = "ol_block_assembly", tx_count = mempool_txs.len())
 )]
+#[expect(clippy::too_many_arguments, reason = "all arguments are required")]
 fn process_transactions<P, S>(
     proof_gen: &P,
     block_context: &BlockContext<'_>,
@@ -439,6 +445,7 @@ fn process_transactions<P, S>(
     accumulated_batch: WriteBatch<S::AccountState>,
     mempool_txs: Vec<(OLTxId, OLTransaction)>,
     accumulated_da: AccumulatedDaData,
+    bridge_params: BridgeParams,
 ) -> ProcessTransactionsOutput<S>
 where
     P: AccumulatorProofGenerator,
@@ -513,7 +520,8 @@ where
         // Step 3: Create per-tx output buffer and execute transaction.
         // Logs are only merged into main buffer on success; on failure they're discarded.
         let tx_buffer = ExecOutputBuffer::new_empty();
-        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &tx_buffer);
+        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &tx_buffer)
+            .with_bridge_params(bridge_params);
         let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
 
         debug!(%txid, kind = %tx.payload().type_id(), "processing transaction");
@@ -2568,6 +2576,7 @@ mod tests {
             accumulated_batch,
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
+            BridgeParams::default(),
         );
 
         assert!(
@@ -2624,6 +2633,7 @@ mod tests {
             accumulated_batch,
             vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
             AccumulatedDaData::new_empty(),
+            BridgeParams::default(),
         );
 
         assert_eq!(
@@ -2668,6 +2678,7 @@ mod tests {
             accumulated_batch,
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
+            BridgeParams::default(),
         );
 
         assert!(
@@ -2707,6 +2718,7 @@ mod tests {
             accumulated_batch,
             mempool_txs,
             seeded_da,
+            BridgeParams::default(),
         )
     }
 

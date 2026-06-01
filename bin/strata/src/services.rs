@@ -184,8 +184,11 @@ mod sequencer_services {
         let epoch_sealing = FixedSlotSealing::new(slots_per_epoch);
         let state_provider = OLStateManagerProviderImpl::new(nodectx.storage().ol_state().clone());
 
+        let l1_reorg_safe_depth = nodectx.params().rollup().l1_reorg_safe_depth;
+
         nodectx.task_manager().handle().block_on(async {
             BlockasmBuilder::new(
+                nodectx.ol_params().clone(),
                 blockasm_config,
                 nodectx.storage().clone(),
                 mempool_provider,
@@ -193,6 +196,7 @@ mod sequencer_services {
                 state_provider,
                 sequencer_config,
                 sequencer_predicate,
+                l1_reorg_safe_depth,
             )
             .launch(nodectx.executor())
             .await

@@ -343,6 +343,7 @@ fn test_evm_partial_state_rejects_invalid_ancestor_parent_hash() {
 fn test_evm_partial_state_codec_roundtrip_execution() {
     use std::sync::Arc;
 
+    use alpen_reth_evm::evm::AlpenEvmFactory;
     use reth_chainspec::ChainSpec;
     use reth_primitives_traits::Block as _;
     use strata_ee_acct_types::{ExecBlock, ExecPayload, ExecutionEnvironment};
@@ -364,7 +365,7 @@ fn test_evm_partial_state_codec_roundtrip_execution() {
     let block = EvmBlock::new(EvmHeader::new(header.clone()), body);
 
     let chain_spec: Arc<ChainSpec> = Arc::new((&witness.genesis).try_into().unwrap());
-    let ee = EvmExecutionEnvironment::new(chain_spec);
+    let ee = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
     let payload = ExecPayload::new(&header, block.get_body());
     let inputs = ExecInputs::new_empty();
 

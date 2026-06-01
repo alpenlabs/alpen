@@ -20,6 +20,7 @@ use strata_ol_state_support_types::IComputeStateRootWithWrites;
 use strata_ol_state_types::IStateBatchApplicable;
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
+use tracing::debug;
 
 use crate::{BlockAssemblyError, BlockAssemblyResult, MempoolProvider};
 
@@ -72,6 +73,10 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
     ) -> BlockAssemblyResult<Option<Arc<Self::State>>>;
 
     /// Fetch ASM manifests from `start_height`, returning at most `max_count` in ascending order.
+    ///
+    /// Implementations must restrict results to manifests buried deeply enough on L1 that
+    /// a reorg cannot rewrite them; shallow manifests must be excluded so an L1 reorg
+    /// cannot cascade into an OL reorg.
     async fn fetch_asm_manifests_from(
         &self,
         start_height: L1Height,
@@ -117,23 +122,31 @@ pub struct BlockAssemblyContext<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     state_provider: S,
+    l1_reorg_safe_depth: u32,
 }
 
 impl<M, S> Debug for BlockAssemblyContext<M, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BlockAssemblyContext")
             .field("storage", &"<NodeStorage>")
+            .field("l1_reorg_safe_depth", &self.l1_reorg_safe_depth)
             .finish_non_exhaustive()
     }
 }
 
 impl<M, S> BlockAssemblyContext<M, S> {
     /// Create a new block assembly context.
-    pub fn new(storage: Arc<NodeStorage>, mempool_provider: M, state_provider: S) -> Self {
+    pub fn new(
+        storage: Arc<NodeStorage>,
+        mempool_provider: M,
+        state_provider: S,
+        l1_reorg_safe_depth: u32,
+    ) -> Self {
         Self {
             storage,
             mempool_provider,
             state_provider,
+            l1_reorg_safe_depth,
         }
     }
 }
@@ -186,11 +199,22 @@ where
             Some((commitment, _)) => commitment.height(),
             None => return Ok(Vec::new()),
         };
-        let end_height = asm_tip_height.min(start_height.saturating_add(max_count - 1));
 
-        if start_height > end_height {
+        // A manifest at height `h` is buried iff it has at least `safe_depth` confirmations
+        // on L1: `asm_tip - h + 1 >= safe_depth`, i.e. `h <= asm_tip - (safe_depth - 1)`.
+        let safe_depth = self.l1_reorg_safe_depth.max(1);
+        let buried_tip = asm_tip_height.saturating_sub(safe_depth - 1);
+        debug!(
+            %asm_tip_height,
+            %buried_tip,
+            %start_height,
+            l1_reorg_safe_depth = self.l1_reorg_safe_depth,
+            "fetching asm manifests"
+        );
+        if start_height > buried_tip {
             return Ok(Vec::new());
         }
+        let end_height = buried_tip.min(start_height.saturating_add(max_count - 1));
 
         let mut manifests = Vec::new();
         for height in start_height..=end_height {

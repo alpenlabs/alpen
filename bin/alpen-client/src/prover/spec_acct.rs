@@ -26,6 +26,7 @@ use bitcoind_async_client::Client as BtcClient;
 use rsp_primitives::genesis::Genesis;
 use ssz::{Decode, Encode as _};
 use strata_acct_types::Hash;
+use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
 use strata_ee_acct_types::UpdateExtraData;
@@ -161,6 +162,7 @@ pub(crate) struct AcctSpec {
     state_diff_provider: Arc<dyn StateDiffProvider>,
     range_witness_fn: Arc<AcctRangeWitnessFn>,
     genesis: Genesis,
+    bridge_params: BridgeParams,
 }
 
 impl AcctSpec {
@@ -172,6 +174,7 @@ impl AcctSpec {
         state_diff_provider: Arc<dyn StateDiffProvider>,
         range_witness_fn: Arc<AcctRangeWitnessFn>,
         genesis: Genesis,
+        bridge_params: BridgeParams,
     ) -> Self {
         Self {
             chunk_receipts,
@@ -181,6 +184,7 @@ impl AcctSpec {
             state_diff_provider,
             range_witness_fn,
             genesis,
+            bridge_params,
         }
     }
 }
@@ -430,6 +434,7 @@ impl ProofSpec for AcctSpec {
             ee_private_input,
             snark_acct_private_input,
             da_witness,
+            bridge_params: self.bridge_params,
         })
     }
 }

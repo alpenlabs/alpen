@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 alpen-ee-da-types.workspace = true
+alpen-reth-evm.workspace = true
 ssz.workspace = true
 zkaleido.workspace = true
 
@@ -17,6 +18,7 @@ strata-proofimpl-alpen-chunk.workspace = true
 strata-proofimpl-checkpoint.workspace = true
 
 strata-acct-types.workspace = true
+strata-bridge-params.workspace = true
 strata-codec.workspace = true
 strata-da-framework.workspace = true
 strata-ee-acct-runtime.workspace = true

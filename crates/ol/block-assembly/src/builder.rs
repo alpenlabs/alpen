@@ -7,6 +7,7 @@ use std::{
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
+use strata_ol_params::OLParams;
 use strata_ol_state_provider::StateProvider;
 use strata_predicate::PredicateKey;
 use strata_service::ServiceBuilder;
@@ -27,6 +28,7 @@ where
     E: EpochSealingPolicy,
     P: StateProvider,
 {
+    ol_params: Arc<OLParams>,
     blockasm_config: Arc<BlockAssemblyConfig>,
     storage: Arc<NodeStorage>,
     mempool_provider: M,
@@ -34,6 +36,7 @@ where
     state_provider: P,
     sequencer_config: SequencerConfig,
     sequencer_predicate: PredicateKey,
+    l1_reorg_safe_depth: u32,
     command_buffer_size: usize,
 }
 
@@ -43,7 +46,12 @@ where
     E: EpochSealingPolicy,
     P: StateProvider,
 {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "builder collects unrelated service inputs"
+    )]
     pub fn new(
+        ol_params: Arc<OLParams>,
         blockasm_config: Arc<BlockAssemblyConfig>,
         storage: Arc<NodeStorage>,
         mempool_provider: M,
@@ -51,8 +59,10 @@ where
         state_provider: P,
         sequencer_config: SequencerConfig,
         sequencer_predicate: PredicateKey,
+        l1_reorg_safe_depth: u32,
     ) -> Self {
         Self {
+            ol_params,
             blockasm_config,
             storage,
             mempool_provider,
@@ -60,6 +70,7 @@ where
             state_provider,
             sequencer_config,
             sequencer_predicate,
+            l1_reorg_safe_depth,
             command_buffer_size: 64,
         }
     }
@@ -86,9 +97,11 @@ where
             self.storage,
             self.mempool_provider,
             self.state_provider,
+            self.l1_reorg_safe_depth,
         ));
 
         let state = BlockasmServiceState::new(
+            self.ol_params,
             self.blockasm_config,
             self.sequencer_config,
             self.sequencer_predicate,

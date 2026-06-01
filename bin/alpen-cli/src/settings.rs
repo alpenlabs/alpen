@@ -14,13 +14,14 @@ use config::Config;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use shrex::Hex;
+use strata_bridge_params::BridgeParams;
 use strata_params::RollupParams;
 use terrors::OneOf;
 
 #[cfg(feature = "test-mode")]
 use crate::{constants::SEED_LEN, seed::Seed};
 use crate::{
-    constants::{DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_FEE, DEFAULT_FINALITY_DEPTH},
+    constants::*,
     signet::{backend::SignetBackend, EsploraClient},
 };
 
@@ -53,6 +54,10 @@ pub struct SettingsFromFile {
     pub bridge_fee_sats: Option<u64>,
     /// The number of confirmations to consider a Bitcoin transaction final.
     pub finality_depth: Option<u32>,
+    /// Denomination in satoshis. Defaults to 100_000_000 (1 BTC).
+    pub withdrawal_denomination_sats: Option<u64>,
+    /// Maximum withdrawal amount in satoshis. Defaults to 1_000_000_000 (10 BTC).
+    pub max_withdrawal_amount_sats: Option<u64>,
     /// Path to the rollup params JSON file.
     pub rollup_params_path: Option<PathBuf>,
     /// Seed that can be passed directly for functional test.
@@ -78,6 +83,7 @@ pub struct Settings {
     pub signet_backend: Arc<dyn SignetBackend>,
     pub bridge_fee: Amount,
     pub finality_depth: u32,
+    pub bridge_params: BridgeParams,
     pub params: RollupParams,
     #[cfg(feature = "test-mode")]
     pub seed: Seed,
@@ -177,6 +183,15 @@ impl Settings {
                 .map(Amount::from_sat)
                 .unwrap_or(DEFAULT_BRIDGE_FEE),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
+            bridge_params: BridgeParams::new(
+                from_file
+                    .withdrawal_denomination_sats
+                    .unwrap_or(DEFAULT_DENOMINATION_SATS),
+                from_file
+                    .max_withdrawal_amount_sats
+                    .or(Some(DEFAULT_MAX_WITHDRAWAL_SATS)),
+            )
+            .expect("invalid withdrawal params in config"),
             params,
             #[cfg(feature = "test-mode")]
             seed: Seed::from_file(from_file.seed),

@@ -42,7 +42,7 @@ use strata_ol_chain_types_new::{
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
-use strata_ol_params::OLParams;
+use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLState};
@@ -151,8 +151,13 @@ pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) ->
 /// Uses unit types for mempool and state provider since
 /// proof generation only requires storage access.
 pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyContext<(), ()> {
-    BlockAssemblyContext::new(storage, (), ())
+    BlockAssemblyContext::new(storage, (), (), TEST_L1_REORG_SAFE_DEPTH)
 }
+
+/// Default `l1_reorg_safe_depth` used in block-assembly tests that don't exercise
+/// the buried-manifest filtering directly. Zero preserves pre-filtering behavior:
+/// the buried tip equals the ASM tip, so all available manifests are eligible.
+pub(crate) const TEST_L1_REORG_SAFE_DEPTH: u32 = 0;
 
 /// Mock mempool provider for tests that stores transactions in memory.
 pub(crate) struct MockMempoolProvider {
@@ -624,8 +629,13 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_new::OLBlockH
     let mut temp_state = create_test_genesis_state();
     let genesis_context = BlockContext::new(&genesis_info, None);
     let genesis_components = BlockComponents::new_empty();
-    let genesis_output =
-        stf_construct_block(&mut temp_state, genesis_context, genesis_components).unwrap();
+    let genesis_output = stf_construct_block(
+        &mut temp_state,
+        genesis_context,
+        genesis_components,
+        BridgeParams::default(),
+    )
+    .unwrap();
     genesis_output.completed_block().header().clone()
 }
 
@@ -703,7 +713,7 @@ pub(crate) fn generate_message_entries(
 /// Creates and stores ASM manifests for L1 blocks from height `start` to `end` (inclusive),
 /// and stores an ASM state at the highest L1 block.
 ///
-/// Returns the L1BlockCommitment for the highest block.
+/// Returns the `L1BlockCommitment` for the highest block.
 pub(crate) async fn setup_asm_state_with_l1_manifests(
     storage: &NodeStorage,
     start: L1Height,
@@ -875,7 +885,8 @@ impl TestEnv {
         fixture: Arc<TestStorageFixture>,
         parent_commitment: OLBlockCommitment,
     ) -> Self {
-        let (ctx, mempool) = create_test_block_assembly_context(fixture.storage().clone());
+        let (ctx, mempool) =
+            create_test_block_assembly_context(fixture.storage().clone(), TEST_L1_REORG_SAFE_DEPTH);
         Self {
             fixture,
             ctx: Arc::new(ctx),
@@ -994,6 +1005,7 @@ impl TestEnv {
             self.sequencer_config(),
             config,
             parent_da,
+            BridgeParams::default(),
         )
         .await
     }
@@ -1263,8 +1275,13 @@ impl TestStorageFixtureBuilder {
                 let components = BlockComponents::new_manifests(vec![genesis_manifest]);
 
                 let block_context = BlockContext::new(&block_info, None);
-                let construct_output = stf_construct_block(&mut state, block_context, components)
-                    .expect("Genesis block execution should succeed");
+                let construct_output = stf_construct_block(
+                    &mut state,
+                    block_context,
+                    components,
+                    BridgeParams::default(),
+                )
+                .expect("Genesis block execution should succeed");
 
                 let completed_block = construct_output.completed_block();
                 let header = completed_block.header().clone();
@@ -1414,10 +1431,16 @@ fn build_inbox_claims_for_messages(
 /// Returns the context. Use `ctx.mempool_provider()` to add transactions to the mock mempool.
 pub(crate) fn create_test_block_assembly_context(
     storage: Arc<NodeStorage>,
+    l1_reorg_safe_depth: u32,
 ) -> (BlockAssemblyContextImpl, Arc<MockMempoolProvider>) {
     let mempool_provider = Arc::new(MockMempoolProvider::new());
     let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
-    let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider);
+    let ctx = BlockAssemblyContext::new(
+        storage,
+        mempool_provider.clone(),
+        state_provider,
+        l1_reorg_safe_depth,
+    );
     (ctx, mempool_provider)
 }
 
@@ -1488,6 +1511,7 @@ pub(crate) async fn assemble_block_with_txs(
         block_epoch,
         txs,
         parent_da,
+        BridgeParams::default(),
     )
     .await
 }

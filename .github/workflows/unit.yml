@@ -65,12 +65,12 @@ jobs:
           rustup default "$RUST_NIGHTLY"
 
       - name: Install latest nextest release
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2.75.20
+        uses: taiki-e/install-action@b550161ef8a7bc4f2a671c0b03a18ac9ccedea1e # v2.79.1
         with:
           tool: nextest
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2.75.20
+        uses: taiki-e/install-action@b550161ef8a7bc4f2a671c0b03a18ac9ccedea1e # v2.79.1
         with:
           tool: cargo-llvm-cov
 
@@ -90,7 +90,7 @@ jobs:
           cargo llvm-cov --workspace --locked nextest --profile ci --lcov --output-path lcov.unit.info --no-cfg-coverage --no-cfg-coverage-nightly
 
       - name: Test Summary
-        uses: test-summary/action@31493c76ec9e7aa675f1585d3ed6f1da69269a86 # v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2
         if: always()
         with:
           paths: "target/nextest/ci/junit.xml"

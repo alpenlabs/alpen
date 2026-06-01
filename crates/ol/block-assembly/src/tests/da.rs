@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{
@@ -113,9 +114,13 @@ async fn test_da_incremental_matches_replay() {
 
     let owned_blocks: Vec<OLBlock> = blocks.into_iter().cloned().collect();
     let mut replay_da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(genesis_state));
-    let replay_logs =
-        execute_block_batch_preseal(&mut replay_da_state, &owned_blocks, parent_header)
-            .expect("replay should succeed");
+    let replay_logs = execute_block_batch_preseal(
+        &mut replay_da_state,
+        &owned_blocks,
+        parent_header,
+        BridgeParams::default(),
+    )
+    .expect("replay should succeed");
 
     let (replay_acc, replay_inner) = replay_da_state.into_parts();
     let replay_blob = finalize_da_to_bytes(replay_acc, replay_inner);
@@ -284,9 +289,10 @@ async fn test_rebuild_da_matches_incremental() {
 
     // Rebuild DA from scratch using the production code path.
     let epoch = artifacts[0].0.header().epoch();
-    let rebuilt_da = rebuild_accumulated_da_upto(final_commitment, epoch, env.ctx())
-        .await
-        .expect("rebuild_accumulated_da_upto should succeed");
+    let rebuilt_da =
+        rebuild_accumulated_da_upto(final_commitment, epoch, BridgeParams::default(), env.ctx())
+            .await
+            .expect("rebuild_accumulated_da_upto should succeed");
 
     let (rebuilt_acc, rebuilt_logs) = rebuilt_da.into_parts();
     let rebuilt_blob = finalize_da_to_bytes(rebuilt_acc, last_post_state.clone());

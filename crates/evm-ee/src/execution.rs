@@ -76,9 +76,10 @@ fn convert_withdrawal_intents_to_messages(
 }
 
 impl EvmExecutionEnvironment {
-    /// Creates a new EvmExecutionEnvironment with the given chain specification.
-    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, AlpenEvmFactory::default());
+    /// Creates a new EvmExecutionEnvironment with the given chain specification
+    /// and EVM factory.
+    pub fn new(chain_spec: Arc<ChainSpec>, evm_factory: AlpenEvmFactory) -> Self {
+        let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, evm_factory);
         Self { evm_config }
     }
 }
@@ -349,7 +350,7 @@ mod tests {
             serde_json::from_str(&json_content).expect("Failed to parse test data");
 
         let chain_spec: Arc<ChainSpec> = Arc::new((&test_data.witness.genesis).try_into().unwrap());
-        let env = EvmExecutionEnvironment::new(chain_spec);
+        let env = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
         let header = test_data.witness.current_block.header().clone();
         let evm_header = EvmHeader::new(header.clone());
         let mut state = EvmPartialState::new(
@@ -401,7 +402,7 @@ mod tests {
 
         // Create execution environment
         let chain_spec: Arc<ChainSpec> = Arc::new((&test_data.witness.genesis).try_into().unwrap());
-        let env = EvmExecutionEnvironment::new(chain_spec);
+        let env = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
 
         // Use the pre-state directly from witness data (it already has all the proofs!)
         let pre_state = EvmPartialState::new(

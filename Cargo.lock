@@ -699,7 +699,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -1046,6 +1046,7 @@ dependencies = [
  "shrex",
  "sled",
  "strata-asm-proto-bridge-v1-txs",
+ "strata-bridge-params",
  "strata-cli-common",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -1111,6 +1112,7 @@ dependencies = [
  "rsp-primitives",
  "ssz",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-btcio",
  "strata-codec",
  "strata-common",
@@ -1467,6 +1469,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "secp256k1 0.29.1",
+ "strata-bridge-params",
  "strata-crypto",
  "strata-identifiers",
  "strata-ol-bridge-types",
@@ -1684,7 +1687,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1695,7 +1698,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2838,7 +2841,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "log",
@@ -3629,7 +3632,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3638,7 +3641,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4377,7 +4380,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -4680,7 +4683,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4999,7 +5002,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7623,7 +7626,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7912,9 +7915,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl"
-version = "0.10.80"
+version = "0.10.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a45fa2aa886c42762255da344f0a0d313e254066c46aad76f300c3d3da62d967"
+checksum = "bf0b434746ee2832f4f0baf10137e1cabb18cbe6912c69e2e33263c45250f542"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
@@ -7949,9 +7952,9 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.116"
+version = "0.9.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f28a22dc7140cda5f096e5e7724a6962ca81a7f8bfd2979f9b18c11af56318c4"
+checksum = "158fe5b292746440aa6e7a7e690e55aeb72d41505e2804c23c6973ad0e9c9781"
 dependencies = [
  "cc",
  "libc",
@@ -9062,7 +9065,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "once_cell",
@@ -9082,7 +9085,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9095,7 +9098,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -12665,7 +12668,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13974,7 +13977,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -15149,6 +15152,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-bridge-params"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "serde",
+ "serde_json",
+ "ssz",
+ "ssz_derive",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-btc-types"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc21#bb060d613880d8d4c8decd0e7544acb54e4d5a25"
@@ -15253,6 +15268,7 @@ dependencies = [
  "sled",
  "ssz",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-checkpoint-types",
  "strata-db-store-sled",
  "strata-db-types",
@@ -16058,6 +16074,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-types",
+ "strata-bridge-params",
  "strata-btc-verification",
  "strata-codec",
  "strata-common",
@@ -16171,6 +16188,7 @@ dependencies = [
  "proptest",
  "serde",
  "strata-asm-proto-checkpoint-types",
+ "strata-bridge-params",
  "strata-checkpoint-types",
  "strata-db-store-sled",
  "strata-identifiers",
@@ -16283,6 +16301,7 @@ dependencies = [
  "arbitrary",
  "serde",
  "serde_json",
+ "strata-bridge-params",
  "strata-btc-types",
  "strata-identifiers",
  "strata-predicate",
@@ -16433,6 +16452,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-proto-checkpoint-types",
+ "strata-bridge-params",
  "strata-codec",
  "strata-identifiers",
  "strata-ledger-types",
@@ -16542,11 +16562,13 @@ version = "0.1.0"
 dependencies = [
  "alpen-ee-da-runtime",
  "alpen-ee-da-types",
+ "alpen-reth-evm",
  "k256",
  "reth-chainspec",
  "rkyv",
  "rsp-primitives",
  "ssz",
+ "strata-bridge-params",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
@@ -16563,6 +16585,7 @@ dependencies = [
 name = "strata-proofimpl-alpen-chunk"
 version = "0.1.0"
 dependencies = [
+ "alpen-reth-evm",
  "k256",
  "reth-chainspec",
  "reth-primitives-traits",
@@ -16573,6 +16596,7 @@ dependencies = [
  "serde_json",
  "ssz",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
@@ -16592,6 +16616,7 @@ dependencies = [
  "ssz_primitives",
  "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-types",
+ "strata-bridge-params",
  "strata-codec",
  "strata-crypto",
  "strata-da-framework",
@@ -16654,6 +16679,7 @@ name = "strata-provers-perf"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-ee-da-types",
+ "alpen-reth-evm",
  "anyhow",
  "argh",
  "num-format",
@@ -16667,6 +16693,7 @@ dependencies = [
  "sp1-sdk",
  "ssz",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-codec",
  "strata-da-framework",
  "strata-ee-acct-runtime",
@@ -17411,9 +17438,9 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tar"
-version = "0.4.45"
+version = "0.4.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22692a6476a21fa75fdfc11d452fda482af402c008cdbaf3476414e122040973"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
 dependencies = [
  "filetime",
  "libc",
@@ -17430,7 +17457,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -18789,7 +18816,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

@@ -2,7 +2,8 @@ use alpen_ee_da_types::DaWitness;
 use k256::schnorr::SigningKey;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
-use ssz::Decode;
+use ssz::{Decode, Encode};
+use strata_bridge_params::BridgeParams;
 use strata_ee_acct_runtime::EePrivateInput;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_snark_acct_runtime::PrivateInput as UpdatePrivateInput;
@@ -39,6 +40,8 @@ pub struct EeAcctProofInput {
     pub snark_acct_private_input: UpdatePrivateInput,
     /// Alpen-EE-specific witness input for verifying the batch's DA.
     pub da_witness: DaWitness,
+    /// Bridge withdrawal denomination and cap, parameterizing the EVM.
+    pub bridge_params: BridgeParams,
 }
 
 #[derive(Debug)]
@@ -80,6 +83,7 @@ impl ZkVmProgram for EeAcctProgram {
         let upd_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.snark_acct_private_input)
             .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
         builder.write_buf(&upd_rkyv_bytes)?;
+        builder.write_buf(&input.bridge_params.as_ssz_bytes())?;
 
         let da_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.da_witness)
             .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
@@ -179,6 +183,7 @@ mod tests {
             ee_private_input,
             snark_acct_private_input,
             da_witness: DaWitness::empty(),
+            bridge_params: BridgeParams::default(),
         };
 
         // Predicate is carried through but never evaluated in this

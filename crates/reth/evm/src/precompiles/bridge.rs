@@ -4,10 +4,7 @@ use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
 use revm_primitives::{Bytes, Log, LogData, U256};
 use strata_primitives::bitcoin_bosd::Descriptor;
 
-use crate::{
-    constants::{BRIDGEOUT_PRECOMPILE_ADDRESS, FIXED_WITHDRAWAL_WEI},
-    utils::wei_to_sats,
-};
+use crate::{constants::BRIDGEOUT_PRECOMPILE_ADDRESS, utils::wei_to_sats};
 
 /// Custom precompile to burn rollup native token and add bridge out intent of equal amount.
 /// Bridge out intent is created during block payload generation.
@@ -16,7 +13,11 @@ use crate::{
 /// Calldata format: `[4 bytes: selected_operator (big-endian u32)][BOSD bytes]`
 /// - `u32::MAX` (`0xFFFFFFFF`): no operator selection
 /// - Any other value: operator index
-pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileResult {
+pub(crate) fn bridge_context_call(
+    mut input: PrecompileInput<'_>,
+    denomination_wei: U256,
+    max_withdrawal_wei: Option<U256>,
+) -> PrecompileResult {
     let calldata = WithdrawalCalldata::decode(input.data).ok_or_else(|| {
         PrecompileError::other(
             "Calldata too short: expected at least 5 bytes (4 operator + 1 BOSD)",
@@ -29,7 +30,7 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
     let withdrawal_amount = input.value;
 
     // Verify that the transaction value is a positive exact multiple of the withdrawal denomination
-    validate_withdrawal_amount(withdrawal_amount)?;
+    validate_withdrawal_amount(withdrawal_amount, denomination_wei, max_withdrawal_wei)?;
 
     // Convert wei to satoshis
     let (sats, _) = wei_to_sats(withdrawal_amount);
@@ -67,12 +68,24 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
 }
 
-/// Validates that the withdrawal amount is a positive exact multiple of the denomination.
-fn validate_withdrawal_amount(amount: U256) -> Result<(), PrecompileError> {
-    if amount.is_zero() || !(amount % FIXED_WITHDRAWAL_WEI).is_zero() {
+/// Validates that the withdrawal amount is a positive exact multiple of the denomination
+/// and within the optional cap.
+fn validate_withdrawal_amount(
+    amount: U256,
+    denomination_wei: U256,
+    max_withdrawal_wei: Option<U256>,
+) -> Result<(), PrecompileError> {
+    if amount.is_zero() || !(amount % denomination_wei).is_zero() {
         return Err(PrecompileError::other(format!(
-            "Invalid withdrawal value: must be a positive exact multiple of {FIXED_WITHDRAWAL_WEI} wei",
+            "Invalid withdrawal value: must be a positive exact multiple of {denomination_wei} wei",
         )));
+    }
+    if let Some(max) = max_withdrawal_wei {
+        if amount > max {
+            return Err(PrecompileError::other(format!(
+                "Withdrawal value {amount} exceeds maximum allowed {max} wei",
+            )));
+        }
     }
     Ok(())
 }
@@ -89,6 +102,10 @@ mod tests {
     use strata_ol_bridge_types::OperatorSelection;
 
     use super::*;
+    use crate::utils::{u256_from, WEI_PER_BTC};
+
+    /// Test-only denomination constant (1 BTC in wei).
+    const FIXED_WITHDRAWAL_WEI: U256 = u256_from(WEI_PER_BTC);
 
     /// Valid P2WPKH descriptor: type tag (0x03) + 20-byte hash160.
     const VALID_P2WPKH_BOSD: &[u8; 21] = &{
@@ -163,28 +180,84 @@ mod tests {
 
     // --- withdrawal amount validation tests ---
 
+    fn max_withdrawal() -> Option<U256> {
+        Some(FIXED_WITHDRAWAL_WEI * U256::from(10))
+    }
+
     #[test]
     fn test_validate_withdrawal_exact_denomination() {
-        assert!(validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI).is_ok());
+        assert!(validate_withdrawal_amount(
+            FIXED_WITHDRAWAL_WEI,
+            FIXED_WITHDRAWAL_WEI,
+            max_withdrawal()
+        )
+        .is_ok());
     }
 
     #[test]
     fn test_validate_withdrawal_exact_multiple() {
-        assert!(validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI * U256::from(3)).is_ok());
+        assert!(validate_withdrawal_amount(
+            FIXED_WITHDRAWAL_WEI * U256::from(3),
+            FIXED_WITHDRAWAL_WEI,
+            max_withdrawal()
+        )
+        .is_ok());
     }
 
     #[test]
     fn test_validate_withdrawal_zero_rejected() {
-        assert!(validate_withdrawal_amount(U256::ZERO).is_err());
+        assert!(
+            validate_withdrawal_amount(U256::ZERO, FIXED_WITHDRAWAL_WEI, max_withdrawal()).is_err()
+        );
     }
 
     #[test]
     fn test_validate_withdrawal_non_multiple_rejected() {
-        assert!(validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI + U256::from(1)).is_err());
+        assert!(validate_withdrawal_amount(
+            FIXED_WITHDRAWAL_WEI + U256::from(1),
+            FIXED_WITHDRAWAL_WEI,
+            max_withdrawal()
+        )
+        .is_err());
     }
 
     #[test]
     fn test_validate_withdrawal_below_denomination_rejected() {
-        assert!(validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI - U256::from(1)).is_err());
+        assert!(validate_withdrawal_amount(
+            FIXED_WITHDRAWAL_WEI - U256::from(1),
+            FIXED_WITHDRAWAL_WEI,
+            max_withdrawal()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_validate_withdrawal_exceeds_cap() {
+        assert!(validate_withdrawal_amount(
+            FIXED_WITHDRAWAL_WEI * U256::from(11),
+            FIXED_WITHDRAWAL_WEI,
+            max_withdrawal()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_validate_withdrawal_at_cap() {
+        assert!(validate_withdrawal_amount(
+            FIXED_WITHDRAWAL_WEI * U256::from(10),
+            FIXED_WITHDRAWAL_WEI,
+            max_withdrawal()
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn test_validate_withdrawal_no_cap() {
+        assert!(validate_withdrawal_amount(
+            FIXED_WITHDRAWAL_WEI * U256::from(100),
+            FIXED_WITHDRAWAL_WEI,
+            None
+        )
+        .is_ok());
     }
 }

@@ -64,6 +64,7 @@ members = [
   "crates/paas",
   "crates/prover-core",
   "crates/params",
+  "crates/bridge-params",
   "crates/primitives",
   "crates/proof-impl/evm-ee-stf",
   "crates/proof-impl/alpen-chunk",
@@ -163,6 +164,7 @@ alpen-reth-rpc = { path = "crates/reth/rpc" }
 alpen-reth-statediff = { path = "crates/reth/statediff", default-features = false }
 alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
+strata-bridge-params = { path = "crates/bridge-params" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chain-worker-new = { path = "crates/chain-worker-new" }

@@ -4,9 +4,12 @@ use std::sync::Arc;
 
 use alpen_ee_da_runtime::verification::verify_da_witness;
 use alpen_ee_da_types::ArchivedDaWitness;
+use alpen_reth_evm::evm::AlpenEvmFactory;
 use reth_chainspec::ChainSpec;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
+use ssz::Decode;
+use strata_bridge_params::BridgeParams;
 use strata_ee_acct_runtime::ArchivedEePrivateInput;
 use strata_ee_acct_types::EeAccountState;
 use strata_evm_ee::EvmExecutionEnvironment;
@@ -41,11 +44,16 @@ pub fn process_ee_acct_update(zkvm: &impl ZkVmEnvSerde, chunk_predicate_key: &Pr
         rkyv::access::<ArchivedUpdatePrivateInput, RkyvError>(&upd_buf)
             .expect("failed to access rkyv update archive");
 
+    let withdrawal_ssz = zkvm.read_buf();
+    let bridge_params = BridgeParams::from_ssz_bytes(&withdrawal_ssz)
+        .expect("failed to deserialize withdrawal params");
+    let evm_factory = AlpenEvmFactory::from_bridge_params(&bridge_params);
+
     let da_buf = zkvm.read_buf();
     let da_witness: &ArchivedDaWitness = rkyv::access::<ArchivedDaWitness, RkyvError>(&da_buf)
         .expect("failed to access rkyv DA witness archive");
 
-    let ee = EvmExecutionEnvironment::new(chain_spec);
+    let ee = EvmExecutionEnvironment::new(chain_spec, evm_factory);
 
     strata_ee_acct_runtime::verify_and_process_update(
         &ee,

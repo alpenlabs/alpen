@@ -608,4 +608,52 @@ class TestRealBridgeDepositWithdraw(BaseTest):
             recipient_btc_balance_before=recipient_btc_balance_before,
         )
 
+        # --- Withdrawal cap enforcement ---
+        # Use the genesis-prefunded dev account (large balance) to test
+        # precompile rejection without worrying about insufficient funds.
+        from common.config.constants import DEV_PRIVATE_KEY
+        from common.evm import DEV_ACCOUNT_ADDRESS
+
+        chain_id = int(alpen_rpc.eth_chainId(), 16)
+        gas_price = int(alpen_rpc.eth_gasPrice(), 16)
+        dev_nonce = int(alpen_rpc.eth_getTransactionCount(DEV_ACCOUNT_ADDRESS, "latest"), 16)
+        calldata_hex = NO_OPERATOR_SELECTION_HEX + recipient_bosd_hex
+
+        # Over-cap: 11 × denomination exceeds the 10 BTC default cap.
+        over_cap_sats = 11 * bridge_denom_sats
+        logger.info("bridgeout cap test: %d sats (over cap, expect revert)", over_cap_sats)
+        overcap_tx = {
+            "nonce": dev_nonce,
+            "gasPrice": gas_price,
+            "gas": 200_000,
+            "to": PRECOMPILE_BRIDGEOUT_ADDRESS,
+            "value": over_cap_sats * SATS_TO_WEI,
+            "data": bytes.fromhex(calldata_hex),
+            "chainId": chain_id,
+        }
+        signed = Account.sign_transaction(overcap_tx, DEV_PRIVATE_KEY)
+        h = alpen_rpc.eth_sendRawTransaction("0x" + signed.raw_transaction.hex())
+        r = wait_for_receipt(alpen_rpc, h, timeout=30)
+        assert r["status"] in (0, "0x0"), f"over-cap bridgeout should revert: {r['status']}"
+        logger.info("  over-cap bridgeout reverted as expected")
+        dev_nonce += 1
+
+        # Non-multiple: half a denomination is not a valid multiple.
+        half_denom_sats = bridge_denom_sats // 2
+        logger.info("bridgeout cap test: %d sats (non-multiple, expect revert)", half_denom_sats)
+        nonmult_tx = {
+            "nonce": dev_nonce,
+            "gasPrice": gas_price,
+            "gas": 200_000,
+            "to": PRECOMPILE_BRIDGEOUT_ADDRESS,
+            "value": half_denom_sats * SATS_TO_WEI,
+            "data": bytes.fromhex(calldata_hex),
+            "chainId": chain_id,
+        }
+        signed = Account.sign_transaction(nonmult_tx, DEV_PRIVATE_KEY)
+        h = alpen_rpc.eth_sendRawTransaction("0x" + signed.raw_transaction.hex())
+        r = wait_for_receipt(alpen_rpc, h, timeout=30)
+        assert r["status"] in (0, "0x0"), f"non-multiple bridgeout should revert: {r['status']}"
+        logger.info("  non-multiple bridgeout reverted as expected")
+
         return True

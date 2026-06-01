@@ -8,6 +8,7 @@
 use alpen_ee_da_types::DaWitness;
 use rsp_primitives::genesis::Genesis;
 use ssz::Encode;
+use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::EePrivateInput;
 use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
@@ -49,6 +50,7 @@ fn prepare_input() -> EeAcctProofInput {
         ee_private_input,
         snark_acct_private_input,
         da_witness: DaWitness::empty(),
+        bridge_params: BridgeParams::default(),
     }
 }
 

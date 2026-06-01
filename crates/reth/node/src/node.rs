@@ -74,7 +74,7 @@ where
         ComponentsBuilder::default()
             .node_types::<N>()
             .pool(AlpenEthereumPoolBuilder::default())
-            .executor(AlpenExecutorBuilder::default())
+            .executor(AlpenExecutorBuilder::new(self.args.evm_factory.clone()))
             .payload(BasicPayloadServiceBuilder::default())
             .network(EthereumNetworkBuilder::default())
             .consensus(EthereumConsensusBuilder::default())
