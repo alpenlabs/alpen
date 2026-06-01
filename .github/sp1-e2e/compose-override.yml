@@ -31,6 +31,8 @@ services:
     command: []
     environment:
       - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
+      - OL_SUBMIT_URL=ws://strata:8435
+      - STRATA_SUBMIT_RPC_TOKEN=dev-only-submit-token
     env_file:
       - ../.github/sp1-e2e/.env.ci
       - ./configs/generated/.env.alpen
