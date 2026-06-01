@@ -12,7 +12,9 @@
 
 use std::sync::Arc;
 
-use alpen_ee_common::{BatchId, BatchProver, BatchStorage, Proof, ProofGenerationStatus, ProofId};
+use alpen_ee_common::{
+    BatchId, BatchProver, BatchStorage, ChunkStatus, Proof, ProofGenerationStatus, ProofId,
+};
 use async_trait::async_trait;
 use strata_paas::{ProverError as PaasError, ProverHandle, TaskStatus};
 use tracing::{debug, info, warn};
@@ -66,6 +68,17 @@ impl BatchProver for PaasBatchProver {
                 .submit(task)
                 .await
                 .map_err(|e| eyre::eyre!("submit chunk task {chunk_id:?}: {e}"))?;
+
+            let Some((_chunk, status)) = self.batch_storage.get_chunk_by_id(chunk_id).await? else {
+                warn!(?chunk_id, %batch_id, "submitted chunk task for missing chunk");
+                continue;
+            };
+
+            if !matches!(status, ChunkStatus::ProofReady(_)) {
+                self.batch_storage
+                    .update_chunk_status(chunk_id, ChunkStatus::ProofPending(task.to_string()))
+                    .await?;
+            }
         }
 
         self.acct_handle

@@ -106,6 +106,16 @@ pub fn gen_l1_tx_entry_with_status(status: L1TxStatus) -> L1TxEntry {
     entry
 }
 
+fn empty_test_psbt() -> Psbt {
+    Psbt::from_unsigned_tx(Transaction {
+        version: Version(2),
+        lock_time: LockTime::ZERO,
+        input: vec![],
+        output: vec![],
+    })
+    .unwrap()
+}
+
 impl Reader for TestBitcoinClient {
     async fn estimate_smart_fee(&self, _conf_target: u16) -> ClientResult<u64> {
         Ok(3)
@@ -415,8 +425,7 @@ impl Wallet for TestBitcoinClient {
         _bip32_derivs: Option<bool>,
     ) -> ClientResult<WalletCreateFundedPsbt> {
         Ok(WalletCreateFundedPsbt {
-            // taken from https://docs.rs/bitcoin/0.32.8/src/bitcoin/psbt/mod.rs.html#1365
-            psbt: Psbt::from_str("70736274ff01003302000000010000000000000000000000000000000000000000000000000000000000000000ffffffff00ffffffff000000000000420204bb0d5d0cca36e7b9c80f63bc04c1240babb83bcd2803ef7ac8b6e2af594291daec281e856c98d210c5ab14dfd5828761f8ee7d5f45ca21ad3e4c4b41b747a3a047304402204f67e2afb76142d44fae58a2495d33a3419daa26cd0db8d04f3452b63289ac0f022010762a9fb67e94cc5cad9026f6dc99ff7f070f4278d30fbc7d0c869dd38c7fe70100").unwrap(),
+            psbt: empty_test_psbt(),
             fee: SignedAmount::from_btc(0.001).unwrap(),
             change_position: 0,
         })
@@ -493,8 +502,7 @@ impl Signer for TestBitcoinClient {
         _bip32_derivs: Option<bool>,
     ) -> ClientResult<WalletProcessPsbt> {
         Ok(WalletProcessPsbt {
-            // taken from https://docs.rs/bitcoin/0.32.8/src/bitcoin/psbt/mod.rs.html#1365
-            psbt: Psbt::from_str("70736274ff01003302000000010000000000000000000000000000000000000000000000000000000000000000ffffffff00ffffffff000000000000420204bb0d5d0cca36e7b9c80f63bc04c1240babb83bcd2803ef7ac8b6e2af594291daec281e856c98d210c5ab14dfd5828761f8ee7d5f45ca21ad3e4c4b41b747a3a047304402204f67e2afb76142d44fae58a2495d33a3419daa26cd0db8d04f3452b63289ac0f022010762a9fb67e94cc5cad9026f6dc99ff7f070f4278d30fbc7d0c869dd38c7fe70100").unwrap(),
+            psbt: empty_test_psbt(),
             complete: true,
             hex: None,
         })
@@ -506,8 +514,7 @@ impl Signer for TestBitcoinClient {
         _options: Option<PsbtBumpFeeOptions>,
     ) -> ClientResult<PsbtBumpFee> {
         Ok(PsbtBumpFee {
-            // taken from https://docs.rs/bitcoin/0.32.8/src/bitcoin/psbt/mod.rs.html#1365
-            psbt: Psbt::from_str("70736274ff01003302000000010000000000000000000000000000000000000000000000000000000000000000ffffffff00ffffffff000000000000420204bb0d5d0cca36e7b9c80f63bc04c1240babb83bcd2803ef7ac8b6e2af594291daec281e856c98d210c5ab14dfd5828761f8ee7d5f45ca21ad3e4c4b41b747a3a047304402204f67e2afb76142d44fae58a2495d33a3419daa26cd0db8d04f3452b63289ac0f022010762a9fb67e94cc5cad9026f6dc99ff7f070f4278d30fbc7d0c869dd38c7fe70100").unwrap(),
+            psbt: empty_test_psbt(),
             original_fee: Amount::from_btc(0.001).unwrap(),
             fee: Amount::from_btc(0.01).unwrap(),
             errors: vec![],

@@ -26,6 +26,8 @@ pub(crate) enum TrackOLAction {
     /// Extend local view of the OL chain with new epochs.
     /// TODO: stream
     Extend(Vec<OLEpochOperations>, Box<OLChainStatus>),
+    /// Refresh local finality state without extending the confirmed epoch.
+    RefreshFinalized(Box<OLChainStatus>),
     /// Local tip not present in OL chain, need to resolve local view.
     Reorg,
     /// Local tip is synced with OL chain, nothing to do.
@@ -87,6 +89,10 @@ pub(crate) async fn track_ol_state(
                 "detect chain mismatch; trigger reorg"
             );
             return Ok(TrackOLAction::Reorg);
+        } else if effective_ol_status.finalized().epoch() > state.finalized_ol_epoch().epoch() {
+            return Ok(TrackOLAction::RefreshFinalized(Box::new(
+                effective_ol_status,
+            )));
         } else {
             // local view is in sync with OL, nothing to do
             return Ok(TrackOLAction::Noop);
@@ -170,6 +176,17 @@ pub(crate) fn apply_epoch_operations(
         .map_err(|e| OLTrackerError::Other(e.to_string()))?;
     }
 
+    Ok(())
+}
+
+pub(crate) async fn handle_refresh_finalized<TStorage: Storage>(
+    chain_status: &OLChainStatus,
+    state: &mut OLTrackerState,
+    storage: &TStorage,
+) -> Result<()> {
+    let next_state =
+        build_tracker_state(state.best_account_state().clone(), chain_status, storage).await?;
+    *state = next_state;
     Ok(())
 }
 
@@ -310,6 +327,43 @@ mod tests {
                 .unwrap();
 
             assert!(matches!(result, TrackOLAction::Noop));
+        }
+
+        #[tokio::test]
+        async fn test_refresh_finalized_when_confirmed_is_synced() {
+            // Scenario: Local chain already tracks the confirmed epoch, but
+            // the OL finalized epoch advances after L1 depth catches up.
+            // Expected:       RefreshFinalized so watchers learn the new
+            // finalized OL block without waiting for the next checkpoint.
+
+            let chain = create_epochs(&[100, 101, 102, 103]);
+            let state = OLTrackerState::new(chain[3].clone(), chain[0].clone());
+
+            let mut mock_client = MockOLClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OLChainStatus {
+                    tip: make_block_commitment(31, 104),
+                    confirmed: make_epoch_commitment(3, 30, 103),
+                    finalized: make_epoch_commitment(3, 30, 103),
+                    latest: make_epoch_commitment(3, 30, 103),
+                })
+            });
+
+            let result = track_ol_state(&state, &mock_client, 10, EpochTrackingMode::Confirmed)
+                .await
+                .unwrap();
+
+            match result {
+                TrackOLAction::RefreshFinalized(status) => {
+                    assert_eq!(status.finalized.epoch(), 3);
+                    assert_eq!(
+                        status.finalized.last_blkid(),
+                        chain[3].epoch_commitment().last_blkid()
+                    );
+                }
+                _ => panic!("Expected RefreshFinalized action"),
+            }
         }
 
         #[tokio::test]

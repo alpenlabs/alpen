@@ -9,6 +9,11 @@ MAX_MESSAGE_ENTRIES = 2 << 10
 ### Public params that we provide as the claim the proof must prove the relate
 ### to each other correctly.
 class UpdateProofPubParams(Container):
+    ### Sequence number this update is authorized under.  Binding this into
+    ### the claim prevents replaying the same proof under a different
+    ### replay-protection counter.
+    seq_no: uint64
+
     ### Current state we're extending.
     cur_state: state.ProofState
 

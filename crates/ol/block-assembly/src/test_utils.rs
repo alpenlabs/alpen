@@ -151,8 +151,13 @@ pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) ->
 /// Uses unit types for mempool and state provider since
 /// proof generation only requires storage access.
 pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyContext<(), ()> {
-    BlockAssemblyContext::new(storage, (), ())
+    BlockAssemblyContext::new(storage, (), (), TEST_L1_REORG_SAFE_DEPTH)
 }
+
+/// Default `l1_reorg_safe_depth` used in block-assembly tests that don't exercise
+/// the buried-manifest filtering directly. Zero preserves pre-filtering behavior:
+/// the buried tip equals the ASM tip, so all available manifests are eligible.
+pub(crate) const TEST_L1_REORG_SAFE_DEPTH: u32 = 0;
 
 /// Mock mempool provider for tests that stores transactions in memory.
 pub(crate) struct MockMempoolProvider {
@@ -708,7 +713,7 @@ pub(crate) fn generate_message_entries(
 /// Creates and stores ASM manifests for L1 blocks from height `start` to `end` (inclusive),
 /// and stores an ASM state at the highest L1 block.
 ///
-/// Returns the L1BlockCommitment for the highest block.
+/// Returns the `L1BlockCommitment` for the highest block.
 pub(crate) async fn setup_asm_state_with_l1_manifests(
     storage: &NodeStorage,
     start: L1Height,
@@ -880,7 +885,8 @@ impl TestEnv {
         fixture: Arc<TestStorageFixture>,
         parent_commitment: OLBlockCommitment,
     ) -> Self {
-        let (ctx, mempool) = create_test_block_assembly_context(fixture.storage().clone());
+        let (ctx, mempool) =
+            create_test_block_assembly_context(fixture.storage().clone(), TEST_L1_REORG_SAFE_DEPTH);
         Self {
             fixture,
             ctx: Arc::new(ctx),
@@ -1422,10 +1428,16 @@ fn build_inbox_claims_for_messages(
 /// Returns the context. Use `ctx.mempool_provider()` to add transactions to the mock mempool.
 pub(crate) fn create_test_block_assembly_context(
     storage: Arc<NodeStorage>,
+    l1_reorg_safe_depth: u32,
 ) -> (BlockAssemblyContextImpl, Arc<MockMempoolProvider>) {
     let mempool_provider = Arc::new(MockMempoolProvider::new());
     let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
-    let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider);
+    let ctx = BlockAssemblyContext::new(
+        storage,
+        mempool_provider.clone(),
+        state_provider,
+        l1_reorg_safe_depth,
+    );
     (ctx, mempool_provider)
 }
 

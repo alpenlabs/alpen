@@ -419,9 +419,11 @@ fn main() {
 
             node_builder = node_builder.extend_rpc_modules({
                 let consensus_watcher = consensus_watcher.clone();
+                let storage = storage.clone();
                 move |ctx| {
                     let provider = ctx.provider().clone();
-                    let ee_rpc_server = EeRpcServer::new(provider, consensus_watcher);
+                    let ee_rpc_server =
+                        EeRpcServer::new(provider, consensus_watcher, storage.clone());
                     ctx.modules.merge_configured(ee_rpc_server.into_rpc())?;
                     Ok(())
                 }
