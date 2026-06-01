@@ -14,5 +14,9 @@
       "balance": 0
     }
   },
-  "last_l1_block": "__LAST_L1_BLOCK__"
+  "last_l1_block": "__LAST_L1_BLOCK__",
+  "bridge_params": {
+    "denomination": 200000000,
+    "max_withdrawal_amount": 1000000000
+  }
 }
