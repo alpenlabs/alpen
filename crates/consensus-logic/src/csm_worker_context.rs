@@ -105,14 +105,14 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
     fn get_asm_state(&self, block: &L1BlockCommitment) -> anyhow::Result<AsmState> {
         self.storage
             .asm()
-            .get_state(*block)?
+            .get_state_blocking(*block)?
             .ok_or_else(|| anyhow::anyhow!("missing ASM state for {block}"))
     }
 
     fn get_aux_data(&self, block: &L1BlockCommitment) -> anyhow::Result<AuxData> {
         self.storage
             .asm()
-            .get_aux_data(*block)?
+            .get_aux_data_blocking(*block)?
             .ok_or_else(|| anyhow::anyhow!("missing ASM aux data for {block}"))
     }
 

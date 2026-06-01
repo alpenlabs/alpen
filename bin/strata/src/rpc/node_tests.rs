@@ -327,8 +327,8 @@ impl OLRpcProvider for MockProvider {
         self.sync_status
     }
 
-    fn get_l1_tip_height(&self) -> Option<L1Height> {
-        self.l1_tip_height
+    async fn get_l1_tip_height(&self) -> DbResult<Option<L1Height>> {
+        Ok(self.l1_tip_height)
     }
 
     async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {

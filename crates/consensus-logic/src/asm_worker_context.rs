@@ -73,14 +73,14 @@ impl WorkerContext for AsmWorkerCtx {
 
     fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, WorkerAsmState)>> {
         self.asmman
-            .fetch_most_recent_state()
+            .fetch_most_recent_state_blocking()
             .map_err(conv_db_err)
             .map(|state| state.map(|(block, state)| (block, storage_to_worker_state(state))))
     }
 
     fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<WorkerAsmState> {
         self.asmman
-            .get_state(*blockid)
+            .get_state_blocking(*blockid)
             .map_err(conv_db_err)?
             .map(storage_to_worker_state)
             .ok_or(WorkerError::MissingAsmState(*blockid.blkid()))
@@ -92,7 +92,7 @@ impl WorkerContext for AsmWorkerCtx {
         state: &WorkerAsmState,
     ) -> WorkerResult<()> {
         self.asmman
-            .put_state(*blockid, worker_to_storage_state(state))
+            .put_state_blocking(*blockid, worker_to_storage_state(state))
             .map_err(conv_db_err)
     }
 
@@ -160,7 +160,7 @@ impl WorkerContext for AsmWorkerCtx {
         data: &strata_asm_common::AuxData,
     ) -> WorkerResult<()> {
         self.asmman
-            .put_aux_data(*blockid, data.clone())
+            .put_aux_data_blocking(*blockid, data.clone())
             .map_err(conv_db_err)
     }
 
@@ -168,7 +168,9 @@ impl WorkerContext for AsmWorkerCtx {
         &self,
         blockid: &L1BlockCommitment,
     ) -> WorkerResult<Option<strata_asm_common::AuxData>> {
-        self.asmman.get_aux_data(*blockid).map_err(conv_db_err)
+        self.asmman
+            .get_aux_data_blocking(*blockid)
+            .map_err(conv_db_err)
     }
 
     fn has_l1_manifest(&self, blockid: &L1BlockId) -> WorkerResult<bool> {
