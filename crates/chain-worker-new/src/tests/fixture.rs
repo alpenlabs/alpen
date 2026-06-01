@@ -13,6 +13,7 @@ use strata_asm_proto_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
     TerminalHeaderComplement,
 };
+use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
@@ -231,6 +232,7 @@ fn run_block_sync(
             block.header(),
             Some(&prev_header),
             block.body(),
+            BridgeParams::default(),
         )
         .expect("block-sync verify_block");
         prev_header = block.header().clone();
@@ -258,8 +260,9 @@ fn rebuild_da_and_logs(
     genesis_header: &OLBlockHeader,
 ) -> (Vec<u8>, Vec<CheckpointOLLog>) {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
-    let logs = execute_block_batch_preseal(&mut da, blocks, genesis_header)
-        .expect("execute_block_batch_preseal");
+    let logs =
+        execute_block_batch_preseal(&mut da, blocks, genesis_header, BridgeParams::default())
+            .expect("execute_block_batch_preseal");
     let blob = da
         .take_completed_epoch_da_blob()
         .expect("finalize DA")

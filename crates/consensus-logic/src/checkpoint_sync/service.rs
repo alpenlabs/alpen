@@ -131,8 +131,8 @@ pub async fn start_css<C: CheckpointSyncCtx>(
     Ok(service_monitor)
 }
 
-/// Initializes css state by catching up on any unapplied finalized epochs at startup and returns the
-/// resulting last-applied epoch.
+/// Initializes css state by catching up on any unapplied finalized epochs at startup and returns
+/// the resulting last-applied epoch.
 ///
 /// Also re-runs finalization on the last already-applied epoch found by the
 /// scan: if a previous run crashed between writing the summary and finalizing,

@@ -22,23 +22,23 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
     BlockFlags, OLBlock, OLBlockHeader, OLL1ManifestContainer, OLLog, SnarkAccountUpdateLogData,
 };
-use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
+use strata_ol_da::{decode_ol_da_payload_bytes, OLDaSchemeV1};
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, SAStateUpdateOp, SnarkAcctStateUpdate,
     WriteTrackingState,
 };
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
+use strata_ol_stf::{apply_da_epoch, verify_block, BlockInfo, EpochInfo};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_snark_acct_types::Seqno;
 use tracing::*;
 
 use crate::{
-    ChainWorkerContextImpl,
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
     traits::ChainWorkerContext,
+    ChainWorkerContextImpl,
 };
 
 /// Mutable state for the chain worker.
@@ -853,7 +853,7 @@ mod tests {
     use strata_ol_chain_types_new::{BlockFlags, OLBlockHeader};
     use strata_ol_state_support_types::IndexerWrites;
     use strata_ol_state_types::{
-        OLAccountState, WriteBatch, test_utils::create_test_genesis_state,
+        test_utils::create_test_genesis_state, OLAccountState, WriteBatch,
     };
 
     use super::*;
