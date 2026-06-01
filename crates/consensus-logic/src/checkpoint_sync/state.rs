@@ -18,37 +18,21 @@ use crate::checkpoint_sync::{
 pub struct CheckpointSyncState<C: CheckpointSyncCtx> {
     /// Dependency context.
     ctx: Arc<C>,
-    /// Mutable progress tracking.
-    inner: InnerState,
-}
-
-/// Progress tracking for the checkpoint sync service.
-#[derive(Clone, Debug)]
-pub(crate) struct InnerState {
     /// Last epoch that has been both finalized and applied to OL state.
     last_finalized_and_applied: Option<EpochCommitment>,
 }
 
-impl InnerState {
-    pub(crate) fn new(last_finalized_and_applied: Option<EpochCommitment>) -> Self {
+impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
+    pub(crate) fn new(ctx: Arc<C>, last_finalized_and_applied: Option<EpochCommitment>) -> Self {
         Self {
+            ctx,
             last_finalized_and_applied,
         }
     }
 
-    pub(crate) fn last_finalized_and_applied(&self) -> Option<EpochCommitment> {
-        self.last_finalized_and_applied
-    }
-}
-
-impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
-    pub(crate) fn new(ctx: Arc<C>, inner: InnerState) -> Self {
-        Self { ctx, inner }
-    }
-
     /// Returns the last epoch finalized and applied so far.
     pub(crate) fn last_finalized_and_applied(&self) -> Option<EpochCommitment> {
-        self.inner.last_finalized_and_applied()
+        self.last_finalized_and_applied
     }
 
     /// Handles a new CSM client state: applies any newly finalized epochs and
@@ -57,7 +41,7 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
         let csm_status = self.ctx.fetch_csm_status().await?;
         debug!(?csm_status, "obtained csm status");
         let new_finalized = match (
-            self.inner.last_finalized_and_applied,
+            self.last_finalized_and_applied,
             csm_status.last_finalized_epoch,
         ) {
             (_, None) => {
@@ -94,7 +78,7 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
         let last_applied =
             find_and_apply_unapplied_epochs(self.ctx.as_ref(), new_finalized).await?;
 
-        self.inner.last_finalized_and_applied = last_applied;
+        self.last_finalized_and_applied = last_applied;
         info!(?last_applied, "checkpoint sync advanced");
 
         Ok(())

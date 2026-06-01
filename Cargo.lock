@@ -15412,6 +15412,7 @@ dependencies = [
  "strata-asm-worker",
  "strata-btc-types",
  "strata-chain-worker",
+ "strata-chain-worker-new",
  "strata-chainexec",
  "strata-chaintsn",
  "strata-checkpoint-types",

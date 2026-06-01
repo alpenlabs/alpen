@@ -6,8 +6,7 @@ use anyhow::Result;
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_checkpoint_types::EpochSummary;
 use strata_consensus_logic::checkpoint_sync::{
-    CheckpointSyncCtx, CheckpointSyncError, CheckpointSyncResult, CssServiceHandle,
-    start_css_service,
+    CheckpointSyncCtx, CheckpointSyncError, CheckpointSyncResult, CssServiceHandle, start_css,
 };
 use strata_csm_types::CheckpointL1Ref;
 use strata_csm_worker::CsmWorkerStatus;
@@ -59,12 +58,8 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
     }
 
     async fn fetch_l1_tip_height(&self) -> CheckpointSyncResult<Option<L1Height>> {
-        self.storage
-            .l1()
-            .get_canonical_chain_tip_async()
-            .await
-            .map(|opt| opt.map(|tip| tip.0))
-            .map_err(|e| CheckpointSyncError::SyncStatusQuery(e.into()))
+        let tip = self.storage.l1().get_canonical_chain_tip_async().await?;
+        Ok(tip.map(|t| t.0))
     }
 
     async fn fetch_csm_status(&self) -> CheckpointSyncResult<CsmWorkerStatus> {
@@ -102,7 +97,7 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
             .map_err(|cause| CheckpointSyncError::EpochOp {
                 epoch,
                 op: "apply_checkpoint",
-                cause: cause.into(),
+                cause,
             })
     }
 
@@ -110,7 +105,7 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
         self.chain_worker
             .update_safe_tip(tip)
             .await
-            .map_err(|cause| CheckpointSyncError::SafeTipUpdate(cause.into()))
+            .map_err(CheckpointSyncError::SafeTipUpdate)
     }
 
     async fn finalize_epoch(&self, epoch: EpochCommitment) -> CheckpointSyncResult<()> {
@@ -120,7 +115,7 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
             .map_err(|cause| CheckpointSyncError::EpochOp {
                 epoch,
                 op: "finalize_epoch",
-                cause: cause.into(),
+                cause,
             })
     }
 
@@ -145,7 +140,7 @@ pub(crate) fn start(
         nodectx.params().rollup().clone(),
     ));
 
-    nodectx.task_manager().handle().block_on(start_css_service(
+    nodectx.task_manager().handle().block_on(start_css(
         css_ctx,
         checkpoint_state_rx,
         nodectx.executor().clone(),

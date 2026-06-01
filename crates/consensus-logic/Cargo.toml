@@ -15,6 +15,7 @@ strata-asm-spec-debug = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-chain-worker.workspace = true
+strata-chain-worker-new.workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-checkpoint-types.workspace = true

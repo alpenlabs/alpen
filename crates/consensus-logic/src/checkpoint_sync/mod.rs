@@ -15,7 +15,5 @@ mod tests;
 
 pub use context::CheckpointSyncCtx;
 pub use errors::{CheckpointSyncError, CheckpointSyncResult};
-pub use service::{
-    start_css_service, CheckpointSyncService, CheckpointSyncStatus, CssServiceHandle,
-};
+pub use service::{start_css, CheckpointSyncService, CheckpointSyncStatus, CssServiceHandle};
 pub use state::CheckpointSyncState;

@@ -17,7 +17,7 @@ use crate::checkpoint_sync::errors::CheckpointSyncResult;
 ///
 /// The concrete implementation is assembled in the binary, keeping this module
 /// free of any dependency on `NodeContext`.
-pub trait CheckpointSyncCtx: Send + Sync {
+pub trait CheckpointSyncCtx: Send + Sync + 'static {
     /// Returns the rollup params.
     fn rollup_params(&self) -> &RollupParams;
 
