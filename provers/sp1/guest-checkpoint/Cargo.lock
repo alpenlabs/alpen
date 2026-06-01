@@ -327,6 +327,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bytemuck"
+version = "1.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9abbd1bc6865053c427f7198e6af43bfdedc55ab791faed4fbd361d789575ff"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -440,6 +460,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "crunchy"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
+
+[[package]]
 name = "crypto-bigint"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -467,8 +493,18 @@ version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee"
 dependencies = [
- "darling_core",
- "darling_macro",
+ "darling_core 0.20.11",
+ "darling_macro 0.20.11",
+]
+
+[[package]]
+name = "darling"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25ae13da2f202d56bd7f91c25fba009e7717a1e4a1cc98a76d844b65ae912e9d"
+dependencies = [
+ "darling_core 0.23.0",
+ "darling_macro 0.23.0",
 ]
 
 [[package]]
@@ -486,12 +522,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "darling_core"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9865a50f7c335f53564bb694ef660825eb8610e0a53d3e11bf1b0d3df31e03b0"
+dependencies = [
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "darling_macro"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
 dependencies = [
- "darling_core",
+ "darling_core 0.20.11",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac3984ec7bd6cfa798e62b4a642426a5be0e68f9401cfc2a01e3fa9ea2fcdb8d"
+dependencies = [
+ "darling_core 0.23.0",
  "quote",
  "syn 2.0.117",
 ]
@@ -1539,6 +1599,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 
 [[package]]
+name = "rustc-hex"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e75f6a532d0fd9f7f13144f392b6ad56a32696bfcd9c78f797f16bbb6f072d6"
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1878,7 +1944,7 @@ dependencies = [
  "serde",
  "sizzle-parser",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "ssz_primitives",
  "ssz_types",
  "syn 2.0.117",
@@ -1892,7 +1958,17 @@ name = "ssz_derive"
 version = "0.15.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.15.0#6e4b99ef2831ea3a97b8cb98a88c06206395f337"
 dependencies = [
- "darling",
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "ssz_derive"
+version = "0.16.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.16.0#a43cb62e88b22a4626dddc158bcd09b298c103e7"
+dependencies = [
+ "darling 0.23.0",
  "quote",
  "syn 2.0.117",
 ]
@@ -1935,7 +2011,7 @@ dependencies = [
  "sha2",
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.16.0",
  "ssz_primitives",
  "ssz_types",
  "strata-btc-types",
@@ -1957,7 +2033,7 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "ssz_primitives",
  "ssz_types",
  "strata-asm-manifest-types",
@@ -1997,7 +2073,7 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
@@ -2020,7 +2096,7 @@ dependencies = [
  "borsh",
  "serde",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "strata-btc-types",
  "strata-identifiers",
  "thiserror 2.0.18",
@@ -2050,7 +2126,7 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "ssz_primitives",
  "ssz_types",
  "strata-asm-manifest-types",
@@ -2073,7 +2149,7 @@ dependencies = [
  "num_enum",
  "serde",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "strata-codec",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -2091,7 +2167,7 @@ dependencies = [
  "borsh",
  "serde",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "strata-btc-types",
  "strata-crypto",
  "strata-identifiers",
@@ -2122,7 +2198,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.16.0",
  "strata-codec",
 ]
 
@@ -2133,7 +2209,7 @@ source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc21#b
 dependencies = [
  "borsh",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "strata-codec",
 ]
 
@@ -2151,7 +2227,7 @@ dependencies = [
  "serde",
  "sha2",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "strata-identifiers",
  "thiserror 2.0.18",
  "zeroize",
@@ -2178,7 +2254,7 @@ dependencies = [
  "paste",
  "serde",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
@@ -2231,7 +2307,7 @@ dependencies = [
  "sha2",
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
@@ -2256,7 +2332,7 @@ dependencies = [
  "borsh",
  "serde",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.16.0",
  "strata-asm-proto-bridge-v1-types",
  "strata-codec",
  "strata-identifiers",
@@ -2271,7 +2347,7 @@ dependencies = [
  "int-enum",
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.16.0",
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",
@@ -2347,7 +2423,7 @@ version = "0.1.0"
 dependencies = [
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.16.0",
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",
@@ -2394,15 +2470,18 @@ source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc21#b
 dependencies = [
  "borsh",
  "hex",
+ "k256",
  "serde",
+ "signature",
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "ssz_primitives",
  "ssz_types",
  "thiserror 2.0.18",
  "tree_hash",
  "tree_hash_derive",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -2458,7 +2537,7 @@ version = "0.1.0"
 dependencies = [
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.16.0",
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",
@@ -2473,6 +2552,22 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
+name = "substrate-bn"
+version = "0.6.0"
+source = "git+https://github.com/sp1-patches/bn?tag=patch-0.6.0-sp1-6.0.0-substrate-bn#13747d255e00c158afbb6d4a4a94275edd804bbf"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+ "cfg-if",
+ "crunchy",
+ "lazy_static",
+ "num-bigint 0.4.6",
+ "rand 0.8.5",
+ "rustc-hex",
+ "sp1-lib",
+]
 
 [[package]]
 name = "subtle"
@@ -2681,7 +2776,7 @@ name = "tree_hash_derive"
 version = "0.15.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.15.0#6e4b99ef2831ea3a97b8cb98a88c06206395f337"
 dependencies = [
- "darling",
+ "darling 0.20.11",
  "quote",
  "syn 2.0.117",
 ]
@@ -2844,6 +2939,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "zkaleido-sp1-groth16-verifier"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1-beta.1#d24c4ce44e4ff2abd4328a5adb373ffb79f34c8c"
+dependencies = [
+ "blake3",
+ "borsh",
+ "hex",
+ "serde",
+ "sha2",
+ "substrate-bn",
+ "thiserror 1.0.69",
+ "zkaleido",
+]
+
+[[package]]
 name = "zkaleido-sp1-guest-env"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1-beta.1#d24c4ce44e4ff2abd4328a5adb373ffb79f34c8c"
@@ -2882,8 +2992,3 @@ dependencies = [
  "sha3",
  "subtle",
 ]
-
-[[patch.unused]]
-name = "substrate-bn"
-version = "0.6.0"
-source = "git+https://github.com/sp1-patches/bn?tag=patch-0.6.0-sp1-6.0.0-substrate-bn#13747d255e00c158afbb6d4a4a94275edd804bbf"
