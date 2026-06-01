@@ -1,11 +1,15 @@
 //! Definitions for EE message types.
 
-use strata_acct_types::SubjectId;
+use strata_acct_types::{MAX_MSG_PAYLOAD_DATA_BYTES, SubjectId};
 use strata_codec::{Codec, VarVec, decode_buf_exact, impl_type_flat_struct};
 use strata_msg_fmt::{Msg, MsgRef, TypeId};
 use strata_snark_acct_runtime::IAcctMsg;
 
 use crate::{MessageDecodeError, MessageDecodeResult};
+
+/// Maximum byte length for subject transfer data, derived from
+/// `MAX_MSG_PAYLOAD_DATA_BYTES` in the acct-types SSZ spec.
+const MAX_TRANSFER_DATA_BYTES: u32 = MAX_MSG_PAYLOAD_DATA_BYTES as u32;
 
 /// Message type ID for deposit messages.
 pub const DEPOSIT_MSG_TYPE: TypeId = 0x02;
@@ -85,7 +89,7 @@ impl_type_flat_struct! {
     pub struct SubjTransferMsgData {
         source_subject: SubjectId,
         dest_subject: SubjectId,
-        transfer_data: VarVec<u8>,
+        transfer_data: VarVec<u8, { MAX_TRANSFER_DATA_BYTES }>,
     }
 }
 

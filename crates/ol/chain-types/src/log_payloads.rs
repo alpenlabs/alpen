@@ -2,7 +2,20 @@
 
 use strata_codec::{Codec, VarVec};
 
-use crate::SauTxUpdateData;
+use crate::{SAU_MAX_EXTRA_DATA_BYTES, SauTxUpdateData};
+
+/// Maximum byte length for a withdrawal destination BOSD descriptor.
+const MAX_DEST_BYTES: u32 = 255;
+
+/// Maximum byte length for snark account update extra data (matches
+/// `SAU_MAX_EXTRA_DATA_BYTES` from the SSZ spec).
+const MAX_EXTRA_DATA_BYTES: u32 = SAU_MAX_EXTRA_DATA_BYTES as u32;
+
+/// Bounded [`VarVec`] holding SAU extra data.
+pub type ExtraDataBufVec = VarVec<u8, { MAX_EXTRA_DATA_BYTES }>;
+
+/// Bounded [`VarVec`] holding withdrawal intent destination BOSD.
+pub type DestinationBufVec = VarVec<u8, { MAX_DEST_BYTES }>;
 
 /// Payload for a simple withdrawal intent log.
 ///
@@ -14,7 +27,7 @@ pub struct SimpleWithdrawalIntentLogData {
     pub amt: u64,
 
     /// Destination BOSD.
-    pub dest: VarVec<u8>,
+    pub dest: DestinationBufVec,
 
     /// User's selected operator index for withdrawal assignment.
     // TODO(STR-1861): encode as varint to reduce DA cost in checkpoint payloads.
@@ -54,7 +67,7 @@ pub struct SnarkAccountUpdateLogData {
     pub new_msg_idx: u64,
 
     /// Extra data from the update operation.
-    pub extra_data: VarVec<u8>,
+    pub extra_data: ExtraDataBufVec,
 }
 
 impl SnarkAccountUpdateLogData {
