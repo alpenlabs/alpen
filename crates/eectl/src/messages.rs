@@ -83,9 +83,6 @@ pub struct PayloadEnv {
 
     /// Operations we're pushing into the EL for processing.
     el_ops: Vec<Op>,
-
-    /// Cumulative gas limit for the epoch.
-    batch_gas_limit: Option<u64>,
 }
 
 impl PayloadEnv {
@@ -94,14 +91,12 @@ impl PayloadEnv {
         prev_l2_block_id: L2BlockId,
         _safe_l1_block: Buf32,
         el_ops: Vec<Op>,
-        batch_gas_limit: Option<u64>,
     ) -> Self {
         Self {
             timestamp,
             prev_l2_block_id,
             _safe_l1_block,
             el_ops,
-            batch_gas_limit,
         }
     }
 
@@ -115,9 +110,5 @@ impl PayloadEnv {
 
     pub fn prev_l2_block_id(&self) -> &L2BlockId {
         &self.prev_l2_block_id
-    }
-
-    pub fn batch_gas_limit(&self) -> Option<u64> {
-        self.batch_gas_limit
     }
 }

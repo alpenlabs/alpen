@@ -8,7 +8,6 @@ use strata_checkpoint_types::Checkpoint;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
-use strata_db_types::DbError;
 use strata_eectl::{
     engine::{ExecEngineCtl, PayloadStatus},
     errors::EngineError,
@@ -29,49 +28,6 @@ use tracing::*;
 
 use super::error::BlockAssemblyError as Error;
 
-/// Get the total gas used by EL blocks from start of current epoch till prev_slot
-fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> Result<u64, Error> {
-    let chainstate = storage
-        .chainstate()
-        .get_slot_write_batch_blocking(prev_blkid)?
-        .ok_or(Error::Db(DbError::MissingSlotWriteBatch(prev_blkid)))?
-        .into_toplevel();
-
-    let prev_epoch = chainstate.prev_epoch();
-    debug!(?prev_epoch);
-    let epoch_start_slot = chainstate.prev_epoch().last_slot() + 1;
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let prev_header = storage
-        .l2()
-        .get_block_data_blocking(&prev_blkid)?
-        .ok_or(Error::Db(DbError::MissingL2Block(prev_blkid)))?
-        .header()
-        .clone();
-    let mut gas_used = 0;
-    let prev_slot = prev_header.slot();
-
-    let mut block_to_fetch = prev_blkid;
-    for _ in epoch_start_slot..=prev_slot {
-        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-        let block: L2BlockBundle = storage
-            .l2()
-            .get_block_data_blocking(&block_to_fetch)?
-            .ok_or(DbError::MissingL2Block(block_to_fetch))?;
-        gas_used += block.accessory().gas_used();
-        block_to_fetch = *block.header().parent();
-    }
-
-    // REVIEW: This doesn't work for the first block because prev_epoch_end_blkid = 0x00
-    // let prev_epoch_end_blkid = *chainstate.prev_epoch().last_blkid();
-    // assert_eq!(
-    //     block_to_fetch, prev_epoch_end_blkid,
-    //     "fetched blocks should end at the last block of the previous epoch"
-    // );
-
-    // TODO: cache
-    Ok(gas_used)
-}
-
 /// Build contents for a new L2 block with the provided configuration.
 /// Needs to be signed to be a valid L2Block.
 // TODO use parent block chainstate
@@ -79,7 +35,6 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> 
 pub fn prepare_block(
     prev_block: L2BlockBundle,
     ts: u64,
-    epoch_gas_limit: Option<u64>,
     storage: &NodeStorage,
     engine: &impl ExecEngineCtl,
     params: &Params,
@@ -117,15 +72,6 @@ pub fn prepare_block(
     )?;
     debug!(?l1_seg);
 
-    let remaining_gas_limit = if first_block_of_epoch {
-        epoch_gas_limit
-    } else if let Some(epoch_gas_limit) = epoch_gas_limit {
-        let gas_used = get_total_gas_used_in_epoch(storage, prev_blkid)?;
-        Some(epoch_gas_limit.saturating_sub(gas_used))
-    } else {
-        None
-    };
-
     // Prepare the execution segment, which right now is just talking to the EVM
     // but will be more advanced later.
     let slot = prev_slot + 1;
@@ -139,7 +85,6 @@ pub fn prepare_block(
         safe_l1_blkid.into(),
         engine,
         params.rollup(),
-        remaining_gas_limit,
     )?;
 
     // Assemble the body and fake header.
@@ -322,20 +267,13 @@ fn prepare_exec_data<E: ExecEngineCtl>(
     safe_l1_block: Buf32,
     engine: &E,
     params: &RollupParams,
-    remaining_gas_limit: Option<u64>,
 ) -> Result<(ExecSegment, L2BlockAccessory), Error> {
     // Start preparing the EL payload.
 
     // construct el_ops by looking at chainstate
     let pending_deposits = prev_chstate.exec_env_state().pending_deposits();
     let el_ops = construct_ops_from_deposit_intents(pending_deposits, params.max_deposits_in_block);
-    let payload_env = PayloadEnv::new(
-        timestamp,
-        prev_l2_blkid,
-        safe_l1_block,
-        el_ops,
-        remaining_gas_limit,
-    );
+    let payload_env = PayloadEnv::new(timestamp, prev_l2_blkid, safe_l1_block, el_ops);
 
     // If the payload preparation fails, we can safely retry in the next iteration.
     // The fork-choice manager includes graceful shutdown logic to handle any
