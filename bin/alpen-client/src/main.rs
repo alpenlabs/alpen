@@ -19,7 +19,8 @@ use std::{env, process, sync::Arc, time::Duration};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::{
-    chain_status_checked, BatchStorage, BlockNumHash, ExecBlockStorage, OLClient, Storage,
+    chain_status_checked, BatchStorage, BlockNumHash, ChunkStorage, ExecBlockStorage, OLClient,
+    Storage,
 };
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
@@ -128,6 +129,10 @@ const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
 /// requests.
 #[cfg(all(feature = "sequencer", feature = "sp1"))]
 const DEFAULT_SP1_DEADLINE_SECS: u64 = 4 * 60 * 60;
+
+/// Default capacity for the batch builder → chunk builder event channel.
+#[cfg(feature = "sequencer")]
+const DEFAULT_BATCH_EVENT_CHANNEL_CAPACITY: usize = 64;
 
 fn main() {
     sigsegv_handler::install();
@@ -479,9 +484,10 @@ fn main() {
 
                 use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobSource};
                 use alpen_ee_sequencer::{
-                    backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
-                    create_batch_builder, create_batch_lifecycle_task,
-                    create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
+                    backfill_missing_chunk_witnesses,
+                    block_count_policy::{BlockCountDataProvider, FixedBlockCountSealing},
+                    chunk_witness_channel, chunk_witness_task, create_batch_builder,
+                    create_batch_lifecycle_task, create_update_submitter_task, BatchBuilderEvent,
                 };
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
@@ -563,13 +569,13 @@ fn main() {
                 // a panic in either path warrants taking the node down
                 // rather than silently producing un-provable chunks.
                 let chunk_witness_backfill_task = {
-                    let batch_storage: Arc<dyn BatchStorage> = storage.clone();
+                    let chunk_storage: Arc<dyn ChunkStorage> = storage.clone();
                     let witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
                         storage.clone();
                     let tx = chunk_witness_tx.clone();
                     async move {
                         if let Err(e) = backfill_missing_chunk_witnesses(
-                            batch_storage.as_ref(),
+                            chunk_storage.as_ref(),
                             witness_store.as_ref(),
                             &tx,
                         )
@@ -579,6 +585,12 @@ fn main() {
                         }
                     }
                 };
+
+                // Channel from batch builder → chunk builder.
+                let (batch_event_tx, batch_event_rx) = mpsc::channel::<BatchBuilderEvent>(
+                    ext.batch_event_channel_capacity
+                        .unwrap_or(DEFAULT_BATCH_EVENT_CHANNEL_CAPACITY),
+                );
 
                 let (batch_builder_handle, batch_builder_task) = create_batch_builder(
                     latest_batch.id(),
@@ -590,7 +602,7 @@ fn main() {
                     storage.clone(),
                     storage.clone(),
                     exec_chain_handle.clone(),
-                    Some(chunk_witness_tx),
+                    Some(batch_event_tx),
                 );
 
                 // --- DA pipeline ---
@@ -712,6 +724,7 @@ fn main() {
                     Arc::new(EeChunkReceiptStore::new(prover_db.clone()));
                 let batch_proofs = Arc::new(EeBatchProofDbManager::new(prover_db));
                 let batch_storage_dyn: Arc<dyn BatchStorage> = storage.clone();
+                let chunk_storage_dyn: Arc<dyn ChunkStorage> = storage.clone();
 
                 let genesis = {
                     use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
@@ -723,19 +736,20 @@ fn main() {
                         .expect("invalid withdrawal params");
 
                 let chunk_builder = ProverBuilder::new(ChunkSpec::new(
-                    batch_storage_dyn.clone(),
+                    chunk_storage_dyn.clone(),
                     storage.clone(),
                     genesis.clone(),
                     bridge_params,
                 ))
                 .task_store(task_store.clone())
                 .receipt_store(chunk_receipts.clone())
-                .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
+                .receipt_hook(ChunkReceiptHook::new(chunk_storage_dyn.clone()))
                 .retry(RetryConfig::default());
 
                 let acct_builder = ProverBuilder::new(AcctSpec::new(
                     chunk_receipts.clone(),
                     batch_storage_dyn.clone(),
+                    chunk_storage_dyn.clone(),
                     storage.clone(),
                     ol_client.clone(),
                     genesis,
@@ -808,7 +822,7 @@ fn main() {
                 let batch_prover = Arc::new(PaasBatchProver::new(
                     chunk_handle,
                     acct_handle,
-                    batch_storage_dyn,
+                    chunk_storage_dyn,
                     batch_proofs,
                 ));
 
@@ -846,6 +860,26 @@ fn main() {
                         storage.clone(),
                     ),
                 );
+
+                // --- Chunk builder service ---
+                let chunk_block_count = ext
+                    .chunk_sealing_block_count
+                    .unwrap_or(ext.batch_sealing_block_count);
+                let genesis_blocknumhash =
+                    BlockNumHash::new(genesis_info.blockhash().0.into(), genesis_info.blocknum());
+
+                services::chunk_builder::start_chunk_builder_service(
+                    genesis_blocknumhash,
+                    storage.clone(),
+                    storage.clone(),
+                    storage.clone(),
+                    FixedBlockCountSealing::new(chunk_block_count),
+                    Some(chunk_witness_tx),
+                    batch_event_rx,
+                    &service_executor,
+                )
+                .await
+                .map_err(|e| eyre::eyre!("failed to launch chunk builder service: {e}"))?;
 
                 node.task_executor
                     .spawn_critical("ee_batch_builder", batch_builder_task);
@@ -1012,6 +1046,18 @@ pub struct AdditionalConfig {
     /// Lower values seal batches more frequently (useful for testing).
     #[arg(long, default_value = "100")]
     pub batch_sealing_block_count: u64,
+
+    /// Number of blocks per chunk before sealing.
+    /// Defaults to `batch_sealing_block_count` if not set.
+    #[cfg(feature = "sequencer")]
+    #[arg(long, required = false)]
+    pub chunk_sealing_block_count: Option<u64>,
+
+    /// Capacity of the batch builder → chunk builder event channel.
+    /// Defaults to 64 if not set.
+    #[cfg(feature = "sequencer")]
+    #[arg(long, required = false)]
+    pub batch_event_channel_capacity: Option<usize>,
 
     /// Bridge denomination in satoshis (1 BTC default).
     #[arg(long, default_value_t = DEFAULT_DENOMINATION_SATS)]

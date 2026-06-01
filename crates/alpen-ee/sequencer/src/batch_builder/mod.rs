@@ -57,6 +57,7 @@
 //!     block_storage,
 //!     batch_storage,
 //!     exec_chain,
+//!     Some(event_tx), // chunk builder event channel
 //! );
 //!
 //! // Use handle to watch for batch updates
@@ -66,21 +67,14 @@
 //! task.await;
 //! ```
 
-mod accumulator;
-mod block_count;
 mod canonical;
 mod ctx;
+mod events;
 mod handle;
 mod reorg;
 mod state;
 mod task;
-mod traits;
 
-pub use accumulator::Accumulator;
-pub use block_count::{
-    BlockCountData, BlockCountDataProvider, BlockCountPolicy, BlockCountValue,
-    FixedBlockCountSealing,
-};
+pub use events::BatchBuilderEvent;
 pub use handle::{create_batch_builder, BatchBuilderHandle};
 pub use state::{init_batch_builder_state, BatchBuilderState};
-pub use traits::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};

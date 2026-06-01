@@ -3,7 +3,7 @@
 use std::{fmt, sync::Arc};
 
 use alloy_primitives::B256;
-use alpen_ee_common::{BatchStorage, ChunkStatus, ConsensusHeads};
+use alpen_ee_common::{ChunkStatus, ChunkStorage, ConsensusHeads};
 use alpen_ee_rpc_api::{
     AlpenEeRpcServer, BlockStatus, BlockStatusResponse, ChunkProofCoverageResponse,
 };
@@ -48,7 +48,7 @@ fn hash_to_b256(hash: &[u8]) -> B256 {
 pub struct EeRpcServer<N: NodeTypesWithDB + ProviderNodeTypes> {
     provider: BlockchainProvider<N>,
     consensus_rx: watch::Receiver<ConsensusHeads>,
-    batch_storage: Arc<dyn BatchStorage>,
+    chunk_storage: Arc<dyn ChunkStorage>,
 }
 
 impl<N: NodeTypesWithDB + ProviderNodeTypes> fmt::Debug for EeRpcServer<N> {
@@ -61,12 +61,12 @@ impl<N: NodeTypesWithDB + ProviderNodeTypes> EeRpcServer<N> {
     pub fn new(
         provider: BlockchainProvider<N>,
         consensus_rx: watch::Receiver<ConsensusHeads>,
-        batch_storage: Arc<dyn BatchStorage>,
+        chunk_storage: Arc<dyn ChunkStorage>,
     ) -> Self {
         Self {
             provider,
             consensus_rx,
-            batch_storage,
+            chunk_storage,
         }
     }
 }
@@ -142,7 +142,7 @@ where
         }
 
         let latest_chunk = self
-            .batch_storage
+            .chunk_storage
             .get_latest_chunk()
             .await
             .map_err(|e| internal_error(e.to_string()))?;
@@ -160,7 +160,7 @@ where
 
         for chunk_idx in 0..=latest_chunk.idx() {
             let Some((chunk, status)) = self
-                .batch_storage
+                .chunk_storage
                 .get_chunk_by_idx(chunk_idx)
                 .await
                 .map_err(|e| internal_error(e.to_string()))?

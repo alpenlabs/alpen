@@ -10,7 +10,7 @@ use strata_acct_types::Hash;
 
 use crate::{
     AccessedStateRecord, AccessedStateStore, Batch, BatchId, BatchStatus, BatchStorage, Chunk,
-    ChunkId, ChunkStatus, ChunkWitnessRecord, ChunkWitnessStore, StorageError,
+    ChunkId, ChunkStatus, ChunkStorage, ChunkWitnessRecord, ChunkWitnessStore, StorageError,
 };
 
 /// In-memory storage for batches and chunks.
@@ -147,7 +147,10 @@ impl BatchStorage for InMemoryStorage {
         let batches = self.batches.read().unwrap();
         Ok(batches.last_key_value().map(|(_, v)| v.clone()))
     }
+}
 
+#[async_trait]
+impl ChunkStorage for InMemoryStorage {
     async fn save_next_chunk(&self, chunk: Chunk) -> Result<(), StorageError> {
         let mut chunks = self.chunks.write().unwrap();
         let mut id_to_idx = self.chunk_id_to_idx.write().unwrap();
@@ -321,9 +324,17 @@ impl AccessedStateStore for InMemoryStorage {
 }
 
 #[cfg(all(test, feature = "test-utils"))]
-mod in_memory_tests {
+mod in_memory_batch_tests {
     use super::InMemoryStorage;
     use crate::batch_storage_tests;
 
     batch_storage_tests!(InMemoryStorage::new_empty());
+}
+
+#[cfg(all(test, feature = "test-utils"))]
+mod in_memory_chunk_tests {
+    use super::InMemoryStorage;
+    use crate::chunk_storage_tests;
+
+    chunk_storage_tests!(InMemoryStorage::new_empty());
 }

@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use alpen_ee_common::{BatchStorage, BlockNumHash};
 use eyre::Result;
 
-use super::{Accumulator, BatchPolicy};
+use crate::policy::{AccumulationPolicy, Accumulator};
 
 /// State for the batch builder task.
 ///
@@ -13,10 +13,11 @@ use super::{Accumulator, BatchPolicy};
 /// the pending batch. This state is not persisted; it is rebuilt from
 /// [`BatchStorage`] on restart.
 #[derive(Debug)]
-pub struct BatchBuilderState<P: BatchPolicy> {
+pub struct BatchBuilderState<P: AccumulationPolicy> {
     /// Hash of the last block in the most recent sealed batch (or genesis if no batches).
     prev_batch_end: BlockNumHash,
-    /// Index for the next batch to be created.
+    /// Index for the next batch to be sealed.
+    /// ie. the batch we are currently accumulating blocks for.
     next_batch_idx: u64,
     /// Accumulator for the pending batch.
     accumulator: Accumulator<P>,
@@ -24,7 +25,7 @@ pub struct BatchBuilderState<P: BatchPolicy> {
     pending_blocks: VecDeque<BlockNumHash>,
 }
 
-impl<P: BatchPolicy> BatchBuilderState<P> {
+impl<P: AccumulationPolicy> BatchBuilderState<P> {
     /// Initialize state from the last sealed batch.
     ///
     /// Used when resuming from storage where batches already exist.
@@ -42,7 +43,8 @@ impl<P: BatchPolicy> BatchBuilderState<P> {
         self.prev_batch_end
     }
 
-    /// Get the index for the next batch to be created.
+    /// Get the index for the next batch to be sealed.
+    /// This is the batch we are currently accumulating blocks for.
     pub fn next_batch_idx(&self) -> u64 {
         self.next_batch_idx
     }
@@ -107,7 +109,7 @@ impl<P: BatchPolicy> BatchBuilderState<P> {
 ///
 /// If batches exist in storage, resumes from the last batch.
 /// Otherwise, starts fresh from genesis.
-pub async fn init_batch_builder_state<P: BatchPolicy>(
+pub async fn init_batch_builder_state<P: AccumulationPolicy>(
     batch_storage: &impl BatchStorage,
 ) -> Result<BatchBuilderState<P>> {
     let (batch, _) = batch_storage
@@ -123,7 +125,7 @@ pub async fn init_batch_builder_state<P: BatchPolicy>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{batch_builder::block_count::BlockCountPolicy, test_utils::*};
+    use crate::{block_count_policy::BlockCountPolicy, test_utils::*};
 
     #[test]
     fn test_from_last_batch() {
