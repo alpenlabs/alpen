@@ -1,6 +1,11 @@
 services:
   strata:
-    image: ${STRATA_IMAGE:-strata:latest}
+    build:
+      context: ..
+      dockerfile: docker/strata/Dockerfile.local
+      args:
+        CARGO_FEATURES: ${STRATA_CARGO_FEATURES:-}
+    image: strata:latest
     env_file:
       - .env
     environment:
@@ -22,7 +27,7 @@ services:
       - ./configs/generated/ol-params.json:/app/configs/generated/ol-params.json:ro
       - ./configs/generated/asm-params.json:/app/configs/generated/asm-params.json:ro
       # SP1 ELFs (empty dir when SP1 disabled — harmless)
-      # - ./elfs:/app/elfs/sp1:ro  # Uncomment for local ELFs; prebuilt images have them baked in
+      - ./elfs:/app/elfs/sp1:ro
       - strata-data:/app/data
     ports:
       - "8432:8432"
@@ -40,7 +45,10 @@ services:
     restart: unless-stopped
 
   strata-signer:
-    image: ${STRATA_SIGNER_IMAGE:-strata-signer:latest}
+    build:
+      context: ..
+      dockerfile: docker/strata-signer/Dockerfile
+    image: strata-signer:latest
     depends_on:
       strata:
         condition: service_healthy
@@ -59,12 +67,15 @@ services:
     restart: unless-stopped
 
   alpen-client:
-    image: ${ALPEN_CLIENT_IMAGE:-alpen-client:latest}
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile.local
+    image: alpen-client:latest
     depends_on:
       strata:
         condition: service_healthy
     # Remove --dev-native-prover when using real SP1 proofs.
-    # command: ["--dev-native-prover"]
+    command: ["--dev-native-prover"]
     env_file:
       - .env
       - ./configs/generated/.env.alpen
@@ -76,7 +87,7 @@ services:
       # Env vars (pubkey, chain spec, etc.) come from env_file above.
       - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
       # SP1 ELFs (empty dir when SP1 disabled — harmless)
-      # - ./elfs:/app/elfs/sp1:ro  # Uncomment for local ELFs; prebuilt images have them baked in
+      - ./elfs:/app/elfs/sp1:ro
       - alpen-client-data:/app/data
     ports:
       - "8545:8545"
