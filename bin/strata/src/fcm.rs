@@ -98,6 +98,13 @@ impl FcmStorage for StrataFcmContext {
             .await
     }
 
+    async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool> {
+        self.storage
+            .ol_block()
+            .clear_block_high_watermark_async(expected)
+            .await
+    }
+
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,

@@ -193,6 +193,14 @@ pub enum DbError {
         last_applied: OLBlockCommitment,
     },
 
+    /// `put_block_data_with_high_watermark` was called for a block whose slot does not strictly
+    /// advance past the current high-watermark.
+    #[error("block high-watermark conflict: attempted {attempted}, current {current}")]
+    BlockHighWatermarkConflict {
+        attempted: OLBlockCommitment,
+        current: OLBlockCommitment,
+    },
+
     #[error("{0}")]
     Other(String),
 }

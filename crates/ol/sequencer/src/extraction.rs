@@ -14,12 +14,31 @@ pub async fn extract_duties(
     node_storage: &NodeStorage,
 ) -> Result<Vec<Duty>, Error> {
     let mut duties = vec![];
+    let block_high_watermark = node_storage
+        .ol_block()
+        .get_block_high_watermark_async()
+        .await?;
 
     // Block duties. Read-only lookup; generation is handled by GenerationTick.
     match blockasm.get_block_template(tip_blkid).await {
         Ok(template) => {
-            let blkduty = BlockSigningDuty::new(template);
-            duties.push(Duty::SignBlock(blkduty));
+            let template_slot = template.header().slot();
+            let should_offer = block_high_watermark
+                .as_ref()
+                .is_none_or(|high_watermark| template_slot > high_watermark.slot());
+            if should_offer {
+                let blkduty = BlockSigningDuty::new(template);
+                duties.push(Duty::SignBlock(blkduty));
+            } else if let Some(high_watermark) = block_high_watermark.as_ref() {
+                debug!(
+                    tip_blkid = ?tip_blkid,
+                    template_slot,
+                    high_watermark = %high_watermark,
+                    "cached block template is at or below block high-watermark; skipping block duty"
+                );
+            } else {
+                unreachable!("block duty should only be skipped when a high-watermark exists");
+            }
         }
         Err(BlockAssemblyError::NoPendingTemplateForParent(_)) => {
             debug!(

@@ -118,16 +118,85 @@ async fn process_generation_tick<C: SequencerContext>(state: &mut SequencerServi
         }
     };
 
-    if generated_tip.is_none() {
-        debug!("generation tick skipped: no canonical tip");
-    }
+    let Some(generated_tip) = generated_tip else {
+        debug!("generation tick skipped");
+        return;
+    };
 
     let previous_tip = state.last_seen_tip;
-    state.last_seen_tip = generated_tip;
+    state.last_seen_tip = Some(generated_tip);
 
     if previous_tip != state.last_seen_tip {
         state.templates_generated += 1;
         counter!("strata_sequencer_templates_generated_total").increment(1);
         debug!(?previous_tip, current_tip = ?state.last_seen_tip, "sequencer tip changed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Mutex},
+    };
+
+    use strata_primitives::{Buf32, OLBlockId};
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct MockSequencerContext {
+        results: Mutex<VecDeque<Result<Option<OLBlockId>, SequencerContextError>>>,
+    }
+
+    impl MockSequencerContext {
+        fn new(
+            results: impl IntoIterator<Item = Result<Option<OLBlockId>, SequencerContextError>>,
+        ) -> Self {
+            Self {
+                results: Mutex::new(results.into_iter().collect()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl SequencerContext for MockSequencerContext {
+        async fn generate_template_for_tip(
+            &self,
+        ) -> Result<Option<OLBlockId>, SequencerContextError> {
+            self.results
+                .lock()
+                .expect("mock sequencer context mutex poisoned")
+                .pop_front()
+                .expect("test should provide a generation result")
+        }
+    }
+
+    fn block_id(byte: u8) -> OLBlockId {
+        OLBlockId::from(Buf32::from([byte; 32]))
+    }
+
+    #[tokio::test]
+    async fn generation_tick_does_not_count_skipped_second_tick() {
+        let tip = block_id(1);
+        let context = Arc::new(MockSequencerContext::new([Ok(Some(tip)), Ok(None)]));
+        let mut state = SequencerServiceState::new(context);
+
+        SequencerService::<MockSequencerContext>::process_input(
+            &mut state,
+            SequencerEvent::GenerationTick,
+        )
+        .await
+        .expect("first generation tick should process");
+        SequencerService::<MockSequencerContext>::process_input(
+            &mut state,
+            SequencerEvent::GenerationTick,
+        )
+        .await
+        .expect("second generation tick should process");
+
+        let status = SequencerService::<MockSequencerContext>::get_status(&state);
+        assert_eq!(status.templates_generated, 1);
+        assert_eq!(state.last_seen_tip, Some(tip));
     }
 }

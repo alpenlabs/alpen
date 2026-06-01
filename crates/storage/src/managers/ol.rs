@@ -46,6 +46,93 @@ impl OLBlockManager {
         Ok(())
     }
 
+    /// Gets the block high-watermark.
+    ///
+    /// This is not the OL tip. Plain block writes do not update it.
+    pub async fn get_block_high_watermark_async(&self) -> DbResult<Option<OLBlockCommitment>> {
+        self.ops.get_block_high_watermark_async().await
+    }
+
+    /// Gets the block high-watermark.
+    ///
+    /// This is not the OL tip. Plain block writes do not update it.
+    pub fn get_block_high_watermark_blocking(&self) -> DbResult<Option<OLBlockCommitment>> {
+        self.ops.get_block_high_watermark_blocking()
+    }
+
+    /// Puts a block and advances the block high-watermark atomically.
+    ///
+    /// This uses the guarded high-watermark path; plain block writes do not update it.
+    pub async fn put_block_data_with_high_watermark_async(
+        &self,
+        block: OLBlock,
+    ) -> DbResult<OLBlockCommitment> {
+        let block_id = block.header().compute_blkid();
+        let commitment = self
+            .ops
+            .put_block_data_with_high_watermark_async(block)
+            .await?;
+        self.block_cache.purge_async(&block_id).await;
+        Ok(commitment)
+    }
+
+    /// Puts a block and advances the block high-watermark atomically.
+    ///
+    /// This uses the guarded high-watermark path; plain block writes do not update it.
+    pub fn put_block_data_with_high_watermark_blocking(
+        &self,
+        block: OLBlock,
+    ) -> DbResult<OLBlockCommitment> {
+        let block_id = block.header().compute_blkid();
+        let commitment = self
+            .ops
+            .put_block_data_with_high_watermark_blocking(block)?;
+        self.block_cache.purge_blocking(&block_id);
+        Ok(commitment)
+    }
+
+    /// Clears the block high-watermark if it currently equals `expected`.
+    ///
+    /// This does not delete block data or purge cached blocks.
+    pub async fn clear_block_high_watermark_async(
+        &self,
+        expected: OLBlockCommitment,
+    ) -> DbResult<bool> {
+        self.ops.clear_block_high_watermark_async(expected).await
+    }
+
+    /// Clears the block high-watermark if it currently equals `expected`.
+    ///
+    /// This does not delete block data or purge cached blocks.
+    pub fn clear_block_high_watermark_blocking(
+        &self,
+        expected: OLBlockCommitment,
+    ) -> DbResult<bool> {
+        self.ops.clear_block_high_watermark_blocking(expected)
+    }
+
+    /// Rolls the block high-watermark back to an existing target block.
+    ///
+    /// This is not normal chain progression; it is used by explicit recovery
+    /// paths that revert OL state.
+    pub async fn rollback_block_high_watermark_async(
+        &self,
+        target: OLBlockCommitment,
+    ) -> DbResult<bool> {
+        self.ops.rollback_block_high_watermark_async(target).await
+    }
+
+    /// Rolls the block high-watermark back to an existing target block.
+    ///
+    /// This is not normal chain progression; it is used by explicit recovery
+    /// paths that revert OL state.
+    pub fn rollback_block_high_watermark_blocking(
+        &self,
+        target: OLBlockCommitment,
+    ) -> DbResult<bool> {
+        self.ops.rollback_block_high_watermark_blocking(target)
+    }
+
     /// Gets a block either in the cache or from the underlying database.
     pub async fn get_block_data_async(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
         self.block_cache

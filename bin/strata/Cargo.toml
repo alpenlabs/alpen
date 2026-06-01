@@ -110,6 +110,7 @@ zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true
+strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true

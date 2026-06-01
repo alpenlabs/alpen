@@ -38,6 +38,14 @@ pub(crate) struct OLSummaryInfo<'a> {
     pub(crate) missing_slots: Vec<Slot>,
 }
 
+/// OL block IDs for one slot.
+#[derive(serde::Serialize)]
+pub(crate) struct OLBlocksAtSlotInfo<'a> {
+    pub(crate) slot: Slot,
+    pub(crate) count: usize,
+    pub(crate) block_ids: &'a [OLBlockId],
+}
+
 impl<'a> Formattable for OLBlockInfo<'a> {
     fn format_porcelain(&self) -> String {
         let mut output = Vec::new();
@@ -118,5 +126,50 @@ impl<'a> Formattable for OLSummaryInfo<'a> {
         }
 
         output.join("\n")
+    }
+}
+
+impl Formattable for OLBlocksAtSlotInfo<'_> {
+    fn format_porcelain(&self) -> String {
+        let mut output = Vec::new();
+
+        output.push(porcelain_field("slot", self.slot));
+        output.push(porcelain_field("count", self.count));
+
+        for (index, block_id) in self.block_ids.iter().enumerate() {
+            output.push(porcelain_field(
+                &format!("block_ids.{index}"),
+                format!("{block_id:?}"),
+            ));
+        }
+
+        output.join("\n")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_identifiers::Buf32;
+
+    use super::*;
+
+    #[test]
+    fn blocks_at_slot_porcelain_lists_indexed_block_ids() {
+        let block_ids = [
+            OLBlockId::from(Buf32::from([0x11; 32])),
+            OLBlockId::from(Buf32::from([0x22; 32])),
+        ];
+        let info = OLBlocksAtSlotInfo {
+            slot: 7,
+            count: block_ids.len(),
+            block_ids: &block_ids,
+        };
+
+        let output = info.format_porcelain();
+
+        assert!(output.contains("slot: 7"));
+        assert!(output.contains("count: 2"));
+        assert!(output.contains("block_ids.0:"));
+        assert!(output.contains("block_ids.1:"));
     }
 }

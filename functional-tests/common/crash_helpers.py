@@ -47,6 +47,7 @@ def crash_and_recover(
     *,
     expected_block_advance: int = 1,
     after_arm: Callable[[], None] | None = None,
+    after_crash: Callable[[Any], None] | None = None,
     crash_timeout: int = 30,
     restart_timeout: int = 20,
     recovery_timeout: int = 30,
@@ -65,6 +66,8 @@ def crash_and_recover(
         after_arm: Optional callable invoked between arming the bail and
             waiting for the crash. Used by tests where an external action
             (e.g. mining L1 blocks) is required to actually trip the bail.
+        after_crash: Optional callable invoked after the process exits and
+            before restart. The callable receives the pre-crash sync status.
         crash_timeout: Seconds to wait for the process to die after arming.
         restart_timeout: Seconds to wait for the new process's RPC to come up.
         recovery_timeout: Seconds to wait for the chain to advance.
@@ -98,6 +101,10 @@ def crash_and_recover(
     # which only happens via stop(). The process is already dead, so this is a
     # bookkeeping reset, not a real terminate.
     strata.stop()
+
+    if after_crash is not None:
+        after_crash(pre_status)
+
     strata.start()
     rpc = strata.wait_for_rpc_ready(timeout=restart_timeout)
 

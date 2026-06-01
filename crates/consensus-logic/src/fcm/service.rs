@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use metrics::{counter, histogram};
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
@@ -207,7 +207,8 @@ async fn process_fc_message<C: FcmContext>(
                 BlockStatus::Invalid
             };
 
-            fcm_state.ctx().set_block_status(*blkid, status).await?;
+            let block = OLBlockCommitment::new(slot, *blkid);
+            set_block_status_and_clear_invalid_high_watermark(fcm_state, block, status).await?;
             if ok {
                 counter!("strata_fcm_blocks_accepted_total").increment(1);
             } else {
@@ -217,6 +218,40 @@ async fn process_fc_message<C: FcmContext>(
     }
 
     Ok(())
+}
+
+async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
+    fcm_state: &FcmServiceState<C>,
+    block: OLBlockCommitment,
+    status: BlockStatus,
+) -> anyhow::Result<bool> {
+    let updated = fcm_state
+        .ctx()
+        .set_block_status(*block.blkid(), status)
+        .await?;
+
+    if matches!(status, BlockStatus::Invalid) {
+        // TODO(STR-2141): `BlockStatus::Invalid` also represents local execution failures.
+        // Revisit high-watermark clearing once FCM distinguishes consensus-invalid blocks
+        // from transient execution failures.
+        let cleared = fcm_state
+            .ctx()
+            .clear_block_high_watermark(block)
+            .await
+            .inspect_err(|err| {
+                error!(
+                    %block,
+                    %err,
+                    "failed to clear high-watermark for invalid OL block; replacement generation for this slot remains blocked"
+                );
+            })
+            .context("failed to clear invalid OL block high-watermark")?;
+        if cleared {
+            info!(%block, "cleared invalid OL block high-watermark");
+        }
+    }
+
+    Ok(updated)
 }
 
 async fn handle_new_state_update<C: FcmContext>(
@@ -284,9 +319,7 @@ async fn handle_new_block<C: FcmContext>(
             .set_block_status(*blkid, BlockStatus::Valid)
             .await?;
     } else {
-        fcm_state
-            .ctx()
-            .set_block_status(*blkid, BlockStatus::Invalid)
+        set_block_status_and_clear_invalid_high_watermark(fcm_state, bc, BlockStatus::Invalid)
             .await?;
         return Ok(false);
     }
@@ -653,6 +686,7 @@ mod tests {
         statuses: HashMap<OLBlockId, BlockStatus>,
         blocks_by_slot: BTreeMap<Slot, Vec<OLBlockId>>,
         canonical_blocks: HashMap<Slot, OLBlockCommitment>,
+        block_high_watermark: Option<OLBlockCommitment>,
         states: HashMap<OLBlockCommitment, Arc<OLState>>,
         canonical_epochs: HashMap<Epoch, EpochCommitment>,
     }
@@ -717,6 +751,14 @@ mod tests {
                 .unwrap()
                 .canonical_epochs
                 .insert(epoch.epoch(), epoch);
+        }
+
+        fn set_block_high_watermark(&self, block: OLBlockCommitment) {
+            self.inner.lock().unwrap().block_high_watermark = Some(block);
+        }
+
+        fn block_high_watermark(&self) -> Option<OLBlockCommitment> {
+            self.inner.lock().unwrap().block_high_watermark
         }
     }
 
@@ -800,6 +842,16 @@ mod tests {
             Ok(block_exists)
         }
 
+        async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool> {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.block_high_watermark != Some(expected) {
+                return Ok(false);
+            }
+
+            inner.block_high_watermark = None;
+            Ok(true)
+        }
+
         async fn get_toplevel_ol_state(
             &self,
             commitment: OLBlockCommitment,
@@ -878,6 +930,10 @@ mod tests {
     impl FcmStorage for StubFcmContext {
         async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
             self.storage.set_block_status(blkid, status).await
+        }
+
+        async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool> {
+            self.storage.clear_block_high_watermark(expected).await
         }
 
         async fn get_toplevel_ol_state(
@@ -1502,6 +1558,46 @@ mod tests {
         assert_eq!(statuses[0].prev_epoch, genesis_epoch);
         assert_eq!(statuses[0].confirmed_epoch, genesis_epoch);
         assert_eq!(statuses[0].finalized_epoch, genesis_epoch);
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_clears_high_watermark_for_invalid_block() -> anyhow::Result<()> {
+        let keypair = make_keypair();
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        let block = make_storage_block(1, genesis_blkid);
+        let blkid = block.header().compute_blkid();
+        let block_commitment = OLBlockCommitment::new(block.header().slot(), blkid);
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_ol_block(block);
+        ctx.storage().set_block_high_watermark(block_commitment);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state =
+            init_fcm_service_state(schnorr_predicate(&keypair.pk), ctx.clone()).await?;
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state).await?;
+
+        assert_eq!(
+            ctx.storage().get_block_status(blkid).await?,
+            Some(BlockStatus::Invalid)
+        );
+        assert_eq!(ctx.storage().block_high_watermark(), None);
+
+        Ok(())
     }
 
     #[test]

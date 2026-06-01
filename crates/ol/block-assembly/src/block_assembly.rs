@@ -116,6 +116,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::Mempool(_)
         | BlockAssemblyError::StateProvider(_)
         | BlockAssemblyError::NoPendingTemplateForParent(_)
+        | BlockAssemblyError::TemplateAlreadyCompletedForParent { .. }
         | BlockAssemblyError::Other(_)
         | BlockAssemblyError::RequestChannelClosed
         | BlockAssemblyError::ResponseChannelClosed
@@ -139,7 +140,10 @@ pub(crate) struct ConstructBlockOutput<S> {
     pub(crate) failed_txs: Vec<FailedMempoolTx>,
     /// The post state after applying all transactions.
     // Used by tests to chain blocks without re-executing through STF.
-    #[cfg_attr(not(test), expect(dead_code, reason = "only used by tests"))]
+    #[cfg_attr(
+        all(not(test), not(feature = "test-utils")),
+        expect(dead_code, reason = "only used by tests")
+    )]
     pub(crate) post_state: S,
     /// Accumulated DA data for the constructed block.
     pub(crate) accumulated_da: AccumulatedDaData,

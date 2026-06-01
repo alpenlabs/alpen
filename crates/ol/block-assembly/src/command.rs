@@ -1,6 +1,6 @@
 //! Command types for OL block assembly service.
 
-use strata_identifiers::OLBlockId;
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::OLBlock;
 use strata_service::CommandCompletionSender;
 use tokio::sync::oneshot;
@@ -19,11 +19,13 @@ type GetBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>;
 /// Type alias for block template completion result.
 type CompleteBlockTemplateResult = Result<OLBlock, BlockAssemblyError>;
 
+/// Type alias for completed-template status release result.
+type ReleaseCompletedTemplateStatusResult = bool;
+
+/// Type alias for recording a persisted block result.
+type RecordPersistedBlockResult = Result<(), BlockAssemblyError>;
+
 #[derive(Debug)]
-#[expect(
-    clippy::enum_variant_names,
-    reason = "BlockTemplate suffix is intentionally descriptive"
-)]
 pub(crate) enum BlockasmCommand {
     GenerateBlockTemplate {
         config: BlockGenerationConfig,
@@ -34,10 +36,22 @@ pub(crate) enum BlockasmCommand {
         completion: CommandCompletionSender<GetBlockTemplateResult>,
     },
     CompleteBlockTemplate {
-        /// The ID of a previously generated template, used to look up the cached template.
+        /// The ID of the cached template to complete into a block.
         template_id: OLBlockId,
         data: BlockCompletionData,
         completion: CommandCompletionSender<CompleteBlockTemplateResult>,
+    },
+    ReleaseCompletedTemplateStatus {
+        /// Parent for the completed-template status.
+        parent_block_id: OLBlockId,
+        /// Block commitment stored in the completed-template status.
+        block: OLBlockCommitment,
+        completion: CommandCompletionSender<ReleaseCompletedTemplateStatusResult>,
+    },
+    RecordPersistedBlock {
+        /// The ID of the template that produced the persisted block.
+        template_id: OLBlockId,
+        completion: CommandCompletionSender<RecordPersistedBlockResult>,
     },
 }
 

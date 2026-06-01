@@ -9,7 +9,7 @@ use crate::{
     cli::OutputFormat,
     cmd::checkpoint::get_last_ol_checkpoint_epoch,
     output::{
-        ol::{OLBlockInfo, OLSummaryInfo},
+        ol::{OLBlockInfo, OLBlocksAtSlotInfo, OLSummaryInfo},
         output,
     },
     utils::block_id::parse_ol_block_id,
@@ -35,6 +35,19 @@ pub(crate) struct GetOLSummaryArgs {
     /// slot to start scanning OL summary from
     #[argh(positional)]
     pub(crate) slot_from: Slot,
+
+    /// output format: "porcelain" (default) or "json"
+    #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
+}
+
+/// Get all OL block IDs stored for a slot.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "get-ol-blocks-at-slot")]
+pub(crate) struct GetOLBlocksAtSlotArgs {
+    /// OL slot
+    #[argh(positional)]
+    pub(crate) slot: Slot,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -148,6 +161,25 @@ pub(crate) fn get_ol_summary(
 
     // Use the output utility
     output(&summary_info, args.output_format)
+}
+
+/// Gets all OL block IDs stored for a slot.
+pub(crate) fn get_ol_blocks_at_slot(
+    db: &impl DatabaseBackend,
+    args: GetOLBlocksAtSlotArgs,
+) -> Result<(), DisplayedError> {
+    let block_ids = db
+        .ol_block_db()
+        .get_blocks_at_height(args.slot)
+        .internal_error(format!("Failed to get blocks at slot {}", args.slot))?;
+
+    let info = OLBlocksAtSlotInfo {
+        slot: args.slot,
+        count: block_ids.len(),
+        block_ids: &block_ids,
+    };
+
+    output(&info, args.output_format)
 }
 
 fn get_chain_tip_ol_block_id(db: &impl DatabaseBackend) -> Result<OLBlockId, DisplayedError> {

@@ -8,16 +8,23 @@ workspace = true
 
 [dependencies]
 strata-acct-types.workspace = true
+strata-asm-common = { workspace = true, optional = true }
 strata-asm-manifest-types.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
 strata-bridge-params.workspace = true
+strata-btc-verification = { workspace = true, optional = true }
+strata-codec = { workspace = true, optional = true }
 strata-common = { workspace = true, optional = true }
 strata-config.workspace = true
+strata-db-store-sled = { workspace = true, optional = true }
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-l1-txfmt = { workspace = true, optional = true }
 strata-ledger-types.workspace = true
+strata-msg-fmt = { workspace = true, optional = true }
 strata-ol-chain-types-new.workspace = true
 strata-ol-mempool.workspace = true
+strata-ol-msg-types = { workspace = true, optional = true }
 strata-ol-params.workspace = true
 strata-ol-state-provider.workspace = true
 strata-ol-state-support-types.workspace = true
@@ -27,20 +34,39 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
+strata-state = { workspace = true, optional = true }
 strata-storage.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
+bitcoin = { workspace = true, optional = true }
+proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
+threadpool = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 
 [features]
 debug-utils = ["dep:strata-common", "strata-common/debug-utils"]
 jsonschema = ["dep:schemars", "strata-identifiers/jsonschema"]
+test-utils = [
+  "dep:bitcoin",
+  "dep:proptest",
+  "dep:strata-asm-common",
+  "dep:strata-btc-verification",
+  "dep:strata-codec",
+  "dep:strata-db-store-sled",
+  "dep:strata-l1-txfmt",
+  "dep:strata-msg-fmt",
+  "dep:strata-ol-msg-types",
+  "dep:strata-state",
+  "dep:threadpool",
+  "strata-db-store-sled/test_utils",
+  "strata-ol-chain-types-new/test-utils",
+]
 
 [dev-dependencies]
 bitcoin.workspace = true
@@ -55,7 +81,6 @@ strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-msg-types.workspace = true
-strata-ol-params.workspace = true
 strata-predicate.workspace = true
 strata-state.workspace = true
 threadpool.workspace = true
