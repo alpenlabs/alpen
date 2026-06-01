@@ -148,6 +148,25 @@ impl OLState {
             }
         }
 
+        // Check that appending the pending ASM logs won't overflow the buffer.
+        // On apply, a `reset` clears the buffer before the appended entries are
+        // pushed, so the starting count is zero in that case; otherwise we build
+        // on top of the entries already present in the state.
+        let intraepoch_writes = batch.intraepoch_writes();
+        let starting_logs = if intraepoch_writes.reset {
+            0
+        } else {
+            self.intraepoch.pending_asm_logs().len() as u64
+        };
+        let appended_logs = intraepoch_writes.appended_pending_asm_logs.len() as u64;
+        if starting_logs + appended_logs > MAX_PENDING_ASM_LOGS {
+            return Err(StateError::PendingAsmLogsOverflow {
+                current: starting_logs,
+                adding: appended_logs,
+                max: MAX_PENDING_ASM_LOGS,
+            });
+        }
+
         Ok(())
     }
 
@@ -445,6 +464,38 @@ mod tests {
 
         let account_2 = state.get_account_state(&account_id_2).unwrap();
         assert_eq!(account_2.balance(), BitcoinAmount::from_sat(2000));
+    }
+
+    #[test]
+    fn test_apply_batch_pending_asm_logs_overflow_errors() {
+        use strata_asm_manifest_types::AsmLogEntry;
+        use strata_ledger_types::PendingAsmLog;
+
+        let mut state = create_test_genesis_state();
+
+        // Build a batch that appends one more pending ASM log than the buffer
+        // can hold. The fresh state starts with an empty buffer and we don't
+        // reset, so the appended count alone must exceed the cap.
+        let overflow_count = MAX_PENDING_ASM_LOGS + 1;
+        let mut batch = WriteBatch::default();
+        let logs = &mut batch.intraepoch_writes_mut().appended_pending_asm_logs;
+        for _ in 0..overflow_count {
+            let entry = AsmLogEntry::from_raw(vec![]).expect("test: empty log entry");
+            logs.push(PendingAsmLog::new(0, entry));
+        }
+
+        // The safety check should reject this before any mutation happens.
+        let err = state
+            .apply_write_batch(batch)
+            .expect_err("test: expected pending ASM logs overflow");
+        assert!(matches!(
+            err,
+            StateError::PendingAsmLogsOverflow {
+                current: 0,
+                adding,
+                max,
+            } if adding == overflow_count && max == MAX_PENDING_ASM_LOGS
+        ));
     }
 
     #[test]

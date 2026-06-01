@@ -78,6 +78,11 @@ pub enum StateError {
 
     #[error("pending ASM logs buffer is full")]
     PendingAsmLogsFull,
+
+    #[error(
+        "pending ASM logs buffer would overflow (current {current}, adding {adding}, max {max})"
+    )]
+    PendingAsmLogsOverflow { current: u64, adding: u64, max: u64 },
 }
 
 /// Execution result error.
