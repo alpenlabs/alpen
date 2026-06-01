@@ -43,10 +43,10 @@ use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
 use strata_ol_chain_types_new::{
-    ClaimList, OLBlock, OLBlockBody, OLLog, OLTransaction, OLTransactionData, OLTxSegment,
-    ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData, SauTxPayload, SauTxProofState,
-    LogDecodeError, OLLogType, SauTxUpdateData, SignedOLBlockHeader, SimpleWithdrawalIntentLogData,
-    TransactionPayload, TxProofs, test_utils as ol_test_utils,
+    ClaimList, LogDecodeError, OLBlock, OLBlockBody, OLLog, OLLogType, OLTransaction,
+    OLTransactionData, OLTxSegment, ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData,
+    SauTxPayload, SauTxProofState, SauTxUpdateData, SignedOLBlockHeader,
+    SimpleWithdrawalIntentLogData, TransactionPayload, TxProofs, test_utils as ol_test_utils,
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
@@ -1495,7 +1495,10 @@ pub(crate) fn template_state_root(template: &FullBlockTemplate) -> Hash {
 /// decode failure). Logs whose type id is not a withdrawal intent are skipped.
 pub(crate) fn extract_withdrawal_intents(
     output: &ConstructBlockOutput<MemoryStateBaseLayer>,
-) -> Vec<(AccountSerial, Result<SimpleWithdrawalIntentLogData, LogDecodeError>)> {
+) -> Vec<(
+    AccountSerial,
+    Result<SimpleWithdrawalIntentLogData, LogDecodeError>,
+)> {
     output
         .accumulated_da
         .logs()
