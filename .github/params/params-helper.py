@@ -78,6 +78,71 @@ def check_no_placeholders(output_dir: Path) -> bool:
     return ok
 
 
+def cross_validate(rp: dict, ap: dict) -> bool:
+    """Verify that shared values between rollup-params and asm-params are consistent."""
+    ok = True
+
+    # --- Sequencer key ---
+    rp_seq_key = rp["cred_rule"]["schnorr_key"]
+    ap_checkpoint = None
+    for sp in ap["subprotocols"]:
+        if "Checkpoint" in sp:
+            ap_checkpoint = sp["Checkpoint"]
+            break
+    if ap_checkpoint is None:
+        print("ERROR: asm-params missing Checkpoint subprotocol", file=sys.stderr)
+        return False
+
+    # sequencer_predicate is "Bip340Schnorr:<hex>"
+    sp_parts = ap_checkpoint["sequencer_predicate"].split(":", 1)
+    if len(sp_parts) != 2 or sp_parts[1] != rp_seq_key:
+        print(
+            f"ERROR: sequencer key mismatch\n"
+            f"  rollup-params cred_rule.schnorr_key: {rp_seq_key}\n"
+            f"  asm-params sequencer_predicate:      {ap_checkpoint['sequencer_predicate']}",
+            file=sys.stderr,
+        )
+        ok = False
+
+    # --- Bridge section ---
+    ap_bridge = None
+    for sp in ap["subprotocols"]:
+        if "Bridge" in sp:
+            ap_bridge = sp["Bridge"]
+            break
+    if ap_bridge is None:
+        print("ERROR: asm-params missing Bridge subprotocol", file=sys.stderr)
+        return False
+
+    # Operator keys: rollup-params has x-only (32B), asm-params has compressed (33B with 02/03 prefix)
+    rp_ops = sorted(rp.get("operators", []))
+    ap_ops_xonly = sorted(op[2:] for op in ap_bridge["operators"])
+    if rp_ops != ap_ops_xonly:
+        print(
+            f"ERROR: operator key mismatch\n"
+            f"  rollup-params operators (x-only): {rp_ops}\n"
+            f"  asm-params operators (stripped):   {ap_ops_xonly}",
+            file=sys.stderr,
+        )
+        ok = False
+
+    # Scalar fields that must match across templates
+    checks = [
+        ("deposit_amount / denomination", rp.get("deposit_amount"), ap_bridge.get("denomination")),
+        ("recovery_delay", rp.get("recovery_delay"), ap_bridge.get("recovery_delay")),
+        ("dispatch_assignment_dur / assignment_duration", rp.get("dispatch_assignment_dur"), ap_bridge.get("assignment_duration")),
+    ]
+    for label, rp_val, ap_val in checks:
+        if rp_val != ap_val:
+            print(
+                f"ERROR: {label} mismatch: rollup-params={rp_val}, asm-params={ap_val}",
+                file=sys.stderr,
+            )
+            ok = False
+
+    return ok
+
+
 def extract_seq_pk(template_dir: Path) -> str:
     rp = load_json(template_dir / "rollup-params.json")
     return rp["cred_rule"]["schnorr_key"]
@@ -150,7 +215,10 @@ def main():
     if not check_no_placeholders(output_dir):
         sys.exit(1)
 
-    print("\n  All placeholders resolved.")
+    if not cross_validate(rp, ap):
+        sys.exit(1)
+
+    print("\n  All checks passed.")
 
 
 if __name__ == "__main__":
