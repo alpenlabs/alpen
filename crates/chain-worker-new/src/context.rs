@@ -7,9 +7,9 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ssz::Encode;
 use strata_acct_types::{MessageEntry, tree_hash::TreeHash};
-use strata_bridge_params::BridgeParams;
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
+use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
