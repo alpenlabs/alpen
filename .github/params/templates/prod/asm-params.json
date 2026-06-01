@@ -6,25 +6,25 @@
       "Admin": {
         "strata_administrator": {
           "keys": [
-            "025f9bfac3b160a0b9129d558ce29ab2df66ebbdd85dec1f5a2faf2e9de07acdfd",
-            "027098a1e38159f586536fabcb5537cdbb1454b1464c5c4a1bfd48de6c794d28c4",
-            "0288610184701307eef5dbb81ce1d974bc6940d21601a9656b565dab485321a03f"
+            "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
+            "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
+            "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
           ],
           "threshold": 2
         },
         "strata_sequencer_manager": {
           "keys": [
-            "025f9bfac3b160a0b9129d558ce29ab2df66ebbdd85dec1f5a2faf2e9de07acdfd",
-            "027098a1e38159f586536fabcb5537cdbb1454b1464c5c4a1bfd48de6c794d28c4",
-            "0288610184701307eef5dbb81ce1d974bc6940d21601a9656b565dab485321a03f"
+            "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
+            "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
+            "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
           ],
           "threshold": 2
         },
         "alpen_administrator": {
           "keys": [
-            "025f9bfac3b160a0b9129d558ce29ab2df66ebbdd85dec1f5a2faf2e9de07acdfd",
-            "027098a1e38159f586536fabcb5537cdbb1454b1464c5c4a1bfd48de6c794d28c4",
-            "0288610184701307eef5dbb81ce1d974bc6940d21601a9656b565dab485321a03f"
+            "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
+            "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
+            "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
           ],
           "threshold": 2
         },
@@ -52,14 +52,14 @@
     {
       "Bridge": {
         "operators": [
-          "025f9bfac3b160a0b9129d558ce29ab2df66ebbdd85dec1f5a2faf2e9de07acdfd",
-          "027098a1e38159f586536fabcb5537cdbb1454b1464c5c4a1bfd48de6c794d28c4",
-          "0288610184701307eef5dbb81ce1d974bc6940d21601a9656b565dab485321a03f"
+          "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
+          "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
+          "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
         ],
         "denomination": 200000000,
         "assignment_duration": 64,
-        "operator_fee": 150000,
-        "recovery_delay": 1008
+        "operator_fee": 300000,
+        "recovery_delay": 36
       }
     }
   ]
