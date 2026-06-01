@@ -189,8 +189,9 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                         let kept: Vec<AccountUpdateRecord> = records
                             .into_iter()
                             .filter(|r| {
-                                r.update_meta()
-                                    .is_none_or(|m| m.block_commitment().slot() <= cutoff_slot)
+                                r.update_meta().is_none_or(|m| {
+                                    m.block_commitment().is_none_or(|b| b.slot() <= cutoff_slot)
+                                })
                             })
                             .collect();
                         if kept.is_empty() {

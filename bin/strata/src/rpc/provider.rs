@@ -14,7 +14,7 @@ use strata_db_types::{
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
-use strata_ol_mempool::{MempoolHandle, OLMempoolResult};
+use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::OLRpcProvider;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment};
@@ -23,17 +23,20 @@ use strata_storage::NodeStorage;
 
 /// Production provider that delegates to [`NodeStorage`], [`StatusChannel`],
 /// and [`MempoolHandle`].
+///
+/// `mempool_handle` is [`None`] on checkpoint-sync nodes; calls that need it
+/// (currently [`Self::submit_transaction`]) return an unavailable error.
 pub(crate) struct NodeRpcProvider {
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
-    mempool_handle: Arc<MempoolHandle>,
+    mempool_handle: Option<Arc<MempoolHandle>>,
 }
 
 impl NodeRpcProvider {
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
-        mempool_handle: Arc<MempoolHandle>,
+        mempool_handle: Option<Arc<MempoolHandle>>,
     ) -> Self {
         Self {
             storage,
@@ -193,7 +196,10 @@ impl OLRpcProvider for NodeRpcProvider {
     }
 
     async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
-        self.mempool_handle.submit_transaction(tx).await
+        let Some(mempool_handle) = self.mempool_handle.as_ref() else {
+            return Err(OLMempoolError::NotAvailable);
+        };
+        mempool_handle.submit_transaction(tx).await
     }
 }
 

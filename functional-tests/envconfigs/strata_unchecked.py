@@ -47,18 +47,19 @@ class StrataUncheckedEnvConfig(flexitest.EnvConfig):
 
         genesis_l1 = GenesisL1View.at_latest_block(btc_rpc)
 
-        strata, sequencer_key_path = strata_factory.create_node(
+        sequencer_node = strata_factory.create_node(
             bitcoind_config,
             genesis_l1.blk.height,
             is_sequencer=True,
             use_unchecked_cred_rule=True,
             epoch_sealing_config=EpochSealingConfig.new_fixed_slot(4),
         )
+        strata = sequencer_node.service
         strata.wait_for_ready(timeout=30)
 
-        assert sequencer_key_path is not None
+        assert sequencer_node.sequencer_key_path is not None
         signer = signer_factory.create_signer(
-            sequencer_key_path,
+            sequencer_node.sequencer_key_path,
             strata.props["admin_rpc_host"],
             strata.props["admin_rpc_port"],
             strata.props["admin_rpc_token"],

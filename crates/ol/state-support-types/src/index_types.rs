@@ -103,8 +103,10 @@ pub struct SAStateUpdateOp {
     /// The account whose state was updated.
     account_id: AccountId,
 
-    /// The new inner state root.
-    inner_state: Hash,
+    /// The new inner state root. `None` when the producer cannot supply a
+    /// per-update root (checkpoint-sync DA reconstruction for non-terminal
+    /// updates within a multi-update epoch).
+    inner_state: Option<Hash>,
 
     /// The next read index.
     next_read_idx: u64,
@@ -119,7 +121,7 @@ pub struct SAStateUpdateOp {
 impl SAStateUpdateOp {
     pub fn new(
         account_id: AccountId,
-        inner_state: Hash,
+        inner_state: Option<Hash>,
         next_read_idx: u64,
         seqno: Seqno,
         extra_data: Vec<u8>,
@@ -137,8 +139,8 @@ impl SAStateUpdateOp {
         self.account_id
     }
 
-    pub fn inner_state(&self) -> [u8; 32] {
-        self.inner_state.into()
+    pub fn inner_state(&self) -> Option<Hash> {
+        self.inner_state
     }
 
     pub fn next_read_idx(&self) -> u64 {
@@ -175,10 +177,11 @@ impl SnarkAcctStateUpdate {
         }
     }
 
-    /// Returns the state hash for this update.
-    pub fn state(&self) -> Hash {
+    /// Returns the state hash for this update. `None` only for checkpoint-sync
+    /// `Update` records on non-terminal updates within a multi-update epoch.
+    pub fn state(&self) -> Option<Hash> {
         match self {
-            Self::DirectSet(s) => s.state,
+            Self::DirectSet(s) => Some(s.state),
             Self::Update(s) => s.inner_state,
         }
     }
@@ -311,6 +314,14 @@ impl IndexerWrites {
     /// Records a snark state update.
     pub fn push_snark_acct_update(&mut self, update: SnarkAcctStateUpdate) {
         self.snark_acct_state_updates.push(update);
+    }
+
+    /// Replaces all tracked snark state updates with `updates`.
+    ///
+    /// This is required to collect the granular snark updates during checkpoint sync because diff
+    /// only doesn't contain the granular updates, which has to come from OL logs in the checkpoint.
+    pub fn set_snark_acct_state_updates(&mut self, updates: Vec<SnarkAcctStateUpdate>) {
+        self.snark_acct_state_updates = updates;
     }
 
     /// Records a predicate key update.

@@ -129,7 +129,7 @@ impl<'b> BlockExecInput<'b> {
         self.tx_segment
     }
 
-    /// Returns the zmanifest container if present.
+    /// Returns the manifest container if present.
     pub fn manifest_container(&self) -> Option<&'b OLL1ManifestContainer> {
         self.manifest_container
     }
@@ -412,27 +412,8 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     manifests: &OLL1ManifestContainer,
     exp: &EpochExecExpectations,
 ) -> ExecResult<()> {
-    // 1. Apply the initial processing by calling process_epoch_initial.
-    let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
-    chain_processing::process_epoch_initial(state, &init_ctx)?;
+    apply_da_epoch::<S, D>(state, epoch_info, diff, manifests)?;
 
-    // 2. Apply the DA diff.
-    D::apply_to_state(diff, state).map_err(|e| {
-        error!(
-            error = %e,
-            epoch = epoch_info.epoch(),
-            "DA scheme failed to apply diff during epoch verification"
-        );
-        ExecError::ChainIntegrity
-    })?;
-
-    // 3. As if it were the last block of an epoch, call process_block_manifests.
-    let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
-    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
-    manifest_processing::process_block_manifests(state, manifests, &term_ctx)?;
-    output.verify_logs_within_block_limit()?;
-
-    // 4. Verify the final state root.
     let final_state_root = state.compute_state_root()?;
     if final_state_root != exp.epoch_post_state_root {
         error!(
@@ -444,6 +425,39 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
         );
         return Err(ExecError::ChainIntegrity);
     }
+
+    Ok(())
+}
+
+/// Reconstructs a full-epoch transition from a DA diff.
+///
+/// Like [`verify_epoch_with_diff`] but without the post-state root check.
+///
+/// Use this only when the diff has already been verified to bind the post-state root via an
+/// upstream proof — e.g. the CSM-verified `CheckpointPayload` path that drives checkpoint sync.
+/// Do not use with peer-supplied or RPC-supplied diffs.
+pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
+    state: &mut S,
+    epoch_info: &EpochInfo,
+    diff: D::Diff,
+    manifests: &OLL1ManifestContainer,
+) -> ExecResult<()> {
+    let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
+    chain_processing::process_epoch_initial(state, &init_ctx)?;
+
+    D::apply_to_state(diff, state).map_err(|e| {
+        error!(
+            error = %e,
+            epoch = epoch_info.epoch(),
+            "DA scheme failed to apply diff during epoch reconstruction"
+        );
+        ExecError::ChainIntegrity
+    })?;
+
+    let output = ExecOutputBuffer::new_empty();
+    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+    manifest_processing::process_block_manifests(state, manifests, &term_ctx)?;
+    output.verify_logs_within_block_limit()?;
 
     Ok(())
 }

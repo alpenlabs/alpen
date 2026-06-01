@@ -38,6 +38,9 @@ pub fn verify_and_process_update<E: ExecutionEnvironment>(
 
 /// Processes changes to an account's inner state using an update manifest,
 /// presumably fetched from RPCs or L1.
+///
+/// The post-state assertion runs iff the manifest carries an expected
+/// `new_state_root` (see [`UpdateManifest`]).
 pub fn process_update_unconditionally<E: ExecutionEnvironment>(
     state: &mut EeAccountState,
     update_manifest: &UpdateManifest,

@@ -125,7 +125,7 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
     updates1.insert(
         acct_a,
         vec![record(
-            Some(AccountUpdateMeta::new(block1, hash(0x11))),
+            Some(AccountUpdateMeta::new(Some(block1), hash(0x11))),
             1,
             5,
             Some(vec![0xAA]),
@@ -148,9 +148,14 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
     updates2.insert(
         acct_a,
         vec![
-            record(Some(AccountUpdateMeta::new(block2, hash(0x22))), 2, 6, None),
             record(
-                Some(AccountUpdateMeta::new(block2, hash(0x33))),
+                Some(AccountUpdateMeta::new(Some(block2), hash(0x22))),
+                2,
+                6,
+                None,
+            ),
+            record(
+                Some(AccountUpdateMeta::new(Some(block2), hash(0x33))),
                 3,
                 7,
                 Some(vec![0xBB]),
@@ -252,7 +257,7 @@ pub fn test_account_active_in_multiple_epochs_creation_epoch_unchanged(
     updates.insert(
         acct_a,
         vec![record(
-            Some(AccountUpdateMeta::new(block(2, 2), hash(1))),
+            Some(AccountUpdateMeta::new(Some(block(2, 2)), hash(1))),
             0,
             0,
             None,
@@ -280,7 +285,7 @@ pub fn test_apply_block_indexing_duplicate_block_errors(db: &impl OLStateIndexin
     updates.insert(
         acct_a,
         vec![record(
-            Some(AccountUpdateMeta::new(blk, hash(0xAA))),
+            Some(AccountUpdateMeta::new(Some(blk), hash(0xAA))),
             1,
             5,
             Some(vec![0xAA]),
@@ -432,7 +437,7 @@ pub fn test_rollback_to_block_drops_later_blocks(db: &impl OLStateIndexingDataba
     u1.insert(
         acct_a,
         vec![record(
-            Some(AccountUpdateMeta::new(blk1, hash(1))),
+            Some(AccountUpdateMeta::new(Some(blk1), hash(1))),
             1,
             5,
             Some(vec![0xAA]),
@@ -449,7 +454,7 @@ pub fn test_rollback_to_block_drops_later_blocks(db: &impl OLStateIndexingDataba
     u2.insert(
         acct_a,
         vec![record(
-            Some(AccountUpdateMeta::new(blk2, hash(2))),
+            Some(AccountUpdateMeta::new(Some(blk2), hash(2))),
             2,
             6,
             Some(vec![0xBB]),
@@ -510,7 +515,7 @@ pub fn test_rollback_to_block_keeps_when_at_or_past_tip(db: &impl OLStateIndexin
     u.insert(
         acct_a,
         vec![record(
-            Some(AccountUpdateMeta::new(blk, hash(1))),
+            Some(AccountUpdateMeta::new(Some(blk), hash(1))),
             1,
             5,
             Some(vec![0xAA]),
@@ -551,7 +556,7 @@ pub fn test_rollback_to_block_idempotent(db: &impl OLStateIndexingDatabase) {
     u.insert(
         acct_a,
         vec![record(
-            Some(AccountUpdateMeta::new(blk_later, hash(1))),
+            Some(AccountUpdateMeta::new(Some(blk_later), hash(1))),
             1,
             5,
             Some(vec![0xAA]),
@@ -638,7 +643,7 @@ pub fn test_rollback_to_epoch_drops_later_epochs(db: &impl OLStateIndexingDataba
         u.insert(
             acct_a,
             vec![record(
-                Some(AccountUpdateMeta::new(blk, hash(ep as u8))),
+                Some(AccountUpdateMeta::new(Some(blk), hash(ep as u8))),
                 1,
                 5,
                 Some(vec![0xAA]),

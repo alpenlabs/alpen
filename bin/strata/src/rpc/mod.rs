@@ -57,9 +57,9 @@ struct RpcDeps {
     max_headers_range: usize,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
-    mempool_handle: Arc<MempoolHandle>,
-    #[cfg(feature = "sequencer")]
-    fcm_handle: Arc<FcmServiceHandle>,
+    /// [`None`] on checkpoint-sync nodes; `submit_transaction` returns an
+    /// unavailable error in that case.
+    mempool_handle: Option<Arc<MempoolHandle>>,
     #[cfg(feature = "sequencer")]
     seq_deps: Option<SeqRpcDeps>,
 }
@@ -74,6 +74,9 @@ struct SeqRpcDeps {
     /// Block assembly handle.
     blockasm_handle: Arc<BlockasmHandle>,
 
+    /// Fork-choice manager handle.
+    fcm_handle: Arc<FcmServiceHandle>,
+
     /// Schnorr public key for verifying reveal-tx signatures submitted via RPC.
     sequencer_pubkey: Option<Buf32>,
 }
@@ -84,11 +87,13 @@ impl SeqRpcDeps {
     fn new(
         envelope_handle: Arc<EnvelopeHandle>,
         blockasm_handle: Arc<BlockasmHandle>,
+        fcm_handle: Arc<FcmServiceHandle>,
         sequencer_pubkey: Option<Buf32>,
     ) -> Self {
         Self {
             envelope_handle,
             blockasm_handle,
+            fcm_handle,
             sequencer_pubkey,
         }
     }
@@ -101,6 +106,11 @@ impl SeqRpcDeps {
     /// Returns the block assembly handle.
     fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
         &self.blockasm_handle
+    }
+
+    /// Returns the fork-choice manager handle.
+    fn fcm_handle(&self) -> &Arc<FcmServiceHandle> {
+        &self.fcm_handle
     }
 }
 
@@ -134,10 +144,17 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     // Bundle RPC dependencies from context for the async task
     #[cfg(feature = "sequencer")]
     let seq_deps = runctx.sequencer_handles().map(|handles| {
+        // A sequencer node always runs FCM — start_sync_services produces
+        // SyncServiceHandle::Fcm on the is_sequencer branch.
+        let fcm_handle = runctx
+            .fcm_handle()
+            .expect("sequencer node must have an FCM sync handle")
+            .clone();
         let sequencer_pubkey = runctx.params().rollup.cred_rule.schnorr_key().copied();
         SeqRpcDeps::new(
             handles.envelope_handle().clone(),
             handles.blockasm_handle().clone(),
+            fcm_handle,
             sequencer_pubkey,
         )
     });
@@ -155,9 +172,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         max_headers_range: runctx.config().client.max_headers_range,
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
-        mempool_handle: runctx.mempool_handle().clone(),
-        #[cfg(feature = "sequencer")]
-        fcm_handle: runctx.fcm_handle().clone(),
+        mempool_handle: runctx.mempool_handle().cloned(),
         #[cfg(feature = "sequencer")]
         seq_deps,
     };
@@ -252,7 +267,7 @@ fn build_admin_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
             deps.status_channel.clone(),
             sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
-            deps.fcm_handle.clone(),
+            sequencer_deps.fcm_handle().clone(),
             sequencer_deps.sequencer_pubkey,
         );
         let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_listener);

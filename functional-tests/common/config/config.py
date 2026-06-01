@@ -18,7 +18,6 @@ class ClientConfig:
     submit_rpc_port: int = field(default=0)
     submit_rpc_bearer_token: str | None = field(default=None)
     p2p_port: int = field(default=0)
-    sync_endpoint: str | None = field(default=None)
     l2_blocks_fetch_limit: int = field(default=10)
     datadir: str = field(default="datadir")
     db_retry_count: int = field(default=3)
