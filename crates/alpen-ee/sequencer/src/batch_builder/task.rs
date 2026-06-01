@@ -187,10 +187,10 @@ where
             // Latest sealed batch has not changed.
             emit_event(
                 &ctx.event_tx,
-                BatchBuilderEvent::Reorg {
-                    revert_to: state.prev_batch_end(),
-                    last_valid_batch_idx: state.next_batch_idx().saturating_sub(1),
-                },
+                BatchBuilderEvent::reorg(
+                    state.prev_batch_end(),
+                    state.next_batch_idx().saturating_sub(1),
+                ),
             )
             .await;
         }
@@ -201,10 +201,10 @@ where
             let _ = ctx.latest_batch_tx.send(batch_id);
             emit_event(
                 &ctx.event_tx,
-                BatchBuilderEvent::Reorg {
-                    revert_to: state.prev_batch_end(),
-                    last_valid_batch_idx: state.next_batch_idx().saturating_sub(1),
-                },
+                BatchBuilderEvent::reorg(
+                    state.prev_batch_end(),
+                    state.next_batch_idx().saturating_sub(1),
+                ),
             )
             .await;
         }
@@ -295,11 +295,7 @@ where
         // blocks, and this block is the first of the next batch.
         emit_event(
             &ctx.event_tx,
-            BatchBuilderEvent::BlockProcessed {
-                block,
-                batch_idx: state.next_batch_idx(),
-                batch_sealed,
-            },
+            BatchBuilderEvent::block_processed(block, state.next_batch_idx(), batch_sealed),
         )
         .await;
 

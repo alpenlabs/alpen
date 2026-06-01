@@ -138,32 +138,26 @@ where
         input: TickMsg<BatchBuilderEvent>,
     ) -> anyhow::Result<Response> {
         let result = match input {
-            TickMsg::Msg(BatchBuilderEvent::BlockProcessed {
-                block,
-                batch_idx,
-                batch_sealed,
-            }) => {
-                if let Some(batch_id) = batch_sealed {
+            TickMsg::Msg(BatchBuilderEvent::BlockProcessed(evt)) => {
+                if let Some(batch_id) = evt.batch_sealed {
                     state
                         .chunk_state
                         .push_pending(PendingEntry::BatchBoundary(batch_id));
                 }
-                state
-                    .chunk_state
-                    .push_pending(PendingEntry::Block { block, batch_idx });
+                state.chunk_state.push_pending(PendingEntry::Block {
+                    block: evt.block,
+                    batch_idx: evt.batch_idx,
+                });
                 Ok(())
             }
-            TickMsg::Msg(BatchBuilderEvent::Reorg {
-                revert_to,
-                last_valid_batch_idx,
-            }) => {
+            TickMsg::Msg(BatchBuilderEvent::Reorg(evt)) => {
                 handlers::handle_reorg(
                     &mut state.chunk_state,
                     state.chunk_storage.as_ref(),
                     state.batch_storage.as_ref(),
                     state.block_storage.as_ref(),
-                    revert_to,
-                    last_valid_batch_idx,
+                    evt.revert_to,
+                    evt.last_valid_batch_idx,
                 )
                 .await
             }
