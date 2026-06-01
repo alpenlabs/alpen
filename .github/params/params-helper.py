@@ -78,8 +78,8 @@ def check_no_placeholders(output_dir: Path) -> bool:
     return ok
 
 
-def cross_validate(rp: dict, ap: dict) -> bool:
-    """Verify that shared values between rollup-params and asm-params are consistent."""
+def cross_validate(rp: dict, ap: dict, olp: dict | None = None) -> bool:
+    """Verify that shared values between rollup-params, asm-params, and ol-params are consistent."""
     ok = True
 
     # --- Sequencer key ---
@@ -136,6 +136,18 @@ def cross_validate(rp: dict, ap: dict) -> bool:
         if rp_val != ap_val:
             print(
                 f"ERROR: {label} mismatch: rollup-params={rp_val}, asm-params={ap_val}",
+                file=sys.stderr,
+            )
+            ok = False
+
+    # --- OL bridge_params ---
+    if olp is not None:
+        ol_bp = olp.get("bridge_params", {})
+        ol_denom = ol_bp.get("denomination")
+        if ol_denom is not None and ol_denom != rp.get("deposit_amount"):
+            print(
+                f"ERROR: ol-params bridge_params.denomination ({ol_denom}) "
+                f"!= rollup-params deposit_amount ({rp.get('deposit_amount')})",
                 file=sys.stderr,
             )
             ok = False
@@ -198,11 +210,11 @@ def main():
     write_json(output_dir / "rollup-params.json", rp)
     print("  rollup-params.json: merged")
 
-    op = merge_ol_params(
+    olp = merge_ol_params(
         load_json(template_dir / "ol-params.json"),
         load_json(raw_dir / "ol-params-raw.json"),
     )
-    write_json(output_dir / "ol-params.json", op)
+    write_json(output_dir / "ol-params.json", olp)
     print("  ol-params.json: merged")
 
     ap = merge_asm_params(
@@ -215,7 +227,7 @@ def main():
     if not check_no_placeholders(output_dir):
         sys.exit(1)
 
-    if not cross_validate(rp, ap):
+    if not cross_validate(rp, ap, olp):
         sys.exit(1)
 
     print("\n  All checks passed.")
