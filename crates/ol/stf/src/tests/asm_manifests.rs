@@ -55,7 +55,7 @@ fn test_manifest_processing_rejects_height_gap() {
 
     assert_eq!(state.last_l1_height(), 0);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT
     );
 }
@@ -102,7 +102,7 @@ fn test_manifest_processing_accepts_empty_manifest_container() {
     assert_eq!(state.cur_epoch(), 1);
     assert_eq!(state.last_l1_height(), 0);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT
     );
 }
@@ -121,7 +121,7 @@ fn test_manifest_processing_accepts_max_manifest_count() {
     assert_eq!(state.cur_epoch(), 1);
     assert_eq!(state.last_l1_height(), MAX_SEALING_MANIFEST_COUNT as u32);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT + MAX_SEALING_MANIFEST_COUNT
     );
 }
@@ -144,7 +144,7 @@ fn test_manifest_processing_skips_unknown_and_unparsable_logs() {
     assert_eq!(state.cur_epoch(), 1);
     assert_eq!(state.last_l1_height(), 1);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT + 1
     );
 }
@@ -215,7 +215,7 @@ fn test_manifest_processing_skips_malformed_deposit_log() {
     assert_eq!(state.cur_epoch(), 1);
     assert_eq!(state.last_l1_height(), 1);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT + 1
     );
     assert_eq!(state.limbo_funds(), BitcoinAmount::zero());

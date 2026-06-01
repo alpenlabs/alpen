@@ -39,8 +39,8 @@ pub struct EpochalStateWrites {
     /// New total ledger balance, if changed.
     pub total_ledger_balance: Option<BitcoinAmount>,
 
-    /// New ASM manifests MMR, if changed.
-    pub asm_manifests_mmr: Option<Mmr64>,
+    /// New L1 block refs MMR, if changed.
+    pub l1_block_refs_mmr: Option<Mmr64>,
 }
 
 /// A batch of writes to the OL state.
@@ -241,7 +241,7 @@ impl Codec for EpochalStateWrites {
         CodecSsz::new(self.last_l1_height).encode(enc)?;
         CodecSsz::new(self.asm_recorded_epoch).encode(enc)?;
         CodecSsz::new(self.total_ledger_balance).encode(enc)?;
-        CodecSsz::new(self.asm_manifests_mmr.clone()).encode(enc)?;
+        CodecSsz::new(self.l1_block_refs_mmr.clone()).encode(enc)?;
         Ok(())
     }
 
@@ -252,7 +252,7 @@ impl Codec for EpochalStateWrites {
             last_l1_height: CodecSsz::<Option<L1Height>>::decode(dec)?.into_inner(),
             asm_recorded_epoch: CodecSsz::<Option<EpochCommitment>>::decode(dec)?.into_inner(),
             total_ledger_balance: CodecSsz::<Option<BitcoinAmount>>::decode(dec)?.into_inner(),
-            asm_manifests_mmr: CodecSsz::<Option<Mmr64>>::decode(dec)?.into_inner(),
+            l1_block_refs_mmr: CodecSsz::<Option<Mmr64>>::decode(dec)?.into_inner(),
         })
     }
 }

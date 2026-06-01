@@ -3,7 +3,8 @@
 use std::{fmt, sync::Arc};
 
 use alloy_primitives::B256;
-use alpen_ee_common::{BatchId, BatchStorage, DaBlob, DaBlobSource, HeaderSummaryProvider};
+use alpen_ee_common::{BatchId, BatchStorage, DaBlobSource, HeaderSummaryProvider};
+use alpen_ee_da_types::DaBlob;
 use alpen_reth_db::{EeDaContext, StateDiffProvider};
 use alpen_reth_statediff::BatchBuilder;
 use async_trait::async_trait;
@@ -18,7 +19,7 @@ use tracing::*;
 /// 3. Aggregates them into a [`BatchStateDiff`](alpen_reth_statediff::BatchStateDiff) via
 ///    [`BatchBuilder`].
 /// 4. Reads the last block's header to build
-///    [`EvmHeaderSummary`](alpen_ee_common::EvmHeaderSummary).
+///    [`EvmHeaderSummary`](alpen_ee_da_types::EvmHeaderSummary).
 /// 5. Returns the assembled [`DaBlob`].
 pub struct StateDiffBlobProvider<S, D, H> {
     batch_storage: Arc<S>,
@@ -69,7 +70,7 @@ impl<S, D, H> StateDiffBlobProvider<S, D, H> {
 impl<S, D, H> DaBlobSource for StateDiffBlobProvider<S, D, H>
 where
     S: BatchStorage,
-    D: StateDiffProvider + Send + Sync,
+    D: StateDiffProvider,
     H: HeaderSummaryProvider,
 {
     async fn get_blob(&self, batch_id: BatchId) -> eyre::Result<DaBlob> {

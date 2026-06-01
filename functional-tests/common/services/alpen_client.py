@@ -11,7 +11,7 @@ from typing import TypedDict
 
 from common.config.constants import (
     DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
-    DEFAULT_EE_BLOCK_TIME_MS,
+    DEFAULT_EE_BLOCK_WAIT_SECONDS,
 )
 from common.rpc import JsonRpcClient
 from common.services.base import RpcService
@@ -158,7 +158,7 @@ class AlpenClientService(RpcService):
     def get_block_wait_timeout(
         self,
         expected_blocks: int,
-        timeout_per_block: float = DEFAULT_EE_BLOCK_TIME_MS / 1000,
+        timeout_per_block: float = DEFAULT_EE_BLOCK_WAIT_SECONDS,
         timeout_slack: int = DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
     ) -> int:
         """Compute a timeout budget for waiting on EE blocks."""
@@ -205,7 +205,7 @@ class AlpenClientService(RpcService):
     def wait_for_additional_blocks(
         self,
         additional_blocks: int,
-        timeout_per_block: float = DEFAULT_EE_BLOCK_TIME_MS / 1000,
+        timeout_per_block: float = DEFAULT_EE_BLOCK_WAIT_SECONDS,
         timeout_slack: int = DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
         poll_interval: float = 0.5,
     ) -> int:

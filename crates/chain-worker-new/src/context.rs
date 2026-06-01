@@ -16,7 +16,8 @@ use strata_db_types::{
 use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_params::OLParams;
+use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
@@ -25,7 +26,7 @@ use strata_storage::{
     OLStateManager,
 };
 use tokio::{runtime::Handle, sync::watch};
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::{
     errors::{WorkerError, WorkerResult},
@@ -67,6 +68,11 @@ pub struct ChainWorkerContextImpl {
     /// Rollup params
     params: Arc<Params>,
 
+    /// OL genesis params. Source of truth for the genesis L1 height used to
+    /// prefill the L1 block refs MMR mirror (matches the in-state MMR which is
+    /// seeded from `OLParams.last_l1_block.height()` at OL genesis).
+    ol_params: Arc<OLParams>,
+
     /// Withdrawal denomination and cap.
     bridge_params: BridgeParams,
 
@@ -87,6 +93,7 @@ impl ChainWorkerContextImpl {
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             params: nodectx.params().clone(),
+            ol_params: nodectx.ol_params().clone(),
             bridge_params: *nodectx.ol_params().bridge_params(),
             handle: nodectx.executor().handle().clone(),
         }
@@ -188,6 +195,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         {
             Ok(()) => {
                 index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+                index_l1_block_ref_mmr_writes(&self.mmr_index_mgr, output)?;
             }
             Err(DbError::BlockIndexingConflict {
                 attempted,
@@ -195,6 +203,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
                 ..
             }) if attempted == commitment && last_applied == commitment => {
                 index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+                index_l1_block_ref_mmr_writes(&self.mmr_index_mgr, output)?;
                 debug!(%commitment, "block indexing already applied; treating as retry");
             }
             Err(e) => return Err(e.into()),
@@ -331,6 +340,13 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
         Ok(())
     }
+
+    fn prefill_l1_block_refs_mmr(&self) -> WorkerResult<()> {
+        // Same source as the in-state MMR's genesis prefill so the two MMRs
+        // stay byte-identical from leaf 0.
+        let genesis_l1_height = self.ol_params.last_l1_block.height() as u64;
+        prefill_l1_block_refs_mmr_blocking(&self.mmr_index_mgr, genesis_l1_height)
+    }
 }
 
 /// Builds an [`IndexingWrites`] payload from a block-execution output.
@@ -392,45 +408,67 @@ fn index_inbox_mmr_writes(
     for write in output.indexer_writes().inbox_messages() {
         let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(write.entry()).into();
         let entry_bytes = write.entry().as_ssz_bytes();
-        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(write.account_id()));
-        let leaf_count = handle.get_num_leaves_blocking()?;
+        let account_id = write.account_id();
+        let idx = write.index();
+        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
+        handle
+            .idempotent_append_leaf_with_preimage_blocking(idx, expected_hash, entry_bytes)
+            .inspect_err(|e| {
+                error!(%account_id, idx, %e, "snark inbox MMR write failed");
+            })?;
+    }
 
-        if write.index() < leaf_count {
-            let Some(existing_hash) = handle.get_leaf_blocking(write.index())? else {
-                return Err(
-                    DbError::MmrLeafNotFoundForAccount(write.index(), write.account_id()).into(),
-                );
-            };
+    Ok(())
+}
 
-            if existing_hash != expected_hash {
-                return Err(DbError::MmrLeafHashMismatch {
-                    idx: write.index(),
-                    expected: expected_hash,
-                    got: existing_hash,
-                }
-                .into());
-            }
-
-            continue;
-        }
-
-        if write.index() > leaf_count {
-            return Err(DbError::MmrIndexOutOfRange {
-                requested: write.index(),
-                cur: leaf_count,
-            }
-            .into());
-        }
-
-        let appended_idx = handle.append_leaf_with_preimage_blocking(expected_hash, entry_bytes)?;
-        if appended_idx != write.index() {
+/// Seeds the L1 block refs MMR mirror with sentinel leaves for indices
+/// `0..=genesis_l1_height`, matching the in-state MMR's genesis prefill.
+///
+/// Run once at chain worker initialization. Idempotent: no-op if the mirror
+/// already contains the expected leaves (crash-restart safe).
+pub(crate) fn prefill_l1_block_refs_mmr_blocking(
+    mmr_index_mgr: &MmrIndexManager,
+    genesis_l1_height: u64,
+) -> WorkerResult<()> {
+    let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+    let leaf_count = handle.get_num_leaves_blocking()?;
+    for expected_idx in leaf_count..=genesis_l1_height {
+        let appended_idx = handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
+        if appended_idx != expected_idx {
             return Err(WorkerError::Unexpected(format!(
-                "snark inbox MMR append index mismatch for account {}: expected {}, got {}",
-                write.account_id(),
-                write.index(),
-                appended_idx
+                "L1 block refs MMR prefill index mismatch: expected {expected_idx}, got {appended_idx}"
             )));
         }
+    }
+    Ok(())
+}
+
+/// Applies terminal-block L1 block ref writes to the MMR proof index.
+///
+/// The in-state accumulator stores only MMR peaks. Block assembly needs the
+/// historical nodes to prove reduced `{block_hash, wtxids_root}` refs in later
+/// snark-account updates, so the chain worker mirrors each accepted manifest
+/// append into the DB-side proof index. The operation is idempotent for
+/// crash-restart retries.
+///
+/// Assumes the mirror has already been seeded via
+/// [`prefill_l1_block_refs_mmr_blocking`] at chain worker initialization.
+fn index_l1_block_ref_mmr_writes(
+    mmr_index_mgr: &MmrIndexManager,
+    output: &OLBlockExecutionOutput,
+) -> WorkerResult<()> {
+    let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+    for write in output.indexer_writes().l1_block_records() {
+        let expected_idx = write.height as u64;
+        let l1_block_ref = &write.record;
+        let expected_hash: Hash = l1_block_ref.leaf_hash().into();
+        let preimage = l1_block_ref.as_ssz_bytes();
+
+        handle
+            .idempotent_append_leaf_with_preimage_blocking(expected_idx, expected_hash, preimage)
+            .inspect_err(|e| {
+                error!(idx = expected_idx, %e, "L1 block refs MMR write failed");
+            })?;
     }
 
     Ok(())
@@ -440,10 +478,10 @@ fn index_inbox_mmr_writes(
 mod tests {
     use std::sync::Arc;
 
-    use strata_acct_types::{BitcoinAmount, MsgPayload};
+    use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_db_store_sled::{MmrIndexDb, SledDbConfig};
     use strata_identifiers::Buf32;
-    use strata_ol_state_support_types::{InboxMessageWrite, IndexerWrites};
+    use strata_ol_state_support_types::{InboxMessageWrite, IndexerWrites, L1BlockRecordWrite};
 
     use super::*;
 
@@ -472,6 +510,22 @@ mod tests {
         OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes)
     }
 
+    fn output_with_l1_block_records(
+        writes: impl IntoIterator<Item = L1BlockRecordWrite>,
+    ) -> OLBlockExecutionOutput {
+        let mut indexer_writes = IndexerWrites::new();
+        for write in writes {
+            indexer_writes.push_l1_block_record(write);
+        }
+
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes)
+    }
+
+    fn l1_block_record_write(height: u32, seed: u8) -> L1BlockRecordWrite {
+        let record = L1BlockRecord::new([seed; 32], [seed.wrapping_add(1); 32]);
+        L1BlockRecordWrite { height, record }
+    }
+
     fn assert_mmr_entry(
         mmr_index_mgr: &MmrIndexManager,
         account_id: AccountId,
@@ -486,6 +540,23 @@ mod tests {
             Some(expected_hash)
         );
         assert_eq!(handle.get_blocking(index).unwrap(), entry.as_ssz_bytes());
+    }
+
+    fn assert_l1_block_ref_entry(
+        mmr_index_mgr: &MmrIndexManager,
+        index: u64,
+        write: &L1BlockRecordWrite,
+    ) {
+        let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+        let l1_block_ref = &write.record;
+        let expected_hash: Hash = l1_block_ref.leaf_hash().into();
+        let expected_preimage = l1_block_ref.as_ssz_bytes();
+
+        assert_eq!(
+            handle.get_leaf_blocking(index).unwrap(),
+            Some(expected_hash)
+        );
+        assert_eq!(handle.get_blocking(index).unwrap(), expected_preimage);
     }
 
     #[test]
@@ -541,5 +612,73 @@ mod tests {
         assert_eq!(handle.get_num_leaves_blocking().unwrap(), 2);
         assert_mmr_entry(&mmr_index_mgr, account_id, 0, &entry_one);
         assert_mmr_entry(&mmr_index_mgr, account_id, 1, &entry_two);
+    }
+
+    #[test]
+    fn prefill_then_index_seeds_genesis_and_stores_refs() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let first_real = l1_block_record_write(1, 10);
+        let output = output_with_l1_block_records([first_real.clone()]);
+
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 2);
+        assert_eq!(
+            handle.get_leaf_blocking(0).unwrap(),
+            Some(MMR_SENTINEL_DUMMY_LEAF_HASH)
+        );
+        assert_l1_block_ref_entry(&mmr_index_mgr, 1, &first_real);
+    }
+
+    #[test]
+    fn prefill_is_idempotent_across_repeated_calls() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+
+        // Multiple invocations must not append duplicate sentinels.
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 3).unwrap();
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 3).unwrap();
+
+        let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 4);
+    }
+
+    #[test]
+    fn index_l1_block_ref_mmr_writes_is_idempotent() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let first_real = l1_block_record_write(1, 10);
+        let second_real = l1_block_record_write(2, 20);
+        let output = output_with_l1_block_records([first_real.clone(), second_real.clone()]);
+
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 3);
+        assert_l1_block_ref_entry(&mmr_index_mgr, 1, &first_real);
+        assert_l1_block_ref_entry(&mmr_index_mgr, 2, &second_real);
+    }
+
+    #[test]
+    fn index_l1_block_ref_mmr_writes_rejects_existing_hash_mismatch() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let first_real = l1_block_record_write(1, 10);
+        let conflicting_first_real = l1_block_record_write(1, 11);
+
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output_with_l1_block_records([first_real]))
+            .unwrap();
+        let err = index_l1_block_ref_mmr_writes(
+            &mmr_index_mgr,
+            &output_with_l1_block_records([conflicting_first_real]),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            WorkerError::Database(DbError::MmrLeafHashMismatch { idx: 1, .. })
+        ));
     }
 }

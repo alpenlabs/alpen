@@ -64,6 +64,13 @@ pub(crate) fn build_chunked_envelope_txs(
         return Err(EnvelopeError::EmptyPayload);
     }
 
+    // The guest currently infers reveal count from the consecutive P2TR outputs
+    // after the commit OP_RETURN. P2TR change would extend that run and make the
+    // guest require a non-existent reveal.
+    if config.sequencer_address.script_pubkey().is_p2tr() {
+        return Err(EnvelopeError::P2trChangeAddressUnsupported);
+    }
+
     let sequencer_xonly = XOnlyPublicKey::from_keypair(sequencer_keypair).0;
     let commit_op_return = build_commit_op_return(magic_bytes, da_blob_version);
 
@@ -437,5 +444,41 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_chunked_envelope_txs_rejects_p2tr_change_address() {
+        let kp = test_keypair();
+        let p2tr_address = Address::p2tr(
+            SECP256K1,
+            XOnlyPublicKey::from_keypair(&kp).0,
+            None,
+            Network::Regtest,
+        );
+        let ctx = get_writer_context();
+        let config = EnvelopeConfig::new(
+            ctx.btcio_params.magic_bytes,
+            p2tr_address,
+            Network::Regtest,
+            1000,
+            546,
+            None,
+        );
+        let chunks = vec![vec![0u8; 150]];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+
+        let result = build_chunked_envelope_txs(
+            &config,
+            &chunks,
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &kp,
+            get_mock_utxos(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(EnvelopeError::P2trChangeAddressUnsupported)
+        ));
     }
 }

@@ -6,11 +6,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use strata_acct_types::{
-    AccountId, AccountTypeId, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
+    AccountId, AccountTypeId, BitcoinAmount, Hash, L1BlockRecord, MessageEntry, Mmr64, MsgPayload,
 };
-use strata_asm_manifest_types::AsmManifest;
 use strata_da_framework::decode_buf_exact;
-use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height, WtxidsRoot};
+use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
@@ -95,19 +94,16 @@ fn test_combined_manifest_tracking() {
     let tracking = WriteTrackingState::new_empty(&base_layer);
     let mut indexer = IndexerState::new(tracking);
 
-    // Append a manifest through the combined stack
+    // Append an L1 block record through the combined stack
     let height = L1Height::from(100u32);
-    let l1_blkid = L1BlockId::from(Buf32::from([1u8; 32]));
-    let wtxids_root = WtxidsRoot::from(Buf32::from([2u8; 32]));
-    let manifest =
-        AsmManifest::new(height, l1_blkid, wtxids_root, vec![]).expect("valid test manifest");
+    let record = L1BlockRecord::new([1u8; 32], [2u8; 32]);
 
-    indexer.append_manifest(height, manifest);
+    indexer.append_l1_block_rec(height, record);
 
-    // Verify IndexerState captured the manifest write
+    // Verify IndexerState captured the record write
     let (_, indexer_writes) = indexer.into_parts();
-    assert_eq!(indexer_writes.manifests().len(), 1);
-    assert_eq!(indexer_writes.manifests()[0].height, height);
+    assert_eq!(indexer_writes.l1_block_records().len(), 1);
+    assert_eq!(indexer_writes.l1_block_records()[0].height, height);
 }
 
 /// Test balance modifications through combined layers.
@@ -703,7 +699,7 @@ impl IStateAccessor for TestState {
         Ok(Buf32::zero())
     }
 
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
+    fn l1_block_refs_mmr(&self) -> &Mmr64 {
         todo!()
     }
 }
@@ -745,7 +741,7 @@ impl IStateAccessorMut for TestState {
         self.cur_epoch = epoch;
     }
 
-    fn append_manifest(&mut self, _height: L1Height, _mf: strata_asm_manifest_types::AsmManifest) {}
+    fn append_l1_block_rec(&mut self, _height: L1Height, _rec: L1BlockRecord) {}
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
         self.asm_recorded_epoch = epoch;

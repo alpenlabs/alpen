@@ -182,23 +182,23 @@ impl SauTxLedgerRefs {
     /// Creates empty ledger refs.
     pub fn new_empty() -> Self {
         Self {
-            asm_history_proofs: ssz_types::Optional::None,
+            l1_block_ref_claims: ssz_types::Optional::None,
         }
     }
 
-    /// Creates ledger refs with the given ASM history claims.
+    /// Creates ledger refs with the given claims.
     pub fn new_with_claims(claims: ClaimList) -> Self {
         Self {
-            asm_history_proofs: ssz_types::Optional::Some(claims),
+            l1_block_ref_claims: ssz_types::Optional::Some(claims),
         }
     }
 
-    pub fn set_asm_history_claims(&mut self, claims: ClaimList) {
-        self.asm_history_proofs = ssz_types::Optional::Some(claims);
+    pub fn set_l1_block_ref_claims(&mut self, claims: ClaimList) {
+        self.l1_block_ref_claims = ssz_types::Optional::Some(claims);
     }
 
-    pub fn asm_history_proofs(&self) -> Option<&ClaimList> {
-        match self.asm_history_proofs.as_ref() {
+    pub fn l1_block_ref_claims(&self) -> Option<&ClaimList> {
+        match self.l1_block_ref_claims.as_ref() {
             ssz_types::Optional::None => None,
             ssz_types::Optional::Some(l) => Some(l),
         }
@@ -430,7 +430,7 @@ mod tests {
                         .try_into()
                         .expect("messages must fit within SSZ max length"),
                     ledger_refs: SauTxLedgerRefs {
-                        asm_history_proofs: ssz_types::Optional::None,
+                        l1_block_ref_claims: ssz_types::Optional::None,
                     },
                 },
             });
@@ -488,7 +488,7 @@ mod tests {
                                 .try_into()
                                 .expect("messages must fit within SSZ max length"),
                             ledger_refs: SauTxLedgerRefs {
-                                asm_history_proofs: ssz_types::Optional::None,
+                                l1_block_ref_claims: ssz_types::Optional::None,
                             },
                         },
                     }),

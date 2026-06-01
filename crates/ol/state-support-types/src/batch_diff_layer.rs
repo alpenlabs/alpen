@@ -153,10 +153,10 @@ impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAcc
         )
     }
 
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
+    fn l1_block_refs_mmr(&self) -> &Mmr64 {
         self.resolve(
-            |b| b.epochal_writes().asm_manifests_mmr.as_ref(),
-            || self.base.asm_manifests_mmr(),
+            |b| b.epochal_writes().l1_block_refs_mmr.as_ref(),
+            || self.base.l1_block_refs_mmr(),
         )
     }
 

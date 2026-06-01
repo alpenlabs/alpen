@@ -81,7 +81,7 @@ use tracing::{error, info};
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
     pub(super) use alpen_ee_common::{ChunkWitnessExtractFn, ChunkWitnessRecord};
-    pub(super) use alpen_ee_da::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
+    pub(super) use alpen_ee_da_provider::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
     pub(super) use alpen_reth_witness::RangeWitnessExtractor;
     pub(super) use strata_paas::{
         ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig, TaskStore,
@@ -97,8 +97,8 @@ mod sequencer_imports {
         header_summary::RethHeaderSummaryProvider,
         payload_builder::AlpenRethPayloadEngine,
         prover::{
-            AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec, EeBatchProofDbManager,
-            EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
+            AcctRangeWitnessFn, AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec,
+            EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
         },
     };
 }
@@ -655,7 +655,7 @@ fn main() {
                     eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair")
                 })?;
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
-                    btc_client,
+                    btc_client.clone(),
                     writer_config,
                     btcio_params,
                     sequencer_address,
@@ -680,8 +680,9 @@ fn main() {
                     blob_provider.clone(),
                     envelope_handle,
                     broadcast_ops,
+                    btc_client.clone(),
                     magic_bytes,
-                ));
+                )?);
 
                 // Spawn btcio tasks.
                 node.task_executor
@@ -733,11 +734,20 @@ fn main() {
                 .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
                 .retry(RetryConfig::default());
 
+                let acct_range_witness_fn: Arc<AcctRangeWitnessFn> = {
+                    let extractor = range_witness_extractor.clone();
+                    Arc::new(move |first_block, last_block| {
+                        extractor.extract_range_witness(first_block, last_block)
+                    })
+                };
+
                 let acct_builder = ProverBuilder::new(AcctSpec::new(
                     chunk_receipts.clone(),
                     batch_storage_dyn.clone(),
                     storage.clone(),
-                    ol_client.clone(),
+                    btc_client.clone(),
+                    dbs.witness_db(),
+                    acct_range_witness_fn,
                     genesis,
                     bridge_params,
                 ))

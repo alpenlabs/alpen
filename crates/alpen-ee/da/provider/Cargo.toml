@@ -1,34 +1,34 @@
 [package]
 edition = "2021"
-name = "alpen-ee-da"
+name = "alpen-ee-da-provider"
 version = "0.3.0-alpha.1"
 
 [lints]
 workspace = true
 
-[features]
-default = []
-
 [dependencies]
 alpen-ee-common.workspace = true
+alpen-ee-da-types.workspace = true
 alpen-ee-database.workspace = true
 alpen-reth-db.workspace = true
 alpen-reth-statediff.workspace = true
-strata-btc-types.workspace = true
-strata-btcio.workspace = true
-strata-db-types.workspace = true
-strata-identifiers.workspace = true
-strata-l1-txfmt.workspace = true
-strata-primitives.workspace = true
 
 alloy-primitives.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
+bitcoind-async-client.workspace = true
 eyre.workspace = true
+strata-btc-types.workspace = true
+strata-btcio.workspace = true
+strata-codec.workspace = true
+strata-db-types.workspace = true
+strata-identifiers.workspace = true
+strata-l1-txfmt.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 strata-db-store-sled.workspace = true
+strata-l1-envelope-fmt.workspace = true
 strata-storage.workspace = true
 threadpool.workspace = true
 tokio.workspace = true

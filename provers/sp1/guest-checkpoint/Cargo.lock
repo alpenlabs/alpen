@@ -327,6 +327,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bytemuck"
+version = "1.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9abbd1bc6865053c427f7198e6af43bfdedc55ab791faed4fbd361d789575ff"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -438,6 +458,12 @@ name = "crossbeam-utils"
 version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
+
+[[package]]
+name = "crunchy"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "crypto-bigint"
@@ -1539,6 +1565,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 
 [[package]]
+name = "rustc-hex"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e75f6a532d0fd9f7f13144f392b6ad56a32696bfcd9c78f797f16bbb6f072d6"
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2328,12 +2360,10 @@ name = "strata-ol-state-support-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
- "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-types",
  "strata-da-framework",
  "strata-identifiers",
  "strata-ledger-types",
- "strata-merkle",
  "strata-ol-da",
  "strata-ol-state-types",
  "strata-predicate",
@@ -2351,7 +2381,6 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",
- "strata-asm-manifest-types",
  "strata-codec",
  "strata-codec-utils 0.1.0",
  "strata-identifiers",
@@ -2394,7 +2423,9 @@ source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc21#b
 dependencies = [
  "borsh",
  "hex",
+ "k256",
  "serde",
+ "signature",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -2403,6 +2434,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tree_hash",
  "tree_hash_derive",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -2473,6 +2505,22 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
+name = "substrate-bn"
+version = "0.6.0"
+source = "git+https://github.com/sp1-patches/bn?tag=patch-0.6.0-sp1-6.0.0-substrate-bn#13747d255e00c158afbb6d4a4a94275edd804bbf"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+ "cfg-if",
+ "crunchy",
+ "lazy_static",
+ "num-bigint 0.4.6",
+ "rand 0.8.5",
+ "rustc-hex",
+ "sp1-lib",
+]
 
 [[package]]
 name = "subtle"
@@ -2844,6 +2892,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "zkaleido-sp1-groth16-verifier"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1-beta.1#d24c4ce44e4ff2abd4328a5adb373ffb79f34c8c"
+dependencies = [
+ "blake3",
+ "borsh",
+ "hex",
+ "serde",
+ "sha2",
+ "substrate-bn",
+ "thiserror 1.0.69",
+ "zkaleido",
+]
+
+[[package]]
 name = "zkaleido-sp1-guest-env"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1-beta.1#d24c4ce44e4ff2abd4328a5adb373ffb79f34c8c"
@@ -2882,8 +2945,3 @@ dependencies = [
  "sha3",
  "subtle",
 ]
-
-[[patch.unused]]
-name = "substrate-bn"
-version = "0.6.0"
-source = "git+https://github.com/sp1-patches/bn?tag=patch-0.6.0-sp1-6.0.0-substrate-bn#13747d255e00c158afbb6d4a4a94275edd804bbf"

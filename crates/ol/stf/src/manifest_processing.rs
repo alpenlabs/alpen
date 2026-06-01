@@ -1,6 +1,6 @@
 //! ASM manifest processing.
 
-use strata_acct_types::{BitcoinAmount, MsgPayload};
+use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
     CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate,
@@ -112,8 +112,9 @@ fn process_asm_manifest<S: IStateAccessorMut>(
         process_asm_log(state, log, real_height, context)?;
     }
 
-    // 2. Accept the manifest into the ASM MMR.
-    state.append_manifest(real_height, mf.clone());
+    // 2. Accept the L1 block record into the ASM MMR.
+    let rec = L1BlockRecord::new(*mf.blkid().as_ref(), *mf.wtxids_root().as_ref());
+    state.append_l1_block_rec(real_height, rec);
 
     Ok(())
 }

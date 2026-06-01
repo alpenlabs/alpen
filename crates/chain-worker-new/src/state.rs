@@ -141,6 +141,11 @@ impl ChainWorkerServiceState {
         let blkid = *cur_tip.blkid();
         info!(%blkid, "initializing chain worker");
 
+        // Seed the DB-side L1 block refs MMR mirror with the same sentinel
+        // prefix the in-state MMR was given at OL genesis. Idempotent across
+        // restarts.
+        self.ctx.prefill_l1_block_refs_mmr()?;
+
         self.state.cur_tip = cur_tip;
         self.state.initialized = true;
 

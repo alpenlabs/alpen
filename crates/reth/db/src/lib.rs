@@ -39,7 +39,7 @@ pub trait StateDiffStore {
     fn del_state_diff(&self, block_hash: B256) -> DbResult<()>;
 }
 
-pub trait StateDiffProvider {
+pub trait StateDiffProvider: Send + Sync {
     fn get_state_diff_by_hash(&self, block_hash: B256) -> DbResult<Option<BlockStateChanges>>;
     fn get_state_diff_by_number(&self, block_number: u64) -> DbResult<Option<BlockStateChanges>>;
 }

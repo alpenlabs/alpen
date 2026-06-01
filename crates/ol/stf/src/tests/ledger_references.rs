@@ -2,7 +2,8 @@
 
 use ssz_primitives::FixedBytes;
 use strata_acct_types::{
-    AccountId, AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof, tree_hash::TreeHash,
+    AccountId, AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof,
+    l1_block_record_leaf_hash,
 };
 use strata_asm_common::AsmManifest;
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
@@ -22,7 +23,8 @@ fn execute_manifest_block_with_tracker(
 ) -> (AccumulatorClaim, RawMerkleProof) {
     let mut manifest_tracker = ManifestMmrTracker::new();
 
-    let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest);
+    let l1_block_ref_hash =
+        l1_block_record_leaf_hash(manifest.blkid().as_ref(), manifest.wtxids_root().as_ref());
 
     fixture
         .child_block()
@@ -32,7 +34,7 @@ fn execute_manifest_block_with_tracker(
     let (manifest_index, manifest_proof) = manifest_tracker.add_manifest(&manifest);
 
     assert_eq!(
-        fixture.state().asm_manifests_mmr().num_entries(),
+        fixture.state().l1_block_refs_mmr().num_entries(),
         manifest_tracker.num_entries(),
         "State MMR should match tracker MMR"
     );
@@ -42,7 +44,7 @@ fn execute_manifest_block_with_tracker(
     );
 
     (
-        AccumulatorClaim::new(manifest_index, manifest_hash.into_inner()),
+        AccumulatorClaim::new(manifest_index, l1_block_ref_hash),
         manifest_proof,
     )
 }
@@ -196,7 +198,8 @@ fn test_snark_update_rejects_proof_for_wrong_ledger_reference_claim() {
     let mut manifest_tracker = ManifestMmrTracker::new();
 
     let manifest1 = make_empty_manifest(1, 1);
-    let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
+    let manifest1_hash =
+        l1_block_record_leaf_hash(manifest1.blkid().as_ref(), manifest1.wtxids_root().as_ref());
     let manifest2 = make_empty_manifest(2, 2);
 
     fixture
@@ -218,12 +221,12 @@ fn test_snark_update_rejects_proof_for_wrong_ledger_reference_claim() {
         "Second real manifest should follow the first real manifest"
     );
     assert_eq!(
-        fixture.state().asm_manifests_mmr().num_entries(),
+        fixture.state().l1_block_refs_mmr().num_entries(),
         manifest_tracker.num_entries(),
         "State MMR should match tracker MMR"
     );
 
-    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash);
     let initial_balance = fixture.account_balance(snark_acct_id);
     let initial_seqno = *fixture.expect_snark_account(snark_acct_id).seqno().inner();
 

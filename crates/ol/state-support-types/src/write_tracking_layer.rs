@@ -5,8 +5,9 @@
 
 use std::{fmt, iter};
 
-use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
-use strata_asm_manifest_types::AsmManifest;
+use strata_acct_types::{
+    AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64, append_l1_block_rec_to_mmr,
+};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_ol_state_types::WriteBatch;
@@ -139,12 +140,12 @@ where
             .unwrap_or_else(|| self.base.total_ledger_balance())
     }
 
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
+    fn l1_block_refs_mmr(&self) -> &Mmr64 {
         self.batch
             .epochal_writes()
-            .asm_manifests_mmr
+            .l1_block_refs_mmr
             .as_ref()
-            .unwrap_or_else(|| self.base.asm_manifests_mmr())
+            .unwrap_or_else(|| self.base.l1_block_refs_mmr())
     }
 
     // ===== Account methods =====
@@ -236,24 +237,21 @@ where
         self.batch.epochal_writes_mut().total_ledger_balance = Some(amt);
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        // For append_manifest, we need to get the current MMR (from batch or
-        // base), clone it, append, and store back.
+    fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
+        // Get the current MMR from the pending batch or base, append, and store it back.
         let mut mmr = self
             .batch
             .epochal_writes()
-            .asm_manifests_mmr
+            .l1_block_refs_mmr
             .clone()
-            .unwrap_or_else(|| self.base.asm_manifests_mmr().clone());
+            .unwrap_or_else(|| self.base.l1_block_refs_mmr().clone());
 
-        use strata_acct_types::{StrataHasher, tree_hash::TreeHash};
-        let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&mf);
-        strata_merkle::Mmr::<StrataHasher>::add_leaf(&mut mmr, manifest_hash.into_inner())
-            .expect("MMR capacity exceeded");
+        append_l1_block_rec_to_mmr(&mut mmr, &rec);
 
+        let blkid = L1BlockId::from(Buf32::from(rec.block_hash()));
         let ew = self.batch.epochal_writes_mut();
-        ew.asm_manifests_mmr = Some(mmr);
-        ew.last_l1_blkid = Some(*mf.blkid());
+        ew.l1_block_refs_mmr = Some(mmr);
+        ew.last_l1_blkid = Some(blkid);
         ew.last_l1_height = Some(height);
     }
 
@@ -295,9 +293,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::BitcoinAmount;
-    use strata_asm_manifest_types::AsmManifest;
-    use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
+    use strata_acct_types::{BitcoinAmount, L1BlockRecord};
+    use strata_identifiers::L1Height;
     use strata_ledger_types::*;
     use strata_ol_state_types::{IStateBatchApplicable, OLAccountState};
 
@@ -501,14 +498,11 @@ mod tests {
         let mut tracking = WriteTrackingState::new_empty(&diff);
 
         let height = L1Height::from(100u32);
-        let l1_blkid = L1BlockId::from(Buf32::from([1u8; 32]));
-        let wtxids_root = WtxidsRoot::from(Buf32::from([2u8; 32]));
-        let manifest =
-            AsmManifest::new(height, l1_blkid, wtxids_root, vec![]).expect("valid test manifest");
+        let record = L1BlockRecord::new([1u8; 32], [2u8; 32]);
 
-        tracking.append_manifest(height, manifest);
+        tracking.append_l1_block_rec(height, record);
 
-        // The manifest should be recorded in the epochal state
+        // The record should be recorded in the epochal state
         // (The actual validation of this would depend on the epochal state implementation)
     }
 

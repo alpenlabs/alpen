@@ -112,7 +112,7 @@ mod tests {
 
     fn ledger_refs_strategy() -> impl Strategy<Value = LedgerRefs> {
         prop::collection::vec(accumulator_claim_strategy(), 0..3).prop_map(|refs| LedgerRefs {
-            asm_manifest_refs: refs
+            l1_block_refs: refs
                 .try_into()
                 .expect("ledger refs must fit within SSZ max length"),
         })

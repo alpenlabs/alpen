@@ -11,7 +11,7 @@ mod common;
 use common::{
     apply_unconditionally, assert_both_paths_succeed, assert_verified_chunks_succeed,
     assert_verified_path_succeeds, build_update_operation, create_deposit_message,
-    create_initial_state, simple_chunk,
+    create_initial_state, empty_exec_header_summary, simple_chunk,
 };
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_ee_acct_runtime::{EeVerificationInput, UpdateBuilder};
@@ -114,7 +114,14 @@ fn test_single_deposit_with_chunk() {
     };
     let parent = builder.cur_tip_blkid();
     let tip = Hash::new([0xAA; 32]);
-    let chunk = simple_chunk(parent, tip, vec![deposit], ExecOutputs::new_empty());
+    let chunk = simple_chunk(
+        parent,
+        tip,
+        Hash::zero(),
+        empty_exec_header_summary(),
+        vec![deposit],
+        ExecOutputs::new_empty(),
+    );
 
     builder
         .accept_chunk_transition(&chunk)
@@ -161,7 +168,14 @@ fn test_chunk_output_does_not_change_inner_tracked_balance() {
     ));
 
     let tip = Hash::new([0xDD; 32]);
-    let chunk = simple_chunk(builder.cur_tip_blkid(), tip, vec![deposit], outputs);
+    let chunk = simple_chunk(
+        builder.cur_tip_blkid(),
+        tip,
+        Hash::zero(),
+        empty_exec_header_summary(),
+        vec![deposit],
+        outputs,
+    );
 
     builder
         .accept_chunk_transition(&chunk)
@@ -206,6 +220,8 @@ fn test_multiple_deposits_multiple_chunks() {
     let chunk1 = simple_chunk(
         builder.cur_tip_blkid(),
         tip1,
+        Hash::zero(),
+        empty_exec_header_summary(),
         vec![d1],
         ExecOutputs::new_empty(),
     );
@@ -224,6 +240,8 @@ fn test_multiple_deposits_multiple_chunks() {
     let chunk2 = simple_chunk(
         builder.cur_tip_blkid(),
         tip2,
+        Hash::zero(),
+        empty_exec_header_summary(),
         vec![d2],
         ExecOutputs::new_empty(),
     );

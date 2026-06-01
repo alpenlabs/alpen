@@ -34,12 +34,11 @@ pub use traits::{
 };
 pub use types::{
     accessed_state::{AccessedAccount, AccessedStateRecord},
-    batch::{Batch, BatchId, BatchStatus, L1DaBlockRef},
+    batch::{Batch, BatchId, BatchStatus, L1DaBlockInfo, L1DaBlockRef},
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
     chunk_witness::{ChunkWitnessExtractFn, ChunkWitnessRecord},
     consensus_heads::ConsensusHeads,
-    da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderSummary, DA_BLOB_VERSION},
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::{ExecBlockPayload, ExecBlockRecord},
     fees::{
@@ -54,5 +53,5 @@ pub use types::{
 pub use utils::{
     clock::{Clock, SystemClock},
     conversions::sats_to_gwei,
-    ledger_refs::{build_ledger_refs_from_da, LedgerRefsError},
+    ledger_refs::build_ledger_refs_from_da,
 };

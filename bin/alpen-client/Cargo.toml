@@ -9,7 +9,8 @@ workspace = true
 [features]
 default = ["sequencer", "sp1"]
 sequencer = [
-  "dep:alpen-ee-da",
+  "dep:alpen-ee-da-provider",
+  "dep:alpen-ee-da-runtime",
   "dep:alpen-ee-exec-chain",
   "dep:alpen-ee-sequencer",
   "dep:alpen-reth-exex",
@@ -34,7 +35,11 @@ alloy-rlp.workspace = true
 alpen-chainspec.workspace = true
 alpen-ee-common.workspace = true
 alpen-ee-config.workspace = true
-alpen-ee-da = { workspace = true, optional = true }
+alpen-ee-da-provider = { workspace = true, optional = true }
+alpen-ee-da-runtime = { workspace = true, optional = true, features = [
+  "builders",
+] }
+alpen-ee-da-types.workspace = true
 alpen-ee-database.workspace = true
 alpen-ee-engine.workspace = true
 alpen-ee-exec-chain = { workspace = true, optional = true }
@@ -42,6 +47,7 @@ alpen-ee-genesis.workspace = true
 alpen-ee-ol-tracker.workspace = true
 alpen-ee-rpc-server.workspace = true
 alpen-ee-sequencer = { workspace = true, optional = true }
+alpen-reth-db.workspace = true
 alpen-reth-evm.workspace = true
 alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true

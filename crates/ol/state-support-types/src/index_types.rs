@@ -5,8 +5,7 @@
 // TODO make the field names here more consistent, which should also reflect in
 // the spec and state accessor fn/arg names
 
-use strata_acct_types::{AccountId, Hash, MessageEntry};
-use strata_asm_manifest_types::AsmManifest;
+use strata_acct_types::{AccountId, Hash, L1BlockRecord, MessageEntry};
 use strata_identifiers::L1Height;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
@@ -237,17 +236,17 @@ impl PredicateKeyUpdate {
 }
 
 // ============================================================================
-// Manifest tracking
+// L1 block record tracking
 // ============================================================================
 
-/// A tracked manifest write.
+/// A tracked L1 block record write.
 #[derive(Clone, Debug)]
-pub struct ManifestWrite {
-    /// The L1 block height associated with the manifest.
+pub struct L1BlockRecordWrite {
+    /// The L1 block height associated with the record.
     pub height: L1Height,
 
-    /// The manifest that was appended.
-    pub manifest: AsmManifest,
+    /// The L1 block record that was appended.
+    pub record: L1BlockRecord,
 }
 
 // ============================================================================
@@ -282,7 +281,7 @@ impl AccountCreatedWrite {
 pub struct IndexerWrites {
     created_accounts: Vec<AccountCreatedWrite>,
     inbox_messages: Vec<InboxMessageWrite>,
-    manifests: Vec<ManifestWrite>,
+    l1_block_records: Vec<L1BlockRecordWrite>,
     snark_acct_state_updates: Vec<SnarkAcctStateUpdate>,
     predicate_key_updates: Vec<PredicateKeyUpdate>,
 }
@@ -303,9 +302,9 @@ impl IndexerWrites {
         self.inbox_messages.push(write);
     }
 
-    /// Records a manifest write.
-    pub fn push_manifest(&mut self, write: ManifestWrite) {
-        self.manifests.push(write);
+    /// Records an L1 block record write.
+    pub fn push_l1_block_record(&mut self, write: L1BlockRecordWrite) {
+        self.l1_block_records.push(write);
     }
 
     /// Records a snark state update.
@@ -328,9 +327,9 @@ impl IndexerWrites {
         &self.inbox_messages
     }
 
-    /// Returns all tracked manifest writes.
-    pub fn manifests(&self) -> &[ManifestWrite] {
-        &self.manifests
+    /// Returns all tracked L1 block record writes.
+    pub fn l1_block_records(&self) -> &[L1BlockRecordWrite] {
+        &self.l1_block_records
     }
 
     /// Returns all tracked snark state updates.
@@ -347,7 +346,7 @@ impl IndexerWrites {
     pub fn is_empty(&self) -> bool {
         self.created_accounts.is_empty()
             && self.inbox_messages.is_empty()
-            && self.manifests.is_empty()
+            && self.l1_block_records.is_empty()
             && self.snark_acct_state_updates.is_empty()
             && self.predicate_key_updates.is_empty()
     }
@@ -356,7 +355,7 @@ impl IndexerWrites {
     pub fn extend(&mut self, other: IndexerWrites) {
         self.created_accounts.extend(other.created_accounts);
         self.inbox_messages.extend(other.inbox_messages);
-        self.manifests.extend(other.manifests);
+        self.l1_block_records.extend(other.l1_block_records);
         self.snark_acct_state_updates
             .extend(other.snark_acct_state_updates);
         self.predicate_key_updates

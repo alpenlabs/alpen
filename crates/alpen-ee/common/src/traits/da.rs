@@ -1,8 +1,9 @@
 //! Data availability provider trait for batch lifecycle management.
 
+use alpen_ee_da_types::{DaBlob, EvmHeaderSummary};
 use async_trait::async_trait;
 
-use crate::{BatchId, DaBlob, EvmHeaderSummary, L1DaBlockRef};
+use crate::{BatchId, L1DaBlockRef};
 
 #[derive(Debug)]
 pub enum DaStatus {

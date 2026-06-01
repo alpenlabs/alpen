@@ -91,14 +91,14 @@ class EpochalState(Container):
     #~# external_kind: container
     checkpointed_epoch: strata_identifiers.EpochCommitment
 
-    ### Manifests MMR
+    ### L1 block refs MMR
     ###
     ### Indices into this MMR are L1 block heights. At genesis the MMR is
     ### prefilled with dummy sentinel values of `[0xff, 32]`, so the first
-    ### real appended manifest (for genesis_l1_height + 1) lands at the
+    ### real appended L1 block ref (for genesis_l1_height + 1) lands at the
     ### correct height-indexed position.
     #~# external_kind: container
-    manifests_mmr: strata_acct_types.Mmr64
+    l1_block_refs_mmr: strata_acct_types.Mmr64
 
 ### Global state tracking current slot
 class GlobalState(Container):

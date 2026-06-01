@@ -3,7 +3,7 @@ use std::{fmt, iter};
 use bitcoin::{Txid, Wtxid};
 use strata_acct_types::Hash;
 use strata_codec::Codec;
-use strata_identifiers::L1BlockCommitment;
+use strata_identifiers::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 
 use crate::{BlockNumHash, ProofId};
 
@@ -51,6 +51,43 @@ impl BatchId {
     }
 }
 
+/// L1 block data committed by the OL ledger-ref MMR for EE DA.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct L1DaBlockInfo {
+    /// L1 block containing this batch's DA transactions.
+    pub commitment: L1BlockCommitment,
+
+    /// Witness transaction Merkle root for the L1 block.
+    pub wtxids_root: WtxidsRoot,
+}
+
+impl L1DaBlockInfo {
+    pub fn new(commitment: L1BlockCommitment, wtxids_root: WtxidsRoot) -> Self {
+        Self {
+            commitment,
+            wtxids_root,
+        }
+    }
+
+    pub fn height(&self) -> L1Height {
+        self.commitment.height()
+    }
+
+    pub fn blkid(&self) -> &L1BlockId {
+        self.commitment.blkid()
+    }
+
+    pub fn wtxids_root(&self) -> &WtxidsRoot {
+        &self.wtxids_root
+    }
+}
+
+impl fmt::Display for L1DaBlockInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} wtxids_root={}", self.commitment, self.wtxids_root)
+    }
+}
+
 /// EE DA txs for a specific batch that confirmed in a single L1 block.
 ///
 /// A batch's DA is published as one commit tx plus one reveal tx per chunk.
@@ -65,15 +102,14 @@ impl BatchId {
 /// [`L1DaBlockRef`] containing only the txs that belong to that batch.
 #[derive(Debug, Clone)]
 pub struct L1DaBlockRef {
-    /// L1 block holding this batch's DA txs below.
-    pub block: L1BlockCommitment,
+    /// L1 block and witness-root data for the DA txs below.
+    pub block: L1DaBlockInfo,
     /// This batch's DA txs confirmed in this block as `(txid, wtxid)` pairs.
     pub txns: Vec<(Txid, Wtxid)>,
-    // inclusion merkle proof ?
 }
 
 impl L1DaBlockRef {
-    pub fn new(block: L1BlockCommitment, txns: Vec<(Txid, Wtxid)>) -> Self {
+    pub fn new(block: L1DaBlockInfo, txns: Vec<(Txid, Wtxid)>) -> Self {
         Self { block, txns }
     }
 }

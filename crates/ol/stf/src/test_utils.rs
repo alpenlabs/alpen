@@ -1661,14 +1661,17 @@ impl ManifestMmrTracker {
         }
     }
 
-    /// Adds a manifest to the tracker and returns a RawMerkleProof for it.
+    /// Adds a manifest's L1 block ref to the tracker and returns a proof for it.
     pub fn add_manifest(&mut self, manifest: &AsmManifest) -> (u64, RawMerkleProof) {
-        let hash = <AsmManifest as TreeHash>::tree_hash_root(manifest);
+        let hash = strata_acct_types::l1_block_record_leaf_hash(
+            manifest.blkid().as_ref(),
+            manifest.wtxids_root().as_ref(),
+        );
         let index = self.mmr.num_entries();
 
         let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
             &mut self.mmr,
-            hash.into_inner(),
+            hash,
             &mut self.proofs,
         )
         .expect("mmr: can't add leaf");

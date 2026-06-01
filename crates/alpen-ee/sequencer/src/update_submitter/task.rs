@@ -169,16 +169,14 @@ async fn process_ready_batches(
         let update = if let Some(cached) = update_cache.get(&batch_id) {
             cached.clone()
         } else {
-            let update =
-                build_update_from_batch(&batch, &da, &proof, ol_client, exec_storage, prover)
-                    .await?;
+            let update = build_update_from_batch(&batch, &da, &proof, exec_storage, prover).await?;
             update_cache.insert(batch_id, batch_idx, update.clone());
             update
         };
 
         let seq_no = update.operation().seq_no();
         let outputs = update.operation().outputs();
-        let l1_ref_count = update.operation().ledger_refs().asm_manifest_refs().len();
+        let l1_ref_count = update.operation().ledger_refs().l1_block_refs().len();
         let output_transfer_count = outputs.transfers().len();
         let output_message_count = outputs.messages().len();
         let output_message_value_sats: u64 = outputs

@@ -39,7 +39,7 @@ class SauTxUpdateData(Container):
 ### References to other accessible ledger accumulators.
 class SauTxLedgerRefs(StableContainer[16]):
     #~# external_kind: container
-    asm_history_proofs: Optional[proofs.ClaimList]
+    l1_block_ref_claims: Optional[proofs.ClaimList]
 
 ### Description of a snark account changes and other constraint checks we need
 ### to check.

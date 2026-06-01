@@ -3,10 +3,9 @@
 use std::collections::BTreeMap;
 
 use strata_acct_types::{
-    AccountId, AccountSerial, BitcoinAmount, Mmr64,
+    AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64,
     tree_hash::{Sha256Hasher, TreeHash},
 };
-use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
@@ -97,8 +96,8 @@ impl IStateAccessor for MemoryStateBaseLayer {
         self.state.epoch.total_ledger_balance()
     }
 
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
-        self.state.epoch.asm_manifests_mmr()
+    fn l1_block_refs_mmr(&self) -> &Mmr64 {
+        self.state.epoch.l1_block_refs_mmr()
     }
 
     // ===== Account methods =====
@@ -155,8 +154,8 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
         self.state.epoch.set_cur_epoch(epoch);
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        self.state.epoch.append_manifest(height, mf);
+    fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
+        self.state.epoch.append_l1_block_rec(height, rec);
     }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {

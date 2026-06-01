@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# Alpen crates
+alpen-ee-da-types.workspace = true
+
 # Strata crates
 strata-acct-types.workspace = true
 strata-codec.workspace = true

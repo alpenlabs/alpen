@@ -319,6 +319,60 @@ impl MmrIndexHandle {
         })
     }
 
+    /// Ensures the leaf at `expected_idx` is exactly `expected_hash`, appending
+    /// `(expected_hash, preimage)` if the slot is currently empty.
+    ///
+    /// Makes mirroring an in-state MMR write idempotent for crash-restart
+    /// retries: callers can re-run their indexing pass without checking whether
+    /// each leaf was already written.
+    ///
+    /// - `expected_idx < leaf_count`: slot occupied — succeeds if the stored hash matches, else
+    ///   [`DbError::MmrLeafHashMismatch`].
+    /// - `expected_idx == leaf_count`: appends.
+    /// - `expected_idx > leaf_count`: [`DbError::MmrIndexOutOfRange`] (MMRs cannot have gaps).
+    pub fn idempotent_append_leaf_with_preimage_blocking(
+        &self,
+        expected_idx: u64,
+        expected_hash: Hash,
+        preimage: Vec<u8>,
+    ) -> DbResult<()> {
+        let leaf_count = self.get_num_leaves_blocking()?;
+
+        if expected_idx < leaf_count {
+            let Some(existing_hash) = self.get_leaf_blocking(expected_idx)? else {
+                return Err(DbError::MmrNodeNotFound(
+                    LeafPos::new(expected_idx).node_pos(),
+                ));
+            };
+
+            if existing_hash != expected_hash {
+                return Err(DbError::MmrLeafHashMismatch {
+                    idx: expected_idx,
+                    expected: expected_hash,
+                    got: existing_hash,
+                });
+            }
+
+            return Ok(());
+        }
+
+        if expected_idx > leaf_count {
+            return Err(DbError::MmrIndexOutOfRange {
+                requested: expected_idx,
+                cur: leaf_count,
+            });
+        }
+
+        let appended_idx = self.append_leaf_with_preimage_blocking(expected_hash, preimage)?;
+        if appended_idx != expected_idx {
+            return Err(DbError::MmrIndexOutOfRange {
+                requested: expected_idx,
+                cur: appended_idx,
+            });
+        }
+        Ok(())
+    }
+
     /// Appends a caller-provided leaf hash and stores its preimage bytes.
     pub async fn append_leaf_with_preimage(&self, hash: Hash, preimage: Vec<u8>) -> DbResult<u64> {
         let this = self.clone();

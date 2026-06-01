@@ -10,7 +10,7 @@ from typing import Any, TypeVar
 
 from common.config.constants import (
     DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
-    DEFAULT_EE_BLOCK_TIME_MS,
+    DEFAULT_EE_BLOCK_WAIT_SECONDS,
 )
 
 from .rpc import RpcError
@@ -24,7 +24,7 @@ _RETRYABLE = (RpcError, OSError)
 
 def timeout_for_expected_blocks(
     expected_blocks: int,
-    seconds_per_block: float = DEFAULT_EE_BLOCK_TIME_MS / 1000,
+    seconds_per_block: float = DEFAULT_EE_BLOCK_WAIT_SECONDS,
     slack_seconds: int = DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
 ) -> int:
     """Compute a timeout budget for a block-driven wait."""

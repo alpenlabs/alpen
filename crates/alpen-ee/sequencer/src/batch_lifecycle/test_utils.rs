@@ -1,12 +1,13 @@
 //! Shared test utilities for batch_lifecycle tests.
 
 use alpen_ee_common::{
-    Batch, BatchId, BatchStatus, BatchStorage, InMemoryStorage, L1DaBlockRef, ProofId,
+    Batch, BatchId, BatchStatus, BatchStorage, InMemoryStorage, L1DaBlockInfo, L1DaBlockRef,
+    ProofId,
 };
 use bitcoin::{hashes::Hash as _, BlockHash, Txid, Wtxid};
 use strata_acct_types::Hash;
 use strata_btc_types::BlockHashExt;
-use strata_identifiers::L1BlockCommitment;
+use strata_identifiers::{Buf32, L1BlockCommitment, WtxidsRoot};
 
 /// Helper to create a test hash from a single byte.
 pub(crate) fn test_hash(n: u8) -> Hash {
@@ -56,8 +57,12 @@ pub(crate) fn test_wtxid(n: u8) -> Wtxid {
 pub(crate) fn make_da_ref(block_n: u8, txn_n: u8) -> L1DaBlockRef {
     let block_hash = BlockHash::from_byte_array([block_n; 32]);
     let blkid = block_hash.to_l1_block_id();
+    let block = L1DaBlockInfo::new(
+        L1BlockCommitment::new(block_n as u32, blkid),
+        WtxidsRoot::from(Buf32::from([block_n; 32])),
+    );
     L1DaBlockRef {
-        block: L1BlockCommitment::new(block_n as u32, blkid),
+        block,
         txns: vec![(test_txid(txn_n), test_wtxid(txn_n))],
     }
 }

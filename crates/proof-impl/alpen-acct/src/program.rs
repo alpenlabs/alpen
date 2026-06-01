@@ -1,3 +1,4 @@
+use alpen_ee_da_types::DaWitness;
 use k256::schnorr::SigningKey;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
@@ -34,7 +35,12 @@ fn test_signing_key() -> SigningKey {
 pub struct EeAcctProofInput {
     pub genesis: Genesis,
     pub ee_private_input: EePrivateInput,
-    pub update_private_input: UpdatePrivateInput,
+    /// Snark-account update private input (`snark_acct_runtime::PrivateInput`):
+    /// the update pub-params, partial pre-state, and per-message coinputs.
+    pub snark_acct_private_input: UpdatePrivateInput,
+    /// Alpen-EE-specific witness input for verifying the batch's DA.
+    pub da_witness: DaWitness,
+    /// Bridge withdrawal denomination and cap, parameterizing the EVM.
     pub bridge_params: BridgeParams,
 }
 
@@ -74,10 +80,14 @@ impl ZkVmProgram for EeAcctProgram {
             .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
         builder.write_buf(&ee_rkyv_bytes)?;
 
-        let upd_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.update_private_input)
+        let upd_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.snark_acct_private_input)
             .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
         builder.write_buf(&upd_rkyv_bytes)?;
         builder.write_buf(&input.bridge_params.as_ssz_bytes())?;
+
+        let da_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.da_witness)
+            .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
+        builder.write_buf(&da_rkyv_bytes)?;
 
         builder.build()
     }
@@ -119,6 +129,7 @@ impl EeAcctProgram {
 
 #[cfg(test)]
 mod tests {
+    use alpen_ee_da_types::DaWitness;
     use rsp_primitives::genesis::Genesis;
     use ssz::Encode;
     use strata_codec::encode_to_vec;
@@ -160,7 +171,7 @@ mod tests {
         );
 
         // Construct private inputs.
-        let update_private_input =
+        let snark_acct_private_input =
             UpdatePrivateInput::new(pub_params, initial_state.as_ssz_bytes(), vec![]);
         let ee_private_input = EePrivateInput::new(vec![], vec![], vec![]);
 
@@ -170,7 +181,8 @@ mod tests {
         let proof_input = EeAcctProofInput {
             genesis,
             ee_private_input,
-            update_private_input,
+            snark_acct_private_input,
+            da_witness: DaWitness::empty(),
             bridge_params: BridgeParams::default(),
         };
 

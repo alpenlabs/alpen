@@ -7,7 +7,9 @@ members = [
   "crates/alpen-ee/exec-chain",
   "crates/alpen-ee/common",
   "crates/alpen-ee/config",
-  "crates/alpen-ee/da",
+  "crates/alpen-ee/da/provider",
+  "crates/alpen-ee/da/runtime",
+  "crates/alpen-ee/da/types",
   "crates/alpen-ee/database",
   "crates/alpen-ee/engine",
   "crates/alpen-ee/genesis",
@@ -141,7 +143,9 @@ alpen-chainspec = { path = "crates/reth/chainspec" }
 alpen-ee-block-assembly = { path = "crates/alpen-ee/block-assembly" }
 alpen-ee-common = { path = "crates/alpen-ee/common" }
 alpen-ee-config = { path = "crates/alpen-ee/config" }
-alpen-ee-da = { path = "crates/alpen-ee/da" }
+alpen-ee-da-provider = { path = "crates/alpen-ee/da/provider" }
+alpen-ee-da-runtime = { path = "crates/alpen-ee/da/runtime" }
+alpen-ee-da-types = { path = "crates/alpen-ee/da/types" }
 alpen-ee-database = { path = "crates/alpen-ee/database", default-features = false }
 alpen-ee-engine = { path = "crates/alpen-ee/engine" }
 alpen-ee-exec-chain = { path = "crates/alpen-ee/exec-chain" }
@@ -157,7 +161,7 @@ alpen-reth-exex = { path = "crates/reth/exex" }
 alpen-reth-node = { path = "crates/reth/node" }
 alpen-reth-primitives = { path = "crates/reth/primitives" }
 alpen-reth-rpc = { path = "crates/reth/rpc" }
-alpen-reth-statediff = { path = "crates/reth/statediff" }
+alpen-reth-statediff = { path = "crates/reth/statediff", default-features = false }
 alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
 strata-bridge-params = { path = "crates/bridge-params" }
@@ -248,10 +252,10 @@ strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag =
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
 strata-logging = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc22" }
-strata-metrics = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc22" }
 strata-merkle = { git = "https://github.com/alpenlabs/strata-common", features = [
   "legacy_compact",
 ], tag = "v0.1.0-alpha-rc21" }
+strata-metrics = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc22" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
 strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
 strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }

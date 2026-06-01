@@ -9,7 +9,7 @@ use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState,
 };
-use strata_ee_chain_types::{ExecOutputs, OutputMessage};
+use strata_ee_chain_types::{ExecHeaderSummary, ExecOutputs, OutputMessage};
 
 /// Write batch containing the updated account state.
 #[derive(Clone, Debug)]
@@ -157,6 +157,10 @@ impl ExecHeader for SimpleHeader {
 
     fn get_state_root(&self) -> Hash {
         self.state_root
+    }
+
+    fn get_exec_header_summary(&self) -> ExecHeaderSummary {
+        ExecHeaderSummary::new_empty()
     }
 
     fn compute_block_id(&self) -> Hash {

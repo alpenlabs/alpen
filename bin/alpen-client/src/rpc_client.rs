@@ -297,7 +297,7 @@ impl SequencerOLClient for RpcOLClient {
         let next_inbox_msg_idx = operation.new_proof_state().next_inbox_msg_idx();
         let l1_ref_heights: Vec<_> = operation
             .ledger_refs()
-            .asm_manifest_refs()
+            .l1_block_refs()
             .iter()
             .map(|claim| claim.idx())
             .collect();
