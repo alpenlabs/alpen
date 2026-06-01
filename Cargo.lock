@@ -18207,7 +18207,7 @@ dependencies = [
 [[package]]
 name = "typed-sled"
 version = "0.1.1"
-source = "git+https://github.com/alpenlabs/typed-sled#63bdf02a551ba384894748c41f908783864a8fc1"
+source = "git+https://github.com/alpenlabs/typed-sled#91ec668184350b8121625942c03152aade330b4b"
 dependencies = [
  "dashmap 6.1.0",
  "rkyv",
