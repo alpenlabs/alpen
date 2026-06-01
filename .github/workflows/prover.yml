@@ -85,12 +85,131 @@ jobs:
 
       - name: Run performance evaluation
         run: |
+          # Guest execution/perf only. `ZKVM_MOCK=1` must not be used as evidence
+          # that the checkpoint-capacity input can be fully proven.
           RUST_LOG=info SP1_PROVER=light ZKVM_MOCK=1 cargo run --profile prover-ci -- \
           --post-to-gh \
           --github-token "${{ secrets.GITHUB_TOKEN }}" \
           --pr-number "${{ github.event.pull_request.number }}" \
           --commit-hash "${{ github.sha }}" \
-          --programs alpen-chunk,alpen-acct,checkpoint
+          --programs alpen-chunk,alpen-acct,checkpoint,checkpoint-capacity
         working-directory: bin/prover-perf
         env:
           RUSTFLAGS: "-C target-cpu=native -C link-arg=-fuse-ld=lld"
+
+  checkpoint_capacity_sp1_network:
+    name: SP1 checkpoint capacity proof (STR-2750 only)
+    if: >
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'STR-2750' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest-m
+    needs: extract-rust-version
+    timeout-minutes: 600
+    environment: prod
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        env:
+          RUST_NIGHTLY: ${{ needs.extract-rust-version.outputs.rust-version }}
+        run: |
+          rustup toolchain install "$RUST_NIGHTLY" --profile minimal
+          rustup default "$RUST_NIGHTLY"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+
+      - name: Use Cargo cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
+        with:
+          cache-on-failure: true
+
+      - name: Install SP1 core runner override
+        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+
+      - name: Install mold linker
+        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+
+      - name: Set up Clang
+        uses: egor-tensin/setup-clang@23bc15cd4207e45f1566447deb48f4ff3ef932cb # v1
+        with:
+          version: latest
+          platform: x64
+
+      - name: Install SP1 Toolchain
+        env:
+          SP1_VERSION: "v6.1.0"
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash && ~/.sp1/bin/sp1up -v "$SP1_VERSION" -c
+          export PATH=~/.sp1/bin:$PATH
+          cargo prove --version
+
+      - name: Build checkpoint capacity prover
+        run: cargo build --profile prover-ci -p strata-provers-perf
+        env:
+          RUSTFLAGS: "-C target-cpu=native -C link-arg=-fuse-ld=lld"
+
+      # Already measured. Keep disabled while running the combined ASM/OL log pressure case below.
+      # - name: Prove 2048-manifest checkpoint capacity input
+      #   env:
+      #     CHECKPOINT_CAPACITY_MANIFEST_COUNTS: "2048"
+      #     NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
+      #     NETWORK_RPC_URL: https://rpc.production.succinct.xyz
+      #     RUSTFLAGS: "-C target-cpu=native -C link-arg=-fuse-ld=lld"
+      #     RUST_LOG: info
+      #     SP1_DEADLINE_ENV_MS: "14400000"
+      #     SP1_PROOF_STRATEGY: reserved
+      #     SP1_PROVER: network
+      #   run: |
+      #     for run in 1 2 3; do
+      #       echo "::group::2048 manifest proof run ${run}/3"
+      #       /usr/bin/time -v ./target/prover-ci/strata-provers-perf \
+      #         --prove \
+      #         --programs checkpoint-capacity
+      #       echo "::endgroup::"
+      #     done
+
+      # Already measured. Keep disabled while running the combined ASM/OL log pressure case below.
+      # - name: Prove 2048-manifest checkpoint capacity input with OL log pressure
+      #   env:
+      #     CHECKPOINT_CAPACITY_MANIFEST_COUNTS: "2048"
+      #     CHECKPOINT_CAPACITY_OL_LOG_TARGET: "16128"
+      #     NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
+      #     NETWORK_RPC_URL: https://rpc.production.succinct.xyz
+      #     RUSTFLAGS: "-C target-cpu=native -C link-arg=-fuse-ld=lld"
+      #     RUST_LOG: info
+      #     SP1_DEADLINE_ENV_MS: "14400000"
+      #     SP1_PROOF_STRATEGY: reserved
+      #     SP1_PROVER: network
+      #   run: |
+      #     echo "::group::2048 manifest proof with 16128 OL logs"
+      #     /usr/bin/time -v ./target/prover-ci/strata-provers-perf \
+      #       --prove \
+      #       --programs checkpoint-capacity
+      #     echo "::endgroup::"
+
+      - name: Prove 2048-manifest checkpoint capacity input with combined log pressure
+        env:
+          CHECKPOINT_CAPACITY_MANIFEST_COUNTS: "2048"
+          CHECKPOINT_CAPACITY_ASM_LOGS_PER_MANIFEST: "128"
+          CHECKPOINT_CAPACITY_OL_LOG_TARGET: "16128"
+          NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
+          NETWORK_RPC_URL: https://rpc.production.succinct.xyz
+          RUSTFLAGS: "-C target-cpu=native -C link-arg=-fuse-ld=lld"
+          RUST_LOG: info
+          SP1_DEADLINE_ENV_MS: "28800000"
+          SP1_PROOF_STRATEGY: reserved
+          SP1_PROVER: network
+        run: |
+          echo "::group::2048 manifest proof with 128 ASM deposit logs per manifest and 16128 OL logs"
+          /usr/bin/time -v ./target/prover-ci/strata-provers-perf \
+            --prove \
+            --programs checkpoint-capacity
+          echo "::endgroup::"

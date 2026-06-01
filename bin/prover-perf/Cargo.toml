@@ -20,7 +20,6 @@ strata-proofimpl-checkpoint.workspace = true
 strata-acct-types.workspace = true
 strata-bridge-params.workspace = true
 strata-codec.workspace = true
-strata-da-framework.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
@@ -29,7 +28,7 @@ strata-evm-ee.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-chain-types-new.workspace = true
-strata-ol-da.workspace = true
+strata-ol-state-support-types.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
@@ -46,7 +45,6 @@ sp1-sdk.workspace = true
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
 zkaleido-sp1-host = { workspace = true, optional = true }
 
-anyhow.workspace = true
 argh.workspace = true
 num-format = "0.4.4"
 reqwest.workspace = true

@@ -6,7 +6,7 @@ import strata_snark_acct_types
 
 MAX_LEDGER_ACCOUNTS = 1 << 24
 MAX_ACCOUNT_SERIALS = 1 << 24
-MAX_PENDING_ASM_LOGS = 1 << 16
+MAX_PENDING_ASM_LOGS = 1 << 18
 
 ### Top-level OL state
 class OLState(Container):
