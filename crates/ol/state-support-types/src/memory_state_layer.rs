@@ -186,15 +186,9 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
 
     fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
         let ssz_entry = entry.into();
-        if self
-            .state
+        self.state
             .intraepoch_state_mut()
             .try_append_pending_log(ssz_entry)
-        {
-            Ok(())
-        } else {
-            Err(StateError::PendingAsmLogsFull)
-        }
     }
 
     fn reset_intraepoch_state(&mut self) {

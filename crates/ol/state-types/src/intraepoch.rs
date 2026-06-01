@@ -3,7 +3,7 @@
 use ssz_types::VariableList;
 use strata_asm_manifest_types::AsmLogEntry;
 use strata_identifiers::L1Height;
-use strata_ledger_types::PendingAsmLog;
+use strata_ledger_types::{PendingAsmLog, StateError};
 
 use crate::ssz_generated::ssz::state::*;
 
@@ -17,10 +17,15 @@ impl IntraepochState {
         &self.pending_asm_logs
     }
 
-    /// Attempts to append a new pending log entry to the buffer, returning
-    /// if success.
-    pub fn try_append_pending_log(&mut self, ent: PendingAsmLogEntry) -> bool {
-        self.pending_asm_logs.push(ent).is_ok()
+    /// Attempts to append a new pending log entry to the buffer.
+    ///
+    /// # Errors
+    ///
+    /// If the buffer is already full.
+    pub fn try_append_pending_log(&mut self, ent: PendingAsmLogEntry) -> Result<(), StateError> {
+        self.pending_asm_logs
+            .push(ent)
+            .map_err(|_| StateError::PendingAsmLogsFull)
     }
 
     /// Checks if we've maxed out the number of pending logs.

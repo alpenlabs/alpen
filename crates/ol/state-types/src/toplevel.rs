@@ -232,10 +232,11 @@ impl OLState {
             self.intraepoch.reset();
         }
         for entry in intraepoch_writes.appended_pending_asm_logs {
+            // This panic is safe.
             let ssz_entry = entry.into();
-            if !self.intraepoch.try_append_pending_log(ssz_entry) {
-                return Err(StateError::PendingAsmLogsFull);
-            }
+            self.intraepoch
+                .try_append_pending_log(ssz_entry)
+                .expect("ol/state: unable to append pending ASM log");
         }
 
         Ok(())
