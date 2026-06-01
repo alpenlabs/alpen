@@ -20,7 +20,7 @@ pub fn test_get_consensus_update(db: &impl ClientStateDatabase) {
     assert_eq!(update, output);
 }
 
-// TODO(QQ): add more tests.
+// TODO(STR-2653): add more tests.
 #[macro_export]
 macro_rules! client_state_db_tests {
     ($setup_expr:expr) => {

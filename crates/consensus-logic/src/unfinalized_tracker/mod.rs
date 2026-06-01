@@ -122,7 +122,7 @@ impl UnfinalizedBlockTracker {
     ///
     /// Returns if this new block forks off and creates a new unfinalized tip
     /// block.
-    // TODO do a `SealedL2BlockHeader` thing that includes the blkid
+    // TODO(STR-3370): do a `SealedL2BlockHeader` thing that includes the blkid
     pub fn attach_block(
         &mut self,
         slot: Slot,

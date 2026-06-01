@@ -236,7 +236,7 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .await
         .context("block_builder: submit new exec block")?;
 
-    // TODO: should this wait for block
+    // TODO(STR-3682): should this wait for block
 
     Ok((blockhash, next_block_target))
 }

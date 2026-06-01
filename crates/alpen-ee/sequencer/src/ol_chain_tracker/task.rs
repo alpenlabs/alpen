@@ -112,7 +112,7 @@ async fn handle_chain_update(
         Err(err) => {
             error!(?err, "failed to track ol state");
             // retry next cycle
-            // TODO: unrecoverable error
+            // TODO(STR-3682): unrecoverable error
         }
     };
 }

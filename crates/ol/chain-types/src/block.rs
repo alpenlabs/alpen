@@ -157,7 +157,7 @@ impl OLBlockBody {
         Self::new(tx_segment, None)
     }
 
-    // TODO convert to builder?
+    // TODO(STR-3677): convert to builder?
     pub fn set_manifests(&mut self, manifests: OLAsmManifestContainer) {
         self.manifests = Some(manifests).into();
     }

@@ -97,7 +97,7 @@ pub trait L1Database: Send + Sync + 'static {
     /// Prune earliest blocks till height
     fn prune_to_height(&self, height: L1Height) -> DbResult<()>;
 
-    // TODO DA scraping storage
+    // TODO(STR-2653): DA scraping storage
 
     // Gets current chain tip height, blockid
     fn get_canonical_chain_tip(&self) -> DbResult<Option<(L1Height, L1BlockId)>>;
@@ -108,7 +108,8 @@ pub trait L1Database: Send + Sync + 'static {
     /// Gets the blockid at height for the current chain.
     fn get_canonical_blockid_at_height(&self, height: L1Height) -> DbResult<Option<L1BlockId>>;
 
-    // TODO: This should not exist in database level and should be handled by downstream manager.
+    // TODO(STR-2653): This should not exist in database level and should be handled by downstream
+    // manager.
     /// Returns a half-open interval of block hashes, if we have all of them
     /// present.  Otherwise, returns error.
     fn get_canonical_blockid_range(
@@ -117,7 +118,7 @@ pub trait L1Database: Send + Sync + 'static {
         end_idx: L1Height,
     ) -> DbResult<Vec<L1BlockId>>;
 
-    // TODO DA queries
+    // TODO(STR-2653): DA queries
 }
 
 /// Db for client state updates and checkpoints.

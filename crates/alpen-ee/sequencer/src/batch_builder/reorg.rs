@@ -18,7 +18,7 @@ async fn find_last_canonical_unfinalized_batch(
         .await?
         .ok_or_else(|| eyre!("no batches in storage; genesis batch expected"))?;
 
-    // TODO: get this directly
+    // TODO(STR-3682): get this directly
     let finalized_blocknum = canonical_reader.finalized_blocknum().await?;
 
     let mut idx = batch.idx();

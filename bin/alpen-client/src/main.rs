@@ -179,11 +179,11 @@ fn main() {
 
             let datadir = builder.config().datadir().data_dir().to_path_buf();
 
-            // TODO: read config, params from file
+            // TODO(STR-2982): read config, params from file
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
-            // TODO: this must also be read from the params file
-            // TODO: define how we want to deterministically generate the AccountId
+            // TODO(STR-3675): this must also be read from the params file
+            // TODO(STR-3675): define how we want to deterministically generate the AccountId
             const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
 
             info!(blockhash=%genesis_info.blockhash(), "EE genesis info");
@@ -905,8 +905,6 @@ fn main() {
                     .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
                 node.task_executor
                     .spawn_critical("ee_update_submitter", update_submitter_task);
-                // TODO: proof generation
-                // TODO: post update to OL
             }
 
             health_check_state.mark_ready();

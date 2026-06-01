@@ -24,7 +24,7 @@ pub(crate) async fn process_unbundled_entries(
         // intents and create payload entries accordingly
         let payload_entry = BundledPayloadEntry::new_unsigned(entry.payload().clone());
 
-        // TODO: the following block till "Atomic Ends" should be atomic.
+        // TODO(STR-3691): the following block till "Atomic Ends" should be atomic.
         let idx = ops.get_next_payload_idx_async().await?;
         ops.put_payload_entry_async(idx, payload_entry).await?;
         info!(

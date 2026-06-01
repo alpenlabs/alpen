@@ -144,7 +144,7 @@ pub fn verify_chunk_transition<E: ExecutionEnvironment>(
     // matches the chunk transition.
     let computed_prev_blkid = prev_header.compute_block_id();
     if computed_prev_blkid != tsn.parent_exec_blkid() {
-        // TODO better error type?
+        // TODO(STR-3685): better error type?
         return Err(EnvError::MismatchedChainSegment);
     }
 

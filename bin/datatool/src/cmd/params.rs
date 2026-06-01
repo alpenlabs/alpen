@@ -107,7 +107,7 @@ pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> 
         seqkey,
         opkeys,
         checkpoint_predicate: rollup_vk,
-        // TODO make a const
+        // TODO(STR-3635): make a const
         deposit_sats,
         proof_timeout: cmd.proof_timeout,
         evm_genesis_info,
@@ -172,7 +172,7 @@ struct ParamsConfig {
 }
 
 /// Constructs the parameters for a Strata network.
-// TODO convert this to also initialize the sync params
+// TODO(STR-3635): convert this to also initialize the sync params
 fn construct_params(config: ParamsConfig) -> anyhow::Result<RollupParams> {
     let cr = config
         .seqkey
@@ -189,24 +189,24 @@ fn construct_params(config: ParamsConfig) -> anyhow::Result<RollupParams> {
         magic_bytes: config.magic,
         block_time: config.block_time_sec * 1000,
         cred_rule: cr,
-        // TODO do we want to remove this?
+        // TODO(STR-2168): do we want to remove this?
         genesis_l1_view: config.genesis_l1_view,
         operators: opkeys,
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),
-        // TODO make configurable
+        // TODO(STR-3635): make configurable
         l1_reorg_safe_depth: 4,
         target_l2_batch_size: config.epoch_slots as u64,
         deposit_amount: Amount::from_sat(config.deposit_sats),
         checkpoint_predicate: config.checkpoint_predicate,
-        // TODO make configurable
+        // TODO(STR-3635): make configurable
         dispatch_assignment_dur: 64,
         recovery_delay: DEFAULT_RECOVERY_DELAY,
         proof_publish_mode: config
             .proof_timeout
             .map(|t| ProofPublishMode::Timeout(t as u64))
             .unwrap_or(ProofPublishMode::Strict),
-        // TODO make configurable
+        // TODO(STR-3635): make configurable
         max_deposits_in_block: 16,
         network: config.bitcoin_network,
     })

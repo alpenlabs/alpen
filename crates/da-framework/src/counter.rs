@@ -23,7 +23,7 @@ pub trait CounterScheme {
     /// of an increment.
     ///
     /// Returns `None` if invalid or out of range.
-    // TODO should these be passed by ref?
+    // TODO(STR-2148): should these be passed by ref?
     fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr>;
 }
 
@@ -241,7 +241,7 @@ macro_rules! inst_via_ctr_schemes {
                 }
 
                 fn update(base: &mut Self::Base, incr: &Self::Incr) {
-                    // TODO add more overflow checks here
+                    // TODO(STR-2148): add more overflow checks here
                     *base = ((*base as $viaty) + (*incr as $viaty)) as $basety;
                 }
 

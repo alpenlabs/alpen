@@ -65,7 +65,7 @@ impl<T> TrackedState<T> {
 /// in consecutive order. Callers must ensure blocks are applied sequentially (block N, then
 /// block N+1, etc.). Applying blocks out of order will produce incorrect diffs.
 ///
-/// **TODO**: Add block number tracking and validation to reject non-consecutive blocks.
+/// **TODO(STR-3649)**: Add block number tracking and validation to reject non-consecutive blocks.
 #[derive(Clone, Debug, Default)]
 pub struct BatchBuilder {
     /// Account states: address -> tracked state (original is None if account didn't exist).

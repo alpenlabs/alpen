@@ -16,7 +16,7 @@ from common.wait import wait_until_with_value
 logger = logging.getLogger(__name__)
 
 # This is empirical and is used to allow alpen to create and submit DA and get it confirmed.
-# TODO: might need to more intelligently calculate this
+# TODO(STR-3692): might need to more intelligently calculate this
 EXPECT_UPDATE_WITHIN_EPOCH = 10
 CHECK_N_UPDATES = 3  # How many updates from alpen to check in strata
 NUM_INIT_BLOCKS = 5

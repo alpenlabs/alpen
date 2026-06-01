@@ -193,7 +193,7 @@ async fn process_fc_message<C: FcmContext>(
                     prev_epoch,
                     confirmed_epoch,
                     finalized_epoch,
-                    // FIXME this is a bit convoluted, could this be simpler?
+                    // FIXME(STR-3673): this is a bit convoluted, could this be simpler?
                     safe_l1: last_l1_blk,
                 };
 
@@ -346,7 +346,7 @@ async fn handle_new_block<C: FcmContext>(
         .collect();
     let best_block = pick_best_block_async(&cur_tip, &tips, fcm_state.ctx()).await?;
 
-    // TODO make configurable
+    // TODO(STR-3050): make configurable
     let depth = 100;
 
     let tip_update = compute_tip_update(&cur_tip, &best_block, depth, fcm_state.chain_tracker())?;
@@ -405,7 +405,7 @@ async fn handle_epoch_finalization<C: FcmContext>(
 
     info!(?next_finalizable_epoch, "updated finalized tip");
     //trace!(?fin_report, "finalization report");
-    // TODO do something with the finalization report?
+    // TODO(STR-3580): do something with the finalization report?
 
     Ok(Some(next_finalizable_epoch))
 }
@@ -481,7 +481,7 @@ async fn apply_tip_update<C: FcmContext>(
     match update {
         // Easy case.
         TipUpdate::ExtendTip(_cur, _new) => {
-            // TODO: what's the relation between _new and bundle
+            // TODO(STR-3673): what's the relation between _new and bundle
             // Update the tip block in the FCM state.
             let blk_cmmt =
                 OLBlockCommitment::new(bundle.header().slot(), bundle.header().compute_blkid());
@@ -557,7 +557,7 @@ async fn apply_tip_update<C: FcmContext>(
                 return Err(Error::OLApplyTipMismatch(expected_tip, final_tip).into());
             }
 
-            // TODO any cleanup?
+            // TODO(STR-3673): any cleanup?
 
             counter!("strata_fcm_reorgs_total").increment(1);
             histogram!("strata_fcm_reorg_depth").record(reorg_depth as f64);

@@ -384,7 +384,7 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, Ini
     )
     .map_err(|e| InitError::BitcoinClientCreation(e.to_string()))?;
 
-    // TODO remove this
+    // TODO(STR-3694): remove this
     if config.network != Network::Regtest {
         warn!("network not set to regtest, ignoring");
     }

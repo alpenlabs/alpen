@@ -285,7 +285,7 @@ fn process_deposit_log<S: IStateAccessorMut>(
     );
 
     // Deliver the deposit message to the target account.
-    // TODO need to tweak this a bit to deal with the changes to epoch contexts
+    // TODO(STR-3677): need to tweak this a bit to deal with the changes to epoch contexts
     account_processing::process_message(
         state,
         BRIDGE_GATEWAY_ACCT_ID,

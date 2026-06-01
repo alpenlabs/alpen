@@ -1,7 +1,7 @@
 //! Collection of generic internal data types that are used widely.
 
-// TODO import address types
-// TODO import generic account types
+// TODO(STR-3689): import address types
+// TODO(STR-3689): import generic account types
 
 // Re-export identifier types from strata-identifiers
 pub use strata_identifiers::{

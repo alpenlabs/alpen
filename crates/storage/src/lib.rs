@@ -29,7 +29,7 @@ use strata_db_types::traits::DatabaseBackend;
 pub use strata_db_types::MmrId;
 
 /// A consolidation of database managers.
-// TODO move this to its own module
+// TODO(STR-3679): move this to its own module
 #[expect(
     missing_debug_implementations,
     reason = "Some inner types don't have Debug implementation"

@@ -159,7 +159,7 @@ impl<'b> BlockContext<'b> {
             return OLBlockCommitment::null();
         };
 
-        // FIXME uhhh this actually does the same destructuring as above but
+        // FIXME(STR-3677): uhhh this actually does the same destructuring as above but
         // LLVM should be able to figure it out after inlining
         let blkid = self.compute_parent_blkid();
         OLBlockCommitment::new(ph.slot(), blkid)

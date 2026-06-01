@@ -90,11 +90,11 @@ pub(crate) async fn handle_ol_update<TStorage: ExecBlockStorage>(
 
     if state.contains_orphan_block(&finalized) {
         // finalized block is a known but unconnected block
-        // TODO: store the finalized state and retry later
+        // TODO(STR-3682): store the finalized state and retry later
         return Ok(());
     }
 
-    // TODO: we have a deep reorg beyond what we consider finalized.
+    // TODO(STR-3682): we have a deep reorg beyond what we consider finalized.
     unimplemented!("deep reorg");
 }
 
