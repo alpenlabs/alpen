@@ -1,6 +1,6 @@
 use alpen_ee_common::{
-    EpochUpdateOp, OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError,
-    OLEpochSummary, SequencerOLClient,
+    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
+    SequencerOLClient, SnarkAccountUpdateInfo,
 };
 use async_trait::async_trait;
 use http::{header::AUTHORIZATION, HeaderMap, HeaderValue};
@@ -189,7 +189,7 @@ impl OLClient for RpcOLClient {
                 let epoch_summary =
                     call_read_rpc!(self, get_acct_epoch_summary(self.account_id, epoch))?;
 
-                let updates: Vec<EpochUpdateOp> = epoch_summary
+                let updates: Vec<SnarkAccountUpdateInfo> = epoch_summary
                     .update_inputs()
                     .iter()
                     .map(|u| {
@@ -200,7 +200,7 @@ impl OLClient for RpcOLClient {
                             .map(MessageEntry::try_from)
                             .collect::<Result<_, _>>()
                             .map_err(|e| OLClientError::rpc(e.to_string()))?;
-                        Ok(EpochUpdateOp::new(
+                        Ok(SnarkAccountUpdateInfo::new(
                             u.seq_no,
                             u.extra_data.0.clone(),
                             messages,
