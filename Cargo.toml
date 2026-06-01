@@ -426,7 +426,7 @@ clap = { version = "4.5.60", default-features = false, features = ["derive"] }
 corepc-node = { version = "0.10.0", features = ["29_0"] }
 criterion = { version = "0.8.2", features = ["html_reports"] }
 deadpool = "0.13.0"
-digest = "0.10"
+digest = "0.11"
 ethnum = "1.5.0"
 eyre = "0.6"
 format_serde_error = { git = "https://github.com/AlexanderThaller/format_serde_error" }
