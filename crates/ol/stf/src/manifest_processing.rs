@@ -29,9 +29,8 @@ use crate::{
 /// Manifests may be included in any block within an epoch; this does not imply
 /// the block is an epoch terminal. The manifest heights must be strictly
 /// sequential after the state's `last_l1_height`, which carries the running
-/// cursor across blocks since [`append_manifest`](IStateAccessorMut::append_manifest)
-/// is applied eagerly here. The ASM-log *effects* are deferred to
-/// [`process_epoch_terminal`].
+/// cursor across blocks since `append_l1_block_rec` is called eagerly here. The
+/// ASM-log *effects* are deferred to [`process_epoch_terminal`].
 ///
 /// Accepts a plain slice rather than the per-block
 /// [`OLAsmManifestContainer`](strata_ol_chain_types_new::OLAsmManifestContainer)
@@ -47,7 +46,7 @@ use crate::{
         epoch = state.cur_epoch(),
     ),
 )]
-pub fn buffer_block_manifests<S: IStateAccessorMut>(
+pub fn process_block_manifests<S: IStateAccessorMut>(
     state: &mut S,
     manifests: &[AsmManifest],
 ) -> ExecResult<()> {
@@ -75,7 +74,7 @@ pub fn buffer_block_manifests<S: IStateAccessorMut>(
             log_count = mf.logs().len(),
             "buffering asm manifest logs",
         );
-        buffer_asm_manifest(state, real_height, mf)?;
+        handle_asm_manifest(state, real_height, mf)?;
     }
 
     Ok(())
@@ -140,10 +139,12 @@ fn next_manifest_height(last_l1_height: L1Height, index: usize) -> ExecResult<L1
         .ok_or(ExecError::AsmManifestHeightOverflow)
 }
 
-/// Buffers a single manifest: appends each of its logs to the intraepoch
-/// pending-log buffer and eagerly accepts the manifest into the ASM MMR (which
+/// Handles a single manifest.
+///
+/// Appends each of its logs to the intraepoch pending-log buffer and eagerly
+/// accepts the L1 block record for the manifest into the ASM MMR (which
 /// advances `last_l1_height`).
-fn buffer_asm_manifest<S: IStateAccessorMut>(
+fn handle_asm_manifest<S: IStateAccessorMut>(
     state: &mut S,
     real_height: L1Height,
     mf: &AsmManifest,

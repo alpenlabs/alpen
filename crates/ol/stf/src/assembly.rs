@@ -109,7 +109,7 @@ pub fn execute_block_manifest_buffering<S: IStateAccessorMut>(
     state: &mut S,
     manifests: &[AsmManifest],
 ) -> ExecResult<()> {
-    manifest_processing::buffer_block_manifests(state, manifests)
+    manifest_processing::process_block_manifests(state, manifests)
 }
 
 /// Processes the epoch terminal: drains buffered ASM logs, resets intraepoch

@@ -192,7 +192,7 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
 
     // 4. Buffer any manifests carried by this block (allowed in any block).
     if let Some(manifest_container) = body.manifests() {
-        manifest_processing::buffer_block_manifests(state, manifest_container.manifests())?;
+        manifest_processing::process_block_manifests(state, manifest_container.manifests())?;
     }
 
     // 5. For non-terminal blocks, the header state root reflects the state
@@ -398,7 +398,7 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     // DA diff does not carry.
     let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
     let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
-    manifest_processing::buffer_block_manifests(state, manifests)?;
+    manifest_processing::process_block_manifests(state, manifests)?;
     manifest_processing::process_epoch_terminal(state, &term_ctx)?;
     output.verify_logs_within_block_limit()?;
 
@@ -495,7 +495,7 @@ mod tests {
             .expect("state-changing epoch diff should apply");
         let output = ExecOutputBuffer::new_empty();
         let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
-        manifest_processing::buffer_block_manifests(&mut expected_state, manifests.manifests())
+        manifest_processing::process_block_manifests(&mut expected_state, manifests.manifests())
             .expect("manifest buffering should succeed");
         manifest_processing::process_epoch_terminal(&mut expected_state, &term_ctx)
             .expect("epoch terminal processing should succeed");

@@ -12,7 +12,7 @@ use strata_ledger_types::{
     ISnarkAccountState, IStateAccessor, IStateAccessorMut, PendingAsmLog, StateError,
 };
 
-use crate::{buffer_block_manifests, errors::ExecError, test_utils::*};
+use crate::{errors::ExecError, process_block_manifests, test_utils::*};
 
 /// A manifest in a non-terminal block buffers its logs (and eagerly advances
 /// the ASM MMR / `last_l1_height`) without applying the deposit effect; the
@@ -260,7 +260,7 @@ fn intraepoch_buffer_full_is_rejected() {
     let manifest = FixtureAsmManifestBuilder::new_at_height(1)
         .with_log(raw_log)
         .build();
-    let err = buffer_block_manifests(&mut state, &[manifest])
+    let err = process_block_manifests(&mut state, &[manifest])
         .expect_err("buffering into a full intraepoch buffer must error");
 
     assert!(
