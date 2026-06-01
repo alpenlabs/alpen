@@ -67,12 +67,16 @@ jobs:
           mask-password: "true"
 
       - name: Pull datatool image
-        run: docker pull "${DATATOOL_REPO}:${{ inputs.commit }}"
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: docker pull "${DATATOOL_REPO}:${COMMIT}"
 
       - name: Verify chainspec
+        env:
+          CHAIN_CONFIG: ${{ inputs.chain_config }}
         run: |
-          echo "Chain config: ${{ inputs.chain_config }}"
-          python3 -c "import json; d=json.load(open('${{ inputs.chain_config }}')); print(f'chainId: {d[\"config\"][\"chainId\"]}')"
+          echo "Chain config: ${CHAIN_CONFIG}"
+          python3 -c "import json,os; d=json.load(open(os.environ['CHAIN_CONFIG'])); print(f'chainId: {d[\"config\"][\"chainId\"]}')"
 
       - name: Generate params
         env:
@@ -87,15 +91,21 @@ jobs:
 
       - name: rollup-params.json
         if: always()
-        run: python3 -m json.tool .github/params/out/${{ inputs.env }}/rollup-params.json 2>/dev/null || echo "Not generated"
+        env:
+          DEPLOY_ENV: ${{ inputs.env }}
+        run: python3 -m json.tool ".github/params/out/${DEPLOY_ENV}/rollup-params.json" 2>/dev/null || echo "Not generated"
 
       - name: ol-params.json
         if: always()
-        run: python3 -m json.tool .github/params/out/${{ inputs.env }}/ol-params.json 2>/dev/null || echo "Not generated"
+        env:
+          DEPLOY_ENV: ${{ inputs.env }}
+        run: python3 -m json.tool ".github/params/out/${DEPLOY_ENV}/ol-params.json" 2>/dev/null || echo "Not generated"
 
       - name: asm-params.json
         if: always()
-        run: python3 -m json.tool .github/params/out/${{ inputs.env }}/asm-params.json 2>/dev/null || echo "Not generated"
+        env:
+          DEPLOY_ENV: ${{ inputs.env }}
+        run: python3 -m json.tool ".github/params/out/${DEPLOY_ENV}/asm-params.json" 2>/dev/null || echo "Not generated"
 
       - name: Upload params artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
