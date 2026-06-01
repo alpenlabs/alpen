@@ -22,11 +22,10 @@ if [ "${DUMMY_OL_CLIENT:-0}" = "1" ]; then
 else
     set -- \
         --ol-client-url "${OL_CLIENT_URL:-ws://strata:8432}" \
-        --ol-submit-url "${OL_SUBMIT_URL:-ws://strata:8435}" \
         "$@"
 fi
 
-# Sequencer-only: DA flags and BTC credentials
+# Sequencer-only: submit URL, DA flags, and BTC credentials
 if [ "${SEQUENCER_MODE}" = "true" ]; then
     BITCOIND_RPC_URL="${BITCOIND_RPC_URL:?BITCOIND_RPC_URL must be set}"
     BITCOIND_RPC_USER="${BITCOIND_RPC_USER:?BITCOIND_RPC_USER must be set}"
@@ -36,6 +35,7 @@ if [ "${SEQUENCER_MODE}" = "true" ]; then
 
     set -- \
         --sequencer \
+        --ol-submit-url "${OL_SUBMIT_URL:-ws://strata:8435}" \
         --ee-da-magic-bytes "${EE_DA_MAGIC_BYTES}" \
         --btc-rpc-url "${BITCOIND_RPC_URL}" \
         --btc-rpc-user "${BITCOIND_RPC_USER}" \
