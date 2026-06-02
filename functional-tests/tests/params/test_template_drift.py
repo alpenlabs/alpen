@@ -75,27 +75,9 @@ def collect_placeholder_keys(obj, prefix=""):
 
 
 def generate_raw_params(tmpdir):
-    """Generate all 3 params using local datatool with fixture L1 view."""
-    rollup_path = Path(tmpdir) / "rollup-params.json"
+    """Generate ol-params and asm-params using local datatool with fixture L1 view."""
     ol_path = Path(tmpdir) / "ol-params.json"
     asm_path = Path(tmpdir) / "asm-params.json"
-
-    dummy_seq_pk = "ab" * 32
-    run_datatool(
-        [
-            "genparams",
-            "--genesis-l1-view-file",
-            str(GENESIS_L1_VIEW),
-            "--name",
-            "ALPN",
-            "--seq-pk",
-            dummy_seq_pk,
-            "--checkpoint-predicate",
-            "bip340-schnorr-test",
-            "-o",
-            str(rollup_path),
-        ]
-    )
 
     run_datatool(
         [
@@ -137,7 +119,6 @@ def generate_raw_params(tmpdir):
     assert asm_path.exists(), f"asm-params not generated at {asm_path}"
 
     return {
-        "rollup-params": rollup_path,
         "ol-params": ol_path,
         "asm-params": asm_path,
     }

@@ -1,12 +1,12 @@
 # CI Params Generation
 
-Generates deployment params (`rollup-params.json`, `ol-params.json`, `asm-params.json`) using the prebuilt datatool image from a given commit.
+Generates deployment params (`ol-params.json`, `asm-params.json`) using the prebuilt datatool image from a given commit.
 
 ## Templates
 
-Each environment has a template directory (`templates/<env>/`) containing the three param files with:
+Each environment has a template directory (`templates/<env>/`) containing the two param files with:
 
-- **Static values**: fields that are decided ahead of deployment and specific to the environment — operator pubkeys, admin pubkeys, sequencer pubkey, deposit amount, denomination, recovery delay, confirmation depths, etc. These must be committed before running the workflow.
+- **Static values**: fields that are decided ahead of deployment and specific to the environment — operator pubkeys, admin pubkeys, sequencer predicate, denomination, recovery delay, confirmation depths, etc. These must be committed before running the workflow.
 - **Placeholders** (`__FIELD_NAME__`): fields that depend on the code version or L1 state at deployment time — verification keys (VKs), genesis L1 view, `genesis_ol_blkid`, `inner_state`. These are filled by datatool during generation.
 
 When adding a new environment or updating an existing one, commit the static values first. The workflow fills in the rest.
@@ -42,7 +42,7 @@ Each environment connects to its own bitcoin node. The node only serves `getbloc
 To add a new environment:
 1. Create the GitHub environment (Settings → Environments) with the exact name used in the workflow input
 2. Add the secrets above
-3. Create a template directory `templates/<env>/` with the three param files
+3. Create a template directory `templates/<env>/` with the two param files
 4. Add the environment name to the `options` list in `ci-genparams.yml`
 
 ## Files
