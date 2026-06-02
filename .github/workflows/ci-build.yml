@@ -171,8 +171,7 @@ jobs:
           ls -la artifacts/ artifacts/elfs/sp1/
 
           # Echo VKs for cross-validation against ci-genparams workflow
-          CHECKPOINT_VK=$(./target/release/strata-datatool genparams \
-            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json | jq -r '.checkpoint_predicate')
+          CHECKPOINT_VK=$(./target/release/strata-datatool gen-checkpoint-predicate)
           echo "Checkpoint VK (ci-build): ${CHECKPOINT_VK}"
 
           ALPEN_VK=$(./target/release/strata-datatool gen-ol-params \
