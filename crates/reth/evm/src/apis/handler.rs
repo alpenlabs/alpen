@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use revm::{
     context::{
         result::{EVMError, HaltReason, InvalidTransaction},
-        Block, Cfg, ContextTr, JournalTr, Transaction,
+        Block, ContextTr, JournalTr, Transaction,
     },
     handler::{
         instructions::InstructionProvider, EvmTr, FrameResult, FrameTr, Handler, PrecompileProvider,
@@ -13,7 +13,7 @@ use revm::{
     state::EvmState,
     Database, Inspector,
 };
-use revm_primitives::{hardfork::SpecId, U256};
+use revm_primitives::U256;
 
 use crate::apis::validation;
 
@@ -61,28 +61,14 @@ where
         let basefee = block.basefee() as u128;
         let effective_gas_price = tx.effective_gas_price(basefee);
 
-        // Calculate total gas used
         let gas = exec_result.gas();
         let gas_used = (gas.spent() - gas.refunded() as u64) as u128;
 
-        // Calculate base fee in ETH (wei)
-        let base_fee_total = basefee * gas_used;
-
-        // Calculate coinbase/beneficiary reward (EIP-1559: effective_gas_price - basefee)
-        let coinbase_gas_price = if context.cfg().spec().into().is_enabled_in(SpecId::LONDON) {
-            effective_gas_price.saturating_sub(basefee)
-        } else {
-            effective_gas_price
-        };
-        let coinbase_reward = coinbase_gas_price * gas_used;
-
-        let total_fees = base_fee_total + coinbase_reward;
-
-        // Transfer all gas fees collected to beneficiary
+        // Credit all gas fees to the beneficiary (base fee + priority fee).
         context
             .journal_mut()
             .load_account_mut(beneficiary)?
-            .incr_balance(U256::from(total_fees));
+            .incr_balance(U256::from(effective_gas_price * gas_used));
 
         Ok(())
     }
