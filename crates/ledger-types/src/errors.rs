@@ -75,6 +75,14 @@ pub enum StateError {
         existing: AccountId,
         new: AccountId,
     },
+
+    #[error("pending ASM logs buffer is full")]
+    PendingAsmLogsFull,
+
+    #[error(
+        "pending ASM logs buffer would overflow (current {current}, adding {adding}, max {max})"
+    )]
+    PendingAsmLogsOverflow { current: u64, adding: u64, max: u64 },
 }
 
 /// Execution result error.
@@ -166,9 +174,6 @@ pub enum ExecError {
 
     #[error("incorrect slot (expected {expected}, got {got})")]
     IncorrectSlot { expected: u64, got: u64 },
-
-    #[error("body inconsistent with header terminal flag")]
-    InconsistentBodyTerminality,
 
     #[error("genesis block was not a terminal")]
     GenesisNonterminal,

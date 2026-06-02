@@ -3,10 +3,11 @@
 mod asm_manifests;
 mod chain;
 mod chain_processing;
-mod da_preseal_correctness;
+mod da_epoch_root_correctness;
 mod deposit_withdrawal;
 mod ee_predicate_update;
 mod inbox;
+mod intraepoch_buffering;
 mod ledger_references;
 mod limbo;
 mod partial_execution;

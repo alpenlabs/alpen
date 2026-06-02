@@ -370,7 +370,7 @@ async fn fetch_asm_manifests_for_terminal_block<
 >(
     ctx: &C,
     parent_state: &S,
-) -> BlockAssemblyResult<Option<OLL1ManifestContainer>> {
+) -> BlockAssemblyResult<Option<OLAsmManifestContainer>> {
     let last_l1_height = parent_state.last_l1_height();
     let start_height = last_l1_height
         .checked_add(1)
@@ -389,7 +389,7 @@ async fn fetch_asm_manifests_for_terminal_block<
         "fetched asm manifests for terminal block",
     );
 
-    let container = OLL1ManifestContainer::new(manifests)?;
+    let container = OLAsmManifestContainer::new(manifests)?;
 
     // Return the container regardless of whether manifests is empty or not. Because otherwise, if
     // for some reasons L1 is slow, epoch sealing policy is not respected.
@@ -641,7 +641,7 @@ fn build_block_template<S>(
     accumulated_batch: WriteBatch<S::AccountState>,
     output_buffer: ExecOutputBuffer,
     successful_txs: Vec<OLTransaction>,
-    manifest_container: Option<OLL1ManifestContainer>,
+    manifest_container: Option<OLAsmManifestContainer>,
 ) -> BlockAssemblyResult<(FullBlockTemplate, S)>
 where
     S: BlockAssemblyStateAccess,
@@ -650,34 +650,33 @@ where
     let mut final_state = parent_state.as_ref().clone();
     final_state.apply_write_batch(accumulated_batch)?;
 
-    // Compute preseal state root (after transactions, before manifest processing)
-    let preseal_state_root = final_state.compute_state_root()?;
+    // Assembly policy: a block that carries manifests is treated as the epoch
+    // terminal. The STF decouples manifest inclusion from terminality (logs are
+    // buffered into intraepoch state regardless), but block assembly currently
+    // only emits manifests at epoch boundaries, so this preserves the existing
+    // external behavior while leaving the infrastructure free to change later.
+    let is_terminal = manifest_container.is_some();
 
-    // For terminal blocks, process manifests to get final state root
-    // For non-terminal blocks, preseal root IS the final root
-    let (post_state_roots, l1_update) = if let Some(mc) = manifest_container {
-        // Terminal block: process manifests to advance epoch and update state
-        // Use the same output_buffer to accumulate logs from manifest processing
-        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output_buffer);
-        process_block_manifests(&mut final_state, &mc, &basic_ctx).map_err(|e| {
-            error!(
-                component = "ol_block_assembly",
-                ?e,
-                "manifest processing failed"
-            );
+    // Buffer any manifests carried by this block into intraepoch state.
+    if let Some(mc) = &manifest_container {
+        process_block_manifests(&mut final_state, mc.manifests()).map_err(|e| {
+            error!(?e, "manifest buffering failed");
             BlockAssemblyError::BlockConstruction(e)
         })?;
+    }
 
-        let final_state_root = final_state.compute_state_root()?;
-        let post_commitment =
-            BlockPostStateCommitments::Terminal(preseal_state_root, final_state_root);
-        let update = OLL1Update::new(preseal_state_root, mc);
-        (post_commitment, Some(update))
-    } else {
-        // Non-terminal block: no manifest processing needed
-        let post_commitment = BlockPostStateCommitments::Common(preseal_state_root);
-        (post_commitment, None)
-    };
+    // At the epoch terminal, drain the buffered ASM logs, reset intraepoch
+    // state, and advance the epoch.
+    if is_terminal {
+        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output_buffer);
+        process_epoch_terminal(&mut final_state, &basic_ctx).map_err(|e| {
+            error!(?e, "epoch terminal processing failed");
+            BlockAssemblyError::BlockConstruction(e)
+        })?;
+    }
+
+    // The single final state root after all of the block's processing.
+    let state_root = final_state.compute_state_root()?;
 
     // Defense-in-depth: per-tx and manifest emission paths enforce the cap at
     // emit time, and this preserves an explicit terminal assembly invariant
@@ -690,23 +689,26 @@ where
     let logs = output_buffer.into_logs();
 
     // Build exec outputs to get header state root
-    let exec_outputs = BlockExecOutputs::new(post_state_roots, logs);
+    let exec_outputs = BlockExecOutputs::new(state_root, logs);
     let logs_root = exec_outputs.compute_block_logs_root();
-    let header_state_root = *exec_outputs.header_post_state_root();
+    let header_state_root = *exec_outputs.state_root();
 
     // Extract slot/epoch from block context
     let block_slot = block_context.slot();
     let block_epoch = block_context.epoch();
     let parent_blkid = block_context.compute_parent_blkid();
 
-    // Build tx segment and body (terminal if l1_update is provided)
+    // Build tx segment and body, attaching any manifests this block carries.
     let tx_segment = OLTxSegment::new(successful_txs)?;
-    let body = OLBlockBody::new(tx_segment, l1_update);
+    let mut body = OLBlockBody::new_common(tx_segment);
+    if let Some(mc) = manifest_container {
+        body.set_manifests(mc);
+    }
     let body_root = body.compute_hash_commitment();
 
-    // Set flags from body
+    // Terminality is the explicit assembly policy decision above.
     let mut flags = BlockFlags::zero();
-    flags.set_is_terminal(body.is_body_terminal());
+    flags.set_is_terminal(is_terminal);
 
     // Use timestamp from config if provided, otherwise compute from system time.
     // OL block timestamps are expressed in milliseconds since Unix epoch.
@@ -1433,14 +1435,13 @@ mod tests {
         expected_heights: &[L1Height],
     ) {
         let body = block_template.body();
-        let l1_update = body.l1_update();
+        let manifest_cont = body.manifests();
         assert!(
-            l1_update.is_some(),
-            "Terminal block should contain L1 update"
+            manifest_cont.is_some(),
+            "Terminal block should contain manifests"
         );
 
-        let manifest_cont = l1_update.unwrap().manifest_cont();
-        let manifests = manifest_cont.manifests();
+        let manifests = manifest_cont.unwrap().manifests();
         assert_eq!(
             manifests.len(),
             expected_heights.len(),
@@ -1462,10 +1463,9 @@ mod tests {
     // Helper to validate non-terminal block without L1 updates
     fn check_non_terminal_block(block_template: &FullBlockTemplate) {
         let body = block_template.body();
-        let l1_update = body.l1_update();
         assert!(
-            l1_update.is_none(),
-            "Non-terminal block should NOT contain L1 update"
+            body.manifests().is_none(),
+            "Non-terminal block should NOT contain manifests"
         );
     }
 
@@ -1816,21 +1816,12 @@ mod tests {
 
         assert_eq!(tx_count, 0, "terminal empty block should have zero txs");
         assert!(
-            body.l1_update().is_some(),
-            "terminal block should include l1_update even when tx segment is empty"
-        );
-        assert!(
-            body.is_body_terminal(),
-            "terminal body must report terminal status"
+            body.manifests().is_some(),
+            "terminal block should include manifests even when tx segment is empty"
         );
         assert!(
             template.header().is_terminal(),
             "terminal header flag must be set"
-        );
-        assert_eq!(
-            template.header().is_terminal(),
-            body.is_body_terminal(),
-            "header terminal flag must match body terminal status"
         );
     }
 
@@ -1875,21 +1866,12 @@ mod tests {
 
         assert_eq!(tx_count, 0, "non-terminal empty block should have zero txs");
         assert!(
-            body.l1_update().is_none(),
-            "non-terminal empty block should not include l1_update"
-        );
-        assert!(
-            !body.is_body_terminal(),
-            "non-terminal body must not report terminal status"
+            body.manifests().is_none(),
+            "non-terminal empty block should not include manifests"
         );
         assert!(
             !template.header().is_terminal(),
             "non-terminal header flag must not be set"
-        );
-        assert_eq!(
-            template.header().is_terminal(),
-            body.is_body_terminal(),
-            "header terminal flag must match body terminal status"
         );
         // Empty log sets must commit to the canonical zero logs root.
         assert_eq!(

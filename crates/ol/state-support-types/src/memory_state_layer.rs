@@ -100,6 +100,24 @@ impl IStateAccessor for MemoryStateBaseLayer {
         self.state.epoch.l1_block_refs_mmr()
     }
 
+    // ===== Intraepoch state methods =====
+
+    fn pending_asm_logs_len(&self) -> usize {
+        self.state.intraepoch_state().pending_asm_logs().len()
+    }
+
+    fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
+        self.state
+            .intraepoch_state()
+            .pending_asm_logs()
+            .get(idx)
+            .map(PendingAsmLog::from)
+    }
+
+    fn pending_asm_logs_full(&self) -> bool {
+        self.state.intraepoch_state().is_pending_logs_full()
+    }
+
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
@@ -164,6 +182,17 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.state.epoch.set_total_ledger_balance(amt);
+    }
+
+    fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
+        let ssz_entry = entry.into();
+        self.state
+            .intraepoch_state_mut()
+            .try_append_pending_log(ssz_entry)
+    }
+
+    fn reset_intraepoch_state(&mut self) {
+        self.state.intraepoch_state_mut().reset();
     }
 
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>

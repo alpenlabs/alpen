@@ -5,7 +5,7 @@ use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
-use strata_ol_stf::execute_block_batch_preseal;
+use strata_ol_stf::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 
 use crate::{BlockAssemblyAnchorContext, BlockAssemblyError, BlockAssemblyStateAccess};
@@ -127,7 +127,7 @@ where
     let initial_state = fetch_state(&epoch_blocks.epoch_parent, ctx).await?;
 
     let mut da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(initial_state));
-    let batch_logs = execute_block_batch_preseal(
+    let batch_logs = execute_block_batch_predrain(
         &mut da_state,
         &epoch_blocks.blocks,
         &epoch_blocks.epoch_parent,

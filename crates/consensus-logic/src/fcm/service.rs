@@ -1024,7 +1024,7 @@ mod tests {
             &mut genesis_state,
             &BlockInfo::new_genesis(1_000),
             None,
-            BlockComponents::new_manifests(vec![genesis_manifest]),
+            BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal(),
         )
         .expect("genesis executes");
         let genesis = ExecutedBlock::new(genesis_completed, &genesis_state);

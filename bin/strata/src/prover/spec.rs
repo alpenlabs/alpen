@@ -11,7 +11,7 @@ pub(crate) use strata_checkpoint_types::CheckpointProofTask as CheckpointTask;
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_params::BridgeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_ol_stf::execute_block_batch_preseal;
+use strata_ol_stf::execute_block_batch_predrain;
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::NodeStorage;
@@ -154,7 +154,7 @@ fn fetch_input_blocking(
     let da_state_diff_bytes = {
         let mut da_state =
             DaAccumulatingState::new(MemoryStateBaseLayer::new((*start_state).clone()));
-        execute_block_batch_preseal(&mut da_state, &blocks, &parent, bridge_params)
+        execute_block_batch_predrain(&mut da_state, &blocks, &parent, bridge_params)
             .map_err(|e| ProverError::DaComputation(e.to_string()))?;
         da_state
             .take_completed_epoch_da_blob()

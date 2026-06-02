@@ -2,7 +2,7 @@ use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, 
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
 use crate::{
-    Coin,
+    Coin, PendingAsmLog,
     account::{IAccountState, IAccountStateMut, NewAccountData},
     errors::StateResult,
 };
@@ -50,6 +50,18 @@ pub trait IStateAccessor {
     /// genesis with zero-hash leaves for heights `0..=genesis_l1_height`, so
     /// callers can use raw L1 heights as MMR leaf indices everywhere.
     fn l1_block_refs_mmr(&self) -> &Mmr64;
+
+    // ===== Intraepoch state methods =====
+
+    /// Returns the number of pending ASM log entries buffered for the current
+    /// epoch.
+    fn pending_asm_logs_len(&self) -> usize;
+
+    /// Looks up a pending ASM log entry by index, if present.
+    fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog>;
+
+    /// Returns whether the pending ASM logs buffer has reached capacity.
+    fn pending_asm_logs_full(&self) -> bool;
 
     // ===== Account methods =====
 
@@ -110,6 +122,17 @@ pub trait IStateAccessorMut: IStateAccessor {
     /// This does not use the [`Coin`] abstraction since it represents an
     /// obligation to fulfill, not a credit.
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount);
+
+    // ===== Intraepoch state methods =====
+
+    /// Appends a new pending ASM log entry to the intraepoch buffer.
+    ///
+    /// Returns `StateError::PendingAsmLogsFull` if the buffer is at its
+    /// capacity bound.
+    fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()>;
+
+    /// Clears all pending intraepoch state. Called at the epoch boundary.
+    fn reset_intraepoch_state(&mut self);
 
     // ===== Account methods =====
 
