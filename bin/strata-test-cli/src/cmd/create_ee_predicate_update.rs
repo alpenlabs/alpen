@@ -145,7 +145,8 @@ fn build_admin_commit_reveal_pair(
     )?;
     sync_wallet(&mut wallet, &client)?;
 
-    let fee_rate = FeeRate::from_sat_per_vb_unchecked(args.fee_rate);
+    let fee_rate_sat_per_vb = u32::try_from(args.fee_rate).context("fee rate exceeds u32 range")?;
+    let fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate_sat_per_vb);
     let mut psbt = {
         let mut builder = wallet.build_tx();
         builder.ordering(TxOrdering::Untouched);

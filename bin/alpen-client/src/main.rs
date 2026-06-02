@@ -49,6 +49,7 @@ use bitcoind_async_client::{
     corepc_types::bitcoin::{
         key::Keypair,
         secp256k1::{Secp256k1, SecretKey},
+        FeeRate,
     },
     traits::Wallet as _,
     Auth, Client as BtcClient,
@@ -1316,8 +1317,11 @@ fn resolve_writer_config(ext: &AdditionalConfig) -> eyre::Result<WriterConfig> {
             conf_target: ext.btcio_conf_target,
         },
         BtcioFeePolicyArg::Fixed => {
-            let fee_rate = ext.btcio_fee_rate.ok_or_else(|| {
+            let fee_rate_sat_vb = ext.btcio_fee_rate.ok_or_else(|| {
                 eyre::eyre!("--btcio-fee-rate is required when --btcio-fee-policy=fixed")
+            })?;
+            let fee_rate = FeeRate::from_sat_per_vb(fee_rate_sat_vb).ok_or_else(|| {
+                eyre::eyre!("--btcio-fee-rate overflows FeeRate: {fee_rate_sat_vb}")
             })?;
             FeePolicy::Fixed { fee_rate }
         }
@@ -1353,7 +1357,7 @@ fn log_writer_config(cfg: &WriterConfig) {
             info!(
                 target: "alpen-client",
                 policy = "fixed",
-                fee_rate_sat_vb = fee_rate,
+                fee_rate_sat_kwu = fee_rate.to_sat_per_kwu(),
                 "btcio writer configured",
             );
         }
@@ -1400,7 +1404,12 @@ mod resolve_writer_config_tests {
     #[test]
     fn fixed_one_sat_vb() {
         let cfg = resolve_writer_config(&args(BtcioFeePolicyArg::Fixed, Some(1), None)).unwrap();
-        assert_eq!(cfg.fee_policy(), &FeePolicy::Fixed { fee_rate: 1 });
+        assert_eq!(
+            cfg.fee_policy(),
+            &FeePolicy::Fixed {
+                fee_rate: FeeRate::from_sat_per_vb_u32(1)
+            }
+        );
     }
 
     #[test]

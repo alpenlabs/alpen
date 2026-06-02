@@ -9,17 +9,17 @@ use bitcoin::{
     key::{Parity, UntweakedKeypair},
     taproot::{ControlBlock, LeafVersion, TaprootMerkleBranch},
     transaction::Version,
-    Address, Amount, Block, BlockHash, Network, Psbt, ScriptBuf, SignedAmount, TapNodeHash,
-    Transaction, TxOut, Txid, Work, XOnlyPublicKey,
+    Address, Amount, Block, BlockHash, FeeRate, Network, Psbt, ScriptBuf, SignedAmount,
+    TapNodeHash, Transaction, TxOut, Txid, Work, XOnlyPublicKey,
 };
 use bitcoind_async_client::{
     corepc_types::{
         model::{
-            Bip125Replaceable, GetAddressInfo, GetBlockchainInfo, GetMempoolInfo, GetRawMempool,
-            GetRawMempoolVerbose, GetRawTransaction, GetRawTransactionVerbose, GetTransaction,
-            GetTxOut, ListTransactions, ListUnspent, ListUnspentItem, MempoolAcceptance,
-            PsbtBumpFee, SignRawTransaction, SubmitPackage, SubmitPackageTxResult,
-            TestMempoolAccept, WalletCreateFundedPsbt, WalletProcessPsbt,
+            Bip125Replaceable, EstimateSmartFee, GetAddressInfo, GetBlockchainInfo, GetMempoolInfo,
+            GetRawMempool, GetRawMempoolVerbose, GetRawTransaction, GetRawTransactionVerbose,
+            GetTransaction, GetTxOut, ListTransactions, ListUnspent, ListUnspentItem,
+            MempoolAcceptance, PsbtBumpFee, SignRawTransaction, SubmitPackage,
+            SubmitPackageTxResult, TestMempoolAccept, WalletCreateFundedPsbt, WalletProcessPsbt,
         },
         v29::{ImportDescriptors, ImportDescriptorsResult},
     },
@@ -117,8 +117,12 @@ fn empty_test_psbt() -> Psbt {
 }
 
 impl Reader for TestBitcoinClient {
-    async fn estimate_smart_fee(&self, _conf_target: u16) -> ClientResult<u64> {
-        Ok(3)
+    async fn estimate_smart_fee(&self, _conf_target: u16) -> ClientResult<EstimateSmartFee> {
+        Ok(EstimateSmartFee {
+            fee_rate: Some(bitcoin::FeeRate::from_sat_per_vb_u32(3)),
+            errors: None,
+            blocks: 1,
+        })
     }
 
     async fn get_block_header(&self, _hash: &BlockHash) -> ClientResult<Header> {
@@ -526,7 +530,7 @@ pub fn build_reveal_transaction_test(
     input_transaction: Transaction,
     recipient: Address,
     output_value: u64,
-    fee_rate: u64,
+    fee_rate: FeeRate,
     reveal_script: &ScriptBuf,
     tag_script: ScriptBuf,
     control_block: &ControlBlock,
@@ -581,9 +585,16 @@ pub fn create_checkpoint_envelope_tx(address: &str, l1_payload: L1Payload) -> Tr
     };
 
     // Create transaction using control block
-    let mut tx =
-        build_reveal_transaction_test(inp_tx, address, 100, 10, &reveal_script, tag_script, &cb)
-            .unwrap();
+    let mut tx = build_reveal_transaction_test(
+        inp_tx,
+        address,
+        100,
+        FeeRate::from_sat_per_vb_u32(10),
+        &reveal_script,
+        tag_script,
+        &cb,
+    )
+    .unwrap();
     tx.input[0].witness.push([1; 3]);
     tx.input[0].witness.push(reveal_script);
     tx.input[0].witness.push(cb.serialize());

@@ -16,8 +16,8 @@ use bitcoin::{
         TaprootSpendInfo,
     },
     transaction::Version,
-    Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid,
-    Witness,
+    Address, Amount, FeeRate, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+    Txid, Witness,
 };
 use bitcoind_async_client::{
     corepc_types::model::ListUnspentItem,
@@ -51,8 +51,8 @@ pub struct EnvelopeConfig {
     pub reveal_amount: u64,
     /// Bitcoin network
     pub network: Network,
-    /// Bitcoin fee rate, sats/vByte
-    pub fee_rate: u64,
+    /// Bitcoin fee rate.
+    pub fee_rate: FeeRate,
     /// Sequencer public key for the taproot envelope script (SPS-51).
     ///
     /// Used as the `<pubkey>` in `<pubkey> CHECKSIG` of the envelope script.
@@ -68,7 +68,7 @@ impl EnvelopeConfig {
         magic_bytes: MagicBytes,
         sequencer_address: Address,
         network: Network,
-        fee_rate: u64,
+        fee_rate: FeeRate,
         reveal_amount: u64,
         envelope_pubkey: Option<XOnlyPublicKey>,
     ) -> Self {
@@ -91,6 +91,9 @@ pub enum EnvelopeError {
 
     #[error("insufficient funds for tx (need {0} sats, have {1} sats)")]
     NotEnoughUtxos(u64, u64),
+
+    #[error("fee calculation overflowed")]
+    FeeOverflow,
 
     #[error("Could not sign raw transaction: {0}")]
     SignRawTransaction(#[source] ClientError),
@@ -229,7 +232,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
 // TODO(STR-3411): make OL node resilient against the Bitcoin node not being available.
 async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
     ctx: &WriterContext<R>,
-) -> anyhow::Result<(Network, Vec<ListUnspentItem>, u64)> {
+) -> anyhow::Result<(Network, Vec<ListUnspentItem>, FeeRate)> {
     let network = ctx.client.network().await?;
     let utxos = ctx
         .client
@@ -282,7 +285,7 @@ pub fn create_envelope_transactions(
         &reveal_script,
         &tag_script,
         &taproot_spend_info,
-    );
+    )?;
 
     // Build commit tx
     let (commit_tx, _) = build_commit_transaction(
@@ -423,7 +426,7 @@ fn build_commit_transaction(
     recipient: Address,
     change_address: Address,
     output_value: u64,
-    fee_rate: u64,
+    fee_rate: FeeRate,
 ) -> Result<(Transaction, Vec<ListUnspentItem>), EnvelopeError> {
     // get single input single output transaction size
     let mut size = get_size(
@@ -444,9 +447,11 @@ fn build_commit_transaction(
         .collect();
 
     let (commit_txn, consumed_utxo) = loop {
-        let fee = (last_size as u64) * fee_rate;
+        let fee = fee_sats_for_vsize(last_size, fee_rate)?;
 
-        let input_total = output_value + fee;
+        let input_total = output_value
+            .checked_add(fee)
+            .ok_or(EnvelopeError::FeeOverflow)?;
 
         let res = choose_utxos(&utxos, input_total)?;
 
@@ -519,7 +524,7 @@ pub fn build_reveal_transaction(
     input_transaction: Transaction,
     recipient: Address,
     output_value: u64,
-    fee_rate: u64,
+    fee_rate: FeeRate,
     reveal_script: &ScriptBuf,
     tag_script: ScriptBuf,
     control_block: &ControlBlock,
@@ -550,8 +555,12 @@ pub fn build_reveal_transaction(
         sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
     }];
     let size = get_size(&inputs, &outputs, Some(reveal_script), Some(control_block));
-    let fee = (size as u64) * fee_rate;
-    let input_required = Amount::from_sat(output_value + fee);
+    let fee = fee_sats_for_vsize(size, fee_rate)?;
+    let input_required = Amount::from_sat(
+        output_value
+            .checked_add(fee)
+            .ok_or(EnvelopeError::FeeOverflow)?,
+    );
     if input_utxo.value < Amount::from_sat(BITCOIN_DUST_LIMIT) || input_utxo.value < input_required
     {
         return Err(EnvelopeError::NotEnoughUtxos(
@@ -572,12 +581,12 @@ pub fn build_reveal_transaction(
 pub(crate) fn calculate_commit_output_value(
     recipient: &Address,
     reveal_value: u64,
-    fee_rate: u64,
+    fee_rate: FeeRate,
     reveal_script: &script::ScriptBuf,
     tag_script: &script::ScriptBuf,
     taproot_spend_info: &TaprootSpendInfo,
-) -> u64 {
-    get_size(
+) -> Result<u64, EnvelopeError> {
+    let reveal_vsize = get_size(
         &default_txin(),
         &[
             TxOut {
@@ -595,9 +604,19 @@ pub(crate) fn calculate_commit_output_value(
                 .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
                 .expect("Cannot create control block"),
         ),
-    ) as u64
-        * fee_rate
-        + reveal_value
+    );
+    let fee = fee_sats_for_vsize(reveal_vsize, fee_rate)?;
+    reveal_value
+        .checked_add(fee)
+        .ok_or(EnvelopeError::FeeOverflow)
+}
+
+pub(crate) fn fee_sats_for_vsize(vsize: usize, fee_rate: FeeRate) -> Result<u64, EnvelopeError> {
+    let vsize = u64::try_from(vsize).map_err(|_| EnvelopeError::FeeOverflow)?;
+    fee_rate
+        .fee_vb(vsize)
+        .map(|fee| fee.to_sat())
+        .ok_or(EnvelopeError::FeeOverflow)
 }
 
 /// Generates a random keypair for envelope construction.
@@ -832,7 +851,7 @@ mod tests {
             inp_txn,
             ctx.sequencer_address.clone(),
             ctx.config.reveal_amount,
-            8,
+            FeeRate::from_sat_per_vb_u32(8),
             &_reveal_script,
             tag_script.clone(),
             &control_block,
@@ -861,7 +880,7 @@ mod tests {
             inp_txn,
             ctx.sequencer_address.clone(),
             inp_required,
-            750,
+            FeeRate::from_sat_per_vb_u32(750),
             &_reveal_script,
             tag_script,
             &control_block,
@@ -887,7 +906,7 @@ mod tests {
             MagicBytes::new(*b"ALPN"),
             ctx.sequencer_address.clone(),
             Network::Regtest,
-            1000,
+            FeeRate::from_sat_per_vb_u32(1_000),
             546,
             Some(pubkey),
         );

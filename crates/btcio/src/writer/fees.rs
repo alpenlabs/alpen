@@ -4,6 +4,7 @@
 use std::sync::LazyLock;
 
 use anyhow::Context;
+use bitcoin::FeeRate;
 use bitcoind_async_client::traits::Reader;
 use reqwest::Url;
 use serde::Deserialize;
@@ -32,14 +33,16 @@ pub(crate) struct MempoolRecommendedFees {
 
 impl MempoolRecommendedFees {
     /// Selects the fee rate according to the given policy.
-    fn select(self, policy: MempoolExplorerFeePolicy) -> u64 {
-        match policy {
+    fn select(self, policy: MempoolExplorerFeePolicy) -> anyhow::Result<FeeRate> {
+        let fee_rate_sat_per_vb = match policy {
             MempoolExplorerFeePolicy::Fastest => self.fastest_fee,
             MempoolExplorerFeePolicy::HalfHour => self.half_hour_fee,
             MempoolExplorerFeePolicy::Hour => self.hour_fee,
             MempoolExplorerFeePolicy::Economy => self.economy_fee,
             MempoolExplorerFeePolicy::Minimum => self.minimum_fee,
-        }
+        };
+        FeeRate::from_sat_per_vb(fee_rate_sat_per_vb)
+            .ok_or_else(|| anyhow::anyhow!("mempool fee rate overflows: {fee_rate_sat_per_vb}"))
     }
 }
 
@@ -88,7 +91,7 @@ impl MempoolExplorerClient {
 pub(crate) async fn resolve_fee_rate<R: Reader>(
     client: &R,
     config: &WriterConfig,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<FeeRate> {
     let fee_rate = match config.fee_policy() {
         // NOTE(STR-2545, STR-2433): fee estimation is currently being doubled since we don't fully
         //                           support fee bumping ostensive mechanisms for making sure
@@ -96,14 +99,19 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
         //                           measure until we implement more robust fee bumping strategies,
         //                           at which point we can remove the doubling and rely on the fee
         //                           policies to provide accurate fee rates.
-        // NOTE(STR-2018): ensure fee is at least 1 sat/vB to avoid zero fee transactions.
-        //                 This will be revised once we support sub 1 sat/vB fee rates.
         FeePolicy::BitcoinD { conf_target } => {
             let fee_estimate = client
                 .estimate_smart_fee(*conf_target)
                 .await
-                .context("failed to estimate smart fee")?;
-            u64::max(fee_estimate, 1) * 2
+                .context("failed to estimate smart fee")
+                .and_then(|estimate| {
+                    estimate.fee_rate.ok_or_else(|| {
+                        anyhow::anyhow!("smart fee estimate unavailable: {:?}", estimate.errors)
+                    })
+                })?;
+            fee_estimate
+                .checked_mul(2)
+                .ok_or_else(|| anyhow::anyhow!("smart fee estimate overflows when doubled"))?
         }
         FeePolicy::MempoolExplorer {
             policy,
@@ -113,7 +121,9 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
             let fee_estimate =
                 resolve_mempool_fee_rate(client, mempool_base_url, *fallback_conf_target, *policy)
                     .await?;
-            u64::max(fee_estimate, 1) * 2
+            fee_estimate
+                .checked_mul(2)
+                .ok_or_else(|| anyhow::anyhow!("mempool fee estimate overflows when doubled"))?
         }
         FeePolicy::Fixed { fee_rate } => *fee_rate,
     };
@@ -128,11 +138,11 @@ async fn resolve_mempool_fee_rate<R: Reader>(
     base_url: &str,
     fallback_conf_target: u16,
     mempool_fee_policy: MempoolExplorerFeePolicy,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<FeeRate> {
     let explorer = MempoolExplorerClient::new(base_url)?;
 
     match explorer.fetch_recommended_fees().await {
-        Ok(fees) => Ok(fees.select(mempool_fee_policy)),
+        Ok(fees) => fees.select(mempool_fee_policy),
         Err(err) => {
             warn!(
                 %base_url,
@@ -144,6 +154,11 @@ async fn resolve_mempool_fee_rate<R: Reader>(
                 .estimate_smart_fee(fallback_conf_target)
                 .await
                 .context("failed to estimate smart fee after mempool fallback")
+                .and_then(|estimate| {
+                    estimate.fee_rate.ok_or_else(|| {
+                        anyhow::anyhow!("smart fee estimate unavailable: {:?}", estimate.errors)
+                    })
+                })
         }
     }
 }
@@ -152,6 +167,7 @@ async fn resolve_mempool_fee_rate<R: Reader>(
 mod tests {
     use std::sync::Arc;
 
+    use bitcoin::FeeRate;
     use strata_config::btcio::{
         FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig,
     };
@@ -265,7 +281,7 @@ mod tests {
             .expect("mempool fee lookup should succeed");
 
         // NOTE: double the fees here
-        assert_eq!(fee_rate, 7 * 2);
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(7 * 2));
     }
 
     #[tokio::test]
@@ -283,7 +299,7 @@ mod tests {
             .expect("mempool fee lookup should succeed");
 
         // NOTE: double the fees here
-        assert_eq!(fee_rate, 4 * 2);
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(4 * 2));
     }
 
     #[tokio::test]
@@ -297,7 +313,7 @@ mod tests {
             .expect("smart fee fallback should succeed");
 
         // NOTE: double the fees here
-        assert_eq!(fee_rate, 3 * 2);
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3 * 2));
     }
 
     #[tokio::test]
@@ -311,7 +327,7 @@ mod tests {
             .expect("smart fee fallback should succeed");
 
         // NOTE: double the fees here
-        assert_eq!(fee_rate, 3 * 2);
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3 * 2));
     }
 
     #[tokio::test]
@@ -337,6 +353,6 @@ mod tests {
             .expect("smart fee lookup should succeed");
 
         // NOTE: double the fees here
-        assert_eq!(fee_rate, 3 * 2);
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3 * 2));
     }
 }

@@ -1,3 +1,4 @@
+use bitcoin::FeeRate;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for btcio tasks.
@@ -118,11 +119,11 @@ pub enum FeePolicy {
         conf_target: u16,
     },
 
-    /// Fixed fee in sat/vB.
+    /// Fixed Bitcoin fee rate.
     #[serde(rename = "fixed")]
     Fixed {
         #[serde(rename = "fixed_fee_rate")]
-        fee_rate: u64,
+        fee_rate: FeeRate,
     },
 }
 
