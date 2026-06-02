@@ -60,9 +60,6 @@ cleanup() {
     } > "${SCRIPT_DIR}/e2e-state.txt" 2>&1
 
     {
-        echo "--- Rollup Params ---"
-        cat "${DOCKER_DIR}/configs/generated/rollup-params.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "(unavailable)"
-        echo ""
         echo "--- OL Params ---"
         cat "${DOCKER_DIR}/configs/generated/ol-params.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "(unavailable)"
         echo ""
@@ -240,7 +237,7 @@ generate_params() {
         ./init-network.sh /tmp/strata-datatool
 
     # Verify no AlwaysAccept
-    for f in configs/generated/{rollup-params,ol-params,asm-params}.json; do
+    for f in configs/generated/{ol-params,asm-params}.json; do
         if grep -q "AlwaysAccept" "${f}"; then
             echo "FAIL: AlwaysAccept found in ${f}"
             exit 1
@@ -248,7 +245,7 @@ generate_params() {
     done
     echo "All params use Sp1Groth16"
 
-    for f in configs/generated/{rollup-params,ol-params,asm-params}.json; do
+    for f in configs/generated/{ol-params,asm-params}.json; do
         echo "::group::${f}"
         cat "${f}"
         echo "::endgroup::"

@@ -237,22 +237,6 @@ GEOF
         fi
     fi
 
-    ROLLUP_PARAMS="${OUTPUT_DIR}/rollup-params.json"
-    if [ ! -f "${ROLLUP_PARAMS}" ]; then
-        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
-            genparams \
-            -o "${ROLLUP_PARAMS}" \
-            -n ALPN \
-            -s "${SEQ_PK}" \
-            -b "${OPERATOR_PK}" \
-            -g "${GENESIS_L1_HEIGHT}" \
-            --proof-timeout 30 \
-            --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
-            ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"} \
-            ${ALPEN_CHAIN_CONFIG:+--chain-config "$ALPEN_CHAIN_CONFIG"}
-        echo "generated ${ROLLUP_PARAMS}"
-    fi
-
     OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
     if [ ! -f "${OL_PARAMS}" ]; then
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
@@ -328,7 +312,7 @@ EOF
 elif [ "${MODE}" = "fullnode" ]; then
     echo "mode: fullnode"
 
-    for f in rollup-params.json ol-params.json asm-params.json; do
+    for f in ol-params.json asm-params.json; do
         if [ ! -f "${PARAMS_DIR}/${f}" ]; then
             echo "error: missing ${f} in ${PARAMS_DIR}" >&2
             exit 1
@@ -336,28 +320,36 @@ elif [ "${MODE}" = "fullnode" ]; then
     done
 
     if [ "$(realpath "${PARAMS_DIR}")" != "$(realpath "${OUTPUT_DIR}")" ]; then
-        for f in rollup-params.json ol-params.json asm-params.json; do
+        for f in ol-params.json asm-params.json; do
             cp "${PARAMS_DIR}/${f}" "${OUTPUT_DIR}/${f}"
         done
         echo "copied params from ${PARAMS_DIR}"
     fi
 
+    # The sequencer pubkey lives in the ASM checkpoint subprotocol's
+    # `sequencer_predicate`, serialized as "Bip340Schnorr:<hex>" (or
+    # "AlwaysAccept" when block signatures are unchecked).
     SEQUENCER_PUBKEY=$("${PYTHON}" -c "
 import json, sys
-params = json.load(open('${OUTPUT_DIR}/rollup-params.json'))
-cr = params['cred_rule']
-if isinstance(cr, dict) and 'schnorr_key' in cr:
-    sys.stdout.write(cr['schnorr_key'])
-elif cr == 'unchecked':
-    sys.stderr.write('warning: cred_rule is unchecked, no sequencer pubkey in params\n')
-    sys.stdout.write('')
-else:
-    sys.stderr.write('error: unexpected cred_rule format\n')
+params = json.load(open('${OUTPUT_DIR}/asm-params.json'))
+checkpoint = None
+for sub in params['subprotocols']:
+    if isinstance(sub, dict) and 'Checkpoint' in sub:
+        checkpoint = sub['Checkpoint']
+        break
+if checkpoint is None:
+    sys.stderr.write('error: asm-params missing Checkpoint subprotocol\n')
     sys.exit(1)
+pred = checkpoint['sequencer_predicate']
+if isinstance(pred, str) and pred.startswith('Bip340Schnorr:'):
+    sys.stdout.write(pred.split(':', 1)[1])
+else:
+    sys.stderr.write('warning: sequencer_predicate is not a schnorr key, no sequencer pubkey\n')
+    sys.stdout.write('')
 ")
 
     if [ -z "${SEQUENCER_PUBKEY}" ]; then
-        echo "error: could not extract sequencer pubkey from rollup-params.json" >&2
+        echo "error: could not extract sequencer pubkey from asm-params.json" >&2
         exit 1
     fi
 
