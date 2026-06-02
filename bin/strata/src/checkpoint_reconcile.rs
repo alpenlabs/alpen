@@ -28,8 +28,8 @@ pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -
 
     let deleted_payloads = storage
         .ol_checkpoint()
-        .del_checkpoint_payload_entries_from_epoch_blocking(first_unaccepted_epoch)
-        .context("delete unaccepted checkpoint payloads")?;
+        .del_local_checkpoint_payload_entries_from_epoch_blocking(first_unaccepted_epoch)
+        .context("delete unaccepted local checkpoint payloads")?;
     extend_missing(&mut cleanup_commitments, deleted_payloads.iter().copied());
 
     let mut deleted_proofs = 0usize;
