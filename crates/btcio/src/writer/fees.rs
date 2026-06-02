@@ -8,27 +8,27 @@ use bitcoin::FeeRate;
 use bitcoind_async_client::traits::Reader;
 use reqwest::Url;
 use serde::Deserialize;
-use strata_config::btcio::{FeePolicy, MempoolExplorerFeePolicy, WriterConfig};
+use strata_config::btcio::{
+    fee_rate_from_sat_per_vb, FeePolicy, MempoolExplorerFeePolicy, WriterConfig,
+};
 use tracing::warn;
 
 /// Shared HTTP client reused across mempool fee lookups for connection pooling.
 static SHARED_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 /// Represents the response from the mempool explorer recommended fees endpoint.
-// TODO(STR-3038): once we update Alpen's mempool explorers we can use `api/v1/fees/precise`
-//                 for more granular sub-1 sat/vB fee rates if desired.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub(crate) struct MempoolRecommendedFees {
     #[serde(rename = "fastestFee")]
-    fastest_fee: u64,
+    fastest_fee: f64,
     #[serde(rename = "halfHourFee")]
-    half_hour_fee: u64,
+    half_hour_fee: f64,
     #[serde(rename = "hourFee")]
-    hour_fee: u64,
+    hour_fee: f64,
     #[serde(rename = "economyFee")]
-    economy_fee: u64,
+    economy_fee: f64,
     #[serde(rename = "minimumFee")]
-    minimum_fee: u64,
+    minimum_fee: f64,
 }
 
 impl MempoolRecommendedFees {
@@ -41,8 +41,7 @@ impl MempoolRecommendedFees {
             MempoolExplorerFeePolicy::Economy => self.economy_fee,
             MempoolExplorerFeePolicy::Minimum => self.minimum_fee,
         };
-        FeeRate::from_sat_per_vb(fee_rate_sat_per_vb)
-            .ok_or_else(|| anyhow::anyhow!("mempool fee rate overflows: {fee_rate_sat_per_vb}"))
+        fee_rate_from_sat_per_vb(fee_rate_sat_per_vb).map_err(anyhow::Error::msg)
     }
 }
 
@@ -67,11 +66,14 @@ impl MempoolExplorerClient {
         Ok(Self { base_url: url })
     }
 
-    /// Fetches the recommended fees from the mempool explorer.
-    async fn fetch_recommended_fees(&self) -> anyhow::Result<MempoolRecommendedFees> {
+    /// Fetches fee estimates from a mempool.space-compatible endpoint path.
+    ///
+    /// The path is relative to the configured base URL so callers can try the precise endpoint
+    /// first and fall back to the older recommended-fees endpoint when necessary.
+    async fn fetch_fee_estimates(&self, path: &str) -> anyhow::Result<MempoolRecommendedFees> {
         let url = self
             .base_url
-            .join("api/v1/fees/recommended")
+            .join(path)
             .with_context(|| format!("invalid recommended-fees URL for base: {}", self.base_url))?;
 
         SHARED_HTTP_CLIENT
@@ -84,6 +86,20 @@ impl MempoolExplorerClient {
             .json::<MempoolRecommendedFees>()
             .await
             .context("failed to decode mempool recommended fees response")
+    }
+
+    /// Fetches the recommended fees from the mempool explorer.
+    async fn fetch_recommended_fees(&self) -> anyhow::Result<MempoolRecommendedFees> {
+        match self.fetch_fee_estimates("api/v1/fees/precise").await {
+            Ok(fees) => Ok(fees),
+            Err(err) => {
+                warn!(
+                    %err,
+                    "mempool precise fee lookup failed, falling back to recommended endpoint"
+                );
+                self.fetch_fee_estimates("api/v1/fees/recommended").await
+            }
+        }
     }
 }
 
@@ -176,7 +192,9 @@ mod tests {
         net::TcpListener,
     };
 
-    use super::{resolve_fee_rate, MempoolExplorerClient, MempoolRecommendedFees};
+    use super::{
+        fee_rate_from_sat_per_vb, resolve_fee_rate, MempoolExplorerClient, MempoolRecommendedFees,
+    };
     use crate::test_utils::TestBitcoinClient;
 
     fn writer_config(l1_fee_policy: L1FeePolicyConfig) -> WriterConfig {
@@ -243,12 +261,24 @@ mod tests {
         assert_eq!(
             fees,
             MempoolRecommendedFees {
-                fastest_fee: 1,
-                half_hour_fee: 2,
-                hour_fee: 3,
-                economy_fee: 4,
-                minimum_fee: 5,
+                fastest_fee: 1.0,
+                half_hour_fee: 2.0,
+                hour_fee: 3.0,
+                economy_fee: 4.0,
+                minimum_fee: 5.0,
             }
+        );
+    }
+
+    #[test]
+    fn test_sat_per_vb_conversion_preserves_sub_sat_rates() {
+        assert_eq!(
+            fee_rate_from_sat_per_vb(0.5).expect("fee rate should convert"),
+            FeeRate::from_sat_per_kwu(125)
+        );
+        assert_eq!(
+            fee_rate_from_sat_per_vb(0.1).expect("fee rate should convert"),
+            FeeRate::from_sat_per_kwu(25)
         );
     }
 
@@ -264,6 +294,24 @@ mod tests {
             "https://mempool.space/signet/"
         );
         assert_eq!(without_slash.base_url, with_slash.base_url);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fee_rate_uses_precise_mempool_fee() {
+        let server = spawn_single_response_server(
+            "200 OK",
+            "{\"fastestFee\":0.2,\"halfHourFee\":0.3,\"hourFee\":0.4,\"economyFee\":0.5,\"minimumFee\":0.1}",
+        )
+        .await;
+        let client = TestBitcoinClient::new(1);
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, server);
+
+        let fee_rate = resolve_fee_rate(&client, &config)
+            .await
+            .expect("mempool fee lookup should succeed");
+
+        // NOTE: double the fees here, so 0.2 sat/vB becomes 0.4 sat/vB.
+        assert_eq!(fee_rate, FeeRate::from_sat_per_kwu(100));
     }
 
     #[tokio::test]
@@ -344,7 +392,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_fee_rate_smart_uses_raw_estimate() {
+    async fn test_resolve_fee_rate_smart_uses_reader_estimate() {
         let client = Arc::new(TestBitcoinClient::new(1));
         let config = bitcoind_writer_config(1);
 

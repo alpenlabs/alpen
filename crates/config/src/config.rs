@@ -471,6 +471,8 @@ pub struct Config {
 
 #[cfg(test)]
 mod test {
+    use bitcoin::FeeRate;
+
     use super::*;
     use crate::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
 
@@ -941,6 +943,27 @@ mod test {
     }
 
     #[test]
+    fn test_writer_config_loads_fixed_sub_sat_fee_rate() {
+        let config: WriterConfig = toml::from_str(
+            r#"
+            write_poll_dur_ms = 200
+            fee_policy = "fixed"
+            fixed_fee_rate = 0.5
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+            "#,
+        )
+        .expect("writer config should parse");
+
+        assert_eq!(
+            config.l1_fee_policy_config.fee_policy(),
+            &FeePolicy::Fixed {
+                fee_rate: FeeRate::from_sat_per_kwu(125),
+            }
+        );
+    }
+
+    #[test]
     fn test_writer_config_serializes_bitcoind_conf_target() {
         let config = WriterConfig {
             write_poll_dur_ms: 200,
@@ -953,5 +976,22 @@ mod test {
 
         assert!(toml.contains("fee_policy = \"bitcoind\""));
         assert!(toml.contains("bitcoind_conf_target = 6"));
+    }
+
+    #[test]
+    fn test_writer_config_serializes_fixed_fee_rate() {
+        let config = WriterConfig {
+            write_poll_dur_ms: 200,
+            reveal_amount: 100,
+            bundle_interval_ms: 1_000,
+            l1_fee_policy_config: L1FeePolicyConfig::new(FeePolicy::Fixed {
+                fee_rate: FeeRate::from_sat_per_kwu(125),
+            }),
+        };
+
+        let toml = toml::to_string(&config).expect("writer config should serialize");
+
+        assert!(toml.contains("fee_policy = \"fixed\""));
+        assert!(toml.contains("fixed_fee_rate = 0.5"));
     }
 }
