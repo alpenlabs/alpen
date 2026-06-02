@@ -21,6 +21,7 @@ GENESIS_L1_HEIGHT="${GENESIS_L1_HEIGHT:-0}"
 BITCOIND_RPC_URL="${BITCOIND_RPC_URL:-${BITCOIND_RPC_URL:-}}"
 BITCOIND_RPC_USER="${BITCOIND_RPC_USER:-${BITCOIND_RPC_USER:-}}"
 BITCOIND_RPC_PASSWORD="${BITCOIND_RPC_PASSWORD:-${BITCOIND_RPC_PASSWORD:-}}"
+SAFE_HARBOUR_ADDRESS="${SAFE_HARBOUR_ADDRESS:?SAFE_HARBOUR_ADDRESS is required: provide a P2TR BOSD descriptor for the bridge emergency sweep address}"
 
 MODE="sequencer"
 PARAMS_DIR=""
@@ -275,7 +276,7 @@ GEOF
             -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
             --ol-params "${OL_PARAMS}" \
-            --safe-harbour-address "${SAFE_HARBOUR_ADDRESS:-04${OPERATOR_PK:2}}" \
+            --safe-harbour-address "${SAFE_HARBOUR_ADDRESS}" \
             ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"}
         echo "generated ${ASM_PARAMS}"
     fi
