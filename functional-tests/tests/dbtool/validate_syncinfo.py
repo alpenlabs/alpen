@@ -50,7 +50,9 @@ class DbtoolValidateSyncinfoTest(StrataNodeTest):
         )
 
         logger.info("Testing get-l1-summary to verify L1 blocks exist")
-        l1_summary = run_dbtool_json(datadir, "get-l1-summary", str(genesis_height))
+        first_post_genesis_height = genesis_height + 1
+        assert l1_tip_height >= first_post_genesis_height
+        l1_summary = run_dbtool_json(datadir, "get-l1-summary", str(first_post_genesis_height))
         assert l1_summary.get("expected_block_count", 0) > 0
         assert l1_summary.get("all_manifests_present", False) is True
         logger.info("L1 summary shows expected blocks/manifests")

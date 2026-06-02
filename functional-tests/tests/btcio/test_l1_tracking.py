@@ -40,9 +40,6 @@ class TestL1Tracking(StrataNodeTest):
         pre_tip = btc_rpc.proxy.getblockchaininfo()["blocks"]
         logger.info(f"Bitcoin tip before mining: {pre_tip}")
 
-        # Wait for strata to have caught up to pre_tip
-        strata.wait_for_asm_manifest_commitment_at(pre_tip, rpc=rpc, timeout=120)
-
         # Mine additional blocks one at a time.  Mining in a single batch can
         # trigger a race in the L1 reader / ASM pipeline where the ASM is
         # notified about a block before the full block data is persisted.
