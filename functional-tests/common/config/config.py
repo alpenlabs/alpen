@@ -48,7 +48,8 @@ class ReaderConfig:
 class WriterConfig:
     write_poll_dur_ms: int = field(default=200)
     reveal_amount: int = field(default=546)  # The dust amount
-    fee_policy: str = field(default="bitcoind")
+    fee_policy: str = field(default="fixed")
+    fixed_fee_rate: float = field(default=1.0)
     bundle_interval_ms: int = field(default=200)
     mempool_base_url: str | None = field(default=None)
 
