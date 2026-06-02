@@ -113,6 +113,7 @@ def generate_raw_params(tmpdir):
 
     # gen-asm-params requires at least one operator key
     dummy_op_pk = "02" + "ab" * 32
+    dummy_safe_harbour = "04" + "ab" * 32
     run_datatool(
         [
             "gen-asm-params",
@@ -126,6 +127,8 @@ def generate_raw_params(tmpdir):
             "ALPN",
             "--op-pk",
             dummy_op_pk,
+            "--safe-harbour-address",
+            dummy_safe_harbour,
             "-o",
             str(asm_path),
         ]
