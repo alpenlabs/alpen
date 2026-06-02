@@ -35,7 +35,7 @@ class AlpenClientEnvParams:
     pure_discovery: bool
     mesh_bootnodes: bool
     enable_l1_da: bool = False
-    da_magic_bytes: bytes = b"0000"
+    da_magic_bytes: bytes = b"ALPN"
     l1_reorg_safe_depth: int = 2
     batch_sealing_block_count: int = 10
     dev_track_latest_epoch: bool = False
