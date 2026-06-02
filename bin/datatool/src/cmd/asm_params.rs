@@ -7,6 +7,7 @@ use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
     ConfirmationDepths, SubprotocolInstance,
 };
+use strata_asm_proto_bridge_v1_types::SafeHarbourAddress;
 use strata_btc_types::BitcoinAmount;
 use strata_crypto::{
     keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig, EvenPublicKey,
@@ -94,14 +95,18 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         strata_admin_multisig_update: depth,
         strata_seq_manager_multisig_update: depth,
         alpen_admin_multisig_update: depth,
+        strata_security_council_multisig_update: depth,
         operator_update: depth,
         sequencer_update: depth,
         ol_stf_vk_update: depth,
         asm_stf_vk_update: depth,
         ee_stf_vk_update: depth,
+        defcon3: depth,
+        safe_harbour_address_update: depth,
     };
 
     let admin = AdministrationInitConfig::new(
+        threshold.clone(),
         threshold.clone(),
         threshold.clone(),
         threshold,
@@ -194,7 +199,7 @@ fn resolve_sequencer_predicate(seq_pk: Option<&str>) -> anyhow::Result<Predicate
     ))
 }
 
-fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<Descriptor> {
+fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarbourAddress> {
     let descriptor = descriptor.trim();
     anyhow::ensure!(
         !descriptor.is_empty(),
@@ -210,7 +215,8 @@ fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<Descriptor> 
         descriptor.type_tag()
     );
 
-    Ok(descriptor)
+    SafeHarbourAddress::try_from(descriptor)
+        .map_err(|e| anyhow::anyhow!("invalid safe harbour descriptor: {e}"))
 }
 
 #[cfg(test)]
@@ -249,7 +255,7 @@ mod tests {
         let resolved = resolve_safe_harbour_address(&descriptor.to_string())
             .expect("p2tr descriptor should resolve");
 
-        assert_eq!(resolved, descriptor);
+        assert_eq!(resolved.as_descriptor(), &descriptor);
     }
 
     #[test]

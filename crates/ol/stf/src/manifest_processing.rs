@@ -3,10 +3,7 @@
 use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
-    CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate,
-    constants::{
-        CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID, EE_PREDICATE_KEY_UPDATE_LOG_TYPE,
-    },
+    CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate, constants::AsmLogTypeId,
 };
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
@@ -179,8 +176,8 @@ fn process_asm_log<S: IStateAccessorMut>(
     };
 
     // Match on the type ID to determine how to process the log.
-    match msg.ty() {
-        DEPOSIT_LOG_TYPE_ID => {
+    match AsmLogTypeId::try_from(msg.ty()) {
+        Ok(AsmLogTypeId::Deposit) => {
             let Ok(deposit) = log.try_into_log::<DepositLog>() else {
                 debug!(
                     height = real_height,
@@ -191,7 +188,7 @@ fn process_asm_log<S: IStateAccessorMut>(
             process_deposit_log(state, real_height, &deposit, context)?;
         }
 
-        CHECKPOINT_TIP_UPDATE_LOG_TYPE => {
+        Ok(AsmLogTypeId::CheckpointTipUpdate) => {
             // Parse the checkpoint tip update from the checkpoint subprotocol.
             let Ok(data) = log.try_into_log::<CheckpointTipUpdate>() else {
                 debug!(
@@ -203,7 +200,7 @@ fn process_asm_log<S: IStateAccessorMut>(
             process_checkpoint_tip_update(state, &data, context)?;
         }
 
-        EE_PREDICATE_KEY_UPDATE_LOG_TYPE => {
+        Ok(AsmLogTypeId::EePredicateKeyUpdate) => {
             // Parse the per-snark-account predicate key update.
             let Ok(data) = log.try_into_log::<EePredicateKeyUpdate>() else {
                 debug!(
@@ -215,11 +212,15 @@ fn process_asm_log<S: IStateAccessorMut>(
             process_ee_predicate_key_update(state, &data)?;
         }
 
-        ty => {
+        Ok(ty) => {
             // Some other log type, which we don't care about, skip it.
+            debug!(height = real_height, ?ty, "ignoring unknown asm log type");
+        }
+
+        Err(_) => {
             debug!(
                 height = real_height,
-                log_ty = ty,
+                log_ty = msg.ty(),
                 "ignoring unknown asm log type"
             );
         }

@@ -28,15 +28,26 @@
           ],
           "threshold": 2
         },
+        "strata_security_council": {
+          "keys": [
+            "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
+            "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
+            "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
+          ],
+          "threshold": 2
+        },
         "confirmation_depths": {
           "strata_admin_multisig_update": 144,
           "strata_seq_manager_multisig_update": 144,
           "alpen_admin_multisig_update": 144,
+          "strata_security_council_multisig_update": 144,
           "operator_update": 144,
           "sequencer_update": 144,
           "ol_stf_vk_update": 144,
           "asm_stf_vk_update": 144,
-          "ee_stf_vk_update": 144
+          "ee_stf_vk_update": 144,
+          "defcon3": 144,
+          "safe_harbour_address_update": 144
         },
         "max_seqno_gap": 10
       }
