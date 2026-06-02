@@ -18,6 +18,8 @@ pub mod tip_update;
 pub mod unfinalized_tracker;
 
 pub mod errors;
+pub mod sync_handle;
 
 pub use asm_worker_submitter::AsmBlockSubmitter;
 pub use fcm::*;
+pub use sync_handle::SyncServiceHandle;

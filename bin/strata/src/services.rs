@@ -6,7 +6,7 @@ use anyhow::Result;
 use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
 use strata_chain_worker_new::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
 use strata_consensus_logic::{
-    AsmBlockSubmitter,
+    AsmBlockSubmitter, SyncServiceHandle,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
 use strata_csm_worker::CsmWorkerStatus;
@@ -19,7 +19,7 @@ use crate::{
     context::ensure_genesis,
     css, fcm,
     helpers::rollup_to_btcio_params,
-    run_context::{RunContext, ServiceHandles, SyncServiceHandle},
+    run_context::{RunContext, ServiceHandles},
 };
 
 #[cfg(feature = "sequencer")]

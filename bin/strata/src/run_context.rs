@@ -8,7 +8,7 @@ use strata_asm_worker::AsmWorkerHandle;
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_config::Config;
-use strata_consensus_logic::{FcmServiceHandle, checkpoint_sync::CssServiceHandle};
+use strata_consensus_logic::{FcmServiceHandle, SyncServiceHandle};
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
 #[cfg(feature = "sequencer")]
@@ -152,18 +152,6 @@ impl SequencerServiceHandles {
     pub(crate) fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
         &self.blockasm_handle
     }
-}
-
-/// Handle for whichever OL sync service the node runs.
-///
-/// A node runs exactly one: the fork-choice manager when it is a sequencer,
-/// the checkpoint sync service otherwise. The `Css` variant is held only to
-/// keep the service alive.
-pub(crate) enum SyncServiceHandle {
-    /// Fork-choice manager handle (sequencer nodes).
-    Fcm(Arc<FcmServiceHandle>),
-    /// Checkpoint sync service handle (non-sequencer nodes).
-    Css(#[expect(dead_code, reason = "held to keep the service alive")] Arc<CssServiceHandle>),
 }
 
 /// Handles for all services.

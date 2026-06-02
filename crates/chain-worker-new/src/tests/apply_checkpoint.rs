@@ -152,6 +152,10 @@ impl ChainWorkerContext for MockChainWorkerContext {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
+    fn prefill_l1_block_refs_mmr(&self) -> WorkerResult<()> {
+        unimplemented!("not used by apply_checkpoint_epoch")
+    }
+
     fn apply_epoch_indexing(
         &self,
         _epoch: &EpochCommitment,
@@ -388,24 +392,24 @@ fn assert_indexer_writes_consistent(block_sync: &IndexerWrites, checkpoint: &Ind
         "inbox messages (incl. MMR index) must match across sync modes"
     );
 
-    // Manifests: same set of (L1 height, manifest). Both paths emit manifest
-    // writes for the same L1 heights; this catches a checkpoint-sync bug that
-    // drops or reorders them.
-    let mut fs_manifests: Vec<_> = block_sync
-        .manifests()
+    // L1 block records: same set of (height, record). Both paths emit writes
+    // for the same L1 heights; this catches a checkpoint-sync bug that drops
+    // or reorders them.
+    let mut fs_l1: Vec<_> = block_sync
+        .l1_block_records()
         .iter()
-        .map(|m| (m.height, m.manifest.clone()))
+        .map(|m| (m.height, m.record.clone()))
         .collect();
-    let mut cp_manifests: Vec<_> = checkpoint
-        .manifests()
+    let mut cp_l1: Vec<_> = checkpoint
+        .l1_block_records()
         .iter()
-        .map(|m| (m.height, m.manifest.clone()))
+        .map(|m| (m.height, m.record.clone()))
         .collect();
-    fs_manifests.sort_by_key(|(h, _)| *h);
-    cp_manifests.sort_by_key(|(h, _)| *h);
+    fs_l1.sort_by_key(|(h, _)| *h);
+    cp_l1.sort_by_key(|(h, _)| *h);
     assert_eq!(
-        fs_manifests, cp_manifests,
-        "manifest writes must match across sync modes"
+        fs_l1, cp_l1,
+        "L1 block record writes must match across sync modes"
     );
 
     // Snark updates: per-account ordered sequence equality. Checkpoint sync now
