@@ -71,6 +71,7 @@ class AlpenClientFactory(flexitest.Factory):
         dev_track_latest_epoch: bool = False,
         bridge_denomination: int = 100_000_000,
         max_withdrawal_amount: int | None = 1_000_000_000,
+        beneficiary_address: str | None = None,
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -162,6 +163,9 @@ class AlpenClientFactory(flexitest.Factory):
         cmd.extend(["--bridge-denomination", str(bridge_denomination)])
         if max_withdrawal_amount is not None:
             cmd.extend(["--max-withdrawal-amount", str(max_withdrawal_amount)])
+
+        if beneficiary_address is not None:
+            cmd.extend(["--beneficiary-address", beneficiary_address])
 
         # DA pipeline configuration
         if da_config is not None:
