@@ -15,7 +15,7 @@ use crate::{
     manifest_processing,
     output::ExecOutputBuffer,
     transaction_processing,
-    verification::{BlockExecInput, BlockPostStateCommitments, verify_block_preseal},
+    verification::{BlockExecInput, verify_block_predrain},
     verify_block,
 };
 
@@ -24,25 +24,20 @@ use crate::{
 /// These can be used to construct a final block.
 #[derive(Clone, Debug)]
 pub struct BlockExecOutputs {
-    post_state_roots: BlockPostStateCommitments,
+    state_root: Buf32,
     logs: Vec<OLLog>,
 }
 
 impl BlockExecOutputs {
-    /// Creates a new `BlockExecOutputs` with the given post-state roots and logs.
-    pub fn new(post_state_roots: BlockPostStateCommitments, logs: Vec<OLLog>) -> Self {
-        Self {
-            post_state_roots,
-            logs,
-        }
+    /// Creates a new `BlockExecOutputs` with the given post-state root and logs.
+    pub fn new(state_root: Buf32, logs: Vec<OLLog>) -> Self {
+        Self { state_root, logs }
     }
 
-    pub fn post_state_roots(&self) -> &BlockPostStateCommitments {
-        &self.post_state_roots
-    }
-
-    pub fn header_post_state_root(&self) -> &Buf32 {
-        self.post_state_roots.header_state_root()
+    /// The final state root after all of the block's processing (including the
+    /// epoch-terminal drain for terminal blocks).
+    pub fn state_root(&self) -> &Buf32 {
+        &self.state_root
     }
 
     pub fn logs(&self) -> &[OLLog] {
@@ -109,13 +104,21 @@ pub fn execute_block_tx_segment<S: IStateAccessorMut>(
     transaction_processing::process_block_tx_segment(state, tx_segment, tx_ctx)
 }
 
-/// Executes manifest processing for a terminal block.
-pub fn execute_block_manifests<S: IStateAccessorMut>(
+/// Buffers the ASM logs carried by a block's manifests into intraepoch state.
+pub fn execute_block_manifest_buffering<S: IStateAccessorMut>(
     state: &mut S,
-    manifest_container: &OLL1ManifestContainer,
+    manifests: &[AsmManifest],
+) -> ExecResult<()> {
+    manifest_processing::process_block_manifests(state, manifests)
+}
+
+/// Processes the epoch terminal: drains buffered ASM logs, resets intraepoch
+/// state, and advances the epoch.
+pub fn execute_epoch_terminal<S: IStateAccessorMut>(
+    state: &mut S,
     term_ctx: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    manifest_processing::process_block_manifests(state, manifest_container, term_ctx)
+    manifest_processing::process_epoch_terminal(state, term_ctx)
 }
 
 /// Performs execution using parts of a block on top of a state, producing
@@ -149,67 +152,75 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     // bypass `emit_logs`.
     output.verify_logs_within_block_limit()?;
 
-    // 4. Compute the state root and remember it.
-    let pre_manifest_state_root = state.compute_state_root()?;
+    // 4. If the block carries manifests, buffer their ASM logs into intraepoch
+    // state. Manifests may appear in any block; this does not apply effects.
+    if let Some(manifest_container) = block_exec_input.manifest_container() {
+        execute_block_manifest_buffering(state, manifest_container.manifests())?;
+    }
 
-    // 5. If it's the last block of an epoch, then call process_block_manifests,
-    // and compute the final state root and remember it.
-    //
-    // Then we use this to figure out what our state commitments should be.
-    let post_state_roots = if let Some(manifest_container) = block_exec_input.manifest_container() {
-        // Terminal block, with manifests.
+    // 5. If this is the epoch terminal (per the authoritative flag), drain the
+    // buffered ASM logs, reset intraepoch state, and advance the epoch.
+    if block_exec_input.is_terminal() {
         let term_ctx = tx_ctx.basic_context();
-        execute_block_manifests(state, manifest_container, term_ctx)?;
-        // Defense-in-depth boundary check after manifest processing.
+        execute_epoch_terminal(state, term_ctx)?;
+        // Defense-in-depth boundary check after terminal processing.
         output.verify_logs_within_block_limit()?;
+    }
 
-        // Then finally extract the stuff.
-        let final_state_root = state.compute_state_root()?;
-        BlockPostStateCommitments::Terminal(pre_manifest_state_root, final_state_root)
-    } else {
-        // Regular non-terminal block.
-        BlockPostStateCommitments::Common(pre_manifest_state_root)
-    };
+    // 6. The single state root is the final root after all of the block's
+    // processing.
+    let state_root = state.compute_state_root()?;
 
     // Extract logs from the execution context and construct the final output.
     // Final backstop before materializing outputs.
     output.verify_logs_within_block_limit()?;
     let logs = output.into_logs();
-    Ok(BlockExecOutputs::new(post_state_roots, logs))
+    Ok(BlockExecOutputs::new(state_root, logs))
 }
 
 /// Parts of a block we're trying to construct.
+///
+/// Terminality is explicit caller intent: it is no longer derived from the
+/// presence of manifests, since manifests may appear in any block.
 #[derive(Clone, Debug)]
 pub struct BlockComponents {
     tx_segment: OLTxSegment,
-    manifest_container: Option<OLL1ManifestContainer>,
+    manifest_container: Option<OLAsmManifestContainer>,
+    is_terminal: bool,
 }
 
 impl BlockComponents {
-    pub fn new(tx_segment: OLTxSegment, manifest_container: Option<OLL1ManifestContainer>) -> Self {
+    pub fn new(
+        tx_segment: OLTxSegment,
+        manifest_container: Option<OLAsmManifestContainer>,
+        is_terminal: bool,
+    ) -> Self {
         Self {
             tx_segment,
             manifest_container,
+            is_terminal,
         }
     }
 
-    /// Create new empty block components.
+    /// Create new empty (non-terminal) block components.
     pub fn new_empty() -> Self {
         Self {
             tx_segment: OLTxSegment::new(Vec::new()).expect("empty tx segment should succeed"),
             manifest_container: None,
+            is_terminal: false,
         }
     }
 
-    /// Create block components from full OLTransaction objects.
+    /// Create non-terminal block components from full OLTransaction objects.
     pub fn new_txs_from_ol_transactions(txs: Vec<OLTransaction>) -> Self {
         Self {
             tx_segment: OLTxSegment::new(txs).expect("tx segment should be within limits"),
             manifest_container: None,
+            is_terminal: false,
         }
     }
 
-    /// Create block components with the given transaction payloads.
+    /// Create non-terminal block components with the given transaction payloads.
     ///
     /// Each payload gets default constraints and empty proofs. GAM payloads
     /// automatically get a zero-value message effect matching their target.
@@ -235,28 +246,49 @@ impl BlockComponents {
         Self {
             tx_segment: OLTxSegment::new(txs).expect("tx segment should be within limits"),
             manifest_container: None,
+            is_terminal: false,
         }
     }
 
-    /// Create terminal block components from manifests.
+    /// Create non-terminal block components carrying the given manifests.
+    ///
+    /// Their ASM logs are buffered into intraepoch state and processed at the
+    /// epoch terminal. Use [`BlockComponents::as_terminal`] to also flag the
+    /// block as the epoch terminal.
     pub fn new_manifests(manifests: Vec<AsmManifest>) -> Self {
         Self {
             tx_segment: OLTxSegment::new(Vec::new()).expect("empty tx segment should succeed"),
             manifest_container: Some(
-                OLL1ManifestContainer::new(manifests).expect("manifests should be within limits"),
+                OLAsmManifestContainer::new(manifests).expect("manifests should be within limits"),
             ),
+            is_terminal: false,
         }
     }
 
+    /// Marks these components as the epoch terminal.
+    pub fn as_terminal(mut self) -> Self {
+        self.is_terminal = true;
+        self
+    }
+
+    /// Sets the terminal flag explicitly.
+    pub fn with_terminal(mut self, is_terminal: bool) -> Self {
+        self.is_terminal = is_terminal;
+        self
+    }
+
     /// Extracts block components from a signed block, handling absent tx segments.
+    ///
+    /// Terminality is read from the authoritative `IS_TERMINAL` header flag.
     pub fn from_block(block: &OLBlock) -> Self {
         let empty =
             OLTxSegment::new(vec![]).expect("empty transaction segment construction is infallible");
         let tx_segment = block.body().tx_segment().unwrap_or(&empty).clone();
-        let manifest_container = block.body().l1_update().map(|u| u.manifest_cont().clone());
+        let manifest_container = block.body().manifests().cloned();
         Self {
             tx_segment,
             manifest_container,
+            is_terminal: block.header().is_terminal(),
         }
     }
 
@@ -264,14 +296,22 @@ impl BlockComponents {
         &self.tx_segment
     }
 
-    pub fn manifest_container(&self) -> Option<&OLL1ManifestContainer> {
+    pub fn manifest_container(&self) -> Option<&OLAsmManifestContainer> {
         self.manifest_container.as_ref()
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.is_terminal
     }
 
     /// Creates a [`BlockExecInput`] which is more or less really just a
     /// borrowed version of this type.
     pub fn to_exec_input(&self) -> BlockExecInput<'_> {
-        BlockExecInput::new(&self.tx_segment, self.manifest_container.as_ref())
+        BlockExecInput::new(
+            &self.tx_segment,
+            self.manifest_container.as_ref(),
+            self.is_terminal,
+        )
     }
 }
 
@@ -332,7 +372,7 @@ impl CompletedBlock {
     fields(
         slot = block_context.slot(),
         epoch = block_context.epoch(),
-        is_terminal = block_components.manifest_container.is_some(),
+        is_terminal = block_components.is_terminal(),
         tx_count = block_components.tx_segment.txs().len(),
     ),
 )]
@@ -343,6 +383,7 @@ pub fn construct_block<S: IStateAccessorMut>(
     bridge_params: BridgeParams,
 ) -> ExecResult<ConstructBlockOutput> {
     // 1. First just execute the block with the inputs.
+    let is_terminal = block_components.is_terminal();
     let block_exec_input = block_components.to_exec_input();
     let exec_outputs = execute_block_inputs(state, block_context, block_exec_input, bridge_params)?;
 
@@ -351,27 +392,23 @@ pub fn construct_block<S: IStateAccessorMut>(
     // Compute the logs root from the execution outputs.
     let logs_root = exec_outputs.compute_block_logs_root();
 
-    // Get the state root from the execution outputs.
-    let state_root = *exec_outputs.header_post_state_root();
+    // Get the single final state root from the execution outputs.
+    let state_root = *exec_outputs.state_root();
 
     // Compute the parent block ID.
     let parent_blkid = block_context.compute_parent_blkid();
 
-    // Construct the block body.
+    // Construct the block body, attaching any manifests this block carries.
     let mut body = OLBlockBody::new_common(block_components.tx_segment);
-
-    // If this is a terminal block with manifests, create the L1 update.
-    if let Some(manifest_container) = block_components.manifest_container
-        && let Some(preseal_root) = exec_outputs.post_state_roots().preseal_state_root()
-    {
-        let l1_update = OLL1Update::new(*preseal_root, manifest_container);
-        body.set_l1_update(l1_update);
+    if let Some(manifest_container) = block_components.manifest_container {
+        body.set_manifests(manifest_container);
     }
 
-    // Compute the body root using the hash commitment method.
+    // Compute the body root using the hash commitment method. Terminality is
+    // set from explicit caller intent, not derived from manifest presence.
     let body_root = body.compute_hash_commitment();
     let mut flags = BlockFlags::zero();
-    flags.set_is_terminal(body.is_body_terminal());
+    flags.set_is_terminal(is_terminal);
 
     // 3. Assemble the final completed block.
     let header = OLBlockHeader::new(
@@ -406,8 +443,8 @@ pub fn execute_and_complete_block<S: IStateAccessorMut>(
 ///
 /// Generic over `S` so callers may pass `OLState` directly or a wrapper
 /// (e.g. `DaAccumulatingState<OLState>`). Use
-/// [`execute_block_batch_preseal`] instead when building a DA blob for
-/// preseal-root verification.
+/// [`execute_block_batch_predrain`] instead when building a DA blob that
+/// excludes the epoch-terminal drain effects.
 pub fn execute_block_batch<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlock],
@@ -432,13 +469,16 @@ pub fn execute_block_batch<S: IStateAccessorMut>(
     Ok(batch_logs.concat())
 }
 
-/// Like [`execute_block_batch`] but skips manifest processing on every
+/// Like [`execute_block_batch`] but skips the epoch-terminal drain on every
 /// block. Returns the concatenated tx-segment logs.
 ///
 /// Intended for DA-rebuild paths: wrapping `state` in `DaAccumulatingState`
-/// here produces a blob containing only tx writes, matching the preseal
-/// root recorded in each terminal block.
-pub fn execute_block_batch_preseal<S: IStateAccessorMut>(
+/// here produces a blob containing only tx writes. Manifest buffering still
+/// runs but writes only to intraepoch/epochal state, which the DA scheme does
+/// not capture; the deferred drain effects (which would mutate DA-covered
+/// ledger state) are skipped so they are not double-counted when the manifests
+/// are replayed on top of the diff during rebuild.
+pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
@@ -448,7 +488,7 @@ pub fn execute_block_batch_preseal<S: IStateAccessorMut>(
     let mut batch_logs = Vec::with_capacity(blocks.len());
 
     for block in blocks {
-        let logs = verify_block_preseal(
+        let logs = verify_block_predrain(
             state,
             block.header(),
             Some(&parent),

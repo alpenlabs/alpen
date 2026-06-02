@@ -5,13 +5,14 @@ use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
 use strata_ol_chain_types_new::OLLog;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::EpochDaAccumulator;
+use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 
 use crate::{
     da_tracker::AccumulatedDaData,
     test_utils::{
         DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
-        TestStorageFixtureBuilder, account_balance, included_txids, test_account_id,
-        withdrawal_intents,
+        TestStorageFixtureBuilder, account_balance, extract_withdrawal_intents, included_txids,
+        test_account_id,
     },
 };
 
@@ -85,14 +86,21 @@ async fn test_withdrawal_log_content() {
         .expect("withdrawal block should assemble");
     assert!(output.failed_txs.is_empty(), "withdrawal tx should succeed");
 
-    let decoded_withdrawal_logs = withdrawal_intents(&output);
+    let withdrawal_logs = extract_withdrawal_intents(&output);
     assert_eq!(
-        decoded_withdrawal_logs.len(),
+        withdrawal_logs.len(),
         1,
-        "expected exactly one decodable withdrawal intent log"
+        "expected exactly one withdrawal intent log"
     );
 
-    let withdrawal_log = &decoded_withdrawal_logs[0];
+    let (source, decoded) = &withdrawal_logs[0];
+    assert_eq!(
+        *source, BRIDGE_GATEWAY_ACCT_SERIAL,
+        "withdrawal intent log should be sourced from the bridge gateway account"
+    );
+    let withdrawal_log = decoded
+        .as_ref()
+        .expect("withdrawal intent log should decode");
     assert_eq!(
         withdrawal_log.amt, withdrawal_sats,
         "withdrawal amount should match"
@@ -209,9 +217,8 @@ async fn test_hard_limit_rollback_discards_tx2_log() {
         seeded_count + 1,
         "only tx1's snark-update log should be appended; tx2 was rolled back"
     );
-    assert_eq!(
-        withdrawal_intents(&output).len(),
-        0,
+    assert!(
+        extract_withdrawal_intents(&output).is_empty(),
         "rolled-back tx2 must not leave bridge-gateway withdrawal logs"
     );
 }

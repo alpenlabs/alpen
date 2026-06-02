@@ -191,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn test_statements_fail_on_da_preseal_mismatch() {
+    fn test_statements_fail_on_da_diff_mismatch() {
         let mut input = prepare_input();
         let terminal_header = input.blocks.last().expect("non-empty block list").header();
         let start_state_layer = MemoryStateBaseLayer::new(input.start_state.clone());

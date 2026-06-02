@@ -1,14 +1,10 @@
 use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment};
-use strata_ol_chain_types::L2BlockId;
-use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, L1Height};
+use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockId, L1Height};
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 use typed_sled::error::Error;
 
-use crate::{
-    chainstate::WriteBatchId,
-    mmr_index::{LeafPos, NodePos},
-};
+use crate::mmr_index::{LeafPos, NodePos};
 
 /// Pure MMR algorithm errors - domain-specific, no storage concepts.
 #[derive(Debug, Clone, Error)]
@@ -63,12 +59,6 @@ pub enum DbError {
 
     #[error("missing L2 state (slot {0})")]
     MissingL2State(u64),
-
-    #[error("missing state instance")]
-    MissingStateInstance,
-
-    #[error("missing write batch (id {0})")]
-    MissingWriteBatch(WriteBatchId),
 
     #[error("missing slot write batch (id {0})")]
     MissingSlotWriteBatch(L2BlockId),

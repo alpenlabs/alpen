@@ -45,7 +45,7 @@ fn test_manifest_processing_rejects_height_gap() {
         &mut state,
         &BlockInfo::new_genesis(1_000_000),
         None,
-        BlockComponents::new_manifests(vec![asm_manifest]),
+        BlockComponents::new_manifests(vec![asm_manifest]).as_terminal(),
     );
 
     match result {

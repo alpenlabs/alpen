@@ -30,6 +30,7 @@ services:
     shm_size: '8gb'
     command: []
     environment:
+      - SEQUENCER_MODE=true
       - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
       - OL_SUBMIT_URL=ws://strata:8435
       - STRATA_SUBMIT_RPC_TOKEN=dev-only-submit-token

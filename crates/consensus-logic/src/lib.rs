@@ -7,13 +7,8 @@ use strata_asm_spec as _;
 
 pub mod asm_worker_context;
 mod asm_worker_submitter;
-pub mod chain_worker_context;
-pub mod checkpoint_verification;
 pub mod csm_worker_context;
-pub mod exec_worker_context;
 mod fcm;
-pub mod fork_choice_manager;
-pub mod genesis;
 pub mod message;
 pub mod sync_manager;
 pub mod tip_update;

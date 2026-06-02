@@ -180,7 +180,7 @@ impl MmrIndexManager {
         let mut batch = MmrBatchWrite::from_preconds_table(prefetched.clone());
         let mut appended_indexes = Vec::with_capacity(requests.len());
 
-        for (request, (mmr_id, leaf_count)) in requests.iter().zip(leaf_counts.into_iter()) {
+        for (request, (mmr_id, leaf_count)) in requests.iter().zip(leaf_counts) {
             let node_table = MmrIndexHandle::get_scoped_node_table(&prefetched, &mmr_id);
             let append_plan =
                 mmr_algorithm::compute_append_plan(request.hash.0, leaf_count, &node_table)?;

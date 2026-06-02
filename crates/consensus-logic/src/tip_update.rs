@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use strata_ol_chain_types::L2BlockId;
+use strata_primitives::l2::L2BlockId;
 use tracing::*;
 
 use crate::{errors::Error, unfinalized_tracker};

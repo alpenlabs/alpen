@@ -14,22 +14,15 @@ strata-asm-spec.workspace = true
 strata-asm-spec-debug = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
-strata-chain-worker.workspace = true
-strata-chainexec.workspace = true
-strata-chaintsn.workspace = true
-strata-checkpoint-types.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-csm-types.workspace = true
 strata-csm-worker.workspace = true
 strata-db-types.workspace = true
-strata-eectl.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-merkle.workspace = true
 strata-node-context.workspace = true
-strata-ol-chain-types.workspace = true
 strata-ol-chain-types-new.workspace = true
-strata-ol-chainstate-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-params.workspace = true
 strata-predicate.workspace = true
@@ -39,13 +32,11 @@ strata-state.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 strata-tasks.workspace = true
-zkaleido.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-borsh.workspace = true
 metrics.workspace = true
 serde.workspace = true
 thiserror.workspace = true
@@ -53,14 +44,11 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-state-support-types.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
-strata-test-utils-l2.workspace = true
 
 rand = { version = "0.8.5", features = ["getrandom", "std_rng"] }
-threadpool.workspace = true
 
 [features]
 debug-asm = ["dep:strata-asm-spec-debug"]

@@ -1,9 +1,31 @@
 use alloy_eips::eip4895::Withdrawal;
 use alpen_reth_primitives::WithdrawalIntent;
+use borsh::{BorshDeserialize, BorshSerialize};
 use revm_primitives::alloy_primitives::FixedBytes;
 use rsp_client_executor::io::EthClientExecutorInput;
 use serde::{Deserialize, Serialize};
-use strata_ol_chain_types::ExecSegment;
+use strata_state::exec_update::ExecUpdate;
+
+/// Information relating to how to update the execution layer.
+///
+/// Right now this just contains a single execution update since we only have a
+/// single execution environment in our execution layer.
+#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct ExecSegment {
+    /// Update payload for the single execution environment.
+    update: ExecUpdate,
+}
+
+impl ExecSegment {
+    pub fn new(update: ExecUpdate) -> Self {
+        Self { update }
+    }
+
+    /// The EE update payload.
+    pub fn update(&self) -> &ExecUpdate {
+        &self.update
+    }
+}
 
 /// Public Parameters that proof asserts
 pub type EvmEeProofOutput = Vec<ExecSegment>;

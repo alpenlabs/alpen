@@ -1,11 +1,9 @@
-use strata_chaintsn::errors::TsnError;
 use strata_db_types::errors::DbError;
-use strata_eectl::errors::EngineError;
 use strata_identifiers::Epoch;
-use strata_ol_chain_types::L2BlockId;
 use strata_predicate::PredicateError;
 use strata_primitives::{
     l1::{L1BlockCommitment, L1BlockId},
+    l2::L2BlockId,
     prelude::*,
 };
 use thiserror::Error;
@@ -41,9 +39,6 @@ pub enum Error {
 
     #[error("missing expected chainstate for block {0:?}")]
     MissingBlockChainstate(L2BlockId),
-
-    #[error("invalid state transition on block {0:?}: {1}")]
-    InvalidStateTsn(L2BlockId, TsnError),
 
     #[error("OL block {0:?} missing signature")]
     MissingBlockSignature(OLBlockId),
@@ -102,9 +97,6 @@ pub enum Error {
 
     #[error("chaintip: {0}")]
     ChainTip(#[from] ChainTipError),
-
-    #[error("engine: {0}")]
-    Engine(#[from] EngineError),
 
     #[error("db: {0}")]
     Db(#[from] DbError),

@@ -26,10 +26,10 @@ def assert_terminal_block_l1_update(
     assert header["slot"] == target_slot, f"unexpected terminal block header: {header}"
     assert header["is_terminal"] is True, f"slot {target_slot} is not terminal: {header}"
 
-    l1_update = block.get("l1_update")
-    assert l1_update is not None, f"terminal slot {target_slot} has no L1 update: {block}"
+    manifests = block.get("manifests")
+    assert manifests is not None, f"terminal slot {target_slot} has no manifests: {block}"
 
-    manifest_count = l1_update.get("manifest_count")
+    manifest_count = manifests.get("manifest_count")
     assert (
         isinstance(manifest_count, int) and manifest_count >= min_l1_manifests_in_terminal_block
     ), (

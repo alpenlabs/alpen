@@ -22,7 +22,7 @@ pub use account_summary::{
     RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMessageEntry, RpcUpdateInputData,
 };
 pub use block::{
-    RpcBlockEntry, RpcBlockHeaderEntry, RpcOLBlockDetail, RpcOLBlockSummary, RpcOLL1UpdateSummary,
+    RpcBlockEntry, RpcBlockHeaderEntry, RpcOLBlockDetail, RpcOLBlockSummary, RpcOLManifestsSummary,
 };
 pub use blocktag::OLBlockOrTag;
 pub use chain_status::{RpcOLBlockInfo, RpcOLChainStatus};

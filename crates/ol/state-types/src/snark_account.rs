@@ -62,21 +62,9 @@ impl ISnarkAccountState for OLSnarkAccountState {
 }
 
 impl ISnarkAccountStateMut for OLSnarkAccountState {
-    fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
+    fn set_proof_state(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
         self.proof_state = ProofState::new(state, next_read_idx);
         self.seqno = seqno;
-    }
-
-    fn update_inner_state(
-        &mut self,
-        state: Hash,
-        next_read_idx: u64,
-        seqno: Seqno,
-        _extra_data: &[u8],
-    ) -> StateResult<()> {
-        // Set the proof state but ignore extra data in this context.
-        self.set_proof_state_directly(state, next_read_idx, seqno);
-        Ok(())
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> StateResult<()> {

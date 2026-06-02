@@ -74,10 +74,10 @@ pub(crate) fn get_ol_block(
 
     let header = ol_block.header();
 
-    // Create manifest data from OL terminal block update (if present).
-    let manifest_data: Vec<(u64, &L1BlockId)> = if let Some(update) = ol_block.body().l1_update() {
-        update
-            .manifest_cont()
+    // Create manifest data from the block's ASM manifests (if present).
+    let manifest_data: Vec<(u64, &L1BlockId)> = if let Some(manifests) = ol_block.body().manifests()
+    {
+        manifests
             .manifests()
             .iter()
             .map(|manifest| (u64::from(manifest.height()), manifest.blkid()))
