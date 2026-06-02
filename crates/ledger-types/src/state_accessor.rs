@@ -127,7 +127,7 @@ pub trait IStateAccessorMut: IStateAccessor {
 
     /// Appends a new pending ASM log entry to the intraepoch buffer.
     ///
-    /// Returns [`StateError::PendingAsmLogsFull`] if the buffer is at its
+    /// Returns `StateError::PendingAsmLogsFull` if the buffer is at its
     /// capacity bound.
     fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()>;
 
