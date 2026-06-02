@@ -323,9 +323,9 @@ where
 
         // Check if adding this block would exceed threshold
         if !state.accumulator().is_empty()
-            && ctx
-                .sealing_policy
-                .would_exceed(state.accumulator(), &block_data)
+            && state
+                .accumulator()
+                .would_exceed(&ctx.sealing_policy, &block_data)
         {
             if let Some(batch_id) = seal_batch(
                 state,

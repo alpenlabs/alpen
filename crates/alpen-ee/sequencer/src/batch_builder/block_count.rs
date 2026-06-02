@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use strata_acct_types::Hash;
 
-use super::{Accumulator, BatchPolicy, BatchSealingPolicy, BlockDataProvider};
+use super::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
 
 /// Block-count based batching policy.
 #[derive(Debug)]
@@ -11,24 +11,23 @@ pub struct BlockCountPolicy;
 
 /// Block data for block-count policy.
 ///
-/// No additional data is needed since the count is tracked by the
-/// accumulator's block list.
+/// No additional data is needed; each block increments the count by one.
 #[derive(Debug, Clone, Default)]
 pub struct BlockCountData;
 
-/// Accumulated value for block-count policy.
-///
-/// This is a unit type since the block count is tracked by
-/// `Accumulator::block_count()` directly.
+/// Accumulated block count.
 #[derive(Debug, Default)]
-pub struct BlockCountValue;
+pub struct BlockCountValue {
+    /// Number of blocks accumulated so far.
+    pub count: u64,
+}
 
 impl BatchPolicy for BlockCountPolicy {
     type BlockData = BlockCountData;
     type AccumulatedValue = BlockCountValue;
 
-    fn accumulate(_value: &mut Self::AccumulatedValue, _data: &Self::BlockData) {
-        // No-op: block count is tracked by Accumulator::blocks.len()
+    fn accumulate(value: &mut Self::AccumulatedValue, _data: &Self::BlockData) {
+        value.count += 1;
     }
 }
 
@@ -57,13 +56,9 @@ impl FixedBlockCountSealing {
 }
 
 impl BatchSealingPolicy<BlockCountPolicy> for FixedBlockCountSealing {
-    fn would_exceed(
-        &self,
-        accumulator: &Accumulator<BlockCountPolicy>,
-        _block_data: &BlockCountData,
-    ) -> bool {
-        // Seal if we've already reached max_blocks
-        accumulator.block_count() >= self.max_blocks
+    fn would_exceed(&self, value: &BlockCountValue, _block_data: &BlockCountData) -> bool {
+        // Each block contributes exactly 1 to the count.
+        value.count + 1 > self.max_blocks
     }
 }
 
@@ -84,14 +79,14 @@ impl BlockDataProvider<BlockCountPolicy> for BlockCountDataProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::*;
+    use crate::{batch_builder::Accumulator, test_utils::*};
 
     #[test]
     fn test_would_not_exceed_when_empty() {
         let sealing = FixedBlockCountSealing::new(3);
         let accumulator: Accumulator<BlockCountPolicy> = Accumulator::new();
 
-        assert!(!sealing.would_exceed(&accumulator, &BlockCountData));
+        assert!(!accumulator.would_exceed(&sealing, &BlockCountData));
     }
 
     #[test]
@@ -99,15 +94,29 @@ mod tests {
         let sealing = FixedBlockCountSealing::new(3);
         let mut accumulator: Accumulator<BlockCountPolicy> = Accumulator::new();
 
+        // 0 + 1 = 1 <= 3
         accumulator.add_block(test_blocknumhash(1), &BlockCountData);
-        assert!(!sealing.would_exceed(&accumulator, &BlockCountData));
+        assert!(!accumulator.would_exceed(&sealing, &BlockCountData));
 
+        // 1 + 1 = 2 <= 3
         accumulator.add_block(test_blocknumhash(2), &BlockCountData);
-        assert!(!sealing.would_exceed(&accumulator, &BlockCountData));
+        assert!(!accumulator.would_exceed(&sealing, &BlockCountData));
     }
 
     #[test]
-    fn test_would_exceed_at_max() {
+    fn test_would_not_exceed_at_exact_max() {
+        let sealing = FixedBlockCountSealing::new(3);
+        let mut accumulator: Accumulator<BlockCountPolicy> = Accumulator::new();
+
+        accumulator.add_block(test_blocknumhash(1), &BlockCountData);
+        accumulator.add_block(test_blocknumhash(2), &BlockCountData);
+
+        // 2 + 1 = 3 <= 3, batch of exactly max_blocks is allowed
+        assert!(!accumulator.would_exceed(&sealing, &BlockCountData));
+    }
+
+    #[test]
+    fn test_would_exceed_past_max() {
         let sealing = FixedBlockCountSealing::new(3);
         let mut accumulator: Accumulator<BlockCountPolicy> = Accumulator::new();
 
@@ -115,8 +124,8 @@ mod tests {
         accumulator.add_block(test_blocknumhash(2), &BlockCountData);
         accumulator.add_block(test_blocknumhash(3), &BlockCountData);
 
-        // Now at 3 blocks, adding another would exceed
-        assert!(sealing.would_exceed(&accumulator, &BlockCountData));
+        // 3 + 1 = 4 > 3, seal before adding the 4th
+        assert!(accumulator.would_exceed(&sealing, &BlockCountData));
     }
 
     #[test]
