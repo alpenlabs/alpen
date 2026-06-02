@@ -26,6 +26,7 @@ use crate::{
 };
 
 mod args;
+mod checkpoint_reconcile;
 mod config;
 mod context;
 mod css;
