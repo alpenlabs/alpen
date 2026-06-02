@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 use strata_csm_types::{CheckpointState, ClientState, L1Checkpoint, L1Status};
 use strata_identifiers::Epoch;
-use strata_ol_chain_types::L2BlockId;
-use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::l1::L1BlockCommitment;
 use thiserror::Error;
 use tokio::sync::watch::{self, error::RecvError};
@@ -83,24 +81,6 @@ impl StatusChannel {
         self.receiver.cl.borrow().client_state.get_last_checkpoint()
     }
 
-    /// Returns a clone of the most recent tip block's chainstate, if present.
-    pub fn get_cur_tip_chainstate(&self) -> Option<Arc<Chainstate>> {
-        self.receiver
-            .chs
-            .borrow()
-            .as_ref()
-            .map(|css| css.new_tl_chainstate().clone())
-    }
-
-    pub fn get_cur_tip_chainstate_with_block(&self) -> Option<(Arc<Chainstate>, L2BlockId)> {
-        self.receiver.chs.borrow().as_ref().map(|css| {
-            (
-                css.new_tl_chainstate().clone(),
-                *css.new_status().tip_blkid(),
-            )
-        })
-    }
-
     /// Gets the latest [`L1Status`].
     #[deprecated(note = "use `.get_l1_status()`")]
     pub fn l1_status(&self) -> L1Status {
@@ -113,14 +93,12 @@ impl StatusChannel {
     }
 
     /// Gets the current chain tip epoch, if present.
+    // TODO(STR-2170): the legacy `chs` channel no longer has a producer (the legacy
+    // fork-choice manager was removed); the live OL fork-choice service publishes to the
+    // `ols` channel instead. This reader should migrate to `ols` and the `chs` channel
+    // should be dropped once the remaining legacy consumers are gone.
     pub fn get_cur_chain_epoch(&self) -> Option<Epoch> {
         self.receiver.chs.borrow().as_ref().map(|ch| ch.cur_epoch())
-    }
-
-    #[deprecated(note = "use `.get_cur_tip_chainstate()`")]
-    pub fn chain_state(&self) -> Option<Chainstate> {
-        self.get_cur_tip_chainstate()
-            .map(|chs| chs.as_ref().clone())
     }
 
     pub fn get_cur_client_state(&self) -> ClientState {

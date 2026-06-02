@@ -10,7 +10,6 @@ workspace = true
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
 strata-ol-bridge-types.workspace = true
-strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 zkaleido.workspace = true
@@ -18,6 +17,7 @@ zkaleido-native-adapter.workspace = true
 
 alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
 alloy-eips.workspace = true
+borsh.workspace = true
 reth-chainspec.workspace = true
 reth-evm-ethereum.workspace = true
 reth-primitives.workspace = true

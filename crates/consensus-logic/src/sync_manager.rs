@@ -10,9 +10,7 @@ use strata_asm_spec::StrataAsmSpec;
 #[cfg(feature = "debug-asm")]
 use strata_asm_spec_debug::DebugAsmSpec;
 use strata_asm_worker::{AsmState as WorkerAsmState, AsmWorkerHandle, AsmWorkerStatus};
-use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
-use strata_eectl::{builder::ExecWorkerBuilder, engine::ExecEngineCtl, handle::ExecCtlHandle};
 use strata_node_context::NodeContext;
 use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
 use strata_params::{Params, RollupParams};
@@ -22,140 +20,9 @@ use strata_state::asm_state::AsmState as StorageAsmState;
 use strata_status::StatusChannel;
 use strata_storage::{MmrId, MmrIndexHandle, NodeStorage};
 use strata_tasks::TaskExecutor;
-use tokio::{runtime::Handle, sync::mpsc};
+use tokio::runtime::Handle;
 
-use crate::{
-    asm_worker_context::AsmWorkerCtx,
-    chain_worker_context::ChainWorkerCtx,
-    csm_worker_context::CsmWorkerContextImpl,
-    exec_worker_context::ExecWorkerCtx,
-    fork_choice_manager::{self},
-    message::ForkChoiceMessage,
-};
-
-/// Handle to the core pipeline tasks.
-#[expect(
-    missing_debug_implementations,
-    reason = "Some inner types don't have Debug impls"
-)]
-pub struct SyncManager {
-    params: Arc<Params>,
-    fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
-    asm_controller: Arc<AsmWorkerHandle>,
-    status_channel: StatusChannel,
-}
-
-impl SyncManager {
-    pub fn params(&self) -> &Params {
-        &self.params
-    }
-
-    pub fn get_params(&self) -> Arc<Params> {
-        self.params.clone()
-    }
-
-    pub fn get_asm_ctl(&self) -> Arc<AsmWorkerHandle> {
-        self.asm_controller.clone()
-    }
-
-    pub fn status_channel(&self) -> &StatusChannel {
-        &self.status_channel
-    }
-
-    /// Submits a fork choice message if possible. (synchronously)
-    pub fn submit_chain_tip_msg(&self, ctm: ForkChoiceMessage) -> bool {
-        self.fc_manager_tx.blocking_send(ctm).is_ok()
-    }
-
-    /// Submits a fork choice message if possible. (asynchronously)
-    pub async fn submit_chain_tip_msg_async(&self, ctm: ForkChoiceMessage) -> bool {
-        self.fc_manager_tx.send(ctm).await.is_ok()
-    }
-}
-
-/// Starts the sync tasks using provided settings.
-pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
-    executor: &TaskExecutor,
-    storage: &Arc<NodeStorage>,
-    bitcoin_client: Arc<Client>,
-    engine: Arc<E>,
-    params: Arc<Params>,
-    asm_params: Arc<AsmParams>,
-    status_channel: StatusChannel,
-) -> anyhow::Result<SyncManager> {
-    // Create channels.
-    let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
-
-    // Exec worker.
-    let ex_storage = storage.clone();
-    let ex_st_ch = status_channel.clone();
-    let ex_handle = executor.handle().clone();
-    let ex_handle = spawn_exec_worker(executor, ex_handle, ex_storage, ex_st_ch, engine)?;
-
-    // Chain worker.
-    let cw_handle = executor.handle().clone();
-    let cw_storage = storage.clone();
-    let cw_st_ch = status_channel.clone();
-    let cw_params = params.clone();
-    let cw_handle = Arc::new(spawn_chain_worker(
-        executor, cw_handle, cw_storage, cw_st_ch, cw_params, ex_handle,
-    )?);
-
-    // ASM worker.
-    let asm_handle = executor.handle().clone();
-    let asm_storage = storage.clone();
-    let rollup_params = Arc::new(params.rollup().clone());
-
-    let asm_controller = Arc::new(spawn_asm_worker(
-        executor,
-        asm_handle,
-        asm_storage,
-        rollup_params,
-        asm_params,
-        bitcoin_client.clone(),
-    )?);
-
-    // Launch CSM listener service that listens to ASM status updates
-    let csm_params = params.clone();
-    let csm_storage = storage.clone();
-    let csm_st_ch = status_channel.clone();
-    let csm_asm_monitor = asm_controller.monitor();
-
-    let _csm_monitor = spawn_csm_listener(
-        executor,
-        csm_params,
-        csm_storage,
-        csm_st_ch.into(),
-        csm_asm_monitor,
-        bitcoin_client,
-    )?;
-
-    // Start the fork choice manager thread.  If we haven't done genesis yet
-    // this will just wait until the CSM says we have.
-    let fcm_storage = storage.clone();
-    let fcm_params = params.clone();
-    let fcm_handle = executor.handle().clone();
-    let st_ch = status_channel.clone();
-    executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
-        // TODO this should be simplified into a builder or something
-        fork_choice_manager::tracker_task(
-            shutdown,
-            fcm_handle,
-            fcm_storage,
-            fcm_rx,
-            cw_handle,
-            fcm_params,
-            st_ch,
-        )
-    });
-
-    Ok(SyncManager {
-        params,
-        fc_manager_tx: fcm_tx,
-        asm_controller,
-        status_channel,
-    })
-}
+use crate::{asm_worker_context::AsmWorkerCtx, csm_worker_context::CsmWorkerContextImpl};
 
 pub fn spawn_csm_listener_with_ctx(
     nodectx: &NodeContext,
@@ -232,56 +99,6 @@ fn spawn_csm_listener(
         .launch_sync("csm_worker", executor)?;
 
     Ok(csm_monitor)
-}
-
-fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
-    executor: &TaskExecutor,
-    handle: Handle,
-    storage: Arc<NodeStorage>,
-    status_channel: StatusChannel,
-    engine: Arc<E>,
-) -> anyhow::Result<ExecCtlHandle> {
-    // Create the worker context - this stays in consensus-logic since it implements WorkerContext
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let context = ExecWorkerCtx::new(storage.l2().clone(), storage.client_state().clone());
-
-    let handle = ExecWorkerBuilder::new()
-        .with_context(context)
-        .with_engine(engine)
-        .with_status_channel(status_channel)
-        .with_runtime(handle)
-        .launch(executor)?;
-
-    Ok(handle)
-}
-
-fn spawn_chain_worker(
-    executor: &TaskExecutor,
-    handle: Handle,
-    storage: Arc<NodeStorage>,
-    status_channel: StatusChannel,
-    params: Arc<Params>,
-    exec_ctl_handle: ExecCtlHandle,
-) -> anyhow::Result<ChainWorkerHandle> {
-    // Create the worker context - this stays in consensus-logic since it implements WorkerContext
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let context = ChainWorkerCtx::new(
-        storage.l2().clone(),
-        storage.chainstate().clone(),
-        storage.checkpoint().clone(),
-        0, // FIXME: Not sure what this is
-    );
-
-    // Use the new builder API to launch the worker and get a handle
-    let handle = strata_chain_worker::ChainWorkerBuilder::new()
-        .with_context(context)
-        .with_params(params)
-        .with_exec_handle(exec_ctl_handle)
-        .with_status_channel(status_channel)
-        .with_runtime(handle)
-        .launch(executor)?;
-
-    Ok(handle)
 }
 
 pub fn spawn_asm_worker_with_ctx(nodectx: &NodeContext) -> anyhow::Result<AsmWorkerHandle> {
