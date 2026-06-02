@@ -3,9 +3,8 @@ use std::io;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_crypto::{hash, schnorr::verify_schnorr_sig};
+use strata_crypto::hash;
 use strata_identifiers::{Buf32, Buf64};
-use strata_params::CredRule;
 use zkaleido::{Proof, ProofReceipt, PublicValues};
 
 use super::batch::BatchInfo;
@@ -193,23 +192,4 @@ impl L1CommittedCheckpoint {
             commitment,
         }
     }
-}
-
-/// Verifies that a signed checkpoint has a proper signature according to rollup
-/// params.
-// TODO(STR-3629): this might want to take a chainstate in the future, but we don't have
-// the ability to get that where we call this yet
-pub fn verify_signed_checkpoint_sig(
-    signed_checkpoint: &SignedCheckpoint,
-    cred_rule: &CredRule,
-) -> bool {
-    let seq_pubkey = match cred_rule {
-        CredRule::SchnorrKey(key) => key,
-
-        // In this case we always just assume true.
-        CredRule::Unchecked => return true,
-    };
-
-    let checkpoint_hash = signed_checkpoint.checkpoint().hash();
-    verify_schnorr_sig(signed_checkpoint.signature(), &checkpoint_hash, seq_pubkey)
 }

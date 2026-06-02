@@ -56,7 +56,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     };
 
     // Get genesis L1 view.
-    let genesis_l1_view = super::params::retrieve_genesis_l1_view(
+    let genesis_l1_view = super::genesis_info::retrieve_genesis_l1_view(
         cmd.genesis_l1_view_file.as_deref(),
         cmd.genesis_l1_height,
         ctx,

@@ -5,8 +5,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bitcoin::Amount;
-use strata_btc_types::GenesisL1View;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_csm_worker::CsmWorkerStatus;
@@ -14,9 +12,6 @@ use strata_db_types::DbResult;
 use strata_identifiers::{
     Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
 };
-use strata_l1_txfmt::MagicBytes;
-use strata_params::{CredRule, ProofPublishMode, RollupParams};
-use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, L1Height};
 use strata_status::OLSyncStatus;
 
@@ -69,33 +64,6 @@ fn make_epoch_summary(
     )
 }
 
-fn test_rollup_params(reorg_safe_depth: u32) -> RollupParams {
-    let genesis_l1_view = GenesisL1View {
-        blk: make_l1_commitment(0, 0),
-        next_target: 0,
-        epoch_start_timestamp: 0,
-        last_11_timestamps: [0; 11],
-    };
-    RollupParams {
-        magic_bytes: MagicBytes::new(*b"TEST"),
-        block_time: 1000,
-        cred_rule: CredRule::Unchecked,
-        genesis_l1_view,
-        operators: vec![],
-        evm_genesis_block_hash: Buf32([0; 32]),
-        evm_genesis_block_state_root: Buf32([0; 32]),
-        l1_reorg_safe_depth: reorg_safe_depth,
-        target_l2_batch_size: 64,
-        deposit_amount: Amount::from_sat(1_000_000_000),
-        recovery_delay: 1008,
-        checkpoint_predicate: PredicateKey::never_accept(),
-        dispatch_assignment_dur: 64,
-        proof_publish_mode: ProofPublishMode::Strict,
-        max_deposits_in_block: 16,
-        network: bitcoin::Network::Regtest,
-    }
-}
-
 /// In-memory mock of [`CheckpointSyncCtx`] replacing storage, Bitcoin RPC, CSM
 /// monitor, and chain worker with hash maps and vectors.
 ///
@@ -103,7 +71,8 @@ fn test_rollup_params(reorg_safe_depth: u32) -> RollupParams {
 /// mirroring how the real chain worker writes an [`EpochSummary`] after
 /// reconstructing the epoch's state.
 struct MockCtx {
-    rollup_params: RollupParams,
+    /// L1 reorg-safe depth used to compute reorg-safety of checkpoints.
+    l1_reorg_safe_depth: u32,
     /// Simulated L1 tip; used to compute reorg-safety of checkpoints.
     l1_tip_height: L1Height,
     /// CSM status returned by `fetch_csm_status`.
@@ -128,7 +97,7 @@ struct MockCtx {
 impl MockCtx {
     fn new(reorg_safe_depth: u32, l1_tip_height: L1Height) -> Self {
         Self {
-            rollup_params: test_rollup_params(reorg_safe_depth),
+            l1_reorg_safe_depth: reorg_safe_depth,
             l1_tip_height,
             csm_status: CsmWorkerStatus {
                 cur_block: None,
@@ -167,8 +136,8 @@ impl MockCtx {
 }
 
 impl CheckpointSyncCtx for MockCtx {
-    fn rollup_params(&self) -> &RollupParams {
-        &self.rollup_params
+    fn l1_reorg_safe_depth(&self) -> u32 {
+        self.l1_reorg_safe_depth
     }
 
     async fn fetch_l1_tip_height(&self) -> CheckpointSyncResult<Option<L1Height>> {

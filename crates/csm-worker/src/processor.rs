@@ -9,7 +9,7 @@ use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
-use strata_params::is_l1_reorg_safe;
+use strata_primitives::l1::is_l1_reorg_safe;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use tracing::*;
@@ -432,12 +432,12 @@ mod tests {
         HeaderVerificationState,
     };
     use strata_asm_logs::constants::DEPOSIT_LOG_TYPE_ID;
+    use strata_asm_params::AsmParams;
     use strata_btc_verification::L1Anchor;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::RBuf32;
     use strata_l1_txfmt::MagicBytes;
-    use strata_params::Params;
     use strata_primitives::prelude::*;
     use strata_state::asm_state::AsmState;
     use strata_status::StatusChannel;
@@ -445,6 +445,10 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{state::CsmWorkerState, test_utils::StubCtx};
+
+    /// Reorg-safe depth used by the test stub context; the ASM params fixture
+    /// carries no reorg depth (that lives in the node config at runtime).
+    const TEST_L1_REORG_SAFE_DEPTH: u32 = 3;
 
     /// Builds a minimal `AsmState` carrying `logs`. The anchor state itself is
     /// inert — gap-fill only reads `AsmState::logs()`.
@@ -472,8 +476,8 @@ mod tests {
         L1BlockId::from(Buf32::from([height as u8; 32]))
     }
 
-    fn create_test_params_arc() -> Arc<Params> {
-        Arc::new(strata_test_utils_l2::gen_params())
+    fn create_test_params_arc() -> Arc<AsmParams> {
+        Arc::new(strata_test_utils_l2::gen_asm_params())
     }
 
     /// Sets up storage seeded with an empty client state and a fresh status channel.
@@ -505,16 +509,16 @@ mod tests {
 
     /// Builds a default `StubCtx` with a panicking `get_l1_block`.
     fn default_stub_ctx(
-        params: &Params,
+        params: &AsmParams,
         storage: Arc<strata_storage::NodeStorage>,
         status_channel: Arc<StatusChannel>,
     ) -> StubCtx {
         StubCtx::new(
             storage,
             status_channel,
-            params.rollup.l1_reorg_safe_depth,
-            params.rollup.magic_bytes,
-            params.rollup.genesis_l1_view.blk,
+            TEST_L1_REORG_SAFE_DEPTH,
+            params.magic,
+            params.anchor.block,
         )
     }
 

@@ -142,12 +142,8 @@ pub async fn deposit(
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
-    let mut l1w = SignetWallet::new(
-        &seed,
-        settings.params.network,
-        settings.signet_backend.clone(),
-    )
-    .internal_error("Failed to load signet wallet")?;
+    let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
+        .internal_error("Failed to load signet wallet")?;
     let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
         .user_error("Invalid Alpen endpoint URL. Check the config file")?;
 
@@ -163,7 +159,7 @@ pub async fn deposit(
         })
         .transpose()?;
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
-    let drt_amount = settings.params.deposit_amount + settings.bridge_fee;
+    let drt_amount = settings.deposit_amount + settings.bridge_fee;
     println!(
         "Bridging {} to Alpen address {}",
         drt_amount.to_string().green(),
@@ -172,8 +168,8 @@ pub async fn deposit(
 
     let (bridge_in_desc, bridge_in_address, header_aux, deposit_output) = prepare_deposit_request(
         settings.bridge_musig2_pubkey,
-        settings.params.network,
-        settings.params.recovery_delay,
+        settings.network,
+        settings.recovery_delay,
         alpen_address,
         drt_amount,
     );
@@ -192,7 +188,7 @@ pub async fn deposit(
     // Number of blocks after which the wallet actually enables recovery. This is mostly to account
     // for any reorgs that may happen at the recovery height.
     let recover_at =
-        current_block_height + settings.params.recovery_delay as u32 + settings.finality_depth;
+        current_block_height + settings.recovery_delay as u32 + settings.finality_depth;
 
     println!(
         "Using {} as bridge in address",
@@ -206,7 +202,7 @@ pub async fn deposit(
         &mut l1w,
         &header_aux,
         &deposit_output,
-        settings.params.magic_bytes,
+        settings.magic_bytes,
         fee_rate,
     )?;
     println!("Built transaction");

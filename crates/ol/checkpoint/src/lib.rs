@@ -1,7 +1,5 @@
 //! OL checkpoint worker.
 
-use strata_params as _;
-
 mod builder;
 mod context;
 mod errors;

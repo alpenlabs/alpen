@@ -54,7 +54,7 @@ pub(crate) enum Subcommand {
     SeqPubkey(SubcSeqPubkey),
     SeqPrivkey(SubcSeqPrivkey),
     OpPubkey(SubcOpPubkey),
-    Params(SubcParams),
+    CheckpointPredicate(SubcCheckpointPredicate),
     AsmParams(SubcAsmParams),
     OlParams(SubcOlParams),
     #[cfg(feature = "btc-client")]
@@ -125,88 +125,19 @@ pub(crate) struct SubcOpPubkey {
     pub(crate) key_file: PathBuf,
 }
 
-/// Generate a network's param file from inputs.
+/// Print the resolved checkpoint predicate (e.g. the SP1 checkpoint VK).
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(
     subcommand,
-    name = "genparams",
-    description = "generates network params from inputs"
+    name = "gen-checkpoint-predicate",
+    description = "prints the resolved checkpoint predicate to stdout"
 )]
-pub(crate) struct SubcParams {
-    #[argh(
-        option,
-        description = "output file path .json (default stdout)",
-        short = 'o'
-    )]
-    pub(crate) output: Option<PathBuf>,
-
-    #[argh(
-        option,
-        description = "network name, used for magics (default random)",
-        short = 'n'
-    )]
-    pub(crate) name: Option<String>,
-
-    #[argh(
-        option,
-        description = "sequencer x-only public key, 32-byte hex (default unchecked)",
-        short = 's'
-    )]
-    pub(crate) seq_pk: Option<String>,
-
-    #[argh(
-        option,
-        description = "add a bridge operator compressed public key (33-byte hex with a parity `02`/`03` prefix)",
-        short = 'b'
-    )]
-    pub(crate) op_pk: Vec<String>,
-
-    #[argh(
-        option,
-        description = "read bridge operator compressed public keys by line from file",
-        short = 'B'
-    )]
-    pub(crate) op_pks: Option<PathBuf>,
-
-    #[argh(option, description = "deposit amount in sats (default \"10 BTC\")")]
-    pub(crate) deposit_sats: Option<String>,
-
-    #[argh(
-        option,
-        description = "genesis L1 block height (default 100)",
-        short = 'g'
-    )]
-    pub(crate) genesis_l1_height: Option<L1Height>,
-
-    #[argh(option, description = "block time in seconds (default 5)", short = 't')]
-    pub(crate) block_time: Option<u64>,
-
-    #[argh(option, description = "epoch duration in slots (default 64)")]
-    pub(crate) epoch_slots: Option<u32>,
-
-    #[argh(
-        option,
-        description = "permit blank proofs after timeout in millis (default strict)"
-    )]
-    pub(crate) proof_timeout: Option<u32>,
-
+pub(crate) struct SubcCheckpointPredicate {
     #[argh(
         option,
         description = "checkpoint predicate type: 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test' (default: feature-gated)"
     )]
     pub(crate) checkpoint_predicate: Option<CheckpointPredicateOverride>,
-
-    #[argh(option, description = "directory to export the generated ELF")]
-    pub(crate) elf_dir: Option<PathBuf>,
-
-    #[argh(option, description = "path to evm chain config json")]
-    pub(crate) chain_config: Option<PathBuf>,
-
-    #[argh(
-        option,
-        description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
-    )]
-    pub(crate) genesis_l1_view_file: Option<String>,
 }
 
 /// Generate an ASM params file from inputs.

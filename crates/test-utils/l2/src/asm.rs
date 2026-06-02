@@ -1,15 +1,8 @@
-//! L2/rollup related test utilities for the Alpen codebase.
+//! ASM params test fixtures for L2/CSM components.
 
-use bitcoin::{
-    hashes::Hash,
-    params::Params as BitcoinParams,
-    secp256k1::{SecretKey, SECP256K1},
-    Amount, CompactTarget, XOnlyPublicKey,
-};
-use rand::{rngs::StdRng, SeedableRng};
-use strata_crypto::EvenSecretKey;
-use strata_params::{CredRule, Params, ProofPublishMode, RollupParams, SyncParams};
-use strata_predicate::PredicateKey;
+use bitcoin::{hashes::Hash, params::Params as BitcoinParams, CompactTarget};
+use strata_asm_params::AsmParams;
+use strata_btc_verification::L1Anchor;
 use strata_primitives::{
     buf::Buf32,
     constants::TIMESTAMPS_FOR_MEDIAN,
@@ -18,49 +11,25 @@ use strata_primitives::{
 };
 use strata_test_utils_btc::BtcMainnetSegment;
 
-/// Generates consensus [`Params`].
+/// Generates a minimal [`AsmParams`] for CSM/L2 tests.
 ///
-/// N.B. Currently, uses the same seed under the hood.
-pub fn gen_params() -> Params {
-    // TODO(STR-3692): create a random seed if we really need random op_pubkeys every time this is
-    // called
-    gen_params_with_seed(0)
-}
-
-fn gen_params_with_seed(seed: u64) -> Params {
-    let opkey = make_dummy_operator_pubkeys_with_seed(seed);
+/// Mirrors the genesis L1 anchor and magic bytes the legacy params fixture
+/// produced. Subprotocols are left empty since current consumers only read the
+/// magic bytes and the genesis anchor block.
+// TODO: populate `subprotocols` (bridge/checkpoint) if a test needs them.
+pub fn gen_asm_params() -> AsmParams {
     let segment = BtcMainnetSegment::load();
     let genesis_l1_view = fetch_genesis_l1_view(&segment, 40_320);
-    Params {
-        rollup: RollupParams {
-            magic_bytes: (*b"ALPN").into(),
-            block_time: 1000,
-            cred_rule: CredRule::Unchecked,
-            genesis_l1_view,
-            operators: vec![opkey],
-            evm_genesis_block_hash:
-                "0x37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba"
-                    .parse()
-                    .unwrap(),
-            evm_genesis_block_state_root:
-                "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f"
-                    .parse()
-                    .unwrap(),
-            l1_reorg_safe_depth: 3,
-            target_l2_batch_size: 64,
-            deposit_amount: Amount::from_sat(1_000_000_000),
-            checkpoint_predicate: PredicateKey::never_accept(),
-            dispatch_assignment_dur: 64,
-            proof_publish_mode: ProofPublishMode::Strict,
-            max_deposits_in_block: 16,
-            network: bitcoin::Network::Regtest,
-            recovery_delay: 1008,
-        },
-        run: SyncParams {
-            l2_blocks_fetch_limit: 1000,
-            l1_follow_distance: 3,
-            client_checkpoint_interval: 10,
-        },
+    let anchor = L1Anchor {
+        block: genesis_l1_view.blk,
+        next_target: genesis_l1_view.next_target,
+        epoch_start_timestamp: genesis_l1_view.epoch_start_timestamp,
+        network: bitcoin::Network::Regtest,
+    };
+    AsmParams {
+        magic: (*b"ALPN").into(),
+        anchor,
+        subprotocols: Vec::new(),
     }
 }
 
@@ -127,19 +96,4 @@ fn fetch_block_timestamps_ascending(
 
     timestamps.reverse();
     timestamps
-}
-
-fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> XOnlyPublicKey {
-    let mut rng = StdRng::seed_from_u64(seed);
-    let sk = SecretKey::new(&mut rng);
-    // Ensure the key has even parity for taproot compatibility
-    let even_sk = EvenSecretKey::from(sk);
-    even_sk.x_only_public_key(SECP256K1).0
-}
-
-/// Gets the operator secret key for testing.
-/// This matches the key generation in `make_dummy_operator_pubkeys_with_seed(0)`.
-pub fn get_test_operator_secret_key() -> SecretKey {
-    let mut rng = StdRng::seed_from_u64(0);
-    SecretKey::new(&mut rng)
 }

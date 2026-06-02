@@ -59,10 +59,6 @@ pub(crate) struct Args {
     #[argh(switch, description = "is sequencer")]
     pub sequencer: bool,
 
-    /// Rollup params path that will override the params in the config toml.
-    #[argh(option, description = "rollup params")]
-    pub rollup_params: Option<PathBuf>,
-
     /// Path to the sequencer runtime config TOML file.
     #[argh(option, description = "sequencer runtime config")]
     pub sequencer_config: Option<PathBuf>,
@@ -266,7 +262,6 @@ mod tests {
             config: PathBuf::from("config.toml"),
             datadir: None,
             sequencer: false,
-            rollup_params: None,
             sequencer_config: None,
             ol_params: None,
             asm_params: None,

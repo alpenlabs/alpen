@@ -18,7 +18,7 @@ use strata_service::ServiceMonitor;
 use crate::{
     context::ensure_genesis,
     css, fcm,
-    helpers::rollup_to_btcio_params,
+    helpers::build_btcio_params,
     run_context::{RunContext, ServiceHandles},
 };
 
@@ -93,7 +93,10 @@ mod sequencer_services {
             BroadcasterBuilder::new(
                 nodectx.bitcoin_client().clone(),
                 broadcast_ops,
-                super::rollup_to_btcio_params(nodectx.params().rollup()),
+                super::build_btcio_params(
+                    nodectx.asm_params(),
+                    nodectx.config().btcio.l1_reorg_safe_depth,
+                ),
             )
             .with_broadcast_poll_interval_ms(nodectx.config().btcio.broadcaster.poll_interval_ms)
             .launch(nodectx.executor().as_ref())
@@ -116,7 +119,10 @@ mod sequencer_services {
 
         let writer_db = nodectx.storage().db().writer_db();
         let config = Arc::new(nodectx.config().btcio.writer.clone());
-        let btcio_params = super::rollup_to_btcio_params(nodectx.params().rollup());
+        let btcio_params = super::build_btcio_params(
+            nodectx.asm_params(),
+            nodectx.config().btcio.l1_reorg_safe_depth,
+        );
         let executor = nodectx.executor();
 
         nodectx.task_manager().handle().block_on(async {
@@ -190,7 +196,7 @@ mod sequencer_services {
         let epoch_sealing = FixedSlotSealing::new(slots_per_epoch);
         let state_provider = OLStateManagerProviderImpl::new(nodectx.storage().ol_state().clone());
 
-        let l1_reorg_safe_depth = nodectx.params().rollup().l1_reorg_safe_depth;
+        let l1_reorg_safe_depth = nodectx.config().btcio.l1_reorg_safe_depth;
 
         nodectx.task_manager().handle().block_on(async {
             BlockasmBuilder::new(
@@ -352,7 +358,10 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
             nodectx.bitcoin_client().clone(),
             nodectx.storage().clone(),
             Arc::new(nodectx.config().btcio.reader.clone()),
-            rollup_to_btcio_params(nodectx.params().rollup()),
+            build_btcio_params(
+                nodectx.asm_params(),
+                nodectx.config().btcio.l1_reorg_safe_depth,
+            ),
             ReaderValidation::new(
                 nodectx.config().bitcoind.network,
                 nodectx.ol_params().last_l1_block,

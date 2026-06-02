@@ -22,7 +22,6 @@ strata-key-derivation.workspace = true
 strata-l1-txfmt.workspace = true
 strata-ol-genesis.workspace = true
 strata-ol-params.workspace = true
-strata-params.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-alpen-acct.workspace = true

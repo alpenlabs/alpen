@@ -13,7 +13,7 @@ use strata_snark_acct_runtime::IInnerState;
 use crate::{
     acct_predicate::resolve_acct_predicate,
     args::{CmdContext, SubcOlParams},
-    cmd::params::{get_alpen_ee_genesis_block_info, retrieve_genesis_l1_view},
+    cmd::genesis_info::{get_alpen_ee_genesis_block_info, retrieve_genesis_l1_view},
 };
 
 const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);

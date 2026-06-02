@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use strata_params::{is_l1_reorg_safe, l1_confirmations};
 use strata_primitives::EpochCommitment;
+use strata_primitives::l1::{is_l1_reorg_safe, l1_confirmations};
 use strata_service::ServiceState;
 use strata_status::OLSyncStatus;
 use tracing::{debug, info};
@@ -167,7 +167,7 @@ pub(crate) async fn find_and_apply_unapplied_epochs(
         .fetch_l1_tip_height()
         .await?
         .ok_or(CheckpointSyncError::L1TipNotReady)?;
-    let reorg_safe_depth = ctx.rollup_params().l1_reorg_safe_depth;
+    let reorg_safe_depth = ctx.l1_reorg_safe_depth();
     debug!(
         %cur_finalized,
         l1_tip_height,
