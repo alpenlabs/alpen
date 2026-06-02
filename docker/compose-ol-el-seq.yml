@@ -80,6 +80,7 @@ services:
       - .env
       - ./configs/generated/.env.alpen
     environment:
+      SEQUENCER_MODE: "true"
       OL_SUBMIT_URL: ws://strata:8435
       STRATA_SUBMIT_RPC_TOKEN: ${STRATA_SUBMIT_RPC_TOKEN:-dev-only-submit-token}
     volumes:
