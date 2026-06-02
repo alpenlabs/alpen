@@ -275,6 +275,7 @@ GEOF
             -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
             --ol-params "${OL_PARAMS}" \
+            --safe-harbour-address "${SAFE_HARBOUR_ADDRESS:-04${OPERATOR_PK:2}}" \
             ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"}
         echo "generated ${ASM_PARAMS}"
     fi
