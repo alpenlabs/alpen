@@ -168,6 +168,14 @@ def extract_operator_pks(template_dir: Path):
     return []
 
 
+def extract_safe_harbour(template_dir: Path) -> str:
+    ap = load_json(template_dir / "asm-params.json")
+    for sp in ap["subprotocols"]:
+        if "Bridge" in sp:
+            return sp["Bridge"]["safe_harbour_address"]
+    raise ValueError("safe_harbour_address not found in asm-params template")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -194,6 +202,10 @@ def main():
         op_pks = extract_operator_pks(template_dir)
         (output_dir / "op-pks.txt").write_text("\n".join(op_pks) + "\n")
         print(f"  operators: {len(op_pks)} keys")
+
+        safe_harbour = extract_safe_harbour(template_dir)
+        (output_dir / "safe-harbour.txt").write_text(safe_harbour + "\n")
+        print(f"  safe_harbour_address: {safe_harbour}")
 
         (output_dir / "seq-pk.txt").write_text(seq_pk + "\n")
         return

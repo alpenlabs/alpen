@@ -46,6 +46,7 @@ python3 "${SCRIPT_DIR}/params-helper.py" extract-keys \
     --template-dir "${TEMPLATE_DIR}" \
     --output-dir "${WORK_DIR}"
 SEQ_PK=$(tr -d '[:space:]' < "${WORK_DIR}/seq-pk.txt")
+SAFE_HARBOUR=$(tr -d '[:space:]' < "${WORK_DIR}/safe-harbour.txt")
 
 echo ""
 echo "=== Step 1: Generate raw params via datatool ==="
@@ -88,6 +89,7 @@ run_datatool -- \
     --checkpoint-predicate sp1-groth16 \
     --ol-params /out/ol-params-raw.json \
     --genesis-l1-height "${GENESIS_L1_HEIGHT}" \
+    --safe-harbour-address "${SAFE_HARBOUR}" \
     -o /out/asm-params-raw.json
 echo "  asm-params-raw.json generated"
 
