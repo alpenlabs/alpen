@@ -55,6 +55,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         da_magic_bytes: bytes = DEFAULT_DA_MAGIC_BYTES,
         l1_reorg_safe_depth: int = 1,
         batch_sealing_block_count: int = 5,
+        beneficiary_address: str | None = None,
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
@@ -64,6 +65,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         self.da_magic_bytes = da_magic_bytes
         self.l1_reorg_safe_depth = l1_reorg_safe_depth
         self.batch_sealing_block_count = batch_sealing_block_count
+        self.beneficiary_address = beneficiary_address
         if pure_discovery and not enable_discovery:
             raise ValueError("pure_discovery requires enable_discovery=True")
         if mesh_bootnodes and not enable_discovery:
@@ -82,6 +84,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             self.da_magic_bytes,
             self.l1_reorg_safe_depth,
             self.batch_sealing_block_count,
+            beneficiary_address=self.beneficiary_address,
         )
         return flexitest.LiveEnv(services)
 
@@ -101,6 +104,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         ol_submit_endpoint: str | None = None,
         ol_submit_token: str | None = None,
         dev_track_latest_epoch: bool = False,
+        beneficiary_address: str | None = None,
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
         privkey, pubkey = generate_sequencer_keypair()
@@ -161,6 +165,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             da_config=da_config,
             batch_sealing_block_count=batch_sealing_block_count,
             dev_track_latest_epoch=dev_track_latest_epoch,
+            beneficiary_address=beneficiary_address,
         )
         sequencer.wait_for_ready(timeout=60)
         seq_enode = sequencer.get_enode()

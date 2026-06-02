@@ -1,14 +1,13 @@
 use std::time::{Duration, Instant};
 
 use alloy_eips::eip4895::Withdrawal;
-use alloy_primitives::B256;
+use alloy_primitives::{Address, B256};
 use alloy_rpc_types_engine::{ForkchoiceState, PayloadAttributes};
 use alpen_ee_common::{
     sats_to_gwei, ExecutionEngine, ExecutionEngineError, PayloadBuildAttributes,
     PayloadBuilderEngine,
 };
 use alpen_ee_engine::AlpenRethExecEngine;
-use alpen_reth_evm::constants::COINBASE_ADDRESS;
 use alpen_reth_node::{
     AlpenBuiltPayload, AlpenEngineTypes, AlpenPayloadAttributes, AlpenPayloadBuilderAttributes,
 };
@@ -60,16 +59,19 @@ async fn sleep_before_missing_parent_retry(
 pub(crate) struct AlpenRethPayloadEngine {
     payload_builder_handle: PayloadBuilderHandle<AlpenEngineTypes>,
     exec_engine: AlpenRethExecEngine,
+    beneficiary_address: Address,
 }
 
 impl AlpenRethPayloadEngine {
     pub(crate) fn new(
         payload_builder_handle: PayloadBuilderHandle<AlpenEngineTypes>,
         beacon_engine_handle: ConsensusEngineHandle<AlpenEngineTypes>,
+        beneficiary_address: Address,
     ) -> Self {
         Self {
             payload_builder_handle,
             exec_engine: AlpenRethExecEngine::new(beacon_engine_handle),
+            beneficiary_address,
         }
     }
 
@@ -114,7 +116,7 @@ impl AlpenRethPayloadEngine {
             // parent_beacon_block_root
             parent_beacon_block_root: Some(B256::ZERO),
             prev_randao: B256::ZERO,
-            suggested_fee_recipient: COINBASE_ADDRESS,
+            suggested_fee_recipient: self.beneficiary_address,
             withdrawals: Some(withdrawals),
         });
 

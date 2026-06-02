@@ -82,6 +82,7 @@ use tracing::{error, info};
 
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
+    pub(super) use alloy_primitives::{address, Address};
     pub(super) use alpen_ee_common::{ChunkWitnessExtractFn, ChunkWitnessRecord};
     pub(super) use alpen_ee_da_provider::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
     pub(super) use alpen_reth_witness::RangeWitnessExtractor;
@@ -103,6 +104,9 @@ mod sequencer_imports {
             EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
         },
     };
+
+    pub(super) const DEFAULT_BENEFICIARY_ADDRESS: Address =
+        address!("5400000000000000000000000000000000000010");
 }
 
 #[cfg(feature = "sequencer")]
@@ -492,6 +496,7 @@ fn main() {
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
                     node.beacon_engine_handle.clone(),
+                    ext.beneficiary_address,
                 ));
 
                 let exec_chain_handle = services::exec_chain::start_exec_chain_service(
@@ -1134,6 +1139,10 @@ pub struct AdditionalConfig {
     #[cfg(feature = "sequencer")]
     #[arg(long, default_value_t = DEFAULT_BTCIO_RETRY_INTERVAL_MS)]
     pub btcio_retry_interval: u64,
+
+    #[cfg(feature = "sequencer")]
+    #[arg(long, default_value_t = DEFAULT_BENEFICIARY_ADDRESS)]
+    pub beneficiary_address: Address,
 }
 
 impl AdditionalConfig {
