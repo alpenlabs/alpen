@@ -249,7 +249,7 @@ where
             }
         })
         .collect();
-    accounts.sort_by(|a, b| a.address.cmp(&b.address));
+    accounts.sort_by_key(|a| a.address);
 
     let mut bytecode_hashes: Vec<[u8; 32]> = accessed
         .accessed_contracts()
