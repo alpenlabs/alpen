@@ -8,7 +8,7 @@ from common.base_test import StrataNodeTest
 from common.config import EpochSealingConfig, ServiceType
 from envconfigs.strata import StrataEnvConfig
 from tests.dbtool.helpers import (
-    load_rollup_genesis_height,
+    load_genesis_height,
     ol_genesis_slot,
     run_dbtool_json,
     setup_revert_ol_state_test,
@@ -35,7 +35,7 @@ class DbtoolValidateSyncinfoTest(StrataNodeTest):
 
         seq_service.stop()
         datadir = seq_service.props["datadir"]
-        genesis_height = load_rollup_genesis_height(datadir)
+        genesis_height = load_genesis_height(datadir)
 
         logger.info("Testing get-syncinfo to validate chain positions")
         syncinfo = run_dbtool_json(datadir, "get-syncinfo")

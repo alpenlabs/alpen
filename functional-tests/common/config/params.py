@@ -4,7 +4,6 @@ Rollup consensus parameters dataclasses.
 
 import json
 from dataclasses import asdict, dataclass, field
-from typing import Literal
 
 from bitcoinlib.keys import Key
 
@@ -30,8 +29,7 @@ def hex_bytes_repeated(n: int, repeat: int = 32) -> str:
 @dataclass
 class L1BlockCommitment:
     height: int = field(default=100)
-    # TODO(STR-3692): more type safe
-    blkid: str = field(default_factory=lambda: hex_bytes_repeated(0))
+    blkid: str = field(default_factory=lambda: hex_bytes_repeated(0))  # TODO: more type safe
 
 
 @dataclass
@@ -39,8 +37,7 @@ class GenesisL1View:
     blk: L1BlockCommitment = field(default_factory=L1BlockCommitment)
     next_target: int = field(default=1000)
     epoch_start_timestamp: int = field(default=1000)
-    # TODO(STR-3692): more type safe
-    last_11_timestamps: list[int] = field(default_factory=lambda: [0] * 11)
+    last_11_timestamps: list[int] = field(default_factory=lambda: [0] * 11)  # TODO: more type safe
 
     @staticmethod
     def at_latest_block(btc_rpc) -> "GenesisL1View":
@@ -89,58 +86,12 @@ class GenesisL1View:
         )
 
 
-# TODO(STR-3692): move this to some place common as this should be useful for other purposes as well
+# TODO: move this to some place common as this should be useful for other purposes as well
 def gen_random_keypair() -> tuple[str, Key]:
     """Generates a keypair and returns a tuple of xonly pubkey and privkey."""
     key = Key()
     xpubkey = format(key.x, "064x")
     return xpubkey, key
-
-
-@dataclass
-class ProofPublishModeTimeout:
-    timeout: int = field(default=30)
-
-
-ProofPublishMode = Literal["strict"] | ProofPublishModeTimeout
-
-
-@dataclass
-class SchnorrVerify:
-    schnorr_key: str  # TODO(STR-3692): more sophisticated, using pydantic?
-
-
-CredRule = SchnorrVerify | Literal["unchecked"]
-
-
-@dataclass
-class RollupParams:
-    magic_bytes: str = "ALPN"
-    block_time: int = field(default=5000)  # millisecs
-    cred_rule: CredRule = field(default="unchecked")
-    genesis_l1_view: GenesisL1View = field(default_factory=GenesisL1View)
-    operators: list[str] = field(default_factory=lambda: [gen_random_keypair()[0]])
-    evm_genesis_block_hash: str = field(default_factory=lambda: hex_bytes_repeated(0))
-    evm_genesis_block_state_root: str = field(default_factory=lambda: hex_bytes_repeated(0))
-    l1_reorg_safe_depth: int = field(default=6)
-    target_l2_batch_size: int = field(default=64)
-    deposit_amount: int = field(default=100000)
-    recovery_delay: int = field(default=1008)
-    checkpoint_predicate: str = field(
-        default="Bip340Schnorr:1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
-    )
-    dispatch_assignment_dur: int = field(default=144)
-    proof_publish_mode: ProofPublishMode = field(default_factory=ProofPublishModeTimeout)
-    max_deposits_in_block: int = field(default=10)
-    network: str = field(default="regtest")
-
-    def as_json_string(self) -> str:
-        d = asdict(self)
-        return json.dumps(d, indent=2)
-
-    def with_genesis_l1(self, genesis_l1: GenesisL1View):
-        self.genesis_l1_view = genesis_l1
-        return self
 
 
 @dataclass
@@ -179,16 +130,3 @@ class DepositTxParams:
     deposit_amount: int = field(default=100000)
     address: str = field(default="")
     operators_pubkey: str = field(default="")
-
-
-@dataclass
-class SyncParams:
-    l1_follow_distance: int = field(default=6)
-    client_checkpoint_interval: int = field(default=20)
-    l2_blocks_fetch_limit: int = field(default=10)
-
-
-@dataclass
-class Params:
-    rollup: RollupParams = field(default_factory=RollupParams)
-    run: SyncParams = field(default_factory=SyncParams)

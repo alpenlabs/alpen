@@ -26,8 +26,7 @@ from common.config import (
 from common.datatool import (
     generate_asm_params,
     generate_ol_params,
-    generate_rollup_params,
-    generate_rollup_params_unchecked,
+    generate_sequencer_artifacts,
 )
 from common.services import StrataProps, StrataService
 
@@ -35,7 +34,6 @@ from common.services import StrataProps, StrataService
 class StrataNodeParams(NamedTuple):
     """Generated parameter files for a Strata node."""
 
-    rollup_params: Path
     ol_params: Path
     asm_params: Path
 
@@ -131,7 +129,7 @@ class StrataFactory(flexitest.Factory):
         logging_config = LoggingConfig()
         # Enable the integrated native prover so the strata sequencer produces
         # real BIP-340 Schnorr witnesses for checkpoint payloads against the
-        # Bip340Schnorr checkpoint predicate baked into rollup params.
+        # Bip340Schnorr checkpoint predicate baked into the ASM params.
         config = StrataConfig(
             bitcoind=bconfig,
             client=client_config,
@@ -157,19 +155,13 @@ class StrataFactory(flexitest.Factory):
                 f.write(sequencer_runtime_config.as_toml_string())
 
         if shared_params is not None:
-            rollup_params_path = datadir / "rollup-params.json"
             ol_params_path = datadir / "ol-params.json"
             asm_params_path = datadir / "asm-params.json"
-            shutil.copyfile(shared_params.rollup_params, rollup_params_path)
             shutil.copyfile(shared_params.ol_params, ol_params_path)
             shutil.copyfile(shared_params.asm_params, asm_params_path)
         else:
-            # Generate rollup params via datatool (also produces keys used below).
-            if use_unchecked_cred_rule:
-                params_data = generate_rollup_params_unchecked(datadir, bconfig, genesis_l1_height)
-            else:
-                params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
-            rollup_params_path = params_data.params_path
+            # Generate the sequencer key + operator pubkeys consumed when building ASM params.
+            seq_artifacts = generate_sequencer_artifacts(datadir, use_unchecked_cred_rule)
 
             # Generate or write OL params.
             if ol_params is not None:
@@ -183,14 +175,13 @@ class StrataFactory(flexitest.Factory):
                 datadir,
                 bconfig,
                 genesis_l1_height,
-                params_data.operator_keys,
+                seq_artifacts.operator_keys,
                 ol_params_path=ol_params_path,
-                sequencer_pubkey=params_data.sequencer_pubkey,
+                sequencer_pubkey=seq_artifacts.sequencer_pubkey,
                 admin_confirmation_depth=admin_confirmation_depth,
             )
 
         node_params = StrataNodeParams(
-            rollup_params=rollup_params_path,
             ol_params=ol_params_path,
             asm_params=asm_params_path,
         )
@@ -202,8 +193,6 @@ class StrataFactory(flexitest.Factory):
             str(config_path),
             "--datadir",
             str(datadir),
-            "--rollup-params",
-            str(rollup_params_path),
             "--ol-params",
             str(ol_params_path),
             "--asm-params",
@@ -287,6 +276,6 @@ class StrataFactory(flexitest.Factory):
             raise RuntimeError(f"Failed to start strata service ({mode}): {e}") from e
 
         seq_key_path = (
-            params_data.sequencer_key_path if is_sequencer and shared_params is None else None
+            seq_artifacts.sequencer_key_path if is_sequencer and shared_params is None else None
         )
         return CreateNodeResult(svc, seq_key_path, node_params, genesis_l1_height)
