@@ -83,7 +83,7 @@ impl RunContext {
     pub(crate) fn fcm_handle(&self) -> Option<&Arc<FcmServiceHandle>> {
         match &self.service_handles.sync_handle {
             SyncServiceHandle::Fcm(handle) => Some(handle),
-            SyncServiceHandle::Css { .. } => None,
+            SyncServiceHandle::Css(_) => None,
         }
     }
 
@@ -157,12 +157,13 @@ impl SequencerServiceHandles {
 /// Handle for whichever OL sync service the node runs.
 ///
 /// A node runs exactly one: the fork-choice manager when it is a sequencer,
-/// the checkpoint sync service otherwise.
+/// the checkpoint sync service otherwise. The `Css` variant is held only to
+/// keep the service alive.
 pub(crate) enum SyncServiceHandle {
     /// Fork-choice manager handle (sequencer nodes).
     Fcm(Arc<FcmServiceHandle>),
     /// Checkpoint sync service handle (non-sequencer nodes).
-    Css { _handle: Arc<CssServiceHandle> },
+    Css(#[expect(dead_code, reason = "held to keep the service alive")] Arc<CssServiceHandle>),
 }
 
 /// Handles for all services.

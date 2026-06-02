@@ -205,6 +205,7 @@ impl OLClient for RpcOLClient {
                             u.extra_data.0.clone(),
                             messages,
                             u.new_state_root.as_ref().map(|root| root.0.into()),
+                            u.next_inbox_msg_idx,
                         ))
                     })
                     .collect::<Result<_, OLClientError>>()?;

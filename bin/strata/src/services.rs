@@ -377,9 +377,7 @@ fn start_sync_services(
         Ok(SyncServiceHandle::Fcm(Arc::new(fcm_handle)))
     } else {
         let css_handle = css::start(nodectx, chain_worker_handle, csm_monitor)?;
-        Ok(SyncServiceHandle::Css {
-            _handle: Arc::new(css_handle),
-        })
+        Ok(SyncServiceHandle::Css(Arc::new(css_handle)))
     }
 }
 

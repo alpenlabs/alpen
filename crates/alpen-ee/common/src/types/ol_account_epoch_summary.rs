@@ -11,6 +11,7 @@ pub struct SnarkAccountUpdateInfo {
     extra_data: Vec<u8>,
     messages: Vec<MessageEntry>,
     new_state_root: Option<Hash>,
+    new_next_msg_idx: u64,
 }
 
 impl SnarkAccountUpdateInfo {
@@ -19,12 +20,14 @@ impl SnarkAccountUpdateInfo {
         extra_data: Vec<u8>,
         messages: Vec<MessageEntry>,
         new_state_root: Option<Hash>,
+        new_next_msg_idx: u64,
     ) -> Self {
         Self {
             seq_no,
             extra_data,
             messages,
             new_state_root,
+            new_next_msg_idx,
         }
     }
 
@@ -42,6 +45,23 @@ impl SnarkAccountUpdateInfo {
 
     pub fn new_state_root(&self) -> Option<Hash> {
         self.new_state_root
+    }
+
+    /// Inbox cursor after this update is applied.
+    pub fn new_next_msg_idx(&self) -> u64 {
+        self.new_next_msg_idx
+    }
+
+    /// Iterates this update's messages paired with their absolute inbox indexes.
+    ///
+    /// Indexes start at `new_next_msg_idx - messages.len()` and increment by one
+    /// per message. Useful for logging which inbox entries an update consumed.
+    pub fn iter_messages_with_idxs(&self) -> impl Iterator<Item = (u64, &MessageEntry)> {
+        let start = self.new_next_msg_idx - self.messages.len() as u64;
+        self.messages
+            .iter()
+            .enumerate()
+            .map(move |(i, m)| (start + i as u64, m))
     }
 }
 

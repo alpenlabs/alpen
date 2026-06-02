@@ -173,8 +173,11 @@ pub(crate) fn apply_epoch_operations(
 
     for op in epoch_operations {
         if op.new_state_root().is_none() {
+            let msg_idxs: Vec<u64> = op.iter_messages_with_idxs().map(|(i, _)| i).collect();
             debug!(
                 seq_no = op.seq_no(),
+                new_next_msg_idx = op.new_next_msg_idx(),
+                ?msg_idxs,
                 "applying update without post-state check"
             );
         }

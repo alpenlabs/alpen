@@ -41,6 +41,13 @@ use crate::{
     ChainWorkerContextImpl,
 };
 
+/// Safety cap on the L1 block range an epoch's manifests can span.
+///
+/// Defends against an outsized range from a malformed payload allocating an
+/// unbounded `Vec<AsmManifest>`. Tuned generously: a healthy epoch spans at
+/// most a few hundred L1 blocks.
+const MAX_EPOCH_L1_RANGE: u32 = 100_000;
+
 /// Mutable state for the chain worker.
 ///
 /// This contains the actual "state" - data that changes during the worker's
@@ -374,6 +381,7 @@ impl ChainWorkerServiceState {
     /// Reconstructs an epoch's OL state from its checkpoint and persists it. Used by checkpoint
     /// sync.
     #[instrument(
+        level = "debug",
         skip_all,
         fields(epoch = epoch.epoch(), slot = epoch.last_slot(), blkid = %epoch.last_blkid()),
         err
@@ -411,13 +419,6 @@ pub(crate) fn get_prev_terminal(
         .ok_or(WorkerError::MissingSummaryForEpoch(target_epoch))
 }
 
-/// Safety cap on the L1 block range an epoch's manifests can span.
-///
-/// Defends against an outsized range from a malformed payload allocating an
-/// unbounded `Vec<AsmManifest>`. Tuned generously: a healthy epoch spans at
-/// most a few hundred L1 blocks.
-const MAX_EPOCH_L1_RANGE: u64 = 100_000;
-
 /// Reconstructs an epoch's OL state from its checkpoint, persisting nothing.
 pub(crate) fn apply_checkpoint_epoch(
     ctx: &impl ChainWorkerContext,
@@ -436,11 +437,11 @@ pub(crate) fn apply_checkpoint_epoch(
     // a key→value mismatch from a future storage backend / writer bug.
     let tip = payload.new_tip();
     if tip.epoch != epoch.epoch() || tip.l2_commitment() != &epoch.to_block_commitment() {
-        return Err(WorkerError::Unexpected(format!(
-            "checkpoint payload tip mismatch for {epoch}: payload epoch={} l2_commitment={:?}",
-            tip.epoch,
-            tip.l2_commitment(),
-        )));
+        return Err(WorkerError::CheckpointTipMismatch {
+            epoch: epoch.epoch(),
+            payload_epoch: tip.epoch,
+            payload_l2: *tip.l2_commitment(),
+        });
     }
 
     // Fetch previous terminal state.
@@ -452,12 +453,18 @@ pub(crate) fn apply_checkpoint_epoch(
 
     let sidecar = payload.sidecar();
     let terminal = *tip.l2_commitment();
-    let da_payload = decode_ol_da_payload_bytes(sidecar.ol_state_diff())
-        .map_err(|e| WorkerError::Unexpected(format!("decode OL DA payload: {e}")))?;
+    let da_payload = decode_ol_da_payload_bytes(sidecar.ol_state_diff()).map_err(|source| {
+        WorkerError::DaPayloadDecode {
+            epoch: epoch.epoch(),
+            source,
+        }
+    })?;
     let (manifest_cont, epoch_info) =
         assemble_da_inputs(ctx, epoch, &base_state, sidecar, tip, prev_terminal)?;
 
-    // Read pre-epoch seqno for every snark account touched by `ol_logs`.
+    // Read each snark account's seqno as of the previous epoch's terminal state.
+    // The set of affected accounts is inferred from `ol_logs`, which records the
+    // changes made during the epoch (we don't directly have the per-account input set).
     let pre_seqnos = collect_pre_seqnos(&base_state, sidecar.ol_logs())?;
 
     // Reconstruct: wrap the base state in the write-tracking + indexer stack,
@@ -465,9 +472,14 @@ pub(crate) fn apply_checkpoint_epoch(
     let tracking_state = WriteTrackingState::new_empty(&base_state);
     let mut indexer_state = IndexerState::new(tracking_state);
     apply_da_epoch::<_, OLDaSchemeV1>(&mut indexer_state, &epoch_info, da_payload, &manifest_cont)?;
-    let indexer_state_root = indexer_state
-        .compute_state_root()
-        .map_err(|e| WorkerError::Unexpected(format!("compute indexer state root: {epoch} {e}")))?;
+    let indexer_state_root =
+        indexer_state
+            .compute_state_root()
+            .map_err(|source| WorkerError::StateRootCompute {
+                epoch: epoch.epoch(),
+                stage: "indexer",
+                source,
+            })?;
 
     // Replace the DA-collapsed snark records (one per account) with per-update
     // records derived from the checkpoint sidecar's `ol_logs`.
@@ -489,9 +501,14 @@ pub(crate) fn apply_checkpoint_epoch(
     verify_snark_seqno_invariant(&new_state, &derived_seqnos)?;
 
     indexer_writes.set_snark_acct_state_updates(rebuilt_snark_updates);
-    let final_state_root = new_state
-        .compute_state_root()
-        .map_err(|e| WorkerError::Unexpected(format!("compute final state root {epoch}: {e}")))?;
+    let final_state_root =
+        new_state
+            .compute_state_root()
+            .map_err(|source| WorkerError::StateRootCompute {
+                epoch: epoch.epoch(),
+                stage: "final",
+                source,
+            })?;
 
     // Now verify.
     verify_reconstruction(
@@ -548,19 +565,26 @@ fn assemble_da_inputs(
     })?;
     let to_height = tip.l1_height();
     if to_height < from_height {
-        return Err(WorkerError::Unexpected(format!(
-            "checkpoint payload L1 range inverted at {epoch}: from={from_height} to={to_height}"
-        )));
+        return Err(WorkerError::L1RangeInverted {
+            epoch: epoch.epoch(),
+            from: from_height,
+            to: to_height,
+        });
     }
-    let range_len = (to_height - from_height + 1) as u64;
+    let range_len = to_height - from_height + 1;
     if range_len > MAX_EPOCH_L1_RANGE {
-        return Err(WorkerError::Unexpected(format!(
-            "epoch L1 manifest range too large at {epoch}: {range_len} blocks (max {MAX_EPOCH_L1_RANGE})"
-        )));
+        return Err(WorkerError::L1RangeTooLarge {
+            epoch: epoch.epoch(),
+            len: range_len,
+            max: MAX_EPOCH_L1_RANGE,
+        });
     }
     let manifests = ctx.fetch_l1_manifests(from_height, to_height)?;
-    let manifest_cont = OLL1ManifestContainer::new(manifests)
-        .map_err(|e| WorkerError::Unexpected(format!("build manifest container: {e}")))?;
+    let manifest_cont =
+        OLL1ManifestContainer::new(manifests).map_err(|e| WorkerError::ManifestContainerBuild {
+            epoch: epoch.epoch(),
+            detail: e.to_string(),
+        })?;
 
     let terminal = tip.l2_commitment();
     let terminal_info = BlockInfo::new(
@@ -590,9 +614,11 @@ fn verify_reconstruction(
             payload_tip_l2 = ?tip.l2_commitment(),
             "epoch reconstruction state root divergence",
         );
-        return Err(WorkerError::Unexpected(format!(
-            "state root divergence at {epoch}: indexer={indexer_state_root} batch={final_state_root}"
-        )));
+        return Err(WorkerError::StateRootDivergence {
+            epoch: epoch.epoch(),
+            indexer_root: indexer_state_root,
+            final_root: final_state_root,
+        });
     }
 
     let mut terminal_flags = BlockFlags::zero();
@@ -616,10 +642,11 @@ fn verify_reconstruction(
             %reconstructed_blkid,
             "terminal header reconstruction blkid mismatch",
         );
-        return Err(WorkerError::Unexpected(format!(
-            "terminal blkid mismatch at {epoch}: expected={} reconstructed={reconstructed_blkid}",
-            terminal.blkid()
-        )));
+        return Err(WorkerError::TerminalBlkidMismatch {
+            epoch: epoch.epoch(),
+            expected: *terminal.blkid(),
+            reconstructed: reconstructed_blkid,
+        });
     }
 
     Ok(())
@@ -634,43 +661,48 @@ fn verify_snark_seqno_invariant<S: IStateAccessor>(
     for (&serial, &derived) in derived_seqnos {
         let account_id = state
             .find_account_id_by_serial(serial)
-            .map_err(|e| {
-                WorkerError::Unexpected(format!("resolve post-state serial {serial:?}: {e}"))
+            .map_err(|source| WorkerError::AccountStateRead {
+                stage: "post-state serial lookup",
+                source,
             })?
-            .ok_or_else(|| {
-                WorkerError::Unexpected(format!(
-                    "post-state missing snark account for serial {serial:?}"
-                ))
-            })?;
+            .ok_or(WorkerError::UnknownAccountSerial(serial))?;
         let acct = state
             .get_account_state(account_id)
-            .map_err(|e| {
-                WorkerError::Unexpected(format!("read post-state account {account_id}: {e}"))
+            .map_err(|source| WorkerError::AccountStateRead {
+                stage: "post-state account read",
+                source,
             })?
             .ok_or_else(|| {
                 WorkerError::Unexpected(format!(
                     "post-state account {account_id} missing after batch apply"
                 ))
             })?;
-        let post = acct.as_snark_account().map(|s| s.seqno()).map_err(|e| {
-            WorkerError::Unexpected(format!(
-                "post-state account {account_id} is not a snark account: {e}"
-            ))
-        })?;
+        let post = acct
+            .as_snark_account()
+            .map(|s| s.seqno())
+            .map_err(|source| WorkerError::AccountStateRead {
+                stage: "post-state as_snark_account",
+                source,
+            })?;
         if post != derived {
             error!(
                 ?serial, %account_id, ?derived, ?post,
                 "snark seqno invariant violated",
             );
-            return Err(WorkerError::Unexpected(format!(
-                "snark seqno mismatch for {serial:?} ({account_id}): derived={derived:?} post={post:?}"
-            )));
+            return Err(WorkerError::SnarkSeqnoMismatch {
+                serial,
+                account_id,
+                derived,
+                post,
+            });
         }
     }
     Ok(())
 }
 
-/// Reads the pre-epoch seqno for every snark account touched by `ol_logs`.
+/// Reads each affected snark account's seqno from the prior epoch's terminal
+/// state. The account set is inferred from `ol_logs` (a record of changes made
+/// during the epoch).
 fn collect_pre_seqnos<S: IStateAccessor>(
     base_state: &S,
     ol_logs: &[OLLog],
@@ -681,18 +713,25 @@ fn collect_pre_seqnos<S: IStateAccessor>(
         if pre_seqnos.contains_key(&serial) {
             continue;
         }
-        let seqno = match base_state.find_account_id_by_serial(serial).map_err(|e| {
-            WorkerError::Unexpected(format!("resolve pre-state serial {serial:?}: {e}"))
-        })? {
-            Some(id) => match base_state
-                .get_account_state(id)
-                .map_err(|e| WorkerError::Unexpected(format!("read pre-state account {id}: {e}")))?
-            {
-                Some(state) => state.as_snark_account().map(|s| s.seqno()).map_err(|e| {
-                    WorkerError::Unexpected(format!(
-                        "received log for non-snark account({id}): {e}"
-                    ))
-                })?,
+        let seqno = match base_state
+            .find_account_id_by_serial(serial)
+            .map_err(|source| WorkerError::AccountStateRead {
+                stage: "pre-state serial lookup",
+                source,
+            })? {
+            Some(id) => match base_state.get_account_state(id).map_err(|source| {
+                WorkerError::AccountStateRead {
+                    stage: "pre-state account read",
+                    source,
+                }
+            })? {
+                Some(state) => state
+                    .as_snark_account()
+                    .map(|s| s.seqno())
+                    .map_err(|source| WorkerError::AccountStateRead {
+                        stage: "pre-state as_snark_account",
+                        source,
+                    })?,
                 None => Seqno::zero(),
             },
             None => Seqno::zero(),
@@ -723,14 +762,11 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
 
         let account_id = state
             .find_account_id_by_serial(serial)
-            .map_err(|e| {
-                WorkerError::Unexpected(format!("resolve post-state serial {serial:?}: {e}"))
+            .map_err(|source| WorkerError::AccountStateRead {
+                stage: "post-state serial lookup",
+                source,
             })?
-            .ok_or_else(|| {
-                WorkerError::Unexpected(format!(
-                    "snark log references unknown account serial {serial:?}"
-                ))
-            })?;
+            .ok_or(WorkerError::UnknownAccountSerial(serial))?;
 
         let cur = next_seqno
             .entry(serial)
