@@ -25,17 +25,30 @@ impl AsmStateManager {
     }
 
     /// Returns [`AsmState`] that corresponds to the "highest" block.
-    pub fn fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+    pub fn fetch_most_recent_state_blocking(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
         self.ops.get_latest_asm_state_blocking()
     }
 
+    /// Returns [`AsmState`] that corresponds to the "highest" block.
+    pub async fn fetch_most_recent_state_async(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+        self.ops.get_latest_asm_state_async().await
+    }
+
     /// Returns [`AsmState`] that corresponds to passed block.
-    pub fn get_state(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>> {
+    pub fn get_state_blocking(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>> {
         self.ops.get_asm_state_blocking(block)
     }
 
     /// Puts [`AsmState`] for the given block.
-    pub fn put_state(&self, block: L1BlockCommitment, asm_state: AsmState) -> DbResult<()> {
+    pub fn put_state_blocking(
+        &self,
+        block: L1BlockCommitment,
+        asm_state: AsmState,
+    ) -> DbResult<()> {
         self.ops.put_asm_state_blocking(block, asm_state)
     }
 
@@ -43,7 +56,7 @@ impl AsmStateManager {
     ///
     /// Returns entries in ascending order (oldest first). If `from_block` doesn't exist,
     /// starts from the next available block after it.
-    pub fn get_states_from(
+    pub fn get_states_from_blocking(
         &self,
         from_block: L1BlockCommitment,
         max_count: usize,
@@ -52,12 +65,12 @@ impl AsmStateManager {
     }
 
     /// Puts [`AuxData`] for the given block.
-    pub fn put_aux_data(&self, block: L1BlockCommitment, data: AuxData) -> DbResult<()> {
+    pub fn put_aux_data_blocking(&self, block: L1BlockCommitment, data: AuxData) -> DbResult<()> {
         self.ops.put_aux_data_blocking(block, data)
     }
 
     /// Returns [`AuxData`] that corresponds to passed block.
-    pub fn get_aux_data(&self, block: L1BlockCommitment) -> DbResult<Option<AuxData>> {
+    pub fn get_aux_data_blocking(&self, block: L1BlockCommitment) -> DbResult<Option<AuxData>> {
         self.ops.get_aux_data_blocking(block)
     }
 }

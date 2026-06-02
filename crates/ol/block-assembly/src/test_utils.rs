@@ -787,7 +787,7 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
 
     storage
         .asm()
-        .put_state(l1_commitment, asm_state)
+        .put_state_blocking(l1_commitment, asm_state)
         .expect("Failed to store ASM state");
 
     l1_commitment

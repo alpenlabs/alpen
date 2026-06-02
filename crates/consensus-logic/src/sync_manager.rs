@@ -64,7 +64,7 @@ fn spawn_csm_listener(
         // Get the latest ASM state as fallback
         let (latest_block, _) = storage
             .asm()
-            .fetch_most_recent_state()?
+            .fetch_most_recent_state_blocking()?
             .expect("No ASM state available");
         latest_block
     };
@@ -72,7 +72,7 @@ fn spawn_csm_listener(
     // Fetch historical ASM states starting from the next height.
     let max_historical_blocks = 1000;
     let nh = from_block.height() + 1;
-    let historical_states = storage.asm().get_states_from(
+    let historical_states = storage.asm().get_states_from_blocking(
         L1BlockCommitment::new(nh, Default::default()),
         max_historical_blocks,
     )?;
