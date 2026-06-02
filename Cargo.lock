@@ -15298,6 +15298,7 @@ name = "strata-config"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
+ "proptest",
  "serde",
  "toml 0.5.11",
 ]

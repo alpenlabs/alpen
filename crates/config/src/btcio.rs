@@ -251,3 +251,48 @@ impl Default for BroadcasterConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn fee_rate_sat_kwu_roundtrips_through_sat_vb(sat_per_kwu in 1_u64..=1_000_000_000_000) {
+            let fee_rate = FeeRate::from_sat_per_kwu(sat_per_kwu);
+            let sat_per_vb = fee_rate_to_sat_per_vb(fee_rate);
+            let roundtripped = fee_rate_from_sat_per_vb(sat_per_vb)
+                .expect("roundtripped fee rate should parse");
+
+            prop_assert_eq!(roundtripped, fee_rate);
+        }
+
+        #[test]
+        fn fee_rate_sat_vb_roundtrip_is_idempotent(sat_per_vb in 0.01_f64..=1_000_000_000.0) {
+            prop_assume!(sat_per_vb.is_finite());
+
+            let fee_rate = fee_rate_from_sat_per_vb(sat_per_vb)
+                .expect("fee rate should parse");
+            let roundtripped = fee_rate_from_sat_per_vb(fee_rate_to_sat_per_vb(fee_rate))
+                .expect("roundtripped fee rate should parse");
+
+            prop_assert_eq!(roundtripped, fee_rate);
+        }
+
+        #[test]
+        fn fee_rate_sat_vb_conversion_rounds_up_to_sat_kwu(sat_per_vb in 0.01_f64..=1_000_000_000.0) {
+            prop_assume!(sat_per_vb.is_finite());
+
+            let fee_rate = fee_rate_from_sat_per_vb(sat_per_vb)
+                .expect("fee rate should parse");
+            let scaled_sat_per_kwu = sat_per_vb * 250.0;
+            let rounding_tolerance = f64::EPSILON * scaled_sat_per_kwu.abs().max(1.0) * 8.0;
+            let sat_per_kwu = fee_rate.to_sat_per_kwu() as f64;
+
+            prop_assert!(sat_per_kwu + rounding_tolerance >= scaled_sat_per_kwu);
+            prop_assert!(sat_per_kwu - scaled_sat_per_kwu <= 1.0);
+        }
+    }
+}
