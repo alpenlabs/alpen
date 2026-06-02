@@ -25,9 +25,7 @@ DEV_CHAIN_ID = 2892
 # Protocol Addresses
 # =============================================================================
 # System addresses for fee distribution in Alpen EVM.
-# These are hardcoded in the chain spec.
-BASEFEE_ADDRESS = "0x5400000000000000000000000000000000000010"
-BENEFICIARY_ADDRESS = "0x5400000000000000000000000000000000000011"
+DEFAULT_BENEFICIARY_ADDRESS = "0x5400000000000000000000000000000000000010"
 
 # =============================================================================
 # Unit Conversions

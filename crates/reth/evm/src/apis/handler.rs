@@ -15,7 +15,7 @@ use revm::{
 };
 use revm_primitives::{hardfork::SpecId, U256};
 
-use crate::{apis::validation, constants::BASEFEE_ADDRESS};
+use crate::apis::validation;
 
 #[expect(
     missing_debug_implementations,
@@ -76,17 +76,13 @@ where
         };
         let coinbase_reward = coinbase_gas_price * gas_used;
 
-        // Transfer base fee to BASEFEE_ADDRESS
-        context
-            .journal_mut()
-            .load_account_mut(BASEFEE_ADDRESS)?
-            .incr_balance(U256::from(base_fee_total));
+        let total_fees = base_fee_total + coinbase_reward;
 
-        // Transfer remaining reward to beneficiary
+        // Transfer all gas fees collected to beneficiary
         context
             .journal_mut()
             .load_account_mut(beneficiary)?
-            .incr_balance(U256::from(coinbase_reward));
+            .incr_balance(U256::from(total_fees));
 
         Ok(())
     }

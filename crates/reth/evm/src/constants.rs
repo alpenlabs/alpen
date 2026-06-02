@@ -13,9 +13,3 @@ pub const SCHNORR_PRECOMPILE_ADDRESS: Address =
 
 /// Custom PrecompileId for the Schnorr precompile contract.
 pub const SCHNORR_PRECOMPILE_PRECOMPILE_ID: &str = "alpen-schnorr-precompile";
-
-/// The address to send transaction basefee to instead of burning.
-pub const BASEFEE_ADDRESS: Address = address!("5400000000000000000000000000000000000010");
-
-/// The address to send transaction priority fees to.
-pub const COINBASE_ADDRESS: Address = address!("5400000000000000000000000000000000000011");
