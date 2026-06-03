@@ -76,20 +76,18 @@ design leans on keeping them apart:
   sequencer, with rotation as the backstop. Its worst case is a *safe halt*,
   never a safety breach.
 
-The asymmetry that makes this tractable: a lagging or misbehaving sequencer can
-only ever *delay* activation, and delay *lengthens* the exit window. So nearly
-everything the sequencer can do to an upgrade is a **liveness** problem, never a
-**safety** one. The design exploits this directly — safety is secured
-unconditionally (it falls out of anchoring on L1, below), while liveness is left
-to the general backstop: sequencer rotation today, forced inclusion later.
+The asymmetry that makes this work: a lagging or misbehaving sequencer can only
+*delay* activation, and delay only *lengthens* the exit window. So whatever the
+sequencer does is a **liveness** problem, never a **safety** one. The design
+leans on that — safety is secured unconditionally (it falls out of anchoring on
+L1, below), while liveness is left to sequencer rotation.
 
-The same split puts **critical bug-fixing out of scope**. Enacting faster than
-the exit window would *shorten* it — a safety violation — so the delayed-upgrade
-path is the wrong tool for an actively-exploited bug. That is acceptable: a VK
-change is opaque (it reveals nothing about *what* changed), and funds ultimately
-sit under the bridge's **1/N** assumption, where an out-of-band correction
-(heavy, last-resort) is the real backstop. No emergency-halt primitive is
-specified here.
+> **Note — critical bug-fixing is out of scope.** Enacting faster than the exit
+> window would *shorten* it (a safety violation), so this path is the wrong tool
+> for an actively-exploited bug. That is acceptable: a VK change is opaque, and
+> funds ultimately sit under the bridge's **1/N** assumption, where an out-of-band
+> correction is the last-resort backstop. No emergency-halt primitive is specified
+> here.
 
 ### Anchor activation on L1, not on a sequencer-paced height
 
