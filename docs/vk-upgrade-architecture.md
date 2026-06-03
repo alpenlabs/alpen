@@ -67,12 +67,12 @@ uniformly.
   consensus-timing decision. It should be fast to reason about, deterministic,
   and **pre-announced** — like an Ethereum fork height.
 
-The previous flow conflated the two: the VK was overwritten at whatever epoch
-terminal happened to drain the ASM log, so the timing was the convolution of L1
-landing → ASM queue → checkpoint manifest → OL terminal block, and was neither
+If the two are conflated — if activation happens whenever the authorization
+*happens to* propagate through the layers — the timing becomes the convolution
+of L1 landing → ASM queue → checkpoint delivery → application, which is neither
 announceable nor controllable. Carrying the **activation point inside the
-authorized payload** decouples them: the slow path still delivers the
-authorization, but it no longer decides *when*.
+authorized payload** decouples them: the slow path delivers the authorization,
+but it no longer decides *when*.
 
 ### P2. Activation is gated on the *proof stream*, never on the verifier's own clock
 
@@ -98,9 +98,9 @@ from the same artifact, so they cannot diverge.
 
 ### P3. A single live VK slot per layer is sufficient
 
-We deliberately keep **one** active VK per layer in state at any instant (the
-behavior the OL checkpoint predicate already has). We do *not* need to store
-old and new simultaneously:
+We deliberately keep **one** active VK per layer in state at any instant,
+mirroring the OL checkpoint predicate's single-slot model. We do *not* need to
+store old and new simultaneously:
 
 * The swap happens atomically at a **non-straddling proof boundary** (an OL
   epoch for the checkpoint VK; an EE batch for the EE VK). Because proofs are
@@ -108,8 +108,9 @@ old and new simultaneously:
   checks the first new-logic proof — there is never an instant where two VKs are
   needed in state.
 * **Historical** verification (fresh sync / replay) recovers the
-  then-current VK by *replaying* the upgrade events in order, exactly as ASM
-  predicate swaps are reconstructed today. "One slot in state" does **not** mean
+  then-current VK by *replaying* the upgrade events in order, the same way ASM
+  predicate swaps are reconstructed during replay. "One slot in state" does
+  **not** mean
   "the old VK is never needed again"; it means it is derived by replay, not
   retained.
 
@@ -295,7 +296,7 @@ the OL sequencer's local clock.
 
 | Alternative | Verdict |
 |-------------|---------|
-| **Immediate overwrite at epoch terminal** (the previous flow) | Rejected: activation timing non-deterministic, not announceable, no exit window, sequencer cannot coordinate. |
+| **Overwrite the VK as soon as the authorization is applied** | Rejected: activation timing non-deterministic, not announceable, no exit window, sequencer cannot coordinate. |
 | **OL-derived activation** (e.g. "+D epochs after the log applies") | Rejected: absolute activation still hostage to L1/checkpoint timing; `D` is a magic constant; not announceable when authorized. |
 | **Per-EE-block-height VK schedule** | Rejected: breaks the one-proof-one-VK invariant; block-height rule changes belong *inside* the ELF (P4 case 1), not in the VK schedule. |
 | **"Bake everything into the ELF, never change the VK"** | Impossible as a complete solution: the VK is a function of the ELF, so a new fork height *is* a new VK. Useful only for forks pre-baked at authorization time (P4 case 1); cannot authorize a genuinely new prover program. |
@@ -314,8 +315,7 @@ the OL sequencer's local clock.
    minimum lead time so the boundary is always known before the chain reaches
    it.
 3. **Keep one live VK slot per layer** (P3); reconstruct historical VKs by
-   replay, mirroring the existing ASM-predicate behavior the team already
-   trusts.
+   replay, mirroring the ASM-predicate single-slot model.
 4. **Prefer pre-baking known forks into the ELF** (P4 case 1) so routine
    upgrades need no governance event; reserve VK rollover for unanticipated
    changes.
@@ -351,8 +351,8 @@ the OL sequencer's local clock.
 ## 7. References
 
 * STR-3480 — seal a batch with L1 view up to the enactment block.
-* `crates/ol/stf/src/manifest_processing.rs` — current ASM-log buffering and
-  epoch-terminal application (`process_block_manifests`, `process_epoch_terminal`,
+* `crates/ol/stf/src/manifest_processing.rs` — ASM-log processing entry points
+  (`process_block_manifests`, `process_epoch_terminal`,
   `process_ee_predicate_key_update`).
 * `crates/ol/state-types/src/snark_account.rs` — `OLSnarkAccountState.update_vk`
   and `set_update_vk` (the EE account VK slot).
