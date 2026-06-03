@@ -14,7 +14,7 @@
 #     -b signet \
 #     --bitcoin-rpc-url http://... --bitcoin-rpc-user ... --bitcoin-rpc-password ... \
 #     gen-asm-params --checkpoint-predicate sp1-groth16 \
-#       --genesis-l1-view-file /out/l1view.json --ol-params /out/ol-params.json \
+#       --l1-anchor-file /out/l1-anchor.json --ol-params /out/ol-params.json \
 #       -o /out/asm-params.json
 
 FROM debian:13-slim

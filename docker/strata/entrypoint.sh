@@ -45,14 +45,14 @@ requires_sequencer_config() {
 
 # Runtime genesis patching.
 #
-# If params were generated with a real GenesisL1View (via datatool genl1view
+# If params were generated with a real L1 anchor (via datatool gen-l1-anchor
 # at init time), the genesis height will already be > 0 and all fields
-# (next_target, epoch_start_timestamp, last_11_timestamps) will be correct.
+# (next_target, epoch_start_timestamp, network) will be correct.
 # In that case we skip patching.
 #
 # If params have genesis height == 0 (placeholder from init without RPC),
 # we patch height + blkid from the current L1 tip.  This is a partial patch
-# (next_target and timestamps are NOT updated) which is acceptable on regtest
+# (next_target is NOT updated) which is acceptable on regtest
 # where difficulty is constant, but NOT sufficient for signet/mainnet.  For
 # non-regtest networks, generate params with BITCOIN_RPC_* at init time.
 #

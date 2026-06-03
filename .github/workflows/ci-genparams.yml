@@ -1,7 +1,7 @@
 # Generates deployment params (ol-params, asm-params) using the prebuilt
 # datatool image from the specified commit. Static values (operator keys,
 # denomination, etc.) come from pre-committed templates per environment;
-# dynamic values (VKs, genesis L1 view, genesis_ol_blkid) are filled in by
+# dynamic values (VKs, genesis L1 anchor, genesis_ol_blkid) are filled in by
 # datatool.
 #
 # Ref: STR-3635

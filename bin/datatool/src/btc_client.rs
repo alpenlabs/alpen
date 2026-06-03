@@ -6,30 +6,24 @@
 use bitcoin::{params::Params, CompactTarget};
 use bitcoind_async_client::{traits::Reader, Auth, Client};
 use strata_btc_types::BlockHashExt;
-use strata_btc_verification::get_relative_difficulty_adjustment_height;
-use strata_primitives::{
-    constants::TIMESTAMPS_FOR_MEDIAN,
-    l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1Height},
-};
+use strata_btc_verification::{get_relative_difficulty_adjustment_height, L1Anchor};
+use strata_primitives::l1::{BtcParams, L1BlockCommitment, L1Height};
 
 use crate::args::BitcoindConfig;
 
-/// Fetches genesis L1 view using the provided Bitcoin RPC configuration.
+/// Fetches the genesis L1 anchor using the provided Bitcoin RPC configuration.
 ///
-/// Creates a Bitcoin client from the config and fetches the genesis L1 view
-/// at the specified block height.
-pub(crate) async fn fetch_genesis_l1_view_with_config(
+/// Creates a Bitcoin client from the config and fetches the [`L1Anchor`] at the
+/// specified block height.
+pub(crate) async fn fetch_l1_anchor_with_config(
     config: &BitcoindConfig,
     block_height: L1Height,
-) -> anyhow::Result<GenesisL1View> {
+) -> anyhow::Result<L1Anchor> {
     let client = create_client(config)?;
-    fetch_genesis_l1_view(&client, block_height).await
+    fetch_l1_anchor(&client, block_height).await
 }
 
-async fn fetch_genesis_l1_view(
-    client: &impl Reader,
-    block_height: L1Height,
-) -> anyhow::Result<GenesisL1View> {
+async fn fetch_l1_anchor(client: &impl Reader, block_height: L1Height) -> anyhow::Result<L1Anchor> {
     // Create BTC parameters based on the current network.
     let network = client.network().await?;
     let btc_params = BtcParams::from(Params::from(network));
@@ -42,22 +36,15 @@ async fn fetch_genesis_l1_view(
         .get_block_header_at(current_epoch_start_height as u64)
         .await?;
 
-    // Fetch the block header at the height
+    // Fetch the block header at the height.
     let block_header = client.get_block_header_at(block_height as u64).await?;
-
-    // Fetch timestamps
-    let timestamps =
-        fetch_block_timestamps_ascending(client, block_height, TIMESTAMPS_FOR_MEDIAN).await?;
-    let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps.try_into().expect(
-        "fetch_block_timestamps_ascending should return exactly TIMESTAMPS_FOR_MEDIAN timestamps",
-    );
 
     // Compute the block ID for the verified block.
     let block_id = block_header.block_hash().to_l1_block_id();
 
     // If (block_height + 1) is the start of the new epoch, we need to calculate the
-    // next_block_target, else next_block_target will be current block's target
-    let next_block_target =
+    // next_target, else next_target will be the current block's target.
+    let next_target =
         if (block_height as u64 + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
             CompactTarget::from_next_work_required(
                 block_header.bits,
@@ -66,50 +53,15 @@ async fn fetch_genesis_l1_view(
             )
             .to_consensus()
         } else {
-            client
-                .get_block_header_at(block_height as u64)
-                .await?
-                .target()
-                .to_compact_lossy()
-                .to_consensus()
+            block_header.target().to_compact_lossy().to_consensus()
         };
 
-    // Build the genesis L1 view structure.
-    let genesis_l1_view = GenesisL1View {
-        blk: L1BlockCommitment::new(block_height, block_id),
-        next_target: next_block_target,
+    Ok(L1Anchor {
+        block: L1BlockCommitment::new(block_height, block_id),
+        next_target,
         epoch_start_timestamp: current_epoch_start_header.time,
-        last_11_timestamps: timestamps,
-    };
-
-    Ok::<GenesisL1View, anyhow::Error>(genesis_l1_view)
-}
-
-/// Retrieves the timestamps for a specified number of blocks starting from the given block height,
-/// moving backwards. For each block from `height` down to `height - count + 1`, it fetches the
-/// block's timestamp. If a block height is less than 1 (i.e. there is no block), it inserts a
-/// placeholder value of 0. The resulting vector is then reversed so that timestamps are returned in
-/// ascending order (oldest first).
-async fn fetch_block_timestamps_ascending(
-    client: &impl Reader,
-    height: L1Height,
-    count: usize,
-) -> anyhow::Result<Vec<u32>> {
-    let mut timestamps = Vec::with_capacity(count);
-
-    for i in 0..count {
-        let current_height = height.saturating_sub(i as u32);
-        // If we've gone past block 1, push 0 as a placeholder.
-        if current_height < 1 {
-            timestamps.push(0);
-        } else {
-            let header = client.get_block_header_at(current_height as u64).await?;
-            timestamps.push(header.time);
-        }
-    }
-
-    timestamps.reverse();
-    Ok(timestamps)
+        network,
+    })
 }
 
 /// Creates a Bitcoin RPC client from the provided configuration.

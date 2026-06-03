@@ -13,7 +13,7 @@ use strata_snark_acct_runtime::IInnerState;
 use crate::{
     acct_predicate::resolve_acct_predicate,
     args::{CmdContext, SubcOlParams},
-    cmd::genesis_info::{get_alpen_ee_genesis_block_info, retrieve_genesis_l1_view},
+    cmd::genesis_info::{get_alpen_ee_genesis_block_info, retrieve_l1_anchor},
 };
 
 const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
@@ -21,7 +21,7 @@ const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
 /// Executes the `gen-ol-params` subcommand.
 ///
 /// Generates the OL params for a Strata network by retrieving the genesis L1
-/// view and constructing an [`OLParams`] with a pre-registered Alpen EE snark
+/// anchor and constructing an [`OLParams`] with a pre-registered Alpen EE snark
 /// account. Outputs the result as pretty-printed JSON, either to the specified
 /// file or to stdout.
 ///
@@ -31,13 +31,9 @@ const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
 /// - `--alpen-inner-state`: explicit 64-char hex value, overrides chain config. If neither is
 ///   provided, computes from the default dev chain spec.
 pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
-    let genesis_l1_view = retrieve_genesis_l1_view(
-        cmd.genesis_l1_view_file.as_deref(),
-        cmd.genesis_l1_height,
-        ctx,
-    )?;
+    let anchor = retrieve_l1_anchor(cmd.l1_anchor_file.as_deref(), cmd.genesis_l1_height, ctx)?;
 
-    let mut ol_params = OLParams::new_empty(genesis_l1_view.blk);
+    let mut ol_params = OLParams::new_empty(anchor.block);
 
     let acct_predicate = resolve_acct_predicate(cmd.alpen_predicate)?;
     let balance = BitcoinAmount::from_sat(cmd.alpen_balance.unwrap_or(0));

@@ -58,7 +58,7 @@ pub(crate) enum Subcommand {
     AsmParams(SubcAsmParams),
     OlParams(SubcOlParams),
     #[cfg(feature = "btc-client")]
-    GenL1View(SubcGenL1View),
+    GenL1Anchor(SubcGenL1Anchor),
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -195,9 +195,9 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
-        description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
+        description = "path to JSON-serialized L1 anchor (required when btc-client feature is disabled)"
     )]
-    pub(crate) genesis_l1_view_file: Option<String>,
+    pub(crate) l1_anchor_file: Option<String>,
 
     #[argh(
         option,
@@ -263,9 +263,9 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
+        description = "path to JSON-serialized L1 anchor (required when btc-client feature is disabled)"
     )]
-    pub(crate) genesis_l1_view_file: Option<String>,
+    pub(crate) l1_anchor_file: Option<String>,
 
     #[argh(
         option,
@@ -295,10 +295,10 @@ pub(crate) struct SubcOlParams {
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(
     subcommand,
-    name = "genl1view",
-    description = "generates the genesis L1 view at the given height"
+    name = "gen-l1-anchor",
+    description = "generates the genesis L1 anchor at the given height"
 )]
-pub(crate) struct SubcGenL1View {
+pub(crate) struct SubcGenL1Anchor {
     #[argh(option, description = "genesis L1 block height", short = 'g')]
     pub(crate) genesis_l1_height: L1Height,
 

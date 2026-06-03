@@ -10,8 +10,8 @@ set -euo pipefail
 #   ./init-network.sh --fullnode <datatool_path> --params-dir <path>
 #   BITCOIN_NETWORK=signet GENESIS_L1_HEIGHT=200000 ./init-network.sh <datatool_path>
 #
-# When BITCOIND_RPC_URL is set, the script fetches the real GenesisL1View from
-# the Bitcoin node via `datatool genl1view`. Without it, a network-specific
+# When BITCOIND_RPC_URL is set, the script fetches the real L1 anchor from
+# the Bitcoin node via `datatool gen-l1-anchor`. Without it, a network-specific
 # placeholder is used (suitable for regtest where the strata entrypoint patches
 # params at runtime).
 
@@ -54,7 +54,7 @@ while [ $# -gt 0 ]; do
             echo "Environment:"
             echo "  BITCOIN_NETWORK       regtest (default) or signet"
             echo "  GENESIS_L1_HEIGHT     L1 block height for genesis (default: 0)"
-            echo "  BITCOIND_RPC_URL       Bitcoin RPC URL (enables fetching real L1 view)"
+            echo "  BITCOIND_RPC_URL       Bitcoin RPC URL (enables fetching real L1 anchor)"
             echo "  BITCOIND_RPC_USER      Bitcoin RPC username"
             echo "  BITCOIND_RPC_PASSWORD  Bitcoin RPC password"
             echo "  OUTPUT_DIR            output directory (default: ./configs/generated)"
@@ -198,42 +198,42 @@ if [ "${MODE}" = "sequencer" ]; then
 
     SEQ_PK=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genseqpubkey -f "${SEQ_ROOT_KEY}")
 
-    GENESIS_L1_VIEW="${OUTPUT_DIR}/genesis-l1-view.json"
-    if [ ! -f "${GENESIS_L1_VIEW}" ]; then
+    L1_ANCHOR="${OUTPUT_DIR}/l1-anchor.json"
+    if [ ! -f "${L1_ANCHOR}" ]; then
         if [ -n "${BITCOIND_RPC_URL}" ] && [ -n "${BITCOIND_RPC_USER}" ] && [ -n "${BITCOIND_RPC_PASSWORD}" ]; then
-            # Fetch real L1 view from Bitcoin node — produces correct values for
-            # all fields (next_target, epoch_start_timestamp, last_11_timestamps).
-            echo "fetching genesis L1 view from ${BITCOIND_RPC_URL} at height ${GENESIS_L1_HEIGHT}..."
+            # Fetch real L1 anchor from Bitcoin node — produces correct values for
+            # all fields (next_target, epoch_start_timestamp, network).
+            echo "fetching genesis L1 anchor from ${BITCOIND_RPC_URL} at height ${GENESIS_L1_HEIGHT}..."
             "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
                 --bitcoin-rpc-url "${BITCOIND_RPC_URL}" \
                 --bitcoin-rpc-user "${BITCOIND_RPC_USER}" \
                 --bitcoin-rpc-password "${BITCOIND_RPC_PASSWORD}" \
-                genl1view \
+                gen-l1-anchor \
                 -g "${GENESIS_L1_HEIGHT}" \
-                -o "${GENESIS_L1_VIEW}"
-            echo "generated ${GENESIS_L1_VIEW} (from Bitcoin RPC)"
+                -o "${L1_ANCHOR}"
+            echo "generated ${L1_ANCHOR} (from Bitcoin RPC)"
         else
-            # No RPC available — write a placeholder L1 view using network-specific
+            # No RPC available — write a placeholder L1 anchor using network-specific
             # genesis block values.  On regtest the strata entrypoint patches
             # height + blkid at runtime; on signet this will be incomplete and you
             # should provide BITCOIN_RPC_* vars instead.
             if [ "${BITCOIN_NETWORK}" != "regtest" ] && [ "${GENESIS_L1_HEIGHT}" != "0" ]; then
-                echo "warning: generating placeholder L1 view for ${BITCOIN_NETWORK} at height ${GENESIS_L1_HEIGHT}" >&2
-                echo "         without Bitcoin RPC, next_target / timestamps will be WRONG." >&2
+                echo "warning: generating placeholder L1 anchor for ${BITCOIN_NETWORK} at height ${GENESIS_L1_HEIGHT}" >&2
+                echo "         without Bitcoin RPC, next_target will be WRONG." >&2
                 echo "         Set BITCOIND_RPC_URL, BITCOIND_RPC_USER, BITCOIND_RPC_PASSWORD for correct values." >&2
             fi
-            cat > "${GENESIS_L1_VIEW}" <<GEOF
+            cat > "${L1_ANCHOR}" <<GEOF
 {
-  "blk": {
+  "block": {
     "height": ${GENESIS_L1_HEIGHT},
     "blkid": "${GENESIS_BLKID}"
   },
   "next_target": ${L1_NEXT_TARGET},
   "epoch_start_timestamp": ${L1_EPOCH_START_TIMESTAMP},
-  "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  "network": "${BITCOIN_NETWORK}"
 }
 GEOF
-            echo "generated ${GENESIS_L1_VIEW} (placeholder)"
+            echo "generated ${L1_ANCHOR} (placeholder)"
         fi
     fi
 
@@ -243,7 +243,7 @@ GEOF
             gen-ol-params \
             -o "${OL_PARAMS}" \
             -g "${GENESIS_L1_HEIGHT}" \
-            --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
+            --l1-anchor-file "${L1_ANCHOR}" \
             ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"} \
             ${ALPEN_CHAIN_CONFIG:+--alpen-chain-config "$ALPEN_CHAIN_CONFIG"}
         echo "generated ${OL_PARAMS}"
@@ -258,7 +258,7 @@ GEOF
             -s "${SEQ_PK}" \
             -b "${OPERATOR_PK}" \
             -g "${GENESIS_L1_HEIGHT}" \
-            --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
+            --l1-anchor-file "${L1_ANCHOR}" \
             --ol-params "${OL_PARAMS}" \
             --safe-harbour-address "${SAFE_HARBOUR_ADDRESS}" \
             ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"}

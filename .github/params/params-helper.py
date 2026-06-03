@@ -2,7 +2,7 @@
 """Merge dynamic values from datatool-generated raw params into pre-committed templates.
 
 Templates contain static fields (operator keys, deposit_amount, etc.) with
-placeholders (__PLACEHOLDER__) for dynamic fields (VKs, genesis L1 view, etc.).
+placeholders (__PLACEHOLDER__) for dynamic fields (VKs, genesis L1 anchor, etc.).
 Raw params from datatool have the correct dynamic values but wrong static values
 (datatool defaults). This script takes the best of both.
 

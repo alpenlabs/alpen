@@ -4,7 +4,7 @@ mod asm_params;
 mod gen_checkpoint_predicate;
 mod genesis_info;
 #[cfg(feature = "btc-client")]
-mod l1_view;
+mod l1_anchor;
 mod ol_params;
 mod op_pubkey;
 mod seq_privkey;
@@ -24,6 +24,6 @@ pub(crate) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
         Subcommand::AsmParams(subc) => asm_params::exec(subc, ctx),
         Subcommand::OlParams(subc) => ol_params::exec(subc, ctx),
         #[cfg(feature = "btc-client")]
-        Subcommand::GenL1View(subc) => l1_view::exec(subc, ctx),
+        Subcommand::GenL1Anchor(subc) => l1_anchor::exec(subc, ctx),
     }
 }
