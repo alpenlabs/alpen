@@ -58,36 +58,57 @@ This single requirement drives most of the design:
 These principles emerged from analyzing the layers together; they apply
 uniformly.
 
-### P1. Separate *authorization* from *activation*
+### P1. Anchor activation on L1, not on a sequencer-paced height
 
-* **Authorization** ("this new VK is approved") is a governance/security
-  decision. It is intrinsically slow and asynchronous and *must* go through the
-  L1/ASM admin multisig.
-* **Activation** ("from this point on, verification uses the new VK") is a
-  consensus-timing decision. It should be fast to reason about, deterministic,
-  and **pre-announced** — like an Ethereum fork height.
+**The choice of clock is the most consequential decision in the design.** The
+activation point must be measured in a clock that is both *observable by users*
+(they decide whether to exit by watching it) and *outside the sequencer's
+control* (or the exit window can be manipulated). Only Bitcoin / L1 satisfies
+both — which rules out the option that would have made everything else simpler.
 
-If the two are conflated — if activation happens whenever the authorization
-*happens to* propagate through the layers — the timing becomes the convolution
-of L1 landing → ASM queue → checkpoint delivery → application, which is neither
-announceable nor controllable.
+**An L2 height is tempting.** Scheduling activation at an L2 block height ("at
+OL/EE block `N`, switch the VK") would be dramatically simpler: each STF already
+advances by its own block height, so the rule collapses to a local
+`if height >= N` check — no L1 view threaded through proofs, no two-clock
+reconciliation, no straddle/boundary handling (STR-3480). It is exactly the
+Ethereum fork-by-height model.
 
-**The plan** removes that convolution by deriving the activation point from one
-L1 fact plus a fixed constant: activation occurs a fixed delay (`2016` Bitcoin
-blocks ≈ one difficulty period) after the L1 **inclusion height** of the
-authorized update transaction. The payload carries *what* changes (the new VK);
-the *when* is `inclusion_height + 2016`, computed identically by every node from
-L1. (If a longer window is ever wanted for a riskier change, the payload could
-carry an additional delay floored at the `2016`-block minimum; the default is the
-fixed constant.)
+**But an L2 height cannot be used,** because it is paced entirely by the
+sequencer, and the map from L2 height to wall-clock is the sequencer's to choose:
 
-Deriving the activation point this way — a fixed delay measured *forward from
-actual inclusion*, rather than an absolute height the admin writes into the
-payload — is what keeps the decoupling robust: the boundary cannot be "already
-passed" or set too soon, it is fixed and public the instant the tx lands
-(≈ two weeks of notice), and it is movable by neither the admin nor the
-sequencer. The slow multisig/L1 path delivers the authorization; a fixed forward
-delay decides *when*.
+* **It can shrink the exit window.** With activation set for L2 block 1,500,000,
+  the sequencer can mint blocks fast and arrive in an hour instead of two weeks.
+  The promised window collapses — a *safety-floor* violation (P5), because the
+  window got *shorter*.
+* **It can overshoot into retroactive invalidation.** The sequencer can get a
+  checkpoint covering past block 1,500,000 verified and finalized under the old
+  VK; the scheduled swap then cannot be applied without rejecting a finalized
+  checkpoint, because the boundary is not decidable from anything the checkpoint
+  commits to.
+* **Users cannot watch it.** "Block `N` arrives in `T` days" is not reliable when
+  the sequencer sets the rate, so the announcement is not a real deadline.
+
+**L1 is the only anchor that works.** Bitcoin height advances independently of
+the sequencer (≈ 10 min/block), so the boundary
+
+```
+B = (L1 inclusion height of the authorized update tx) + 2016   (≈ 2 weeks)
+```
+
+is a fixed wall-clock window the sequencer **cannot compress**, every node
+computes identically, users can watch, and — because each proof commits the L1
+view it incorporated — `B` is decidable *at verification time*, so a checkpoint
+can never be accepted under the wrong VK and "become invalid later." The
+sequencer can still *lag* (delay crossing `B`), but lag only *lengthens* the
+window, which is safe.
+
+**No explicit height field is needed,** and this is where the
+authorization-vs-activation split lives. `B` is fully determined the instant the
+authorization lands on L1 (`inclusion + 2016`), so there is nothing for the
+payload to carry beyond the new VK — an explicit signed activation height would
+be redundant. The L1 transaction *authorizes* the new VK (the "what"); activation
+(the "when") is a fixed L1 offset from that transaction's inclusion, decided by
+neither the admin nor the sequencer.
 
 **Consequence — activation is sequencer-influenced, and that is intrinsic.**
 Gating activation on the proof stream (P2) means the sequencer, which paces that
@@ -100,7 +121,7 @@ is safe (delay only *lengthens* the exit window, P5), it is capped by sequencer
 rotation (P6), and the urgent case is out of scope by construction (P5). The
 clean long-term severance is forced inclusion.
 
-#### Enforcing the split: safety vs. liveness
+#### Enforcing activation: safety vs. liveness
 
 "Can activation be *enforced*?" is two questions with opposite answers.
 
