@@ -11,34 +11,34 @@
 
 use std::collections::HashMap;
 
-use strata_acct_types::{AccountId, AccountSerial};
-use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip, OLLog};
+use strata_acct_types::AccountSerial;
+use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
-use strata_codec::decode_buf_exact;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_new::{
-    BlockFlags, OLBlock, OLBlockHeader, OLL1ManifestContainer, OLLog, SnarkAccountUpdateLogData,
+    BlockFlags, OLAsmManifestContainer, OLBlock, OLBlockHeader, OLLog, OLLogType,
+    SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
-use strata_ol_da::{decode_ol_da_payload_bytes, OLDaSchemeV1};
+use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
-    IndexerState, IndexerWrites, MemoryStateBaseLayer, SAStateUpdateOp, SnarkAcctStateUpdate,
-    WriteTrackingState,
+    IndexerState, IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate, WriteTrackingState,
 };
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::{apply_da_epoch, verify_block, BlockInfo, EpochInfo};
+use strata_ol_stf::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_snark_acct_types::Seqno;
 use tracing::*;
 
 use crate::{
+    ChainWorkerContextImpl,
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
     traits::ChainWorkerContext,
-    ChainWorkerContextImpl,
 };
 
 /// Safety cap on the L1 block range an epoch's manifests can span.
@@ -462,16 +462,29 @@ pub(crate) fn apply_checkpoint_epoch(
     let (manifest_cont, epoch_info) =
         assemble_da_inputs(ctx, epoch, &base_state, sidecar, tip, prev_terminal)?;
 
+    // The sidecar carries logs in its own wire type; convert to the OL chain-types
+    // `OLLog` so the reconstructed epoch output mirrors the per-block path.
+    let ol_logs: Vec<OLLog> = sidecar
+        .ol_logs()
+        .iter()
+        .map(|log| OLLog::new(log.account_serial(), log.payload().to_vec()))
+        .collect();
+
     // Read each snark account's seqno as of the previous epoch's terminal state.
     // The set of affected accounts is inferred from `ol_logs`, which records the
     // changes made during the epoch (we don't directly have the per-account input set).
-    let pre_seqnos = collect_pre_seqnos(&base_state, sidecar.ol_logs())?;
+    let pre_seqnos = collect_pre_seqnos(&base_state, &ol_logs)?;
 
     // Reconstruct: wrap the base state in the write-tracking + indexer stack,
     // run apply_da_epoch, then extract the batch and indexer writes.
     let tracking_state = WriteTrackingState::new_empty(&base_state);
     let mut indexer_state = IndexerState::new(tracking_state);
-    apply_da_epoch::<_, OLDaSchemeV1>(&mut indexer_state, &epoch_info, da_payload, &manifest_cont)?;
+    apply_da_epoch::<_, OLDaSchemeV1>(
+        &mut indexer_state,
+        &epoch_info,
+        da_payload,
+        manifest_cont.manifests(),
+    )?;
     let indexer_state_root =
         indexer_state
             .compute_state_root()
@@ -482,9 +495,9 @@ pub(crate) fn apply_checkpoint_epoch(
             })?;
 
     // Replace the DA-collapsed snark records (one per account) with per-update
-    // records derived from the checkpoint sidecar's `ol_logs`.
+    // records derived from the epoch's `ol_logs`.
     let (rebuilt_snark_updates, derived_seqnos) =
-        rebuild_snark_records_from_logs(&indexer_state, sidecar.ol_logs(), &pre_seqnos)?;
+        rebuild_snark_records_from_logs(&indexer_state, &ol_logs, &pre_seqnos)?;
 
     let (tracking_state, mut indexer_writes) = indexer_state.into_parts();
     let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
@@ -534,7 +547,8 @@ pub(crate) fn apply_checkpoint_epoch(
         new_l1,
         final_state_root,
     );
-    let output = OLBlockExecutionOutput::new(final_state_root, write_batch, indexer_writes);
+    let output =
+        OLBlockExecutionOutput::new(final_state_root, write_batch, indexer_writes, ol_logs);
 
     Ok(AppliedEpochArtifacts {
         terminal,
@@ -556,7 +570,7 @@ fn assemble_da_inputs(
     sidecar: &CheckpointSidecar,
     tip: &CheckpointTip,
     prev_terminal: OLBlockCommitment,
-) -> WorkerResult<(OLL1ManifestContainer, EpochInfo)> {
+) -> WorkerResult<(OLAsmManifestContainer, EpochInfo)> {
     let from_height = base_state.last_l1_height().checked_add(1).ok_or_else(|| {
         WorkerError::Unexpected(format!(
             "L1 height overflow at base state for {epoch}: {}",
@@ -580,11 +594,12 @@ fn assemble_da_inputs(
         });
     }
     let manifests = ctx.fetch_l1_manifests(from_height, to_height)?;
-    let manifest_cont =
-        OLL1ManifestContainer::new(manifests).map_err(|e| WorkerError::ManifestContainerBuild {
+    let manifest_cont = OLAsmManifestContainer::new(manifests).map_err(|e| {
+        WorkerError::ManifestContainerBuild {
             epoch: epoch.epoch(),
             detail: e.to_string(),
-        })?;
+        }
+    })?;
 
     let terminal = tip.l2_commitment();
     let terminal_info = BlockInfo::new(
@@ -710,6 +725,9 @@ fn collect_pre_seqnos<S: IStateAccessor>(
     let mut pre_seqnos = HashMap::new();
     for log in ol_logs {
         let serial = log.account_serial();
+        if MsgRef::try_from(log.payload())?.ty() != SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID {
+            continue;
+        }
         if pre_seqnos.contains_key(&serial) {
             continue;
         }
@@ -741,7 +759,7 @@ fn collect_pre_seqnos<S: IStateAccessor>(
     Ok(pre_seqnos)
 }
 
-/// Rebuilds per-update snark index records from the checkpoint sidecar's logs.
+/// Rebuilds per-update snark index records from the epoch's OL logs.
 fn rebuild_snark_records_from_logs<S: IStateAccessor>(
     state: &S,
     ol_logs: &[OLLog],
@@ -752,13 +770,15 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
 
     for log in ol_logs {
         let serial = log.account_serial();
-        let Ok(log_data) = decode_buf_exact::<SnarkAccountUpdateLogData>(log.payload()) else {
+        let msg = MsgRef::try_from(log.payload())?;
+        if msg.ty() != SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID {
             info!(
                 ?serial,
-                "non-snark update log for account in checkpoint logs. Ignoring."
+                "non-snark update log in checkpoint logs. Ignoring."
             );
             continue;
-        };
+        }
+        let log_data = SnarkAccountUpdateLogData::try_decode_log(&msg)?;
 
         let account_id = state
             .find_account_id_by_serial(serial)
@@ -774,14 +794,13 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
         *cur = cur.incr();
         let seqno = *cur;
 
-        let op = SAStateUpdateOp::new(
+        // No per-update inner state root is available from checkpoint logs.
+        records.push(SnarkAcctStateUpdate::new(
             account_id,
             None,
             log_data.new_msg_idx,
             seqno,
-            log_data.extra_data.to_vec(),
-        );
-        records.push(SnarkAcctStateUpdate::Update(op));
+        ));
     }
 
     Ok((records, next_seqno))
@@ -845,12 +864,6 @@ fn run_stf_verification(
     Ok((write_batch, indexer_writes, logs))
 }
 
-impl ServiceState for ChainWorkerServiceState {
-    fn name(&self) -> &str {
-        "chain_worker_new"
-    }
-}
-
 /// Builds the [`EpochSummary`] for a completed epoch from the terminal block,
 /// its execution output, and the post-state.
 ///
@@ -889,7 +902,7 @@ mod tests {
     use strata_ol_chain_types_new::{BlockFlags, OLBlockHeader};
     use strata_ol_state_support_types::IndexerWrites;
     use strata_ol_state_types::{
-        test_utils::create_test_genesis_state, OLAccountState, WriteBatch,
+        OLAccountState, WriteBatch, test_utils::create_test_genesis_state,
     };
 
     use super::*;

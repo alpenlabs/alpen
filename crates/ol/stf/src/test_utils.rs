@@ -2094,7 +2094,7 @@ pub fn epoch_runner_run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBl
         state,
         &BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP),
         None,
-        BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]),
+        BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]).as_terminal(),
     )
     .expect("genesis block")
 }
@@ -2141,7 +2141,7 @@ pub fn epoch_runner_run_terminal(
             1,
         ),
         Some(parent),
-        BlockComponents::new_manifests(vec![manifest]),
+        BlockComponents::new_manifests(vec![manifest]).as_terminal(),
     )
     .expect("terminal block");
     blocks.push(to_ol_block(&cb));

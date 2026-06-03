@@ -19,7 +19,7 @@ use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use crate::{
     BlockInfo, EpochInfo, apply_da_epoch,
     assembly::{BlockComponents, CompletedBlock},
-    execute_block_batch_preseal,
+    execute_block_batch_predrain,
     test_utils::{
         EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
         TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
@@ -225,8 +225,8 @@ fn reconstruct_epoch(
     blocks: &[OLBlock],
 ) -> Buf32 {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
-    execute_block_batch_preseal(&mut da, blocks, genesis.header(), BridgeParams::default())
-        .expect("execute_block_batch_preseal");
+    execute_block_batch_predrain(&mut da, blocks, genesis.header(), BridgeParams::default())
+        .expect("execute_block_batch_predrain");
     let da_blob = da
         .take_completed_epoch_da_blob()
         .expect("finalize DA")
@@ -239,10 +239,10 @@ fn reconstruct_epoch(
     );
     let manifests = terminal
         .body()
-        .l1_update()
-        .expect("terminal must have l1_update")
-        .manifest_cont()
-        .clone();
+        .manifests()
+        .expect("terminal must have manifests")
+        .manifests()
+        .to_vec();
 
     let mut reconstructed = pre_epoch_state.clone();
     apply_da_epoch::<_, OLDaSchemeV1>(&mut reconstructed, &epoch_info, payload, &manifests)

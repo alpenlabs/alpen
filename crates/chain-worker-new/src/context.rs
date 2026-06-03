@@ -374,7 +374,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         epoch: &EpochCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
-        let writes = build_checkpoint_indexing_writes(output);
+        let writes = build_checkpoint_indexing_writes(output)?;
         self.ol_state_indexing_mgr
             .apply_epoch_indexing_blocking(*epoch, writes)?;
         index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
@@ -423,7 +423,10 @@ fn build_indexing_writes(
                 found: log.new_msg_idx(),
             });
         }
-        let meta = AccountUpdateMeta::new(Some(commitment), update.state());
+        let state = update
+            .state()
+            .expect("block-sync snark update must carry a state root");
+        let meta = AccountUpdateMeta::new(Some(commitment), state);
         let record = AccountUpdateRecord::new(
             Some(meta),
             *update.seqno().inner(),
@@ -473,7 +476,9 @@ fn collect_snark_update_logs<'a>(
 /// Like [`build_indexing_writes`] but with no per-block attribution and no
 /// per-update state root: update records carry `update_meta: None`. The
 /// post-epoch root lives on the epoch summary.
-pub(crate) fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) -> IndexingWrites {
+pub(crate) fn build_checkpoint_indexing_writes(
+    output: &OLBlockExecutionOutput,
+) -> WorkerResult<IndexingWrites> {
     let indexer_writes = output.indexer_writes();
 
     let created_accounts: Vec<AccountId> = indexer_writes
@@ -482,13 +487,28 @@ pub(crate) fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) 
         .map(|c| c.account_id())
         .collect();
 
+    let snark_updates = indexer_writes.snark_state_updates();
+    let snark_update_logs = collect_snark_update_logs(output.logs())?;
+    if snark_updates.len() != snark_update_logs.len() {
+        return Err(WorkerError::SnarkUpdateLogCountMismatch {
+            expected: snark_updates.len(),
+            found: snark_update_logs.len(),
+        });
+    }
+
     let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
-    for update in indexer_writes.snark_state_updates() {
+    for (update, log) in snark_updates.iter().zip(snark_update_logs.iter()) {
+        if log.new_msg_idx() != update.next_read_idx() {
+            return Err(WorkerError::SnarkUpdateLogMismatch {
+                expected: update.next_read_idx(),
+                found: log.new_msg_idx(),
+            });
+        }
         let record = AccountUpdateRecord::new(
             None,
             *update.seqno().inner(),
             update.next_read_idx(),
-            update.extra_data().map(<[u8]>::to_vec),
+            Some(log.extra_data().to_vec()),
         );
         account_updates
             .entry(update.account_id())
@@ -506,7 +526,11 @@ pub(crate) fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) 
             .push(record);
     }
 
-    IndexingWrites::new(created_accounts, account_updates, account_inbox_writes)
+    Ok(IndexingWrites::new(
+        created_accounts,
+        account_updates,
+        account_inbox_writes,
+    ))
 }
 
 /// Applies snark inbox writes to the MMR proof index.
@@ -640,7 +664,7 @@ mod tests {
         let mut indexer_writes = IndexerWrites::new();
         indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
             account_id,
-            state,
+            Some(state),
             next_read_idx,
             seqno,
         ));
@@ -673,7 +697,7 @@ mod tests {
         let mut indexer_writes = IndexerWrites::new();
         indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
             AccountId::from([1u8; 32]),
-            Hash::from([0u8; 32]),
+            Some(Hash::from([0u8; 32])),
             0,
             Seqno::from(1),
         ));

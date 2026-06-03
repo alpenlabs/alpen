@@ -423,7 +423,7 @@ fn assert_indexer_writes_consistent(block_sync: &IndexerWrites, checkpoint: &Ind
     let cp_snark = group_snark_by_account(checkpoint);
     assert_eq!(
         fs_snark, cp_snark,
-        "per-account snark update sequence (seqno, next_inbox_idx, extra_data) must match"
+        "per-account snark update sequence (seqno, next_inbox_idx) must match"
     );
 
     // Predicate-key updates: same sequence. No current fixture shape exercises
@@ -445,8 +445,8 @@ fn assert_indexer_writes_consistent(block_sync: &IndexerWrites, checkpoint: &Ind
     );
 }
 
-/// `(seqno, next_inbox_idx, extra_data)` — the comparable snark-update fields.
-type SnarkUpdateProj = (u64, u64, Option<Vec<u8>>);
+/// `(seqno, next_inbox_idx)` — the comparable snark-update fields.
+type SnarkUpdateProj = (u64, u64);
 
 /// Groups snark updates by account, preserving emission order within each
 /// account. Returns the comparable projection per record — see the call site
@@ -454,11 +454,9 @@ type SnarkUpdateProj = (u64, u64, Option<Vec<u8>>);
 fn group_snark_by_account(writes: &IndexerWrites) -> HashMap<AccountId, Vec<SnarkUpdateProj>> {
     let mut out: HashMap<AccountId, Vec<SnarkUpdateProj>> = HashMap::new();
     for upd in writes.snark_state_updates() {
-        out.entry(upd.account_id()).or_default().push((
-            *upd.seqno().inner(),
-            upd.next_read_idx(),
-            upd.extra_data().map(<[u8]>::to_vec),
-        ));
+        out.entry(upd.account_id())
+            .or_default()
+            .push((*upd.seqno().inner(), upd.next_read_idx()));
     }
     out
 }
@@ -534,7 +532,7 @@ mod db_idempotency {
         ) -> anyhow::Result<()> {
             self.ol_state
                 .put_toplevel_ol_state_blocking(artifacts.terminal, artifacts.new_state.clone())?;
-            let indexing_writes = build_checkpoint_indexing_writes(&artifacts.output);
+            let indexing_writes = build_checkpoint_indexing_writes(&artifacts.output)?;
             self.ol_indexing
                 .apply_epoch_indexing_blocking(epoch, indexing_writes)?;
             index_inbox_mmr_writes(&self.mmr_index, &artifacts.output)?;

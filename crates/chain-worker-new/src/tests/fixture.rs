@@ -27,7 +27,7 @@ use strata_ol_state_support_types::{
 };
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
 use strata_ol_stf::{
-    BlockComponents, execute_block_batch_preseal,
+    BlockComponents, execute_block_batch_predrain,
     test_utils::{
         EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
         TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
@@ -261,8 +261,8 @@ fn rebuild_da_and_logs(
 ) -> (Vec<u8>, Vec<CheckpointOLLog>) {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
     let logs =
-        execute_block_batch_preseal(&mut da, blocks, genesis_header, BridgeParams::default())
-            .expect("execute_block_batch_preseal");
+        execute_block_batch_predrain(&mut da, blocks, genesis_header, BridgeParams::default())
+            .expect("execute_block_batch_predrain");
     let blob = da
         .take_completed_epoch_da_blob()
         .expect("finalize DA")
