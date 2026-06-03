@@ -82,11 +82,17 @@ This repository is composed of:
 
 ## Contributing
 
-Contributions are generally welcome.
-If you intend to make larger changes please discuss them in an issue
-before opening a PR to avoid duplicate work and architectural mismatches.
+If you believe you have found a vulnerability, please provide details to
+[security@alpenlabs.io](mailto:security@alpenlabs.io) instead of
+opening a public issue.
 
-For more information please see [`CONTRIBUTING.md`](/CONTRIBUTING.md).
+This repository is not open for external contributions.
+Alpen Labs maintains this codebase with internal contributors and approved
+collaborators only.
+
+Please do not open unsolicited pull requests this repository.
+
+For details please see [`CONTRIBUTING.md`](/CONTRIBUTING.md).
 
 ## License
 
