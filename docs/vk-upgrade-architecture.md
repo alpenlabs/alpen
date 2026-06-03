@@ -55,7 +55,7 @@ This single requirement drives most of the design:
 
 ## 2. Design principles
 
-These principles emerged from analysing the layers together; they apply
+These principles emerged from analyzing the layers together; they apply
 uniformly.
 
 ### P1. Separate *authorization* from *activation*
@@ -73,6 +73,16 @@ of L1 landing → ASM queue → checkpoint delivery → application, which is ne
 announceable nor controllable. Carrying the **activation point inside the
 authorized payload** decouples them: the slow path delivers the authorization,
 but it no longer decides *when*.
+
+**Consequence — activation is sequencer-influenced, and that is intrinsic.**
+Gating activation on the proof stream (P2) means the sequencer, which paces that
+stream, also influences *when* activation lands; in the limit it can delay an
+upgrade indefinitely. This is not a wart to design away — you cannot have both
+"activation independent of the sequencer" *and* "activation synchronized to the
+proof stream." It is the dual of P6, and it is bounded three ways: the direction
+is safe (delay only *lengthens* the exit window, P5), it is capped by sequencer
+rotation (P6), and the urgent case is out of scope by construction (P5). The
+clean long-term severance is forced inclusion.
 
 ### P2. Activation is gated on the *proof stream*, never on the verifier's own clock
 
@@ -141,20 +151,43 @@ governance event, and reserve the heavyweight VK rollover for the rest.
   actively-exploited bug.
 
 The apparent contradiction between "delay for exit" and "fix bugs fast" is a
-category error. Critical exploits need a **separate emergency-halt / pause
-primitive** (freeze the chain or withdrawals, or a security-council fast path),
-distinct from the normal delayed-upgrade path. This document does not specify
-that primitive but flags it as a required, orthogonal mechanism.
+category error: they are different classes, and the delayed-upgrade path should
+not try to serve both.
+
+Fast handling of critical bugs is **explicitly out of scope** for the
+VK-upgrade mechanism. Two reasons make that acceptable:
+
+* **The VK change is opaque.** A VK reveals nothing about *what* changed, so the
+  upgrade path cannot make fine-grained "this is an urgent fix" decisions anyway
+  — bug-driven urgency does not belong here.
+* **The bridge trust model is the ultimate backstop.** Funds are held under the
+  bridge's 1/N honesty assumption. If a flaw would otherwise misappropriate
+  funds, an out-of-band correction can keep them from landing in the bad state.
+  It may require major changes and is a heavy last resort, but from that angle
+  the system is safe *without* a dedicated emergency-halt primitive in this
+  design.
 
 ### P6. Sequencer-induced delay is the general liveness problem
 
 "The sequencer can delay an upgrade by lagging on L1" is a special case of "the
-sequencer can delay everything." Its solution is the general **forced-inclusion
-/ sequencer-replacement-on-timeout** mechanism (not yet implemented). Do not
-design a bespoke anti-stall just for VK upgrades; upgrade-liveness rides on the
-same escape hatch that makes the exit guarantee real in the first place. Note
-the circularity: the forced-inclusion exit is *both* the thing the exit window
-protects *and* the bound on sequencer-induced delay.
+sequencer can delay everything." Do not design a bespoke anti-stall just for VK
+upgrades; upgrade-liveness rides on the general liveness backstop.
+
+The backstop available today is **sequencer rotation**, not forced inclusion
+(which is not yet implemented). Rotation also goes through L1 — so it is
+observable and authority-gated — but, unlike a VK upgrade, it **applies
+immediately**, with no enactment delay. The reason is a clean distinction:
+
+> A delay is required only for changes that alter the **rules** users are
+> trusting. Changing the **operator** under fixed rules touches no user's exit
+> assumption, so it needs no exit window and can take effect at once.
+
+This bounds sequencer-induced upgrade delay to roughly "one rotation-authority
+coordination round + L1 settlement" — not anything on the 2016-block scale. The
+residual cost is exactly that coordination lift (the rotation authority is a
+separate multisig). Forced inclusion remains the longer-term, trust-minimized
+version of the same backstop, and is also what an airtight L1-forced-*exit*
+guarantee ultimately depends on.
 
 ### P7. The new code must be public at announcement
 
@@ -221,16 +254,33 @@ major replay hazard and the minor timing-divergence both disappear: activation
 is a deterministic function of an artifact all nodes share, not of local
 observation timing.
 
+**Delay budget.** End to end, an OL upgrade stacks three delays:
+
+* **Coordination** (multisig sign + L1 settlement) — front-loaded, *before* the
+  window starts; magnitude unknown but small relative to the rest.
+* **Enactment** — `2016` Bitcoin blocks ≈ 14 days. This *is* the exit window.
+* **OL application tail** — because L1 information is applied only at the batch
+  **terminal** block (a DA optimization), the swap lands batch-granularly: up to
+  one batch (planned ≈ 9 h, ~2.7 % of the 14-day window) plus the OL's reorg lag.
+
+The tail falls *after* enactment, so it only *lengthens* the effective exit
+window (safe, P5). The OL reorg lag is subsumed: at 2016 blocks deep the
+enactment boundary is far past any realistic reorg. Because the tail is a few
+percent on a two-week floor, prefer the **relaxed** STR-3480 option (below) over
+forcing an off-cadence short batch — the precise cut buys ≈ 9 h of tightness that
+the exit direction does not need.
+
 **Open question (STR-3480).** What if, for some reason, the L1 view is *not* cut
 exactly on the enactment block? Options under consideration:
 
 * Require the batch to be sealed with L1 view up to exactly the enactment block
-  (the ticketed approach), or
-* Relax the condition and look at the **first** block of the L1 view (the
-  previous last-block-of-L1-view plus one, unless L1 has not advanced) to decide
-  old-vs-new.
+  (the ticketed approach — precise, but may force an off-cadence short batch), or
+* *(recommended)* Relax the condition and look at the **first** block of the L1
+  view (the previous last-block-of-L1-view plus one, unless L1 has not advanced)
+  to decide old-vs-new, letting the whole straddling batch run old logic.
 
-This is the one genuinely unresolved boundary-alignment detail at the OL layer.
+Per the delay budget above, the relaxed option is preferred; the exact-cut
+tradeoff is the remaining boundary-alignment detail to settle.
 
 **Single slot is preserved.** Checkpoints are verified in epoch order; the ASM
 verifies the last old-logic checkpoint, swaps the predicate, then verifies the
@@ -322,11 +372,13 @@ the OL sequencer's local clock.
 5. **Allow exactly one trailing old-VK snark update at the EE layer** to absorb
    proving-time jitter; layer a commit → prove flow under it if/when an anti-stall
    deadline is wanted.
-6. **Specify a separate emergency-halt primitive** (P5) for actively-exploited
-   bugs; do not route them through the delayed-upgrade path.
-7. **Treat the exit guarantee as only as strong as forced inclusion** (P6): the
-   delay `D` must exceed the forced-inclusion latency bound, and that bound does
-   not exist until forced inclusion is implemented.
+6. **Leave fast critical-bug handling out of scope** (P5): the VK change is
+   opaque, and the bridge's 1/N trust model plus out-of-band correction is the
+   ultimate backstop. Do not route urgent fixes through the delayed-upgrade path.
+7. **Use immediate sequencer rotation as today's liveness backstop** (P6):
+   rotation goes through L1 but applies at once, because it changes the operator
+   and not the rules. Forced inclusion is the longer-term version and is what an
+   airtight L1-forced-exit guarantee ultimately depends on.
 8. **Publish the new ELF/source at announcement** (P7).
 
 ## 6. Open questions
@@ -344,9 +396,12 @@ the OL sequencer's local clock.
   checkpoint stream) vs. L1 height (matches the exit guarantee directly but needs
   straddle handling). The checkpoint-L1-view approach effectively chooses L1
   height as the coordinate while reading it from the proof.
-* **Emergency-halt primitive:** out of scope here but required (P5).
-* **Forced inclusion:** prerequisite for an airtight exit guarantee (P6); not yet
-  implemented.
+* **Critical-bug handling:** out of scope (P5); backstopped by the bridge 1/N
+  model plus out-of-band correction. Confirm that backstop is acceptable for the
+  threat model.
+* **Forced inclusion:** not yet implemented; the interim liveness backstop is
+  immediate sequencer rotation (P6). Forced inclusion is the prerequisite for an
+  airtight L1-forced-exit guarantee.
 
 ## 7. References
 
