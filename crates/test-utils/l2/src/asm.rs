@@ -15,7 +15,6 @@ use strata_test_utils_btc::BtcMainnetSegment;
 /// Mirrors the genesis L1 anchor and magic bytes the legacy params fixture
 /// produced. Subprotocols are left empty since current consumers only read the
 /// magic bytes and the genesis anchor block.
-// TODO: populate `subprotocols` (bridge/checkpoint) if a test needs them.
 pub fn gen_asm_params() -> AsmParams {
     let segment = BtcMainnetSegment::load();
     let anchor = compute_l1_anchor(&segment, 40_320);
