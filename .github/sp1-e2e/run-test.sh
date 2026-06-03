@@ -34,6 +34,10 @@ export CHECKPOINT_PREDICATE=sp1-groth16
 export ALPEN_PREDICATE=sp1-groth16
 export ALPEN_CHAIN_CONFIG="${REPO_ROOT}/crates/reth/chainspec/src/res/testnet-chain.json"
 export CHAIN_SPEC=testnet
+# P2TR BOSD for the bridge safe harbour address (required by init-network.sh).
+# CI-only throwaway value — 04 (P2TR type tag) + 32-byte x-only pubkey derived
+# from the "abandon" mnemonic. Not used for real funds.
+export SAFE_HARBOUR_ADDRESS="0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
 # --- Low-level helpers ---
 
