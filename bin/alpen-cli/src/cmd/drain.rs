@@ -43,6 +43,18 @@ pub struct DrainArgs {
 #[derive(Debug, Clone, Copy)]
 pub struct MissingTargetAddress;
 
+fn alpen_drain_fee(gas_limit: u64, gas_price: u128) -> U256 {
+    U256::from(gas_limit) * U256::from(gas_price)
+}
+
+fn max_alpen_drain_value(balance: U256, gas_limit: u64, gas_price: u128) -> Option<U256> {
+    let max_send_amount = balance.checked_sub(alpen_drain_fee(gas_limit, gas_price))?;
+    if max_send_amount == U256::ZERO {
+        return None;
+    }
+    Some(max_send_amount)
+}
+
 pub async fn drain(
     DrainArgs {
         signet_address,
@@ -156,16 +168,23 @@ pub async fn drain(
         let gas_price = l2w
             .get_gas_price()
             .await
-            .internal_error("Failed to fetch Alpen gas price.")? as u64;
+            .internal_error("Failed to fetch Alpen gas price.")?;
         let gas_estimate = l2w
             .estimate_gas(estimate_tx)
             .await
             .internal_error("Failed to estimate Alpen gas")?;
 
-        let total_fee = gas_estimate * gas_price;
-        let max_send_amount = balance.saturating_sub(U256::from(total_fee));
+        let Some(max_send_amount) = max_alpen_drain_value(balance, gas_estimate, gas_price) else {
+            println!("No Alpen bitcoin to send after reserving gas");
+            return Ok(());
+        };
 
-        let tx = l2w.transaction_request().to(address).value(max_send_amount);
+        let tx = l2w
+            .transaction_request()
+            .to(address)
+            .value(max_send_amount)
+            .gas_limit(gas_estimate)
+            .gas_price(gas_price);
 
         let res = l2w
             .send_transaction(tx)
@@ -187,4 +206,50 @@ pub async fn drain(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alpen_drain_value_reserves_exact_fee() {
+        let balance = U256::from(1_000_000_000_000_000_000u128);
+        let gas_limit = 21_000;
+        let gas_price = 1_000_000_000;
+
+        let amount = max_alpen_drain_value(balance, gas_limit, gas_price).unwrap();
+
+        assert_eq!(amount, U256::from(999_979_000_000_000_000u128));
+        assert_eq!(amount + alpen_drain_fee(gas_limit, gas_price), balance);
+    }
+
+    #[test]
+    fn alpen_drain_value_rejects_balance_equal_to_fee() {
+        let gas_limit = 21_000;
+        let gas_price = 1_000_000_000;
+        let balance = alpen_drain_fee(gas_limit, gas_price);
+
+        assert_eq!(max_alpen_drain_value(balance, gas_limit, gas_price), None);
+    }
+
+    #[test]
+    fn alpen_drain_value_rejects_balance_below_fee() {
+        let gas_limit = 21_000;
+        let gas_price = 1_000_000_000;
+        let balance = alpen_drain_fee(gas_limit, gas_price) - U256::from(1);
+
+        assert_eq!(max_alpen_drain_value(balance, gas_limit, gas_price), None);
+    }
+
+    #[test]
+    fn alpen_drain_fee_uses_wide_arithmetic() {
+        let gas_limit = u64::MAX;
+        let gas_price = u128::MAX;
+
+        assert_eq!(
+            alpen_drain_fee(gas_limit, gas_price),
+            U256::from(gas_limit) * U256::from(gas_price)
+        );
+    }
 }
