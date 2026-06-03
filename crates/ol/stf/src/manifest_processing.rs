@@ -1,6 +1,6 @@
 //! ASM manifest processing.
 
-use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
+use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, L1BlockRecord, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
     CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate,
@@ -18,7 +18,6 @@ use tracing::{debug, info, trace, warn};
 
 use crate::{
     account_processing::{self, handle_misplaced_funds},
-    constants::BRIDGE_GATEWAY_ACCT_ID,
     context::BasicExecContext,
     errors::{ExecError, ExecResult},
 };

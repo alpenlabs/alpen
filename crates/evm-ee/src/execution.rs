@@ -14,7 +14,7 @@ use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::EthPrimitives;
 use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
+use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayload};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     BlockAssembler, EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecPartialState, ExecPayload,
@@ -28,13 +28,6 @@ use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
     utils::{build_and_recover_block, compute_hashed_post_state, validate_deposits_against_block},
 };
-
-/// Address where withdrawal intent msgs are forwarded.
-// TODO(STR-3358): de-duplicate with the default bridge gateway account in
-// `crates/alpen-ee/sequencer/src/block_builder/config.rs` once a shared home
-// for bridge account constants exists.
-const BRIDGE_GATEWAY_REF: u8 = 0x10;
-const BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(BRIDGE_GATEWAY_REF);
 
 /// EVM Execution Environment for Alpen.
 ///
@@ -70,7 +63,7 @@ fn convert_withdrawal_intents_to_messages(
         // Create message to bridge gateway with withdrawal amount and encoded data
         let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(intent.amt), msg_data)
             .expect("withdrawal message payload bytes must fit within SSZ max length");
-        let message = OutputMessage::new(BRIDGE_GATEWAY_ACCOUNT, payload);
+        let message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload);
         outputs.add_message(message);
     }
 }
@@ -313,7 +306,7 @@ mod tests {
         let [message] = outputs.output_messages() else {
             panic!("expected exactly one withdrawal output message");
         };
-        assert_eq!(message.dest(), AccountId::special(BRIDGE_GATEWAY_REF));
+        assert_eq!(message.dest(), BRIDGE_GATEWAY_ACCT_ID);
         assert_eq!(
             message.payload().value(),
             BitcoinAmount::from_sat(withdrawal_sats)

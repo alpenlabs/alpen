@@ -16711,7 +16711,6 @@ dependencies = [
  "strata-ol-bridge-types",
  "strata-ol-msg-types",
  "strata-ol-rpc-types",
- "strata-ol-stf",
  "strata-predicate",
  "strata-primitives",
  "strata-snark-acct-types",

@@ -63,8 +63,8 @@ use std::{any::type_name, collections::BTreeMap, mem};
 use ssz_primitives::FixedBytes;
 use ssz_types::VariableList;
 use strata_acct_types::{
-    AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
-    RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
+    AccountId, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash, MessageEntry, Mmr64,
+    MsgPayload, RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
     tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
@@ -207,7 +207,7 @@ pub fn make_deposit_message_entry(
         .expect("deposit message should be valid")
         .to_vec();
     MessageEntry::new(
-        crate::BRIDGE_GATEWAY_ACCT_ID,
+        BRIDGE_GATEWAY_ACCT_ID,
         epoch,
         MsgPayload::from_bytes(amount, deposit_data)
             .expect("message payload bytes must fit within SSZ max length"),

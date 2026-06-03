@@ -1,9 +1,9 @@
 //! Tests for SAU output message behavior.
 
-use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount};
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 
-use crate::{BRIDGE_GATEWAY_ACCT_ID, test_utils::*};
+use crate::test_utils::*;
 
 #[test]
 fn test_snark_update_multiple_output_messages() {

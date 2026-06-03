@@ -1,9 +1,9 @@
 //! Tests for SAU transfer behavior.
 
-use strata_acct_types::{AcctError, BitcoinAmount};
+use strata_acct_types::{AcctError, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount};
 use strata_ledger_types::ISnarkAccountState;
 
-use crate::{BRIDGE_GATEWAY_ACCT_ID, errors::ExecError, test_utils::*};
+use crate::{errors::ExecError, test_utils::*};
 
 #[test]
 fn test_snark_update_success_with_transfer() {
