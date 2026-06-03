@@ -11,13 +11,17 @@ name = "alpen-ee-da-tool"
 path = "src/main.rs"
 
 [dependencies]
+alpen-ee-da-l1-extraction.workspace = true
 strata-cli-common.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 
 argh.workspace = true
 bitcoin.workspace = true
+bitcoind-async-client.workspace = true
+futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 terrors.workspace = true
+tokio.workspace = true
 toml.workspace = true
