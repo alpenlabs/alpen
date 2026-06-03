@@ -71,8 +71,10 @@ design leans on keeping them apart:
 
 * **Safety** (must *always* hold): the exit window is never shortened, and a
   proof never verifies under the wrong VK.
-* **Liveness** (best-effort): the upgrade eventually takes effect, and the chain
-  keeps progressing.
+* **Liveness** (not guaranteed by the protocol alone): the upgrade eventually
+  takes effect and the chain keeps progressing — contingent on a functioning
+  sequencer, with rotation as the backstop. Its worst case is a *safe halt*,
+  never a safety breach.
 
 The asymmetry that makes this tractable: a lagging or misbehaving sequencer can
 only ever *delay* activation, and delay *lengthens* the exit window. So nearly
