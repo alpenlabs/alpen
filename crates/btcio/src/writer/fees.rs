@@ -74,7 +74,7 @@ impl MempoolExplorerClient {
         let url = self
             .base_url
             .join(path)
-            .with_context(|| format!("invalid recommended-fees URL for base: {}", self.base_url))?;
+            .with_context(|| format!("invalid path URL for base: {}", self.base_url))?;
 
         SHARED_HTTP_CLIENT
             .get(url)

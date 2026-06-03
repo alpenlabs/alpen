@@ -9,6 +9,7 @@ use bitcoin::{
     consensus::encode::serialize_hex,
     key::Keypair,
     secp256k1::{SecretKey, SECP256K1},
+    FeeRate,
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 use serde_json::json;
@@ -135,12 +136,14 @@ fn build_and_post_ee_da_envelope(args: PostEeDaEnvelopeArgs) -> anyhow::Result<S
         .context("get change address")?
         .require_network(NETWORK)
         .context("change address network mismatch")?;
+    let fee_rate_sat_per_vb = u32::try_from(args.fee_rate).context("fee rate exceeds u32 range")?;
+    let fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate_sat_per_vb);
 
     let config = EnvelopeConfig::new(
         args.magic_bytes,
         change_addr,
         NETWORK,
-        args.fee_rate,
+        fee_rate,
         DEFAULT_REVEAL_AMOUNT_SATS,
         None,
     );
