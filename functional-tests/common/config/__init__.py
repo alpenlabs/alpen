@@ -34,7 +34,6 @@ from common.config.constants import (
 from common.config.params import (
     DepositTxParams,
     GenesisAccountData,
-    GenesisL1View,
     L1BlockCommitment,
     OLParams,
     gen_random_keypair,
@@ -72,7 +71,6 @@ __all__ = [
     "GWEI_TO_WEI",
     # params.py
     "L1BlockCommitment",
-    "GenesisL1View",
     "DepositTxParams",
     "GenesisAccountData",
     "OLParams",

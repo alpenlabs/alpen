@@ -6,7 +6,7 @@ from typing import cast
 import flexitest
 
 from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
-from common.config.params import GenesisAccountData, GenesisL1View, OLParams
+from common.config.params import GenesisAccountData, L1BlockCommitment, OLParams
 from factories.bitcoin import BitcoinFactory
 from factories.signer import SignerFactory
 from factories.strata import CreateNodeResult, StrataFactory
@@ -93,17 +93,17 @@ class StrataEnvConfig(flexitest.EnvConfig):
             rpc_password=bitcoind.get_prop("rpc_password"),
         )
 
-        genesis_l1 = GenesisL1View.at_latest_block(btc_rpc)
+        genesis_l1_block = L1BlockCommitment.at_latest_block(btc_rpc)
 
         # Build OL params with optional genesis accounts
         ol_params = None
         if self.genesis_accounts is not None:
-            ol_params = OLParams(accounts=self.genesis_accounts).with_genesis_l1(genesis_l1)
+            ol_params = OLParams(accounts=self.genesis_accounts).with_genesis_l1(genesis_l1_block)
 
         # Start Strata sequencer
         sequencer_node = strata_factory.create_node(
             bitcoind_config,
-            genesis_l1.blk.height,
+            genesis_l1_block.height,
             is_sequencer=True,
             ol_params=ol_params,
             epoch_sealing_config=self.epoch_sealing,
