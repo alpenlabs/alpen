@@ -93,31 +93,30 @@ specified here.
 
 ### Anchor activation on L1, not on a sequencer-paced height
 
-The activation point needs a clock with two properties: **users can watch it**
-(they decide whether to exit by seeing when the switch will happen), and **the
-sequencer cannot control it** (otherwise it can move the deadline). Only
-Bitcoin / L1 has both — which rules out the option that would have been far
-simpler.
+**Why an activation point is needed.** Because the upgrade is delayed, some
+single moment has to separate "verify under the old VK" from "verify under the
+new VK." Every node must agree on that boundary — otherwise they disagree on
+which VK validates a given proof, which is a consensus split — and users must be
+able to see it, because it is the end of their exit window.
 
-**Why not an L2 height?** Scheduling activation at an L2 block height ("at OL/EE
-block `N`, switch the VK") is by far the easiest to build: each STF already
-tracks its own height, so activation is a local `if height >= N` check — the
-Ethereum fork-by-height model, with none of the L1 plumbing the rest of this
-document needs. But the sequencer sets the pace of L2 blocks, so it decides when
-that height is reached. That breaks two things:
+**The candidates.** That boundary has to be named in some clock, and there are
+two: an **L2 coordinate** (an OL/EE block height, or an OL epoch) or an **L1
+coordinate** (a Bitcoin block height).
 
-* **The exit window can be shrunk.** With activation at L2 block 1,500,000, the
-  sequencer can mint blocks fast and arrive in an hour instead of two weeks. A
-  *shorter* window is a safety failure, not an inconvenience.
-* **The schedule can be overshot.** The sequencer can get a checkpoint past block
-  1,500,000 finalized under the old VK; the swap then cannot be applied without
-  rejecting a finalized checkpoint, because nothing the checkpoint commits to
-  makes the boundary decidable.
+**Why not an L2 height or epoch?** It is by far the easiest to build — each STF
+already tracks its own height, so activation is a local `if height >= N` check
+(the Ethereum fork-by-height model), with none of the L1 plumbing the rest of
+this document needs. But an L2 clock is paced by the sequencer, and that is
+fatal:
 
-(And "block `N`, in `T` days" is not a deadline users can rely on when the
-sequencer sets the rate.)
+* **The exit window can be shrunk.** The sequencer sets how fast L2 blocks are
+  produced, so it can reach the activation height in an hour instead of two
+  weeks. A *shorter* window is a safety failure, not an inconvenience.
+* **Users cannot watch it.** "Block `N`, in `T` days" is not a deadline anyone
+  can rely on when the sequencer controls the rate.
 
-**Why L1 works.** Bitcoin advances on its own at ≈ 10 min/block, so define
+**Why L1 works.** A Bitcoin height advances independently of the sequencer
+(≈ 10 min/block), so define
 
 ```
 B = (L1 inclusion height of the update tx) + 2016     (≈ 2 weeks)
@@ -127,12 +126,11 @@ B = (L1 inclusion height of the update tx) + 2016     (≈ 2 weeks)
 computes it identically, and users can watch it. The sequencer can still *lag*
 (cross `B` late), but lag only *lengthens* the window — which is safe.
 
-**Nothing extra goes in the payload.** `B` is fully determined the moment the
-update tx lands (`inclusion + 2016`), so the payload carries only the new VK — an
-explicit activation height would be redundant. This is the
-authorization-vs-activation split made concrete: the L1 transaction is the
-**authorization** ("what"), and `B = inclusion + 2016` is the **activation**
-("when"), set by neither the admin nor the sequencer.
+**Nothing extra goes in the payload.** `B` is fixed the moment the update tx
+lands, so the payload carries only the new VK; an explicit activation height
+would be redundant. This is the authorization-vs-activation split made concrete:
+the L1 transaction is the **authorization** ("what"), and `inclusion + 2016` is
+the **activation** ("when") — chosen by neither the admin nor the sequencer.
 
 ### Securing safety: the reading rule
 
