@@ -156,14 +156,15 @@ impl<C: FcmContext> FcmServiceState<C> {
     }
 
     pub(crate) async fn get_block_slot(&self, blkid: OLBlockId) -> anyhow::Result<u64> {
-        // FIXME this comes from old code that said "this is horrible but it makes our current use
-        // case much faster, see below"
+        // FIXME(STR-3673): this comes from old code that said "this is horrible but it makes our
+        // current use case much faster, see below"
         if blkid == *self.cur_best_block().blkid() {
             return Ok(self.cur_best_block().slot());
         }
 
-        // FIXME we should have some in-memory cache of blkid->height, although now that we use the
-        // manager this is less significant because we're cloning what's already in memory
+        // FIXME(STR-3673): we should have some in-memory cache of blkid->height, although now that
+        // we use the manager this is less significant because we're cloning what's already
+        // in memory
         let block = self
             .ctx()
             .get_ol_block(blkid)
@@ -196,7 +197,7 @@ impl<C: FcmContext> FcmServiceState<C> {
 }
 
 impl<C: FcmContext> ServiceState for FcmServiceState<C> {
-    // FIXME: these methods should really be within `Service` trait
+    // FIXME(STR-3673): these methods should really be within `Service` trait
     fn name(&self) -> &str {
         "fcm"
     }

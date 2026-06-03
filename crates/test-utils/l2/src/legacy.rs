@@ -22,7 +22,8 @@ use strata_test_utils_btc::BtcMainnetSegment;
 ///
 /// N.B. Currently, uses the same seed under the hood.
 pub fn gen_params() -> Params {
-    // TODO: create a random seed if we really need random op_pubkeys every time this is called
+    // TODO(STR-3692): create a random seed if we really need random op_pubkeys every time this is
+    // called
     gen_params_with_seed(0)
 }
 

@@ -122,11 +122,10 @@ pub const KECCAK_EMPTY: B256 =
 /// This function is a thin wrapper around the Keccak256 hashing algorithm
 /// and is optimized for performance.
 ///
-/// # TODO
-/// - Consider switching the return type to `B256` for consistency with other parts of the codebase.
+/// # TODO(STR-3687): /// - Consider switching the return type to `B256` for consistency with other parts of the codebase.
 #[inline]
 pub fn keccak(data: impl AsRef<[u8]>) -> [u8; 32] {
-    // TODO: Remove this benchmarking code once performance testing is complete.
+    // TODO(STR-3687): Remove this benchmarking code once performance testing is complete.
     // std::hint::black_box(sha2::Sha256::digest(&data));
     *keccak256(data)
 }
@@ -296,7 +295,7 @@ impl Encodable for MptNode {
 ///
 /// **Note**: This implementation is still using the older RLP library and needs to be
 /// migrated to `alloy_rlp` in the future.
-// TODO: migrate to alloy_rlp
+// TODO(STR-3687): migrate to alloy_rlp
 impl Decodable for MptNode {
     /// Decodes an RLP-encoded node from the provided `rlp` buffer.
     ///

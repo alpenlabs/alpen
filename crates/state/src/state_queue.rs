@@ -48,7 +48,7 @@ impl<T> StateQueue<T> {
 
     /// Returns a slice over the entries in the queue, without their positioning
     /// information.  Consider if `.iter_entries` is more well-suited.
-    // TODO is it bad to expose this?
+    // TODO(STR-3688): is it bad to expose this?
     pub fn entries(&self) -> &[T] {
         &self.entries
     }
@@ -284,7 +284,7 @@ impl<T> StateQueue<T> {
 mod tests {
     use super::StateQueue;
 
-    // TODO maybe add a queue that goes back and forth several times
+    // TODO(STR-3688): maybe add a queue that goes back and forth several times
     #[test]
     fn test_push_pop_arr() {
         let mut q = StateQueue::<u64>::new_empty();
@@ -365,6 +365,6 @@ mod tests {
         assert_eq!(q.back_idx(), Some(10));
         assert_eq!(q.back(), Some(&5));
 
-        // TODO
+        // TODO(STR-3688): add more coverage here.
     }
 }

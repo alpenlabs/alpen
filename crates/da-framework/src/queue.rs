@@ -4,7 +4,7 @@ use crate::{
     BuilderError, Codec, CodecResult, CompoundMember, DaBuilder, DaWrite, Decoder, Encoder,
 };
 
-// TODO make this generic over the queue type
+// TODO(STR-2148): make this generic over the queue type
 
 /// The type that we use to refer to queue indexes.
 pub type IdxTy = usize;
@@ -30,11 +30,11 @@ pub trait DaQueueTarget {
     type Entry: Codec;
 
     /// Gets the global index of the next entry to be removed from the queue.
-    fn cur_front(&self) -> IncrTy; // TODO make a `IdxTy`
+    fn cur_front(&self) -> IncrTy; // TODO(STR-2148): make a `IdxTy`
 
     /// Gets what would be the global index of the next entry to be added to the
     /// queue.
-    fn cur_next(&self) -> IncrTy; // TODO make a `IdxTy`
+    fn cur_next(&self) -> IncrTy; // TODO(STR-2148): make a `IdxTy`
 
     /// Increments the index of the front of the queue.
     fn increment_front(&mut self, incr: IncrTy);
@@ -54,7 +54,7 @@ pub struct DaQueue<Q: DaQueueTarget> {
     tail: Vec<Q::Entry>,
 
     /// The new front of the queue.
-    // TODO should this be converted to a counter?
+    // TODO(STR-2148): should this be converted to a counter?
     incr_front: IncrTy,
 }
 
@@ -63,7 +63,7 @@ impl<Q: DaQueueTarget> DaQueue<Q> {
         <Self as Default>::default()
     }
 
-    // TODO add fn to safely add to the back, needs some context
+    // TODO(STR-2148): add fn to safely add to the back, needs some context
 }
 
 impl<Q: DaQueueTarget> Default for DaQueue<Q> {

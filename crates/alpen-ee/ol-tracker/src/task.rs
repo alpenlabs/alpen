@@ -24,7 +24,7 @@ pub(crate) struct OLEpochOperations {
 #[derive(Debug)]
 pub(crate) enum TrackOLAction {
     /// Extend local view of the OL chain with new epochs.
-    /// TODO: stream
+    /// TODO(STR-3682): stream
     Extend(Vec<OLEpochOperations>, Box<OLChainStatus>),
     /// Refresh local finality state without extending the confirmed epoch.
     RefreshFinalized(Box<OLChainStatus>),

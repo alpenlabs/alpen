@@ -11,7 +11,7 @@ use crate::errors::{ExecError, ExecResult};
 #[derive(Clone, Debug)]
 pub struct ExecOutputBuffer {
     // maybe we'll have stuff other than logs in the future
-    // TODO don't use refcell, this sucks
+    // TODO(STR-3677): don't use refcell, this sucks
     logs: RefCell<Vec<OLLog>>,
 }
 

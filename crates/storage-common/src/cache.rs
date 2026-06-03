@@ -63,7 +63,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
     }
 
     /// Gets the number of elements in the cache.
-    // TODO replace this with an atomic we update after every op
+    // TODO(STR-3679): replace this with an atomic we update after every op
     #[allow(dead_code, clippy::allow_attributes, reason = "used for debugging")]
     pub async fn get_len_async(&self) -> usize {
         let cache = self.cache.lock().await;
@@ -71,7 +71,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
     }
 
     /// Gets the number of elements in the cache.
-    // TODO replace this with an atomic we update after every op
+    // TODO(STR-3679): replace this with an atomic we update after every op
     #[allow(dead_code, clippy::allow_attributes, reason = "used for debugging")]
     pub fn get_len_blocking(&self) -> usize {
         let cache = self.cache.blocking_lock();

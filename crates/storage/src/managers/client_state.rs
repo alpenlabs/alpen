@@ -1,5 +1,5 @@
 //! Client state manager.
-// TODO should this also include sync events?
+// TODO(STR-3679): should this also include sync events?
 
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ use crate::{
 pub struct ClientStateManager {
     ops: ClientStateOps,
 
-    // TODO actually use caches
+    // TODO(STR-3679): actually use caches
     update_cache: cache::CacheTable<L1Height, Option<ClientUpdateOutput>>,
     state_cache: cache::CacheTable<L1Height, Arc<ClientState>>,
 
@@ -50,7 +50,7 @@ impl ClientStateManager {
         })
     }
 
-    // TODO convert to managing these with Arcs
+    // TODO(STR-3679): convert to managing these with Arcs
     pub async fn get_state_async(&self, block: L1BlockCommitment) -> DbResult<Option<ClientState>> {
         Ok(self
             .ops
@@ -78,7 +78,7 @@ impl ClientStateManager {
         block: &L1BlockCommitment,
         update: ClientUpdateOutput,
     ) -> DbResult<Arc<ClientState>> {
-        // FIXME this is a lot of cloning, good thing the type isn't gigantic,
+        // FIXME(STR-3679): this is a lot of cloning, good thing the type isn't gigantic,
         // still feels bad though
         let state = Arc::new(update.state().clone());
         let height = block.height();

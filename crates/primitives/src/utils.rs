@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::Buf32;
 
 /// Temporary schnorr keypair.
-// FIXME why temporary?
+// FIXME(STR-3689): why temporary?
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SchnorrKeypair {
     /// Secret key.
@@ -17,7 +17,7 @@ pub struct SchnorrKeypair {
 ///
 /// These are generated randomly and added here just for functional tests till we don't have proper
 /// genesis configuration plus operator  addition mechanism ready
-// FIXME remove
+// FIXME(STR-3689): remove
 pub fn get_test_schnorr_keys() -> [SchnorrKeypair; 2] {
     let sk1 = Buf32::from([
         155, 178, 84, 107, 54, 0, 197, 195, 174, 240, 129, 191, 24, 173, 144, 52, 153, 57, 41, 184,

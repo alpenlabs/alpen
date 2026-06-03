@@ -95,7 +95,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         exec_payload: &ExecPayload<'_, Self::Block>,
         inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
-        // TODO Split this function up into multiple stages, there's a lot going
+        // TODO(STR-3683): Split this function up into multiple stages, there's a lot going
         // on here.  There's also check happening here that should be done in
         // `check_outputs_against_header`.  We don't have to clone the state,
         // those checks are managed by the chunk runtime.
@@ -158,7 +158,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // Step 10: Get state root from header intrinsics (verification happens during merge)
         // This avoids an expensive state clone that would be needed to compute the root here.
         //
-        // FIXME This is not correct behavior, the state root is a "result" of
+        // FIXME(STR-3683): This is not correct behavior, the state root is a "result" of
         // processing the block, so it *can't* be an intrinsic, see the doc
         // comment for `Intrinsics`.  I think we may be doing unnecessary checks
         // here.
@@ -187,7 +187,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // an expensive state clone. The actual verification happens when the state
         // is mutated and we can compute the root directly without cloning.
         //
-        // FIXME this should be checked here
+        // FIXME(STR-3683): this should be checked here
         // Note: The following are verified during execution in execute_block_body():
         // - transactions_root, ommers_hash, withdrawals_root: by validate_body_against_header()
         // - receipts_root, logs_bloom, gas_used: by validate_block_post_execution()

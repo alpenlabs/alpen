@@ -7,7 +7,7 @@ pub fn test_insert_into_empty_db(db: &impl L1Database) {
     let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
     let idx = 1;
 
-    // TODO maybe tweak this to make it a bit more realistic?
+    // TODO(STR-2653): maybe tweak this to make it a bit more realistic?
     let mf = AsmManifest::new(idx, arb.generate(), arb.generate(), vec![])
         .expect("generated test manifest should be valid");
 

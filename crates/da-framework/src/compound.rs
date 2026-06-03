@@ -163,7 +163,7 @@ impl<T: Bitmap> Default for BitSeqWriter<T> {
 /// using the macro. This gives full control over how context is used during apply.
 ///
 /// See the `context` test module for an example of manual `DaWrite` implementation.
-// TODO turn this into a proc macro
+// TODO(STR-2148): turn this into a proc macro
 #[macro_export]
 macro_rules! make_compound_impl {
     // Entry point without context type - uses () context and default error

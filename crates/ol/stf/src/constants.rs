@@ -9,9 +9,9 @@ pub const BRIDGE_GATEWAY_ACCT_ID: AccountId = AccountId::special(BRIDGE_GATEWAY_
 pub const BRIDGE_GATEWAY_ACCT_SERIAL: AccountSerial = AccountSerial::reserved(BRIDGE_GATEWAY_REF);
 
 /// ID for sequencer-sent accounts.
-// TODO make this different, really, it should be the sequencer producing the block
+// TODO(STR-3677): make this different, really, it should be the sequencer producing the block
 pub const SEQUENCER_ACCT_ID: AccountId = BRIDGE_GATEWAY_ACCT_ID;
 
 /// Serial of the bridge gateway account.
-// TODO make this different, really, it should be the sequencer producing the block
+// TODO(STR-3677): make this different, really, it should be the sequencer producing the block
 pub const SEQUENCER_ACCT_SERIAL: AccountSerial = BRIDGE_GATEWAY_ACCT_SERIAL;

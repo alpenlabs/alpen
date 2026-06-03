@@ -7,7 +7,7 @@ use crate::traits::ExecutionEnvironment;
 pub struct ExecBlockOutput<E: ExecutionEnvironment> {
     write_batch: E::WriteBatch,
     outputs: ExecOutputs,
-    // TODO
+    // TODO(STR-3685): add any remaining block output fields.
 }
 
 impl<E: ExecutionEnvironment> ExecBlockOutput<E> {

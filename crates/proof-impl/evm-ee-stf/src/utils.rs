@@ -11,7 +11,7 @@ pub fn generate_exec_update(el_proof_pp: &EvmBlockStfOutput) -> ExecSegment {
         .withdrawal_intents
         .iter()
         .map(|intent| {
-            // TODO: proper error handling
+            // TODO(STR-3684): proper error handling
             WithdrawalIntent::new(
                 BitcoinAmount::from_sat(intent.amt),
                 intent.destination.clone(),

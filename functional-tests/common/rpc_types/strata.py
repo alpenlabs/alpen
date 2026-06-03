@@ -4,7 +4,7 @@ Strata RPC types
 
 from typing import TypedDict
 
-HexBytes32 = str  # TODO: stricter
+HexBytes32 = str  # TODO(STR-3692): stricter
 HexBytes = str
 
 

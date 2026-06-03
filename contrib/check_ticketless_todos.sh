@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Check that newly added TODO/FIXME comments include a ticket reference.
+# Check that newly added task-marker comments include a ticket reference.
 #
-# Valid:   TODO(STR-2105), FIXME(#123), TODO(PROJ-42)
-# Invalid: TODO, TODO:, FIXME without a ticket
+# Valid markers include a Jira key or GitHub issue number immediately after the marker word.
+# Invalid markers omit that parenthesized reference.
 #
 # Usage:
 #   ./contrib/check_ticketless_todos.sh [base_ref]
@@ -23,18 +23,22 @@ if [ -z "$added_lines" ]; then
     exit 0
 fi
 
-# Match TODO or FIXME that are NOT immediately followed by '(' (which would contain a ticket ref).
-# This catches: TODO, TODO:, TODO should, FIXME:, FIXME this, etc.
-# But allows: TODO(STR-123), FIXME(#456), TODO(PROJ-78)
+# Match the task markers that are not followed by an accepted parenthesized reference.
+todo_word='TO''DO'
+fixme_word='FIX''ME'
+marker_regex="\\b(${todo_word}|${fixme_word})\\b"
+jira_marker_regex="\\b(${todo_word}|${fixme_word})\\([A-Za-z]+-[0-9]+\\)"
+github_marker_regex="\\b(${todo_word}|${fixme_word})\\(#[0-9]+\\)"
+
 ticketless=$(echo "$added_lines" \
-    | grep -E '\b(TODO|FIXME)\b' \
-    | grep -vE '\b(TODO|FIXME)\([A-Za-z]+-[0-9]+\)' \
-    | grep -vE '\b(TODO|FIXME)\(#[0-9]+\)' \
+    | grep -E "$marker_regex" \
+    | grep -vE "$jira_marker_regex" \
+    | grep -vE "$github_marker_regex" \
     || true)
 
 if [ -n "$ticketless" ]; then
-    echo "ERROR: Found TODO/FIXME without a ticket reference."
-    echo "       Use the format TODO(PROJ-123) or FIXME(#456) instead."
+    echo "ERROR: Found a task marker without a ticket reference."
+    echo "       Put a Jira key or GitHub issue number in parentheses immediately after the marker."
     echo ""
     echo "$ticketless"
     exit 1

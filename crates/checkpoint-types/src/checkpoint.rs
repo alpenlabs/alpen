@@ -79,7 +79,7 @@ impl Checkpoint {
     }
 
     // #[deprecated(note = "use `checkpoint_verification::construct_receipt`")]
-    // TODO: commented for now
+    // TODO(STR-3629): commented for now
     // understand the rationale for making it deprecated
     pub fn construct_receipt(&self) -> ProofReceipt {
         let proof = self.proof().clone();
@@ -90,7 +90,7 @@ impl Checkpoint {
     }
 
     pub fn hash(&self) -> Buf32 {
-        // FIXME make this more structured and use incremental hashing
+        // FIXME(STR-3629): make this more structured and use incremental hashing
 
         let mut buf = vec![];
         let batch_serialized = borsh::to_vec(&self.commitment.batch_info)
@@ -197,7 +197,7 @@ impl L1CommittedCheckpoint {
 
 /// Verifies that a signed checkpoint has a proper signature according to rollup
 /// params.
-// TODO this might want to take a chainstate in the future, but we don't have
+// TODO(STR-3629): this might want to take a chainstate in the future, but we don't have
 // the ability to get that where we call this yet
 pub fn verify_signed_checkpoint_sig(
     signed_checkpoint: &SignedCheckpoint,
