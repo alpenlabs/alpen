@@ -99,7 +99,7 @@ jobs:
             # "Sp1Groth16:<hex>"; strip the type prefix to recover the raw VK hex
             # the Helm values expect.
             CHECKPOINT_PREDICATE=$(./target/release/strata-datatool gen-checkpoint-predicate)
-            SP1_VALUE=$(echo "$CHECKPOINT_PREDICATE" | sed 's/^[A-Za-z0-9]*://')
+            SP1_VALUE="${CHECKPOINT_PREDICATE#*:}"
             echo "sp1_value=$SP1_VALUE" >> "$GITHUB_OUTPUT"
             echo "SP1 verification key: $SP1_VALUE"
 
