@@ -57,6 +57,10 @@ class TerminalBlockAssemblyBase(StrataNodeTest):
     # 64 slots at 500ms gives slower L1 mining time to include a terminal manifest.
     epoch_sealing = EpochSealingConfig.new_fixed_slot(64)
 
+    # Pin the reorg-safe depth the manifest-burial timing relies on, so the test
+    # does not silently break when the global btcio default changes.
+    l1_reorg_safe_depth = 4
+
     l1_mining_interval_seconds: float
     terminal_blocks_to_validate: int
     terminal_slot_timeout_seconds: int
@@ -68,6 +72,7 @@ class TerminalBlockAssemblyBase(StrataNodeTest):
                 pre_generate_blocks=110,
                 epoch_sealing=self.epoch_sealing,
                 ol_block_time_ms=500,
+                l1_reorg_safe_depth=self.l1_reorg_safe_depth,
             )
         )
 

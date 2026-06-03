@@ -13,6 +13,7 @@ import flexitest
 
 from common.config import (
     BitcoindConfig,
+    BtcioConfig,
     ClientConfig,
     EpochSealingConfig,
     LoggingConfig,
@@ -75,6 +76,7 @@ class StrataFactory(flexitest.Factory):
         env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
         shared_params: "StrataNodeParams | None" = None,
+        l1_reorg_safe_depth: int | None = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -94,6 +96,9 @@ class StrataFactory(flexitest.Factory):
             shared_params: If provided, reuse these param files instead of
                 generating fresh ones (datatool key generation is random per
                 invocation, so two nodes need shared params to agree).
+            l1_reorg_safe_depth: Optional btcio L1 reorg-safe depth. Pin this in tests
+                whose behavior depends on the buried-manifest cutoff so they do not
+                break when the global default changes.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -130,11 +135,17 @@ class StrataFactory(flexitest.Factory):
         # Enable the integrated native prover so the strata sequencer produces
         # real BIP-340 Schnorr witnesses for checkpoint payloads against the
         # Bip340Schnorr checkpoint predicate baked into the ASM params.
+        btcio_config = (
+            BtcioConfig(l1_reorg_safe_depth=l1_reorg_safe_depth)
+            if l1_reorg_safe_depth is not None
+            else BtcioConfig()
+        )
         config = StrataConfig(
             bitcoind=bconfig,
             client=client_config,
             logging=logging_config,
             prover=ProverConfig(backend="native"),
+            btcio=btcio_config,
         )
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
