@@ -48,7 +48,7 @@ class TestCheckpointSyncNode(BaseTest):
         sequencer.wait_for_rpc_ready(timeout=20)
         checkpoint_node.wait_for_rpc_ready(timeout=20)
 
-        # Walk epochs as the EE node posts updates, collecting epochs whose ALPEN
+        # Walk epochs as the EE node posts updates, collecting epochs whose EE
         # account summary on the sequencer has real activity.
         active_epochs: list[int] = []
         next_epoch = 1

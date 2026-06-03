@@ -337,7 +337,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         struct Pending {
             block_commitment: OLBlockCommitment,
             seq_no: u64,
-            final_state_root: Hash,
+            new_state_root: Hash,
             extra_data: Vec<u8>,
             cursor_start: u64,
             cursor_end: u64,
@@ -389,7 +389,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     pending.push(Pending {
                         block_commitment,
                         seq_no: r.seq_no(),
-                        final_state_root: meta.new_state_root(),
+                        new_state_root: meta.new_state_root(),
                         extra_data,
                         cursor_start: prev_cursor,
                         cursor_end: next_cursor,
@@ -433,7 +433,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                         p.seq_no,
                         messages,
                         UpdateStateData::new(
-                            ProofState::new(p.final_state_root, p.cursor_end),
+                            ProofState::new(p.new_state_root, p.cursor_end),
                             p.extra_data,
                         ),
                     ));
@@ -449,7 +449,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                         p.seq_no,
                         Vec::new(),
                         UpdateStateData::new(
-                            ProofState::new(p.final_state_root, p.cursor_end),
+                            ProofState::new(p.new_state_root, p.cursor_end),
                             p.extra_data,
                         ),
                     ));

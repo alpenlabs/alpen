@@ -20,8 +20,8 @@ use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_new::{
-    BlockFlags, OLAsmManifestContainer, OLBlock, OLBlockHeader, OLLog, OLLogType,
-    SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
+    BlockFlags, MAX_SEALING_MANIFEST_COUNT, OLAsmManifestContainer, OLBlock, OLBlockHeader, OLLog,
+    OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
@@ -40,13 +40,6 @@ use crate::{
     output::OLBlockExecutionOutput,
     traits::ChainWorkerContext,
 };
-
-/// Safety cap on the L1 block range an epoch's manifests can span.
-///
-/// Defends against an outsized range from a malformed payload allocating an
-/// unbounded `Vec<AsmManifest>`. Tuned generously: a healthy epoch spans at
-/// most a few hundred L1 blocks.
-const MAX_EPOCH_L1_RANGE: u32 = 100_000;
 
 /// Mutable state for the chain worker.
 ///
@@ -203,7 +196,12 @@ impl ChainWorkerServiceState {
         // Merge the epoch's write batches into the terminal state. Must run
         // after persist_execution_output, since the merge reads every block's
         // write batch including the terminal block's, stored just above.
-        if let Some(epoch) = sealed_epoch {
+        if block.header().is_terminal() {
+            let epoch = EpochCommitment {
+                epoch: block.header().epoch(),
+                last_slot: block_commitment.slot(),
+                last_blkid: *block_commitment.blkid(),
+            };
             self.ctx.merge_epoch_data(&epoch)?;
         }
 
@@ -363,7 +361,7 @@ impl ChainWorkerServiceState {
         Ok(())
     }
 
-    /// Marks an epoch as finalized.
+    /// Marks an epoch as finalized(buried).
     ///
     /// By the time this runs the epoch's terminal state has already been merged
     /// and stored — by [`Self::handle_terminal_block_exec_post_ops`] for full
@@ -562,7 +560,7 @@ pub(crate) fn apply_checkpoint_epoch(
 /// [`EpochInfo`] used to drive [`apply_da_epoch`].
 ///
 /// Fails if the L1 range derived from the base state and payload tip is
-/// inverted or exceeds [`MAX_EPOCH_L1_RANGE`].
+/// inverted or exceeds [`MAX_SEALING_MANIFEST_COUNT`].
 fn assemble_da_inputs(
     ctx: &impl ChainWorkerContext,
     epoch: EpochCommitment,
@@ -586,11 +584,11 @@ fn assemble_da_inputs(
         });
     }
     let range_len = to_height - from_height + 1;
-    if range_len > MAX_EPOCH_L1_RANGE {
+    if range_len > MAX_SEALING_MANIFEST_COUNT as u32 {
         return Err(WorkerError::L1RangeTooLarge {
             epoch: epoch.epoch(),
             len: range_len,
-            max: MAX_EPOCH_L1_RANGE,
+            max: MAX_SEALING_MANIFEST_COUNT as u32,
         });
     }
     let manifests = ctx.fetch_l1_manifests(from_height, to_height)?;

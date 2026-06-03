@@ -16,7 +16,7 @@ pub struct RpcAccountEpochSummary {
     /// Previous epoch commitment.
     prev_epoch_commitment: EpochCommitment,
     /// Balance of account at the end of this epoch in sats.
-    balance: u64,
+    final_balance: u64,
     /// Account's state root at the end of this epoch.
     final_state_root: HexBytes32,
     /// Update inputs for this epoch if present
@@ -28,14 +28,14 @@ impl RpcAccountEpochSummary {
     pub fn new(
         epoch_commitment: EpochCommitment,
         prev_epoch_commitment: EpochCommitment,
-        balance: u64,
+        final_balance: u64,
         final_state_root: HexBytes32,
         update_inputs: Vec<RpcUpdateInputData>,
     ) -> Self {
         Self {
             epoch_commitment,
             prev_epoch_commitment,
-            balance,
+            final_balance,
             final_state_root,
             update_inputs,
         }
@@ -49,8 +49,8 @@ impl RpcAccountEpochSummary {
         self.prev_epoch_commitment
     }
 
-    pub fn balance(&self) -> u64 {
-        self.balance
+    pub fn final_balance(&self) -> u64 {
+        self.final_balance
     }
 
     pub fn final_state_root(&self) -> &HexBytes32 {

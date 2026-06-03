@@ -102,17 +102,29 @@ use crate::{
     verification::verify_block,
 };
 
+/// Genesis block timestamp used by the shared epoch runner.
+pub const EPOCH_RUNNER_GENESIS_TIMESTAMP: u64 = 1_000_000;
+
+/// Per-slot timestamp step used by the shared epoch runner.
+pub const EPOCH_RUNNER_SLOT_TIMESTAMP_STEP: u64 = 1_000;
+
+/// L1 height of an epoch's terminal manifest under the shared epoch runner.
+///
+/// Genesis carries the manifest at height 1; the non-terminal blocks of the
+/// epoch under test carry none, so the terminal manifest is always at height 2.
+pub const EPOCH_RUNNER_TERMINAL_L1_HEIGHT: u32 = 2;
+
+/// Standard numeric account IDs used by tests.
+pub const TEST_SNARK_ACCOUNT_ID: u32 = 100;
+pub const TEST_RECIPIENT_ID: u32 = 200;
+pub const TEST_NONEXISTENT_ID: u32 = 999;
+
 /// Builds an account ID with predictable bytes.
 pub fn make_account_id(index: u32) -> AccountId {
     let mut bytes = [0u8; 32];
     bytes[0..4].copy_from_slice(&index.to_le_bytes());
     AccountId::from(bytes)
 }
-
-/// Standard numeric account IDs used by tests.
-pub const TEST_SNARK_ACCOUNT_ID: u32 = 100;
-pub const TEST_RECIPIENT_ID: u32 = 200;
-pub const TEST_NONEXISTENT_ID: u32 = 999;
 
 /// Builds a state root with predictable bytes.
 pub fn make_state_root(variant: u8) -> Hash {
@@ -2054,18 +2066,6 @@ pub fn snark_inbox_msg_with_data(data: &[u8]) -> MessageEntry {
             .expect("inbox msg payload"),
     )
 }
-
-/// Genesis block timestamp used by the shared epoch runner.
-pub const EPOCH_RUNNER_GENESIS_TIMESTAMP: u64 = 1_000_000;
-
-/// Per-slot timestamp step used by the shared epoch runner.
-pub const EPOCH_RUNNER_SLOT_TIMESTAMP_STEP: u64 = 1_000;
-
-/// L1 height of an epoch's terminal manifest under the shared epoch runner.
-///
-/// Genesis carries the manifest at height 1; the non-terminal blocks of the
-/// epoch under test carry none, so the terminal manifest is always at height 2.
-pub const EPOCH_RUNNER_TERMINAL_L1_HEIGHT: u32 = 2;
 
 /// Seeds the standard test recipient and snark accounts.
 ///

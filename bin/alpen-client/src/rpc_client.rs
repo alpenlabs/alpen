@@ -1,6 +1,6 @@
 use alpen_ee_common::{
-    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
-    SequencerOLClient, SnarkAccountUpdateInfo,
+    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, SequencerOLClient,
+    SnarkAccountEpochSummary, SnarkAccountUpdateInfo,
 };
 use async_trait::async_trait;
 use http::{header::AUTHORIZATION, HeaderMap, HeaderValue};
@@ -180,7 +180,7 @@ impl OLClient for RpcOLClient {
         .await
     }
 
-    async fn epoch_summary(&self, epoch: Epoch) -> Result<OLEpochSummary, OLClientError> {
+    async fn epoch_summary(&self, epoch: Epoch) -> Result<SnarkAccountEpochSummary, OLClientError> {
         retry_with_backoff_async(
             "ol_client_epoch_summary",
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
@@ -210,7 +210,7 @@ impl OLClient for RpcOLClient {
                     })
                     .collect::<Result<_, OLClientError>>()?;
 
-                Ok(OLEpochSummary::new(
+                Ok(SnarkAccountEpochSummary::new(
                     epoch_summary.epoch_commitment(),
                     epoch_summary.prev_epoch_commitment(),
                     Hash::from(epoch_summary.final_state_root().0),

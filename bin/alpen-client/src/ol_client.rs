@@ -1,8 +1,8 @@
 //! OL client wrapper that supports both real RPC and dummy implementations.
 
 use alpen_ee_common::{
-    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
-    SequencerOLClient,
+    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, SequencerOLClient,
+    SnarkAccountEpochSummary,
 };
 use async_trait::async_trait;
 use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLTxId};
@@ -31,7 +31,7 @@ impl OLClient for OLClientKind {
         }
     }
 
-    async fn epoch_summary(&self, epoch: Epoch) -> Result<OLEpochSummary, OLClientError> {
+    async fn epoch_summary(&self, epoch: Epoch) -> Result<SnarkAccountEpochSummary, OLClientError> {
         match self {
             Self::Rpc(client) => <RpcOLClient as OLClient>::epoch_summary(client, epoch).await,
             Self::Dummy(client) => <DummyOLClient as OLClient>::epoch_summary(client, epoch).await,

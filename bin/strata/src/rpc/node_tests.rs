@@ -2141,7 +2141,7 @@ async fn epoch_summary_valid_snark_account() {
 
     assert_eq!(summary.epoch_commitment().epoch(), 1);
     assert_eq!(summary.prev_epoch_commitment().epoch(), 0);
-    assert_eq!(summary.balance(), 0);
+    assert_eq!(summary.final_balance(), 0);
 }
 
 #[tokio::test]

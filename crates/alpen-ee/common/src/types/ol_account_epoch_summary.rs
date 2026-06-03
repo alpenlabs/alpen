@@ -66,14 +66,14 @@ impl SnarkAccountUpdateInfo {
 }
 
 #[derive(Debug)]
-pub struct OLEpochSummary {
+pub struct SnarkAccountEpochSummary {
     epoch: EpochCommitment,
     prev: EpochCommitment,
     final_state_root: Hash,
     updates: Vec<SnarkAccountUpdateInfo>,
 }
 
-impl OLEpochSummary {
+impl SnarkAccountEpochSummary {
     pub fn new(
         epoch: EpochCommitment,
         prev: EpochCommitment,
