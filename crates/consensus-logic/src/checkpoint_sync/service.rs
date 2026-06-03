@@ -5,7 +5,9 @@ use std::{marker::PhantomData, sync::Arc};
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
 use strata_primitives::EpochCommitment;
-use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
+use strata_service::{
+    AsyncService, Response, Service, ServiceBuilder, ServiceMonitor, TokioWatchInput,
+};
 use strata_tasks::TaskExecutor;
 use tokio::sync::watch;
 use tracing::{debug, info, warn};
@@ -13,7 +15,6 @@ use tracing::{debug, info, warn};
 use crate::checkpoint_sync::{
     context::CheckpointSyncCtx,
     errors::{CheckpointSyncError, CheckpointSyncResult},
-    input::{CheckpointSyncEvent, CheckpointSyncInput},
     state::{
         build_ol_sync_status, find_and_apply_unapplied_epochs, refinalize_applied_epoch,
         CheckpointSyncState,
@@ -43,7 +44,7 @@ impl<C> Service for CheckpointSyncService<C>
 where
     C: CheckpointSyncCtx,
 {
-    type Msg = CheckpointSyncEvent;
+    type Msg = CheckpointState;
     type State = CheckpointSyncState<C>;
     type Status = CheckpointSyncStatus;
 
@@ -64,32 +65,26 @@ where
         Ok(())
     }
 
-    async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
-        match input {
-            CheckpointSyncEvent::NewCsmStateUpdate => match state.handle_new_client_state().await {
-                Ok(()) => {}
-                // Wait condition, not a failure: the L1 tip will advance and the
-                // next CSM update will re-trigger the scan.
-                Err(CheckpointSyncError::NotReorgSafe {
-                    epoch,
-                    depth,
-                    required,
-                }) => {
-                    warn!(
-                        %epoch, depth, required,
-                        "checkpoint not reorg-safe yet, will retry on next CSM update"
-                    );
-                }
-                // Pre-sync: btcio reader hasn't published an L1 tip yet.
-                Err(CheckpointSyncError::L1TipNotReady) => {
-                    debug!("L1 tip not yet ready, will retry on next CSM update");
-                }
-                Err(e) => return Err(e.into()),
-            },
-            CheckpointSyncEvent::Abort => {
-                warn!("checkpoint sync received abort signal, shutting down");
-                return Ok(Response::ShouldExit);
+    async fn process_input(state: &mut Self::State, _input: Self::Msg) -> anyhow::Result<Response> {
+        match state.handle_new_client_state().await {
+            Ok(()) => {}
+            // Wait condition, not a failure: the L1 tip will advance and the
+            // next CSM update will re-trigger the scan.
+            Err(CheckpointSyncError::NotReorgSafe {
+                epoch,
+                depth,
+                required,
+            }) => {
+                warn!(
+                    %epoch, depth, required,
+                    "checkpoint not reorg-safe yet, will retry on next CSM update"
+                );
             }
+            // Pre-sync: btcio reader hasn't published an L1 tip yet.
+            Err(CheckpointSyncError::L1TipNotReady) => {
+                debug!("L1 tip not yet ready, will retry on next CSM update");
+            }
+            Err(e) => return Err(e.into()),
         }
         Ok(Response::Continue)
     }
@@ -120,13 +115,14 @@ pub async fn start_css<C: CheckpointSyncCtx>(
     }
 
     let state = CheckpointSyncState::new(ctx, last_finalized_and_applied);
-    let input = CheckpointSyncInput::new(checkpoint_state_rx);
+    let input = TokioWatchInput::from_receiver(checkpoint_state_rx);
 
-    let service_monitor = ServiceBuilder::<CheckpointSyncService<C>, CheckpointSyncInput>::new()
-        .with_state(state)
-        .with_input(input)
-        .launch_async("checkpoint-sync", texec.as_ref())
-        .await?;
+    let service_monitor =
+        ServiceBuilder::<CheckpointSyncService<C>, TokioWatchInput<CheckpointState>>::new()
+            .with_state(state)
+            .with_input(input)
+            .launch_async("checkpoint-sync", texec.as_ref())
+            .await?;
 
     Ok(service_monitor)
 }
