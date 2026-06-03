@@ -49,7 +49,7 @@ This single requirement drives most of the design:
    sequencer) but must never be shortened.
 2. The activation point must be **observable on L1** and **not movable by the
    sequencer**, because users decide to exit by watching L1 and they rely on the
-   window being honoured.
+   window being honored.
 3. Everything a user does on L1 *before* activation (notably a forced-inclusion
    or deposit/withdrawal transaction) must be processed under the **old** logic.
 
@@ -70,19 +70,75 @@ uniformly.
 If the two are conflated — if activation happens whenever the authorization
 *happens to* propagate through the layers — the timing becomes the convolution
 of L1 landing → ASM queue → checkpoint delivery → application, which is neither
-announceable nor controllable. Carrying the **activation point inside the
-authorized payload** decouples them: the slow path delivers the authorization,
-but it no longer decides *when*.
+announceable nor controllable.
+
+**The plan** removes that convolution by deriving the activation point from one
+L1 fact plus a fixed constant: activation occurs a fixed delay (`2016` Bitcoin
+blocks ≈ one difficulty period) after the L1 **inclusion height** of the
+authorized update transaction. The payload carries *what* changes (the new VK);
+the *when* is `inclusion_height + 2016`, computed identically by every node from
+L1. (If a longer window is ever wanted for a riskier change, the payload could
+carry an additional delay floored at the `2016`-block minimum; the default is the
+fixed constant.)
+
+Deriving the activation point this way — a fixed delay measured *forward from
+actual inclusion*, rather than an absolute height the admin writes into the
+payload — is what keeps the decoupling robust: the boundary cannot be "already
+passed" or set too soon, it is fixed and public the instant the tx lands
+(≈ two weeks of notice), and it is movable by neither the admin nor the
+sequencer. The slow multisig/L1 path delivers the authorization; a fixed forward
+delay decides *when*.
 
 **Consequence — activation is sequencer-influenced, and that is intrinsic.**
 Gating activation on the proof stream (P2) means the sequencer, which paces that
-stream, also influences *when* activation lands; in the limit it can delay an
-upgrade indefinitely. This is not a wart to design away — you cannot have both
+stream, also influences how promptly the running system *crosses* that L1-fixed
+boundary; in the limit it can delay the switch (bounded as the enforcement note
+below shows). This is not a wart to design away — you cannot have both
 "activation independent of the sequencer" *and* "activation synchronized to the
 proof stream." It is the dual of P6, and it is bounded three ways: the direction
 is safe (delay only *lengthens* the exit window, P5), it is capped by sequencer
 rotation (P6), and the urgent case is out of scope by construction (P5). The
 clean long-term severance is forced inclusion.
+
+#### Enforcing the split: safety vs. liveness
+
+"Can activation be *enforced*?" is two questions with opposite answers.
+
+**Safety — no early activation, no wrong-VK acceptance — is fully enforceable
+and needs no trust between nodes.** The mechanism is the reading rule of P2:
+
+1. Every node derives the boundary `B = inclusion_height + 2016` independently
+   from L1.
+2. Every proof commits its L1 view `V`, and `V` is checked against the real L1
+   chain, so it cannot be forged.
+3. Verify under the new VK iff `V` crosses `B`, else the old VK; reject anything
+   that does not verify under the rule-selected key.
+
+This cuts **both** ways: a post-`B` proof produced under old logic is rejected
+(no late switch), and a pre-`B` proof produced under new logic is rejected (no
+*early* switch — this is what actually enforces the exit window). Because `B` is
+an L1 fact every node computes identically, the enforcement is decentralized.
+
+**Liveness — forcing the switch to actually happen — is not intrinsically
+enforceable.** No reading rule compels a stalling sequencer to *produce* a
+post-`B` proof; this is the general sequencer-liveness problem (P6). But the
+protocol narrows it sharply: the sequencer **cannot validly process new L1
+content under old logic**. Past `B` its only options are (a) switch to the new
+logic, or (b) freeze its L1 view — which stops crediting deposits, withdrawals,
+and all L1-originated activity. There is no option to keep running normally while
+quietly staying on old logic, so delay manifests as a **visible halt**, which is
+exactly what triggers immediate rotation (P6).
+
+**Optional hard rule.** A deadline ("if no proof with `V ≥ B` appears within `N`
+L1 blocks of `B`, reject further old-logic proofs") turns the visible halt into a
+consensus rule. It still cannot force activation — only force the stall to become
+an explicit, rotation-triggering halt. Since freezing is already self-evident,
+this may not be worth the lift.
+
+**Open item — EE-from-L1.** For ASM and OL the verifier has direct L1 access and
+enforces `B` itself. For EE, whether a node syncing from L1 must independently
+check activation timing or may delegate it to the OL proof is unsettled (§3.3);
+feasibility holds either way, only the *location* of the check changes.
 
 ### P2. Activation is gated on the *proof stream*, never on the verifier's own clock
 
@@ -360,10 +416,11 @@ the OL sequencer's local clock.
    coordinate** at every layer (P2). ASM: the Bitcoin height directly. OL: the
    L1 view in the checkpoint. EE: the L1 view in the OL checkpoint that crosses
    enactment (the trust-minimized variant of §3.3).
-2. **Authorize the activation point inside the signed payload** (P1) with the
-   `2016`-block (one difficulty period) delay as the exit window; enforce a
-   minimum lead time so the boundary is always known before the chain reaches
-   it.
+2. **Derive the activation point as `inclusion_height + 2016`** (P1): the payload
+   carries only the new VK, and every node computes the boundary from the update
+   tx's L1 inclusion height plus the fixed `2016`-block (one difficulty period)
+   delay — measured forward from inclusion, so it is always known in advance and
+   movable by neither the admin nor the sequencer.
 3. **Keep one live VK slot per layer** (P3); reconstruct historical VKs by
    replay, mirroring the ASM-predicate single-slot model.
 4. **Prefer pre-baking known forks into the ELF** (P4 case 1) so routine
