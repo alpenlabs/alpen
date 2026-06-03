@@ -103,17 +103,20 @@ able to see it, because it is the end of their exit window.
 two: an **L2 coordinate** (an OL/EE block height, or an OL epoch) or an **L1
 coordinate** (a Bitcoin block height).
 
-**Why not an L2 height or epoch?** It is by far the easiest to build — each STF
-already tracks its own height, so activation is a local `if height >= N` check
-(the Ethereum fork-by-height model), with none of the L1 plumbing the rest of
-this document needs. But an L2 clock is paced by the sequencer, and that is
-fatal:
+**L2 height or epoch** is by far the easiest to build — each STF already tracks
+its own height, so activation is a local `if height >= N` check (the Ethereum
+fork-by-height model), with none of the L1 plumbing the rest of this document
+needs. But an L2 clock is paced by the sequencer, and that is fatal:
 
 * **The exit window can be shrunk.** The sequencer sets how fast L2 blocks are
   produced, so it can reach the activation height in an hour instead of two
   weeks. A *shorter* window is a safety failure, not an inconvenience.
-* **Users cannot watch it.** "Block `N`, in `T` days" is not a deadline anyone
-  can rely on when the sequencer controls the rate.
+* **The chain can be forced to halt.** Activation is defined to happen *at*
+  height `N`, but the sequencer keeps producing blocks, so the chain can finalize
+  past `N` — to `N+k` — under the old VK before the switch takes effect. Now the
+  rule cannot be honored: the new VK should apply from `N`, yet blocks `N..N+k`
+  are already final under the old one, and final blocks cannot be undone. The
+  upgrade can no longer be applied, and the only way out is to halt.
 
 **Why L1 works.** A Bitcoin height advances independently of the sequencer
 (≈ 10 min/block), so define
@@ -123,8 +126,11 @@ B = (L1 inclusion height of the update tx) + 2016     (≈ 2 weeks)
 ```
 
 `B` is a fixed wall-clock deadline the sequencer **cannot compress**, every node
-computes it identically, and users can watch it. The sequencer can still *lag*
-(cross `B` late), but lag only *lengthens* the window — which is safe.
+computes it identically, and users can watch it. And because `B` is known a full
+difficulty period before it arrives, the switch is always enforceable in time —
+no node finalizes past `B` under the old VK, so there is nothing to unwind. The
+sequencer can still *lag* (cross `B` late), but lag only *lengthens* the window —
+which is safe.
 
 **Nothing extra goes in the payload.** `B` is fixed the moment the update tx
 lands, so the payload carries only the new VK; an explicit activation height
