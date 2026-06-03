@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 async-trait.workspace = true
 borsh.workspace = true
+libc = "0.2"
 parking_lot.workspace = true
 serde.workspace = true
 thiserror.workspace = true

@@ -22,6 +22,7 @@ use crate::{
     config::{ProverConfig, RetryConfig},
     error::{ProverError, ProverResult},
     in_memory::InMemoryTaskStore,
+    stderr_capture,
     strategy::NativeStrategy,
     task::{now_secs, TaskRecord, TaskResult, TaskStatus},
     traits::{ProofSpec, ProveContext, ProveStrategy, ReceiptHook, ReceiptStore, TaskStore},
@@ -366,7 +367,12 @@ impl<H: ProofSpec> Prover<H> {
             let parent_span = Span::current();
             let prove_result = spawn_blocking(move || {
                 let _guard = parent_span.enter();
-                strategy.prove(&input, ctx)
+                // Capture the guest output SP1 writes to host stderr during
+                // simulation/proving and re-emit it under the prove span. See
+                // `stderr_capture` for why fd-level capture is the only seam.
+                let (result, captured) = stderr_capture::capture(|| strategy.prove(&input, ctx));
+                stderr_capture::tee_to_tracing(&captured);
+                result
             })
             .await;
 
