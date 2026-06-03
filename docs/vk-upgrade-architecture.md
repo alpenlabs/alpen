@@ -60,9 +60,34 @@ only the VK to verify; only provers need the ELF.
 
 ## 2. Design principles
 
-The entire design follows from a single question — **what clock measures the
-activation point?** — so this section is really one principle (anchor on L1) and
-its direct consequences.
+The design rests on one decision — anchoring activation on L1 — read through one
+lens: the split between safety and liveness. This section states the lens, the
+decision, and how each property is secured.
+
+### Safety and liveness
+
+The exit guarantee sorts every concern below into two classes, and the whole
+design leans on keeping them apart:
+
+* **Safety** (must *always* hold): the exit window is never shortened, and a
+  proof never verifies under the wrong VK.
+* **Liveness** (best-effort): the upgrade eventually takes effect, and the chain
+  keeps progressing.
+
+The asymmetry that makes this tractable: a lagging or misbehaving sequencer can
+only ever *delay* activation, and delay *lengthens* the exit window. So nearly
+everything the sequencer can do to an upgrade is a **liveness** problem, never a
+**safety** one. The design exploits this directly — safety is secured
+unconditionally (it falls out of anchoring on L1, below), while liveness is left
+to the general backstop: sequencer rotation today, forced inclusion later.
+
+The same split puts **critical bug-fixing out of scope**. Enacting faster than
+the exit window would *shorten* it — a safety violation — so the delayed-upgrade
+path is the wrong tool for an actively-exploited bug. That is acceptable: a VK
+change is opaque (it reveals nothing about *what* changed), and funds ultimately
+sit under the bridge's **1/N** assumption, where an out-of-band correction
+(heavy, last-resort) is the real backstop. No emergency-halt primitive is
+specified here.
 
 ### Anchor activation on L1, not on a sequencer-paced height
 
@@ -107,64 +132,50 @@ authorization-vs-activation split made concrete: the L1 transaction is the
 **authorization** ("what"), and `B = inclusion + 2016` is the **activation**
 ("when"), set by neither the admin nor the sequencer.
 
-How each layer reads `B` from its proofs — and why it must use the L1 view
-*committed in the proof* rather than its own L1 tip — is the "two-clock"
-subtlety worked through in §3.2.
+### Securing safety: the reading rule
 
-### Enforcing activation: safety vs. liveness
-
-The sequencer paces the proof stream, so it influences *when* the system crosses
-`B`. That influence splits into two questions with opposite answers.
-
-**Safety — no early switch, no wrong-VK acceptance — is fully enforced, with no
-trust between nodes.** The reading rule:
+Safety — no early switch and no wrong-VK acceptance — is enforced with no trust
+between nodes:
 
 1. Every node derives `B = inclusion_height + 2016` independently from L1.
-2. Every proof commits its L1 view `V`, checked against the real L1 chain, so `V`
-   cannot be forged.
+2. Every proof commits the **L1 view** `V` it incorporated, checked against the
+   real L1 chain, so `V` cannot be forged.
 3. Verify under the new VK iff `V` crosses `B`, else the old VK; reject anything
    that does not verify under the rule-selected key.
 
 This cuts **both** ways: a post-`B` proof under old logic is rejected (no late
-switch), and a pre-`B` proof under new logic is rejected (no *early* switch —
-which is what actually enforces the exit window). `B` is an L1 fact every node
-computes identically, so enforcement is decentralized.
+switch), and a pre-`B` proof under new logic is rejected (no *early* switch — the
+part that actually protects the exit window). Every node computes `B` and reads
+`V` identically, so enforcement is decentralized.
 
-**Liveness — forcing the switch to happen — is not intrinsically enforceable,
-but the gap is narrow.** No rule can make a stalled sequencer *produce* a post-`B`
-proof. But it **cannot validly process new L1 content under old logic** either:
-past `B`, its only choices are (a) switch to the new logic, or (b) freeze its L1
-view — which stops crediting deposits, withdrawals, and all L1-originated
-activity. There is no "keep running normally on old logic" option, so any delay
-shows up as a **visible halt**.
+The boundary is read from the L1 view *in the proof*, never from the verifier's
+own L1 tip. A verifier can run ahead of the proof stream it checks — the ASM sits
+at the L1 tip while the checkpoint stream it verifies lags — and keying off its
+own tip would judge a proof against the wrong VK. §3.2 works this "two-clock"
+hazard through on the OL.
 
-**A halt is handled by sequencer rotation.** Rotation also goes through L1 but
-**applies immediately**, with no exit window — because a window is needed only to
-change the **rules** users trust, and rotation changes the **operator**, not the
-rules. This bounds sequencer-induced delay to one rotation-authority coordination
-round plus L1 settlement (the cost being that coordination — rotation is a
-separate multisig). Forced inclusion is the longer-term, trust-minimized version,
-and is what an airtight L1-forced-exit guarantee ultimately needs; it is not yet
-implemented.
+### Bounding liveness: a stall can only become a halt
 
-**Critical bugs are deliberately out of scope.** You cannot enact faster than the
-exit window without breaking the guarantee, so this path is the wrong tool for an
-actively-exploited bug. That is acceptable because a VK change is **opaque** (it
-says nothing about *what* changed, so the path cannot make "this is urgent"
-decisions anyway), and funds sit under the bridge's **1/N** assumption, where an
-out-of-band correction (heavy, possibly large changes) can keep a flaw from
-misappropriating them. No dedicated emergency-halt primitive is specified here.
+Liveness is not intrinsically enforceable — no rule makes a stalled sequencer
+*produce* a proof. But the gap is narrow: a sequencer **cannot validly process
+new L1 content under old logic**. Past `B` its only choices are to switch to the
+new logic or to **freeze** its L1 view — and freezing stops crediting deposits,
+withdrawals, and all L1-originated activity. So a stall is always a *visible
+halt*, never quiet drift on old logic.
 
-**Optional hard rule.** A deadline ("if no proof with `V ≥ B` lands within `N` L1
-blocks of `B`, reject further old-logic proofs") makes the halt a consensus rule.
-It still cannot force activation — only force the stall into an explicit,
-rotation-triggering halt. Since freezing is already self-evident, this may not be
-worth the lift.
+A halt is cleared by **sequencer rotation**, which also goes through L1 but
+applies *immediately* — a window is needed only to change the **rules** users
+trust, and rotation changes the **operator**, not the rules. This bounds
+sequencer-induced delay to one rotation-authority coordination round plus L1
+settlement (the cost being that coordination: rotation is a separate multisig).
+Forced inclusion is the longer-term, trust-minimized version, and is what an
+airtight L1-forced-exit guarantee ultimately needs; it is not yet implemented.
 
-**Open item — EE-from-L1.** For ASM and OL the verifier has direct L1 access and
-enforces `B` itself. For EE, whether a node syncing from L1 checks activation
-timing itself or delegates it to the OL proof is unsettled (§3.3); feasibility
-holds either way, only the *location* of the check changes.
+Optionally, a deadline — "if no proof with `V ≥ B` lands within `N` L1 blocks of
+`B`, reject further old-logic proofs" — promotes the halt to a hard consensus
+rule. It cannot force activation, only force the stall to surface as an explicit,
+rotation-triggering halt; since the freeze is already self-evident, this may not
+be worth the lift.
 
 ### One live VK per layer
 
