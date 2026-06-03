@@ -9,7 +9,6 @@ use bitcoin::{
     consensus::encode::serialize_hex,
     key::Keypair,
     secp256k1::{SecretKey, SECP256K1},
-    SignedAmount,
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 use serde_json::json;
@@ -247,7 +246,7 @@ fn to_corepc_list_unspent_item(entry: ListUnspentResultEntry) -> anyhow::Result<
         address,
         label: entry.label.unwrap_or_default(),
         script_pubkey: entry.script_pub_key,
-        amount: SignedAmount::from_sat(entry.amount.to_sat() as i64),
+        amount: entry.amount,
         confirmations: entry.confirmations,
         redeem_script: entry.redeem_script,
         spendable: entry.spendable,
