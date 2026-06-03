@@ -1209,6 +1209,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-da-l1-extraction"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-da-types",
+ "bitcoin",
+ "bitcoind-async-client",
+ "futures",
+ "proptest",
+ "strata-btcio",
+ "strata-codec",
+ "strata-common",
+ "strata-identifiers",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "alpen-ee-da-provider"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -1269,14 +1288,18 @@ dependencies = [
 name = "alpen-ee-da-tool"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alpen-ee-da-l1-extraction",
  "argh",
  "bitcoin",
+ "bitcoind-async-client",
+ "futures",
  "serde",
  "serde_json",
  "strata-cli-common",
  "strata-identifiers",
  "strata-l1-txfmt",
  "terrors",
+ "tokio",
  "toml 0.5.11",
 ]
 
