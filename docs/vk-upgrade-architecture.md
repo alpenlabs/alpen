@@ -1,10 +1,10 @@
-# Verifying-Key (Predicate) Upgrade Architecture
+# VK (Predicate) Upgrade Architecture
 
 Status: draft / design discussion
 Scope: ASM, OL, and EE verifying-key (VK / predicate) upgrades
 Related: STR-3480 (seal a batch with L1 view up to the enactment block)
 
-## 1. Purpose and motivation
+## Purpose and motivation
 
 Each of Alpen's three state-transition functions (ASM, OL, EE) is enforced by a
 zero-knowledge proof verified against a **verifying key** (a `PredicateKey`).
@@ -21,7 +21,7 @@ This document records *why* upgrades are structured the way they are, the
 design principles we converged on, the alternatives we rejected, and the
 recommended path forward for each layer.
 
-### Why a controlled upgrade is hard
+## Why a controlled upgrade is hard
 
 A VK is a **pure function of the ELF bytes**: any change to the guest program —
 whether a one-character typo fix, a bug fix, or an entirely new codebase —
@@ -35,7 +35,7 @@ produces a new program ID and therefore a new VK. There is no such thing as a
   logic is considered valid for which blocks*. Getting that moment wrong is a
   consensus failure, not a cosmetic one.
 
-### The governing rationale: the exit guarantee
+## The governing rationale: the exit guarantee
 
 The reason upgrades are **delayed** rather than applied immediately is the user
 **exit guarantee**: a user who dislikes an announced upgrade must be able to
@@ -58,13 +58,7 @@ must be published at announcement: a VK is opaque, so users need the source
 (ideally via reproducible builds) to decide whether to object. Full nodes need
 only the VK to verify; only provers need the ELF.
 
-## 2. Design principles
-
-The design rests on one decision — anchoring activation on L1 — read through one
-lens: the split between safety and liveness. This section states the lens, the
-decision, and how each property is secured.
-
-### Safety and liveness
+## Safety and liveness
 
 The exit guarantee sorts every concern below into two classes, and the whole
 design leans on keeping them apart:
@@ -73,14 +67,15 @@ design leans on keeping them apart:
   proof never verifies under the wrong VK.
 * **Liveness** (not guaranteed by the protocol alone): the upgrade eventually
   takes effect and the chain keeps progressing — contingent on a functioning
-  sequencer, with rotation as the backstop. Its worst case is a *safe halt*,
-  never a safety breach.
+  sequencer. Its worst case is a *safe halt*, never a safety breach.
+    * Liveness is not intrinsically enforceable — no rule makes a stalled
+      sequencer *produce* a proof.
 
-The asymmetry that makes this work: a lagging or misbehaving sequencer can only
-*delay* activation, and delay only *lengthens* the exit window. So whatever the
-sequencer does is a **liveness** problem, never a **safety** one. The design
-leans on that — safety is secured unconditionally (it falls out of anchoring on
-L1, below), while liveness is left to sequencer rotation.
+So the design should only ever let a misbehaving sequencer **delay** activation,
+and delay only *lengthens* the exit window. Whatever the sequencer does is then a
+**liveness** problem, never a **safety** one. The design leans on that — safety is
+secured unconditionally (it falls out of anchoring on L1, below), while liveness
+is left to sequencer rotation.
 
 > **Note — critical bug-fixing is out of scope.** Enacting faster than the exit
 > window would *shorten* it (a safety violation), so this path is the wrong tool
@@ -89,32 +84,36 @@ L1, below), while liveness is left to sequencer rotation.
 > correction is the last-resort backstop. No emergency-halt primitive is specified
 > here.
 
-### Anchor activation on L1, not on a sequencer-paced height
+## Anchoring activation on L1
 
-**Why an activation point is needed.** Because the upgrade is delayed, some
-single moment has to separate "verify under the old VK" from "verify under the
-new VK." Every node must agree on that boundary — otherwise they disagree on
-which VK validates a given proof, which is a consensus split — and users must be
-able to see it, because it is the end of their exit window.
+This is the first place `B` appears, so to be plain: **`B` is the activation
+boundary — the single L1 block height at which verification switches from the old
+VK to the new one.** Everything below is about choosing `B` and reading it.
 
-**The candidates.** That boundary has to be named in some clock, and there are
-two: an **L2 coordinate** (an OL/EE block height, or an OL epoch) or an **L1
-coordinate** (a Bitcoin block height).
+**Why an activation point is needed.** Because the upgrade is delayed, some single
+moment must separate "verify under the old VK" from "verify under the new VK."
+Every node has to agree on that moment — otherwise they disagree on which VK
+validates a given proof, a consensus split — and users must be able to see it,
+because it ends their exit window.
 
-**L2 height or epoch** is by far the easiest to build — each STF already tracks
-its own height, so activation is a local `if height >= N` check (the Ethereum
-fork-by-height model), with none of the L1 plumbing the rest of this document
-needs. But an L2 clock is paced by the sequencer, and that is fatal:
+**The candidates.** `B` has to be named in some clock, and there are two: an **L2
+coordinate** (an OL/EE block height or an OL epoch) or an **L1 coordinate** (a
+Bitcoin block height).
+
+**Why not an L2 height or epoch.** It is by far the easiest to build — each STF
+already tracks its own height, so activation is a local `if height >= N` check
+(the Ethereum fork-by-height model), with none of the L1 plumbing below. But an L2
+clock is paced by the sequencer, and that is fatal:
 
 * **The exit window can be shrunk.** The sequencer sets how fast L2 blocks are
-  produced, so it can reach the activation height in an hour instead of two
-  weeks. A *shorter* window is a safety failure, not an inconvenience.
-* **The chain can be forced to halt.** Activation is defined to happen *at*
-  height `N`, but the sequencer keeps producing blocks, so the chain can finalize
-  past `N` — to `N+k` — under the old VK before the switch takes effect. Now the
-  rule cannot be honored: the new VK should apply from `N`, yet blocks `N..N+k`
-  are already final under the old one, and final blocks cannot be undone. The
-  upgrade can no longer be applied, and the only way out is to halt.
+  produced, so it can reach the activation height in an hour instead of two weeks.
+  A *shorter* window is a safety failure, not an inconvenience.
+* **The chain can be forced to halt.** Activation is defined to happen *at* height
+  `N`, but the sequencer keeps producing blocks, so the chain can finalize past
+  `N` — to `N+k` — under the old VK before the switch takes effect. The rule then
+  cannot be honored: the new VK should apply from `N`, yet blocks `N..N+k` are
+  already final under the old one and cannot be undone. The upgrade can no longer
+  be applied, and the only way out is to halt.
 
 **Why L1 works.** A Bitcoin height advances independently of the sequencer
 (≈ 10 min/block), so define
@@ -124,64 +123,36 @@ B = (L1 inclusion height of the update tx) + 2016     (≈ 2 weeks)
 ```
 
 `B` is a fixed wall-clock deadline the sequencer **cannot compress**, every node
-computes it identically, and users can watch it. And because `B` is known a full
+computes it identically, and users can watch it. Because `B` is known a full
 difficulty period before it arrives, the switch is always enforceable in time —
 no node finalizes past `B` under the old VK, so there is nothing to unwind. The
-sequencer can still *lag* (cross `B` late), but lag only *lengthens* the window —
+sequencer can still *lag* (cross `B` late), but lag only *lengthens* the window,
 which is safe.
 
 **Nothing extra goes in the payload.** `B` is fixed the moment the update tx
-lands, so the payload carries only the new VK; an explicit activation height
-would be redundant. This is the authorization-vs-activation split made concrete:
-the L1 transaction is the **authorization** ("what"), and `inclusion + 2016` is
-the **activation** ("when") — chosen by neither the admin nor the sequencer.
+lands, so the payload carries only the new VK; an explicit activation height would
+be redundant. This is the authorization-vs-activation split made concrete: the L1
+transaction is the **authorization** ("what"), and `inclusion + 2016` is the
+**activation** ("when") — chosen by neither the admin nor the sequencer.
 
-### Securing safety: the reading rule
+**How `B` is read — and why safety is unconditional.** Each node enforces `B`
+with no trust in any other:
 
-Safety — no early switch and no wrong-VK acceptance — is enforced with no trust
-between nodes:
-
-1. Every node derives `B = inclusion_height + 2016` independently from L1.
-2. Every proof commits the **L1 view** `V` it incorporated, checked against the
-   real L1 chain, so `V` cannot be forged.
-3. Verify under the new VK iff `V` crosses `B`, else the old VK; reject anything
-   that does not verify under the rule-selected key.
+1. derive `B = inclusion + 2016` independently from L1;
+2. read the **L1 view** `V` each proof commits to (the L1 blocks it incorporated),
+   checked against the real L1 chain so `V` cannot be forged;
+3. verify under the new VK iff `V ≥ B`, else the old VK; reject anything that does
+   not verify under the rule-selected key.
 
 This cuts **both** ways: a post-`B` proof under old logic is rejected (no late
-switch), and a pre-`B` proof under new logic is rejected (no *early* switch — the
-part that actually protects the exit window). Every node computes `B` and reads
-`V` identically, so enforcement is decentralized.
+switch) and a pre-`B` proof under new logic is rejected (no *early* switch — the
+part that protects the exit window). The boundary is read from the L1 view *in the
+proof*, never from a node's own L1 tip: a verifier can run ahead of the proof
+stream it checks (the ASM sits at the L1 tip while the checkpoint stream it
+verifies lags), and keying off its own tip would judge a proof against the wrong
+VK. The per-layer plan works this "two-clock" point through on the OL.
 
-The boundary is read from the L1 view *in the proof*, never from the verifier's
-own L1 tip. A verifier can run ahead of the proof stream it checks — the ASM sits
-at the L1 tip while the checkpoint stream it verifies lags — and keying off its
-own tip would judge a proof against the wrong VK. §4.2 works this "two-clock"
-hazard through on the OL.
-
-### Bounding liveness: a stall can only become a halt
-
-Liveness is not intrinsically enforceable — no rule makes a stalled sequencer
-*produce* a proof. But the gap is narrow: a sequencer **cannot validly process
-new L1 content under old logic**. Past `B` its only choices are to switch to the
-new logic or to **freeze** its L1 view — and freezing stops crediting deposits,
-withdrawals, and all L1-originated activity. So a stall is always a *visible
-halt*, never quiet drift on old logic.
-
-A halt is cleared by **sequencer rotation**, which also goes through L1 but
-applies *immediately* — a window is needed only to change the **rules** users
-trust, and rotation changes the **operator**, not the rules. This bounds
-sequencer-induced delay to one rotation-authority coordination round plus L1
-settlement (the cost being that coordination: rotation is a separate multisig).
-Forced inclusion is the longer-term, trust-minimized version, and is what an
-airtight L1-forced-exit guarantee ultimately needs; it is not yet implemented.
-
-Optionally, a deadline — "if no proof with `V ≥ B` lands within `N` L1 blocks of
-`B`, reject further old-logic proofs" — promotes the halt to a hard consensus
-rule. It cannot force activation, only force the stall to surface as an explicit,
-rotation-triggering halt; since the freeze is already self-evident, this may not
-be worth the lift.
-
-### One live VK per layer
+## One live VK per layer
 
 We keep **one** active VK per layer in state at any instant, mirroring the OL
 checkpoint predicate's single-slot model — old and new are never stored
@@ -201,7 +172,7 @@ already express by height — an EVM hardfork the guest knows about — fire *in
 the ELF with the **same VK** and need no rollover at all. Only changes that
 produce a new ELF, hence a new VK, use the activation machinery above.)
 
-## 3. Lifecycle of an upgrade
+## Lifecycle of an upgrade
 
 This section ties the pieces above into one timeline. Nothing here is new design.
 
@@ -214,7 +185,7 @@ This section ties the pieces above into one timeline. Nothing here is new design
    fixed number of L1 blocks (planned: `2016`, ≈ 2 weeks). During this window the
    admin can still **cancel** the upgrade if something turns out to be wrong.
 4. **Activate.** When the queue elapses — at `B = inclusion + 2016` — the new VK
-   becomes the live rule, applied per layer as in §4.
+   becomes the live rule, applied per layer as in the per-layer plan below.
 
 The queue window does double duty: it is both the admin's cancellation window and
 the users' exit window, over the same `2016` blocks.
@@ -239,7 +210,7 @@ time. Crucially it can only ever push activation *later*, never earlier, so it
 never shortens the exit window. Its size is bounded by the per-layer budgets
 (about one batch at the OL, plus the one-update wiggle at the EE).
 
-## 4. Per-layer implementation plan
+## Per-layer implementation plan
 
 Two facts shape every layer. First, the ASM core — the admin subprotocol that
 queues and authorizes VK updates, `CheckpointState`, `AnchorState`, and the log
@@ -252,7 +223,7 @@ for EE), so most local work is *selection and sealing alignment*, not new
 commitments. Each subsection gives the design recap, what already exists, and the
 concrete changes grouped by component.
 
-### 4.1 ASM
+### ASM
 
 **Design.** The ASM's own STF VK is the easy case: one client, one clock.
 Activation is `inclusion + 2016`; the verifier *is* the L1 follower, so there is
@@ -271,7 +242,7 @@ activation concept to build.
   alongside the existing `bin/strata-test-cli` `create-ee-predicate-update` —
   today that is the *only* admin-update command.
 
-### 4.2 OL
+### OL
 
 **Design.** The OL-STF VK is the *checkpoint predicate*, held in the ASM's
 `CheckpointState`. Activate by the **L1 view committed in the checkpoint**: the
@@ -309,7 +280,8 @@ L1 height `B-1`." That is the core STR-3480 work.
   sources `B` from ASM state.
 * *Full node (local):* mirror the same old/new selection in
   `crates/csm-worker/src/checkpoint_extract.rs` and `processor.rs` so local
-  verification matches the ASM (and re-read the predicate live — see §4.4).
+  verification matches the ASM (and re-read the predicate live — see the
+  cross-cutting notes).
 * *Proving (optional, likely unnecessary):* bind the L1 range into
   `CheckpointClaim` only if the threat model requires the *proof* (not the signed
   envelope) to carry the L1 view. Recommended **not** needed: the ASM has direct
@@ -321,13 +293,13 @@ L1 height `B-1`." That is the core STR-3480 work.
 the old VK, so a straddling epoch need not be re-cut. The ASM can derive the
 start from its previous `verified_tip`, so no off-cadence short batch is forced.
 
-**Application tail.** Of the delays in §3, only the activation stage is
+**Application tail.** Of the delays in the lifecycle section, only the activation stage is
 OL-specific: because L1 info is applied at the epoch-terminal block, the swap
 lands batch-granularly — up to one batch (≈ 9 h, ~2.7 % of the window) after `B`.
 It only *lengthens* the window (safe), and the reorg lag is subsumed
 (`2016 ≫ l1_reorg_safe_depth`).
 
-### 4.3 EE
+### EE
 
 **Design.** The EE VK is the snark-account `update_vk` in OL state. Gate the swap
 on the EE update's **own** committed L1 view — `max(ledger_refs.idx())`, the
@@ -374,13 +346,13 @@ at prover startup (`bin/alpen-client/src/main.rs`), not per batch.
 * *EE full node from L1 (local):* reconstruction applies the same gated swap;
   `crates/ee-acct-runtime/src/update_processing.rs` selects the chunk predicate
   key by `B`. This rests on the assumption that an L1-syncing EE node takes swap
-  timing from verified OL state rather than re-deriving it (see §7).
+  timing from verified OL state rather than re-deriving it (see the open questions).
 * *External (optional):* add an explicit `activation_l1_height` to
   `EePredicateKeyUpdate` only if the ASM should emit the log at *announcement*
   rather than enactment; the default (emit at enactment, `B` = landing height)
   avoids any external field change.
 
-### 4.4 Cross-cutting: rotation, live predicate reads, burial
+### Cross-cutting: rotation, live predicate reads, burial
 
 * **Live predicate reads (prerequisite).** Today `sequencer_predicate` /
   `checkpoint_predicate` are read **once at startup** and cloned into the FCM
@@ -399,7 +371,7 @@ at prover startup (`bin/alpen-client/src/main.rs`), not per batch.
 * **Burial.** `B`'s enforcement uses the existing `l1_reorg_safe_depth`; since
   `2016 ≫` that depth, the enactment boundary is final by the time anyone acts.
 
-### 4.5 Build, ELF distribution, and rollout order
+### Build, ELF distribution, and rollout order
 
 The new source/ELF is published at announcement; full nodes need only the VK to
 verify, provers need the ELF (`provers/sp1/build.rs` → `vks.rs`,
@@ -409,7 +381,7 @@ verify, provers need the ELF (`provers/sp1/build.rs` → `vks.rs`,
 gate + per-batch host selection; (5) rotation tooling. Each step is independently
 testable.
 
-## 5. Alternatives considered and rejected
+## Alternatives considered and rejected
 
 | Alternative | Verdict |
 |-------------|---------|
@@ -417,38 +389,20 @@ testable.
 | **OL-derived activation** (e.g. "+D epochs after the log applies") | Rejected: absolute activation still hostage to L1/checkpoint timing; `D` is a magic constant; not announceable when authorized. |
 | **Per-EE-block-height VK schedule** | Rejected: breaks the one-proof-one-VK invariant; block-height rule changes belong *inside* the ELF (height-conditional logic in the guest), not in the VK schedule. |
 | **"Bake everything into the ELF, never change the VK"** | Impossible as a complete solution: the VK is a function of the ELF, so a new fork height *is* a new VK. Useful only for forks pre-baked into the ELF at authorization time; cannot authorize a genuinely new prover program. |
-| **Activate OL VK purely by Bitcoin block height** | Rejected: the major/minor two-clock problems of §4.2 — batch replay and node-timing divergence. |
-| **EE tracks L1 burial independently to time activation** | Workable with wiggle room, but requires trusting the OL sequencer's timing / risks OL-EE divergence. Superseded by the checkpoint-L1-view variant (§4.3). |
+| **Activate OL VK purely by Bitcoin block height** | Rejected: the major/minor two-clock problems of the OL plan — batch replay and node-timing divergence. |
+| **EE tracks L1 burial independently to time activation** | Workable with wiggle room, but requires trusting the OL sequencer's timing / risks OL-EE divergence. Superseded by the checkpoint-L1-view variant (the EE plan). |
 | **One emergency mechanism that also does fast bug fixes via the upgrade path** | Rejected: category error — the exit delay and fast bug-fixing are different classes. Critical bugs are out of scope (bridge 1/N backstop), not a VK-upgrade concern. |
 
-## 6. Decisions settled
-
-* **Anchor every activation on L1** (`B = inclusion + 2016`), never on an L2
-  height/epoch; the payload carries only the new VK.
-* **One live VK slot per layer**, reconstructed by replay; the VK lives in the
-  layer above (ASM holds OL's; OL holds EE's).
-* **OL:** activate by the checkpoint's committed L1 view; seal the boundary epoch
-  at `B-1`; use the *relaxed* reading rule; no `CheckpointClaim` change.
-* **EE:** gate the swap on the update's `ledger_refs` L1 view with a pending VK in
-  snark state; the crossing update keeps the old VK (one-update wiggle); `B` = the
-  log's landing height.
-* **Pre-baked, height-conditional ELF forks** (same VK) handle routine upgrades
-  with no governance event; VK rollover is reserved for unanticipated changes.
-* **Critical bugs are out of scope** (opaque VK; bridge 1/N backstop); no
-  emergency-halt primitive here. The new source/ELF is published at announcement.
-* **Rotation** is the immediate liveness backstop; **forced inclusion** is the
-  longer-term version (not yet implemented).
-
-## 7. Open questions
+## Open questions
 
 * **STR-3480 boundary alignment:** confirm the *relaxed* reading rule (epoch
-  start `< B` ⇒ old) over an exact cut. See §4.2.
+  start `< B` ⇒ old) over an exact cut. See the OL plan.
 * **`CheckpointClaim` binding:** confirm that envelope + ASM L1-check binding is
   sufficient so the L1 range need not enter the proven claim (recommended). See
-  §4.2.
+  the OL plan.
 * **EE-from-L1 assumption:** confirm an L1-syncing EE node can take swap timing
   from verified OL state rather than re-deriving it; if not, it must independently
-  check `B` against the update's L1 view (both are available). See §4.3.
+  check `B` against the update's L1 view (both are available). See the EE plan.
 * **EE anti-stall deadline:** whether to require the snark update to land within
   ~3 L1 blocks of `B` (with a commit→prove flow). Deferred — high lift.
 * **External admin actions:** whether `alpenlabs/asm` exposes update actions for
@@ -459,7 +413,7 @@ testable.
 * **Forced inclusion:** not yet implemented; the interim liveness backstop is
   immediate sequencer rotation.
 
-## 8. References
+## References
 
 * STR-3480 — seal a batch with L1 view up to the enactment block.
 * **OL:** `crates/checkpoint-types/src/batch.rs` (`BatchInfo.l1_range`,
