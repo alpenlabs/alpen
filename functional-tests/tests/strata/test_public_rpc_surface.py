@@ -38,7 +38,7 @@ class TestPublicRpcSurface(BaseTest):
             1,
             0,
         )
-        assert_method_not_found(
+        assert_method_registered(
             checkpoint_rpc,
             "strata_getSnarkAcctUpdateManifest",
             ALPEN_ACCOUNT_ID,

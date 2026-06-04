@@ -23,7 +23,8 @@ use strata_ol_rpc_types::{
     RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
     RpcIndexedEntry, RpcMessageEntry, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
-    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
+    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState,
+    RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -323,9 +324,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     }
 
     /// Fetches per-(account, epoch) update and inbox records over
-    /// `[first_epoch, last_epoch]`. Updates are grouped by block commitment,
-    /// filtered to `block_commitments`. Out-of-chain and checkpoint-sync
-    /// records still advance the inbox cursor so in-chain slices stay accurate.
+    /// `[first_epoch, last_epoch]`. Updates are grouped by block commitment
+    /// and filtered to `block_commitments`.
     async fn fetch_records_in_epoch_range(
         &self,
         account_id: AccountId,
@@ -333,28 +333,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         last_epoch: Epoch,
         block_commitments: &HashSet<OLBlockCommitment>,
     ) -> RpcResult<AccountRecords> {
-        // Seed the cursor once. If the account isn't found in the prior epoch's
-        // terminal state — either because `first_epoch == 0` (no prior epoch
-        // to query) or because it didn't exist as a snark account at that
-        // point — start at 0. Both cases mean "no prior record of the account
-        // in queryable state, so its inbox starts at 0."
-        let mut cursor: u64 = if first_epoch == 0 {
-            0
-        } else {
-            let (_, prev_ol_state) = self
-                .get_toplevel_ol_state_for_epoch(first_epoch - 1)
-                .await?;
-            prev_ol_state
-                .get_account_state(&account_id)
-                .and_then(|s| s.as_snark_account().ok())
-                .map_or(0, |s| s.next_inbox_msg_idx())
-        };
-
-        // Walk records across all epochs in one pass. Out-of-chain and
-        // checkpoint-sync rows advance the cursor without emitting; in-chain
-        // records emit a `Pending` triple capturing the inbox slice they
-        // consumed. Inbox indexing is monotonic per account across epoch
-        // boundaries, so the cursor flows through without re-seeding.
+        // Walk records across all epochs in one pass. In-chain records emit a
+        // `Pending` triple capturing the inbox slice they consumed.
         struct Pending {
             block_commitment: OLBlockCommitment,
             seq_no: u64,
@@ -374,10 +354,6 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 .map_err(db_error)?
             {
                 for r in records {
-                    let prev_cursor = cursor;
-                    let next_cursor = r.next_inbox_idx();
-                    cursor = next_cursor;
-
                     // Skip rows with no block attribution: checkpoint-sync,
                     // or CSS-terminal-stamped rows (root present but block
                     // absent). This endpoint is the block-scoped view.
@@ -412,8 +388,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                         seq_no: r.seq_no(),
                         new_state_root: meta.new_state_root(),
                         extra_data,
-                        cursor_start: prev_cursor,
-                        cursor_end: next_cursor,
+                        cursor_start: r.prev_next_inbox_idx(),
+                        cursor_end: r.next_inbox_idx(),
                     });
                 }
             }
@@ -579,6 +555,19 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
 
         Ok((epoch_commitment, ol_state))
     }
+
+    /// Returns the account's current Snark update seqno at the tip epoch.
+    async fn current_snark_account_seq_no(
+        &self,
+        account_id: AccountId,
+        tip_epoch: Epoch,
+    ) -> RpcResult<Option<u64>> {
+        let (_, tip_ol_state) = self.get_toplevel_ol_state_for_epoch(tip_epoch).await?;
+        Ok(tip_ol_state
+            .get_account_state(&account_id)
+            .and_then(|state| state.as_snark_account().ok())
+            .map(|state| *state.seqno().inner()))
+    }
 }
 
 #[async_trait]
@@ -612,20 +601,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 )));
             }
 
-            // Inbox-message ranges are contiguous per record:
-            // [prev_record.next_inbox_idx, this.next_inbox_idx). The first
-            // record's lower bound is the prior epoch's terminal next_inbox_idx.
-            // Epoch 0 is genesis: no prior terminal state, no collectable messages.
             let skip_fetch = epoch == 0;
-            let mut cursor = if skip_fetch {
-                0
-            } else {
-                let (_, prev_ol_state) = self.get_toplevel_ol_state_for_epoch(epoch - 1).await?;
-                prev_ol_state
-                    .get_account_state(&account_id)
-                    .and_then(|s| s.as_snark_account().ok())
-                    .map_or(0, |s| s.next_inbox_msg_idx())
-            };
 
             struct Pending {
                 seq_no: u64,
@@ -637,10 +613,6 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
             let mut pending = Vec::with_capacity(records.len());
             for r in &records {
-                let cursor_start = cursor;
-                let cursor_end = r.next_inbox_idx();
-                cursor = cursor_end;
-
                 let new_state_root = r.update_meta().map(|m| m.new_state_root());
                 let extra_data = r
                     .extra_data()
@@ -656,8 +628,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                     seq_no: r.seq_no(),
                     new_state_root,
                     extra_data,
-                    cursor_start,
-                    cursor_end,
+                    cursor_start: r.prev_next_inbox_idx(),
+                    cursor_end: r.next_inbox_idx(),
                 });
             }
 
@@ -959,6 +931,70 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .enumerate()
             .map(|(offset, message)| RpcIndexedEntry::new(start + offset as u64, message.into()))
             .collect())
+    }
+
+    async fn get_snark_acct_update_manifest(
+        &self,
+        account_id: AccountId,
+        seq_no: u64,
+    ) -> RpcResult<RpcSnarkAcctUpdateManifest> {
+        let creation_epoch = self
+            .provider
+            .get_account_creation_epoch(account_id)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                not_found_error(format!("No creation epoch found for account {account_id}"))
+            })?;
+        let tip_epoch = self
+            .provider
+            .get_ol_sync_status()
+            .ok_or_else(|| internal_error("OL sync status not available"))?
+            .tip_epoch;
+        if let Some(current_seq_no) = self
+            .current_snark_account_seq_no(account_id, tip_epoch)
+            .await?
+        {
+            // Account state stores the next operation seqno. Published manifests
+            // can only exist for operation seqnos below that upper bound.
+            if seq_no >= current_seq_no {
+                return Err(not_found_error(format!(
+                    "No Snark account update manifest found for account {account_id} seq_no {seq_no}"
+                )));
+            }
+        }
+        for epoch in creation_epoch..=tip_epoch {
+            let Some(records) = self
+                .provider
+                .get_account_update_records(epoch, account_id)
+                .await
+                .map_err(db_error)?
+            else {
+                continue;
+            };
+
+            for record in records {
+                let operation_seq_no = record.orig_acct_seq_no().ok_or_else(|| {
+                    internal_error(format!(
+                        "update record for account {account_id} epoch {epoch} has invalid \
+                         post-state seq_no 0",
+                    ))
+                })?;
+
+                if operation_seq_no != seq_no {
+                    continue;
+                }
+
+                return Ok(RpcSnarkAcctUpdateManifest::from_account_update_record(
+                    &record,
+                    operation_seq_no,
+                ));
+            }
+        }
+
+        Err(not_found_error(format!(
+            "No Snark account update manifest found for account {account_id} seq_no {seq_no}"
+        )))
     }
 
     async fn get_snark_account_state_by_tag(

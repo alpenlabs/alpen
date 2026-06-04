@@ -104,7 +104,14 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMu
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStateMut<S> {
     fn set_proof_state(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
-        let update = SnarkAcctStateUpdate::new(self.account_id, Some(state), next_read_idx, seqno);
+        let prev_next_read_idx = self.inner.next_inbox_msg_idx();
+        let update = SnarkAcctStateUpdate::new(
+            self.account_id,
+            Some(state),
+            prev_next_read_idx,
+            next_read_idx,
+            seqno,
+        );
 
         // Pass through to inner.
         self.inner.set_proof_state(state, next_read_idx, seqno);
@@ -1105,6 +1112,7 @@ mod tests {
         let update = &writes.snark_state_updates()[0];
         assert_eq!(update.account_id(), account_id);
         assert_eq!(update.state(), Some(new_hash));
+        assert_eq!(update.prev_next_read_idx(), 0);
         assert_eq!(update.next_read_idx(), next_read_idx);
         assert_eq!(update.seqno(), seqno);
     }
@@ -1136,6 +1144,7 @@ mod tests {
 
         for (i, update) in writes.snark_state_updates().iter().enumerate() {
             assert_eq!(update.account_id(), account_id);
+            assert_eq!(update.prev_next_read_idx(), i.saturating_sub(1) as u64);
             assert_eq!(update.next_read_idx(), i as u64);
             assert_eq!(update.seqno(), Seqno::from(i as u64));
         }
