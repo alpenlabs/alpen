@@ -154,18 +154,19 @@ VK. The per-layer plan works this "two-clock" point through on the OL.
 
 ## One live VK per layer
 
-We keep **one** active VK per layer in state at any instant, mirroring the OL
-checkpoint predicate's single-slot model — old and new are never stored
-simultaneously:
+At any L1 point, exactly **one** VK is authoritative for a given proof. Across a
+transition the verifier may briefly hold both — the ASM keeps the old and new
+checkpoint predicates until the L1 view crosses `B`; the EE carries the incoming
+VK as a queued inbox message — but it is only ever a transient pair, resolved at
+the boundary:
 
-* The swap happens atomically at a **non-straddling proof boundary** (an OL epoch
-  for the checkpoint VK; an EE batch for the EE VK). Because proofs are verified
-  in order, the verifier checks the last old-logic proof, swaps, then checks the
-  first new-logic proof — there is never an instant where two VKs are needed.
+* The swap lands at a **non-straddling proof boundary** (the checkpoint that ends
+  exactly at `B` for OL; the update that ends exactly at the VK-update message for
+  EE). Proofs are verified in order, so the verifier checks the last old-logic
+  proof, swaps, then checks the first new-logic proof.
 * **Historical** verification (fresh sync / replay) recovers the then-current VK
-  by *replaying* the upgrade events in order. "One slot in state" does **not**
-  mean the old VK is never needed again; it means it is derived by replay, not
-  retained.
+  by *replaying* the upgrade events in order — the old VK is derived by replay,
+  not retained indefinitely.
 
 (One axis stays out of this mechanism: behavioral changes the active ELF can
 already express by height — an EVM hardfork the guest knows about — fire *inside*
@@ -208,149 +209,144 @@ activation from the L1 view in its proofs and runs behind the L1 tip (to avoid L
 reorgs), folding in L1 data only at batch boundaries — so it adds a little more
 time. Crucially it can only ever push activation *later*, never earlier, so it
 never shortens the exit window. Its size is bounded by the per-layer budgets
-(about one batch at the OL, plus the one-update wiggle at the EE).
+(about one batch — one checkpoint at the OL, one EE batch at the EE).
 
 ## Per-layer implementation plan
 
-Two facts shape every layer. First, the ASM core — the admin subprotocol that
-queues and authorizes VK updates, `CheckpointState`, `AnchorState`, and the log
-types — lives in the external `alpenlabs/asm` dependency (pinned in
-`Cargo.toml`); the `2016`-block queue and dual-predicate selection are
-implemented *there*, and the local repo consumes the result. Second, the L1 view
-each VK decision needs is **already committed** in that layer's artifact (the
-checkpoint's `CheckpointTip.l1_height` for OL; the snark update's `ledger_refs`
-for EE), so most local work is *selection and sealing alignment*, not new
-commitments. Each subsection gives the design recap, what already exists, and the
-concrete changes grouped by component.
+Most ASM logic is external — the `alpenlabs/asm` dependency family pinned in
+[`Cargo.toml`](https://github.com/alpenlabs/alpen/blob/55907ce/Cargo.toml) holds
+the admin subprotocol, `CheckpointState`, `AnchorState`, and the log types. The
+local repo holds the OL/EE state, the sequencer, the full-node verification
+mirror, and the tooling. **Code references below are GitHub permalinks pinned to
+commit [`55907ce`](https://github.com/alpenlabs/alpen/tree/55907ce).**
 
 ### ASM
 
-**Design.** The ASM's own STF VK is the easy case: one client, one clock.
-Activation is `inclusion + 2016`; the verifier *is* the L1 follower, so there is
-no second clock and the single slot holds directly.
+ASM is the simplest layer: it is a reactive state machine over L1 blocks, its STF
+advancing one L1 block at a time, so the switch can be made at the L1 block
+itself. The work is mostly external; the shape is:
 
-**Already there / external.** All of this lives in `alpenlabs/asm`: the admin
-subprotocol (ID 0), the queue, and the swap. Locally the node only consumes
-`AnchorState` via `crates/state/src/asm_state.rs`. There is **no** local
-activation concept to build.
+1. **Stop at the boundary.** Once the queued update matures, the ASM knows the VK
+   has changed and must stop applying the old STF to blocks past that point.
+2. **Resume under explicit approval.** Continuing requires an explicit signal that
+   the new logic is the one to run from here; how it is expressed depends on the
+   change.
 
-**Changes.**
-
-* *External (`alpenlabs/asm`):* the `2016`-block queue and the dual-slot swap for
-  the ASM/Moho VK; re-pin the tag in `Cargo.toml` afterward.
-* *Tooling (local):* add an admin-update CLI for the ASM / checkpoint predicate
-  alongside the existing `bin/strata-test-cli` `create-ee-predicate-update` —
-  today that is the *only* admin-update command.
+The local CSM worker that consumes ASM output —
+[`processor.rs::process_asm_block`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/csm-worker/src/processor.rs#L253)
+— walks heights sequentially and has **no pause/halt** today, so any real halt
+lives in the external ASM STF. See the
+[ASM Upgrade Strategy](https://app.notion.com/p/ASM-Upgrade-Strategy-319901ba000f8083af11dc33d88f0de9)
+for the detailed plan.
 
 ### OL
 
-**Design.** The OL-STF VK is the *checkpoint predicate*, held in the ASM's
-`CheckpointState`. Activate by the **L1 view committed in the checkpoint**: the
-ASM verifies a checkpoint under the old predicate while its L1 view is below `B`,
-under the new one at/after `B`. The sequencer seals the boundary epoch with L1
-view up to `B-1` (STR-3480) so the cut is clean, and the single live slot is
-preserved because checkpoints are verified in epoch order (last old, swap, first
-new).
+**The problem today.** As soon as the admin queue completes, the checkpoint
+predicate is swapped. Nothing then forces the OL sequencer to have processed every
+L1-originated transaction before `B` under the old logic — it can do whatever it
+likes. That breaks the exit guarantee and must change.
 
-**Already there.** The decision input exists end to end: the on-chain
-`CheckpointTip.l1_height()` (epoch-terminal L1 height,
-`crates/ol/checkpoint/src/state.rs`) and the local `EpochSummary.new_l1` /
-`BatchInfo.l1_range` (`crates/checkpoint-types/src/batch.rs`) already commit the
-L1 view. The predicate is verified inside the ASM checkpoint subprotocol and
-mirrored locally in `crates/csm-worker/src/checkpoint_extract.rs::verify_checkpoint`.
-The proven `CheckpointClaim` (`crates/proof-impl/checkpoint/src/statements.rs`)
-commits `l2_range` + `asm_manifests_hash` — not the L1 range directly, but the
-manifests hash already binds the L1 blocks processed.
+**Two predicates in ASM state.** The checkpoint predicate lives in the ASM's
+(external) `CheckpointState`, which today holds a *single* predicate. It must hold
+**both the old and the new at once**, from when the queue completes until
+activation. Activation happens when the checkpoint's L1 view reaches `B`; at that
+point the ASM drops the old predicate and verifies all later checkpoints under the
+new one. (This refines the *one live VK* note above: at any L1 point one VK is
+authoritative, but the state carries both across the transition.)
 
-**Gap.** Sealing is driven purely by L2 slot count (`FixedSlotSealing` in
-`crates/ol/block-assembly/src/epoch_sealing.rs`); there is no way to seal "up to
-L1 height `B-1`." That is the core STR-3480 work.
+**The cut must be exactly at `B`.** The checkpoint subprotocol must reject any
+checkpoint whose L1 range *straddles* `B`: a checkpoint carrying the tip from, say,
+`B-1` to `B+1` is invalid — the break has to fall exactly on `B`. Otherwise the
+sequencer could get `B+1` accepted under the old VK when it should be the new one.
+The verification path already commits to an exact inclusive L1 range —
+[`checkpoint_extract.rs::verify_checkpoint`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/csm-worker/src/checkpoint_extract.rs#L122)
+returns a `CheckpointL1Range::Range { start_height, end_height }` and binds the
+manifest hashes over exactly that range — so the boundary check has the data it
+needs; the range-vs-`B` rejection itself lives in the external subprotocol.
 
-**Changes.**
+**Batch sealing must target `B`.** Sealing is driven purely by L2 slot count
+([`epoch_sealing.rs` `FixedSlotSealing`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/block-assembly/src/epoch_sealing.rs#L23)),
+with no L1-height input;
+[`block_assembly.rs::fetch_asm_manifests_for_terminal_block`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/block-assembly/src/block_assembly.rs#L367)
+pulls whatever L1 has produced, capped by a count. To honor the exact cut the
+sequencer must seal the epoch so its L1 range ends exactly at `B`: add an
+L1-height-aware seal condition to the policy and `construct_block`, and bound the
+manifest fetch to end at `B`.
 
-* *External (`alpenlabs/asm`):* `CheckpointState` holds `{old predicate, new
-  predicate, boundary B}`; checkpoint verification selects old/new by the
-  checkpoint's L1 view vs `B`; the admin subprotocol runs the `2016` queue.
-* *Sequencer (local, STR-3480):* seal the boundary epoch at L1 view `B-1`. Add an
-  L1-target seal condition to `epoch_sealing.rs`; in
-  `crates/ol/block-assembly/src/block_assembly.rs` cap
-  `fetch_asm_manifests_for_terminal_block` at `B-1` and feed it into `should_seal`
-  in `construct_block`; thread a `target_l1_height` through `BlockGenerationConfig`
-  (`types.rs`), `builder.rs`/`state.rs`, and the `crates/ol/sequencer` duty, which
-  sources `B` from ASM state.
-* *Full node (local):* mirror the same old/new selection in
-  `crates/csm-worker/src/checkpoint_extract.rs` and `processor.rs` so local
-  verification matches the ASM (and re-read the predicate live — see the
-  cross-cutting notes).
-* *Proving (optional, likely unnecessary):* bind the L1 range into
-  `CheckpointClaim` only if the threat model requires the *proof* (not the signed
-  envelope) to carry the L1 view. Recommended **not** needed: the ASM has direct
-  L1 access and checks `CheckpointTip.l1_height` against its own view, and
-  `asm_manifests_hash` already commits the manifests.
+### Alpen EE
 
-**Reading-rule choice (STR-3480).** Recommend the *relaxed* rule — an epoch whose
-**start** L1 height (previous verified tip `+ 1`) is below `B` stays entirely on
-the old VK, so a straddling epoch need not be re-cut. The ASM can derive the
-start from its previous `verified_tip`, so no off-cadence short batch is forced.
+**The problem today.** When the queue completes, the ASM emits an
+`EePredicateKeyUpdate` log (external `strata_asm_logs`); the OL processes it at its
+epoch-terminal block and swaps the snark account's `update_vk` immediately
+([`process_ee_predicate_key_update`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/stf/src/manifest_processing.rs#L317)
+→ [`set_update_vk`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/state-types/src/snark_account.rs#L77)).
+As with OL, nothing forces the sequencer to process the pre-`B` L1-originated
+transactions under the old logic, so the same invariant — *everything a user does
+on L1 before activation runs under the old logic* — is violated.
 
-**Application tail.** Of the delays in the lifecycle section, only the activation stage is
-OL-specific: because L1 info is applied at the epoch-terminal block, the swap
-lands batch-granularly — up to one batch (≈ 9 h, ~2.7 % of the window) after `B`.
-It only *lengthens* the window (safe), and the reorg lag is subsumed
-(`2016 ≫ l1_reorg_safe_depth`).
+**Why the OL approach does not transfer.** The OL anchors the switch to the L1
+view it commits in each checkpoint. The EE has **no L1 view of its own**: its
+account state
+([`EeAccountState`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ee-acct-types/src/state.rs#L9))
+tracks only execution tips and pending inputs, and an update commits L1 only as
+`ledger_refs` (references to DA blocks, not a tracked cursor). We *could* give the
+EE an OL view, but we deliberately **do not anchor EE activation to OL height**:
+the OL is not yet robust, and a faulty OL could shorten the EE exit window — a
+safety failure.
 
-### EE
+**Use the inbox-MMR ordering.** Every L1-originated message a snark account
+receives is appended to its **inbox MMR** in L1 order
+([`insert_inbox_message`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/state-types/src/snark_account.rs#L70);
+deposits travel
+[`process_deposit_log`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/stf/src/manifest_processing.rs#L231)
+→ `process_message` →
+[`handle_snark_msg`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/snark-acct-sys/src/handlers.rs#L6)).
+That ordering is the boundary:
 
-**Design.** The EE VK is the snark-account `update_vk` in OL state. Gate the swap
-on the EE update's **own** committed L1 view — `max(ledger_refs.idx())`, the
-highest L1 block the batch incorporated — versus `B`. Store a *pending* VK + `B`
-in the snark account; verify each update under the current VK and, *after*
-applying, swap to pending once the update's L1 view reaches `B`. Because
-verification reads the VK before the swap, the update that crosses `B` is checked
-under the **old** VK and the next under the **new** — this *is* the one-update
-"wiggle room," and it absorbs proving-time jitter.
+1. **Queue, don't swap.** When the VK-update log arrives, the OL inserts a
+   **VK-update message** into the inbox MMR — in its L1-order position among the
+   deposits — instead of calling `set_update_vk`.
+2. **Terminate the batch at it.** The EE account guest must **end the update
+   exactly at the VK-update message** when one is present: every message ahead of
+   it (the pre-`B` L1 transactions) is processed under the old logic, and the next
+   update begins under the new one.
+3. **Carry it in the OLTx.** The snark-account-update transaction already carries
+   the processed inbox messages
+   ([`SauTxOperationData.messages`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/chain-types/src/transaction.rs#L152)),
+   so the VK-update message rides along, and the OL applies the swap when it sees
+   that message processed as the batch's last.
 
-**Already there.** The EE update already commits its L1 view via
-`ledger_refs: LedgerRefs` (each `AccumulatorClaim.idx()` is an L1 height), built
-in production by `build_ledger_refs_from_da` (`crates/alpen-ee/.../update_builder.rs`).
-The OL verifies the update against `update_vk` in
-`crates/ol/stf/src/proof_verification.rs`. Deposits arrive separately, via the
-inbox MMR.
+Today the guest stops by **message count**, not by a designated message
+([`program_processing.rs`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/snark-acct-runtime/src/program_processing.rs#L47)
+checks `cur_next_msg_idx + msg_count == new_next_msg_idx`), so "terminate exactly
+at the VK-update message" is a new rule.
 
-**Gap.** The current `EePredicateKeyUpdate` path swaps **immediately and
-unconditionally** at the epoch terminal (`process_ee_predicate_key_update`,
-`crates/ol/stf/src/manifest_processing.rs:317`), and the ELF/VK is bound **once**
-at prover startup (`bin/alpen-client/src/main.rs`), not per batch.
+**Two properties worth noting:**
 
-**Changes.**
+* **EE upgrades become EE-defined.** Because the update is just a message the EE
+  account interprets, different EEs can choose different upgrade semantics and
+  invariants. The user-exit guarantee is *Alpen's* choice, not a protocol-wide
+  one.
+* **The update could originate from another EE** via cross-account messaging — it
+  is up to each EE to define the message and its rules. For Alpen specifically,
+  the VK-update message must therefore be verified to have **originated from L1**
+  (the ASM), not from the sequencer or another account.
 
-* *OL state (local):* add `pending_update_vk` + `pending_activation_height` to
-  `OLSnarkAccountState` (`crates/ol/state-types/ssz/state.ssz` +
-  `snark_account.rs`), with accessors/mutators in `crates/ledger-types`, and
-  encode them in OL DA (`crates/ol/da/src/types/{ledger.rs,payload.rs}`) so
-  L1-reconstructing nodes apply the same swap.
-* *OL STF (local):* `process_ee_predicate_key_update` stores `pending(new_vk, B)`
-  instead of swapping, where `B` = the L1 height the log lands at (pass the
-  `real_height` already available in `process_asm_log`; the ASM emits the log at
-  enactment, after its queue, so no explicit height field is needed). Gate the
-  swap in the SAU apply path (`crates/ol/stf/src/transaction_processing.rs`, the
-  `update_account` closure): after applying, if `pending` is set and the update's
-  L1 view `≥ B`, `set_update_vk(pending)` and clear.
-* *EE sequencer (local):* select the ELF/host per batch by the batch's L1 view vs
-  `B`. Hold both hosts + `B` at the prover boundary (`bin/alpen-client/src/main.rs`,
-  `prover/spec_acct.rs`, which already has `da_refs`), route per task in
-  `crates/prover-core`, and have `crates/alpen-ee/ol-tracker` surface the
-  checkpoint's committed L1 view (it exposes epochs today). Aim to cut the batch
-  at `B-1` under the old ELF and start the new ELF at `B`; the wiggle covers
-  jitter. A commit→prove flow would decouple this from proving latency.
-* *EE full node from L1 (local):* reconstruction applies the same gated swap;
-  `crates/ee-acct-runtime/src/update_processing.rs` selects the chunk predicate
-  key by `B`. This rests on the assumption that an L1-syncing EE node takes swap
-  timing from verified OL state rather than re-deriving it (see the open questions).
-* *External (optional):* add an explicit `activation_l1_height` to
-  `EePredicateKeyUpdate` only if the ASM should emit the log at *announcement*
-  rather than enactment; the default (emit at enactment, `B` = landing height)
-  avoids any external field change.
+**What changes:**
+
+* **EE message type & batch rule** — add a VK-update variant to
+  [`DecodedEeMessageData::decode_raw`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ee-acct-types/src/messages.rs#L39)
+  / `apply_decoded_message`, and enforce termination on it in
+  [`ee_program.rs::finalize_verification`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ee-acct-runtime/src/ee_program.rs#L123)
+  /
+  [`verify_update_inner`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/snark-acct-runtime/src/program_processing.rs#L91)
+  (likely via a new `UpdateExtraData` marker).
+* **OL transaction (OLTx)** — recognize the terminal VK-update message in
+  [`process_update_tx`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/stf/src/transaction_processing.rs#L102)
+  and apply `set_update_vk` only then, checking the message's L1/ASM provenance.
+* **OL log handling** — change
+  [`process_ee_predicate_key_update`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/stf/src/manifest_processing.rs#L317)
+  to *insert the inbox message* instead of swapping.
 
 ### Cross-cutting: rotation, live predicate reads, burial
 
@@ -377,9 +373,9 @@ The new source/ELF is published at announcement; full nodes need only the VK to
 verify, provers need the ELF (`provers/sp1/build.rs` → `vks.rs`,
 `crates/zkvm/hosts`). A workable order: (1) external `alpenlabs/asm` changes
 (dual-slot + `B` + queue + selection) and re-pin; (2) live predicate reads;
-(3) OL sealing (STR-3480) + `csm-worker` mirror; (4) EE pending-VK state + DA +
-gate + per-batch host selection; (5) rotation tooling. Each step is independently
-testable.
+(3) OL exact-cut sealing (STR-3480) + `csm-worker` mirror; (4) EE VK-update
+message type + guest batch-termination rule + OLTx handling; (5) rotation tooling.
+Each step is independently testable.
 
 ## Alternatives considered and rejected
 
@@ -390,19 +386,21 @@ testable.
 | **Per-EE-block-height VK schedule** | Rejected: breaks the one-proof-one-VK invariant; block-height rule changes belong *inside* the ELF (height-conditional logic in the guest), not in the VK schedule. |
 | **"Bake everything into the ELF, never change the VK"** | Impossible as a complete solution: the VK is a function of the ELF, so a new fork height *is* a new VK. Useful only for forks pre-baked into the ELF at authorization time; cannot authorize a genuinely new prover program. |
 | **Activate OL VK purely by Bitcoin block height** | Rejected: the major/minor two-clock problems of the OL plan — batch replay and node-timing divergence. |
-| **EE tracks L1 burial independently to time activation** | Workable with wiggle room, but requires trusting the OL sequencer's timing / risks OL-EE divergence. Superseded by the checkpoint-L1-view variant (the EE plan). |
+| **Anchor EE activation to an OL view / OL height** | Rejected: ties the EE exit window to the OL, which is not yet robust — a faulty OL could *shorten* the window (a safety failure). Superseded by inbox-MMR ordering (the EE plan). |
 | **One emergency mechanism that also does fast bug fixes via the upgrade path** | Rejected: category error — the exit delay and fast bug-fixing are different classes. Critical bugs are out of scope (bridge 1/N backstop), not a VK-upgrade concern. |
 
 ## Open questions
 
-* **STR-3480 boundary alignment:** confirm the *relaxed* reading rule (epoch
-  start `< B` ⇒ old) over an exact cut. See the OL plan.
+* **STR-3480 exact cut:** the OL requires the checkpoint to break exactly at `B`;
+  confirm the sequencer can seal there reliably (an off-cadence short epoch may be
+  needed). See the OL plan.
 * **`CheckpointClaim` binding:** confirm that envelope + ASM L1-check binding is
   sufficient so the L1 range need not enter the proven claim (recommended). See
   the OL plan.
-* **EE-from-L1 assumption:** confirm an L1-syncing EE node can take swap timing
-  from verified OL state rather than re-deriving it; if not, it must independently
-  check `B` against the update's L1 view (both are available). See the EE plan.
+* **EE-from-L1 / provenance:** the VK-update message lives in OL state and DA, so
+  an L1-syncing EE node sees it by verifying OL; confirm that suffices, and pin
+  down how the EE proves the message **originated from L1/ASM** (not the sequencer
+  or another account). See the EE plan.
 * **EE anti-stall deadline:** whether to require the snark update to land within
   ~3 L1 blocks of `B` (with a commit→prove flow). Deferred — high lift.
 * **External admin actions:** whether `alpenlabs/asm` exposes update actions for
