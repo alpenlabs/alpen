@@ -46,6 +46,18 @@ pub trait OLClientRpc {
         end_slot: u64,
     ) -> RpcResult<Vec<RpcAccountBlockSummary>>;
 
+    /// Get indexed inbox messages for a Snark account.
+    ///
+    /// The range is half-open: `[start, end)`. Returned entries are ordered by
+    /// increasing inbox index. An empty range returns an empty list.
+    #[method(name = "getSnarkAcctInboxMsgRange")]
+    async fn get_snark_acct_inbox_msg_range(
+        &self,
+        account_id: AccountId,
+        start: u64,
+        end: u64,
+    ) -> RpcResult<Vec<RpcIndexedEntry<RpcMessageEntry>>>;
+
     /// Get snark account state of an account at a specified block.
     #[method(name = "getSnarkAccountState")]
     async fn get_snark_account_state(

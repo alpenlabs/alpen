@@ -177,6 +177,33 @@ impl From<UpdateInputData> for RpcUpdateInputData {
     }
 }
 
+/// RPC serializable value with its absolute index.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcIndexedEntry<T> {
+    /// Absolute index of the value.
+    index: u64,
+    /// Value at `index`.
+    value: T,
+}
+
+impl<T> RpcIndexedEntry<T> {
+    /// Creates a new [`RpcIndexedEntry`].
+    pub fn new(index: u64, value: T) -> Self {
+        Self { index, value }
+    }
+
+    /// Returns the absolute index.
+    pub fn index(&self) -> u64 {
+        self.index
+    }
+
+    /// Returns the indexed value.
+    pub fn value(&self) -> &T {
+        &self.value
+    }
+}
+
 /// RPC serializable version of [`MessageEntry`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]

@@ -22,8 +22,8 @@ use strata_ol_rpc_types::{
     OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
     RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
-    RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary, RpcOLChainStatus, RpcOLTransaction,
-    RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
+    RpcIndexedEntry, RpcMessageEntry, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
+    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -54,6 +54,12 @@ struct AccountRecords {
     updates_by_block: HashMap<OLBlockCommitment, Vec<UpdateInputData>>,
     inbox: Vec<InboxMessageRecord>,
 }
+
+/// Maximum number of Snark account inbox messages returned by one RPC call.
+///
+/// This is a server-side page-size and DoS guard, not a protocol limit. Callers
+/// that need a larger inbox span should split it into multiple requests.
+const MAX_SNARK_ACCT_INBOX_MSG_RANGE: u64 = 1_000;
 
 fn local_inbox_message_range(
     account_id: AccountId,
@@ -868,6 +874,44 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         }
 
         Ok(summaries)
+    }
+
+    async fn get_snark_acct_inbox_msg_range(
+        &self,
+        account_id: AccountId,
+        start: u64,
+        end: u64,
+    ) -> RpcResult<Vec<RpcIndexedEntry<RpcMessageEntry>>> {
+        if start > end {
+            return Err(invalid_params_error("start must be <= end"));
+        }
+        let requested_message_count = end - start;
+        if requested_message_count > MAX_SNARK_ACCT_INBOX_MSG_RANGE {
+            return Err(invalid_params_error(format!(
+                "Inbox message range too big \
+                 (count {requested_message_count}, max {MAX_SNARK_ACCT_INBOX_MSG_RANGE})",
+            )));
+        }
+
+        // NOTE: This intentionally does not pre-validate account existence or
+        // account type. The provider/MMR path owns that behavior: empty ranges
+        // return empty, while non-empty missing inbox data surfaces as a
+        // storage error.
+        let messages = self
+            .provider
+            .get_account_inbox_messages(account_id, start, end)
+            .await
+            .map_err(db_error)?;
+        debug_assert!(
+            u64::try_from(messages.len()).expect("message count must fit in u64") <= end - start,
+            "provider returned more inbox messages than requested range"
+        );
+
+        Ok(messages
+            .into_iter()
+            .enumerate()
+            .map(|(offset, message)| RpcIndexedEntry::new(start + offset as u64, message.into()))
+            .collect())
     }
 
     async fn get_account_genesis_epoch_commitment(
