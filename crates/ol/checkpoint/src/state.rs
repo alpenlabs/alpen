@@ -51,20 +51,7 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
     pub(crate) fn handle_complete_epoch(&mut self, target: EpochCommitment) -> anyhow::Result<()> {
         anyhow::ensure!(self.initialized, "worker not initialized");
 
-        let Some(target_epoch_index) = self.ctx.get_last_summarized_epoch()? else {
-            return Ok(());
-        };
-
-        // Determine starting epoch index (last processed + 1, or 1 if none, skip genesis epoch)
-        let start_epoch_index = self
-            .last_processed_epoch
-            .map(|e| e.saturating_add(1))
-            .unwrap_or(1);
-
-        // Process all epochs from start to target (inclusive)
-        for epoch_index in start_epoch_index..=target_epoch_index {
-            self.process_epoch(epoch_index)?;
-        }
+        self.catch_up_to_latest_summary()?;
 
         // Sanity check: verify we processed up to at least the target epoch
         if let Some(last_epoch) = self.last_processed_epoch
@@ -75,6 +62,39 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
                 target_epoch = target.epoch(),
                 "processed epochs but not yet caught up to target"
             );
+        }
+
+        Ok(())
+    }
+
+    /// Builds and persists checkpoint payloads for every epoch from the current
+    /// cursor (`last_processed_epoch + 1`, or `1` if none) up to and including
+    /// the latest summarized epoch.
+    ///
+    /// This is the shared catch-up path used both by [`Self::handle_complete_epoch`]
+    /// (driven by the epoch-summary watch channel during normal operation) and at
+    /// startup from the service's `on_launch`. Running it at startup ensures that a
+    /// node which restarted after an epoch was summarized but before its checkpoint
+    /// payload was built resumes checkpointing immediately, instead of waiting for
+    /// the next epoch-completion event (which is gated on a new L1 block being mined).
+    ///
+    /// Note: when a prover is configured, [`Self::process_epoch`] reads proofs from
+    /// the proof DB and will wait for a proof that has not been stored yet, matching
+    /// the steady-state behavior.
+    pub(crate) fn catch_up_to_latest_summary(&mut self) -> anyhow::Result<()> {
+        let Some(target_epoch_index) = self.ctx.get_last_summarized_epoch()? else {
+            return Ok(());
+        };
+
+        // Determine starting epoch index (last processed + 1, or 1 if none, skip genesis epoch)
+        let start_epoch_index = self
+            .last_processed_epoch
+            .map(|e| e.saturating_add(1))
+            .unwrap_or(1);
+
+        // Process all epochs from start to the latest summary (inclusive)
+        for epoch_index in start_epoch_index..=target_epoch_index {
+            self.process_epoch(epoch_index)?;
         }
 
         Ok(())
@@ -458,6 +478,96 @@ mod tests {
             prop_assert_eq!(*sidecar_terminal_subset.body_root(), *terminal_header.body_root());
             prop_assert_eq!(*sidecar_terminal_subset.logs_root(), *terminal_header.logs_root());
             prop_assert!(stored.proof().is_empty());
+        }
+    }
+
+    proptest! {
+        /// Simulates a restart: an epoch summary exists in the DB but no checkpoint
+        /// payload was ever built. The worker must build it on startup via
+        /// `catch_up_to_latest_summary` WITHOUT receiving any epoch-completion
+        /// (watch channel) message, so checkpoint signing is not stalled until the
+        /// next L1 block.
+        #[test]
+        fn catch_up_builds_pending_checkpoint_on_restart(
+            prev_terminal in ol_block_commitment_strategy(),
+            slot_offset in 1..u64::MAX,
+            body_root in buf32_strategy(),
+            logs_root in buf32_strategy(),
+            genesis_l1 in l1_block_commitment_strategy(),
+            new_l1 in l1_block_commitment_strategy(),
+            final_state in buf32_strategy(),
+            state_diff in state_diff_strategy(),
+            ol_logs in ol_logs_strategy(),
+        ) {
+            let backend = get_test_sled_backend();
+            let storage = Arc::new(
+                create_node_storage(backend, threadpool::ThreadPool::new(1)).expect("test storage"),
+            );
+            let checkpoint_mgr = storage.ol_checkpoint();
+            let ol_block_mgr = storage.ol_block();
+
+            let epoch: Epoch = 1;
+            let prev_terminal: OLBlockCommitment = prev_terminal;
+            let terminal_slot = prev_terminal.slot().saturating_add(slot_offset);
+            let terminal_header = OLBlockHeader::new(
+                1_700_000_000,
+                BlockFlags::zero(),
+                terminal_slot,
+                epoch,
+                *prev_terminal.blkid(),
+                body_root,
+                final_state,
+                logs_root,
+            );
+
+            let terminal_block = OLBlock::new(
+                SignedOLBlockHeader::new(terminal_header.clone(), Buf64::zero()),
+                OLBlockBody::new_common(
+                    OLTxSegment::new(vec![])
+                        .expect("empty tx segment construction is infallible"),
+                ),
+            );
+            ol_block_mgr
+                .put_block_data_blocking(terminal_block)
+                .expect("insert terminal block");
+
+            let terminal = terminal_header.compute_block_commitment();
+            let genesis_summary =
+                EpochSummary::new(0, prev_terminal, OLBlockCommitment::null(), genesis_l1, final_state);
+            checkpoint_mgr
+                .insert_epoch_summary_blocking(genesis_summary)
+                .expect("insert genesis summary");
+            let summary = EpochSummary::new(epoch, terminal, prev_terminal, new_l1, final_state);
+            let commitment = summary.get_epoch_commitment();
+            checkpoint_mgr
+                .insert_epoch_summary_blocking(summary)
+                .expect("insert summary");
+
+            // Fresh worker state, as after a process restart. No checkpoint payload
+            // exists yet, and no epoch-completion message is delivered.
+            let ctx = TestCheckpointContext::new(Arc::clone(&storage), state_diff, ol_logs);
+            let mut state = OLCheckpointServiceState::new(ctx);
+            state.initialize();
+
+            // Sanity: nothing built purely from initialize().
+            prop_assert!(
+                checkpoint_mgr
+                    .get_checkpoint_payload_entry_blocking(commitment)
+                    .expect("get checkpoint")
+                    .is_none()
+            );
+
+            // Startup catch-up builds the pending checkpoint without a watch message.
+            state
+                .catch_up_to_latest_summary()
+                .expect("startup catch-up should build pending checkpoint");
+
+            let stored = checkpoint_mgr
+                .get_checkpoint_payload_entry_blocking(commitment)
+                .expect("get checkpoint")
+                .expect("checkpoint should be stored after catch-up");
+            prop_assert_eq!(stored.new_tip().epoch, epoch);
+            prop_assert_eq!(state.last_processed_epoch(), Some(epoch));
         }
     }
 }

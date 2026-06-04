@@ -40,6 +40,25 @@ impl<C: CheckpointWorkerContext> Service for OLCheckpointService<C> {
 impl<C: CheckpointWorkerContext> SyncService for OLCheckpointService<C> {
     fn on_launch(state: &mut Self::State) -> anyhow::Result<()> {
         state.initialize();
+
+        // Startup catch-up: build any checkpoint payloads for epochs that were
+        // summarized before a restart but never checkpointed. The checkpoint
+        // worker is otherwise only driven by the epoch-summary watch channel,
+        // whose next message arrives only when a new epoch completes (gated on a
+        // new L1 block). Without this, a restart would stall checkpoint signing
+        // until the next L1 block was mined.
+        if let Err(err) = state.catch_up_to_latest_summary() {
+            match err.downcast_ref::<CheckpointNotReady>() {
+                Some(not_ready) => {
+                    warn!(%not_ready, "startup checkpoint catch-up deferred; epoch data not yet available");
+                }
+                None => {
+                    error!(%err, "startup checkpoint catch-up failed");
+                    return Err(err);
+                }
+            }
+        }
+
         Ok(())
     }
 
