@@ -22,6 +22,33 @@ use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::{TaskExecutor, TaskManager};
 
+/// Runtime node role derived from the composed service set.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(crate) enum NodeRole {
+    /// Checkpoint-sync node without complete OL block history.
+    CheckpointSync,
+    /// Full OL node with complete OL block data, but no sequencer-only endpoints.
+    #[expect(
+        dead_code,
+        reason = "reserved for the future OL full-node service profile"
+    )]
+    FullNode,
+    /// Sequencer node with block execution and sequencer-only endpoints.
+    Sequencer,
+}
+
+impl NodeRole {
+    /// Returns true when the node can serve OL full-node RPC methods.
+    pub(crate) fn serves_fullnode_rpc(self) -> bool {
+        matches!(self, Self::FullNode | Self::Sequencer)
+    }
+
+    /// Returns true when the node can serve sequencer submit/admin RPC methods.
+    pub(crate) fn serves_sequencer_rpc(self) -> bool {
+        matches!(self, Self::Sequencer)
+    }
+}
+
 /// Holds handles and monitors for all running services.
 pub(crate) struct RunContext {
     pub task_manager: TaskManager,
@@ -43,6 +70,15 @@ impl RunContext {
     /// Returns the config.
     pub(crate) fn config(&self) -> &Config {
         self.common.config()
+    }
+
+    /// Returns the runtime node role.
+    pub(crate) fn node_role(&self) -> NodeRole {
+        if self.config().client.is_sequencer {
+            NodeRole::Sequencer
+        } else {
+            NodeRole::CheckpointSync
+        }
     }
 
     pub(crate) fn asm_params(&self) -> &Arc<AsmParams> {

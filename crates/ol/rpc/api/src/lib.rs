@@ -29,6 +29,24 @@ pub trait OLClientRpc {
     #[method(name = "getCheckpointInfo")]
     async fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>>;
 
+    /// Get the epoch commitment for the epoch in which an account was first created.
+    ///
+    /// Resolves the creation epoch and returns the corresponding
+    /// [`EpochCommitment`] in a single call.
+    #[method(name = "getAccountGenesisEpochCommitment")]
+    async fn get_account_genesis_epoch_commitment(
+        &self,
+        account_id: AccountId,
+    ) -> RpcResult<EpochCommitment>;
+
+    /// Get the canonical ASM-manifest commitment (the manifest's tree-hash root)
+    /// for the given L1 block height.
+    #[method(name = "getAsmManifestCommitment")]
+    async fn get_asm_manifest_commitment(
+        &self,
+        l1_height: L1Height,
+    ) -> RpcResult<Option<HexBytes32>>;
+
     /// Get account-specific summaries for blocks in a slot range.
     ///
     /// Returns the account's state (balance, sequence number, inbox position) at each block
@@ -57,32 +75,6 @@ pub trait OLClientRpc {
         start: u64,
         end: u64,
     ) -> RpcResult<Vec<RpcIndexedEntry<RpcMessageEntry>>>;
-
-    /// Get snark account state of an account at a specified block.
-    #[method(name = "getSnarkAccountState")]
-    async fn get_snark_account_state(
-        &self,
-        account_id: AccountId,
-        block_or_tag: OLBlockOrTag,
-    ) -> RpcResult<Option<RpcSnarkAccountState>>;
-
-    /// Get the epoch commitment for the epoch in which an account was first created.
-    ///
-    /// Resolves the creation epoch and returns the corresponding
-    /// [`EpochCommitment`] in a single call.
-    #[method(name = "getAccountGenesisEpochCommitment")]
-    async fn get_account_genesis_epoch_commitment(
-        &self,
-        account_id: AccountId,
-    ) -> RpcResult<EpochCommitment>;
-
-    /// Get the canonical ASM-manifest commitment (the manifest's tree-hash root)
-    /// for the given L1 block height.
-    #[method(name = "getAsmManifestCommitment")]
-    async fn get_asm_manifest_commitment(
-        &self,
-        l1_height: L1Height,
-    ) -> RpcResult<Option<HexBytes32>>;
 }
 
 /// OL RPC methods served by sequencer nodes for transaction submission.
@@ -134,6 +126,14 @@ pub trait OLFullNodeRpc {
     /// blocks in ascending slot order.
     #[method(name = "getRecentBlocks")]
     async fn get_recent_blocks(&self, count: u64) -> RpcResult<Vec<RpcOLBlockSummary>>;
+
+    /// Get snark account state of an account at a specified block.
+    #[method(name = "getSnarkAccountState")]
+    async fn get_snark_account_state(
+        &self,
+        account_id: AccountId,
+        block_or_tag: OLBlockOrTag,
+    ) -> RpcResult<Option<RpcSnarkAccountState>>;
 
     /// Get all transactions in the canonical OL block at the given slot.
     #[method(name = "getBlockTransactions")]

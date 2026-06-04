@@ -802,6 +802,39 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         }))
     }
 
+    async fn get_account_genesis_epoch_commitment(
+        &self,
+        account_id: AccountId,
+    ) -> RpcResult<EpochCommitment> {
+        let epoch = self
+            .provider
+            .get_account_creation_epoch(account_id)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                not_found_error(format!("No creation epoch found for account {account_id}"))
+            })?;
+
+        self.provider
+            .get_canonical_epoch_commitment_at(epoch)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
+    }
+
+    async fn get_asm_manifest_commitment(
+        &self,
+        l1_height: L1Height,
+    ) -> RpcResult<Option<HexBytes32>> {
+        let manifest = self
+            .provider
+            .get_block_manifest_at_height(l1_height)
+            .await
+            .map_err(db_error)?;
+
+        Ok(manifest.map(|m| HexBytes32::from(*m.compute_hash().as_ref())))
+    }
+
     async fn get_blocks_summaries(
         &self,
         account_id: AccountId,
@@ -875,7 +908,6 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
         Ok(summaries)
     }
-
     async fn get_snark_acct_inbox_msg_range(
         &self,
         account_id: AccountId,
@@ -912,83 +944,6 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .enumerate()
             .map(|(offset, message)| RpcIndexedEntry::new(start + offset as u64, message.into()))
             .collect())
-    }
-
-    async fn get_account_genesis_epoch_commitment(
-        &self,
-        account_id: AccountId,
-    ) -> RpcResult<EpochCommitment> {
-        let epoch = self
-            .provider
-            .get_account_creation_epoch(account_id)
-            .await
-            .map_err(db_error)?
-            .ok_or_else(|| {
-                not_found_error(format!("No creation epoch found for account {account_id}"))
-            })?;
-
-        self.provider
-            .get_canonical_epoch_commitment_at(epoch)
-            .await
-            .map_err(db_error)?
-            .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
-    }
-
-    async fn get_asm_manifest_commitment(
-        &self,
-        l1_height: L1Height,
-    ) -> RpcResult<Option<HexBytes32>> {
-        let manifest = self
-            .provider
-            .get_block_manifest_at_height(l1_height)
-            .await
-            .map_err(db_error)?;
-
-        Ok(manifest.map(|m| HexBytes32::from(*m.compute_hash().as_ref())))
-    }
-
-    async fn get_snark_account_state(
-        &self,
-        account_id: AccountId,
-        block_or_tag: OLBlockOrTag,
-    ) -> RpcResult<Option<RpcSnarkAccountState>> {
-        let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
-
-        // Get OL state at the resolved block
-        let ol_state = self
-            .provider
-            .get_toplevel_ol_state(block_commitment)
-            .await
-            .map_err(|e| {
-                error!(?e, %block_commitment, "Failed to get OL state");
-                db_error(e)
-            })?
-            .ok_or_else(|| {
-                not_found_error(format!("No OL state found for block {block_commitment}"))
-            })?;
-
-        // Get account state
-        let Some(account_state) = ol_state.get_account_state(&account_id) else {
-            return Ok(None); // Account doesn't exist
-        };
-
-        // Try to get snark account state; return None if not a snark account
-        match account_state.as_snark_account() {
-            Ok(snark_state) => {
-                let seq_no: u64 = *snark_state.seqno().inner();
-                let inner_state = snark_state.inner_state_root().0.into();
-                let next_inbox_msg_idx = snark_state.next_inbox_msg_idx();
-                let update_vk = snark_state.update_vk().clone();
-
-                Ok(Some(RpcSnarkAccountState::new(
-                    seq_no,
-                    inner_state,
-                    next_inbox_msg_idx,
-                    update_vk,
-                )))
-            }
-            Err(_) => Ok(None), // Not a snark account
-        }
     }
 }
 
@@ -1162,6 +1117,50 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         }
         summaries.reverse();
         Ok(summaries)
+    }
+
+    async fn get_snark_account_state(
+        &self,
+        account_id: AccountId,
+        block_or_tag: OLBlockOrTag,
+    ) -> RpcResult<Option<RpcSnarkAccountState>> {
+        let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
+
+        // Get OL state at the resolved block
+        let ol_state = self
+            .provider
+            .get_toplevel_ol_state(block_commitment)
+            .await
+            .map_err(|e| {
+                error!(?e, %block_commitment, "Failed to get OL state");
+                db_error(e)
+            })?
+            .ok_or_else(|| {
+                not_found_error(format!("No OL state found for block {block_commitment}"))
+            })?;
+
+        // Get account state
+        let Some(account_state) = ol_state.get_account_state(&account_id) else {
+            return Ok(None); // Account doesn't exist
+        };
+
+        // Try to get snark account state; return None if not a snark account
+        match account_state.as_snark_account() {
+            Ok(snark_state) => {
+                let seq_no: u64 = *snark_state.seqno().inner();
+                let inner_state = snark_state.inner_state_root().0.into();
+                let next_inbox_msg_idx = snark_state.next_inbox_msg_idx();
+                let update_vk = snark_state.update_vk().clone();
+
+                Ok(Some(RpcSnarkAccountState::new(
+                    seq_no,
+                    inner_state,
+                    next_inbox_msg_idx,
+                    update_vk,
+                )))
+            }
+            Err(_) => Ok(None), // Not a snark account
+        }
     }
 
     async fn get_block_transactions(&self, slot: u64) -> RpcResult<Vec<RpcOLTxDetail>> {
