@@ -2,8 +2,10 @@
 
 use std::sync::Arc;
 
-use strata_primitives::EpochCommitment;
-use strata_primitives::l1::{is_l1_reorg_safe, l1_confirmations};
+use strata_primitives::{
+    l1::{is_l1_reorg_safe, l1_confirmations},
+    EpochCommitment,
+};
 use strata_service::ServiceState;
 use strata_status::OLSyncStatus;
 use tracing::{debug, info};

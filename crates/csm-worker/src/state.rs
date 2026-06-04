@@ -4,8 +4,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
-use strata_primitives::l1::is_l1_reorg_safe;
-use strata_primitives::prelude::*;
+use strata_primitives::{l1::is_l1_reorg_safe, prelude::*};
 use strata_service::ServiceState;
 
 use crate::{constants, context::CsmWorkerContext};

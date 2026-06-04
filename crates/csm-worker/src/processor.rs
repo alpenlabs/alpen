@@ -9,8 +9,7 @@ use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
-use strata_primitives::l1::is_l1_reorg_safe;
-use strata_primitives::prelude::*;
+use strata_primitives::{l1::is_l1_reorg_safe, prelude::*};
 use strata_state::asm_state::AsmState;
 use tracing::*;
 
