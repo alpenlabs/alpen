@@ -10,6 +10,10 @@ pub struct BtcioConfig {
     ///
     /// Drives finality decisions in the CSM worker, the buried-manifest cutoff in OL
     /// block assembly, and reorg handling in the btcio reader/broadcaster.
+    ///
+    /// A value of `0` is permitted and means the chain follows the L1 tip with no
+    /// reorg buffer (a checkpoint finalizes as soon as its L1 block reaches the tip);
+    /// larger values require that many confirmations before finalizing.
     #[serde(default = "default_l1_reorg_safe_depth")]
     pub l1_reorg_safe_depth: u32,
 }
