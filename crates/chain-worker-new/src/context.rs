@@ -10,6 +10,8 @@ use strata_acct_types::{
     MessageEntry,
     tree_hash::{Sha256Hasher, TreeHash},
 };
+use strata_asm_common::AsmManifest;
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
@@ -29,8 +31,8 @@ use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
-    MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
-    OLStateManager,
+    L1BlockManager, MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager,
+    OLStateIndexingManager, OLStateManager,
 };
 use tokio::{runtime::Handle, sync::watch};
 use tracing::{debug, error};
@@ -62,6 +64,9 @@ pub struct ChainWorkerContextImpl {
 
     /// Manager for OL state indexing data (per-block writes, epoch finalization).
     ol_state_indexing_mgr: Arc<OLStateIndexingManager>,
+
+    /// Manager for L1 block data, used to read ASM manifests by height.
+    l1_block_mgr: Arc<L1BlockManager>,
 
     /// Manager for append-only MMR proof indices.
     mmr_index_mgr: Arc<MmrIndexManager>,
@@ -96,6 +101,7 @@ impl ChainWorkerContextImpl {
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
             ol_state_indexing_mgr: nodectx.storage().ol_state_indexing().clone(),
+            l1_block_mgr: nodectx.storage().l1().clone(),
             mmr_index_mgr: nodectx.storage().mmr_index().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
@@ -273,27 +279,18 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .ok_or(WorkerError::MissingEpochSummary(*epoch))
     }
 
-    fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>> {
-        // Get all epoch commitments for this epoch index
-        let epoch_commitments = self
+    fn fetch_canonical_epoch_summary_at(&self, epoch: u32) -> WorkerResult<Option<EpochSummary>> {
+        let commitment = self
             .ol_checkpoint_mgr
-            .get_epoch_commitments_at_blocking(epoch)?;
-
-        // Fetch the summary for each commitment
-        let mut summaries = Vec::with_capacity(epoch_commitments.len());
-        for commitment in epoch_commitments {
-            if let Some(summary) = self
-                .ol_checkpoint_mgr
-                .get_epoch_summary_blocking(commitment)?
-            {
-                summaries.push(summary);
-            }
+            .get_canonical_epoch_commitment_at_blocking(epoch)?;
+        if let Some(com) = commitment {
+            Ok(self.ol_checkpoint_mgr.get_epoch_summary_blocking(com)?)
+        } else {
+            Ok(None)
         }
-
-        Ok(summaries)
     }
 
-    fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
+    fn merge_epoch_data(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
         let summary = self.fetch_summary(epoch)?;
         let terminal = *summary.terminal();
         let prev_terminal = *summary.prev_terminal();
@@ -320,14 +317,10 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         // Reverse to get forward order (excluding prev_terminal which is already finalized)
         chain.reverse();
 
-        // Get base state from prev_terminal (or genesis)
-        let mut current_state = if prev_terminal.is_null() {
-            self.fetch_ol_state(OLBlockCommitment::null())?
-                .ok_or(WorkerError::MissingPreState(OLBlockCommitment::null()))?
-        } else {
-            self.fetch_ol_state(prev_terminal)?
-                .ok_or(WorkerError::MissingPreState(prev_terminal))?
-        };
+        // Fetch prev state.
+        let mut cur_state = self
+            .fetch_ol_state(prev_terminal)?
+            .ok_or(WorkerError::MissingPreState(prev_terminal))?;
 
         // Apply write batches in canonical order.
         // Every block in the canonical chain must have a write batch - a missing one
@@ -336,14 +329,14 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             let wb = self
                 .fetch_write_batch(commitment)?
                 .ok_or(WorkerError::MissingWriteBatch(commitment))?;
-            current_state
+            cur_state
                 .apply_write_batch(wb)
                 .map_err(|e| WorkerError::Unexpected(format!("failed to apply batch: {e}")))?;
         }
 
         // Store the final merged state at the terminal commitment
         self.ol_state_mgr
-            .put_toplevel_ol_state_blocking(terminal, current_state)?;
+            .put_toplevel_ol_state_blocking(terminal, cur_state)?;
 
         Ok(())
     }
@@ -353,6 +346,39 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         // stay byte-identical from leaf 0.
         let genesis_l1_height = self.ol_params.last_l1_block.height() as u64;
         prefill_l1_block_refs_mmr_blocking(&self.mmr_index_mgr, genesis_l1_height)
+    }
+
+    fn fetch_checkpoint_payload(
+        &self,
+        epoch: &EpochCommitment,
+    ) -> WorkerResult<Option<CheckpointPayload>> {
+        Ok(self
+            .ol_checkpoint_mgr
+            .get_checkpoint_l1_observed_payload_blocking(*epoch)?)
+    }
+
+    fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>> {
+        let mut manifests = Vec::new();
+        for height in from..=to {
+            let manifest = self
+                .l1_block_mgr
+                .get_block_manifest_at_height(height)?
+                .ok_or(WorkerError::MissingDependency("l1 manifest"))?;
+            manifests.push(manifest);
+        }
+        Ok(manifests)
+    }
+
+    fn apply_epoch_indexing(
+        &self,
+        epoch: &EpochCommitment,
+        output: &OLBlockExecutionOutput,
+    ) -> WorkerResult<()> {
+        let writes = build_checkpoint_indexing_writes(output)?;
+        self.ol_state_indexing_mgr
+            .apply_epoch_indexing_blocking(*epoch, writes)?;
+        index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+        Ok(())
     }
 }
 
@@ -397,7 +423,10 @@ fn build_indexing_writes(
                 found: log.new_msg_idx(),
             });
         }
-        let meta = AccountUpdateMeta::new(commitment, update.state());
+        let state = update
+            .state()
+            .expect("block-sync snark update must carry a state root");
+        let meta = AccountUpdateMeta::new(Some(commitment), state);
         let record = AccountUpdateRecord::new(
             Some(meta),
             *update.seqno().inner(),
@@ -442,13 +471,75 @@ fn collect_snark_update_logs<'a>(
     Ok(out)
 }
 
+/// Builds an [`IndexingWrites`] payload for a DA-reconstructed epoch.
+///
+/// Like [`build_indexing_writes`] but with no per-block attribution and no
+/// per-update state root: update records carry `update_meta: None`. The
+/// post-epoch root lives on the epoch summary.
+pub(crate) fn build_checkpoint_indexing_writes(
+    output: &OLBlockExecutionOutput,
+) -> WorkerResult<IndexingWrites> {
+    let indexer_writes = output.indexer_writes();
+
+    let created_accounts: Vec<AccountId> = indexer_writes
+        .created_accounts()
+        .iter()
+        .map(|c| c.account_id())
+        .collect();
+
+    let snark_updates = indexer_writes.snark_state_updates();
+    let snark_update_logs = collect_snark_update_logs(output.logs())?;
+    if snark_updates.len() != snark_update_logs.len() {
+        return Err(WorkerError::SnarkUpdateLogCountMismatch {
+            expected: snark_updates.len(),
+            found: snark_update_logs.len(),
+        });
+    }
+
+    let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
+    for (update, log) in snark_updates.iter().zip(snark_update_logs.iter()) {
+        if log.new_msg_idx() != update.next_read_idx() {
+            return Err(WorkerError::SnarkUpdateLogMismatch {
+                expected: update.next_read_idx(),
+                found: log.new_msg_idx(),
+            });
+        }
+        let record = AccountUpdateRecord::new(
+            None,
+            *update.seqno().inner(),
+            update.next_read_idx(),
+            Some(log.extra_data().to_vec()),
+        );
+        account_updates
+            .entry(update.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> = BTreeMap::new();
+    for write in indexer_writes.inbox_messages() {
+        let entry_bytes = write.entry().as_ssz_bytes();
+        let record = InboxMessageRecord::new(entry_bytes, None);
+        account_inbox_writes
+            .entry(write.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    Ok(IndexingWrites::new(
+        created_accounts,
+        account_updates,
+        account_inbox_writes,
+    ))
+}
+
 /// Applies snark inbox writes to the MMR proof index.
 ///
 /// The OL state itself stores the compact MMR root/peaks. Block assembly needs
 /// historical nodes from [`MmrIndexManager`] to generate proofs for later snark
 /// account updates, so the chain worker mirrors each accepted inbox append into
 /// the proof index. The operation is idempotent for crash-restart retries.
-fn index_inbox_mmr_writes(
+pub(crate) fn index_inbox_mmr_writes(
     mmr_index_mgr: &MmrIndexManager,
     output: &OLBlockExecutionOutput,
 ) -> WorkerResult<()> {
@@ -573,7 +664,7 @@ mod tests {
         let mut indexer_writes = IndexerWrites::new();
         indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
             account_id,
-            state,
+            Some(state),
             next_read_idx,
             seqno,
         ));
@@ -606,7 +697,7 @@ mod tests {
         let mut indexer_writes = IndexerWrites::new();
         indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
             AccountId::from([1u8; 32]),
-            Hash::from([0u8; 32]),
+            Some(Hash::from([0u8; 32])),
             0,
             Seqno::from(1),
         ));

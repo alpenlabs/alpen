@@ -104,7 +104,7 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMu
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStateMut<S> {
     fn set_proof_state(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
-        let update = SnarkAcctStateUpdate::new(self.account_id, state, next_read_idx, seqno);
+        let update = SnarkAcctStateUpdate::new(self.account_id, Some(state), next_read_idx, seqno);
 
         // Pass through to inner.
         self.inner.set_proof_state(state, next_read_idx, seqno);
@@ -1104,7 +1104,7 @@ mod tests {
 
         let update = &writes.snark_state_updates()[0];
         assert_eq!(update.account_id(), account_id);
-        assert_eq!(update.state(), new_hash);
+        assert_eq!(update.state(), Some(new_hash));
         assert_eq!(update.next_read_idx(), next_read_idx);
         assert_eq!(update.seqno(), seqno);
     }

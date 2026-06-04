@@ -5,6 +5,7 @@ Creates Strata sequencer and fullnode instances.
 
 import contextlib
 import os
+import shutil
 from pathlib import Path
 from typing import NamedTuple
 
@@ -31,11 +32,21 @@ from common.datatool import (
 from common.services import StrataProps, StrataService
 
 
+class StrataNodeParams(NamedTuple):
+    """Generated parameter files for a Strata node."""
+
+    rollup_params: Path
+    ol_params: Path
+    asm_params: Path
+
+
 class CreateNodeResult(NamedTuple):
     """Result of creating a Strata node."""
 
     service: StrataService
     sequencer_key_path: Path | None
+    params: StrataNodeParams
+    genesis_l1_height: int
 
 
 class StrataFactory(flexitest.Factory):
@@ -65,6 +76,7 @@ class StrataFactory(flexitest.Factory):
         admin_confirmation_depth: int | None = None,
         env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
+        shared_params: "StrataNodeParams | None" = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -81,6 +93,9 @@ class StrataFactory(flexitest.Factory):
             admin_confirmation_depth: Optional admin subprotocol confirmation depth.
             env: Additional process environment variables.
             ol_block_time_ms: Optional sequencer OL block time override.
+            shared_params: If provided, reuse these param files instead of
+                generating fresh ones (datatool key generation is random per
+                invocation, so two nodes need shared params to agree).
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -141,28 +156,43 @@ class StrataFactory(flexitest.Factory):
             with open(sequencer_config_path, "w") as f:
                 f.write(sequencer_runtime_config.as_toml_string())
 
-        # Generate rollup params via datatool (also produces keys used below).
-        if use_unchecked_cred_rule:
-            params_data = generate_rollup_params_unchecked(datadir, bconfig, genesis_l1_height)
-        else:
-            params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
-
-        # Generate or write OL params.
-        if ol_params is not None:
+        if shared_params is not None:
+            rollup_params_path = datadir / "rollup-params.json"
             ol_params_path = datadir / "ol-params.json"
-            ol_params_path.write_text(ol_params.as_json_string())
+            asm_params_path = datadir / "asm-params.json"
+            shutil.copyfile(shared_params.rollup_params, rollup_params_path)
+            shutil.copyfile(shared_params.ol_params, ol_params_path)
+            shutil.copyfile(shared_params.asm_params, asm_params_path)
         else:
-            ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
+            # Generate rollup params via datatool (also produces keys used below).
+            if use_unchecked_cred_rule:
+                params_data = generate_rollup_params_unchecked(datadir, bconfig, genesis_l1_height)
+            else:
+                params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
+            rollup_params_path = params_data.params_path
 
-        # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
-        asm_params_path = generate_asm_params(
-            datadir,
-            bconfig,
-            genesis_l1_height,
-            params_data.operator_keys,
-            ol_params_path=ol_params_path,
-            sequencer_pubkey=params_data.sequencer_pubkey,
-            admin_confirmation_depth=admin_confirmation_depth,
+            # Generate or write OL params.
+            if ol_params is not None:
+                ol_params_path = datadir / "ol-params.json"
+                ol_params_path.write_text(ol_params.as_json_string())
+            else:
+                ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
+
+            # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
+            asm_params_path = generate_asm_params(
+                datadir,
+                bconfig,
+                genesis_l1_height,
+                params_data.operator_keys,
+                ol_params_path=ol_params_path,
+                sequencer_pubkey=params_data.sequencer_pubkey,
+                admin_confirmation_depth=admin_confirmation_depth,
+            )
+
+        node_params = StrataNodeParams(
+            rollup_params=rollup_params_path,
+            ol_params=ol_params_path,
+            asm_params=asm_params_path,
         )
 
         # Build command
@@ -173,7 +203,7 @@ class StrataFactory(flexitest.Factory):
             "--datadir",
             str(datadir),
             "--rollup-params",
-            str(params_data.params_path),
+            str(rollup_params_path),
             "--ol-params",
             str(ol_params_path),
             "--asm-params",
@@ -256,5 +286,7 @@ class StrataFactory(flexitest.Factory):
                 svc.stop()
             raise RuntimeError(f"Failed to start strata service ({mode}): {e}") from e
 
-        seq_key_path = params_data.sequencer_key_path if is_sequencer else None
-        return CreateNodeResult(svc, seq_key_path)
+        seq_key_path = (
+            params_data.sequencer_key_path if is_sequencer and shared_params is None else None
+        )
+        return CreateNodeResult(svc, seq_key_path, node_params, genesis_l1_height)

@@ -4,7 +4,7 @@ use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitme
 use strata_snark_acct_types::{ProofState, Seqno, SnarkAccountUpdate};
 use thiserror::Error;
 
-use crate::{OLChainStatus, OLEpochSummary};
+use crate::{OLChainStatus, SnarkAccountEpochSummary};
 
 /// Client interface for interacting with the OL chain.
 ///
@@ -18,7 +18,7 @@ pub trait OLClient: Sized + Send + Sync {
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError>;
 
     /// Retrieves epoch commitment and update operations for the specified epoch.
-    async fn epoch_summary(&self, epoch: Epoch) -> Result<OLEpochSummary, OLClientError>;
+    async fn epoch_summary(&self, epoch: Epoch) -> Result<SnarkAccountEpochSummary, OLClientError>;
 
     /// Returns the epoch commitment for the epoch in which this client's account
     /// was first created.

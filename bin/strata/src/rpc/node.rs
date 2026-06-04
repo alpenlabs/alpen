@@ -337,7 +337,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         struct Pending {
             block_commitment: OLBlockCommitment,
             seq_no: u64,
-            final_state_root: Hash,
+            new_state_root: Hash,
             extra_data: Vec<u8>,
             cursor_start: u64,
             cursor_end: u64,
@@ -357,14 +357,18 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     let next_cursor = r.next_inbox_idx();
                     cursor = next_cursor;
 
-                    // Checkpoint-sync rows: epoch-scoped, not block-scoped.
+                    // Skip rows with no block attribution: checkpoint-sync,
+                    // or CSS-terminal-stamped rows (root present but block
+                    // absent). This endpoint is the block-scoped view.
                     let Some(meta) = r.update_meta() else {
+                        continue;
+                    };
+                    let Some(block_commitment) = meta.block_commitment().copied() else {
                         continue;
                     };
 
                     // Out-of-chain blocks: belong to a sibling/orphan that's
                     // not on the queried canonical chain.
-                    let block_commitment = *meta.block_commitment();
                     if !block_commitments.contains(&block_commitment) {
                         continue;
                     }
@@ -385,7 +389,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     pending.push(Pending {
                         block_commitment,
                         seq_no: r.seq_no(),
-                        final_state_root: meta.final_state_root(),
+                        new_state_root: meta.new_state_root(),
                         extra_data,
                         cursor_start: prev_cursor,
                         cursor_end: next_cursor,
@@ -429,7 +433,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                         p.seq_no,
                         messages,
                         UpdateStateData::new(
-                            ProofState::new(p.final_state_root, p.cursor_end),
+                            ProofState::new(p.new_state_root, p.cursor_end),
                             p.extra_data,
                         ),
                     ));
@@ -445,7 +449,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                         p.seq_no,
                         Vec::new(),
                         UpdateStateData::new(
-                            ProofState::new(p.final_state_root, p.cursor_end),
+                            ProofState::new(p.new_state_root, p.cursor_end),
                             p.extra_data,
                         ),
                     ));
@@ -568,6 +572,11 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .get_account_state(&account_id)
             .ok_or_else(|| not_found_error(format!("Account {account_id} not found")))?;
 
+        let snark_state = account_state.as_snark_account().map_err(|_| {
+            invalid_params_error(format!("Account {account_id} is not a snark account"))
+        })?;
+        let final_state_root: HexBytes32 = snark_state.inner_state_root().0.into();
+
         let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
 
         let updates = if let Some(records) = self
@@ -599,7 +608,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
             struct Pending {
                 seq_no: u64,
-                final_state_root: Hash,
+                new_state_root: Option<Hash>,
                 extra_data: Vec<u8>,
                 cursor_start: u64,
                 cursor_end: u64,
@@ -611,12 +620,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 let cursor_end = r.next_inbox_idx();
                 cursor = cursor_end;
 
-                let meta = r.update_meta().ok_or_else(|| {
-                    internal_error(format!(
-                        "record for account {account_id} epoch {epoch} missing update_meta \
-                         (checkpoint-sync row not serveable here)"
-                    ))
-                })?;
+                let new_state_root = r.update_meta().map(|m| m.new_state_root());
                 let extra_data = r
                     .extra_data()
                     .ok_or_else(|| {
@@ -629,7 +633,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
                 pending.push(Pending {
                     seq_no: r.seq_no(),
-                    final_state_root: meta.final_state_root(),
+                    new_state_root,
                     extra_data,
                     cursor_start,
                     cursor_end,
@@ -662,7 +666,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 };
                 out.push(RpcUpdateInputData {
                     seq_no: p.seq_no,
-                    proof_state: ProofState::new(p.final_state_root, p.cursor_end).into(),
+                    next_inbox_msg_idx: p.cursor_end,
+                    new_state_root: p.new_state_root.map(|root| root.0.into()),
                     extra_data: p.extra_data.into(),
                     messages: messages.into_iter().map(Into::into).collect(),
                 });
@@ -676,6 +681,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             epoch_commitment,
             prev_epoch_commitment,
             account_state.balance().to_sat(),
+            final_state_root,
             updates,
         ))
     }

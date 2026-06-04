@@ -80,4 +80,8 @@ pub enum OLMempoolError {
     /// Mempool service is closed or unavailable.
     #[error("mempool service unavailable: {0}")]
     ServiceClosed(String),
+
+    /// Mempool is not running on this node (e.g. checkpoint-sync fullnode).
+    #[error("mempool not available on this node")]
+    NotAvailable,
 }

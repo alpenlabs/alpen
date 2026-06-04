@@ -6,9 +6,9 @@ use strata_acct_types::BitcoinAmount;
 use strata_asm_common::AsmManifest;
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
-use strata_identifiers::{Buf64, OLBlockCommitment, SubjectId};
+use strata_identifiers::{OLBlockCommitment, SubjectId};
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 
@@ -174,11 +174,4 @@ fn rebuild_da_blob(
     da.take_completed_epoch_da_blob()
         .expect("finalize DA")
         .expect("DA blob")
-}
-
-fn to_ol_block(cb: &CompletedBlock) -> OLBlock {
-    OLBlock::new(
-        SignedOLBlockHeader::new(cb.header().clone(), Buf64::zero()),
-        cb.body().clone(),
-    )
 }

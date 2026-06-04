@@ -24,7 +24,7 @@ use strata_predicate::PredicateKey;
 use strata_primitives::{
     HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
 };
-use strata_snark_acct_types::{Seqno, UpdateInputData};
+use strata_snark_acct_types::{ProofState, Seqno, UpdateInputData, UpdateStateData};
 use strata_status::OLSyncStatus;
 use tokio::runtime::Builder;
 
@@ -167,7 +167,7 @@ impl MockProvider {
         extra_data: Vec<u8>,
         block: OLBlockCommitment,
     ) -> Self {
-        let meta = AccountUpdateMeta::new(block, [0u8; 32].into());
+        let meta = AccountUpdateMeta::new(Some(block), [0u8; 32].into());
         let record = AccountUpdateRecord::new(Some(meta), seq_no, next_inbox_idx, Some(extra_data));
         self.account_update_entries
             .entry((epoch, account_id))
@@ -529,9 +529,25 @@ fn rpc_messages_to_entries(messages: &[RpcMessageEntry]) -> Vec<MessageEntry> {
 }
 
 fn rpc_update_to_input(update: RpcUpdateInputData) -> UpdateInputData {
-    update
-        .try_into()
-        .expect("message payload bytes must fit within SSZ max length")
+    let messages: Vec<MessageEntry> = update
+        .messages
+        .into_iter()
+        .map(|msg| {
+            msg.try_into()
+                .expect("message payload bytes must fit within SSZ max length")
+        })
+        .collect();
+    let new_state_root = update
+        .new_state_root
+        .expect("test fixtures populate new_state_root")
+        .0
+        .into();
+    let proof_state = ProofState::new(new_state_root, update.next_inbox_msg_idx);
+    UpdateInputData::new(
+        update.seq_no,
+        messages,
+        UpdateStateData::new(proof_state, update.extra_data.0),
+    )
 }
 
 fn inbox_fetch_expect_success(
@@ -1372,7 +1388,7 @@ async fn blocks_summaries_populates_updates_and_new_inbox_messages_from_index() 
     let final_state_root = fixed_buf32(0x66);
     let extra_data = vec![0xF0, 0x0D];
     let update_record = AccountUpdateRecord::new(
-        Some(AccountUpdateMeta::new(commitment, final_state_root)),
+        Some(AccountUpdateMeta::new(Some(commitment), final_state_root)),
         6,
         2,
         Some(extra_data.clone()),
@@ -1436,13 +1452,13 @@ async fn blocks_summaries_slices_processed_messages_from_index_ranges() {
     let commitment = OLBlockCommitment::new(10, block.header().compute_blkid());
     let records = vec![
         AccountUpdateRecord::new(
-            Some(AccountUpdateMeta::new(commitment, [0x11; 32].into())),
+            Some(AccountUpdateMeta::new(Some(commitment), [0x11; 32].into())),
             21,
             4,
             Some(vec![0xA0]),
         ),
         AccountUpdateRecord::new(
-            Some(AccountUpdateMeta::new(commitment, [0x22; 32].into())),
+            Some(AccountUpdateMeta::new(Some(commitment), [0x22; 32].into())),
             22,
             6,
             Some(vec![0xA1]),
@@ -1515,13 +1531,19 @@ async fn blocks_summaries_walks_cursor_across_epochs() {
     let commitment_e2 = OLBlockCommitment::new(10, block_e2.header().compute_blkid());
 
     let record_e1 = AccountUpdateRecord::new(
-        Some(AccountUpdateMeta::new(commitment_e1, [0x11; 32].into())),
+        Some(AccountUpdateMeta::new(
+            Some(commitment_e1),
+            [0x11; 32].into(),
+        )),
         10,
         2,
         Some(vec![0xA0]),
     );
     let record_e2 = AccountUpdateRecord::new(
-        Some(AccountUpdateMeta::new(commitment_e2, [0x22; 32].into())),
+        Some(AccountUpdateMeta::new(
+            Some(commitment_e2),
+            [0x22; 32].into(),
+        )),
         11,
         4,
         Some(vec![0xA1]),
@@ -1590,7 +1612,7 @@ async fn blocks_summaries_seeds_cursor_to_zero_for_new_account() {
     let block = make_block(5, epoch, genesis_blkid);
     let commitment = OLBlockCommitment::new(5, block.header().compute_blkid());
     let record = AccountUpdateRecord::new(
-        Some(AccountUpdateMeta::new(commitment, [0x33; 32].into())),
+        Some(AccountUpdateMeta::new(Some(commitment), [0x33; 32].into())),
         1,
         2,
         Some(vec![0xB0]),
@@ -1678,7 +1700,7 @@ async fn blocks_summaries_account_appears_midway_through_range() {
 
     let record = AccountUpdateRecord::new(
         Some(AccountUpdateMeta::new(
-            appears_commitment,
+            Some(appears_commitment),
             [0x33; 32].into(),
         )),
         1,
@@ -1756,7 +1778,10 @@ async fn blocks_summaries_ignores_records_for_other_blocks() {
     let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
     let other_commitment = OLBlockCommitment::new(99, fixed_ol_block_id(0x99));
     let update_record = AccountUpdateRecord::new(
-        Some(AccountUpdateMeta::new(other_commitment, [0x44; 32].into())),
+        Some(AccountUpdateMeta::new(
+            Some(other_commitment),
+            [0x44; 32].into(),
+        )),
         1,
         1,
         Some(vec![0x01]),
@@ -1798,14 +1823,17 @@ async fn blocks_summaries_out_of_chain_directset_does_not_fail_rpc() {
     // after hydration, this would trip the "no extra_data (DirectSet)" error
     // and fail the entire RPC. The chain filter must drop it before hydration.
     let out_of_chain_directset = AccountUpdateRecord::new(
-        Some(AccountUpdateMeta::new(other_commitment, [0x99; 32].into())),
+        Some(AccountUpdateMeta::new(
+            Some(other_commitment),
+            [0x99; 32].into(),
+        )),
         1,
         2,
         None,
     );
     let in_chain_update = AccountUpdateRecord::new(
         Some(AccountUpdateMeta::new(
-            queried_commitment,
+            Some(queried_commitment),
             [0x11; 32].into(),
         )),
         2,
@@ -1856,14 +1884,14 @@ async fn blocks_summaries_cursor_passes_checkpoint_sync_row() {
     //      cursor having moved past B
     let records = vec![
         AccountUpdateRecord::new(
-            Some(AccountUpdateMeta::new(commitment, [0x11; 32].into())),
+            Some(AccountUpdateMeta::new(Some(commitment), [0x11; 32].into())),
             21,
             4,
             Some(vec![0xA0]),
         ),
         AccountUpdateRecord::new(None, 22, 6, Some(vec![0xA1])),
         AccountUpdateRecord::new(
-            Some(AccountUpdateMeta::new(commitment, [0x33; 32].into())),
+            Some(AccountUpdateMeta::new(Some(commitment), [0x33; 32].into())),
             23,
             8,
             Some(vec![0xA2]),
@@ -1969,7 +1997,7 @@ proptest! {
                     block0_commitment
                 };
                 AccountUpdateRecord::new(
-                    Some(AccountUpdateMeta::new(commitment, (*root).into())),
+                    Some(AccountUpdateMeta::new(Some(commitment), (*root).into())),
                     u64::from(*seq_no),
                     0,
                     Some(extra_data.clone()),
@@ -2113,7 +2141,7 @@ async fn epoch_summary_valid_snark_account() {
 
     assert_eq!(summary.epoch_commitment().epoch(), 1);
     assert_eq!(summary.prev_epoch_commitment().epoch(), 0);
-    assert_eq!(summary.balance(), 0);
+    assert_eq!(summary.final_balance(), 0);
 }
 
 #[tokio::test]
@@ -2171,12 +2199,11 @@ async fn epoch_summary_non_snark_account() {
         .with_epoch_commitment(0, epoch0_commit);
     let rpc = make_rpc(provider);
 
-    let summary = rpc
+    let err = rpc
         .get_acct_epoch_summary(account_id, 0)
         .await
-        .expect("non-snark");
-    assert_eq!(summary.balance(), 0);
-    assert!(summary.update_inputs().is_empty());
+        .expect_err("non-snark account should error");
+    assert!(err.message().contains("not a snark account"));
 }
 
 #[tokio::test]
@@ -2272,19 +2299,19 @@ async fn epoch_summary_multi_record_slices_messages_per_update() {
 
     let records = vec![
         AccountUpdateRecord::new(
-            Some(AccountUpdateMeta::new(block1, [0x11; 32].into())),
+            Some(AccountUpdateMeta::new(Some(block1), [0x11; 32].into())),
             10,
             4,
             Some(vec![1, 2]),
         ),
         AccountUpdateRecord::new(
-            Some(AccountUpdateMeta::new(block2, [0x22; 32].into())),
+            Some(AccountUpdateMeta::new(Some(block2), [0x22; 32].into())),
             11,
             4,
             Some(vec![3, 4]),
         ),
         AccountUpdateRecord::new(
-            Some(AccountUpdateMeta::new(block3, [0x33; 32].into())),
+            Some(AccountUpdateMeta::new(Some(block3), [0x33; 32].into())),
             12,
             7,
             Some(vec![5, 6]),

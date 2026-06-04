@@ -182,7 +182,6 @@ mod tests {
             rpc_port = 8432
             l2_blocks_fetch_limit = 1_000
             datadir = "/path/to/data/directory"
-            sync_endpoint = "9.9.9.9:8432"
             db_retry_count = 5
 
             [sync]

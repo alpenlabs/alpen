@@ -62,8 +62,11 @@ pub struct SnarkAcctStateUpdate {
     /// The account whose state was updated.
     account_id: AccountId,
 
-    /// The new inner state root.
-    state: Hash,
+    /// The new inner state root, if known.
+    ///
+    /// Present on block-sync updates; `None` for checkpoint-sync updates
+    /// rebuilt from logs, which carry no per-update intermediate root.
+    state: Option<Hash>,
 
     /// The next read index.
     next_read_idx: u64,
@@ -73,7 +76,12 @@ pub struct SnarkAcctStateUpdate {
 }
 
 impl SnarkAcctStateUpdate {
-    pub fn new(account_id: AccountId, state: Hash, next_read_idx: u64, seqno: Seqno) -> Self {
+    pub fn new(
+        account_id: AccountId,
+        state: Option<Hash>,
+        next_read_idx: u64,
+        seqno: Seqno,
+    ) -> Self {
         Self {
             account_id,
             state,
@@ -87,8 +95,8 @@ impl SnarkAcctStateUpdate {
         self.account_id
     }
 
-    /// Returns the state hash for this update.
-    pub fn state(&self) -> Hash {
+    /// Returns the new inner state root, or `None` for checkpoint-sync updates.
+    pub fn state(&self) -> Option<Hash> {
         self.state
     }
 
@@ -206,6 +214,14 @@ impl IndexerWrites {
     /// Records a snark state update.
     pub fn push_snark_acct_update(&mut self, update: SnarkAcctStateUpdate) {
         self.snark_acct_state_updates.push(update);
+    }
+
+    /// Replaces all tracked snark state updates with `updates`.
+    ///
+    /// This is required to collect the granular snark updates during checkpoint sync because diff
+    /// only doesn't contain the granular updates, which has to come from OL logs in the checkpoint.
+    pub fn set_snark_acct_state_updates(&mut self, updates: Vec<SnarkAcctStateUpdate>) {
+        self.snark_acct_state_updates = updates;
     }
 
     /// Records a predicate key update.

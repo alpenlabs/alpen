@@ -1,12 +1,14 @@
 use alpen_ee_common::{
-    chain_status_checked, EeAccountStateAtEpoch, OLChainStatus, OLClient, Storage,
+    chain_status_checked, EeAccountStateAtEpoch, OLChainStatus, OLClient, SnarkAccountUpdateInfo,
+    Storage,
 };
 use strata_ee_acct_runtime::process_update_unconditionally;
 use strata_ee_acct_types::EeAccountState;
 use strata_evm_ee::EvmExecutionEnvironment;
-use strata_identifiers::EpochCommitment;
+use strata_identifiers::{EpochCommitment, Hash};
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{UpdateInputData, UpdateManifest};
+use strata_snark_acct_runtime::IInnerState;
+use strata_snark_acct_types::UpdateManifest;
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -16,16 +18,17 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub(crate) struct OLEpochOperations {
+pub(crate) struct OLEpochUpdates {
     pub epoch: EpochCommitment,
-    pub operations: Vec<UpdateInputData>,
+    pub final_state_root: Hash,
+    pub updates: Vec<SnarkAccountUpdateInfo>,
 }
 
 #[derive(Debug)]
 pub(crate) enum TrackOLAction {
     /// Extend local view of the OL chain with new epochs.
     /// TODO(STR-3682): stream
-    Extend(Vec<OLEpochOperations>, Box<OLChainStatus>),
+    Extend(Vec<OLEpochUpdates>, Box<OLChainStatus>),
     /// Refresh local finality state without extending the confirmed epoch.
     RefreshFinalized(Box<OLChainStatus>),
     /// Local tip not present in OL chain, need to resolve local view.
@@ -139,9 +142,10 @@ pub(crate) async fn track_ol_state(
                 }
             }
 
-            epoch_operations.push(OLEpochOperations {
+            epoch_operations.push(OLEpochUpdates {
                 epoch: *epoch_summary.epoch(),
-                operations: epoch_summary.updates().to_vec(),
+                final_state_root: epoch_summary.final_state_root(),
+                updates: epoch_summary.updates().to_vec(),
             });
 
             // Update expected_prev for next iteration
@@ -160,20 +164,38 @@ pub(crate) async fn track_ol_state(
 
 pub(crate) fn apply_epoch_operations(
     state: &mut EeAccountState,
-    epoch_operations: &[UpdateInputData],
+    epoch_operations: &[SnarkAccountUpdateInfo],
+    final_state_root: Hash,
 ) -> Result<()> {
     for op in epoch_operations {
+        if op.new_state_root().is_none() {
+            let msg_idxs: Vec<u64> = op.iter_messages_with_idxs().map(|(i, _)| i).collect();
+            debug!(
+                seq_no = op.seq_no(),
+                new_next_msg_idx = op.new_next_msg_idx(),
+                ?msg_idxs,
+                "applying update without post-state check"
+            );
+        }
         let manifest = UpdateManifest::new(
-            op.new_state(),
+            op.new_state_root(),
             op.extra_data().to_vec(),
-            op.processed_messages().to_vec(),
+            op.messages().to_vec(),
         );
+
         process_update_unconditionally::<EvmExecutionEnvironment>(
             state,
             &manifest,
             PredicateKey::always_accept(),
-        )
-        .map_err(|e| OLTrackerError::Other(e.to_string()))?;
+        )?;
+    }
+
+    let observed = state.compute_state_root();
+    if observed != final_state_root {
+        return Err(OLTrackerError::TerminalStateRootMismatch {
+            observed,
+            expected: final_state_root,
+        });
     }
 
     Ok(())
@@ -191,21 +213,22 @@ pub(crate) async fn handle_refresh_finalized<TStorage: Storage>(
 }
 
 pub(crate) async fn handle_extend_ee_state<TStorage: Storage>(
-    epoch_operations: &[OLEpochOperations],
+    epoch_operations: &[OLEpochUpdates],
     chain_status: &OLChainStatus,
     state: &mut OLTrackerState,
     storage: &TStorage,
 ) -> Result<()> {
     for epoch_op in epoch_operations {
-        let OLEpochOperations {
+        let OLEpochUpdates {
             epoch: ol_epoch,
-            operations,
+            final_state_root,
+            updates: operations,
         } = epoch_op;
 
         let mut ee_state = state.best_ee_state().clone();
 
         // 1. Apply all operations in the epoch to update local ee account state.
-        apply_epoch_operations(&mut ee_state, operations).map_err(|error| {
+        apply_epoch_operations(&mut ee_state, operations, *final_state_root).map_err(|error| {
             error!(
                 epoch = %ol_epoch.epoch(),
                 %error,
@@ -247,30 +270,14 @@ pub(crate) async fn handle_extend_ee_state<TStorage: Storage>(
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{MockOLClient, OLChainStatus, OLEpochSummary};
+    use alpen_ee_common::{MockOLClient, OLChainStatus, SnarkAccountEpochSummary};
 
     use super::*;
     use crate::test_utils::*;
 
-    mod apply_epoch_operations_tests {
+    mod track_ol_state_tests {
         use strata_acct_types::Hash;
 
-        use super::*;
-
-        #[test]
-        fn test_apply_empty_operations() {
-            // Scenario: Apply empty operations list
-            // Expected: State unchanged, returns Ok
-            let mut state = EeAccountState::new(Hash::new([0u8; 32]), Hash::zero(), vec![], vec![]);
-            let operations: Vec<UpdateInputData> = vec![];
-
-            let result = apply_epoch_operations(&mut state, &operations);
-
-            assert!(result.is_ok());
-        }
-    }
-
-    mod track_ol_state_tests {
         use super::*;
 
         #[tokio::test]
@@ -584,9 +591,10 @@ mod tests {
                 .expect_epoch_summary()
                 .withf(|epoch| *epoch == 3)
                 .returning(|_| {
-                    Ok(OLEpochSummary::new(
+                    Ok(SnarkAccountEpochSummary::new(
                         make_epoch_commitment(3, 30, 103),
                         make_epoch_commitment(2, 20, 102),
+                        Hash::default(),
                         vec![],
                     ))
                 });
@@ -595,9 +603,10 @@ mod tests {
                 .expect_epoch_summary()
                 .withf(|epoch| *epoch == 4)
                 .returning(|_| {
-                    Ok(OLEpochSummary::new(
+                    Ok(SnarkAccountEpochSummary::new(
                         make_epoch_commitment(4, 40, 104),
                         make_epoch_commitment(3, 30, 103),
+                        Hash::default(),
                         vec![],
                     ))
                 });
@@ -606,10 +615,11 @@ mod tests {
                 .expect_epoch_summary()
                 .withf(|epoch| *epoch == 5)
                 .returning(|_| {
-                    Ok(OLEpochSummary::new(
+                    Ok(SnarkAccountEpochSummary::new(
                         make_epoch_commitment(5, 50, 105),
                         make_epoch_commitment(4, 40, 199), /* Discontinuity: prev doesn't match
                                                             * epoch 4 */
+                        Hash::default(),
                         vec![],
                     ))
                 });

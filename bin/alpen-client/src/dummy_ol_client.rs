@@ -5,8 +5,8 @@
 //! in isolation without needing to run a full OL node.
 
 use alpen_ee_common::{
-    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
-    SequencerOLClient,
+    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, SequencerOLClient,
+    SnarkAccountEpochSummary,
 };
 use async_trait::async_trait;
 use strata_acct_types::Hash;
@@ -48,7 +48,7 @@ impl OLClient for DummyOLClient {
         Ok(self.genesis_epoch)
     }
 
-    async fn epoch_summary(&self, epoch: Epoch) -> Result<OLEpochSummary, OLClientError> {
+    async fn epoch_summary(&self, epoch: Epoch) -> Result<SnarkAccountEpochSummary, OLClientError> {
         let commitment = EpochCommitment::new(
             epoch,
             epoch as u64,
@@ -66,7 +66,12 @@ impl OLClient for DummyOLClient {
                 self.slot_to_block_commitment(prev_epoch as u64).blkid,
             )
         };
-        Ok(OLEpochSummary::new(commitment, prev, vec![]))
+        Ok(SnarkAccountEpochSummary::new(
+            commitment,
+            prev,
+            Hash::default(),
+            vec![],
+        ))
     }
 }
 

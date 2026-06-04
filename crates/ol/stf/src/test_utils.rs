@@ -71,7 +71,7 @@ use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
 use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
-    AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
+    AccountSerial, Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
     SubjectIdBytes, WtxidsRoot,
 };
 use strata_ledger_types::*;
@@ -102,17 +102,29 @@ use crate::{
     verification::verify_block,
 };
 
+/// Genesis block timestamp used by the shared epoch runner.
+pub const EPOCH_RUNNER_GENESIS_TIMESTAMP: u64 = 1_000_000;
+
+/// Per-slot timestamp step used by the shared epoch runner.
+pub const EPOCH_RUNNER_SLOT_TIMESTAMP_STEP: u64 = 1_000;
+
+/// L1 height of an epoch's terminal manifest under the shared epoch runner.
+///
+/// Genesis carries the manifest at height 1; the non-terminal blocks of the
+/// epoch under test carry none, so the terminal manifest is always at height 2.
+pub const EPOCH_RUNNER_TERMINAL_L1_HEIGHT: u32 = 2;
+
+/// Standard numeric account IDs used by tests.
+pub const TEST_SNARK_ACCOUNT_ID: u32 = 100;
+pub const TEST_RECIPIENT_ID: u32 = 200;
+pub const TEST_NONEXISTENT_ID: u32 = 999;
+
 /// Builds an account ID with predictable bytes.
 pub fn make_account_id(index: u32) -> AccountId {
     let mut bytes = [0u8; 32];
     bytes[0..4].copy_from_slice(&index.to_le_bytes());
     AccountId::from(bytes)
 }
-
-/// Standard numeric account IDs used by tests.
-pub const TEST_SNARK_ACCOUNT_ID: u32 = 100;
-pub const TEST_RECIPIENT_ID: u32 = 200;
-pub const TEST_NONEXISTENT_ID: u32 = 999;
 
 /// Builds a state root with predictable bytes.
 pub fn make_state_root(variant: u8) -> Hash {
@@ -137,6 +149,14 @@ pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
         OLTransactionData::from_gam_bytes(dest, vec![])
             .expect("message payload bytes must fit within SSZ max length"),
         TxProofs::new_empty(),
+    )
+}
+
+/// Wraps a [`CompletedBlock`] into an [`OLBlock`] with a zero signature.
+pub fn to_ol_block(cb: &CompletedBlock) -> OLBlock {
+    OLBlock::new(
+        SignedOLBlockHeader::new(cb.header().clone(), Buf64::zero()),
+        cb.body().clone(),
     )
 }
 
@@ -1651,6 +1671,21 @@ impl InboxMmrTracker {
     pub fn num_entries(&self) -> u64 {
         self.mmr.num_entries()
     }
+
+    /// Returns the current (i.e. updated through every later `add_message`)
+    /// merkle proof for the leaf at `leaf_idx`.
+    pub fn proof_for(&self, leaf_idx: usize) -> RawMerkleProof {
+        let proof = &self.proofs[leaf_idx];
+        RawMerkleProof {
+            cohashes: proof
+                .cohashes()
+                .iter()
+                .map(|h| FixedBytes::from(*h))
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("proof cohashes should fit into RawMerkleProof"),
+        }
+    }
 }
 
 /// Tracks ASM manifests in a parallel MMR to generate proofs for ledger references.
@@ -2004,4 +2039,111 @@ impl SnarkUpdateBuilder {
 
         OLTransaction::new(data, tx_proofs)
     }
+}
+
+/// Returns the (`OLAccountState`, `OLSnarkAccountState`) for `snark_id`,
+/// panicking if not found or not a snark account.
+pub fn get_snark_state_expect(
+    state: &MemoryStateBaseLayer,
+    snark_id: AccountId,
+) -> (&OLAccountState, &OLSnarkAccountState) {
+    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    (snark_account, snark_account.as_snark_account().unwrap())
+}
+
+/// The inbox message a GAM block delivers and a snark update consumes in tests.
+pub fn snark_inbox_msg() -> MessageEntry {
+    snark_inbox_msg_with_data(b"inbox msg")
+}
+
+/// Variant of [`snark_inbox_msg`] with caller-supplied payload bytes, for
+/// tests that need multiple distinguishable inbox messages.
+pub fn snark_inbox_msg_with_data(data: &[u8]) -> MessageEntry {
+    MessageEntry::new(
+        crate::SEQUENCER_ACCT_ID,
+        1,
+        MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data.to_vec())
+            .expect("inbox msg payload"),
+    )
+}
+
+/// Seeds the standard test recipient and snark accounts.
+///
+/// Inserts an empty account under [`TEST_RECIPIENT_ID`] and creates a snark
+/// account under [`TEST_SNARK_ACCOUNT_ID`] with an `always_accept` predicate
+/// and a deterministic initial state root. Returns the snark account's serial.
+pub fn epoch_runner_seed_accounts(state: &mut MemoryStateBaseLayer) -> AccountSerial {
+    insert_empty_account(state, make_account_id(TEST_RECIPIENT_ID));
+    state
+        .create_new_account(
+            make_account_id(TEST_SNARK_ACCOUNT_ID),
+            NewAccountData::new(
+                BitcoinAmount::from_sat(100_000_000),
+                NewAccountTypeState::Snark {
+                    update_vk: PredicateKey::always_accept(),
+                    initial_state_root: make_state_root(1),
+                },
+            ),
+        )
+        .expect("create snark account")
+}
+
+/// Executes the genesis (epoch 0 terminal) block under the shared epoch runner.
+pub fn epoch_runner_run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
+    execute_block(
+        state,
+        &BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP),
+        None,
+        BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]).as_terminal(),
+    )
+    .expect("genesis block")
+}
+
+/// Executes one block at the slot following `parent` with the given
+/// `components`, appends it to `blocks`, and returns its header.
+pub fn epoch_runner_run_block(
+    state: &mut MemoryStateBaseLayer,
+    blocks: &mut Vec<OLBlock>,
+    parent: &OLBlockHeader,
+    components: BlockComponents,
+) -> OLBlockHeader {
+    let slot = parent.slot() + 1;
+    let cb = execute_block(
+        state,
+        &BlockInfo::new(
+            EPOCH_RUNNER_GENESIS_TIMESTAMP + slot * EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+            slot,
+            1,
+        ),
+        Some(parent),
+        components,
+    )
+    .expect("epoch block");
+    blocks.push(to_ol_block(&cb));
+    cb.header().clone()
+}
+
+/// Executes the terminal block carrying `manifest`, closing the epoch, and
+/// returns the [`CompletedBlock`] (so callers can read the body the way the
+/// checkpoint payload assembler does).
+pub fn epoch_runner_run_terminal(
+    state: &mut MemoryStateBaseLayer,
+    blocks: &mut Vec<OLBlock>,
+    parent: &OLBlockHeader,
+    manifest: AsmManifest,
+) -> CompletedBlock {
+    let slot = parent.slot() + 1;
+    let cb = execute_block(
+        state,
+        &BlockInfo::new(
+            EPOCH_RUNNER_GENESIS_TIMESTAMP + slot * EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+            slot,
+            1,
+        ),
+        Some(parent),
+        BlockComponents::new_manifests(vec![manifest]).as_terminal(),
+    )
+    .expect("terminal block");
+    blocks.push(to_ol_block(&cb));
+    cb
 }

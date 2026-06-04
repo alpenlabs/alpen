@@ -137,10 +137,6 @@ fn get_config(args: Args) -> Result<Config, InitError> {
 }
 
 fn validate_config(config: Config) -> Result<Config, InitError> {
-    if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
-        return Err(InitError::MissingSyncEndpoint);
-    }
-
     if config.client.is_sequencer
         && config
             .client
@@ -550,7 +546,6 @@ mod tests {
             submit_rpc_port = 8435
             l2_blocks_fetch_limit = 1_000
             datadir = "/path/to/data/directory"
-            sync_endpoint = "9.9.9.9:8432"
             db_retry_count = 5
 
             [sync]

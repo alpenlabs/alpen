@@ -1,33 +1,35 @@
 //! Update history types extracted from L1.
 
-use strata_acct_types::MessageEntry;
+use strata_acct_types::{Hash, MessageEntry};
 
-use crate::ProofState;
-
-/// Description of a snark account update extracted from L1.
+/// Snark account update extracted from L1, used to reconstruct inner state
+/// outside the proof.
 ///
-/// This is used to compute and sanity check snark account inner states in
-/// absence of orchestration layer blocks and coinputs.  Correctness is implied
-/// by the orchestration layer permitting the state transition in the first
-/// place, since that requires a snark proof.
+/// `new_state_root` is `None` when the caller cannot supply a per-update root
+/// (checkpoint sync only recovers the terminal epoch state). The apply path
+/// asserts post-state when present and skips when absent.
 #[derive(Clone, Debug)]
 pub struct UpdateManifest {
-    new_state: ProofState,
+    new_state_root: Option<Hash>,
     extra_data: Vec<u8>,
     messages: Vec<MessageEntry>,
 }
 
 impl UpdateManifest {
-    pub fn new(new_state: ProofState, extra_data: Vec<u8>, messages: Vec<MessageEntry>) -> Self {
+    pub fn new(
+        new_state_root: Option<Hash>,
+        extra_data: Vec<u8>,
+        messages: Vec<MessageEntry>,
+    ) -> Self {
         Self {
-            new_state,
+            new_state_root,
             extra_data,
             messages,
         }
     }
 
-    pub fn new_state(&self) -> &ProofState {
-        &self.new_state
+    pub fn new_state_root(&self) -> Option<Hash> {
+        self.new_state_root
     }
 
     pub fn extra_data(&self) -> &[u8] {

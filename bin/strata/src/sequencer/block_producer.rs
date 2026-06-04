@@ -30,12 +30,15 @@ pub(crate) fn start_block_producer(
         .ok_or_else(|| anyhow!("sequencer config required when block producer is enabled"))?
         .ol_block_time_ms;
 
+    let fcm_handle = runctx
+        .fcm_handle()
+        .ok_or_else(|| anyhow!("fcm handle not available (is_sequencer=true required)"))?;
     runctx
         .task_manager()
         .handle()
         .block_on(process_startup_high_watermark_block(
             runctx.storage().as_ref(),
-            runctx.fcm_handle().as_ref(),
+            fcm_handle.as_ref(),
         ))?;
 
     let context = Arc::new(NodeSequencerContext::new(

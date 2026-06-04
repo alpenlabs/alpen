@@ -4,18 +4,20 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
-use strata_chain_worker_new::start_chain_worker_service_from_ctx;
+use strata_chain_worker_new::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
 use strata_consensus_logic::{
-    AsmBlockSubmitter,
+    AsmBlockSubmitter, SyncServiceHandle,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
+use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::NodeContext;
 use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+use strata_service::ServiceMonitor;
 
 use crate::{
     context::ensure_genesis,
-    fcm,
+    css, fcm,
     helpers::rollup_to_btcio_params,
     run_context::{RunContext, ServiceHandles},
 };
@@ -48,12 +50,16 @@ mod sequencer_services {
 
     pub(super) fn start_if_enabled(
         nodectx: &NodeContext,
-        mempool_handle: Arc<MempoolHandle>,
+        mempool_handle: Option<Arc<MempoolHandle>>,
         envelope_pubkey: Option<[u8; 32]>,
     ) -> Result<Option<SequencerServiceHandles>> {
         if !nodectx.config().client.is_sequencer {
             return Ok(None);
         }
+
+        // Sequencer mode always starts the mempool upstream; if not, that's a
+        // wiring regression in `start_strata_services`.
+        let mempool_handle = mempool_handle.expect("sequencer node must have a mempool handle");
 
         let broadcast_handle = Arc::new(start_broadcaster(nodectx)?);
         let (envelope_handle, watcher_handle) =
@@ -216,7 +222,7 @@ mod sequencer_services {
 
     pub(super) fn start_if_enabled(
         _: &NodeContext,
-        _: Arc<MempoolHandle>,
+        _: Option<Arc<MempoolHandle>>,
         _: Option<[u8; 32]>,
     ) -> Result<()> {
         Ok(())
@@ -262,8 +268,15 @@ pub(crate) fn start_strata_services(
         nodectx.status_channel().as_ref(),
     )?;
 
-    // Start mempool service
-    let mempool_handle = Arc::new(start_mempool(&nodectx)?);
+    let is_sequencer = nodectx.config().client.is_sequencer;
+
+    // Checkpoint sync nodes do not have mempool, so start mempool for sequencer node only.
+    // NOTE: When there are nodes supporting mempool the if condition needs to change.
+    let mempool_handle = if is_sequencer {
+        Some(Arc::new(start_mempool(&nodectx)?))
+    } else {
+        None
+    };
 
     // Start Chain worker
     let chain_worker_handle = Arc::new(start_chain_worker_service_from_ctx(&nodectx)?);
@@ -273,35 +286,40 @@ pub(crate) fn start_strata_services(
     // the proof DB and signals ProofNotify to wake the checkpoint worker.
     // The worker waits indefinitely for proofs. Without a prover, empty
     // proofs are used immediately.
-    let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
-    let checkpoint_builder = OLCheckpointBuilder::new()
-        .with_node_context(&nodectx)
-        .with_epoch_summary_receiver(epoch_summary_rx);
+    let (checkpoint_handle, proof_notify) = if is_sequencer {
+        let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
+        let checkpoint_builder = OLCheckpointBuilder::new()
+            .with_node_context(&nodectx)
+            .with_epoch_summary_receiver(epoch_summary_rx);
 
-    #[cfg(feature = "prover")]
-    let (checkpoint_builder, proof_notify): (
-        OLCheckpointBuilder,
-        Option<Arc<strata_ol_checkpoint::ProofNotify>>,
-    ) = if nodectx.config().prover.is_some() {
-        let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
-        let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
-            notify: notify.clone(),
-        });
-        (builder, Some(notify))
+        #[cfg(feature = "prover")]
+        let (checkpoint_builder, proof_notify): (
+            OLCheckpointBuilder,
+            Option<Arc<strata_ol_checkpoint::ProofNotify>>,
+        ) = if nodectx.config().prover.is_some() {
+            let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
+            let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
+                notify: notify.clone(),
+            });
+            (builder, Some(notify))
+        } else {
+            (checkpoint_builder, None)
+        };
+
+        #[cfg(not(feature = "prover"))]
+        let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> = None;
+
+        let handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
+        (Some(handle), proof_notify)
     } else {
-        (checkpoint_builder, None)
+        (None, None)
     };
-
-    #[cfg(not(feature = "prover"))]
-    let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> = None;
-
-    let checkpoint_handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
 
     let sequencer_handles =
         sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), envelope_pubkey)?;
 
-    let fcm_handle = fcm::start(&nodectx, chain_worker_handle.clone(), csm_monitor.clone())?;
-    let fcm_handle = Arc::new(fcm_handle);
+    let sync_handle =
+        start_sync_services(&nodectx, chain_worker_handle.clone(), csm_monitor.clone())?;
 
     let service_handles_builder = ServiceHandles::builder(
         asm_handle,
@@ -309,7 +327,7 @@ pub(crate) fn start_strata_services(
         mempool_handle,
         chain_worker_handle,
         checkpoint_handle,
-        fcm_handle,
+        sync_handle,
     );
     let service_handles =
         sequencer_services::attach_service_handles(service_handles_builder, sequencer_handles)
@@ -343,6 +361,24 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
             Arc::new(AsmBlockSubmitter::new(asm_handle)),
         ),
     );
+}
+
+/// Starts the OL sync service for the node's role.
+///
+/// Sequencer nodes run the fork-choice manager; non-sequencer nodes run the
+/// checkpoint sync service. A node runs exactly one.
+fn start_sync_services(
+    nodectx: &NodeContext,
+    chain_worker_handle: Arc<ChainWorkerHandle>,
+    csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
+) -> Result<SyncServiceHandle> {
+    if nodectx.config().client.is_sequencer {
+        let fcm_handle = fcm::start(nodectx, chain_worker_handle, csm_monitor)?;
+        Ok(SyncServiceHandle::Fcm(Arc::new(fcm_handle)))
+    } else {
+        let css_handle = css::start(nodectx, chain_worker_handle, csm_monitor)?;
+        Ok(SyncServiceHandle::Css(Arc::new(css_handle)))
+    }
 }
 
 /// Starts the mempool service.
