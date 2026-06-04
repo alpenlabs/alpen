@@ -29,7 +29,8 @@ def hex_bytes_repeated(n: int, repeat: int = 32) -> str:
 @dataclass
 class L1BlockCommitment:
     height: int = field(default=100)
-    blkid: str = field(default_factory=lambda: hex_bytes_repeated(0))  # TODO: more type safe
+    # TODO(STR-3692): more type safe
+    blkid: str = field(default_factory=lambda: hex_bytes_repeated(0))
 
     @staticmethod
     def at_latest_block(btc_rpc) -> "L1BlockCommitment":
@@ -39,7 +40,7 @@ class L1BlockCommitment:
         return L1BlockCommitment(blk_info["height"], blkid)
 
 
-# TODO: move this to some place common as this should be useful for other purposes as well
+# TODO(STR-3692): move this to some place common as this should be useful for other purposes as well
 def gen_random_keypair() -> tuple[str, Key]:
     """Generates a keypair and returns a tuple of xonly pubkey and privkey."""
     key = Key()
