@@ -43,59 +43,9 @@ requires_sequencer_config() {
     return 1
 }
 
-# Runtime genesis patching.
-#
-# If params were generated with a real L1 anchor (via datatool gen-l1-anchor
-# at init time), the genesis height will already be > 0 and all fields
-# (next_target, epoch_start_timestamp, network) will be correct.
-# In that case we skip patching.
-#
-# If params have genesis height == 0 (placeholder from init without RPC),
-# we patch height + blkid from the current L1 tip.  This is a partial patch
-# (next_target is NOT updated) which is acceptable on regtest
-# where difficulty is constant, but NOT sufficient for signet/mainnet.  For
-# non-regtest networks, generate params with BITCOIN_RPC_* at init time.
-#
-# The ASM anchor (`anchor.block`) is the source of truth for the genesis L1
-# block; the OL params mirror it in `last_l1_block`.
-CURRENT_GENESIS_HEIGHT=$(jq -r '.anchor.block.height // 0' "${ASM_PARAMS_PATH}" 2>/dev/null || echo "0")
-
-if [ -n "${BITCOIND_RPC_URL}" ] && [ "${CURRENT_GENESIS_HEIGHT}" -eq 0 ]; then
-    rpc_call() {
-        curl -sf -u "${BITCOIND_RPC_USER}:${BITCOIND_RPC_PASSWORD}" \
-            -d "{\"jsonrpc\":\"1.0\",\"method\":\"$1\",\"params\":$2}" \
-            "${BITCOIND_RPC_URL}"
-    }
-
-    echo "genesis height is 0 (placeholder) — patching from L1 tip..."
-    INFO=$(rpc_call getblockchaininfo '[]')
-    TIP_HEIGHT=$(echo "${INFO}" | jq -r '.result.blocks')
-    TIP_HASH=$(echo "${INFO}" | jq -r '.result.bestblockhash')
-
-    if [ -z "${TIP_HEIGHT}" ] || [ "${TIP_HEIGHT}" = "null" ]; then
-        echo "error: failed to get L1 tip from ${BITCOIND_RPC_URL}" >&2
-        exit 1
-    fi
-
-    echo "L1 tip: height=${TIP_HEIGHT} hash=${TIP_HASH}"
-
-    # Patch asm-params.json: update the ASM anchor block.
-    PATCHED_ASM="/app/data/asm-params.json"
-    jq --argjson h "${TIP_HEIGHT}" --arg id "${TIP_HASH}" \
-        '.anchor.block.height = $h | .anchor.block.blkid = $id' \
-        "${ASM_PARAMS_PATH}" > "${PATCHED_ASM}"
-    ASM_PARAMS_PATH="${PATCHED_ASM}"
-
-    # Patch ol-params.json to mirror the same genesis L1 block.
-    PATCHED_OL="/app/data/ol-params.json"
-    jq --argjson h "${TIP_HEIGHT}" --arg id "${TIP_HASH}" \
-        '.last_l1_block.height = $h | .last_l1_block.blkid = $id' \
-        "${OL_PARAMS_PATH}" > "${PATCHED_OL}"
-    OL_PARAMS_PATH="${PATCHED_OL}"
-elif [ "${CURRENT_GENESIS_HEIGHT}" -gt 0 ]; then
-    echo "genesis height is ${CURRENT_GENESIS_HEIGHT} — params already initialized, skipping patching"
-fi
-
+# Params are generated with their final genesis L1 anchor at init time (via
+# datatool gen-l1-anchor, pinned to GENESIS_L1_HEIGHT). The node consumes them
+# as-is — there is no runtime genesis patching.
 EXTRA_ARGS=""
 if [ -n "${OL_PARAMS_PATH}" ] && [ -f "${OL_PARAMS_PATH}" ]; then
     EXTRA_ARGS="${EXTRA_ARGS} --ol-params ${OL_PARAMS_PATH}"
@@ -119,12 +69,6 @@ fi
 
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
 CONFIG_OVERRIDES="${CONFIG_OVERRIDES} -o bitcoind.network=${BITCOIN_NETWORK}"
-
-# L1 reorg-safe depth now lives in the node's [btcio] config (it used to be a
-# rollup-params field). Source it from the env so infra can tune it per network.
-if [ -n "${L1_REORG_SAFE_DEPTH:-}" ]; then
-    CONFIG_OVERRIDES="${CONFIG_OVERRIDES} -o btcio.l1_reorg_safe_depth=${L1_REORG_SAFE_DEPTH}"
-fi
 
 SEQUENCER_ARGS=""
 if requires_sequencer_config "$@"; then

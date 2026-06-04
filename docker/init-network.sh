@@ -11,9 +11,11 @@ set -euo pipefail
 #   BITCOIN_NETWORK=signet GENESIS_L1_HEIGHT=200000 ./init-network.sh <datatool_path>
 #
 # When BITCOIND_RPC_URL is set, the script fetches the real L1 anchor from
-# the Bitcoin node via `datatool gen-l1-anchor`. Without it, a network-specific
-# placeholder is used (suitable for regtest where the strata entrypoint patches
-# params at runtime).
+# the Bitcoin node via `datatool gen-l1-anchor`. Without it, a placeholder L1
+# anchor is written from network-specific genesis values. The node consumes the
+# anchor as-is (there is no runtime patching), so the placeholder is only correct
+# for regtest at genesis height 0 (the regtest genesis block); any other
+# network/height needs BITCOIND_RPC_*.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
@@ -213,13 +215,14 @@ if [ "${MODE}" = "sequencer" ]; then
                 -o "${L1_ANCHOR}"
             echo "generated ${L1_ANCHOR} (from Bitcoin RPC)"
         else
-            # No RPC available — write a placeholder L1 anchor using network-specific
-            # genesis block values.  On regtest the strata entrypoint patches
-            # height + blkid at runtime; on signet this will be incomplete and you
-            # should provide BITCOIN_RPC_* vars instead.
-            if [ "${BITCOIN_NETWORK}" != "regtest" ] && [ "${GENESIS_L1_HEIGHT}" != "0" ]; then
-                echo "warning: generating placeholder L1 anchor for ${BITCOIN_NETWORK} at height ${GENESIS_L1_HEIGHT}" >&2
-                echo "         without Bitcoin RPC, next_target will be WRONG." >&2
+            # No RPC available — write a placeholder L1 anchor from network-specific
+            # genesis block values. The node consumes the anchor as-is (no runtime
+            # patching), so this is only correct for regtest at height 0 (the regtest
+            # genesis block); any non-zero genesis height needs BITCOIN_RPC_* for a
+            # correct blkid and next_target.
+            if [ "${GENESIS_L1_HEIGHT}" != "0" ]; then
+                echo "warning: generating placeholder L1 anchor at height ${GENESIS_L1_HEIGHT} without Bitcoin RPC;" >&2
+                echo "         blkid and next_target will not match the real chain." >&2
                 echo "         Set BITCOIND_RPC_URL, BITCOIND_RPC_USER, BITCOIND_RPC_PASSWORD for correct values." >&2
             fi
             cat > "${L1_ANCHOR}" <<GEOF
