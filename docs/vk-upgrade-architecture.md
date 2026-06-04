@@ -183,13 +183,16 @@ This section ties the pieces above into one timeline. Nothing here is new design
 2. **Approve.** The new VK goes to the admin multisig. The signers review it and,
    if enough agree, sign an update transaction and post it to L1.
 3. **Queue.** The ASM admin subprotocol accepts the transaction and holds it for a
-   fixed number of L1 blocks (planned: `2016`, ≈ 2 weeks). During this window the
-   admin can still **cancel** the upgrade if something turns out to be wrong.
+   configurable **confirmation depth** — planned `2016` blocks (≈ 2 weeks) for VK
+   updates; depth `0` would bypass the queue. During this window the admin can
+   still **cancel** the upgrade (`MultisigAction::Cancel`) if something is wrong.
 4. **Activate.** When the queue elapses — at `B = inclusion + 2016` — the new VK
    becomes the live rule, applied per layer as in the per-layer plan below.
 
 The queue window does double duty: it is both the admin's cancellation window and
-the users' exit window, over the same `2016` blocks.
+the users' exit window, over the same `2016` blocks. The queue, the per-variant
+depth, and cancellation all already exist in `alpenlabs/asm`; what is new is the
+per-height activation that follows.
 
 ### Where the time goes
 
@@ -213,18 +216,34 @@ never shortens the exit window. Its size is bounded by the per-layer budgets
 
 ## Per-layer implementation plan
 
-Most ASM logic is external — the `alpenlabs/asm` dependency family pinned in
-[`Cargo.toml`](https://github.com/alpenlabs/alpen/blob/55907ce/Cargo.toml) holds
-the admin subprotocol, `CheckpointState`, `AnchorState`, and the log types. The
+The ASM admin and checkpoint subprotocols — the queue, the update actions, and
+`CheckpointState` — live in the external
+[`alpenlabs/asm`](https://github.com/alpenlabs/asm/tree/v0.1-alpha.10) repo
+(pinned at `v0.1-alpha.10` in
+[`Cargo.toml`](https://github.com/alpenlabs/alpen/blob/55907ce/Cargo.toml)); the
 local repo holds the OL/EE state, the sequencer, the full-node verification
-mirror, and the tooling. **Code references below are GitHub permalinks pinned to
-commit [`55907ce`](https://github.com/alpenlabs/alpen/tree/55907ce).**
+mirror, and the tooling. Much of the machinery **already exists** in `asm`: a
+generic admin queue with a configurable per-variant **confirmation depth**
+([`QueuedUpdate`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/subprotocol/src/queued_update.rs),
+height-gated drain), **cancellation** during that window
+([`MultisigAction::Cancel`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/txs/src/actions/cancel.rs)),
+and the VK update actions
+[`UpdateAction::{OlStfVk, AsmStfVk, EeStfVk, Sequencer}`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/txs/src/actions/updates/mod.rs).
+What is *missing* is the per-height activation (dual predicate + boundary `B`):
+the predicate is swapped immediately today. (`2016` is the *planned* depth for VK
+updates — config, not a constant; depth `0` bypasses the queue.)
+
+Code references are GitHub permalinks pinned to
+[`55907ce`](https://github.com/alpenlabs/alpen/tree/55907ce) (Alpen) and
+[`v0.1-alpha.10`](https://github.com/alpenlabs/asm/tree/v0.1-alpha.10) (asm).
 
 ### ASM
 
 ASM is the simplest layer: it is a reactive state machine over L1 blocks, its STF
 advancing one L1 block at a time, so the switch can be made at the L1 block
-itself. The work is mostly external; the shape is:
+itself. Its own VK update already has an action
+([`AsmStfVk`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/txs/src/actions/updates/asm_stf_vk.rs),
+which emits an `AsmStfUpdate` log on enactment); the new behavior is in the STF:
 
 1. **Stop at the boundary.** Once the queued update matures, the ASM knows the VK
    has changed and must stop applying the old STF to blocks past that point.
@@ -232,37 +251,46 @@ itself. The work is mostly external; the shape is:
    the new logic is the one to run from here; how it is expressed depends on the
    change.
 
-The local CSM worker that consumes ASM output —
+(The local CSM worker that consumes ASM output —
 [`processor.rs::process_asm_block`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/csm-worker/src/processor.rs#L253)
-— walks heights sequentially and has **no pause/halt** today, so any real halt
-lives in the external ASM STF. See the
+— walks heights sequentially with no pause/halt; a real halt lives in the ASM
+STF.) See the
 [ASM Upgrade Strategy](https://app.notion.com/p/ASM-Upgrade-Strategy-319901ba000f8083af11dc33d88f0de9)
 for the detailed plan.
 
 ### OL
 
-**The problem today.** As soon as the admin queue completes, the checkpoint
-predicate is swapped. Nothing then forces the OL sequencer to have processed every
-L1-originated transaction before `B` under the old logic — it can do whatever it
-likes. That breaks the exit guarantee and must change.
+**The problem today.** The `OlStfVk` update enacts at the end of the queue and
+relays `UpdateCheckpointPredicate` to the checkpoint subprotocol, which swaps the
+predicate **immediately and unconditionally**
+([`update_checkpoint_predicate`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/checkpoint/verification/src/state.rs)).
+Nothing then forces the OL sequencer to have processed every L1-originated
+transaction before `B` under the old logic — it can do whatever it likes. That
+breaks the exit guarantee and must change.
 
-**Two predicates in ASM state.** The checkpoint predicate lives in the ASM's
-(external) `CheckpointState`, which today holds a *single* predicate. It must hold
-**both the old and the new at once**, from when the queue completes until
-activation. Activation happens when the checkpoint's L1 view reaches `B`; at that
-point the ASM drops the old predicate and verifies all later checkpoints under the
-new one. (This refines the *one live VK* note above: at any L1 point one VK is
-authoritative, but the state carries both across the transition.)
+**Two predicates in `CheckpointState`.** The checkpoint predicate lives in the
+ASM's
+[`CheckpointState`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/checkpoint/verification/ssz/state.ssz)
+— an SSZ-codegen'd container that today holds a *single* `checkpoint_predicate`. It
+must hold **both the old and the new at once** (a schema change), from enactment
+until activation. The boundary `B` is the L1 height at which the
+`UpdateCheckpointPredicate` message arrives — i.e. the queue's `activation_height`.
+Activation happens when a verified checkpoint's L1 view reaches `B`; the ASM then
+drops the old predicate and verifies all later checkpoints under the new one. (This
+refines the *one live VK* note above: at any L1 point one VK is authoritative, but
+the state carries both across the transition.)
 
 **The cut must be exactly at `B`.** The checkpoint subprotocol must reject any
 checkpoint whose L1 range *straddles* `B`: a checkpoint carrying the tip from, say,
 `B-1` to `B+1` is invalid — the break has to fall exactly on `B`. Otherwise the
 sequencer could get `B+1` accepted under the old VK when it should be the new one.
-The verification path already commits to an exact inclusive L1 range —
-[`checkpoint_extract.rs::verify_checkpoint`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/csm-worker/src/checkpoint_extract.rs#L122)
-returns a `CheckpointL1Range::Range { start_height, end_height }` and binds the
-manifest hashes over exactly that range — so the boundary check has the data it
-needs; the range-vs-`B` rejection itself lives in the external subprotocol.
+The verification already commits to an exact inclusive L1 range:
+[`verify_progression`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/checkpoint/verification/src/verification.rs)
+returns `CheckpointL1Range::Range { start_height, end_height }` and binds the
+manifest hashes over exactly that range (mirrored locally in
+[`checkpoint_extract.rs`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/csm-worker/src/checkpoint_extract.rs#L122)).
+So the data is there; the new rule — reject a checkpoint whose range straddles `B`
+— goes into the checkpoint subprotocol's verification.
 
 **Batch sealing must target `B`.** Sealing is driven purely by L2 slot count
 ([`epoch_sealing.rs` `FixedSlotSealing`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/block-assembly/src/epoch_sealing.rs#L23)),
@@ -275,14 +303,17 @@ manifest fetch to end at `B`.
 
 ### Alpen EE
 
-**The problem today.** When the queue completes, the ASM emits an
-`EePredicateKeyUpdate` log (external `strata_asm_logs`); the OL processes it at its
-epoch-terminal block and swaps the snark account's `update_vk` immediately
+**The problem today.** At the end of the queue the `EeStfVk` enactment emits an
+`EePredicateKeyUpdate` log targeting the Alpen EE account
+([`relay_alpen_predicate_update`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/subprotocol/src/handler.rs)).
+The OL processes it at its epoch-terminal block and swaps the snark account's
+`update_vk` immediately
 ([`process_ee_predicate_key_update`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/stf/src/manifest_processing.rs#L317)
 → [`set_update_vk`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/state-types/src/snark_account.rs#L77)).
 As with OL, nothing forces the sequencer to process the pre-`B` L1-originated
-transactions under the old logic, so the same invariant — *everything a user does
-on L1 before activation runs under the old logic* — is violated.
+transactions under the old logic, so the invariant — *everything a user does on L1
+before activation runs under the old logic* — is violated. (`B` here is the log's
+landing height, the queue's `activation_height`.)
 
 **Why the OL approach does not transfer.** The OL anchors the switch to the L1
 view it commits in each checkpoint. The EE has **no L1 view of its own**: its
@@ -356,14 +387,16 @@ at the VK-update message" is a new rule.
   ASM-driven swap (OL VK activation *or* sequencer rotation) to take effect
   without a restart, the node must re-read the predicate from the live ASM
   checkpoint section. This is a shared prerequisite.
-* **Sequencer rotation (liveness backstop).** No rotation exists; the sequencer
-  identity is the `sequencer_predicate` in the ASM checkpoint config. Block-
-  producer auth already checks it
-  (`crates/consensus-logic/src/fcm/service.rs::check_ol_block_proposal_valid` →
+* **Sequencer rotation (liveness backstop).** Rotation already has an admin action
+  —
+  [`UpdateAction::Sequencer`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/txs/src/actions/updates/mod.rs)
+  swaps the `sequencer_predicate` — and block-producer auth already checks that
+  predicate (`crates/consensus-logic/src/fcm/service.rs::check_ol_block_proposal_valid` →
   `crates/ol/chain-types/src/validation.rs::verify_sequencer_predicate_signature`).
-  Rotation = an external admin action that swaps `sequencer_predicate` (analogous
-  to `EeStfVk`) + the live-read above; it applies **immediately** (no `2016`
-  delay) because it changes the operator, not the rules.
+  To apply **immediately** (no delay, since it changes the operator, not the
+  rules), give the `Sequencer` variant a confirmation depth of `0` (which bypasses
+  the queue). The one local gap is the live-read above — the predicate is cached at
+  startup today.
 * **Burial.** `B`'s enforcement uses the existing `l1_reorg_safe_depth`; since
   `2016 ≫` that depth, the enactment boundary is final by the time anyone acts.
 
@@ -372,7 +405,8 @@ at the VK-update message" is a new rule.
 The new source/ELF is published at announcement; full nodes need only the VK to
 verify, provers need the ELF (`provers/sp1/build.rs` → `vks.rs`,
 `crates/zkvm/hosts`). A workable order: (1) external `alpenlabs/asm` changes
-(dual-slot + `B` + queue + selection) and re-pin; (2) live predicate reads;
+(dual predicate + `B` + exact-cut in `CheckpointState`; the queue, depth, and
+actions already exist) and re-pin; (2) live predicate reads;
 (3) OL exact-cut sealing (STR-3480) + `csm-worker` mirror; (4) EE VK-update
 message type + guest batch-termination rule + OLTx handling; (5) rotation tooling.
 Each step is independently testable.
@@ -403,9 +437,9 @@ Each step is independently testable.
   or another account). See the EE plan.
 * **EE anti-stall deadline:** whether to require the snark update to land within
   ~3 L1 blocks of `B` (with a commit→prove flow). Deferred — high lift.
-* **External admin actions:** whether `alpenlabs/asm` exposes update actions for
-  the *checkpoint predicate* and *sequencer predicate* (only `EeStfVk` is used
-  locally) — needed for OL VK activation and rotation tooling.
+* **Admin-update tooling (local):** the asm actions all exist (`OlStfVk`,
+  `AsmStfVk`, `Sequencer`, `Cancel`), but Alpen-side tooling
+  (`bin/strata-test-cli`) builds only `EeStfVk` — the rest need CLI support.
 * **Critical-bug handling:** confirm the bridge 1/N + out-of-band-correction
   backstop is acceptable for the threat model (no emergency-halt primitive).
 * **Forced inclusion:** not yet implemented; the interim liveness backstop is
@@ -433,7 +467,17 @@ Each step is independently testable.
   `crates/consensus-logic/src/fcm/service.rs` +
   `crates/ol/chain-types/src/validation.rs` (block-producer auth);
   `bin/strata-test-cli/src/cmd/create_ee_predicate_update.rs` (admin-update tooling).
-* **External** (`alpenlabs/asm`, `strata-common`; pinned in `Cargo.toml`): admin
-  subprotocol, `CheckpointState`, `AnchorState`, `EePredicateKeyUpdate`,
-  `PredicateKey`, `L1Height`.
+* **`alpenlabs/asm`** (pinned `v0.1-alpha.10`): admin subprotocol —
+  [`handler.rs`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/subprotocol/src/handler.rs),
+  [`state.rs`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/subprotocol/src/state.rs),
+  [`queued_update.rs`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/subprotocol/src/queued_update.rs),
+  [actions](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/txs/src/actions/updates/mod.rs)
+  (`OlStfVk`/`AsmStfVk`/`EeStfVk`/`Sequencer`/`Cancel`),
+  [`confirmation_depth.rs`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/params/src/subprotocols/admin/confirmation_depth.rs);
+  checkpoint subprotocol —
+  [`state.ssz`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/checkpoint/verification/ssz/state.ssz)
+  (`CheckpointState`),
+  [`verification.rs`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/checkpoint/verification/src/verification.rs)
+  (`verify_progression`, `CheckpointL1Range`),
+  [`state.rs`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/checkpoint/verification/src/state.rs).
 * SPS-60 (Moho), SPS-62/63 (checkpoint), SPS-64 (bridge) — protocol context.
