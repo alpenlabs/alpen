@@ -1,0 +1,41 @@
+# Checkpoint-sync (non-sequencer) node config. Adjust according to deployment.
+#
+# This node reconstructs OL state from L1-buried checkpoints. It runs no block
+# assembly, writer/broadcaster, or checkpoint proving, so the sequencer-only
+# sections (btcio.writer, btcio.broadcaster, relayer, prover, submit RPC) are
+# omitted. Keep is_sequencer = false: the checkpoint-sync image is built
+# without the sequencer feature and rejects is_sequencer = true.
+
+[client]
+rpc_host = "0.0.0.0"
+rpc_port = 8432
+admin_rpc_host = "0.0.0.0"
+admin_rpc_port = 8434
+admin_rpc_bearer_token = "dev-only-change-me"
+l2_blocks_fetch_limit = 1_000
+datadir = "data"
+db_retry_count = 5
+is_sequencer = false
+
+[logging]
+metrics_host = "0.0.0.0"
+metrics_port = 9615
+
+[bitcoind]
+rpc_url = "bitcoind:18443/wallet/default"
+rpc_user = "rpcuser"
+rpc_password = "rpcpassword"
+network = "regtest"
+
+[btcio.reader]
+client_poll_dur_ms = 200
+
+[sync]
+l1_follow_distance = 6
+max_reorg_depth = 4
+client_poll_dur_ms = 2000
+client_checkpoint_interval = 10
+
+[exec.reth]
+rpc_url = "reth:8551"
+secret = "configs/jwt.hex"

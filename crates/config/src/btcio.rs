@@ -5,7 +5,11 @@ use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtcioConfig {
     pub reader: ReaderConfig,
+    /// Writer config, only used by sequencer nodes.
+    #[serde(default)]
     pub writer: WriterConfig,
+    /// Broadcaster config, only used by sequencer nodes.
+    #[serde(default)]
     pub broadcaster: BroadcasterConfig,
     /// Depth, in L1 blocks, after which an L1 block is considered safe from reorgs.
     ///
