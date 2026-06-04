@@ -379,6 +379,63 @@ at the VK-update message" is a new rule.
   [`process_ee_predicate_key_update`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/stf/src/manifest_processing.rs#L317)
   to *insert the inbox message* instead of swapping.
 
+### Alpen EE: EVM forks and the L2-height coordinate
+
+The inbox-MMR boundary decides *which VK verifies the account updates*, but for
+Alpen it is not the whole story. Alpen's EE is EVM-based, and most upgrades are
+**EVM forks** activated through the **reth chainspec**
+([`crates/reth/chainspec`](https://github.com/alpenlabs/alpen/tree/55907ce/crates/reth/chainspec),
+[`crates/reth/evm`](https://github.com/alpenlabs/alpen/tree/55907ce/crates/reth/evm)).
+A reth fork activates at a hardcoded **L2 block height** (or timestamp) in the
+chainspec, and the chainspec is **part of the ELF** — so the fork height `H` is
+baked into the new guest at build time, *before* the VK is even authorized. (This
+is the "new ELF" case: a fork decided now is not pre-baked in the active ELF, so
+it needs both the VK rollover *and* a chosen `H`.)
+
+That reintroduces the L2-timing problem we banished for the VK switch. The switch
+itself stays L1-anchored and safe (the inbox-MMR boundary), but the EVM fork fires
+at L2 height `H`, and whether the chain reaches `H` *after* the new ELF is active
+depends on the sequencer's block rate — which the sequencer controls. The
+invariant: **the chain must not produce block `H` until the new ELF (the one that
+knows about the fork at `H`) is active.** If the old ELF is still active when the
+chain reaches `H`, it produces `H` under the old rules and the fork is silently
+missed — a safety problem.
+
+**So `H` must be chosen first, before anything else,** and with margin: it is
+committed at the very start of a long pipeline (in the ELF, built before
+authorization, before the 2-week enactment). You are forecasting where the EE
+chain will be ~two weeks out and setting `H` safely beyond that.
+
+**Back-of-the-envelope** (EE block time 5 s):
+
+| Delay | Estimate |
+|-------|----------|
+| Admin (agree, sign, broadcast) | ~1 day (variable) |
+| Enactment (`2016` BTC blocks) | ~14 days |
+| OL application (ASM logs applied only at the epoch-terminal block) | ~9 h batch |
+| EE sequencer (≈ 4 h batch + ~6-block L1 lag + acts only on finalized checkpoint state) | ~1 day |
+
+Total ≈ **~16 days**, or at 5 s/block ≈ **~276k EE blocks**. So `H` should sit at
+least that far beyond the current EE tip, plus a safety margin.
+
+**Direction of the risk.**
+
+* **Sequencer slower than planned → safe.** The chain reaches `H` later, so the
+  new ELF is comfortably active first; the window only grows.
+* **Sequencer faster than planned → potentially unsafe.** The chain could reach
+  `H` before the VK switches. During an upgrade we therefore recommend: **control
+  the sequencer, monitor it closely, and if needed adjust the block time** — a
+  *config* change only, nothing else in the ELF or rules.
+
+**If a stage runs long.** The same forecasting risk applies whenever a delay
+stretches:
+
+* **Admin can't reach threshold** → the whole pipeline shifts later, so the chain
+  is further along by activation; the chosen `H` must have had margin for it.
+* **OL goes down (unrelated reasons)** → the EE sequencer, which advances only on
+  finalized OL/checkpoint state, stalls or skews and must **re-adjust its block
+  timing** to still land the fork at `H` after activation.
+
 ### Cross-cutting: rotation, live predicate reads, burial
 
 * **Live predicate reads (prerequisite).** Today `sequencer_predicate` /
