@@ -6,7 +6,7 @@ use serde_json as _;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, L1Height, OLBlockId, OLTxId};
 use strata_ol_rpc_types::*;
 use strata_ol_sequencer::BlockCompletionData;
-use strata_primitives::{HexBytes, HexBytes32, HexBytes64};
+use strata_primitives::{HexBytes, HexBytes32, HexBytes64, OLBlockCommitment};
 
 /// Common OL RPC methods that are served by all kinds of nodes(DA, block executing).
 #[strata_open_rpc_macros::open_rpc(namespace = "strata", tag = "Client Node")]
@@ -75,6 +75,14 @@ pub trait OLClientRpc {
         start: u64,
         end: u64,
     ) -> RpcResult<Vec<RpcIndexedEntry<RpcMessageEntry>>>;
+
+    /// Get Snark account state at a CSS-safe chain tag.
+    #[method(name = "getSnarkAccountStateByTag")]
+    async fn get_snark_account_state_by_tag(
+        &self,
+        account_id: AccountId,
+        tag: OLBlockTag,
+    ) -> RpcResult<Option<RpcSnarkAccountState>>;
 }
 
 /// OL RPC methods served by sequencer nodes for transaction submission.
@@ -127,12 +135,12 @@ pub trait OLFullNodeRpc {
     #[method(name = "getRecentBlocks")]
     async fn get_recent_blocks(&self, count: u64) -> RpcResult<Vec<RpcOLBlockSummary>>;
 
-    /// Get snark account state of an account at a specified block.
-    #[method(name = "getSnarkAccountState")]
-    async fn get_snark_account_state(
+    /// Get Snark account state at an exact OL block commitment.
+    #[method(name = "getSnarkAccountStateAtBlock")]
+    async fn get_snark_account_state_at_block(
         &self,
         account_id: AccountId,
-        block_or_tag: OLBlockOrTag,
+        block: OLBlockCommitment,
     ) -> RpcResult<Option<RpcSnarkAccountState>>;
 
     /// Get all transactions in the canonical OL block at the given slot.

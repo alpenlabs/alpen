@@ -25,7 +25,7 @@ pub use account_summary::{
 pub use block::{
     RpcBlockEntry, RpcBlockHeaderEntry, RpcOLBlockDetail, RpcOLBlockSummary, RpcOLManifestsSummary,
 };
-pub use blocktag::OLBlockOrTag;
+pub use blocktag::OLBlockTag;
 pub use chain_status::{RpcOLBlockInfo, RpcOLChainStatus};
 pub use checkpoint::{RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref};
 pub use duty::*;

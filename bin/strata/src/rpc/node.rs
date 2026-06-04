@@ -19,7 +19,7 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
+    OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
     RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
     RpcIndexedEntry, RpcMessageEntry, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
@@ -204,45 +204,60 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             })
     }
 
-    /// Resolves an [`OLBlockOrTag`] to a concrete [`OLBlockCommitment`].
-    ///
-    /// `Latest`, `Confirmed`, and `Finalized` come from the OL sync status.
-    /// `OLBlockId` requires fetching the block to read its slot. `Slot` looks
-    /// up the canonical block at that slot.
-    async fn resolve_block_or_tag(
-        &self,
-        block_or_tag: OLBlockOrTag,
-    ) -> RpcResult<OLBlockCommitment> {
-        Ok(match block_or_tag {
-            OLBlockOrTag::Latest => {
-                self.provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?
-                    .tip
-            }
-            OLBlockOrTag::Confirmed => self
-                .provider
-                .get_ol_sync_status()
-                .ok_or_else(|| internal_error("OL sync status not available"))?
-                .confirmed_epoch
-                .to_block_commitment(),
-            OLBlockOrTag::Finalized => self
-                .provider
-                .get_ol_sync_status()
-                .ok_or_else(|| internal_error("OL sync status not available"))?
-                .finalized_epoch
-                .to_block_commitment(),
-            OLBlockOrTag::OLBlockId(block_id) => {
-                let block = self.get_block(block_id).await?;
-                OLBlockCommitment::new(block.header().slot(), block_id)
-            }
-            OLBlockOrTag::Slot(slot) => self
-                .provider
-                .get_canonical_block_at(slot)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?,
+    /// Resolves an [`OLBlockTag`] to a concrete [`OLBlockCommitment`].
+    async fn resolve_block_tag(&self, tag: OLBlockTag) -> RpcResult<OLBlockCommitment> {
+        let sync_status = self
+            .provider
+            .get_ol_sync_status()
+            .ok_or_else(|| internal_error("OL sync status not available"))?;
+
+        Ok(match tag {
+            OLBlockTag::Latest => sync_status.tip,
+            OLBlockTag::Confirmed => sync_status.confirmed_epoch.to_block_commitment(),
+            OLBlockTag::Finalized => sync_status.finalized_epoch.to_block_commitment(),
         })
+    }
+
+    async fn get_snark_account_state_at_block(
+        &self,
+        account_id: AccountId,
+        block_commitment: OLBlockCommitment,
+    ) -> RpcResult<Option<RpcSnarkAccountState>> {
+        // Get OL state at the resolved block
+        let ol_state = self
+            .provider
+            .get_toplevel_ol_state(block_commitment)
+            .await
+            .map_err(|e| {
+                error!(?e, %block_commitment, "Failed to get OL state");
+                db_error(e)
+            })?
+            .ok_or_else(|| {
+                not_found_error(format!("No OL state found for block {block_commitment}"))
+            })?;
+
+        // Get account state
+        let Some(account_state) = ol_state.get_account_state(&account_id) else {
+            return Ok(None); // Account doesn't exist
+        };
+
+        // Try to get snark account state; return None if not a snark account
+        match account_state.as_snark_account() {
+            Ok(snark_state) => {
+                let seq_no: u64 = *snark_state.seqno().inner();
+                let inner_state = snark_state.inner_state_root().0.into();
+                let next_inbox_msg_idx = snark_state.next_inbox_msg_idx();
+                let update_vk = snark_state.update_vk().clone();
+
+                Ok(Some(RpcSnarkAccountState::new(
+                    seq_no,
+                    inner_state,
+                    next_inbox_msg_idx,
+                    update_vk,
+                )))
+            }
+            Err(_) => Ok(None), // Not a snark account
+        }
     }
 
     /// Walks the canonical chain backwards from `end_slot` to `start_slot`,
@@ -945,6 +960,16 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .map(|(offset, message)| RpcIndexedEntry::new(start + offset as u64, message.into()))
             .collect())
     }
+
+    async fn get_snark_account_state_by_tag(
+        &self,
+        account_id: AccountId,
+        tag: OLBlockTag,
+    ) -> RpcResult<Option<RpcSnarkAccountState>> {
+        let block_commitment = self.resolve_block_tag(tag).await?;
+        self.get_snark_account_state_at_block(account_id, block_commitment)
+            .await
+    }
 }
 
 const MAX_RAW_BLOCKS_RANGE: usize = 5000;
@@ -1119,48 +1144,12 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         Ok(summaries)
     }
 
-    async fn get_snark_account_state(
+    async fn get_snark_account_state_at_block(
         &self,
         account_id: AccountId,
-        block_or_tag: OLBlockOrTag,
+        block: OLBlockCommitment,
     ) -> RpcResult<Option<RpcSnarkAccountState>> {
-        let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
-
-        // Get OL state at the resolved block
-        let ol_state = self
-            .provider
-            .get_toplevel_ol_state(block_commitment)
-            .await
-            .map_err(|e| {
-                error!(?e, %block_commitment, "Failed to get OL state");
-                db_error(e)
-            })?
-            .ok_or_else(|| {
-                not_found_error(format!("No OL state found for block {block_commitment}"))
-            })?;
-
-        // Get account state
-        let Some(account_state) = ol_state.get_account_state(&account_id) else {
-            return Ok(None); // Account doesn't exist
-        };
-
-        // Try to get snark account state; return None if not a snark account
-        match account_state.as_snark_account() {
-            Ok(snark_state) => {
-                let seq_no: u64 = *snark_state.seqno().inner();
-                let inner_state = snark_state.inner_state_root().0.into();
-                let next_inbox_msg_idx = snark_state.next_inbox_msg_idx();
-                let update_vk = snark_state.update_vk().clone();
-
-                Ok(Some(RpcSnarkAccountState::new(
-                    seq_no,
-                    inner_state,
-                    next_inbox_msg_idx,
-                    update_vk,
-                )))
-            }
-            Err(_) => Ok(None), // Not a snark account
-        }
+        OLRpcServer::get_snark_account_state_at_block(self, account_id, block).await
     }
 
     async fn get_block_transactions(&self, slot: u64) -> RpcResult<Vec<RpcOLTxDetail>> {

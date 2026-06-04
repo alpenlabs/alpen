@@ -16094,7 +16094,6 @@ name = "strata-ol-rpc-types"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "hex",
  "schemars 1.2.1",
  "serde",
  "serde_json",

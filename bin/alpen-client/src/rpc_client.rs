@@ -16,9 +16,9 @@ use strata_common::{
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLTxId,
 };
-use strata_ol_rpc_api::{OLClientRpcClient, OLFullNodeRpcClient, OLSubmitRpcClient};
+use strata_ol_rpc_api::{OLClientRpcClient, OLSubmitRpcClient};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
+    OLBlockTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
 };
 use strata_snark_acct_types::{ProofState, SnarkAccountUpdate};
 use tracing::info;
@@ -271,7 +271,7 @@ impl SequencerOLClient for RpcOLClient {
     async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError> {
         let snark_account_state = call_read_rpc!(
             self,
-            get_snark_account_state(self.account_id, OLBlockOrTag::Latest)
+            get_snark_account_state_by_tag(self.account_id, OLBlockTag::Latest)
         )?
         .ok_or_else(|| OLClientError::Rpc("missing latest account state".into()))?;
 
