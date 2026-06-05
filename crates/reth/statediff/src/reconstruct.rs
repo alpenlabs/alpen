@@ -232,8 +232,12 @@ impl StateReconstructor {
                         code_hash: snapshot.code_hash,
                     };
 
-                    // Skip empty accounts
+                    // Empty accounts are absent from the state trie (EIP-161).
                     if state_account.is_account_empty() {
+                        self.state_trie.delete(&acc_info_trie_path)?;
+                        self.storage_trie.remove(address);
+                        self.accounts.remove(address);
+                        self.storage.remove(address);
                         continue;
                     }
 
@@ -389,7 +393,10 @@ pub fn apply_batch_state_diff_to_ethereum_state(
                     code_hash: snapshot.code_hash,
                 };
 
+                // Empty accounts are absent from the state trie (EIP-161).
                 if state_account.is_account_empty() {
+                    state.state_trie.delete(hashed_addr.as_slice())?;
+                    state.storage_tries.remove(&hashed_addr);
                     continue;
                 }
 
@@ -638,6 +645,41 @@ mod tests {
             &canonical_accounts(&expected_state).unwrap()
         );
         assert_eq!(prestate.storage(), &expected_state.storage);
+    }
+
+    #[test]
+    fn test_reconstruct_update_to_empty_account_deletes_account() {
+        let address = addr(0x18);
+        let slot_one = slot(1);
+        let empty_code_hash = StateAccount::default().code_hash;
+        let pre_state = CanonicalState::new()
+            .with_account(address, state_account(100, 1, empty_code_hash))
+            .set_storage_slot(address, slot_one, value(5));
+        let expected_state = CanonicalState::new();
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            Some(snapshot(100, 1, empty_code_hash)),
+            Some(snapshot(0, 0, empty_code_hash)),
+        );
+        storage_change(&mut block, address, slot_one, value(5), U256::ZERO);
+
+        let diff = roundtrip_batch_diff(&[block]);
+        let mut reconstructor = reconstructor_from_state(&pre_state);
+        reconstructor.apply_diff(&diff).unwrap();
+        let prestate = reconstructor.to_prestate();
+
+        assert_reconstruction_matches(
+            &reconstructor,
+            &expected_state,
+            &[(address, slot_one)],
+            &[],
+            &diff,
+        );
+        assert!(!prestate.accounts().contains_key(&address));
+        assert!(!prestate.storage().contains_key(&address));
     }
 
     #[test]
@@ -1055,6 +1097,47 @@ mod tests {
             canonical_state_root(&expected_state).unwrap(),
             "ethereum-state apply must match canonical post-state root"
         );
+    }
+
+    #[test]
+    fn apply_to_ethereum_state_deletes_account_emptied_by_diff() {
+        let address = addr(0xA2);
+        let slot_one = slot(1);
+        let empty_code_hash = StateAccount::default().code_hash;
+        let expected_state = CanonicalState::new();
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            Some(snapshot(100, 1, empty_code_hash)),
+            Some(snapshot(0, 0, empty_code_hash)),
+        );
+        storage_change(&mut block, address, slot_one, value(5), U256::ZERO);
+        let diff = roundtrip_batch_diff(&[block]);
+
+        let mut state = EthereumState {
+            state_trie: Default::default(),
+            storage_tries: Default::default(),
+        };
+        let mut pre_block = block_diff();
+        account_change(
+            &mut pre_block,
+            address,
+            None,
+            Some(snapshot(100, 1, empty_code_hash)),
+        );
+        storage_change(&mut pre_block, address, slot_one, U256::ZERO, value(5));
+        let pre_diff = roundtrip_batch_diff(&[pre_block]);
+        apply_batch_state_diff_to_ethereum_state(&mut state, &pre_diff).unwrap();
+
+        apply_batch_state_diff_to_ethereum_state(&mut state, &diff).unwrap();
+
+        assert_eq!(
+            state.state_root(),
+            canonical_state_root(&expected_state).unwrap()
+        );
+        assert!(state.storage_tries.is_empty());
     }
 
     #[test]
