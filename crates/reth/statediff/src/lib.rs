@@ -64,6 +64,7 @@ pub use batch::{AccountChange, AccountDiff, BatchBuilder, BatchStateDiff, Storag
 pub use block::{AccountSnapshot, BlockAccountChange, BlockStateChanges, BlockStorageDiff};
 pub use reconstruct::{
     apply_batch_state_diff_to_ethereum_state, ReconstructError, StateReconstructor,
+    StateReconstructorSeed,
 };
 #[cfg(feature = "serde")]
 pub use serde_impl::{AccountChangeSerde, AccountDiffSerde, BatchStateDiffSerde};
