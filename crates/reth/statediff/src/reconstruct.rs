@@ -201,7 +201,10 @@ pub fn apply_batch_state_diff_to_ethereum_state(
                     code_hash: snapshot.code_hash,
                 };
 
+                // Empty accounts are absent from the state trie (EIP-161).
                 if state_account.is_account_empty() {
+                    state.state_trie.delete(hashed_addr.as_slice())?;
+                    state.storage_tries.remove(&hashed_addr);
                     continue;
                 }
 
@@ -393,8 +396,10 @@ mod tests {
                             code_hash: snapshot.code_hash,
                         };
 
-                        // Skip empty accounts
+                        // Empty accounts are absent from the state trie (EIP-161).
                         if state_account.is_account_empty() {
+                            self.state_trie.delete(&acc_info_trie_path)?;
+                            self.storage_trie.remove(address);
                             continue;
                         }
 
@@ -1285,6 +1290,42 @@ mod tests {
             canonical_state_root(&expected_state).unwrap(),
             "ethereum-state apply must match canonical post-state root"
         );
+    }
+
+    #[test]
+    fn apply_to_ethereum_state_deletes_account_emptied_by_diff() {
+        let address = addr(0xA2);
+        let slot_one = slot(1);
+        let empty_code_hash = KECCAK_EMPTY;
+        let expected_state = CanonicalState::new();
+        let mut state = ethereum_state_from_genesis_accounts([(
+            address,
+            genesis_account(100, 1, None, BTreeMap::from([(slot_one, value(5))])),
+        )])
+        .unwrap();
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            Some(snapshot(100, 1, empty_code_hash)),
+            Some(snapshot(0, 0, empty_code_hash)),
+        );
+        storage_change(&mut block, address, slot_one, value(5), U256::ZERO);
+        let diff = roundtrip_batch_diff(&[block]);
+
+        apply_batch_state_diff_to_ethereum_state(&mut state, &diff).unwrap();
+
+        assert_eq!(
+            state.state_root(),
+            canonical_state_root(&expected_state).unwrap()
+        );
+        assert_eq!(state.get_account_snapshot(address).unwrap(), None);
+        assert_eq!(
+            state.get_storage_slot(address, slot_one).unwrap(),
+            U256::ZERO
+        );
+        assert!(state.storage_tries.is_empty());
     }
 
     #[test]
