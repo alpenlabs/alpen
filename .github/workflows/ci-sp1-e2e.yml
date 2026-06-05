@@ -32,6 +32,7 @@ jobs:
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
       short_tag: ${{ steps.check.outputs.short_tag }}
+      commit_sha: ${{ steps.check.outputs.commit_sha }}
     steps:
       - name: Check for new commits since last success
         id: check
@@ -40,38 +41,42 @@ jobs:
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
+          REPO="${{ github.repository }}"
+
           if [ -n "${INPUT_IMAGE_TAG}" ]; then
-            # Manual dispatch with explicit tag
+            # Manual tag: resolve the full commit SHA that produced the image.
             SHORT_TAG="${INPUT_IMAGE_TAG}"
             SHORT_TAG="${SHORT_TAG:0:7}"
-            echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
-            echo "Manual trigger with tag ${SHORT_TAG} — running"
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            BUILD_SHA=$(gh run list -R "${REPO}" \
+              --workflow ci-build.yml \
+              --status success \
+              --limit 100 \
+              --json headSha \
+              --jq ".[] | select(.headSha | startswith(\"${SHORT_TAG}\")) | .headSha" | head -n1)
+          else
+            # Scheduled/default run: use the latest successful main image build.
+            BUILD_SHA=$(gh run list -R "${REPO}" \
+              --workflow ci-build.yml \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json headSha \
+              --jq '.[0].headSha // ""')
+            SHORT_TAG="${BUILD_SHA:0:7}"
           fi
 
-          # Find the latest successful image build on main
-          REPO="${{ github.repository }}"
-          BUILD_SHA=$(gh run list -R "${REPO}" \
-            --workflow ci-build.yml \
-            --branch main \
-            --status success \
-            --limit 1 \
-            --json headSha \
-            --jq '.[0].headSha // ""')
-
           if [ -z "${BUILD_SHA}" ]; then
-            echo "::error::No successful image build found on main"
+            echo "::error::No successful ci-build found for ${SHORT_TAG:-main}"
             echo "should_run=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          SHORT_TAG="${BUILD_SHA:0:7}"
           echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
-          echo "Latest image build: ${SHORT_TAG}"
+          echo "commit_sha=${BUILD_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Selected image build: ${SHORT_TAG} (${BUILD_SHA})"
 
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
-            echo "Manual trigger — running with latest build ${SHORT_TAG}"
+            echo "Manual trigger — running"
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -107,6 +112,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
+          ref: ${{ needs.check-new-commits.outputs.commit_sha }}
           persist-credentials: false
 
       - name: Configure AWS credentials (OIDC)
