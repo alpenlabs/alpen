@@ -7,12 +7,14 @@ services:
       context: ..
       dockerfile: docker/strata-checkpoint-sync/Dockerfile
     image: strata-checkpoint-sync:latest
-    env_file:
-      - .env
     environment:
       CONFIG_PATH: /app/configs/config.checkpoint-sync.toml
       OL_PARAMS_PATH: /app/configs/generated/ol-params.json
       ASM_PARAMS_PATH: /app/configs/generated/asm-params.json
+      BITCOIND_RPC_URL: ${BITCOIND_RPC_URL:-http://bitcoind:38332}
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-bitcoin}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-bitcoin}
+      BITCOIN_NETWORK: ${BITCOIN_NETWORK:-signet}
       RUST_BACKTRACE: 1
     volumes:
       - ./configs/config.checkpoint-sync.toml:/app/configs/config.checkpoint-sync.toml:ro
