@@ -24,6 +24,11 @@ rpc_user = "rpcuser"
 rpc_password = "rpcpassword"
 network = "regtest"
 
+[btcio]
+# Depth, in L1 blocks, after which an L1 block is considered safe from reorgs.
+# Set to 0 to follow the L1 tip with no reorg buffer.
+l1_reorg_safe_depth = 4
+
 [btcio.reader]
 client_poll_dur_ms = 200
 

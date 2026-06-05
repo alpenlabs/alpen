@@ -13,7 +13,6 @@ use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::DbResult;
 use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
-use strata_params::RollupParams;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
@@ -30,8 +29,8 @@ struct StrataCheckpointSyncContext {
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     /// Status channel for publishing OL sync status updates.
     status_channel: Arc<StatusChannel>,
-    /// Rollup params, used for the L1 reorg-safe depth.
-    rollup_params: RollupParams,
+    /// L1 reorg-safe depth, after which an L1 block is considered safe from reorgs.
+    l1_reorg_safe_depth: u32,
 }
 
 impl StrataCheckpointSyncContext {
@@ -40,21 +39,21 @@ impl StrataCheckpointSyncContext {
         chain_worker: Arc<ChainWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
         status_channel: Arc<StatusChannel>,
-        rollup_params: RollupParams,
+        l1_reorg_safe_depth: u32,
     ) -> Self {
         Self {
             storage,
             chain_worker,
             csm_monitor,
             status_channel,
-            rollup_params,
+            l1_reorg_safe_depth,
         }
     }
 }
 
 impl CheckpointSyncCtx for StrataCheckpointSyncContext {
-    fn rollup_params(&self) -> &RollupParams {
-        &self.rollup_params
+    fn l1_reorg_safe_depth(&self) -> u32 {
+        self.l1_reorg_safe_depth
     }
 
     async fn fetch_l1_tip_height(&self) -> CheckpointSyncResult<Option<L1Height>> {
@@ -137,7 +136,7 @@ pub(crate) fn start(
         chain_worker_handle,
         csm_monitor,
         nodectx.status_channel().clone(),
-        nodectx.params().rollup().clone(),
+        nodectx.config().btcio.l1_reorg_safe_depth,
     ));
 
     nodectx.task_manager().handle().block_on(start_css(

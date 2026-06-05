@@ -2,7 +2,7 @@
 """Merge dynamic values from datatool-generated raw params into pre-committed templates.
 
 Templates contain static fields (operator keys, deposit_amount, etc.) with
-placeholders (__PLACEHOLDER__) for dynamic fields (VKs, genesis L1 view, etc.).
+placeholders (__PLACEHOLDER__) for dynamic fields (VKs, genesis L1 anchor, etc.).
 Raw params from datatool have the correct dynamic values but wrong static values
 (datatool defaults). This script takes the best of both.
 
@@ -28,14 +28,6 @@ def write_json(path: Path, data: dict) -> None:
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
-
-
-def merge_rollup_params(template: dict, raw: dict) -> dict:
-    template["genesis_l1_view"] = raw["genesis_l1_view"]
-    template["checkpoint_predicate"] = raw["checkpoint_predicate"]
-    template["evm_genesis_block_hash"] = raw["evm_genesis_block_hash"]
-    template["evm_genesis_block_state_root"] = raw["evm_genesis_block_state_root"]
-    return template
 
 
 def merge_ol_params(template: dict, raw: dict) -> dict:
@@ -70,7 +62,7 @@ def merge_asm_params(template: dict, raw: dict) -> dict:
 
 def check_no_placeholders(output_dir: Path) -> bool:
     ok = True
-    for name in ["rollup-params", "ol-params", "asm-params"]:
+    for name in ["ol-params", "asm-params"]:
         content = (output_dir / f"{name}.json").read_text()
         if "__" in content:
             print(f"ERROR: {name}.json still has placeholders", file=sys.stderr)
@@ -78,33 +70,10 @@ def check_no_placeholders(output_dir: Path) -> bool:
     return ok
 
 
-def cross_validate(rp: dict, ap: dict, olp: dict | None = None) -> bool:
-    """Verify that shared values between rollup-params, asm-params, and ol-params are consistent."""
+def cross_validate(ap: dict, olp: dict) -> bool:
+    """Verify that shared values between asm-params and ol-params are consistent."""
     ok = True
 
-    # --- Sequencer key ---
-    rp_seq_key = rp["cred_rule"]["schnorr_key"]
-    ap_checkpoint = None
-    for sp in ap["subprotocols"]:
-        if "Checkpoint" in sp:
-            ap_checkpoint = sp["Checkpoint"]
-            break
-    if ap_checkpoint is None:
-        print("ERROR: asm-params missing Checkpoint subprotocol", file=sys.stderr)
-        return False
-
-    # sequencer_predicate is "Bip340Schnorr:<hex>"
-    sp_parts = ap_checkpoint["sequencer_predicate"].split(":", 1)
-    if len(sp_parts) != 2 or sp_parts[1] != rp_seq_key:
-        print(
-            f"ERROR: sequencer key mismatch\n"
-            f"  rollup-params cred_rule.schnorr_key: {rp_seq_key}\n"
-            f"  asm-params sequencer_predicate:      {ap_checkpoint['sequencer_predicate']}",
-            file=sys.stderr,
-        )
-        ok = False
-
-    # --- Bridge section ---
     ap_bridge = None
     for sp in ap["subprotocols"]:
         if "Bridge" in sp:
@@ -114,50 +83,19 @@ def cross_validate(rp: dict, ap: dict, olp: dict | None = None) -> bool:
         print("ERROR: asm-params missing Bridge subprotocol", file=sys.stderr)
         return False
 
-    # Operator keys: rollup-params has x-only (32B), asm-params has compressed (33B with 02/03 prefix)
-    rp_ops = sorted(rp.get("operators", []))
-    ap_ops_xonly = sorted(op[2:] for op in ap_bridge["operators"])
-    if rp_ops != ap_ops_xonly:
+    # The OL withdrawal denomination must match the ASM bridge denomination.
+    ol_denom = olp.get("bridge_params", {}).get("denomination")
+    ap_denom = ap_bridge.get("denomination")
+    if ol_denom is not None and ap_denom is not None and ol_denom != ap_denom:
         print(
-            f"ERROR: operator key mismatch\n"
-            f"  rollup-params operators (x-only): {rp_ops}\n"
-            f"  asm-params operators (stripped):   {ap_ops_xonly}",
+            f"ERROR: denomination mismatch: "
+            f"ol-params bridge_params.denomination={ol_denom}, "
+            f"asm-params Bridge.denomination={ap_denom}",
             file=sys.stderr,
         )
         ok = False
 
-    # Scalar fields that must match across templates
-    checks = [
-        ("deposit_amount / denomination", rp.get("deposit_amount"), ap_bridge.get("denomination")),
-        ("recovery_delay", rp.get("recovery_delay"), ap_bridge.get("recovery_delay")),
-        ("dispatch_assignment_dur / assignment_duration", rp.get("dispatch_assignment_dur"), ap_bridge.get("assignment_duration")),
-    ]
-    for label, rp_val, ap_val in checks:
-        if rp_val != ap_val:
-            print(
-                f"ERROR: {label} mismatch: rollup-params={rp_val}, asm-params={ap_val}",
-                file=sys.stderr,
-            )
-            ok = False
-
-    # --- OL bridge_params ---
-    if olp is not None:
-        ol_bp = olp.get("bridge_params", {})
-        ol_denom = ol_bp.get("denomination")
-        if ol_denom is not None and ol_denom != rp.get("deposit_amount"):
-            print(
-                f"ERROR: ol-params bridge_params.denomination ({ol_denom}) "
-                f"!= rollup-params deposit_amount ({rp.get('deposit_amount')})",
-                file=sys.stderr,
-            )
-            ok = False
-
     return ok
-
-
-def extract_seq_pk(template_dir: Path) -> str:
-    rp = load_json(template_dir / "rollup-params.json")
-    return rp["cred_rule"]["schnorr_key"]
 
 
 def extract_operator_pks(template_dir: Path):
@@ -196,9 +134,6 @@ def main():
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        seq_pk = extract_seq_pk(template_dir)
-        print(f"  seq_pk: {seq_pk}")
-
         op_pks = extract_operator_pks(template_dir)
         (output_dir / "op-pks.txt").write_text("\n".join(op_pks) + "\n")
         print(f"  operators: {len(op_pks)} keys")
@@ -206,21 +141,12 @@ def main():
         safe_harbour = extract_safe_harbour(template_dir)
         (output_dir / "safe-harbour.txt").write_text(safe_harbour + "\n")
         print(f"  safe_harbour_address: {safe_harbour}")
-
-        (output_dir / "seq-pk.txt").write_text(seq_pk + "\n")
         return
 
     raw_dir = Path(args.raw_dir)
     template_dir = Path(args.template_dir)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    rp = merge_rollup_params(
-        load_json(template_dir / "rollup-params.json"),
-        load_json(raw_dir / "rollup-params-raw.json"),
-    )
-    write_json(output_dir / "rollup-params.json", rp)
-    print("  rollup-params.json: merged")
 
     olp = merge_ol_params(
         load_json(template_dir / "ol-params.json"),
@@ -239,7 +165,7 @@ def main():
     if not check_no_placeholders(output_dir):
         sys.exit(1)
 
-    if not cross_validate(rp, ap, olp):
+    if not cross_validate(ap, olp):
         sys.exit(1)
 
     print("\n  All checks passed.")

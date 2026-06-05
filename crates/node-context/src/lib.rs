@@ -5,7 +5,6 @@ use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
 use strata_config::{BlockAssemblyConfig, Config};
 use strata_ol_params::OLParams;
-use strata_params::Params;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::{TaskExecutor, TaskManager};
@@ -19,7 +18,6 @@ use tokio::runtime::Handle;
 pub struct NodeContext {
     executor: Arc<TaskExecutor>,
     config: Config,
-    params: Arc<Params>,
     blockasm_config: Option<Arc<BlockAssemblyConfig>>,
     asm_params: Arc<AsmParams>,
     ol_params: Arc<OLParams>,
@@ -37,7 +35,6 @@ impl NodeContext {
     pub fn new(
         handle: Handle,
         config: Config,
-        params: Arc<Params>,
         blockasm_config: Option<Arc<BlockAssemblyConfig>>,
         asm_params: Arc<AsmParams>,
         ol_params: Arc<OLParams>,
@@ -50,7 +47,6 @@ impl NodeContext {
         Self {
             executor: Arc::new(executor),
             config,
-            params,
             blockasm_config,
             asm_params,
             ol_params,
@@ -67,10 +63,6 @@ impl NodeContext {
 
     pub fn config(&self) -> &Config {
         &self.config
-    }
-
-    pub fn params(&self) -> &Arc<Params> {
-        &self.params
     }
 
     pub fn blockasm_config(&self) -> Option<&Arc<BlockAssemblyConfig>> {
@@ -106,7 +98,6 @@ impl NodeContext {
             self.task_manager,
             CommonContext {
                 executor: self.executor,
-                params: self.params,
                 blockasm_config: self.blockasm_config,
                 asm_params: self.asm_params,
                 ol_params: self.ol_params,
@@ -125,7 +116,6 @@ impl NodeContext {
 )]
 pub struct CommonContext {
     executor: Arc<TaskExecutor>,
-    params: Arc<Params>,
     blockasm_config: Option<Arc<BlockAssemblyConfig>>,
     asm_params: Arc<AsmParams>,
     ol_params: Arc<OLParams>,
@@ -137,10 +127,6 @@ pub struct CommonContext {
 impl CommonContext {
     pub fn executor(&self) -> &Arc<TaskExecutor> {
         &self.executor
-    }
-
-    pub fn params(&self) -> &Arc<Params> {
-        &self.params
     }
 
     pub fn blockasm_config(&self) -> Option<&Arc<BlockAssemblyConfig>> {

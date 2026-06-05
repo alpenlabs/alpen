@@ -17,7 +17,7 @@ from common.datatool import run_datatool
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATES_DIR = REPO_ROOT / ".github" / "params" / "templates"
-GENESIS_L1_VIEW = REPO_ROOT / ".github" / "fixtures" / "genesis-l1-view.json"
+L1_ANCHOR = REPO_ROOT / ".github" / "fixtures" / "l1-anchor.json"
 
 
 PLACEHOLDER_PREFIX = "__"
@@ -75,33 +75,15 @@ def collect_placeholder_keys(obj, prefix=""):
 
 
 def generate_raw_params(tmpdir):
-    """Generate all 3 params using local datatool with fixture L1 view."""
-    rollup_path = Path(tmpdir) / "rollup-params.json"
+    """Generate ol-params and asm-params using local datatool with fixture L1 anchor."""
     ol_path = Path(tmpdir) / "ol-params.json"
     asm_path = Path(tmpdir) / "asm-params.json"
-
-    dummy_seq_pk = "ab" * 32
-    run_datatool(
-        [
-            "genparams",
-            "--genesis-l1-view-file",
-            str(GENESIS_L1_VIEW),
-            "--name",
-            "ALPN",
-            "--seq-pk",
-            dummy_seq_pk,
-            "--checkpoint-predicate",
-            "bip340-schnorr-test",
-            "-o",
-            str(rollup_path),
-        ]
-    )
 
     run_datatool(
         [
             "gen-ol-params",
-            "--genesis-l1-view-file",
-            str(GENESIS_L1_VIEW),
+            "--l1-anchor-file",
+            str(L1_ANCHOR),
             "--alpen-predicate",
             "bip340-schnorr-test",
             "-o",
@@ -117,8 +99,8 @@ def generate_raw_params(tmpdir):
     run_datatool(
         [
             "gen-asm-params",
-            "--genesis-l1-view-file",
-            str(GENESIS_L1_VIEW),
+            "--l1-anchor-file",
+            str(L1_ANCHOR),
             "--ol-params",
             str(ol_path),
             "--checkpoint-predicate",
@@ -137,7 +119,6 @@ def generate_raw_params(tmpdir):
     assert asm_path.exists(), f"asm-params not generated at {asm_path}"
 
     return {
-        "rollup-params": rollup_path,
         "ol-params": ol_path,
         "asm-params": asm_path,
     }

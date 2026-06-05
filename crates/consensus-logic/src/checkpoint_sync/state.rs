@@ -2,8 +2,10 @@
 
 use std::sync::Arc;
 
-use strata_params::{is_l1_reorg_safe, l1_confirmations};
-use strata_primitives::EpochCommitment;
+use strata_primitives::{
+    l1::{compute_confirmation_depth, is_l1_reorg_safe},
+    EpochCommitment,
+};
 use strata_service::ServiceState;
 use strata_status::OLSyncStatus;
 use tracing::{debug, info};
@@ -167,7 +169,7 @@ pub(crate) async fn find_and_apply_unapplied_epochs(
         .fetch_l1_tip_height()
         .await?
         .ok_or(CheckpointSyncError::L1TipNotReady)?;
-    let reorg_safe_depth = ctx.rollup_params().l1_reorg_safe_depth;
+    let reorg_safe_depth = ctx.l1_reorg_safe_depth();
     debug!(
         %cur_finalized,
         l1_tip_height,
@@ -227,7 +229,7 @@ pub(crate) async fn scan_unapplied_epochs(
             .await?
             .ok_or(CheckpointSyncError::MissingL1Ref(cur_finalized))?;
 
-        let depth = l1_confirmations(l1_ref.block_height(), l1_tip_height);
+        let depth = compute_confirmation_depth(l1_ref.block_height(), l1_tip_height);
         debug!(
             ?reorg_safe_depth,
             ?depth,
@@ -239,7 +241,7 @@ pub(crate) async fn scan_unapplied_epochs(
         if !is_l1_reorg_safe(l1_ref.block_height(), l1_tip_height, reorg_safe_depth) {
             return Err(CheckpointSyncError::NotReorgSafe {
                 epoch: cur_finalized,
-                depth,
+                depth: depth.unwrap_or(0),
                 required: reorg_safe_depth,
             });
         }

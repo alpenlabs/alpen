@@ -26,7 +26,6 @@ prover = [
   "dep:strata-ol-state-support-types",
   "dep:strata-ol-stf",
   "dep:strata-paas",
-  "dep:strata-predicate",
   "dep:strata-proofimpl-checkpoint",
   "dep:zkaleido",
 ]
@@ -78,8 +77,7 @@ strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-ol-stf = { workspace = true, optional = true }
 strata-paas = { workspace = true, optional = true }
-strata-params.workspace = true
-strata-predicate = { workspace = true, optional = true }
+strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-checkpoint = { workspace = true, optional = true }
 strata-service.workspace = true
@@ -115,7 +113,6 @@ strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
-strata-predicate.workspace = true
 
 [lints]
 workspace = true

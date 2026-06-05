@@ -5,7 +5,7 @@ from typing import cast
 import flexitest
 
 from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
-from common.config.params import GenesisL1View
+from common.config.params import L1BlockCommitment
 from factories.bitcoin import BitcoinFactory
 from factories.signer import SignerFactory
 from factories.strata import StrataFactory
@@ -55,10 +55,10 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
             rpc_password=bitcoind.get_prop("rpc_password"),
         )
 
-        genesis_l1 = GenesisL1View.at_latest_block(btc_rpc)
+        genesis_l1_block = L1BlockCommitment.at_latest_block(btc_rpc)
         sequencer_node = strata_factory.create_node(
             bitcoind_config,
-            genesis_l1.blk.height,
+            genesis_l1_block.height,
             is_sequencer=True,
             epoch_sealing_config=epoch_sealing_config,
         )
@@ -77,7 +77,7 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
 
         fullnode_result = strata_factory.create_node(
             bitcoind_config,
-            genesis_l1.blk.height,
+            genesis_l1_block.height,
             is_sequencer=False,
         )
         fullnode = fullnode_result.service

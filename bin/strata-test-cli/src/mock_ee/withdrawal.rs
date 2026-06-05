@@ -274,7 +274,7 @@ mod tests {
     /// verifying key wired into functional-test params and the
     /// `bip340-schnorr-test` datatool variant. If this fails, either the
     /// SK bytes here drifted from `strata_proofimpl_alpen_acct` or the hex
-    /// pinned in `entry.py` / `RollupParams` defaults drifted.
+    /// pinned in `entry.py` / the ASM params defaults drifted.
     #[test]
     fn test_alpen_acct_test_signing_key_pubkey_matches_pinned_hex() {
         let sk = SigningKey::from_bytes(&ALPEN_ACCT_TEST_SK_BYTES).unwrap();

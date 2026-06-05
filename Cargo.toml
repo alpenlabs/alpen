@@ -57,7 +57,6 @@ members = [
   "crates/ol/stf",
   "crates/paas",
   "crates/prover-core",
-  "crates/params",
   "crates/bridge-params",
   "crates/primitives",
   "crates/proof-impl/evm-ee-stf",
@@ -195,7 +194,6 @@ strata-ol-stf = { path = "crates/ol/stf" }
 strata-open-rpc = { path = "crates/rpc/open-rpc" }
 strata-open-rpc-macros = { path = "crates/rpc/open-rpc-macros" }
 strata-paas = { path = "crates/paas" }
-strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-alpen-acct = { path = "crates/proof-impl/alpen-acct" }
 strata-proofimpl-alpen-chunk = { path = "crates/proof-impl/alpen-chunk" }

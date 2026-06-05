@@ -1,11 +1,36 @@
 use serde::{Deserialize, Serialize};
 
 /// Configuration for btcio tasks.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtcioConfig {
     pub reader: ReaderConfig,
     pub writer: WriterConfig,
     pub broadcaster: BroadcasterConfig,
+    /// Depth, in L1 blocks, after which an L1 block is considered safe from reorgs.
+    ///
+    /// Drives finality decisions in the CSM worker, the buried-manifest cutoff in OL
+    /// block assembly, and reorg handling in the btcio reader/broadcaster.
+    ///
+    /// A value of `0` is permitted and means the chain follows the L1 tip with no
+    /// reorg buffer (a checkpoint finalizes as soon as its L1 block reaches the tip);
+    /// larger values require that many confirmations before finalizing.
+    #[serde(default = "default_l1_reorg_safe_depth")]
+    pub l1_reorg_safe_depth: u32,
+}
+
+impl Default for BtcioConfig {
+    fn default() -> Self {
+        Self {
+            reader: ReaderConfig::default(),
+            writer: WriterConfig::default(),
+            broadcaster: BroadcasterConfig::default(),
+            l1_reorg_safe_depth: default_l1_reorg_safe_depth(),
+        }
+    }
+}
+
+const fn default_l1_reorg_safe_depth() -> u32 {
+    6
 }
 
 /// Configuration for btcio reader.

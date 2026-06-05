@@ -95,11 +95,11 @@ jobs:
             # Build datatool with sp1 features
             cargo build --bin strata-datatool -F "sp1-builder" --release
 
-            # Generate parameters and capture the output
-            PARAMS_OUTPUT=$(./target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1)
-
-            # Extract sp1 value using jq
-            SP1_VALUE=$(echo "$PARAMS_OUTPUT" | jq -r '.rollup_vk.sp1')
+            # The SP1 checkpoint VK is the checkpoint predicate, serialized as
+            # "Sp1Groth16:<hex>"; strip the type prefix to recover the raw VK hex
+            # the Helm values expect.
+            CHECKPOINT_PREDICATE=$(./target/release/strata-datatool gen-checkpoint-predicate)
+            SP1_VALUE="${CHECKPOINT_PREDICATE#*:}"
             echo "sp1_value=$SP1_VALUE" >> "$GITHUB_OUTPUT"
             echo "SP1 verification key: $SP1_VALUE"
 

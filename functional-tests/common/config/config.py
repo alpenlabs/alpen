@@ -60,6 +60,8 @@ class BroadcasterConfig:
 
 @dataclass
 class BtcioConfig:
+    # Declared first so the scalar serializes before the sub-tables in TOML.
+    l1_reorg_safe_depth: int = field(default=6)
     reader: ReaderConfig = field(default_factory=ReaderConfig)
     writer: WriterConfig = field(default_factory=WriterConfig)
     broadcaster: BroadcasterConfig = field(default_factory=BroadcasterConfig)

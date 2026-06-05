@@ -13,9 +13,9 @@
 #     strata-datatool:<sha> \
 #     -b signet \
 #     --bitcoin-rpc-url http://... --bitcoin-rpc-user ... --bitcoin-rpc-password ... \
-#     genparams --checkpoint-predicate sp1-groth16 \
-#       --elf-dir /out/elfs --genesis-l1-view-file /out/l1view.json \
-#       > /out/rollup-params.json
+#     gen-asm-params --checkpoint-predicate sp1-groth16 \
+#       --l1-anchor-file /out/l1-anchor.json --ol-params /out/ol-params.json \
+#       -o /out/asm-params.json
 
 FROM debian:13-slim
 

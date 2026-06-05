@@ -8,7 +8,6 @@ use strata_asm_params::{
     ConfirmationDepths, SubprotocolInstance,
 };
 use strata_btc_types::BitcoinAmount;
-use strata_btc_verification::L1Anchor;
 use strata_crypto::{
     keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig, EvenPublicKey,
 };
@@ -55,9 +54,9 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         "ALPN".parse().expect("default magic bytes should be valid")
     };
 
-    // Get genesis L1 view.
-    let genesis_l1_view = super::params::retrieve_genesis_l1_view(
-        cmd.genesis_l1_view_file.as_deref(),
+    // Get the genesis L1 anchor.
+    let anchor = super::genesis_info::retrieve_l1_anchor(
+        cmd.l1_anchor_file.as_deref(),
         cmd.genesis_l1_height,
         ctx,
     )?;
@@ -116,11 +115,11 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let ol_params: OLParams = serde_json::from_str(&ol_params_str)
         .map_err(|e| anyhow::anyhow!("failed to parse OL params: {e}"))?;
 
-    if ol_params.last_l1_block != genesis_l1_view.blk {
+    if ol_params.last_l1_block != anchor.block {
         anyhow::bail!(
             "OL params and ASM params have different genesis L1 block: OL={:?}, ASM={:?}",
             ol_params.last_l1_block,
-            genesis_l1_view.blk
+            anchor.block
         );
     }
     let genesis_artifacts = build_genesis_artifacts(&ol_params)
@@ -130,7 +129,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     // Build checkpoint config.
     let sequencer_predicate = resolve_sequencer_predicate(cmd.seq_pk.as_deref())?;
     let checkpoint_predicate = resolve_checkpoint_predicate(cmd.checkpoint_predicate)?;
-    let genesis_l1_height = genesis_l1_view.blk.height();
+    let genesis_l1_height = anchor.block.height();
 
     let checkpoint = CheckpointInitConfig {
         sequencer_predicate,
@@ -161,12 +160,6 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     };
 
     // Assemble ASM params.
-    let anchor = L1Anchor {
-        block: genesis_l1_view.blk,
-        next_target: genesis_l1_view.next_target,
-        epoch_start_timestamp: genesis_l1_view.epoch_start_timestamp,
-        network: ctx.bitcoin_network,
-    };
     let asm_params = AsmParams {
         magic,
         anchor,

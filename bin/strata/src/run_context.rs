@@ -49,10 +49,6 @@ impl RunContext {
         self.common.asm_params()
     }
 
-    pub(crate) fn params(&self) -> &Arc<strata_params::Params> {
-        self.common.params()
-    }
-
     #[cfg(feature = "prover")]
     pub(crate) fn ol_params(&self) -> &Arc<strata_ol_params::OLParams> {
         self.common.ol_params()

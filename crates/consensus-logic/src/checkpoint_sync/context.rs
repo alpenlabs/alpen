@@ -7,7 +7,6 @@ use strata_csm_types::CheckpointL1Ref;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::DbResult;
 use strata_identifiers::Epoch;
-use strata_params::RollupParams;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
 use strata_status::OLSyncStatus;
 
@@ -18,8 +17,9 @@ use crate::checkpoint_sync::errors::CheckpointSyncResult;
 /// The concrete implementation is assembled in the binary, keeping this module
 /// free of any dependency on `NodeContext`.
 pub trait CheckpointSyncCtx: Send + Sync + 'static {
-    /// Returns the rollup params.
-    fn rollup_params(&self) -> &RollupParams;
+    /// Returns the L1 reorg-safe depth, the number of confirmations after which
+    /// an L1 block is considered safe from reorgs.
+    fn l1_reorg_safe_depth(&self) -> u32;
 
     /// Fetches the current L1 chain tip height, if any. Returns `None` if L1 info is not
     /// available.

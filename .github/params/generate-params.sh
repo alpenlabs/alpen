@@ -45,7 +45,6 @@ echo "=== Reading keys from templates ==="
 python3 "${SCRIPT_DIR}/params-helper.py" extract-keys \
     --template-dir "${TEMPLATE_DIR}" \
     --output-dir "${WORK_DIR}"
-SEQ_PK=$(tr -d '[:space:]' < "${WORK_DIR}/seq-pk.txt")
 SAFE_HARBOUR=$(tr -d '[:space:]' < "${WORK_DIR}/safe-harbour.txt")
 
 echo ""
@@ -67,15 +66,6 @@ run_datatool() {
 }
 
 run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
-    genparams \
-    -s "${SEQ_PK}" -B /out/op-pks.txt \
-    --checkpoint-predicate sp1-groth16 \
-    --chain-config /app/chain.json \
-    --genesis-l1-height "${GENESIS_L1_HEIGHT}" \
-    -o /out/rollup-params-raw.json
-echo "  rollup-params-raw.json generated"
-
-run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
     gen-ol-params \
     --alpen-predicate sp1-groth16 \
     --alpen-chain-config /app/chain.json \
@@ -83,9 +73,11 @@ run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
     -o /out/ol-params-raw.json
 echo "  ol-params-raw.json generated"
 
+# The ASM checkpoint sequencer_predicate is static (from the template); the raw
+# generation only needs operators + safe-harbour, so no -s/sequencer key here.
 run_datatool -- \
     gen-asm-params \
-    -s "${SEQ_PK}" -B /out/op-pks.txt \
+    -B /out/op-pks.txt \
     --checkpoint-predicate sp1-groth16 \
     --ol-params /out/ol-params-raw.json \
     --genesis-l1-height "${GENESIS_L1_HEIGHT}" \
@@ -94,7 +86,7 @@ run_datatool -- \
 echo "  asm-params-raw.json generated"
 
 # Verify raw files were actually produced
-for f in rollup-params-raw.json ol-params-raw.json asm-params-raw.json; do
+for f in ol-params-raw.json asm-params-raw.json; do
     if [ ! -s "${WORK_DIR}/${f}" ]; then
         echo "ERROR: datatool did not produce ${f} (check BTC RPC connectivity)" >&2
         exit 1

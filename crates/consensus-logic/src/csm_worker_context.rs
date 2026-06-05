@@ -5,6 +5,7 @@ use std::sync::Arc;
 use bitcoin::Block;
 use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_common::AuxData;
+use strata_asm_params::AsmParams;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
@@ -12,7 +13,6 @@ use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_csm_worker::CsmWorkerContext;
 use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;
-use strata_params::Params;
 use strata_primitives::{
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
@@ -31,7 +31,8 @@ use tokio::runtime::Handle;
 pub struct CsmWorkerContextImpl {
     handle: Handle,
     bitcoin_client: Arc<Client>,
-    params: Arc<Params>,
+    asm_params: Arc<AsmParams>,
+    l1_reorg_safe_depth: u32,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
 }
@@ -40,14 +41,16 @@ impl CsmWorkerContextImpl {
     pub fn new(
         handle: Handle,
         bitcoin_client: Arc<Client>,
-        params: Arc<Params>,
+        asm_params: Arc<AsmParams>,
+        l1_reorg_safe_depth: u32,
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
     ) -> Self {
         Self {
             handle,
             bitcoin_client,
-            params,
+            asm_params,
+            l1_reorg_safe_depth,
             storage,
             status_channel,
         }
@@ -95,11 +98,11 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
     }
 
     fn l1_reorg_safe_depth(&self) -> u32 {
-        self.params.rollup.l1_reorg_safe_depth
+        self.l1_reorg_safe_depth
     }
 
     fn magic_bytes(&self) -> MagicBytes {
-        self.params.rollup.magic_bytes
+        self.asm_params.magic
     }
 
     fn get_asm_state(&self, block: &L1BlockCommitment) -> anyhow::Result<AsmState> {
@@ -132,7 +135,7 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
     }
 
     fn genesis_l1_block(&self) -> L1BlockCommitment {
-        self.params.rollup.genesis_l1_view.blk
+        self.asm_params.anchor.block
     }
 
     fn get_last_checkpoint_l1_ref_epoch(&self) -> anyhow::Result<Option<EpochCommitment>> {

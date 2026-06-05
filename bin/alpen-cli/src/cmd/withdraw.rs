@@ -56,21 +56,17 @@ pub async fn withdraw(
                 "Invalid signet address: '{a}'. Must be a valid Bitcoin address."
             ))?;
             let checked = unchecked
-                .require_network(settings.params.network)
+                .require_network(settings.network)
                 .user_error(format!(
                     "Provided address '{a}' is not valid for network '{}'",
-                    settings.params.network
+                    settings.network
                 ))?;
             Ok(checked)
         })
         .transpose()?;
 
-    let mut l1w = SignetWallet::new(
-        &seed,
-        settings.params.network,
-        settings.signet_backend.clone(),
-    )
-    .internal_error("Failed to load signet wallet")?;
+    let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
+        .internal_error("Failed to load signet wallet")?;
     l1w.sync()
         .await
         .internal_error("Failed to sync signet wallet")?;

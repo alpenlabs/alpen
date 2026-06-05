@@ -13,7 +13,6 @@ use strata_asm_worker::{AsmState as WorkerAsmState, AsmWorkerHandle, AsmWorkerSt
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_node_context::NodeContext;
 use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
-use strata_params::{Params, RollupParams};
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_state::asm_state::AsmState as StorageAsmState;
@@ -30,7 +29,8 @@ pub fn spawn_csm_listener_with_ctx(
 ) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>> {
     spawn_csm_listener(
         nodectx.executor(),
-        nodectx.params().clone(),
+        nodectx.asm_params().clone(),
+        nodectx.config().btcio.l1_reorg_safe_depth,
         nodectx.storage().clone(),
         nodectx.status_channel().clone(),
         asm_monitor,
@@ -40,7 +40,8 @@ pub fn spawn_csm_listener_with_ctx(
 
 fn spawn_csm_listener(
     executor: &TaskExecutor,
-    params: Arc<Params>,
+    asm_params: Arc<AsmParams>,
+    l1_reorg_safe_depth: u32,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     asm_monitor: &ServiceMonitor<AsmWorkerStatus>,
@@ -50,7 +51,8 @@ fn spawn_csm_listener(
     let ctx = CsmWorkerContextImpl::new(
         executor.handle().clone(),
         bitcoin_client,
-        params,
+        asm_params,
+        l1_reorg_safe_depth,
         storage.clone(),
         status_channel,
     );
@@ -106,7 +108,6 @@ pub fn spawn_asm_worker_with_ctx(nodectx: &NodeContext) -> anyhow::Result<AsmWor
         nodectx.executor(),
         nodectx.executor().handle().clone(),
         nodectx.storage().clone(),
-        nodectx.params().rollup.clone().into(),
         nodectx.asm_params().clone(),
         nodectx.bitcoin_client().clone(),
     )
@@ -116,7 +117,6 @@ pub fn spawn_asm_worker(
     executor: &TaskExecutor,
     handle: Handle,
     storage: Arc<NodeStorage>,
-    _rollup_params: Arc<RollupParams>,
     asm_params: Arc<AsmParams>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<AsmWorkerHandle> {

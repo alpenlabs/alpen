@@ -1,8 +1,8 @@
-# Generates full params (rollup-params, ol-params, asm-params) using the
-# prebuilt datatool image from the specified commit. Static values (operator
-# keys, deposit amounts, etc.) come from pre-committed templates per
-# environment; dynamic values (VKs, genesis L1 view, genesis_ol_blkid) are
-# filled in by datatool.
+# Generates deployment params (ol-params, asm-params) using the prebuilt
+# datatool image from the specified commit. Static values (operator keys,
+# denomination, etc.) come from pre-committed templates per environment;
+# dynamic values (VKs, genesis L1 anchor, genesis_ol_blkid) are filled in by
+# datatool.
 #
 # Ref: STR-3635
 
@@ -88,12 +88,6 @@ jobs:
           BTC_RPC_USER: ${{ secrets.PARAMS_BTC_RPC_USER }}
           BTC_RPC_PASSWORD: ${{ secrets.PARAMS_BTC_RPC_PASSWORD }}
         run: .github/params/generate-params.sh
-
-      - name: rollup-params.json
-        if: always()
-        env:
-          DEPLOY_ENV: ${{ inputs.env }}
-        run: python3 -m json.tool ".github/params/out/${DEPLOY_ENV}/rollup-params.json" 2>/dev/null || echo "Not generated"
 
       - name: ol-params.json
         if: always()

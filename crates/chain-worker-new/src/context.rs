@@ -27,7 +27,6 @@ use strata_ol_chain_types_new::{
 };
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLAccountState, OLState, WriteBatch};
-use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
@@ -77,9 +76,6 @@ pub struct ChainWorkerContextImpl {
     /// Channel for emitting epoch summary events.
     epoch_summary_tx: watch::Sender<Option<EpochCommitment>>,
 
-    /// Rollup params
-    params: Arc<Params>,
-
     /// OL genesis params. Source of truth for the genesis L1 height used to
     /// prefill the L1 block refs MMR mirror (matches the in-state MMR which is
     /// seeded from `OLParams.last_l1_block.height()` at OL genesis).
@@ -105,7 +101,6 @@ impl ChainWorkerContextImpl {
             mmr_index_mgr: nodectx.storage().mmr_index().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
-            params: nodectx.params().clone(),
             ol_params: nodectx.ol_params().clone(),
             bridge_params: *nodectx.ol_params().bridge_params(),
             handle: nodectx.executor().handle().clone(),
@@ -118,10 +113,6 @@ impl ChainWorkerContextImpl {
 
     pub fn status_channel(&self) -> &StatusChannel {
         &self.status_channel
-    }
-
-    pub fn params(&self) -> &Params {
-        &self.params
     }
 
     pub fn bridge_params(&self) -> BridgeParams {

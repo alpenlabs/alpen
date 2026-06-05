@@ -553,6 +553,7 @@ dependencies = [
  "reth-primitives",
  "revm",
  "revm-primitives",
+ "strata-bridge-params",
  "strata-crypto",
  "strata-identifiers",
  "strata-ol-bridge-types",
@@ -4956,6 +4957,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-bridge-params"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "ssz",
+ "ssz_derive",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-btc-types"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc23#f93a3b7c4f2381dca87354aa59ebadbc4bc40755"
@@ -5124,7 +5135,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc21#bb060d613880d8d4c8decd0e7544acb54e4d5a25"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc23#f93a3b7c4f2381dca87354aa59ebadbc4bc40755"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.18",
@@ -5246,11 +5257,13 @@ dependencies = [
 name = "strata-proofimpl-alpen-chunk"
 version = "0.1.0"
 dependencies = [
+ "alpen-reth-evm",
  "k256",
  "reth-chainspec",
  "rkyv",
  "rsp-primitives",
  "ssz",
+ "strata-bridge-params",
  "strata-ee-chain-types",
  "strata-ee-chunk-runtime",
  "strata-evm-ee",

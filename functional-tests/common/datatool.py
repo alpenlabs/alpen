@@ -88,9 +88,10 @@ def p2tr_bosd_from_compressed_pubkey(pubkey: str) -> str:
 
 
 @dataclass
-class RollupParamsArtifacts:
-    params_path: Path
-    sequencer_key_path: Path | None
+class SequencerArtifacts:
+    """Sequencer key material and operator pubkeys consumed when building ASM params."""
+
+    sequencer_key_path: Path
     sequencer_pubkey: str | None
     operator_keys: list[str]
 
@@ -112,80 +113,29 @@ def write_sequencer_runtime_config(
     return config_path
 
 
-def generate_rollup_params_unchecked(
+def generate_sequencer_artifacts(
     datadir: Path,
-    bconfig: BitcoindConfig,
-    genesis_l1_height: int,
+    use_unchecked_cred_rule: bool,
     seq_fname: str = "sequencer_root_key",
-) -> RollupParamsArtifacts:
-    """Generates rollup params with ``CredRule::Unchecked``.
+) -> SequencerArtifacts:
+    """Ensures the sequencer key and operator pubkeys used to build ASM params.
 
-    A sequencer key is generated for the signer to load (so it can fulfill
-    block signing duties), but the key is NOT embedded in the rollup params,
-    keeping the cred rule as ``Unchecked``.  ``SignRevealTx`` duties are
-    handled in-process and never reach the signer.
+    A sequencer key is always generated so the signer can fulfill block-signing
+    duties. When ``use_unchecked_cred_rule`` is True, the sequencer pubkey is
+    NOT embedded in the ASM checkpoint sequencer predicate (it stays
+    ``AlwaysAccept``); otherwise the derived pubkey is returned so the ASM
+    checkpoint predicate requires that sequencer's signature.
     """
     sequencer_key_path = datadir / seq_fname
     ensure_priv_key(sequencer_key_path)
-    operator_pubkeys = get_operator_pubkeys(datadir, "bridge-operator_keys")
-    params_path = datadir / "rollup-params.json"
-
-    args = [
-        "genparams",
-        "--checkpoint-predicate",
-        "bip340-schnorr-test",
-        "--name",
-        "ALPN",
-        "--genesis-l1-height",
-        str(genesis_l1_height),
-        "-o",
-        str(params_path),
-    ]
-    for pk in operator_pubkeys:
-        args.extend(["--op-pk", pk])
-
-    run_datatool(args, bconfig)
-    return RollupParamsArtifacts(
-        params_path=params_path,
-        sequencer_key_path=sequencer_key_path,
-        sequencer_pubkey=None,
-        operator_keys=operator_pubkeys,
+    sequencer_pubkey = (
+        None if use_unchecked_cred_rule else generate_sequencer_pubkey(sequencer_key_path)
     )
-
-
-def generate_rollup_params(
-    datadir: Path,
-    bconfig: BitcoindConfig,
-    genesis_l1_height: int,
-    seq_fname="sequencer_root_key",
-) -> RollupParamsArtifacts:
-    # Generate sequencer keys
-    sequencer_key_path = datadir / seq_fname
-    ensure_priv_key(sequencer_key_path)
-    sequencer_pubkey = generate_sequencer_pubkey(sequencer_key_path)
     operator_pubkeys = get_operator_pubkeys(datadir, "bridge-operator_keys")
-
-    params_path = datadir / "rollup-params.json"
-
-    args = [
-        "genparams",
-        "--checkpoint-predicate",
-        "bip340-schnorr-test",
-        "--name",
-        "ALPN",
-        "--genesis-l1-height",
-        str(genesis_l1_height),
-        "--seq-pk",
-        sequencer_pubkey,
-        "-o",
-        str(params_path),
-    ]
-    for pk in operator_pubkeys:
-        args.extend(["--op-pk", pk])
-
-    run_datatool(args, bconfig)
-    return RollupParamsArtifacts(
-        params_path, sequencer_key_path, sequencer_pubkey, operator_pubkeys
+    return SequencerArtifacts(
+        sequencer_key_path=sequencer_key_path,
+        sequencer_pubkey=sequencer_pubkey,
+        operator_keys=operator_pubkeys,
     )
 
 

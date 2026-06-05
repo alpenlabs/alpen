@@ -35,6 +35,8 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
+#[cfg(feature = "sequencer")]
+use crate::helpers::sequencer_schnorr_key;
 use crate::run_context::RunContext;
 #[cfg(feature = "sequencer")]
 use crate::sequencer::OLSeqRpcServer;
@@ -150,7 +152,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
             .fcm_handle()
             .expect("sequencer node must have an FCM sync handle")
             .clone();
-        let sequencer_pubkey = runctx.params().rollup.cred_rule.schnorr_key().copied();
+        let sequencer_pubkey = sequencer_schnorr_key(runctx.asm_params());
         SeqRpcDeps::new(
             handles.envelope_handle().clone(),
             handles.blockasm_handle().clone(),

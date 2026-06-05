@@ -4,8 +4,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
-use strata_params::is_l1_reorg_safe;
-use strata_primitives::prelude::*;
+use strata_primitives::{l1::is_l1_reorg_safe, prelude::*};
 use strata_service::ServiceState;
 
 use crate::{constants, context::CsmWorkerContext};
@@ -229,12 +228,12 @@ impl<C: CsmWorkerContext + 'static> ServiceState for CsmWorkerState<C> {
 mod tests {
     use std::sync::Arc;
 
+    use strata_asm_params::AsmParams;
     use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
     use strata_checkpoint_types::EpochSummary;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, L1BlockId, RBuf32};
-    use strata_params::Params;
     use strata_primitives::prelude::*;
     use strata_status::StatusChannel;
     use strata_storage::create_node_storage;
@@ -243,12 +242,12 @@ mod tests {
     use super::CsmWorkerState;
     use crate::test_utils::StubCtx;
 
-    fn create_test_params() -> Arc<Params> {
-        Arc::new(strata_test_utils_l2::gen_params())
+    fn create_test_params() -> Arc<AsmParams> {
+        Arc::new(strata_test_utils_l2::gen_asm_params())
     }
 
     fn create_test_storage_and_status(
-        params: Arc<Params>,
+        params: Arc<AsmParams>,
     ) -> (Arc<strata_storage::NodeStorage>, Arc<StatusChannel>) {
         let db = get_test_sled_backend();
         let pool = threadpool::ThreadPool::new(4);
@@ -266,7 +265,7 @@ mod tests {
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),
-            params.rollup.genesis_l1_view.blk,
+            params.anchor.block,
             arbgen.generate(),
             None,
             None,
@@ -335,8 +334,8 @@ mod tests {
             storage.clone(),
             status_channel,
             4,
-            params.rollup.magic_bytes,
-            params.rollup.genesis_l1_view.blk,
+            params.magic,
+            params.anchor.block,
         );
         let state = CsmWorkerState::new(ctx).expect("state init");
 
@@ -436,8 +435,8 @@ mod tests {
             storage.clone(),
             status_channel,
             4,
-            params.rollup.magic_bytes,
-            params.rollup.genesis_l1_view.blk,
+            params.magic,
+            params.anchor.block,
         );
         let state = CsmWorkerState::new(ctx).expect("state init");
 

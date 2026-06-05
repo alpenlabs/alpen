@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import toml
+
 from common.services.bitcoin import BitcoinService
 from common.wait import wait_until_with_value
 
@@ -28,7 +30,7 @@ def _inject_l1_reorg_safe_depth(datadir: str, args: list[str]) -> list[str]:
     if "--l1-reorg-safe-depth" in args:
         return args
 
-    l1_reorg_safe_depth = load_rollup_l1_reorg_safe_depth(datadir)
+    l1_reorg_safe_depth = load_l1_reorg_safe_depth(datadir)
     return [*args, "--l1-reorg-safe-depth", str(l1_reorg_safe_depth)]
 
 
@@ -126,23 +128,25 @@ def run_dbtool_ee_json(ee_datadir: str, *args: str, timeout: int = 60) -> dict[s
     return extract_json_from_output(stdout)
 
 
-def _load_rollup_params(datadir: str) -> dict[str, Any]:
-    """Load rollup params from rollup-params.json in the node datadir."""
-    rollup_path = Path(datadir) / "rollup-params.json"
-    with open(rollup_path) as f:
+def _load_asm_params(datadir: str) -> dict[str, Any]:
+    """Load ASM params from asm-params.json in the node datadir."""
+    asm_path = Path(datadir) / "asm-params.json"
+    with open(asm_path) as f:
         return json.load(f)
 
 
-def load_rollup_genesis_height(datadir: str) -> int:
-    """Load genesis L1 height from rollup-params.json in the node datadir."""
-    params = _load_rollup_params(datadir)
-    return int(params["genesis_l1_view"]["blk"]["height"])
+def load_genesis_height(datadir: str) -> int:
+    """Load genesis L1 height from the ASM anchor in asm-params.json."""
+    params = _load_asm_params(datadir)
+    return int(params["anchor"]["block"]["height"])
 
 
-def load_rollup_l1_reorg_safe_depth(datadir: str) -> int:
-    """Load l1_reorg_safe_depth from rollup-params.json in the node datadir."""
-    params = _load_rollup_params(datadir)
-    return int(params["l1_reorg_safe_depth"])
+def load_l1_reorg_safe_depth(datadir: str) -> int:
+    """Load l1_reorg_safe_depth from the node's config.toml [btcio] section."""
+    config_path = Path(datadir) / "config.toml"
+    with open(config_path) as f:
+        config = toml.load(f)
+    return int(config["btcio"]["l1_reorg_safe_depth"])
 
 
 def ol_genesis_slot() -> int:
@@ -511,7 +515,7 @@ def setup_revert_ol_state_test_fullnode(
 
 def get_latest_checkpoint(datadir: str) -> dict[str, Any]:
     """Fetch latest checkpoint."""
-    genesis_height = load_rollup_genesis_height(datadir)
+    genesis_height = load_genesis_height(datadir)
     checkpoints_summary = run_dbtool_json(datadir, "get-checkpoints-summary", str(genesis_height))
     checkpoints_found = int(checkpoints_summary["checkpoints_found_in_db"])
     expected_checkpoints = checkpoints_summary.get("expected_checkpoints_count")

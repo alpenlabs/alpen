@@ -133,7 +133,7 @@ mod tests {
         Arc<strata_storage::NodeStorage>,
         L1BlockCommitment,
     ) {
-        let params = strata_test_utils_l2::gen_params();
+        let params = strata_test_utils_l2::gen_asm_params();
         let db = get_test_sled_backend();
         let pool = threadpool::ThreadPool::new(4);
         let storage = Arc::new(create_node_storage(db, pool).expect("create storage"));
@@ -153,7 +153,7 @@ mod tests {
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),
-            params.rollup.genesis_l1_view.blk,
+            params.anchor.block,
             arbgen.generate(),
             None,
             None,
@@ -165,8 +165,8 @@ mod tests {
             storage.clone(),
             status_channel,
             finality_depth,
-            params.rollup.magic_bytes,
-            params.rollup.genesis_l1_view.blk,
+            params.magic,
+            params.anchor.block,
         )
         .with_l1_fetch_failure();
 
