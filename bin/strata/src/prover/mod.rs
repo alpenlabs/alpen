@@ -197,7 +197,21 @@ fn spawn_checkpoint_runner(
     executor.spawn_critical_async("checkpoint-proof-runner", async move {
         // Resume after the last checkpointed epoch, or start from epoch 1.
         let mut next_epoch_to_prove: Epoch = last_payload_epoch.map_or(1, |e| e + 1);
-        let mut latest_epoch = epoch_rx.borrow().map_or(0, |commitment| commitment.epoch());
+        // The epoch-summary watch channel resets to `None` on restart, so fall
+        // back to the last summarized epoch from storage. Otherwise the catch-up
+        // loop below would idle at 0 and never re-prove epochs whose proofs were
+        // cleared by startup reconciliation until a new terminal epoch arrives.
+        let mut latest_epoch = epoch_rx
+            .borrow()
+            .map(|commitment| commitment.epoch())
+            .or_else(|| {
+                storage
+                    .ol_checkpoint()
+                    .get_last_summarized_epoch_blocking()
+                    .ok()
+                    .flatten()
+            })
+            .unwrap_or(0);
         let mut retry_tick = time::interval(PROVER_RETRY_INTERVAL);
         retry_tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
