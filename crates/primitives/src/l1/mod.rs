@@ -2,18 +2,21 @@
 pub use strata_btc_types::{payload, *};
 pub use strata_identifiers::{L1BlockCommitment, L1BlockId, L1Height};
 
-/// Number of confirmations an L1 block has under `current_tip`, counting the
-/// block itself as one confirmation.
+/// Computes how many confirmations an L1 block at `observed_height` has under
+/// `current_tip`, counting the block itself as one confirmation.
 ///
-/// A block at the tip has 1 confirmation; one block below tip has 2; etc.
-/// Observation heights above the tip saturate to 0.
-pub fn l1_confirmations(observed_height: L1Height, current_tip: L1Height) -> u32 {
+/// A block at the tip has 1 confirmation; one block below the tip has 2; etc.
+/// Returns [`None`] when `observed_height` is above `current_tip`, since such a
+/// block is not actually confirmed under that tip.
+pub fn compute_confirmation_depth(observed_height: L1Height, current_tip: L1Height) -> Option<u32> {
     if observed_height > current_tip {
-        return 0;
+        return None;
     }
-    current_tip
-        .saturating_sub(observed_height)
-        .saturating_add(1)
+    Some(
+        current_tip
+            .saturating_sub(observed_height)
+            .saturating_add(1),
+    )
 }
 
 /// A single computation logic for whether an L1 block at `observed_height` is buried deep enough
@@ -23,7 +26,8 @@ pub fn is_l1_reorg_safe(
     current_tip: L1Height,
     l1_reorg_safe_depth: u32,
 ) -> bool {
-    l1_confirmations(observed_height, current_tip) >= l1_reorg_safe_depth.max(1)
+    compute_confirmation_depth(observed_height, current_tip)
+        .is_some_and(|depth| depth >= l1_reorg_safe_depth.max(1))
 }
 
 #[cfg(test)]
@@ -32,17 +36,17 @@ mod tests {
 
     #[test]
     fn confirmations_at_tip_is_one() {
-        assert_eq!(l1_confirmations(100, 100), 1);
+        assert_eq!(compute_confirmation_depth(100, 100), Some(1));
     }
 
     #[test]
     fn confirmations_grows_with_burial() {
-        assert_eq!(l1_confirmations(98, 100), 3);
+        assert_eq!(compute_confirmation_depth(98, 100), Some(3));
     }
 
     #[test]
-    fn confirmations_above_tip_is_zero() {
-        assert_eq!(l1_confirmations(101, 100), 0);
+    fn confirmations_above_tip_is_none() {
+        assert_eq!(compute_confirmation_depth(101, 100), None);
     }
 
     #[test]
