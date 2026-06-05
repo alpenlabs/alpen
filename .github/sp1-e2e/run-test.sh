@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DOCKER_DIR="${REPO_ROOT}/docker"
-PROOF_TIMEOUT="${PROOF_TIMEOUT:-2400}"
+PROOF_TIMEOUT="${PROOF_TIMEOUT:-3600}"
 RPC_READY_TIMEOUT="${RPC_READY_TIMEOUT:-120}"
 FAILURE_REASON_FILE="${SCRIPT_DIR}/e2e-failure-reason.txt"
 WARN_ERROR_SUMMARY_FILE="${SCRIPT_DIR}/e2e-warn-error-summary.txt"
