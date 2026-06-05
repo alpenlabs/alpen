@@ -22,6 +22,10 @@ on:
         description: "Alpen commit short SHA (must have a successful CI — Build and Push Images run)"
         required: true
         type: string
+      checkout_ref:
+        description: "Repo ref to checkout (default: image commit SHA)"
+        required: false
+        type: string
       genesis_l1_height:
         description: "Genesis L1 block height"
         required: true
@@ -46,12 +50,52 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.env }}
     permissions:
+      actions: read
       contents: read
       id-token: write
     steps:
+      - name: Resolve image commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_COMMIT: ${{ inputs.commit }}
+          INPUT_CHECKOUT_REF: ${{ inputs.checkout_ref }}
+        run: |
+          set_output() {
+            echo "$1=$2" >> "$GITHUB_OUTPUT"
+          }
+
+          SHORT_TAG="${INPUT_COMMIT:0:7}"
+          BUILD_SHA=$(gh run list -R "${{ github.repository }}" \
+            --workflow ci-build.yml \
+            --status success \
+            --limit 100 \
+            --json headSha \
+            --jq ".[] | select(.headSha | startswith(\"${SHORT_TAG}\")) | .headSha" | head -n1)
+
+          if [ -z "${BUILD_SHA}" ]; then
+            echo "::error::No successful ci-build found for ${SHORT_TAG}"
+            exit 1
+          fi
+
+          if [ -n "${INPUT_CHECKOUT_REF}" ]; then
+            # Manual override: use caller-provided scripts/templates.
+            CHECKOUT_REF="${INPUT_CHECKOUT_REF}"
+          else
+            # Default path: checkout the same commit that produced the image.
+            CHECKOUT_REF="${BUILD_SHA}"
+          fi
+
+          set_output short_tag "${SHORT_TAG}"
+          set_output commit_sha "${BUILD_SHA}"
+          set_output checkout_ref "${CHECKOUT_REF}"
+          echo "Selected image build: ${SHORT_TAG} (${BUILD_SHA})"
+          echo "Checkout ref: ${CHECKOUT_REF}"
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
+          ref: ${{ steps.resolve.outputs.checkout_ref }}
           persist-credentials: false
 
       - name: Configure AWS credentials
@@ -68,7 +112,7 @@ jobs:
 
       - name: Pull datatool image
         env:
-          COMMIT: ${{ inputs.commit }}
+          COMMIT: ${{ steps.resolve.outputs.short_tag }}
         run: docker pull "${DATATOOL_REPO}:${COMMIT}"
 
       - name: Verify chainspec
@@ -81,7 +125,7 @@ jobs:
       - name: Generate params
         env:
           DEPLOY_ENV: ${{ inputs.env }}
-          COMMIT: ${{ inputs.commit }}
+          COMMIT: ${{ steps.resolve.outputs.short_tag }}
           GENESIS_L1_HEIGHT: ${{ inputs.genesis_l1_height }}
           CHAIN_CONFIG: ${{ inputs.chain_config }}
           BTC_RPC_URL: ${{ secrets.PARAMS_BTC_RPC_URL }}
@@ -110,6 +154,6 @@ jobs:
       - name: Upload params artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: params-${{ inputs.env }}-${{ inputs.commit }}
+          name: params-${{ inputs.env }}-${{ steps.resolve.outputs.short_tag }}
           path: .github/params/out/${{ inputs.env }}/
           retention-days: 30
