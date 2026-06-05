@@ -1,5 +1,5 @@
 //! [`RethGasDataProvider`] — Reth-backed [`BlockDataProvider`] for gas-limit
-//! batch sealing.
+//! chunk sealing.
 
 use alloy_consensus::BlockHeader;
 use alpen_ee_sequencer::sealing_policy::{

@@ -496,7 +496,7 @@ fn main() {
                     sealing_policy::{
                         block_count_policy::{BlockCountDataProvider, FixedBlockCountSealing},
                         gas_limit_policy::MaxGasSealing,
-                        or_policy::{ComposedDataProvider, OrSealing},
+                        or_policy::OrSealing,
                     },
                     BatchBuilderEvent,
                 };
@@ -528,36 +528,9 @@ fn main() {
 
                 let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
 
-                // Validate --batch-sealing-gas-limit if configured.
-                //
-                // EIP-1559 lets the per-block gas limit drift from genesis by
-                // ±1/1024 per block, so the actual block gas limit at runtime
-                // may be slightly higher than genesis. We use 2× the genesis
-                // gas limit as a conservative floor to accommodate this drift
-                // while still catching obvious misconfigurations.
-                if let Some(configured) = ext.batch_sealing_gas_limit {
-                    let min_batch_gas = ext.custom_chain.genesis().gas_limit.saturating_mul(2);
-                    eyre::ensure!(
-                        configured >= min_batch_gas,
-                        "--batch-sealing-gas-limit ({configured}) is below the minimum \
-                         ({min_batch_gas}, 2× genesis block gas limit {}). A single block \
-                         can use up to the per-block gas limit, so the batch budget must \
-                         be large enough to always fit at least one block.",
-                        ext.custom_chain.genesis().gas_limit,
-                    );
-                }
-
-                // u64::MAX effectively disables the gas policy while keeping a
-                // single monomorphic code path (no dyn / enum branching).
-                let batch_gas_limit = ext.batch_sealing_gas_limit.unwrap_or(u64::MAX);
-                let batch_sealing_policy = OrSealing::new(
-                    FixedBlockCountSealing::new(ext.batch_sealing_block_count),
-                    MaxGasSealing::new(batch_gas_limit),
-                );
-                let block_data_provider = Arc::new(ComposedDataProvider::new(
-                    BlockCountDataProvider,
-                    RethGasDataProvider::new(node.provider.clone()),
-                ));
+                let batch_sealing_policy =
+                    FixedBlockCountSealing::new(ext.batch_sealing_block_count);
+                let block_data_provider = Arc::new(BlockCountDataProvider);
 
                 // Chunk-spanning witness extractor. Single producer of
                 // `ChunkWitnessRecord`: the background `chunk_witness_task`
@@ -920,12 +893,40 @@ fn main() {
                 let genesis_blocknumhash =
                     BlockNumHash::new(genesis_info.blockhash().0.into(), genesis_info.blocknum());
 
+                // Validate --chunk-sealing-gas-limit if configured.
+                //
+                // EIP-1559 lets the per-block gas limit drift from genesis by
+                // ±1/1024 per block, so the actual block gas limit at runtime
+                // may be slightly higher than genesis. We use 2× the genesis
+                // gas limit as a conservative floor to accommodate this drift
+                // while still catching obvious misconfigurations.
+                if let Some(configured) = ext.chunk_sealing_gas_limit {
+                    let min_chunk_gas = ext.custom_chain.genesis().gas_limit.saturating_mul(2);
+                    eyre::ensure!(
+                        configured >= min_chunk_gas,
+                        "--chunk-sealing-gas-limit ({configured}) is below the minimum \
+                         ({min_chunk_gas}, 2× genesis block gas limit {}). A single block \
+                         can use up to the per-block gas limit, so the chunk budget must \
+                         be large enough to always fit at least one block.",
+                        ext.custom_chain.genesis().gas_limit,
+                    );
+                }
+
+                // u64::MAX effectively disables the gas policy while keeping a
+                // single monomorphic code path (no dyn / enum branching).
+                let chunk_gas_limit = ext.chunk_sealing_gas_limit.unwrap_or(u64::MAX);
+                let chunk_sealing_policy = OrSealing::new(
+                    FixedBlockCountSealing::new(chunk_block_count),
+                    MaxGasSealing::new(chunk_gas_limit),
+                );
+
                 services::chunk_builder::start_chunk_builder_service(
                     genesis_blocknumhash,
                     storage.clone(),
                     storage.clone(),
                     storage.clone(),
-                    FixedBlockCountSealing::new(chunk_block_count),
+                    chunk_sealing_policy,
+                    RethGasDataProvider::new(node.provider.clone()),
                     Some(chunk_witness_tx),
                     batch_event_rx,
                     &service_executor,
@@ -1097,17 +1098,17 @@ pub struct AdditionalConfig {
     #[arg(long, default_value = "100")]
     pub batch_sealing_block_count: u64,
 
-    /// Cumulative gas limit per batch before sealing.
-    /// When set, a batch is sealed when either the block count or the gas
-    /// limit is reached (whichever comes first). When omitted, only the
-    /// block count policy is used.
-    #[arg(long, required = false)]
-    pub batch_sealing_gas_limit: Option<u64>,
-
     /// Number of blocks per chunk before sealing.
     /// Defaults to `batch_sealing_block_count` if not set.
     #[arg(long, required = false)]
     pub chunk_sealing_block_count: Option<u64>,
+
+    /// Cumulative gas limit per chunk before sealing.
+    /// When set, a chunk is sealed when either the block count or the gas
+    /// limit is reached (whichever comes first). When omitted, only the
+    /// block count policy is used.
+    #[arg(long, required = false)]
+    pub chunk_sealing_gas_limit: Option<u64>,
 
     /// Capacity of the batch builder → chunk builder event channel.
     /// Defaults to 64 if not set.
