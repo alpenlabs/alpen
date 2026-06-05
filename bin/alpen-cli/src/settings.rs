@@ -26,6 +26,17 @@ use crate::{
     signet::{backend::SignetBackend, EsploraClient},
 };
 
+/// Environment variable overriding the project directories root.
+const PROJ_DIRS_ENV: &str = "PROJ_DIRS";
+/// Environment variable overriding the CLI config file path.
+const CONFIG_FILE_ENV: &str = "CLI_CONFIG";
+/// Environment variable overriding the ASM params file path.
+const ASM_PARAMS_ENV: &str = "STRATA_NETWORK_PARAMS";
+/// Default file name for the CLI config within the config directory.
+const DEFAULT_CONFIG_FILENAME: &str = "config.toml";
+/// Default file name for the ASM params within the config directory.
+const DEFAULT_ASM_PARAMS_FILENAME: &str = "asm-params.json";
+
 /// Settings deserialized from the config file.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SettingsFromFile {
@@ -97,21 +108,26 @@ pub struct Settings {
     pub seed: Seed,
 }
 
-pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| match var("PROJ_DIRS").ok() {
+pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| match var(PROJ_DIRS_ENV).ok() {
     Some(path) => ProjectDirs::from_path(path.into()).expect("valid project path"),
     None => ProjectDirs::from("io", "alpenlabs", "alpen").expect("project dir should be available"),
 });
 
-pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var("CLI_CONFIG").ok() {
+pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var(CONFIG_FILE_ENV).ok() {
     Some(path) => PathBuf::from_str(&path).expect("valid config path"),
-    None => PROJ_DIRS.config_dir().to_owned().join("config.toml"),
+    None => PROJ_DIRS
+        .config_dir()
+        .to_owned()
+        .join(DEFAULT_CONFIG_FILENAME),
 });
 
-pub static ASM_PARAMS_FILE: LazyLock<PathBuf> =
-    LazyLock::new(|| match var("STRATA_NETWORK_PARAMS").ok() {
-        Some(path) => PathBuf::from_str(&path).expect("valid asm params path"),
-        None => PROJ_DIRS.config_dir().to_owned().join("asm-params.json"),
-    });
+pub static ASM_PARAMS_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var(ASM_PARAMS_ENV).ok() {
+    Some(path) => PathBuf::from_str(&path).expect("valid asm params path"),
+    None => PROJ_DIRS
+        .config_dir()
+        .to_owned()
+        .join(DEFAULT_ASM_PARAMS_FILENAME),
+});
 
 impl Settings {
     pub fn load() -> Result<Self, OneOf<(io::Error, config::ConfigError)>> {
