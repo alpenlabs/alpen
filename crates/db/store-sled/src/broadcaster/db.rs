@@ -1,7 +1,12 @@
-use strata_db_types::{DbResult, errors::DbError, traits::L1BroadcastDatabase, types::L1TxEntry};
+use strata_db_types::{
+    DbResult,
+    errors::DbError,
+    traits::L1BroadcastDatabase,
+    types::{L1TxEntry, TxNodeId, TxNodeRecord},
+};
 use strata_primitives::buf::Buf32;
 
-use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
+use super::schemas::{BcastL1TxIdSchema, BcastL1TxNodeSchema, BcastL1TxSchema};
 use crate::{
     define_sled_database,
     utils::{find_next_available_id, first, second},
@@ -11,6 +16,7 @@ define_sled_database!(
     pub struct L1BroadcastDBSled {
         tx_id_tree: BcastL1TxIdSchema,
         tx_tree: BcastL1TxSchema,
+        tx_node_tree: BcastL1TxNodeSchema,
     }
 );
 
@@ -120,6 +126,24 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
 
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>> {
         Ok(self.tx_tree.last()?.map(second))
+    }
+
+    fn put_tx_node(&self, node_id: TxNodeId, record: TxNodeRecord) -> DbResult<()> {
+        self.tx_node_tree.insert(&node_id, &record)?;
+        Ok(())
+    }
+
+    fn get_tx_node(&self, node_id: TxNodeId) -> DbResult<Option<TxNodeRecord>> {
+        Ok(self.tx_node_tree.get(&node_id)?)
+    }
+
+    fn get_all_tx_nodes(&self) -> DbResult<Vec<TxNodeRecord>> {
+        let mut records = Vec::new();
+        for item in self.tx_node_tree.iter() {
+            let (_, record) = item?;
+            records.push(record);
+        }
+        Ok(records)
     }
 }
 

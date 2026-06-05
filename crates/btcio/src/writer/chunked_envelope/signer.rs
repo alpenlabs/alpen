@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use bitcoin::consensus::encode::serialize as btc_serialize;
+use bitcoin::{consensus::encode::serialize as btc_serialize, FeeRate};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_btc_types::{TxidExt, WtxidExt};
 use strata_db_types::types::{
@@ -170,9 +170,18 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         updated.commit_wtxid = commit_wtxid;
         updated.reveals = reveals;
         updated.status = ChunkedEnvelopeStatus::Unpublished;
+        let commit_tx_entry = if ctx.config.fee_bumping.is_enabled() {
+            L1TxEntry::from_tx_with_fee_rate(
+                &signed_commit,
+                FeeRate::from_sat_per_vb(fee_rate).expect("fee rate must fit"),
+            )
+        } else {
+            L1TxEntry::from_tx(&signed_commit)
+        };
+
         Ok(SignedChunkedEnvelope {
             entry: updated,
-            commit_tx_entry: L1TxEntry::from_tx(&signed_commit),
+            commit_tx_entry,
         })
     }
     .instrument(sign_chunked_envelope_span)

@@ -1,5 +1,4 @@
-use strata_db_types::errors::DbError;
-use strata_primitives::buf::Buf32;
+use strata_db_types::{errors::DbError, types::L1TxId};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,7 +10,7 @@ pub enum BroadcasterError {
     Rpc(#[from] anyhow::Error),
 
     #[error("missing transaction entry index for txid {0}")]
-    MissingEntryIndex(Buf32),
+    MissingEntryIndex(L1TxId),
 
     #[error("transaction not found in db at index {0}")]
     TxNotFound(u64),

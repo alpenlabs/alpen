@@ -65,7 +65,7 @@ where
             .await
             .map(Some),
         L1TxStatus::Finalized { .. } => Ok(None),
-        L1TxStatus::InvalidInputs => Ok(None),
+        L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. } => Ok(None),
     };
     if let Ok(ref updated_status) = result {
         debug!(?updated_status);
@@ -294,10 +294,10 @@ mod test {
 
     use bitcoin::{Transaction, Txid};
     use proptest::prelude::*;
-    use strata_db_types::types::{L1TxEntry, L1TxStatus};
+    use strata_db_types::types::{L1BlockHash, L1TxEntry, L1TxStatus};
     use strata_identifiers::test_utils::buf32_strategy;
     use strata_l1_txfmt::MagicBytes;
-    use strata_primitives::{buf::Buf32, L1Height};
+    use strata_primitives::L1Height;
     use tokio::runtime::Builder;
 
     use super::*;
@@ -417,7 +417,7 @@ mod test {
     fn confirmation_info(
         confirmations: i64,
         block_height: L1Height,
-        block_hash: Buf32,
+        block_hash: L1BlockHash,
     ) -> TxConfirmationInfo {
         if confirmations == 0 {
             TxConfirmationInfo {
@@ -437,7 +437,7 @@ mod test {
     fn status_with_confirmations(
         confirmations: u64,
         block_height: L1Height,
-        block_hash: Buf32,
+        block_hash: L1BlockHash,
         finalized: bool,
     ) -> L1TxStatus {
         if finalized {
@@ -458,7 +458,7 @@ mod test {
     fn confirmed_status(
         confirmations: u64,
         block_height: L1Height,
-        block_hash: Buf32,
+        block_hash: L1BlockHash,
     ) -> L1TxStatus {
         status_with_confirmations(confirmations, block_height, block_hash, false)
     }
@@ -466,7 +466,7 @@ mod test {
     fn finalized_status(
         confirmations: u64,
         block_height: L1Height,
-        block_hash: Buf32,
+        block_hash: L1BlockHash,
     ) -> L1TxStatus {
         status_with_confirmations(confirmations, block_height, block_hash, true)
     }
@@ -554,7 +554,7 @@ mod test {
         #[test]
         fn test_handle_published_entry(
             block_height in 1_u32..1_000_000,
-            block_hash in buf32_strategy(),
+            block_hash in buf32_strategy().prop_map(|buf| L1BlockHash::from(buf.0)),
         ) {
             run_async_test(async move {
                 let (e, txid) = entry_with_txid(L1TxStatus::Published);
@@ -611,7 +611,7 @@ mod test {
         #[test]
         fn test_handle_confirmed_entry(
             block_height in 1_u32..1_000_000,
-            block_hash in buf32_strategy(),
+            block_hash in buf32_strategy().prop_map(|buf| L1BlockHash::from(buf.0)),
         ) {
             run_async_test(async move {
                 let (e, txid) = entry_with_txid(confirmed_status(1, block_height, block_hash));
@@ -744,7 +744,7 @@ mod test {
         let io = MockIoContext::default()
             .with_tx_lookup(
                 txid,
-                MockTxLookupResult::Found(confirmation_info(0, 0, Buf32::zero())),
+                MockTxLookupResult::Found(confirmation_info(0, 0, L1BlockHash::zero())),
             )
             .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
         let res = process_status(&io, &e, &txid, &btcio_params).await;
@@ -776,7 +776,7 @@ mod test {
         // Confirmed entries that go missing on lookup should still regress to
         // Unpublished so the broadcaster re-publishes (e.g. after a reorg
         // dropped them from the wallet view).
-        let (e, txid) = entry_with_txid(confirmed_status(1, 1, Buf32::zero()));
+        let (e, txid) = entry_with_txid(confirmed_status(1, 1, L1BlockHash::zero()));
         let btcio_params = get_test_btcio_params();
 
         let io = MockIoContext::default().with_tx_lookup(txid, MockTxLookupResult::Missing);
@@ -790,7 +790,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_confirmed_entry_lookup_retry_later_holds_confirmed() {
-        let current_status = confirmed_status(1, 1, Buf32::zero());
+        let current_status = confirmed_status(1, 1, L1BlockHash::zero());
         let (e, txid) = entry_with_txid(current_status.clone());
         let btcio_params = get_test_btcio_params();
 
@@ -805,7 +805,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_finalized_entry() {
-        let (e, txid) = entry_with_txid(finalized_status(1, 1, Buf32::zero()));
+        let (e, txid) = entry_with_txid(finalized_status(1, 1, L1BlockHash::zero()));
         let btcio_params = get_test_btcio_params();
 
         let io = MockIoContext::default();
@@ -830,7 +830,7 @@ mod test {
         fn test_process_unfinalized_entries(
             seed_idx in 1_u64..1_000_000,
             block_height in 1_u32..1_000_000,
-            block_hash in buf32_strategy(),
+            block_hash in buf32_strategy().prop_map(|buf| L1BlockHash::from(buf.0)),
         ) {
             run_async_test(async move {
                 let btcio_params = get_test_btcio_params();
@@ -920,7 +920,7 @@ mod test {
 
     #[test]
     fn confirmation_status_below_reorg_depth_is_confirmed() {
-        let block_hash = Buf32::new([7u8; 32]);
+        let block_hash = L1BlockHash::new([7u8; 32]);
         let block_height: L1Height = 100;
         let info = confirmation_info(3, block_height, block_hash);
         assert_eq!(
@@ -931,7 +931,7 @@ mod test {
 
     #[test]
     fn confirmation_status_at_or_above_reorg_depth_is_finalized() {
-        let block_hash = Buf32::new([7u8; 32]);
+        let block_hash = L1BlockHash::new([7u8; 32]);
         let block_height: L1Height = 100;
         let info = confirmation_info(6, block_height, block_hash);
         assert_eq!(

@@ -29,6 +29,7 @@ mod sequencer_services {
     use anyhow::{Result, anyhow};
     use strata_btcio::{
         broadcaster::{BroadcasterBuilder, L1BroadcastHandle},
+        fee_bumper::service::{FeeBumperContext, fee_bumper_task},
         writer::{BundlerBuilder, EnvelopeHandle, WatcherBuilder, WriterContext},
     };
     use strata_config::EpochSealingConfig;
@@ -144,21 +145,38 @@ mod sequencer_services {
             let ctx = Arc::new(ctx);
 
             let (watcher_handle, _) = WatcherBuilder::new(
-                ctx,
+                ctx.clone(),
                 writer_ops.clone(),
-                broadcast_handle,
+                broadcast_handle.clone(),
                 Duration::from_millis(config.write_poll_dur_ms),
             )
             .launch(executor)
             .await?;
 
             let _ = BundlerBuilder::new(
-                writer_ops,
+                writer_ops.clone(),
                 Duration::from_millis(config.bundle_interval_ms),
                 intent_rx,
             )
             .launch(executor)
             .await?;
+
+            if config.fee_bumping.is_enabled() {
+                let fee_bumper_context = FeeBumperContext {
+                    envelope_ops: Some(writer_ops.clone()),
+                    external_single_envelope_signing: ctx.envelope_pubkey.is_some(),
+                    ..FeeBumperContext::default()
+                };
+                executor.spawn_critical_async(
+                    "btcio_fee_bumper",
+                    fee_bumper_task(
+                        nodectx.bitcoin_client().clone(),
+                        (*config).clone(),
+                        broadcast_handle.clone(),
+                        fee_bumper_context,
+                    ),
+                );
+            }
 
             Ok((envelope_handle, watcher_handle))
         })

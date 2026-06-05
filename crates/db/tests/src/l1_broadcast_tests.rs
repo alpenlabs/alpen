@@ -1,7 +1,7 @@
 use bitcoin::{consensus::deserialize, hashes::Hash, Transaction};
 use strata_db_types::{
     traits::L1BroadcastDatabase,
-    types::{L1TxEntry, L1TxStatus},
+    types::{L1BlockHash, L1TxEntry, L1TxStatus},
 };
 use strata_primitives::buf::Buf32;
 
@@ -54,7 +54,7 @@ pub fn test_update_tx_entry(db: &impl L1BroadcastDatabase) {
     let mut updated_txentry = txentry;
     updated_txentry.status = L1TxStatus::Finalized {
         confirmations: 1,
-        block_hash: Buf32::zero(),
+        block_hash: L1BlockHash::zero(),
         block_height: 100,
     };
 

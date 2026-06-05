@@ -8,13 +8,13 @@ use alpen_ee_common::{
 use alpen_ee_da_types::{wtxids_root_from_txs, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
-use bitcoin::{Block, BlockHash, Txid, Wtxid};
+use bitcoin::{hashes::Hash, Block, BlockHash, Txid, Wtxid};
 use bitcoind_async_client::{traits::Reader, Client as BtcClient};
 use eyre::{bail, ensure};
 use strata_btc_types::{BlockHashExt, Buf32BitcoinExt};
 use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
 use strata_db_types::types::{
-    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxId, L1TxStatus, L1WtxId,
+    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1BlockHash, L1TxId, L1TxStatus, L1WtxId,
 };
 use strata_identifiers::{Buf32, L1BlockCommitment, L1Height, WtxidsRoot};
 use strata_l1_txfmt::MagicBytes;
@@ -54,7 +54,7 @@ struct FinalizedRevealTx {
 }
 
 /// Groups commit + reveal txs by L1 block for [`L1DaBlockRef`] construction.
-type BlockMap = HashMap<(Buf32, L1Height), BlockTxs>;
+type BlockMap = HashMap<(L1BlockHash, L1Height), BlockTxs>;
 
 #[async_trait]
 pub trait L1BlockReader: Send + Sync {
@@ -249,7 +249,7 @@ impl ChunkedEnvelopeDaProvider {
         // first; reveals follow in ascending vout order.
         let mut refs: Vec<L1DaBlockRef> = Vec::with_capacity(block_map.len());
         for ((hash, height), mut txs) in block_map {
-            let block_hash = hash.to_block_hash();
+            let block_hash = BlockHash::from_byte_array(hash.0);
             let block = self.l1_blocks.get_l1_block(&block_hash).await?;
             let wtxids_root = compute_wtxids_root(&block)?;
 
@@ -270,7 +270,7 @@ impl ChunkedEnvelopeDaProvider {
     }
 
     /// Looks up a tx in the broadcast DB and returns the finalized L1 block.
-    async fn lookup_finalized(&self, txid: L1TxId) -> eyre::Result<(Buf32, L1Height)> {
+    async fn lookup_finalized(&self, txid: L1TxId) -> eyre::Result<(L1BlockHash, L1Height)> {
         let Some(tx_entry) = self
             .broadcast_ops
             .get_tx_entry_by_id_async(to_raw_buf32(txid))
@@ -464,7 +464,7 @@ mod tests {
         let mut entry = L1TxEntry::from_tx(&make_test_tx());
         entry.status = L1TxStatus::Finalized {
             confirmations: 6,
-            block_hash: Buf32::from([height as u8; 32]),
+            block_hash: L1BlockHash::from([height as u8; 32]),
             block_height: height,
         };
         entry
