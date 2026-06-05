@@ -175,6 +175,8 @@ class AlpenClientFactory(flexitest.Factory):
                 "--btc-rpc-url", da_config.btc_rpc_url,
                 "--btc-rpc-user", da_config.btc_rpc_user,
                 "--btc-rpc-password", da_config.btc_rpc_password,
+                "--btcio-fee-policy", "fixed",
+                "--btcio-fee-rate", "1.0",
                 "--l1-reorg-safe-depth", str(da_config.l1_reorg_safe_depth),
                 "--genesis-l1-height", str(da_config.genesis_l1_height),
             ])

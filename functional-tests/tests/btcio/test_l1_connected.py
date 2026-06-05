@@ -39,16 +39,22 @@ class TestL1Connected(StrataNodeTest):
 
         # In a standalone env, the current bitcoin tip equals the genesis L1
         # height: it was set during env init and nothing has touched bitcoin
-        # since. The ASM only creates manifests for heights >= genesis, so
-        # checking the genesis height itself proves the L1 reader is connected
-        # and processing blocks.
+        # since. Genesis itself is the ASM anchor, so mine one post-genesis
+        # block and wait for its manifest.
         chain_info = btc_rpc.proxy.getblockchaininfo()
         genesis_l1_height = chain_info["blocks"]
         logger.info(f"Genesis L1 height: {genesis_l1_height}")
 
+        addr = btc_rpc.proxy.getnewaddress()
+        btc_rpc.proxy.generatetoaddress(1, addr)
+        post_genesis_height = btc_rpc.proxy.getblockchaininfo()["blocks"]
+        expected_height = genesis_l1_height + 1
+        if post_genesis_height != expected_height:
+            raise AssertionError(f"Expected tip {expected_height}, got {post_genesis_height}")
+
         commitment = strata.wait_for_asm_manifest_commitment_at(
-            genesis_l1_height, rpc=rpc, timeout=60
+            post_genesis_height, rpc=rpc, timeout=60
         )
 
-        logger.info(f"L1 header commitment at {genesis_l1_height}: {commitment}")
+        logger.info(f"L1 header commitment at {post_genesis_height}: {commitment}")
         return True

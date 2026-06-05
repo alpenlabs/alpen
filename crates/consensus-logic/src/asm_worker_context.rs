@@ -160,13 +160,6 @@ impl WorkerContext for AsmWorkerCtx {
             .get_aux_data_blocking(*blockid)
             .map_err(conv_db_err)
     }
-
-    fn has_l1_manifest(&self, blockid: &L1BlockId) -> WorkerResult<bool> {
-        self.l1man
-            .get_block_manifest(blockid)
-            .map(|opt| opt.is_some())
-            .map_err(conv_db_err)
-    }
 }
 
 fn conv_db_err(_e: DbError) -> WorkerError {

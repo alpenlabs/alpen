@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use bitcoin::hashes::Hash;
 use strata_asm_common::{AsmLogEntry, Subprotocol, VerifiedAuxData};
-use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE};
+use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
@@ -54,19 +54,23 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         log: &AsmLogEntry,
         asm_block: &L1BlockCommitment,
     ) -> anyhow::Result<()> {
-        match log.ty() {
-            Some(CHECKPOINT_TIP_UPDATE_LOG_TYPE) => {
+        match log.ty().and_then(|ty| AsmLogTypeId::try_from(ty).ok()) {
+            Some(AsmLogTypeId::CheckpointTipUpdate) => {
                 let tip_upd = log.try_into_log().map_err(|e| {
                     anyhow::anyhow!("Failed to deserialize CheckpointTipUpdate: {}", e)
                 })?;
 
                 return self.process_checkpoint_tip_log(pending, &tip_upd, asm_block);
             }
-            Some(log_type) => {
-                debug!(log_type, "log type not processed by CSM");
-            }
             None => {
-                warn!("logs without a type ID?");
+                if let Some(log_type) = log.ty() {
+                    debug!(log_type, "log type not processed by CSM");
+                } else {
+                    warn!("logs without a type ID?");
+                }
+            }
+            Some(log_type) => {
+                debug!(?log_type, "log type not processed by CSM");
             }
         }
         Ok(())
@@ -430,7 +434,7 @@ mod tests {
         AnchorState, AsmHistoryAccumulatorState, AsmLogEntry, ChainViewState,
         HeaderVerificationState,
     };
-    use strata_asm_logs::constants::DEPOSIT_LOG_TYPE_ID;
+    use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_params::AsmParams;
     use strata_btc_verification::L1Anchor;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
@@ -548,7 +552,7 @@ mod tests {
     fn create_non_checkpoint_log_type() -> AsmLogEntry {
         let mut arbgen = ArbitraryGenerator::new();
         let payload = (0..8).map(|_| arbgen.generate()).collect::<Vec<u8>>();
-        AsmLogEntry::from_msg(DEPOSIT_LOG_TYPE_ID, payload)
+        AsmLogEntry::from_msg(AsmLogTypeId::Deposit.into(), payload)
             .expect("Failed to create non-checkpoint log")
     }
 

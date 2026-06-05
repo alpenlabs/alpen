@@ -2,7 +2,7 @@
 
 use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{CheckpointTipUpdate, constants::DEPOSIT_LOG_TYPE_ID};
+use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
 use strata_asm_proto_checkpoint_types::CheckpointTip;
 use strata_identifiers::{
     Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId,
@@ -201,8 +201,8 @@ fn test_manifest_processing_updates_checkpoint_tip() {
 
 #[test]
 fn test_manifest_processing_skips_malformed_deposit_log() {
-    let malformed_deposit_log =
-        AsmLogEntry::from_msg(DEPOSIT_LOG_TYPE_ID, vec![0xff]).expect("deposit log should encode");
+    let malformed_deposit_log = AsmLogEntry::from_msg(AsmLogTypeId::Deposit.into(), vec![0xff])
+        .expect("deposit log should encode");
     let asm_manifest = FixtureAsmManifestBuilder::new_at_height(1)
         .with_log(malformed_deposit_log)
         .build();

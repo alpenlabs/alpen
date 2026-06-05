@@ -35,6 +35,7 @@ pub(crate) fn is_retryable_envelope_error(err: &EnvelopeError) -> bool {
         }
         EnvelopeError::SignRawTransaction(err) => is_retryable_client_error(err),
         EnvelopeError::EmptyPayload
+        | EnvelopeError::FeeOverflow
         | EnvelopeError::NotEnoughUtxos(_, _)
         | EnvelopeError::MissingEnvelopePubkey
         | EnvelopeError::P2trChangeAddressUnsupported

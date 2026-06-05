@@ -78,7 +78,7 @@ fn create_withdrawal_fulfillment_inner(
     wallet.reveal_next_address(KeychainKind::External);
     sync_wallet(&mut wallet, &client)?;
 
-    let fee_rate = FeeRate::from_sat_per_vb_unchecked(2);
+    let fee_rate = FeeRate::from_sat_per_vb_u32(2);
 
     // Build PSBT using wallet for funding
     let mut psbt = {

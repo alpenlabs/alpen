@@ -71,7 +71,10 @@ use strata_btcio::{
 };
 use strata_common::healthz::{start_health_check_server, HealthCheckState};
 #[cfg(feature = "sequencer")]
-use strata_config::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
+use strata_config::btcio::{
+    fee_rate_from_sat_per_vb, fee_rate_to_sat_per_vb, FeePolicy, L1FeePolicyConfig,
+    MempoolExplorerFeePolicy, WriterConfig,
+};
 use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
 use strata_logging::{init_logging_from_config, LoggingInitConfig};
@@ -1116,7 +1119,7 @@ pub struct AdditionalConfig {
     /// Fixed fee rate in sat/vB. Required when policy is `fixed`.
     #[cfg(feature = "sequencer")]
     #[arg(long)]
-    pub btcio_fee_rate: Option<u64>,
+    pub btcio_fee_rate: Option<f64>,
 
     /// mempool.space-compatible base URL. Required when policy is `mempool`.
     #[cfg(feature = "sequencer")]
@@ -1316,9 +1319,11 @@ fn resolve_writer_config(ext: &AdditionalConfig) -> eyre::Result<WriterConfig> {
             conf_target: ext.btcio_conf_target,
         },
         BtcioFeePolicyArg::Fixed => {
-            let fee_rate = ext.btcio_fee_rate.ok_or_else(|| {
+            let fee_rate_sat_per_vb = ext.btcio_fee_rate.ok_or_else(|| {
                 eyre::eyre!("--btcio-fee-rate is required when --btcio-fee-policy=fixed")
             })?;
+            let fee_rate = fee_rate_from_sat_per_vb(fee_rate_sat_per_vb)
+                .map_err(|err| eyre::eyre!("invalid --btcio-fee-rate: {err}"))?;
             FeePolicy::Fixed { fee_rate }
         }
         BtcioFeePolicyArg::Mempool => {
@@ -1353,7 +1358,7 @@ fn log_writer_config(cfg: &WriterConfig) {
             info!(
                 target: "alpen-client",
                 policy = "fixed",
-                fee_rate_sat_vb = fee_rate,
+                fee_rate_sat_vb = fee_rate_to_sat_per_vb(*fee_rate),
                 "btcio writer configured",
             );
         }
@@ -1376,11 +1381,13 @@ fn log_writer_config(cfg: &WriterConfig) {
 
 #[cfg(all(test, feature = "sequencer"))]
 mod resolve_writer_config_tests {
+    use bitcoind_async_client::corepc_types::bitcoin::FeeRate;
+
     use super::*;
 
     fn args(
         policy: BtcioFeePolicyArg,
-        fee_rate: Option<u64>,
+        fee_rate: Option<f64>,
         mempool_url: Option<&str>,
     ) -> AdditionalConfig {
         let argv = ["alpen-client", "--sequencer-pubkey", &"0".repeat(64)];
@@ -1399,8 +1406,24 @@ mod resolve_writer_config_tests {
 
     #[test]
     fn fixed_one_sat_vb() {
-        let cfg = resolve_writer_config(&args(BtcioFeePolicyArg::Fixed, Some(1), None)).unwrap();
-        assert_eq!(cfg.fee_policy(), &FeePolicy::Fixed { fee_rate: 1 });
+        let cfg = resolve_writer_config(&args(BtcioFeePolicyArg::Fixed, Some(1.0), None)).unwrap();
+        assert_eq!(
+            cfg.fee_policy(),
+            &FeePolicy::Fixed {
+                fee_rate: FeeRate::from_sat_per_vb_u32(1)
+            }
+        );
+    }
+
+    #[test]
+    fn fixed_half_sat_vb() {
+        let cfg = resolve_writer_config(&args(BtcioFeePolicyArg::Fixed, Some(0.5), None)).unwrap();
+        assert_eq!(
+            cfg.fee_policy(),
+            &FeePolicy::Fixed {
+                fee_rate: FeeRate::from_sat_per_kwu(125)
+            }
+        );
     }
 
     #[test]

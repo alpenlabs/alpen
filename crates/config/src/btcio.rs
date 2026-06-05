@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use bitcoin::FeeRate;
+use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Configuration for btcio tasks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,12 +119,59 @@ pub enum FeePolicy {
         conf_target: u16,
     },
 
-    /// Fixed fee in sat/vB.
+    /// Fixed Bitcoin fee rate in sat/vB.
     #[serde(rename = "fixed")]
     Fixed {
-        #[serde(rename = "fixed_fee_rate")]
-        fee_rate: u64,
+        #[serde(rename = "fixed_fee_rate", with = "fee_rate_sat_vb")]
+        fee_rate: FeeRate,
     },
+}
+
+/// Converts a sat/vB fee rate into [`FeeRate`].
+pub fn fee_rate_from_sat_per_vb(fee_rate_sat_per_vb: f64) -> Result<FeeRate, String> {
+    if !fee_rate_sat_per_vb.is_finite() || fee_rate_sat_per_vb <= 0.0 {
+        return Err(format!("invalid fee rate: {fee_rate_sat_per_vb}"));
+    }
+
+    let scaled_sat_per_kwu = fee_rate_sat_per_vb * 250.0;
+    if scaled_sat_per_kwu > u64::MAX as f64 {
+        return Err(format!("fee rate overflows: {fee_rate_sat_per_vb}"));
+    }
+
+    let rounded_sat_per_kwu = scaled_sat_per_kwu.round();
+    let rounding_tolerance = f64::EPSILON * scaled_sat_per_kwu.abs().max(1.0) * 8.0;
+    let fee_rate_sat_per_kwu =
+        if (scaled_sat_per_kwu - rounded_sat_per_kwu).abs() <= rounding_tolerance {
+            rounded_sat_per_kwu
+        } else {
+            scaled_sat_per_kwu.ceil()
+        };
+
+    Ok(FeeRate::from_sat_per_kwu(fee_rate_sat_per_kwu as u64))
+}
+
+/// Converts a [`FeeRate`] into sat/vB.
+pub fn fee_rate_to_sat_per_vb(fee_rate: FeeRate) -> f64 {
+    fee_rate.to_sat_per_kwu() as f64 / 250.0
+}
+
+mod fee_rate_sat_vb {
+    use super::*;
+
+    pub(super) fn serialize<S>(fee_rate: &FeeRate, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_f64(fee_rate_to_sat_per_vb(*fee_rate))
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<FeeRate, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fee_rate_sat_per_vb = f64::deserialize(deserializer)?;
+        fee_rate_from_sat_per_vb(fee_rate_sat_per_vb).map_err(DeError::custom)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -200,6 +248,51 @@ impl Default for BroadcasterConfig {
     fn default() -> Self {
         Self {
             poll_interval_ms: 5_000,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn fee_rate_sat_kwu_roundtrips_through_sat_vb(sat_per_kwu in 1_u64..=1_000_000_000_000) {
+            let fee_rate = FeeRate::from_sat_per_kwu(sat_per_kwu);
+            let sat_per_vb = fee_rate_to_sat_per_vb(fee_rate);
+            let roundtripped = fee_rate_from_sat_per_vb(sat_per_vb)
+                .expect("roundtripped fee rate should parse");
+
+            prop_assert_eq!(roundtripped, fee_rate);
+        }
+
+        #[test]
+        fn fee_rate_sat_vb_roundtrip_is_idempotent(sat_per_vb in 0.01_f64..=1_000_000_000.0) {
+            prop_assume!(sat_per_vb.is_finite());
+
+            let fee_rate = fee_rate_from_sat_per_vb(sat_per_vb)
+                .expect("fee rate should parse");
+            let roundtripped = fee_rate_from_sat_per_vb(fee_rate_to_sat_per_vb(fee_rate))
+                .expect("roundtripped fee rate should parse");
+
+            prop_assert_eq!(roundtripped, fee_rate);
+        }
+
+        #[test]
+        fn fee_rate_sat_vb_conversion_rounds_up_to_sat_kwu(sat_per_vb in 0.01_f64..=1_000_000_000.0) {
+            prop_assume!(sat_per_vb.is_finite());
+
+            let fee_rate = fee_rate_from_sat_per_vb(sat_per_vb)
+                .expect("fee rate should parse");
+            let scaled_sat_per_kwu = sat_per_vb * 250.0;
+            let rounding_tolerance = f64::EPSILON * scaled_sat_per_kwu.abs().max(1.0) * 8.0;
+            let sat_per_kwu = fee_rate.to_sat_per_kwu() as f64;
+
+            prop_assert!(sat_per_kwu + rounding_tolerance >= scaled_sat_per_kwu);
+            prop_assert!(sat_per_kwu - scaled_sat_per_kwu <= 1.0);
         }
     }
 }
