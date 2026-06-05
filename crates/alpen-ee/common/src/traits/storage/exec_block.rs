@@ -397,6 +397,7 @@ pub mod exec_block_storage_test_fns {
             timestamp_ms,
             parent_hash,
             0,
+            0,
             messages,
         )
     }
