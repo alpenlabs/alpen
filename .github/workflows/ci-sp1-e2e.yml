@@ -15,6 +15,10 @@ on:
         description: "Image tag to test (default: current SHA short)"
         required: false
         type: string
+      checkout_ref:
+        description: "Repo ref to checkout (default: image commit SHA)"
+        required: false
+        type: string
 
 env:
   AWS_REGION: us-east-1
@@ -33,14 +37,20 @@ jobs:
       should_run: ${{ steps.check.outputs.should_run }}
       short_tag: ${{ steps.check.outputs.short_tag }}
       commit_sha: ${{ steps.check.outputs.commit_sha }}
+      checkout_ref: ${{ steps.check.outputs.checkout_ref }}
     steps:
       - name: Check for new commits since last success
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          INPUT_CHECKOUT_REF: ${{ inputs.checkout_ref }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
+          set_output() {
+            echo "$1=$2" >> "$GITHUB_OUTPUT"
+          }
+
           REPO="${{ github.repository }}"
 
           if [ -n "${INPUT_IMAGE_TAG}" ]; then
@@ -67,17 +77,18 @@ jobs:
 
           if [ -z "${BUILD_SHA}" ]; then
             echo "::error::No successful ci-build found for ${SHORT_TAG:-main}"
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            set_output should_run false
             exit 0
           fi
 
-          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
-          echo "commit_sha=${BUILD_SHA}" >> "$GITHUB_OUTPUT"
+          set_output short_tag "${SHORT_TAG}"
+          set_output commit_sha "${BUILD_SHA}"
+          set_output checkout_ref "${INPUT_CHECKOUT_REF:-${BUILD_SHA}}"
           echo "Selected image build: ${SHORT_TAG} (${BUILD_SHA})"
 
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             echo "Manual trigger — running"
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            set_output should_run true
             exit 0
           fi
 
@@ -92,10 +103,10 @@ jobs:
 
           if [ "${LAST_SUCCESS}" = "${BUILD_SHA}" ]; then
             echo "Already tested build ${SHORT_TAG} — skipping"
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            set_output should_run false
           else
             echo "New build ${SHORT_TAG} not yet tested — running"
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            set_output should_run true
           fi
 
   sp1-e2e:
@@ -112,7 +123,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
-          ref: ${{ needs.check-new-commits.outputs.commit_sha }}
+          ref: ${{ needs.check-new-commits.outputs.checkout_ref }}
           persist-credentials: false
 
       - name: Configure AWS credentials (OIDC)
