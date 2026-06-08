@@ -26,9 +26,9 @@ use crate::{
 };
 
 mod args;
-mod checkpoint_reconcile;
 #[cfg(feature = "sequencer")]
 mod checkpoint_auth;
+mod checkpoint_reconcile;
 mod config;
 mod context;
 mod css;
