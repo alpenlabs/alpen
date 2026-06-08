@@ -17,7 +17,7 @@ The primary local stack is split into two compose files:
 | Compose | Purpose |
 |---|---|
 | `compose-signet.yml` | Local signet `bitcoind` miner or fullnode |
-| `compose-ol-el-seq.yml` | OL sequencer, a checkpoint-sync OL node, external `strata-signer`, and EE sequencer |
+| `compose-ol-el-seq.yml` | OL sequencer, external `strata-signer`, and EE sequencer |
 
 Bitcoin is decoupled from the OL/EE stack. `just docker-seq-up` starts signet, runs `gen-params-and-elfs.sh`, then starts the sequencer stack. Generated keys, params, and env files live under `configs/generated/` and are ignored by git.
 
@@ -25,6 +25,7 @@ The retained secondary compose files have narrower test/debug purposes:
 
 | Compose | Purpose |
 |---|---|
+| `compose-checkpoint-sync.yml` | Checkpoint-sync OL node — depends only on a bitcoin chain; mount pre-generated params under `configs/sync-params/` |
 | `docker-compose-eest.yml` | Ethereum execution spec test environment |
 | `docker-compose-p2p-test.yml` | Minimal EE P2P/gossip test |
 

@@ -42,7 +42,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
-    cargo build --locked --release --bin strata-signer && \
+    cargo build --locked --release --bin strata-dbtool && \
     install -m 0555 /app/target/release/strata-signer /usr/local/bin/strata-signer
 
 # ---- runtime ----
@@ -63,11 +63,10 @@ WORKDIR "${APP_HOME}"
 RUN mkdir -p /app/data /app/.cache /app/.local/share && \
     chown -R alpen:alpen /app
 
-COPY --from=builder /usr/local/bin/strata-signer /usr/local/bin/strata-signer
-COPY docker/strata-signer/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0555 /usr/local/bin/strata-signer /usr/local/bin/entrypoint.sh
+COPY --from=builder /usr/local/bin/strata-dbtool /usr/local/bin/strata-dbtool
+RUN chmod 0555 /usr/local/bin/strata-dbtool
 
 USER alpen
 
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/strata-dbtool"]

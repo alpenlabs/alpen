@@ -50,7 +50,7 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
-    cargo chef cook --release --recipe-path recipe.json
+    cargo chef cook --release --no-default-features --recipe-path recipe.json
 
 COPY . .
 
@@ -69,7 +69,7 @@ ENV APP_HOME=/app \
     RUST_LOG=info
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates libssl3 curl jq && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 curl && \
     rm -rf /var/lib/apt/lists/*
 
 RUN useradd --system --create-home --home-dir "${APP_HOME}" --uid 10001 --shell /usr/sbin/nologin alpen
