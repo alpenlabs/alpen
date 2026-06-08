@@ -528,6 +528,22 @@ fn rpc_messages_to_entries(messages: &[RpcMessageEntry]) -> Vec<MessageEntry> {
         .collect()
 }
 
+fn indexed_rpc_messages_to_entries(
+    messages: &[RpcIndexedEntry<RpcMessageEntry>],
+) -> Vec<(u64, MessageEntry)> {
+    messages
+        .iter()
+        .map(|msg| {
+            let entry = msg
+                .value()
+                .clone()
+                .try_into()
+                .expect("message payload bytes must fit within SSZ max length");
+            (msg.index(), entry)
+        })
+        .collect()
+}
+
 fn rpc_update_to_input(update: RpcUpdateInputData) -> UpdateInputData {
     let messages: Vec<MessageEntry> = update
         .messages
@@ -1170,6 +1186,115 @@ async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
     let result = rpc.get_checkpoint_info(2).await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), INTERNAL_ERROR_CODE);
+}
+
+// ── get_snark_acct_inbox_msg_range ──
+
+#[tokio::test]
+async fn snark_acct_inbox_msg_range_returns_indexed_messages() {
+    let account_id = test_account_id(1);
+    let messages = vec![
+        make_message_entry(test_account_id(10), 2, 30, vec![0x01]),
+        make_message_entry(test_account_id(11), 2, 40, vec![0x02]),
+    ];
+    let provider = MockProvider::new().with_inbox_fetch_fn(inbox_fetch_expect_success(
+        account_id,
+        7,
+        9,
+        messages.clone(),
+    ));
+    let rpc = make_rpc(provider);
+
+    let response = rpc
+        .get_snark_acct_inbox_msg_range(account_id, 7, 9)
+        .await
+        .expect("inbox range should succeed");
+
+    assert_eq!(
+        indexed_rpc_messages_to_entries(&response),
+        vec![(7, messages[0].clone()), (8, messages[1].clone())]
+    );
+}
+
+#[tokio::test]
+async fn snark_acct_inbox_msg_range_empty_range_returns_empty() {
+    let account_id = test_account_id(1);
+    let provider = MockProvider::new().with_inbox_fetch_fn(inbox_fetch_expect_success(
+        account_id,
+        5,
+        5,
+        vec![],
+    ));
+    let rpc = make_rpc(provider);
+
+    let response = rpc
+        .get_snark_acct_inbox_msg_range(account_id, 5, 5)
+        .await
+        .expect("empty range should succeed");
+
+    assert!(response.is_empty());
+}
+
+#[tokio::test]
+async fn snark_acct_inbox_msg_range_rejects_reversed_range() {
+    let provider =
+        MockProvider::new().with_inbox_fetch_fn(inbox_fetch_panic("invalid range must not fetch"));
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_inbox_msg_range(test_account_id(1), 9, 7)
+        .await
+        .expect_err("reversed range must fail");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+}
+
+#[tokio::test]
+async fn snark_acct_inbox_msg_range_rejects_oversized_range() {
+    let provider = MockProvider::new()
+        .with_inbox_fetch_fn(inbox_fetch_panic("oversized range must not fetch"));
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_inbox_msg_range(test_account_id(1), 0, 1_001)
+        .await
+        .expect_err("oversized range must fail");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+}
+
+#[tokio::test]
+async fn snark_acct_inbox_msg_range_allows_range_at_limit() {
+    let account_id = test_account_id(1);
+    let provider = MockProvider::new().with_inbox_fetch_fn(inbox_fetch_expect_success(
+        account_id,
+        0,
+        1_000,
+        vec![],
+    ));
+    let rpc = make_rpc(provider);
+
+    let response = rpc
+        .get_snark_acct_inbox_msg_range(account_id, 0, 1_000)
+        .await
+        .expect("range at limit should succeed");
+
+    assert!(response.is_empty());
+}
+
+#[tokio::test]
+async fn snark_acct_inbox_msg_range_maps_provider_error() {
+    let account_id = test_account_id(1);
+    let provider =
+        MockProvider::new().with_inbox_fetch_fn(inbox_fetch_error("inbox preimage missing"));
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_inbox_msg_range(account_id, 1, 2)
+        .await
+        .expect_err("provider error must fail");
+
+    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
 }
 
 // ── get_blocks_summaries ──

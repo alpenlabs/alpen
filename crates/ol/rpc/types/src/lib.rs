@@ -19,7 +19,8 @@ pub use account_state::{
     RpcAccountTypeData, RpcBlockAccountChanges, RpcSnarkAccountState,
 };
 pub use account_summary::{
-    RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMessageEntry, RpcUpdateInputData,
+    RpcAccountBlockSummary, RpcAccountEpochSummary, RpcIndexedEntry, RpcMessageEntry,
+    RpcUpdateInputData,
 };
 pub use block::{
     RpcBlockEntry, RpcBlockHeaderEntry, RpcOLBlockDetail, RpcOLBlockSummary, RpcOLManifestsSummary,
