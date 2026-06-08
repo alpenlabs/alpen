@@ -224,6 +224,16 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
         start_epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>>;
 
+    /// Delete locally-built checkpoint payload entries from the specified epoch onwards.
+    ///
+    /// Returns a vector of deleted epoch commitments. Signing entries for deleted
+    /// payload commitments are also deleted. L1-observed checkpoint payloads and
+    /// L1 refs are preserved.
+    fn del_local_checkpoint_payload_entries_from_epoch(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>>;
+
     /// Store an OL checkpoint signing entry by epoch.
     fn put_checkpoint_signing_entry(
         &self,

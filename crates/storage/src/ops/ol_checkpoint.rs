@@ -20,6 +20,7 @@ inst_ops_simple! {
         get_last_checkpoint_payload_epoch() => Option<EpochCommitment>;
         del_checkpoint_payload_entry(epoch: EpochCommitment) => bool;
         del_checkpoint_payload_entries_from_epoch(start_epoch: Epoch) => Vec<EpochCommitment>;
+        del_local_checkpoint_payload_entries_from_epoch(start_epoch: Epoch) => Vec<EpochCommitment>;
         put_checkpoint_signing_entry(epoch: EpochCommitment, payload_intent_idx: L1PayloadIntentIndex) => ();
         get_checkpoint_signing_entry(epoch: EpochCommitment) => Option<L1PayloadIntentIndex>;
         del_checkpoint_signing_entry(epoch: EpochCommitment) => bool;

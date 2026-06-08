@@ -10,6 +10,7 @@ inst_ops_simple! {
         get_task(key: Vec<u8>) => Option<TaskRecordData>;
         insert_task(key: Vec<u8>, record: TaskRecordData) => ();
         put_task(key: Vec<u8>, record: TaskRecordData) => ();
+        delete_task(key: Vec<u8>) => bool;
         list_retriable(now_secs: u64) => Vec<(Vec<u8>, TaskRecordData)>;
         list_unfinished() => Vec<(Vec<u8>, TaskRecordData)>;
         count_tasks() => usize;

@@ -44,6 +44,15 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
         self.initialized = true;
     }
 
+    /// Returns the canonical commitment of the most recently summarized epoch,
+    /// or `None` if no epoch has been summarized yet.
+    pub(crate) fn last_summarized_commitment(&self) -> anyhow::Result<Option<EpochCommitment>> {
+        let Some(epoch_index) = self.ctx.get_last_summarized_epoch()? else {
+            return Ok(None);
+        };
+        self.ctx.get_canonical_epoch_commitment_at(epoch_index)
+    }
+
     /// Handles a completed epoch, catching up from last checkpoint to latest summary.
     ///
     /// The `target` commitment identifies the epoch that was completed. We process

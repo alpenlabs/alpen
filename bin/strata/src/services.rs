@@ -16,6 +16,7 @@ use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_service::ServiceMonitor;
 
 use crate::{
+    checkpoint_reconcile::reconcile_unaccepted_checkpoint_artifacts,
     context::ensure_genesis,
     css, fcm,
     helpers::build_btcio_params,
@@ -273,6 +274,7 @@ pub(crate) fn start_strata_services(
         nodectx.ol_params(),
         nodectx.status_channel().as_ref(),
     )?;
+    reconcile_unaccepted_checkpoint_artifacts(&nodectx)?;
 
     let is_sequencer = nodectx.config().client.is_sequencer;
 

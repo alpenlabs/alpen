@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use strata_db_types::{errors::DbError, traits::ProverTaskDatabase};
+use strata_db_types::{errors::DbError, traits::ProverTaskDatabase, DbResult};
 use strata_paas::{ProverError, ProverResult, TaskRecord, TaskRecordData, TaskStatus, TaskStore};
 use threadpool::ThreadPool;
 
@@ -27,6 +27,11 @@ impl ProverTaskDbManager {
     pub fn new(pool: ThreadPool, db: Arc<impl ProverTaskDatabase + 'static>) -> Self {
         let ops = Context::new(db).into_ops(pool);
         Self { ops }
+    }
+
+    /// Deletes a task record by key.
+    pub fn delete_task(&self, key: &[u8]) -> DbResult<bool> {
+        self.ops.delete_task_blocking(key.to_vec())
     }
 }
 

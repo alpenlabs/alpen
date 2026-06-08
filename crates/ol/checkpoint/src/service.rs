@@ -40,6 +40,14 @@ impl<C: CheckpointWorkerContext> Service for OLCheckpointService<C> {
 impl<C: CheckpointWorkerContext> SyncService for OLCheckpointService<C> {
     fn on_launch(state: &mut Self::State) -> anyhow::Result<()> {
         state.initialize();
+        // The epoch-summary watch channel resets to `None` on restart and is
+        // never replayed, so drive a one-shot catch-up to rebuild checkpoint
+        // payloads for epochs already summarized before launch (e.g. those
+        // cleared by startup checkpoint reconciliation). Later epochs arrive
+        // through the watch channel as usual.
+        if let Some(commitment) = state.last_summarized_commitment()? {
+            Self::process_input(state, Some(commitment))?;
+        }
         Ok(())
     }
 
