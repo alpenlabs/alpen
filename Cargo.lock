@@ -15121,6 +15121,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-btc-types",
+ "strata-common",
  "strata-config",
  "strata-csm-types",
  "strata-db-store-sled",
