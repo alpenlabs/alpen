@@ -42,7 +42,9 @@ export SAFE_HARBOUR_ADDRESS="0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d95
 # --- Low-level helpers ---
 
 cleanup() {
-    [ -n "${LOGS_PID:-}" ] && kill "${LOGS_PID}" 2>/dev/null || true
+    if [ -n "${LOGS_PID:-}" ]; then
+        kill "${LOGS_PID}" 2>/dev/null || true
+    fi
 
     echo "=== Collecting final state ==="
     {
@@ -61,10 +63,10 @@ cleanup() {
 
     {
         echo "--- OL Params ---"
-        cat "${DOCKER_DIR}/configs/generated/ol-params.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "(unavailable)"
+        python3 -m json.tool <"${DOCKER_DIR}/configs/generated/ol-params.json" 2>/dev/null || echo "(unavailable)"
         echo ""
         echo "--- ASM Params ---"
-        cat "${DOCKER_DIR}/configs/generated/asm-params.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "(unavailable)"
+        python3 -m json.tool <"${DOCKER_DIR}/configs/generated/asm-params.json" 2>/dev/null || echo "(unavailable)"
     } > "${SCRIPT_DIR}/e2e-params.txt" 2>&1
 
     {
