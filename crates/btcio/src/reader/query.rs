@@ -110,11 +110,18 @@ fn calculate_target_next_block(
     storage: &NodeStorage,
     genesis_l1_height: L1Height,
 ) -> anyhow::Result<L1Height> {
-    let target_next_block = storage
+    let client_state_target = storage
         .client_state()
         .fetch_most_recent_state()?
         .map(|(block, _)| block.height().saturating_add(1))
-        .unwrap_or(genesis_l1_height)
+        .unwrap_or(genesis_l1_height);
+    let stored_l1_target = storage
+        .l1()
+        .get_canonical_chain_tip()?
+        .map(|(height, _)| height.saturating_add(1))
+        .unwrap_or(genesis_l1_height);
+    let target_next_block = client_state_target
+        .max(stored_l1_target)
         .max(genesis_l1_height);
     Ok(target_next_block)
 }
@@ -470,6 +477,20 @@ mod tests {
         let target = calculate_target_next_block(&storage, 42).expect("test: target block");
 
         assert_eq!(target, 42);
+    }
+
+    #[test]
+    fn calculate_target_next_block_does_not_replay_stored_l1_tip() {
+        let storage = test_storage();
+        store_client_state(&storage, 100);
+        storage
+            .l1()
+            .extend_canonical_chain(&L1BlockId::default(), 111)
+            .expect("test: extend canonical chain");
+
+        let target = calculate_target_next_block(&storage, 42).expect("test: target block");
+
+        assert_eq!(target, 112);
     }
 
     #[tokio::test]
