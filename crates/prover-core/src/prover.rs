@@ -1,6 +1,8 @@
 //! Core prover: fetches input via spec, proves via strategy,
 //! optionally stores receipt and calls domain hook.
 
+#[cfg(feature = "remote")]
+use std::time::Duration;
 use std::{
     collections::HashMap,
     fmt, slice,
@@ -8,7 +10,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Duration,
 };
 
 use parking_lot::Mutex;
@@ -451,10 +452,10 @@ impl<H: ProofSpec> Prover<H> {
                         error: msg.to_string(),
                     },
                 );
-                let delay = Duration::from_secs(cfg.calculate_delay(new_count));
+                let delay_secs = cfg.jittered_delay_secs(new_count, jitter_seed(key, new_count));
                 let _ = self
                     .task_store
-                    .set_retry_after(key, now_secs() + delay.as_secs());
+                    .set_retry_after(key, now_secs() + delay_secs);
                 return;
             }
         }
@@ -490,6 +491,17 @@ impl<H: ProofSpec> Prover<H> {
             }
         }
     }
+}
+
+/// Deterministic per-task backoff seed (FNV-1a over the key, mixed with the
+/// attempt count). Used to jitter retry delays so distinct tasks that failed on
+/// the same tick spread their wake-ups instead of retrying in lockstep.
+fn jitter_seed(key: &[u8], retry_count: u32) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in key {
+        h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h.wrapping_add(u64::from(retry_count))
 }
 
 /// Decode a storage key back into a typed task.
