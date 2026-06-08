@@ -31,6 +31,10 @@ pub enum TaskStatus {
     },
     /// Proof completed successfully, receipt available.
     Completed,
+    /// Parked waiting for an input dependency (e.g. an upstream chunk proof
+    /// not yet produced). Not a failure: rechecked on a steady cadence via
+    /// `retry_after`, and does NOT consume the retry/resubmit budget.
+    Blocked { reason: String },
     /// Temporary failure; will be retried after backoff.
     TransientFailure {
         retry_count: u32,
@@ -48,6 +52,16 @@ impl TaskStatus {
 
     pub fn is_retriable(&self) -> bool {
         matches!(self, Self::TransientFailure { .. })
+    }
+
+    pub fn is_blocked(&self) -> bool {
+        matches!(self, Self::Blocked { .. })
+    }
+
+    /// Statuses the scanner re-spawns once their `retry_after` elapses:
+    /// transient failures (retry) and blocked tasks (dependency recheck).
+    pub fn wants_rescan(&self) -> bool {
+        self.is_retriable() || self.is_blocked()
     }
 
     pub fn is_in_progress(&self) -> bool {

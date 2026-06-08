@@ -23,7 +23,7 @@ use strata_ee_chain_types::{
 };
 use strata_ee_chunk_runtime::{PrivateInput, RawBlockData, RawChunkData};
 use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader};
-use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
+use strata_paas::{InputResolution, ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_alpen_chunk::{EeChunkProgram, EeChunkProofInput};
 
 /// Chunk-id-shaped task identifier for paas.
@@ -134,7 +134,20 @@ impl ProofSpec for ChunkSpec {
     type Task = ChunkTask;
     type Program = EeChunkProgram;
 
-    async fn fetch_input(&self, task: &Self::Task) -> ProverResult<EeChunkProofInput> {
+    async fn resolve_input(
+        &self,
+        task: &Self::Task,
+    ) -> ProverResult<InputResolution<EeChunkProofInput>> {
+        InputResolution::from_result(self.assemble_input(task).await)
+    }
+}
+
+impl ChunkSpec {
+    /// Assemble the chunk proof input. "Not produced yet" cases (chunk/witness
+    /// not in storage, missing `ExecBlockRecord`) return a transient error,
+    /// bridged to [`InputResolution::Blocked`] by `resolve_input`; malformed
+    /// data returns a permanent error (→ `Rejected`); storage faults stay `Err`.
+    async fn assemble_input(&self, task: &ChunkTask) -> ProverResult<EeChunkProofInput> {
         let chunk_id = task.0;
 
         // 1. Read the chunk's block list.

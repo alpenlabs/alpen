@@ -75,7 +75,7 @@ impl ProverTaskDatabase for ProofDBSled {
         let mut out = Vec::new();
         for item in self.prover_task_tree.iter() {
             let (key, record) = item?;
-            if record.status().is_retriable()
+            if record.status().wants_rescan()
                 && record.retry_after_secs().is_some_and(|t| t <= now_secs)
             {
                 out.push((key, record));
