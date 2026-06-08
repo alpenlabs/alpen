@@ -13,7 +13,6 @@ sequencer = [
   "dep:strata-ol-block-assembly",
   "dep:strata-ol-sequencer",
   "dep:strata-ol-state-provider",
-  "dep:strata-predicate",
 ]
 debug-asm = ["strata-consensus-logic/debug-asm"]
 debug-utils = [
