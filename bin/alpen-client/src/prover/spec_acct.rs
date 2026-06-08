@@ -31,7 +31,9 @@ use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
 use strata_ee_acct_types::UpdateExtraData;
 use strata_ee_chain_types::ChunkTransition;
-use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStore};
+use strata_paas::{
+    InputResolution, ProofSpec, ProverError as PaasError, ProverResult, ReceiptStore,
+};
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
 use strata_snark_acct_types::{
@@ -164,7 +166,21 @@ impl ProofSpec for AcctSpec {
     type Task = BatchTask;
     type Program = EeAcctProgram;
 
-    async fn fetch_input(&self, task: &Self::Task) -> ProverResult<EeAcctProofInput> {
+    async fn resolve_input(
+        &self,
+        task: &Self::Task,
+    ) -> ProverResult<InputResolution<EeAcctProofInput>> {
+        InputResolution::from_result(self.assemble_input(task).await)
+    }
+}
+
+impl AcctSpec {
+    /// Assemble the acct/update proof input. Dependency-not-ready cases (chunk
+    /// receipt missing, pre-state / DA refs / seq-no not yet available, missing
+    /// `ExecBlockRecord`) return transient errors, bridged to
+    /// [`InputResolution::Blocked`] by `resolve_input`; malformed/overflow
+    /// cases return permanent errors (→ `Rejected`); storage faults stay `Err`.
+    async fn assemble_input(&self, task: &BatchTask) -> ProverResult<EeAcctProofInput> {
         let batch_id = task.0;
 
         // 1. Chunk inputs: per-chunk transitions + their proofs, in order.
@@ -266,7 +282,7 @@ impl ProofSpec for AcctSpec {
         let range_data =
             task::spawn_blocking(move || (range_witness_fn)(first_block_hash, last_block_hash))
                 .await
-                .map_err(|e| PaasError::transient(format!("batch witness extraction join: {e}")))?
+                .map_err(|e| PaasError::Storage(format!("batch witness extraction join: {e}")))?
                 .map_err(|e| PaasError::transient(format!("batch witness extraction: {e}")))?;
 
         let ee_private_input =
@@ -327,7 +343,9 @@ impl ProofSpec for AcctSpec {
             .await
             .map_err(|e| PaasError::Storage(format!("get_exec_block({last_block_hash:?}): {e}")))?
             .ok_or_else(|| {
-                PaasError::permanent(format!("last block record missing for batch {batch_id}"))
+                // A missing record is "not produced yet" → Blocked, consistent
+                // with the per-block ExecBlockRecord case above.
+                PaasError::transient(format!("last block record missing for batch {batch_id}"))
             })?;
         let new_tip_blkid = last_record.package().exec_blkid();
         let new_tip_state_root = last_record.account_state().last_exec_state_root();

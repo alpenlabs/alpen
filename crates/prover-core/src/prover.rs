@@ -1,8 +1,6 @@
 //! Core prover: fetches input via spec, proves via strategy,
 //! optionally stores receipt and calls domain hook.
 
-#[cfg(feature = "remote")]
-use std::time::Duration;
 use std::{
     collections::HashMap,
     fmt, slice,
@@ -10,11 +8,12 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::Duration,
 };
 
 use parking_lot::Mutex;
 use tokio::{sync::oneshot, task::spawn_blocking};
-use tracing::{error, info, info_span, warn, Instrument};
+use tracing::{debug, error, info, info_span, warn, Instrument};
 use zkaleido::ZkVmHost;
 #[cfg(feature = "remote")]
 use zkaleido::ZkVmRemoteHost;
@@ -25,7 +24,10 @@ use crate::{
     in_memory::InMemoryTaskStore,
     strategy::NativeStrategy,
     task::{now_secs, TaskRecord, TaskResult, TaskStatus},
-    traits::{ProofSpec, ProveContext, ProveStrategy, ReceiptHook, ReceiptStore, TaskStore},
+    traits::{
+        InputResolution, ProofSpec, ProveContext, ProveStrategy, ReceiptHook, ReceiptStore,
+        TaskStore,
+    },
 };
 
 /// One completion-notification sender per pending `wait_for_tasks` caller.
@@ -33,6 +35,11 @@ use crate::{
 /// Each waiter receives a private `oneshot::Receiver`; [`Prover::notify`]
 /// drains and removes the entry when the task reaches a terminal state.
 type WatcherMap<T> = HashMap<Vec<u8>, Vec<oneshot::Sender<TaskResult<T>>>>;
+
+/// Recheck cadence for a blocked task when no retry config is present and the
+/// spec gave no per-task override. Real consumers configure
+/// `RetryConfig::blocked_recheck_secs`; this is only a floor.
+const DEFAULT_BLOCKED_RECHECK_SECS: u64 = 10;
 
 /// Single-proof-type prover.
 ///
@@ -347,11 +354,28 @@ impl<H: ProofSpec> Prover<H> {
                 },
             );
 
-            // 1. Fetch input
-            let input = match self.spec.fetch_input(&task).await {
-                Ok(input) => input,
+            // 1. Resolve input: ready, blocked on a dependency, or rejected.
+            let input = match self.spec.resolve_input(&task).await {
+                Ok(InputResolution::Ready(input)) => input,
+                Ok(InputResolution::Blocked {
+                    reason,
+                    recheck_after,
+                }) => {
+                    // Not a failure — park and recheck without notifying waiters
+                    // or touching the retry budget.
+                    self.park_blocked(&key, reason, recheck_after);
+                    return;
+                }
+                Ok(InputResolution::Rejected { reason }) => {
+                    error!(%reason, "input rejected");
+                    let _ = self
+                        .task_store
+                        .update_status(&key, TaskStatus::PermanentFailure { error: reason });
+                    self.notify(&key, &task);
+                    return;
+                }
                 Err(e) => {
-                    error!(%e, "fetch_input failed");
+                    error!(%e, "resolve_input failed");
                     self.handle_error(&key, &e, prior_retry_count, prior_resubmit_count);
                     self.notify(&key, &task);
                     return;
@@ -422,6 +446,26 @@ impl<H: ProofSpec> Prover<H> {
         }
         .instrument(span)
         .await;
+    }
+
+    /// Park a task that is waiting on an input dependency.
+    ///
+    /// Sets [`TaskStatus::Blocked`] and schedules a steady recheck via
+    /// `retry_after`. Does not touch the retry/resubmit counters or notify
+    /// waiters — blocking is an expected wait, not a failure, so the scanner
+    /// re-spawns it (via [`TaskStatus::wants_rescan`]) when the recheck is due.
+    fn park_blocked(&self, key: &[u8], reason: String, recheck_after: Option<Duration>) {
+        let secs = recheck_after.map(|d| d.as_secs()).unwrap_or_else(|| {
+            self.config
+                .retry
+                .as_ref()
+                .map_or(DEFAULT_BLOCKED_RECHECK_SECS, |c| c.blocked_recheck_secs)
+        });
+        debug!(reason, recheck_secs = secs, "task blocked on dependency");
+        let _ = self
+            .task_store
+            .update_status(key, TaskStatus::Blocked { reason });
+        let _ = self.task_store.set_retry_after(key, now_secs() + secs);
     }
 
     fn handle_error(&self, key: &[u8], err: &ProverError, retry_count: u32, resubmit_count: u32) {

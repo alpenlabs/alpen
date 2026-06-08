@@ -45,6 +45,12 @@ impl From<&TaskStatus> for StatusInfo {
                 resubmit_count: None,
                 error: None,
             },
+            TaskStatus::Blocked { reason } => Self {
+                name: "blocked",
+                retry_count: None,
+                resubmit_count: None,
+                error: Some(reason.clone()),
+            },
             TaskStatus::TransientFailure {
                 retry_count,
                 resubmit_count,
@@ -159,6 +165,7 @@ pub(crate) struct ProverTasksSummaryInfo {
     pub(crate) pending: usize,
     pub(crate) proving: usize,
     pub(crate) completed: usize,
+    pub(crate) blocked: usize,
     pub(crate) transient_failure: usize,
     pub(crate) permanent_failure: usize,
     pub(crate) matched: usize,
@@ -173,6 +180,7 @@ impl Formattable for ProverTasksSummaryInfo {
             porcelain_field("pending", self.pending),
             porcelain_field("proving", self.proving),
             porcelain_field("completed", self.completed),
+            porcelain_field("blocked", self.blocked),
             porcelain_field("transient_failure", self.transient_failure),
             porcelain_field("permanent_failure", self.permanent_failure),
             porcelain_field("matched", self.matched),

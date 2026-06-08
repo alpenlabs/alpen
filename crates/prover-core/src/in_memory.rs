@@ -87,7 +87,7 @@ impl TaskStore for InMemoryTaskStore {
             .read()
             .values()
             .filter(|r| {
-                r.status().is_retriable() && r.retry_after_secs().is_some_and(|t| t <= now_secs)
+                r.status().wants_rescan() && r.retry_after_secs().is_some_and(|t| t <= now_secs)
             })
             .cloned()
             .collect())
