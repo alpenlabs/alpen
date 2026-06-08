@@ -1,10 +1,46 @@
 //! Configuration.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct ProverConfig {
     pub retry: Option<RetryConfig>,
+}
+
+/// In-attempt (local) retry budget for idempotent backend ops — the gRPC
+/// status/proof polls and similar reads.
+///
+/// This is the fast, in-process tier: a transient blip (e.g. SP1's
+/// "Service was not ready" transport error, which the SDK gives up on quickly)
+/// is retried here with short backoff so it never escalates to a full
+/// task-level retry (5s tick + pipeline restart). Kept small and bounded; the
+/// task-level [`RetryConfig`] is the durable backstop.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalRetryConfig {
+    pub max_attempts: u32,
+    pub base_delay_ms: u64,
+    pub max_delay_ms: u64,
+}
+
+impl Default for LocalRetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 5,
+            base_delay_ms: 500,
+            max_delay_ms: 10_000,
+        }
+    }
+}
+
+impl LocalRetryConfig {
+    /// Backoff before the `attempt`-th (1-based) in-attempt retry, capped at
+    /// `max_delay_ms`.
+    pub fn delay(&self, attempt: u32) -> Duration {
+        let ms = self.base_delay_ms as f64 * 1.5_f64.powi(attempt.saturating_sub(1) as i32);
+        Duration::from_millis(ms.min(self.max_delay_ms as f64) as u64)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +63,9 @@ pub struct RetryConfig {
     /// an expected wait, not a failure. A spec can override per task via
     /// [`InputResolution::Blocked`](crate::InputResolution)'s `recheck_after`.
     pub blocked_recheck_secs: u64,
+    /// In-attempt retry budget for idempotent backend ops (see
+    /// [`LocalRetryConfig`]).
+    pub local: LocalRetryConfig,
 }
 
 impl Default for RetryConfig {
@@ -39,6 +78,7 @@ impl Default for RetryConfig {
             jitter_frac: 0.2,
             max_resubmits: 3,
             blocked_recheck_secs: 10,
+            local: LocalRetryConfig::default(),
         }
     }
 }
@@ -114,6 +154,19 @@ mod tests {
             cfg.jittered_delay_secs(4, 123),
             cfg.calculate_delay(4),
             "zero jitter must equal the base delay"
+        );
+    }
+
+    #[test]
+    fn local_retry_delay_grows_and_caps() {
+        let cfg = LocalRetryConfig::default();
+        assert!(
+            cfg.delay(2) >= cfg.delay(1),
+            "later attempts back off at least as long"
+        );
+        assert!(
+            (cfg.delay(100).as_millis() as u64) <= cfg.max_delay_ms,
+            "delay never exceeds the cap"
         );
     }
 }

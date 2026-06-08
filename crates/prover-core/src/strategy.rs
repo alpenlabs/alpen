@@ -6,12 +6,17 @@
 
 use std::sync::Arc;
 #[cfg(feature = "remote")]
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
 #[cfg(feature = "remote")]
-use tokio::runtime::{Builder, Runtime};
+use tokio::{
+    runtime::{Builder, Runtime},
+    time::sleep,
+};
 use zkaleido::{ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram};
 
+#[cfg(feature = "remote")]
+use crate::config::LocalRetryConfig;
 use crate::{
     error::{ProverError, ProverResult},
     traits::{ProofSpec, ProveContext, ProveStrategy},
@@ -71,6 +76,8 @@ pub(crate) struct RemoteStrategy<Host> {
     /// `Option` only so [`Drop`] can take it and shut it down without blocking;
     /// it is `Some` for the entire normal lifetime.
     rt: Option<Runtime>,
+    /// In-attempt retry budget for the idempotent remote polls.
+    local_retry: LocalRetryConfig,
 }
 
 #[cfg(feature = "remote")]
@@ -89,7 +96,7 @@ impl<Host> Drop for RemoteStrategy<Host> {
 
 #[cfg(feature = "remote")]
 impl<Host> RemoteStrategy<Host> {
-    pub(crate) fn new(host: Host, poll_interval: Duration) -> Self {
+    pub(crate) fn new(host: Host, poll_interval: Duration, local_retry: LocalRetryConfig) -> Self {
         // Multi-thread (not current-thread): concurrent fanned-out `prove()`
         // calls each run on their own `spawn_blocking` thread and `block_on`
         // this runtime simultaneously; a current-thread runtime would serialize
@@ -106,6 +113,42 @@ impl<Host> RemoteStrategy<Host> {
             host: Arc::new(host),
             poll_interval,
             rt: Some(rt),
+            local_retry,
+        }
+    }
+}
+
+/// Retry an idempotent backend op in-process on transient (`RetryResume`)
+/// errors, with short backoff, before surfacing to the task-level tier.
+///
+/// Complements the backend's own transport retry: SP1 marks some transient
+/// transport failures (e.g. "Service was not ready") as permanent and gives up
+/// quickly, so a brief local re-poll recovers them without a full task restart.
+/// Permanent errors are returned immediately.
+#[cfg(feature = "remote")]
+async fn with_local_retry<T, F, Fut>(
+    cfg: &LocalRetryConfig,
+    op_name: &str,
+    mut op: F,
+) -> ProverResult<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = ProverResult<T>>,
+{
+    use crate::error::FailureAction;
+
+    let mut attempt: u32 = 0;
+    loop {
+        match op().await {
+            Ok(value) => return Ok(value),
+            Err(e) => {
+                attempt += 1;
+                if attempt > cfg.max_attempts || e.action() != FailureAction::RetryResume {
+                    return Err(e);
+                }
+                tracing::warn!(op = op_name, attempt, error = %e, "in-attempt retry");
+                sleep(cfg.delay(attempt)).await;
+            }
         }
     }
 }
@@ -202,16 +245,17 @@ where
         proof_id: &Host::ProofId,
         poll_interval: Duration,
     ) -> ProverResult<ProofReceiptWithMetadata> {
-        use tokio::time::sleep;
         use zkaleido::RemoteProofStatus;
 
         use crate::classify::classify_remote_failure;
 
         loop {
-            let status = host
-                .get_status(proof_id)
-                .await
-                .map_err(ProverError::from_zkvm)?;
+            let status = with_local_retry(&self.local_retry, "get_status", || async {
+                host.get_status(proof_id)
+                    .await
+                    .map_err(ProverError::from_zkvm)
+            })
+            .await?;
 
             match status {
                 RemoteProofStatus::Completed => {
@@ -231,10 +275,12 @@ where
         }
 
         // Retrieve the receipt.
-        let receipt = host
-            .get_proof(proof_id)
-            .await
-            .map_err(ProverError::from_zkvm)?;
+        let receipt = with_local_retry(&self.local_retry, "get_proof", || async {
+            host.get_proof(proof_id)
+                .await
+                .map_err(ProverError::from_zkvm)
+        })
+        .await?;
 
         // Verify output is well-formed.
         let _ =

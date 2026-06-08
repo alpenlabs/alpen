@@ -339,6 +339,32 @@ impl<H: ProofSpec> Prover<H> {
         let span = info_span!("prove", task = %task);
 
         async {
+            // Stage checkpoint: if proving already succeeded on a prior attempt
+            // the receipt is in the receipt store. Skip resolve_input and the
+            // (expensive) prove, and re-run only the post-prove hook + finish —
+            // so a transient receipt-hook failure never triggers a re-prove.
+            // Only applies to provers with a receipt store configured.
+            if let Some(receipt) = self
+                .receipt_store
+                .as_ref()
+                .and_then(|store| store.get(&key).ok().flatten())
+            {
+                debug!("receipt already persisted; skipping prove, running hook only");
+                if let Some(hook) = &self.receipt_hook {
+                    if let Err(e) = hook.on_receipt(&task, &receipt).await {
+                        error!(%e, "receipt hook failed (checkpoint path)");
+                        let (retry_count, resubmit_count) = self.read_counts(&key);
+                        self.handle_error(&key, &e, retry_count, resubmit_count);
+                        self.notify(&key, &task);
+                        return;
+                    }
+                }
+                let _ = self.task_store.update_status(&key, TaskStatus::Completed);
+                info!("task completed (from checkpointed receipt)");
+                self.notify(&key, &task);
+                return;
+            }
+
             // Snapshot the retry counter from the persisted record BEFORE
             // flipping status to `Proving`. `schedule_retry` cannot read it
             // from the store after the overwrite below, and `recover` needs
@@ -668,7 +694,16 @@ impl<H: ProofSpec> ProverBuilder<H> {
         Host: ZkVmRemoteHost + Send + Sync + 'static,
     {
         use crate::strategy::RemoteStrategy;
-        self.build(Arc::new(RemoteStrategy::new(host, Duration::from_secs(10))))
+        let local = self
+            .retry
+            .as_ref()
+            .map(|r| r.local.clone())
+            .unwrap_or_default();
+        self.build(Arc::new(RemoteStrategy::new(
+            host,
+            Duration::from_secs(10),
+            local,
+        )))
     }
 
     /// Build with a remote host and custom poll interval.
@@ -678,7 +713,12 @@ impl<H: ProofSpec> ProverBuilder<H> {
         Host: ZkVmRemoteHost + Send + Sync + 'static,
     {
         use crate::strategy::RemoteStrategy;
-        self.build(Arc::new(RemoteStrategy::new(host, poll_interval)))
+        let local = self
+            .retry
+            .as_ref()
+            .map(|r| r.local.clone())
+            .unwrap_or_default();
+        self.build(Arc::new(RemoteStrategy::new(host, poll_interval, local)))
     }
 
     fn build(self, strategy: Arc<dyn ProveStrategy<H>>) -> Prover<H> {
