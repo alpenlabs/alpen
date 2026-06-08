@@ -114,7 +114,7 @@ jobs:
     needs: [check-new-commits]
     if: needs.check-new-commits.outputs.should_run == 'true'
     runs-on: ubuntu-latest-m
-    timeout-minutes: 320
+    timeout-minutes: 260
     environment: prod
     permissions:
       contents: read
