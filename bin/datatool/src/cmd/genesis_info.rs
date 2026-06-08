@@ -16,6 +16,7 @@ const DEFAULT_L1_GENESIS_HEIGHT: L1Height = 100;
 pub(super) struct BlockInfo {
     pub(super) blockhash: B256,
     pub(super) stateroot: B256,
+    pub(super) blocknum: u64,
 }
 
 pub(super) fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
@@ -26,10 +27,15 @@ pub(super) fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Res
     let genesis_header = chain_spec.genesis_header();
     let genesis_stateroot = genesis_header.state_root;
     let genesis_hash = chain_spec.genesis_hash();
+    let genesis_blocknum = chain_spec
+        .genesis()
+        .number
+        .expect("genesis block number should be present");
 
     Ok(BlockInfo {
         blockhash: genesis_hash,
         stateroot: genesis_stateroot,
+        blocknum: genesis_blocknum,
     })
 }
 

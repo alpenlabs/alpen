@@ -2,7 +2,7 @@
 
 use std::{fs, path::Path};
 
-use alpen_chainspec::DEV_CHAIN_SPEC;
+use alpen_ee_config::AlpenEeParams;
 use strata_btc_types::BitcoinAmount;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::AccountId;
@@ -13,7 +13,10 @@ use strata_snark_acct_runtime::IInnerState;
 use crate::{
     acct_predicate::resolve_acct_predicate,
     args::{CmdContext, SubcOlParams},
-    cmd::genesis_info::{get_alpen_ee_genesis_block_info, retrieve_l1_anchor},
+    cmd::{
+        ee_params::read_chain_config,
+        genesis_info::{get_alpen_ee_genesis_block_info, retrieve_l1_anchor},
+    },
 };
 
 const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
@@ -34,6 +37,7 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
     let anchor = retrieve_l1_anchor(cmd.l1_anchor_file.as_deref(), cmd.genesis_l1_height, ctx)?;
 
     let mut ol_params = OLParams::new_empty(anchor.block);
+    let ee_params = read_ee_params(cmd.ee_params.as_deref())?;
 
     let acct_predicate = resolve_acct_predicate(cmd.alpen_predicate)?;
     let balance = BitcoinAmount::from_sat(cmd.alpen_balance.unwrap_or(0));
@@ -41,16 +45,23 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
         Some(hex) => hex
             .parse::<Buf32>()
             .map_err(|e| anyhow::anyhow!("invalid alpen-inner-state hex: {e}"))?,
-        None => compute_inner_state_from_chain_config(cmd.alpen_chain_config.as_deref())?,
+        None => match &ee_params {
+            Some(params) => {
+                compute_inner_state(params.genesis_blockhash(), params.genesis_stateroot())
+            }
+            None => compute_inner_state_from_chain_config(cmd.alpen_chain_config.as_deref())?,
+        },
     };
     let alpen_ee_account = GenesisSnarkAccountData {
         predicate: acct_predicate,
         inner_state,
         balance,
     };
-    ol_params
-        .accounts
-        .insert(ALPEN_EE_ACCOUNT_ID, alpen_ee_account);
+    let account_id = ee_params
+        .as_ref()
+        .map(AlpenEeParams::account_id)
+        .unwrap_or(ALPEN_EE_ACCOUNT_ID);
+    ol_params.accounts.insert(account_id, alpen_ee_account);
 
     let params_buf = serde_json::to_string_pretty(&ol_params)?;
 
@@ -64,16 +75,33 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
     Ok(())
 }
 
-const DEFAULT_CHAIN_SPEC: &str = DEV_CHAIN_SPEC;
+fn read_ee_params(path: Option<&Path>) -> anyhow::Result<Option<AlpenEeParams>> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+
+    let json = fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("failed to read EE params file {path:?}: {e}"))?;
+    let params = AlpenEeParams::from_json_str(&json)
+        .map_err(|e| anyhow::anyhow!("failed to parse EE params file {path:?}: {e}"))?;
+    Ok(Some(params))
+}
 
 fn compute_inner_state_from_chain_config(chain_config: Option<&Path>) -> anyhow::Result<Buf32> {
-    let genesis_json = match chain_config {
-        Some(p) => fs::read_to_string(p)?,
-        None => DEFAULT_CHAIN_SPEC.into(),
-    };
+    let genesis_json = read_chain_config(chain_config)?;
     let genesis_info = get_alpen_ee_genesis_block_info(&genesis_json)?;
-    let blockhash = genesis_info.blockhash.0.into();
-    let state_root = genesis_info.stateroot.0.into();
+    Ok(compute_inner_state(
+        genesis_info.blockhash,
+        genesis_info.stateroot,
+    ))
+}
+
+fn compute_inner_state(
+    blockhash: alloy_primitives::B256,
+    state_root: alloy_primitives::B256,
+) -> Buf32 {
+    let blockhash = blockhash.0.into();
+    let state_root = state_root.0.into();
     let ee_state = EeAccountState::new(blockhash, state_root, Vec::new(), Vec::new());
-    Ok(ee_state.compute_state_root())
+    ee_state.compute_state_root()
 }
