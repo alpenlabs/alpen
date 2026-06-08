@@ -151,6 +151,7 @@ def generate_ol_params(
     datadir: Path,
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
+    ee_params_path: Path | None = None,
 ) -> Path:
     """Generates OL params via ``strata-datatool gen-ol-params``."""
     params_path = datadir / "ol-params.json"
@@ -164,8 +165,26 @@ def generate_ol_params(
         "-o",
         str(params_path),
     ]
+    if ee_params_path is not None:
+        args.extend(["--ee-params", str(ee_params_path)])
 
     run_datatool(args, bconfig)
+    return params_path
+
+
+def generate_ee_params(datadir: Path, alpen_chain_config: str | None = None) -> Path:
+    """Generates EE params via ``strata-datatool gen-ee-params``."""
+    params_path = datadir / "ee-params.json"
+
+    args = [
+        "gen-ee-params",
+        "-o",
+        str(params_path),
+    ]
+    if alpen_chain_config is not None:
+        args.extend(["--alpen-chain-config", alpen_chain_config])
+
+    run_datatool(args)
     return params_path
 
 
