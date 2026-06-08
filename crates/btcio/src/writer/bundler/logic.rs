@@ -15,7 +15,7 @@ pub(crate) async fn process_unbundled_entries(
     ops: &EnvelopeDataOps,
     unbundled: Vec<IntentEntry>,
 ) -> DbResult<Vec<IntentEntry>> {
-    for mut entry in unbundled {
+    for entry in unbundled {
         // Check it is actually unbundled, omit if bundled
         if entry.status != IntentStatus::Unbundled {
             continue;
@@ -24,21 +24,16 @@ pub(crate) async fn process_unbundled_entries(
         // intents and create payload entries accordingly
         let payload_entry = BundledPayloadEntry::new_unsigned(entry.payload().clone());
 
-        // TODO(STR-3691): the following block till "Atomic Ends" should be atomic.
-        let idx = ops.get_next_payload_idx_async().await?;
-        ops.put_payload_entry_async(idx, payload_entry).await?;
+        let intent_commitment = *entry.intent.commitment();
+        let idx = ops
+            .bundle_intent_payload_async(intent_commitment, entry, payload_entry)
+            .await?;
         info!(
             component = "btcio_writer_bundler",
-            intent_commitment = %entry.intent.commitment(),
+            %intent_commitment,
             payload_idx = idx,
             "bundled L1 intent into payload entry"
         );
-
-        // Set the entry to be bundled so that it won't be processed next time.
-        entry.status = IntentStatus::Bundled(idx);
-        ops.put_intent_entry_async(*entry.intent.commitment(), entry)
-            .await?;
-        // Atomic Ends.
     }
     // Return empty Vec because each entry is being bundled right now. This might be different in
     // future.
