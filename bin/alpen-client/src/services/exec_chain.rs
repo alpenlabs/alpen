@@ -6,7 +6,7 @@ use alpen_ee_exec_chain::{
 };
 use strata_service::{AsyncExecutor, ServiceBuilder, TokioMpscInput};
 use tokio::sync::watch;
-use tracing::{info_span, warn, Instrument};
+use tracing::{error_span, warn, Instrument};
 
 /// Starts the exec chain tracker as a service framework service.
 ///
@@ -53,7 +53,7 @@ where
                 }
             }
         }
-        .instrument(info_span!("consensus_forwarder", component = "alpen")),
+        .instrument(error_span!("consensus_forwarder", component = "alpen")),
     );
 
     Ok(handle)

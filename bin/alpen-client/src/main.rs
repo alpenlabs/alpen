@@ -81,7 +81,7 @@ use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, L1Height};
 use tokio::sync::{mpsc, watch};
-use tracing::{error, info, info_span, Instrument};
+use tracing::{error, error_span, info, Instrument};
 
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
@@ -167,7 +167,10 @@ fn main() {
             let health_check_addr = format!("{}:{}", ext.health_check_host, ext.health_check_port);
             let _health_check_handle =
                 start_health_check_server(health_check_addr.clone(), health_check_state.clone())
-                    .instrument(info_span!("start_health_check_server", component = "alpen"))
+                    .instrument(error_span!(
+                        "start_health_check_server",
+                        component = "alpen"
+                    ))
                     .await
                     .context("failed to start health check server")?;
             info!(target: "alpen-client", component = "alpen", %health_check_addr, "health check server started");
@@ -299,35 +302,35 @@ fn main() {
             // Fetch the genesis epoch commitment from the OL client once at startup.
             let genesis_epoch = ol_client
                 .account_genesis_epoch()
-                .instrument(info_span!("account_genesis_epoch", component = "alpen"))
+                .instrument(error_span!("account_genesis_epoch", component = "alpen"))
                 .await
                 .context("failed to fetch account genesis epoch from OL")?;
 
             ensure_genesis(config.as_ref(), &genesis_epoch, storage.as_ref())
-                .instrument(info_span!("ensure_genesis", component = "alpen"))
+                .instrument(error_span!("ensure_genesis", component = "alpen"))
                 .await
                 .context("genesis should not fail")?;
 
             let ol_chain_status = chain_status_checked(ol_client.as_ref())
-                .instrument(info_span!("chain_status_check", component = "alpen"))
+                .instrument(error_span!("chain_status_check", component = "alpen"))
                 .await
                 .context("cannot fetch OL chain status")?;
 
             let ol_tracker_state = init_ol_tracker_state(ol_chain_status, storage.as_ref())
-                .instrument(info_span!("init_ol_tracker", component = "alpen"))
+                .instrument(error_span!("init_ol_tracker", component = "alpen"))
                 .await
                 .context("ol tracker state initialization should not fail")?;
 
             #[cfg(feature = "sequencer")]
             let ol_chain_tracker_state =
                 init_ol_chain_tracker_state(storage.as_ref(), ol_client.as_ref())
-                    .instrument(info_span!("init_ol_chain_tracker", component = "alpen"))
+                    .instrument(error_span!("init_ol_chain_tracker", component = "alpen"))
                     .await
                     .context("ol chain tracker state initialization should not fail")?;
 
             #[cfg(feature = "sequencer")]
             let exec_chain_state = init_exec_chain_state_from_storage(storage.as_ref())
-                .instrument(info_span!("init_exec_chain", component = "alpen"))
+                .instrument(error_span!("init_exec_chain", component = "alpen"))
                 .await
                 .context("exec chain state initialization should not fail")?;
 
@@ -353,12 +356,12 @@ fn main() {
             };
 
             let batch_builder_state = init_batch_builder_state(storage.as_ref())
-                .instrument(info_span!("init_batch_builder", component = "alpen"))
+                .instrument(error_span!("init_batch_builder", component = "alpen"))
                 .await
                 .context("batch builder state initialization should not fail")?;
 
             let batch_lifecycle_state = init_lifecycle_state(storage.as_ref())
-                .instrument(info_span!("init_lifecycle", component = "alpen"))
+                .instrument(error_span!("init_lifecycle", component = "alpen"))
                 .await
                 .context("batch lifecycle state initialization should not fail")?;
             // --- INITIALIZE SERVICES ---
@@ -461,7 +464,7 @@ fn main() {
                 // Block on the async sync operation
                 let sync_result =
                     sync_chainstate_to_engine(storage_clone.as_ref(), &provider_clone, &engine)
-                        .instrument(info_span!("chainstate_sync", component = "alpen"))
+                        .instrument(error_span!("chainstate_sync", component = "alpen"))
                         .await;
 
                 if let Err(e) = sync_result {
@@ -489,11 +492,11 @@ fn main() {
             // Spawn critical tasks
             node.task_executor.spawn_critical(
                 "engine_control",
-                engine_control_task.instrument(info_span!("engine_control", component = "alpen")),
+                engine_control_task.instrument(error_span!("engine_control", component = "alpen")),
             );
             node.task_executor.spawn_critical(
                 "gossip_task",
-                gossip_task.instrument(info_span!("gossip_task", component = "alpen")),
+                gossip_task.instrument(error_span!("gossip_task", component = "alpen")),
             );
 
             #[cfg(feature = "sequencer")]
@@ -523,7 +526,7 @@ fn main() {
                     consensus_watcher.clone(),
                     &service_executor,
                 )
-                .instrument(info_span!("start_exec_chain", component = "alpen"))
+                .instrument(error_span!("start_exec_chain", component = "alpen"))
                 .await
                 .map_err(|e| eyre::eyre!("failed to start exec chain service: {e}"))?;
 
@@ -535,7 +538,7 @@ fn main() {
                 );
 
                 let (latest_batch, _) = require_latest_batch(storage.as_ref())
-                    .instrument(info_span!("require_latest_batch", component = "alpen"))
+                    .instrument(error_span!("require_latest_batch", component = "alpen"))
                     .await?;
 
                 // Validate --batch-sealing-gas-limit if configured.
@@ -746,7 +749,7 @@ fn main() {
                 node.task_executor.spawn_critical(
                     "chunked_envelope_watcher",
                     envelope_watcher_task
-                        .instrument(info_span!("chunked_envelope_watcher", component = "alpen")),
+                        .instrument(error_span!("chunked_envelope_watcher", component = "alpen")),
                 );
 
                 info!(target: "alpen-client", component = "alpen", "btcio DA pipeline started");
@@ -901,7 +904,7 @@ fn main() {
                 node.task_executor.spawn_critical(
                     "ol_chain_tracker",
                     ol_chain_tracker_task
-                        .instrument(info_span!("ol_chain_tracker", component = "alpen")),
+                        .instrument(error_span!("ol_chain_tracker", component = "alpen")),
                 );
                 node.task_executor.spawn_critical(
                     "block_assembly",
@@ -912,33 +915,35 @@ fn main() {
                         payload_engine,
                         storage.clone(),
                     )
-                    .instrument(info_span!("block_assembly", component = "alpen")),
+                    .instrument(error_span!("block_assembly", component = "alpen")),
                 );
 
                 node.task_executor.spawn_critical(
                     "ee_batch_builder",
                     batch_builder_task
-                        .instrument(info_span!("ee_batch_builder", component = "alpen")),
+                        .instrument(error_span!("ee_batch_builder", component = "alpen")),
                 );
                 node.task_executor.spawn_critical(
                     "ee_chunk_witness",
                     chunk_witness_task_fut
-                        .instrument(info_span!("ee_chunk_witness", component = "alpen")),
+                        .instrument(error_span!("ee_chunk_witness", component = "alpen")),
                 );
                 node.task_executor.spawn_critical(
                     "ee_chunk_witness_backfill",
-                    chunk_witness_backfill_task
-                        .instrument(info_span!("ee_chunk_witness_backfill", component = "alpen")),
+                    chunk_witness_backfill_task.instrument(error_span!(
+                        "ee_chunk_witness_backfill",
+                        component = "alpen"
+                    )),
                 );
                 node.task_executor.spawn_critical(
                     "ee_batch_lifecycle",
                     batch_lifecycle_task
-                        .instrument(info_span!("ee_batch_lifecycle", component = "alpen")),
+                        .instrument(error_span!("ee_batch_lifecycle", component = "alpen")),
                 );
                 node.task_executor.spawn_critical(
                     "ee_update_submitter",
                     update_submitter_task
-                        .instrument(info_span!("ee_update_submitter", component = "alpen")),
+                        .instrument(error_span!("ee_update_submitter", component = "alpen")),
                 );
             }
 
