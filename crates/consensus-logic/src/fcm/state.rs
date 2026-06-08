@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc, time};
+use std::{collections::VecDeque, mem, sync::Arc, time};
 
 use anyhow::anyhow;
 use metrics::{counter, gauge};
@@ -72,6 +72,10 @@ impl<C: FcmContext> FcmServiceState<C> {
 
     pub(crate) fn cur_best_block(&self) -> OLBlockCommitment {
         self.inner_state.cur_best_block
+    }
+
+    pub(crate) fn take_startup_replay_candidates(&mut self) -> Vec<OLBlockId> {
+        mem::take(&mut self.inner_state.startup_replay_candidates)
     }
 
     pub(crate) fn chain_tracker_mut(&mut self) -> &mut UnfinalizedBlockTracker {
@@ -212,6 +216,7 @@ pub(crate) struct FcmInnerState {
     chain_tracker: UnfinalizedBlockTracker,
     cur_best_block: L2BlockCommitment,
     cur_olstate: Arc<OLState>,
+    startup_replay_candidates: Vec<OLBlockId>,
     epochs_pending_finalization: VecDeque<EpochCommitment>,
 }
 
@@ -220,11 +225,13 @@ impl FcmInnerState {
         chain_tracker: UnfinalizedBlockTracker,
         cur_best_block: L2BlockCommitment,
         cur_olstate: Arc<OLState>,
+        startup_replay_candidates: Vec<OLBlockId>,
     ) -> Self {
         Self {
             chain_tracker,
             cur_best_block,
             cur_olstate,
+            startup_replay_candidates,
             epochs_pending_finalization: VecDeque::new(),
         }
     }
@@ -254,7 +261,7 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
 
     // Populate the unfinalized block tracker.
     let mut chain_tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
-    chain_tracker
+    let startup_replay_candidates = chain_tracker
         .load_unfinalized_ol_blocks_async(fcm_ctx.as_ref())
         .await?;
 
@@ -268,7 +275,12 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
         .await?
         .ok_or(Error::MissingOLState(tip_blkid))?;
 
-    let fcm_inner = FcmInnerState::new(chain_tracker, cur_tip_block, ol_state);
+    let fcm_inner = FcmInnerState::new(
+        chain_tracker,
+        cur_tip_block,
+        ol_state,
+        startup_replay_candidates,
+    );
     gauge!("strata_ol_tip_slot").set(cur_tip_block.slot() as f64);
     gauge!("strata_fcm_finalized_epoch").set(finalized_epoch.epoch() as f64);
     gauge!("strata_fcm_finalized_slot").set(finalized_epoch.last_slot() as f64);

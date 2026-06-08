@@ -69,6 +69,7 @@ pub async fn start_fcm_service<C: FcmContext>(
         .with_input(fcm_input)
         .launch_async("fcm", texec.as_ref())
         .await?;
+
     Ok(FcmServiceHandle {
         service_monitor,
         fcm_tx,
@@ -98,7 +99,24 @@ impl<C: FcmContext> Service for FcmService<C> {
 }
 
 impl<C: FcmContext> AsyncService for FcmService<C> {
-    async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
+    async fn on_launch(state: &mut Self::State) -> anyhow::Result<()> {
+        let startup_replay_candidates = state.take_startup_replay_candidates();
+        if startup_replay_candidates.is_empty() {
+            return Ok(());
+        }
+
+        let replay_candidate_count = startup_replay_candidates.len();
+        for blkid in startup_replay_candidates {
+            let msg = ForkChoiceMessage::NewBlock(blkid);
+            process_fc_message(&msg, state)
+                .await
+                .with_context(|| format!("failed to replay startup OL block {blkid}"))?;
+        }
+
+        debug!(
+            replay_candidate_count,
+            "processed startup replay candidates"
+        );
         Ok(())
     }
 
@@ -1002,6 +1020,7 @@ mod tests {
                 tracker,
                 cur_block.commitment(),
                 Arc::new(cur_block.state.clone()),
+                Vec::new(),
             );
             FcmServiceState::new(self.ctx.clone(), PredicateKey::always_accept(), inner)
         }
@@ -1425,6 +1444,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn on_launch_replays_startup_candidates_and_drains_them() -> anyhow::Result<()> {
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        let block1 = make_storage_block(1, genesis_blkid);
+        let blkid1 = block1.header().compute_blkid();
+        let commitment1 = OLBlockCommitment::new(block1.header().slot(), blkid1);
+        let block2 = make_storage_block(2, blkid1);
+        let blkid2 = block2.header().compute_blkid();
+        let commitment2 = OLBlockCommitment::new(block2.header().slot(), blkid2);
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        for (block, commitment) in [(block1, commitment1), (block2, commitment2)] {
+            let blkid = block.header().compute_blkid();
+            ctx.storage().put_ol_block(block);
+            ctx.storage()
+                .set_block_status(blkid, BlockStatus::Unchecked)
+                .await?;
+            ctx.storage()
+                .put_toplevel_ol_state(commitment, make_genesis_state().state().clone());
+        }
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state =
+            init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
+
+        <FcmService<StubFcmContext> as AsyncService>::on_launch(&mut fcm_state).await?;
+
+        assert_eq!(ctx.executed_blocks(), vec![commitment1, commitment2]);
+        assert_eq!(ctx.safe_tip_updates(), vec![commitment1, commitment2]);
+        assert_eq!(fcm_state.cur_best_block(), commitment2);
+        assert_eq!(fcm_state.take_startup_replay_candidates(), Vec::new());
+        assert_eq!(
+            ctx.storage().get_block_status(blkid1).await?,
+            Some(BlockStatus::Valid)
+        );
+        assert_eq!(
+            ctx.storage().get_block_status(blkid2).await?,
+            Some(BlockStatus::Valid)
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn stub_storage_round_trips_blocks_and_statuses() {
         let storage = StubFcmStorage::new();
         let block = make_storage_block(1, OLBlockId::from(Buf32::zero()));
@@ -1516,12 +1591,17 @@ mod tests {
         );
         ctx.storage().put_ol_block(block);
         ctx.storage()
+            .set_block_status(blkid, BlockStatus::Unchecked)
+            .await
+            .expect("set unchecked status");
+        ctx.storage()
             .put_toplevel_ol_state(block_commitment, make_genesis_state().state().clone());
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
 
         let mut fcm_state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone())
             .await
             .expect("FCM state initializes from stub context");
+        assert_eq!(fcm_state.take_startup_replay_candidates(), vec![blkid]);
 
         process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state)
             .await
@@ -1567,10 +1647,14 @@ mod tests {
             BlockStatus::Valid,
         );
         ctx.storage().put_ol_block(block);
+        ctx.storage()
+            .set_block_status(blkid, BlockStatus::Unchecked)
+            .await?;
         ctx.storage().set_block_high_watermark(block_commitment);
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
 
         let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
+        assert_eq!(fcm_state.take_startup_replay_candidates(), vec![blkid]);
 
         process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state).await?;
 
