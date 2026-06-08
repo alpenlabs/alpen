@@ -15,16 +15,28 @@ use serde::{Deserialize, Serialize};
 pub enum TaskStatus {
     /// Task registered but not yet picked up for proving.
     Pending,
-    /// Actively being proved. Carries the retry counter so the count survives
-    /// the `TransientFailure → Proving → (crash)` transition: if the process
-    /// dies mid-attempt (OOM, SIGKILL, panic) the persisted record still
-    /// reflects how many retries the task has already burned, and `recover`
-    /// can bump it correctly instead of resetting to zero.
-    Proving { retry_count: u32 },
+    /// Actively being proved. Carries the retry/resubmit counters so they
+    /// survive the `TransientFailure → Proving → (crash)` transition: if the
+    /// process dies mid-attempt (OOM, SIGKILL, panic) the persisted record
+    /// still reflects how many attempts the task has already burned, and
+    /// `recover` can bump correctly instead of resetting to zero.
+    ///
+    /// `retry_count` counts resume-class retries (network blips, crash
+    /// recovery); `resubmit_count` counts resubmit-class retries (the remote
+    /// request was dead so a fresh one was submitted). They have separate
+    /// budgets because a resubmit re-runs the whole proof.
+    Proving {
+        retry_count: u32,
+        resubmit_count: u32,
+    },
     /// Proof completed successfully, receipt available.
     Completed,
     /// Temporary failure; will be retried after backoff.
-    TransientFailure { retry_count: u32, error: String },
+    TransientFailure {
+        retry_count: u32,
+        resubmit_count: u32,
+        error: String,
+    },
     /// Unrecoverable failure; task will not be retried.
     PermanentFailure { error: String },
 }

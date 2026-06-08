@@ -18,6 +18,10 @@ pub struct RetryConfig {
     /// wake-up times of many tasks that failed on the same tick, so they don't
     /// retry in a synchronized storm against a shared backend.
     pub jitter_frac: f64,
+    /// Budget for resubmit-class retries (a dead remote request resubmitted
+    /// fresh). Kept much smaller than `max_retries` because each resubmit
+    /// re-runs the whole proof, whereas resume-class retries only re-poll.
+    pub max_resubmits: u32,
 }
 
 impl Default for RetryConfig {
@@ -28,6 +32,7 @@ impl Default for RetryConfig {
             multiplier: 1.5,
             max_delay_secs: 3600,
             jitter_frac: 0.2,
+            max_resubmits: 3,
         }
     }
 }
@@ -59,6 +64,10 @@ impl RetryConfig {
 
     pub fn should_retry(&self, retry_count: u32) -> bool {
         retry_count < self.max_retries
+    }
+
+    pub fn should_resubmit(&self, resubmit_count: u32) -> bool {
+        resubmit_count < self.max_resubmits
     }
 }
 
