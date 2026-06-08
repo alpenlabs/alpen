@@ -25,6 +25,8 @@ struct ExecPackageMetadata {
     ol_block: OLBlockCommitment,
     /// Next inbox message index at this ol_block.
     next_inbox_msg_idx: u64,
+    /// Monotonically incrementing index for next deposit to use.
+    next_deposit_idx: u64,
 }
 
 /// `ExecBlockPackage` with additional block metadata
@@ -50,6 +52,7 @@ impl ExecBlockRecord {
         timestamp_ms: u64,
         parent_blockhash: Hash,
         next_inbox_msg_idx: u64,
+        next_deposit_idx: u64,
         messages: Vec<MessageEntry>,
     ) -> Self {
         Self {
@@ -62,6 +65,7 @@ impl ExecBlockRecord {
                 timestamp_ms,
                 parent_blockhash,
                 next_inbox_msg_idx,
+                next_deposit_idx,
             },
         }
     }
@@ -100,6 +104,10 @@ impl ExecBlockRecord {
 
     pub fn next_inbox_msg_idx(&self) -> u64 {
         self.metadata.next_inbox_msg_idx
+    }
+
+    pub fn next_deposit_idx(&self) -> u64 {
+        self.metadata.next_deposit_idx
     }
 
     pub fn messages(&self) -> &[MessageEntry] {

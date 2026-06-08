@@ -488,6 +488,7 @@ mod tests {
             timestamp_ms,
             parent_hash,
             0,
+            0,
             vec![],
         )
     }

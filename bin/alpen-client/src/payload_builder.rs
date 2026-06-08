@@ -91,10 +91,9 @@ impl AlpenRethPayloadEngine {
             .iter()
             .map(|deposit| {
                 Ok::<Withdrawal, eyre::Error>(Withdrawal {
-                    // Index fields are set to 0 because Alpen uses the Withdrawal type
-                    // to transfer deposits into the EVM state, not for validator withdrawals.
-                    // These indices are unused in our execution context.
-                    index: 0,
+                    // Alpen uses the Withdrawal type to transfer deposits into the EVM state, not
+                    // for validator withdrawals.
+                    index: deposit.idx(),
                     validator_index: 0,
                     address: deposit.address(),
                     amount: sats_to_gwei(deposit.amount().to_sat())

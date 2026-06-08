@@ -114,6 +114,7 @@ fn create_block_assembly_inputs<'a>(
         timestamp_ms,
         max_deposits_per_block: config.max_deposits_per_block(),
         bridge_gateway_account_id: config.bridge_gateway_account_id(),
+        next_deposit_idx: last_local_block.next_deposit_idx(),
     }
 }
 
@@ -127,6 +128,7 @@ fn create_next_exec_block_record(
     timestamp_ms: u64,
     parent_blockhash: Hash,
     next_inbox_msg_idx: u64,
+    next_deposit_idx: u64,
     messages: Vec<MessageEntry>,
 ) -> ExecBlockRecord {
     ExecBlockRecord::new(
@@ -137,6 +139,7 @@ fn create_next_exec_block_record(
         timestamp_ms,
         parent_blockhash,
         next_inbox_msg_idx,
+        next_deposit_idx,
         messages,
     )
 }
@@ -309,6 +312,7 @@ async fn build_next_block(
         package,
         payload,
         account_state,
+        next_deposit_idx,
     } = build_next_exec_block(block_assembly_inputs, payload_builder)
         .await
         .context("build_next_block: failed to build exec block")?;
@@ -323,6 +327,7 @@ async fn build_next_block(
         timestamp_ms,
         parent_blockhash,
         next_inbox_msg_idx,
+        next_deposit_idx,
         inbox_messages,
     );
 
@@ -366,6 +371,7 @@ mod tests {
             ol_block,
             timestamp_ms,
             Hash::default(),
+            0,
             0,
             vec![],
         )
