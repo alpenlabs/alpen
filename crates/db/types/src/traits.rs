@@ -354,6 +354,16 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
     /// Store the [`IntentEntry`].
     fn put_intent_entry(&self, payloadid: Buf32, payloadentry: IntentEntry) -> DbResult<u64>;
 
+    /// Atomically stores a payload entry and marks an existing intent as bundled.
+    ///
+    /// Returns the payload index allocated for the new [`BundledPayloadEntry`].
+    fn bundle_intent_payload(
+        &self,
+        intent_id: Buf32,
+        intent_entry: IntentEntry,
+        payloadentry: BundledPayloadEntry,
+    ) -> DbResult<u64>;
+
     /// Get a [`IntentEntry`] by its hash
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>>;
 
