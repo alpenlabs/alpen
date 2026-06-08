@@ -1,6 +1,5 @@
-# This workflow is triggered when a new commit is made on main branch or manually triggered.
-# It builds and pushes the Docker images. Afterwards updates the Helm values with the new Docker
-# image tags and commits and pushes the changes to the deployments repo.
+# This workflow is manually triggered (workflow_dispatch).
+# It builds and pushes the Docker images to ECR.
 
 name: Continuous Deployment
 on:
@@ -39,9 +38,6 @@ jobs:
         # The directories `bin` and `docker` must contain the subdirectories in the
         # matrix below.
         program: [prover-client]
-    outputs:
-      program: ${{ matrix.program }}
-      sp1_value: ${{ steps.extract-sp1-value.outputs.sp1_value }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
@@ -92,17 +88,6 @@ jobs:
           ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${PROGRAM}"
 
           if [ "$PROGRAM" == "prover-client" ]; then
-            # Build datatool with sp1 features
-            cargo build --bin strata-datatool -F "sp1-builder" --release
-
-            # The SP1 checkpoint VK is the checkpoint predicate, serialized as
-            # "Sp1Groth16:<hex>"; strip the type prefix to recover the raw VK hex
-            # the Helm values expect.
-            CHECKPOINT_PREDICATE=$(./target/release/strata-datatool gen-checkpoint-predicate)
-            SP1_VALUE="${CHECKPOINT_PREDICATE#*:}"
-            echo "sp1_value=$SP1_VALUE" >> "$GITHUB_OUTPUT"
-            echo "SP1 verification key: $SP1_VALUE"
-
             # Build prover with sp1 features
             docker build \
               --build-arg PROVER_FEATURES="sp1" \
@@ -116,90 +101,3 @@ jobs:
 
           # Push the image to ECR
           docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHORT_TAG}"
-
-      - name: Extract SP1 Value
-        id: extract-sp1-value
-        env:
-          SP1_VALUE: ${{ steps.build-and-push.outputs.sp1_value }}
-        run: |
-          # store sp1 value only if the matrix program is prover-client
-          if [ "${{ matrix.program }}" == "prover-client" ]; then
-            if [ -n "$SP1_VALUE" ]; then
-              echo "sp1_value=$SP1_VALUE" >> "$GITHUB_OUTPUT"
-            else
-              # the process must exit if we do not have the verification key when prover is built
-              echo "Error: Failed to extract SP1 value from parameters"
-              exit 1
-            fi
-          fi
-
-  update-helm-values:
-    name: Update Helm Values
-    needs: [build-and-push]
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'development') }}
-    steps:
-      - name: Set up SSH for private repo access
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.DEPLOYMENTS_REPO_WRITE }}
-
-      - name: Clone deployments repo (specific branch)
-        env:
-          BRANCH_OF_DEPLOYMENT_REPO: ${{ vars.BRANCH_OF_DEPLOYMENT_REPO }}
-        run: |
-          git clone --depth=1 --branch "$BRANCH_OF_DEPLOYMENT_REPO" git@github.com:alpenlabs/deployments.git deployments
-          cd deployments || exit
-          git checkout "$BRANCH_OF_DEPLOYMENT_REPO"
-
-      - name: Install yq
-        run: |
-          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
-          sudo chmod +x /usr/local/bin/yq
-
-      - name: Update Docker image tag in Helm values
-        env:
-          SHORT_TAG: ${{ github.sha }}
-          CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
-          SP1_VALUE: ${{ needs.build-and-push.outputs.sp1_value || 'default_value' }}
-        run: |
-          # Sanitize SHORT_TAG
-          SHORT_TAG="${COMMIT//[^a-zA-Z0-9._-]/}"
-          SHORT_TAG="${SHORT_TAG:0:7}"
-
-          VALUES_FILE_NODES="deployments/clusters/${CLUSTER_NAME}/values/strata-nodes-values.yaml"
-          VALUES_FILE_PROVER="deployments/clusters/${CLUSTER_NAME}/values/strata-prover-values.yaml"
-
-          # update sequencer tags
-          yq eval -i ".client.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
-
-          # update prover tags
-          yq eval -i ".proverClient.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_PROVER"
-
-          # update sp1 value in prover's and node's params.json
-          sed -i "s|\"sp1\": \"[a-f0-9]*\"|\"sp1\": \"${SP1_VALUE}\"|g" "$VALUES_FILE_NODES"
-          sed -i "s|\"sp1\": \"[a-f0-9]*\"|\"sp1\": \"${SP1_VALUE}\"|g" "$VALUES_FILE_PROVER"
-
-      - name: Commit and push changes
-        env:
-          SHORT_TAG: ${{ github.sha }}
-          GH_ACTIONS_USER_NAME: ${{ vars.GH_ACTIONS_USER_NAME }}
-          CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
-          BRANCH_OF_DEPLOYMENT_REPO: ${{ vars.BRANCH_OF_DEPLOYMENT_REPO }}
-        run: |
-          SHORT_TAG="${COMMIT//[^a-zA-Z0-9._-]/}"
-          SHORT_TAG="${SHORT_TAG:0:7}"
-
-          cd deployments || exit
-          git config user.name "$GH_ACTIONS_USER_NAME"
-          git config user.email "$GH_ACTIONS_USER_NAME@alpenlabs.io"
-
-          # only if there is a change in any of the values file, commit and push
-          if git diff --quiet; then
-            echo "No changes to commit."
-          else
-            git add "clusters/$CLUSTER_NAME/values"
-            git commit -m "Update image tags to \"$SHORT_TAG\"."
-            git pull --rebase origin "$BRANCH_OF_DEPLOYMENT_REPO"
-            git push origin "$BRANCH_OF_DEPLOYMENT_REPO"
-          fi
