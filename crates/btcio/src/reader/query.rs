@@ -13,6 +13,7 @@ use strata_primitives::l1::{L1BlockCommitment, L1Height};
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
+use thiserror::Error;
 use tokio::time::sleep;
 use tracing::*;
 
@@ -63,6 +64,20 @@ impl ReaderValidation {
             expected_l1_anchor,
         }
     }
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+enum ReaderError {
+    #[error(
+        "btcio: unable to find common L1 block with Bitcoin client chain \
+         (client height {client_height}, reader best height {reader_best_height}, \
+         known depth {known_depth})"
+    )]
+    PivotNotFound {
+        client_height: L1Height,
+        reader_best_height: L1Height,
+        known_depth: usize,
+    },
 }
 
 /// The main task that initializes the reader state and starts reading from bitcoin.
@@ -269,9 +284,18 @@ async fn poll_for_new_blocks<R: Reader>(
             return Ok(vec![revert_ev]);
         }
     } else {
-        // TODO(STR-3691): make this case a bit more structured
-        error!("unable to find common block with client chain, something is seriously wrong here!");
-        bail!("things are broken with l1 reader");
+        let reader_best_height = state.best_block_idx();
+        let known_depth = state.iter_blocks_back().count();
+        let err = ReaderError::PivotNotFound {
+            client_height,
+            reader_best_height,
+            known_depth,
+        };
+        error!(
+            client_height,
+            reader_best_height, known_depth, "unable to find common block with client chain"
+        );
+        return Err(err.into());
     }
 
     debug!(%client_height, "have new blocks");
@@ -362,13 +386,20 @@ async fn process_block<R: Reader>(
 
 #[cfg(test)]
 mod tests {
-    use strata_csm_types::{ClientState, ClientUpdateOutput};
+    use std::{collections::VecDeque, sync::Arc};
+
+    use bitcoin::{hashes::Hash, BlockHash, Network};
+    use strata_config::btcio::ReaderConfig;
+    use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_l1_txfmt::MagicBytes;
     use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
+    use strata_status::StatusChannel;
     use strata_storage::{create_node_storage, NodeStorage};
     use threadpool::ThreadPool;
 
     use super::*;
+    use crate::test_utils::TestBitcoinClient;
 
     fn test_storage() -> NodeStorage {
         create_node_storage(get_test_sled_backend(), ThreadPool::new(1))
@@ -379,15 +410,46 @@ mod tests {
         L1BlockCommitment::new(height, L1BlockId::default())
     }
 
-    fn store_client_state(storage: &NodeStorage, height: L1Height) {
+    async fn store_client_state(storage: &NodeStorage, height: L1Height) {
         let block = l1_block(height);
         storage
             .client_state()
-            .put_update_blocking(
+            .put_update_async(
                 &block,
                 ClientUpdateOutput::new_state(ClientState::default()),
             )
+            .await
             .expect("test: put client state");
+    }
+
+    async fn store_l1_canonical(storage: &NodeStorage, height: L1Height) {
+        storage
+            .l1()
+            .extend_canonical_chain_async(&L1BlockId::default(), height)
+            .await
+            .expect("test: extend canonical chain");
+    }
+
+    fn block_hash(byte: u8) -> BlockHash {
+        BlockHash::from_byte_array([byte; 32])
+    }
+
+    fn reader_context(storage: NodeStorage) -> ReaderContext<TestBitcoinClient> {
+        ReaderContext {
+            client: Arc::new(TestBitcoinClient::new(0)),
+            storage: Arc::new(storage),
+            config: Arc::new(ReaderConfig::default()),
+            btcio_params: BtcioParams::new(2, MagicBytes::new(*b"ALPN"), 0),
+            expected_network: Network::Regtest,
+            expected_l1_anchor: l1_block(0),
+            status_channel: StatusChannel::new(
+                ClientState::default(),
+                l1_block(0),
+                L1Status::default(),
+                None,
+                None,
+            ),
+        }
     }
 
     #[test]
@@ -417,5 +479,25 @@ mod tests {
         let target = calculate_target_next_block(&storage, 42).expect("test: target block");
 
         assert_eq!(target, 42);
+    }
+
+    #[tokio::test]
+    async fn poll_for_new_blocks_reports_structured_pivot_failure() {
+        let ctx = reader_context(test_storage());
+        let mut state = ReaderState::new(3, 2, VecDeque::from([block_hash(1), block_hash(2)]), 0);
+        let mut status_updates = Vec::new();
+
+        let err = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+            .await
+            .expect_err("test: pivot failure");
+
+        assert_eq!(
+            err.downcast_ref::<ReaderError>(),
+            Some(&ReaderError::PivotNotFound {
+                client_height: 100,
+                reader_best_height: 2,
+                known_depth: 2,
+            })
+        );
     }
 }
