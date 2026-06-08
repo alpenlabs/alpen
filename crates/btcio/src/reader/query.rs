@@ -106,17 +106,55 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
 }
 
 /// Calculates target next block to start polling l1 from.
-fn calculate_target_next_block(
+async fn calculate_target_next_block(
     storage: &NodeStorage,
     genesis_l1_height: L1Height,
 ) -> anyhow::Result<L1Height> {
-    let target_next_block = storage
-        .client_state()
-        .fetch_most_recent_state()?
-        .map(|(block, _)| block.height().saturating_add(1))
+    let client_state_target = calculate_client_state_target(storage).await?;
+    let stored_l1_target = storage
+        .l1()
+        .get_canonical_chain_tip_async()
+        .await?
+        .map(|(height, _)| height.saturating_add(1))
+        .unwrap_or(genesis_l1_height);
+    let target_next_block = client_state_target
         .unwrap_or(genesis_l1_height)
+        .max(stored_l1_target)
         .max(genesis_l1_height);
     Ok(target_next_block)
+}
+
+async fn calculate_client_state_target(storage: &NodeStorage) -> anyhow::Result<Option<L1Height>> {
+    let Some((block, _)) = storage
+        .client_state()
+        .fetch_most_recent_state_async()
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    match storage
+        .l1()
+        .get_canonical_blockid_at_height_async(block.height())
+        .await?
+    {
+        Some(blockid) if blockid == *block.blkid() => Ok(Some(block.height().saturating_add(1))),
+        Some(blockid) => {
+            warn!(
+                client_state_block = %block,
+                canonical_l1_blkid = %blockid,
+                "ignoring latest client-state height because it is not on the stored L1 canonical chain"
+            );
+            Ok(None)
+        }
+        None => {
+            warn!(
+                client_state_block = %block,
+                "ignoring latest client-state height because its L1 block is not stored as canonical"
+            );
+            Ok(None)
+        }
+    }
 }
 
 /// Inner function that actually does the reading task.
@@ -452,33 +490,66 @@ mod tests {
         }
     }
 
-    #[test]
-    fn calculate_target_next_block_falls_back_to_genesis_without_client_state() {
+    #[tokio::test]
+    async fn calculate_target_next_block_falls_back_to_genesis_without_client_state() {
         let storage = test_storage();
 
-        let target = calculate_target_next_block(&storage, 42).expect("test: target block");
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
 
         assert_eq!(target, 42);
     }
 
-    #[test]
-    fn calculate_target_next_block_uses_latest_client_state_height() {
+    #[tokio::test]
+    async fn calculate_target_next_block_uses_latest_client_state_height() {
         let storage = test_storage();
-        store_client_state(&storage, 100);
+        store_client_state(&storage, 100).await;
+        store_l1_canonical(&storage, 100).await;
 
-        let target = calculate_target_next_block(&storage, 42).expect("test: target block");
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
 
         assert_eq!(target, 101);
     }
 
-    #[test]
-    fn calculate_target_next_block_clamps_pregenesis_client_state_to_genesis() {
+    #[tokio::test]
+    async fn calculate_target_next_block_ignores_client_state_without_l1_canonical_anchor() {
         let storage = test_storage();
-        store_client_state(&storage, 10);
+        store_client_state(&storage, 100).await;
 
-        let target = calculate_target_next_block(&storage, 42).expect("test: target block");
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
 
         assert_eq!(target, 42);
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_clamps_pregenesis_client_state_to_genesis() {
+        let storage = test_storage();
+        store_client_state(&storage, 10).await;
+        store_l1_canonical(&storage, 10).await;
+
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
+
+        assert_eq!(target, 42);
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_does_not_replay_stored_l1_tip() {
+        let storage = test_storage();
+        store_client_state(&storage, 100).await;
+        store_l1_canonical(&storage, 111).await;
+
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
+
+        assert_eq!(target, 112);
     }
 
     #[tokio::test]
