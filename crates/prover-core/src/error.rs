@@ -13,8 +13,8 @@ pub type ProverResult<T> = Result<T, ProverError>;
 
 /// What the task layer should do with a failed proving attempt.
 ///
-/// The decision is a property of the *error*, classified once (see
-/// [`crate::classify`]), not of the call-site that produced it.
+/// The decision is a property of the *error*, classified once in the crate's
+/// `classify` module, not of the call-site that produced it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureAction {
     /// Retry, resuming any saved remote state (poll the same `ProofId`).
@@ -41,7 +41,7 @@ pub enum ProverError {
     ///
     /// Constructed via [`ProverError::transient`] / [`ProverError::resubmit`] /
     /// [`ProverError::permanent`] (for consumer-side input errors) or
-    /// [`ProverError::from_zkvm`] (for upstream zkaleido errors).
+    /// `ProverError::from_zkvm` (for upstream zkaleido errors).
     #[error("{msg}")]
     Failed { action: FailureAction, msg: String },
 
