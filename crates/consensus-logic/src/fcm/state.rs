@@ -30,18 +30,23 @@ impl<C: FcmContext> FcmServiceState<C> {
         self.inner_state.cur_olstate.clone()
     }
 
-    /// Gets the most recently finalized epoch, even if it's one that we haven't
-    /// accepted as a new base yet due to missing intermediary blocks.
-    fn get_most_recently_finalized_epoch(&self) -> &EpochCommitment {
+    /// Gets the latest finalized epoch observed by FCM.
+    ///
+    /// This may be newer than [`UnfinalizedBlockTracker::finalized_epoch`] when
+    /// CSM has reported a finalized epoch but FCM's finalized epoch has not
+    /// advanced to it yet because the terminal block is not finalizable.
+    pub(crate) fn latest_observed_finalized_epoch(&self) -> &EpochCommitment {
         self.inner_state
             .epochs_pending_finalization
             .back()
             .unwrap_or(self.inner_state.chain_tracker.finalized_epoch())
     }
 
-    /// Does handling to accept an epoch as finalized before we've actually validated it.
-    pub(crate) fn attach_epoch_pending_finalization(&mut self, epoch: EpochCommitment) -> bool {
-        let last_finalized_epoch = self.get_most_recently_finalized_epoch();
+    /// Records a finalized epoch observed from FCM's context.
+    ///
+    /// Returns whether the epoch was queued for FCM finalization.
+    pub(crate) fn record_observed_finalized_epoch(&mut self, epoch: EpochCommitment) -> bool {
+        let latest_observed_finalized_epoch = self.latest_observed_finalized_epoch();
 
         if epoch.is_null() {
             warn!("tried to finalize null epoch");
@@ -49,11 +54,35 @@ impl<C: FcmContext> FcmServiceState<C> {
         }
 
         // Some checks to make sure we don't go backwards.
-        if last_finalized_epoch.last_slot() > 0 {
-            let epoch_advances = epoch.epoch() > last_finalized_epoch.epoch();
-            let block_advances = epoch.last_slot() > last_finalized_epoch.last_slot();
+        if latest_observed_finalized_epoch.last_slot() > 0 {
+            let epoch_advances = epoch.epoch() > latest_observed_finalized_epoch.epoch();
+            let block_advances = epoch.last_slot() > latest_observed_finalized_epoch.last_slot();
+
+            if epoch == *latest_observed_finalized_epoch {
+                debug!(
+                    ?latest_observed_finalized_epoch,
+                    "finalized epoch already observed, ignoring"
+                );
+                return false;
+            }
+
             if !epoch_advances || !block_advances {
-                warn!(?last_finalized_epoch, received = ?epoch, "received invalid or out of order epoch");
+                let epoch_regresses = epoch.epoch() < latest_observed_finalized_epoch.epoch();
+                let block_regresses =
+                    epoch.last_slot() < latest_observed_finalized_epoch.last_slot();
+                if epoch_regresses && block_regresses {
+                    warn!(
+                        ?latest_observed_finalized_epoch,
+                        received = ?epoch,
+                        "received out-of-order epoch"
+                    );
+                } else {
+                    warn!(
+                        ?latest_observed_finalized_epoch,
+                        received = ?epoch,
+                        "received inconsistent epoch ordering"
+                    );
+                }
                 return false;
             }
         }
