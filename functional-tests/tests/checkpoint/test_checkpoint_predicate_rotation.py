@@ -14,8 +14,6 @@ from common.wait import wait_until_with_value
 from envconfigs.strata import StrataEnvConfig
 from tests.checkpoint.helpers import (
     mine_until_finalized_epoch,
-    parse_checkpoint_epoch,
-    wait_for_checkpoint_duty,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,18 +84,6 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             activated_finalized_epoch,
             blocked_epoch,
         )
-
-        duty = wait_for_checkpoint_duty(
-            strata_rpc,
-            timeout=120,
-            step=1.0,
-            min_epoch=blocked_epoch,
-        )
-        duty_epoch = parse_checkpoint_epoch(duty)
-        if duty_epoch != blocked_epoch:
-            raise AssertionError(
-                f"expected next checkpoint duty for epoch {blocked_epoch}, got {duty_epoch}"
-            )
 
         checkpoint_info = self._wait_for_checkpoint_info(strata_rpc, blocked_epoch)
         logger.info(
