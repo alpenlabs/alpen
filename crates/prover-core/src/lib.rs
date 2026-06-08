@@ -17,7 +17,7 @@ mod strategy;
 mod task;
 mod traits;
 
-pub use config::{ProverConfig, RetryConfig};
+pub use config::{LocalRetryConfig, ProverConfig, RetryConfig};
 pub use error::{FailureAction, ProverError, ProverResult};
 pub use in_memory::{InMemoryReceiptStore, InMemoryTaskStore};
 pub use prover::{Prover, ProverBuilder};
