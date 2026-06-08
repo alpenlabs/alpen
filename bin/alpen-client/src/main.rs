@@ -1441,7 +1441,13 @@ mod resolve_writer_config_tests {
         fee_rate: Option<f64>,
         mempool_url: Option<&str>,
     ) -> AdditionalConfig {
-        let argv = ["alpen-client", "--sequencer-pubkey", &"0".repeat(64)];
+        let argv = [
+            "alpen-client",
+            "--ee-params",
+            "/tmp/ee-params.json",
+            "--sequencer-pubkey",
+            &"0".repeat(64),
+        ];
         let mut cfg = <AdditionalConfig as clap::Parser>::parse_from(argv);
         cfg.btcio_fee_policy = policy;
         cfg.btcio_fee_rate = fee_rate;
