@@ -68,7 +68,24 @@ pub(crate) struct RemoteStrategy<Host> {
     /// Long-lived runtime shared across every `prove()` call so the SP1 gRPC
     /// channel's background worker (spawned on first use) outlives individual
     /// proves. See the type-level docs for why this must not be per-call.
-    rt: Arc<Runtime>,
+    ///
+    /// `Option` only so [`Drop`] can take it and shut it down without blocking;
+    /// it is `Some` for the entire normal lifetime.
+    rt: Option<Runtime>,
+}
+
+#[cfg(feature = "remote")]
+impl<Host> Drop for RemoteStrategy<Host> {
+    fn drop(&mut self) {
+        // The default `Runtime` drop performs a *blocking* shutdown, which
+        // panics if it runs inside an async context — and these strategies are
+        // dropped during async service teardown (the bins build remote provers
+        // inside the tokio runtime). `shutdown_background` releases the runtime
+        // without blocking, so it is safe to drop from any context.
+        if let Some(rt) = self.rt.take() {
+            rt.shutdown_background();
+        }
+    }
 }
 
 #[cfg(feature = "remote")]
@@ -89,7 +106,7 @@ impl<Host> RemoteStrategy<Host> {
         Self {
             host: Arc::new(host),
             poll_interval,
-            rt: Arc::new(rt),
+            rt: Some(rt),
         }
     }
 }
@@ -113,8 +130,13 @@ where
 
         // Drive on the strategy's long-lived runtime (see the type-level docs):
         // a fresh per-call runtime would kill SP1's process-cached gRPC channel
-        // worker after the first prove.
-        local.block_on(&self.rt, async move {
+        // worker after the first prove. `rt` is `Some` for the whole lifetime;
+        // it is only taken in `Drop`.
+        let rt = self
+            .rt
+            .as_ref()
+            .expect("remote-prover runtime present outside Drop");
+        local.block_on(rt, async move {
             // Try to resume from saved metadata (prior crash).
             let proof_id = if let Some(saved) = ctx.saved.take() {
                 match Host::ProofId::try_from(saved) {
