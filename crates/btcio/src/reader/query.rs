@@ -12,7 +12,7 @@ use strata_config::btcio::ReaderConfig;
 use strata_primitives::l1::{L1BlockCommitment, L1Height};
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
-use strata_storage::{L1BlockManager, NodeStorage};
+use strata_storage::NodeStorage;
 use tokio::time::sleep;
 use tracing::*;
 
@@ -76,7 +76,7 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
     let target_next_block =
-        calculate_target_next_block(storage.l1().as_ref(), btcio_params.genesis_l1_height())?;
+        calculate_target_next_block(storage.as_ref(), btcio_params.genesis_l1_height())?;
 
     let ctx = ReaderContext {
         client,
@@ -92,15 +92,15 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
 
 /// Calculates target next block to start polling l1 from.
 fn calculate_target_next_block(
-    l1_manager: &L1BlockManager,
-    horz_height: L1Height,
+    storage: &NodeStorage,
+    genesis_l1_height: L1Height,
 ) -> anyhow::Result<L1Height> {
-    // TODO(STR-3691): switch to checking the L1 tip in the consensus/client state
-    let target_next_block = l1_manager
-        .get_canonical_chain_tip()?
-        .map(|(height, _)| height + 1)
-        .unwrap_or(horz_height);
-    assert!(target_next_block >= horz_height);
+    let target_next_block = storage
+        .client_state()
+        .fetch_most_recent_state()?
+        .map(|(block, _)| block.height().saturating_add(1))
+        .unwrap_or(genesis_l1_height)
+        .max(genesis_l1_height);
     Ok(target_next_block)
 }
 
@@ -358,4 +358,64 @@ async fn process_block<R: Reader>(
     let block_ev = L1Event::BlockData(block_data, state.epoch());
 
     Ok((block_ev, l1blkid))
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_csm_types::{ClientState, ClientUpdateOutput};
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
+    use strata_storage::{create_node_storage, NodeStorage};
+    use threadpool::ThreadPool;
+
+    use super::*;
+
+    fn test_storage() -> NodeStorage {
+        create_node_storage(get_test_sled_backend(), ThreadPool::new(1))
+            .expect("test: create node storage")
+    }
+
+    fn l1_block(height: L1Height) -> L1BlockCommitment {
+        L1BlockCommitment::new(height, L1BlockId::default())
+    }
+
+    fn store_client_state(storage: &NodeStorage, height: L1Height) {
+        let block = l1_block(height);
+        storage
+            .client_state()
+            .put_update_blocking(
+                &block,
+                ClientUpdateOutput::new_state(ClientState::default()),
+            )
+            .expect("test: put client state");
+    }
+
+    #[test]
+    fn calculate_target_next_block_falls_back_to_genesis_without_client_state() {
+        let storage = test_storage();
+
+        let target = calculate_target_next_block(&storage, 42).expect("test: target block");
+
+        assert_eq!(target, 42);
+    }
+
+    #[test]
+    fn calculate_target_next_block_uses_latest_client_state_height() {
+        let storage = test_storage();
+        store_client_state(&storage, 100);
+
+        let target = calculate_target_next_block(&storage, 42).expect("test: target block");
+
+        assert_eq!(target, 101);
+    }
+
+    #[test]
+    fn calculate_target_next_block_clamps_pregenesis_client_state_to_genesis() {
+        let storage = test_storage();
+        store_client_state(&storage, 10);
+
+        let target = calculate_target_next_block(&storage, 42).expect("test: target block");
+
+        assert_eq!(target, 42);
+    }
 }
