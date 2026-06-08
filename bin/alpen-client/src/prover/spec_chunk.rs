@@ -143,13 +143,11 @@ impl ProofSpec for ChunkSpec {
             .get_chunk_by_id(chunk_id)
             .await
             .map_err(|e| PaasError::Storage(format!("get_chunk_by_id({chunk_id:?}): {e}")))?
-            .ok_or_else(|| {
-                PaasError::TransientFailure(format!("chunk {chunk_id:?} not in storage"))
-            })?;
+            .ok_or_else(|| PaasError::transient(format!("chunk {chunk_id:?} not in storage")))?;
 
         let block_hashes: Vec<Hash> = chunk.blocks_iter().collect();
         if block_hashes.is_empty() {
-            return Err(PaasError::PermanentFailure(format!(
+            return Err(PaasError::permanent(format!(
                 "chunk {chunk_id:?} has no blocks"
             )));
         }
@@ -167,7 +165,7 @@ impl ProofSpec for ChunkSpec {
             .await
             .map_err(|e| PaasError::Storage(format!("get_chunk_witness({chunk_id:?}): {e}")))?
             .ok_or_else(|| {
-                PaasError::TransientFailure(format!(
+                PaasError::transient(format!(
                     "no chunk witness for {chunk_id:?} yet — seal-time extraction may still be \
                      in flight, gated on the AccessedStateGenerator exex catching up, or the \
                      record was deleted"
@@ -175,7 +173,7 @@ impl ProofSpec for ChunkSpec {
             })?;
 
         if witness.block_count() != block_hashes.len() {
-            return Err(PaasError::PermanentFailure(format!(
+            return Err(PaasError::permanent(format!(
                 "chunk witness block count mismatch for {chunk_id:?}: chunk has {} blocks, witness has {}",
                 block_hashes.len(),
                 witness.block_count(),
@@ -187,16 +185,14 @@ impl ProofSpec for ChunkSpec {
         // builder did via `ChunkWitnessRecord::new` in main.rs.)
         let prev_header: alloy_consensus::Header =
             alloy_rlp::decode_exact(&witness.prev_header_rlp[..]).map_err(|e| {
-                PaasError::PermanentFailure(format!("decode prev_header_rlp for {chunk_id:?}: {e}"))
+                PaasError::permanent(format!("decode prev_header_rlp for {chunk_id:?}: {e}"))
             })?;
         let alloy_blocks: Vec<Block> = witness
             .blocks_rlp
             .iter()
             .map(|b| alloy_rlp::decode_exact(&b[..]))
             .collect::<Result<_, _>>()
-            .map_err(|e| {
-                PaasError::PermanentFailure(format!("decode block RLP for {chunk_id:?}: {e}"))
-            })?;
+            .map_err(|e| PaasError::permanent(format!("decode block RLP for {chunk_id:?}: {e}")))?;
         let raw_partial_pre_state = witness.raw_partial_pre_state;
 
         // 3. Parent header — wrap in `EvmHeader` and encode via `strata_codec` for the guest
@@ -204,7 +200,7 @@ impl ProofSpec for ChunkSpec {
         let parent_evm_header = EvmHeader::new(prev_header);
         let parent_blkid: Hash = parent_evm_header.compute_block_id();
         let raw_prev_header = encode_to_vec(&parent_evm_header)
-            .map_err(|e| PaasError::PermanentFailure(format!("encode prev header: {e}")))?;
+            .map_err(|e| PaasError::permanent(format!("encode prev header: {e}")))?;
 
         // Integrity check: the witness was extracted for some specific
         // chunk; here we confirm its parent-header + per-block hashes
@@ -215,7 +211,7 @@ impl ProofSpec for ChunkSpec {
         // we already have the hashes computed for the assembly loop
         // below.
         if parent_blkid != chunk_id.prev_block() {
-            return Err(PaasError::PermanentFailure(format!(
+            return Err(PaasError::permanent(format!(
                 "chunk witness prev-block hash mismatch for {chunk_id:?}: \
                  chunk expects {:?}, witness has {parent_blkid:?}",
                 chunk_id.prev_block(),
@@ -226,7 +222,7 @@ impl ProofSpec for ChunkSpec {
         {
             let computed: Hash = EvmHeader::new(alloy_block.header.clone()).compute_block_id();
             if computed != *expected_hash {
-                return Err(PaasError::PermanentFailure(format!(
+                return Err(PaasError::permanent(format!(
                     "chunk witness block hash mismatch for {chunk_id:?} at index {idx}: \
                      chunk has {expected_hash:?}, witness has {computed:?}"
                 )));
@@ -253,7 +249,7 @@ impl ProofSpec for ChunkSpec {
                 .await
                 .map_err(|e| PaasError::Storage(format!("get_exec_block({block_hash:?}): {e}")))?
                 .ok_or_else(|| {
-                    PaasError::TransientFailure(format!(
+                    PaasError::transient(format!(
                         "ExecBlockRecord missing for {block_hash:?} in chunk {chunk_id:?}"
                     ))
                 })?;
@@ -277,9 +273,7 @@ impl ProofSpec for ChunkSpec {
                     block_inputs,
                     block_outputs,
                 )
-                .map_err(|e| {
-                    PaasError::PermanentFailure(format!("encode block {block_hash:?}: {e}"))
-                })?,
+                .map_err(|e| PaasError::permanent(format!("encode block {block_hash:?}: {e}")))?,
             );
         }
 

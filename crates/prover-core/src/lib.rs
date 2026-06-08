@@ -8,6 +8,7 @@
 //! everything else (concrete impls, supporting types) lives next to its
 //! domain.
 
+mod classify;
 mod config;
 mod error;
 mod in_memory;
@@ -17,7 +18,7 @@ mod task;
 mod traits;
 
 pub use config::{ProverConfig, RetryConfig};
-pub use error::{ProverError, ProverResult};
+pub use error::{FailureAction, ProverError, ProverResult};
 pub use in_memory::{InMemoryReceiptStore, InMemoryTaskStore};
 pub use prover::{Prover, ProverBuilder};
 pub use task::{TaskRecord, TaskRecordData, TaskResult, TaskStatus};

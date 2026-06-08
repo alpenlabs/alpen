@@ -70,6 +70,10 @@ impl TaskStore for ProverTaskDbManager {
         self.modify(key, |d| d.set_metadata(Some(data)))
     }
 
+    fn clear_metadata(&self, key: &[u8]) -> ProverResult<()> {
+        self.modify(key, |d| d.set_metadata(None))
+    }
+
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
         let items = self.ops.list_retriable_blocking(now_secs).map_err(db_err)?;
         Ok(items

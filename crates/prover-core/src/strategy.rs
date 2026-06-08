@@ -40,8 +40,7 @@ where
         input: &<H::Program as ZkVmProgram>::Input,
         _ctx: ProveContext,
     ) -> ProverResult<ProofReceiptWithMetadata> {
-        H::Program::prove(input, self.host.as_ref())
-            .map_err(|e| ProverError::PermanentFailure(e.to_string()))
+        H::Program::prove(input, self.host.as_ref()).map_err(ProverError::from_zkvm)
     }
 }
 
@@ -174,12 +173,12 @@ where
         host: &Host,
     ) -> ProverResult<Host::ProofId> {
         let prepared = <H::Program as ZkVmProgram>::prepare_input::<Host::Input<'_>>(input)
-            .map_err(|e| ProverError::PermanentFailure(e.to_string()))?;
+            .map_err(|e| ProverError::from_zkvm(e.into()))?;
 
         let proof_id = host
             .start_proving(prepared, H::Program::proof_type())
             .await
-            .map_err(|e| ProverError::TransientFailure(e.to_string()))?;
+            .map_err(ProverError::from_zkvm)?;
 
         tracing::info!(%proof_id, "remote proof submitted");
         Ok(proof_id)
@@ -206,11 +205,13 @@ where
         use tokio::time::sleep;
         use zkaleido::RemoteProofStatus;
 
+        use crate::classify::classify_remote_failure;
+
         loop {
             let status = host
                 .get_status(proof_id)
                 .await
-                .map_err(|e| ProverError::TransientFailure(e.to_string()))?;
+                .map_err(ProverError::from_zkvm)?;
 
             match status {
                 RemoteProofStatus::Completed => {
@@ -218,9 +219,10 @@ where
                     break;
                 }
                 RemoteProofStatus::Failed(reason) => {
-                    return Err(ProverError::PermanentFailure(format!(
-                        "remote proof failed: {reason}"
-                    )));
+                    return Err(ProverError::Failed {
+                        action: classify_remote_failure(&reason),
+                        msg: format!("remote proof failed: {reason}"),
+                    });
                 }
                 RemoteProofStatus::Requested | RemoteProofStatus::InProgress => {
                     sleep(poll_interval).await;
@@ -232,12 +234,12 @@ where
         let receipt = host
             .get_proof(proof_id)
             .await
-            .map_err(|e| ProverError::PermanentFailure(e.to_string()))?;
+            .map_err(ProverError::from_zkvm)?;
 
         // Verify output is well-formed.
         let _ =
             <H::Program as ZkVmProgram>::process_output::<Host>(receipt.receipt().public_values())
-                .map_err(|e| ProverError::PermanentFailure(e.to_string()))?;
+                .map_err(ProverError::from_zkvm)?;
 
         Ok(receipt)
     }

@@ -120,6 +120,10 @@ pub trait TaskStore: Send + Sync + 'static {
     fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()>;
     fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()>;
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()>;
+    /// Drop any persisted strategy metadata (e.g. a remote `ProofId`) for the
+    /// task, so the next attempt starts fresh instead of resuming a dead
+    /// request. Used by the resubmit (`RetryFresh`) retry path.
+    fn clear_metadata(&self, key: &[u8]) -> ProverResult<()>;
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>>;
     /// Every record that was submitted but hasn't reached a terminal state —
     /// Pending or Proving. Used by startup recovery to re-spawn
@@ -146,6 +150,9 @@ impl<T: TaskStore + ?Sized> TaskStore for Arc<T> {
     }
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
         (**self).set_metadata(key, data)
+    }
+    fn clear_metadata(&self, key: &[u8]) -> ProverResult<()> {
+        (**self).clear_metadata(key)
     }
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
         (**self).list_retriable(now_secs)
