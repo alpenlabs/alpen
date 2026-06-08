@@ -1203,6 +1203,8 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
+ "serde",
+ "serde_json",
  "strata-acct-types",
  "strata-config",
  "strata-predicate",
