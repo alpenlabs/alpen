@@ -22,8 +22,8 @@ use async_trait::async_trait;
 use bitcoin::Network;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
 use strata_acct_types::{
-    AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, Hash, L1BlockRecord, MessageEntry,
-    MsgPayload, l1_block_record_leaf_hash,
+    AccountId, AccountSerial, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash,
+    L1BlockRecord, MessageEntry, MsgPayload, l1_block_record_leaf_hash,
     tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{
@@ -55,8 +55,7 @@ use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLState};
 use strata_ol_stf::{
-    BRIDGE_GATEWAY_ACCT_ID, BlockComponents, BlockContext, BlockInfo,
-    construct_block as stf_construct_block,
+    BlockComponents, BlockContext, BlockInfo, construct_block as stf_construct_block,
 };
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;

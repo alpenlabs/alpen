@@ -1,14 +1,11 @@
 //! Body commitment and round-trip verification tests for the OL STF implementation.
 
-use strata_acct_types::{AccountId, BitcoinAmount, MAX_MESSAGES};
+use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MAX_MESSAGES};
 use strata_identifiers::Buf32;
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::MAX_LOGS_PER_BLOCK;
 
-use crate::{
-    BRIDGE_GATEWAY_ACCT_ID, assembly::BlockComponents, context::BlockInfo, errors::ExecError,
-    test_utils::*,
-};
+use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
 
 const WITHDRAWAL_LOG_AMOUNT: u64 = 100_000_000;
 

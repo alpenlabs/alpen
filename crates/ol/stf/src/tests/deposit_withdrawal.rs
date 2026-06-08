@@ -1,13 +1,13 @@
 //! Deposit-withdraw tests for end-to-end workflows.
 
-use strata_acct_types::BitcoinAmount;
+use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount};
 use strata_identifiers::SubjectId;
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::DEPOSIT_MSG_TYPE_ID;
 
-use crate::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, test_utils::*};
+use crate::test_utils::*;
 
 #[test]
 fn test_snark_account_deposit_and_withdrawal() {

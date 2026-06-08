@@ -27,7 +27,6 @@ strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-bridge-types.workspace = true
 strata-ol-msg-types.workspace = true
-strata-ol-stf.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
