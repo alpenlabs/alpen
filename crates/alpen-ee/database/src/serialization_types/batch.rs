@@ -252,6 +252,8 @@ pub(crate) struct DBChunk {
     idx: u64,
     prev_block: [u8; 32],
     last_block: [u8; 32],
+    last_blocknum: u64,
+    batch_idx: u64,
     inner_blocks: Vec<[u8; 32]>,
 }
 
@@ -261,6 +263,8 @@ impl From<Chunk> for DBChunk {
             idx: value.idx(),
             prev_block: value.prev_block().into(),
             last_block: value.last_block().into(),
+            last_blocknum: value.last_blocknum(),
+            batch_idx: value.batch_idx(),
             inner_blocks: value.inner_blocks().iter().map(|h| (*h).into()).collect(),
         }
     }
@@ -273,6 +277,8 @@ impl From<DBChunk> for Chunk {
             value.idx,
             Hash::from(value.prev_block),
             Hash::from(value.last_block),
+            value.last_blocknum,
+            value.batch_idx,
             inner_blocks,
         )
     }

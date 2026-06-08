@@ -1,6 +1,7 @@
 mod accessed_state;
 mod account;
 mod batch;
+mod chunk;
 mod chunk_witness;
 mod errors;
 mod exec_block;
@@ -17,6 +18,9 @@ pub use account::{OLBlockOrEpoch, Storage};
 pub use batch::BatchStorage;
 #[cfg(feature = "test-utils")]
 pub use batch::{tests as batch_storage_test_fns, MockBatchStorage};
+pub use chunk::ChunkStorage;
+#[cfg(feature = "test-utils")]
+pub use chunk::{tests as chunk_storage_test_fns, MockChunkStorage};
 pub use chunk_witness::ChunkWitnessStore;
 #[cfg(feature = "test-utils")]
 pub use chunk_witness::MockChunkWitnessStore;

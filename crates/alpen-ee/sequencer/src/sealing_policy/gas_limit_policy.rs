@@ -3,7 +3,7 @@
 //! Seals a batch when the cumulative gas used across blocks reaches a
 //! configured maximum.
 
-use super::{BatchPolicy, BatchSealingPolicy};
+use super::policy::{AccumulationPolicy, SealingPolicy};
 
 /// Gas-limit based batching policy.
 #[derive(Debug)]
@@ -23,7 +23,7 @@ pub struct GasValue {
     pub total_gas: u64,
 }
 
-impl BatchPolicy for GasLimitPolicy {
+impl AccumulationPolicy for GasLimitPolicy {
     type BlockData = GasBlockData;
     type AccumulatedValue = GasValue;
 
@@ -50,7 +50,7 @@ impl MaxGasSealing {
     }
 }
 
-impl BatchSealingPolicy<GasLimitPolicy> for MaxGasSealing {
+impl SealingPolicy<GasLimitPolicy> for MaxGasSealing {
     fn would_exceed(&self, value: &GasValue, data: &GasBlockData) -> bool {
         value.total_gas + data.gas_used > self.max_gas
     }
@@ -59,7 +59,7 @@ impl BatchSealingPolicy<GasLimitPolicy> for MaxGasSealing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{batch_builder::Accumulator, test_utils::*};
+    use crate::{sealing_policy::Accumulator, test_utils::*};
 
     #[test]
     fn test_accumulates_gas() {
@@ -118,7 +118,7 @@ mod tests {
         let mut acc: Accumulator<GasLimitPolicy> = Accumulator::new();
 
         acc.add_block(test_blocknumhash(1), &GasBlockData { gas_used: 999 });
-        acc.drain_for_batch();
+        acc.drain();
 
         assert_eq!(acc.value().total_gas, 0);
     }

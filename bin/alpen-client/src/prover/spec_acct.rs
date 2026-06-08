@@ -14,8 +14,8 @@ use std::{fmt, sync::Arc};
 
 use alloy_primitives::B256;
 use alpen_ee_common::{
-    build_ledger_refs_from_da, BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef,
-    Storage,
+    build_ledger_refs_from_da, BatchId, BatchStatus, BatchStorage, ChunkStorage, ExecBlockStorage,
+    L1DaBlockRef, Storage,
 };
 use alpen_ee_da_runtime::builders::{build_da_witness, DaDedupResolver, DaWitnessBuildError};
 use alpen_ee_database::EeNodeStorage;
@@ -157,6 +157,7 @@ impl From<AcctProofInputError> for PaasError {
 pub(crate) struct AcctSpec {
     chunk_receipts: Arc<dyn ReceiptStore>,
     batch_storage: Arc<dyn BatchStorage>,
+    chunk_storage: Arc<dyn ChunkStorage>,
     storage: Arc<EeNodeStorage>,
     btc_client: Arc<BtcClient>,
     state_diff_provider: Arc<dyn StateDiffProvider>,
@@ -173,6 +174,7 @@ impl AcctSpec {
     pub(crate) fn new(
         chunk_receipts: Arc<dyn ReceiptStore>,
         batch_storage: Arc<dyn BatchStorage>,
+        chunk_storage: Arc<dyn ChunkStorage>,
         storage: Arc<EeNodeStorage>,
         btc_client: Arc<BtcClient>,
         state_diff_provider: Arc<dyn StateDiffProvider>,
@@ -183,6 +185,7 @@ impl AcctSpec {
         Self {
             chunk_receipts,
             batch_storage,
+            chunk_storage,
             storage,
             btc_client,
             state_diff_provider,
@@ -203,7 +206,7 @@ impl ProofSpec for AcctSpec {
 
         // 1. Chunk inputs: per-chunk transitions + their proofs, in order.
         let chunks: Vec<ChunkInput> =
-            collect_chunk_inputs_for_batch(&*self.batch_storage, &*self.chunk_receipts, batch_id)
+            collect_chunk_inputs_for_batch(&*self.chunk_storage, &*self.chunk_receipts, batch_id)
                 .await?;
         if chunks.is_empty() {
             return Err(PaasError::PermanentFailure(format!(
@@ -499,11 +502,11 @@ fn decode_chunk_transition(ci: &ChunkInput) -> ProverResult<ChunkTransition> {
 /// (paas will retry on tick); returns `PermanentFailure` if a stored
 /// receipt fails to decode as a [`ChunkTransition`] (data corruption).
 async fn collect_chunk_inputs_for_batch(
-    batch_storage: &dyn BatchStorage,
+    chunk_storage: &dyn ChunkStorage,
     chunk_receipts: &dyn ReceiptStore,
     batch_id: BatchId,
 ) -> ProverResult<Vec<ChunkInput>> {
-    let chunk_ids = batch_storage
+    let chunk_ids = chunk_storage
         .get_batch_chunks(batch_id)
         .await
         .map_err(|e| PaasError::Storage(format!("get_batch_chunks({batch_id}): {e}")))?

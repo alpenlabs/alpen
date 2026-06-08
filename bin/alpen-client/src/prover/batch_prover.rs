@@ -1,7 +1,7 @@
 //! [`BatchProver`] impl that drives the chunk + acct paas provers.
 //!
 //! `request_proof_generation(batch_id)` reads the batch's chunk-id list
-//! from `BatchStorage::get_batch_chunks` and submits one `ChunkTask` per
+//! from `ChunkStorage::get_batch_chunks` and submits one `ChunkTask` per
 //! chunk + one `BatchTask(batch_id)`. Both submits are idempotent;
 //! multi-batch concurrency is paas-native.
 //!
@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{
-    BatchId, BatchProver, BatchStorage, ChunkStatus, Proof, ProofGenerationStatus, ProofId,
+    BatchId, BatchProver, ChunkStatus, ChunkStorage, Proof, ProofGenerationStatus, ProofId,
 };
 use async_trait::async_trait;
 use strata_paas::{ProverError as PaasError, ProverHandle, TaskStatus};
@@ -27,7 +27,7 @@ use super::{
 pub(crate) struct PaasBatchProver {
     chunk_handle: ProverHandle<ChunkSpec>,
     acct_handle: ProverHandle<AcctSpec>,
-    batch_storage: Arc<dyn BatchStorage>,
+    chunk_storage: Arc<dyn ChunkStorage>,
     batch_proofs: Arc<EeBatchProofDbManager>,
 }
 
@@ -35,13 +35,13 @@ impl PaasBatchProver {
     pub(crate) fn new(
         chunk_handle: ProverHandle<ChunkSpec>,
         acct_handle: ProverHandle<AcctSpec>,
-        batch_storage: Arc<dyn BatchStorage>,
+        chunk_storage: Arc<dyn ChunkStorage>,
         batch_proofs: Arc<EeBatchProofDbManager>,
     ) -> Self {
         Self {
             chunk_handle,
             acct_handle,
-            batch_storage,
+            chunk_storage,
             batch_proofs,
         }
     }
@@ -51,7 +51,7 @@ impl PaasBatchProver {
 impl BatchProver for PaasBatchProver {
     async fn request_proof_generation(&self, batch_id: BatchId) -> eyre::Result<()> {
         let chunks = self
-            .batch_storage
+            .chunk_storage
             .get_batch_chunks(batch_id)
             .await?
             .ok_or_else(|| eyre::eyre!("no chunks set for batch {batch_id}"))?;
@@ -69,13 +69,13 @@ impl BatchProver for PaasBatchProver {
                 .await
                 .map_err(|e| eyre::eyre!("submit chunk task {chunk_id:?}: {e}"))?;
 
-            let Some((_chunk, status)) = self.batch_storage.get_chunk_by_id(chunk_id).await? else {
+            let Some((_chunk, status)) = self.chunk_storage.get_chunk_by_id(chunk_id).await? else {
                 warn!(?chunk_id, %batch_id, "submitted chunk task for missing chunk");
                 continue;
             };
 
             if !matches!(status, ChunkStatus::ProofReady(_)) {
-                self.batch_storage
+                self.chunk_storage
                     .update_chunk_status(chunk_id, ChunkStatus::ProofPending(task.to_string()))
                     .await?;
             }

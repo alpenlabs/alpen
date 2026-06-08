@@ -6,12 +6,11 @@
 //!
 //! # Architecture
 //!
-//! The batch builder is parameterized by a [`BatchPolicy`] that defines:
-//! - The type of data collected per block ([`BatchPolicy::BlockData`])
-//! - The type of accumulated value ([`BatchPolicy::AccumulatedValue`])
-//! - How to accumulate block data ([`BatchPolicy::accumulate`])
-//!
-//! A [`BatchSealingPolicy`] determines when to seal a batch based on the accumulated state.
+//! The batch builder is parameterized by an
+//! [`AccumulationPolicy`](crate::sealing_policy::AccumulationPolicy) and
+//! [`SealingPolicy`](crate::sealing_policy::SealingPolicy) from
+//! [`crate::sealing_policy`]. See that module for details on the policy
+//! framework and available implementations.
 //!
 //! # Reorg Handling
 //!
@@ -34,8 +33,8 @@
 //! ```ignore
 //! use alpen_ee_genesis::ensure_batch_genesis;
 //! use alpen_ee_sequencer::{
-//!     create_batch_builder, BatchBuilderState, BlockCountPolicy, FixedBlockCountSealing,
-//!     init_batch_builder_state,
+//!     create_batch_builder, BatchBuilderState, init_batch_builder_state,
+//!     sealing_policy::block_count_policy::{BlockCountPolicy, FixedBlockCountSealing},
 //! };
 //!
 //! // Ensure genesis batch exists (must be called before init_batch_builder_state)
@@ -57,6 +56,7 @@
 //!     block_storage,
 //!     batch_storage,
 //!     exec_chain,
+//!     Some(event_tx), // chunk builder event channel
 //! );
 //!
 //! // Use handle to watch for batch updates
@@ -66,25 +66,14 @@
 //! task.await;
 //! ```
 
-mod accumulator;
-mod block_count;
 mod canonical;
 mod ctx;
-mod gas_limit;
+mod events;
 mod handle;
-mod or_policy;
 mod reorg;
 mod state;
 mod task;
-mod traits;
 
-pub use accumulator::Accumulator;
-pub use block_count::{
-    BlockCountData, BlockCountDataProvider, BlockCountPolicy, BlockCountValue,
-    FixedBlockCountSealing,
-};
-pub use gas_limit::{GasBlockData, GasLimitPolicy, GasValue, MaxGasSealing};
+pub use events::BatchBuilderEvent;
 pub use handle::{create_batch_builder, BatchBuilderHandle};
-pub use or_policy::{ComposedDataProvider, ComposedPolicy, OrSealing};
 pub use state::{init_batch_builder_state, BatchBuilderState};
-pub use traits::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};

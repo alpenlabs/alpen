@@ -4,7 +4,8 @@ use alpen_ee_common::{Batch, BatchId, BatchStorage, BlockNumHash};
 use eyre::{eyre, Result};
 use tracing::{error, warn};
 
-use super::{canonical::CanonicalChainReader, BatchBuilderState, BatchPolicy};
+use super::{canonical::CanonicalChainReader, BatchBuilderState};
+use crate::sealing_policy::AccumulationPolicy;
 
 /// Find the last batch whose end block is still canonical.
 /// If a canonical batch cannot be found at height > finalized height, it is a deep reorg and must
@@ -62,7 +63,7 @@ pub(crate) enum ReorgReport {
 /// - `ShallowReorg` - only accumulated/pending blocks were reorged, state was reset
 /// - `Reorg(BatchId)` - batches were reverted, returning the new latest batch id
 /// - `DeepReorg` - reorg below finalized batches, manual intervention required
-pub(crate) async fn check_and_handle_reorg<P: BatchPolicy>(
+pub(crate) async fn check_and_handle_reorg<P: AccumulationPolicy>(
     state: &mut BatchBuilderState<P>,
     canonical_reader: &impl CanonicalChainReader,
     batch_storage: &impl BatchStorage,
@@ -120,7 +121,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        batch_builder::{canonical::MockCanonicalChainReader, BlockCountData, BlockCountPolicy},
+        batch_builder::canonical::MockCanonicalChainReader,
+        sealing_policy::block_count_policy::{BlockCountData, BlockCountPolicy},
         test_utils::*,
     };
 

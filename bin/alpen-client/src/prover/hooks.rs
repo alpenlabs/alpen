@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use alpen_ee_common::{BatchStatus, BatchStorage, ChunkStatus};
+use alpen_ee_common::{BatchStatus, BatchStorage, ChunkStatus, ChunkStorage};
 use async_trait::async_trait;
 use strata_paas::{ProverError, ProverResult, ReceiptHook};
 use tracing::{info, warn};
@@ -25,12 +25,12 @@ use super::{
 /// convention). That keeps `ChunkStatus::ProofReady(ProofId)` aligned
 /// with the proof's actual identity in storage.
 pub(crate) struct ChunkReceiptHook {
-    batch_storage: Arc<dyn BatchStorage>,
+    chunk_storage: Arc<dyn ChunkStorage>,
 }
 
 impl ChunkReceiptHook {
-    pub(crate) fn new(batch_storage: Arc<dyn BatchStorage>) -> Self {
-        Self { batch_storage }
+    pub(crate) fn new(chunk_storage: Arc<dyn ChunkStorage>) -> Self {
+        Self { chunk_storage }
     }
 }
 
@@ -44,7 +44,7 @@ impl ReceiptHook<ChunkSpec> for ChunkReceiptHook {
         let chunk_id = task.0;
         let proof_id = chunk_id.last_block();
         info!(?chunk_id, %proof_id, "marking chunk as proof-ready");
-        self.batch_storage
+        self.chunk_storage
             .update_chunk_status(chunk_id, ChunkStatus::ProofReady(proof_id))
             .await
             .map_err(|e| ProverError::Storage(format!("update_chunk_status: {e}")))

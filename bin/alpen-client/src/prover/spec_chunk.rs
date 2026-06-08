@@ -8,7 +8,7 @@
 
 use std::{fmt, sync::Arc};
 
-use alpen_ee_common::{BatchStorage, ChunkId, ChunkWitnessStore, ExecBlockStorage};
+use alpen_ee_common::{ChunkId, ChunkStorage, ChunkWitnessStore, ExecBlockStorage};
 use alpen_ee_database::EeNodeStorage;
 use async_trait::async_trait;
 use reth_primitives::Block;
@@ -107,7 +107,7 @@ impl TryFrom<Vec<u8>> for ChunkTask {
 /// - **`ExecBlockStorage`** — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
 ///   `ExecOutputs`.
 pub(crate) struct ChunkSpec {
-    batch_storage: Arc<dyn BatchStorage>,
+    chunk_storage: Arc<dyn ChunkStorage>,
     storage: Arc<EeNodeStorage>,
     genesis: Genesis,
     bridge_params: BridgeParams,
@@ -115,13 +115,13 @@ pub(crate) struct ChunkSpec {
 
 impl ChunkSpec {
     pub(crate) fn new(
-        batch_storage: Arc<dyn BatchStorage>,
+        chunk_storage: Arc<dyn ChunkStorage>,
         storage: Arc<EeNodeStorage>,
         genesis: Genesis,
         bridge_params: BridgeParams,
     ) -> Self {
         Self {
-            batch_storage,
+            chunk_storage,
             storage,
             genesis,
             bridge_params,
@@ -139,7 +139,7 @@ impl ProofSpec for ChunkSpec {
 
         // 1. Read the chunk's block list.
         let (chunk, _status) = self
-            .batch_storage
+            .chunk_storage
             .get_chunk_by_id(chunk_id)
             .await
             .map_err(|e| PaasError::Storage(format!("get_chunk_by_id({chunk_id:?}): {e}")))?
