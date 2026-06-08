@@ -16,6 +16,8 @@ pub(crate) struct StatusInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) retry_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) resubmit_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
 }
 
@@ -25,26 +27,38 @@ impl From<&TaskStatus> for StatusInfo {
             TaskStatus::Pending => Self {
                 name: "pending",
                 retry_count: None,
+                resubmit_count: None,
                 error: None,
             },
-            TaskStatus::Proving { retry_count } => Self {
+            TaskStatus::Proving {
+                retry_count,
+                resubmit_count,
+            } => Self {
                 name: "proving",
                 retry_count: Some(*retry_count),
+                resubmit_count: Some(*resubmit_count),
                 error: None,
             },
             TaskStatus::Completed => Self {
                 name: "completed",
                 retry_count: None,
+                resubmit_count: None,
                 error: None,
             },
-            TaskStatus::TransientFailure { retry_count, error } => Self {
+            TaskStatus::TransientFailure {
+                retry_count,
+                resubmit_count,
+                error,
+            } => Self {
                 name: "transient_failure",
                 retry_count: Some(*retry_count),
+                resubmit_count: Some(*resubmit_count),
                 error: Some(error.clone()),
             },
             TaskStatus::PermanentFailure { error } => Self {
                 name: "permanent_failure",
                 retry_count: None,
+                resubmit_count: None,
                 error: Some(error.clone()),
             },
         }
@@ -202,9 +216,13 @@ mod tests {
         assert_eq!(pending.retry_count, None);
         assert_eq!(pending.error, None);
 
-        let proving = StatusInfo::from(&TaskStatus::Proving { retry_count: 3 });
+        let proving = StatusInfo::from(&TaskStatus::Proving {
+            retry_count: 3,
+            resubmit_count: 1,
+        });
         assert_eq!(proving.name, "proving");
         assert_eq!(proving.retry_count, Some(3));
+        assert_eq!(proving.resubmit_count, Some(1));
         assert_eq!(proving.error, None);
 
         let completed = StatusInfo::from(&TaskStatus::Completed);
@@ -214,6 +232,7 @@ mod tests {
 
         let transient = StatusInfo::from(&TaskStatus::TransientFailure {
             retry_count: 2,
+            resubmit_count: 0,
             error: "rpc down".into(),
         });
         assert_eq!(transient.name, "transient_failure");
@@ -255,7 +274,10 @@ mod tests {
     #[test]
     fn porcelain_output_includes_known_keys() {
         let key = vec![0xaa, 0xbb];
-        let record = TaskRecordData::new(TaskStatus::Proving { retry_count: 1 });
+        let record = TaskRecordData::new(TaskStatus::Proving {
+            retry_count: 1,
+            resubmit_count: 0,
+        });
         let info = ProverTaskInfo::from_record(&key, &record);
 
         let out = info.format_porcelain();

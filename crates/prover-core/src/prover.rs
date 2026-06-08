@@ -248,8 +248,15 @@ impl<H: ProofSpec> Prover<H> {
                 continue;
             };
 
-            if let TaskStatus::Proving { retry_count } = record.status() {
+            if let TaskStatus::Proving {
+                retry_count,
+                resubmit_count,
+            } = record.status()
+            {
+                // A crash mid-prove is resume-class: bump retry_count, keep
+                // the resubmit_count as-is.
                 let new_count = retry_count + 1;
+                let resubmit_count = *resubmit_count;
                 let should_retry = self
                     .config
                     .retry
@@ -283,6 +290,7 @@ impl<H: ProofSpec> Prover<H> {
                     &key,
                     TaskStatus::TransientFailure {
                         retry_count: new_count,
+                        resubmit_count,
                         error: "process died mid-Proving".to_string(),
                     },
                 );
@@ -297,20 +305,26 @@ impl<H: ProofSpec> Prover<H> {
         }
     }
 
-    /// Read the persisted retry counter for a task.
+    /// Read the persisted `(retry_count, resubmit_count)` counters for a task.
     ///
     /// Used at the top of [`Self::run_task`] before status is overwritten to
-    /// `Proving`, and by [`Self::recover`] to compute the post-crash bump.
-    /// Returns 0 for `Pending` or absent records.
-    fn read_retry_count(&self, key: &[u8]) -> u32 {
+    /// `Proving`. Returns `(0, 0)` for `Pending` or absent records.
+    fn read_counts(&self, key: &[u8]) -> (u32, u32) {
         self.task_store
             .get(key)
             .ok()
             .flatten()
-            .map_or(0, |r| match r.status() {
-                TaskStatus::Proving { retry_count }
-                | TaskStatus::TransientFailure { retry_count, .. } => *retry_count,
-                _ => 0,
+            .map_or((0, 0), |r| match r.status() {
+                TaskStatus::Proving {
+                    retry_count,
+                    resubmit_count,
+                }
+                | TaskStatus::TransientFailure {
+                    retry_count,
+                    resubmit_count,
+                    ..
+                } => (*retry_count, *resubmit_count),
+                _ => (0, 0),
             })
     }
 
@@ -323,12 +337,13 @@ impl<H: ProofSpec> Prover<H> {
             // from the store after the overwrite below, and `recover` needs
             // the count to survive a mid-Proving crash, so persist it inside
             // the `Proving` status itself.
-            let prior_retry_count = self.read_retry_count(&key);
+            let (prior_retry_count, prior_resubmit_count) = self.read_counts(&key);
 
             let _ = self.task_store.update_status(
                 &key,
                 TaskStatus::Proving {
                     retry_count: prior_retry_count,
+                    resubmit_count: prior_resubmit_count,
                 },
             );
 
@@ -337,7 +352,7 @@ impl<H: ProofSpec> Prover<H> {
                 Ok(input) => input,
                 Err(e) => {
                     error!(%e, "fetch_input failed");
-                    self.handle_error(&key, &e, prior_retry_count);
+                    self.handle_error(&key, &e, prior_retry_count, prior_resubmit_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -363,7 +378,7 @@ impl<H: ProofSpec> Prover<H> {
                 Ok(Ok(receipt)) => receipt,
                 Ok(Err(e)) => {
                     error!(%e, "prove failed");
-                    self.handle_error(&key, &e, prior_retry_count);
+                    self.handle_error(&key, &e, prior_retry_count, prior_resubmit_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -384,7 +399,7 @@ impl<H: ProofSpec> Prover<H> {
             if let Some(store) = &self.receipt_store {
                 if let Err(e) = store.put(&key, &receipt) {
                     error!(%e, "receipt store put failed");
-                    self.handle_error(&key, &e, prior_retry_count);
+                    self.handle_error(&key, &e, prior_retry_count, prior_resubmit_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -394,7 +409,7 @@ impl<H: ProofSpec> Prover<H> {
             if let Some(hook) = &self.receipt_hook {
                 if let Err(e) = hook.on_receipt(&task, &receipt).await {
                     error!(%e, "receipt hook failed");
-                    self.handle_error(&key, &e, prior_retry_count);
+                    self.handle_error(&key, &e, prior_retry_count, prior_resubmit_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -409,13 +424,13 @@ impl<H: ProofSpec> Prover<H> {
         .await;
     }
 
-    fn handle_error(&self, key: &[u8], err: &ProverError, prior_retry_count: u32) {
+    fn handle_error(&self, key: &[u8], err: &ProverError, retry_count: u32, resubmit_count: u32) {
         match err.action() {
             FailureAction::RetryResume => {
-                self.schedule_retry(key, &err.to_string(), prior_retry_count, false);
+                self.schedule_retry(key, &err.to_string(), retry_count, resubmit_count, false);
             }
             FailureAction::RetryFresh => {
-                self.schedule_retry(key, &err.to_string(), prior_retry_count, true);
+                self.schedule_retry(key, &err.to_string(), retry_count, resubmit_count, true);
             }
             FailureAction::Permanent => {
                 let _ = self.task_store.update_status(
@@ -428,19 +443,40 @@ impl<H: ProofSpec> Prover<H> {
         }
     }
 
-    /// Schedule a retry after backoff. When `fresh` is set (a resubmit), the
-    /// saved strategy metadata (remote `ProofId`) is dropped first so the next
-    /// attempt starts a new request instead of resuming a dead one.
-    fn schedule_retry(&self, key: &[u8], msg: &str, prior_retry_count: u32, fresh: bool) {
-        let new_count = prior_retry_count + 1;
-
+    /// Schedule a retry after backoff.
+    ///
+    /// Resume-class retries (`fresh == false`) re-poll the same request and
+    /// draw from `max_retries`. Resubmit-class retries (`fresh == true`) drop
+    /// the saved remote metadata so the next attempt submits a fresh request,
+    /// and draw from the smaller `max_resubmits` budget since each one re-runs
+    /// the whole proof. When the relevant budget is exhausted the task becomes
+    /// `PermanentFailure`. Backoff is keyed on whichever counter advanced.
+    fn schedule_retry(
+        &self,
+        key: &[u8],
+        msg: &str,
+        retry_count: u32,
+        resubmit_count: u32,
+        fresh: bool,
+    ) {
         if let Some(ref cfg) = self.config.retry {
-            if cfg.should_retry(new_count) {
+            let (new_retry, new_resubmit, within_budget) = if fresh {
+                let n = resubmit_count + 1;
+                (retry_count, n, cfg.should_resubmit(n))
+            } else {
+                let n = retry_count + 1;
+                (n, resubmit_count, cfg.should_retry(n))
+            };
+
+            if within_budget {
                 if fresh {
+                    // Drop the dead remote ProofId so the next attempt resubmits.
                     let _ = self.task_store.clear_metadata(key);
                 }
+                let attempt = if fresh { new_resubmit } else { new_retry };
                 warn!(
-                    retry_count = new_count,
+                    retry_count = new_retry,
+                    resubmit_count = new_resubmit,
                     fresh,
                     error = %msg,
                     "scheduling retry"
@@ -448,11 +484,12 @@ impl<H: ProofSpec> Prover<H> {
                 let _ = self.task_store.update_status(
                     key,
                     TaskStatus::TransientFailure {
-                        retry_count: new_count,
+                        retry_count: new_retry,
+                        resubmit_count: new_resubmit,
                         error: msg.to_string(),
                     },
                 );
-                let delay_secs = cfg.jittered_delay_secs(new_count, jitter_seed(key, new_count));
+                let delay_secs = cfg.jittered_delay_secs(attempt, jitter_seed(key, attempt));
                 let _ = self
                     .task_store
                     .set_retry_after(key, now_secs() + delay_secs);

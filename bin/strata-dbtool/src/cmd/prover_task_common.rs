@@ -100,10 +100,14 @@ mod tests {
     #[test]
     fn status_filter_matches_each_variant() {
         let pending = TaskStatus::Pending;
-        let proving = TaskStatus::Proving { retry_count: 2 };
+        let proving = TaskStatus::Proving {
+            retry_count: 2,
+            resubmit_count: 0,
+        };
         let completed = TaskStatus::Completed;
         let transient = TaskStatus::TransientFailure {
             retry_count: 1,
+            resubmit_count: 0,
             error: "x".into(),
         };
         let permanent = TaskStatus::PermanentFailure { error: "y".into() };
