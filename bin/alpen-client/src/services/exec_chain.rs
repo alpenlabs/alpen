@@ -6,7 +6,7 @@ use alpen_ee_exec_chain::{
 };
 use strata_service::{AsyncExecutor, ServiceBuilder, TokioMpscInput};
 use tokio::sync::watch;
-use tracing::warn;
+use tracing::{error_span, warn, Instrument};
 
 /// Starts the exec chain tracker as a service framework service.
 ///
@@ -39,19 +39,22 @@ where
 
     // Spawn consensus forwarder: bridges watch channel -> command channel.
     let forwarder_handle = handle.clone();
-    tokio::spawn(async move {
-        loop {
-            if consensus_watcher.changed().await.is_err() {
-                warn!(target: "exec_chain_consensus_forwarder", "consensus_watch channel closed");
-                break;
-            }
-            let update = consensus_watcher.borrow_and_update().clone();
-            if forwarder_handle.new_consensus_state(update).await.is_err() {
-                warn!(target: "exec_chain_consensus_forwarder", "exec_chain command channel closed");
-                break;
+    tokio::spawn(
+        async move {
+            loop {
+                if consensus_watcher.changed().await.is_err() {
+                    warn!(target: "exec_chain_consensus_forwarder", "consensus_watch channel closed");
+                    break;
+                }
+                let update = consensus_watcher.borrow_and_update().clone();
+                if forwarder_handle.new_consensus_state(update).await.is_err() {
+                    warn!(target: "exec_chain_consensus_forwarder", "exec_chain command channel closed");
+                    break;
+                }
             }
         }
-    });
+        .instrument(error_span!("consensus_forwarder", component = "alpen")),
+    );
 
     Ok(handle)
 }

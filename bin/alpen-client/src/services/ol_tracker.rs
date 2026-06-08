@@ -103,7 +103,10 @@ where
     let (consensus_tx, consensus_rx) = watch::channel(state.get_consensus_heads());
 
     let tracking_mode = if track_latest_epoch {
-        warn!("ol_tracker: Tracking latest epoch. This should only be used for testing");
+        warn!(
+            component = "alpen",
+            "ol_tracker: Tracking latest epoch. This should only be used for testing"
+        );
         EpochTrackingMode::Latest
     } else {
         EpochTrackingMode::Confirmed
