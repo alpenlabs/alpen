@@ -37,7 +37,7 @@ use tracing::info;
 
 #[cfg(feature = "sequencer")]
 use crate::helpers::sequencer_schnorr_key;
-use crate::run_context::RunContext;
+use crate::run_context::{NodeRole, RunContext};
 #[cfg(feature = "sequencer")]
 use crate::sequencer::OLSeqRpcServer;
 
@@ -57,6 +57,7 @@ struct RpcDeps {
     submit_rpc_bearer_token: Option<SecretString>,
     genesis_l1_height: L1Height,
     max_headers_range: usize,
+    node_role: NodeRole,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     /// [`None`] on checkpoint-sync nodes; `submit_transaction` returns an
@@ -172,6 +173,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         submit_rpc_bearer_token: runctx.config().client.submit_rpc_bearer_token.clone(),
         genesis_l1_height: runctx.asm_params().anchor.block.height(),
         max_headers_range: runctx.config().client.max_headers_range,
+        node_role: runctx.node_role(),
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
         mempool_handle: runctx.mempool_handle().cloned(),
@@ -182,7 +184,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     runctx
         .executor()
         .spawn_critical_async("main-rpc", spawn_public_rpc(deps.clone()));
-    if runctx.config().client.is_sequencer {
+    if deps.node_role.serves_sequencer_rpc() {
         runctx
             .executor()
             .spawn_critical_async("admin-rpc", spawn_admin_rpc(deps.clone()));
@@ -196,7 +198,15 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
 fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     let mut module = build_public_static_rpc_module();
 
-    // Create and register OL client RPC server
+    register_client_rpc(&mut module, deps)?;
+    if deps.node_role.serves_fullnode_rpc() {
+        register_fullnode_rpc(&mut module, deps)?;
+    }
+
+    Ok(module)
+}
+
+fn register_client_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()> {
     let client_provider = NodeRpcProvider::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
@@ -210,9 +220,10 @@ fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
         .merge(ol_module)
-        .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))?;
+        .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))
+}
 
-    // Create and register OL fullnode RPC listener
+fn register_fullnode_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()> {
     let fullnode_provider = NodeRpcProvider::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
@@ -226,9 +237,7 @@ fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_listener);
     module
         .merge(ol_fullnode_module)
-        .map_err(|e| anyhow!("Failed to merge OL fullnode RPC module: {}", e))?;
-
-    Ok(module)
+        .map_err(|e| anyhow!("Failed to merge OL fullnode RPC module: {}", e))
 }
 
 fn build_public_static_rpc_module() -> RpcModule<()> {

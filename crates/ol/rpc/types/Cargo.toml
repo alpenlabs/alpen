@@ -26,7 +26,6 @@ strata-snark-acct-types.workspace = true
 strata-status.workspace = true
 
 async-trait.workspace = true
-hex.workspace = true
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 ssz.workspace = true

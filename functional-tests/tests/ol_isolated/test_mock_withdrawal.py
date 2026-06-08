@@ -40,7 +40,7 @@ def get_account_balance(rpc, account_id_hex: str) -> int:
     """Query the account balance at the latest slot.
 
     Uses getChainStatus to find the latest slot, then getBlocksSummaries
-    to get the balance, since getSnarkAccountState does not include balance.
+    to get the balance, since getSnarkAccountStateByTag does not include balance.
     """
     status = rpc.strata_getChainStatus()
     tip_slot = status["tip"]["slot"]
@@ -129,7 +129,7 @@ class TestMockWithdrawal(StrataNodeTest):
 
         # Step 5: Build withdrawal transaction
         # Get snark account state for withdrawal params
-        account_state = rpc.strata_getSnarkAccountState(account_id_hex, "latest")
+        account_state = rpc.strata_getSnarkAccountStateByTag(account_id_hex, "latest")
         if account_state is None:
             raise AssertionError("Account state not found")
 

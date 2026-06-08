@@ -2,17 +2,17 @@
 
 use std::borrow::Cow;
 
-use crate::{OLBlockOrTag, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref};
+use crate::{OLBlockTag, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref};
 
-impl schemars::JsonSchema for OLBlockOrTag {
+impl schemars::JsonSchema for OLBlockTag {
     fn schema_name() -> Cow<'static, str> {
-        "OLBlockOrTag".into()
+        "OLBlockTag".into()
     }
 
     fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
             "type": "string",
-            "description": "Block identifier: 'latest', 'confirmed', 'finalized', a slot number, or a 0x-prefixed block hash"
+            "description": "Block tag: 'latest', 'confirmed', or 'finalized'"
         })
     }
 }

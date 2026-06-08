@@ -2757,10 +2757,10 @@ async fn submit_transaction_nonexistent_account_returns_error() {
     assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
 }
 
-// ── get_snark_account_state ──
+// ── get_snark_account_state_by_tag / get_snark_account_state_at_block ──
 
 #[tokio::test]
-async fn snark_account_state_latest_returns_state() {
+async fn snark_account_state_by_tag_latest_returns_state() {
     let account_id = test_account_id(1);
 
     let block = make_block(5, 0, null_blkid());
@@ -2783,7 +2783,7 @@ async fn snark_account_state_latest_returns_state() {
     let rpc = make_rpc(provider);
 
     let state = rpc
-        .get_snark_account_state(account_id, OLBlockOrTag::Latest)
+        .get_snark_account_state_by_tag(account_id, OLBlockTag::Latest)
         .await
         .expect("snark state")
         .expect("should be Some");
@@ -2793,16 +2793,16 @@ async fn snark_account_state_latest_returns_state() {
 }
 
 #[tokio::test]
-async fn snark_account_state_by_slot() {
+async fn snark_account_state_at_block_returns_state() {
     let account_id = test_account_id(1);
 
     let block = make_block(10, 0, null_blkid());
     let blkid = block.header().compute_blkid();
-    let tip = OLBlockCommitment::new(10, blkid);
+    let block_commitment = OLBlockCommitment::new(10, blkid);
 
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
-            tip,
+            block_commitment,
             0,
             false,
             EpochCommitment::null(),
@@ -2816,7 +2816,7 @@ async fn snark_account_state_by_slot() {
     let rpc = make_rpc(provider);
 
     let state = rpc
-        .get_snark_account_state(account_id, OLBlockOrTag::Slot(10))
+        .get_snark_account_state_at_block(account_id, block_commitment)
         .await
         .expect("snark state")
         .expect("should be Some");
@@ -2845,7 +2845,7 @@ async fn snark_account_state_non_snark_returns_none() {
     let rpc = make_rpc(provider);
 
     let result = rpc
-        .get_snark_account_state(account_id, OLBlockOrTag::Latest)
+        .get_snark_account_state_by_tag(account_id, OLBlockTag::Latest)
         .await
         .expect("should succeed");
 
@@ -2868,7 +2868,7 @@ async fn snark_account_state_missing_account_returns_none() {
     let rpc = make_rpc(provider);
 
     let result = rpc
-        .get_snark_account_state(test_account_id(99), OLBlockOrTag::Latest)
+        .get_snark_account_state_by_tag(test_account_id(99), OLBlockTag::Latest)
         .await
         .expect("should succeed");
 
@@ -2881,42 +2881,10 @@ async fn snark_account_state_no_ol_sync_returns_error() {
     let rpc = make_rpc(provider);
 
     let result = rpc
-        .get_snark_account_state(test_account_id(1), OLBlockOrTag::Latest)
+        .get_snark_account_state_by_tag(test_account_id(1), OLBlockTag::Latest)
         .await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), INTERNAL_ERROR_CODE);
-}
-
-#[tokio::test]
-async fn snark_account_state_by_block_id() {
-    let account_id = test_account_id(1);
-
-    let block = make_block(8, 0, null_blkid());
-    let blkid = block.header().compute_blkid();
-    let tip = OLBlockCommitment::new(8, blkid);
-
-    let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(
-            tip,
-            0,
-            false,
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-        ))
-        .with_block_and_state(
-            &block,
-            ol_state_with_snark_account(account_id, 8, 11, DEFAULT_NEXT_INBOX_MSG_IDX),
-        );
-    let rpc = make_rpc(provider);
-
-    let state = rpc
-        .get_snark_account_state(account_id, OLBlockOrTag::OLBlockId(blkid))
-        .await
-        .expect("snark state")
-        .expect("should be Some");
-
-    assert_eq!(state.seq_no(), 11);
 }
 
 #[tokio::test]
@@ -2948,7 +2916,7 @@ async fn snark_account_state_confirmed_uses_confirmed_epoch() {
     let rpc = make_rpc(provider);
 
     let state = rpc
-        .get_snark_account_state(account_id, OLBlockOrTag::Confirmed)
+        .get_snark_account_state_by_tag(account_id, OLBlockTag::Confirmed)
         .await
         .expect("snark state")
         .expect("confirmed snark account");
