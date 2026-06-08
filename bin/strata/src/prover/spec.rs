@@ -50,7 +50,7 @@ impl ProofSpec for CheckpointSpec {
         // don't stall the async runtime while reading blocks and state.
         spawn_blocking(move || fetch_input_blocking(storage, commitment, bridge_params))
             .await
-            .map_err(|e| PaasError::TransientFailure(format!("input fetch join: {e}")))?
+            .map_err(|e| PaasError::transient(format!("input fetch join: {e}")))?
             .map_err(PaasError::from)
     }
 }

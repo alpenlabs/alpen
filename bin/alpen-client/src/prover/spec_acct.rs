@@ -104,9 +104,7 @@ impl From<AcctProofInputError> for PaasError {
             | AcctProofInputError::ReadBestEeAccountState { .. } => PaasError::Storage(message),
             AcctProofInputError::NoEeAccountState
             | AcctProofInputError::EePreStateUnavailable { .. }
-            | AcctProofInputError::BatchMissingDaRefs { .. } => {
-                PaasError::TransientFailure(message)
-            }
+            | AcctProofInputError::BatchMissingDaRefs { .. } => PaasError::transient(message),
         }
     }
 }
@@ -174,7 +172,7 @@ impl ProofSpec for AcctSpec {
             collect_chunk_inputs_for_batch(&*self.chunk_storage, &*self.chunk_receipts, batch_id)
                 .await?;
         if chunks.is_empty() {
-            return Err(PaasError::PermanentFailure(format!(
+            return Err(PaasError::permanent(format!(
                 "batch {batch_id} has no chunks"
             )));
         }
@@ -186,9 +184,7 @@ impl ProofSpec for AcctSpec {
             .get_batch_by_id(batch_id)
             .await
             .map_err(|e| PaasError::Storage(format!("get_batch_by_id({batch_id}): {e}")))?
-            .ok_or_else(|| {
-                PaasError::PermanentFailure(format!("batch {batch_id} not in storage"))
-            })?;
+            .ok_or_else(|| PaasError::permanent(format!("batch {batch_id} not in storage")))?;
         let da_refs = da_refs_from_status(batch_id, status)?;
 
         // 3. Previous EE account state.
@@ -215,7 +211,7 @@ impl ProofSpec for AcctSpec {
         //          local storage (genesis, or an unrelated bug surfacing
         //          a missing record).
         let first_chunk = chunks.first().ok_or_else(|| {
-            PaasError::PermanentFailure("first chunk missing after non-empty check".to_string())
+            PaasError::permanent("first chunk missing after non-empty check".to_string())
         })?;
         let first_transition = decode_chunk_transition(first_chunk)?;
         let parent_blkid = first_transition.parent_exec_blkid();
@@ -262,7 +258,7 @@ impl ProofSpec for AcctSpec {
         //    tip state root. This spans the full batch, not just one chunk.
         let batch_block_hashes: Vec<Hash> = batch.blocks_iter().collect();
         let first_batch_block = batch_block_hashes.first().copied().ok_or_else(|| {
-            PaasError::PermanentFailure(format!("batch {batch_id} has no execution blocks"))
+            PaasError::permanent(format!("batch {batch_id} has no execution blocks"))
         })?;
         let first_block_hash = B256::from(first_batch_block.0);
         let last_block_hash = B256::from(batch.last_block().0);
@@ -270,12 +266,8 @@ impl ProofSpec for AcctSpec {
         let range_data =
             task::spawn_blocking(move || (range_witness_fn)(first_block_hash, last_block_hash))
                 .await
-                .map_err(|e| {
-                    PaasError::TransientFailure(format!("batch witness extraction join: {e}"))
-                })?
-                .map_err(|e| {
-                    PaasError::TransientFailure(format!("batch witness extraction: {e}"))
-                })?;
+                .map_err(|e| PaasError::transient(format!("batch witness extraction join: {e}")))?
+                .map_err(|e| PaasError::transient(format!("batch witness extraction: {e}")))?;
 
         let ee_private_input =
             EePrivateInput::new(Vec::new(), range_data.raw_partial_pre_state, chunks.clone());
@@ -297,7 +289,7 @@ impl ProofSpec for AcctSpec {
                 .await
                 .map_err(|e| PaasError::Storage(format!("get_exec_block({block_hash:?}): {e}")))?
                 .ok_or_else(|| {
-                    PaasError::TransientFailure(format!(
+                    PaasError::transient(format!(
                         "ExecBlockRecord missing for {block_hash:?} in batch {batch_id}"
                     ))
                 })?;
@@ -314,7 +306,7 @@ impl ProofSpec for AcctSpec {
                         .map(|t| OutputTransfer::new(t.dest(), t.value())),
                 )
                 .map_err(|_| {
-                    PaasError::PermanentFailure("UpdateOutputs transfers overflow".to_string())
+                    PaasError::permanent("UpdateOutputs transfers overflow".to_string())
                 })?;
             update_outputs
                 .try_extend_messages(
@@ -324,9 +316,7 @@ impl ProofSpec for AcctSpec {
                         .iter()
                         .map(|m| OutputMessage::new(m.dest(), m.payload().clone())),
                 )
-                .map_err(|_| {
-                    PaasError::PermanentFailure("UpdateOutputs messages overflow".to_string())
-                })?;
+                .map_err(|_| PaasError::permanent("UpdateOutputs messages overflow".to_string()))?;
         }
 
         // Last block gives us post-batch metadata.
@@ -337,9 +327,7 @@ impl ProofSpec for AcctSpec {
             .await
             .map_err(|e| PaasError::Storage(format!("get_exec_block({last_block_hash:?}): {e}")))?
             .ok_or_else(|| {
-                PaasError::PermanentFailure(format!(
-                    "last block record missing for batch {batch_id}"
-                ))
+                PaasError::permanent(format!("last block record missing for batch {batch_id}"))
             })?;
         let new_tip_blkid = last_record.package().exec_blkid();
         let new_tip_state_root = last_record.account_state().last_exec_state_root();
@@ -347,7 +335,7 @@ impl ProofSpec for AcctSpec {
         let post_state_root = last_record.account_state().compute_state_root();
         let message_count = messages.len() as u64;
         let pre_inbox_idx = new_inbox_idx.checked_sub(message_count).ok_or_else(|| {
-            PaasError::TransientFailure(format!(
+            PaasError::transient(format!(
                 "inconsistent inbox indices for batch {batch_id}: \
                  new_inbox_idx={new_inbox_idx}, message_count={message_count}"
             ))
@@ -364,11 +352,11 @@ impl ProofSpec for AcctSpec {
         let extra_data =
             UpdateExtraData::new(new_tip_blkid, new_tip_state_root, processed_inputs, 0);
         let extra_data_bytes = encode_to_vec(&extra_data)
-            .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
+            .map_err(|e| PaasError::permanent(format!("encode extra data: {e}")))?;
         let ledger_refs = build_ledger_refs_from_da(&da_refs);
 
         let seq_no = batch.update_seq_no().ok_or_else(|| {
-            PaasError::TransientFailure(format!("batch {batch_id} has no assigned update seq_no"))
+            PaasError::transient(format!("batch {batch_id} has no assigned update seq_no"))
         })?;
 
         let pub_params = UpdateProofPubParams::new(
@@ -443,20 +431,20 @@ fn map_witness_build_err(err: DaWitnessBuildError) -> PaasError {
         E::GetBlock { .. } | E::StateDiffProvider { .. } | E::BytecodeStore { .. } => {
             PaasError::Storage(message)
         }
-        E::StateDiffMissing(_) | E::BytecodeMissing(_) => PaasError::TransientFailure(message),
+        E::StateDiffMissing(_) | E::BytecodeMissing(_) => PaasError::transient(message),
         E::EmptyDaRefs
         | E::BlockHasNoTransactions(_)
         | E::WtxidsRootMismatch { .. }
         | E::DaTxNotFound { .. }
         | E::Parse(_)
-        | E::Reassembly(_) => PaasError::PermanentFailure(message),
+        | E::Reassembly(_) => PaasError::permanent(message),
     }
 }
 
 /// Decodes a `ChunkInput`'s transition bytes. `PermanentFailure` on malformed.
 fn decode_chunk_transition(ci: &ChunkInput) -> ProverResult<ChunkTransition> {
     ci.try_decode_chunk_transition()
-        .map_err(|e| PaasError::PermanentFailure(format!("decode chunk transition: {e:?}")))
+        .map_err(|e| PaasError::permanent(format!("decode chunk transition: {e:?}")))
 }
 
 /// Collect [`ChunkInput`]s for a batch by reading per-chunk receipts from
@@ -475,21 +463,19 @@ async fn collect_chunk_inputs_for_batch(
         .get_batch_chunks(batch_id)
         .await
         .map_err(|e| PaasError::Storage(format!("get_batch_chunks({batch_id}): {e}")))?
-        .ok_or_else(|| {
-            PaasError::PermanentFailure(format!("no chunks set for batch {batch_id}"))
-        })?;
+        .ok_or_else(|| PaasError::permanent(format!("no chunks set for batch {batch_id}")))?;
 
     let mut chunks = Vec::with_capacity(chunk_ids.len());
     for chunk_id in chunk_ids {
         let key: Vec<u8> = ChunkTask(chunk_id).into();
         let receipt = chunk_receipts.get(&key)?.ok_or_else(|| {
-            PaasError::TransientFailure(format!(
+            PaasError::transient(format!(
                 "chunk receipt missing for {chunk_id:?} (batch {batch_id})"
             ))
         })?;
         let pubvals = receipt.receipt().public_values().as_bytes();
         let transition = ChunkTransition::from_ssz_bytes(pubvals).map_err(|e| {
-            PaasError::PermanentFailure(format!("decode ChunkTransition for {chunk_id:?}: {e:?}"))
+            PaasError::permanent(format!("decode ChunkTransition for {chunk_id:?}: {e:?}"))
         })?;
         let proof_bytes = receipt.receipt().proof().as_bytes().to_vec();
         chunks.push(ChunkInput::new(transition, proof_bytes));
