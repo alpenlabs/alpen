@@ -22,6 +22,11 @@ pub struct RetryConfig {
     /// fresh). Kept much smaller than `max_retries` because each resubmit
     /// re-runs the whole proof, whereas resume-class retries only re-poll.
     pub max_resubmits: u32,
+    /// Default recheck cadence for a `Blocked` task (waiting on a dependency),
+    /// in seconds. A steady poll — not exponential backoff — since blocking is
+    /// an expected wait, not a failure. A spec can override per task via
+    /// [`InputResolution::Blocked`](crate::InputResolution)'s `recheck_after`.
+    pub blocked_recheck_secs: u64,
 }
 
 impl Default for RetryConfig {
@@ -33,6 +38,7 @@ impl Default for RetryConfig {
             max_delay_secs: 3600,
             jitter_frac: 0.2,
             max_resubmits: 3,
+            blocked_recheck_secs: 10,
         }
     }
 }
