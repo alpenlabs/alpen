@@ -23,6 +23,13 @@ L1_ANCHOR = REPO_ROOT / ".github" / "fixtures" / "l1-anchor.json"
 PLACEHOLDER_PREFIX = "__"
 
 
+class NoServicesEnv(flexitest.EnvConfig):
+    """Environment for tests that only need local binaries."""
+
+    def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
+        return flexitest.LiveEnv({})
+
+
 def collect_keys(obj, prefix=""):
     """Recursively collect all key paths from a JSON object."""
     keys = set()
@@ -75,9 +82,20 @@ def collect_placeholder_keys(obj, prefix=""):
 
 
 def generate_raw_params(tmpdir):
-    """Generate ol-params and asm-params using local datatool with fixture L1 anchor."""
+    """Generate ee-params, ol-params, and asm-params using local datatool with fixture L1 anchor."""
+    ee_path = Path(tmpdir) / "ee-params.json"
     ol_path = Path(tmpdir) / "ol-params.json"
     asm_path = Path(tmpdir) / "asm-params.json"
+
+    run_datatool(
+        [
+            "gen-ee-params",
+            "-o",
+            str(ee_path),
+        ]
+    )
+
+    assert ee_path.exists(), f"ee-params not generated at {ee_path}"
 
     run_datatool(
         [
@@ -86,6 +104,8 @@ def generate_raw_params(tmpdir):
             str(L1_ANCHOR),
             "--alpen-predicate",
             "bip340-schnorr-test",
+            "--ee-params",
+            str(ee_path),
             "-o",
             str(ol_path),
         ]
@@ -119,6 +139,7 @@ def generate_raw_params(tmpdir):
     assert asm_path.exists(), f"asm-params not generated at {asm_path}"
 
     return {
+        "ee-params": ee_path,
         "ol-params": ol_path,
         "asm-params": asm_path,
     }
@@ -130,7 +151,7 @@ class TestParamsTemplateDrift(BaseTest):
 
     def __init__(self, ctx: flexitest.InitContext):
         # No services needed — just datatool on PATH
-        ctx.set_env("basic")
+        ctx.set_env(NoServicesEnv())
 
     def main(self, ctx):
         with tempfile.TemporaryDirectory() as tmpdir:
