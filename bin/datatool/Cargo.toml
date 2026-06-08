@@ -11,6 +11,7 @@ name = "strata-datatool"
 path = "src/main.rs"
 
 [dependencies]
+alpen-ee-config.workspace = true
 alpen-chainspec.workspace = true
 strata-asm-params.workspace = true
 strata-asm-proto-bridge-v1-types.workspace = true
@@ -39,6 +40,7 @@ anyhow.workspace = true
 argh.workspace = true
 bitcoin = { workspace = true, features = ["std"] }
 bitcoind-async-client = { workspace = true, optional = true }
+hex.workspace = true
 rand_core.workspace = true
 reth-chainspec.workspace = true
 serde_json.workspace = true
