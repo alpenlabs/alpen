@@ -20,7 +20,7 @@ use zkaleido::ZkVmRemoteHost;
 
 use crate::{
     config::{ProverConfig, RetryConfig},
-    error::{ProverError, ProverResult},
+    error::{FailureAction, ProverError, ProverResult},
     in_memory::InMemoryTaskStore,
     strategy::NativeStrategy,
     task::{now_secs, TaskRecord, TaskResult, TaskStatus},
@@ -409,27 +409,40 @@ impl<H: ProofSpec> Prover<H> {
     }
 
     fn handle_error(&self, key: &[u8], err: &ProverError, prior_retry_count: u32) {
-        if err.is_transient() {
-            self.schedule_retry(key, &err.to_string(), prior_retry_count);
-        } else {
-            let _ = self.task_store.update_status(
-                key,
-                TaskStatus::PermanentFailure {
-                    error: err.to_string(),
-                },
-            );
+        match err.action() {
+            FailureAction::RetryResume => {
+                self.schedule_retry(key, &err.to_string(), prior_retry_count, false);
+            }
+            FailureAction::RetryFresh => {
+                self.schedule_retry(key, &err.to_string(), prior_retry_count, true);
+            }
+            FailureAction::Permanent => {
+                let _ = self.task_store.update_status(
+                    key,
+                    TaskStatus::PermanentFailure {
+                        error: err.to_string(),
+                    },
+                );
+            }
         }
     }
 
-    fn schedule_retry(&self, key: &[u8], msg: &str, prior_retry_count: u32) {
+    /// Schedule a retry after backoff. When `fresh` is set (a resubmit), the
+    /// saved strategy metadata (remote `ProofId`) is dropped first so the next
+    /// attempt starts a new request instead of resuming a dead one.
+    fn schedule_retry(&self, key: &[u8], msg: &str, prior_retry_count: u32, fresh: bool) {
         let new_count = prior_retry_count + 1;
 
         if let Some(ref cfg) = self.config.retry {
             if cfg.should_retry(new_count) {
+                if fresh {
+                    let _ = self.task_store.clear_metadata(key);
+                }
                 warn!(
                     retry_count = new_count,
+                    fresh,
                     error = %msg,
-                    "transient failure, scheduling retry"
+                    "scheduling retry"
                 );
                 let _ = self.task_store.update_status(
                     key,
