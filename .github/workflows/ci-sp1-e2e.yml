@@ -190,8 +190,24 @@ jobs:
             echo "SLACK_WEBHOOK_URL not set — skipping notification"
             exit 0
           fi
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq jq > /dev/null
+          fi
+
+          REASON_FILE=".github/sp1-e2e/e2e-failure-reason.txt"
+          if [ -s "${REASON_FILE}" ]; then
+            FAILURE_REASON="$(cat "${REASON_FILE}")"
+          else
+            FAILURE_REASON="Workflow failed before SP1 E2E produced a failure reason. Check the failed job step."
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg image_tag "${IMAGE_TAG}" \
+            --arg run_url "${RUN_URL}" \
+            --arg reason "${FAILURE_REASON}" \
+            '{text: "🚨 *SP1 E2E Test Failed* — commit `\($image_tag)`\n<\($run_url)|View run>\nReason: \($reason)"}')
+
           curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
             -H 'Content-Type: application/json' \
-            -d "{
-              \"text\": \"🚨 *SP1 E2E Test Failed* — commit \`${IMAGE_TAG}\`\n<${RUN_URL}|View run>\nZK proof regression detected. Investigate immediately.\"
-            }"
+            -d "${PAYLOAD}"
