@@ -58,10 +58,6 @@ max_reorg_depth = 4
 client_poll_dur_ms = 2000
 client_checkpoint_interval = 10
 
-[exec.reth]
-rpc_url = "reth:8551"
-secret = "configs/jwt.hex"
-
 [relayer]
 refresh_interval = 10
 stale_duration = 120

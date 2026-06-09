@@ -344,17 +344,6 @@ pub struct BitcoindConfig {
     pub retry_interval: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RethELConfig {
-    pub rpc_url: String,
-    pub secret: PathBuf,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecConfig {
-    pub reth: RethELConfig,
-}
-
 /// Default number of workers for the selected prover backend.
 const DEFAULT_PROVER_WORKERS: usize = 1;
 
@@ -450,7 +439,6 @@ pub struct Config {
     pub bitcoind: BitcoindConfig,
     pub btcio: BtcioConfig,
     pub sync: SyncConfig,
-    pub exec: ExecConfig,
 
     /// Sequencer configuration (only required if client.is_sequencer = true).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -505,10 +493,6 @@ mod test {
             l1_follow_distance = 6
             client_poll_dur_ms = 200
             client_checkpoint_interval = 10
-
-            [exec.reth]
-            rpc_url = "http://localhost:8551"
-            secret = "1234567890abcdef"
 
             [btcio.reader]
             client_poll_dur_ms = 200
@@ -619,10 +603,6 @@ mod test {
 
             [btcio.broadcaster]
             poll_interval_ms = 1_000
-
-            [exec.reth]
-            rpc_url = "http://localhost:8551"
-            secret = "1234567890abcdef"
 
             [relayer]
             refresh_interval = 10

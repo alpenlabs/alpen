@@ -112,7 +112,7 @@ pub(crate) struct Args {
     pub health_check_port: u16,
 
     /// Other generic overrides to the config toml.
-    /// Will be used, for example, as `-o btcio.reader.client_poll_dur_ms=1000 -o exec.reth.rpc_url=http://reth`
+    /// Will be used, for example, as `-o btcio.reader.client_poll_dur_ms=1000`.
     #[argh(option, short = 'o', description = "generic config overrides")]
     pub overrides: Vec<String>,
 }
@@ -197,9 +197,6 @@ mod tests {
             [btcio.broadcaster]
             poll_interval_ms = 1_000
 
-            [exec.reth]
-            rpc_url = "http://localhost:8551"
-            secret = "jwt.hex"
             "#,
         )
         .unwrap()

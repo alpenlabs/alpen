@@ -69,17 +69,6 @@ class BtcioConfig:
 
 
 @dataclass
-class RethELConfig:
-    rpc_url: str = field(default="")
-    secret: str = field(default="")
-
-
-@dataclass
-class ExecConfig:
-    reth: RethELConfig = field(default_factory=RethELConfig)
-
-
-@dataclass
 class RelayerConfig:
     refresh_interval: int = field(default=200)
     stale_duration: int = field(default=20)
@@ -171,7 +160,6 @@ class StrataConfig:
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)
     btcio: BtcioConfig = field(default_factory=BtcioConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
-    exec: ExecConfig = field(default_factory=ExecConfig)
     relayer: RelayerConfig = field(default_factory=RelayerConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     prover: ProverConfig | None = field(default=None)

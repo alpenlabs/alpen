@@ -531,9 +531,6 @@ mod tests {
             [btcio.broadcaster]
             poll_interval_ms = 1_000
 
-            [exec.reth]
-            rpc_url = "http://localhost:8551"
-            secret = "jwt.hex"
             "#,
         )
         .unwrap()
