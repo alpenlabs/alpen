@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use anyhow::Context;
 use bitcoin::hashes::Hash;
 use strata_asm_common::{AsmLogEntry, Subprotocol, VerifiedAuxData};
 use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
@@ -16,6 +15,7 @@ use tracing::*;
 use crate::{
     checkpoint_extract::{CheckpointVerificationContext, extract_matching_checkpoint},
     context::CsmWorkerContext,
+    errors::{CsmWorkerError, CsmWorkerResult},
     state::CsmWorkerState,
 };
 
@@ -46,19 +46,16 @@ impl PendingCsmUpdate {
     }
 }
 
-// TODO(STR-3491): Use typed errors instead of `anyhow!`
 impl<C: CsmWorkerContext> CsmWorkerState<C> {
     pub(crate) fn process_log(
         &self,
         pending: &mut PendingCsmUpdate,
         log: &AsmLogEntry,
         asm_block: &L1BlockCommitment,
-    ) -> anyhow::Result<()> {
+    ) -> CsmWorkerResult<()> {
         match log.ty().and_then(|ty| AsmLogTypeId::try_from(ty).ok()) {
             Some(AsmLogTypeId::CheckpointTipUpdate) => {
-                let tip_upd = log.try_into_log().map_err(|e| {
-                    anyhow::anyhow!("Failed to deserialize CheckpointTipUpdate: {}", e)
-                })?;
+                let tip_upd = log.try_into_log()?;
 
                 return self.process_checkpoint_tip_log(pending, &tip_upd, asm_block);
             }
@@ -82,7 +79,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         pending: &mut PendingCsmUpdate,
         checkpoint_tip_update: &CheckpointTipUpdate,
         asm_block: &L1BlockCommitment,
-    ) -> anyhow::Result<()> {
+    ) -> CsmWorkerResult<()> {
         let tip = checkpoint_tip_update.tip();
         let epoch = tip.epoch;
         let _span = info_span!("process_checkpoint_tip_log", %epoch).entered();
@@ -124,7 +121,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         &mut self,
         asm_block: L1BlockCommitment,
         next_state: Arc<ClientState>,
-    ) -> anyhow::Result<()> {
+    ) -> CsmWorkerResult<()> {
         let state = next_state.as_ref().clone();
         self.ctx
             .put_client_state_update(&asm_block, ClientUpdateOutput::new(state.clone(), vec![]))?;
@@ -143,17 +140,15 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         &mut self,
         asm_block: L1BlockCommitment,
         logs: &[AsmLogEntry],
-    ) -> anyhow::Result<()> {
+    ) -> CsmWorkerResult<()> {
         let mut pending =
             PendingCsmUpdate::new(self.last_committed_state.clone(), self.last_processed_epoch);
 
         for log in logs {
-            self.process_log(&mut pending, log, &asm_block)
-                .with_context(|| format!("processing ASM log for block {asm_block}"))?;
+            self.process_log(&mut pending, log, &asm_block)?;
         }
 
-        self.commit_block(asm_block, pending.cur_state)
-            .with_context(|| format!("committing CSM block {asm_block}"))?;
+        self.commit_block(asm_block, pending.cur_state)?;
 
         // Commit succeeded; fold pending outputs onto the worker.
         self.last_processed_epoch = pending.last_processed_epoch;
@@ -259,10 +254,8 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         &mut self,
         asm_block: L1BlockCommitment,
         logs: &[AsmLogEntry],
-    ) -> anyhow::Result<()> {
-        let last = self
-            .last_asm_block
-            .ok_or_else(|| anyhow::anyhow!("CSM has no last committed ASM block"))?;
+    ) -> CsmWorkerResult<()> {
+        let last = self.last_asm_block.ok_or(CsmWorkerError::NoLastAsmBlock)?;
         let last_height = last.height();
         let target_height = asm_block.height();
 
@@ -300,14 +293,8 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
                 (asm_block, logs.to_vec())
             } else {
                 // fetch from db.
-                let gap_block = self
-                    .ctx
-                    .get_canonical_l1_block(height)
-                    .with_context(|| format!("resolving gap L1 block at height {height}"))?;
-                let gap_state = self
-                    .ctx
-                    .get_asm_state(&gap_block)
-                    .with_context(|| format!("fetching ASM state for gap block {gap_block}"))?;
+                let gap_block = self.ctx.get_canonical_l1_block(height)?;
+                let gap_state = self.ctx.get_asm_state(&gap_block)?;
                 info!(%gap_block, "replaying ASM block skipped by status channel");
                 (gap_block, gap_state.logs().clone())
             };
@@ -319,26 +306,18 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     fn get_checkpoint_verification_context(
         &self,
         asm_block: &L1BlockCommitment,
-    ) -> anyhow::Result<CheckpointVerificationContext> {
-        let block = self
-            .ctx
-            .get_l1_block(asm_block.blkid())
-            .with_context(|| format!("fetching L1 block {asm_block} for checkpoint observation"))?;
+    ) -> CsmWorkerResult<CheckpointVerificationContext> {
+        let block = self.ctx.get_l1_block(asm_block.blkid())?;
 
         // Prepare for same checkpoint validation that ASM does.
         let parent_block = parent_commitment(asm_block, &block)?;
-        let parent_asm_state = self.ctx.get_asm_state(&parent_block).with_context(|| {
-            format!("fetching parent ASM state {parent_block} for checkpoint observation")
-        })?;
+        let parent_asm_state = self.ctx.get_asm_state(&parent_block)?;
         let checkpoint_state = decode_checkpoint_section(&parent_asm_state)?;
-        let aux_data = self.ctx.get_aux_data(asm_block).with_context(|| {
-            format!("fetching ASM aux data {asm_block} for checkpoint observation")
-        })?;
+        let aux_data = self.ctx.get_aux_data(asm_block)?;
         let verified_aux_data = VerifiedAuxData::try_new(
             &aux_data,
             &parent_asm_state.state().chain_view.history_accumulator,
-        )
-        .with_context(|| format!("verifying ASM aux data for {asm_block}"))?;
+        )?;
 
         Ok(CheckpointVerificationContext {
             block,
@@ -355,7 +334,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         pending: &mut PendingCsmUpdate,
         checkpoint_tip_update: &CheckpointTipUpdate,
         asm_block: &L1BlockCommitment,
-    ) -> anyhow::Result<L1Checkpoint> {
+    ) -> CsmWorkerResult<L1Checkpoint> {
         let tip = checkpoint_tip_update.tip();
         let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
         let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
@@ -371,11 +350,9 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         let extracted =
             extract_matching_checkpoint(ctx, self.ctx.magic_bytes(), tip, asm_block.height())
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "no checkpoint envelope tx in L1 block {asm_block} validated for epoch {}",
-                        tip.epoch
-                    )
+                .ok_or(CsmWorkerError::NoMatchingCheckpoint {
+                    asm_block: *asm_block,
+                    epoch: tip.epoch,
                 })?;
 
         let observation = CheckpointL1Ref::new(*asm_block, extracted.txid, extracted.wtxid);
@@ -406,23 +383,23 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 fn parent_commitment(
     asm_block: &L1BlockCommitment,
     block: &bitcoin::Block,
-) -> anyhow::Result<L1BlockCommitment> {
+) -> CsmWorkerResult<L1BlockCommitment> {
     let height = asm_block.height();
     let parent_height = height
         .checked_sub(1)
-        .ok_or_else(|| anyhow::anyhow!("cannot derive parent for genesis L1 block {asm_block}"))?;
+        .ok_or(CsmWorkerError::GenesisHasNoParent(*asm_block))?;
     let parent_blkid = L1BlockId::from(Buf32::from(block.header.prev_blockhash.to_byte_array()));
     Ok(L1BlockCommitment::new(parent_height, parent_blkid))
 }
 
 /// Extracts the checkpoint subprotocol's typed state from a parent `AsmState`.
-fn decode_checkpoint_section(asm_state: &AsmState) -> anyhow::Result<CheckpointState> {
+fn decode_checkpoint_section(asm_state: &AsmState) -> CsmWorkerResult<CheckpointState> {
     asm_state
         .state()
         .find_section(CheckpointSubprotocol::ID)
-        .ok_or_else(|| anyhow::anyhow!("checkpoint subprotocol section missing in ASM state"))?
+        .ok_or(CsmWorkerError::MissingCheckpointSection)?
         .try_to_state::<CheckpointSubprotocol>()
-        .map_err(|e| anyhow::anyhow!("decode checkpoint subprotocol state: {e}"))
+        .map_err(CsmWorkerError::DecodeCheckpointSection)
 }
 
 #[cfg(test)]
@@ -447,7 +424,7 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use crate::{state::CsmWorkerState, test_utils::StubCtx};
+    use crate::{errors::CsmWorkerError, state::CsmWorkerState, test_utils::StubCtx};
 
     /// Reorg-safe depth used by the test stub context; the ASM params fixture
     /// carries no reorg depth (that lives in the node config at runtime).
@@ -638,7 +615,7 @@ mod tests {
             .process_log(&mut pending, &log, &asm_block)
             .expect_err("fetch failure should propagate");
         assert!(
-            err.to_string().contains("fetching L1 block"),
+            matches!(err, CsmWorkerError::L1Fetch { .. }),
             "unexpected error: {err}"
         );
 
@@ -699,7 +676,7 @@ mod tests {
             .process_log(&mut pending, &log, &asm_block)
             .expect_err("L1 fetch failure should make the log fail");
         assert!(
-            err.to_string().contains("fetching L1 block"),
+            matches!(err, CsmWorkerError::L1Fetch { .. }),
             "unexpected error: {err}"
         );
 
@@ -743,7 +720,7 @@ mod tests {
             .process_asm_block(next, &[create_non_checkpoint_log_type()])
             .expect_err("commit failure should propagate");
         assert!(
-            err.to_string().contains("committing CSM block"),
+            matches!(err, CsmWorkerError::Context(_)),
             "unexpected error: {err}"
         );
 
@@ -864,8 +841,11 @@ mod tests {
             .process_asm_block(target, &[create_non_checkpoint_log_type()])
             .expect_err("gap-fill should fail when a gap block can't be resolved");
         assert!(
-            err.to_string()
-                .contains("resolving gap L1 block at height 102"),
+            matches!(
+                err,
+                CsmWorkerError::MissingData { what, ref detail }
+                    if what == "canonical L1 block" && detail.contains("height 102")
+            ),
             "unexpected error: {err}"
         );
 

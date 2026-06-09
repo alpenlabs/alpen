@@ -7,7 +7,7 @@ use strata_identifiers::Epoch;
 use strata_primitives::{l1::is_l1_reorg_safe, prelude::*};
 use strata_service::ServiceState;
 
-use crate::{constants, context::CsmWorkerContext};
+use crate::{constants, context::CsmWorkerContext, errors::CsmWorkerResult};
 
 /// State for the CSM worker service.
 ///
@@ -47,14 +47,13 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
     pub(crate) observed_checkpoints: VecDeque<L1Checkpoint>,
 }
 
-// TODO(STR-3491): Use typed errors instead of `anyhow!`
 impl<C: CsmWorkerContext> CsmWorkerState<C> {
     /// Create a new CSM worker state.
     ///
     /// All bootstrap reads (last client state, observed checkpoint refs, params)
     /// go through `ctx`; runtime persistence and L1 fetches use the same
     /// context after construction.
-    pub fn new(ctx: C) -> anyhow::Result<Self> {
+    pub fn new(ctx: C) -> CsmWorkerResult<Self> {
         // Load the most recent client state from storage
         let (cur_block, cur_state) = ctx
             .fetch_most_recent_client_state()?
@@ -151,7 +150,7 @@ fn load_observed_checkpoints<C: CsmWorkerContext>(
     ctx: &C,
     start_epoch: Epoch,
     current_l1_tip: L1Height,
-) -> anyhow::Result<VecDeque<L1Checkpoint>> {
+) -> CsmWorkerResult<VecDeque<L1Checkpoint>> {
     let Some(last_l1_ref_commitment) = ctx.get_last_checkpoint_l1_ref_epoch()? else {
         return Ok(VecDeque::new());
     };

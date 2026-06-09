@@ -17,7 +17,10 @@ use strata_state::asm_state::AsmState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
-use crate::context::CsmWorkerContext;
+use crate::{
+    context::CsmWorkerContext,
+    errors::{CsmWorkerError, CsmWorkerResult},
+};
 
 /// What `get_l1_block` does when called.
 enum L1Fetch {
@@ -103,9 +106,11 @@ impl CsmWorkerContext for StubCtx {
         &self,
         block: &L1BlockCommitment,
         output: ClientUpdateOutput,
-    ) -> anyhow::Result<()> {
+    ) -> CsmWorkerResult<()> {
         if self.fail_client_state_update {
-            return Err(anyhow::anyhow!("simulated client state update failure"));
+            return Err(CsmWorkerError::Context(
+                "simulated client state update failure".to_string(),
+            ));
         }
         self.storage
             .client_state()
@@ -122,17 +127,20 @@ impl CsmWorkerContext for StubCtx {
         commitment: EpochCommitment,
         payload: CheckpointPayload,
         l1_ref: CheckpointL1Ref,
-    ) -> anyhow::Result<()> {
+    ) -> CsmWorkerResult<()> {
         self.storage
             .ol_checkpoint()
             .put_checkpoint_l1_observation_blocking(commitment, payload, l1_ref)?;
         Ok(())
     }
 
-    fn get_l1_block(&self, _blockid: &L1BlockId) -> anyhow::Result<Block> {
+    fn get_l1_block(&self, blockid: &L1BlockId) -> CsmWorkerResult<Block> {
         match &self.l1_fetch {
             L1Fetch::Unset => panic!("test should not fetch L1 block"),
-            L1Fetch::Fail => Err(anyhow::anyhow!("simulated L1 fetch failure")),
+            L1Fetch::Fail => Err(CsmWorkerError::L1Fetch {
+                blockid: *blockid,
+                cause: "simulated L1 fetch failure".to_string(),
+            }),
         }
     }
 
@@ -144,35 +152,43 @@ impl CsmWorkerContext for StubCtx {
         self.magic
     }
 
-    fn get_asm_state(&self, block: &L1BlockCommitment) -> anyhow::Result<AsmState> {
+    fn get_asm_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AsmState> {
         self.canonical_asm_states
             .get(&block.height())
             .filter(|(blkid, _)| blkid == block.blkid())
             .map(|(_, state)| state.clone())
-            .ok_or_else(|| anyhow::anyhow!("no test ASM state configured for {block}"))
+            .ok_or_else(|| CsmWorkerError::MissingData {
+                what: "test ASM state",
+                detail: block.to_string(),
+            })
     }
 
-    fn get_aux_data(&self, block: &L1BlockCommitment) -> anyhow::Result<AuxData> {
-        Err(anyhow::anyhow!(
-            "stub get_aux_data called for {block}; tests that need aux data should use end-to-end fixtures"
-        ))
+    fn get_aux_data(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AuxData> {
+        Err(CsmWorkerError::MissingData {
+            what: "test ASM aux data",
+            detail: format!("{block}; tests that need aux data should use end-to-end fixtures"),
+        })
     }
 
-    fn get_canonical_l1_block(&self, height: L1Height) -> anyhow::Result<L1BlockCommitment> {
+    fn get_canonical_l1_block(&self, height: L1Height) -> CsmWorkerResult<L1BlockCommitment> {
         if self.canonical_fail_height == Some(height) {
-            return Err(anyhow::anyhow!(
-                "simulated canonical lookup failure at height {height}"
-            ));
+            return Err(CsmWorkerError::MissingData {
+                what: "canonical L1 block",
+                detail: format!("simulated lookup failure at height {height}"),
+            });
         }
         self.canonical_asm_states
             .get(&height)
             .map(|(blkid, _)| L1BlockCommitment::new(height, *blkid))
-            .ok_or_else(|| anyhow::anyhow!("no test canonical block configured at height {height}"))
+            .ok_or_else(|| CsmWorkerError::MissingData {
+                what: "test canonical block",
+                detail: format!("height {height}"),
+            })
     }
 
     fn fetch_most_recent_client_state(
         &self,
-    ) -> anyhow::Result<Option<(L1BlockCommitment, ClientState)>> {
+    ) -> CsmWorkerResult<Option<(L1BlockCommitment, ClientState)>> {
         Ok(self.storage.client_state().fetch_most_recent_state()?)
     }
 
@@ -180,7 +196,7 @@ impl CsmWorkerContext for StubCtx {
         self.genesis_l1_block
     }
 
-    fn get_last_checkpoint_l1_ref_epoch(&self) -> anyhow::Result<Option<EpochCommitment>> {
+    fn get_last_checkpoint_l1_ref_epoch(&self) -> CsmWorkerResult<Option<EpochCommitment>> {
         Ok(self
             .storage
             .ol_checkpoint()
@@ -190,7 +206,7 @@ impl CsmWorkerContext for StubCtx {
     fn get_canonical_epoch_commitment_at(
         &self,
         epoch: Epoch,
-    ) -> anyhow::Result<Option<EpochCommitment>> {
+    ) -> CsmWorkerResult<Option<EpochCommitment>> {
         Ok(self
             .storage
             .ol_checkpoint()
@@ -200,7 +216,7 @@ impl CsmWorkerContext for StubCtx {
     fn get_checkpoint_l1_ref(
         &self,
         commitment: EpochCommitment,
-    ) -> anyhow::Result<Option<CheckpointL1Ref>> {
+    ) -> CsmWorkerResult<Option<CheckpointL1Ref>> {
         Ok(self
             .storage
             .ol_checkpoint()
@@ -210,7 +226,7 @@ impl CsmWorkerContext for StubCtx {
     fn get_checkpoint_payload(
         &self,
         commitment: EpochCommitment,
-    ) -> anyhow::Result<Option<CheckpointPayload>> {
+    ) -> CsmWorkerResult<Option<CheckpointPayload>> {
         Ok(self
             .storage
             .ol_checkpoint()

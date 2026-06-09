@@ -15398,6 +15398,7 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-asm-manifest-types",
  "strata-asm-params",
  "strata-asm-proto-checkpoint",
  "strata-asm-proto-checkpoint-txs",
@@ -15412,6 +15413,7 @@ dependencies = [
  "strata-common",
  "strata-csm-types",
  "strata-db-store-sled",
+ "strata-db-types",
  "strata-identifiers",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
@@ -15423,6 +15425,7 @@ dependencies = [
  "strata-test-utils",
  "strata-test-utils-checkpoint",
  "strata-test-utils-l2",
+ "thiserror 2.0.18",
  "threadpool",
  "tracing",
 ]

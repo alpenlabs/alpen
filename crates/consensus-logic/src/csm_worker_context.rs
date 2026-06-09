@@ -10,7 +10,7 @@ use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
-use strata_csm_worker::CsmWorkerContext;
+use strata_csm_worker::{CsmWorkerContext, CsmWorkerError, CsmWorkerResult};
 use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
@@ -62,7 +62,7 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         &self,
         block: &L1BlockCommitment,
         output: ClientUpdateOutput,
-    ) -> anyhow::Result<()> {
+    ) -> CsmWorkerResult<()> {
         self.storage
             .client_state()
             .put_update_blocking(block, output)?;
@@ -78,14 +78,14 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         commitment: EpochCommitment,
         payload: CheckpointPayload,
         l1_ref: CheckpointL1Ref,
-    ) -> anyhow::Result<()> {
+    ) -> CsmWorkerResult<()> {
         self.storage
             .ol_checkpoint()
             .put_checkpoint_l1_observation_blocking(commitment, payload, l1_ref)?;
         Ok(())
     }
 
-    fn get_l1_block(&self, blockid: &L1BlockId) -> anyhow::Result<Block> {
+    fn get_l1_block(&self, blockid: &L1BlockId) -> CsmWorkerResult<Block> {
         // ASM has already processed this block, so bitcoind must have it. Retry
         // with backoff to absorb transient failures (RPC timeout, replica lag).
         let hash = blockid.to_block_hash();
@@ -93,7 +93,10 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         retry_with_backoff("csm_get_l1_block", 10, &backoff, || {
             self.handle
                 .block_on(self.bitcoin_client.get_block(&hash))
-                .map_err(|e| anyhow::anyhow!("fetch L1 block {blockid}: {e}"))
+                .map_err(|e| CsmWorkerError::L1Fetch {
+                    blockid: *blockid,
+                    cause: e.to_string(),
+                })
         })
     }
 
@@ -105,32 +108,41 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         self.asm_params.magic
     }
 
-    fn get_asm_state(&self, block: &L1BlockCommitment) -> anyhow::Result<AsmState> {
+    fn get_asm_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AsmState> {
         self.storage
             .asm()
             .get_state_blocking(*block)?
-            .ok_or_else(|| anyhow::anyhow!("missing ASM state for {block}"))
+            .ok_or_else(|| CsmWorkerError::MissingData {
+                what: "ASM state",
+                detail: block.to_string(),
+            })
     }
 
-    fn get_aux_data(&self, block: &L1BlockCommitment) -> anyhow::Result<AuxData> {
+    fn get_aux_data(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AuxData> {
         self.storage
             .asm()
             .get_aux_data_blocking(*block)?
-            .ok_or_else(|| anyhow::anyhow!("missing ASM aux data for {block}"))
+            .ok_or_else(|| CsmWorkerError::MissingData {
+                what: "ASM aux data",
+                detail: block.to_string(),
+            })
     }
 
-    fn get_canonical_l1_block(&self, height: L1Height) -> anyhow::Result<L1BlockCommitment> {
+    fn get_canonical_l1_block(&self, height: L1Height) -> CsmWorkerResult<L1BlockCommitment> {
         let blkid = self
             .storage
             .l1()
             .get_canonical_blockid_at_height(height)?
-            .ok_or_else(|| anyhow::anyhow!("missing canonical L1 block at height {height}"))?;
+            .ok_or_else(|| CsmWorkerError::MissingData {
+                what: "canonical L1 block",
+                detail: format!("height {height}"),
+            })?;
         Ok(L1BlockCommitment::new(height, blkid))
     }
 
     fn fetch_most_recent_client_state(
         &self,
-    ) -> anyhow::Result<Option<(L1BlockCommitment, ClientState)>> {
+    ) -> CsmWorkerResult<Option<(L1BlockCommitment, ClientState)>> {
         Ok(self.storage.client_state().fetch_most_recent_state()?)
     }
 
@@ -138,7 +150,7 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         self.asm_params.anchor.block
     }
 
-    fn get_last_checkpoint_l1_ref_epoch(&self) -> anyhow::Result<Option<EpochCommitment>> {
+    fn get_last_checkpoint_l1_ref_epoch(&self) -> CsmWorkerResult<Option<EpochCommitment>> {
         Ok(self
             .storage
             .ol_checkpoint()
@@ -148,7 +160,7 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
     fn get_canonical_epoch_commitment_at(
         &self,
         epoch: Epoch,
-    ) -> anyhow::Result<Option<EpochCommitment>> {
+    ) -> CsmWorkerResult<Option<EpochCommitment>> {
         Ok(self
             .storage
             .ol_checkpoint()
@@ -158,7 +170,7 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
     fn get_checkpoint_l1_ref(
         &self,
         commitment: EpochCommitment,
-    ) -> anyhow::Result<Option<CheckpointL1Ref>> {
+    ) -> CsmWorkerResult<Option<CheckpointL1Ref>> {
         Ok(self
             .storage
             .ol_checkpoint()
@@ -168,7 +180,7 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
     fn get_checkpoint_payload(
         &self,
         commitment: EpochCommitment,
-    ) -> anyhow::Result<Option<CheckpointPayload>> {
+    ) -> CsmWorkerResult<Option<CheckpointPayload>> {
         Ok(self
             .storage
             .ol_checkpoint()
