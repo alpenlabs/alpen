@@ -19,10 +19,6 @@ rpc_user = "alpen"
 rpc_password = "alpen"
 network = "regtest"
 
-[sync]
-l1_follow_distance = 6
-client_checkpoint_interval = 10
-
 [btcio.reader]
 client_poll_dur_ms = 200
 
@@ -41,9 +37,3 @@ fee_policy = "mempool"
 # fixed_fee_rate = 0.5
 mempool_base_url = "https://mempool.space"
 reveal_amount = 100
-
-[exec.reth]
-# reth {authrpc.address}:{authrpc.port}
-rpc_url = "localhost:8551"
-# reth authrpc.jwtsecret path
-secret = "/path/to/jwt.hex"

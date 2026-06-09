@@ -24,12 +24,6 @@ class ClientConfig:
 
 
 @dataclass
-class SyncConfig:
-    l1_follow_distance: int = field(default=6)
-    client_checkpoint_interval: int = field(default=20)
-
-
-@dataclass
 class BitcoindConfig:
     rpc_url: str = field(default="http://localhost:8443")
     rpc_user: str = field(default="rpcuser")
@@ -66,24 +60,6 @@ class BtcioConfig:
     reader: ReaderConfig = field(default_factory=ReaderConfig)
     writer: WriterConfig = field(default_factory=WriterConfig)
     broadcaster: BroadcasterConfig = field(default_factory=BroadcasterConfig)
-
-
-@dataclass
-class RethELConfig:
-    rpc_url: str = field(default="")
-    secret: str = field(default="")
-
-
-@dataclass
-class ExecConfig:
-    reth: RethELConfig = field(default_factory=RethELConfig)
-
-
-@dataclass
-class RelayerConfig:
-    refresh_interval: int = field(default=200)
-    stale_duration: int = field(default=20)
-    relay_misc: bool = field(default=True)
 
 
 @dataclass
@@ -170,9 +146,6 @@ class StrataConfig:
     client: ClientConfig = field(default_factory=ClientConfig)
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)
     btcio: BtcioConfig = field(default_factory=BtcioConfig)
-    sync: SyncConfig = field(default_factory=SyncConfig)
-    exec: ExecConfig = field(default_factory=ExecConfig)
-    relayer: RelayerConfig = field(default_factory=RelayerConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     prover: ProverConfig | None = field(default=None)
 
