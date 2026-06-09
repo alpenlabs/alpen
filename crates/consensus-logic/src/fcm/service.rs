@@ -640,8 +640,9 @@ mod tests {
     use strata_db_types::{traits::BlockStatus, DbResult};
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
     use strata_ol_chain_types_new::{
-        test_utils::schnorr_predicate, BlockFlags, OLBlock, OLBlockBody, OLBlockCredential,
-        OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+        test_utils::{schnorr_predicate, test_schnorr_keypair},
+        BlockFlags, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment,
+        SignedOLBlockHeader,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::OLState;
@@ -650,12 +651,7 @@ mod tests {
         BlockComponents, BlockInfo, CompletedBlock,
     };
     use strata_predicate::PredicateKey;
-    use strata_primitives::{
-        crypto::sign_schnorr_sig,
-        l1::L1BlockId,
-        utils::{get_test_schnorr_keys, SchnorrKeypair},
-        Buf64, OLBlockId,
-    };
+    use strata_primitives::{crypto::sign_schnorr_sig, l1::L1BlockId, Buf64, OLBlockId};
 
     use super::*;
     use crate::{
@@ -1383,10 +1379,6 @@ mod tests {
         Ok(())
     }
 
-    fn make_keypair() -> SchnorrKeypair {
-        get_test_schnorr_keys()[0].clone()
-    }
-
     fn make_block(slot: u64, signature: Option<Buf64>) -> OLBlock {
         let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
         let header = OLBlockHeader::new(
@@ -1554,7 +1546,7 @@ mod tests {
 
     #[tokio::test]
     async fn process_fc_message_clears_high_watermark_for_invalid_block() -> anyhow::Result<()> {
-        let keypair = make_keypair();
+        let (_, pk) = test_schnorr_keypair();
         let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
         let genesis_blkid = genesis.header().compute_blkid();
         let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
@@ -1578,8 +1570,7 @@ mod tests {
         ctx.storage().set_block_high_watermark(block_commitment);
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
 
-        let mut fcm_state =
-            init_fcm_service_state(schnorr_predicate(&keypair.pk), ctx.clone()).await?;
+        let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
 
         process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state).await?;
 
@@ -1605,8 +1596,8 @@ mod tests {
 
     #[test]
     fn rejects_unsigned_block_when_checked() {
-        let keypair = make_keypair();
-        let predicate = schnorr_predicate(&keypair.pk);
+        let (_, pk) = test_schnorr_keypair();
+        let predicate = schnorr_predicate(&pk);
         let block = make_block(1, None);
         let blkid = block.header().compute_blkid();
 
@@ -1618,8 +1609,8 @@ mod tests {
 
     #[test]
     fn rejects_invalid_signature() {
-        let keypair = make_keypair();
-        let predicate = schnorr_predicate(&keypair.pk);
+        let (_, pk) = test_schnorr_keypair();
+        let predicate = schnorr_predicate(&pk);
         let block = make_block(1, Some(Buf64::zero()));
         let blkid = block.header().compute_blkid();
 
@@ -1642,10 +1633,10 @@ mod tests {
 
     #[test]
     fn accepts_valid_signature() {
-        let keypair = make_keypair();
-        let predicate = schnorr_predicate(&keypair.pk);
+        let (sk, pk) = test_schnorr_keypair();
+        let predicate = schnorr_predicate(&pk);
         let block = make_block(1, Some(Buf64::zero()));
-        let signature = sign_block(&block, &keypair.sk);
+        let signature = sign_block(&block, &sk);
         let block = make_block(1, Some(signature));
         let blkid = block.header().compute_blkid();
 
@@ -1656,8 +1647,8 @@ mod tests {
 
     #[test]
     fn rejects_genesis_block_proposal() {
-        let keypair = make_keypair();
-        let predicate = schnorr_predicate(&keypair.pk);
+        let (_, pk) = test_schnorr_keypair();
+        let predicate = schnorr_predicate(&pk);
         let block = make_block(0, None);
         let blkid = block.header().compute_blkid();
 

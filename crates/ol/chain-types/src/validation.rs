@@ -39,18 +39,12 @@ pub fn verify_sequencer_predicate_signature(
 #[cfg(test)]
 mod tests {
     use strata_crypto::sign_schnorr_sig;
-    use strata_primitives::utils::get_test_schnorr_keys;
 
     use super::*;
-    use crate::test_utils::schnorr_predicate;
+    use crate::test_utils::{schnorr_predicate, test_schnorr_keypair};
 
     fn test_msg() -> Buf32 {
         Buf32::from([42; 32])
-    }
-
-    fn test_schnorr_keypair() -> (Buf32, Buf32) {
-        let keypair = get_test_schnorr_keys()[0].clone();
-        (keypair.sk, keypair.pk)
     }
 
     #[test]
