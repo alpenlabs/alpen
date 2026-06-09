@@ -171,12 +171,32 @@ jobs:
         if: always()
         run: cat .github/sp1-e2e/e2e-env.txt 2>/dev/null || echo "No env collected"
 
+      - name: WARN/ERROR summary
+        if: always()
+        run: |
+          SUMMARY_FILE=".github/sp1-e2e/e2e-warn-error-summary.txt"
+          if [ ! -s "${SUMMARY_FILE}" ]; then
+            echo "No WARN/ERROR summary collected"
+            exit 0
+          fi
+
+          cat "${SUMMARY_FILE}"
+          {
+            echo "## WARN/ERROR log summary"
+            echo
+            echo '```text'
+            head -300 "${SUMMARY_FILE}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sp1-e2e-logs
-          path: .github/sp1-e2e/e2e-logs.txt
+          path: |
+            .github/sp1-e2e/e2e-logs.txt
+            .github/sp1-e2e/e2e-warn-error-summary.txt
           retention-days: 7
 
       - name: Notify Slack on failure

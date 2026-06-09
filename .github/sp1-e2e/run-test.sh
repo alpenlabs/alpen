@@ -15,6 +15,7 @@ DOCKER_DIR="${REPO_ROOT}/docker"
 PROOF_TIMEOUT="${PROOF_TIMEOUT:-2400}"
 RPC_READY_TIMEOUT="${RPC_READY_TIMEOUT:-120}"
 FAILURE_REASON_FILE="${SCRIPT_DIR}/e2e-failure-reason.txt"
+WARN_ERROR_SUMMARY_FILE="${SCRIPT_DIR}/e2e-warn-error-summary.txt"
 
 DATATOOL_IMAGE="${ECR_REGISTRY}/strata-datatool:${IMAGE_TAG}"
 
@@ -106,6 +107,7 @@ cleanup() {
     echo "=== Collecting logs ==="
     docker compose -f "${DOCKER_DIR}/compose-ol-el-seq.yml" -f "${SCRIPT_DIR}/compose-override.yml" logs --no-color > "${SCRIPT_DIR}/e2e-logs.txt" 2>&1 || true
     docker compose -f "${DOCKER_DIR}/compose-signet.yml" logs --no-color >> "${SCRIPT_DIR}/e2e-logs.txt" 2>&1 || true
+    python3 "${SCRIPT_DIR}/summarize-warn-error-logs.py" "${SCRIPT_DIR}/e2e-logs.txt" > "${WARN_ERROR_SUMMARY_FILE}" || true
     echo "=== Tearing down ==="
     docker compose -f "${DOCKER_DIR}/compose-ol-el-seq.yml" -f "${SCRIPT_DIR}/compose-override.yml" down -v 2>/dev/null || true
     docker compose -f "${DOCKER_DIR}/compose-signet.yml" down -v 2>/dev/null || true
