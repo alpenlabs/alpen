@@ -28,7 +28,9 @@ class TestL1CanonicalWriteBeforeManifestCrash(StrataNodeTest):
 
         rpc = strata.wait_for_rpc_ready(timeout=30)
         btc_rpc = bitcoin.create_rpc()
+        mine_addr = btc_rpc.proxy.getnewaddress()
 
+        btc_rpc.proxy.generatetoaddress(1, mine_addr)
         initial_tip = btc_rpc.proxy.getblockchaininfo()["blocks"]
         strata.wait_for_asm_manifest_commitment_at(initial_tip, rpc=rpc, timeout=180)
         logger.info("Initial L1 tip %d is tracked", initial_tip)
@@ -36,7 +38,6 @@ class TestL1CanonicalWriteBeforeManifestCrash(StrataNodeTest):
         bail_tag = require_known_bail_tag(rpc, "btcio_after_l1_canonical_write")
         rpc.debug_bail(bail_tag)
 
-        mine_addr = btc_rpc.proxy.getnewaddress()
         btc_rpc.proxy.generatetoaddress(1, mine_addr)
         partial_height = btc_rpc.proxy.getblockchaininfo()["blocks"]
         if partial_height != initial_tip + 1:

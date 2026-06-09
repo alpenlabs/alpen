@@ -1,8 +1,9 @@
 //! Context impl to instantiate ASM worker with.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use bitcoind_async_client::{client::Client, traits::Reader};
+use strata_asm_common::{AsmManifest, AuxData};
 use strata_asm_worker::{AsmState as WorkerAsmState, WorkerContext, WorkerError, WorkerResult};
 use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
@@ -25,6 +26,7 @@ pub struct AsmWorkerCtx {
     asmman: Arc<AsmStateManager>,
     /// MMR handle for ASM manifest MMR
     mmr_handle: MmrIndexHandle,
+    pending_manifest_mmr_leaf: Mutex<Option<(u64, Hash)>>,
 }
 
 impl AsmWorkerCtx {
@@ -41,6 +43,7 @@ impl AsmWorkerCtx {
             l1man,
             asmman,
             mmr_handle,
+            pending_manifest_mmr_leaf: Mutex::new(None),
         }
     }
 }
@@ -84,8 +87,17 @@ impl WorkerContext for AsmWorkerCtx {
             .map_err(conv_db_err)
     }
 
-    fn store_l1_manifest(&self, manifest: strata_asm_common::AsmManifest) -> WorkerResult<()> {
-        self.l1man.put_block_data(manifest).map_err(conv_db_err)
+    fn store_l1_manifest(&self, manifest: AsmManifest) -> WorkerResult<()> {
+        let expected_idx = u64::from(manifest.height());
+        let manifest_hash = manifest.compute_hash().into();
+
+        self.l1man.put_block_data(manifest).map_err(conv_db_err)?;
+
+        let mut pending = self.pending_manifest_mmr_leaf.lock().map_err(|_| {
+            WorkerError::Unexpected("ASM manifest MMR pending leaf lock poisoned".to_string())
+        })?;
+        *pending = Some((expected_idx, manifest_hash));
+        Ok(())
     }
 
     fn get_network(&self) -> WorkerResult<bitcoin::Network> {
@@ -114,12 +126,42 @@ impl WorkerContext for AsmWorkerCtx {
     }
 
     fn append_manifest_to_mmr(&self, manifest_hash: Hash) -> WorkerResult<u64> {
+        let (expected_idx, expected_hash) = self
+            .pending_manifest_mmr_leaf
+            .lock()
+            .map_err(|_| {
+                WorkerError::Unexpected("ASM manifest MMR pending leaf lock poisoned".to_string())
+            })?
+            .ok_or_else(|| {
+                WorkerError::Unexpected(
+                    "ASM manifest MMR append requested without a pending manifest".to_string(),
+                )
+            })?;
+
+        if expected_hash != manifest_hash {
+            return Err(WorkerError::Unexpected(format!(
+                "ASM manifest MMR hash mismatch at height {expected_idx}: expected {expected_hash}, got {manifest_hash}"
+            )));
+        }
+
         self.mmr_handle
-            .append_leaf_blocking(manifest_hash)
+            .idempotent_append_leaf_blocking(expected_idx, manifest_hash)
             .map_err(|e| {
-                error!(?e, "Failed to append leaf to MMR");
+                error!(
+                    ?e,
+                    expected_idx, "failed to append ASM manifest leaf to MMR"
+                );
                 WorkerError::DbError
-            })
+            })?;
+
+        let mut pending = self.pending_manifest_mmr_leaf.lock().map_err(|_| {
+            WorkerError::Unexpected("ASM manifest MMR pending leaf lock poisoned".to_string())
+        })?;
+        if pending.as_ref() == Some(&(expected_idx, manifest_hash)) {
+            *pending = None;
+        }
+
+        Ok(expected_idx)
     }
 
     fn generate_mmr_proof_at(
@@ -142,20 +184,13 @@ impl WorkerContext for AsmWorkerCtx {
         })
     }
 
-    fn store_aux_data(
-        &self,
-        blockid: &L1BlockCommitment,
-        data: &strata_asm_common::AuxData,
-    ) -> WorkerResult<()> {
+    fn store_aux_data(&self, blockid: &L1BlockCommitment, data: &AuxData) -> WorkerResult<()> {
         self.asmman
             .put_aux_data_blocking(*blockid, data.clone())
             .map_err(conv_db_err)
     }
 
-    fn get_aux_data(
-        &self,
-        blockid: &L1BlockCommitment,
-    ) -> WorkerResult<Option<strata_asm_common::AuxData>> {
+    fn get_aux_data(&self, blockid: &L1BlockCommitment) -> WorkerResult<Option<AuxData>> {
         self.asmman
             .get_aux_data_blocking(*blockid)
             .map_err(conv_db_err)
