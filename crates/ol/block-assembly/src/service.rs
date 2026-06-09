@@ -275,12 +275,11 @@ mod tests {
     use strata_config::BlockAssemblyConfig;
     use strata_crypto::sign_schnorr_sig;
     use strata_identifiers::{Buf32, Buf64, OLBlockCommitment};
-    use strata_ol_chain_types_new::test_utils::schnorr_predicate;
+    use strata_ol_chain_types_new::test_utils::{schnorr_predicate, test_schnorr_keypair};
     use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
     use strata_ol_params::OLParams;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_predicate::PredicateKey;
-    use strata_primitives::utils::get_test_schnorr_keys;
 
     use super::*;
     use crate::{
@@ -312,8 +311,8 @@ mod tests {
         Option<Buf32>,
     ) {
         let (sequencer_predicate, signing_key) = if use_schnorr_predicate {
-            let keypair = get_test_schnorr_keys()[0].clone();
-            (schnorr_predicate(&keypair.pk), Some(keypair.sk))
+            let (sk, pk) = test_schnorr_keypair();
+            (schnorr_predicate(&pk), Some(sk))
         } else {
             (PredicateKey::always_accept(), None)
         };

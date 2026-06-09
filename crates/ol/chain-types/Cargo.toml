@@ -23,20 +23,29 @@ tree_hash_derive.workspace = true
 arbitrary = { optional = true, workspace = true }
 int-enum.workspace = true
 proptest = { optional = true, workspace = true }
+rand = { optional = true, workspace = true }
+secp256k1 = { optional = true, workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]
 arbitrary.workspace = true
 proptest.workspace = true
+rand.workspace = true
+secp256k1.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
-strata-primitives.workspace = true
 strata-test-utils-ssz.workspace = true
 
 [build-dependencies]
 ssz_codegen.workspace = true
 
 [features]
-test-utils = ["dep:arbitrary", "dep:proptest", "strata-identifiers/test-utils"]
+test-utils = [
+    "dep:arbitrary",
+    "dep:proptest",
+    "dep:rand",
+    "dep:secp256k1",
+    "strata-identifiers/test-utils",
+]
 
 [lints]
 workspace = true

@@ -48,7 +48,6 @@ pub mod nonempty_vec;
 pub mod prelude;
 pub mod serde_helpers;
 pub mod sorted_vec;
-pub mod utils;
 
 pub use bitcoin_bosd;
 pub use serde_helpers::serde_hex_bytes::*;
