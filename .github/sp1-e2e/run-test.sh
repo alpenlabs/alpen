@@ -49,14 +49,18 @@ record_failure() {
     local reason="$1"
 
     if [ ! -s "${FAILURE_REASON_FILE}" ]; then
-        printf '%s\n' "${reason}" > "${FAILURE_REASON_FILE}"
+        printf '%s\n' "${reason}" | strip_ansi > "${FAILURE_REASON_FILE}"
     fi
+}
+
+strip_ansi() {
+    sed -E $'s/\x1B\\[[0-9;?]*[ -/]*[@-~]//g'
 }
 
 fail() {
     local reason="$1"
 
-    echo "FAIL: ${reason}"
+    printf 'FAIL: %s\n' "${reason}" | strip_ansi
     record_failure "${reason}"
     exit 1
 }
@@ -100,8 +104,8 @@ cleanup() {
     } > "${SCRIPT_DIR}/e2e-env.txt" 2>&1
 
     echo "=== Collecting logs ==="
-    docker compose -f "${DOCKER_DIR}/compose-ol-el-seq.yml" -f "${SCRIPT_DIR}/compose-override.yml" logs > "${SCRIPT_DIR}/e2e-logs.txt" 2>&1 || true
-    docker compose -f "${DOCKER_DIR}/compose-signet.yml" logs >> "${SCRIPT_DIR}/e2e-logs.txt" 2>&1 || true
+    docker compose -f "${DOCKER_DIR}/compose-ol-el-seq.yml" -f "${SCRIPT_DIR}/compose-override.yml" logs --no-color > "${SCRIPT_DIR}/e2e-logs.txt" 2>&1 || true
+    docker compose -f "${DOCKER_DIR}/compose-signet.yml" logs --no-color >> "${SCRIPT_DIR}/e2e-logs.txt" 2>&1 || true
     echo "=== Tearing down ==="
     docker compose -f "${DOCKER_DIR}/compose-ol-el-seq.yml" -f "${SCRIPT_DIR}/compose-override.yml" down -v 2>/dev/null || true
     docker compose -f "${DOCKER_DIR}/compose-signet.yml" down -v 2>/dev/null || true
@@ -234,7 +238,7 @@ stack_state_failure_reason() {
 
 stack_recent_logs() {
     if [ -n "${STACK_LOG_SINCE}" ]; then
-        compose_stack logs --since "${STACK_LOG_SINCE}" strata alpen-client 2>/dev/null || true
+        compose_stack logs --no-color --since "${STACK_LOG_SINCE}" strata alpen-client 2>/dev/null || true
     fi
 }
 

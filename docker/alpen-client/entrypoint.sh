@@ -32,6 +32,7 @@ if [ "${SEQUENCER_MODE}" = "true" ]; then
     BITCOIND_RPC_PASSWORD="${BITCOIND_RPC_PASSWORD:?BITCOIND_RPC_PASSWORD must be set}"
     STRATA_SUBMIT_RPC_TOKEN="${STRATA_SUBMIT_RPC_TOKEN:?STRATA_SUBMIT_RPC_TOKEN must be set}"
     EE_DA_MAGIC_BYTES="${EE_DA_MAGIC_BYTES:-ALPN}"
+    BTCIO_FEE_POLICY="${BTCIO_FEE_POLICY:-bitcoind}"
 
     set -- \
         --sequencer \
@@ -40,7 +41,24 @@ if [ "${SEQUENCER_MODE}" = "true" ]; then
         --btc-rpc-url "${BITCOIND_RPC_URL}" \
         --btc-rpc-user "${BITCOIND_RPC_USER}" \
         --btc-rpc-password "${BITCOIND_RPC_PASSWORD}" \
+        --btcio-fee-policy "${BTCIO_FEE_POLICY}" \
         "$@"
+
+    if [ -n "${BTCIO_CONF_TARGET:-}" ]; then
+        set -- "$@" --btcio-conf-target "${BTCIO_CONF_TARGET}"
+    fi
+
+    if [ -n "${BTCIO_FEE_RATE:-}" ]; then
+        set -- "$@" --btcio-fee-rate "${BTCIO_FEE_RATE}"
+    fi
+
+    if [ -n "${BTCIO_MEMPOOL_BASE_URL:-}" ]; then
+        set -- "$@" --btcio-mempool-base-url "${BTCIO_MEMPOOL_BASE_URL}"
+    fi
+
+    if [ -n "${BTCIO_MEMPOOL_TIER:-}" ]; then
+        set -- "$@" --btcio-mempool-tier "${BTCIO_MEMPOOL_TIER}"
+    fi
 fi
 
 exec alpen-client \
