@@ -28,7 +28,11 @@ services:
     image: ${ECR_REGISTRY}/alpen-client:${IMAGE_TAG}
     platform: linux/amd64
     shm_size: '8gb'
-    command: []
+    command:
+      - --btcio-fee-policy
+      - fixed
+      - --btcio-fee-rate
+      - "5"
     environment:
       - SEQUENCER_MODE=true
       - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
