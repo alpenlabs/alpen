@@ -15,7 +15,7 @@ use crate::checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_
 ///
 /// All values are epoch-cumulative for the candidate state being checked.
 /// Block assembly builds this snapshot incrementally before admitting a
-/// candidate resource, such as a transaction or manifest prefix.
+/// candidate resource, such as a transaction or manifest sequence.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EpochSealingResourceStats {
     da_diff_size: usize,
@@ -122,11 +122,7 @@ impl EpochSealingLimitVerdict {
         }
     }
 
-    /// Merges another verdict into this one, keeping the stricter action for duplicate limits.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "manifest admission wires this in the next commit")
-    )]
+    /// Merges another verdict into this one, keeping the stricter action for each limit.
     pub(crate) fn merge(&mut self, other: Self) {
         for (limit, action) in other.actions {
             self.record(limit, action);
@@ -143,10 +139,7 @@ impl EpochSealingLimitVerdict {
     }
 
     /// Returns the manifest-count limit action.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "manifest admission wires this in the next commit")
-    )]
+    #[cfg(test)]
     pub(crate) fn manifest_count_action(&self) -> EpochSealingLimitAction {
         self.action_for(EpochSealingLimit::ManifestCount)
     }
@@ -162,7 +155,7 @@ impl EpochSealingLimitVerdict {
         self.actions.iter().copied()
     }
 
-    fn most_restrictive_action(&self) -> EpochSealingLimitAction {
+    pub(crate) fn most_restrictive_action(&self) -> EpochSealingLimitAction {
         self.actions()
             .map(|(_, action)| action)
             .max()

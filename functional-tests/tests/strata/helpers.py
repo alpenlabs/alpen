@@ -12,12 +12,13 @@ from envconfigs.strata import StrataEnvConfig
 logger = logging.getLogger(__name__)
 
 
-def assert_terminal_block_l1_update(
+def assert_terminal_epoch_l1_update(
     rpc: JsonRpcClient,
     target_slot: int,
-    min_l1_manifests_in_terminal_block: int,
+    slots_per_epoch: int,
+    min_l1_manifests_in_epoch: int,
 ) -> None:
-    """Asserts a canonical terminal block exposes the expected L1 update."""
+    """Asserts a canonical terminal epoch exposes the expected L1 update."""
 
     block = rpc.strata_getBlockBySlot(target_slot)
     assert block is not None, f"terminal slot {target_slot} is missing from canonical chain"
@@ -26,15 +27,23 @@ def assert_terminal_block_l1_update(
     assert header["slot"] == target_slot, f"unexpected terminal block header: {header}"
     assert header["is_terminal"] is True, f"slot {target_slot} is not terminal: {header}"
 
-    manifests = block.get("manifests")
-    assert manifests is not None, f"terminal slot {target_slot} has no manifests: {block}"
+    first_epoch_slot = target_slot - slots_per_epoch + 1
+    epoch_manifest_count = 0
+    for slot in range(first_epoch_slot, target_slot + 1):
+        epoch_block = rpc.strata_getBlockBySlot(slot)
+        assert epoch_block is not None, f"slot {slot} is missing from canonical chain"
 
-    manifest_count = manifests.get("manifest_count")
-    assert (
-        isinstance(manifest_count, int) and manifest_count >= min_l1_manifests_in_terminal_block
-    ), (
-        f"terminal slot {target_slot} included {manifest_count!r} L1 manifests, "
-        f"expected at least {min_l1_manifests_in_terminal_block}: {block}"
+        manifests = epoch_block.get("manifests")
+        if manifests is not None:
+            manifest_count = manifests.get("manifest_count")
+            assert isinstance(manifest_count, int), (
+                f"slot {slot} has an invalid manifest count {manifest_count!r}: {epoch_block}"
+            )
+            epoch_manifest_count += manifest_count
+
+    assert epoch_manifest_count >= min_l1_manifests_in_epoch, (
+        f"epoch ending at terminal slot {target_slot} included {epoch_manifest_count} "
+        f"L1 manifests, expected at least {min_l1_manifests_in_epoch}"
     )
 
     status = rpc.strata_getChainStatus()
@@ -45,9 +54,9 @@ def assert_terminal_block_l1_update(
     )
 
     logger.info(
-        "asserted terminal slot %s with %s L1 manifests",
+        "asserted terminal slot %s after epoch included %s L1 manifests",
         target_slot,
-        manifest_count,
+        epoch_manifest_count,
     )
 
 
@@ -64,7 +73,7 @@ class TerminalBlockAssemblyBase(StrataNodeTest):
     l1_mining_interval_seconds: float
     terminal_blocks_to_validate: int
     terminal_slot_timeout_seconds: int
-    min_l1_manifests_in_terminal_block: int
+    min_l1_manifests_in_epoch: int
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
@@ -110,10 +119,11 @@ class TerminalBlockAssemblyBase(StrataNodeTest):
                 terminal_slot,
             )
 
-            assert_terminal_block_l1_update(
+            assert_terminal_epoch_l1_update(
                 rpc,
                 terminal_slot,
-                self.min_l1_manifests_in_terminal_block,
+                self.epoch_sealing.slots_per_epoch,
+                self.min_l1_manifests_in_epoch,
             )
             target_slot = self.epoch_sealing.next_terminal_slot_after(terminal_slot)
 

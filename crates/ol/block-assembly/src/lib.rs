@@ -5,11 +5,11 @@ mod builder;
 mod checkpoint_size;
 mod command;
 mod context;
-mod da_tracker;
 mod epoch_sealing;
 mod error;
 mod handle;
 mod mempool_provider;
+mod resource_state;
 mod service;
 mod state;
 #[cfg(any(test, feature = "test-utils"))]

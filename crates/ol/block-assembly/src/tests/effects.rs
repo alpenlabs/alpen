@@ -7,7 +7,7 @@ use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::EpochDaAccumulator;
 
 use crate::{
-    da_tracker::AccumulatedDaData,
+    resource_state::AccumulatedDaData,
     test_utils::{
         DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
         TestStorageFixtureBuilder, account_balance, extract_withdrawal_intents, included_txids,
@@ -212,7 +212,7 @@ async fn test_hard_limit_rollback_discards_tx2_log() {
     );
 
     assert_eq!(
-        output.accumulated_da.logs().len(),
+        output.resource_state.da().logs().len(),
         seeded_count + 1,
         "only tx1's snark-update log should be appended; tx2 was rolled back"
     );
