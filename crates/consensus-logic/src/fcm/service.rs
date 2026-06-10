@@ -242,6 +242,33 @@ async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
         // Revisit high-watermark clearing once FCM distinguishes consensus-invalid blocks
         // from transient execution failures.
 
+        // A rejected terminal block may have stored its epoch summary before
+        // failing (the summary is the last exec step, but post-exec failures
+        // can still invalidate the block afterwards). Drop it so it cannot
+        // shadow the replacement terminal's summary in canonical lookups.
+        // Keyed exactly by the rejected block's own commitment, this can
+        // never touch another block's summary, so it runs regardless of the
+        // high-watermark gate below.
+        if bundle.header().is_terminal() {
+            let summary_commitment =
+                EpochCommitment::new(bundle.header().epoch(), block.slot(), *block.blkid());
+            let deleted = fcm_state
+                .ctx()
+                .del_epoch_summary(summary_commitment)
+                .await
+                .inspect_err(|err| {
+                    error!(
+                        %block,
+                        %err,
+                        "failed to delete epoch summary of invalid OL terminal block"
+                    );
+                })
+                .context("failed to delete epoch summary of invalid OL terminal block")?;
+            if deleted {
+                info!(%block, "deleted epoch summary of invalid OL terminal block");
+            }
+        }
+
         // The cleanup below only applies to the block the sequencer is
         // currently stuck on. An invalid block that is not the high-watermark
         // (e.g. a stale or forked proposal arriving after a valid block at
@@ -277,30 +304,6 @@ async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
                 );
             })
             .context("failed to roll back state indexing for invalid OL block")?;
-
-        // A rejected terminal block may have stored its epoch summary before
-        // failing (the summary is the last exec step, but post-exec failures
-        // can still invalidate the block afterwards). Drop it so it cannot
-        // shadow the replacement terminal's summary in canonical lookups.
-        if bundle.header().is_terminal() {
-            let summary_commitment =
-                EpochCommitment::new(bundle.header().epoch(), block.slot(), *block.blkid());
-            let deleted = fcm_state
-                .ctx()
-                .del_epoch_summary(summary_commitment)
-                .await
-                .inspect_err(|err| {
-                    error!(
-                        %block,
-                        %err,
-                        "failed to delete epoch summary of invalid OL terminal block; replacement generation for this slot remains blocked"
-                    );
-                })
-                .context("failed to delete epoch summary of invalid OL terminal block")?;
-            if deleted {
-                info!(%block, "deleted epoch summary of invalid OL terminal block");
-            }
-        }
 
         let cleared = fcm_state
             .ctx()
@@ -1830,6 +1833,73 @@ mod tests {
         );
         // The fork block is not the high-watermark: the canonical chain's
         // indexing rows must stay untouched and the high-watermark kept.
+        assert_eq!(ctx.storage().indexing_rollbacks(), vec![]);
+        assert_eq!(
+            ctx.storage().block_high_watermark(),
+            Some(canonical_commitment)
+        );
+        // Non-terminal blocks never store a summary, so none is deleted.
+        assert!(ctx.storage().epoch_summary_deletes().is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_deletes_summary_for_invalid_non_high_watermark_terminal_block(
+    ) -> anyhow::Result<()> {
+        let (_, pk) = test_schnorr_keypair();
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        // An accepted canonical block holds the high-watermark at slot 1...
+        let canonical = make_storage_block(1, genesis_blkid);
+        let canonical_commitment = OLBlockCommitment::new(
+            canonical.header().slot(),
+            canonical.header().compute_blkid(),
+        );
+
+        // ...and an unsigned *terminal* fork block at the same slot arrives.
+        let fork = make_terminal_storage_block(1, OLBlockId::from(Buf32::from([7u8; 32])));
+        let fork_blkid = fork.header().compute_blkid();
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_executed_block(
+            canonical,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_ol_block(fork);
+        ctx.storage().set_block_high_watermark(canonical_commitment);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(fork_blkid), &mut fcm_state).await?;
+
+        assert_eq!(
+            ctx.storage().get_block_status(fork_blkid).await?,
+            Some(BlockStatus::Invalid)
+        );
+        // The exact-keyed summary delete runs even though the fork is not the
+        // high-watermark: a stale summary keyed by the rejected terminal must
+        // not shadow canonical epoch lookups.
+        assert_eq!(
+            ctx.storage().epoch_summary_deletes(),
+            vec![EpochCommitment::new(0, 1, fork_blkid)]
+        );
+        // The suffix-shaped cleanup stays gated: no indexing rollback and the
+        // canonical high-watermark is kept.
         assert_eq!(ctx.storage().indexing_rollbacks(), vec![]);
         assert_eq!(
             ctx.storage().block_high_watermark(),
