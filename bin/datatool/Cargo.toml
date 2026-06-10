@@ -29,7 +29,6 @@ strata-proofimpl-alpen-acct.workspace = true
 strata-proofimpl-checkpoint.workspace = true
 strata-snark-acct-runtime.workspace = true
 
-borsh = { workspace = true, optional = true }
 sp1-verifier = { workspace = true, optional = true }
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
 zkaleido-sp1-groth16-verifier = { workspace = true, optional = true }
@@ -51,7 +50,6 @@ default = ["btc-client"]
 btc-client = ["dep:bitcoind-async-client", "dep:tokio"]
 sp1-builder = [
   "strata-sp1-guest-builder/sp1-dev",
-  "dep:borsh",
   "dep:sp1-verifier",
   "dep:zkaleido-sp1-groth16-verifier",
 ]
