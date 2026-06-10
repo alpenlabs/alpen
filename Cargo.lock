@@ -15288,12 +15288,10 @@ name = "strata-checkpoint-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "borsh",
  "serde",
  "ssz",
  "ssz_derive",
  "strata-asm-checkpoint-types",
- "strata-crypto",
  "strata-identifiers",
  "strata-ol-chain-types",
  "thiserror 2.0.18",
@@ -15472,7 +15470,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "borsh",
  "serde",
  "serde_json",
  "strata-asm-checkpoint-types",
@@ -15482,7 +15479,6 @@ dependencies = [
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-primitives",
- "strata-test-utils",
  "thiserror 2.0.18",
 ]
 
@@ -15651,7 +15647,6 @@ dependencies = [
  "anyhow",
  "arbitrary",
  "bitcoin",
- "borsh",
  "proptest",
  "serde",
  "serde_json",
@@ -15659,6 +15654,7 @@ dependencies = [
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-codec",
+ "strata-codec-utils 0.1.0",
  "strata-csm-types",
  "strata-db-macros",
  "strata-identifiers",

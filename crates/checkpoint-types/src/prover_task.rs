@@ -12,11 +12,10 @@
 
 use std::fmt;
 
-use borsh::{io::Error as BorshIoError, BorshDeserialize, BorshSerialize};
 use strata_identifiers::EpochCommitment;
 
 /// Task identifier for an integrated checkpoint proof.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CheckpointProofTask(pub EpochCommitment);
 
 impl CheckpointProofTask {
@@ -24,60 +23,10 @@ impl CheckpointProofTask {
     pub fn commitment(&self) -> EpochCommitment {
         self.0
     }
-
-    /// Encodes the task into its stored byte form.
-    pub fn to_key_bytes(&self) -> Vec<u8> {
-        borsh::to_vec(self).expect("CheckpointProofTask borsh-serializable")
-    }
 }
 
 impl fmt::Display for CheckpointProofTask {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl From<CheckpointProofTask> for Vec<u8> {
-    fn from(task: CheckpointProofTask) -> Self {
-        task.to_key_bytes()
-    }
-}
-
-impl TryFrom<Vec<u8>> for CheckpointProofTask {
-    type Error = BorshIoError;
-
-    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        borsh::from_slice(&bytes)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn key_bytes_roundtrip() {
-        let task = CheckpointProofTask(EpochCommitment::null());
-        let bytes = task.to_key_bytes();
-        let decoded = CheckpointProofTask::try_from(bytes).unwrap();
-        assert_eq!(decoded, task);
-    }
-
-    #[test]
-    fn key_bytes_match_borsh_of_inner_commitment() {
-        // The on-disk format is documented as `borsh::to_vec(&task)` — which,
-        // because borsh serializes a tuple newtype as its inner field, must
-        // equal `borsh::to_vec(&commitment)`. This invariant lets external
-        // tooling reconstruct the key without depending on this wrapper.
-        let commit = EpochCommitment::null();
-        let task = CheckpointProofTask(commit);
-        assert_eq!(task.to_key_bytes(), borsh::to_vec(&commit).unwrap());
-    }
-
-    #[test]
-    fn commitment_accessor_returns_inner() {
-        let commit = EpochCommitment::null();
-        let task = CheckpointProofTask(commit);
-        assert_eq!(task.commitment(), commit);
     }
 }

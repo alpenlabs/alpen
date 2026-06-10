@@ -8,12 +8,10 @@ workspace = true
 
 [dependencies]
 strata-asm-checkpoint-types.workspace = true
-strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types.workspace = true
 
 arbitrary.workspace = true
-borsh.workspace = true
 serde.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
