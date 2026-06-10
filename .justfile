@@ -276,6 +276,7 @@ lint-check-shell: ensure-shellcheck
 lint-check-style:
     ./contrib/find_with_structs.sh crates/
     ./contrib/find_with_structs.sh bin/
+    ./contrib/check_manual_ssz_impls.sh crates/ bin/
 
 # Check that new TODO/FIXME comments include a ticket reference
 [group('code-quality')]

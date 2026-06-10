@@ -33,6 +33,7 @@ impl<'de> Deserialize<'de> for BridgeParams {
     }
 }
 
+// ssz-manual-ok: delegates byte parsing to derived BridgeParamsRaw; adds validation only.
 impl ssz::Decode for BridgeParams {
     fn is_ssz_fixed_len() -> bool {
         BridgeParamsRaw::is_ssz_fixed_len()
@@ -188,5 +189,42 @@ mod tests {
         let encoded = ssz::Encode::as_ssz_bytes(&bp);
         let decoded = <BridgeParams as ssz::Decode>::from_ssz_bytes(&encoded).unwrap();
         assert_eq!(bp, decoded);
+    }
+
+    proptest::proptest! {
+        /// Any valid params survive an SSZ encode/decode roundtrip unchanged.
+        #[test]
+        fn ssz_roundtrip_valid(denom in 1u64..=1_000_000u64, mult in 0u64..=1_000u64) {
+            // `mult == 0` -> no cap; otherwise the cap is a multiple of and >= the
+            // denomination, so `new` always succeeds for these bounded inputs.
+            let cap = if mult == 0 { None } else { Some(denom * mult) };
+            let bp = BridgeParams::new(denom, cap).unwrap();
+            let encoded = ssz::Encode::as_ssz_bytes(&bp);
+            let decoded = <BridgeParams as ssz::Decode>::from_ssz_bytes(&encoded).unwrap();
+            proptest::prop_assert_eq!(bp, decoded);
+        }
+    }
+
+    /// SSZ decode re-validates invariants: bytes encoding a zero denomination are
+    /// rejected rather than decoded into an illegal value. `denomination` is the
+    /// leading fixed field, so overwriting the first 8 bytes targets it directly.
+    #[test]
+    fn ssz_decode_rejects_zero_denomination() {
+        let bp = BridgeParams::new(100_000_000, None).unwrap();
+        let mut encoded = ssz::Encode::as_ssz_bytes(&bp);
+        encoded[0..8].copy_from_slice(&0u64.to_le_bytes());
+        let err = <BridgeParams as ssz::Decode>::from_ssz_bytes(&encoded).unwrap_err();
+        assert!(matches!(err, ssz::DecodeError::BytesInvalid(_)));
+    }
+
+    /// SSZ decode rejects a denomination that exceeds the encoded cap.
+    #[test]
+    fn ssz_decode_rejects_max_below_denomination() {
+        let bp = BridgeParams::new(100_000_000, Some(1_000_000_000)).unwrap();
+        let mut encoded = ssz::Encode::as_ssz_bytes(&bp);
+        // Overwrite the denomination to exceed the 1 BTC cap.
+        encoded[0..8].copy_from_slice(&1_500_000_000u64.to_le_bytes());
+        let err = <BridgeParams as ssz::Decode>::from_ssz_bytes(&encoded).unwrap_err();
+        assert!(matches!(err, ssz::DecodeError::BytesInvalid(_)));
     }
 }
