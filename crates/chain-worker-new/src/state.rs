@@ -21,7 +21,7 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_new::{
     BlockFlags, MAX_SEALING_MANIFEST_COUNT, OLAsmManifestContainer, OLBlock, OLBlockHeader, OLLog,
-    OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
+    SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
@@ -776,7 +776,7 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
             );
             continue;
         }
-        let log_data = SnarkAccountUpdateLogData::try_decode_log(&msg)?;
+        let log_data = log.try_into_log::<SnarkAccountUpdateLogData>()?;
 
         let account_id = state
             .find_account_id_by_serial(serial)

@@ -76,7 +76,7 @@ use strata_identifiers::{
 };
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
-use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
+use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::*;
 use strata_ol_msg_types::{
@@ -1538,10 +1538,7 @@ impl FixtureGenesisOutput {
             .logs()
             .iter()
             .filter(|l| l.account_serial() == serial)
-            .find_map(|l| {
-                let msg = MsgRef::try_from(l.payload()).ok()?;
-                T::try_decode_log(&msg).ok()
-            })
+            .find_map(|l| l.try_into_log::<T>().ok())
     }
 
     /// Decodes the typed log emitted by `serial`, panicking if it is missing.
@@ -1578,10 +1575,7 @@ impl FixtureBlockOutput {
             .logs()
             .iter()
             .filter(|l| l.account_serial() == serial)
-            .find_map(|l| {
-                let msg = MsgRef::try_from(l.payload()).ok()?;
-                T::try_decode_log(&msg).ok()
-            })
+            .find_map(|l| l.try_into_log::<T>().ok())
     }
 
     /// Returns true if any emitted log uses `serial`.

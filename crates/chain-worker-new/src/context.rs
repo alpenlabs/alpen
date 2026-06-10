@@ -22,8 +22,7 @@ use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{
-    OLBlock, OLBlockHeader, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
-    SnarkAccountUpdateLogData,
+    OLBlock, OLBlockHeader, OLLog, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLAccountState, OLState, WriteBatch};
@@ -456,7 +455,7 @@ fn collect_snark_update_logs<'a>(
     for log in logs {
         let msg = MsgRef::try_from(log.payload())?;
         if msg.ty() == SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID {
-            out.push(SnarkAccountUpdateLogData::try_decode_log(&msg)?);
+            out.push(log.try_into_log::<SnarkAccountUpdateLogData>()?);
         }
     }
     Ok(out)
@@ -662,7 +661,7 @@ mod tests {
 
         // The matching log carries the extra_data that must end up in the index record.
         let log_data = SnarkAccountUpdateLogData::new(next_read_idx, extra.clone()).unwrap();
-        let log = OLLog::new(serial, log_data.encode_log().unwrap());
+        let log = OLLog::from_log(serial, &log_data).unwrap();
 
         let output = OLBlockExecutionOutput::new(
             Buf32::zero(),

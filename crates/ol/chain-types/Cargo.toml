@@ -12,6 +12,7 @@ ssz_primitives.workspace = true
 ssz_types.workspace = true
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
+strata-asm-proto-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
