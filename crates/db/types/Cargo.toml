@@ -11,6 +11,7 @@ strata-asm-common.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
+strata-codec-utils.workspace = true
 strata-csm-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
@@ -30,7 +31,6 @@ strata-db-macros = { workspace = true, optional = true }
 anyhow.workspace = true
 arbitrary.workspace = true
 bitcoin.workspace = true
-borsh.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, optional = true, features = ["rt"] }

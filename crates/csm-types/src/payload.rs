@@ -12,10 +12,7 @@
 // TODO(STR-3838): drop the upstream `L1Payload`/`PayloadIntent` once every
 // consumer uses these local types.
 
-use std::io::{self, Read, Write};
-
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_identifiers::Buf32;
 use strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE;
@@ -26,21 +23,7 @@ use strata_l1_txfmt::TagData;
 ///
 /// Defined locally since `strata-btc-types` dropped its payload types in
 /// v0.3.0; only the L1 settlement destination is currently supported.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    BorshDeserialize,
-    BorshSerialize,
-    Serialize,
-    Deserialize,
-)]
-#[borsh(use_discriminant = true)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum PayloadDest {
     /// If we expect the DA to be on the L1 chain that we settle to. This is
@@ -58,19 +41,7 @@ impl<'a> Arbitrary<'a> for PayloadDest {
 
 /// Summary of a DA blob expected on a DA layer. Specifies the target and a
 /// commitment to the payload.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Hash,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Arbitrary, Serialize, Deserialize)]
 pub struct BlobSpec {
     /// Target settlement layer we're expecting the DA on.
     dest: PayloadDest,
@@ -94,19 +65,7 @@ impl BlobSpec {
 
 /// Summary of a DA payload to be included on a DA layer. Specifies the target
 /// and a commitment to the payload.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Hash,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Arbitrary, Serialize, Deserialize)]
 pub struct PayloadSpec {
     /// Target settlement layer we're expecting the DA on.
     dest: PayloadDest,
@@ -182,35 +141,6 @@ impl L1Payload {
     }
 }
 
-// Borsh is hand-rolled rather than derived for two reasons: `TagData` does not
-// implement borsh, and the upstream `L1Payload` only gets borsh via
-// `impl_borsh_via_ssz!`, which routes through the SSZ encoding that enforces the
-// 520-byte per-chunk cap this type exists to avoid. So encode the payload chunks
-// and the decomposed tag fields directly, routing decode through `TagData::new`
-// and `L1Payload::new` to preserve their invariants.
-impl BorshSerialize for L1Payload {
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        BorshSerialize::serialize(&self.data, writer)?;
-        BorshSerialize::serialize(&self.tag.subproto_id(), writer)?;
-        BorshSerialize::serialize(&self.tag.tx_type(), writer)?;
-        BorshSerialize::serialize(&self.tag.aux_data().to_vec(), writer)?;
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for L1Payload {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let data: Vec<Vec<u8>> = BorshDeserialize::deserialize_reader(reader)?;
-        let subproto_id = u8::deserialize_reader(reader)?;
-        let tx_type = u8::deserialize_reader(reader)?;
-        let aux_data: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
-        let tag = TagData::new(subproto_id, tx_type, aux_data)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
-        Self::new(data, tag)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))
-    }
-}
-
 impl<'a> Arbitrary<'a> for L1Payload {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         // Generate a bounded number of bounded chunks so the result is always a
@@ -245,7 +175,7 @@ impl<'a> Arbitrary<'a> for L1Payload {
 /// Intent produced when the sequencer wants to publish a payload to L1.
 ///
 /// These are never stored on-chain.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary)]
 pub struct PayloadIntent {
     /// The destination for this payload.
     dest: PayloadDest,
@@ -307,18 +237,6 @@ mod tests {
             L1Payload::new(payload, tag()),
             Err(L1PayloadError::PayloadTooLarge { .. })
         ));
-    }
-
-    #[test]
-    fn borsh_roundtrip() {
-        let payload = L1Payload::new(
-            vec![vec![1, 2, 3], vec![4; 600]],
-            TagData::new(5, 9, vec![0xAA, 0xBB]).unwrap(),
-        )
-        .unwrap();
-        let buf = borsh::to_vec(&payload).unwrap();
-        let decoded: L1Payload = borsh::from_slice(&buf).unwrap();
-        assert_eq!(decoded, payload);
     }
 
     #[test]

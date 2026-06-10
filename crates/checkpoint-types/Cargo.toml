@@ -7,11 +7,9 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-strata-crypto.workspace = true
 strata-identifiers.workspace = true
 
 arbitrary.workspace = true
-borsh.workspace = true
 serde.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true

@@ -1,18 +1,13 @@
-use std::io;
-
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_crypto::hash;
 use strata_identifiers::{Buf32, Buf64};
-use zkaleido::{Proof, ProofReceipt, PublicValues};
+use zkaleido::Proof;
 
 use super::batch::BatchInfo;
 
 /// Consolidates all the information that the checkpoint is committing to, signing and proving.
-#[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
+#[deprecated]
+#[derive(Clone, Debug, PartialEq, Eq, Arbitrary, Deserialize, Serialize)]
 pub struct CheckpointCommitment {
     /// Information regarding the current batches of l1 and l2 blocks along with epoch.
     /// This is verified by the proof
@@ -22,9 +17,8 @@ pub struct CheckpointCommitment {
 /// Consolidates all information required to describe and verify a batch checkpoint.
 /// This includes metadata about the batch, the state transitions, checkpoint base state,
 /// and the proof itself. The proof verifies that the `transition` is valid.
-#[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
+#[deprecated]
+#[derive(Clone, Debug, PartialEq, Eq, Arbitrary, Deserialize, Serialize)]
 pub struct Checkpoint {
     /// Data that this checkpoint is committing to
     commitment: CheckpointCommitment,
@@ -45,22 +39,6 @@ impl Checkpoint {
         }
     }
 
-    #[deprecated(
-        note = "this is deprecated and will be removed in the future in favor of using SSZ representation"
-    )]
-    /// Decodes a legacy checkpoint payload.
-    pub fn from_raw_bytes(bytes: &[u8]) -> io::Result<Self> {
-        borsh::from_slice(bytes)
-    }
-
-    #[deprecated(
-        note = "this is deprecated and will be removed in the future in favor of using SSZ representation"
-    )]
-    /// Encodes this checkpoint using the legacy payload format.
-    pub fn to_raw_bytes(&self) -> io::Result<Vec<u8>> {
-        borsh::to_vec(self)
-    }
-
     pub fn batch_info(&self) -> &BatchInfo {
         &self.commitment.batch_info
     }
@@ -77,38 +55,13 @@ impl Checkpoint {
         self.proof = proof
     }
 
-    // #[deprecated(note = "use `checkpoint_verification::construct_receipt`")]
-    // TODO(STR-3629): commented for now
-    // understand the rationale for making it deprecated
-    pub fn construct_receipt(&self) -> ProofReceipt {
-        let proof = self.proof().clone();
-        let output = self.batch_info();
-        let public_values =
-            PublicValues::new(borsh::to_vec(&output).expect("checkpoint: proof output"));
-        ProofReceipt::new(proof, public_values)
-    }
-
-    pub fn hash(&self) -> Buf32 {
-        // FIXME(STR-3629): make this more structured and use incremental hashing
-
-        let mut buf = vec![];
-        let batch_serialized = borsh::to_vec(&self.commitment.batch_info)
-            .expect("could not serialize checkpoint info");
-
-        buf.extend(&batch_serialized);
-        buf.extend(self.proof.as_bytes());
-
-        hash::raw(&buf)
-    }
-
     pub fn sidecar(&self) -> &CheckpointSidecar {
         &self.sidecar
     }
 }
 
-#[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshSerialize, BorshDeserialize, Deserialize, Serialize,
-)]
+#[deprecated]
+#[derive(Clone, Debug, PartialEq, Eq, Arbitrary, Deserialize, Serialize)]
 pub struct CheckpointSidecar {
     /// Chainstate at the end of this checkpoint's epoch.
     /// Note: using `Vec<u8>` instead of Chainstate to avoid circular dependency with strata_state
@@ -125,9 +78,8 @@ impl CheckpointSidecar {
     }
 }
 
-#[derive(
-    Clone, Debug, BorshDeserialize, BorshSerialize, Arbitrary, PartialEq, Eq, Serialize, Deserialize,
-)]
+#[deprecated]
+#[derive(Clone, Debug, Arbitrary, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignedCheckpoint {
     inner: Checkpoint,
     signature: Buf64,
@@ -136,14 +88,6 @@ pub struct SignedCheckpoint {
 impl SignedCheckpoint {
     pub fn new(inner: Checkpoint, signature: Buf64) -> Self {
         Self { inner, signature }
-    }
-
-    #[deprecated(
-        note = "this is deprecated and will be removed in the future in favor of using SSZ representation"
-    )]
-    /// Decodes a legacy signed checkpoint payload.
-    pub fn from_raw_bytes(bytes: &[u8]) -> io::Result<Self> {
-        borsh::from_slice(bytes)
     }
 
     pub fn checkpoint(&self) -> &Checkpoint {
@@ -161,9 +105,7 @@ impl From<SignedCheckpoint> for Checkpoint {
     }
 }
 
-#[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Arbitrary, Serialize, Deserialize)]
 pub struct CommitmentInfo {
     pub blockhash: Buf32,
     pub txid: Buf32,
@@ -175,9 +117,7 @@ impl CommitmentInfo {
     }
 }
 
-#[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Arbitrary, Serialize, Deserialize)]
 pub struct L1CommittedCheckpoint {
     /// The actual `Checkpoint` data.
     pub checkpoint: Checkpoint,
