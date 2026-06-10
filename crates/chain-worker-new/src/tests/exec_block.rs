@@ -92,18 +92,31 @@ impl ChainWorkerContext for OrderEnforcingContext {
     }
 
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()> {
-        let epoch = summary.get_epoch_commitment().epoch();
+        let commitment = summary.get_epoch_commitment();
+        let epoch = commitment.epoch();
         if !self.indexed_epochs.lock().unwrap().contains(&epoch) {
             return Err(WorkerError::Database(DbError::Other(format!(
                 "no epoch indexing data for epoch {epoch}"
+            ))));
+        }
+        // Pins the intended ordering rather than a DB contract: the summary
+        // must be the last durable step, after the epoch data merge, so a
+        // merge failure can never leave a summary behind for a block that
+        // then gets rejected.
+        if !self.merged_epochs.lock().unwrap().contains(&commitment) {
+            return Err(WorkerError::Database(DbError::Other(format!(
+                "summary stored before epoch data merge for epoch {epoch}"
             ))));
         }
         self.stored_summaries.lock().unwrap().push(summary);
         Ok(())
     }
 
-    fn merge_epoch_data(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
-        self.merged_epochs.lock().unwrap().push(*epoch);
+    fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
+        self.merged_epochs
+            .lock()
+            .unwrap()
+            .push(summary.get_epoch_commitment());
         Ok(())
     }
 
@@ -121,10 +134,6 @@ impl ChainWorkerContext for OrderEnforcingContext {
         &self,
         _commitment: OLBlockCommitment,
     ) -> WorkerResult<Option<WriteBatch<OLAccountState>>> {
-        unimplemented!("not used by exec_block")
-    }
-
-    fn fetch_summary(&self, _epoch: &EpochCommitment) -> WorkerResult<EpochSummary> {
         unimplemented!("not used by exec_block")
     }
 
@@ -217,6 +226,6 @@ fn test_exec_single_block_epoch_persists_before_summary() {
     assert_eq!(
         ctx.merged_epochs.lock().unwrap().as_slice(),
         &[epoch],
-        "epoch data merged after summary"
+        "epoch data merged before the summary was stored"
     );
 }

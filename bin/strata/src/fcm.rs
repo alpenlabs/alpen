@@ -123,6 +123,13 @@ impl FcmStorage for StrataFcmContext {
             .await
     }
 
+    async fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
+        self.storage
+            .ol_checkpoint()
+            .del_epoch_summary_async(epoch)
+            .await
+    }
+
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,

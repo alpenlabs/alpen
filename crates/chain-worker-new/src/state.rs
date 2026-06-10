@@ -263,12 +263,7 @@ pub(crate) fn exec_block(
         // TODO(STR-3673): the epoch commitment seems to be sent to the
         // receiver for each block at the moment. Ideally we would do it just
         // here.
-        let epoch = handle_terminal_block_exec_post_ops(ctx, &block, &output, &new_state)?;
-
-        // Merge the epoch's write batches into the terminal state. Must run
-        // after persist_execution_output, since the merge reads every block's
-        // write batch including the terminal block's, stored just above.
-        ctx.merge_epoch_data(&epoch)?;
+        handle_terminal_block_exec_post_ops(ctx, &block, &output, &new_state)?;
     } else {
         // Persist results (including the full state)
         persist_execution_output(ctx, &block, *block_commitment, &output, new_state)?;
@@ -397,27 +392,32 @@ fn persist_execution_output(
 /// Takes the block and post-state and inserts database entries to reflect
 /// the epoch being finished on-chain.
 ///
-/// Expects the terminal block's own output to be persisted already, so the
-/// epoch commitment stamp targets an existing indexing row.
+/// Expects the terminal block's own output to be persisted already: the merge
+/// reads every block's write batch including the terminal block's, and epoch
+/// finalization stamps the epoch commitment onto an existing indexing row.
 ///
-/// Returns the completed epoch's commitment so the caller can merge its
-/// epoch data.
+/// The summary is stored last, after the epoch data merge: a stored summary
+/// (and the notification it emits) indicates the whole epoch finalization
+/// persisted. A failure anywhere earlier leaves no summary behind for a
+/// block that may then be rejected.
 fn handle_terminal_block_exec_post_ops(
     ctx: &impl ChainWorkerContext,
     block: &OLBlock,
     last_block_output: &OLBlockExecutionOutput,
     new_state: &OLState,
-) -> WorkerResult<EpochCommitment> {
+) -> WorkerResult<()> {
     let completed_epoch = block.header().epoch();
 
     let prev_terminal = get_prev_terminal(ctx, completed_epoch)?;
     let summary = build_epoch_summary(block.header(), last_block_output, new_state, prev_terminal);
-    let epoch = summary.get_epoch_commitment();
+
+    // Merge the epoch's write batches into the terminal state.
+    ctx.merge_epoch_data(&summary)?;
 
     debug!(?summary, "completed chain epoch");
     ctx.store_summary(summary)?;
 
-    Ok(epoch)
+    Ok(())
 }
 
 /// Gets the terminal commitment of the epoch before `cur_epoch`.

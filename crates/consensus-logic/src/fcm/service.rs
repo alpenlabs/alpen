@@ -278,6 +278,30 @@ async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
             })
             .context("failed to roll back state indexing for invalid OL block")?;
 
+        // A rejected terminal block may have stored its epoch summary before
+        // failing (the summary is the last exec step, but post-exec failures
+        // can still invalidate the block afterwards). Drop it so it cannot
+        // shadow the replacement terminal's summary in canonical lookups.
+        if bundle.header().is_terminal() {
+            let summary_commitment =
+                EpochCommitment::new(bundle.header().epoch(), block.slot(), *block.blkid());
+            let deleted = fcm_state
+                .ctx()
+                .del_epoch_summary(summary_commitment)
+                .await
+                .inspect_err(|err| {
+                    error!(
+                        %block,
+                        %err,
+                        "failed to delete epoch summary of invalid OL terminal block; replacement generation for this slot remains blocked"
+                    );
+                })
+                .context("failed to delete epoch summary of invalid OL terminal block")?;
+            if deleted {
+                info!(%block, "deleted epoch summary of invalid OL terminal block");
+            }
+        }
+
         let cleared = fcm_state
             .ctx()
             .clear_block_high_watermark(block)
@@ -727,6 +751,7 @@ mod tests {
         states: HashMap<OLBlockCommitment, Arc<OLState>>,
         canonical_epochs: HashMap<Epoch, EpochCommitment>,
         indexing_rollbacks: Vec<(Epoch, OLBlockCommitment)>,
+        epoch_summary_deletes: Vec<EpochCommitment>,
     }
 
     impl StubFcmStorage {
@@ -801,6 +826,10 @@ mod tests {
 
         fn indexing_rollbacks(&self) -> Vec<(Epoch, OLBlockCommitment)> {
             self.inner.lock().unwrap().indexing_rollbacks.clone()
+        }
+
+        fn epoch_summary_deletes(&self) -> Vec<EpochCommitment> {
+            self.inner.lock().unwrap().epoch_summary_deletes.clone()
         }
     }
 
@@ -911,6 +940,11 @@ mod tests {
             Ok(())
         }
 
+        async fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
+            self.inner.lock().unwrap().epoch_summary_deletes.push(epoch);
+            Ok(false)
+        }
+
         async fn get_toplevel_ol_state(
             &self,
             commitment: OLBlockCommitment,
@@ -1007,6 +1041,10 @@ mod tests {
             self.storage
                 .rollback_block_state_indexing(epoch, cutoff)
                 .await
+        }
+
+        async fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
+            self.storage.del_epoch_summary(epoch).await
         }
 
         async fn get_toplevel_ol_state(
@@ -1504,6 +1542,23 @@ mod tests {
         OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
     }
 
+    fn make_terminal_storage_block(slot: Slot, parent: OLBlockId) -> OLBlock {
+        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
+        let mut flags = BlockFlags::from(0);
+        flags.set_is_terminal(true);
+        let header = OLBlockHeader::new(
+            1_000 + slot,
+            flags,
+            slot,
+            0,
+            parent,
+            body.compute_hash_commitment(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+    }
+
     fn sign_block(block: &OLBlock, signing_key: &Buf32) -> Buf64 {
         let msg: Buf32 = block.header().compute_blkid().into();
         sign_schnorr_sig(&msg, signing_key)
@@ -1669,6 +1724,57 @@ mod tests {
         assert_eq!(
             ctx.storage().indexing_rollbacks(),
             vec![(0, genesis_commitment)]
+        );
+        // Non-terminal blocks never store a summary, so none is deleted.
+        assert!(ctx.storage().epoch_summary_deletes().is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_deletes_summary_for_invalid_terminal_block() -> anyhow::Result<()> {
+        let (_, pk) = test_schnorr_keypair();
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        let block = make_terminal_storage_block(1, genesis_blkid);
+        let blkid = block.header().compute_blkid();
+        let block_commitment = OLBlockCommitment::new(block.header().slot(), blkid);
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_ol_block(block);
+        ctx.storage().set_block_high_watermark(block_commitment);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state).await?;
+
+        assert_eq!(
+            ctx.storage().get_block_status(blkid).await?,
+            Some(BlockStatus::Invalid)
+        );
+        assert_eq!(ctx.storage().block_high_watermark(), None);
+        assert_eq!(
+            ctx.storage().indexing_rollbacks(),
+            vec![(0, genesis_commitment)]
+        );
+        // A rejected terminal block's epoch summary is dropped so it cannot
+        // shadow the replacement terminal's summary in canonical lookups.
+        assert_eq!(
+            ctx.storage().epoch_summary_deletes(),
+            vec![EpochCommitment::new(0, 1, blkid)]
         );
 
         Ok(())
