@@ -5,7 +5,6 @@
 use core::fmt;
 
 use arbitrary::{Arbitrary, Unstructured};
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_proto_checkpoint_types::CheckpointTip;
 use strata_identifiers::{
@@ -18,18 +17,7 @@ use strata_identifiers::{
 /// This is updated when we see a consensus-relevant message.  This is L2 blocks
 /// but also L1 blocks being published with relevant things in them, and
 /// various other events.
-#[derive(
-    Clone,
-    Debug,
-    Default,
-    Eq,
-    PartialEq,
-    Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
-    Deserialize,
-    Serialize,
-)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct ClientState {
     // Last *finalized* checkpoint.
     pub(crate) last_finalized_checkpoint: Option<L1Checkpoint>,
@@ -111,9 +99,7 @@ impl CheckpointState {
 ///
 /// `txid` and `wtxid` use [`RBuf32`] so their `Debug`/`Display` follow Bitcoin's
 /// reversed-byte hash convention.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct CheckpointL1Ref {
     pub l1_commitment: L1BlockCommitment,
     pub txid: RBuf32,
@@ -138,7 +124,7 @@ impl CheckpointL1Ref {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct L1Checkpoint {
     /// Tip published by the ASM checkpoint subprotocol for this checkpoint.
     ///
