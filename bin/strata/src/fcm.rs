@@ -105,6 +105,17 @@ impl FcmStorage for StrataFcmContext {
             .await
     }
 
+    async fn rollback_block_state_indexing(
+        &self,
+        epoch: Epoch,
+        cutoff: OLBlockCommitment,
+    ) -> DbResult<()> {
+        self.storage
+            .ol_state_indexing()
+            .rollback_to_block_async(epoch, cutoff)
+            .await
+    }
+
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,

@@ -208,7 +208,13 @@ async fn process_fc_message<C: FcmContext>(
             };
 
             let block = OLBlockCommitment::new(slot, *blkid);
-            set_block_status_and_clear_invalid_high_watermark(fcm_state, block, status).await?;
+            set_block_status_and_clear_invalid_high_watermark(
+                fcm_state,
+                &block_bundle,
+                block,
+                status,
+            )
+            .await?;
             if ok {
                 counter!("strata_fcm_blocks_accepted_total").increment(1);
             } else {
@@ -222,6 +228,7 @@ async fn process_fc_message<C: FcmContext>(
 
 async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
     fcm_state: &FcmServiceState<C>,
+    bundle: &OLBlock,
     block: OLBlockCommitment,
     status: BlockStatus,
 ) -> anyhow::Result<bool> {
@@ -234,6 +241,29 @@ async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
         // TODO(STR-2141): `BlockStatus::Invalid` also represents local execution failures.
         // Revisit high-watermark clearing once FCM distinguishes consensus-invalid blocks
         // from transient execution failures.
+
+        // Drop any state-indexing writes the rejected block persisted before
+        // it failed, so a replacement block at this slot doesn't conflict
+        // against the indexing high-watermark. Must land before the
+        // high-watermark clear below, since the clear is what unblocks
+        // building the replacement.
+        let cutoff = OLBlockCommitment::new(
+            block.slot().saturating_sub(1),
+            *bundle.header().parent_blkid(),
+        );
+        fcm_state
+            .ctx()
+            .rollback_block_state_indexing(bundle.header().epoch(), cutoff)
+            .await
+            .inspect_err(|err| {
+                error!(
+                    %block,
+                    %err,
+                    "failed to roll back state indexing for invalid OL block; replacement generation for this slot remains blocked"
+                );
+            })
+            .context("failed to roll back state indexing for invalid OL block")?;
+
         let cleared = fcm_state
             .ctx()
             .clear_block_high_watermark(block)
@@ -319,8 +349,13 @@ async fn handle_new_block<C: FcmContext>(
             .set_block_status(*blkid, BlockStatus::Valid)
             .await?;
     } else {
-        set_block_status_and_clear_invalid_high_watermark(fcm_state, bc, BlockStatus::Invalid)
-            .await?;
+        set_block_status_and_clear_invalid_high_watermark(
+            fcm_state,
+            bundle,
+            bc,
+            BlockStatus::Invalid,
+        )
+        .await?;
         return Ok(false);
     }
 
@@ -677,6 +712,7 @@ mod tests {
         block_high_watermark: Option<OLBlockCommitment>,
         states: HashMap<OLBlockCommitment, Arc<OLState>>,
         canonical_epochs: HashMap<Epoch, EpochCommitment>,
+        indexing_rollbacks: Vec<(Epoch, OLBlockCommitment)>,
     }
 
     impl StubFcmStorage {
@@ -747,6 +783,10 @@ mod tests {
 
         fn block_high_watermark(&self) -> Option<OLBlockCommitment> {
             self.inner.lock().unwrap().block_high_watermark
+        }
+
+        fn indexing_rollbacks(&self) -> Vec<(Epoch, OLBlockCommitment)> {
+            self.inner.lock().unwrap().indexing_rollbacks.clone()
         }
     }
 
@@ -840,6 +880,19 @@ mod tests {
             Ok(true)
         }
 
+        async fn rollback_block_state_indexing(
+            &self,
+            epoch: Epoch,
+            cutoff: OLBlockCommitment,
+        ) -> DbResult<()> {
+            self.inner
+                .lock()
+                .unwrap()
+                .indexing_rollbacks
+                .push((epoch, cutoff));
+            Ok(())
+        }
+
         async fn get_toplevel_ol_state(
             &self,
             commitment: OLBlockCommitment,
@@ -922,6 +975,16 @@ mod tests {
 
         async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool> {
             self.storage.clear_block_high_watermark(expected).await
+        }
+
+        async fn rollback_block_state_indexing(
+            &self,
+            epoch: Epoch,
+            cutoff: OLBlockCommitment,
+        ) -> DbResult<()> {
+            self.storage
+                .rollback_block_state_indexing(epoch, cutoff)
+                .await
         }
 
         async fn get_toplevel_ol_state(
@@ -1579,6 +1642,12 @@ mod tests {
             Some(BlockStatus::Invalid)
         );
         assert_eq!(ctx.storage().block_high_watermark(), None);
+        // The rejected block's indexing writes are rolled back to its parent,
+        // so a replacement block at the same slot can apply its own.
+        assert_eq!(
+            ctx.storage().indexing_rollbacks(),
+            vec![(0, genesis_commitment)]
+        );
 
         Ok(())
     }
