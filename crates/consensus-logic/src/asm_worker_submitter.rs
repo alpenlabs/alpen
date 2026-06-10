@@ -19,11 +19,11 @@ impl AsmBlockSubmitter {
 
 #[async_trait]
 impl BlockSubmitter for AsmBlockSubmitter {
-    fn submit_block(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
+    fn submit_block_blocking(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
         self.handle.submit_block(block)
     }
 
-    async fn submit_block_async(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
+    async fn submit_block(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
         self.handle.submit_block_async(block).await
     }
 }
