@@ -91,25 +91,42 @@ impl<'c> IoTracker<'c> {
     }
 }
 
-/// Processes a chunk's blocks and updates the state, checking the IO against an
-/// expected IO trace.
+/// Processes a chunk's blocks and verifies each block transition, checking the
+/// IO against an expected IO trace.
+///
+/// Each block carries its own depth-0 partial-state witness (`block_states[i]`,
+/// parallel to `chunk.blocks()`). Per block we verify the witness against the
+/// parent state root (pre-root), execute the block against it, and verify the
+/// resulting root against the block's own header (post-root) — a verified chain
+/// of per-block transitions rather than one trie carried across the chunk. The
+/// pre-/post-root checks and the chain anchoring (`prev_state_root` for the
+/// first block, then each block's own header root) are what keep the
+/// decomposition sound.
+#[expect(clippy::too_many_arguments, reason = "per-block transition verification")]
 fn process_chunk_blocks<E: ExecutionEnvironment>(
     ee: &E,
-    state: &mut E::PartialState,
+    block_states: &mut [E::PartialState],
     chunk: &Chunk<'_, E>,
     verified_tip: Hash,
+    prev_state_root: Hash,
     expected_inputs: &ExecInputs,
     expected_outputs: &ExecOutputs,
 ) -> EnvResult<()> {
-    // 1. Check that the chunk is nonempty.
+    // 1. Check that the chunk is nonempty and the per-block witness list lines
+    //    up with the blocks.
     if chunk.blocks().is_empty() {
         return Err(EnvError::MalformedChainSegment);
     }
+    if block_states.len() != chunk.blocks().len() {
+        return Err(EnvError::MalformedChainSegment);
+    }
 
-    // 2. Process each block, tracking the IO traces and chain continuity.
+    // 2. Process each block against its own witness, tracking the IO traces,
+    //    chain continuity, and per-block pre/post state roots.
     let mut io_tracker = IoTracker::from_io(expected_inputs, expected_outputs);
     let mut cur_verified_tip_blkid = verified_tip;
-    for cb in chunk.blocks() {
+    let mut parent_state_root = prev_state_root;
+    for (cb, state) in chunk.blocks().iter().zip(block_states.iter_mut()) {
         let header = cb.exec_block().get_header();
 
         // Verify it builds on the previous block.
@@ -117,13 +134,25 @@ fn process_chunk_blocks<E: ExecutionEnvironment>(
             return Err(EnvError::MismatchedChainSegment);
         }
 
-        // Verify the block itself.
+        // Pre-root: this block's witness must hash to the parent state root.
+        if state.compute_state_root()? != parent_state_root {
+            return Err(EnvError::MismatchedCurStateData);
+        }
+
+        // Verify the block itself against its own witness state.
         process_block(ee, state, cb)?;
+
+        // Post-root: after execution the witness must hash to this block's own
+        // header state root.
+        if state.compute_state_root()? != header.get_state_root() {
+            return Err(EnvError::MismatchedChainSegment);
+        }
 
         // Check the block's IO.
         io_tracker.check_update(cb.inputs(), cb.outputs())?;
 
         cur_verified_tip_blkid = header.compute_block_id();
+        parent_state_root = header.get_state_root();
     }
 
     // 3. Make sure all the trackers are consumed.
@@ -132,16 +161,23 @@ fn process_chunk_blocks<E: ExecutionEnvironment>(
     Ok(())
 }
 
-/// Verifies a chunk transition using the pre state, parent header, etc.
+/// Verifies a chunk transition using the per-block witnesses, parent header,
+/// and chunk transition.
+///
+/// `block_states` holds one depth-0 partial-state witness per block, parallel
+/// to `chunk.blocks()`. The chunk-spanning transition `S₀ → Sₙ` is proven as a
+/// verified chain of per-block transitions: every intermediate state root is
+/// checked (pre and post per block), anchored at the first block by the prev
+/// header's state root and glued through each block's own header state root.
 pub fn verify_chunk_transition<E: ExecutionEnvironment>(
     tsn: &ChunkTransition,
     ee: &E,
     prev_header: &<E::Block as ExecBlock>::Header,
-    state: &mut E::PartialState,
+    block_states: &mut [E::PartialState],
     chunk: &Chunk<'_, E>,
 ) -> EnvResult<()> {
-    // 1. Make sure the parent block ID we have that we're extending from
-    // matches the chunk transition.
+    // 1. Make sure the parent block ID we're extending from matches the chunk
+    // transition.
     let computed_prev_blkid = prev_header.compute_block_id();
     if computed_prev_blkid != tsn.parent_exec_blkid() {
         // TODO(STR-3685): better error type?
@@ -162,30 +198,23 @@ pub fn verify_chunk_transition<E: ExecutionEnvironment>(
         return Err(EnvError::MismatchedChainSegment);
     }
 
-    // 2. Make sure the state matches the parent block's state root.
-    let computed_pre_sr = state.compute_state_root()?;
-    if computed_pre_sr != prev_header.get_state_root() {
-        return Err(EnvError::MismatchedCurStateData);
-    }
-
-    // 3. Execute the blocks in the chunk.  This dooesn't verify the
-    // intermediate state roots because that's expensive and we only really care
-    // about the final state.
+    // 3. Execute the blocks as a verified chain of per-block transitions. The
+    // per-block pre-/post-root checks live inside `process_chunk_blocks`; the
+    // prev header's state root anchors the first block.
     process_chunk_blocks(
         ee,
-        state,
+        block_states,
         chunk,
         tsn.parent_exec_blkid(),
+        prev_header.get_state_root(),
         tsn.inputs(),
         tsn.outputs(),
     )?;
 
-    // 4. Compute the final state root and make sure it matches.
-    let computed_post_sr = state.compute_state_root()?;
-    if computed_post_sr != new_tip_header.get_state_root() {
-        return Err(EnvError::MismatchedChainSegment);
-    }
-    if computed_post_sr != tsn.tip_state_root() {
+    // 4. Bind the chunk tip. The last block's post-root was already checked
+    // against its own header state root in step 3; here we bind that header
+    // state root to the transition's tip state root.
+    if new_tip_header.get_state_root() != tsn.tip_state_root() {
         return Err(EnvError::MismatchedChainSegment);
     }
 
@@ -314,21 +343,25 @@ mod tests {
         ];
         let chunk = Chunk::new(chunk_blocks);
 
-        // Process starting from the initial state.
-        let mut state = initial_state;
+        // Each block carries its own pre-state witness, parallel to the chunk's
+        // blocks: block i is anchored at the state before block i executes.
+        let prev_state_root = initial_state.compute_state_root().unwrap();
+        let mut block_states = vec![initial_state.clone(), state1.clone(), state2.clone()];
         process_chunk_blocks(
             &ee,
-            &mut state,
+            &mut block_states,
             &chunk,
             genesis_blkid,
+            prev_state_root,
             &chunk_inputs,
             &chunk_outputs,
         )
         .expect("multi-block chunk should process successfully");
 
-        // Verify final balances: alice=1000-200-300-100=400, bob=200+300+100=600
-        assert_eq!(state.accounts().get(&alice()), Some(&400));
-        assert_eq!(state.accounts().get(&bob()), Some(&600));
+        // Verify final balances on the last block's post-state:
+        // alice=1000-200-300-100=400, bob=200+300+100=600
+        assert_eq!(block_states[2].accounts().get(&alice()), Some(&400));
+        assert_eq!(block_states[2].accounts().get(&bob()), Some(&600));
     }
 
     #[test]
@@ -365,10 +398,11 @@ mod tests {
             outputs.clone(),
         );
         let chunk = Chunk::new(vec![ChunkBlock::new(&inputs, &outputs, block)]);
-        let mut state = initial_state;
+        let mut block_states = vec![initial_state];
 
-        let err = verify_chunk_transition(&chunk_transition, &ee, &prev_header, &mut state, &chunk)
-            .expect_err("wrong tip state root must be rejected");
+        let err =
+            verify_chunk_transition(&chunk_transition, &ee, &prev_header, &mut block_states, &chunk)
+                .expect_err("wrong tip state root must be rejected");
         assert!(matches!(err, EnvError::MismatchedChainSegment));
     }
 
@@ -407,10 +441,11 @@ mod tests {
             outputs.clone(),
         );
         let chunk = Chunk::new(vec![ChunkBlock::new(&inputs, &outputs, block)]);
-        let mut state = initial_state;
+        let mut block_states = vec![initial_state];
 
-        let err = verify_chunk_transition(&chunk_transition, &ee, &prev_header, &mut state, &chunk)
-            .expect_err("wrong tip header summary must be rejected");
+        let err =
+            verify_chunk_transition(&chunk_transition, &ee, &prev_header, &mut block_states, &chunk)
+                .expect_err("wrong tip header summary must be rejected");
         assert!(matches!(err, EnvError::MismatchedChainSegment));
     }
 }

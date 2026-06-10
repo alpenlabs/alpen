@@ -9,13 +9,17 @@ use strata_ee_acct_types::{ExecBlock, ExecutionEnvironment};
 use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs};
 
 /// Private inputs we expose to the runtime.
+///
+/// Each block in [`RawChunkData`] carries its own depth-0 partial-state
+/// witness (see [`RawBlockData::raw_partial_pre_state`]); there is no single
+/// chunk-spanning pre-state. [`raw_prev_header`](Self::raw_prev_header) anchors
+/// the first block's parent state root.
 #[derive(Debug, Archive, Deserialize, Serialize)]
 #[rkyv(derive(Debug))]
 pub struct PrivateInput {
     chunk_transition_ssz: Vec<u8>,
     raw_chunk: RawChunkData,
     raw_prev_header: Vec<u8>,
-    raw_partial_pre_state: Vec<u8>,
 }
 
 impl PrivateInput {
@@ -23,13 +27,11 @@ impl PrivateInput {
         chunk_transition: ChunkTransition,
         raw_chunk: RawChunkData,
         raw_prev_header: Vec<u8>,
-        raw_partial_pre_state: Vec<u8>,
     ) -> Self {
         Self {
             chunk_transition_ssz: chunk_transition.as_ssz_bytes(),
             raw_chunk,
             raw_prev_header,
-            raw_partial_pre_state,
         }
     }
 
@@ -48,10 +50,6 @@ impl PrivateInput {
         &self.raw_prev_header
     }
 
-    pub fn raw_partial_pre_state(&self) -> &[u8] {
-        &self.raw_partial_pre_state
-    }
-
     /// Tries to decode the chunk transition as its type.
     pub fn try_decode_chunk_transition(&self) -> Result<ChunkTransition, DecodeError> {
         ChunkTransition::from_ssz_bytes(self.chunk_transition_ssz())
@@ -62,13 +60,6 @@ impl PrivateInput {
         &self,
     ) -> Result<<E::Block as ExecBlock>::Header, CodecError> {
         strata_codec::decode_buf_exact(self.raw_prev_header())
-    }
-
-    /// Tries to decode the raw partial prestate for an execution environment.
-    pub fn try_decode_pre_state<E: ExecutionEnvironment>(
-        &self,
-    ) -> Result<E::PartialState, CodecError> {
-        strata_codec::decode_buf_exact(self.raw_partial_pre_state())
     }
 }
 
@@ -122,27 +113,42 @@ pub struct RawBlockData {
 
     /// SSZed `ExecOutputs`.
     exec_outputs_ssz: Vec<u8>,
+
+    /// Codec-encoded per-block `E::PartialState` — this block's depth-0
+    /// transition witness, anchored at the block's parent state root and
+    /// updatable to the block's own state root. The chunk witness is the
+    /// ordered list of these across the chunk's blocks.
+    raw_partial_pre_state: Vec<u8>,
 }
 
 impl RawBlockData {
-    pub fn new(raw_block: Vec<u8>, exec_inputs: ExecInputs, exec_outputs: ExecOutputs) -> Self {
+    pub fn new(
+        raw_block: Vec<u8>,
+        exec_inputs: ExecInputs,
+        exec_outputs: ExecOutputs,
+        raw_partial_pre_state: Vec<u8>,
+    ) -> Self {
         Self {
             raw_block,
             exec_inputs_ssz: exec_inputs.as_ssz_bytes(),
             exec_outputs_ssz: exec_outputs.as_ssz_bytes(),
+            raw_partial_pre_state,
         }
     }
 
-    /// Constructs a new instance from a execution block (and IO) by encoding it.
+    /// Constructs a new instance from an execution block (and IO + witness) by
+    /// encoding it.
     pub fn from_block<E: ExecutionEnvironment>(
         block: &E::Block,
         exec_inputs: ExecInputs,
         exec_outputs: ExecOutputs,
+        raw_partial_pre_state: Vec<u8>,
     ) -> Result<Self, CodecError> {
         Ok(Self::new(
             strata_codec::encode_to_vec(block)?,
             exec_inputs,
             exec_outputs,
+            raw_partial_pre_state,
         ))
     }
 }
@@ -161,9 +167,20 @@ impl RawBlockData {
         &self.exec_outputs_ssz
     }
 
+    pub fn raw_partial_pre_state(&self) -> &[u8] {
+        &self.raw_partial_pre_state
+    }
+
     /// Tries to decode the raw block for an execution environment.
     pub fn try_decode_block<E: ExecutionEnvironment>(&self) -> Result<E::Block, CodecError> {
         strata_codec::decode_buf_exact::<E::Block>(self.raw_block())
+    }
+
+    /// Tries to decode this block's per-block partial pre-state witness.
+    pub fn try_decode_partial_state<E: ExecutionEnvironment>(
+        &self,
+    ) -> Result<E::PartialState, CodecError> {
+        strata_codec::decode_buf_exact(self.raw_partial_pre_state())
     }
 
     /// Tries to decode the [`ExecInputs`] as its type.
