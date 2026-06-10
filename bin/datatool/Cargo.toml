@@ -34,7 +34,6 @@ sp1-verifier = { workspace = true, optional = true }
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
 zkaleido-sp1-groth16-verifier = { workspace = true, optional = true }
 
-alloy-genesis.workspace = true
 alloy-primitives.workspace = true
 anyhow.workspace = true
 argh.workspace = true
@@ -42,7 +41,6 @@ bitcoin = { workspace = true, features = ["std"] }
 bitcoind-async-client = { workspace = true, optional = true }
 hex.workspace = true
 rand_core.workspace = true
-reth-chainspec.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, optional = true }
 zeroize.workspace = true

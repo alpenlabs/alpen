@@ -2,6 +2,9 @@ use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use strata_acct_types::AccountId;
 
+/// Default Alpen EE account id registered in generated OL params.
+pub const DEFAULT_ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
+
 /// Chain specific config, that needs to remain constant on all nodes
 /// to ensure all stay on the same chain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,14 +72,12 @@ impl AlpenEeParams {
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::AccountId;
-
-    use super::AlpenEeParams;
+    use super::{AlpenEeParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
 
     #[test]
     fn json_roundtrip_preserves_params() {
         let params = AlpenEeParams::new(
-            AccountId::new([1u8; 32]),
+            DEFAULT_ALPEN_EE_ACCOUNT_ID,
             [2u8; 32].into(),
             [3u8; 32].into(),
             42,

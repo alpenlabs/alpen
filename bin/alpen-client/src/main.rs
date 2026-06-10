@@ -3,7 +3,6 @@
 mod dummy_ol_client;
 #[cfg(feature = "sequencer")]
 mod gas_data_provider;
-mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
 mod header_summary;
@@ -25,7 +24,9 @@ use std::{
     sync::Arc,
 };
 
-use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
+use alpen_chainspec::{
+    chain_value_parser, ee_genesis_block_info, AlpenChainSpecParser, AlpenEeGenesisBlockInfo,
+};
 use alpen_ee_common::{
     chain_status_checked, BatchStorage, BlockNumHash, ChunkStorage, ExecBlockStorage, OLClient,
     Storage,
@@ -123,7 +124,6 @@ use sequencer_imports::*;
 
 use crate::{
     dummy_ol_client::DummyOLClient,
-    genesis::ee_genesis_block_info,
     gossip::{create_gossip_task, GossipConfig},
     ol_client::OLClientKind,
     rpc_client::RpcOLClient,
@@ -1226,7 +1226,7 @@ fn load_ee_params(path: &Path) -> eyre::Result<AlpenEeParams> {
 /// Validates that EE params describe the selected execution genesis block.
 fn validate_ee_params_genesis(
     params: &AlpenEeParams,
-    genesis_info: &genesis::BlockInfo,
+    genesis_info: &AlpenEeGenesisBlockInfo,
 ) -> eyre::Result<()> {
     if params.genesis_blockhash() != genesis_info.blockhash() {
         eyre::bail!(

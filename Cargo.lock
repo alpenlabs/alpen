@@ -1008,6 +1008,7 @@ name = "alpen-chainspec"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-genesis",
+ "alloy-primitives",
  "eyre",
  "reth-chainspec",
  "reth-cli",
@@ -15461,7 +15462,6 @@ dependencies = [
 name = "strata-datatool"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alloy-genesis",
  "alloy-primitives",
  "alpen-chainspec",
  "alpen-ee-config",
@@ -15471,7 +15471,6 @@ dependencies = [
  "bitcoind-async-client",
  "hex",
  "rand_core 0.6.4",
- "reth-chainspec",
  "serde_json",
  "sp1-verifier",
  "strata-asm-params",

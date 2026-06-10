@@ -2,11 +2,11 @@
 
 use std::{fs, path::Path};
 
-use alpen_ee_config::AlpenEeParams;
+use alpen_chainspec::ee_genesis_block_info_from_json;
+use alpen_ee_config::{AlpenEeParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
 use anyhow::{anyhow, bail};
 use strata_btc_types::BitcoinAmount;
 use strata_ee_acct_types::EeAccountState;
-use strata_identifiers::AccountId;
 use strata_ol_params::{GenesisSnarkAccountData, OLParams};
 use strata_primitives::Buf32;
 use strata_snark_acct_runtime::IInnerState;
@@ -14,13 +14,8 @@ use strata_snark_acct_runtime::IInnerState;
 use crate::{
     acct_predicate::resolve_acct_predicate,
     args::{CmdContext, SubcOlParams},
-    cmd::{
-        ee_params::read_chain_config,
-        genesis_info::{get_alpen_ee_genesis_block_info, retrieve_l1_anchor},
-    },
+    cmd::{ee_params::read_chain_config, genesis_info::retrieve_l1_anchor},
 };
-
-const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
 
 /// Executes the `gen-ol-params` subcommand.
 ///
@@ -65,7 +60,7 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
     let account_id = ee_params
         .as_ref()
         .map(AlpenEeParams::account_id)
-        .unwrap_or(ALPEN_EE_ACCOUNT_ID);
+        .unwrap_or(DEFAULT_ALPEN_EE_ACCOUNT_ID);
     ol_params.accounts.insert(account_id, alpen_ee_account);
 
     let params_buf = serde_json::to_string_pretty(&ol_params)?;
@@ -105,10 +100,10 @@ fn read_ee_params(path: Option<&Path>) -> anyhow::Result<Option<AlpenEeParams>> 
 
 fn compute_inner_state_from_chain_config(chain_config: Option<&Path>) -> anyhow::Result<Buf32> {
     let genesis_json = read_chain_config(chain_config)?;
-    let genesis_info = get_alpen_ee_genesis_block_info(&genesis_json)?;
+    let genesis_info = ee_genesis_block_info_from_json(&genesis_json)?;
     Ok(compute_inner_state(
-        genesis_info.blockhash,
-        genesis_info.stateroot,
+        genesis_info.blockhash(),
+        genesis_info.stateroot(),
     ))
 }
 
