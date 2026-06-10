@@ -15292,6 +15292,10 @@ name = "strata-codec-utils"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "ciborium",
+ "hex",
+ "serde",
+ "serde_json",
  "ssz",
  "ssz_derive",
  "strata-codec",
