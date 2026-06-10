@@ -212,7 +212,7 @@ async fn test_hard_limit_rollback_discards_tx2_log() {
     );
 
     assert_eq!(
-        output.accumulated_da.logs().len(),
+        output.resource_totals.da().logs().len(),
         seeded_count + 1,
         "only tx1's snark-update log should be appended; tx2 was rolled back"
     );

@@ -81,6 +81,7 @@ strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-msg-types.workspace = true
+strata-ol-stf = { workspace = true, features = ["test-utils"] }
 strata-predicate.workspace = true
 strata-state.workspace = true
 threadpool.workspace = true

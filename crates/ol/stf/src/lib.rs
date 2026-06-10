@@ -25,7 +25,9 @@ pub use chain_processing::{process_block_start, process_epoch_initial};
 pub use constants::*;
 pub use context::{BasicExecContext, BlockContext, BlockInfo, EpochInfo, TxExecContext};
 pub use errors::{ErrorKind, ExecError, ExecResult};
-pub use manifest_processing::{process_block_manifests, process_epoch_terminal};
+pub use manifest_processing::{
+    process_block_manifests, process_epoch_terminal, process_pending_asm_log_effect,
+};
 pub use output::*;
 pub use proof_verification::TxProofVerifierImpl;
 pub use sau_processing::verify_snark_acct_update_proofs;

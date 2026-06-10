@@ -7,19 +7,21 @@
 use std::{cmp::Ordering, fmt::Debug};
 
 use strata_identifiers::Slot;
-use strata_ol_chain_types_new::MAX_SEALING_MANIFEST_COUNT;
+use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT};
 
 use crate::checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict};
 
 /// Resource stats used by sealing-limit rules.
 ///
 /// Block assembly builds this snapshot incrementally before admitting a
-/// candidate resource, such as a transaction or manifest prefix.
+/// candidate resource, such as a transaction or manifest sequence. Rules ignore
+/// optional facts that are not present in a given snapshot.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EpochSealingResourceStats {
     da_diff_size: usize,
     log: LogMetrics,
     manifest_count: Option<usize>,
+    terminal_block_log_count: Option<usize>,
 }
 
 impl EpochSealingResourceStats {
@@ -29,16 +31,19 @@ impl EpochSealingResourceStats {
             da_diff_size,
             log,
             manifest_count: None,
+            terminal_block_log_count: None,
         }
     }
 
     /// Adds the epoch-cumulative ASM manifest count.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "manifest admission wires this in the next commit")
-    )]
     pub(crate) fn with_manifest_count(mut self, manifest_count: usize) -> Self {
         self.manifest_count = Some(manifest_count);
+        self
+    }
+
+    /// Adds the projected OL log count if this candidate block is terminal.
+    pub(crate) fn with_terminal_block_log_count(mut self, log_count: usize) -> Self {
+        self.terminal_block_log_count = Some(log_count);
         self
     }
 
@@ -55,6 +60,11 @@ impl EpochSealingResourceStats {
     /// Returns the epoch-cumulative ASM manifest count, if this snapshot includes it.
     pub(crate) fn manifest_count(&self) -> Option<usize> {
         self.manifest_count
+    }
+
+    /// Returns the projected OL log count if this candidate block is terminal, if present.
+    pub(crate) fn terminal_block_log_count(&self) -> Option<usize> {
+        self.terminal_block_log_count
     }
 }
 
@@ -88,6 +98,9 @@ pub(crate) enum EpochSealingLimit {
 
     /// Epoch-cumulative ASM manifest count.
     ManifestCount,
+
+    /// Projected OL log count if this candidate block is terminal.
+    TerminalBlockLogCount,
 }
 
 /// Verdict from checking candidate values against sealing limits.
@@ -131,11 +144,7 @@ impl EpochSealingLimitVerdict {
         }
     }
 
-    /// Merges another verdict into this one, keeping the stricter action for duplicate limits.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "manifest admission wires this in the next commit")
-    )]
+    /// Merges another verdict into this one, keeping the stricter action for each limit.
     pub(crate) fn merge(&mut self, other: Self) {
         for (limit, action) in other.actions {
             self.record(limit, action);
@@ -154,7 +163,7 @@ impl EpochSealingLimitVerdict {
     /// Returns the manifest-count limit action.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "manifest admission wires this in the next commit")
+        expect(dead_code, reason = "used by sealing-policy unit tests")
     )]
     pub(crate) fn manifest_count_action(&self) -> EpochSealingLimitAction {
         self.action_for(EpochSealingLimit::ManifestCount)
@@ -171,7 +180,7 @@ impl EpochSealingLimitVerdict {
         self.actions.iter().copied()
     }
 
-    fn most_restrictive_action(&self) -> EpochSealingLimitAction {
+    pub(crate) fn most_restrictive_action(&self) -> EpochSealingLimitAction {
         self.actions()
             .map(|(_, action)| action)
             .max()
@@ -286,6 +295,31 @@ impl SealingLimitRule for ManifestCountRule {
     }
 }
 
+/// Terminal block OL-log-count sealing limit rule.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TerminalBlockLogCountRule;
+
+impl SealingLimitRule for TerminalBlockLogCountRule {
+    fn limit(&self) -> EpochSealingLimit {
+        EpochSealingLimit::TerminalBlockLogCount
+    }
+
+    fn check(&self, stats: &EpochSealingResourceStats) -> EpochSealingLimitAction {
+        let Some(log_count) = stats.terminal_block_log_count() else {
+            return EpochSealingLimitAction::Continue;
+        };
+
+        let max_logs = MAX_LOGS_PER_BLOCK as usize;
+        if log_count > max_logs {
+            EpochSealingLimitAction::RejectCandidate
+        } else if log_count >= max_logs * 9 / 10 {
+            EpochSealingLimitAction::SealAfterAdmit
+        } else {
+            EpochSealingLimitAction::Continue
+        }
+    }
+}
+
 /// Construction-time context for sealing limit checks.
 #[derive(Debug)]
 struct EpochSealingPolicyContext {
@@ -298,6 +332,7 @@ impl Default for EpochSealingPolicyContext {
             limits: vec![
                 Box::new(CheckpointSizeRule),
                 Box::new(ManifestCountRule::default()),
+                Box::new(TerminalBlockLogCountRule),
             ],
         }
     }
@@ -396,6 +431,7 @@ impl CadencePolicy for FixedSlotSealing {
 #[cfg(test)]
 mod fixed_slot_sealing_tests {
     use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
+    use strata_ol_chain_types_new::MAX_LOGS_PER_BLOCK;
 
     use super::*;
 
@@ -502,6 +538,42 @@ mod fixed_slot_sealing_tests {
         assert_eq!(
             rule.check(
                 &EpochSealingResourceStats::new(0, LogMetrics::default()).with_manifest_count(4)
+            ),
+            EpochSealingLimitAction::RejectCandidate
+        );
+    }
+
+    #[test]
+    fn test_terminal_block_log_count_rule_actions() {
+        let rule = TerminalBlockLogCountRule;
+        let max_logs = MAX_LOGS_PER_BLOCK as usize;
+        let soft_threshold = max_logs * 9 / 10;
+
+        assert_eq!(
+            rule.check(
+                &EpochSealingResourceStats::new(0, LogMetrics::default())
+                    .with_terminal_block_log_count(soft_threshold - 1)
+            ),
+            EpochSealingLimitAction::Continue
+        );
+        assert_eq!(
+            rule.check(
+                &EpochSealingResourceStats::new(0, LogMetrics::default())
+                    .with_terminal_block_log_count(soft_threshold)
+            ),
+            EpochSealingLimitAction::SealAfterAdmit
+        );
+        assert_eq!(
+            rule.check(
+                &EpochSealingResourceStats::new(0, LogMetrics::default())
+                    .with_terminal_block_log_count(max_logs)
+            ),
+            EpochSealingLimitAction::SealAfterAdmit
+        );
+        assert_eq!(
+            rule.check(
+                &EpochSealingResourceStats::new(0, LogMetrics::default())
+                    .with_terminal_block_log_count(max_logs + 1)
             ),
             EpochSealingLimitAction::RejectCandidate
         );

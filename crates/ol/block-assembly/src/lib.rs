@@ -1,5 +1,6 @@
 //! Block assembly API for OL.
 
+mod asm_log_projection;
 mod block_assembly;
 mod builder;
 mod checkpoint_size;

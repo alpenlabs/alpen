@@ -63,8 +63,8 @@ where
             let expired_template_ids = state.state_mut().cleanup_expired_templates();
             for template_id in expired_template_ids {
                 state
-                    .epoch_da_tracker_mut()
-                    .remove_accumulated_da(template_id);
+                    .epoch_resource_tracker_mut()
+                    .remove_resource_totals(template_id);
             }
         }
 
@@ -155,8 +155,8 @@ where
         });
     }
 
-    let parent_da = state
-        .fetch_epoch_da_until_parent(config.parent_block_commitment())
+    let resource_totals_before_block = state
+        .fetch_epoch_resource_totals_until_parent(config.parent_block_commitment())
         .await?;
 
     let result = generate_block_template_inner(
@@ -164,12 +164,12 @@ where
         state.epoch_sealing_policy(),
         state.sequencer_config(),
         config,
-        parent_da,
+        resource_totals_before_block,
         *state.ol_params().bridge_params(),
     )
     .await?;
 
-    let (full_template, failed_txs, accumulated_da) = result.into_parts();
+    let (full_template, failed_txs, resource_totals) = result.into_parts();
 
     // Report failed transactions back to mempool.
     if !failed_txs.is_empty() {
@@ -186,15 +186,15 @@ where
         .state_mut()
         .insert_template(template_id, full_template.clone())?;
 
-    // Store accumulated DA for the new block, removing parent entry.
+    // Store resource totals for the new block, removing the parent entry.
     state
-        .epoch_da_tracker_mut()
-        .set_accumulated_da_and_remove_parent_entry(template_id, parent_blkid, accumulated_da);
+        .epoch_resource_tracker_mut()
+        .set_resource_totals_and_remove_parent_entry(template_id, parent_blkid, resource_totals);
 
     for evicted_template_id in evicted_template_ids {
         state
-            .epoch_da_tracker_mut()
-            .remove_accumulated_da(evicted_template_id);
+            .epoch_resource_tracker_mut()
+            .remove_resource_totals(evicted_template_id);
     }
 
     Ok(full_template)
@@ -241,15 +241,15 @@ fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
     Ok(template_ref.complete_block_template(completion_data))
 }
 
-/// Records that a block has been stored for a template and removes its accumulated DA entry.
+/// Records that a block has been stored for a template and removes its resource totals entry.
 fn record_persisted_block<M: MempoolProvider, E: EpochSealingPolicy, S>(
     state: &mut BlockasmServiceState<M, E, S>,
     template_id: OLBlockId,
 ) -> Result<(), BlockAssemblyError> {
     state.state_mut().record_persisted_block(template_id)?;
     state
-        .epoch_da_tracker_mut()
-        .remove_accumulated_da(template_id);
+        .epoch_resource_tracker_mut()
+        .remove_resource_totals(template_id);
     Ok(())
 }
 
@@ -284,7 +284,7 @@ mod tests {
     use super::*;
     use crate::{
         command::create_completion,
-        da_tracker::AccumulatedDaData,
+        da_tracker::EpochResourceTotals,
         epoch_sealing::{FixedSlotSealing, LimitAwareSealing},
         state::BlockasmServiceState,
         test_utils::{
@@ -412,8 +412,8 @@ mod tests {
         let parent = *template.header().parent_blkid();
         assert!(
             state
-                .epoch_da_tracker()
-                .get_accumulated_da(template_id)
+                .epoch_resource_tracker()
+                .get_resource_totals(template_id)
                 .is_some(),
             "generated template should have tracked DA entry"
         );
@@ -441,8 +441,8 @@ mod tests {
         );
         assert!(
             state
-                .epoch_da_tracker()
-                .get_accumulated_da(template_id)
+                .epoch_resource_tracker()
+                .get_resource_totals(template_id)
                 .is_none(),
             "expired template cleanup should evict DA tracker entry"
         );
@@ -457,12 +457,12 @@ mod tests {
             .await
             .expect("first generation should succeed");
         let template_id = first.get_blockid();
-        let tracked_da = state
-            .epoch_da_tracker()
-            .get_accumulated_da(template_id)
-            .expect("first generation should store accumulated DA for template id");
+        let tracked_totals = state
+            .epoch_resource_tracker()
+            .get_resource_totals(template_id)
+            .expect("first generation should store resource totals for template id");
         assert_eq!(
-            tracked_da.logs().len(),
+            tracked_totals.da().logs().len(),
             0,
             "empty mempool generation should store zero DA logs"
         );
@@ -493,8 +493,8 @@ mod tests {
         let first_template_id = first.get_blockid();
         assert!(
             state
-                .epoch_da_tracker()
-                .get_accumulated_da(first_template_id)
+                .epoch_resource_tracker()
+                .get_resource_totals(first_template_id)
                 .is_some(),
             "first generation should store accumulated DA entry"
         );
@@ -520,15 +520,15 @@ mod tests {
         );
         assert!(
             state
-                .epoch_da_tracker()
-                .get_accumulated_da(first_template_id)
+                .epoch_resource_tracker()
+                .get_resource_totals(first_template_id)
                 .is_none(),
             "same-parent replacement should evict old DA tracker entry"
         );
         assert!(
             state
-                .epoch_da_tracker()
-                .get_accumulated_da(second_template_id)
+                .epoch_resource_tracker()
+                .get_resource_totals(second_template_id)
                 .is_some(),
             "new template should retain DA tracker entry"
         );
@@ -546,8 +546,8 @@ mod tests {
             .insert_template(stale_template_id, stale_template)
             .expect("stale test template insert should succeed");
         state
-            .epoch_da_tracker_mut()
-            .set_accumulated_da(stale_template_id, AccumulatedDaData::new_empty());
+            .epoch_resource_tracker_mut()
+            .set_resource_totals(stale_template_id, EpochResourceTotals::new_empty());
         state
             .state_mut()
             .set_template_created_at_for_test(
@@ -570,8 +570,8 @@ mod tests {
         );
         assert!(
             state
-                .epoch_da_tracker()
-                .get_accumulated_da(stale_template_id)
+                .epoch_resource_tracker()
+                .get_resource_totals(stale_template_id)
                 .is_none(),
             "insert-time cleanup should evict stale DA tracker entry"
         );
@@ -732,8 +732,8 @@ mod tests {
         assert_eq!(cached_template.get_blockid(), template_id);
         assert!(
             state
-                .epoch_da_tracker()
-                .get_accumulated_da(template_id)
+                .epoch_resource_tracker()
+                .get_resource_totals(template_id)
                 .is_some(),
             "completion should not evict DA tracker entry before storage succeeds"
         );
@@ -749,8 +749,8 @@ mod tests {
         );
         assert!(
             state
-                .epoch_da_tracker()
-                .get_accumulated_da(template_id)
+                .epoch_resource_tracker()
+                .get_resource_totals(template_id)
                 .is_none(),
             "successful completion should evict DA tracker entry"
         );
@@ -803,8 +803,8 @@ mod tests {
         );
         assert!(
             state
-                .epoch_da_tracker()
-                .get_accumulated_da(template_id)
+                .epoch_resource_tracker()
+                .get_resource_totals(template_id)
                 .is_none(),
             "recording persisted block should evict DA tracker entry"
         );

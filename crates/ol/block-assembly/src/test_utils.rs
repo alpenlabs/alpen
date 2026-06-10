@@ -29,7 +29,7 @@ use strata_acct_types::{
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
 };
-use strata_asm_manifest_types::AsmManifest;
+use strata_asm_manifest_types::{AsmLogEntry, AsmManifest};
 use strata_btc_verification::L1Anchor;
 use strata_codec::encode_to_vec;
 use strata_config::SequencerConfig;
@@ -77,7 +77,7 @@ use crate::{
         generate_block_template_inner,
     },
     context::{BlockAssemblyAnchorContext, BlockAssemblyContext},
-    da_tracker::AccumulatedDaData,
+    da_tracker::{AccumulatedDaData, EpochResourceTotals},
     types::{BlockGenerationConfig, BlockTemplateResult, FullBlockTemplate},
 };
 
@@ -735,23 +735,57 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
     start: L1Height,
     end: L1Height,
 ) -> L1BlockCommitment {
-    // Create and store ASM manifests
-    let mut last_blkid = L1BlockId::from(Buf32::zero());
-    for height in start..=end {
-        // Generate deterministic but unique block ID for each height
-        let mut block_bytes = [0u8; 32];
-        block_bytes[0] = height as u8;
-        block_bytes[1] = (height >> 8) as u8;
-        last_blkid = L1BlockId::from(Buf32::from(block_bytes));
+    let manifests = (start..=end)
+        .map(|height| create_l1_manifest_with_logs(height, vec![]))
+        .collect();
 
-        let manifest = AsmManifest::new(
-            height,
-            last_blkid,
-            WtxidsRoot::from(Buf32::from([0u8; 32])),
-            vec![],
-        )
-        .expect("test manifest should be valid");
+    setup_asm_state_with_l1_manifests_list(storage, manifests).await
+}
 
+/// Setup ASM state with L1 manifests carrying the provided logs.
+///
+/// Creates one manifest per log vector, starting at `start`, and stores an ASM
+/// state at the final manifest.
+pub(crate) async fn setup_asm_state_with_l1_manifests_and_logs(
+    storage: &NodeStorage,
+    start: L1Height,
+    logs_by_manifest: &[Vec<AsmLogEntry>],
+) -> L1BlockCommitment {
+    let manifests = logs_by_manifest
+        .iter()
+        .enumerate()
+        .map(|(idx, logs)| create_l1_manifest_with_logs(start + idx as L1Height, logs.clone()))
+        .collect();
+
+    setup_asm_state_with_l1_manifests_list(storage, manifests).await
+}
+
+fn create_l1_manifest_with_logs(height: L1Height, logs: Vec<AsmLogEntry>) -> AsmManifest {
+    // Generate deterministic but unique block ID for each height.
+    let mut block_bytes = [0u8; 32];
+    block_bytes[0] = height as u8;
+    block_bytes[1] = (height >> 8) as u8;
+    let blkid = L1BlockId::from(Buf32::from(block_bytes));
+
+    AsmManifest::new(
+        height,
+        blkid,
+        WtxidsRoot::from(Buf32::from([0u8; 32])),
+        logs,
+    )
+    .expect("test manifest should be valid")
+}
+
+async fn setup_asm_state_with_l1_manifests_list(
+    storage: &NodeStorage,
+    manifests: Vec<AsmManifest>,
+) -> L1BlockCommitment {
+    let last_manifest = manifests
+        .last()
+        .expect("test must seed at least one L1 manifest");
+    let l1_commitment = L1BlockCommitment::new(last_manifest.height(), *last_manifest.blkid());
+
+    for manifest in manifests {
         storage
             .l1()
             .put_block_data_async(manifest.clone())
@@ -759,13 +793,10 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
             .expect("Failed to store L1 manifest");
         storage
             .l1()
-            .extend_canonical_chain_async(manifest.blkid(), height)
+            .extend_canonical_chain_async(manifest.blkid(), manifest.height())
             .await
             .expect("Failed to extend L1 canonical chain");
     }
-
-    // Store ASM state at the highest L1 block
-    let l1_commitment = L1BlockCommitment::new(end, last_blkid);
 
     // Create minimal ASM state for testing
     let pow_state = HeaderVerificationState::init(L1Anchor {
@@ -1008,17 +1039,18 @@ impl TestEnv {
         BlockGenerationConfig::new(self.parent_commitment())
     }
 
-    /// Generates block template from mempool using current parent commitment and empty parent DA.
+    /// Generates block template from mempool using current parent commitment and empty epoch
+    /// resource totals.
     pub(crate) async fn generate_block_template(&self) -> BlockAssemblyResult<BlockTemplateResult> {
-        self.generate_block_template_with_da(AccumulatedDaData::new_empty())
+        self.generate_block_template_with_resource_totals(EpochResourceTotals::new_empty())
             .await
     }
 
-    /// Generates block template from mempool using current parent commitment and explicit parent
-    /// DA.
-    pub(crate) async fn generate_block_template_with_da(
+    /// Generates block template from mempool using current parent commitment and explicit epoch
+    /// resource totals before the candidate block.
+    pub(crate) async fn generate_block_template_with_resource_totals(
         &self,
-        parent_da: AccumulatedDaData,
+        resource_totals_before_block: EpochResourceTotals,
     ) -> BlockAssemblyResult<BlockTemplateResult> {
         let config = self.parent_config();
         generate_block_template_inner(
@@ -1026,23 +1058,23 @@ impl TestEnv {
             self.epoch_sealing_policy(),
             self.sequencer_config(),
             config,
-            parent_da,
+            resource_totals_before_block,
             BridgeParams::default(),
         )
         .await
     }
 
     /// Constructs a block directly from explicit txs using current parent commitment and empty
-    /// parent DA.
+    /// epoch resource totals.
     pub(crate) async fn construct_block(
         &self,
         txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
-        self.construct_block_with_da(txs, AccumulatedDaData::new_empty())
+        self.construct_block_with_resource_totals(txs, EpochResourceTotals::new_empty())
             .await
     }
 
-    /// Constructs an empty block using current parent commitment and empty parent DA.
+    /// Constructs an empty block using current parent commitment and empty epoch resource totals.
     pub(crate) async fn construct_empty_block(
         &self,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
@@ -1050,20 +1082,52 @@ impl TestEnv {
             .await
     }
 
-    /// Constructs an empty block using current parent commitment and explicit parent DA.
+    /// Constructs an empty block using current parent commitment and explicit epoch DA before the
+    /// candidate block.
     pub(crate) async fn construct_empty_block_with_da(
         &self,
-        parent_da: AccumulatedDaData,
+        epoch_cumulative_da: AccumulatedDaData,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
-        self.construct_block_with_da(iter::empty::<(OLTxId, OLTransaction)>(), parent_da)
-            .await
+        self.construct_empty_block_with_resource_totals(EpochResourceTotals::new(
+            epoch_cumulative_da,
+            0,
+        ))
+        .await
     }
 
-    /// Constructs a block directly from explicit txs and parent DA using current parent commitment.
+    /// Constructs a block directly from explicit txs and epoch DA before the candidate block using
+    /// current parent commitment.
     pub(crate) async fn construct_block_with_da(
         &self,
         txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
-        parent_da: AccumulatedDaData,
+        epoch_cumulative_da: AccumulatedDaData,
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+        self.construct_block_with_resource_totals(
+            txs,
+            EpochResourceTotals::new(epoch_cumulative_da, 0),
+        )
+        .await
+    }
+
+    /// Constructs an empty block using current parent commitment and explicit epoch resource
+    /// totals before the candidate block.
+    pub(crate) async fn construct_empty_block_with_resource_totals(
+        &self,
+        resource_totals_before_block: EpochResourceTotals,
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+        self.construct_block_with_resource_totals(
+            iter::empty::<(OLTxId, OLTransaction)>(),
+            resource_totals_before_block,
+        )
+        .await
+    }
+
+    /// Constructs a block directly from explicit txs and epoch resource totals before the
+    /// candidate block.
+    pub(crate) async fn construct_block_with_resource_totals(
+        &self,
+        txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
+        resource_totals_before_block: EpochResourceTotals,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         let config = self.parent_config();
         assemble_block_with_txs(
@@ -1071,7 +1135,7 @@ impl TestEnv {
             self.epoch_sealing_policy(),
             &config,
             txs.into_iter().collect(),
-            parent_da,
+            resource_totals_before_block,
         )
         .await
     }
@@ -1503,7 +1567,8 @@ pub(crate) fn extract_withdrawal_intents(
     Result<SimpleWithdrawalIntentLogData, LogDecodeError>,
 )> {
     output
-        .accumulated_da
+        .resource_totals
+        .da()
         .logs()
         .iter()
         .filter_map(|log| {
@@ -1527,13 +1592,14 @@ pub(crate) fn seeded_da(n: usize) -> AccumulatedDaData {
 
 // ===== Assembly Pipeline Helper =====
 
-/// Assembles a block for `config` using tx list and parent DA snapshot.
+/// Assembles a block for `config` using tx list and epoch resource totals before the candidate
+/// block.
 pub(crate) async fn assemble_block_with_txs(
     ctx: &BlockAssemblyContextImpl,
     epoch_sealing_policy: &TestEpochSealingPolicy,
     config: &BlockGenerationConfig,
     txs: Vec<(OLTxId, OLTransaction)>,
-    parent_da: AccumulatedDaData,
+    resource_totals_before_block: EpochResourceTotals,
 ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
     let parent_state = ctx
         .fetch_state_for_tip(config.parent_block_commitment())
@@ -1551,7 +1617,7 @@ pub(crate) async fn assemble_block_with_txs(
         block_slot,
         block_epoch,
         txs,
-        parent_da,
+        resource_totals_before_block,
         BridgeParams::default(),
     )
     .await

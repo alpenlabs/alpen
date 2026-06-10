@@ -75,7 +75,7 @@ async fn test_multi_sender_attribution() {
     );
 
     // Persist block 1 + post-state as parent for block 2.
-    let parent_da_2 = output_block1.accumulated_da.clone();
+    let resource_totals_after_block1 = output_block1.resource_totals.clone();
     let _current_commitment = env.persist(&output_block1).await;
 
     // Mirror expected entries into storage MMR for block-2 proof generation.
@@ -94,7 +94,10 @@ async fn test_multi_sender_attribution() {
     let tx_receiver_id = tx_receiver.compute_txid();
 
     let output_block2 = env
-        .construct_block_with_da(vec![(tx_receiver_id, tx_receiver)], parent_da_2)
+        .construct_block_with_resource_totals(
+            vec![(tx_receiver_id, tx_receiver)],
+            resource_totals_after_block1,
+        )
         .await
         .expect("block 2 should construct and process attributed messages");
     let included_block2 = included_txids(&output_block2.template);

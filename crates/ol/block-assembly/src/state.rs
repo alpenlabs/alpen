@@ -19,7 +19,7 @@ use tracing::warn;
 use crate::{
     BlockAssemblyAnchorContext, BlockAssemblyStateAccess, EpochSealingPolicy, MempoolProvider,
     context::BlockAssemblyContext,
-    da_tracker::{AccumulatedDaData, EpochDaTracker, rebuild_accumulated_da_upto},
+    da_tracker::{EpochResourceTotals, EpochResourceTracker, rebuild_epoch_resource_totals_upto},
     error::BlockAssemblyError,
     types::FullBlockTemplate,
 };
@@ -287,7 +287,7 @@ pub(crate) struct BlockasmServiceState<M: MempoolProvider, E: EpochSealingPolicy
     ctx: Arc<BlockAssemblyContext<M, S>>,
     epoch_sealing_policy: E,
     state: BlockAssemblyState,
-    epoch_da_tracker: EpochDaTracker,
+    epoch_resource_tracker: EpochResourceTracker,
 }
 
 impl<M: MempoolProvider, E: EpochSealingPolicy, S> Debug for BlockasmServiceState<M, E, S> {
@@ -322,7 +322,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
             ctx,
             epoch_sealing_policy,
             state: BlockAssemblyState::new(ttl),
-            epoch_da_tracker: EpochDaTracker::new_empty(),
+            epoch_resource_tracker: EpochResourceTracker::new_empty(),
         }
     }
 
@@ -350,12 +350,12 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
         &mut self.state
     }
 
-    pub(crate) fn epoch_da_tracker(&self) -> &EpochDaTracker {
-        &self.epoch_da_tracker
+    pub(crate) fn epoch_resource_tracker(&self) -> &EpochResourceTracker {
+        &self.epoch_resource_tracker
     }
 
-    pub(crate) fn epoch_da_tracker_mut(&mut self) -> &mut EpochDaTracker {
-        &mut self.epoch_da_tracker
+    pub(crate) fn epoch_resource_tracker_mut(&mut self) -> &mut EpochResourceTracker {
+        &mut self.epoch_resource_tracker
     }
 }
 
@@ -368,12 +368,14 @@ where
     <<S::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
         Clone,
 {
-    /// Resolves accumulated DA upto a block: returns cached data, rebuilds by re-executing epoch
-    /// blocks, or creates fresh data if parent is terminal.
-    pub(crate) async fn fetch_epoch_da_until_parent(
+    /// Resolves epoch resource totals up to a block.
+    ///
+    /// Returns cached totals, rebuilds by re-executing epoch blocks, or creates
+    /// fresh totals if the parent is terminal.
+    pub(crate) async fn fetch_epoch_resource_totals_until_parent(
         &self,
         parent_blkid: OLBlockCommitment,
-    ) -> Result<AccumulatedDaData, BlockAssemblyError> {
+    ) -> Result<EpochResourceTotals, BlockAssemblyError> {
         let parent_blk = self
             .context()
             .fetch_ol_block(parent_blkid.blkid)
@@ -384,17 +386,17 @@ where
 
         // If parent block is terminal then we are in the new epoch and thus start afresh.
         if parent_header.is_terminal() {
-            Ok(AccumulatedDaData::new_empty())
+            Ok(EpochResourceTotals::new_empty())
         } else {
-            // Parent is not terminal, so we try to fetch accumulated da for the epoch.
+            // Parent is not terminal, so we try to fetch resource totals for the epoch.
             let cur_epoch = parent_header.epoch();
             match self
-                .epoch_da_tracker()
-                .get_accumulated_da(parent_blkid.blkid)
+                .epoch_resource_tracker()
+                .get_resource_totals(parent_blkid.blkid)
             {
-                Some(da) => Ok(da.clone()),
+                Some(totals) => Ok(totals.clone()),
                 None => {
-                    rebuild_accumulated_da_upto(
+                    rebuild_epoch_resource_totals_upto(
                         parent_blkid,
                         cur_epoch,
                         *self.ol_params().bridge_params(),
@@ -430,7 +432,7 @@ mod tests {
     use crate::{
         FixedSlotSealing, LimitAwareSealing,
         block_assembly::generate_block_template_inner,
-        da_tracker::AccumulatedDaData,
+        da_tracker::{AccumulatedDaData, EpochResourceTotals},
         test_utils::{
             MockMempoolProvider, TEST_BLOCK_TEMPLATE_TTL, TEST_SLOTS_PER_EPOCH, TestEnv,
             TestStorageFixtureBuilder, create_test_template, create_test_template_with_parent,
@@ -449,6 +451,10 @@ mod tests {
             EpochDaAccumulator::default(),
             vec![OLLog::new(AccountSerial::from(4242_u32), vec![1, 2, 3])],
         )
+    }
+
+    fn sample_resource_totals() -> EpochResourceTotals {
+        EpochResourceTotals::new(sample_accumulated_da(), 0)
     }
 
     fn create_test_template_with_parent_and_slot(
@@ -821,13 +827,13 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_fetch_da_terminal_parent_empty() {
+    async fn test_fetch_resource_totals_terminal_parent_empty() {
         let (mut state, env) = build_service_state_with_env(0).await;
 
-        // Even if tracker has an entry, terminal-parent path must return fresh empty DA.
+        // Even if tracker has an entry, terminal-parent path must return fresh empty totals.
         state
-            .epoch_da_tracker_mut()
-            .set_accumulated_da(*env.parent_commitment().blkid(), sample_accumulated_da());
+            .epoch_resource_tracker_mut()
+            .set_resource_totals(*env.parent_commitment().blkid(), sample_resource_totals());
 
         let parent_block = state
             .context()
@@ -840,18 +846,23 @@ mod tests {
             "test setup requires terminal parent"
         );
 
-        let da = state
-            .fetch_epoch_da_until_parent(env.parent_commitment())
+        let totals = state
+            .fetch_epoch_resource_totals_until_parent(env.parent_commitment())
             .await
-            .expect("terminal parent should return empty DA");
+            .expect("terminal parent should return empty totals");
         assert!(
-            da.logs().is_empty(),
+            totals.da().logs().is_empty(),
             "terminal-parent path must reset accumulated DA"
+        );
+        assert_eq!(
+            totals.manifest_count(),
+            0,
+            "terminal-parent path must reset manifest count"
         );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_fetch_da_cache_hit() {
+    async fn test_fetch_resource_totals_cache_hit() {
         let (mut state, env) = build_service_state_with_env(1).await;
 
         let parent_block = state
@@ -865,25 +876,30 @@ mod tests {
             "test setup requires non-terminal parent"
         );
 
-        let cached_da = sample_accumulated_da();
-        let expected_logs = cached_da.logs().to_vec();
+        let cached_totals = EpochResourceTotals::new(sample_accumulated_da(), 7);
+        let expected_logs = cached_totals.da().logs().to_vec();
         state
-            .epoch_da_tracker_mut()
-            .set_accumulated_da(*env.parent_commitment().blkid(), cached_da);
+            .epoch_resource_tracker_mut()
+            .set_resource_totals(*env.parent_commitment().blkid(), cached_totals);
 
-        let da = state
-            .fetch_epoch_da_until_parent(env.parent_commitment())
+        let totals = state
+            .fetch_epoch_resource_totals_until_parent(env.parent_commitment())
             .await
             .expect("cache-hit path should succeed");
         assert_eq!(
-            da.logs(),
+            totals.da().logs(),
             expected_logs.as_slice(),
             "cache-hit path should return tracker data without rebuild"
+        );
+        assert_eq!(
+            totals.manifest_count(),
+            7,
+            "cache-hit path should preserve cached manifest count"
         );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_fetch_da_cache_miss_rebuild() {
+    async fn test_fetch_resource_totals_cache_miss_rebuild() {
         let (state, env) = build_service_state_with_env(0).await;
 
         let config = BlockGenerationConfig::new(env.parent_commitment());
@@ -892,7 +908,7 @@ mod tests {
             env.epoch_sealing_policy(),
             env.sequencer_config(),
             config,
-            AccumulatedDaData::new_empty(),
+            EpochResourceTotals::new_empty(),
             *state.ol_params().bridge_params(),
         )
         .await
@@ -912,18 +928,18 @@ mod tests {
         let child_block = OLBlock::new(signed_header, child_template.body().clone());
         env.put_block(child_block).await;
 
-        let da = state
-            .fetch_epoch_da_until_parent(child_commitment)
+        let totals = state
+            .fetch_epoch_resource_totals_until_parent(child_commitment)
             .await
             .expect("cache-miss rebuild should succeed");
         assert!(
-            da.logs().is_empty(),
+            totals.da().logs().is_empty(),
             "empty-child rebuild should produce empty logs"
         );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_fetch_da_missing_parent_not_found() {
+    async fn test_fetch_resource_totals_missing_parent_not_found() {
         let (state, env) = build_service_state_with_env(0).await;
         let missing = OLBlockCommitment::new(
             env.parent_commitment().slot() + 100,
@@ -931,7 +947,7 @@ mod tests {
         );
 
         let err = state
-            .fetch_epoch_da_until_parent(missing)
+            .fetch_epoch_resource_totals_until_parent(missing)
             .await
             .expect_err("missing parent should fail");
         assert!(
