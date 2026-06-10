@@ -16,6 +16,7 @@ impl ExecutionEnvironment for SimpleExecutionEnvironment {
     type PartialState = SimplePartialState;
     type Block = SimpleBlock;
     type WriteBatch = SimpleWriteBatch;
+    type BlockOutput = ();
 
     fn execute_block_body(
         &self,

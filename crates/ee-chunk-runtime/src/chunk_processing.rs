@@ -18,6 +18,9 @@ pub fn process_block<E: ExecutionEnvironment>(
 ) -> EnvResult<()> {
     // Repackage the block into the payload we can execute.
     let eb = block.exec_block();
+    if !E::Block::check_header_matches_body(eb.get_header(), eb.get_body()) {
+        return Err(EnvError::InvalidBlock);
+    }
     let header_intrinsics = eb.get_header().get_intrinsics();
     let epl = ExecPayload::new(&header_intrinsics, eb.get_body());
 

@@ -83,6 +83,12 @@ pub trait ExecutionEnvironment: Sized + 'static {
     /// This is NOT any kind of writes we check for in DA.
     type WriteBatch: Sized;
 
+    /// Execution-derived block output that is neither a state write nor OL-facing output.
+    ///
+    /// This carries execution-environment-specific commitments needed to verify
+    /// or complete a block header.
+    type BlockOutput: Sized;
+
     /// Executes a block payload on top of a pre-state, returning the execution
     /// output.
     ///

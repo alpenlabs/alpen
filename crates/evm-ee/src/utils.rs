@@ -12,7 +12,7 @@ use reth_trie::{HashedPostState, KeccakKeyHasher};
 use strata_ee_acct_types::{EnvError, EnvResult, ExecPayload};
 use strata_ee_chain_types::ExecInputs;
 
-use crate::types::EvmBlock;
+use crate::types::{EvmBlock, EvmHeaderIntrinsics};
 
 /// Builds an Alloy block from exec payload and recovers transaction senders.
 ///
@@ -21,8 +21,9 @@ use crate::types::EvmBlock;
 pub(crate) fn build_and_recover_block(
     exec_payload: &ExecPayload<'_, EvmBlock>,
 ) -> EnvResult<RecoveredBlock<AlloyBlock<TransactionSigned>>> {
-    let header = exec_payload.header_intrinsics().clone();
+    let header: EvmHeaderIntrinsics = exec_payload.header_intrinsics().clone();
     let body = exec_payload.body().body().clone();
+    let header = header.to_execution_header(&body);
 
     // Build block using alloy_consensus types
     let alloy_block = AlloyBlock { header, body };

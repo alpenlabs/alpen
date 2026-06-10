@@ -10,4 +10,7 @@ mod types;
 mod utils;
 
 pub use execution::EvmExecutionEnvironment;
-pub use types::{EvmBlock, EvmBlockBody, EvmHeader, EvmPartialState, EvmWriteBatch};
+pub use types::{
+    EvmBlock, EvmBlockBody, EvmBlockOutput, EvmHeader, EvmHeaderIntrinsics, EvmPartialState,
+    EvmWriteBatch,
+};
