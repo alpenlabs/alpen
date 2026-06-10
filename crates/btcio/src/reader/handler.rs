@@ -34,7 +34,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
 
     // Dispatch new blocks.
     if let Some(block) = new_block {
-        block_submitter.submit_block_async(block).await?;
+        block_submitter.submit_block(block).await?;
     }
     Ok(())
 }
