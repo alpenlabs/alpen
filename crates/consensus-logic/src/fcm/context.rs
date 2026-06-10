@@ -30,6 +30,10 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
 
     async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool>;
 
+    /// Returns the latest OL block committed through the high-watermark path,
+    /// if any.
+    async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>>;
+
     /// Rolls back per-block OL state-indexing writes in `epoch` attributed to
     /// blocks with slots strictly greater than `cutoff.slot()`.
     ///

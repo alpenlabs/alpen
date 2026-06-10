@@ -105,6 +105,13 @@ impl FcmStorage for StrataFcmContext {
             .await
     }
 
+    async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>> {
+        self.storage
+            .ol_block()
+            .get_block_high_watermark_async()
+            .await
+    }
+
     async fn rollback_block_state_indexing(
         &self,
         epoch: Epoch,

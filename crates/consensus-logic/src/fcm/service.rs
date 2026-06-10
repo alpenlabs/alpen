@@ -242,9 +242,23 @@ async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
         // Revisit high-watermark clearing once FCM distinguishes consensus-invalid blocks
         // from transient execution failures.
 
+        // The cleanup below only applies to the block the sequencer is
+        // currently stuck on. An invalid block that is not the high-watermark
+        // (e.g. a stale or forked proposal arriving after a valid block at
+        // this slot was accepted) must not trigger a rollback: the indexing
+        // rows past its parent slot belong to the accepted canonical chain.
+        let high_watermark = fcm_state.ctx().get_block_high_watermark().await?;
+        if high_watermark != Some(block) {
+            debug!(%block, "invalid OL block is not the high-watermark; skipping indexing rollback");
+            return Ok(updated);
+        }
+
         // Drop any state-indexing writes the rejected block persisted before
         // it failed, so a replacement block at this slot doesn't conflict
-        // against the indexing high-watermark. Must land before the
+        // against the indexing high-watermark. The high-watermark is advanced
+        // when a block is stored and execution follows storage, so with the
+        // rejected block at the high-watermark the epoch's indexing writes
+        // past its parent slot can only be its own. Must land before the
         // high-watermark clear below, since the clear is what unblocks
         // building the replacement.
         let cutoff = OLBlockCommitment::new(
@@ -880,6 +894,10 @@ mod tests {
             Ok(true)
         }
 
+        async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>> {
+            Ok(self.inner.lock().unwrap().block_high_watermark)
+        }
+
         async fn rollback_block_state_indexing(
             &self,
             epoch: Epoch,
@@ -975,6 +993,10 @@ mod tests {
 
         async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool> {
             self.storage.clear_block_high_watermark(expected).await
+        }
+
+        async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>> {
+            self.storage.get_block_high_watermark().await
         }
 
         async fn rollback_block_state_indexing(
@@ -1647,6 +1669,65 @@ mod tests {
         assert_eq!(
             ctx.storage().indexing_rollbacks(),
             vec![(0, genesis_commitment)]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_skips_indexing_rollback_for_non_high_watermark_block(
+    ) -> anyhow::Result<()> {
+        let (_, pk) = test_schnorr_keypair();
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        // An accepted canonical block holds the high-watermark at slot 1...
+        let canonical = make_storage_block(1, genesis_blkid);
+        let canonical_commitment = OLBlockCommitment::new(
+            canonical.header().slot(),
+            canonical.header().compute_blkid(),
+        );
+
+        // ...and an unsigned fork block at the same slot arrives afterwards.
+        let fork = make_storage_block(1, OLBlockId::from(Buf32::from([7u8; 32])));
+        let fork_blkid = fork.header().compute_blkid();
+        assert_ne!(fork_blkid, *canonical_commitment.blkid());
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_executed_block(
+            canonical,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_ol_block(fork);
+        ctx.storage().set_block_high_watermark(canonical_commitment);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(fork_blkid), &mut fcm_state).await?;
+
+        assert_eq!(
+            ctx.storage().get_block_status(fork_blkid).await?,
+            Some(BlockStatus::Invalid)
+        );
+        // The fork block is not the high-watermark: the canonical chain's
+        // indexing rows must stay untouched and the high-watermark kept.
+        assert_eq!(ctx.storage().indexing_rollbacks(), vec![]);
+        assert_eq!(
+            ctx.storage().block_high_watermark(),
+            Some(canonical_commitment)
         );
 
         Ok(())
