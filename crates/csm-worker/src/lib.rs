@@ -7,6 +7,7 @@
 mod checkpoint_extract;
 mod constants;
 mod context;
+mod errors;
 mod processor;
 mod service;
 mod state;
@@ -15,6 +16,7 @@ mod status;
 mod test_utils;
 
 pub use context::CsmWorkerContext;
+pub use errors::{CsmWorkerError, CsmWorkerResult};
 pub use service::CsmWorkerService;
 pub use state::CsmWorkerState;
 pub use status::CsmWorkerStatus;

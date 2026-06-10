@@ -8,7 +8,10 @@ use strata_primitives::l1::L1BlockCommitment;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
-use crate::{context::CsmWorkerContext, state::CsmWorkerState, status::CsmWorkerStatus};
+use crate::{
+    context::CsmWorkerContext, errors::CsmWorkerResult, state::CsmWorkerState,
+    status::CsmWorkerStatus,
+};
 
 /// CSM worker service that acts as a listener to ASM worker status updates.
 ///
@@ -92,7 +95,7 @@ fn refresh_finalized_checkpoint<C: CsmWorkerContext>(
     state: &mut CsmWorkerState<C>,
     asm_block: L1BlockCommitment,
     finalized: L1Checkpoint,
-) -> anyhow::Result<()> {
+) -> CsmWorkerResult<()> {
     let last_seen = state.last_committed_state.get_last_checkpoint();
     let refreshed = ClientState::new(Some(finalized), last_seen);
     state.ctx.put_client_state_update(
