@@ -132,6 +132,20 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// the record was present.
     fn del_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<()>;
 
+    // Per-block proof-witness operations
+    //
+    // Written by the EE block-production / import path at commit time
+    // (depth-0), read by the chunk prover's input assembly.
+
+    /// Store the per-block proof-witness for `block_id`. Overwrites if present.
+    fn put_block_witness(&self, block_id: Hash, witness: Vec<u8>) -> DbResult<()>;
+
+    /// Fetch the per-block proof-witness for `block_id`, if one exists.
+    fn get_block_witness(&self, block_id: Hash) -> DbResult<Option<Vec<u8>>>;
+
+    /// Delete a block's proof-witness. Idempotent.
+    fn del_block_witness(&self, block_id: Hash) -> DbResult<()>;
+
     // Per-block accessed-state + content-addressed bytecode operations
     //
     // Written by the `AccessedStateGenerator` exex (phase 2) and read by
@@ -201,6 +215,11 @@ pub(crate) mod ops {
             put_chunk_witness(chunk_id: ChunkId, witness: ChunkWitnessRecord) => ();
             get_chunk_witness(chunk_id: ChunkId) => Option<ChunkWitnessRecord>;
             del_chunk_witness(chunk_id: ChunkId) => ();
+
+            // Per-block proof-witness operations
+            put_block_witness(block_id: Hash, witness: Vec<u8>) => ();
+            get_block_witness(block_id: Hash) => Option<Vec<u8>>;
+            del_block_witness(block_id: Hash) => ();
 
             // Per-block accessed-state + bytecode operations
             put_block_accessed_state(block_id: Hash, record: AccessedStateRecord) => ();
