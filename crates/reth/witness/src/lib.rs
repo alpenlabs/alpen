@@ -5,6 +5,8 @@
 //! (e.g., via chunking algorithms, batch boundaries, etc.). This crate simply extracts
 //! the witness data needed to prove execution of the given range.
 
+mod block_witness;
 mod range_witness_extractor;
 
+pub use block_witness::build_block_witness;
 pub use range_witness_extractor::{RangeWitnessData, RangeWitnessExtractor};
