@@ -8,7 +8,7 @@ use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 
 use crate::{
-    BlockAssemblyError, FixedSlotSealing,
+    BlockAssemblyError, FixedSlotSealing, LimitAwareSealing,
     block_assembly::generate_block_template_inner,
     context::BlockAssemblyContext,
     da_tracker::AccumulatedDaData,
@@ -61,7 +61,7 @@ async fn test_state_provider_failure_propagates() {
         1,
         OLBlockId::from(Buf32::from([7; 32])),
     ));
-    let epoch_sealing_policy = FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH);
+    let epoch_sealing_policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
     let sequencer_config = SequencerConfig::default();
 
     let err = generate_block_template_inner(

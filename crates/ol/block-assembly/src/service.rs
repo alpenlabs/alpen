@@ -285,19 +285,20 @@ mod tests {
     use crate::{
         command::create_completion,
         da_tracker::AccumulatedDaData,
-        epoch_sealing::FixedSlotSealing,
+        epoch_sealing::{FixedSlotSealing, LimitAwareSealing},
         state::BlockasmServiceState,
         test_utils::{
             MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider,
-            TEST_BLOCK_TEMPLATE_TTL, TestAccount, TestEnv, TestStorageFixtureBuilder,
-            create_test_template, create_test_template_with_parent, test_account_id,
+            TEST_BLOCK_TEMPLATE_TTL, TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv,
+            TestStorageFixtureBuilder, create_test_template, create_test_template_with_parent,
+            test_account_id,
         },
         types::BlockCompletionData,
     };
 
     type TestServiceState = BlockasmServiceState<
         Arc<MockMempoolProvider>,
-        FixedSlotSealing,
+        LimitAwareSealing<FixedSlotSealing>,
         OLStateManagerProviderImpl,
     >;
 
@@ -331,7 +332,7 @@ mod tests {
             env.sequencer_config().clone(),
             sequencer_predicate,
             env.ctx_arc(),
-            env.epoch_sealing_policy().clone(),
+            LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH)),
         );
 
         (state, mempool, env, signing_key)

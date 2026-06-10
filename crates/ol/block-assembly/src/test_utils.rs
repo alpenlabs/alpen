@@ -71,7 +71,7 @@ pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
 }
 
 use crate::{
-    BlockAssemblyResult, FixedSlotSealing, MempoolProvider,
+    BlockAssemblyResult, FixedSlotSealing, LimitAwareSealing, MempoolProvider,
     block_assembly::{
         ConstructBlockOutput, calculate_block_slot_and_epoch, construct_block,
         generate_block_template_inner,
@@ -80,6 +80,8 @@ use crate::{
     da_tracker::AccumulatedDaData,
     types::{BlockGenerationConfig, BlockTemplateResult, FullBlockTemplate},
 };
+
+type TestEpochSealingPolicy = LimitAwareSealing<FixedSlotSealing>;
 
 /// Creates a test account ID with the given seed byte.
 pub(crate) fn test_account_id(id: u8) -> AccountId {
@@ -893,7 +895,7 @@ pub(crate) struct TestEnv {
     ctx: Arc<BlockAssemblyContextImpl>,
     mempool: Arc<MockMempoolProvider>,
     sequencer_config: SequencerConfig,
-    epoch_sealing_policy: FixedSlotSealing,
+    epoch_sealing_policy: TestEpochSealingPolicy,
     parent_commitment: OLBlockCommitment,
 }
 
@@ -910,7 +912,9 @@ impl TestEnv {
             ctx: Arc::new(ctx),
             mempool,
             sequencer_config: SequencerConfig::default(),
-            epoch_sealing_policy: FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH),
+            epoch_sealing_policy: LimitAwareSealing::new(FixedSlotSealing::new(
+                TEST_SLOTS_PER_EPOCH,
+            )),
             parent_commitment,
         }
     }
@@ -995,7 +999,7 @@ impl TestEnv {
     }
 
     /// Returns epoch sealing policy.
-    pub(crate) fn epoch_sealing_policy(&self) -> &FixedSlotSealing {
+    pub(crate) fn epoch_sealing_policy(&self) -> &TestEpochSealingPolicy {
         &self.epoch_sealing_policy
     }
 
@@ -1526,7 +1530,7 @@ pub(crate) fn seeded_da(n: usize) -> AccumulatedDaData {
 /// Assembles a block for `config` using tx list and parent DA snapshot.
 pub(crate) async fn assemble_block_with_txs(
     ctx: &BlockAssemblyContextImpl,
-    epoch_sealing_policy: &FixedSlotSealing,
+    epoch_sealing_policy: &TestEpochSealingPolicy,
     config: &BlockGenerationConfig,
     txs: Vec<(OLTxId, OLTransaction)>,
     parent_da: AccumulatedDaData,

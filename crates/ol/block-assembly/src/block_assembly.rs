@@ -22,11 +22,14 @@ use strata_snark_acct_types as _;
 use tracing::{debug, error, warn};
 
 use crate::{
-    AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, EpochSealingPolicy,
-    MempoolProvider,
-    checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict},
+    AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, MempoolProvider,
+    checkpoint_size::LogMetrics,
     context::BlockAssemblyAnchorContext,
     da_tracker::AccumulatedDaData,
+    epoch_sealing::{
+        EpochSealingLimitAction, EpochSealingLimitVerdict, EpochSealingPolicy,
+        EpochSealingResourceStats,
+    },
     error::BlockAssemblyError,
     types::{BlockGenerationConfig, BlockTemplateResult, FailedMempoolTx, FullBlockTemplate},
 };
@@ -41,8 +44,8 @@ struct ProcessTransactionsOutput<S: IStateAccessor> {
     accumulated_batch: WriteBatch<S::AccountState>,
     /// Accumulated da data after processing all transactions.
     accumulated_da: AccumulatedDaData,
-    /// Whether the estimated checkpoint payload is approaching the L1 envelope limit.
-    checkpoint_size_limit_reached: bool,
+    /// Non-cadence limits requesting an epoch seal, if any.
+    sealing_limit_verdict: EpochSealingLimitVerdict,
 }
 
 /// Maps an [`ExecError`] to a [`MempoolTxInvalidReason`].
@@ -194,7 +197,7 @@ where
     // 3. Get transactions from mempool
     let mempool_txs = MempoolProvider::get_transactions(ctx, max_txs_per_block).await?;
 
-    // 4. Construct block (handles terminal detection and manifest fetching internally)
+    // 4. Construct block using the sealing policy decision and manifest fetch gate.
     let output = construct_block(
         ctx,
         epoch_sealing_policy,
@@ -244,7 +247,7 @@ pub(crate) fn calculate_block_slot_and_epoch<S: IStateAccessor>(
 /// 2. Executes block initialization (epoch initial + block start)
 /// 3. Validates each transaction against accumulated state
 /// 4. Filters out invalid transactions (proof failures, execution failures)
-/// 5. Detects terminal blocks and fetches L1 manifests
+/// 5. Applies the sealing policy and fetches L1 manifests for terminal blocks
 /// 6. Builds the complete block with only valid transactions
 #[expect(clippy::too_many_arguments, reason = "can't get around the args")]
 #[tracing::instrument(
@@ -306,9 +309,10 @@ where
         failed_txs,
         accumulated_batch,
         accumulated_da,
-        checkpoint_size_limit_reached,
+        sealing_limit_verdict,
     } = process_transactions(
         ctx,
+        epoch_sealing_policy,
         &block_context,
         &output_buffer,
         parent_state.as_ref(),
@@ -318,11 +322,18 @@ where
         bridge_params,
     );
 
-    // Phase 3: Seal the epoch if the policy says so or the checkpoint payload is near the
-    // L1 envelope limit. Fetch manifests for the terminal block (possibly empty if L1 is slow).
-    let should_seal =
-        epoch_sealing_policy.should_seal_epoch(block_slot) || checkpoint_size_limit_reached;
-    debug!(%block_slot, checkpoint_size_limit_reached, should_seal, "epoch seal decision");
+    // Phase 3: Ask the sealing policy whether this block should be terminal. Fetch manifests for
+    // the terminal block (possibly empty if L1 is slow).
+    let sealing_decision =
+        epoch_sealing_policy.should_seal_epoch(block_slot, &sealing_limit_verdict);
+    let should_seal = sealing_decision.should_seal();
+    debug!(
+        %block_slot,
+        ?sealing_limit_verdict,
+        ?sealing_decision,
+        should_seal,
+        "epoch seal decision"
+    );
     let manifest_container = if should_seal {
         fetch_asm_manifests_for_terminal_block(ctx, parent_state.as_ref()).await?
     } else {
@@ -335,7 +346,8 @@ where
     debug!(
         successful_tx_count = successful_txs.len(),
         failed_tx_count = failed_txs.len(),
-        is_terminal = manifest_container.is_some(),
+        is_terminal = should_seal,
+        has_manifests = manifest_container.is_some(),
         "block construction summary",
     );
     let (template, post_state) = build_block_template(
@@ -345,6 +357,7 @@ where
         accumulated_batch,
         output_buffer.clone(),
         successful_txs,
+        should_seal,
         manifest_container,
     )?;
 
@@ -441,8 +454,9 @@ where
     fields(component = "ol_block_assembly", tx_count = mempool_txs.len())
 )]
 #[expect(clippy::too_many_arguments, reason = "all arguments are required")]
-fn process_transactions<P, S>(
+fn process_transactions<P, E, S>(
     proof_gen: &P,
+    epoch_sealing_policy: &E,
     block_context: &BlockContext<'_>,
     output_buffer: &ExecOutputBuffer,
     parent_state: &S,
@@ -453,12 +467,13 @@ fn process_transactions<P, S>(
 ) -> ProcessTransactionsOutput<S>
 where
     P: AccumulatorProofGenerator,
+    E: EpochSealingPolicy,
     S: BlockAssemblyStateAccess,
     <<S as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     let mut successful_txs = Vec::new();
     let mut failed_txs = Vec::new();
-    let mut checkpoint_size_limit_reached = false;
+    let mut sealing_limit_verdict = EpochSealingLimitVerdict::within_limits();
 
     // Track log metrics incrementally for checkpoint size estimation.
     let mut log_metrics = LogMetrics::from_logs(accumulated_da.logs());
@@ -538,10 +553,11 @@ where
                 let mut tentative = log_metrics;
                 tentative.add_logs(&tx_logs);
                 let da_diff_size = staging_state.accumulator().estimated_encoded_size();
-                let verdict = checkpoint_size_verdict(da_diff_size, &tentative);
+                let stats = EpochSealingResourceStats::new(da_diff_size, tentative);
+                let verdict = epoch_sealing_policy.check_limits(&stats);
 
-                match verdict {
-                    CheckpointSizeVerdict::HardLimitExceeded => {
+                match verdict.checkpoint_size_action() {
+                    EpochSealingLimitAction::RejectCandidate => {
                         debug!(
                             da_diff_size,
                             ?tentative,
@@ -551,10 +567,10 @@ where
                             WriteTrackingState::new(parent_state, backup_batch),
                             backup_accumulator,
                         );
-                        checkpoint_size_limit_reached = true;
+                        sealing_limit_verdict = verdict;
                         break;
                     }
-                    CheckpointSizeVerdict::SoftLimitReached => {
+                    EpochSealingLimitAction::SealAfterAdmit => {
                         debug!(
                             da_diff_size,
                             ?tentative,
@@ -569,10 +585,10 @@ where
                         } else {
                             successful_txs.push(tx);
                         }
-                        checkpoint_size_limit_reached = true;
+                        sealing_limit_verdict = verdict;
                         break;
                     }
-                    CheckpointSizeVerdict::WithinLimits => {
+                    EpochSealingLimitAction::Continue => {
                         if output_buffer.emit_logs(tx_logs).is_err() {
                             debug!(?txid, "block log cap exceeded, rolling back tx");
                             staging_state = DaAccumulatingState::new_with_accumulator(
@@ -627,13 +643,17 @@ where
         failed_txs,
         accumulated_batch,
         accumulated_da,
-        checkpoint_size_limit_reached,
+        sealing_limit_verdict,
     }
 }
 
 /// Builds the final block template from accumulated state and transactions.
 ///
 /// Returns `(template, final_state)` where `final_state` is the post-block state.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "block template construction consumes outputs from separate assembly phases"
+)]
 fn build_block_template<S>(
     config: &BlockGenerationConfig,
     block_context: &BlockContext<'_>,
@@ -641,6 +661,7 @@ fn build_block_template<S>(
     accumulated_batch: WriteBatch<S::AccountState>,
     output_buffer: ExecOutputBuffer,
     successful_txs: Vec<OLTransaction>,
+    is_terminal: bool,
     manifest_container: Option<OLAsmManifestContainer>,
 ) -> BlockAssemblyResult<(FullBlockTemplate, S)>
 where
@@ -649,13 +670,6 @@ where
     // Clone parent state and apply accumulated batch to get state after transactions
     let mut final_state = parent_state.as_ref().clone();
     final_state.apply_write_batch(accumulated_batch)?;
-
-    // Assembly policy: a block that carries manifests is treated as the epoch
-    // terminal. The STF decouples manifest inclusion from terminality (logs are
-    // buffered into intraepoch state regardless), but block assembly currently
-    // only emits manifests at epoch boundaries, so this preserves the existing
-    // external behavior while leaving the infrastructure free to change later.
-    let is_terminal = manifest_container.is_some();
 
     // Buffer any manifests carried by this block into intraepoch state.
     if let Some(mc) = &manifest_container {
@@ -706,7 +720,8 @@ where
     }
     let body_root = body.compute_hash_commitment();
 
-    // Terminality is the explicit assembly policy decision above.
+    // Terminality is the explicit assembly decision, independent of whether the
+    // block happens to carry manifests.
     let mut flags = BlockFlags::zero();
     flags.set_is_terminal(is_terminal);
 
@@ -2556,6 +2571,7 @@ mod tests {
 
         let out = process_transactions(
             env.ctx(),
+            env.epoch_sealing_policy(),
             &block_context,
             &output_buffer,
             parent_state.as_ref(),
@@ -2613,6 +2629,7 @@ mod tests {
 
         let out = process_transactions(
             env.ctx(),
+            env.epoch_sealing_policy(),
             &block_context,
             &output_buffer,
             parent_state.as_ref(),
@@ -2658,6 +2675,7 @@ mod tests {
 
         let out = process_transactions(
             env.ctx(),
+            env.epoch_sealing_policy(),
             &block_context,
             &output_buffer,
             parent_state.as_ref(),
@@ -2698,6 +2716,7 @@ mod tests {
 
         process_transactions(
             env.ctx(),
+            env.epoch_sealing_policy(),
             &block_context,
             &output_buffer,
             parent_state.as_ref(),
@@ -2749,8 +2768,11 @@ mod tests {
             "deferred tx should not be marked invalid"
         );
         assert!(
-            out.checkpoint_size_limit_reached,
-            "soft verdict should mark checkpoint_size_limit_reached"
+            matches!(
+                out.sealing_limit_verdict.checkpoint_size_action(),
+                EpochSealingLimitAction::SealAfterAdmit
+            ),
+            "soft verdict should request checkpoint-size sealing"
         );
     }
 
@@ -2803,8 +2825,11 @@ mod tests {
             "hard-limit rollback should not mark tx invalid"
         );
         assert!(
-            out.checkpoint_size_limit_reached,
-            "hard verdict should mark checkpoint_size_limit_reached"
+            matches!(
+                out.sealing_limit_verdict.checkpoint_size_action(),
+                EpochSealingLimitAction::RejectCandidate
+            ),
+            "hard verdict should request checkpoint-size sealing"
         );
     }
 
