@@ -8,7 +8,6 @@ use bitcoin::{
     consensus::{self, deserialize, serialize},
     Transaction,
 };
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::Checkpoint;
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
@@ -26,7 +25,7 @@ pub type L1TxId = RBuf32;
 pub type L1WtxId = RBuf32;
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct IntentEntry {
     pub intent: PayloadIntent,
     pub status: IntentStatus,
@@ -54,7 +53,7 @@ impl IntentEntry {
 
 /// Status of Intent indicating various stages of being bundled to L1 transaction.
 /// Unbundled Intents are collected and bundled to create [`BundledPayloadEntry`].
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub enum IntentStatus {
     // It is not bundled yet, and thus will be collected and processed by bundler.
     Unbundled,
@@ -63,7 +62,7 @@ pub enum IntentStatus {
 }
 
 /// Represents data for a payload we're still planning to post to L1.
-#[derive(Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct BundledPayloadEntry {
     pub payload: L1Payload,
     pub commit_txid: L1TxId,
@@ -130,9 +129,7 @@ impl fmt::Display for BundledPayloadEntry {
 }
 
 /// Various status that transactions corresponding to a payload can be in L1
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Serialize, Deserialize)]
 pub enum L1BundleStatus {
     /// The payload has not been signed yet, i.e commit-reveal transactions have not been created
     /// yet.
@@ -161,9 +158,7 @@ pub enum L1BundleStatus {
 
 /// This is the entry that gets saved to the database corresponding to a bitcoin transaction that
 /// the broadcaster will publish and watches for until finalization
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Serialize, Deserialize)]
 pub struct L1TxEntry {
     /// Raw serialized transaction. This is basically `consensus::serialize()` of [`Transaction`]
     tx_raw: Vec<u8>,
@@ -206,9 +201,7 @@ impl L1TxEntry {
 }
 
 /// The possible statuses of a publishable transaction
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 #[serde(tag = "status")]
 pub enum L1TxStatus {
     /// The transaction is waiting to be published
@@ -270,7 +263,7 @@ impl fmt::Display for L1TxStatus {
 }
 
 /// Entry corresponding to a BatchCommitment
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 #[deprecated(note = "use `OLCheckpointEntry` for OL/EE-decoupled checkpoint storage")]
 pub struct CheckpointEntry {
     /// The batch checkpoint containing metadata, state transitions, and proof data.
@@ -343,7 +336,7 @@ impl From<CheckpointEntry> for Checkpoint {
 #[deprecated(
     note = "use `OLCheckpointEntry::signing_status` for OL/EE-decoupled checkpoint signing status"
 )]
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub enum CheckpointProvingStatus {
     /// Proof has not been created for this checkpoint
     PendingProof,
@@ -354,7 +347,7 @@ pub enum CheckpointProvingStatus {
 #[deprecated(
     note = "use `OLCheckpointEntry::confirmation_status` for OL/EE-decoupled checkpoint confirmation flow"
 )]
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub enum CheckpointConfStatus {
     /// Pending to be posted on L1
     Pending,
@@ -400,7 +393,7 @@ pub type L1PayloadIntentIndex = u64;
 /// (`magic + version`); each subsequent P2TR output funds a
 /// reveal whose tapscript carries one chunk under `<sequencer_pk> OP_CHECKSIG`.
 /// Reveals do NOT reference each other; entries are independent across batches.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct ChunkedEnvelopeEntry {
     /// Raw chunk payloads, ordered by commit-output index.
     pub chunk_data: Vec<Vec<u8>>,
@@ -462,7 +455,7 @@ impl fmt::Display for ChunkedEnvelopeEntry {
 }
 
 /// Metadata for a single reveal transaction within a chunked envelope.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct RevealTxMeta {
     /// Output index in the commit tx that this reveal spends.
     pub vout_index: u32,
@@ -492,7 +485,7 @@ impl fmt::Display for RevealTxMeta {
 ///                 ↓              ↓
 ///            NeedsResign    NeedsResign
 /// ```
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum ChunkedEnvelopeStatus {
     /// Chunk data prepared, transactions not yet created.
     Unsigned,

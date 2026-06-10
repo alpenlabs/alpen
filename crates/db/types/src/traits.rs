@@ -3,8 +3,7 @@
 
 use std::sync::Arc;
 
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use strata_asm_common::{AsmManifest, AuxData};
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
@@ -151,9 +150,7 @@ pub trait ClientStateDatabase: Send + Sync + 'static {
 }
 
 /// Gets the status of a block.
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, BorshSerialize, BorshDeserialize, Serialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
 pub enum BlockStatus {
     /// Block's validity hasn't been checked yet.
     Unchecked,

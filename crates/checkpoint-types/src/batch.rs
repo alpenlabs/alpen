@@ -1,7 +1,6 @@
 use std::{fmt, io};
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use strata_identifiers::{
@@ -12,20 +11,7 @@ use strata_identifiers::{
 ///
 /// It's possible in theory for more than one of these to validly exist for a
 /// single epoch, but not in the same chain.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Deserialize,
-    Serialize,
-    Encode,
-    Decode,
-)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Arbitrary, Deserialize, Serialize, Encode, Decode)]
 pub struct EpochSummary {
     /// The epoch number.
     ///
@@ -128,19 +114,7 @@ impl EpochSummary {
 
 /// Contains metadata describing a batch checkpoint, including the L1 and L2 height ranges
 /// it covers and the final L2 block ID in that range.
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Deserialize,
-    Serialize,
-    Encode,
-    Decode,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, Deserialize, Serialize, Encode, Decode)]
 pub struct BatchInfo {
     /// Checkpoint epoch
     pub epoch: Epoch,
@@ -213,13 +187,5 @@ impl BatchInfo {
     pub fn l1_height_at_or_before_end(&self, height: L1Height) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
         height <= last_l1_commitment.height()
-    }
-
-    #[deprecated(
-        note = "this is deprecated and will be removed in the future in favor of using SSZ representation"
-    )]
-    /// Decodes legacy checkpoint proof public values into a [`BatchInfo`].
-    pub fn from_proof_output_bytes(bytes: &[u8]) -> io::Result<Self> {
-        borsh::from_slice(bytes)
     }
 }
