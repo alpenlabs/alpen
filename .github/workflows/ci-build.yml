@@ -324,43 +324,11 @@ jobs:
           echo "Successfully pushed: ${FULL_IMAGE}"
 
   # ---------------------------------------------------------------------------
-  # Dispatch CD to deployments repo
-  # ---------------------------------------------------------------------------
-  dispatch-cd:
-    name: Dispatch CD to deployments
-    needs: [build-and-push]
-    if: always() && needs.build-and-push.result == 'success'
-    runs-on: ubuntu-latest
-    permissions: {}
-    environment: prod
-    steps:
-      - name: Trigger deployments repo
-        env:
-          GH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
-          SHORT_TAG: ${{ needs.build-and-push.outputs.short_tag }}
-          COMMIT_SHA: ${{ needs.build-and-push.outputs.commit_sha }}
-        run: |
-          jq -n \
-            --arg tag "$SHORT_TAG" \
-            --arg sha "$COMMIT_SHA" \
-            --arg ref "${GITHUB_REF_NAME}" \
-            '{
-              event_type: "new-arch-deploy",
-              client_payload: {
-                tag: $tag,
-                commit_sha: $sha,
-                ref: $ref
-              }
-            }' | gh api repos/alpenlabs/deployments/dispatches --method POST --input -
-
-          echo "Dispatched CD to deployments repo with tag=${SHORT_TAG}"
-
-  # ---------------------------------------------------------------------------
   # Summary
   # ---------------------------------------------------------------------------
   summary:
     name: Build Summary
-    needs: [build-and-push, dispatch-cd]
+    needs: [build-and-push]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
@@ -370,7 +338,6 @@ jobs:
           SHORT_TAG: ${{ needs.build-and-push.outputs.short_tag }}
           COMMIT_SHA: ${{ needs.build-and-push.outputs.commit_sha }}
           BUILD_RESULT: ${{ needs.build-and-push.result }}
-          CD_RESULT: ${{ needs.dispatch-cd.result }}
         run: |
           {
             echo "## Build Summary"
@@ -380,7 +347,6 @@ jobs:
             echo "| **Commit** | \`${COMMIT_SHA}\` |"
             echo "| **Image Tag** | \`${SHORT_TAG}\` |"
             echo "| **Ref** | \`${GITHUB_REF_NAME}\` |"
-            echo "| **CD Dispatch** | \`${CD_RESULT}\` |"
             echo ""
             echo "### Build Status"
             echo "Overall: **${BUILD_RESULT}**"
