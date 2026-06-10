@@ -19,8 +19,8 @@ use crate::{
     },
     sleddb::{
         BatchByIdxSchema, BatchChunksSchema, BatchIdToIdxSchema, BlockAccessedStateSchema,
-        BytecodeSchema, ChunkByIdxSchema, ChunkIdToIdxSchema, ChunkWitnessSchema,
-        ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema,
+        BlockWitnessSchema, BytecodeSchema, ChunkByIdxSchema, ChunkIdToIdxSchema,
+        ChunkWitnessSchema, ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema,
         ExecBlocksAtHeightSchema,
     },
     DbError, DbResult,
@@ -90,6 +90,7 @@ pub(crate) struct EeNodeDBSled {
     chunk_witness_tree: SledTree<ChunkWitnessSchema>,
     block_accessed_state_tree: SledTree<BlockAccessedStateSchema>,
     bytecode_tree: SledTree<BytecodeSchema>,
+    block_witness_tree: SledTree<BlockWitnessSchema>,
     config: SledDbConfig,
 }
 
@@ -110,6 +111,7 @@ impl EeNodeDBSled {
             chunk_witness_tree: db.get_tree()?,
             block_accessed_state_tree: db.get_tree()?,
             bytecode_tree: db.get_tree()?,
+            block_witness_tree: db.get_tree()?,
             config,
         })
     }
@@ -977,6 +979,20 @@ impl EeNodeDb for EeNodeDBSled {
     fn del_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<()> {
         let db_chunk_id: DBChunkId = chunk_id.into();
         self.chunk_witness_tree.remove(&db_chunk_id)?;
+        Ok(())
+    }
+
+    fn put_block_witness(&self, block_id: Hash, witness: Vec<u8>) -> DbResult<()> {
+        self.block_witness_tree.insert(&block_id, &witness)?;
+        Ok(())
+    }
+
+    fn get_block_witness(&self, block_id: Hash) -> DbResult<Option<Vec<u8>>> {
+        Ok(self.block_witness_tree.get(&block_id)?)
+    }
+
+    fn del_block_witness(&self, block_id: Hash) -> DbResult<()> {
+        self.block_witness_tree.remove(&block_id)?;
         Ok(())
     }
 

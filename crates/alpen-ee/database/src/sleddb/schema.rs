@@ -98,6 +98,13 @@ define_table_with_default_codec!(
     (BytecodeSchema) Hash => Vec<u8>
 );
 
+define_table_with_default_codec!(
+    /// Per-block proof-witness (codec-encoded `EvmPartialState`), written by
+    /// the EE block-production / import path at commit time (depth-0) and read
+    /// by the chunk prover's input assembly. Keyed by execution block hash.
+    (BlockWitnessSchema) Hash => Vec<u8>
+);
+
 // Prover storage schemas.
 //
 // `ProverTaskSchema` backs `strata_paas::TaskStore` for the EE chunk

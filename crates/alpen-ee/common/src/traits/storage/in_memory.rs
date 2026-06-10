@@ -9,8 +9,9 @@ use async_trait::async_trait;
 use strata_acct_types::Hash;
 
 use crate::{
-    AccessedStateRecord, AccessedStateStore, Batch, BatchId, BatchStatus, BatchStorage, Chunk,
-    ChunkId, ChunkStatus, ChunkStorage, ChunkWitnessRecord, ChunkWitnessStore, StorageError,
+    AccessedStateRecord, AccessedStateStore, Batch, BatchId, BatchStatus, BatchStorage,
+    BlockWitnessStore, Chunk, ChunkId, ChunkStatus, ChunkStorage, ChunkWitnessRecord,
+    ChunkWitnessStore, StorageError,
 };
 
 /// In-memory storage for batches and chunks.
@@ -24,6 +25,7 @@ pub struct InMemoryStorage {
     pub chunk_witnesses: RwLock<HashMap<ChunkId, ChunkWitnessRecord>>,
     pub block_accessed_state: RwLock<HashMap<Hash, AccessedStateRecord>>,
     pub bytecodes: RwLock<HashMap<Hash, Vec<u8>>>,
+    pub block_witnesses: RwLock<HashMap<Hash, Vec<u8>>>,
 }
 
 impl InMemoryStorage {
@@ -320,6 +322,30 @@ impl AccessedStateStore for InMemoryStorage {
 
     async fn get_bytecode(&self, code_hash: Hash) -> Result<Option<Vec<u8>>, StorageError> {
         Ok(self.bytecodes.read().unwrap().get(&code_hash).cloned())
+    }
+}
+
+#[async_trait]
+impl BlockWitnessStore for InMemoryStorage {
+    async fn put_block_witness(
+        &self,
+        block_id: Hash,
+        witness: Vec<u8>,
+    ) -> Result<(), StorageError> {
+        self.block_witnesses
+            .write()
+            .unwrap()
+            .insert(block_id, witness);
+        Ok(())
+    }
+
+    async fn get_block_witness(&self, block_id: Hash) -> Result<Option<Vec<u8>>, StorageError> {
+        Ok(self.block_witnesses.read().unwrap().get(&block_id).cloned())
+    }
+
+    async fn del_block_witness(&self, block_id: Hash) -> Result<(), StorageError> {
+        self.block_witnesses.write().unwrap().remove(&block_id);
+        Ok(())
     }
 }
 
