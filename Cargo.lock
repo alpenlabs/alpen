@@ -15295,7 +15295,6 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-chain-types",
  "thiserror 2.0.18",
- "zkaleido",
 ]
 
 [[package]]
@@ -15474,7 +15473,6 @@ dependencies = [
  "serde_json",
  "strata-asm-checkpoint-types",
  "strata-btc-types",
- "strata-checkpoint-types",
  "strata-identifiers",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
