@@ -2,17 +2,11 @@
 
 use std::{fs, path::Path};
 
-use alpen_chainspec::DEV_CHAIN_SPEC;
-use alpen_ee_config::AlpenEeParams;
+use alpen_chainspec::{ee_genesis_block_info_from_json, DEV_CHAIN_SPEC};
+use alpen_ee_config::{AlpenEeParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
 use strata_identifiers::AccountId;
 
-use crate::{
-    args::{CmdContext, SubcEeParams},
-    cmd::genesis_info::get_alpen_ee_genesis_block_info,
-};
-
-/// Default Alpen EE account id registered in generated OL params.
-const DEFAULT_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
+use crate::args::{CmdContext, SubcEeParams};
 
 /// Default EVM chain spec used when `--alpen-chain-config` is omitted.
 const DEFAULT_CHAIN_SPEC: &str = DEV_CHAIN_SPEC;
@@ -21,16 +15,16 @@ const DEFAULT_CHAIN_SPEC: &str = DEV_CHAIN_SPEC;
 pub(super) fn exec(cmd: SubcEeParams, _ctx: &mut CmdContext) -> anyhow::Result<()> {
     let account_id = match cmd.account_id {
         Some(account_id) => parse_account_id(&account_id)?,
-        None => DEFAULT_ACCOUNT_ID,
+        None => DEFAULT_ALPEN_EE_ACCOUNT_ID,
     };
 
     let genesis_json = read_chain_config(cmd.alpen_chain_config.as_deref())?;
-    let genesis_info = get_alpen_ee_genesis_block_info(&genesis_json)?;
+    let genesis_info = ee_genesis_block_info_from_json(&genesis_json)?;
     let params = AlpenEeParams::new(
         account_id,
-        genesis_info.blockhash,
-        genesis_info.stateroot,
-        genesis_info.blocknum,
+        genesis_info.blockhash(),
+        genesis_info.stateroot(),
+        genesis_info.blocknum(),
     );
     let params_buf = params.to_json_string_pretty()?;
 

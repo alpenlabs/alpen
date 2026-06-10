@@ -16,8 +16,6 @@ import json
 import sys
 from pathlib import Path
 
-DEFAULT_ALPEN_ACCOUNT_ID = "0101010101010101010101010101010101010101010101010101010101010101"
-
 
 def load_json(path: Path) -> dict:
     with open(path) as f:
@@ -132,8 +130,11 @@ def extract_safe_harbour(template_dir: Path) -> str:
 def extract_ee_account_id(template_dir: Path) -> str:
     path = template_dir / "ee-params.json"
     if not path.exists():
-        return DEFAULT_ALPEN_ACCOUNT_ID
-    return load_json(path).get("account_id", DEFAULT_ALPEN_ACCOUNT_ID)
+        raise FileNotFoundError(f"missing required EE params template: {path}")
+    ee_params = load_json(path)
+    if "account_id" not in ee_params:
+        raise KeyError(f"missing account_id in EE params template: {path}")
+    return ee_params["account_id"]
 
 
 def main():
