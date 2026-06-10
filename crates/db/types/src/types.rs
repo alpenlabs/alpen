@@ -9,7 +9,7 @@ use bitcoin::{
     Transaction,
 };
 use serde::{Deserialize, Serialize};
-use strata_checkpoint_types::Checkpoint;
+use strata_codec_utils::SerdeSsz;
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
 use strata_identifiers::{Buf32, Buf64, OLTxId, RBuf32};
 use strata_l1_txfmt::MagicBytes;
@@ -27,33 +27,42 @@ pub type L1WtxId = RBuf32;
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
 #[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct IntentEntry {
-    pub intent: PayloadIntent,
-    pub status: IntentStatus,
+    intent: SerdeSsz<PayloadIntent>,
+    status: IntentStatus,
 }
 
 impl IntentEntry {
-    pub fn new_unbundled(intent: PayloadIntent) -> Self {
+    pub fn new(payload: PayloadIntent, status: IntentStatus) -> Self {
         Self {
-            intent,
-            status: IntentStatus::Unbundled,
+            intent: SerdeSsz::new(payload),
+            status,
         }
+    }
+
+    pub fn new_unbundled(intent: PayloadIntent) -> Self {
+        Self::new(intent, IntentStatus::Unbundled)
     }
 
     pub fn new_bundled(intent: PayloadIntent, bundle_idx: u64) -> Self {
-        Self {
-            intent,
-            status: IntentStatus::Bundled(bundle_idx),
-        }
+        Self::new(intent, IntentStatus::Bundled(bundle_idx))
+    }
+
+    pub fn intent(&self) -> &PayloadIntent {
+        self.intent.inner()
     }
 
     pub fn payload(&self) -> &L1Payload {
-        self.intent.payload()
+        self.intent().payload()
+    }
+
+    pub fn status(&self) -> IntentStatus {
+        self.status
     }
 }
 
 /// Status of Intent indicating various stages of being bundled to L1 transaction.
 /// Unbundled Intents are collected and bundled to create [`BundledPayloadEntry`].
-#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub enum IntentStatus {
     // It is not bundled yet, and thus will be collected and processed by bundler.
     Unbundled,
@@ -259,76 +268,6 @@ impl fmt::Display for L1TxStatus {
             }
             Self::InvalidInputs => f.write_str("invalid_inputs"),
         }
-    }
-}
-
-/// Entry corresponding to a BatchCommitment
-#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
-#[deprecated(note = "use `OLCheckpointEntry` for OL/EE-decoupled checkpoint storage")]
-pub struct CheckpointEntry {
-    /// The batch checkpoint containing metadata, state transitions, and proof data.
-    pub checkpoint: Checkpoint,
-
-    /// Proving Status
-    #[expect(
-        deprecated,
-        reason = "legacy old code CheckpointProvingStatus is retained for compatibility"
-    )]
-    pub proving_status: CheckpointProvingStatus,
-
-    /// Confirmation Status
-    #[expect(
-        deprecated,
-        reason = "legacy old code CheckpointConfStatus is retained for compatibility"
-    )]
-    pub confirmation_status: CheckpointConfStatus,
-}
-
-#[expect(
-    deprecated,
-    reason = "legacy old code CheckpointEntry is retained for compatibility"
-)]
-impl CheckpointEntry {
-    #[expect(
-        deprecated,
-        reason = "legacy old code CheckpointProvingStatus and CheckpointConfStatus are retained for compatibility"
-    )]
-    pub fn new(
-        checkpoint: Checkpoint,
-        proving_status: CheckpointProvingStatus,
-        confirmation_status: CheckpointConfStatus,
-    ) -> Self {
-        Self {
-            checkpoint,
-            proving_status,
-            confirmation_status,
-        }
-    }
-
-    #[expect(
-        deprecated,
-        reason = "legacy old code CheckpointEntry is retained for compatibility"
-    )]
-    pub fn into_batch_checkpoint(self) -> Checkpoint {
-        self.checkpoint
-    }
-
-    #[expect(
-        deprecated,
-        reason = "legacy old code CheckpointEntry is retained for compatibility"
-    )]
-    pub fn is_proof_ready(&self) -> bool {
-        self.proving_status == CheckpointProvingStatus::ProofReady
-    }
-}
-
-#[expect(
-    deprecated,
-    reason = "legacy old code CheckpointEntry is retained for compatibility"
-)]
-impl From<CheckpointEntry> for Checkpoint {
-    fn from(entry: CheckpointEntry) -> Checkpoint {
-        entry.into_batch_checkpoint()
     }
 }
 

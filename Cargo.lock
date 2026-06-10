@@ -15210,7 +15210,6 @@ dependencies = [
  "ssz",
  "ssz_derive",
  "strata-identifiers",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1-beta.3)",
 ]
 
 [[package]]
@@ -15384,7 +15383,6 @@ dependencies = [
  "serde",
  "strata-asm-proto-checkpoint-types",
  "strata-btc-types",
- "strata-checkpoint-types",
  "strata-identifiers",
  "strata-primitives",
  "strata-test-utils",
