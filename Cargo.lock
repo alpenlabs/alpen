@@ -15235,7 +15235,6 @@ dependencies = [
  "ssz",
  "ssz_derive",
  "strata-identifiers",
- "zkaleido",
 ]
 
 [[package]]
@@ -15416,7 +15415,6 @@ dependencies = [
  "serde_json",
  "strata-asm-proto-checkpoint-types",
  "strata-btc-types",
- "strata-checkpoint-types",
  "strata-identifiers",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
