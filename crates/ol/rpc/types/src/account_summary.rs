@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry, MsgPayload, MsgPayloadError};
+use strata_db_types::ol_state_index::AccountUpdateRecord;
 use strata_identifiers::OLBlockCommitment;
 use strata_primitives::{EpochCommitment, HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData};
@@ -164,6 +165,81 @@ pub struct RpcUpdateInputData {
     pub messages: Vec<RpcMessageEntry>,
 }
 
+/// Published manifest metadata for a Snark account update.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcSnarkAcctUpdateManifest {
+    /// Sequence number of the update.
+    seq_no: u64,
+    /// Inner state root after this update, if stored by the serving node.
+    new_inner_state_root: Option<HexBytes32>,
+    /// Inbox cursor before this update.
+    prev_next_msg_idx: u64,
+    /// Inbox cursor after this update.
+    new_next_msg_idx: u64,
+    /// Extra data posted with this update, if stored by the serving node.
+    extra_data: Option<HexBytes>,
+}
+
+impl RpcSnarkAcctUpdateManifest {
+    /// Creates a new [`RpcSnarkAcctUpdateManifest`].
+    pub fn new(
+        seq_no: u64,
+        new_inner_state_root: Option<HexBytes32>,
+        prev_next_msg_idx: u64,
+        new_next_msg_idx: u64,
+        extra_data: Option<HexBytes>,
+    ) -> Self {
+        Self {
+            seq_no,
+            new_inner_state_root,
+            prev_next_msg_idx,
+            new_next_msg_idx,
+            extra_data,
+        }
+    }
+
+    /// Creates a manifest response from an account update record.
+    pub fn from_account_update_record(record: &AccountUpdateRecord, operation_seq_no: u64) -> Self {
+        Self {
+            seq_no: operation_seq_no,
+            new_inner_state_root: record
+                .update_meta()
+                .map(|meta| HexBytes32::from(*meta.new_state_root().as_ref())),
+            prev_next_msg_idx: record.prev_next_inbox_idx(),
+            new_next_msg_idx: record.next_inbox_idx(),
+            extra_data: record
+                .extra_data()
+                .map(|data| HexBytes::from(data.to_vec())),
+        }
+    }
+
+    /// Returns the update sequence number.
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
+
+    /// Returns the inner state root after this update, if available.
+    pub fn new_inner_state_root(&self) -> Option<&HexBytes32> {
+        self.new_inner_state_root.as_ref()
+    }
+
+    /// Returns the inbox cursor before this update.
+    pub fn prev_next_msg_idx(&self) -> u64 {
+        self.prev_next_msg_idx
+    }
+
+    /// Returns the inbox cursor after this update.
+    pub fn new_next_msg_idx(&self) -> u64 {
+        self.new_next_msg_idx
+    }
+
+    /// Returns the update extra data, if available.
+    pub fn extra_data(&self) -> Option<&HexBytes> {
+        self.extra_data.as_ref()
+    }
+}
+
 impl From<UpdateInputData> for RpcUpdateInputData {
     fn from(value: UpdateInputData) -> Self {
         let proof_state = value.update_state.proof_state;
@@ -281,6 +357,18 @@ impl From<ProofState> for RpcProofState {
             inner_state: state.inner_state().0.into(),
             next_inbox_msg_idx: state.next_inbox_msg_idx(),
         }
+    }
+}
+
+impl RpcProofState {
+    /// Returns the state root.
+    pub fn inner_state(&self) -> &HexBytes32 {
+        &self.inner_state
+    }
+
+    /// Returns the next inbox message index.
+    pub fn next_inbox_msg_idx(&self) -> u64 {
+        self.next_inbox_msg_idx
     }
 }
 

@@ -35,7 +35,7 @@ fn record(
     idx: u64,
     extra: Option<Vec<u8>>,
 ) -> AccountUpdateRecord {
-    AccountUpdateRecord::new(meta, seq, idx, extra)
+    AccountUpdateRecord::new(meta, seq, 0, idx, extra)
 }
 
 #[track_caller]
@@ -178,6 +178,9 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
     assert_eq!(got[0].seq_no(), 1);
     assert_eq!(got[1].seq_no(), 2);
     assert_eq!(got[2].seq_no(), 3);
+    assert_eq!(got[0].prev_next_inbox_idx(), 0);
+    assert_eq!(got[1].prev_next_inbox_idx(), 0);
+    assert_eq!(got[2].prev_next_inbox_idx(), 0);
 
     let inb = db
         .get_account_inbox_records(epoch, acct_a)

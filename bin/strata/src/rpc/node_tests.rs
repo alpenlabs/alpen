@@ -1,4 +1,12 @@
-use std::{collections::HashMap, slice, sync::Arc};
+use std::{
+    collections::HashMap,
+    ops::Range,
+    slice,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
 use async_trait::async_trait;
 use proptest::prelude::*;
@@ -37,6 +45,33 @@ use crate::rpc::errors::{
 
 type SubmitFn = Box<dyn Fn(OLTransaction) -> OLMempoolResult<OLTxId> + Send + Sync>;
 type InboxFetchFn = Box<dyn Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync>;
+type UpdateRecordsFetchFn =
+    Box<dyn Fn(Epoch, AccountId) -> DbResult<Option<Vec<AccountUpdateRecord>>> + Send + Sync>;
+
+fn update_record(
+    update_meta: Option<AccountUpdateMeta>,
+    seq_no: u64,
+    next_inbox_idx: u64,
+    extra_data: Option<Vec<u8>>,
+) -> AccountUpdateRecord {
+    update_record_with_prev(update_meta, seq_no, 0, next_inbox_idx, extra_data)
+}
+
+fn update_record_with_prev(
+    update_meta: Option<AccountUpdateMeta>,
+    seq_no: u64,
+    prev_next_inbox_idx: u64,
+    next_inbox_idx: u64,
+    extra_data: Option<Vec<u8>>,
+) -> AccountUpdateRecord {
+    AccountUpdateRecord::new(
+        update_meta,
+        seq_no,
+        prev_next_inbox_idx,
+        next_inbox_idx,
+        extra_data,
+    )
+}
 
 struct MockProvider {
     blocks: HashMap<OLBlockId, OLBlock>,
@@ -54,6 +89,7 @@ struct MockProvider {
     sync_status: Option<OLSyncStatus>,
     submit_fn: SubmitFn,
     inbox_fetch_fn: Option<InboxFetchFn>,
+    update_records_fetch_fn: Option<UpdateRecordsFetchFn>,
 }
 
 impl MockProvider {
@@ -74,6 +110,7 @@ impl MockProvider {
             sync_status: None,
             submit_fn: Box::new(|_| Ok(OLTxId::from(Buf32::from([0xAB; 32])))),
             inbox_fetch_fn: None,
+            update_records_fetch_fn: None,
         }
     }
 
@@ -154,12 +191,23 @@ impl MockProvider {
         )
     }
 
+    fn with_snark_tip_state(
+        self,
+        commitment: EpochCommitment,
+        account_id: AccountId,
+        seq_no: u64,
+        next_inbox_msg_idx: u64,
+    ) -> Self {
+        self.with_epoch_commitment(commitment.epoch(), commitment)
+            .with_snark_state_at_terminal(commitment, account_id, seq_no, next_inbox_msg_idx)
+    }
+
     fn with_genesis_state_at_terminal(self, commitment: EpochCommitment) -> Self {
         self.with_state_at(commitment.to_block_commitment(), genesis_ol_state())
     }
 
     fn with_account_extra_data(
-        mut self,
+        self,
         account_id: AccountId,
         epoch: Epoch,
         seq_no: u64,
@@ -167,8 +215,33 @@ impl MockProvider {
         extra_data: Vec<u8>,
         block: OLBlockCommitment,
     ) -> Self {
+        self.with_account_extra_data_range(
+            account_id,
+            epoch,
+            seq_no,
+            0..next_inbox_idx,
+            extra_data,
+            block,
+        )
+    }
+
+    fn with_account_extra_data_range(
+        mut self,
+        account_id: AccountId,
+        epoch: Epoch,
+        seq_no: u64,
+        inbox_range: Range<u64>,
+        extra_data: Vec<u8>,
+        block: OLBlockCommitment,
+    ) -> Self {
         let meta = AccountUpdateMeta::new(Some(block), [0u8; 32].into());
-        let record = AccountUpdateRecord::new(Some(meta), seq_no, next_inbox_idx, Some(extra_data));
+        let record = update_record_with_prev(
+            Some(meta),
+            seq_no,
+            inbox_range.start,
+            inbox_range.end,
+            Some(extra_data),
+        );
         self.account_update_entries
             .entry((epoch, account_id))
             .or_default()
@@ -195,6 +268,25 @@ impl MockProvider {
         )
     }
 
+    fn with_account_extra_data_range_at_terminal(
+        self,
+        account_id: AccountId,
+        epoch: Epoch,
+        seq_no: u64,
+        inbox_range: Range<u64>,
+        extra_data: Vec<u8>,
+        commitment: EpochCommitment,
+    ) -> Self {
+        self.with_account_extra_data_range(
+            account_id,
+            epoch,
+            seq_no,
+            inbox_range,
+            extra_data,
+            commitment.to_block_commitment(),
+        )
+    }
+
     fn with_account_update_records(
         mut self,
         account_id: AccountId,
@@ -203,6 +295,11 @@ impl MockProvider {
     ) -> Self {
         self.account_update_entries
             .insert((epoch, account_id), records);
+        self
+    }
+
+    fn with_account_creation_epoch(mut self, account_id: AccountId, epoch: Epoch) -> Self {
+        self.account_creation_epochs.insert(account_id, epoch);
         self
     }
 
@@ -230,6 +327,17 @@ impl MockProvider {
         f: impl Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync + 'static,
     ) -> Self {
         self.inbox_fetch_fn = Some(Box::new(f));
+        self
+    }
+
+    fn with_update_records_fetch_fn(
+        mut self,
+        f: impl Fn(Epoch, AccountId) -> DbResult<Option<Vec<AccountUpdateRecord>>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        self.update_records_fetch_fn = Some(Box::new(f));
         self
     }
 }
@@ -284,6 +392,10 @@ impl OLRpcProvider for MockProvider {
         epoch: Epoch,
         account: AccountId,
     ) -> DbResult<Option<Vec<AccountUpdateRecord>>> {
+        if let Some(fetch_fn) = &self.update_records_fetch_fn {
+            return fetch_fn(epoch, account);
+        }
+
         Ok(self.account_update_entries.get(&(epoch, account)).cloned())
     }
 
@@ -1512,7 +1624,7 @@ async fn blocks_summaries_populates_updates_and_new_inbox_messages_from_index() 
     let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
     let final_state_root = fixed_buf32(0x66);
     let extra_data = vec![0xF0, 0x0D];
-    let update_record = AccountUpdateRecord::new(
+    let update_record = update_record(
         Some(AccountUpdateMeta::new(Some(commitment), final_state_root)),
         6,
         2,
@@ -1576,15 +1688,17 @@ async fn blocks_summaries_slices_processed_messages_from_index_ranges() {
     let block = make_block(10, epoch, null_blkid());
     let commitment = OLBlockCommitment::new(10, block.header().compute_blkid());
     let records = vec![
-        AccountUpdateRecord::new(
+        update_record_with_prev(
             Some(AccountUpdateMeta::new(Some(commitment), [0x11; 32].into())),
             21,
+            2,
             4,
             Some(vec![0xA0]),
         ),
-        AccountUpdateRecord::new(
+        update_record_with_prev(
             Some(AccountUpdateMeta::new(Some(commitment), [0x22; 32].into())),
             22,
+            4,
             6,
             Some(vec![0xA1]),
         ),
@@ -1638,7 +1752,7 @@ async fn blocks_summaries_slices_processed_messages_from_index_ranges() {
 }
 
 #[tokio::test]
-async fn blocks_summaries_walks_cursor_across_epochs() {
+async fn blocks_summaries_reads_indexed_ranges_across_epochs() {
     let account_id = test_account_id(1);
 
     // Genesis (epoch 0, slot 0) → block_e1 (epoch 1's terminal, slot 5)
@@ -1655,7 +1769,7 @@ async fn blocks_summaries_walks_cursor_across_epochs() {
     let block_e2 = make_block(10, 2, blkid_e1);
     let commitment_e2 = OLBlockCommitment::new(10, block_e2.header().compute_blkid());
 
-    let record_e1 = AccountUpdateRecord::new(
+    let record_e1 = update_record(
         Some(AccountUpdateMeta::new(
             Some(commitment_e1),
             [0x11; 32].into(),
@@ -1664,12 +1778,13 @@ async fn blocks_summaries_walks_cursor_across_epochs() {
         2,
         Some(vec![0xA0]),
     );
-    let record_e2 = AccountUpdateRecord::new(
+    let record_e2 = update_record_with_prev(
         Some(AccountUpdateMeta::new(
             Some(commitment_e2),
             [0x22; 32].into(),
         )),
         11,
+        2,
         4,
         Some(vec![0xA1]),
     );
@@ -1726,7 +1841,7 @@ async fn blocks_summaries_walks_cursor_across_epochs() {
 }
 
 #[tokio::test]
-async fn blocks_summaries_seeds_cursor_to_zero_for_new_account() {
+async fn blocks_summaries_reads_zero_prev_range_for_new_account() {
     let account_id = test_account_id(1);
     let epoch: Epoch = 1;
 
@@ -1736,7 +1851,7 @@ async fn blocks_summaries_seeds_cursor_to_zero_for_new_account() {
 
     let block = make_block(5, epoch, genesis_blkid);
     let commitment = OLBlockCommitment::new(5, block.header().compute_blkid());
-    let record = AccountUpdateRecord::new(
+    let record = update_record(
         Some(AccountUpdateMeta::new(Some(commitment), [0x33; 32].into())),
         1,
         2,
@@ -1757,7 +1872,7 @@ async fn blocks_summaries_seeds_cursor_to_zero_for_new_account() {
             EpochCommitment::null(),
         ))
         .with_epoch_commitment(0, prev_epoch_commitment)
-        // Genesis state has no snark account — exercises the cursor=0 fallback.
+        // First indexed update for a new account consumes messages from index 0.
         .with_block_and_state(&genesis_block, genesis_ol_state())
         .with_block_and_state(&block, ol_state_with_snark_account(account_id, 5, 1, 2))
         .with_account_update_records(account_id, epoch, vec![record])
@@ -1794,12 +1909,9 @@ async fn blocks_summaries_account_appears_midway_through_range() {
     let genesis_blkid = genesis_block.header().compute_blkid();
     let epoch0_commitment = EpochCommitment::new(0, 0, genesis_blkid);
 
-    // Range covers epochs 1..=5. Account doesn't exist at epoch 0 (cursor
-    // seeds to 0), has no records in epochs 1 and 2 (cursor stays at 0),
-    // first appears at epoch 3, then no records again in epochs 4 and 5.
-    // The cursor walk must hold the seed through empty leading epochs,
-    // apply [0, next_inbox_idx) to the first record, and emit nothing for
-    // the trailing empty epochs.
+    // Range covers epochs 1..=5. Account doesn't exist at epoch 0, has no
+    // records in epochs 1 and 2, first appears at epoch 3, then has no records
+    // again in epochs 4 and 5. Only the indexed update in epoch 3 should emit.
     let blocks: Vec<OLBlock> = {
         let mut acc = Vec::with_capacity(NUM_EPOCHS as usize);
         let mut parent = genesis_blkid;
@@ -1823,7 +1935,7 @@ async fn blocks_summaries_account_appears_midway_through_range() {
         tip_block.header().compute_blkid(),
     );
 
-    let record = AccountUpdateRecord::new(
+    let record = update_record(
         Some(AccountUpdateMeta::new(
             Some(appears_commitment),
             [0x33; 32].into(),
@@ -1902,7 +2014,7 @@ async fn blocks_summaries_ignores_records_for_other_blocks() {
     let block = make_block(0, 0, null_blkid());
     let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
     let other_commitment = OLBlockCommitment::new(99, fixed_ol_block_id(0x99));
-    let update_record = AccountUpdateRecord::new(
+    let update_record = update_record(
         Some(AccountUpdateMeta::new(
             Some(other_commitment),
             [0x44; 32].into(),
@@ -1947,7 +2059,7 @@ async fn blocks_summaries_out_of_chain_directset_does_not_fail_rpc() {
     // Out-of-chain DirectSet record (extra_data = None). If filtering happened
     // after hydration, this would trip the "no extra_data (DirectSet)" error
     // and fail the entire RPC. The chain filter must drop it before hydration.
-    let out_of_chain_directset = AccountUpdateRecord::new(
+    let out_of_chain_directset = update_record(
         Some(AccountUpdateMeta::new(
             Some(other_commitment),
             [0x99; 32].into(),
@@ -1956,11 +2068,12 @@ async fn blocks_summaries_out_of_chain_directset_does_not_fail_rpc() {
         2,
         None,
     );
-    let in_chain_update = AccountUpdateRecord::new(
+    let in_chain_update = update_record_with_prev(
         Some(AccountUpdateMeta::new(
             Some(queried_commitment),
             [0x11; 32].into(),
         )),
+        2,
         2,
         4,
         Some(vec![0xA0]),
@@ -1992,7 +2105,7 @@ async fn blocks_summaries_out_of_chain_directset_does_not_fail_rpc() {
 }
 
 #[tokio::test]
-async fn blocks_summaries_cursor_passes_checkpoint_sync_row() {
+async fn blocks_summaries_reads_ranges_past_checkpoint_sync_row() {
     let account_id = test_account_id(1);
     let epoch: Epoch = 2;
     let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 5, 0x10);
@@ -2003,21 +2116,21 @@ async fn blocks_summaries_cursor_passes_checkpoint_sync_row() {
 
     // Three records in this epoch:
     //   A: in-chain Update consuming inbox [2, 4)
-    //   B: checkpoint-sync row (meta=None) consuming inbox [4, 6) — must
-    //      advance the cursor without being emitted
-    //   C: in-chain Update consuming inbox [6, 8) — its slice depends on the
-    //      cursor having moved past B
+    //   B: checkpoint-sync row (meta=None) consuming inbox [4, 6), not emitted
+    //   C: in-chain Update consuming inbox [6, 8)
     let records = vec![
-        AccountUpdateRecord::new(
+        update_record_with_prev(
             Some(AccountUpdateMeta::new(Some(commitment), [0x11; 32].into())),
             21,
+            2,
             4,
             Some(vec![0xA0]),
         ),
-        AccountUpdateRecord::new(None, 22, 6, Some(vec![0xA1])),
-        AccountUpdateRecord::new(
+        update_record_with_prev(None, 22, 4, 6, Some(vec![0xA1])),
+        update_record_with_prev(
             Some(AccountUpdateMeta::new(Some(commitment), [0x33; 32].into())),
             23,
+            6,
             8,
             Some(vec![0xA2]),
         ),
@@ -2109,10 +2222,9 @@ proptest! {
         let block1 = make_block(2, epoch, block0.header().compute_blkid());
         let block1_commitment = OLBlockCommitment::new(2, block1.header().compute_blkid());
 
-        // Property under test is grouping by block_commitment, not cursor walking.
-        // Force `next_inbox_idx = 0` for every record so the cursor never advances
-        // and the inbox fetch is skipped — keeps `processed_messages` empty
-        // regardless of record ordering.
+        // Property under test is grouping by block_commitment, not inbox slicing.
+        // Force empty ranges for every record so the inbox fetch is skipped and
+        // `processed_messages` stays empty regardless of record ordering.
         let records: Vec<AccountUpdateRecord> = generated_updates
             .iter()
             .map(|(use_second_block, seq_no, root, extra_data)| {
@@ -2121,7 +2233,7 @@ proptest! {
                 } else {
                     block0_commitment
                 };
-                AccountUpdateRecord::new(
+                update_record(
                     Some(AccountUpdateMeta::new(Some(commitment), (*root).into())),
                     u64::from(*seq_no),
                     0,
@@ -2363,11 +2475,11 @@ async fn epoch_summary_returns_messages_from_mmr_range() {
             prev_seq_no,
             prev_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(
+        .with_account_extra_data_range_at_terminal(
             account_id,
             epoch,
             cur_seq_no,
-            cur_next_inbox_msg_idx,
+            prev_next_inbox_msg_idx..cur_next_inbox_msg_idx,
             vec![2, 2, 5],
             epoch_commitment,
         )
@@ -2423,21 +2535,24 @@ async fn epoch_summary_multi_record_slices_messages_per_update() {
     ];
 
     let records = vec![
-        AccountUpdateRecord::new(
+        update_record_with_prev(
             Some(AccountUpdateMeta::new(Some(block1), [0x11; 32].into())),
             10,
+            2,
             4,
             Some(vec![1, 2]),
         ),
-        AccountUpdateRecord::new(
+        update_record_with_prev(
             Some(AccountUpdateMeta::new(Some(block2), [0x22; 32].into())),
             11,
             4,
+            4,
             Some(vec![3, 4]),
         ),
-        AccountUpdateRecord::new(
+        update_record_with_prev(
             Some(AccountUpdateMeta::new(Some(block3), [0x33; 32].into())),
             12,
+            4,
             7,
             Some(vec![5, 6]),
         ),
@@ -2544,11 +2659,11 @@ async fn epoch_summary_no_idx_delta_returns_empty_messages() {
             prev_seq_no,
             unchanged_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(
+        .with_account_extra_data_range_at_terminal(
             account_id,
             epoch,
             cur_seq_no,
-            unchanged_next_inbox_msg_idx,
+            unchanged_next_inbox_msg_idx..unchanged_next_inbox_msg_idx,
             vec![4, 7],
             epoch_commitment,
         )
@@ -2684,6 +2799,336 @@ async fn epoch_summary_mmr_fetch_error_propagates() {
     let result = rpc.get_acct_epoch_summary(account_id, epoch).await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), INTERNAL_ERROR_CODE);
+}
+
+// ── get_snark_acct_update_manifest ──
+
+#[tokio::test]
+async fn snark_acct_update_manifest_returns_record_with_indexed_range() {
+    let account_id = test_account_id(1);
+    let prev_epoch_commitment = test_epoch_commitment(0, 0, 0x10);
+    let tip_epoch_commitment = test_epoch_commitment(2, 10, 0x20);
+    let final_state_root = fixed_buf32(0x22);
+    let extra_data = vec![0xBB, 0xCC];
+
+    let records_epoch_1 = vec![update_record(
+        Some(AccountUpdateMeta::new(None, [0x11; 32].into())),
+        8,
+        2,
+        Some(vec![0xAA]),
+    )];
+    let records_epoch_2 = vec![update_record_with_prev(
+        Some(AccountUpdateMeta::new(None, final_state_root)),
+        9,
+        2,
+        5,
+        Some(extra_data.clone()),
+    )];
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            2,
+            false,
+            prev_epoch_commitment,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 1)
+        .with_epoch_commitment(0, prev_epoch_commitment)
+        .with_genesis_state_at_terminal(prev_epoch_commitment)
+        .with_snark_tip_state(tip_epoch_commitment, account_id, 10, 5)
+        .with_account_update_records(account_id, 1, records_epoch_1)
+        .with_account_update_records(account_id, 2, records_epoch_2);
+    let rpc = make_rpc(provider);
+
+    let manifest = rpc
+        .get_snark_acct_update_manifest(account_id, 8)
+        .await
+        .expect("manifest");
+
+    assert_eq!(manifest.seq_no(), 8);
+    assert_eq!(manifest.prev_next_msg_idx(), 2);
+    assert_eq!(manifest.new_next_msg_idx(), 5);
+    assert_eq!(
+        manifest.new_inner_state_root().expect("state root").0,
+        final_state_root.0
+    );
+    assert_eq!(manifest.extra_data().expect("extra data").0, extra_data);
+}
+
+#[tokio::test]
+async fn snark_acct_update_manifest_unknown_account_errors() {
+    let rpc = make_rpc(MockProvider::new());
+
+    let err = rpc
+        .get_snark_acct_update_manifest(test_account_id(99), 0)
+        .await
+        .expect_err("unknown account should error");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+}
+
+#[tokio::test]
+async fn snark_acct_update_manifest_missing_seqno_errors() {
+    let account_id = test_account_id(2);
+    let tip_epoch_commitment = test_epoch_commitment(0, 0, 0x20);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 0)
+        .with_snark_tip_state(tip_epoch_commitment, account_id, 100, 0)
+        .with_account_update_records(
+            account_id,
+            0,
+            vec![update_record(
+                Some(AccountUpdateMeta::new(None, [0x11; 32].into())),
+                1,
+                0,
+                Some(vec![0xAA]),
+            )],
+        );
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_update_manifest(account_id, 99)
+        .await
+        .expect_err("missing seqno should error");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+}
+
+#[tokio::test]
+async fn snark_acct_update_manifest_out_of_range_seqno_skips_record_walk() {
+    let account_id = test_account_id(7);
+    let tip_epoch_commitment = test_epoch_commitment(0, 0, 0x70);
+    let fetch_count = Arc::new(AtomicUsize::new(0));
+    let fetch_count_for_closure = fetch_count.clone();
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 0)
+        .with_snark_tip_state(tip_epoch_commitment, account_id, 2, 0)
+        .with_update_records_fetch_fn(move |_epoch, _account| {
+            fetch_count_for_closure.fetch_add(1, Ordering::Relaxed);
+            Ok(None)
+        });
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_update_manifest(account_id, 2)
+        .await
+        .expect_err("out-of-range seqno should error");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(fetch_count.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn snark_acct_update_manifest_errors_when_ol_sync_unavailable() {
+    let account_id = test_account_id(2);
+    let provider = MockProvider::new().with_account_creation_epoch(account_id, 0);
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_update_manifest(account_id, 1)
+        .await
+        .expect_err("missing OL sync status should error");
+
+    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
+    assert_eq!(err.message(), "OL sync status not available");
+}
+
+#[tokio::test]
+async fn snark_acct_update_manifest_maps_update_record_db_error() {
+    let account_id = test_account_id(2);
+    let tip_epoch_commitment = test_epoch_commitment(0, 0, 0x21);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 0)
+        .with_snark_tip_state(tip_epoch_commitment, account_id, 2, 0)
+        .with_update_records_fetch_fn(move |epoch, account| {
+            assert_eq!(epoch, 0);
+            assert_eq!(account, account_id);
+            Err(DbError::Other("forced update-record fetch failure".into()))
+        });
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_update_manifest(account_id, 1)
+        .await
+        .expect_err("update record DB error should propagate");
+
+    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
+    assert!(err.message().contains("Database error"));
+    assert!(err.message().contains("forced update-record fetch failure"));
+}
+
+#[tokio::test]
+async fn snark_acct_update_manifest_no_message_update_returns_empty_extra_data() {
+    let account_id = test_account_id(3);
+    let tip_epoch_commitment = test_epoch_commitment(0, 0, 0x30);
+    let final_state_root = fixed_buf32(0x33);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 0)
+        .with_snark_tip_state(tip_epoch_commitment, account_id, 1, 0)
+        .with_account_update_records(
+            account_id,
+            0,
+            vec![update_record(
+                Some(AccountUpdateMeta::new(None, final_state_root)),
+                1,
+                0,
+                Some(Vec::new()),
+            )],
+        );
+    let rpc = make_rpc(provider);
+
+    let manifest = rpc
+        .get_snark_acct_update_manifest(account_id, 0)
+        .await
+        .expect("manifest");
+
+    assert_eq!(manifest.seq_no(), 0);
+    assert_eq!(manifest.prev_next_msg_idx(), 0);
+    assert_eq!(manifest.new_next_msg_idx(), 0);
+    assert!(manifest.extra_data().expect("extra data").0.is_empty());
+    assert_eq!(
+        manifest.new_inner_state_root().expect("state root").0,
+        final_state_root.0
+    );
+}
+
+#[tokio::test]
+async fn snark_acct_update_manifest_rejects_invalid_stored_seqno_zero() {
+    let account_id = test_account_id(6);
+    let tip_epoch_commitment = test_epoch_commitment(0, 0, 0x60);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 0)
+        .with_snark_tip_state(tip_epoch_commitment, account_id, 1, 0)
+        .with_account_update_records(
+            account_id,
+            0,
+            vec![update_record(
+                Some(AccountUpdateMeta::new(None, [0x11; 32].into())),
+                0,
+                0,
+                Some(Vec::new()),
+            )],
+        );
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_update_manifest(account_id, 0)
+        .await
+        .expect_err("stored post-state seqno 0 should be invalid");
+
+    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
+    assert!(err.message().contains("invalid post-state seq_no 0"));
+}
+
+#[tokio::test]
+async fn snark_acct_update_manifest_missing_update_meta_returns_null_state_root() {
+    let account_id = test_account_id(4);
+    let tip_epoch_commitment = test_epoch_commitment(0, 0, 0x40);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 0)
+        .with_snark_tip_state(tip_epoch_commitment, account_id, 1, 0)
+        .with_account_update_records(
+            account_id,
+            0,
+            vec![update_record(None, 1, 0, Some(vec![0xAA]))],
+        );
+    let rpc = make_rpc(provider);
+
+    let manifest = rpc
+        .get_snark_acct_update_manifest(account_id, 0)
+        .await
+        .expect("missing update metadata should still return manifest");
+
+    assert_eq!(manifest.seq_no(), 0);
+    assert!(manifest.new_inner_state_root().is_none());
+    assert_eq!(manifest.extra_data().expect("extra data").0, vec![0xAA]);
+}
+
+#[tokio::test]
+async fn snark_acct_update_manifest_missing_extra_data_returns_null_extra_data() {
+    let account_id = test_account_id(5);
+    let tip_epoch_commitment = test_epoch_commitment(0, 0, 0x50);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 0)
+        .with_snark_tip_state(tip_epoch_commitment, account_id, 1, 0)
+        .with_account_update_records(
+            account_id,
+            0,
+            vec![update_record(
+                Some(AccountUpdateMeta::new(None, [0x11; 32].into())),
+                1,
+                0,
+                None,
+            )],
+        );
+    let rpc = make_rpc(provider);
+
+    let manifest = rpc
+        .get_snark_acct_update_manifest(account_id, 0)
+        .await
+        .expect("missing extra data should still return manifest");
+
+    assert_eq!(manifest.seq_no(), 0);
+    assert!(manifest.extra_data().is_none());
+    assert!(manifest.new_inner_state_root().is_some());
 }
 
 // ── submit_transaction ──

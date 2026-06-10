@@ -166,14 +166,13 @@ impl AccountUpdateMeta {
 /// Single snark account state update.
 ///
 /// Messages consumed by this update are the inbox entries in the range
-/// `[prev_record.next_inbox_idx, self.next_inbox_idx)`. The first record
-/// in an epoch uses the prior epoch's terminal `next_inbox_idx` as the
-/// lower bound. Callers fetch the actual entries from the inbox MMR
-/// when needed.
+/// `[self.prev_next_inbox_idx, self.next_inbox_idx)`. Callers fetch the
+/// actual entries from the inbox MMR when needed.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AccountUpdateRecord {
     update_meta: Option<AccountUpdateMeta>,
     seq_no: u64,
+    prev_next_inbox_idx: u64,
     next_inbox_idx: u64,
     extra_data: Option<Vec<u8>>,
 }
@@ -182,12 +181,14 @@ impl AccountUpdateRecord {
     pub fn new(
         update_meta: Option<AccountUpdateMeta>,
         seq_no: u64,
+        prev_next_inbox_idx: u64,
         next_inbox_idx: u64,
         extra_data: Option<Vec<u8>>,
     ) -> Self {
         Self {
             update_meta,
             seq_no,
+            prev_next_inbox_idx,
             next_inbox_idx,
             extra_data,
         }
@@ -199,6 +200,18 @@ impl AccountUpdateRecord {
 
     pub fn seq_no(&self) -> u64 {
         self.seq_no
+    }
+
+    /// Returns the operation seqno that produced this record.
+    ///
+    /// The record stores the post-update account seqno. Snark account updates
+    /// publish the pre-update operation seqno, so this is `seq_no - 1`.
+    pub fn orig_acct_seq_no(&self) -> Option<u64> {
+        self.seq_no.checked_sub(1)
+    }
+
+    pub fn prev_next_inbox_idx(&self) -> u64 {
+        self.prev_next_inbox_idx
     }
 
     pub fn next_inbox_idx(&self) -> u64 {
