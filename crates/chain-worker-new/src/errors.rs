@@ -68,8 +68,7 @@ pub enum WorkerError {
     #[error("checkpoint payload L1 range inverted at epoch {epoch} (from {from}, to {to})")]
     L1RangeInverted { epoch: Epoch, from: u32, to: u32 },
 
-    /// The L1 range exceeds the safety cap; defends against an outsized range
-    /// from a malformed payload.
+    /// The L1 manifest range exceeds the epoch manifest limit.
     #[error("epoch L1 manifest range too large at epoch {epoch} ({len} blocks, max {max})")]
     L1RangeTooLarge { epoch: Epoch, len: u32, max: u32 },
 
@@ -80,10 +79,6 @@ pub enum WorkerError {
         #[source]
         source: CodecError,
     },
-
-    /// Failed to assemble the manifest container from fetched L1 manifests.
-    #[error("build manifest container at epoch {epoch}: {detail}")]
-    ManifestContainerBuild { epoch: Epoch, detail: String },
 
     /// Failed to compute a state root during reconstruction.
     /// `stage` discriminates the call site (e.g. "indexer", "final").
