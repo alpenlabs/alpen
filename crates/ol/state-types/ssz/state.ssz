@@ -6,7 +6,10 @@ import strata_snark_acct_types
 
 MAX_LEDGER_ACCOUNTS = 1 << 24
 MAX_ACCOUNT_SERIALS = 1 << 24
-MAX_PENDING_ASM_LOGS = 1 << 16
+
+### Buffers one full epoch's manifest budget under the expected heavy-manifest case:
+### 2048 ASM manifests with up to 128 logs each, i.e. 2048 * 128 = 1 << 18 pending logs.
+MAX_PENDING_ASM_LOGS = 1 << 18
 
 ### Top-level OL state
 class OLState(Container):
