@@ -52,21 +52,6 @@ bundle_interval_ms = 1000
 [btcio.broadcaster]
 poll_interval_ms = 1000
 
-[sync]
-l1_follow_distance = 6
-max_reorg_depth = 4
-client_poll_dur_ms = 2000
-client_checkpoint_interval = 10
-
-[exec.reth]
-rpc_url = "reth:8551"
-secret = "configs/jwt.hex"
-
-[relayer]
-refresh_interval = 10
-stale_duration = 120
-relay_misc = true
-
 # Uncomment for real SP1 proving (requires strata built with prover,sp1 features)
 # [prover]
 # backend = "sp1"

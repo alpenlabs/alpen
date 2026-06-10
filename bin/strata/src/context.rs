@@ -514,10 +514,6 @@ mod tests {
             datadir = "/path/to/data/directory"
             db_retry_count = 5
 
-            [sync]
-            l1_follow_distance = 6
-            client_checkpoint_interval = 10
-
             [btcio.reader]
             client_poll_dur_ms = 200
 
@@ -531,9 +527,6 @@ mod tests {
             [btcio.broadcaster]
             poll_interval_ms = 1_000
 
-            [exec.reth]
-            rpc_url = "http://localhost:8551"
-            secret = "jwt.hex"
             "#,
         )
         .unwrap()
