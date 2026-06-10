@@ -75,9 +75,6 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    let target_next_block =
-        calculate_target_next_block(storage.l1().as_ref(), btcio_params.genesis_l1_height())?;
-
     let ctx = ReaderContext {
         client,
         storage,
@@ -87,6 +84,16 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
         expected_l1_anchor: validation.expected_l1_anchor,
         status_channel,
     };
+
+    // Recover any canonical L1 height that was durably written but never
+    // materialized by the ASM worker before computing where to resume polling.
+    reconcile_unmaterialized_canonical_tip(&ctx).await?;
+
+    let target_next_block = calculate_target_next_block(
+        ctx.storage.l1().as_ref(),
+        ctx.btcio_params.genesis_l1_height(),
+    )?;
+
     do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
 }
 
@@ -102,6 +109,77 @@ fn calculate_target_next_block(
         .unwrap_or(horz_height);
     assert!(target_next_block >= horz_height);
     Ok(target_next_block)
+}
+
+/// Reverts canonical L1 entries that were durably written but never fully
+/// materialized by the ASM worker.
+///
+/// btcio writes a canonical-chain entry before notifying the ASM worker, and the
+/// reader awaits ASM completion per block (see
+/// [`handle_bitcoin_event`](super::handler::handle_bitcoin_event)). A crash
+/// between the canonical write and ASM materialization can therefore strand the
+/// canonical tip (or a short suffix) without a stored ASM anchor state. Restart
+/// computes the reader target from the canonical tip, so without this step those
+/// heights would be skipped and their manifests/anchor states never regenerated.
+///
+/// The ASM worker writes a block's anchor state last (after its manifest, MMR
+/// leaf, and aux data), so a present anchor state marks a fully materialized
+/// height. This reverts the canonical chain back to the highest such height,
+/// after which the reader re-fetches and re-submits the unmaterialized heights to
+/// the ASM worker for clean reprocessing.
+async fn reconcile_unmaterialized_canonical_tip<R: Reader>(
+    ctx: &ReaderContext<R>,
+) -> anyhow::Result<()> {
+    let lookback = ctx.btcio_params.l1_reorg_safe_depth() as L1Height * 2;
+    let l1man = ctx.storage.l1();
+
+    let Some((tip_height, tip_blockid)) = l1man.get_canonical_chain_tip_async().await? else {
+        return Ok(());
+    };
+
+    let pre_genesis = ctx.btcio_params.genesis_l1_height().saturating_sub(1);
+    let scan_floor = tip_height.saturating_sub(lookback).max(pre_genesis);
+
+    // Walk down from the canonical tip looking for the highest height whose ASM
+    // anchor state exists; that height (and everything below it) is materialized.
+    for height in (scan_floor..=tip_height).rev() {
+        let Some(blockid) = l1man.get_canonical_blockid_at_height_async(height).await? else {
+            warn!(
+                %height,
+                %tip_height,
+                "missing stored canonical L1 block while checking ASM materialization"
+            );
+            continue;
+        };
+
+        let block = L1BlockCommitment::new(height, blockid);
+        if ctx.storage.asm().get_state_async(block).await?.is_some() {
+            if height < tip_height {
+                warn!(
+                    %height,
+                    %tip_height,
+                    %tip_blockid,
+                    "canonical L1 tip lacks an ASM anchor state; reverting to last materialized height for reprocessing"
+                );
+                l1man.revert_canonical_chain_async(height).await?;
+            } else {
+                debug!(%tip_height, %tip_blockid, "canonical L1 tip is fully materialized");
+            }
+
+            return Ok(());
+        }
+    }
+
+    error!(
+        %scan_floor,
+        %tip_height,
+        %tip_blockid,
+        %lookback,
+        "no materialized ASM anchor state found within startup lookback window"
+    );
+    bail!(
+        "btcio: no materialized ASM anchor state for stored canonical L1 chain within startup lookback window {scan_floor}..={tip_height}; operator repair or resync is required"
+    );
 }
 
 /// Inner function that actually does the reading task.

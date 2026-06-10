@@ -320,6 +320,53 @@ impl MmrIndexHandle {
     }
 
     /// Ensures the leaf at `expected_idx` is exactly `expected_hash`, appending
+    /// `expected_hash` if the slot is currently empty.
+    ///
+    /// This is the no-preimage variant of
+    /// [`Self::idempotent_append_leaf_with_preimage_blocking`].
+    pub fn idempotent_append_leaf_blocking(
+        &self,
+        expected_idx: u64,
+        expected_hash: Hash,
+    ) -> DbResult<()> {
+        let leaf_count = self.get_num_leaves_blocking()?;
+
+        if expected_idx < leaf_count {
+            let Some(existing_hash) = self.get_leaf_blocking(expected_idx)? else {
+                return Err(DbError::MmrNodeNotFound(
+                    LeafPos::new(expected_idx).node_pos(),
+                ));
+            };
+
+            if existing_hash != expected_hash {
+                return Err(DbError::MmrLeafHashMismatch {
+                    idx: expected_idx,
+                    expected: expected_hash,
+                    got: existing_hash,
+                });
+            }
+
+            return Ok(());
+        }
+
+        if expected_idx > leaf_count {
+            return Err(DbError::MmrIndexOutOfRange {
+                requested: expected_idx,
+                cur: leaf_count,
+            });
+        }
+
+        let appended_idx = self.append_leaf_blocking(expected_hash)?;
+        if appended_idx != expected_idx {
+            return Err(DbError::MmrIndexOutOfRange {
+                requested: expected_idx,
+                cur: appended_idx,
+            });
+        }
+        Ok(())
+    }
+
+    /// Ensures the leaf at `expected_idx` is exactly `expected_hash`, appending
     /// `(expected_hash, preimage)` if the slot is currently empty.
     ///
     /// Makes mirroring an in-state MMR write idempotent for crash-restart
@@ -725,6 +772,67 @@ mod tests {
             handle.get_range_blocking(1, 2).expect("get single range"),
             vec![payloads[1].clone()]
         );
+    }
+
+    #[test]
+    fn idempotent_append_leaf_blocking_reuses_existing_matching_leaf() {
+        let handle = setup_handle();
+        let first_hash = Hash::from([0x11; 32]);
+        let second_hash = Hash::from([0x22; 32]);
+
+        handle
+            .idempotent_append_leaf_blocking(0, first_hash)
+            .expect("append leaf at expected index");
+        handle
+            .idempotent_append_leaf_blocking(0, first_hash)
+            .expect("existing matching leaf is idempotent");
+        handle
+            .idempotent_append_leaf_blocking(1, second_hash)
+            .expect("append next leaf");
+
+        assert_eq!(handle.get_num_leaves_blocking().expect("leaf count"), 2);
+        assert_eq!(
+            handle.get_leaf_blocking(0).expect("first leaf"),
+            Some(first_hash)
+        );
+        assert_eq!(
+            handle.get_leaf_blocking(1).expect("second leaf"),
+            Some(second_hash)
+        );
+    }
+
+    #[test]
+    fn idempotent_append_leaf_blocking_rejects_conflicts_and_gaps() {
+        let handle = setup_handle();
+        let expected_hash = Hash::from([0x11; 32]);
+        let conflicting_hash = Hash::from([0x22; 32]);
+
+        handle
+            .idempotent_append_leaf_blocking(0, expected_hash)
+            .expect("append leaf");
+
+        let err = handle
+            .idempotent_append_leaf_blocking(0, conflicting_hash)
+            .expect_err("conflicting hash should fail");
+        assert!(matches!(
+            err,
+            DbError::MmrLeafHashMismatch {
+                idx: 0,
+                expected,
+                got
+            } if expected == conflicting_hash && got == expected_hash
+        ));
+
+        let err = handle
+            .idempotent_append_leaf_blocking(3, conflicting_hash)
+            .expect_err("gap should fail");
+        assert!(matches!(
+            err,
+            DbError::MmrIndexOutOfRange {
+                requested: 3,
+                cur: 1
+            }
+        ));
     }
 
     #[tokio::test]
