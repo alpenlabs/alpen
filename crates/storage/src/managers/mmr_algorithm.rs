@@ -1,12 +1,19 @@
 //! MMR index algorithm for the storage manager layer.
 //!
-//! This module is `NodePos`/`LeafPos`-native at its public boundary.
+//! This module is `NodePos`/`LeafPos`-native at its public boundary. The pure
+//! position math and the append/proof walks are provided by
+//! [`strata_merkle_node_store`]; this module adapts them to the prefetched
+//! [`NodeTable`] snapshots and `DbError` contract the manager uses, and adds the
+//! pop algorithm (which the node-store crate does not provide).
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, convert::Infallible};
 
-use strata_db_types::{errors::MmrError, DbError, DbResult, LeafPos, NodePos, NodeTable};
+use strata_db_types::{DbError, DbResult, LeafPos, NodePos, NodeTable};
 use strata_identifiers::Hash;
-use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
+use strata_merkle::{MerkleProofB32 as MerkleProof, Sha256Hasher};
+use strata_merkle_node_store::{
+    assemble_proof, proof_positions, write_plan, MmrError as NodeStoreMmrError,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct AppendPlan {
@@ -21,60 +28,26 @@ pub(crate) struct PopPlan {
     pub(crate) nodes_to_remove: Vec<NodePos>,
 }
 
-fn compute_highest_mountain_size(leaves: u64) -> u64 {
-    debug_assert!(
-        leaves > 0,
-        "compute_highest_mountain_size: leaves must be > 0"
-    );
-    1u64 << (63 - leaves.leading_zeros())
-}
-
-pub(crate) fn compute_peak_positions(leaf_count: u64) -> Vec<NodePos> {
-    if leaf_count == 0 {
-        return Vec::new();
-    }
-
-    let mut peaks = Vec::new();
-    let mut start_leaf = 0u64;
-    let mut remaining = leaf_count;
-
-    while remaining > 0 {
-        let size = compute_highest_mountain_size(remaining);
-        let height = size.trailing_zeros() as u8;
-        peaks.push(NodePos::new(height, start_leaf >> height));
-
-        debug_assert!(
-            start_leaf.checked_add(size).is_some(),
-            "compute_peak_positions: start_leaf + size overflow"
-        );
-        start_leaf += size;
-        remaining -= size;
-    }
-
-    peaks
-}
-
-fn compute_peak_for_leaf(leaf_index: u64, leaf_count: u64) -> Result<NodePos, MmrError> {
-    if leaf_index >= leaf_count {
-        return Err(MmrError::LeafNotFound(leaf_index));
-    }
-
-    let mut start_leaf = 0u64;
-    let mut remaining = leaf_count;
-
-    while remaining > 0 {
-        let size = compute_highest_mountain_size(remaining);
-        let end_leaf = start_leaf + size;
-        if leaf_index < end_leaf {
-            let height = size.trailing_zeros() as u8;
-            return Ok(NodePos::new(height, start_leaf >> height));
+/// Maps a node-store [`write_plan`] error into the manager's `DbError`.
+///
+/// `write_plan` over a consistent store can only fail with
+/// [`NodeStoreMmrError::NodeMissing`] (a corrupt store, surfaced as
+/// [`DbError::MmrNodeNotFound`]); the backend error is [`Infallible`] here. The
+/// remaining variants are not reachable for an append but are mapped defensively
+/// to keep the match exhaustive.
+fn map_write_plan_err(err: NodeStoreMmrError<Infallible>) -> DbError {
+    match err {
+        NodeStoreMmrError::NodeMissing(pos) => DbError::MmrNodeNotFound(pos),
+        NodeStoreMmrError::Backend(never) => match never {},
+        NodeStoreMmrError::LeafOutOfRange { index, leaf_count }
+        | NodeStoreMmrError::LeafGap { index, leaf_count } => DbError::MmrIndexOutOfRange {
+            requested: index,
+            cur: leaf_count,
+        },
+        NodeStoreMmrError::MaxCapacity => {
+            DbError::Other("MMR has reached max capacity".to_string())
         }
-
-        start_leaf = end_leaf;
-        remaining -= size;
     }
-
-    Err(MmrError::LeafNotFound(leaf_index))
 }
 
 fn require_node_hash(table: &NodeTable, pos: NodePos) -> DbResult<[u8; 32]> {
@@ -85,15 +58,11 @@ fn require_node_hash(table: &NodeTable, pos: NodePos) -> DbResult<[u8; 32]> {
 }
 
 pub(crate) fn compute_append_fetch_positions(leaf_count: u64) -> Vec<NodePos> {
-    let mut positions = Vec::new();
-    let mut current_pos = LeafPos::new(leaf_count).node_pos();
-
-    while !current_pos.is_left_child() {
-        positions.push(current_pos.neighbor());
-        current_pos = current_pos.parent_unchecked();
-    }
-
-    positions
+    // Appending leaf `leaf_count` recomputes exactly the ancestors on that
+    // leaf's proof path in the resulting MMR, so its sibling positions are the
+    // nodes the append must read.
+    let new_count = leaf_count.checked_add(1).expect("MMR leaf count overflow");
+    proof_positions(leaf_count, new_count)
 }
 
 pub(crate) fn compute_pop_fetch_positions(leaf_count: u64) -> Vec<NodePos> {
@@ -101,7 +70,7 @@ pub(crate) fn compute_pop_fetch_positions(leaf_count: u64) -> Vec<NodePos> {
         return Vec::new();
     }
 
-    vec![LeafPos::new(leaf_count - 1).node_pos()]
+    vec![LeafPos::new(leaf_count - 1).to_node_pos()]
 }
 
 pub(crate) fn compute_append_plan(
@@ -110,22 +79,17 @@ pub(crate) fn compute_append_plan(
     table: &NodeTable,
 ) -> DbResult<AppendPlan> {
     let leaf_pos = LeafPos::new(leaf_count);
+    let new_count = leaf_count.checked_add(1).expect("MMR leaf count overflow");
 
-    let mut nodes_to_write = vec![(leaf_pos.node_pos(), Hash::from(hash))];
-    let mut current_pos = leaf_pos.node_pos();
-    let mut current_hash = hash;
+    let writes = write_plan::<Sha256Hasher, Infallible>(leaf_count, hash, new_count, |pos| {
+        Ok(table.get_node(pos).map(|h| h.0))
+    })
+    .map_err(map_write_plan_err)?;
 
-    while !current_pos.is_left_child() {
-        let sibling_pos = current_pos.neighbor();
-        let sibling_hash = require_node_hash(table, sibling_pos)?;
-        let parent_hash = Sha256Hasher::hash_node(sibling_hash, current_hash);
-        let parent_pos = current_pos.parent_unchecked();
-
-        nodes_to_write.push((parent_pos, parent_hash.into()));
-
-        current_pos = parent_pos;
-        current_hash = parent_hash;
-    }
+    let nodes_to_write = writes
+        .into_iter()
+        .map(|(pos, node_hash)| (pos, Hash::from(node_hash)))
+        .collect();
 
     Ok(AppendPlan {
         leaf_pos,
@@ -140,13 +104,13 @@ pub(crate) fn compute_pop_plan(leaf_count: u64, table: &NodeTable) -> DbResult<O
 
     let leaf_pos = LeafPos::new(leaf_count - 1);
     let mut nodes_to_remove = Vec::new();
-    let leaf_node_pos = leaf_pos.node_pos();
+    let leaf_node_pos = leaf_pos.to_node_pos();
     let leaf_hash = require_node_hash(table, leaf_node_pos)?;
     nodes_to_remove.push(leaf_node_pos);
 
     let mut current_pos = leaf_node_pos;
     while !current_pos.is_left_child() {
-        current_pos = current_pos.parent_unchecked();
+        current_pos = current_pos.parent();
         // Every removed node must exist in the pre-fetched table so we can
         // enforce a matching precondition before deletion.
         let _ = require_node_hash(table, current_pos)?;
@@ -165,18 +129,20 @@ pub(crate) fn generate_proof(
     leaf_count: u64,
     table: &NodeTable,
 ) -> DbResult<MerkleProof> {
-    let peak_pos = compute_peak_for_leaf(leaf_index, leaf_count)?;
-
-    let mut cohashes = Vec::new();
-    let mut current_pos = LeafPos::new(leaf_index).node_pos();
-
-    while current_pos != peak_pos {
-        let sibling_pos = current_pos.neighbor();
-        cohashes.push(require_node_hash(table, sibling_pos)?);
-        current_pos = current_pos.parent_unchecked();
+    if leaf_index >= leaf_count {
+        return Err(DbError::MmrLeafNotFound(leaf_index));
     }
 
-    Ok(MerkleProof::from_cohashes(cohashes, leaf_index))
+    let mut cohashes = Vec::new();
+    for pos in proof_positions(leaf_index, leaf_count) {
+        cohashes.push(require_node_hash(table, pos)?);
+    }
+
+    // `assemble_proof` yields the generic `MerkleProof<[u8; 32]>`; convert it to
+    // the SSZ wire type (`MerkleProofB32`) the manager returns.
+    Ok(MerkleProof::from_generic(&assemble_proof(
+        leaf_index, cohashes,
+    )))
 }
 
 /// Generates proofs for all leaves in `[start, end]` (both inclusive).
@@ -207,16 +173,11 @@ pub(crate) fn compute_proof_fetch_positions(
     leaf_index: u64,
     leaf_count: u64,
 ) -> DbResult<Vec<NodePos>> {
-    let peak_pos = compute_peak_for_leaf(leaf_index, leaf_count)?;
-    let mut positions = Vec::new();
-    let mut current_pos = LeafPos::new(leaf_index).node_pos();
-
-    while current_pos != peak_pos {
-        positions.push(current_pos.neighbor());
-        current_pos = current_pos.parent_unchecked();
+    if leaf_index >= leaf_count {
+        return Err(DbError::MmrLeafNotFound(leaf_index));
     }
 
-    Ok(positions)
+    Ok(proof_positions(leaf_index, leaf_count))
 }
 
 pub(crate) fn compute_proofs_fetch_positions(
