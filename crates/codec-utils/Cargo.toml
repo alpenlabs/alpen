@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arbitrary = { workspace = true, optional = true }
 borsh.workspace = true
 strata-codec.workspace = true
 
@@ -19,3 +20,7 @@ serde_json.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+default = ["arbitrary"]
+arbitrary = ["dep:arbitrary"]
