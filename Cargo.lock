@@ -15231,11 +15231,9 @@ name = "strata-checkpoint-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "borsh",
  "serde",
  "ssz",
  "ssz_derive",
- "strata-crypto",
  "strata-identifiers",
  "zkaleido",
 ]
@@ -15291,6 +15289,7 @@ dependencies = [
 name = "strata-codec-utils"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "borsh",
  "ciborium",
  "hex",
@@ -15413,7 +15412,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "borsh",
  "serde",
  "serde_json",
  "strata-asm-proto-checkpoint-types",
@@ -15423,7 +15421,6 @@ dependencies = [
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-primitives",
- "strata-test-utils",
  "thiserror 2.0.18",
 ]
 
@@ -15588,7 +15585,6 @@ dependencies = [
  "anyhow",
  "arbitrary",
  "bitcoin",
- "borsh",
  "proptest",
  "serde",
  "serde_json",
@@ -15596,6 +15592,7 @@ dependencies = [
  "strata-asm-proto-checkpoint-types",
  "strata-checkpoint-types",
  "strata-codec",
+ "strata-codec-utils 0.1.0",
  "strata-csm-types",
  "strata-db-macros",
  "strata-identifiers",
