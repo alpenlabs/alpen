@@ -1,24 +1,24 @@
-//! Shim for exposing SSZ types through [`serde`].
+//! Shim for exposing [`Codec`] types through [`serde`].
 
 use std::fmt;
 
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Visitor},
+    ser,
 };
-use ssz::{Decode, Encode};
+use strata_codec::{Codec, decode_buf_exact, encode_to_vec};
 
-/// Wraps an SSZ type so that it can be transparently [`Serialize`]d and
+/// Wraps a [`Codec`] type so that it can be transparently [`Serialize`]d and
 /// [`Deserialize`]d.
 ///
-/// The inner value is encoded to its SSZ byte representation. Binary formats
-/// receive it as a raw byte blob (like a `Vec<u8>`), while human-readable
-/// formats receive it as a hex-encoded string.
+/// The inner value is encoded to its [`Codec`] byte representation. Binary
+/// formats receive it as a raw byte blob (like a `Vec<u8>`), while
+/// human-readable formats receive it as a hex-encoded string.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct SerdeSsz<T>(T);
+pub struct SerdeCodec<T>(T);
 
-impl<T> SerdeSsz<T> {
+impl<T> SerdeCodec<T> {
     pub fn new(inner: T) -> Self {
         Self(inner)
     }
@@ -36,9 +36,9 @@ impl<T> SerdeSsz<T> {
     }
 }
 
-impl<T: Encode> Serialize for SerdeSsz<T> {
+impl<T: Codec> Serialize for SerdeCodec<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let bytes = self.0.as_ssz_bytes();
+        let bytes = encode_to_vec(&self.0).map_err(ser::Error::custom)?;
 
         if serializer.is_human_readable() {
             serializer.serialize_str(&hex::encode(&bytes))
@@ -48,7 +48,7 @@ impl<T: Encode> Serialize for SerdeSsz<T> {
     }
 }
 
-impl<'de, T: Decode> Deserialize<'de> for SerdeSsz<T> {
+impl<'de, T: Codec> Deserialize<'de> for SerdeCodec<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let bytes = if deserializer.is_human_readable() {
             let s = String::deserialize(deserializer)?;
@@ -57,8 +57,7 @@ impl<'de, T: Decode> Deserialize<'de> for SerdeSsz<T> {
             deserializer.deserialize_bytes(BytesVisitor)?
         };
 
-        let inner =
-            T::from_ssz_bytes(&bytes).map_err(|e| de::Error::custom(format!("ssz ({e:?})")))?;
+        let inner = decode_buf_exact(&bytes).map_err(de::Error::custom)?;
 
         Ok(Self(inner))
     }
@@ -94,66 +93,80 @@ impl<'de> Visitor<'de> for BytesVisitor {
 
 #[cfg(test)]
 mod tests {
-    use ssz_derive::{Decode, Encode};
+    use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec};
 
     use super::*;
 
-    #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     struct TestStruct {
         a: u32,
         b: u64,
     }
 
+    impl Codec for TestStruct {
+        fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+            let a = u32::decode(dec)?;
+            let b = u64::decode(dec)?;
+            Ok(Self { a, b })
+        }
+
+        fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+            self.a.encode(enc)?;
+            self.b.encode(enc)?;
+            Ok(())
+        }
+    }
+
     #[test]
     fn test_json_roundtrip_is_hex_string() {
         let original = TestStruct { a: 42, b: 1337 };
-        let wrapped = SerdeSsz::new(original.clone());
+        let wrapped = SerdeCodec::new(original.clone());
 
-        let json = serde_json::to_string(&wrapped).expect("test: failed to serialize");
+        let json = serde_json::to_string(&wrapped).expect("failed to serialize");
 
         // Human-readable formats encode as a hex string.
-        let expected = format!("\"{}\"", hex::encode(original.as_ssz_bytes()));
+        let expected = format!("\"{}\"", hex::encode(encode_to_vec(&original).unwrap()));
         assert_eq!(json, expected);
 
-        let decoded: SerdeSsz<TestStruct> =
-            serde_json::from_str(&json).expect("test: failed to deserialize");
+        let decoded: SerdeCodec<TestStruct> =
+            serde_json::from_str(&json).expect("failed to deserialize");
         assert_eq!(decoded.inner(), &original);
     }
 
     #[test]
     fn test_ciborium_roundtrip_is_binary() {
         let original = TestStruct { a: 42, b: 1337 };
-        let wrapped = SerdeSsz::new(original.clone());
+        let wrapped = SerdeCodec::new(original.clone());
 
         let mut bytes = Vec::new();
-        ciborium::into_writer(&wrapped, &mut bytes).expect("test: failed to serialize");
+        ciborium::into_writer(&wrapped, &mut bytes).expect("failed to serialize");
 
-        let decoded: SerdeSsz<TestStruct> =
-            ciborium::from_reader(bytes.as_slice()).expect("test: failed to deserialize");
+        let decoded: SerdeCodec<TestStruct> =
+            ciborium::from_reader(bytes.as_slice()).expect("failed to deserialize");
         assert_eq!(decoded.inner(), &original);
     }
 
     #[test]
     fn test_vector_roundtrip() {
-        let original = vec![1u32, 2, 3, 4, 5];
-        let wrapped = SerdeSsz::new(original.clone());
+        let original: VarVec<u32> = VarVec::from_vec(vec![1u32, 2, 3, 4, 5]).unwrap();
+        let wrapped = SerdeCodec::new(original.clone());
 
-        let json = serde_json::to_string(&wrapped).expect("test: failed to serialize");
-        let decoded: SerdeSsz<Vec<u32>> =
-            serde_json::from_str(&json).expect("test: failed to deserialize");
+        let json = serde_json::to_string(&wrapped).expect("failed to serialize");
+        let decoded: SerdeCodec<VarVec<u32>> =
+            serde_json::from_str(&json).expect("failed to deserialize");
         assert_eq!(decoded.inner(), &original);
 
         let mut bytes = Vec::new();
-        ciborium::into_writer(&wrapped, &mut bytes).expect("test: failed to serialize");
-        let decoded: SerdeSsz<Vec<u32>> =
-            ciborium::from_reader(bytes.as_slice()).expect("test: failed to deserialize");
+        ciborium::into_writer(&wrapped, &mut bytes).expect("failed to serialize");
+        let decoded: SerdeCodec<VarVec<u32>> =
+            ciborium::from_reader(bytes.as_slice()).expect("failed to deserialize");
         assert_eq!(decoded.inner(), &original);
     }
 
     #[test]
     fn test_invalid_hex_fails() {
         let bad = "\"not hex\"";
-        let result: Result<SerdeSsz<TestStruct>, _> = serde_json::from_str(bad);
+        let result: Result<SerdeCodec<TestStruct>, _> = serde_json::from_str(bad);
         assert!(result.is_err());
     }
 }
