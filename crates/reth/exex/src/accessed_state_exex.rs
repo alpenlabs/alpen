@@ -41,7 +41,7 @@ use strata_acct_types::Hash;
 use tokio::task;
 use tracing::{debug, error, warn};
 
-use crate::CacheDBProvider;
+use alpen_reth_witness::CacheDBProvider;
 
 #[expect(
     missing_debug_implementations,

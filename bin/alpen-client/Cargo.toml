@@ -33,6 +33,7 @@ path = "src/main.rs"
 alloy-consensus.workspace = true
 alloy-rlp.workspace = true
 alpen-chainspec.workspace = true
+borsh.workspace = true
 alpen-ee-common.workspace = true
 alpen-ee-config.workspace = true
 alpen-ee-da-provider = { workspace = true, optional = true }
@@ -98,6 +99,7 @@ reth-cli-commands.workspace = true
 reth-cli-runner.workspace = true
 reth-cli-util.workspace = true
 reth-db.workspace = true
+reth-evm.workspace = true
 reth-network.workspace = true
 reth-network-api.workspace = true
 reth-node-builder.workspace = true

@@ -19,7 +19,7 @@ pub use batch_builder::{
 pub use batch_lifecycle::{
     create_batch_lifecycle_task, init_lifecycle_state, BatchLifecycleHandle, BatchLifecycleState,
 };
-pub use block_builder::{block_builder_task, BlockBuilderConfig};
+pub use block_builder::{block_builder_task, BlockBuilderConfig, BlockWitnessProducer};
 pub use chunk_witness_task::{
     backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
     ChunkExtractRequest, CHUNK_WITNESS_CHANNEL_CAPACITY,
