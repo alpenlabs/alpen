@@ -25,10 +25,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Configure AWS ECR Details
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v4
+        env:
+          ROLE_ARN: ${{ secrets.SHARED_ECR_ROLE_ARN }}
         with:
-          role-to-assume: ${{ secrets.AWS_ECR_ROLE }}
+          role-to-assume: ${{ env.ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
@@ -40,7 +42,7 @@ jobs:
       - name: Pull alpen-client image from ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY_PREFIX: ${{ vars.ECR_REPOSITORY_PREFIX }}
+          ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
         run: |
           ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/alpen-client"
           TAG=$(aws ecr describe-images \
