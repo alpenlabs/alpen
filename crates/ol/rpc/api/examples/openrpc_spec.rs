@@ -19,7 +19,9 @@
 
 use std::env;
 
-use strata_ol_rpc_api::{OLClientRpcOpenRpc, OLFullNodeRpcOpenRpc, OLSequencerRpcOpenRpc};
+use strata_ol_rpc_api::{
+    OLClientRpcOpenRpc, OLFullNodeRpcOpenRpc, OLSequencerRpcOpenRpc, OLSubmitRpcOpenRpc,
+};
 
 fn main() {
     let compact = env::args().any(|a| a == "--compact");
@@ -38,6 +40,7 @@ fn main() {
     project.add_module(OLFullNodeRpcOpenRpc::module_doc());
     project.add_module(OLClientRpcOpenRpc::module_doc());
     project.add_module(OLSequencerRpcOpenRpc::module_doc());
+    project.add_module(OLSubmitRpcOpenRpc::module_doc());
 
     let json = if compact {
         serde_json::to_string(&project).expect("serialization should not fail")
