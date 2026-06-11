@@ -97,9 +97,9 @@ fn build_sp1_predicate() -> PredicateKey {
         true,
     )
     .expect("Failed to load SP1 Groth16 verifier");
-    // strata-predicate's Sp1Groth16 verifier expects a borsh-serialized
-    // `SP1Groth16Verifier`, not raw VK bytes.
-    let condition_bytes = borsh::to_vec(&sp1_verifier)
-        .expect("failed to borsh-serialize SP1Groth16Verifier for acct predicate");
+    // strata-predicate's Sp1Groth16 verifier reads the condition via
+    // `SP1Groth16Verifier::parse`, i.e. the verifier's canonical uncompressed
+    // encoding.
+    let condition_bytes = sp1_verifier.to_uncompressed_bytes();
     PredicateKey::new(PredicateTypeId::Sp1Groth16, condition_bytes)
 }
