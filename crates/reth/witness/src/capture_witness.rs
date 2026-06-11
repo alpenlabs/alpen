@@ -1,34 +1,31 @@
-//! Synchronous per-block proof-witness capture.
+//! Synchronous per-block proof-witness capture via reth's execution-witness path.
 //!
-//! Re-executes a block against its parent state (the committed tip at
-//! production time, depth 1) to recover the accessed set and the write set,
-//! then builds the block's depth-0 transition witness via
-//! [`alpen_reth_witness::build_block_witness`]. Unlike the accessed-state exex
-//! this is meant to run **inline** in the block-production path, so a block is
-//! never accepted without its witness — there is no separate schedule that can
-//! lag tip and push the multiproof to historical depth.
+//! Produces a reth [`ExecutionWitness`] for the block — the library path under
+//! `debug_executionWitness`: re-execute the block against the parent state with
+//! reth's [`ExecutionWitnessRecord`], then `StateProvider::witness` for the
+//! trie nodes — and builds the per-block [`EvmPartialState`] from it directly
+//! via rsp's [`EthereumState::from_execution_witness`]. No hand-rolled
+//! multiproof, `CacheDBProvider`, or `from_transition_proofs`.
 //!
-//! Alongside the witness the capture returns the RLP-encoded block and its
-//! parent header, so the chunk prover can assemble its input entirely from
-//! per-block records without re-touching reth at proof time.
+//! Re-execution runs against the **parent** state (the committed tip at
+//! production time, depth 1), so no historical provider is ever opened.
 
 use std::collections::BTreeMap;
 
 use alloy_consensus::Header;
-use alloy_primitives::{map::HashMap, Address, B256};
+use alloy_primitives::{keccak256, B256};
+use alloy_rpc_types_debug::ExecutionWitness;
 use reth_evm::{
     execute::{BasicBlockExecutor, Executor},
     ConfigureEvm,
 };
 use reth_primitives::{Block, EthPrimitives};
 use reth_primitives_traits::Block as _;
-use reth_provider::{BlockReader, StateProviderFactory};
-use reth_revm::{db::CacheDB, state::Bytecode};
-use reth_trie::HashedPostState;
-use reth_trie_common::KeccakKeyHasher;
+use reth_provider::{BlockReader, HeaderProvider, StateProofProvider, StateProviderFactory};
+use reth_revm::{database::StateProviderDatabase, db::State, state::Bytecode, witness::ExecutionWitnessRecord};
+use reth_trie::TrieInput;
+use rsp_mpt::EthereumState;
 use strata_evm_ee::EvmPartialState;
-
-use crate::{build_block_witness, CacheDBProvider};
 
 /// Everything the chunk prover needs for one block, captured at production.
 #[expect(
@@ -47,13 +44,13 @@ pub struct CapturedBlockWitness {
 /// Builds the depth-0 proof witness for the block identified by `block_hash`.
 ///
 /// `provider` must see the block, its parent block, and the parent's state. The
-/// block is re-executed against the parent state wrapped in a
-/// [`CacheDBProvider`] to record the accessed set; the executor output yields
-/// the write set. Both the pre- and post-state multiproofs inside
-/// [`build_block_witness`] run against the parent provider (depth 0–1 at
-/// production time), so no historical state provider is opened.
+/// block is re-executed against the parent state with reth's
+/// [`ExecutionWitnessRecord`]; `StateProvider::witness` then yields the trie
+/// nodes, and rsp's [`EthereumState::from_execution_witness`] reconstructs the
+/// sparse state directly from that witness. The witness is anchored at the
+/// parent state root; the guest's `update()` advances it to the block's root.
 ///
-/// CPU-heavy (re-execution + multiproofs); call inside
+/// CPU-heavy (re-execution + witness build); call inside
 /// [`tokio::task::spawn_blocking`].
 pub fn capture_block_witness<P, E>(
     provider: P,
@@ -61,80 +58,60 @@ pub fn capture_block_witness<P, E>(
     block_hash: B256,
 ) -> eyre::Result<CapturedBlockWitness>
 where
-    P: StateProviderFactory + BlockReader<Block = Block>,
-    E: ConfigureEvm<Primitives = EthPrimitives> + Clone,
+    P: StateProviderFactory + BlockReader<Block = Block> + HeaderProvider<Header = Header>,
+    E: ConfigureEvm<Primitives = EthPrimitives>,
 {
     let block = provider
         .block_by_hash(block_hash)?
         .ok_or_else(|| eyre::eyre!("block {block_hash} not found for witness capture"))?;
     let block_num = block.header.number;
     let block_rlp = alloy_rlp::encode(&block);
-    let sealed = block.seal_slow();
-    let recovered = sealed.try_recover()?;
+    let recovered = block.seal_slow().try_recover()?;
 
     let parent_num = block_num.saturating_sub(1);
     let parent_block = provider
         .block_by_number(parent_num)?
         .ok_or_else(|| eyre::eyre!("parent block {parent_num} not found for witness capture"))?;
-    let start_state_root = parent_block.header.state_root;
+    let parent_state_root = parent_block.header.state_root;
     let parent_header_rlp = alloy_rlp::encode(&parent_block.header);
 
-    // Re-execute the block against the parent state with a recording DB to
-    // recover the accessed set and the write set.
-    let history = provider.history_by_block_number(parent_num)?;
-    let cache_provider = CacheDBProvider::new(history);
-    let cache_db = CacheDB::new(&cache_provider);
-    let executor = BasicBlockExecutor::new(evm_config, cache_db);
-    let output = executor.execute(&recovered)?;
+    let state_provider = provider.history_by_block_number(parent_num)?;
 
-    let accessed = cache_provider.get_accessed_state();
+    // Re-execute against the parent state, recording the execution witness with
+    // reth's maintained recorder. Scoped so the executor's borrow of
+    // `state_provider` is released before the `witness()` call below.
+    let (hashed_state, codes, lowest_block_number) = {
+        let db = StateProviderDatabase::new(&state_provider);
+        let executor = BasicBlockExecutor::new(evm_config, db);
+        let mut record = ExecutionWitnessRecord::default();
+        executor
+            .execute_with_state_closure(&recovered, |statedb: &State<_>| {
+                record.record_executed_state(statedb);
+            })
+            .map_err(|e| eyre::eyre!("block re-execution for witness failed: {e}"))?;
+        let ExecutionWitnessRecord { hashed_state, codes, lowest_block_number, .. } = record;
+        (hashed_state, codes, lowest_block_number)
+    };
 
-    // Touched accounts -> their accessed storage slots.
-    let touched: HashMap<Address, Vec<B256>> = accessed
-        .accessed_accounts()
+    // Trie nodes covering the block's touched paths (against the parent state).
+    let state = state_provider.witness(TrieInput::default(), hashed_state)?;
+    let witness = ExecutionWitness { state, ..Default::default() };
+
+    // rsp builds the sparse state directly from the witness node bag.
+    let ethereum_state = EthereumState::from_execution_witness(&witness, parent_state_root);
+
+    // Bytecodes the block loaded, keyed by code hash.
+    let bytecodes: BTreeMap<B256, Bytecode> = codes
         .iter()
-        .map(|(addr, slots)| {
-            (
-                *addr,
-                slots
-                    .iter()
-                    .map(|slot| B256::from(slot.to_be_bytes::<32>()))
-                    .collect::<Vec<_>>(),
-            )
-        })
+        .map(|code| (keccak256(code), Bytecode::new_raw(code.clone())))
         .collect();
 
-    let bytecodes: BTreeMap<B256, Bytecode> = accessed
-        .accessed_contracts()
-        .iter()
-        .map(|(hash, code)| (*hash, code.clone()))
-        .collect();
+    // BLOCKHASH ancestor headers: the contiguous range from the lowest block
+    // referenced (or just the parent) up to the parent.
+    let smallest = lowest_block_number.unwrap_or_else(|| block_num.saturating_sub(1));
+    let ancestor_headers: Vec<Header> = provider.headers_range(smallest..block_num)?;
 
-    // BLOCKHASH ancestor headers actually used by the block.
-    let mut ancestor_headers: Vec<Header> = Vec::new();
-    for idx in accessed.accessed_block_idxs() {
-        let header = provider
-            .block_by_number(*idx)?
-            .ok_or_else(|| eyre::eyre!("ancestor block {idx} not found for witness capture"))?
-            .header;
-        ancestor_headers.push(header);
-    }
-
-    // The block's write set, used as the post-state overlay so the post
-    // multiproof yields proofs valid at `root(block_num)`.
-    let write_set = HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state);
-
-    // A clean parent state provider for the multiproofs — the one above is
-    // consumed by re-execution.
-    let mp_provider = provider.history_by_block_number(parent_num)?;
-    let partial_state = build_block_witness(
-        &mp_provider,
-        &touched,
-        write_set,
-        start_state_root,
-        bytecodes,
-        ancestor_headers,
-    )?;
+    let partial_state = EvmPartialState::new(ethereum_state, bytecodes, ancestor_headers);
 
     Ok(CapturedBlockWitness {
         partial_state,

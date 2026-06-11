@@ -1618,6 +1618,7 @@ dependencies = [
  "alloy-consensus",
  "alloy-primitives",
  "alloy-rlp",
+ "alloy-rpc-types-debug",
  "alpen-ee-common",
  "eyre",
  "reth-evm",

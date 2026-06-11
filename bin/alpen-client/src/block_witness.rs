@@ -11,6 +11,7 @@
 
 use std::sync::Arc;
 
+use alloy_consensus::Header;
 use alloy_primitives::B256;
 use alpen_ee_common::BlockWitnessStore;
 use alpen_ee_sequencer::BlockWitnessProducer;
@@ -19,7 +20,7 @@ use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
 use reth_evm::ConfigureEvm;
 use reth_primitives::{Block, EthPrimitives};
-use reth_provider::{BlockReader, StateProviderFactory};
+use reth_provider::{BlockReader, HeaderProvider, StateProviderFactory};
 use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use tokio::task;
@@ -62,7 +63,13 @@ impl<P, E, S> RethBlockWitnessProducer<P, E, S> {
 #[async_trait]
 impl<P, E, S> BlockWitnessProducer for RethBlockWitnessProducer<P, E, S>
 where
-    P: StateProviderFactory + BlockReader<Block = Block> + Clone + Send + Sync + 'static,
+    P: StateProviderFactory
+        + BlockReader<Block = Block>
+        + HeaderProvider<Header = Header>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone + Send + Sync + 'static,
     S: BlockWitnessStore + 'static,
 {
