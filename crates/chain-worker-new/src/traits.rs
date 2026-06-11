@@ -74,16 +74,21 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     // =========================================================================
 
     /// Stores an epoch summary in the database.
+    ///
+    /// Called as the last durable step of terminal block execution: a stored
+    /// summary indicates the whole epoch finalization persisted.
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()>;
-
-    /// Fetches a specific epoch summary by its commitment.
-    fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary>;
 
     /// Fetches canonical epoch summary for an epoch index.
     fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>>;
 
-    /// Merges write batches of an epoch and stores the result.
-    fn merge_epoch_data(&self, epoch: &EpochCommitment) -> WorkerResult<()>;
+    /// Merges write batches of the epoch described by `summary` and stores
+    /// the merged state at the epoch's terminal commitment.
+    ///
+    /// Takes the summary by value-reference rather than reading it from
+    /// storage so it can run before [`store_summary`](Self::store_summary),
+    /// keeping the summary the last durable step.
+    fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()>;
 
     /// Seeds the DB-side L1 block refs MMR mirror with sentinel leaves matching
     /// the in-state MMR's genesis prefill. Called once at chain worker init.
