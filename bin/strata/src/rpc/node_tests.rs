@@ -2858,6 +2858,48 @@ async fn snark_acct_update_manifest_returns_record_with_indexed_range() {
 }
 
 #[tokio::test]
+async fn snark_acct_update_manifest_walks_records_when_tip_epoch_is_not_canonical() {
+    let account_id = test_account_id(8);
+    let tip_epoch_commitment = test_epoch_commitment(2, 10, 0x28);
+    let final_state_root = fixed_buf32(0x82);
+    let extra_data = vec![0xD0, 0xD1];
+    let records_epoch_2 = vec![update_record_with_prev(
+        Some(AccountUpdateMeta::new(None, final_state_root)),
+        9,
+        2,
+        5,
+        Some(extra_data.clone()),
+    )];
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            2,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 1)
+        .with_account_update_records(account_id, 2, records_epoch_2);
+    let rpc = make_rpc(provider);
+
+    let manifest = rpc
+        .get_snark_acct_update_manifest(account_id, 8)
+        .await
+        .expect("manifest");
+
+    assert_eq!(manifest.seq_no(), 8);
+    assert_eq!(manifest.prev_next_msg_idx(), 2);
+    assert_eq!(manifest.new_next_msg_idx(), 5);
+    assert_eq!(
+        manifest.new_inner_state_root().expect("state root").0,
+        final_state_root.0
+    );
+    assert_eq!(manifest.extra_data().expect("extra data").0, extra_data);
+}
+
+#[tokio::test]
 async fn snark_acct_update_manifest_unknown_account_errors() {
     let rpc = make_rpc(MockProvider::new());
 
