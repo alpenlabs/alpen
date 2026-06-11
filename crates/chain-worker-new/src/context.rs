@@ -264,12 +264,6 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(())
     }
 
-    fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary> {
-        self.ol_checkpoint_mgr
-            .get_epoch_summary_blocking(*epoch)?
-            .ok_or(WorkerError::MissingEpochSummary(*epoch))
-    }
-
     fn fetch_canonical_epoch_summary_at(&self, epoch: u32) -> WorkerResult<Option<EpochSummary>> {
         let commitment = self
             .ol_checkpoint_mgr
@@ -281,8 +275,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         }
     }
 
-    fn merge_epoch_data(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
-        let summary = self.fetch_summary(epoch)?;
+    fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
         let terminal = *summary.terminal();
         let prev_terminal = *summary.prev_terminal();
 

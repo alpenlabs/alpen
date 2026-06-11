@@ -177,190 +177,7 @@ impl ChainWorkerServiceState {
         block_commitment: &OLBlockCommitment,
     ) -> WorkerResult<()> {
         self.check_initialized()?;
-
-        let blkid = block_commitment.blkid();
-        debug!(%blkid, "Trying to execute block");
-
-        // Fetch block and parent context
-        let (block, parent_header, parent_commitment) =
-            self.fetch_block_with_parent(block_commitment)?;
-
-        // Execute STF and get output and new state
-        let (output, new_state) =
-            self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
-
-        // Handle epoch terminal if needed
-        debug!(slot=%block.header().slot(), is_terminal=%block.header().is_terminal(), "Checking if block is terminal");
-        if block.header().is_terminal() {
-            self.handle_terminal_block_exec_post_ops(&block, &output, &new_state)?;
-            // Send the epoch commitment to receiver
-            // TODO(STR-3673): it seems to be done for each block at the moment. Ideally we would do
-            // it just here.
-        }
-
-        // Persist results (including the full state)
-        self.persist_execution_output(&block, *block_commitment, &output, new_state)?;
-
-        // Merge the epoch's write batches into the terminal state. Must run
-        // after persist_execution_output, since the merge reads every block's
-        // write batch including the terminal block's, stored just above.
-        if block.header().is_terminal() {
-            let epoch = EpochCommitment {
-                epoch: block.header().epoch(),
-                last_slot: block_commitment.slot(),
-                last_blkid: *block_commitment.blkid(),
-            };
-            self.ctx.merge_epoch_data(&epoch)?;
-        }
-
-        Ok(())
-    }
-
-    /// Fetches a block and its parent header from the context.
-    ///
-    /// Returns the block, optional parent header, and parent commitment.
-    fn fetch_block_with_parent(
-        &self,
-        block_commitment: &OLBlockCommitment,
-    ) -> WorkerResult<(OLBlock, Option<OLBlockHeader>, OLBlockCommitment)> {
-        let blkid = block_commitment.blkid();
-
-        let block = self
-            .ctx
-            .fetch_block(blkid)?
-            .ok_or(WorkerError::MissingOLBlock(*blkid))?;
-
-        let parent_blkid = block.header().parent_blkid();
-        let parent_commitment = if parent_blkid.is_null() {
-            OLBlockCommitment::null()
-        } else {
-            // Parent slot is the block's slot - 1.
-            let parent_slot = block.header().slot().saturating_sub(1);
-            OLBlockCommitment::new(parent_slot, *parent_blkid)
-        };
-
-        let parent_header = if parent_commitment.is_null() {
-            None
-        } else {
-            Some(
-                self.ctx
-                    .fetch_header(parent_commitment.blkid())?
-                    .ok_or(WorkerError::MissingOLBlock(*parent_commitment.blkid()))?,
-            )
-        };
-
-        Ok((block, parent_header, parent_commitment))
-    }
-
-    /// Executes the STF on a block and returns the execution output.
-    ///
-    /// This fetches parent state, builds the state stack, runs verification,
-    /// and extracts the resulting write batch and indexer writes.
-    #[instrument(
-        skip_all,
-        fields(
-            slot = block.header().slot(),
-            epoch = block.header().epoch(),
-            is_terminal = block.header().is_terminal(),
-            %parent_commitment,
-        ),
-        err,
-    )]
-    fn execute_stf(
-        &self,
-        block: &OLBlock,
-        parent_header: Option<&OLBlockHeader>,
-        parent_commitment: OLBlockCommitment,
-    ) -> WorkerResult<(OLBlockExecutionOutput, OLState)> {
-        // Fetch parent state and wrap in MemoryStateBaseLayer for IStateAccessor
-        let parent_state_raw = self
-            .ctx
-            .fetch_ol_state(parent_commitment)?
-            .ok_or(WorkerError::MissingPreState(parent_commitment))?;
-        let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
-
-        // Execute and extract outputs
-        let (write_batch, indexer_writes, logs) = run_stf_verification(
-            &parent_state,
-            block,
-            parent_header,
-            self.ctx.bridge_params(),
-        )?;
-
-        // Apply write batch to parent state to get new state
-        let mut new_state = parent_state;
-        new_state
-            .apply_write_batch(write_batch.clone())
-            .map_err(|source| WorkerError::ApplyWriteBatch {
-                commitment: parent_commitment,
-                source,
-            })?;
-        let new_state = new_state.into_inner();
-
-        // Use the state root from the header (verify_block validated it).
-        // Note: logs are validated internally by verify_block via the logs_root commitment.
-        let computed_state_root = *block.header().state_root();
-
-        Ok((
-            OLBlockExecutionOutput::new(computed_state_root, write_batch, indexer_writes, logs),
-            new_state,
-        ))
-    }
-
-    /// Persists the execution output and state to storage.
-    ///
-    /// Handles crash-restart cases like indexing already applied or wrong indexing applied
-    /// gracefully.
-    fn persist_execution_output(
-        &self,
-        block: &OLBlock,
-        block_commitment: OLBlockCommitment,
-        output: &OLBlockExecutionOutput,
-        new_state: OLState,
-    ) -> WorkerResult<()> {
-        match self.ctx.store_block_output(block, block_commitment, output) {
-            Ok(()) => {}
-            Err(WorkerError::Database(DbError::BlockIndexingConflict {
-                attempted,
-                last_applied,
-                ..
-            })) if attempted == block_commitment && last_applied == block_commitment => {
-                debug!(
-                    %block_commitment,
-                    "block indexing already applied for this exact block; \
-                     treating as crash-restart retry and continuing persist"
-                );
-            }
-            Err(e) => return Err(e),
-        }
-
-        self.ctx.store_toplevel_state(block_commitment, new_state)?;
-
-        Ok(())
-    }
-
-    /// Takes the block and post-state and inserts database entries to reflect
-    /// the epoch being finished on-chain.
-    ///
-    /// Returns the completed epoch's commitment so the caller can merge its
-    /// epoch data once the terminal block's write batch is persisted.
-    fn handle_terminal_block_exec_post_ops(
-        &mut self,
-        block: &OLBlock,
-        last_block_output: &OLBlockExecutionOutput,
-        new_state: &OLState,
-    ) -> WorkerResult<EpochCommitment> {
-        let completed_epoch = block.header().epoch();
-
-        let prev_terminal = get_prev_terminal(&self.ctx, completed_epoch)?;
-        let summary =
-            build_epoch_summary(block.header(), last_block_output, new_state, prev_terminal);
-        let epoch = summary.get_epoch_commitment();
-
-        debug!(?summary, "completed chain epoch");
-        self.ctx.store_summary(summary)?;
-
-        Ok(epoch)
+        exec_block(&self.ctx, self.ctx.bridge_params(), block_commitment)
     }
 
     /// Updates the current tip as managed by the worker.
@@ -372,7 +189,7 @@ impl ChainWorkerServiceState {
     /// Marks an epoch as finalized(buried).
     ///
     /// By the time this runs the epoch's terminal state has already been merged
-    /// and stored — by [`Self::handle_terminal_block_exec_post_ops`] for full
+    /// and stored — by [`handle_terminal_block_exec_post_ops`] for full
     /// sync, or by `apply_checkpoint` for checkpoint sync. This verifies that
     /// state is present, then records the epoch as finalized.
     pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
@@ -404,6 +221,203 @@ impl ChainWorkerServiceState {
 
         Ok(())
     }
+}
+
+/// Executes a block via the OL STF and persists its outputs.
+///
+/// For terminal blocks the execution output is persisted *before* the epoch
+/// post-ops run: [`handle_terminal_block_exec_post_ops`] stamps the epoch
+/// commitment onto the indexing row that persisting a block of the epoch
+/// creates. In a single-block epoch (e.g. one sealed immediately by the
+/// checkpoint size policy) this block's persist is the only thing that
+/// creates that row, so stamping first fails with a missing-row error.
+pub(crate) fn exec_block(
+    ctx: &impl ChainWorkerContext,
+    bridge_params: BridgeParams,
+    block_commitment: &OLBlockCommitment,
+) -> WorkerResult<()> {
+    let blkid = block_commitment.blkid();
+    debug!(%blkid, "Trying to execute block");
+
+    // Fetch block and parent context
+    let (block, parent_header, parent_commitment) = fetch_block_with_parent(ctx, block_commitment)?;
+
+    // Execute STF and get output and new state
+    let (output, new_state) = execute_stf(
+        ctx,
+        bridge_params,
+        &block,
+        parent_header.as_ref(),
+        parent_commitment,
+    )?;
+
+    let is_terminal = block.header().is_terminal();
+    debug!(slot=%block.header().slot(), is_terminal, "Checking if block is terminal");
+
+    if is_terminal {
+        // Persist results (including the full state) before the terminal
+        // post-ops; see the doc comment above.
+        persist_execution_output(ctx, &block, *block_commitment, &output, new_state.clone())?;
+
+        // Handle epoch terminal
+        // TODO(STR-3673): the epoch commitment seems to be sent to the
+        // receiver for each block at the moment. Ideally we would do it just
+        // here.
+        handle_terminal_block_exec_post_ops(ctx, &block, &output, &new_state)?;
+    } else {
+        // Persist results (including the full state)
+        persist_execution_output(ctx, &block, *block_commitment, &output, new_state)?;
+    }
+
+    Ok(())
+}
+
+/// Fetches a block and its parent header from the context.
+///
+/// Returns the block, optional parent header, and parent commitment.
+fn fetch_block_with_parent(
+    ctx: &impl ChainWorkerContext,
+    block_commitment: &OLBlockCommitment,
+) -> WorkerResult<(OLBlock, Option<OLBlockHeader>, OLBlockCommitment)> {
+    let blkid = block_commitment.blkid();
+
+    let block = ctx
+        .fetch_block(blkid)?
+        .ok_or(WorkerError::MissingOLBlock(*blkid))?;
+
+    let parent_blkid = block.header().parent_blkid();
+    let parent_commitment = if parent_blkid.is_null() {
+        OLBlockCommitment::null()
+    } else {
+        // Parent slot is the block's slot - 1.
+        let parent_slot = block.header().slot().saturating_sub(1);
+        OLBlockCommitment::new(parent_slot, *parent_blkid)
+    };
+
+    let parent_header = if parent_commitment.is_null() {
+        None
+    } else {
+        Some(
+            ctx.fetch_header(parent_commitment.blkid())?
+                .ok_or(WorkerError::MissingOLBlock(*parent_commitment.blkid()))?,
+        )
+    };
+
+    Ok((block, parent_header, parent_commitment))
+}
+
+/// Executes the STF on a block and returns the execution output.
+///
+/// This fetches parent state, builds the state stack, runs verification,
+/// and extracts the resulting write batch and indexer writes.
+#[instrument(
+    skip_all,
+    fields(
+        slot = block.header().slot(),
+        epoch = block.header().epoch(),
+        is_terminal = block.header().is_terminal(),
+        %parent_commitment,
+    ),
+    err,
+)]
+fn execute_stf(
+    ctx: &impl ChainWorkerContext,
+    bridge_params: BridgeParams,
+    block: &OLBlock,
+    parent_header: Option<&OLBlockHeader>,
+    parent_commitment: OLBlockCommitment,
+) -> WorkerResult<(OLBlockExecutionOutput, OLState)> {
+    // Fetch parent state and wrap in MemoryStateBaseLayer for IStateAccessor
+    let parent_state_raw = ctx
+        .fetch_ol_state(parent_commitment)?
+        .ok_or(WorkerError::MissingPreState(parent_commitment))?;
+    let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
+
+    // Execute and extract outputs
+    let (write_batch, indexer_writes, logs) =
+        run_stf_verification(&parent_state, block, parent_header, bridge_params)?;
+
+    // Apply write batch to parent state to get new state
+    let mut new_state = parent_state;
+    new_state
+        .apply_write_batch(write_batch.clone())
+        .map_err(|source| WorkerError::ApplyWriteBatch {
+            commitment: parent_commitment,
+            source,
+        })?;
+    let new_state = new_state.into_inner();
+
+    // Use the state root from the header (verify_block validated it).
+    // Note: logs are validated internally by verify_block via the logs_root commitment.
+    let computed_state_root = *block.header().state_root();
+
+    Ok((
+        OLBlockExecutionOutput::new(computed_state_root, write_batch, indexer_writes, logs),
+        new_state,
+    ))
+}
+
+/// Persists the execution output and state to storage.
+///
+/// Handles crash-restart cases like indexing already applied or wrong indexing applied
+/// gracefully.
+fn persist_execution_output(
+    ctx: &impl ChainWorkerContext,
+    block: &OLBlock,
+    block_commitment: OLBlockCommitment,
+    output: &OLBlockExecutionOutput,
+    new_state: OLState,
+) -> WorkerResult<()> {
+    match ctx.store_block_output(block, block_commitment, output) {
+        Ok(()) => {}
+        Err(WorkerError::Database(DbError::BlockIndexingConflict {
+            attempted,
+            last_applied,
+            ..
+        })) if attempted == block_commitment && last_applied == block_commitment => {
+            debug!(
+                %block_commitment,
+                "block indexing already applied for this exact block; \
+                 treating as crash-restart retry and continuing persist"
+            );
+        }
+        Err(e) => return Err(e),
+    }
+
+    ctx.store_toplevel_state(block_commitment, new_state)?;
+
+    Ok(())
+}
+
+/// Takes the block and post-state and inserts database entries to reflect
+/// the epoch being finished on-chain.
+///
+/// Expects the terminal block's own output to be persisted already: the merge
+/// reads every block's write batch including the terminal block's, and epoch
+/// finalization stamps the epoch commitment onto an existing indexing row.
+///
+/// The summary is stored last, after the epoch data merge: a stored summary
+/// (and the notification it emits) indicates the whole epoch finalization
+/// persisted. A failure anywhere earlier leaves no summary behind for a
+/// block that may then be rejected.
+fn handle_terminal_block_exec_post_ops(
+    ctx: &impl ChainWorkerContext,
+    block: &OLBlock,
+    last_block_output: &OLBlockExecutionOutput,
+    new_state: &OLState,
+) -> WorkerResult<()> {
+    let completed_epoch = block.header().epoch();
+
+    let prev_terminal = get_prev_terminal(ctx, completed_epoch)?;
+    let summary = build_epoch_summary(block.header(), last_block_output, new_state, prev_terminal);
+
+    // Merge the epoch's write batches into the terminal state.
+    ctx.merge_epoch_data(&summary)?;
+
+    debug!(?summary, "completed chain epoch");
+    ctx.store_summary(summary)?;
+
+    Ok(())
 }
 
 /// Gets the terminal commitment of the epoch before `cur_epoch`.
