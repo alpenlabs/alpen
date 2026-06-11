@@ -48,20 +48,20 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
 }
 
 impl<C: CsmWorkerContext> CsmWorkerState<C> {
-    /// Create a new CSM worker state.
+    /// Bootstraps a new CSM worker state.
     ///
     /// All bootstrap reads (last client state, observed checkpoint refs, params)
     /// go through `ctx`; runtime persistence and L1 fetches use the same
-    /// context after construction.
-    pub fn new(ctx: C) -> CsmWorkerResult<Self> {
+    /// context after construction. Also eagerly updates and publishes the client state.
+    pub fn bootstrap(ctx: C) -> CsmWorkerResult<Self> {
         // Load the most recent client state from storage
-        let (cur_block, cur_state) = ctx
+        let (cur_block, cur_clstate) = ctx
             .fetch_most_recent_client_state()?
             .unwrap_or((ctx.genesis_l1_block(), ClientState::default()));
 
         let current_l1_tip = cur_block.height();
         let finality_depth = ctx.l1_reorg_safe_depth().max(1);
-        let baseline_finalized_epoch = cur_state.get_declared_final_epoch();
+        let baseline_finalized_epoch = cur_clstate.get_declared_final_epoch();
         let observation_start_epoch = baseline_finalized_epoch
             .map(|epoch| epoch.epoch().saturating_add(1))
             .unwrap_or(0);
@@ -100,7 +100,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         {
             let refreshed = ClientState::new(
                 Some(newly_finalized.clone()),
-                cur_state.get_last_checkpoint(),
+                cur_clstate.get_last_checkpoint(),
             );
             ctx.put_client_state_update(
                 &cur_block,
@@ -109,7 +109,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             ctx.publish_client_state(refreshed.clone(), cur_block);
             Arc::new(refreshed)
         } else {
-            Arc::new(cur_state)
+            Arc::new(cur_clstate)
         };
 
         // Keep only non-finalized candidates for incremental tip-driven advancement.
@@ -336,7 +336,7 @@ mod tests {
             params.magic,
             params.anchor.block,
         );
-        let state = CsmWorkerState::new(ctx).expect("state init");
+        let state = CsmWorkerState::bootstrap(ctx).expect("state init");
 
         assert_eq!(state.confirmed_epoch, Some(commitment_2));
         assert_eq!(state.finalized_epoch, Some(commitment_1));
@@ -437,7 +437,7 @@ mod tests {
             params.magic,
             params.anchor.block,
         );
-        let state = CsmWorkerState::new(ctx).expect("state init");
+        let state = CsmWorkerState::bootstrap(ctx).expect("state init");
 
         assert_eq!(state.finalized_epoch, Some(commitment_1));
         assert_eq!(

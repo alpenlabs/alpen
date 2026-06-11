@@ -173,7 +173,7 @@ mod tests {
         )
         .with_l1_fetch_failure();
 
-        let mut state = CsmWorkerState::new(ctx).expect("bootstrap state");
+        let mut state = CsmWorkerState::bootstrap(ctx).expect("bootstrap state");
 
         // Inject a queued observation deep enough that any
         // `advance_finalization` call would advance finality.

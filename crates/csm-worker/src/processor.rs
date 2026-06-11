@@ -507,7 +507,7 @@ mod tests {
         let params = create_test_params_arc();
         let (storage, status_channel) = create_test_storage();
         let ctx = default_stub_ctx(&params, storage.clone(), status_channel);
-        let state = CsmWorkerState::new(ctx).unwrap();
+        let state = CsmWorkerState::bootstrap(ctx).unwrap();
         (state, storage)
     }
 
@@ -521,7 +521,7 @@ mod tests {
         let params = create_test_params_arc();
         let (storage, status_channel) = create_test_storage();
         let ctx = configure(default_stub_ctx(&params, storage.clone(), status_channel));
-        let state = CsmWorkerState::new(ctx).unwrap();
+        let state = CsmWorkerState::bootstrap(ctx).unwrap();
         (state, storage)
     }
 
