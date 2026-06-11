@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
-use alloy_consensus::{Block as AlloyBlock, proofs::calculate_receipt_root};
-use alpen_reth_evm::{accumulate_logs_bloom, evm::AlpenEvmFactory, extract_withdrawal_intents};
+use alloy_consensus::Block as AlloyBlock;
+use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
 use reth_consensus_common::validation::validate_body_against_header;
-use reth_evm::execute::{BasicBlockExecutor, Executor};
+use reth_evm::execute::{BasicBlockExecutor, BlockExecutionOutput, Executor};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::{
     EthPrimitives, Receipt as EthereumReceipt, RecoveredBlock, TransactionSigned,
@@ -29,14 +29,6 @@ use crate::{
     types::{EvmBlock, EvmBlockOutput, EvmPartialState, EvmWriteBatch},
     utils::{build_and_recover_block, compute_hashed_post_state, validate_deposits_against_block},
 };
-
-struct EvmExecutionCommitments {
-    receipts_root: revm_primitives::B256,
-    logs_bloom: revm_primitives::alloy_primitives::Bloom,
-    gas_used: u64,
-    blob_gas_used: Option<u64>,
-    requests_hash: Option<revm_primitives::B256>,
-}
 
 /// EVM Execution Environment for Alpen.
 ///
@@ -104,7 +96,7 @@ impl EvmExecutionEnvironment {
         &self,
         block: &RecoveredBlock<AlloyBlock<TransactionSigned>>,
         pre_state: &EvmPartialState,
-    ) -> EnvResult<reth_evm::execute::BlockExecutionOutput<EthereumReceipt>> {
+    ) -> EnvResult<BlockExecutionOutput<EthereumReceipt>> {
         let db = {
             let wit_db = pre_state.create_witness_db();
             WrapDatabaseRef(wit_db)
@@ -113,23 +105,6 @@ impl EvmExecutionEnvironment {
         block_executor
             .execute(block)
             .map_err(|_| EnvError::InvalidBlock)
-    }
-
-    fn execution_commitments(
-        header_intrinsics: &crate::types::EvmHeaderIntrinsics,
-        execution_output: &reth_evm::execute::BlockExecutionOutput<EthereumReceipt>,
-    ) -> EvmExecutionCommitments {
-        EvmExecutionCommitments {
-            logs_bloom: accumulate_logs_bloom(&execution_output.result.receipts),
-            receipts_root: calculate_receipt_root(&execution_output.result.receipts),
-            gas_used: execution_output.result.gas_used,
-            blob_gas_used: header_intrinsics
-                .has_blob_gas_used()
-                .then_some(execution_output.result.blob_gas_used),
-            requests_hash: header_intrinsics
-                .has_requests_hash()
-                .then_some(execution_output.result.requests.requests_hash()),
-        }
     }
 }
 
@@ -157,7 +132,8 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 4: Accumulate execution commitments.
         let header_intrinsics = exec_payload.header_intrinsics();
-        let commitments = Self::execution_commitments(header_intrinsics, &execution_output);
+        let block_output =
+            EvmBlockOutput::from_header_and_output(header_intrinsics, &execution_output);
 
         // Step 5: Collect withdrawal intents.
         let transactions = block.into_transactions();
@@ -170,23 +146,12 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 7: Split state writes from execution-derived header commitments.
         let write_batch = EvmWriteBatch::new(hashed_post_state);
-        let block_output = EvmBlockOutput::new(
-            commitments.receipts_root,
-            commitments.logs_bloom,
-            commitments.gas_used,
-            commitments.blob_gas_used,
-            commitments.requests_hash,
-        );
 
         // Step 8: Create ExecOutputs with withdrawal intent messages.
         let mut outputs = ExecOutputs::new_empty();
         convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
 
-        Ok(ExecBlockOutput::new_with_block_output(
-            write_batch,
-            block_output,
-            outputs,
-        ))
+        Ok(ExecBlockOutput::new(write_batch, block_output, outputs))
     }
 
     fn verify_outputs_against_header(
@@ -238,7 +203,7 @@ mod tests {
     use alloy_consensus::Sealable;
     use reth_primitives_traits::Block as RethBlockTrait;
     use revm::{DatabaseRef, state::Bytecode};
-    use revm_primitives::B256;
+    use revm_primitives::{B256, alloy_primitives::Bloom};
     use rsp_client_executor::io::EthClientExecutorInput;
     use serde::Deserialize;
     use strata_ee_acct_types::{ExecBlock, ExecHeader};
@@ -463,7 +428,7 @@ mod tests {
         );
 
         let mut bad_logs_bloom = header.clone();
-        bad_logs_bloom.logs_bloom = revm_primitives::alloy_primitives::Bloom::from([0x22; 256]);
+        bad_logs_bloom.logs_bloom = Bloom::from([0x22; 256]);
         assert!(
             env.verify_outputs_against_header(&EvmHeader::new(bad_logs_bloom), &output)
                 .is_err()

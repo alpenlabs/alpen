@@ -1,6 +1,12 @@
 //! EVM execution-derived block output.
 
+use alloy_consensus::proofs::calculate_receipt_root;
+use alpen_reth_evm::accumulate_logs_bloom;
+use reth_evm::execute::BlockExecutionOutput;
+use reth_primitives::Receipt as EthereumReceipt;
 use revm_primitives::alloy_primitives::{B256, Bloom};
+
+use crate::types::EvmHeaderIntrinsics;
 
 /// Execution commitments produced while executing an EVM block.
 ///
@@ -16,6 +22,24 @@ pub struct EvmBlockOutput {
 }
 
 impl EvmBlockOutput {
+    /// Creates execution commitments from the header shape and execution result.
+    pub fn from_header_and_output(
+        header_intrinsics: &EvmHeaderIntrinsics,
+        execution_output: &BlockExecutionOutput<EthereumReceipt>,
+    ) -> Self {
+        Self {
+            logs_bloom: accumulate_logs_bloom(&execution_output.result.receipts),
+            receipts_root: calculate_receipt_root(&execution_output.result.receipts),
+            gas_used: execution_output.result.gas_used,
+            blob_gas_used: header_intrinsics
+                .has_blob_gas_used()
+                .then_some(execution_output.result.blob_gas_used),
+            requests_hash: header_intrinsics
+                .has_requests_hash()
+                .then_some(execution_output.result.requests.requests_hash()),
+        }
+    }
+
     /// Creates execution commitments for a block.
     pub fn new(
         receipts_root: B256,

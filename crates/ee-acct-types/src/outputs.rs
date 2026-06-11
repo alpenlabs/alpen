@@ -11,14 +11,7 @@ pub struct ExecBlockOutput<E: ExecutionEnvironment> {
 }
 
 impl<E: ExecutionEnvironment> ExecBlockOutput<E> {
-    pub fn new(write_batch: E::WriteBatch, outputs: ExecOutputs) -> Self
-    where
-        E::BlockOutput: Default,
-    {
-        Self::new_with_block_output(write_batch, E::BlockOutput::default(), outputs)
-    }
-
-    pub fn new_with_block_output(
+    pub fn new(
         write_batch: E::WriteBatch,
         block_output: E::BlockOutput,
         outputs: ExecOutputs,

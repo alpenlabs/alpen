@@ -84,7 +84,7 @@ impl EvmHeaderIntrinsics {
     ///
     /// Execution-result fields are left empty because they are produced after
     /// executing the block and verified separately against the full header.
-    pub(crate) fn to_execution_header(&self, body: &BlockBody<TransactionSigned>) -> Header {
+    pub(crate) fn build_execution_header(&self, body: &BlockBody<TransactionSigned>) -> Header {
         Header {
             parent_hash: self.parent_hash,
             ommers_hash: body.calculate_ommers_root(),

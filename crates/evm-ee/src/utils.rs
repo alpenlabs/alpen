@@ -23,7 +23,7 @@ pub(crate) fn build_and_recover_block(
 ) -> EnvResult<RecoveredBlock<AlloyBlock<TransactionSigned>>> {
     let header: EvmHeaderIntrinsics = exec_payload.header_intrinsics().clone();
     let body = exec_payload.body().body().clone();
-    let header = header.to_execution_header(&body);
+    let header = header.build_execution_header(&body);
 
     // Build block using alloy_consensus types
     let alloy_block = AlloyBlock { header, body };
