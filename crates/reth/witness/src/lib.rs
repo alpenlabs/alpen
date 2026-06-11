@@ -6,7 +6,11 @@
 //! the witness data needed to prove execution of the given range.
 
 mod block_witness;
+mod cache_db_provider;
+mod capture_witness;
 mod range_witness_extractor;
 
 pub use block_witness::build_block_witness;
+pub use cache_db_provider::{AccessedState, CacheDBProvider, StorageKey};
+pub use capture_witness::{capture_block_witness, CapturedBlockWitness};
 pub use range_witness_extractor::{RangeWitnessData, RangeWitnessExtractor};
