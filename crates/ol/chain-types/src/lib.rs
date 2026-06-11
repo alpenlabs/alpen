@@ -13,9 +13,15 @@ mod validation;
 pub mod test_utils;
 
 pub use error::ChainTypesError;
-// Re-export commitment types from identifiers
 // Re-export AsmManifest from asm-common (canonical source)
 pub use strata_asm_common::AsmManifest;
+// Re-export the canonical OL log-payload types from the checkpoint subprotocol crate, which is
+// the source of truth for the types shared with checkpoint verification.
+pub use strata_asm_proto_checkpoint_types::{
+    OLLogDecodeError, OLLogType, SIMPLE_WITHDRAWAL_INTENT_LOG_TYPE_ID,
+    SimpleWithdrawalIntentLogData,
+};
+// Re-export commitment types from identifiers
 pub use strata_identifiers::{
     Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId, OLTxId,
     Slot,

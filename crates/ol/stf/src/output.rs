@@ -3,7 +3,7 @@
 use std::{cell::RefCell, iter};
 
 use strata_acct_types::AccountSerial;
-use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog, OLLogType};
+use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog, OLLogDecodeError, OLLogType};
 
 use crate::errors::{ExecError, ExecResult};
 
@@ -72,8 +72,13 @@ pub trait OutputCtx {
 
     /// Records a typed log.  Returns an error if the block log cap would be exceeded.
     fn emit_typed_log(&self, source: AccountSerial, body: &impl OLLogType) -> ExecResult<()> {
-        let encoded_body = body.encode_log()?;
-        self.emit_log(OLLog::new(source, encoded_body))
+        let log = OLLog::from_log(source, body).map_err(|err| match err {
+            OLLogDecodeError::Codec(err) => ExecError::Codec(err),
+            // Encoding a typed log with a valid const type id never mismatches or fails to build
+            // the msg-fmt envelope.
+            err => unreachable!("typed log encode produced a decode-side error: {err}"),
+        })?;
+        self.emit_log(log)
     }
 }
 

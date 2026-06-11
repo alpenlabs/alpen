@@ -144,11 +144,9 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     let selected_operator = withdrawal_data.selected_operator();
     let dest = withdrawal_data.into_dest_desc();
     let dest_desc_len = dest.len();
-    let log_data = SimpleWithdrawalIntentLogData {
-        amt: amt_raw,
-        selected_operator,
-        dest,
-    };
+    let log_data =
+        SimpleWithdrawalIntentLogData::new(amt_raw, dest.into_inner(), selected_operator)
+            .expect("withdrawal destination fits within log bounds");
     context.emit_typed_log(BRIDGE_GATEWAY_ACCT_SERIAL, &log_data)?;
     info!(
         %sender,
