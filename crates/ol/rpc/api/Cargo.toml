@@ -17,6 +17,7 @@ strata-primitives = { workspace = true, features = ["jsonschema"] }
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 
 [dev-dependencies]
+alpen-ee-rpc-api.workspace = true
 serde_json.workspace = true
 
 [features]

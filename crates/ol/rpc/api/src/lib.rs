@@ -1,5 +1,7 @@
 //! OL RPC API definitions.
 
+#[cfg(test)]
+use alpen_ee_rpc_api as _;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 #[cfg(test)]
 use serde_json as _;

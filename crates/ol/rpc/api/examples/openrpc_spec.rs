@@ -19,6 +19,7 @@
 
 use std::env;
 
+use alpen_ee_rpc_api::AlpenEeRpcOpenRpc;
 use strata_ol_rpc_api::{
     OLClientRpcOpenRpc, OLFullNodeRpcOpenRpc, OLSequencerRpcOpenRpc, OLSubmitRpcOpenRpc,
 };
@@ -41,6 +42,7 @@ fn main() {
     project.add_module(OLClientRpcOpenRpc::module_doc());
     project.add_module(OLSequencerRpcOpenRpc::module_doc());
     project.add_module(OLSubmitRpcOpenRpc::module_doc());
+    project.add_module(AlpenEeRpcOpenRpc::module_doc());
 
     let json = if compact {
         serde_json::to_string(&project).expect("serialization should not fail")
