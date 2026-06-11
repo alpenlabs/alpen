@@ -1132,6 +1132,7 @@ dependencies = [
  "strata-primitives",
  "strata-proofimpl-alpen-acct",
  "strata-proofimpl-alpen-chunk",
+ "strata-proofimpl-predicate-keys",
  "strata-service",
  "strata-snark-acct-runtime",
  "strata-snark-acct-types",
@@ -14698,6 +14699,7 @@ dependencies = [
  "strata-predicate",
  "strata-primitives",
  "strata-proofimpl-checkpoint",
+ "strata-proofimpl-predicate-keys",
  "strata-service",
  "strata-snark-acct-types",
  "strata-status",
@@ -15469,7 +15471,6 @@ dependencies = [
  "rand_core 0.6.4",
  "reth-chainspec",
  "serde_json",
- "sp1-verifier",
  "strata-asm-params",
  "strata-asm-proto-bridge-v1-types",
  "strata-btc-types",
@@ -15485,11 +15486,11 @@ dependencies = [
  "strata-primitives",
  "strata-proofimpl-alpen-acct",
  "strata-proofimpl-checkpoint",
+ "strata-proofimpl-predicate-keys",
  "strata-snark-acct-runtime",
  "strata-sp1-guest-builder",
  "tokio",
  "zeroize",
- "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -16424,6 +16425,19 @@ dependencies = [
  "strata-state",
  "zkaleido",
  "zkaleido-native-adapter",
+]
+
+[[package]]
+name = "strata-proofimpl-predicate-keys"
+version = "0.1.0"
+dependencies = [
+ "sp1-verifier",
+ "strata-predicate",
+ "strata-proofimpl-alpen-acct",
+ "strata-proofimpl-alpen-chunk",
+ "strata-proofimpl-checkpoint",
+ "thiserror 2.0.18",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]

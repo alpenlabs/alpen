@@ -23,10 +23,18 @@ use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
 #[cfg(feature = "prover")]
-use strata_predicate::PredicateTypeId;
+use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{L1BlockCommitment, OLBlockCommitment};
+#[cfg(all(feature = "prover", feature = "sp1"))]
+use strata_proofimpl_predicate_keys::Sp1Groth16PredicateKey;
+#[cfg(feature = "prover")]
+use strata_proofimpl_predicate_keys::{
+    NativeCheckpointPredicateKey, PredicateKeyProvider, validate_expected_predicate_key,
+};
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::{NodeStorage, create_node_storage};
+#[cfg(all(feature = "prover", feature = "sp1"))]
+use strata_zkvm_hosts::sp1::checkpoint_host;
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
@@ -64,7 +72,7 @@ pub(crate) fn init_node_context(
     // When the integrated prover is enabled, validate that its backend matches the
     // checkpoint predicate the runtime ASM will enforce.
     #[cfg(feature = "prover")]
-    validate_integrated_prover_compatibility(&config, &asm_params)?;
+    validate_integrated_prover_compatibility(&config, &asm_params, &handle)?;
 
     let blockasm_config = config
         .sequencer
@@ -195,8 +203,10 @@ fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
 fn validate_integrated_prover_compatibility(
     config: &Config,
     asm_params: &AsmParams,
+    handle: &Handle,
 ) -> Result<(), InitError> {
-    let checkpoint_predicate_type = checkpoint_predicate_type_from_asm_params(asm_params)?;
+    let checkpoint_predicate = checkpoint_predicate_from_asm_params(asm_params)?;
+    let checkpoint_predicate_type = checkpoint_predicate_type(checkpoint_predicate)?;
     let expected_backend = expected_backend_for_checkpoint_predicate(checkpoint_predicate_type)?;
 
     // When the prover is not configured, validate that the checkpoint predicate
@@ -221,13 +231,21 @@ fn validate_integrated_prover_compatibility(
         )));
     }
 
+    let expected_predicate = checkpoint_predicate_key_for_backend(prover_config.backend, handle)?;
+    validate_expected_predicate_key(checkpoint_predicate, &expected_predicate).map_err(|e| {
+        InitError::InvalidProverConfig(format!(
+            "checkpoint predicate key does not match configured prover backend {:?}: {e}",
+            prover_config.backend
+        ))
+    })?;
+
     Ok(())
 }
 
 #[cfg(feature = "prover")]
-fn checkpoint_predicate_type_from_asm_params(
+fn checkpoint_predicate_from_asm_params(
     asm_params: &AsmParams,
-) -> Result<PredicateTypeId, InitError> {
+) -> Result<&PredicateKey, InitError> {
     let checkpoint_subprotocol = asm_params
         .subprotocols
         .iter()
@@ -242,7 +260,12 @@ fn checkpoint_predicate_type_from_asm_params(
             )
         })?;
 
-    let checkpoint_predicate_id = checkpoint_subprotocol.checkpoint_predicate.id();
+    Ok(&checkpoint_subprotocol.checkpoint_predicate)
+}
+
+#[cfg(feature = "prover")]
+fn checkpoint_predicate_type(predicate: &PredicateKey) -> Result<PredicateTypeId, InitError> {
+    let checkpoint_predicate_id = predicate.id();
     PredicateTypeId::try_from(checkpoint_predicate_id).map_err(|e| {
         InitError::InvalidProverConfig(format!(
             "invalid AsmParams checkpoint predicate type id {checkpoint_predicate_id}: {e}"
@@ -268,6 +291,36 @@ fn expected_backend_for_checkpoint_predicate(
             "unsupported checkpoint predicate for integrated prover: {checkpoint_predicate_type}"
         ))),
     }
+}
+
+#[cfg(feature = "prover")]
+fn checkpoint_predicate_key_for_backend(
+    backend: ProverBackend,
+    handle: &Handle,
+) -> Result<PredicateKey, InitError> {
+    match backend {
+        ProverBackend::Native => NativeCheckpointPredicateKey
+            .predicate_key()
+            .map_err(|e| InitError::InvalidProverConfig(e.to_string())),
+        ProverBackend::Sp1 => checkpoint_sp1_predicate_key(handle),
+    }
+}
+
+#[cfg(all(feature = "prover", feature = "sp1"))]
+fn checkpoint_sp1_predicate_key(handle: &Handle) -> Result<PredicateKey, InitError> {
+    use zkaleido::ZkVmExecutor;
+
+    let host = handle.block_on(checkpoint_host(zkaleido_sp1_host::SP1HostConfig::default()));
+    Sp1Groth16PredicateKey::new(host.program_id().0)
+        .predicate_key()
+        .map_err(|e| InitError::InvalidProverConfig(e.to_string()))
+}
+
+#[cfg(all(feature = "prover", not(feature = "sp1")))]
+fn checkpoint_sp1_predicate_key(_handle: &Handle) -> Result<PredicateKey, InitError> {
+    Err(InitError::InvalidProverConfig(
+        "config.prover.backend=sp1 requires building `strata` with the `sp1` feature".to_string(),
+    ))
 }
 
 fn populate_sequencer_runtime_config(config: &mut Config, args: &Args) -> Result<(), InitError> {
@@ -676,5 +729,33 @@ mod tests {
         let err = super::expected_backend_for_checkpoint_predicate(PredicateTypeId::NeverAccept)
             .unwrap_err();
         assert!(matches!(err, InitError::InvalidProverConfig(_)));
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn accepts_matching_checkpoint_predicate_key_provider() {
+        use strata_proofimpl_predicate_keys::{
+            NativeCheckpointPredicateKey, PredicateKeyProvider, validate_expected_predicate_key,
+        };
+
+        let predicate = NativeCheckpointPredicateKey.predicate_key().unwrap();
+
+        validate_expected_predicate_key(&predicate, &predicate).unwrap();
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn rejects_mismatched_checkpoint_predicate_key_provider() {
+        use strata_predicate::PredicateKey;
+        use strata_proofimpl_predicate_keys::{
+            NativeCheckpointPredicateKey, PredicateKeyProvider, validate_expected_predicate_key,
+        };
+
+        let configured = NativeCheckpointPredicateKey.predicate_key().unwrap();
+        let expected = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]);
+
+        let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
+
+        assert!(err.to_string().contains("predicate key mismatch"));
     }
 }
