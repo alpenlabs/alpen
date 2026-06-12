@@ -18,7 +18,7 @@ import os
 import sys
 
 import flexitest
-from flexitest.runtime import load_candidate_modules, scan_dir_for_modules
+from flexitest.runtime import load_module_at, scan_dir_for_modules
 
 # Import environments
 from common.config import EpochSealingConfig, ServiceType
@@ -190,6 +190,22 @@ def filter_tests(
     return filtered
 
 
+def load_candidate_test_modules(modules: dict[str, str]) -> list[str]:
+    """Load modules and return only names that registered runnable tests."""
+    registered_start = len(flexitest._TEST_UNITS)
+    for name, path in modules.items():
+        load_module_at(name, path)
+
+    test_names = []
+    seen = set()
+    for test_class in flexitest._TEST_UNITS[registered_start:]:
+        test_name = test_class.__module__
+        if test_name not in seen:
+            test_names.append(test_name)
+            seen.add(test_name)
+    return test_names
+
+
 def list_tests(modules: dict[str, str], test_dir: str) -> None:
     """
     List all available tests with their groups.
@@ -256,6 +272,8 @@ def main(argv: list[str]) -> int:
     # Handle --list mode
     if args.list:
         modules = flexitest.runtime.scan_dir_for_modules(test_dir)
+        candidate_names = frozenset(load_candidate_test_modules(modules))
+        modules = {name: path for name, path in modules.items() if name in candidate_names}
         list_tests(modules, test_dir)
         return 0
 
@@ -373,7 +391,7 @@ def main(argv: list[str]) -> int:
                 print("\nUse --list to see available tests and groups.")
             return 1
 
-        tests = load_candidate_modules(filtered_modules)
+        tests = load_candidate_test_modules(filtered_modules)
         runtime.prepare_registered_tests()
 
     # Run tests
