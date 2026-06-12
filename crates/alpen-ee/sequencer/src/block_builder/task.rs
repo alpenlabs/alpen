@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use alpen_ee_block_assembly::{build_next_exec_block, BlockAssemblyInputs, BlockAssemblyOutputs};
+use alloy_primitives::B256;
 use alpen_ee_common::{
-    Clock, EnginePayload, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage,
+    Clock, EnginePayload, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, ForkchoiceState,
     PayloadBuilderEngine, SystemClock,
 };
 use alpen_ee_exec_chain::ExecChainHandle;
@@ -231,8 +232,24 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .await
         .context("block_builder: submit payload to engine")?;
 
-    // Block acceptance blocks on witness production: now that reth knows the
-    // block (it is at tip), synchronously compute + persist its depth-0 proof
+    // Canonicalize the freshly built block before capturing its witness. The
+    // payload submission above only inserts the block into the engine tree as
+    // VALID; `block_by_hash` (used by witness capture) sees only canonical or
+    // pending blocks. Drive the forkchoice update here — instead of relying on
+    // the OL tracker's asynchronous FCU — so block acceptance is synchronous
+    // and self-contained, and the block is canonical at tip when we capture.
+    // Safe/finalized are left zero to retain their current values.
+    payload_builder
+        .update_consensus_state(ForkchoiceState {
+            head_block_hash: B256::from_slice(blockhash.as_ref()),
+            safe_block_hash: B256::ZERO,
+            finalized_block_hash: B256::ZERO,
+        })
+        .await
+        .context("block_builder: canonicalize block via forkchoice update")?;
+
+    // Block acceptance blocks on witness production: now that the block is
+    // canonical at tip, synchronously compute + persist its depth-0 proof
     // witness before the block is saved/advanced. A failure fails the block —
     // the builder loop retries — so a block is never accepted without its
     // witness, and the witness's multiproofs are always shallow.

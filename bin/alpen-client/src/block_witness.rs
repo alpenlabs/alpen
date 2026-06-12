@@ -24,6 +24,7 @@ use reth_provider::{BlockReader, HeaderProvider, StateProviderFactory};
 use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use tokio::task;
+use tracing::info;
 
 /// Persisted per-block proof-witness, keyed by execution block hash.
 ///
@@ -97,6 +98,7 @@ where
             .put_block_witness(block_hash, bytes)
             .await
             .map_err(|e| eyre::eyre!("persist block witness: {e}"))?;
+        info!(?block_hash, "persisted block witness");
         Ok(())
     }
 }

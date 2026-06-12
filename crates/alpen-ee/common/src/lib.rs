@@ -9,7 +9,10 @@ mod utils;
 
 pub use traits::{
     da::{BatchDaProvider, DaBlobSource, DaStatus, HeaderSummaryProvider},
-    engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
+    engine::{
+        EnginePayload, ExecutionEngine, ExecutionEngineError, ForkchoiceState,
+        PayloadBuilderEngine,
+    },
     ol_client::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
         OLClient, OLClientError, SequencerOLClient,
