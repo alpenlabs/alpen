@@ -104,16 +104,22 @@ impl MmrIndexDatabase for MmrIndexDb {
                 for node_ref in &nodes {
                     let mmr_id = node_ref.id().clone();
                     let requested_pos = node_ref.pos();
-                    let mut current = Some(requested_pos);
 
                     // Walk upward from the requested node and stop at the first absent parent.
-                    while let Some(pos) = current {
+                    let mut pos = requested_pos;
+                    loop {
                         let Some(hash) = nt.get(&(mmr_id.clone(), pos))? else {
                             break;
                         };
                         out.get_or_create_table_mut(mmr_id.clone())
                             .put_node(pos, hash);
-                        current = pos.parent();
+                        // A real MMR never reaches the height ceiling; guard
+                        // against it so `parent()` (which panics at u8::MAX)
+                        // stays unreachable even on corrupt input.
+                        if pos.height() == u8::MAX {
+                            break;
+                        }
+                        pos = pos.parent();
                     }
 
                     // Preimages are leaf-only and optional for this fetch.
@@ -259,19 +265,22 @@ mod tests {
         let mut batch = MmrBatchWrite::default();
         {
             let mmr_batch = batch.entry(mmr_id.clone());
-            mmr_batch.put_node(leaf.node_pos(), Hash::from([4u8; 32]));
+            mmr_batch.put_node(leaf.to_node_pos(), Hash::from([4u8; 32]));
             mmr_batch.put_preimage(leaf, preimage.clone());
         }
         db.apply_update(batch).expect("seed node+preimage");
 
         let without_preimages = db
             .fetch_node_paths(
-                vec![MmrNodePos::new(mmr_id.clone(), leaf.node_pos())],
+                vec![MmrNodePos::new(mmr_id.clone(), leaf.to_node_pos())],
                 false,
             )
             .expect("fetch without preimages");
         let with_preimages = db
-            .fetch_node_paths(vec![MmrNodePos::new(mmr_id.clone(), leaf.node_pos())], true)
+            .fetch_node_paths(
+                vec![MmrNodePos::new(mmr_id.clone(), leaf.to_node_pos())],
+                true,
+            )
             .expect("fetch with preimages");
 
         let table_without = without_preimages.get_table(&mmr_id).expect("table without");
