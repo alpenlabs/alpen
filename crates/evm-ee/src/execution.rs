@@ -270,7 +270,7 @@ mod tests {
     use strata_msg_fmt::{Msg, MsgRef};
     use strata_ol_bridge_types::OperatorSelection;
     use strata_ol_msg_types::OLMessageExt;
-    use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
+    use strata_primitives::bitcoin_bosd::Descriptor;
 
     use super::*;
     use crate::types::{EvmBlock, EvmBlockBody, EvmHeader, EvmPartialState};
@@ -296,7 +296,6 @@ mod tests {
         let intent = alpen_reth_primitives::WithdrawalIntent {
             amt: withdrawal_sats,
             selected_operator: OperatorSelection::any(),
-            withdrawal_txid: Buf32::new([0x44; 32]),
             destination,
         };
 
