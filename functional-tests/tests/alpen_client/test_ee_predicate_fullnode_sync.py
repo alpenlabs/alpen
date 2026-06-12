@@ -70,7 +70,9 @@ class TestEePredicateFullnodeSync(BaseTest):
         btc_password = bitcoin.props["rpc_password"]
         mine_addr = btc_rpc.proxy.getnewaddress()
 
-        initial_vk = strata_rpc.strata_getSnarkAccountState(ALPEN_ACCOUNT_ID, "latest")["update_vk"]
+        initial_vk = strata_rpc.strata_getSnarkAccountStateByTag(ALPEN_ACCOUNT_ID, "latest")[
+            "update_vk"
+        ]
         if initial_vk != INITIAL_ACCT_PREDICATE:
             raise AssertionError(
                 f"expected initial update_vk to be {INITIAL_ACCT_PREDICATE!r}, got {initial_vk!r}"
@@ -187,7 +189,9 @@ class TestEePredicateFullnodeSync(BaseTest):
 
         def fetch_update_vk_and_mine() -> str:
             btc_rpc.proxy.generatetoaddress(1, mine_addr)
-            return strata_rpc.strata_getSnarkAccountState(ALPEN_ACCOUNT_ID, "latest")["update_vk"]
+            return strata_rpc.strata_getSnarkAccountStateByTag(ALPEN_ACCOUNT_ID, "latest")[
+                "update_vk"
+            ]
 
         wait_until_with_value(
             fetch_update_vk_and_mine,
