@@ -60,14 +60,10 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
             BitcoinAmount::from_sat(withdrawal_intent.amt),
             withdrawal_intent.selected_operator,
         ) else {
-            warn!(
-                withdrawal_txid = %withdrawal_intent.withdrawal_txid,
-                "skipping withdrawal: failed to create withdrawal message"
-            );
+            warn!("skipping withdrawal: failed to create withdrawal message");
             continue;
         };
         info!(
-            withdrawal_txid = ?withdrawal_intent.withdrawal_txid,
             amount_sat = withdrawal_intent.amt,
             selected_operator = withdrawal_intent.selected_operator.raw(),
             dest_desc_len = withdrawal_intent.destination.to_bytes().len(),

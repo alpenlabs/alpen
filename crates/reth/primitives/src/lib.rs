@@ -7,7 +7,7 @@ use std::mem::size_of;
 use alloy_sol_types::sol;
 use serde::{Deserialize, Serialize};
 use strata_ol_bridge_types::OperatorSelection;
-use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
+use strata_primitives::bitcoin_bosd::Descriptor;
 
 /// Type for withdrawal_intents in rpc.
 /// Distinct from `strata_ol_bridge_types::WithdrawalIntent`
@@ -19,9 +19,6 @@ pub struct WithdrawalIntent {
 
     /// User's operator selection for withdrawal assignment.
     pub selected_operator: OperatorSelection,
-
-    /// Withdrawal request transaction id.
-    pub withdrawal_txid: Buf32,
 
     /// Dynamic-sized bytes BOSD descriptor for the withdrawal destinations in L1.
     pub destination: Descriptor,
