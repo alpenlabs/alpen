@@ -6,6 +6,13 @@ use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::{constants::BRIDGEOUT_PRECOMPILE_ADDRESS, utils::wei_to_sats};
 
+// REVIEW(STR-3676): Replace these draft values with protocol-approved launch constants.
+/// Fixed raw EVM gas charged for bridge-out precompile execution.
+const BRIDGEOUT_BASE_GAS: u64 = 10_000;
+
+/// Raw EVM gas charged per calldata byte handled by the bridge-out precompile.
+const BRIDGEOUT_CALLDATA_BYTE_GAS: u64 = 16;
+
 /// Custom precompile to burn rollup native token and add bridge out intent of equal amount.
 /// Bridge out intent is created during block payload generation.
 /// This precompile validates transaction and burns the bridge out amount.
@@ -18,6 +25,11 @@ pub(crate) fn bridge_context_call(
     denomination_wei: U256,
     max_withdrawal_wei: Option<U256>,
 ) -> PrecompileResult {
+    let gas_cost = bridgeout_gas_cost(input.data.len())?;
+    if gas_cost > input.gas {
+        return Err(PrecompileError::OutOfGas);
+    }
+
     let calldata = WithdrawalCalldata::decode(input.data).ok_or_else(|| {
         PrecompileError::other(
             "Calldata too short: expected at least 5 bytes (4 operator + 1 BOSD)",
@@ -62,10 +74,17 @@ pub(crate) fn bridge_context_call(
             PrecompileError::Fatal("Failed to reset BRIDGEOUT_ADDRESS account balance".into())
         })?;
 
-    // TODO(STR-3676): Properly calculate and deduct gas for the bridge out operation
-    let gas_cost = 0;
-
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
+}
+
+fn bridgeout_gas_cost(calldata_len: usize) -> Result<u64, PrecompileError> {
+    let calldata_len = u64::try_from(calldata_len)
+        .map_err(|_| PrecompileError::Fatal("Bridgeout calldata length exceeds u64".into()))?;
+
+    BRIDGEOUT_CALLDATA_BYTE_GAS
+        .checked_mul(calldata_len)
+        .and_then(|calldata_gas| BRIDGEOUT_BASE_GAS.checked_add(calldata_gas))
+        .ok_or_else(|| PrecompileError::Fatal("Bridgeout gas cost overflow".into()))
 }
 
 /// Validates that the withdrawal amount is a positive exact multiple of the denomination
@@ -176,6 +195,29 @@ mod tests {
         // Exactly 4 bytes (operator only, no BOSD)
         let data = vec![0x00, 0x00, 0x00, 0x05];
         assert!(WithdrawalCalldata::decode(&data).is_none());
+    }
+
+    #[test]
+    fn test_bridgeout_gas_cost_includes_base_and_calldata_bytes() {
+        let calldata_len = 4 + VALID_P2WPKH_BOSD.len();
+
+        assert_eq!(
+            bridgeout_gas_cost(calldata_len).unwrap(),
+            BRIDGEOUT_BASE_GAS + BRIDGEOUT_CALLDATA_BYTE_GAS * calldata_len as u64
+        );
+    }
+
+    #[test]
+    fn test_bridgeout_gas_cost_scales_with_calldata_len() {
+        let short = bridgeout_gas_cost(5).unwrap();
+        let long = bridgeout_gas_cost(6).unwrap();
+
+        assert_eq!(long - short, BRIDGEOUT_CALLDATA_BYTE_GAS);
+    }
+
+    #[test]
+    fn test_bridgeout_gas_cost_rejects_overflow() {
+        assert!(bridgeout_gas_cost(usize::MAX).is_err());
     }
 
     // --- withdrawal amount validation tests ---
