@@ -68,7 +68,9 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             ctx.publish_client_state(new_clstate.as_ref().clone(), recent_l1blk);
         }
 
-        let recent_asm_blocks = init_recent_processed_blocks(&ctx, recent_l1blk)?;
+        // The list starts at the committed block and refills as blocks are
+        // processed; pruning bounds it to the reorg-safe depth.
+        let recent_asm_blocks = vec![recent_l1blk];
         let confirmed_epoch = new_clstate.get_last_epoch();
         let finalized_epoch = new_clstate.get_declared_final_epoch();
 
@@ -144,24 +146,6 @@ pub(crate) fn derive_state<C: CsmWorkerContext>(
         observed_checkpoints,
         new_clstate,
     })
-}
-
-/// Builds the initial L1 block list from the reorg-safe finalized floor up to
-/// `cur_block`.
-fn init_recent_processed_blocks(
-    ctx: &impl CsmWorkerContext,
-    cur_block: L1BlockCommitment,
-) -> CsmWorkerResult<Vec<L1BlockCommitment>> {
-    let depth = ctx.l1_reorg_safe_depth().max(1);
-    let gen_height = ctx.genesis_l1_block().height();
-    // Anchor is whichever is highest: depth from cur tip or genesis height
-    let anchor_height = cur_block.height().saturating_sub(depth - 1).max(gen_height);
-
-    let mut blocks = Vec::new();
-    for height in anchor_height..=cur_block.height() {
-        blocks.push(ctx.get_canonical_l1_block(height)?);
-    }
-    Ok(blocks)
 }
 
 /// Loads observed checkpoint candidates from the OL checkpoint DB via `ctx`,
@@ -397,13 +381,9 @@ mod tests {
             )
             .expect("insert epoch 1 observation");
 
-        // Seed the on-disk ClientState so its `last_finalized_checkpoint`
-        // already reflects epoch 1 — bootstrap should observe this and skip
-        // the refresh path.
-        let baseline = ClientState::new(
-            Some(L1Checkpoint::new(*payload_1.new_tip(), l1_ref_1)),
-            None,
-        );
+        // Seed the on-disk ClientState so both checkpoints already reflect epoch 1.
+        let epoch_1_ckpt = L1Checkpoint::new(*payload_1.new_tip(), l1_ref_1);
+        let baseline = ClientState::new(Some(epoch_1_ckpt.clone()), Some(epoch_1_ckpt));
         let baseline_block = L1BlockCommitment::new(20, L1BlockId::default());
         storage
             .client_state()
