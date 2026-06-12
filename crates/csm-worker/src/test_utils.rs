@@ -189,7 +189,11 @@ impl CsmWorkerContext for StubCtx {
         }
         self.canonical_blocks
             .get(&height)
-            .or_else(|| self.canonical_asm_states.get(&height).map(|(blkid, _)| blkid))
+            .or_else(|| {
+                self.canonical_asm_states
+                    .get(&height)
+                    .map(|(blkid, _)| blkid)
+            })
             .map(|blkid| L1BlockCommitment::new(height, *blkid))
             .ok_or_else(|| CsmWorkerError::MissingData {
                 what: "test canonical block",
