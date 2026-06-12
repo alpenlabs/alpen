@@ -146,6 +146,13 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         Ok(self.storage.client_state().fetch_most_recent_state()?)
     }
 
+    fn get_client_state_at(
+        &self,
+        block: &L1BlockCommitment,
+    ) -> CsmWorkerResult<Option<ClientState>> {
+        Ok(self.storage.client_state().get_state_blocking(*block)?)
+    }
+
     fn genesis_l1_block(&self) -> L1BlockCommitment {
         self.asm_params.anchor.block
     }

@@ -16,7 +16,7 @@ use crate::{
     checkpoint_extract::{CheckpointVerificationContext, extract_matching_checkpoint},
     context::CsmWorkerContext,
     errors::{CsmWorkerError, CsmWorkerResult},
-    state::CsmWorkerState,
+    state::{CsmWorkerState, derive_state},
 };
 
 /// The in-flight CSM update produced by processing one ASM block's logs.
@@ -125,11 +125,37 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let state = next_state.as_ref().clone();
         self.ctx
             .put_client_state_update(&asm_block, ClientUpdateOutput::new(state.clone(), vec![]))?;
-        self.last_asm_block = Some(asm_block);
+
+        // The list stays contiguous: a commit either extends the tip by one or
+        // replaces it at the same height (reorg). It never skips a height.
+        let last = self
+            .recent_asm_blocks
+            .last()
+            .expect("recent_asm_blocks is non-empty");
+        let extends_tip = asm_block.height() == last.height() + 1;
+        let same_height_reorg = asm_block.height() <= last.height();
+        debug_assert!(
+            extends_tip || same_height_reorg,
+            "commit skipped a height: tip {last}, block {asm_block}"
+        );
+
+        self.recent_asm_blocks.push(asm_block);
+        self.prune_below_reorg_floor();
         self.last_committed_state = next_state;
         // Publish the client state to status channel.
         self.ctx.publish_client_state(state, asm_block);
         Ok(())
+    }
+
+    /// Keeps only the `depth` newest blocks: index 0 becomes the reorg-safe
+    /// floor, the deepest point a reorg could reach. Older entries can never be
+    /// reorged out, so they are dropped.
+    fn prune_below_reorg_floor(&mut self) {
+        let depth = self.ctx.l1_reorg_safe_depth().max(1) as usize;
+        let len = self.recent_asm_blocks.len();
+        if len > depth {
+            self.recent_asm_blocks.drain(..len - depth);
+        }
     }
 
     /// Processes every log of a single ASM block and commits it as one unit.
@@ -255,9 +281,10 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         asm_block: L1BlockCommitment,
         logs: &[AsmLogEntry],
     ) -> CsmWorkerResult<()> {
-        let last = self.last_asm_block.ok_or(CsmWorkerError::NoLastAsmBlock)?;
-        let last_height = last.height();
-        let target_height = asm_block.height();
+        let last = *self
+            .recent_asm_blocks
+            .last()
+            .ok_or(CsmWorkerError::NoAnchorAsmBlock)?;
 
         // Exact duplicate — ASM redelivered the same status, nothing to do.
         if asm_block == last {
@@ -265,42 +292,81 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             return Ok(());
         }
 
-        // TODO(STR-3466): Strictly behind — either a stale message or a deeper reorg.
-        if target_height < last_height {
-            warn!(
-                %asm_block,
-                last_height,
-                "ASM block strictly behind last committed; skipping (possible deeper reorg)"
-            );
-            return Ok(());
+        // A clean forward extension keeps `last` on the canonical chain.
+        let last_still_canonical = self.ctx.get_canonical_l1_block(last.height())? == last;
+        if !(asm_block.height() > last.height() && last_still_canonical) {
+            self.reorg_to_fork(&asm_block)?;
         }
 
-        // Same height, different blkid — the chain reorged out our last tip.
-        // TODO(STR-3466): with this ticket the two conditionals can be collapsed into one `<=`
-        // check.
-        if target_height == last_height {
-            warn!(
-                %asm_block,
-                last_blkid = ?last.blkid(),
-                "same-height ASM block with different blkid; processing as reorged tip"
-            );
-            // Directly process the logs in one block reorg.
-            return self.process_asm_logs(asm_block, logs);
-        }
+        // Non-empty: `last` was extracted above and reorg keeps the fork entry.
+        let resume_height = self
+            .recent_asm_blocks
+            .last()
+            .expect("recent_asm_blocks is non-empty")
+            .height();
 
-        for height in (last_height + 1)..=target_height {
-            let (block, block_logs) = if height == target_height {
-                (asm_block, logs.to_vec())
-            } else {
-                // fetch from db.
-                let gap_block = self.ctx.get_canonical_l1_block(height)?;
-                let gap_state = self.ctx.get_asm_state(&gap_block)?;
-                info!(%gap_block, "replaying ASM block skipped by status channel");
-                (gap_block, gap_state.logs().clone())
-            };
-            self.process_asm_logs(block, &block_logs)?;
+        // Replay gap blocks, then the target.
+        for height in (resume_height + 1)..asm_block.height() {
+            let gap_block = self.ctx.get_canonical_l1_block(height)?;
+            let gap_state = self.ctx.get_asm_state(&gap_block)?;
+            info!(%gap_block, "replaying ASM block skipped by status channel");
+            self.process_asm_logs(gap_block, gap_state.logs())?;
         }
+        // Process the target.
+        self.process_asm_logs(asm_block, logs)?;
         Ok(())
+    }
+
+    /// Rewinds the worker to the fork point shared with the chain leading to
+    /// `incoming`, re-deriving cursors and persisted state there.
+    ///
+    /// Errors if the fork lies at or below the finalized anchor (index 0): a
+    /// reorg past finality is a protocol violation the worker must not absorb.
+    fn reorg_to_fork(&mut self, incoming: &L1BlockCommitment) -> CsmWorkerResult<()> {
+        // No match means the divergence reaches past the finalized anchor.
+        let Some(fork_idx) = self.find_fork_index()? else {
+            return Err(CsmWorkerError::ReorgPastFinality {
+                finalized: self.recent_asm_blocks[0],
+                incoming: *incoming,
+            });
+        };
+        let fork_block = self.recent_asm_blocks[fork_idx];
+
+        warn!(%fork_block, %incoming, "reorg detected; rewinding to fork point");
+        self.recent_asm_blocks.truncate(fork_idx + 1);
+
+        let fork_clstate = self
+            .ctx
+            .get_client_state_at(&fork_block)?
+            .unwrap_or_default();
+        let derived = derive_state(&self.ctx, &fork_block, &fork_clstate)?;
+        let new_clstate = derived.new_clstate;
+        self.confirmed_epoch = new_clstate.get_last_epoch();
+        self.finalized_epoch = new_clstate.get_declared_final_epoch();
+        self.observed_checkpoints = derived.observed_checkpoints;
+
+        // Re-persist at the fork to overwrite the orphaned branch's row.
+        self.ctx.put_client_state_update(
+            &fork_block,
+            ClientUpdateOutput::new_state(new_clstate.clone()),
+        )?;
+        self.ctx
+            .publish_client_state(new_clstate.clone(), fork_block);
+        self.last_committed_state = Arc::new(new_clstate);
+        Ok(())
+    }
+
+    /// Highest list index whose block still matches the canonical L1 chain.
+    ///
+    /// `None` if even the finalized anchor (index 0) diverged.
+    fn find_fork_index(&self) -> CsmWorkerResult<Option<usize>> {
+        for idx in (0..self.recent_asm_blocks.len()).rev() {
+            let block = self.recent_asm_blocks[idx];
+            if self.ctx.get_canonical_l1_block(block.height())? == block {
+                return Ok(Some(idx));
+            }
+        }
+        Ok(None)
     }
 
     fn get_checkpoint_verification_context(
@@ -609,7 +675,7 @@ mod tests {
         let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
 
         let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_fetch_failure());
-        state.last_asm_block = Some(asm_block);
+        state.recent_asm_blocks = Some(asm_block);
         let mut pending = fresh_pending(&state);
         let err = state
             .process_log(&mut pending, &log, &asm_block)
@@ -640,7 +706,7 @@ mod tests {
             .commit_block(asm_block, next_state)
             .expect("commit should succeed");
 
-        assert_eq!(state.last_asm_block, Some(asm_block));
+        assert_eq!(state.recent_asm_blocks, Some(asm_block));
         let (persisted_block, _) = storage
             .client_state()
             .fetch_most_recent_state()
@@ -659,7 +725,7 @@ mod tests {
         let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
 
         let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_fetch_failure());
-        state.last_asm_block = Some(asm_block);
+        state.recent_asm_blocks = Some(asm_block);
 
         // The genesis client-state row seeded by `create_test_storage`.
         let (before_block, _) = storage
@@ -699,7 +765,7 @@ mod tests {
     fn commit_failure_leaves_cursors_unchanged() {
         let (mut state, storage) = create_test_state_with_ctx(|c| c.with_commit_failure());
         let last = L1BlockCommitment::new(100, block_id_at(100));
-        state.last_asm_block = Some(last);
+        state.recent_asm_blocks = Some(last);
 
         // Seed cursors with a known baseline so we can detect any partial
         // advancement that survives the failed commit.
@@ -725,7 +791,7 @@ mod tests {
         );
 
         // Commit cursor pinned at the last committed block.
-        assert_eq!(state.last_asm_block, Some(last));
+        assert_eq!(state.recent_asm_blocks, Some(last));
         // Every cursor unchanged.
         assert_eq!(state.last_processed_epoch, baseline_last_processed_epoch);
         assert_eq!(state.confirmed_epoch, baseline_confirmed_epoch);
@@ -747,14 +813,14 @@ mod tests {
     fn contiguous_block_commits_directly() {
         let (mut state, storage) = create_test_state();
         let last = L1BlockCommitment::new(100, block_id_at(100));
-        state.last_asm_block = Some(last);
+        state.recent_asm_blocks = Some(last);
 
         let next = L1BlockCommitment::new(101, block_id_at(101));
         state
             .process_asm_block(next, &[create_non_checkpoint_log_type()])
             .expect("contiguous block should process");
 
-        assert_eq!(state.last_asm_block, Some(next));
+        assert_eq!(state.recent_asm_blocks, Some(next));
         let (persisted, _) = storage
             .client_state()
             .fetch_most_recent_state()
@@ -783,14 +849,14 @@ mod tests {
             }
             c
         });
-        state.last_asm_block = Some(last);
+        state.recent_asm_blocks = Some(last);
 
         state
             .process_asm_block(target, &[create_non_checkpoint_log_type()])
             .expect("gap-fill should replay skipped blocks and commit target");
 
         // Cursor advanced all the way to the target.
-        assert_eq!(state.last_asm_block, Some(target));
+        assert_eq!(state.recent_asm_blocks, Some(target));
         // The last persisted client-state row is keyed on the target block,
         // and each gap block was committed in turn (105 distinct keys exist).
         let (persisted, _) = storage
@@ -829,7 +895,7 @@ mod tests {
             )
             .with_canonical_failure_at(102)
         });
-        state.last_asm_block = Some(last);
+        state.recent_asm_blocks = Some(last);
 
         let (before_block, _) = storage
             .client_state()
@@ -852,7 +918,7 @@ mod tests {
         // Block 101 was committed before the failure; the cursor advanced to
         // 101 but no further — it did not jump to the target.
         assert_eq!(
-            state.last_asm_block,
+            state.recent_asm_blocks,
             Some(L1BlockCommitment::new(101, block_id_at(101)))
         );
         assert!(
@@ -876,7 +942,7 @@ mod tests {
         let old_blkid = block_id_at(100);
         let new_blkid = block_id_at(0xFE);
         let last = L1BlockCommitment::new(100, old_blkid);
-        state.last_asm_block = Some(last);
+        state.recent_asm_blocks = Some(last);
 
         let reorged = L1BlockCommitment::new(100, new_blkid);
         state
@@ -884,7 +950,7 @@ mod tests {
             .expect("same-height reorg should process the new tip");
 
         assert_eq!(
-            state.last_asm_block,
+            state.recent_asm_blocks,
             Some(reorged),
             "cursor must advance to the reorged-in blkid"
         );
@@ -903,7 +969,7 @@ mod tests {
     fn stale_or_duplicate_block_is_ignored() {
         let (mut state, storage) = create_test_state();
         let last = L1BlockCommitment::new(100, block_id_at(100));
-        state.last_asm_block = Some(last);
+        state.recent_asm_blocks = Some(last);
 
         let (before, _) = storage
             .client_state()
@@ -921,7 +987,7 @@ mod tests {
             .process_asm_block(behind, &[create_non_checkpoint_log_type()])
             .expect("stale block should be a no-op");
 
-        assert_eq!(state.last_asm_block, Some(last));
+        assert_eq!(state.recent_asm_blocks, Some(last));
         let (after, _) = storage
             .client_state()
             .fetch_most_recent_state()
