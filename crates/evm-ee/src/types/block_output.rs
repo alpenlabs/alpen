@@ -1,6 +1,6 @@
 //! EVM execution-derived block output.
 
-use alloy_consensus::proofs::calculate_receipt_root;
+use alloy_consensus::{TxReceipt, proofs::calculate_receipt_root};
 use alpen_reth_evm::accumulate_logs_bloom;
 use reth_evm::execute::BlockExecutionOutput;
 use reth_primitives::Receipt as EthereumReceipt;
@@ -27,9 +27,16 @@ impl EvmBlockOutput {
         header_intrinsics: &EvmHeaderIntrinsics,
         execution_output: &BlockExecutionOutput<EthereumReceipt>,
     ) -> Self {
+        let receipts_with_bloom = execution_output
+            .result
+            .receipts
+            .iter()
+            .map(TxReceipt::with_bloom_ref)
+            .collect::<Vec<_>>();
+
         Self {
             logs_bloom: accumulate_logs_bloom(&execution_output.result.receipts),
-            receipts_root: calculate_receipt_root(&execution_output.result.receipts),
+            receipts_root: calculate_receipt_root(&receipts_with_bloom),
             gas_used: execution_output.result.gas_used,
             blob_gas_used: header_intrinsics
                 .has_blob_gas_used()
