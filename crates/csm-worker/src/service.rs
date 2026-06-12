@@ -276,7 +276,7 @@ mod tests {
             "finalized_epoch must not advance when process_asm_block failed"
         );
         // The cursor must stay pinned at the last committed block.
-        assert_eq!(state.recent_asm_blocks, Some(last));
+        assert_eq!(state.recent_asm_blocks.last(), Some(&last));
         // No ClientState row may exist at the failed block.
         assert!(
             storage
