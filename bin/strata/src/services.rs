@@ -45,6 +45,7 @@ mod sequencer_services {
     use tokio::sync::mpsc;
 
     use crate::{
+        checkpoint_auth::CheckpointSequencerKeyProvider,
         helpers::generate_sequencer_address,
         run_context::{SequencerServiceHandles, ServiceHandlesBuilder},
     };
@@ -52,7 +53,6 @@ mod sequencer_services {
     pub(super) fn start_if_enabled(
         nodectx: &NodeContext,
         mempool_handle: Option<Arc<MempoolHandle>>,
-        envelope_pubkey: Option<[u8; 32]>,
     ) -> Result<Option<SequencerServiceHandles>> {
         if !nodectx.config().client.is_sequencer {
             return Ok(None);
@@ -63,8 +63,7 @@ mod sequencer_services {
         let mempool_handle = mempool_handle.expect("sequencer node must have a mempool handle");
 
         let broadcast_handle = Arc::new(start_broadcaster(nodectx)?);
-        let (envelope_handle, watcher_handle) =
-            start_writer(nodectx, broadcast_handle.clone(), envelope_pubkey)?;
+        let (envelope_handle, watcher_handle) = start_writer(nodectx, broadcast_handle.clone())?;
         let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle)?);
 
         Ok(Some(SequencerServiceHandles::new(
@@ -111,7 +110,6 @@ mod sequencer_services {
     fn start_writer(
         nodectx: &NodeContext,
         broadcast_handle: Arc<L1BroadcastHandle>,
-        envelope_pubkey: Option<[u8; 32]>,
     ) -> Result<(Arc<EnvelopeHandle>, DumbTickHandle)> {
         let sequencer_address = nodectx
             .task_manager()
@@ -132,16 +130,16 @@ mod sequencer_services {
             let (intent_tx, intent_rx) = mpsc::channel(64);
             let envelope_handle = Arc::new(EnvelopeHandle::new(writer_ops.clone(), intent_tx));
 
-            let mut ctx = WriterContext::new(
+            let ctx = WriterContext::new(
                 btcio_params,
                 config.clone(),
                 sequencer_address,
                 nodectx.bitcoin_client().clone(),
                 nodectx.status_channel().as_ref().clone(),
-            );
-            if let Some(pk) = &envelope_pubkey {
-                ctx = ctx.with_envelope_pubkey(pk);
-            }
+            )
+            .with_signing_mode_provider(Arc::new(CheckpointSequencerKeyProvider::new(
+                nodectx.storage().clone(),
+            )));
             let ctx = Arc::new(ctx);
 
             let (watcher_handle, _) = WatcherBuilder::new(
@@ -227,11 +225,7 @@ mod sequencer_services {
 
     use crate::run_context::ServiceHandlesBuilder;
 
-    pub(super) fn start_if_enabled(
-        _: &NodeContext,
-        _: Option<Arc<MempoolHandle>>,
-        _: Option<[u8; 32]>,
-    ) -> Result<()> {
+    pub(super) fn start_if_enabled(_: &NodeContext, _: Option<Arc<MempoolHandle>>) -> Result<()> {
         Ok(())
     }
 
@@ -253,7 +247,6 @@ pub(crate) type OptionalProofNotify = Option<Arc<strata_ol_checkpoint::ProofNoti
 /// wake the checkpoint worker immediately after storing a proof.
 pub(crate) fn start_strata_services(
     nodectx: NodeContext,
-    envelope_pubkey: Option<[u8; 32]>,
 ) -> Result<(RunContext, OptionalProofNotify)> {
     // Start Asm worker
     let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
@@ -323,8 +316,7 @@ pub(crate) fn start_strata_services(
         (None, None)
     };
 
-    let sequencer_handles =
-        sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), envelope_pubkey)?;
+    let sequencer_handles = sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone())?;
 
     let sync_handle =
         start_sync_services(&nodectx, chain_worker_handle.clone(), csm_monitor.clone())?;
