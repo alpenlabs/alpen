@@ -13,11 +13,11 @@ use format_serde_error::SerdeError;
 use strata_asm_params::AsmParams;
 #[cfg(feature = "prover")]
 use strata_asm_params::SubprotocolInstance;
-#[cfg(feature = "prover")]
-use strata_config::ProverBackend;
 use strata_config::{
     BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig, SequencerRuntimeConfig,
 };
+#[cfg(feature = "prover")]
+use strata_config::{ProverBackend, ProverConfig};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
@@ -25,12 +25,10 @@ use strata_ol_params::OLParams;
 #[cfg(feature = "prover")]
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{L1BlockCommitment, OLBlockCommitment};
-#[cfg(all(feature = "prover", feature = "sp1"))]
+#[cfg(feature = "prover")]
 use strata_proofimpl_predicate_keys::Sp1Groth16PredicateKey;
 #[cfg(feature = "prover")]
-use strata_proofimpl_predicate_keys::{
-    NativeCheckpointPredicateKey, PredicateKeyProvider, validate_expected_predicate_key,
-};
+use strata_proofimpl_predicate_keys::{NativeCheckpointPredicateKey, validate_predicate_key};
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::{NodeStorage, create_node_storage};
 #[cfg(all(feature = "prover", feature = "sp1"))]
@@ -38,6 +36,8 @@ use strata_zkvm_hosts::sp1::checkpoint_host;
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
+#[cfg(all(feature = "prover", feature = "sp1"))]
+use crate::prover::checkpoint_sp1_host_config;
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
 /// Load config early for logging initialization
@@ -231,13 +231,7 @@ fn validate_integrated_prover_compatibility(
         )));
     }
 
-    let expected_predicate = checkpoint_predicate_key_for_backend(prover_config.backend, handle)?;
-    validate_expected_predicate_key(checkpoint_predicate, &expected_predicate).map_err(|e| {
-        InitError::InvalidProverConfig(format!(
-            "checkpoint predicate key does not match configured prover backend {:?}: {e}",
-            prover_config.backend
-        ))
-    })?;
+    validate_checkpoint_predicate_key_for_backend(checkpoint_predicate, prover_config, handle)?;
 
     Ok(())
 }
@@ -294,30 +288,45 @@ fn expected_backend_for_checkpoint_predicate(
 }
 
 #[cfg(feature = "prover")]
-fn checkpoint_predicate_key_for_backend(
-    backend: ProverBackend,
+fn validate_checkpoint_predicate_key_for_backend(
+    checkpoint_predicate: &PredicateKey,
+    prover_config: &ProverConfig,
     handle: &Handle,
-) -> Result<PredicateKey, InitError> {
-    match backend {
-        ProverBackend::Native => NativeCheckpointPredicateKey
-            .predicate_key()
-            .map_err(|e| InitError::InvalidProverConfig(e.to_string())),
-        ProverBackend::Sp1 => checkpoint_sp1_predicate_key(handle),
+) -> Result<(), InitError> {
+    match prover_config.backend {
+        ProverBackend::Native => {
+            validate_predicate_key(checkpoint_predicate, &NativeCheckpointPredicateKey)
+        }
+        ProverBackend::Sp1 => {
+            let provider = checkpoint_sp1_predicate_key_provider(prover_config, handle)?;
+            validate_predicate_key(checkpoint_predicate, &provider)
+        }
     }
+    .map_err(|e| {
+        InitError::InvalidProverConfig(format!(
+            "checkpoint predicate key does not match configured prover backend {:?}: {e}",
+            prover_config.backend
+        ))
+    })
 }
 
 #[cfg(all(feature = "prover", feature = "sp1"))]
-fn checkpoint_sp1_predicate_key(handle: &Handle) -> Result<PredicateKey, InitError> {
+fn checkpoint_sp1_predicate_key_provider(
+    prover_config: &ProverConfig,
+    handle: &Handle,
+) -> Result<Sp1Groth16PredicateKey, InitError> {
     use zkaleido::ZkVmExecutor;
 
-    let host = handle.block_on(checkpoint_host(zkaleido_sp1_host::SP1HostConfig::default()));
-    Sp1Groth16PredicateKey::new(host.program_id().0)
-        .predicate_key()
-        .map_err(|e| InitError::InvalidProverConfig(e.to_string()))
+    let sp1_config = checkpoint_sp1_host_config(prover_config);
+    let host = handle.block_on(checkpoint_host(sp1_config));
+    Ok(Sp1Groth16PredicateKey::new(host.program_id().0))
 }
 
 #[cfg(all(feature = "prover", not(feature = "sp1")))]
-fn checkpoint_sp1_predicate_key(_handle: &Handle) -> Result<PredicateKey, InitError> {
+fn checkpoint_sp1_predicate_key_provider(
+    _prover_config: &ProverConfig,
+    _handle: &Handle,
+) -> Result<Sp1Groth16PredicateKey, InitError> {
     Err(InitError::InvalidProverConfig(
         "config.prover.backend=sp1 requires building `strata` with the `sp1` feature".to_string(),
     ))

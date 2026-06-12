@@ -16431,6 +16431,7 @@ dependencies = [
 name = "strata-proofimpl-predicate-keys"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "sp1-verifier",
  "strata-predicate",
  "strata-proofimpl-alpen-acct",

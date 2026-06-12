@@ -20,18 +20,23 @@ pub enum PredicateKeyError {
     /// The configured predicate does not match the expected predicate.
     #[error(
         "predicate key mismatch: configured type {configured_type} condition length \
-         {configured_condition_len}, expected type {expected_type} condition length \
-         {expected_condition_len}"
+         {configured_condition_len} condition {configured_condition}, expected type \
+         {expected_type} condition length {expected_condition_len} condition \
+         {expected_condition}"
     )]
     Mismatch {
         /// Predicate type configured in params.
         configured_type: u8,
         /// Configured predicate condition byte length.
         configured_condition_len: usize,
+        /// Hex-encoded configured predicate condition.
+        configured_condition: String,
         /// Expected predicate type for the selected provider.
         expected_type: u8,
         /// Expected predicate condition byte length.
         expected_condition_len: usize,
+        /// Hex-encoded expected predicate condition.
+        expected_condition: String,
     },
 }
 
@@ -62,8 +67,10 @@ pub fn validate_expected_predicate_key(
     Err(PredicateKeyError::Mismatch {
         configured_type: configured.id(),
         configured_condition_len: configured.condition().len(),
+        configured_condition: hex::encode(configured.condition()),
         expected_type: expected.id(),
         expected_condition_len: expected.condition().len(),
+        expected_condition: hex::encode(expected.condition()),
     })
 }
 
@@ -136,5 +143,88 @@ impl PredicateKeyProvider for Sp1Groth16PredicateKey {
         Err(PredicateKeyError::FeatureDisabled(
             "SP1 predicate-key derivation requires the `sp1` feature",
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_predicate::{PredicateKey, PredicateTypeId};
+
+    use super::{
+        PredicateKeyError, PredicateKeyProvider, validate_expected_predicate_key,
+        validate_predicate_key,
+    };
+
+    #[derive(Debug)]
+    struct StaticPredicateKeyProvider(PredicateKey);
+
+    impl PredicateKeyProvider for StaticPredicateKeyProvider {
+        fn predicate_key(&self) -> Result<PredicateKey, PredicateKeyError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    #[test]
+    fn accepts_equal_predicate_keys() {
+        let predicate = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![1, 2, 3]);
+
+        validate_expected_predicate_key(&predicate, &predicate).unwrap();
+    }
+
+    #[test]
+    fn validates_predicate_key_provider_output() {
+        let predicate = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![1, 2, 3]);
+        let provider = StaticPredicateKeyProvider(predicate.clone());
+
+        validate_predicate_key(&predicate, &provider).unwrap();
+    }
+
+    #[test]
+    fn mismatch_reports_type_length_and_conditions() {
+        let configured = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0xaa; 32]);
+        let expected = PredicateKey::new(PredicateTypeId::Sp1Groth16, vec![0xbb; 16]);
+
+        let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
+
+        let PredicateKeyError::Mismatch {
+            configured_type,
+            configured_condition_len,
+            configured_condition,
+            expected_type,
+            expected_condition_len,
+            expected_condition,
+        } = err
+        else {
+            panic!("expected mismatch error");
+        };
+
+        assert_eq!(configured_type, PredicateTypeId::Bip340Schnorr as u8);
+        assert_eq!(configured_condition_len, 32);
+        assert_eq!(
+            configured_condition,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(expected_type, PredicateTypeId::Sp1Groth16 as u8);
+        assert_eq!(expected_condition_len, 16);
+        assert_eq!(expected_condition, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    }
+
+    #[test]
+    fn mismatch_reports_same_type_and_length_with_different_conditions() {
+        let configured = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0xaa; 32]);
+        let expected = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0xbb; 32]);
+
+        let err = validate_expected_predicate_key(&configured, &expected)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains(
+            "configured type 10 condition length 32 condition \
+             aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ));
+        assert!(err.contains(
+            "expected type 10 condition length 32 condition \
+             bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ));
     }
 }

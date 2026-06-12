@@ -21,6 +21,8 @@ use strata_storage::CheckpointProofDbManager;
 use strata_tasks::TaskExecutor;
 use tokio::{sync::watch, time};
 use tracing::{debug, info, warn};
+#[cfg(feature = "sp1")]
+use zkaleido_sp1_host::{SP1Host, SP1HostConfig};
 
 use self::{
     receipt_hook::CheckpointReceiptHook,
@@ -38,6 +40,22 @@ const PROVER_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 /// cover checkpoint proofs while still failing fast on stuck requests.
 #[cfg(feature = "sp1")]
 const DEFAULT_SP1_DEADLINE_SECS: u64 = 4 * 60 * 60;
+
+/// Returns the checkpoint SP1 proof deadline configured for this node.
+#[cfg(feature = "sp1")]
+pub(crate) fn checkpoint_sp1_proof_deadline_secs(prover_config: &ProverConfig) -> u64 {
+    prover_config
+        .sp1_proof_deadline_secs
+        .unwrap_or(DEFAULT_SP1_DEADLINE_SECS)
+}
+
+/// Builds the SP1 host config used by the checkpoint prover.
+#[cfg(feature = "sp1")]
+pub(crate) fn checkpoint_sp1_host_config(prover_config: &ProverConfig) -> SP1HostConfig {
+    SP1HostConfig::default().with_deadline(Duration::from_secs(checkpoint_sp1_proof_deadline_secs(
+        prover_config,
+    )))
+}
 
 /// Starts the integrated prover service.
 ///
@@ -86,7 +104,6 @@ pub(crate) fn start_prover_service(
         #[cfg(feature = "sp1")]
         ProverBackend::Sp1 => {
             use strata_zkvm_hosts::sp1::checkpoint_host;
-            use zkaleido_sp1_host::SP1HostConfig;
             // prover-core's `.remote(host)` takes the host by value and
             // re-wraps it in its own Arc inside RemoteStrategy. SP1Host
             // is Clone (only holds a SP1ProvingKey), so cloning from the
@@ -94,17 +111,14 @@ pub(crate) fn start_prover_service(
             // proving key + prover client over the network/local SDK), so
             // we drive it on the runtime handle. The deadline is now part
             // of `SP1HostConfig`, applied at init time rather than after.
-            let deadline_secs = prover_config
-                .sp1_proof_deadline_secs
-                .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
-            let sp1_config =
-                SP1HostConfig::default().with_deadline(Duration::from_secs(deadline_secs));
+            let deadline_secs = checkpoint_sp1_proof_deadline_secs(&prover_config);
+            let sp1_config = checkpoint_sp1_host_config(&prover_config);
             info!(deadline_secs, "sp1 prover deadline configured");
             let host_static = runctx
                 .task_manager
                 .handle()
                 .block_on(checkpoint_host(sp1_config));
-            let host: zkaleido_sp1_host::SP1Host = (**host_static).clone();
+            let host: SP1Host = (**host_static).clone();
             ProverBuilder::new(spec)
                 .task_store(task_store)
                 .receipt_hook(hook)
