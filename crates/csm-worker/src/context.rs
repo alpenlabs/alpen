@@ -64,6 +64,12 @@ pub trait CsmWorkerContext: Send + Sync {
         &self,
     ) -> CsmWorkerResult<Option<(L1BlockCommitment, ClientState)>>;
 
+    /// Returns the client state persisted at `block`, if any.
+    fn get_client_state_at(
+        &self,
+        block: &L1BlockCommitment,
+    ) -> CsmWorkerResult<Option<ClientState>>;
+
     /// L1 block that bootstrap should anchor to when storage has no client
     /// state yet.
     fn genesis_l1_block(&self) -> L1BlockCommitment;

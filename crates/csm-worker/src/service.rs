@@ -33,7 +33,7 @@ impl<C: CsmWorkerContext + 'static> Service for CsmWorkerService<C> {
 
     fn get_status(state: &Self::State) -> Self::Status {
         CsmWorkerStatus {
-            cur_block: state.last_asm_block,
+            cur_block: state.recent_asm_blocks.last().copied(),
             last_processed_epoch: state.last_processed_epoch.map(|e| e as u64),
             last_confirmed_epoch: state.confirmed_epoch,
             last_finalized_epoch: state.finalized_epoch,
@@ -76,8 +76,8 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
             error!(%asm_block, err = ?e, "Failed to persist refreshed finalized checkpoint");
         }
 
-        // FCM listens on checkpoint-state updates. Emit when checkpoint status changed
-        // even if client-state object itself did not change (tip-only L1 movement).
+        // Publish client state update when checkpoint status changed even if client-state object
+        // itself did not change (tip-only L1 movement).
         if confirmed_changed || newly_finalized.is_some() {
             state
                 .ctx
@@ -276,7 +276,7 @@ mod tests {
             "finalized_epoch must not advance when process_asm_block failed"
         );
         // The cursor must stay pinned at the last committed block.
-        assert_eq!(state.last_asm_block, Some(last));
+        assert_eq!(state.recent_asm_blocks, Some(last));
         // No ClientState row may exist at the failed block.
         assert!(
             storage

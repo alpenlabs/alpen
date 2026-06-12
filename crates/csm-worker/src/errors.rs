@@ -14,8 +14,8 @@ pub type CsmWorkerResult<T> = Result<T, CsmWorkerError>;
 #[derive(Debug, Error)]
 pub enum CsmWorkerError {
     /// No committed ASM block exists yet; the worker was bootstrapped without one.
-    #[error("CSM has no last committed ASM block")]
-    NoLastAsmBlock,
+    #[error("CSM has no last committed anchor ASM block")]
+    NoAnchorAsmBlock,
 
     /// The genesis L1 block has no parent to derive a commitment from.
     #[error("cannot derive parent for genesis L1 block {0}")]
@@ -60,6 +60,13 @@ pub enum CsmWorkerError {
     /// A record the worker expected was absent.
     #[error("missing {what}: {detail}")]
     MissingData { what: &'static str, detail: String },
+
+    /// A reorg diverged at or below the finalized anchor — a protocol violation.
+    #[error("reorg past finality: finalized {finalized}, incoming {incoming}")]
+    ReorgPastFinality {
+        finalized: L1BlockCommitment,
+        incoming: L1BlockCommitment,
+    },
 
     /// Other generic errors without precise types.
     #[error("{0}")]
