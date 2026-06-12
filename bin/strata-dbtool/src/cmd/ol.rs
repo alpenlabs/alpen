@@ -58,8 +58,8 @@ pub(crate) struct GetOLBlocksAtSlotArgs {
 ///
 /// Intended for pruning an orphaned sibling block left behind by a reorg,
 /// e.g. when the slot index still lists the orphan ahead of the canonical
-/// block. Refuses to delete a block that is alone at its slot or that has a
-/// stored child.
+/// block. Refuses to delete a block that is alone at its slot, that has a
+/// stored child, or that is the current block high-watermark.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "delete-ol-block")]
 pub(crate) struct DeleteOLBlockArgs {
@@ -248,6 +248,19 @@ pub(crate) fn delete_ol_block(
             return Err(DisplayedError::UserError(
                 "Refusing to delete block with a stored child".to_string(),
                 Box::new(child_id),
+            ));
+        }
+    }
+
+    let block_high_watermark = db
+        .ol_block_db()
+        .get_block_high_watermark()
+        .internal_error("Failed to read OL block high-watermark")?;
+    if let Some(high_watermark) = block_high_watermark {
+        if *high_watermark.blkid() == block_id {
+            return Err(DisplayedError::UserError(
+                "Refusing to delete current OL block high-watermark".to_string(),
+                Box::new(high_watermark),
             ));
         }
     }
