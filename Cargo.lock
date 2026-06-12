@@ -16097,9 +16097,7 @@ dependencies = [
 name = "strata-ol-rpc-api"
 version = "0.1.0"
 dependencies = [
- "alpen-ee-rpc-api",
  "jsonrpsee",
- "serde_json",
  "strata-identifiers",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
@@ -16488,6 +16486,16 @@ dependencies = [
  "tracing",
  "zkaleido",
  "zkaleido-sp1-host",
+]
+
+[[package]]
+name = "strata-rpc-openrpc-spec"
+version = "0.1.0"
+dependencies = [
+ "alpen-ee-rpc-api",
+ "serde_json",
+ "strata-ol-rpc-api",
+ "strata-open-rpc",
 ]
 
 [[package]]

@@ -1,10 +1,6 @@
 //! OL RPC API definitions.
 
-#[cfg(test)]
-use alpen_ee_rpc_api as _;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
-#[cfg(test)]
-use serde_json as _;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, L1Height, OLBlockId, OLTxId};
 use strata_ol_rpc_types::*;
 use strata_ol_sequencer::BlockCompletionData;

@@ -1,0 +1,13 @@
+[package]
+edition = "2021"
+name = "strata-rpc-openrpc-spec"
+version = "0.1.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-ee-rpc-api.workspace = true
+serde_json.workspace = true
+strata-ol-rpc-api.workspace = true
+strata-open-rpc.workspace = true
