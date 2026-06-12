@@ -20,7 +20,7 @@ use crate::cmd::{
         EeDeleteAcctProofArgs, EeDeleteChunkReceiptArgs, EeGetAcctProofArgs, EeGetChunkReceiptArgs,
     },
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
-    ol::{GetOLBlockArgs, GetOLBlocksAtSlotArgs, GetOLSummaryArgs},
+    ol::{DeleteOLBlockArgs, GetOLBlockArgs, GetOLBlocksAtSlotArgs, GetOLSummaryArgs},
     ol_state::{GetOLStateArgs, RevertOLStateArgs},
     prover_task::{
         AbandonProverTaskArgs, AbandonProverTasksArgs, BackfillCheckpointProofTaskArgs,
@@ -59,6 +59,7 @@ pub(crate) enum Command {
     GetOlBlock(GetOLBlockArgs),
     GetOlBlocksAtSlot(GetOLBlocksAtSlotArgs),
     GetOlSummary(GetOLSummaryArgs),
+    DeleteOlBlock(DeleteOLBlockArgs),
     GetClientStateUpdate(GetClientStateUpdateArgs),
     GetCheckpoint(GetCheckpointArgs),
     GetCheckpointsSummary(GetCheckpointsSummaryArgs),

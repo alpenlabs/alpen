@@ -9,7 +9,7 @@ use crate::{
     cli::OutputFormat,
     cmd::checkpoint::get_last_ol_checkpoint_epoch,
     output::{
-        ol::{OLBlockInfo, OLBlocksAtSlotInfo, OLSummaryInfo},
+        ol::{OLBlockDeleteInfo, OLBlockInfo, OLBlocksAtSlotInfo, OLSummaryInfo},
         output,
     },
     utils::block_id::parse_ol_block_id,
@@ -48,6 +48,28 @@ pub(crate) struct GetOLBlocksAtSlotArgs {
     /// OL slot
     #[argh(positional)]
     pub(crate) slot: Slot,
+
+    /// output format: "porcelain" (default) or "json"
+    #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
+}
+
+/// Delete one OL block (block data, status, and slot-index entry).
+///
+/// Intended for pruning an orphaned sibling block left behind by a reorg,
+/// e.g. when the slot index still lists the orphan ahead of the canonical
+/// block. Refuses to delete a block that is alone at its slot, that has a
+/// stored child, or that is the current block high-watermark.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "delete-ol-block")]
+pub(crate) struct DeleteOLBlockArgs {
+    /// OL block id (hex)
+    #[argh(positional)]
+    pub(crate) block_id: String,
+
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -179,6 +201,82 @@ pub(crate) fn get_ol_blocks_at_slot(
         block_ids: &block_ids,
     };
 
+    output(&info, args.output_format)
+}
+
+/// Deletes one OL block after checking it is a childless sibling fork.
+pub(crate) fn delete_ol_block(
+    db: &impl DatabaseBackend,
+    args: DeleteOLBlockArgs,
+) -> Result<(), DisplayedError> {
+    let block_id = parse_ol_block_id(&args.block_id)?;
+
+    let block = get_ol_block_data(db, block_id)?.ok_or_else(|| {
+        DisplayedError::UserError("OL block with id not found".to_string(), Box::new(block_id))
+    })?;
+    let slot = block.header().slot();
+
+    let blocks_at_slot = db
+        .ol_block_db()
+        .get_blocks_at_height(slot)
+        .internal_error(format!("Failed to get blocks at slot {slot}"))?;
+
+    // Deleting the only block at a slot would punch a hole in the chain.
+    let remaining_block_ids: Vec<OLBlockId> = blocks_at_slot
+        .iter()
+        .copied()
+        .filter(|id| *id != block_id)
+        .collect();
+    if remaining_block_ids.is_empty() {
+        return Err(DisplayedError::UserError(
+            "Refusing to delete the only block at slot".to_string(),
+            Box::new(slot),
+        ));
+    }
+
+    // A stored child means this block is (or was) extended by some chain;
+    // deleting it would leave that child without a parent in the database.
+    let blocks_at_next_slot = db
+        .ol_block_db()
+        .get_blocks_at_height(slot + 1)
+        .internal_error(format!("Failed to get blocks at slot {}", slot + 1))?;
+    for child_id in blocks_at_next_slot {
+        let Some(child) = get_ol_block_data(db, child_id)? else {
+            continue;
+        };
+        if *child.header().parent_blkid() == block_id {
+            return Err(DisplayedError::UserError(
+                "Refusing to delete block with a stored child".to_string(),
+                Box::new(child_id),
+            ));
+        }
+    }
+
+    let block_high_watermark = db
+        .ol_block_db()
+        .get_block_high_watermark()
+        .internal_error("Failed to read OL block high-watermark")?;
+    if let Some(high_watermark) = block_high_watermark {
+        if *high_watermark.blkid() == block_id {
+            return Err(DisplayedError::UserError(
+                "Refusing to delete current OL block high-watermark".to_string(),
+                Box::new(high_watermark),
+            ));
+        }
+    }
+
+    if args.force {
+        db.ol_block_db()
+            .del_block_data(block_id)
+            .internal_error("Failed to delete OL block")?;
+    }
+
+    let info = OLBlockDeleteInfo {
+        block_id: &block_id,
+        slot,
+        remaining_block_ids: &remaining_block_ids,
+        dry_run: !args.force,
+    };
     output(&info, args.output_format)
 }
 
