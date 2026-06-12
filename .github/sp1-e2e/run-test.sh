@@ -281,6 +281,28 @@ assert_stack_healthy_or_exit() {
     fi
 }
 
+compose_signet_up() {
+    local label="$1"
+    local deadline=$((SECONDS + 300))
+    local attempt=1
+    local output
+
+    while [ $SECONDS -lt $deadline ]; do
+        if output=$(docker compose -f compose-signet.yml up -d 2>&1); then
+            printf '%s\n' "${output}" | tail -1
+            return 0
+        fi
+
+        printf '%s\n' "${output}" | tail -20
+        echo "Signet ${label} start failed on attempt ${attempt}; retrying in 30s..."
+        attempt=$((attempt + 1))
+        sleep 30
+    done
+
+    echo "FAIL: Signet ${label} did not start within 300s"
+    return 1
+}
+
 btc_height() {
     docker exec docker-bitcoind-1 bitcoin-cli -signet getblockcount 2>/dev/null || echo 0
 }
@@ -317,7 +339,7 @@ start_signet_fast() {
     echo "=== Starting signet (BLOCKPRODUCTIONDELAY=0) ==="
     cd "${DOCKER_DIR}"
     export BLOCKPRODUCTIONDELAY=0
-    docker compose -f compose-signet.yml up -d 2>&1 | tail -1
+    compose_signet_up "fast"
 
     echo "Waiting for bitcoin height > 101 (coinbase maturity)..."
     local deadline=$((SECONDS + 300))
@@ -343,7 +365,7 @@ restart_signet_slow() {
     cd "${DOCKER_DIR}"
     docker compose -f compose-signet.yml down
     export BLOCKPRODUCTIONDELAY=30
-    docker compose -f compose-signet.yml up -d 2>&1 | tail -1
+    compose_signet_up "slow"
 
     echo "Waiting for bitcoind to come back up..."
     local deadline=$((SECONDS + 60))
