@@ -15,7 +15,7 @@ use strata_ol_stf::execute_block_batch_predrain;
 
 use crate::{
     context::BlockAssemblyAnchorContext,
-    da_tracker::{AccumulatedDaData, rebuild_accumulated_da_upto},
+    da_tracker::{AccumulatedDaData, EpochResourceTotals, rebuild_epoch_resource_totals_upto},
     test_utils::{
         DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
         TestStorageFixtureBuilder, block_and_post_state_from_output, generate_message_entries,
@@ -32,18 +32,20 @@ fn finalize_da_to_bytes(accumulator: EpochDaAccumulator, state: MemoryStateBaseL
         .expect("should produce a blob")
 }
 
-/// Builds blocks from the env parent commitment up to (not including) `target_slot`, threading DA.
-/// Returns `(final_commitment, accumulated_da, Vec<(block, post_state)>)`.
-async fn build_blocks_with_da_and_artifacts(
+/// Builds blocks from the env parent commitment up to (not including) `target_slot`, threading
+/// resource totals.
+///
+/// Returns `(final_commitment, resource_totals, Vec<(block, post_state)>)`.
+async fn build_blocks_with_resource_totals_and_artifacts(
     env: &mut TestEnv,
     target_slot: u64,
 ) -> (
     OLBlockCommitment,
-    AccumulatedDaData,
+    EpochResourceTotals,
     Vec<(OLBlock, MemoryStateBaseLayer)>,
 ) {
     let mut current_commitment = env.parent_commitment();
-    let mut accumulated_da = AccumulatedDaData::new_empty();
+    let mut resource_totals = EpochResourceTotals::new_empty();
     let mut artifacts = Vec::new();
 
     let start_slot = if current_commitment.is_null() {
@@ -54,18 +56,18 @@ async fn build_blocks_with_da_and_artifacts(
 
     for slot in start_slot..target_slot {
         let output = env
-            .construct_empty_block_with_da(accumulated_da)
+            .construct_empty_block_with_resource_totals(resource_totals)
             .await
             .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
         let (block, post_state) = block_and_post_state_from_output(&output);
         let new_commitment = env.persist(&output).await;
 
         artifacts.push((block, post_state));
-        accumulated_da = output.accumulated_da;
+        resource_totals = output.resource_totals;
         current_commitment = new_commitment;
     }
 
-    (current_commitment, accumulated_da, artifacts)
+    (current_commitment, resource_totals, artifacts)
 }
 
 /// Core correctness: DA accumulated incrementally during block assembly must produce
@@ -80,14 +82,14 @@ async fn test_da_incremental_matches_replay() {
 
     // Build blocks 1..5, threading DA through each.
     let start_commitment = env.parent_commitment();
-    let (_final_commitment, incremental_da, artifacts) =
-        build_blocks_with_da_and_artifacts(&mut env, 5).await;
+    let (_final_commitment, block_assembled_totals, artifacts) =
+        build_blocks_with_resource_totals_and_artifacts(&mut env, 5).await;
 
     // Get the post-state of the last block for finalization.
     let (_, last_post_state) = artifacts.last().unwrap();
 
     // Finalize incremental accumulator to bytes.
-    let (incremental_acc, incremental_logs) = incremental_da.into_parts();
+    let (incremental_acc, incremental_logs) = block_assembled_totals.da().clone().into_parts();
     let incremental_blob = finalize_da_to_bytes(incremental_acc, last_post_state.clone());
 
     // Replay: use DaAccumulatingState to re-execute all blocks.
@@ -150,11 +152,11 @@ async fn test_da_resets_at_epoch_boundary() {
     let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
     // Build blocks 1..10 (slots before the terminal block), threading DA.
-    let (pre_terminal_commitment, epoch1_da, _epoch1_artifacts) =
-        build_blocks_with_da_and_artifacts(&mut env, 10).await;
+    let (pre_terminal_commitment, epoch1_totals, _epoch1_artifacts) =
+        build_blocks_with_resource_totals_and_artifacts(&mut env, 10).await;
 
     // Epoch 1 DA accumulator should have slot changes from blocks 1-9.
-    let (epoch1_acc, _) = epoch1_da.clone().into_parts();
+    let (epoch1_acc, _) = epoch1_totals.da().clone().into_parts();
     let epoch1_pre_terminal_state = env
         .ctx()
         .fetch_state_for_tip(pre_terminal_commitment)
@@ -166,7 +168,7 @@ async fn test_da_resets_at_epoch_boundary() {
 
     // Build terminal block (slot 10) with epoch 1 DA.
     let terminal_output = env
-        .construct_empty_block_with_da(epoch1_da)
+        .construct_empty_block_with_resource_totals(epoch1_totals)
         .await
         .expect("terminal block construction should succeed");
 
@@ -180,7 +182,7 @@ async fn test_da_resets_at_epoch_boundary() {
         .expect("epoch 2 block construction should succeed");
 
     // Epoch 2 DA should only contain slot 11's changes, not epoch 1's.
-    let (epoch2_acc, epoch2_logs) = epoch2_output.accumulated_da.into_parts();
+    let (epoch2_acc, epoch2_logs) = epoch2_output.resource_totals.da().clone().into_parts();
     let epoch2_blob = finalize_da_to_bytes(epoch2_acc, epoch2_output.post_state);
 
     // The two blobs must differ: epoch 1 accumulated 9 slot changes, epoch 2 has 1.
@@ -252,10 +254,10 @@ async fn test_da_rollback_on_failed_tx() {
         .expect("valid-only block construction should succeed");
 
     // Finalize both DA accumulators and compare.
-    let (acc_both, _) = output_both.accumulated_da.into_parts();
+    let (acc_both, _) = output_both.resource_totals.da().clone().into_parts();
     let blob_both = finalize_da_to_bytes(acc_both, output_both.post_state);
 
-    let (acc_valid, _) = output_valid_only.accumulated_da.into_parts();
+    let (acc_valid, _) = output_valid_only.resource_totals.da().clone().into_parts();
     let blob_valid = finalize_da_to_bytes(acc_valid, output_valid_only.post_state);
 
     assert_eq!(
@@ -264,7 +266,7 @@ async fn test_da_rollback_on_failed_tx() {
     );
 }
 
-/// `rebuild_accumulated_da_upto` must produce the same DA as incremental accumulation.
+/// `rebuild_epoch_resource_totals_upto` must produce the same DA as incremental accumulation.
 ///
 /// This exercises the `collect_epoch_blocks_until` -> `execute_block_batch` path,
 /// which previously had a bug where the first epoch block's header was passed as the
@@ -278,23 +280,27 @@ async fn test_rebuild_da_matches_incremental() {
     let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
     // Build blocks 1..5, threading DA incrementally.
-    let (final_commitment, incremental_da, artifacts) =
-        build_blocks_with_da_and_artifacts(&mut env, 5).await;
+    let (final_commitment, block_assembled_totals, artifacts) =
+        build_blocks_with_resource_totals_and_artifacts(&mut env, 5).await;
 
     let (_, last_post_state) = artifacts.last().unwrap();
 
     // Finalize incremental accumulator.
-    let (incremental_acc, incremental_logs) = incremental_da.into_parts();
+    let (incremental_acc, incremental_logs) = block_assembled_totals.da().clone().into_parts();
     let incremental_blob = finalize_da_to_bytes(incremental_acc, last_post_state.clone());
 
     // Rebuild DA from scratch using the production code path.
     let epoch = artifacts[0].0.header().epoch();
-    let rebuilt_da =
-        rebuild_accumulated_da_upto(final_commitment, epoch, BridgeParams::default(), env.ctx())
-            .await
-            .expect("rebuild_accumulated_da_upto should succeed");
+    let rebuilt_totals = rebuild_epoch_resource_totals_upto(
+        final_commitment,
+        epoch,
+        BridgeParams::default(),
+        env.ctx(),
+    )
+    .await
+    .expect("rebuild_epoch_resource_totals_upto should succeed");
 
-    let (rebuilt_acc, rebuilt_logs) = rebuilt_da.into_parts();
+    let (rebuilt_acc, rebuilt_logs) = rebuilt_totals.da().clone().into_parts();
     let rebuilt_blob = finalize_da_to_bytes(rebuilt_acc, last_post_state.clone());
 
     assert_eq!(
@@ -304,5 +310,14 @@ async fn test_rebuild_da_matches_incremental() {
     assert_eq!(
         incremental_logs, rebuilt_logs,
         "Rebuilt logs must match incrementally accumulated logs"
+    );
+    assert_eq!(
+        block_assembled_totals.manifest_count(),
+        rebuilt_totals.manifest_count(),
+        "Rebuilt manifest count must match block-assembled manifest count"
+    );
+    assert!(
+        block_assembled_totals.manifest_count() > 0,
+        "test fixture should exercise nonzero manifest-count rebuilding"
     );
 }

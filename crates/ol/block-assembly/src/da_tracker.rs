@@ -11,43 +11,43 @@ use strata_primitives::nonempty_vec::NonEmptyVec;
 use crate::{BlockAssemblyAnchorContext, BlockAssemblyError, BlockAssemblyStateAccess};
 
 #[derive(Clone, Debug)]
-pub(crate) struct EpochDaTracker {
-    block_da_map: HashMap<OLBlockId, AccumulatedDaData>,
+pub(crate) struct EpochResourceTracker {
+    block_resource_map: HashMap<OLBlockId, EpochResourceTotals>,
 }
 
-impl EpochDaTracker {
+impl EpochResourceTracker {
     pub(crate) fn new_empty() -> Self {
         Self::new(HashMap::default())
     }
 
-    pub(crate) fn new(block_da_map: HashMap<OLBlockId, AccumulatedDaData>) -> Self {
-        Self { block_da_map }
+    pub(crate) fn new(block_resource_map: HashMap<OLBlockId, EpochResourceTotals>) -> Self {
+        Self { block_resource_map }
     }
 
-    pub(crate) fn get_accumulated_da(&self, blkid: OLBlockId) -> Option<&AccumulatedDaData> {
-        self.block_da_map.get(&blkid)
+    pub(crate) fn get_resource_totals(&self, blkid: OLBlockId) -> Option<&EpochResourceTotals> {
+        self.block_resource_map.get(&blkid)
     }
 
-    pub(crate) fn set_accumulated_da(&mut self, blkid: OLBlockId, da: AccumulatedDaData) {
-        self.block_da_map.insert(blkid, da);
+    pub(crate) fn set_resource_totals(&mut self, blkid: OLBlockId, totals: EpochResourceTotals) {
+        self.block_resource_map.insert(blkid, totals);
     }
 
-    /// Removes accumulated DA for a block id, if present.
-    pub(crate) fn remove_accumulated_da(&mut self, blkid: OLBlockId) {
-        self.block_da_map.remove(&blkid);
+    /// Removes resource totals for a block id, if present.
+    pub(crate) fn remove_resource_totals(&mut self, blkid: OLBlockId) {
+        self.block_resource_map.remove(&blkid);
     }
 
-    /// Inserts the entry for given block id and also removes the entry for parent if exists. This
-    /// method is used to optimize memory usage because in the next assembly we would require
-    /// accumulation upto the current block and not the parent block.
-    pub(crate) fn set_accumulated_da_and_remove_parent_entry(
+    /// Inserts resource totals for `blkid` and removes the parent entry, if present.
+    ///
+    /// The next assembly step needs totals up to the current block, not its parent.
+    pub(crate) fn set_resource_totals_and_remove_parent_entry(
         &mut self,
         blkid: OLBlockId,
         parent: OLBlockId,
-        da: AccumulatedDaData,
+        totals: EpochResourceTotals,
     ) {
-        self.set_accumulated_da(blkid, da);
-        self.block_da_map.remove(&parent);
+        self.set_resource_totals(blkid, totals);
+        self.block_resource_map.remove(&parent);
     }
 }
 
@@ -109,14 +109,14 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
     Ok(epoch_blocks)
 }
 
-/// Rebuilds accumulated DA for `target_blkid` by replaying all epoch blocks
-/// from the epoch boundary up to and including `target_blkid`.
-pub(crate) async fn rebuild_accumulated_da_upto<C: BlockAssemblyAnchorContext>(
+/// Rebuilds epoch resource totals for `target_blkid` by replaying all epoch
+/// blocks from the epoch boundary up to and including `target_blkid`.
+pub(crate) async fn rebuild_epoch_resource_totals_upto<C: BlockAssemblyAnchorContext>(
     blkid: OLBlockCommitment,
     epoch: Epoch,
     bridge_params: BridgeParams,
     ctx: &C,
-) -> Result<AccumulatedDaData, BlockAssemblyError>
+) -> Result<EpochResourceTotals, BlockAssemblyError>
 where
     C::State: BlockAssemblyStateAccess,
     <C::State as IStateAccessorMut>::AccountStateMut: Clone,
@@ -136,8 +136,17 @@ where
     .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
 
     let (accumulator, _) = da_state.into_parts();
+    let manifest_count = epoch_blocks
+        .blocks
+        .iter()
+        .filter_map(|block| block.body().manifests())
+        .map(|manifests| manifests.manifests().len())
+        .sum();
 
-    Ok(AccumulatedDaData::new(accumulator, batch_logs))
+    Ok(EpochResourceTotals::new(
+        AccumulatedDaData::new(accumulator, batch_logs),
+        manifest_count,
+    ))
 }
 
 /// Fetches the state for `blk_header`.
@@ -151,6 +160,31 @@ async fn fetch_state<C: BlockAssemblyAnchorContext>(
         .await?
         .ok_or(BlockAssemblyError::EpochBoundaryStateNotFound(blkid))?;
     Ok(ol_state)
+}
+
+/// Resource totals accumulated so far in an epoch.
+#[derive(Clone, Debug)]
+pub(crate) struct EpochResourceTotals {
+    da: AccumulatedDaData,
+    manifest_count: usize,
+}
+
+impl EpochResourceTotals {
+    pub(crate) fn new_empty() -> Self {
+        Self::new(AccumulatedDaData::new_empty(), 0)
+    }
+
+    pub(crate) fn new(da: AccumulatedDaData, manifest_count: usize) -> Self {
+        Self { da, manifest_count }
+    }
+
+    pub(crate) fn da(&self) -> &AccumulatedDaData {
+        &self.da
+    }
+
+    pub(crate) fn manifest_count(&self) -> usize {
+        self.manifest_count
+    }
 }
 
 /// An 'append-only' container of state diff and OL logs accumulated DA data for some epoch.
@@ -279,10 +313,14 @@ mod tests {
         env.put_block(boundary).await;
         env.put_block(target).await;
 
-        let err =
-            rebuild_accumulated_da_upto(target_commitment, 2, BridgeParams::default(), env.ctx())
-                .await
-                .expect_err("missing boundary state should fail rebuild");
+        let err = rebuild_epoch_resource_totals_upto(
+            target_commitment,
+            2,
+            BridgeParams::default(),
+            env.ctx(),
+        )
+        .await
+        .expect_err("missing boundary state should fail rebuild");
         assert!(
             matches!(err, BlockAssemblyError::EpochBoundaryStateNotFound(_)),
             "expected EpochBoundaryStateNotFound(_), got: {err:?}"
@@ -295,25 +333,25 @@ mod tests {
         let child = test_blkid(11);
         let unrelated = test_blkid(12);
 
-        let mut tracker = EpochDaTracker::new_empty();
-        tracker.set_accumulated_da(parent, AccumulatedDaData::new_empty());
-        tracker.set_accumulated_da(unrelated, AccumulatedDaData::new_empty());
-        tracker.set_accumulated_da_and_remove_parent_entry(
+        let mut tracker = EpochResourceTracker::new_empty();
+        tracker.set_resource_totals(parent, EpochResourceTotals::new_empty());
+        tracker.set_resource_totals(unrelated, EpochResourceTotals::new_empty());
+        tracker.set_resource_totals_and_remove_parent_entry(
             child,
             parent,
-            AccumulatedDaData::new_empty(),
+            EpochResourceTotals::new_empty(),
         );
 
         assert!(
-            tracker.get_accumulated_da(parent).is_none(),
+            tracker.get_resource_totals(parent).is_none(),
             "parent entry must be removed"
         );
         assert!(
-            tracker.get_accumulated_da(child).is_some(),
+            tracker.get_resource_totals(child).is_some(),
             "child entry must be inserted"
         );
         assert!(
-            tracker.get_accumulated_da(unrelated).is_some(),
+            tracker.get_resource_totals(unrelated).is_some(),
             "unrelated entries must remain"
         );
     }

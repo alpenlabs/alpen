@@ -5,7 +5,7 @@ use strata_identifiers::{Buf64, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLBlockBody, OLBlockHeader, SignedOLBlockHeader};
 use strata_ol_mempool::MempoolTxInvalidReason;
 
-use crate::da_tracker::AccumulatedDaData;
+use crate::da_tracker::EpochResourceTotals;
 
 /// Represents a complete block template containing header and body.
 ///
@@ -149,7 +149,7 @@ pub(crate) type FailedMempoolTx = (OLTxId, MempoolTxInvalidReason);
 pub(crate) struct BlockTemplateResult {
     template: FullBlockTemplate,
     failed_txs: Vec<FailedMempoolTx>,
-    accumulated_da: AccumulatedDaData,
+    resource_totals: EpochResourceTotals,
 }
 
 impl BlockTemplateResult {
@@ -157,12 +157,12 @@ impl BlockTemplateResult {
     pub(crate) fn new(
         template: FullBlockTemplate,
         failed_txs: Vec<FailedMempoolTx>,
-        accumulated_da: AccumulatedDaData,
+        resource_totals: EpochResourceTotals,
     ) -> Self {
         Self {
             template,
             failed_txs,
-            accumulated_da,
+            resource_totals,
         }
     }
 
@@ -179,7 +179,9 @@ impl BlockTemplateResult {
     }
 
     /// Consumes self and returns all components.
-    pub(crate) fn into_parts(self) -> (FullBlockTemplate, Vec<FailedMempoolTx>, AccumulatedDaData) {
-        (self.template, self.failed_txs, self.accumulated_da)
+    pub(crate) fn into_parts(
+        self,
+    ) -> (FullBlockTemplate, Vec<FailedMempoolTx>, EpochResourceTotals) {
+        (self.template, self.failed_txs, self.resource_totals)
     }
 }

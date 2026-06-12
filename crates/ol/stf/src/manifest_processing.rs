@@ -127,6 +127,23 @@ pub fn process_epoch_terminal<S: IStateAccessorMut>(
     Ok(())
 }
 
+/// Applies the epoch-terminal effect of one buffered ASM log without resetting the epoch.
+///
+/// Block assembly uses this to project buffered ASM-log processing before
+/// deciding whether a candidate block seals the epoch. It must stay behaviorally
+/// aligned with [`process_epoch_terminal`], which applies the same effect to
+/// every pending ASM log before resetting intraepoch state.
+///
+/// This function does not clear the pending ASM-log queue or advance the epoch.
+/// Use [`process_epoch_terminal`] for the actual terminal transition.
+pub fn process_pending_asm_log_effect<S: IStateAccessorMut>(
+    state: &mut S,
+    entry: &PendingAsmLog,
+    context: &BasicExecContext<'_>,
+) -> ExecResult<()> {
+    process_asm_log(state, entry.log(), entry.height(), context)
+}
+
 fn next_manifest_height(last_l1_height: L1Height, index: usize) -> ExecResult<L1Height> {
     let offset = L1Height::try_from(index).map_err(|_| ExecError::AsmManifestHeightOverflow)?;
     last_l1_height
