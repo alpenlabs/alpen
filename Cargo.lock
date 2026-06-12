@@ -1390,6 +1390,8 @@ dependencies = [
  "alloy-primitives",
  "alpen-ee-rpc-types",
  "jsonrpsee",
+ "schemars 1.2.1",
+ "strata-open-rpc",
 ]
 
 [[package]]
@@ -1410,6 +1412,7 @@ dependencies = [
 name = "alpen-ee-rpc-types"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "schemars 1.2.1",
  "serde",
 ]
 
@@ -16095,7 +16098,6 @@ name = "strata-ol-rpc-api"
 version = "0.1.0"
 dependencies = [
  "jsonrpsee",
- "serde_json",
  "strata-identifiers",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
@@ -16484,6 +16486,16 @@ dependencies = [
  "tracing",
  "zkaleido",
  "zkaleido-sp1-host",
+]
+
+[[package]]
+name = "strata-rpc-openrpc-spec"
+version = "0.1.0"
+dependencies = [
+ "alpen-ee-rpc-api",
+ "serde_json",
+ "strata-ol-rpc-api",
+ "strata-open-rpc",
 ]
 
 [[package]]

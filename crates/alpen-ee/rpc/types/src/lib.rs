@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// L1 finalization status of an EE block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum BlockStatus {
     /// Block is not yet covered by any confirmed or finalized checkpoint.
@@ -21,6 +22,7 @@ pub enum BlockStatus {
 /// Reserved for forward-compatible expansion; additional fields may be added without changing the
 /// method signature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct BlockStatusResponse {
     /// L1 finalization status.
     pub status: BlockStatus,
@@ -28,6 +30,7 @@ pub struct BlockStatusResponse {
 
 /// Response for `alpen_getChunkProofCoverage`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct ChunkProofCoverageResponse {
     /// First requested EE block number.
     pub start_block: u64,
