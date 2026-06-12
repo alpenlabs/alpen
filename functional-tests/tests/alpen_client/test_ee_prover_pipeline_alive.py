@@ -15,11 +15,14 @@ extraction:
 
 Native mode runs the full guest program logic in plain Rust; only the
 zk proof generation itself is bypassed. So this test exercises:
-  - `ChunkSpec::fetch_input` (sled reads of the new ChunkWitnessRecord)
-  - `AccessedStateGenerator` exex (per-block accessed-state writes,
-    plus bytecode cache lookups via `BytecodeSchema`)
-  - The batch builder's seal-time witness extraction
-  - The `EeChunkProgram` guest (state transition checks, MPT validation)
+  - Inline per-block witness production (`RethBlockWitnessProducer` ->
+    `capture_block_witness` -> reth `ExecutionWitness` -> rsp
+    `from_execution_witness` -> `BlockWitnessStore`), which gates block
+    acceptance
+  - `ChunkSpec::fetch_input` (sled reads of the per-block `BlockWitnessRecord`s)
+  - `AccessedStateGenerator` exex (per-block accessed-state writes, feeding
+    the account proof's batch-range witness)
+  - The `EeChunkProgram` guest (per-block state transition checks, MPT validation)
   - The `EeAcctProgram` guest (update aggregation, pub-params construction)
   - The paas service framework (task lifecycle, receipt hooks, OL submission)
 
@@ -295,10 +298,10 @@ class TestEeProverPipelineAlive(BaseTest):
 
         _wait_for_log_signal(
             log_path,
-            r"persisted chunk witness",
+            r"persisted block witness",
             after_offset=log_offset,
             timeout=SIGNAL_TIMEOUT_SECS,
-            description="chunk witness persisted at seal time (batch builder)",
+            description="per-block witness persisted inline at block production",
             btc_rpc=btc_rpc,
             miner_addr=miner_addr,
         )
