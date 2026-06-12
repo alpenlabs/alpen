@@ -213,7 +213,10 @@ fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
 
     if !is_cache_valid(&elf_hash, &paths) {
         // Cache is invalid, need to generate the verifying key.
-        let client = ProverClient::from_env();
+        // Build-time VK generation should stay on the local CPU path. It runs inside a Cargo
+        // build script, not inside the runtime proving environment, so inheriting SP1_PROVER=cuda
+        // can panic while the CUDA client tries to spawn async work without a Tokio runtime.
+        let client = ProverClient::builder().cpu().build();
         let pk = client
             .setup(elf.clone().into())
             .map_err(|e| format!("Failed to set up proving key: {e}"))?;

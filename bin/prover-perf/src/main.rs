@@ -14,8 +14,8 @@ pub mod github;
 pub mod programs;
 
 use anyhow::Result;
-use args::{parse_programs, EvalArgs};
-use format::{format_header, format_results};
+use args::{parse_mode, parse_programs, validate_mode_programs, EvalArgs, PerfMode};
+use format::{format_header, format_results_for_mode, ProofSummary};
 use github::{format_github_message, post_to_github_pr};
 #[cfg(feature = "sp1")]
 use zkaleido::ExecutionSummary;
@@ -30,14 +30,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("Error: {e}");
         process::exit(1);
     });
+    let mode = parse_mode(&args.mode).unwrap_or_else(|e| {
+        eprintln!("Error: {e}");
+        process::exit(1);
+    });
+    validate_mode_programs(mode, &programs).unwrap_or_else(|e| {
+        eprintln!("Error: {e}");
+        process::exit(1);
+    });
 
     let mut results_text = vec![format_header(&args)];
 
     #[cfg(feature = "sp1")]
     {
-        let sp1_reports: Vec<(String, ExecutionSummary)> =
-            programs::run_sp1_programs(&programs).await;
-        results_text.push(format_results(&sp1_reports, "SP1".to_owned()));
+        let mut execute_reports: Vec<(String, ExecutionSummary)> = Vec::new();
+        let mut prove_reports: Vec<(String, ProofSummary)> = Vec::new();
+
+        match mode {
+            PerfMode::Execute => {
+                execute_reports = programs::run_sp1_execute_programs(&programs).await;
+            }
+            PerfMode::Prove => {
+                prove_reports = programs::run_sp1_prove_programs(&programs).await;
+            }
+        }
+
+        results_text.push(format_results_for_mode(
+            mode,
+            &execute_reports,
+            &prove_reports,
+            "SP1".to_owned(),
+        ));
     }
 
     // Print results
