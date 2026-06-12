@@ -69,6 +69,7 @@ pub async fn start_fcm_service<C: FcmContext>(
         .with_input(fcm_input)
         .launch_async("fcm", texec.as_ref())
         .await?;
+
     Ok(FcmServiceHandle {
         service_monitor,
         fcm_tx,
@@ -98,7 +99,24 @@ impl<C: FcmContext> Service for FcmService<C> {
 }
 
 impl<C: FcmContext> AsyncService for FcmService<C> {
-    async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
+    async fn on_launch(state: &mut Self::State) -> anyhow::Result<()> {
+        let startup_replay_candidates = state.take_startup_replay_candidates();
+        if startup_replay_candidates.is_empty() {
+            return Ok(());
+        }
+
+        let replay_candidate_count = startup_replay_candidates.len();
+        for blkid in startup_replay_candidates {
+            let msg = ForkChoiceMessage::NewBlock(blkid);
+            process_fc_message(&msg, state)
+                .await
+                .with_context(|| format!("failed to replay startup OL block {blkid}"))?;
+        }
+
+        debug!(
+            replay_candidate_count,
+            "processed startup replay candidates"
+        );
         Ok(())
     }
 
@@ -146,7 +164,12 @@ async fn process_fc_message<C: FcmContext>(
                     // problem checking the block in general and it could be
                     // valid or invalid, but we're kinda sloppy with errors
                     // here so let's try to avoid crashing the FCM task?
-                    error!(%slot, %blkid, "error processing block, interpreting as invalid\n{e:?}");
+                    error!(
+                        %slot,
+                        %blkid,
+                        err = ?e,
+                        "error processing block, interpreting as invalid"
+                    );
                     false
                 }
             };
@@ -328,27 +351,65 @@ async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
 async fn handle_new_state_update<C: FcmContext>(
     fcm_state: &mut FcmServiceState<C>,
 ) -> anyhow::Result<()> {
-    let Some(new_fin_epoch) = fcm_state.ctx().last_finalized_epoch() else {
+    let Some(observed_finalized_epoch) = fcm_state.ctx().last_finalized_epoch() else {
         debug!("got new CSM state, but finalized epoch still unset, ignoring");
         return Ok(());
     };
 
-    info!(?new_fin_epoch, "got new finalized block");
-    fcm_state.attach_epoch_pending_finalization(new_fin_epoch);
+    let current_finalized_epoch = *fcm_state.chain_tracker().finalized_epoch();
+    if observed_finalized_epoch == current_finalized_epoch {
+        debug!(
+            ?current_finalized_epoch,
+            ?observed_finalized_epoch,
+            "no new finalized epoch in CSM update"
+        );
+        return Ok(());
+    }
 
+    let latest_observed_finalized_epoch = *fcm_state.latest_observed_finalized_epoch();
+    if observed_finalized_epoch == latest_observed_finalized_epoch {
+        debug!(
+            ?observed_finalized_epoch,
+            "observed finalized epoch is already recorded, checking finalization progress"
+        );
+        check_finalization_progress(fcm_state, observed_finalized_epoch).await?;
+        return Ok(());
+    }
+
+    if !fcm_state.record_observed_finalized_epoch(observed_finalized_epoch) {
+        return Ok(());
+    }
+
+    info!(?observed_finalized_epoch, "observed new finalized epoch");
+    check_finalization_progress(fcm_state, observed_finalized_epoch).await?;
+
+    Ok(())
+}
+
+async fn check_finalization_progress<C: FcmContext>(
+    fcm_state: &mut FcmServiceState<C>,
+    observed_finalized_epoch: EpochCommitment,
+) -> anyhow::Result<()> {
     match handle_epoch_finalization(fcm_state).await {
         Err(err) => {
             error!(%err, "failed to finalize epoch");
         }
-        Ok(Some(finalized_epoch)) if finalized_epoch == new_fin_epoch => {
-            debug!(?finalized_epoch, "finalized latest epoch");
+        Ok(Some(finalized_epoch)) if finalized_epoch == observed_finalized_epoch => {
+            debug!(
+                ?finalized_epoch,
+                "FCM caught up to observed finalized epoch"
+            );
         }
         Ok(Some(finalized_epoch)) => {
-            debug!(?finalized_epoch, "finalized earlier epoch");
+            debug!(
+                ?finalized_epoch,
+                ?observed_finalized_epoch,
+                "FCM finalized earlier recorded epoch; still behind observed finalized epoch"
+            );
         }
         Ok(None) => {
             // there were no epochs that could be finalized
-            warn!("did not finalize epoch");
+            debug!(?observed_finalized_epoch, "no finalization progress");
         }
     };
 
@@ -479,9 +540,7 @@ async fn handle_epoch_finalization<C: FcmContext>(
 
     fcm_state.finalize_epoch(next_finalizable_epoch).await?;
 
-    info!(?next_finalizable_epoch, "updated finalized tip");
-    //trace!(?fin_report, "finalization report");
-    // TODO(STR-3580): do something with the finalization report?
+    info!(?next_finalizable_epoch, "advanced finalized epoch");
 
     Ok(Some(next_finalizable_epoch))
 }
@@ -721,7 +780,7 @@ mod tests {
         SignedOLBlockHeader,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::OLState;
+    use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
     use strata_ol_stf::{
         test_utils::{execute_block, make_genesis_state},
         BlockComponents, BlockInfo, CompletedBlock,
@@ -1128,6 +1187,7 @@ mod tests {
                 tracker,
                 cur_block.commitment(),
                 Arc::new(cur_block.state.clone()),
+                Vec::new(),
             );
             FcmServiceState::new(self.ctx.clone(), PredicateKey::always_accept(), inner)
         }
@@ -1160,9 +1220,19 @@ mod tests {
         timestamp: u64,
         slot: u64,
     ) -> ExecutedBlock {
+        execute_test_block_in_epoch(state, parent, timestamp, slot, 1)
+    }
+
+    fn execute_test_block_in_epoch(
+        state: &mut MemoryStateBaseLayer,
+        parent: &OLBlock,
+        timestamp: u64,
+        slot: u64,
+        epoch: Epoch,
+    ) -> ExecutedBlock {
         let completed = execute_block(
             state,
-            &BlockInfo::new(timestamp, slot, 1),
+            &BlockInfo::new(timestamp, slot, epoch),
             Some(parent.header()),
             BlockComponents::new_empty(),
         )
@@ -1307,6 +1377,100 @@ mod tests {
         fn tracker_through_x4(&self) -> UnfinalizedBlockTracker {
             tracker_with_blocks(&self.genesis, &[&self.x1, &self.x2, &self.x3, &self.x4])
         }
+    }
+
+    #[test]
+    fn record_observed_finalized_epoch_classifies_ordering() {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        let finalized_epoch =
+            EpochCommitment::new(1, chain.x1.commitment().slot(), chain.x1.blkid());
+        let tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
+        let mut fcm_state = fixture.fcm_state_at(tracker, &chain.x1);
+
+        assert!(!fcm_state.record_observed_finalized_epoch(finalized_epoch));
+
+        let strict_regression = EpochCommitment::new(0, 0, chain.genesis.blkid());
+        assert!(!fcm_state.record_observed_finalized_epoch(strict_regression));
+
+        let epoch_up_slot_flat =
+            EpochCommitment::new(2, finalized_epoch.last_slot(), chain.x2.blkid());
+        assert!(!fcm_state.record_observed_finalized_epoch(epoch_up_slot_flat));
+
+        let slot_up_epoch_flat = EpochCommitment::new(
+            finalized_epoch.epoch(),
+            chain.x2.commitment().slot(),
+            chain.x2.blkid(),
+        );
+        assert!(!fcm_state.record_observed_finalized_epoch(slot_up_epoch_flat));
+
+        let strict_advance =
+            EpochCommitment::new(2, chain.x2.commitment().slot(), chain.x2.blkid());
+        assert!(fcm_state.record_observed_finalized_epoch(strict_advance));
+        assert_eq!(*fcm_state.latest_observed_finalized_epoch(), strict_advance);
+    }
+
+    #[tokio::test]
+    async fn handle_new_state_update_ignores_repeated_finalized_epoch() -> anyhow::Result<()> {
+        let (genesis, _) = execute_test_genesis();
+        let genesis_epoch = EpochCommitment::new(0, 0, genesis.blkid());
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+        seed_executed_block(ctx.storage(), &genesis, BlockStatus::Valid);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let tracker = empty_tracker(&genesis);
+        let inner = FcmInnerState::new(
+            tracker,
+            genesis.commitment(),
+            Arc::new(genesis.state.clone()),
+            Vec::new(),
+        );
+        let mut fcm_state = FcmServiceState::new(ctx.clone(), PredicateKey::always_accept(), inner);
+
+        handle_new_state_update(&mut fcm_state).await?;
+
+        assert!(ctx.finalized_epochs().is_empty());
+        assert_eq!(*fcm_state.latest_observed_finalized_epoch(), genesis_epoch);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn handle_new_state_update_retries_pending_finalized_epoch() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let pending_epoch = EpochCommitment::new(1, chain.x1.commitment().slot(), chain.x1.blkid());
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(pending_epoch))
+                .with_last_confirmed_epoch(Some(pending_epoch)),
+        );
+        let tracker = tracker_with_blocks(&chain.genesis, &[&chain.x1, &chain.x2]);
+        let mut finalizable_state = chain.x2.state.clone();
+        let mut epoch_update = WriteBatch::<OLAccountState>::default();
+        epoch_update.epochal_writes_mut().cur_epoch = Some(2);
+        finalizable_state
+            .apply_write_batch(epoch_update)
+            .expect("test epoch update applies");
+
+        let inner = FcmInnerState::new(
+            tracker,
+            chain.x2.commitment(),
+            Arc::new(finalizable_state),
+            Vec::new(),
+        );
+        let mut fcm_state = FcmServiceState::new(ctx.clone(), PredicateKey::always_accept(), inner);
+        assert!(fcm_state.record_observed_finalized_epoch(pending_epoch));
+
+        handle_new_state_update(&mut fcm_state).await?;
+
+        assert_eq!(ctx.finalized_epochs(), vec![pending_epoch]);
+        assert_eq!(*fcm_state.chain_tracker().finalized_epoch(), pending_epoch);
+
+        Ok(())
     }
 
     #[tokio::test]
@@ -1568,6 +1732,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn on_launch_replays_startup_candidates_and_drains_them() -> anyhow::Result<()> {
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        let block1 = make_storage_block(1, genesis_blkid);
+        let blkid1 = block1.header().compute_blkid();
+        let commitment1 = OLBlockCommitment::new(block1.header().slot(), blkid1);
+        let block2 = make_storage_block(2, blkid1);
+        let blkid2 = block2.header().compute_blkid();
+        let commitment2 = OLBlockCommitment::new(block2.header().slot(), blkid2);
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        for (block, commitment) in [(block1, commitment1), (block2, commitment2)] {
+            let blkid = block.header().compute_blkid();
+            ctx.storage().put_ol_block(block);
+            ctx.storage()
+                .set_block_status(blkid, BlockStatus::Unchecked)
+                .await?;
+            ctx.storage()
+                .put_toplevel_ol_state(commitment, make_genesis_state().state().clone());
+        }
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state =
+            init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
+
+        <FcmService<StubFcmContext> as AsyncService>::on_launch(&mut fcm_state).await?;
+
+        assert_eq!(ctx.executed_blocks(), vec![commitment1, commitment2]);
+        assert_eq!(ctx.safe_tip_updates(), vec![commitment1, commitment2]);
+        assert_eq!(fcm_state.cur_best_block(), commitment2);
+        assert_eq!(fcm_state.take_startup_replay_candidates(), Vec::new());
+        assert_eq!(
+            ctx.storage().get_block_status(blkid1).await?,
+            Some(BlockStatus::Valid)
+        );
+        assert_eq!(
+            ctx.storage().get_block_status(blkid2).await?,
+            Some(BlockStatus::Valid)
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn stub_storage_round_trips_blocks_and_statuses() {
         let storage = StubFcmStorage::new();
         let block = make_storage_block(1, OLBlockId::from(Buf32::zero()));
@@ -1659,12 +1879,17 @@ mod tests {
         );
         ctx.storage().put_ol_block(block);
         ctx.storage()
+            .set_block_status(blkid, BlockStatus::Unchecked)
+            .await
+            .expect("set unchecked status");
+        ctx.storage()
             .put_toplevel_ol_state(block_commitment, make_genesis_state().state().clone());
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
 
         let mut fcm_state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone())
             .await
             .expect("FCM state initializes from stub context");
+        assert_eq!(fcm_state.take_startup_replay_candidates(), vec![blkid]);
 
         process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state)
             .await
@@ -1710,10 +1935,14 @@ mod tests {
             BlockStatus::Valid,
         );
         ctx.storage().put_ol_block(block);
+        ctx.storage()
+            .set_block_status(blkid, BlockStatus::Unchecked)
+            .await?;
         ctx.storage().set_block_high_watermark(block_commitment);
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
 
         let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
+        assert_eq!(fcm_state.take_startup_replay_candidates(), vec![blkid]);
 
         process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state).await?;
 
