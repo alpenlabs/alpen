@@ -112,7 +112,6 @@ async fn process_entries(
             storage,
             policy,
             &BlockCountDataProvider,
-            None, // no witness channel in tests
         )
         .await
         .expect("process_pending failed");
@@ -350,7 +349,6 @@ async fn reorg_backfills_surviving_batch_when_events_were_dropped() {
             &storage,
             &policy,
             &BlockCountDataProvider,
-            None,
         )
         .await
         .expect("process_pending failed");

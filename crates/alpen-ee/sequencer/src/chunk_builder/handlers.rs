@@ -8,17 +8,13 @@
 use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, Chunk, ChunkStorage, ExecBlockStorage};
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
-use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
 use super::{
     recovery,
     state::{ChunkBuilderState, PendingEntry},
 };
-use crate::{
-    sealing_policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy},
-    ChunkExtractRequest,
-};
+use crate::sealing_policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy};
 
 /// Maximum number of entries to process in a single tick cycle.
 const MAX_ENTRIES_PER_TICK: usize = 10;
@@ -35,7 +31,6 @@ pub(crate) async fn process_pending<P, S, D>(
     chunk_storage: &impl ChunkStorage,
     sealing_policy: &S,
     block_data_provider: &D,
-    chunk_witness_tx: Option<&mpsc::Sender<ChunkExtractRequest>>,
 ) -> Result<()>
 where
     P: AccumulationPolicy,
@@ -78,7 +73,7 @@ where
                     ));
                 }
 
-                handle_batch_boundary(state, chunk_storage, chunk_witness_tx, batch_id).await?;
+                handle_batch_boundary(state, chunk_storage, batch_id).await?;
             }
             PendingEntry::Block { block, batch_idx } => {
                 let next_expected = state.last_known_blocknum() + 1;
@@ -124,7 +119,7 @@ where
                         .accumulator()
                         .would_exceed(sealing_policy, &block_data)
                 {
-                    seal_chunk(state, chunk_storage, chunk_witness_tx).await?;
+                    seal_chunk(state, chunk_storage).await?;
                 }
 
                 state.accumulator_mut().add_block(block, &block_data);
@@ -145,11 +140,10 @@ where
 async fn handle_batch_boundary<P: AccumulationPolicy>(
     state: &mut ChunkBuilderState<P>,
     chunk_storage: &impl ChunkStorage,
-    chunk_witness_tx: Option<&mpsc::Sender<ChunkExtractRequest>>,
     batch_id: BatchId,
 ) -> Result<()> {
     if !state.accumulator().is_empty() {
-        seal_chunk(state, chunk_storage, chunk_witness_tx).await?;
+        seal_chunk(state, chunk_storage).await?;
     }
 
     let chunk_ids = state.take_batch_chunks();
@@ -242,7 +236,6 @@ async fn reset_state_to_storage_frontier<P: AccumulationPolicy>(
 async fn seal_chunk<P: AccumulationPolicy>(
     state: &mut ChunkBuilderState<P>,
     chunk_storage: &impl ChunkStorage,
-    chunk_witness_tx: Option<&mpsc::Sender<ChunkExtractRequest>>,
 ) -> Result<()> {
     let prev_block = state.prev_chunk_end();
     let (inner_blocks, last_block) = state.accumulator_mut().drain();
@@ -259,13 +252,6 @@ async fn seal_chunk<P: AccumulationPolicy>(
     );
     let chunk_id = chunk.id();
 
-    // Extract values needed after `chunk` is moved into storage.
-    let first_block_hash = chunk
-        .blocks_iter()
-        .next()
-        .expect("chunk has at least last_block");
-    let last_block_hash = chunk.last_block();
-
     debug!(
         chunk_idx,
         prev_block = %prev_block.hash(),
@@ -277,21 +263,6 @@ async fn seal_chunk<P: AccumulationPolicy>(
         .save_next_chunk(chunk)
         .await
         .map_err(|e| eyre!("save_next_chunk: {e}"))?;
-
-    if let Some(tx) = chunk_witness_tx {
-        let req = ChunkExtractRequest {
-            chunk_id,
-            first_block: first_block_hash,
-            last_block: last_block_hash,
-        };
-        if let Err(e) = tx.send(req).await {
-            warn!(
-                ?chunk_id,
-                error = %e,
-                "chunk witness channel closed; chunk sealed without witness"
-            );
-        }
-    }
 
     state.push_batch_chunk(chunk_id);
     state.advance_chunk(last_block);
