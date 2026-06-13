@@ -891,9 +891,6 @@ fn main() {
                     storage.clone(),
                     chunk_sealing_policy,
                     RethGasDataProvider::new(node.provider.clone()),
-                    // No chunk-seal extraction: witnesses are produced inline
-                    // at block production.
-                    None,
                     batch_event_rx,
                     &service_executor,
                 )

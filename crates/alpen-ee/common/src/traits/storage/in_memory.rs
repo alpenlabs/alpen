@@ -10,8 +10,7 @@ use strata_acct_types::Hash;
 
 use crate::{
     AccessedStateRecord, AccessedStateStore, Batch, BatchId, BatchStatus, BatchStorage,
-    BlockWitnessStore, Chunk, ChunkId, ChunkStatus, ChunkStorage, ChunkWitnessRecord,
-    ChunkWitnessStore, StorageError,
+    BlockWitnessStore, Chunk, ChunkId, ChunkStatus, ChunkStorage, StorageError,
 };
 
 /// In-memory storage for batches and chunks.
@@ -22,7 +21,6 @@ pub struct InMemoryStorage {
     pub chunks: RwLock<BTreeMap<u64, (Chunk, ChunkStatus)>>,
     pub chunk_id_to_idx: RwLock<HashMap<ChunkId, u64>>,
     pub batch_chunks: RwLock<HashMap<BatchId, Vec<ChunkId>>>,
-    pub chunk_witnesses: RwLock<HashMap<ChunkId, ChunkWitnessRecord>>,
     pub block_accessed_state: RwLock<HashMap<Hash, AccessedStateRecord>>,
     pub bytecodes: RwLock<HashMap<Hash, Vec<u8>>>,
     pub block_witnesses: RwLock<HashMap<Hash, Vec<u8>>>,
@@ -254,33 +252,6 @@ impl ChunkStorage for InMemoryStorage {
     ) -> Result<Option<Vec<ChunkId>>, StorageError> {
         let batch_chunks = self.batch_chunks.read().unwrap();
         Ok(batch_chunks.get(&batch_id).cloned())
-    }
-}
-
-#[async_trait]
-impl ChunkWitnessStore for InMemoryStorage {
-    async fn put_chunk_witness(
-        &self,
-        chunk_id: ChunkId,
-        witness: ChunkWitnessRecord,
-    ) -> Result<(), StorageError> {
-        self.chunk_witnesses
-            .write()
-            .unwrap()
-            .insert(chunk_id, witness);
-        Ok(())
-    }
-
-    async fn get_chunk_witness(
-        &self,
-        chunk_id: ChunkId,
-    ) -> Result<Option<ChunkWitnessRecord>, StorageError> {
-        Ok(self.chunk_witnesses.read().unwrap().get(&chunk_id).cloned())
-    }
-
-    async fn del_chunk_witness(&self, chunk_id: ChunkId) -> Result<(), StorageError> {
-        self.chunk_witnesses.write().unwrap().remove(&chunk_id);
-        Ok(())
     }
 }
 

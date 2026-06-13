@@ -2,7 +2,7 @@ use std::{error::Error, sync::Arc, thread, time::Duration};
 
 use alpen_ee_common::{
     AccessedStateRecord, Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus,
-    ChunkWitnessRecord, EeAccountStateAtEpoch, ExecBlockRecord,
+    EeAccountStateAtEpoch, ExecBlockRecord,
 };
 use strata_acct_types::Hash;
 use strata_db_store_sled::SledDbConfig;
@@ -20,8 +20,7 @@ use crate::{
     sleddb::{
         BatchByIdxSchema, BatchChunksSchema, BatchIdToIdxSchema, BlockAccessedStateSchema,
         BlockWitnessSchema, BytecodeSchema, ChunkByIdxSchema, ChunkIdToIdxSchema,
-        ChunkWitnessSchema, ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema,
-        ExecBlocksAtHeightSchema,
+        ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema, ExecBlocksAtHeightSchema,
     },
     DbError, DbResult,
 };
@@ -87,7 +86,6 @@ pub(crate) struct EeNodeDBSled {
     chunk_by_idx_tree: SledTree<ChunkByIdxSchema>,
     chunk_id_to_idx_tree: SledTree<ChunkIdToIdxSchema>,
     batch_chunks_tree: SledTree<BatchChunksSchema>,
-    chunk_witness_tree: SledTree<ChunkWitnessSchema>,
     block_accessed_state_tree: SledTree<BlockAccessedStateSchema>,
     bytecode_tree: SledTree<BytecodeSchema>,
     block_witness_tree: SledTree<BlockWitnessSchema>,
@@ -108,7 +106,6 @@ impl EeNodeDBSled {
             chunk_by_idx_tree: db.get_tree()?,
             chunk_id_to_idx_tree: db.get_tree()?,
             batch_chunks_tree: db.get_tree()?,
-            chunk_witness_tree: db.get_tree()?,
             block_accessed_state_tree: db.get_tree()?,
             bytecode_tree: db.get_tree()?,
             block_witness_tree: db.get_tree()?,
@@ -963,23 +960,6 @@ impl EeNodeDb for EeNodeDBSled {
             return Ok(None);
         };
         Ok(Some(db_chunks.into_iter().map(Into::into).collect()))
-    }
-
-    fn put_chunk_witness(&self, chunk_id: ChunkId, witness: ChunkWitnessRecord) -> DbResult<()> {
-        let db_chunk_id: DBChunkId = chunk_id.into();
-        self.chunk_witness_tree.insert(&db_chunk_id, &witness)?;
-        Ok(())
-    }
-
-    fn get_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<Option<ChunkWitnessRecord>> {
-        let db_chunk_id: DBChunkId = chunk_id.into();
-        Ok(self.chunk_witness_tree.get(&db_chunk_id)?)
-    }
-
-    fn del_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<()> {
-        let db_chunk_id: DBChunkId = chunk_id.into();
-        self.chunk_witness_tree.remove(&db_chunk_id)?;
-        Ok(())
     }
 
     fn put_block_witness(&self, block_id: Hash, witness: Vec<u8>) -> DbResult<()> {

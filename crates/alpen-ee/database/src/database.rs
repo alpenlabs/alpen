@@ -1,6 +1,6 @@
 use alpen_ee_common::{
     AccessedStateRecord, Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus,
-    ChunkWitnessRecord, EeAccountStateAtEpoch, ExecBlockRecord,
+    EeAccountStateAtEpoch, ExecBlockRecord,
 };
 use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
@@ -116,22 +116,6 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Get the chunk-id list previously set for a batch.
     fn get_batch_chunks(&self, batch_id: BatchId) -> DbResult<Option<Vec<ChunkId>>>;
 
-    // Chunk witness operations
-    //
-    // Pre-computed witness records, written at chunk-seal time and read
-    // by the chunk prover's `fetch_input`. See the EE prover redesign
-    // doc for context.
-
-    /// Store the pre-computed witness for a chunk. Overwrites if present.
-    fn put_chunk_witness(&self, chunk_id: ChunkId, witness: ChunkWitnessRecord) -> DbResult<()>;
-
-    /// Fetch the pre-computed witness for a chunk, if one exists.
-    fn get_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<Option<ChunkWitnessRecord>>;
-
-    /// Delete a chunk's witness record. Idempotent — succeeds whether or not
-    /// the record was present.
-    fn del_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<()>;
-
     // Per-block proof-witness operations
     //
     // Written by the EE block-production / import path at commit time
@@ -210,11 +194,6 @@ pub(crate) mod ops {
             get_latest_chunk() => Option<(Chunk, ChunkStatus)>;
             set_batch_chunks(batch_id: BatchId, chunks: Vec<ChunkId>) => ();
             get_batch_chunks(batch_id: BatchId) => Option<Vec<ChunkId>>;
-
-            // Chunk witness operations
-            put_chunk_witness(chunk_id: ChunkId, witness: ChunkWitnessRecord) => ();
-            get_chunk_witness(chunk_id: ChunkId) => Option<ChunkWitnessRecord>;
-            del_chunk_witness(chunk_id: ChunkId) => ();
 
             // Per-block proof-witness operations
             put_block_witness(block_id: Hash, witness: Vec<u8>) => ();

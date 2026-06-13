@@ -3,7 +3,6 @@ mod account;
 mod batch;
 mod block_witness;
 mod chunk;
-mod chunk_witness;
 mod errors;
 mod exec_block;
 #[cfg(feature = "test-utils")]
@@ -25,9 +24,6 @@ pub use chunk::{tests as chunk_storage_test_fns, MockChunkStorage};
 pub use block_witness::BlockWitnessStore;
 #[cfg(feature = "test-utils")]
 pub use block_witness::MockBlockWitnessStore;
-pub use chunk_witness::ChunkWitnessStore;
-#[cfg(feature = "test-utils")]
-pub use chunk_witness::MockChunkWitnessStore;
 pub use errors::StorageError;
 pub use exec_block::ExecBlockStorage;
 #[cfg(feature = "test-utils")]
