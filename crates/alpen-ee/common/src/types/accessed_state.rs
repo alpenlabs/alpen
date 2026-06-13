@@ -7,11 +7,10 @@
 //! for BLOCKHASH) here, plus any newly-referenced bytecodes into the
 //! sibling bytecode tree.
 //!
-//! Consumer: the chunk-builder at chunk-seal time. It unions the per-block
-//! records of the chunk's blocks into a single multiproof target set, then
-//! runs the two pre/post state multiproofs and assembles the
-//! `ChunkWitnessRecord`. With this cache in place, chunk-sealing no longer
-//! has to re-execute blocks.
+//! Consumer: the acct-proof range-witness extractor. It unions the per-block
+//! records of a batch's blocks into a single multiproof target set, then runs
+//! the pre/post state multiproofs to assemble the batch witness. With this
+//! cache in place, the extractor no longer has to re-execute blocks.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -24,7 +23,7 @@ pub struct AccessedStateRecord {
     /// Accounts the block read (and the storage slots, if any).
     pub accounts: Vec<AccessedAccount>,
     /// Code hashes referenced during execution. Resolve via
-    /// [`crate::ChunkWitnessStore`]-adjacent bytecode lookups (see
+    /// [`crate::AccessedStateStore`] bytecode lookups (see
     /// `AccessedStateStore::get_bytecode`).
     pub bytecode_hashes: Vec<[u8; 32]>,
     /// Ancestor block numbers queried via the EVM `BLOCKHASH` opcode.

@@ -173,20 +173,21 @@ mod tests {
             outputs.clone(),
         );
 
-        // Encode block, header, and state for the private input.
-        let raw_block_data =
-            RawBlockData::from_block::<EvmExecutionEnvironment>(&block, inputs, outputs)
-                .expect("encode block");
+        // Encode block, header, and the block's per-block witness for the
+        // private input. With a single block in this chunk, the block's witness
+        // is the pre-state anchored at the parent root.
+        let raw_pre_state = encode_to_vec(&pre_state).expect("encode pre-state");
+        let raw_block_data = RawBlockData::from_block::<EvmExecutionEnvironment>(
+            &block,
+            inputs,
+            outputs,
+            raw_pre_state,
+        )
+        .expect("encode block");
         let raw_chunk = RawChunkData::new(vec![raw_block_data], parent_blkid);
         let raw_prev_header = encode_to_vec(&parent_evm_header).expect("encode prev header");
-        let raw_pre_state = encode_to_vec(&pre_state).expect("encode pre-state");
 
-        let private_input = PrivateInput::new(
-            chunk_transition.clone(),
-            raw_chunk,
-            raw_prev_header,
-            raw_pre_state,
-        );
+        let private_input = PrivateInput::new(chunk_transition.clone(), raw_chunk, raw_prev_header);
 
         let proof_input = EeChunkProofInput {
             genesis: witness.genesis,

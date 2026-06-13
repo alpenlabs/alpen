@@ -1,6 +1,6 @@
 use alpen_ee_common::{
     AccessedStateRecord, Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus,
-    ChunkWitnessRecord, EeAccountStateAtEpoch, ExecBlockRecord,
+    EeAccountStateAtEpoch, ExecBlockRecord,
 };
 use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
@@ -116,21 +116,19 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Get the chunk-id list previously set for a batch.
     fn get_batch_chunks(&self, batch_id: BatchId) -> DbResult<Option<Vec<ChunkId>>>;
 
-    // Chunk witness operations
+    // Per-block proof-witness operations
     //
-    // Pre-computed witness records, written at chunk-seal time and read
-    // by the chunk prover's `fetch_input`. See the EE prover redesign
-    // doc for context.
+    // Written by the EE block-production / import path at commit time
+    // (depth-0), read by the chunk prover's input assembly.
 
-    /// Store the pre-computed witness for a chunk. Overwrites if present.
-    fn put_chunk_witness(&self, chunk_id: ChunkId, witness: ChunkWitnessRecord) -> DbResult<()>;
+    /// Store the per-block proof-witness for `block_id`. Overwrites if present.
+    fn put_block_witness(&self, block_id: Hash, witness: Vec<u8>) -> DbResult<()>;
 
-    /// Fetch the pre-computed witness for a chunk, if one exists.
-    fn get_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<Option<ChunkWitnessRecord>>;
+    /// Fetch the per-block proof-witness for `block_id`, if one exists.
+    fn get_block_witness(&self, block_id: Hash) -> DbResult<Option<Vec<u8>>>;
 
-    /// Delete a chunk's witness record. Idempotent — succeeds whether or not
-    /// the record was present.
-    fn del_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<()>;
+    /// Delete a block's proof-witness. Idempotent.
+    fn del_block_witness(&self, block_id: Hash) -> DbResult<()>;
 
     // Per-block accessed-state + content-addressed bytecode operations
     //
@@ -197,10 +195,10 @@ pub(crate) mod ops {
             set_batch_chunks(batch_id: BatchId, chunks: Vec<ChunkId>) => ();
             get_batch_chunks(batch_id: BatchId) => Option<Vec<ChunkId>>;
 
-            // Chunk witness operations
-            put_chunk_witness(chunk_id: ChunkId, witness: ChunkWitnessRecord) => ();
-            get_chunk_witness(chunk_id: ChunkId) => Option<ChunkWitnessRecord>;
-            del_chunk_witness(chunk_id: ChunkId) => ();
+            // Per-block proof-witness operations
+            put_block_witness(block_id: Hash, witness: Vec<u8>) => ();
+            get_block_witness(block_id: Hash) => Option<Vec<u8>>;
+            del_block_witness(block_id: Hash) => ();
 
             // Per-block accessed-state + bytecode operations
             put_block_accessed_state(block_id: Hash, record: AccessedStateRecord) => ();
