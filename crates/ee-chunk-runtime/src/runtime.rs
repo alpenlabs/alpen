@@ -20,9 +20,9 @@ pub fn verify_input<E: ExecutionEnvironment>(
         .try_decode_prev_header::<E>()
         .map_err(|_| EnvError::MalformedChainSegment)?;
 
-    // 2. Parse the blocks (with their per-block witnesses) into a chunk we can
-    //    execute. Each block carries its own depth-0 partial-state witness,
-    //    decoded here into a parallel `block_states` list.
+    // 2. Parse the blocks (with their per-block witnesses) into a chunk we can execute. Each block
+    //    carries its own depth-0 partial-state witness, decoded here into a parallel `block_states`
+    //    list.
     // TODO(STR-3685): rework borrowings here because this is really ugly
     let mut block_inputs = Vec::new();
     let mut block_outputs = Vec::new();

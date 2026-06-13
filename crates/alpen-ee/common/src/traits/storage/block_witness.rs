@@ -20,7 +20,8 @@ use crate::StorageError;
 #[async_trait]
 pub trait BlockWitnessStore: Send + Sync {
     /// Insert or overwrite the witness for `block_id`.
-    async fn put_block_witness(&self, block_id: Hash, witness: Vec<u8>) -> Result<(), StorageError>;
+    async fn put_block_witness(&self, block_id: Hash, witness: Vec<u8>)
+        -> Result<(), StorageError>;
 
     /// Fetch the witness for `block_id`, if persisted.
     async fn get_block_witness(&self, block_id: Hash) -> Result<Option<Vec<u8>>, StorageError>;

@@ -22,7 +22,9 @@ use reth_evm::{
 use reth_primitives::{Block, EthPrimitives};
 use reth_primitives_traits::Block as _;
 use reth_provider::{BlockReader, HeaderProvider, StateProofProvider, StateProviderFactory};
-use reth_revm::{database::StateProviderDatabase, db::State, state::Bytecode, witness::ExecutionWitnessRecord};
+use reth_revm::{
+    database::StateProviderDatabase, db::State, state::Bytecode, witness::ExecutionWitnessRecord,
+};
 use reth_trie::TrieInput;
 use rsp_mpt::EthereumState;
 use strata_evm_ee::EvmPartialState;
@@ -89,13 +91,21 @@ where
                 record.record_executed_state(statedb);
             })
             .map_err(|e| eyre::eyre!("block re-execution for witness failed: {e}"))?;
-        let ExecutionWitnessRecord { hashed_state, codes, lowest_block_number, .. } = record;
+        let ExecutionWitnessRecord {
+            hashed_state,
+            codes,
+            lowest_block_number,
+            ..
+        } = record;
         (hashed_state, codes, lowest_block_number)
     };
 
     // Trie nodes covering the block's touched paths (against the parent state).
     let state = state_provider.witness(TrieInput::default(), hashed_state)?;
-    let witness = ExecutionWitness { state, ..Default::default() };
+    let witness = ExecutionWitness {
+        state,
+        ..Default::default()
+    };
 
     // rsp builds the sparse state directly from the witness node bag.
     let ethereum_state = EthereumState::from_execution_witness(&witness, parent_state_root);

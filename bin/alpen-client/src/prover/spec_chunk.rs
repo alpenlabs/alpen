@@ -101,15 +101,17 @@ impl TryFrom<Vec<u8>> for ChunkTask {
 
 /// Chunk proof specification.
 ///
-/// Assembled entirely from per-block records — no chunk-spanning witness:
+/// The input is assembled entirely from per-block records — no chunk-spanning witness:
 /// - **`BlockWitnessStore`** — one [`BlockWitnessRecord`] per block (the depth-0 transition witness
 ///   plus the RLP block and parent header), written inline in the block-production path. A missing
-///   record returns `TransientFailure` so paas retries with backoff. (TODO(paas-retries): once the
-///   `resolve_input`/`Blocked` API lands, map "not produced yet" to `Blocked` instead of a fake
-///   transient failure — block-production blocks on witness capture, so a present chunk should
-///   always resolve `Ready` on the normal path.)
+///   record returns `TransientFailure` so paas retries with backoff.
 /// - **`ExecBlockStorage`** — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
 ///   `ExecOutputs`.
+///
+/// TODO(STR-3735): Once the paas-retries `resolve_input`/`Blocked` API lands,
+/// "not produced yet" should map to `Blocked` instead of a fake transient failure —
+/// block-production blocks on witness capture, so a present chunk should always resolve `Ready` on
+/// the normal path.
 pub(crate) struct ChunkSpec {
     chunk_storage: Arc<dyn ChunkStorage>,
     storage: Arc<EeNodeStorage>,
@@ -158,9 +160,9 @@ impl ProofSpec for ChunkSpec {
             )));
         }
 
-        // 2. Assemble per-block data from the per-block witness records. Each
-        //    record (written inline at block production) carries the block's
-        //    depth-0 transition witness, the RLP block, and its parent header.
+        // 2. Assemble per-block data from the per-block witness records. Each record (written
+        //    inline at block production) carries the block's depth-0 transition witness, the RLP
+        //    block, and its parent header.
         let mut block_datas: Vec<RawBlockData> = Vec::with_capacity(block_hashes.len());
         let mut aggregated_inputs = ExecInputs::new_empty();
         let mut aggregated_outputs = ExecOutputs::new_empty();
@@ -175,15 +177,13 @@ impl ProofSpec for ChunkSpec {
             // Per-block witness record: depth-0 witness + RLP block + parent
             // header. Missing means production-time capture hasn't landed yet
             // (or the record was deleted) — a transient failure so paas retries.
-            // TODO(paas-retries): map "not produced yet" to `Blocked` once the
-            // `resolve_input` API lands.
+            // Once the paas-retries `resolve_input` API lands, "not produced
+            // yet" should map to `Blocked` rather than a transient failure.
             let bytes = self
                 .storage
                 .get_block_witness(*block_hash)
                 .await
-                .map_err(|e| {
-                    PaasError::Storage(format!("get_block_witness({block_hash:?}): {e}"))
-                })?
+                .map_err(|e| PaasError::Storage(format!("get_block_witness({block_hash:?}): {e}")))?
                 .ok_or_else(|| {
                     PaasError::TransientFailure(format!(
                         "no block witness for {block_hash:?} in chunk {chunk_id:?} yet — \
@@ -257,8 +257,8 @@ impl ProofSpec for ChunkSpec {
             );
         }
 
-        // 3. Parent header (from the first block's witness) — wrap + encode for
-        //    the guest, and confirm it matches the chunk's prev_block.
+        // 3. Parent header (from the first block's witness) — wrap + encode for the guest, and
+        //    confirm it matches the chunk's prev_block.
         let prev_header = prev_header.expect("non-empty chunk has a first block");
         let parent_evm_header = EvmHeader::new(prev_header);
         let parent_blkid: Hash = parent_evm_header.compute_block_id();

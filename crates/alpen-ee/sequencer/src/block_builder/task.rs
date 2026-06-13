@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use alpen_ee_block_assembly::{build_next_exec_block, BlockAssemblyInputs, BlockAssemblyOutputs};
 use alloy_primitives::B256;
+use alpen_ee_block_assembly::{build_next_exec_block, BlockAssemblyInputs, BlockAssemblyOutputs};
 use alpen_ee_common::{
     Clock, EnginePayload, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, ForkchoiceState,
     PayloadBuilderEngine, SystemClock,

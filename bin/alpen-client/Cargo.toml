@@ -33,7 +33,6 @@ path = "src/main.rs"
 alloy-consensus.workspace = true
 alloy-rlp.workspace = true
 alpen-chainspec.workspace = true
-borsh.workspace = true
 alpen-ee-common.workspace = true
 alpen-ee-config.workspace = true
 alpen-ee-da-provider = { workspace = true, optional = true }
@@ -54,6 +53,7 @@ alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
 alpen-reth-witness.workspace = true
 bitcoind-async-client = { workspace = true, optional = true }
+borsh.workspace = true
 ssz.workspace = true
 strata-acct-types.workspace = true
 strata-bridge-params.workspace = true

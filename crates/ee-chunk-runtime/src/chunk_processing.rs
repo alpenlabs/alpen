@@ -102,7 +102,6 @@ impl<'c> IoTracker<'c> {
 /// pre-/post-root checks and the chain anchoring (`prev_state_root` for the
 /// first block, then each block's own header root) are what keep the
 /// decomposition sound.
-#[expect(clippy::too_many_arguments, reason = "per-block transition verification")]
 fn process_chunk_blocks<E: ExecutionEnvironment>(
     ee: &E,
     block_states: &mut [E::PartialState],
@@ -112,8 +111,7 @@ fn process_chunk_blocks<E: ExecutionEnvironment>(
     expected_inputs: &ExecInputs,
     expected_outputs: &ExecOutputs,
 ) -> EnvResult<()> {
-    // 1. Check that the chunk is nonempty and the per-block witness list lines
-    //    up with the blocks.
+    // 1. Check that the chunk is nonempty and the per-block witness list lines up with the blocks.
     if chunk.blocks().is_empty() {
         return Err(EnvError::MalformedChainSegment);
     }
@@ -121,8 +119,8 @@ fn process_chunk_blocks<E: ExecutionEnvironment>(
         return Err(EnvError::MalformedChainSegment);
     }
 
-    // 2. Process each block against its own witness, tracking the IO traces,
-    //    chain continuity, and per-block pre/post state roots.
+    // 2. Process each block against its own witness, tracking the IO traces, chain continuity, and
+    //    per-block pre/post state roots.
     let mut io_tracker = IoTracker::from_io(expected_inputs, expected_outputs);
     let mut cur_verified_tip_blkid = verified_tip;
     let mut parent_state_root = prev_state_root;
@@ -400,9 +398,14 @@ mod tests {
         let chunk = Chunk::new(vec![ChunkBlock::new(&inputs, &outputs, block)]);
         let mut block_states = vec![initial_state];
 
-        let err =
-            verify_chunk_transition(&chunk_transition, &ee, &prev_header, &mut block_states, &chunk)
-                .expect_err("wrong tip state root must be rejected");
+        let err = verify_chunk_transition(
+            &chunk_transition,
+            &ee,
+            &prev_header,
+            &mut block_states,
+            &chunk,
+        )
+        .expect_err("wrong tip state root must be rejected");
         assert!(matches!(err, EnvError::MismatchedChainSegment));
     }
 
@@ -443,9 +446,14 @@ mod tests {
         let chunk = Chunk::new(vec![ChunkBlock::new(&inputs, &outputs, block)]);
         let mut block_states = vec![initial_state];
 
-        let err =
-            verify_chunk_transition(&chunk_transition, &ee, &prev_header, &mut block_states, &chunk)
-                .expect_err("wrong tip header summary must be rejected");
+        let err = verify_chunk_transition(
+            &chunk_transition,
+            &ee,
+            &prev_header,
+            &mut block_states,
+            &chunk,
+        )
+        .expect_err("wrong tip header summary must be rejected");
         assert!(matches!(err, EnvError::MismatchedChainSegment));
     }
 }

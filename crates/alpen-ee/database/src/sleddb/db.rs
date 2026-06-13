@@ -20,7 +20,8 @@ use crate::{
     sleddb::{
         BatchByIdxSchema, BatchChunksSchema, BatchIdToIdxSchema, BlockAccessedStateSchema,
         BlockWitnessSchema, BytecodeSchema, ChunkByIdxSchema, ChunkIdToIdxSchema,
-        ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema, ExecBlocksAtHeightSchema,
+        ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema,
+        ExecBlocksAtHeightSchema,
     },
     DbError, DbResult,
 };
