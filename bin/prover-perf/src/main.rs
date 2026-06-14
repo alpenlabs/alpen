@@ -1,6 +1,6 @@
 //! Prover performance evaluation.
 
-use std::{error::Error, process};
+use std::{env, error::Error, io, process};
 
 use sp1_sdk::utils::setup_logger;
 #[cfg(feature = "sp1")]
@@ -13,12 +13,17 @@ pub mod format;
 pub mod github;
 pub mod programs;
 
-use anyhow::Result;
 use args::{parse_programs, EvalArgs};
-use format::{format_header, format_results};
+use format::{format_header, format_proof_results, format_results};
 use github::{format_github_message, post_to_github_pr};
 #[cfg(feature = "sp1")]
 use zkaleido::ExecutionSummary;
+
+fn env_truthy(name: &str) -> bool {
+    env::var(name)
+        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -35,9 +40,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     #[cfg(feature = "sp1")]
     {
-        let sp1_reports: Vec<(String, ExecutionSummary)> =
-            programs::run_sp1_programs(&programs).await;
-        results_text.push(format_results(&sp1_reports, "SP1".to_owned()));
+        if args.prove {
+            if env_truthy("ZKVM_MOCK")
+                || env::var("SP1_PROVER")
+                    .map(|value| value.eq_ignore_ascii_case("mock"))
+                    .unwrap_or(false)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "proof mode requires a real SP1 prover; unset ZKVM_MOCK and do not use SP1_PROVER=mock",
+                )
+                .into());
+            }
+
+            let sp1_reports = programs::prove_sp1_programs(&programs).await;
+            results_text.push(format_proof_results(&sp1_reports, "SP1".to_owned()));
+        } else {
+            let sp1_reports: Vec<(String, ExecutionSummary)> =
+                programs::run_sp1_programs(&programs).await;
+            results_text.push(format_results(&sp1_reports, "SP1".to_owned()));
+        }
     }
 
     // Print results

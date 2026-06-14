@@ -26,6 +26,10 @@ pub struct EvalArgs {
     /// --programs checkpoint`
     #[argh(option)]
     pub programs: Vec<String>,
+
+    /// generate full proofs instead of only executing the SP1 guests
+    #[argh(switch)]
+    pub prove: bool,
 }
 
 /// Parses program strings into [`GuestProgram`] variants.
