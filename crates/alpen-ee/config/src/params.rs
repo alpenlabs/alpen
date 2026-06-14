@@ -1,9 +1,13 @@
 use alloy_primitives::B256;
+use serde::{Deserialize, Serialize};
 use strata_acct_types::AccountId;
+
+/// Default Alpen EE account id registered in generated OL params.
+pub const DEFAULT_ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
 
 /// Chain specific config, that needs to remain constant on all nodes
 /// to ensure all stay on the same chain.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlpenEeParams {
     /// Account id of current EE in OL
     account_id: AccountId,
@@ -35,6 +39,16 @@ impl AlpenEeParams {
         }
     }
 
+    /// Parses chain parameters from a JSON string.
+    pub fn from_json_str(json: &str) -> serde_json::Result<Self> {
+        serde_json::from_str(json)
+    }
+
+    /// Serializes chain parameters to pretty-printed JSON.
+    pub fn to_json_string_pretty(&self) -> serde_json::Result<String> {
+        serde_json::to_string_pretty(self)
+    }
+
     /// Returns the EE account ID in the OL chain.
     pub fn account_id(&self) -> AccountId {
         self.account_id
@@ -53,5 +67,39 @@ impl AlpenEeParams {
     /// Returns the genesis block number of the execution chain.
     pub fn genesis_blocknum(&self) -> u64 {
         self.genesis_blocknum
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AlpenEeParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
+
+    #[test]
+    fn json_roundtrip_preserves_params() {
+        let params = AlpenEeParams::new(
+            DEFAULT_ALPEN_EE_ACCOUNT_ID,
+            [2u8; 32].into(),
+            [3u8; 32].into(),
+            42,
+        );
+
+        let json = params
+            .to_json_string_pretty()
+            .expect("params should serialize");
+        let decoded = AlpenEeParams::from_json_str(&json).expect("params should deserialize");
+
+        assert_eq!(decoded, params);
+    }
+
+    #[test]
+    fn json_rejects_malformed_account_id() {
+        let json = r#"{
+            "account_id": "01",
+            "genesis_blockhash": "0x0202020202020202020202020202020202020202020202020202020202020202",
+            "genesis_stateroot": "0x0303030303030303030303030303030303030303030303030303030303030303",
+            "genesis_blocknum": 0
+        }"#;
+
+        assert!(AlpenEeParams::from_json_str(json).is_err());
     }
 }

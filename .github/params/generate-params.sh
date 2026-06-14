@@ -46,6 +46,7 @@ python3 "${SCRIPT_DIR}/params-helper.py" extract-keys \
     --template-dir "${TEMPLATE_DIR}" \
     --output-dir "${WORK_DIR}"
 SAFE_HARBOUR=$(tr -d '[:space:]' < "${WORK_DIR}/safe-harbour.txt")
+EE_ACCOUNT_ID=$(tr -d '[:space:]' < "${WORK_DIR}/ee-account-id.txt")
 
 echo ""
 echo "=== Step 1: Generate raw params via datatool ==="
@@ -66,9 +67,17 @@ run_datatool() {
 }
 
 run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
+    gen-ee-params \
+    --alpen-chain-config /app/chain.json \
+    --account-id "${EE_ACCOUNT_ID}" \
+    -o /out/ee-params-raw.json
+echo "  ee-params-raw.json generated"
+
+run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
     gen-ol-params \
     --alpen-predicate sp1-groth16 \
     --alpen-chain-config /app/chain.json \
+    --ee-params /out/ee-params-raw.json \
     --genesis-l1-height "${GENESIS_L1_HEIGHT}" \
     -o /out/ol-params-raw.json
 echo "  ol-params-raw.json generated"
@@ -86,7 +95,7 @@ run_datatool -- \
 echo "  asm-params-raw.json generated"
 
 # Verify raw files were actually produced
-for f in ol-params-raw.json asm-params-raw.json; do
+for f in ee-params-raw.json ol-params-raw.json asm-params-raw.json; do
     if [ ! -s "${WORK_DIR}/${f}" ]; then
         echo "ERROR: datatool did not produce ${f} (check BTC RPC connectivity)" >&2
         exit 1
