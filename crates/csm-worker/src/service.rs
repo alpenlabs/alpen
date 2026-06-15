@@ -33,7 +33,7 @@ impl<C: CsmWorkerContext + 'static> Service for CsmWorkerService<C> {
 
     fn get_status(state: &Self::State) -> Self::Status {
         CsmWorkerStatus {
-            cur_block: state.last_asm_block,
+            cur_block: state.recent_asm_blocks.last().copied(),
             last_processed_epoch: state.last_processed_epoch.map(|e| e as u64),
             last_confirmed_epoch: state.confirmed_epoch,
             last_finalized_epoch: state.finalized_epoch,
@@ -76,8 +76,8 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
             error!(%asm_block, err = ?e, "Failed to persist refreshed finalized checkpoint");
         }
 
-        // FCM listens on checkpoint-state updates. Emit when checkpoint status changed
-        // even if client-state object itself did not change (tip-only L1 movement).
+        // Publish client state update when checkpoint status changed even if client-state object
+        // itself did not change (tip-only L1 movement).
         if confirmed_changed || newly_finalized.is_some() {
             state
                 .ctx
@@ -98,10 +98,9 @@ fn refresh_finalized_checkpoint<C: CsmWorkerContext>(
 ) -> CsmWorkerResult<()> {
     let last_seen = state.last_committed_state.get_last_checkpoint();
     let refreshed = ClientState::new(Some(finalized), last_seen);
-    state.ctx.put_client_state_update(
-        &asm_block,
-        ClientUpdateOutput::new(refreshed.clone(), vec![]),
-    )?;
+    state
+        .ctx
+        .put_client_state_update(&asm_block, ClientUpdateOutput::new_state(refreshed.clone()))?;
     state.last_committed_state = Arc::new(refreshed);
     Ok(())
 }
@@ -173,7 +172,7 @@ mod tests {
         )
         .with_l1_fetch_failure();
 
-        let mut state = CsmWorkerState::new(ctx).expect("bootstrap state");
+        let mut state = CsmWorkerState::bootstrap(ctx).expect("bootstrap state");
 
         // Inject a queued observation deep enough that any
         // `advance_finalization` call would advance finality.
@@ -276,7 +275,7 @@ mod tests {
             "finalized_epoch must not advance when process_asm_block failed"
         );
         // The cursor must stay pinned at the last committed block.
-        assert_eq!(state.last_asm_block, Some(last));
+        assert_eq!(state.recent_asm_blocks.last(), Some(&last));
         // No ClientState row may exist at the failed block.
         assert!(
             storage

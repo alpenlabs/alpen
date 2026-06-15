@@ -165,6 +165,10 @@ impl L1Checkpoint {
     pub fn new(tip: CheckpointTip, l1_reference: CheckpointL1Ref) -> Self {
         Self { tip, l1_reference }
     }
+
+    pub fn height(&self) -> L1Height {
+        self.l1_reference.block_height()
+    }
 }
 
 impl From<&L1Checkpoint> for EpochCommitment {

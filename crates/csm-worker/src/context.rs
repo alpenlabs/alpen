@@ -55,14 +55,24 @@ pub trait CsmWorkerContext: Send + Sync {
     /// Fetches the auxiliary data ASM consumed when processing `block`.
     fn get_aux_data(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AuxData>;
 
-    /// Resolves the canonical L1 block commitment at `height`.
-    fn get_canonical_l1_block(&self, height: L1Height) -> CsmWorkerResult<L1BlockCommitment>;
+    /// Resolves the canonical L1 block commitment at `height`, or `None` when
+    /// no canonical block exists there (e.g. a height above a reverted tip).
+    fn get_canonical_l1_block(
+        &self,
+        height: L1Height,
+    ) -> CsmWorkerResult<Option<L1BlockCommitment>>;
 
     /// Returns the most recently persisted client state, or `None` if storage
     /// has none yet.
     fn fetch_most_recent_client_state(
         &self,
     ) -> CsmWorkerResult<Option<(L1BlockCommitment, ClientState)>>;
+
+    /// Returns the client state persisted at `block`, if any.
+    fn get_client_state_at(
+        &self,
+        block: &L1BlockCommitment,
+    ) -> CsmWorkerResult<Option<ClientState>>;
 
     /// L1 block that bootstrap should anchor to when storage has no client
     /// state yet.
