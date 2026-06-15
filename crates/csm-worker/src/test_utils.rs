@@ -180,25 +180,25 @@ impl CsmWorkerContext for StubCtx {
         })
     }
 
-    fn get_canonical_l1_block(&self, height: L1Height) -> CsmWorkerResult<L1BlockCommitment> {
+    fn get_canonical_l1_block(
+        &self,
+        height: L1Height,
+    ) -> CsmWorkerResult<Option<L1BlockCommitment>> {
         if self.canonical_fail_height == Some(height) {
             return Err(CsmWorkerError::MissingData {
                 what: "canonical L1 block",
                 detail: format!("simulated lookup failure at height {height}"),
             });
         }
-        self.canonical_blocks
+        Ok(self
+            .canonical_blocks
             .get(&height)
             .or_else(|| {
                 self.canonical_asm_states
                     .get(&height)
                     .map(|(blkid, _)| blkid)
             })
-            .map(|blkid| L1BlockCommitment::new(height, *blkid))
-            .ok_or_else(|| CsmWorkerError::MissingData {
-                what: "test canonical block",
-                detail: format!("height {height}"),
-            })
+            .map(|blkid| L1BlockCommitment::new(height, *blkid)))
     }
 
     fn fetch_most_recent_client_state(

@@ -7,7 +7,11 @@ use strata_identifiers::Epoch;
 use strata_primitives::{l1::is_l1_reorg_safe, prelude::*};
 use strata_service::ServiceState;
 
-use crate::{constants, context::CsmWorkerContext, errors::CsmWorkerResult};
+use crate::{
+    constants,
+    context::CsmWorkerContext,
+    errors::{CsmWorkerError, CsmWorkerResult},
+};
 
 /// State for the CSM worker service.
 ///
@@ -68,9 +72,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             ctx.publish_client_state(new_clstate.as_ref().clone(), recent_l1blk);
         }
 
-        // The list starts at the committed block and refills as blocks are
-        // processed; pruning bounds it to the reorg-safe depth.
-        let recent_asm_blocks = vec![recent_l1blk];
+        let recent_asm_blocks = init_recent_asm_blocks(&ctx, recent_l1blk)?;
         let confirmed_epoch = new_clstate.get_last_epoch();
         let finalized_epoch = new_clstate.get_declared_final_epoch();
 
@@ -89,6 +91,32 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     pub fn get_last_asm_block(&self) -> Option<L1BlockCommitment> {
         self.recent_asm_blocks.last().copied()
     }
+}
+
+/// Builds the recent-ASM-blocks list from the reorg-safe floor(index 0) up to `tip`,
+/// filling each height from the canonical L1 chain.
+fn init_recent_asm_blocks<C: CsmWorkerContext>(
+    ctx: &C,
+    tip: L1BlockCommitment,
+) -> CsmWorkerResult<Vec<L1BlockCommitment>> {
+    let depth = ctx.l1_reorg_safe_depth().max(1);
+    let genesis = ctx.genesis_l1_block().height();
+    // Floor is the reorg-safe anchor, bounded below by genesis and above by
+    // `tip` so the range always yields at least `tip`.
+    let floor = tip.height().saturating_sub(depth - 1).max(genesis);
+
+    let mut blocks = Vec::new();
+    for height in floor..tip.height() {
+        let block =
+            ctx.get_canonical_l1_block(height)?
+                .ok_or_else(|| CsmWorkerError::MissingData {
+                    what: "canonical L1 block",
+                    detail: format!("height {height}"),
+                })?;
+        blocks.push(block);
+    }
+    blocks.push(tip);
+    Ok(blocks)
 }
 
 /// Client state and surviving observation queue derived as of an L1 tip.
