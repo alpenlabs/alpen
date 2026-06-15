@@ -502,6 +502,82 @@ Each step is independently testable.
 * **Forced inclusion:** not yet implemented; the interim liveness backstop is
   immediate sequencer rotation.
 
+## De-enshrining Alpen: where the VK-change payload originates
+
+The EE plan above settles *how* a VK change is enforced once it reaches the
+account's inbox MMR — that design does not change here. What this section
+addresses is *where the VK-change payload comes from*. For Alpen we said "it comes
+from Alpen"; for another EE it could come from the EE itself. This is the Alpen
+version, and how it keeps the exit guarantee.
+
+**The enshrinement today.** ASM currently knows what Alpen is: the admin
+subprotocol has a dedicated `AlpenAdministrator` role
+([`roles.rs`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/params/src/subprotocols/admin/roles.rs))
+and an Alpen-specific
+[`EeStfVk`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/txs/src/actions/updates/ee_stf_vk.rs)
+action. The goal is for ASM/admin to provide only a *generic* "delay this for the
+user guarantee" service and to stop being Alpen-aware — Alpen should own its own
+VK decision.
+
+**Alpen defines its own VK.** Move the authority inside Alpen: a contract at
+genesis holds the Alpen administrator role, its keys, and its threshold, and is
+the thing that can change the Alpen VK. When the threshold is met the EVM emits an
+`AlpenVKChange` event — the same shape as today's ASM admin approval, but inside
+Alpen.
+
+**The exit guarantee still needs L1 observability.** A change decided purely
+inside Alpen is not enough: for users to exit, the new VK must be observable on
+**Bitcoin**, with enough lead time to leave under the old rules first. So the
+change must round-trip to L1 and be delayed there before it takes effect.
+
+**A generic `DelayedL1Msg(payload, l1_delay)`.** The Alpen sequencer wraps the
+`AlpenVKChange` event into a message to the OL. To the OL the `payload` is
+**opaque**; alongside it travels `l1_delay`, the L1 lead time required before the
+payload may be acted upon. This is a generic type — Alpen uses it for VK changes
+now, but other EEs can reuse it later.
+
+Once the OL has a `DelayedL1Msg`, the delay can be enforced in one of two places.
+Either way it ends by placing the payload on the inbox-MMR queue, where the EE
+mechanism above takes over.
+
+**Option 1 — the ASM checkpoint subprotocol queues it.** The OL emits the payload
+as an OL log and carries it in the checkpoint payload; the checkpoint subprotocol
+queues it for `l1_delay` and re-emits the log (now carrying the payload) when the
+delay elapses. ASM still does the queuing, but generically — it never learns the
+payload is "Alpen."
+
+**Option 2 — the OL queues it itself.** No ASM involvement. The OL keeps two
+queues:
+
+* `OutgoingQueue` of `(payload, ol_height, l1_delay)` — `ol_height` is the OL
+  height at which the payload was received.
+* `ActivationQueue` of `(payload, target_l1_height)`.
+
+The transitions:
+
+1. **On each `CheckpointTipUpdate`** — which means OL state up to its `ol_height`
+   is now finalized on L1
+   ([`process_checkpoint_tip_update`](https://github.com/alpenlabs/alpen/blob/55907ce/crates/ol/stf/src/manifest_processing.rs#L300)) —
+   for every `OutgoingQueue` entry with `ol_height ≤ CheckpointTipUpdate.ol_height`
+   (now observable on L1), set
+   `target_l1_height = (L1 height where this tip update was emitted) + l1_delay`,
+   move it to the `ActivationQueue`, and drop it from `OutgoingQueue`.
+2. **On each manifest processed** (one L1 block): for every `ActivationQueue` entry
+   whose `target_l1_height` equals the manifest's height, move the payload onto the
+   inbox-MMR queue.
+
+**Why this keeps the exit guarantee.** The delay is measured from the moment the
+payload becomes **observable on L1** — the `CheckpointTipUpdate` that lands the
+relevant OL block on Bitcoin — not from when Alpen decided it. So a user watching
+L1 sees the pending VK change and has `l1_delay` blocks to exit under the old rules
+before it is acted upon. `target_l1_height` is exactly the boundary `B` the EE
+mechanism then enforces.
+
+**Which option.** Option 1 keeps the delay logic in one place (the ASM checkpoint
+subprotocol) at the cost of ASM still handling the payload; Option 2 removes ASM
+from the path entirely (fully de-enshrined) at the cost of extra OL state. Either
+is generic enough to serve other EEs, not just Alpen.
+
 ## References
 
 * STR-3480 — seal a batch with L1 view up to the enactment block.
