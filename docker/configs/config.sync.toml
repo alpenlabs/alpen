@@ -1,0 +1,66 @@
+# Checkpoint-sync (non-sequencer) node config. Adjust according to deployment.
+#
+# This node reconstructs OL state from L1-buried checkpoints. It runs no block
+# assembly, writer/broadcaster, or checkpoint proving, so the sequencer-only
+# sections (btcio.writer, btcio.broadcaster, relayer, prover, submit RPC) are
+# omitted. Keep is_sequencer = false: the checkpoint-sync image is built
+# without the sequencer feature and rejects is_sequencer = true.
+
+[client]
+rpc_host = "0.0.0.0"
+rpc_port = 8432
+admin_rpc_host = "0.0.0.0"
+admin_rpc_port = 8434
+submit_rpc_host = "0.0.0.0"
+submit_rpc_port = 8435
+l2_blocks_fetch_limit = 1_000
+datadir = "/app/data"
+db_retry_count = 5
+is_sequencer = true
+
+[bitcoind]
+# OL points at the miner bitcoind (has the wallet). Fullnode has no wallet
+# and would reject signing.
+rpc_url = "http://localhost:83333"
+rpc_user = "rpcuser"
+rpc_password = "rpcpassword"
+network = "signet"
+# retry_count is parsed as u8 (max 255) — see crates/config BitcoindConfig.
+# 2_160 overflowed and hard-failed config load at startup. Capped at 255
+# for now; at retry_interval 5s that's ~21m of L1-outage tolerance per call.
+# For longer windows, raise retry_interval (ms, u64), not retry_count.
+retry_count = 255
+retry_interval = 5_000
+
+[btcio.reader]
+client_poll_dur_ms = 10_000
+
+[btcio.writer]
+write_poll_dur_ms = 10_000
+fee_policy = "mempool"
+policy = "fastest"
+mempool_base_url = "https://bitcoin-staging.testnet-v2.alpenlabs.io/"
+reveal_amount = 330
+bundle_interval_ms = 1_000
+
+[btcio.broadcaster]
+poll_interval_ms = 1_000
+
+[sync]
+l1_follow_distance = 6
+max_reorg_depth = 4
+client_poll_dur_ms = 2000
+client_checkpoint_interval = 10
+
+[exec.reth]
+rpc_url = "alpen-client-ee-svc:8551"
+secret = "/app/keys/jwt.hex"
+
+[relayer]
+refresh_interval = 10
+stale_duration = 120
+relay_misc = true
+
+[prover]
+backend = "sp1"
+workers = 1

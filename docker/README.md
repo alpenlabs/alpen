@@ -25,6 +25,7 @@ The retained secondary compose files have narrower test/debug purposes:
 
 | Compose | Purpose |
 |---|---|
+| `compose-checkpoint-sync.yml` | Checkpoint-sync OL node — depends only on a bitcoin chain; mount pre-generated params under `configs/sync-params/` |
 | `docker-compose-eest.yml` | Ethereum execution spec test environment |
 | `docker-compose-p2p-test.yml` | Minimal EE P2P/gossip test |
 
