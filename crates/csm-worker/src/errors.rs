@@ -62,7 +62,7 @@ pub enum CsmWorkerError {
     MissingData { what: &'static str, detail: String },
 
     /// A reorg diverged at or below the finalized anchor — a protocol violation.
-    #[error("reorg past finality: finalized {finalized}, incoming {incoming}")]
+    #[error("reorg past finality (finalized {finalized}, incoming {incoming})")]
     ReorgPastFinality {
         finalized: L1BlockCommitment,
         incoming: L1BlockCommitment,
