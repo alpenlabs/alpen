@@ -72,7 +72,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             ctx.publish_client_state(new_clstate.as_ref().clone(), recent_l1blk);
         }
 
-        let recent_asm_blocks = init_recent_asm_blocks(&ctx, recent_l1blk)?;
+        let recent_asm_blocks = init_recent_asm_blocks(&ctx, &new_clstate, recent_l1blk)?;
         let confirmed_epoch = new_clstate.get_last_epoch();
         let finalized_epoch = new_clstate.get_declared_final_epoch();
 
@@ -93,17 +93,14 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     }
 }
 
-/// Builds the recent-ASM-blocks list from the reorg-safe floor(index 0) up to `tip`,
-/// filling each height from the canonical L1 chain.
+/// Builds the recent-ASM-blocks list from the reorg-safe floor (index 0) up to
+/// `tip`, the last block CSM committed client state for.
 fn init_recent_asm_blocks<C: CsmWorkerContext>(
     ctx: &C,
+    clstate: &ClientState,
     tip: L1BlockCommitment,
 ) -> CsmWorkerResult<Vec<L1BlockCommitment>> {
-    let depth = ctx.l1_reorg_safe_depth().max(1);
-    let genesis = ctx.genesis_l1_block().height();
-    // Floor is the reorg-safe anchor, bounded below by genesis and above by
-    // `tip` so the range always yields at least `tip`.
-    let floor = tip.height().saturating_sub(depth - 1).max(genesis);
+    let floor = reorg_floor_height(ctx, clstate, tip.height());
 
     let mut blocks = Vec::new();
     for height in floor..tip.height() {
@@ -117,6 +114,29 @@ fn init_recent_asm_blocks<C: CsmWorkerContext>(
     }
     blocks.push(tip);
     Ok(blocks)
+}
+
+/// Deepest L1 height a reorg could reach under `tip` — the window's floor.
+///
+/// A block is reorg-safe once it is either buried `depth` deep under `tip` or at
+/// or below the last finalized checkpoint.
+pub(crate) fn reorg_floor_height<C: CsmWorkerContext>(
+    ctx: &C,
+    clstate: &ClientState,
+    tip: L1Height,
+) -> L1Height {
+    let depth = ctx.l1_reorg_safe_depth().max(1);
+    let genesis = ctx.genesis_l1_block().height();
+    let depth_floor = tip.saturating_sub(depth - 1);
+    let checkpoint_floor = finalized_l1_height(clstate).unwrap_or(genesis);
+    depth_floor.max(checkpoint_floor).max(genesis)
+}
+
+/// L1 height of the last finalized checkpoint, if any.
+pub(crate) fn finalized_l1_height(clstate: &ClientState) -> Option<L1Height> {
+    clstate
+        .get_last_finalized_checkpoint()
+        .map(|ckpt| ckpt.height())
 }
 
 /// Client state and surviving observation queue derived as of an L1 tip.
@@ -233,7 +253,7 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::CsmWorkerState;
+    use super::{CsmWorkerState, reorg_floor_height};
     use crate::test_utils::StubCtx;
 
     fn create_test_params() -> Arc<AsmParams> {
@@ -324,13 +344,19 @@ mod tests {
             )
             .expect("insert epoch 2 observation");
 
-        let ctx = StubCtx::new(
+        // Finality lands at epoch 1 (L1 height 17), so the reorg window spans
+        // [17 ..= 20]; register a canonical block at each intermediate height.
+        let mut ctx = StubCtx::new(
             storage.clone(),
             status_channel,
             4,
             params.magic,
             params.anchor.block,
         );
+        for height in 17..20 {
+            ctx =
+                ctx.with_canonical_block(height, L1BlockId::from(Buf32::from([height as u8; 32])));
+        }
         let state = CsmWorkerState::bootstrap(ctx).expect("state init");
 
         assert_eq!(state.confirmed_epoch, Some(commitment_2));
@@ -421,13 +447,20 @@ mod tests {
             )
             .expect("seed baseline client state");
 
-        let ctx = StubCtx::new(
+        // Baseline finality is epoch 1 (L1 height 17), so the reorg window
+        // spans [17 ..= 20]; register a canonical block at each intermediate
+        // height.
+        let mut ctx = StubCtx::new(
             storage.clone(),
             status_channel,
             4,
             params.magic,
             params.anchor.block,
         );
+        for height in 17..20 {
+            ctx =
+                ctx.with_canonical_block(height, L1BlockId::from(Buf32::from([height as u8; 32])));
+        }
         let state = CsmWorkerState::bootstrap(ctx).expect("state init");
 
         assert_eq!(state.finalized_epoch, Some(commitment_1));
@@ -445,5 +478,60 @@ mod tests {
             persisted_state, baseline,
             "bootstrap must not rewrite ClientState when baseline already matches"
         );
+    }
+
+    /// Builds a `StubCtx` rooted at genesis L1 height 0 with the given reorg depth.
+    fn stub_ctx_at_genesis_zero(depth: u32) -> StubCtx {
+        let params = create_test_params();
+        let (storage, status_channel) = create_test_storage_and_status(params.clone());
+        StubCtx::new(
+            storage,
+            status_channel,
+            depth,
+            params.magic,
+            L1BlockCommitment::new(0, L1BlockId::default()),
+        )
+    }
+
+    /// Builds a `ClientState` whose last finalized checkpoint sits at `l1_height`.
+    fn finalized_state_at(l1_height: L1Height) -> ClientState {
+        let payload = create_test_checkpoint_payload(1);
+        let ckpt = L1Checkpoint::new(
+            *payload.new_tip(),
+            CheckpointL1Ref::new(
+                L1BlockCommitment::new(l1_height, L1BlockId::default()),
+                RBuf32::from([1; 32]),
+                RBuf32::from([2; 32]),
+            ),
+        );
+        ClientState::new(Some(ckpt.clone()), Some(ckpt))
+    }
+
+    /// When the depth bound is deeper (lower) than the finalized checkpoint, the
+    /// depth term sets the floor.
+    #[test]
+    fn reorg_floor_height_depth_term_wins() {
+        let depth = 5;
+        let tip = 98;
+        let depth_floor = tip - (depth - 1);
+        let checkpoint = depth_floor - 4; // checkpoint sits below the depth floor
+
+        let ctx = stub_ctx_at_genesis_zero(depth);
+        let clstate = finalized_state_at(checkpoint);
+        assert_eq!(reorg_floor_height(&ctx, &clstate, tip), depth_floor);
+    }
+
+    /// When the finalized checkpoint is deeper (higher) than the depth bound, the
+    /// checkpoint term sets the floor.
+    #[test]
+    fn reorg_floor_height_checkpoint_term_wins() {
+        let depth = 5;
+        let tip = 99;
+        let depth_floor = tip - (depth - 1);
+        let checkpoint = depth_floor + 3; // checkpoint sits above the depth floor
+
+        let ctx = stub_ctx_at_genesis_zero(depth);
+        let clstate = finalized_state_at(checkpoint);
+        assert_eq!(reorg_floor_height(&ctx, &clstate, tip), checkpoint);
     }
 }

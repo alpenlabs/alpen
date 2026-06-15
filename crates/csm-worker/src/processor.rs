@@ -16,7 +16,7 @@ use crate::{
     checkpoint_extract::{CheckpointVerificationContext, extract_matching_checkpoint},
     context::CsmWorkerContext,
     errors::{CsmWorkerError, CsmWorkerResult},
-    state::{CsmWorkerState, derive_state},
+    state::{CsmWorkerState, derive_state, reorg_floor_height},
 };
 
 /// The in-flight CSM update produced by processing one ASM block's logs.
@@ -141,22 +141,31 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         );
 
         self.recent_asm_blocks.push(asm_block);
-        self.prune_below_reorg_floor();
         self.last_committed_state = next_state;
+        self.prune_below_reorg_floor();
         // Publish the client state to status channel.
         self.ctx.publish_client_state(state, asm_block);
         Ok(())
     }
 
-    /// Keeps only the `depth` newest blocks: index 0 becomes the reorg-safe
-    /// floor, the deepest point a reorg could reach. Older entries can never be
-    /// reorged out, so they are dropped.
+    /// Drops blocks below the reorg-safe floor; index 0 stays the deepest point
+    /// a reorg could reach. The floor is `max(tip - depth, finalized checkpoint)`
+    /// (see [`reorg_floor_height`]), computed against the most recently
+    /// processed block, so the window never drops a block that could still
+    /// reorg yet stays bounded by `depth` when checkpoint-finality stalls.
     fn prune_below_reorg_floor(&mut self) {
-        let depth = self.ctx.l1_reorg_safe_depth().max(1) as usize;
-        let len = self.recent_asm_blocks.len();
-        if len > depth {
-            self.recent_asm_blocks.drain(..len - depth);
-        }
+        let Some(tip) = self.recent_asm_blocks.last() else {
+            return;
+        };
+        let floor = reorg_floor_height(&self.ctx, &self.last_committed_state, tip.height());
+        let keep_from = self
+            .recent_asm_blocks
+            .iter()
+            .position(|b| b.height() >= floor)
+            .unwrap_or(self.recent_asm_blocks.len());
+        // Always retain at least the tip so the window is never empty.
+        let keep_from = keep_from.min(self.recent_asm_blocks.len().saturating_sub(1));
+        self.recent_asm_blocks.drain(..keep_from);
     }
 
     /// Processes every log of a single ASM block and commits it as one unit.
@@ -351,18 +360,16 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         warn!(%fork_block, %incoming, "reorg detected; rewinding to fork point");
         self.recent_asm_blocks.truncate(fork_idx + 1);
 
-        // A fork at a seeded-but-uncommitted ancestor (e.g. right after a
-        // restart) has no persisted row. Fall back to the surviving finalized
-        // checkpoint rather than a default state, so re-derivation can't drop
-        // finality below the reorg-safe floor.
+        // Every window entry sits at or below the committed tip, so CSM
+        // persisted its client state in a prior run. A missing row means that
+        // invariant broke; surface it rather than fabricating a default state.
         let persisted = self.ctx.get_client_state_at(&fork_block)?;
-        let fork_clstate = persisted.clone().unwrap_or_else(|| {
-            warn!(%fork_block, "no persisted client state at fork; seeding from finalized floor");
-            ClientState::new(
-                self.last_committed_state.get_last_finalized_checkpoint(),
-                None,
-            )
-        });
+        let fork_clstate = persisted
+            .clone()
+            .ok_or_else(|| CsmWorkerError::MissingData {
+                what: "client state at fork block",
+                detail: fork_block.to_string(),
+            })?;
         let derived = derive_state(&self.ctx, &fork_block, &fork_clstate)?;
         let new_clstate = derived.new_clstate;
         self.confirmed_epoch = new_clstate.get_last_epoch();
@@ -497,7 +504,7 @@ fn decode_checkpoint_section(asm_state: &AsmState) -> CsmWorkerResult<Checkpoint
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{iter::once, sync::Arc};
 
     use bitcoin::Network;
     use strata_asm_common::{
@@ -549,6 +556,19 @@ mod tests {
     /// tests can register and resolve gap blocks consistently.
     fn block_id_at(height: u32) -> L1BlockId {
         L1BlockId::from(Buf32::from([height as u8; 32]))
+    }
+
+    /// Persists an empty client-state row at `block`, mirroring what a prior
+    /// CSM run leaves behind for every committed (at/below-tip) block. The reorg
+    /// path re-derives the fork's state from this row.
+    fn seed_client_state_row(storage: &strata_storage::NodeStorage, block: &L1BlockCommitment) {
+        storage
+            .client_state()
+            .put_update_blocking(
+                block,
+                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+            )
+            .expect("seed client state row");
     }
 
     fn create_test_params_arc() -> Arc<AsmParams> {
@@ -1124,6 +1144,10 @@ mod tests {
         });
         state.recent_asm_blocks = vec![anchor, orphan_100];
 
+        // CSM persisted a client state at the fork block (anchor) in a prior
+        // run; the reorg re-derives from it.
+        seed_client_state_row(&storage, &anchor);
+
         // Canonical chain: anchor stays at 99, and height 100 is now a
         // different block than the orphaned tip the worker committed.
         let canonical_100 = L1BlockCommitment::new(100, block_id_at(101));
@@ -1165,6 +1189,9 @@ mod tests {
                 )
         });
         state.recent_asm_blocks = vec![anchor, orphan_101, orphan_102];
+
+        // CSM persisted a client state at the fork block in a prior run.
+        seed_client_state_row(&storage, &anchor);
 
         state
             .process_asm_block(target, &[create_non_checkpoint_log_type()])
@@ -1217,6 +1244,9 @@ mod tests {
             c.with_canonical_block(105, block_id_at(205))
         });
         state.recent_asm_blocks = vec![anchor, orphan_101, orphan_102];
+
+        // CSM persisted a client state at the fork block in a prior run.
+        seed_client_state_row(&storage, &anchor);
 
         state
             .process_asm_block(target, &[create_non_checkpoint_log_type()])
@@ -1284,27 +1314,33 @@ mod tests {
     /// rewinds only as far as needed even when older entries are still good.
     #[test]
     fn reorg_anchors_at_highest_canonical_entry() {
-        let anchor = L1BlockCommitment::new(100, block_id_at(100));
-        let good_101 = L1BlockCommitment::new(101, block_id_at(101));
-        let orphan_102 = L1BlockCommitment::new(102, block_id_at(102));
-        let target = L1BlockCommitment::new(102, block_id_at(202));
+        // Heights sit at/above the genesis anchor (40320) so nothing finalized
+        // means pruning never drops a still-canonical entry; only the reorg
+        // rewind shapes the list.
+        let anchor = L1BlockCommitment::new(40320, block_id_at(20));
+        let good_mid = L1BlockCommitment::new(40321, block_id_at(21));
+        let orphan_tip = L1BlockCommitment::new(40322, block_id_at(22));
+        let target = L1BlockCommitment::new(40322, block_id_at(202));
 
-        let (mut state, _) = create_test_state_with_ctx(|c| {
-            // 100 and 101 still canonical; only 102 diverged.
-            c.with_canonical_block(100, block_id_at(100))
-                .with_canonical_block(101, block_id_at(101))
-                .with_canonical_block(102, block_id_at(202))
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // 40320 and 40321 still canonical; only 40322 diverged.
+            c.with_canonical_block(40320, block_id_at(20))
+                .with_canonical_block(40321, block_id_at(21))
+                .with_canonical_block(40322, block_id_at(202))
         });
-        state.recent_asm_blocks = vec![anchor, good_101, orphan_102];
+        state.recent_asm_blocks = vec![anchor, good_mid, orphan_tip];
+
+        // CSM persisted a client state at the fork block (good_mid) in a prior run.
+        seed_client_state_row(&storage, &good_mid);
 
         state
             .process_asm_block(target, &[create_non_checkpoint_log_type()])
             .expect("reorg should anchor at the highest canonical entry");
 
-        // good_101 survived (fork point), orphan_102 replaced by target.
+        // good_mid survived (fork point), orphan_tip replaced by target.
         assert_eq!(
             state.recent_asm_blocks,
-            vec![anchor, good_101, target],
+            vec![anchor, good_mid, target],
             "list should rewind only to the highest canonical entry"
         );
     }
@@ -1352,12 +1388,14 @@ mod tests {
     /// appends.
     #[test]
     fn pure_extension_does_not_reorg() {
-        let anchor = L1BlockCommitment::new(99, block_id_at(99));
-        let last = L1BlockCommitment::new(100, block_id_at(100));
-        let next = L1BlockCommitment::new(101, block_id_at(101));
+        // Heights sit at/above the genesis anchor (40320) so nothing finalized
+        // means pruning leaves every entry in place.
+        let anchor = L1BlockCommitment::new(40320, block_id_at(20));
+        let last = L1BlockCommitment::new(40321, block_id_at(21));
+        let next = L1BlockCommitment::new(40322, block_id_at(22));
 
         let (mut state, _) =
-            create_test_state_with_ctx(|c| c.with_canonical_block(100, block_id_at(100)));
+            create_test_state_with_ctx(|c| c.with_canonical_block(40321, block_id_at(21)));
         state.recent_asm_blocks = vec![anchor, last];
 
         state
@@ -1409,8 +1447,9 @@ mod tests {
         let params = create_test_params_arc();
         let (storage, status_channel) = create_test_storage();
 
-        // depth = 3. Floor = tip - (depth - 1) = 40323,
-        // so the seeded window is [40323, 40324, 40325].
+        // Nothing finalized, so the floor is the depth bound: with depth 3 and
+        // tip 40325 the window spans [40323 ..= 40325].
+        let floor = 40323;
         let tip = L1BlockCommitment::new(40325, block_id_at(25));
         // Store initial client state to db.
         storage
@@ -1421,20 +1460,20 @@ mod tests {
             )
             .expect("seed client state at tip");
 
-        // Build context.
-        let ctx = default_stub_ctx(&params, storage.clone(), status_channel)
-            .with_canonical_block(40323, block_id_at(23))
-            .with_canonical_block(40324, block_id_at(24));
+        // Build context with a canonical block at every intermediate height.
+        let mut ctx = default_stub_ctx(&params, storage.clone(), status_channel);
+        for height in floor..tip.height() {
+            ctx = ctx.with_canonical_block(height, block_id_at(height));
+        }
 
         let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap");
 
+        let expected: Vec<_> = (floor..tip.height())
+            .map(|height| L1BlockCommitment::new(height, block_id_at(height)))
+            .chain(once(tip))
+            .collect();
         assert_eq!(
-            state.recent_asm_blocks,
-            vec![
-                L1BlockCommitment::new(40323, block_id_at(23)),
-                L1BlockCommitment::new(40324, block_id_at(24)),
-                tip,
-            ],
+            state.recent_asm_blocks, expected,
             "bootstrap must seed the full reorg-safe window"
         );
     }
@@ -1488,6 +1527,9 @@ mod tests {
         });
         state.recent_asm_blocks = vec![anchor, orphan_tip];
 
+        // CSM persisted a client state at the fork block in a prior run.
+        seed_client_state_row(&storage, &anchor);
+
         // Epoch 1 observed at L1 height 90 (at/below the fork at 100); epoch 2
         // observed at the orphaned tip (height 101, above the fork).
         let commitment_1 = seed_ol_checkpoint_observation(&storage, 1, 90);
@@ -1529,6 +1571,9 @@ mod tests {
                 .with_canonical_block(40324, block_id_at(24))
         });
         state.recent_asm_blocks = vec![anchor, good_24, orphan_25];
+
+        // CSM persisted a client state at the fork block (good_24) in a prior run.
+        seed_client_state_row(&storage, &good_24);
 
         state
             .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
