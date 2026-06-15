@@ -67,6 +67,11 @@ mod tests {
                 base_fee: 1_000_000_000,
                 gas_used: 15_000_000,
                 gas_limit: 30_000_000,
+                parent_hash: [0u8; 32],
+                transactions_root: [0u8; 32],
+                receipts_root: [0u8; 32],
+                logs_bloom: [0u8; 256],
+                withdrawals_root: [0u8; 32],
             },
             state_diff: BatchStateDiff::default(),
         }

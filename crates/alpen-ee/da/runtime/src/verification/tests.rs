@@ -190,6 +190,11 @@ fn valid_fixture() -> (EePrivateInput, DaWitness, UpdateProofPubParams, [u8; 32]
         base_fee: 100,
         gas_used: 21_000,
         gas_limit: 30_000_000,
+        parent_hash: [0u8; 32],
+        transactions_root: [0u8; 32],
+        receipts_root: [0u8; 32],
+        logs_bloom: [0u8; 256],
+        withdrawals_root: [0u8; 32],
     };
     let pre_state = EvmPartialState::new(
         EthereumState {
@@ -250,6 +255,11 @@ fn verify_da_witness_accepts_deduped_bytecode_from_private_witness() {
         base_fee: 100,
         gas_used: 21_000,
         gas_limit: 30_000_000,
+        parent_hash: [0u8; 32],
+        transactions_root: [0u8; 32],
+        receipts_root: [0u8; 32],
+        logs_bloom: [0u8; 256],
+        withdrawals_root: [0u8; 32],
     };
     let mut pre_state = EvmPartialState::new(
         EthereumState {
@@ -342,6 +352,11 @@ fn verify_da_blob_metadata_rejects_missing_deployed_bytecode() {
         base_fee: 100,
         gas_used: 21_000,
         gas_limit: 30_000_000,
+        parent_hash: [0u8; 32],
+        transactions_root: [0u8; 32],
+        receipts_root: [0u8; 32],
+        logs_bloom: [0u8; 256],
+        withdrawals_root: [0u8; 32],
     };
     // An account references a code hash that is neither published in the blob nor
     // supplied as a preimage, so verification must reject it.
@@ -469,6 +484,11 @@ fn verify_da_witness_rejects_evm_header_mismatch() {
         base_fee: 100,
         gas_used: 21_000,
         gas_limit: 30_000_000,
+        parent_hash: [0u8; 32],
+        transactions_root: [0u8; 32],
+        receipts_root: [0u8; 32],
+        logs_bloom: [0u8; 256],
+        withdrawals_root: [0u8; 32],
     };
     let bad_ee_input = rebuild_ee_input(
         ee_input.raw_partial_pre_state(),
@@ -493,6 +513,11 @@ fn verify_da_witness_rejects_state_root_mismatch() {
         base_fee: 100,
         gas_used: 21_000,
         gas_limit: 30_000_000,
+        parent_hash: [0u8; 32],
+        transactions_root: [0u8; 32],
+        receipts_root: [0u8; 32],
+        logs_bloom: [0u8; 256],
+        withdrawals_root: [0u8; 32],
     };
     let bad_ee_input = rebuild_ee_input(
         ee_input.raw_partial_pre_state(),

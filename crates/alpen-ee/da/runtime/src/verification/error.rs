@@ -76,8 +76,8 @@ pub enum DaVerificationError {
     ExecHeaderSummaryDecode(CodecError),
     #[error("DA blob EVM header summary mismatch (expected {expected:?}, got {actual:?})")]
     EvmHeaderMismatch {
-        expected: EvmHeaderSummary,
-        actual: EvmHeaderSummary,
+        expected: Box<EvmHeaderSummary>,
+        actual: Box<EvmHeaderSummary>,
     },
     #[error("DA blob missing deployed bytecode for code hash {0:?}")]
     MissingDeployedBytecode([u8; 32]),

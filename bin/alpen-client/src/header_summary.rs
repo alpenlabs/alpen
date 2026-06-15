@@ -55,6 +55,11 @@ fn summarize_header(header: &reth_primitives::Header) -> eyre::Result<EvmHeaderS
         })?,
         gas_used: header.gas_used,
         gas_limit: header.gas_limit,
+        parent_hash: header.parent_hash.0,
+        transactions_root: header.transactions_root.0,
+        receipts_root: header.receipts_root.0,
+        logs_bloom: header.logs_bloom.0 .0,
+        withdrawals_root: header.withdrawals_root.unwrap_or_default().0,
     })
 }
 
@@ -68,12 +73,25 @@ mod tests {
     /// right source on the reth header.
     #[test]
     fn summarize_header_maps_fields_correctly() {
+        use alloy_primitives::{Bloom, B256};
+
+        let parent_hash = B256::from([0x11; 32]);
+        let transactions_root = B256::from([0x22; 32]);
+        let receipts_root = B256::from([0x33; 32]);
+        let logs_bloom = Bloom::from([0x44; 256]);
+        let withdrawals_root = B256::from([0x55; 32]);
+
         let header = Header {
             number: 12345,
             timestamp: 1_700_000_000,
             base_fee_per_gas: Some(1_000_000_000),
             gas_used: 15_000_000,
             gas_limit: 30_000_000,
+            parent_hash,
+            transactions_root,
+            receipts_root,
+            logs_bloom,
+            withdrawals_root: Some(withdrawals_root),
             ..Default::default()
         };
         let summary = summarize_header(&header).expect("mapping must succeed");
@@ -83,6 +101,11 @@ mod tests {
         assert_eq!(summary.base_fee, 1_000_000_000);
         assert_eq!(summary.gas_used, 15_000_000);
         assert_eq!(summary.gas_limit, 30_000_000);
+        assert_eq!(summary.parent_hash, parent_hash.0);
+        assert_eq!(summary.transactions_root, transactions_root.0);
+        assert_eq!(summary.receipts_root, receipts_root.0);
+        assert_eq!(summary.logs_bloom, logs_bloom.0 .0);
+        assert_eq!(summary.withdrawals_root, withdrawals_root.0);
     }
 
     #[test]

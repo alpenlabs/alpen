@@ -60,6 +60,11 @@ impl ExecHeader for EvmHeader {
                 .expect("Alpen EVM headers must include base_fee_per_gas from genesis"),
             gas_used: self.header.gas_used,
             gas_limit: self.header.gas_limit,
+            parent_hash: self.header.parent_hash.0,
+            transactions_root: self.header.transactions_root.0,
+            receipts_root: self.header.receipts_root.0,
+            logs_bloom: self.header.logs_bloom.0.0,
+            withdrawals_root: self.header.withdrawals_root.unwrap_or_default().0,
         };
         ExecHeaderSummary::from_vec(encode_to_vec(&payload).expect("encode EVM header summary"))
             .expect("exec header summary fits the SSZ bound")

@@ -223,6 +223,11 @@ mod tests {
                 base_fee: 100,
                 gas_used: 21_000,
                 gas_limit: 30_000_000,
+                parent_hash: [0u8; 32],
+                transactions_root: [0u8; 32],
+                receipts_root: [0u8; 32],
+                logs_bloom: [0u8; 256],
+                withdrawals_root: [0u8; 32],
             },
             state_diff: filtered_diff,
         };

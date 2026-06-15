@@ -219,8 +219,8 @@ fn verify_da_blob_metadata(
             .map_err(DaVerificationError::ExecHeaderSummaryDecode)?;
     if blob.evm_header != expected_header {
         return Err(DaVerificationError::EvmHeaderMismatch {
-            expected: expected_header,
-            actual: blob.evm_header,
+            expected: Box::new(expected_header),
+            actual: Box::new(blob.evm_header),
         });
     }
 
