@@ -685,9 +685,12 @@ mod tests {
     use std::sync::Arc;
 
     use bitcoin::{
-        absolute::LockTime, script, secp256k1::constants::SCHNORR_SIGNATURE_SIZE,
-        taproot::ControlBlock, transaction::Version, Address, Network, OutPoint, ScriptBuf,
-        Sequence, Transaction, TxIn, TxOut, Witness,
+        absolute::LockTime,
+        script,
+        secp256k1::{constants::SCHNORR_SIGNATURE_SIZE, Secp256k1, SecretKey},
+        taproot::ControlBlock,
+        transaction::Version,
+        Address, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
     use strata_l1_txfmt::{MagicBytes, TagData, TagDataRef};
@@ -764,6 +767,32 @@ mod tests {
         ];
 
         (ctx, body, signature, utxos)
+    }
+
+    fn test_payload() -> L1Payload {
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        L1Payload::new(vec![vec![0u8; 150]], tag)
+    }
+
+    fn test_envelope_pubkey() -> XOnlyPublicKey {
+        let secp = Secp256k1::new();
+        let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
+        let (pubkey, _) = sk.x_only_public_key(&secp);
+        pubkey
+    }
+
+    fn test_envelope_config(
+        ctx: &WriterContext<TestBitcoinClient>,
+        envelope_pubkey: Option<XOnlyPublicKey>,
+    ) -> EnvelopeConfig {
+        EnvelopeConfig::new(
+            MagicBytes::new(*b"ALPN"),
+            ctx.sequencer_address.clone(),
+            Network::Regtest,
+            FeeRate::from_sat_per_vb_u32(1_000),
+            546,
+            envelope_pubkey,
+        )
     }
 
     #[test]
@@ -891,25 +920,91 @@ mod tests {
     }
 
     #[test]
+    fn test_create_envelope_transactions_requires_envelope_pubkey() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let env_config = test_envelope_config(&ctx, None);
+
+        let res = super::create_envelope_transactions(&env_config, &test_payload(), utxos);
+
+        assert!(matches!(res, Err(EnvelopeError::MissingEnvelopePubkey)));
+    }
+
+    #[test]
+    fn test_build_commit_transaction_filters_unusable_utxos() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let mut unspendable = utxos[0].clone();
+        unspendable.spendable = false;
+        let mut unsolvable = utxos[1].clone();
+        unsolvable.solvable = false;
+        let viable = utxos[2].clone();
+
+        let (tx, consumed) = super::build_commit_transaction(
+            vec![unspendable, unsolvable, viable.clone()],
+            ctx.sequencer_address.clone(),
+            ctx.sequencer_address.clone(),
+            500_000_000,
+            FeeRate::from_sat_per_vb_u32(1),
+        )
+        .unwrap();
+
+        assert_eq!(consumed, vec![viable.clone()]);
+        assert_eq!(tx.input.len(), 1);
+        assert_eq!(tx.input[0].previous_output.txid, viable.txid);
+    }
+
+    #[test]
+    fn test_build_commit_transaction_rejects_insufficient_filtered_utxos() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let mut dust = utxos[2].clone();
+        dust.amount = Amount::from_sat(BITCOIN_DUST_LIMIT);
+
+        let res = super::build_commit_transaction(
+            vec![dust],
+            ctx.sequencer_address.clone(),
+            ctx.sequencer_address.clone(),
+            500_000_000,
+            FeeRate::from_sat_per_vb_u32(1),
+        );
+
+        assert!(matches!(res, Err(EnvelopeError::NotEnoughUtxos(_, 0))));
+    }
+
+    #[test]
+    fn test_build_reveal_transaction_rejects_dust_input() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let mut dust = utxos[2].clone();
+        dust.amount = Amount::from_sat(BITCOIN_DUST_LIMIT - 1);
+        let input_tx = get_txn_from_utxo(&dust, &ctx.sequencer_address);
+        let reveal_script = ScriptBuf::from_hex("62a58f2674fd840b6144bea2e63ebd35c16d7fd40252a2f28b2a01a648df356343e47976d7906a0e688bf5e134b6fd21bd365c016b57b1ace85cf30bf1206e27").unwrap();
+        let tag = TagDataRef::new(1, 1, &[]).unwrap();
+        let tag_script = ParseConfig::new((*b"ALPN").into())
+            .encode_script_buf(&tag)
+            .unwrap();
+        let control_block = ControlBlock::decode(&[
+            193, 165, 246, 250, 6, 222, 28, 9, 130, 28, 217, 67, 171, 11, 229, 62, 48, 206, 219,
+            111, 155, 208, 6, 7, 119, 63, 146, 90, 227, 254, 231, 232, 249,
+        ])
+        .unwrap();
+
+        let res = super::build_reveal_transaction(
+            input_tx,
+            ctx.sequencer_address.clone(),
+            ctx.config.reveal_amount,
+            FeeRate::from_sat_per_vb_u32(1),
+            &reveal_script,
+            tag_script,
+            &control_block,
+        );
+
+        assert!(matches!(res, Err(EnvelopeError::NotEnoughUtxos(_, _))));
+    }
+
+    #[test]
     fn test_create_envelope_transactions() {
         let (ctx, _, _, utxos) = get_mock_data();
 
-        let tag = TagData::new(1, 1, vec![]).unwrap();
-        // Use 150 bytes to meet minimum envelope payload size of 126 bytes
-        let payload = L1Payload::new(vec![vec![0u8; 150]], tag);
-
-        use bitcoin::secp256k1::{Secp256k1, SecretKey};
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
-        let (pubkey, _) = sk.x_only_public_key(&secp);
-        let env_config = EnvelopeConfig::new(
-            MagicBytes::new(*b"ALPN"),
-            ctx.sequencer_address.clone(),
-            Network::Regtest,
-            FeeRate::from_sat_per_vb_u32(1_000),
-            546,
-            Some(pubkey),
-        );
+        let payload = test_payload();
+        let env_config = test_envelope_config(&ctx, Some(test_envelope_pubkey()));
         let unsigned =
             super::create_envelope_transactions(&env_config, &payload, utxos.to_vec()).unwrap();
 
@@ -955,5 +1050,24 @@ mod tests {
         assert_ne!(unsigned.sighash, Buf32::zero());
     }
 
-    // TODO(STR-3691): make the tests more comprehensive
+    #[test]
+    fn test_attach_reveal_signature_populates_witness() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let payload = test_payload();
+        let env_config = test_envelope_config(&ctx, Some(test_envelope_pubkey()));
+        let mut unsigned =
+            super::create_envelope_transactions(&env_config, &payload, utxos.to_vec()).unwrap();
+
+        super::attach_reveal_signature(
+            &mut unsigned.reveal_tx,
+            &unsigned.reveal_script,
+            &unsigned.taproot_spend_info,
+            &[0x11; SCHNORR_SIGNATURE_SIZE],
+        )
+        .unwrap();
+
+        let witness = &unsigned.reveal_tx.input[0].witness;
+        assert_eq!(witness.len(), 3);
+        assert_eq!(witness.iter().next().unwrap().len(), SCHNORR_SIGNATURE_SIZE);
+    }
 }
