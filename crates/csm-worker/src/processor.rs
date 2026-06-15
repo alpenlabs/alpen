@@ -124,7 +124,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     ) -> CsmWorkerResult<()> {
         let state = next_state.as_ref().clone();
         self.ctx
-            .put_client_state_update(&asm_block, ClientUpdateOutput::new(state.clone(), vec![]))?;
+            .put_client_state_update(&asm_block, ClientUpdateOutput::new_state(state.clone()))?;
 
         // The list stays contiguous: a commit either extends the tip by one or
         // replaces it at the same height (reorg). It never skips a height.
@@ -292,8 +292,9 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             return Ok(());
         }
 
-        // A clean forward extension keeps `last` on the canonical chain.
-        let last_still_canonical = self.ctx.get_canonical_l1_block(last.height())? == last;
+        // A clean forward extension keeps `last` on the canonical chain. A
+        // missing block (height above a reverted tip) means it diverged.
+        let last_still_canonical = self.ctx.get_canonical_l1_block(last.height())? == Some(last);
         let is_pure_extension = last_still_canonical && asm_block.height() > last.height();
         if !is_pure_extension {
             self.reorg_to_fork(&asm_block)?;
@@ -308,7 +309,12 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         // Replay gap blocks, then the target.
         for height in (resume_height + 1)..asm_block.height() {
-            let gap_block = self.ctx.get_canonical_l1_block(height)?;
+            let gap_block = self.ctx.get_canonical_l1_block(height)?.ok_or_else(|| {
+                CsmWorkerError::MissingData {
+                    what: "canonical L1 block",
+                    detail: format!("height {height}"),
+                }
+            })?;
             let gap_state = self.ctx.get_asm_state(&gap_block)?;
             info!(%gap_block, "replaying ASM block skipped by status channel");
             self.process_asm_logs(gap_block, gap_state.logs())?;
@@ -358,12 +364,12 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     }
 
     /// Highest list index whose block still matches the canonical L1 chain.
-    ///
-    /// `None` if even the finalized anchor (index 0) diverged.
     fn find_fork_index(&self) -> CsmWorkerResult<Option<usize>> {
         for idx in (0..self.recent_asm_blocks.len()).rev() {
             let block = self.recent_asm_blocks[idx];
-            if self.ctx.get_canonical_l1_block(block.height())? == block {
+            // A missing block (above a reverted tip) or a mismatched blkid both
+            // mean this entry diverged; keep walking down.
+            if self.ctx.get_canonical_l1_block(block.height())? == Some(block) {
                 return Ok(Some(idx));
             }
         }
@@ -480,7 +486,9 @@ mod tests {
     };
     use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_params::AsmParams;
+    use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
     use strata_btc_verification::L1Anchor;
+    use strata_checkpoint_types::EpochSummary;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::RBuf32;
@@ -488,7 +496,7 @@ mod tests {
     use strata_primitives::prelude::*;
     use strata_state::asm_state::AsmState;
     use strata_status::StatusChannel;
-    use strata_storage::create_node_storage;
+    use strata_storage::{NodeStorage, create_node_storage};
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{errors::CsmWorkerError, state::CsmWorkerState, test_utils::StubCtx};
@@ -1338,6 +1346,157 @@ mod tests {
 
         // Both prior entries survive and the new block is appended.
         assert_eq!(state.recent_asm_blocks, vec![anchor, last, next]);
+    }
+
+    #[test]
+    fn bootstrap_seeds_full_reorg_window() {
+        let params = create_test_params_arc();
+        let (storage, status_channel) = create_test_storage();
+
+        // depth = 3. Floor = tip - (depth - 1) = 40323,
+        // so the seeded window is [40323, 40324, 40325].
+        let tip = L1BlockCommitment::new(40325, block_id_at(25));
+        // Store initial client state to db.
+        storage
+            .client_state()
+            .put_update_blocking(
+                &tip,
+                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+            )
+            .expect("seed client state at tip");
+
+        // Build context.
+        let ctx = default_stub_ctx(&params, storage.clone(), status_channel)
+            .with_canonical_block(40323, block_id_at(23))
+            .with_canonical_block(40324, block_id_at(24));
+
+        let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap");
+
+        assert_eq!(
+            state.recent_asm_blocks,
+            vec![
+                L1BlockCommitment::new(40323, block_id_at(23)),
+                L1BlockCommitment::new(40324, block_id_at(24)),
+                tip,
+            ],
+            "bootstrap must seed the full reorg-safe window"
+        );
+    }
+
+    /// Seeds an OL-checkpoint observation (epoch summary + L1 ref + payload) at
+    /// `l1_height`, mirroring the wiring `load_observed_checkpoints` reads.
+    /// Returns the resulting epoch commitment.
+    fn seed_ol_checkpoint_observation(
+        storage: &NodeStorage,
+        epoch: u32,
+        l1_height: L1Height,
+    ) -> EpochCommitment {
+        let ol_checkpoint = storage.ol_checkpoint();
+        let payload = create_test_checkpoint_payload(epoch);
+        let ol_terminal = *payload.new_tip().l2_commitment();
+        let summary = EpochSummary::new(
+            epoch,
+            ol_terminal,
+            L2BlockCommitment::new(0, L2BlockId::default()),
+            L1BlockCommitment::new(l1_height, block_id_at(l1_height)),
+            Buf32::zero(),
+        );
+        let commitment = summary.get_epoch_commitment();
+        ol_checkpoint
+            .insert_epoch_summary_blocking(summary)
+            .expect("insert epoch summary");
+        ol_checkpoint
+            .put_checkpoint_l1_observation_blocking(
+                commitment,
+                payload,
+                CheckpointL1Ref::new(
+                    L1BlockCommitment::new(l1_height, block_id_at(l1_height)),
+                    RBuf32::from([epoch as u8; 32]),
+                    RBuf32::from([epoch as u8; 32]),
+                ),
+            )
+            .expect("insert epoch observation");
+        commitment
+    }
+
+    /// On the reorg path, `derive_state` re-derives cursors as of the fork block
+    /// (below the current tip), so observations recorded ABOVE the fork on the
+    /// orphaned branch must be excluded from the re-derived state.
+    ///
+    /// Without the height filter in `load_observed_checkpoints`, the above-fork
+    /// observation would leak in as the confirmed cursor.
+    #[test]
+    fn reorg_excludes_observations_above_fork() {
+        let anchor = L1BlockCommitment::new(100, block_id_at(100));
+        let orphan_tip = L1BlockCommitment::new(101, block_id_at(101));
+        let incoming = L1BlockCommitment::new(101, block_id_at(201));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // Fork lands at the anchor (height 100); 101 diverged.
+            c.with_canonical_block(100, block_id_at(100))
+                .with_canonical_block(101, block_id_at(201))
+        });
+        state.recent_asm_blocks = vec![anchor, orphan_tip];
+
+        // Epoch 1 observed at L1 height 90 (at/below the fork at 100); epoch 2
+        // observed at the orphaned tip (height 101, above the fork). The latter
+        // is the realistic contaminant: a checkpoint genuinely seen on the
+        // orphaned branch at its tip, which the reorg discards.
+        let commitment_1 = seed_ol_checkpoint_observation(&storage, 1, 90);
+        let commitment_2 = seed_ol_checkpoint_observation(&storage, 2, 101);
+
+        state
+            .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
+            .expect("reorg should re-derive state at the fork");
+
+        // Only the at/below-fork observation survives. Epoch 1 is buried
+        // 100 - 90 = 10 >= depth, so it is both confirmed and finalized.
+        assert_eq!(
+            state.confirmed_epoch,
+            Some(commitment_1),
+            "above-fork observation must not leak in as confirmed"
+        );
+        assert_eq!(state.finalized_epoch, Some(commitment_1));
+        assert!(
+            !state
+                .observed_checkpoints
+                .iter()
+                .any(|c| EpochCommitment::from(c) == commitment_2),
+            "above-fork observation must not be queued post-reorg"
+        );
+    }
+
+    #[test]
+    fn shorter_chain_reorg_rewinds_to_fork() {
+        let anchor = L1BlockCommitment::new(40323, block_id_at(23));
+        let good_24 = L1BlockCommitment::new(40324, block_id_at(24));
+        let orphan_25 = L1BlockCommitment::new(40325, block_id_at(25));
+        // New canonical tip is 40324; 40325 was reorged away. Incoming sits
+        // below the old committed tip (40325) at a height that is canonical.
+        let incoming = L1BlockCommitment::new(40324, block_id_at(24));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // Canonical chain only reaches 40324; 40325 is not registered.
+            c.with_canonical_block(40323, block_id_at(23))
+                .with_canonical_block(40324, block_id_at(24))
+        });
+        state.recent_asm_blocks = vec![anchor, good_24, orphan_25];
+
+        state
+            .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
+            .expect("shorter-chain reorg should rewind to the fork and commit");
+
+        assert_eq!(state.recent_asm_blocks.last(), Some(&incoming));
+        assert!(
+            !state.recent_asm_blocks.contains(&orphan_25),
+            "orphaned higher entry must be pruned"
+        );
+        let (persisted, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row");
+        assert_eq!(persisted, incoming);
     }
 
     /// `commit_block` must never skip a height: a non-contiguous commit trips

@@ -98,10 +98,9 @@ fn refresh_finalized_checkpoint<C: CsmWorkerContext>(
 ) -> CsmWorkerResult<()> {
     let last_seen = state.last_committed_state.get_last_checkpoint();
     let refreshed = ClientState::new(Some(finalized), last_seen);
-    state.ctx.put_client_state_update(
-        &asm_block,
-        ClientUpdateOutput::new(refreshed.clone(), vec![]),
-    )?;
+    state
+        .ctx
+        .put_client_state_update(&asm_block, ClientUpdateOutput::new_state(refreshed.clone()))?;
     state.last_committed_state = Arc::new(refreshed);
     Ok(())
 }

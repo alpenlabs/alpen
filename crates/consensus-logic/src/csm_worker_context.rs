@@ -128,16 +128,15 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
             })
     }
 
-    fn get_canonical_l1_block(&self, height: L1Height) -> CsmWorkerResult<L1BlockCommitment> {
-        let blkid = self
+    fn get_canonical_l1_block(
+        &self,
+        height: L1Height,
+    ) -> CsmWorkerResult<Option<L1BlockCommitment>> {
+        Ok(self
             .storage
             .l1()
             .get_canonical_blockid_at_height(height)?
-            .ok_or_else(|| CsmWorkerError::MissingData {
-                what: "canonical L1 block",
-                detail: format!("height {height}"),
-            })?;
-        Ok(L1BlockCommitment::new(height, blkid))
+            .map(|blkid| L1BlockCommitment::new(height, blkid)))
     }
 
     fn fetch_most_recent_client_state(
