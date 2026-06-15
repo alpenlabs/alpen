@@ -21,6 +21,10 @@ The primary local stack is split into two compose files:
 
 Bitcoin is decoupled from the OL/EE stack. `just docker-seq-up` starts signet, runs `gen-params-and-elfs.sh`, then starts the sequencer stack. Generated keys, params, and env files live under `configs/generated/` and are ignored by git.
 
+The external `strata-signer` reads the sequencer admin bearer token from
+`STRATA_ADMIN_RPC_TOKEN`, so deployments do not need to hardcode that secret in
+the signer config TOML.
+
 The retained secondary compose files have narrower test/debug purposes:
 
 | Compose | Purpose |
