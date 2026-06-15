@@ -16,6 +16,7 @@ impl ExecutionEnvironment for SimpleExecutionEnvironment {
     type PartialState = SimplePartialState;
     type Block = SimpleBlock;
     type WriteBatch = SimpleWriteBatch;
+    type BlockOutput = ();
 
     fn execute_block_body(
         &self,
@@ -45,7 +46,7 @@ impl ExecutionEnvironment for SimpleExecutionEnvironment {
         // 3. Create write batch with the changes
         let write_batch = SimpleWriteBatch::new(accounts.clone());
 
-        Ok(ExecBlockOutput::new(write_batch, outputs))
+        Ok(ExecBlockOutput::new(write_batch, (), outputs))
     }
 
     fn verify_outputs_against_header(
