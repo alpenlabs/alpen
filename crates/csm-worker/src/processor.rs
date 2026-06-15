@@ -296,6 +296,14 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         // A clean forward extension keeps `last` on the canonical chain. A
         // missing block (height above a reverted tip) means it diverged.
         let last_still_canonical = self.ctx.get_canonical_l1_block(last.height())? == Some(last);
+
+        // Stale redelivery: a lower-height status while the tip is still
+        // canonical is an out-of-order replay, not a reorg.
+        if last_still_canonical && asm_block.height() < last.height() {
+            debug!(%asm_block, %last, "ignoring stale lower-height ASM status");
+            return Ok(());
+        }
+
         let is_pure_extension = last_still_canonical && asm_block.height() > last.height();
         if !is_pure_extension {
             self.reorg_to_fork(&asm_block)?;
@@ -1358,6 +1366,42 @@ mod tests {
 
         // Both prior entries survive and the new block is appended.
         assert_eq!(state.recent_asm_blocks, vec![anchor, last, next]);
+    }
+
+    /// A stale lower-height status redelivered while the tip is still canonical
+    /// is an out-of-order replay, not a reorg: the worker must ignore it rather
+    /// than rewinding the cursor backwards onto the older block.
+    #[test]
+    fn stale_lower_height_status_is_noop_when_tip_canonical() {
+        let anchor = L1BlockCommitment::new(98, block_id_at(98));
+        let mid = L1BlockCommitment::new(99, block_id_at(99));
+        let tip = L1BlockCommitment::new(100, block_id_at(100));
+        // A legitimate older canonical block (height 99) redelivered out of order.
+        let stale = L1BlockCommitment::new(99, block_id_at(99));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // Tip at 100 is still canonical (no reorg happened); 99 too.
+            c.with_canonical_block(99, block_id_at(99))
+                .with_canonical_block(100, block_id_at(100))
+        });
+        state.recent_asm_blocks = vec![anchor, mid, tip];
+
+        state
+            .process_asm_block(stale, &[create_non_checkpoint_log_type()])
+            .expect("stale lower-height status must be a no-op");
+
+        // Tip unchanged: not rewound onto the older block.
+        assert_eq!(state.recent_asm_blocks.last(), Some(&tip));
+        assert_eq!(state.recent_asm_blocks, vec![anchor, mid, tip]);
+        // No row written at the stale height, and the cursor still sits at the tip.
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&stale)
+                .expect("query client state")
+                .is_none(),
+            "stale block must not persist a client-state row"
+        );
     }
 
     #[test]
