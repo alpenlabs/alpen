@@ -26,9 +26,10 @@ impl ZkVmProgram for EvmEeProgram {
         B: zkaleido::ZkVmInputBuilder<'a>,
     {
         let mut input_builder = B::new();
-        input_builder.write_serde(&el_inputs.len())?;
+        input_builder.write_serde(&el_inputs.block_inputs.len())?;
+        input_builder.write_serde(&el_inputs.bridge_params)?;
 
-        for el_block_input in el_inputs {
+        for el_block_input in &el_inputs.block_inputs {
             input_builder.write_serde(el_block_input)?;
         }
 

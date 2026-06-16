@@ -4,6 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use revm_primitives::alloy_primitives::FixedBytes;
 use rsp_client_executor::io::EthClientExecutorInput;
 use serde::{Deserialize, Serialize};
+use strata_bridge_params::BridgeParams;
 use strata_state::exec_update::ExecUpdate;
 
 /// Information relating to how to update the execution layer.
@@ -34,7 +35,20 @@ pub type EvmEeProofOutput = Vec<ExecSegment>;
 pub type EvmBlockStfInput = EthClientExecutorInput;
 
 /// Public Parameters that proof asserts
-pub type EvmEeProofInput = Vec<EthClientExecutorInput>;
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct EvmEeProofInput {
+    pub bridge_params: BridgeParams,
+    pub block_inputs: Vec<EvmBlockStfInput>,
+}
+
+impl EvmEeProofInput {
+    pub fn new(bridge_params: BridgeParams, block_inputs: Vec<EvmBlockStfInput>) -> Self {
+        Self {
+            bridge_params,
+            block_inputs,
+        }
+    }
+}
 
 /// Result of the block execution
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

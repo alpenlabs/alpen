@@ -3,10 +3,7 @@ use std::sync::Arc;
 use alloy_consensus::{BlockHeader, EthBlock, Header, TxReceipt};
 use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
-use reth_evm::{
-    execute::{BasicBlockExecutor, BlockExecutionError, ExecutionOutcome, Executor},
-    ConfigureEvm,
-};
+use reth_evm::execute::{BasicBlockExecutor, BlockExecutionError, ExecutionOutcome, Executor};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::EthPrimitives;
 use reth_primitives_traits::block::Block;
@@ -18,6 +15,7 @@ use rsp_client_executor::{
     io::{EthClientExecutorInput, WitnessInput},
     profile_report, BlockValidator, FromInput,
 };
+use strata_bridge_params::BridgeParams;
 
 use crate::EvmBlockStfOutput;
 
@@ -30,11 +28,15 @@ pub const ACCRUE_LOG_BLOOM: &str = "accrue logs bloom";
 pub const COMPUTE_STATE_ROOT: &str = "compute state root";
 pub const COLLECT_WITHDRAWAL_INTENTS: &str = "collect withdrawal intents";
 
-pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOutput, ClientError> {
+pub fn process_block(
+    mut input: EthClientExecutorInput,
+    bridge_params: BridgeParams,
+) -> Result<EvmBlockStfOutput, ClientError> {
     let chain_spec: Arc<ChainSpec> = Arc::new((&input.genesis).try_into().unwrap());
-    let evm_config =
-        EthEvmConfig::new_with_evm_factory(chain_spec.clone(), AlpenEvmFactory::default());
-    let bridge_params = *evm_config.evm_factory().bridge_params();
+    let evm_config = EthEvmConfig::new_with_evm_factory(
+        chain_spec.clone(),
+        AlpenEvmFactory::from_bridge_params(&bridge_params),
+    );
 
     let sealed_headers = input.sealed_headers().collect::<Vec<_>>();
 

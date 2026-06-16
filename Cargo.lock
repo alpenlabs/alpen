@@ -16474,6 +16474,7 @@ dependencies = [
  "rsp-client-executor",
  "serde",
  "serde_json",
+ "strata-bridge-params",
  "strata-ol-bridge-types",
  "strata-primitives",
  "strata-state",
