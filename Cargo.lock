@@ -16301,6 +16301,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-predicate",
+ "strata-primitives",
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "tracing",

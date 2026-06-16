@@ -510,7 +510,7 @@ fn with_withdrawal_log_saus<'a>(
                 sau = sau.output_message(
                     BRIDGE_GATEWAY_ACCT_ID,
                     BitcoinAmount::from_sat(WITHDRAWAL_LOG_AMOUNT),
-                    make_withdrawal_payload(b"bc1qlogcap".to_vec()),
+                    make_withdrawal_payload(make_p2wpkh_bosd_descriptor(0x15)),
                 );
             }
             sau.with_state_root(state_root).with_proof(proof)

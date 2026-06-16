@@ -244,6 +244,13 @@ pub fn make_withdrawal_payload(dest_desc: Vec<u8>) -> Vec<u8> {
         .to_vec()
 }
 
+/// Builds a valid P2WPKH BOSD descriptor for withdrawal tests.
+pub fn make_p2wpkh_bosd_descriptor(byte: u8) -> Vec<u8> {
+    let mut dest_desc = vec![byte; 21];
+    dest_desc[0] = 0x03;
+    dest_desc
+}
+
 /// Builds terminal genesis components with one empty manifest at L1 height 1.
 pub fn build_terminal_genesis_components() -> BlockComponents {
     BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]).as_terminal()
