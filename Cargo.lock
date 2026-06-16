@@ -15739,6 +15739,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",

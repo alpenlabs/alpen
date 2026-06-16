@@ -3,7 +3,10 @@ use std::sync::Arc;
 use alloy_consensus::{BlockHeader, EthBlock, Header, TxReceipt};
 use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
-use reth_evm::execute::{BasicBlockExecutor, ExecutionOutcome, Executor};
+use reth_evm::{
+    execute::{BasicBlockExecutor, BlockExecutionError, ExecutionOutcome, Executor},
+    ConfigureEvm,
+};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::EthPrimitives;
 use reth_primitives_traits::block::Block;
@@ -31,6 +34,7 @@ pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOut
     let chain_spec: Arc<ChainSpec> = Arc::new((&input.genesis).try_into().unwrap());
     let evm_config =
         EthEvmConfig::new_with_evm_factory(chain_spec.clone(), AlpenEvmFactory::default());
+    let bridge_params = *evm_config.evm_factory().bridge_params();
 
     let sealed_headers = input.sealed_headers().collect::<Vec<_>>();
 
@@ -71,7 +75,8 @@ pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOut
     // Accumulate withdrawal intents from the executed transactions.
     let withdrawal_intents = profile_report!(COLLECT_WITHDRAWAL_INTENTS, {
         let transactions = block.into_transactions();
-        extract_withdrawal_intents(&transactions, &execution_output.receipts).collect::<Vec<_>>()
+        extract_withdrawal_intents(&transactions, &execution_output.receipts, &bridge_params)
+            .map_err(BlockExecutionError::other)?
     });
 
     // Convert the output to an execution outcome.

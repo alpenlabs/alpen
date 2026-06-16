@@ -11,7 +11,7 @@ use revm::{
     Context, Inspector, MainBuilder, MainContext,
 };
 use revm_primitives::{hardfork::SpecId, U256};
-use strata_bridge_params::BridgeParams;
+use strata_bridge_params::{BridgeParams, DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN};
 
 use crate::{
     apis::AlpenAlloyEvm,
@@ -28,6 +28,8 @@ use crate::{
 pub struct AlpenEvmFactory {
     denomination_wei: U256,
     max_withdrawal_wei: Option<U256>,
+    max_withdrawal_descriptor_len: u32,
+    bridge_params: BridgeParams,
 }
 
 impl Default for AlpenEvmFactory {
@@ -35,6 +37,8 @@ impl Default for AlpenEvmFactory {
         Self {
             denomination_wei: u256_from(WEI_PER_BTC),
             max_withdrawal_wei: Some(u256_from(WEI_PER_BTC * 10)),
+            max_withdrawal_descriptor_len: DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN,
+            bridge_params: BridgeParams::default(),
         }
     }
 }
@@ -44,7 +48,17 @@ impl AlpenEvmFactory {
         Self {
             denomination_wei,
             max_withdrawal_wei,
+            max_withdrawal_descriptor_len: DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN,
+            bridge_params: BridgeParams::default(),
         }
+    }
+
+    pub fn max_withdrawal_descriptor_len(&self) -> u32 {
+        self.max_withdrawal_descriptor_len
+    }
+
+    pub fn bridge_params(&self) -> &BridgeParams {
+        &self.bridge_params
     }
 
     /// Creates an [`AlpenEvmFactory`] from [`BridgeParams`] (sats-denominated),
@@ -54,7 +68,12 @@ impl AlpenEvmFactory {
         let max_wei = bp
             .max_withdrawal_amount()
             .map(|m| U256::from(m) * WEI_PER_SAT);
-        Self::new(denom_wei, max_wei)
+        Self {
+            denomination_wei: denom_wei,
+            max_withdrawal_wei: max_wei,
+            max_withdrawal_descriptor_len: bp.max_withdrawal_descriptor_len(),
+            bridge_params: *bp,
+        }
     }
 }
 
@@ -73,6 +92,7 @@ impl EvmFactory for AlpenEvmFactory {
             input.cfg_env.spec,
             self.denomination_wei,
             self.max_withdrawal_wei,
+            self.max_withdrawal_descriptor_len,
         );
 
         let evm = Context::mainnet()

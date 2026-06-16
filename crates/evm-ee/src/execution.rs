@@ -17,6 +17,7 @@ use reth_primitives::{
 use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayload};
+use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecPayload, ExecutionEnvironment,
@@ -38,6 +39,7 @@ use crate::{
 pub struct EvmExecutionEnvironment {
     /// EVM configuration with AlpenEvmFactory (contains chain spec)
     evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
+    bridge_params: BridgeParams,
 }
 
 /// Converts withdrawal intents to messages sent to the bridge gateway account.
@@ -73,8 +75,12 @@ impl EvmExecutionEnvironment {
     /// Creates a new EvmExecutionEnvironment with the given chain specification
     /// and EVM factory.
     pub fn new(chain_spec: Arc<ChainSpec>, evm_factory: AlpenEvmFactory) -> Self {
+        let bridge_params = *evm_factory.bridge_params();
         let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, evm_factory);
-        Self { evm_config }
+        Self {
+            evm_config,
+            bridge_params,
+        }
     }
 
     fn validate_execution_inputs(
@@ -137,8 +143,12 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 5: Collect withdrawal intents.
         let transactions = block.into_transactions();
-        let withdrawal_intents =
-            extract_withdrawal_intents(&transactions, &execution_output.receipts).collect();
+        let withdrawal_intents = extract_withdrawal_intents(
+            &transactions,
+            &execution_output.receipts,
+            &self.bridge_params,
+        )
+        .map_err(|_| EnvError::InvalidBlock)?;
 
         // Step 6: Convert execution outcome to HashedPostState.
         let block_number = header_intrinsics.number();

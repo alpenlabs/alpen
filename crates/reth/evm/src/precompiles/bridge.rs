@@ -24,6 +24,7 @@ pub(crate) fn bridge_context_call(
     mut input: PrecompileInput<'_>,
     denomination_wei: U256,
     max_withdrawal_wei: Option<U256>,
+    max_withdrawal_descriptor_len: u32,
 ) -> PrecompileResult {
     if !input.is_direct_call() {
         return Err(PrecompileError::other(
@@ -42,8 +43,8 @@ pub(crate) fn bridge_context_call(
         )
     })?;
 
-    // Validate that this is a valid BOSD
-    validate_bosd(&calldata.bosd)?;
+    // Validate that this is a valid BOSD.
+    validate_bosd(&calldata.bosd, max_withdrawal_descriptor_len)?;
 
     let withdrawal_amount = input.value;
 
@@ -118,8 +119,16 @@ fn validate_withdrawal_amount(
     Ok(())
 }
 
-/// Validates that input is a valid BOSD [`Descriptor`].
-fn validate_bosd(data: &[u8]) -> Result<(), PrecompileError> {
+/// Validates that input is a valid BOSD [`Descriptor`] within the configured limit.
+fn validate_bosd(data: &[u8], max_withdrawal_descriptor_len: u32) -> Result<(), PrecompileError> {
+    if data.len() > max_withdrawal_descriptor_len as usize {
+        return Err(PrecompileError::other(format!(
+            "Invalid BOSD: descriptor length {} exceeds maximum {}",
+            data.len(),
+            max_withdrawal_descriptor_len
+        )));
+    }
+
     Descriptor::from_bytes(data)
         .map_err(|_| PrecompileError::other("Invalid BOSD: expected a valid BOSD descriptor"))?;
     Ok(())
@@ -147,6 +156,7 @@ mod tests {
         buf[0] = 0x03; // P2WPKH type tag
         buf
     };
+    const MAX_DESCRIPTOR_LEN: u32 = 81;
 
     #[test]
     fn test_decode_calldata_empty() {
@@ -371,5 +381,28 @@ mod tests {
             None
         )
         .is_ok());
+    }
+
+    #[test]
+    fn test_validate_bosd_accepts_descriptor_at_limit() {
+        let mut bosd = vec![0u8; MAX_DESCRIPTOR_LEN as usize];
+        bosd[0] = 0x00;
+
+        assert!(validate_bosd(&bosd, MAX_DESCRIPTOR_LEN).is_ok());
+    }
+
+    #[test]
+    fn test_validate_bosd_rejects_oversized_descriptor() {
+        let mut bosd = vec![0u8; MAX_DESCRIPTOR_LEN as usize + 1];
+        bosd[0] = 0x00;
+
+        assert!(validate_bosd(&bosd, MAX_DESCRIPTOR_LEN).is_err());
+    }
+
+    #[test]
+    fn test_validate_bosd_rejects_malformed_descriptor() {
+        let bosd = [0x03, 0x01, 0x02, 0x03];
+
+        assert!(validate_bosd(&bosd, MAX_DESCRIPTOR_LEN).is_err());
     }
 }
