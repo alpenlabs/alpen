@@ -28,11 +28,45 @@ impl ExecSegment {
     }
 }
 
+/// Policy-relevant [`BridgeParams`] fields committed by the EVM EE STF proof public statement.
+///
+/// This statement must mirror every bridge parameter field that affects execution policy.
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+)]
+pub struct BridgeParamsStatement {
+    denomination: u64,
+    max_withdrawal_amount: Option<u64>,
+    max_withdrawal_descriptor_len: u32,
+}
+
+impl BridgeParamsStatement {
+    pub fn from_bridge_params(bridge_params: BridgeParams) -> Self {
+        Self {
+            denomination: bridge_params.denomination(),
+            max_withdrawal_amount: bridge_params.max_withdrawal_amount(),
+            max_withdrawal_descriptor_len: bridge_params.max_withdrawal_descriptor_len(),
+        }
+    }
+
+    pub fn denomination(&self) -> u64 {
+        self.denomination
+    }
+
+    pub fn max_withdrawal_amount(&self) -> Option<u64> {
+        self.max_withdrawal_amount
+    }
+
+    pub fn max_withdrawal_descriptor_len(&self) -> u32 {
+        self.max_withdrawal_descriptor_len
+    }
+}
+
 /// Public statement proven by the EVM EE STF proof.
 #[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct EvmEeProofOutput {
     /// Bridge parameters used while executing the proved blocks.
-    bridge_params: BridgeParams,
+    bridge_params: BridgeParamsStatement,
     /// Execution updates derived from the proved blocks.
     segments: Vec<ExecSegment>,
 }
@@ -40,13 +74,13 @@ pub struct EvmEeProofOutput {
 impl EvmEeProofOutput {
     pub fn new(bridge_params: BridgeParams, segments: Vec<ExecSegment>) -> Self {
         Self {
-            bridge_params,
+            bridge_params: BridgeParamsStatement::from_bridge_params(bridge_params),
             segments,
         }
     }
 
     /// Bridge parameters committed as part of the public proof statement.
-    pub fn bridge_params(&self) -> &BridgeParams {
+    pub fn bridge_params(&self) -> &BridgeParamsStatement {
         &self.bridge_params
     }
 

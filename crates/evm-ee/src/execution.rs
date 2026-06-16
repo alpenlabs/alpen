@@ -9,7 +9,10 @@ use alloy_consensus::Block as AlloyBlock;
 use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
 use reth_consensus_common::validation::validate_body_against_header;
-use reth_evm::execute::{BasicBlockExecutor, BlockExecutionOutput, Executor};
+use reth_evm::{
+    ConfigureEvm,
+    execute::{BasicBlockExecutor, BlockExecutionOutput, Executor},
+};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::{
     EthPrimitives, Receipt as EthereumReceipt, RecoveredBlock, TransactionSigned,
@@ -17,7 +20,6 @@ use reth_primitives::{
 use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayload};
-use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecPayload, ExecutionEnvironment,
@@ -39,7 +41,6 @@ use crate::{
 pub struct EvmExecutionEnvironment {
     /// EVM configuration with AlpenEvmFactory (contains chain spec)
     evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
-    bridge_params: BridgeParams,
 }
 
 /// Converts withdrawal intents to messages sent to the bridge gateway account.
@@ -75,12 +76,8 @@ impl EvmExecutionEnvironment {
     /// Creates a new EvmExecutionEnvironment with the given chain specification
     /// and EVM factory.
     pub fn new(chain_spec: Arc<ChainSpec>, evm_factory: AlpenEvmFactory) -> Self {
-        let bridge_params = *evm_factory.bridge_params();
         let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, evm_factory);
-        Self {
-            evm_config,
-            bridge_params,
-        }
+        Self { evm_config }
     }
 
     fn validate_execution_inputs(
@@ -146,7 +143,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         let withdrawal_intents = extract_withdrawal_intents(
             &transactions,
             &execution_output.receipts,
-            &self.bridge_params,
+            self.evm_config.evm_factory().bridge_params(),
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 

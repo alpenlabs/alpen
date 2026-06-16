@@ -96,7 +96,18 @@ mod tests {
 
         let output = EvmEeProgram::execute(&input).expect("native execution succeeds");
 
-        assert_eq!(output.bridge_params(), &bridge_params);
+        assert_eq!(
+            output.bridge_params().denomination(),
+            bridge_params.denomination()
+        );
+        assert_eq!(
+            output.bridge_params().max_withdrawal_amount(),
+            bridge_params.max_withdrawal_amount()
+        );
+        assert_eq!(
+            output.bridge_params().max_withdrawal_descriptor_len(),
+            bridge_params.max_withdrawal_descriptor_len()
+        );
         assert_eq!(output.segments().len(), 1);
     }
 }

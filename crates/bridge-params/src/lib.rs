@@ -2,7 +2,6 @@
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize, io};
 use serde::{Deserialize, Serialize, de::Error as DeError};
 use ssz_derive::{Decode, Encode};
 use thiserror::Error;
@@ -31,13 +30,6 @@ struct BridgeParamsRaw {
     max_withdrawal_descriptor_len: u32,
 }
 
-/// Legacy raw mirror used to decode params encoded before descriptor limits.
-#[derive(Decode, Encode)]
-struct LegacyBridgeParamsRaw {
-    denomination: u64,
-    max_withdrawal_amount: Option<u64>,
-}
-
 impl<'de> Deserialize<'de> for BridgeParams {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = BridgeParamsRaw::deserialize(deserializer)?;
@@ -60,41 +52,13 @@ impl ssz::Decode for BridgeParams {
     }
 
     fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
-        if let Ok(raw) = BridgeParamsRaw::from_ssz_bytes(bytes) {
-            return Self::new_with_descriptor_limit(
-                raw.denomination,
-                raw.max_withdrawal_amount,
-                raw.max_withdrawal_descriptor_len,
-            )
-            .map_err(|e| ssz::DecodeError::BytesInvalid(e.to_string()));
-        }
-
-        let raw = LegacyBridgeParamsRaw::from_ssz_bytes(bytes)?;
-        Self::new(raw.denomination, raw.max_withdrawal_amount)
-            .map_err(|e| ssz::DecodeError::BytesInvalid(e.to_string()))
-    }
-}
-
-impl BorshSerialize for BridgeParams {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        BorshSerialize::serialize(&self.denomination, writer)?;
-        BorshSerialize::serialize(&self.max_withdrawal_amount, writer)?;
-        BorshSerialize::serialize(&self.max_withdrawal_descriptor_len, writer)
-    }
-}
-
-impl BorshDeserialize for BridgeParams {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let denomination = u64::deserialize_reader(reader)?;
-        let max_withdrawal_amount = Option::<u64>::deserialize_reader(reader)?;
-        let max_withdrawal_descriptor_len = u32::deserialize_reader(reader)?;
-
+        let raw = BridgeParamsRaw::from_ssz_bytes(bytes)?;
         Self::new_with_descriptor_limit(
-            denomination,
-            max_withdrawal_amount,
-            max_withdrawal_descriptor_len,
+            raw.denomination,
+            raw.max_withdrawal_amount,
+            raw.max_withdrawal_descriptor_len,
         )
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
+        .map_err(|e| ssz::DecodeError::BytesInvalid(e.to_string()))
     }
 }
 
@@ -341,19 +305,5 @@ mod tests {
         let encoded = ssz::Encode::as_ssz_bytes(&bp);
         let decoded = <BridgeParams as ssz::Decode>::from_ssz_bytes(&encoded).unwrap();
         assert_eq!(bp, decoded);
-    }
-
-    #[test]
-    fn ssz_legacy_decode_uses_default_descriptor_len() {
-        let legacy = LegacyBridgeParamsRaw {
-            denomination: 100_000_000,
-            max_withdrawal_amount: Some(1_000_000_000),
-        };
-        let encoded = ssz::Encode::as_ssz_bytes(&legacy);
-        let decoded = <BridgeParams as ssz::Decode>::from_ssz_bytes(&encoded).unwrap();
-        assert_eq!(
-            decoded.max_withdrawal_descriptor_len(),
-            DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN
-        );
     }
 }

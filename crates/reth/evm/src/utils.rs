@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, mem::size_of};
+use std::mem::size_of;
 
 use alloy_consensus::TxReceipt;
 use alloy_sol_types::SolEvent;
@@ -9,6 +9,7 @@ use strata_bridge_params::BridgeParams;
 use strata_identifiers::{SubjectId, SubjectIdBytes, SUBJ_ID_LEN};
 use strata_ol_bridge_types::OperatorSelection;
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
+use thiserror::Error;
 
 use crate::constants::BRIDGEOUT_PRECOMPILE_ADDRESS;
 
@@ -29,34 +30,15 @@ pub(crate) fn wei_to_sats(wei: U256) -> (U256, U256) {
 }
 
 /// Error returned when a bridge-out log cannot be decoded into a valid withdrawal intent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum WithdrawalIntentExtractionError {
+    #[error("failed to decode withdrawal intent event for tx {txid:?}")]
     EventDecode { txid: Buf32 },
+    #[error("withdrawal descriptor length {len} exceeds maximum {max} for tx {txid:?}")]
     InvalidDescriptorLength { txid: Buf32, len: usize, max: u32 },
+    #[error("failed to decode withdrawal descriptor for tx {txid:?}")]
     DescriptorDecode { txid: Buf32 },
 }
-
-impl fmt::Display for WithdrawalIntentExtractionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EventDecode { txid } => {
-                write!(
-                    f,
-                    "failed to decode withdrawal intent event for tx {txid:?}"
-                )
-            }
-            Self::InvalidDescriptorLength { txid, len, max } => write!(
-                f,
-                "withdrawal descriptor length {len} exceeds maximum {max} for tx {txid:?}"
-            ),
-            Self::DescriptorDecode { txid } => {
-                write!(f, "failed to decode withdrawal descriptor for tx {txid:?}")
-            }
-        }
-    }
-}
-
-impl Error for WithdrawalIntentExtractionError {}
 
 /// Extracts withdrawal intents from bridge-out events in transaction receipts.
 /// Returns an error if a log emitted by the bridge-out precompile is malformed.

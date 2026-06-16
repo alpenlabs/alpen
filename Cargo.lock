@@ -1483,6 +1483,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-bridge-types",
  "strata-primitives",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -15106,7 +15107,6 @@ name = "strata-bridge-params"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
- "borsh",
  "serde",
  "serde_json",
  "ssz",
@@ -15740,7 +15740,6 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-acct-types",
- "strata-bridge-params",
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
@@ -16282,6 +16281,7 @@ dependencies = [
 name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
+ "bitcoin-bosd 0.11.0",
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",
@@ -16302,7 +16302,6 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-predicate",
- "strata-primitives",
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "tracing",

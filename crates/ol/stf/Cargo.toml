@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bitcoin-bosd.workspace = true
 ssz_primitives = { workspace = true, optional = true }
 ssz_types = { workspace = true, optional = true }
 strata-acct-types.workspace = true
@@ -23,7 +24,6 @@ strata-ol-params = { workspace = true, optional = true }
 strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-predicate.workspace = true
-strata-primitives.workspace = true
 strata-snark-acct-sys.workspace = true
 strata-snark-acct-types.workspace = true
 

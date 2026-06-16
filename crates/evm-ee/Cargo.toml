@@ -9,7 +9,6 @@ alpen-ee-da-types.workspace = true
 
 # Strata crates
 strata-acct-types.workspace = true
-strata-bridge-params.workspace = true
 strata-codec.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
