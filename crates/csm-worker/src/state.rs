@@ -57,9 +57,14 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     ///
     /// Also eagerly updates, persists and publishes the client state.
     pub fn bootstrap(ctx: C) -> CsmWorkerResult<Self> {
-        let (recent_l1blk, recent_clstate) = ctx
+        let (loaded_block, loaded_clstate) = ctx
             .fetch_most_recent_client_state()?
             .unwrap_or((ctx.genesis_l1_block(), ClientState::default()));
+
+        // The stored tip may be an orphan from a reorg the node missed while
+        // down; resolve down to the latest block still on the canonical chain.
+        let (recent_l1blk, recent_clstate) =
+            resolve_canonical_tip(&ctx, loaded_block, loaded_clstate)?;
 
         let derived = derive_state(&ctx, &recent_l1blk, &recent_clstate)?;
 
@@ -91,6 +96,35 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     pub fn get_last_asm_block(&self) -> Option<L1BlockCommitment> {
         self.recent_asm_blocks.last().copied()
     }
+}
+
+/// Resolves the latest committed block still on the canonical chain.
+fn resolve_canonical_tip<C: CsmWorkerContext>(
+    ctx: &C,
+    candidate_blk: L1BlockCommitment,
+    candidate_clstate: ClientState,
+) -> CsmWorkerResult<(L1BlockCommitment, ClientState)> {
+    let floor = reorg_floor_height(ctx, &candidate_clstate, candidate_blk.height());
+    if candidate_blk.height() <= floor
+        || ctx.get_canonical_l1_block(candidate_blk.height())? == Some(candidate_blk)
+    {
+        return Ok((candidate_blk, candidate_clstate));
+    }
+
+    // Iterate from the tip, the first appearing client state is the canonical state.
+    for height in (floor..candidate_blk.height()).rev() {
+        let Some(canonical) = ctx.get_canonical_l1_block(height)? else {
+            continue;
+        };
+        if let Some(state) = ctx.get_client_state_at(&canonical)? {
+            return Ok((canonical, state));
+        }
+    }
+
+    Err(CsmWorkerError::MissingData {
+        what: "canonical client state at or above reorg floor",
+        detail: candidate_blk.to_string(),
+    })
 }
 
 /// Builds the recent-ASM-blocks list from the reorg-safe floor (index 0) up to
@@ -152,7 +186,7 @@ pub(crate) fn derive_state<C: CsmWorkerContext>(
     cur_block: &L1BlockCommitment,
     cur_clstate: &ClientState,
 ) -> CsmWorkerResult<DerivedState> {
-    let current_l1_tip = cur_block.height();
+    let current_csm_tip = cur_block.height();
     let finality_depth = ctx.l1_reorg_safe_depth().max(1);
     let last_finalized_epoch = cur_clstate.get_declared_final_epoch();
     let observation_start_epoch = last_finalized_epoch
@@ -160,17 +194,17 @@ pub(crate) fn derive_state<C: CsmWorkerContext>(
         .unwrap_or(0);
 
     let mut observed_checkpoints =
-        load_observed_checkpoints(ctx, observation_start_epoch, current_l1_tip)?;
+        load_observed_checkpoints(ctx, observation_start_epoch, current_csm_tip)?;
 
     // Derive new finalized checkpoint from last finalized and finalized ones among the observed.
     let new_finalized_ckpt = observed_checkpoints
         .iter()
         .rev()
-        .find(|ckpt| is_l1_reorg_safe(ckpt.height(), current_l1_tip, finality_depth))
-        .cloned()
+        .find(|ckpt| is_l1_reorg_safe(ckpt.height(), current_csm_tip, finality_depth))
         .filter(|obs_ckpt| {
             last_finalized_epoch.is_none_or(|last_fin| last_fin.epoch() < obs_ckpt.tip.epoch)
         })
+        .cloned()
         .or_else(|| cur_clstate.get_last_finalized_checkpoint());
 
     // Confirmed: the latest observation seen on L1, else the finalized one.
@@ -201,7 +235,7 @@ pub(crate) fn derive_state<C: CsmWorkerContext>(
 fn load_observed_checkpoints<C: CsmWorkerContext>(
     ctx: &C,
     start_epoch: Epoch,
-    current_l1_tip: L1Height,
+    cur_csm_tip: L1Height,
 ) -> CsmWorkerResult<VecDeque<L1Checkpoint>> {
     let Some(last_ep_with_l1ref) = ctx.get_last_checkpoint_l1_ref_epoch()? else {
         return Ok(VecDeque::new());
@@ -222,7 +256,7 @@ fn load_observed_checkpoints<C: CsmWorkerContext>(
 
         // Heights are strictly increasing in epoch order, so once one exceeds
         // the tip every later one does too.
-        if observation.l1_commitment.height() > current_l1_tip {
+        if observation.l1_commitment.height() > cur_csm_tip {
             break;
         }
 
@@ -533,5 +567,93 @@ mod tests {
         let ctx = stub_ctx_at_genesis_zero(depth);
         let clstate = finalized_state_at(checkpoint);
         assert_eq!(reorg_floor_height(&ctx, &clstate, tip), checkpoint);
+    }
+
+    /// A blkid deterministically derived from a byte tag.
+    fn blkid(tag: u8) -> L1BlockId {
+        L1BlockId::from(Buf32::from([tag; 32]))
+    }
+
+    /// Persists an empty client-state row at `block`.
+    fn put_client_state_row(storage: &strata_storage::NodeStorage, block: &L1BlockCommitment) {
+        storage
+            .client_state()
+            .put_update_blocking(
+                block,
+                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+            )
+            .expect("put client state row");
+    }
+
+    /// A stored tip higher than the canonical tip (chain reverted below it) is an
+    /// orphan; bootstrap must anchor to the highest canonical row, not the orphan.
+    #[test]
+    fn bootstrap_ignores_higher_orphan_after_shorter_reorg() {
+        let params = create_test_params();
+        let (storage, status_channel) = create_test_storage_and_status(params.clone());
+
+        // Genesis 40320, depth 4: floor for tip 40330 is 40327, so 40330 is
+        // above the floor and the orphan path is exercised.
+        let canonical_tip = L1BlockCommitment::new(40329, blkid(201));
+        let orphan = L1BlockCommitment::new(40330, blkid(202));
+
+        put_client_state_row(&storage, &canonical_tip);
+        put_client_state_row(&storage, &orphan);
+
+        // Canonical chain only reaches 40329; nothing at the orphan's height.
+        let mut ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            4,
+            params.magic,
+            params.anchor.block,
+        );
+        for height in 40326..=40329 {
+            ctx = ctx.with_canonical_block(height, blkid(height as u8));
+        }
+        ctx = ctx.with_canonical_block(40329, *canonical_tip.blkid());
+
+        let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap");
+
+        assert_eq!(state.recent_asm_blocks.last(), Some(&canonical_tip));
+        assert_ne!(state.recent_asm_blocks.last(), Some(&orphan));
+    }
+
+    /// Two rows at the same height: the orphan sorts higher so `get_latest`
+    /// returns it, but bootstrap must anchor to the canonical-blkid block.
+    #[test]
+    fn bootstrap_ignores_same_height_orphan() {
+        let params = create_test_params();
+        let (storage, status_channel) = create_test_storage_and_status(params.clone());
+
+        // Canonical fork point one below; the canonical row at the same height
+        // sorts lower than the orphan, which `get_latest` returns.
+        let height = 40330;
+        let canonical = L1BlockCommitment::new(height, blkid(0x01));
+        let orphan = L1BlockCommitment::new(height, blkid(0xff));
+        let fork = L1BlockCommitment::new(height - 1, blkid(0x10));
+
+        put_client_state_row(&storage, &fork);
+        put_client_state_row(&storage, &canonical);
+        put_client_state_row(&storage, &orphan);
+
+        // Canonical chain: the fork at H-1 and a different blkid at H.
+        let mut ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            4,
+            params.magic,
+            params.anchor.block,
+        );
+        for h in 40326..height {
+            ctx = ctx.with_canonical_block(h, blkid(h as u8));
+        }
+        ctx = ctx.with_canonical_block(height - 1, *fork.blkid());
+        ctx = ctx.with_canonical_block(height, *canonical.blkid());
+
+        let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap");
+
+        assert_ne!(state.recent_asm_blocks.last(), Some(&orphan));
+        assert_eq!(state.recent_asm_blocks.last(), Some(&fork));
     }
 }

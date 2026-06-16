@@ -90,12 +90,33 @@ impl ClientStateManager {
         Ok(state)
     }
 
+    /// Deletes the client update at `block`, keeping caches and the current
+    /// state tracker coherent.
+    pub fn del_update_blocking(&self, block: &L1BlockCommitment) -> DbResult<()> {
+        let height = block.height();
+        self.ops.del_client_update_blocking(*block)?;
+        self.update_cache.purge_blocking(&height);
+        self.state_cache.purge_blocking(&height);
+        self.reset_cur_state_blocking()?;
+        Ok(())
+    }
+
     fn maybe_update_cur_state_blocking(&self, height: L1Height, state: &Arc<ClientState>) -> bool {
         let mut cur = self.cur_state.blocking_lock();
         cur.maybe_update(height, state)
     }
 
-    /// Returns either pre-genesis init [`ClientState`] or the one with the biggest height.
+    /// Recomputes the current-state tracker from storage after a deletion.
+    fn reset_cur_state_blocking(&self) -> DbResult<()> {
+        let mut cur = self.cur_state.blocking_lock();
+        *cur = CurStateTracker::new_empty();
+        if let Some((blk, cs)) = self.ops.get_latest_client_state_blocking()? {
+            cur.set(blk.height(), Arc::new(cs));
+        }
+        Ok(())
+    }
+
+    /// Returns either pre-genesis init [`ClientState`] or the one with the greatest key.
     pub fn fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
         self.ops.get_latest_client_state_blocking()
     }
@@ -144,5 +165,63 @@ impl CurStateTracker {
             self.set(idx, state.clone());
         }
         should
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::traits::DatabaseBackend;
+    use strata_identifiers::L1BlockId;
+
+    use super::*;
+
+    fn setup_manager() -> ClientStateManager {
+        let pool = ThreadPool::new(1);
+        let db = Arc::new(get_test_sled_backend());
+        ClientStateManager::new(pool, db.client_state_db()).expect("open client state manager")
+    }
+
+    fn block_at(height: L1Height) -> L1BlockCommitment {
+        L1BlockCommitment::new(
+            height,
+            L1BlockId::from(strata_identifiers::Buf32::from([height as u8; 32])),
+        )
+    }
+
+    fn empty_update() -> ClientUpdateOutput {
+        ClientUpdateOutput::new(ClientState::new(None, None), vec![])
+    }
+
+    #[test]
+    fn del_update_removes_row_and_resets_latest() {
+        let manager = setup_manager();
+        let low = block_at(10);
+        let high = block_at(20);
+
+        manager
+            .put_update_blocking(&low, empty_update())
+            .expect("put low");
+        manager
+            .put_update_blocking(&high, empty_update())
+            .expect("put high");
+
+        manager.del_update_blocking(&high).expect("delete high");
+
+        assert!(
+            manager
+                .get_update_blocking(&high)
+                .expect("query high")
+                .is_none(),
+            "deleted row must be gone"
+        );
+        let (latest_block, _) = manager
+            .fetch_most_recent_state()
+            .expect("query latest")
+            .expect("latest row");
+        assert_eq!(
+            latest_block, low,
+            "latest must fall back to the remaining row"
+        );
     }
 }

@@ -132,6 +132,11 @@ impl CsmWorkerContext for StubCtx {
         self.status_channel.update_client_state(state, block);
     }
 
+    fn del_client_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<()> {
+        self.storage.client_state().del_update_blocking(block)?;
+        Ok(())
+    }
+
     fn put_checkpoint_l1_observation(
         &self,
         commitment: EpochCommitment,

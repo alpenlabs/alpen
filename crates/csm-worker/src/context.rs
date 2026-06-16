@@ -28,6 +28,9 @@ pub trait CsmWorkerContext: Send + Sync {
         output: ClientUpdateOutput,
     ) -> CsmWorkerResult<()>;
 
+    /// Deletes the client state row at the given L1 block.
+    fn del_client_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<()>;
+
     /// Publishes the current client state and the L1 block it is anchored at.
     fn publish_client_state(&self, state: ClientState, block: L1BlockCommitment);
 

@@ -345,8 +345,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     /// Rewinds the worker to the fork point shared with the chain leading to
     /// `incoming`, re-deriving cursors and persisted state there.
     ///
-    /// Errors if the fork lies at or below the finalized anchor (index 0): a
-    /// reorg past finality is a protocol violation the worker must not absorb.
+    /// Errors if the fork lies at or below the finalized anchor (index 0).
     fn reorg_to_fork(&mut self, incoming: &L1BlockCommitment) -> CsmWorkerResult<()> {
         // No match means the divergence reaches past the finalized anchor.
         let Some(fork_idx) = self.find_fork_index()? else {
@@ -358,11 +357,16 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let fork_block = self.recent_asm_blocks[fork_idx];
 
         warn!(%fork_block, %incoming, "reorg detected; rewinding to fork point");
-        self.recent_asm_blocks.truncate(fork_idx + 1);
 
-        // Every window entry sits at or below the committed tip, so CSM
-        // persisted its client state in a prior run. A missing row means that
-        // invariant broke; surface it rather than fabricating a default state.
+        // Delete the orphaned branch's rows so a restart can't bootstrap from an
+        // orphan that's above the canonical tip.
+        let orphans = self.recent_asm_blocks.split_off(fork_idx + 1);
+        for orphan in &orphans {
+            self.ctx.del_client_state(orphan)?;
+        }
+
+        // It is expected to have client state persisted below the tip, which means below the fork
+        // point as well.
         let persisted = self.ctx.get_client_state_at(&fork_block)?;
         let fork_clstate = persisted
             .clone()
@@ -1147,6 +1151,8 @@ mod tests {
         // CSM persisted a client state at the fork block (anchor) in a prior
         // run; the reorg re-derives from it.
         seed_client_state_row(&storage, &anchor);
+        // The orphaned tip left a row behind from the prior run.
+        seed_client_state_row(&storage, &orphan_100);
 
         // Canonical chain: anchor stays at 99, and height 100 is now a
         // different block than the orphaned tip the worker committed.
@@ -1161,6 +1167,14 @@ mod tests {
         assert!(
             !state.recent_asm_blocks.contains(&orphan_100),
             "orphaned tip must be pruned from the list"
+        );
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&orphan_100)
+                .expect("query client state")
+                .is_none(),
+            "orphaned tip's row must be deleted"
         );
         let (persisted, _) = storage
             .client_state()
@@ -1460,11 +1474,13 @@ mod tests {
             )
             .expect("seed client state at tip");
 
-        // Build context with a canonical block at every intermediate height.
+        // Build context with a canonical block at every intermediate height,
+        // and at the tip so bootstrap takes the canonical (non-orphan) path.
         let mut ctx = default_stub_ctx(&params, storage.clone(), status_channel);
         for height in floor..tip.height() {
             ctx = ctx.with_canonical_block(height, block_id_at(height));
         }
+        ctx = ctx.with_canonical_block(tip.height(), *tip.blkid());
 
         let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap");
 
@@ -1574,6 +1590,8 @@ mod tests {
 
         // CSM persisted a client state at the fork block (good_24) in a prior run.
         seed_client_state_row(&storage, &good_24);
+        // The reorged-away tip left a higher-keyed row behind.
+        seed_client_state_row(&storage, &orphan_25);
 
         state
             .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
@@ -1583,6 +1601,14 @@ mod tests {
         assert!(
             !state.recent_asm_blocks.contains(&orphan_25),
             "orphaned higher entry must be pruned"
+        );
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&orphan_25)
+                .expect("query client state")
+                .is_none(),
+            "orphaned higher row must be deleted"
         );
         let (persisted, _) = storage
             .client_state()
