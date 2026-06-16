@@ -13,7 +13,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_state_index::InboxMessageRecord;
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
-    OLBlockCommitment, OLBlockId, OLTxId,
+    OLBlockCommitment, OLBlockId, OLTxId, RBuf32,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
@@ -706,21 +706,26 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         let l2_start = self.get_first_l2_block_in_epoch(&epoch_summary).await?;
         let l2_range = (l2_start, *epoch_summary.terminal());
 
+        let cur_l1 = *epoch_summary.new_l1();
         let l1_start = if epoch == 0 {
-            let l1_start_height = self.genesis_l1_height.saturating_add(1);
-            let l1_start_manifest = self
-                .provider
-                .get_block_manifest_at_height(l1_start_height)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| {
-                    not_found_error(format!(
-                        "No L1 manifest found at genesis+1 height {} for epoch 0",
-                        l1_start_height
-                    ))
-                })?;
+            if cur_l1.height() <= self.genesis_l1_height {
+                cur_l1
+            } else {
+                let l1_start_height = self.genesis_l1_height.saturating_add(1);
+                let l1_start_manifest = self
+                    .provider
+                    .get_block_manifest_at_height(l1_start_height)
+                    .await
+                    .map_err(db_error)?
+                    .ok_or_else(|| {
+                        not_found_error(format!(
+                            "No L1 manifest found at genesis+1 height {} for epoch 0",
+                            l1_start_height
+                        ))
+                    })?;
 
-            L1BlockCommitment::new(l1_start_height, *l1_start_manifest.blkid())
+                L1BlockCommitment::new(l1_start_height, *l1_start_manifest.blkid())
+            }
         } else {
             let prev_epoch = epoch - 1;
             let (_, prev_summary) = self
@@ -730,30 +735,40 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                     not_found_error(format!("No canonical summary found for epoch {prev_epoch}"))
                 })?;
 
-            let l1_start_height = prev_summary.new_l1().height().saturating_add(1);
-            let l1_start_manifest = self
-                .provider
-                .get_block_manifest_at_height(l1_start_height)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| {
-                    not_found_error(format!(
-                        "No L1 manifest found at checkpoint start height {} for epoch {}",
-                        l1_start_height, epoch
-                    ))
-                })?;
+            let prev_l1 = *prev_summary.new_l1();
+            if cur_l1.height() <= prev_l1.height() {
+                cur_l1
+            } else {
+                let l1_start_height = prev_l1.height().saturating_add(1);
+                let l1_start_manifest = self
+                    .provider
+                    .get_block_manifest_at_height(l1_start_height)
+                    .await
+                    .map_err(db_error)?
+                    .ok_or_else(|| {
+                        not_found_error(format!(
+                            "No L1 manifest found at checkpoint start height {} for epoch {}",
+                            l1_start_height, epoch
+                        ))
+                    })?;
 
-            L1BlockCommitment::new(l1_start_height, *l1_start_manifest.blkid())
+                L1BlockCommitment::new(l1_start_height, *l1_start_manifest.blkid())
+            }
         };
-        let l1_end = *epoch_summary.new_l1();
+        let l1_end = cur_l1;
         let l1_range = (l1_start, l1_end);
+        debug_assert!(l1_range.0.height() <= l1_range.1.height());
 
-        let l1_ref = self
+        let confirmation_status = if epoch == 0 {
+            let l1_reference =
+                RpcCheckpointL1Ref::new(cur_l1, RBuf32::from([0u8; 32]), RBuf32::from([0u8; 32]));
+            RpcCheckpointConfStatus::Finalized { l1_reference }
+        } else if let Some(obs) = self
             .provider
             .get_checkpoint_l1_ref(commitment)
             .await
-            .map_err(db_error)?;
-        let confirmation_status = if let Some(obs) = l1_ref {
+            .map_err(db_error)?
+        {
             let l1_reference = RpcCheckpointL1Ref::new(obs.l1_commitment, obs.txid, obs.wtxid);
             let observed_height = obs.l1_commitment.height();
             let Some(tip) = self.provider.get_l1_tip_height().await.map_err(db_error)? else {

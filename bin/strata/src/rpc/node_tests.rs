@@ -498,9 +498,24 @@ fn make_sync_status(
 }
 
 fn make_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlock {
+    make_block_with_terminal_flag(slot, epoch, parent, false)
+}
+
+fn make_terminal_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlock {
+    make_block_with_terminal_flag(slot, epoch, parent, true)
+}
+
+fn make_block_with_terminal_flag(
+    slot: Slot,
+    epoch: Epoch,
+    parent: OLBlockId,
+    is_terminal: bool,
+) -> OLBlock {
+    let mut flags = BlockFlags::zero();
+    flags.set_is_terminal(is_terminal);
     let header = OLBlockHeader::new(
         0,
-        0.into(),
+        flags,
         slot,
         epoch,
         parent,
@@ -511,6 +526,32 @@ fn make_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlock {
     let signed = SignedOLBlockHeader::new(header, Buf64::zero());
     let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty segment"));
     OLBlock::new(signed, body)
+}
+
+fn make_epoch_blocks(
+    prev_terminal: L2BlockCommitment,
+    epoch: Epoch,
+    terminal_slot: Slot,
+) -> Vec<OLBlock> {
+    let mut blocks = Vec::new();
+    let mut parent = *prev_terminal.blkid();
+    for slot in prev_terminal.slot().saturating_add(1)..=terminal_slot {
+        let block = if slot == terminal_slot {
+            make_terminal_block(slot, epoch, parent)
+        } else {
+            make_block(slot, epoch, parent)
+        };
+        parent = block.header().compute_blkid();
+        blocks.push(block);
+    }
+    blocks
+}
+
+fn with_blocks(mut provider: MockProvider, blocks: &[OLBlock]) -> MockProvider {
+    for block in blocks {
+        provider = provider.with_block_and_state(block, genesis_ol_state());
+    }
+    provider
 }
 
 fn make_block_with_gam_tx(
@@ -863,20 +904,18 @@ async fn checkpoint_info_returns_none_when_epoch_missing() {
 }
 
 #[tokio::test]
-async fn checkpoint_info_returns_expected_l1_and_l2_ranges() {
-    let prev_terminal = L2BlockCommitment::new(80, fixed_ol_block_id(0x10));
-
-    let first_epoch_block = make_block(85, 2, *prev_terminal.blkid());
-    let first_epoch_blkid = first_epoch_block.header().compute_blkid();
-    let mid_epoch_block = make_block(90, 2, first_epoch_blkid);
-    let mid_epoch_blkid = mid_epoch_block.header().compute_blkid();
-    let terminal_block = make_block(100, 2, mid_epoch_blkid);
-    let terminal = L2BlockCommitment::new(100, terminal_block.header().compute_blkid());
+async fn checkpoint_info_with_l1_advance() {
+    // With fixed-slot sealing at 10 slots/epoch, epoch 0 is slot 0, epoch 1
+    // terminates at slot 10, and epoch 2 terminates at slot 20.
+    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
+    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
+    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
 
     let prev_summary = EpochSummary::new(
         1,
         prev_terminal,
-        L2BlockCommitment::new(60, fixed_ol_block_id(0x11)),
+        L2BlockCommitment::new(0, fixed_ol_block_id(0x11)),
         L1BlockCommitment::new(500, fixed_l1_block_id(0x30)),
         fixed_buf32(0x40),
     );
@@ -907,14 +946,11 @@ async fn checkpoint_info_returns_expected_l1_and_l2_ranges() {
             cur_commitment,
             prev_commitment,
         ))
-        .with_l1_tip_height(509)
+        .with_l1_tip_height(510)
         .with_epoch_commitment(1, prev_commitment)
         .with_epoch_commitment(2, cur_commitment)
         .with_epoch_summary(prev_summary)
         .with_epoch_summary(cur_summary)
-        .with_block_and_state(&first_epoch_block, genesis_ol_state())
-        .with_block_and_state(&mid_epoch_block, genesis_ol_state())
-        .with_block_and_state(&terminal_block, genesis_ol_state())
         .with_manifest(
             AsmManifest::new(
                 501,
@@ -925,6 +961,7 @@ async fn checkpoint_info_returns_expected_l1_and_l2_ranges() {
             .expect("test manifest should be valid"),
         )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
+    let provider = with_blocks(provider, &epoch_blocks);
 
     let rpc = make_rpc(provider);
 
@@ -935,31 +972,74 @@ async fn checkpoint_info_returns_expected_l1_and_l2_ranges() {
         .expect("checkpoint should exist");
 
     assert_eq!(info.idx, 2);
-    assert_eq!(info.l2_range.0.slot(), 85);
+    assert_eq!(info.l2_range.0.slot(), 11);
     assert_eq!(info.l2_range.1, terminal);
     assert_eq!(info.l1_range.0.height(), 501);
     assert_eq!(info.l1_range.1.height(), 510);
 }
 
 #[tokio::test]
-async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
-    let prev_terminal = L2BlockCommitment::new(80, fixed_ol_block_id(0x10));
-    let observed_height = 505;
-    let l1_tip_height = 509;
-    let checkpoint_txid = fixed_buf32(0xAA);
-    let checkpoint_wtxid = fixed_buf32(0xBB);
-
-    let first_epoch_block = make_block(85, 2, *prev_terminal.blkid());
-    let first_epoch_blkid = first_epoch_block.header().compute_blkid();
-    let mid_epoch_block = make_block(90, 2, first_epoch_blkid);
-    let mid_epoch_blkid = mid_epoch_block.header().compute_blkid();
-    let terminal_block = make_block(100, 2, mid_epoch_blkid);
-    let terminal = L2BlockCommitment::new(100, terminal_block.header().compute_blkid());
+async fn checkpoint_info_no_l1_advance() {
+    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
+    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
+    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+    let unchanged_l1 = L1BlockCommitment::new(500, fixed_l1_block_id(0x30));
 
     let prev_summary = EpochSummary::new(
         1,
         prev_terminal,
-        L2BlockCommitment::new(60, fixed_ol_block_id(0x11)),
+        L2BlockCommitment::new(0, fixed_ol_block_id(0x11)),
+        unchanged_l1,
+        fixed_buf32(0x40),
+    );
+    let cur_summary =
+        EpochSummary::new(2, terminal, prev_terminal, unchanged_l1, fixed_buf32(0x41));
+
+    let prev_commitment = prev_summary.get_epoch_commitment();
+    let cur_commitment = cur_summary.get_epoch_commitment();
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(1, prev_commitment)
+        .with_epoch_commitment(2, cur_commitment)
+        .with_epoch_summary(prev_summary)
+        .with_epoch_summary(cur_summary);
+    let provider = with_blocks(provider, &epoch_blocks);
+
+    let rpc = make_rpc(provider);
+
+    let info = rpc
+        .get_checkpoint_info(2)
+        .await
+        .expect("checkpoint info should not error")
+        .expect("checkpoint should exist");
+
+    assert_eq!(info.idx, 2);
+    assert_eq!(info.l1_range.0, unchanged_l1);
+    assert_eq!(info.l1_range.1, unchanged_l1);
+    assert!(info.l1_range.0.height() <= info.l1_range.1.height());
+    assert!(matches!(
+        info.confirmation_status,
+        RpcCheckpointConfStatus::Pending
+    ));
+}
+
+#[tokio::test]
+async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
+    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let observed_height = 505;
+    let l1_tip_height = 510;
+    let checkpoint_txid = fixed_buf32(0xAA);
+    let checkpoint_wtxid = fixed_buf32(0xBB);
+
+    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
+    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
+    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+
+    let prev_summary = EpochSummary::new(
+        1,
+        prev_terminal,
+        L2BlockCommitment::new(0, fixed_ol_block_id(0x11)),
         L1BlockCommitment::new(500, fixed_l1_block_id(0x30)),
         fixed_buf32(0x40),
     );
@@ -995,9 +1075,6 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
         .with_epoch_commitment(2, cur_commitment)
         .with_epoch_summary(prev_summary)
         .with_epoch_summary(cur_summary)
-        .with_block_and_state(&first_epoch_block, genesis_ol_state())
-        .with_block_and_state(&mid_epoch_block, genesis_ol_state())
-        .with_block_and_state(&terminal_block, genesis_ol_state())
         .with_manifest(
             AsmManifest::new(
                 501,
@@ -1008,6 +1085,7 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
             .expect("test manifest should be valid"),
         )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
+    let provider = with_blocks(provider, &epoch_blocks);
 
     let rpc = make_rpc(provider);
 
@@ -1029,18 +1107,15 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_pending_when_observation_missing() {
-    let prev_terminal = L2BlockCommitment::new(80, fixed_ol_block_id(0x10));
-    let first_epoch_block = make_block(85, 2, *prev_terminal.blkid());
-    let first_epoch_blkid = first_epoch_block.header().compute_blkid();
-    let mid_epoch_block = make_block(90, 2, first_epoch_blkid);
-    let mid_epoch_blkid = mid_epoch_block.header().compute_blkid();
-    let terminal_block = make_block(100, 2, mid_epoch_blkid);
-    let terminal = L2BlockCommitment::new(100, terminal_block.header().compute_blkid());
+    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
+    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
+    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
 
     let prev_summary = EpochSummary::new(
         1,
         prev_terminal,
-        L2BlockCommitment::new(60, fixed_ol_block_id(0x11)),
+        L2BlockCommitment::new(0, fixed_ol_block_id(0x11)),
         L1BlockCommitment::new(500, fixed_l1_block_id(0x30)),
         fixed_buf32(0x40),
     );
@@ -1065,18 +1140,16 @@ async fn checkpoint_info_returns_pending_when_observation_missing() {
             cur_commitment,
             prev_commitment,
         ))
-        .with_l1_tip_height(509)
+        .with_l1_tip_height(510)
         .with_epoch_commitment(1, prev_commitment)
         .with_epoch_commitment(2, cur_commitment)
         .with_epoch_summary(prev_summary)
         .with_epoch_summary(cur_summary)
-        .with_block_and_state(&first_epoch_block, genesis_ol_state())
-        .with_block_and_state(&mid_epoch_block, genesis_ol_state())
-        .with_block_and_state(&terminal_block, genesis_ol_state())
         .with_manifest(
             AsmManifest::new(501, fixed_l1_block_id(0x61), WtxidsRoot::default(), vec![])
                 .expect("test manifest should be valid"),
         );
+    let provider = with_blocks(provider, &epoch_blocks);
 
     let rpc = make_rpc(provider);
 
@@ -1094,22 +1167,19 @@ async fn checkpoint_info_returns_pending_when_observation_missing() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
-    let prev_terminal = L2BlockCommitment::new(80, fixed_ol_block_id(0x10));
+    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
     let observed_height = 505;
-    let l1_tip_height = 509;
+    let l1_tip_height = 510;
     let checkpoint_txid = fixed_buf32(0xAA);
     let checkpoint_wtxid = fixed_buf32(0xBB);
-    let first_epoch_block = make_block(85, 2, *prev_terminal.blkid());
-    let first_epoch_blkid = first_epoch_block.header().compute_blkid();
-    let mid_epoch_block = make_block(90, 2, first_epoch_blkid);
-    let mid_epoch_blkid = mid_epoch_block.header().compute_blkid();
-    let terminal_block = make_block(100, 2, mid_epoch_blkid);
-    let terminal = L2BlockCommitment::new(100, terminal_block.header().compute_blkid());
+    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
+    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
+    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
 
     let prev_summary = EpochSummary::new(
         1,
         prev_terminal,
-        L2BlockCommitment::new(60, fixed_ol_block_id(0x11)),
+        L2BlockCommitment::new(0, fixed_ol_block_id(0x11)),
         L1BlockCommitment::new(500, fixed_l1_block_id(0x30)),
         fixed_buf32(0x40),
     );
@@ -1145,14 +1215,12 @@ async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
         .with_epoch_commitment(2, cur_commitment)
         .with_epoch_summary(prev_summary)
         .with_epoch_summary(cur_summary)
-        .with_block_and_state(&first_epoch_block, genesis_ol_state())
-        .with_block_and_state(&mid_epoch_block, genesis_ol_state())
-        .with_block_and_state(&terminal_block, genesis_ol_state())
         .with_manifest(
             AsmManifest::new(501, fixed_l1_block_id(0x61), WtxidsRoot::default(), vec![])
                 .expect("test manifest should be valid"),
         )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
+    let provider = with_blocks(provider, &epoch_blocks);
 
     let rpc = make_rpc(provider);
 
@@ -1173,39 +1241,25 @@ async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
 }
 
 #[tokio::test]
-async fn checkpoint_info_epoch_0_l1_range_from_genesis() {
-    let genesis_blkid = fixed_ol_block_id(0x01);
-    let first_block = make_block(1, 0, genesis_blkid);
-    let first_blkid = first_block.header().compute_blkid();
-    let terminal_block = make_block(10, 0, first_blkid);
-    let terminal = L2BlockCommitment::new(10, terminal_block.header().compute_blkid());
-    let prev_terminal = L2BlockCommitment::new(0, genesis_blkid);
-
+async fn checkpoint_info_epoch_0_with_l1_advance() {
+    let genesis_block = make_terminal_block(0, 0, null_blkid());
+    let genesis_blkid = genesis_block.header().compute_blkid();
+    let terminal = L2BlockCommitment::new(0, genesis_blkid);
+    let advanced_l1 = L1BlockCommitment::new(5, fixed_l1_block_id(0x55));
     let summary = EpochSummary::new(
         0,
         terminal,
-        prev_terminal,
-        L1BlockCommitment::new(5, fixed_l1_block_id(0x55)),
+        OLBlockCommitment::null(),
+        advanced_l1,
         fixed_buf32(0x99),
     );
     let commitment = summary.get_epoch_commitment();
 
     let l1_start_blkid = fixed_l1_block_id(0x71);
-    let tip = OLBlockCommitment::new(20, fixed_ol_block_id(0x77));
     let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(
-            tip,
-            1,
-            false,
-            commitment,
-            commitment,
-            EpochCommitment::null(),
-        ))
-        .with_l1_tip_height(10)
         .with_epoch_commitment(0, commitment)
         .with_epoch_summary(summary)
-        .with_block_and_state(&first_block, genesis_ol_state())
-        .with_block_and_state(&terminal_block, genesis_ol_state())
+        .with_block_and_state(&genesis_block, genesis_ol_state())
         .with_manifest(
             AsmManifest::new(
                 TEST_GENESIS_L1_HEIGHT + 1,
@@ -1227,28 +1281,77 @@ async fn checkpoint_info_epoch_0_l1_range_from_genesis() {
     assert_eq!(info.idx, 0);
     assert_eq!(info.l1_range.0.height(), TEST_GENESIS_L1_HEIGHT + 1);
     assert_eq!(*info.l1_range.0.blkid(), l1_start_blkid);
-    assert_eq!(info.l1_range.1.height(), 5);
-    assert_eq!(info.l2_range.0.slot(), 1);
+    assert_eq!(info.l1_range.1, advanced_l1);
+    assert_eq!(info.l2_range.0, terminal);
     assert_eq!(info.l2_range.1, terminal);
+    match info.confirmation_status {
+        RpcCheckpointConfStatus::Finalized { l1_reference } => {
+            assert_eq!(l1_reference.l1_block, advanced_l1);
+            assert_eq!(l1_reference.txid, RBuf32::from([0u8; 32]));
+            assert_eq!(l1_reference.wtxid, RBuf32::from([0u8; 32]));
+        }
+        _ => panic!("expected finalized genesis checkpoint status"),
+    }
+}
+
+#[tokio::test]
+async fn checkpoint_info_epoch_0_l1_did_not_advance() {
+    let genesis_block = make_terminal_block(0, 0, null_blkid());
+    let genesis_blkid = genesis_block.header().compute_blkid();
+    let terminal = L2BlockCommitment::new(0, genesis_blkid);
+    let genesis_l1 = L1BlockCommitment::new(TEST_GENESIS_L1_HEIGHT, fixed_l1_block_id(0x55));
+    let summary = EpochSummary::new(
+        0,
+        terminal,
+        OLBlockCommitment::null(),
+        genesis_l1,
+        fixed_buf32(0x99),
+    );
+    let commitment = summary.get_epoch_commitment();
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(0, commitment)
+        .with_epoch_summary(summary)
+        .with_block_and_state(&genesis_block, genesis_ol_state());
+
+    let rpc = make_rpc(provider);
+
+    let info = rpc
+        .get_checkpoint_info(0)
+        .await
+        .expect("checkpoint info should not error")
+        .expect("epoch 0 checkpoint should exist");
+
+    assert_eq!(info.idx, 0);
+    assert_eq!(info.l1_range.0, genesis_l1);
+    assert_eq!(info.l1_range.1, genesis_l1);
+    assert_eq!(info.l2_range.0, terminal);
+    assert_eq!(info.l2_range.1, terminal);
+    assert!(info.l1_range.0.height() <= info.l1_range.1.height());
+    match info.confirmation_status {
+        RpcCheckpointConfStatus::Finalized { l1_reference } => {
+            assert_eq!(l1_reference.l1_block, genesis_l1);
+            assert_eq!(l1_reference.txid, RBuf32::from([0u8; 32]));
+            assert_eq!(l1_reference.wtxid, RBuf32::from([0u8; 32]));
+        }
+        _ => panic!("expected finalized genesis checkpoint status"),
+    }
 }
 
 #[tokio::test]
 async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
-    let prev_terminal = L2BlockCommitment::new(80, fixed_ol_block_id(0x10));
+    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
     let observed_height = 505;
     let checkpoint_txid = fixed_buf32(0xAA);
     let checkpoint_wtxid = fixed_buf32(0xBB);
-    let first_epoch_block = make_block(85, 2, *prev_terminal.blkid());
-    let first_epoch_blkid = first_epoch_block.header().compute_blkid();
-    let mid_epoch_block = make_block(90, 2, first_epoch_blkid);
-    let mid_epoch_blkid = mid_epoch_block.header().compute_blkid();
-    let terminal_block = make_block(100, 2, mid_epoch_blkid);
-    let terminal = L2BlockCommitment::new(100, terminal_block.header().compute_blkid());
+    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
+    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
+    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
 
     let prev_summary = EpochSummary::new(
         1,
         prev_terminal,
-        L2BlockCommitment::new(60, fixed_ol_block_id(0x11)),
+        L2BlockCommitment::new(0, fixed_ol_block_id(0x11)),
         L1BlockCommitment::new(500, fixed_l1_block_id(0x30)),
         fixed_buf32(0x40),
     );
@@ -1256,7 +1359,7 @@ async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
         2,
         terminal,
         prev_terminal,
-        L1BlockCommitment::new(510, fixed_l1_block_id(0x31)),
+        L1BlockCommitment::new(504, fixed_l1_block_id(0x31)),
         fixed_buf32(0x41),
     );
 
@@ -1284,14 +1387,12 @@ async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
         .with_epoch_commitment(2, cur_commitment)
         .with_epoch_summary(prev_summary)
         .with_epoch_summary(cur_summary)
-        .with_block_and_state(&first_epoch_block, genesis_ol_state())
-        .with_block_and_state(&mid_epoch_block, genesis_ol_state())
-        .with_block_and_state(&terminal_block, genesis_ol_state())
         .with_manifest(
             AsmManifest::new(501, fixed_l1_block_id(0x61), WtxidsRoot::default(), vec![])
                 .expect("test manifest should be valid"),
         )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
+    let provider = with_blocks(provider, &epoch_blocks);
 
     let rpc = make_rpc(provider);
 
