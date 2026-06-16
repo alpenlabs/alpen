@@ -70,7 +70,10 @@ use reth_cli_util::sigsegv_handler;
 use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_provider::CanonStateSubscriptions;
-use strata_bridge_params::{BridgeParams, DEFAULT_DENOMINATION_SATS, DEFAULT_MAX_WITHDRAWAL_SATS};
+use strata_bridge_params::{
+    BridgeParams, DEFAULT_DENOMINATION_SATS, DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN,
+    DEFAULT_MAX_WITHDRAWAL_SATS,
+};
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
     broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
@@ -196,6 +199,12 @@ fn main() {
                 Some(v) => Some(v),
                 None => Some(DEFAULT_MAX_WITHDRAWAL_SATS),
             };
+            let bridge_params = BridgeParams::new_with_descriptor_limit(
+                ext.bridge_denomination,
+                resolved_max_withdrawal,
+                ext.max_withdrawal_descriptor_len,
+            )
+            .expect("invalid withdrawal params");
 
             let datadir = builder.config().datadir().data_dir().to_path_buf();
 
@@ -379,10 +388,7 @@ fn main() {
             .await
             .map_err(|e| eyre::eyre!("failed to start ol tracker service: {e}"))?;
 
-            let evm_factory = AlpenEvmFactory::from_bridge_params(
-                &BridgeParams::new(ext.bridge_denomination, resolved_max_withdrawal)
-                    .expect("invalid withdrawal params"),
-            );
+            let evm_factory = AlpenEvmFactory::from_bridge_params(&bridge_params);
             let node_args = AlpenNodeArgs {
                 sequencer_http: ext.sequencer_http.clone(),
                 evm_factory,
@@ -693,10 +699,6 @@ fn main() {
                     use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
                     ext.custom_chain.genesis().config.clone().into_rsp()
                 };
-
-                let bridge_params =
-                    BridgeParams::new(ext.bridge_denomination, resolved_max_withdrawal)
-                        .expect("invalid withdrawal params");
 
                 let chunk_builder = ProverBuilder::new(ChunkSpec::new(
                     chunk_storage_dyn.clone(),
@@ -1084,6 +1086,10 @@ pub struct AdditionalConfig {
     #[arg(long, default_value_t = DEFAULT_DENOMINATION_SATS)]
     pub bridge_denomination: u64,
 
+    /// Maximum withdrawal BOSD descriptor length in bytes, including the type tag.
+    #[arg(long, default_value_t = DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN)]
+    pub max_withdrawal_descriptor_len: u32,
+
     /// Maximum withdrawal amount in satoshis.
     ///
     /// When omitted, defaults to 1_000_000_000 (10 BTC) at runtime.
@@ -1213,6 +1219,43 @@ fn validate_ee_params_genesis(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod additional_config_tests {
+    use super::*;
+
+    const SEQUENCER_PUBKEY: &str =
+        "0000000000000000000000000000000000000000000000000000000000000000";
+
+    fn parse_additional_config(args: &[&str]) -> AdditionalConfig {
+        let mut argv = vec![
+            "alpen-client",
+            "--ee-params",
+            "/tmp/ee-params.json",
+            "--sequencer-pubkey",
+            SEQUENCER_PUBKEY,
+        ];
+        argv.extend_from_slice(args);
+        <AdditionalConfig as clap::Parser>::parse_from(argv)
+    }
+
+    #[test]
+    fn max_withdrawal_descriptor_len_defaults_to_policy_limit() {
+        let config = parse_additional_config(&[]);
+
+        assert_eq!(
+            config.max_withdrawal_descriptor_len,
+            DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN
+        );
+    }
+
+    #[test]
+    fn max_withdrawal_descriptor_len_can_be_configured() {
+        let config = parse_additional_config(&["--max-withdrawal-descriptor-len", "100"]);
+
+        assert_eq!(config.max_withdrawal_descriptor_len, 100);
+    }
 }
 
 /// Run node with logging
