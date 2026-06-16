@@ -216,7 +216,8 @@ pub(crate) fn derive_state<C: CsmWorkerContext>(
     let finalized_epoch = new_finalized_ckpt.as_ref().map(EpochCommitment::from);
     let new_clstate = ClientState::new(new_finalized_ckpt, confirmed_ckpt);
 
-    // Keep only non-finalized candidates for incremental advancement.
+    // Drop candidates that are already finalized, leaving only newer observations
+    // for incremental finality advancement.
     while observed_checkpoints
         .front()
         .is_some_and(|ckpt| finalized_epoch.is_some_and(|fin| ckpt.tip.epoch <= fin.epoch()))

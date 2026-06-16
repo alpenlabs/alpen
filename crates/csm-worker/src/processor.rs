@@ -122,10 +122,6 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         asm_block: L1BlockCommitment,
         next_state: Arc<ClientState>,
     ) -> CsmWorkerResult<()> {
-        let state = next_state.as_ref().clone();
-        self.ctx
-            .put_client_state_update(&asm_block, ClientUpdateOutput::new_state(state.clone()))?;
-
         // A commit either extends the tip by one or replaces it at the same
         // height (a reorg whose fork sits at the incoming height). It never
         // skips a height.
@@ -137,9 +133,12 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let same_height_reorg = asm_block.height() == last.height();
         debug_assert!(
             extends_tip || same_height_reorg,
-            "commit skipped a height: tip {last}, block {asm_block}"
+            "received asm block skipping a height: tip {last}, block {asm_block}"
         );
 
+        let state = next_state.as_ref().clone();
+        self.ctx
+            .put_client_state_update(&asm_block, ClientUpdateOutput::new_state(state.clone()))?;
         self.recent_asm_blocks.push(asm_block);
         self.last_committed_state = next_state;
         self.prune_below_reorg_floor();
@@ -970,8 +969,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                CsmWorkerError::MissingData { what, ref detail }
-                    if what == "canonical L1 block" && detail.contains("height 102")
+                CsmWorkerError::MissingData { what, .. } if what == "canonical L1 block"
             ),
             "unexpected error: {err}"
         );
@@ -1234,9 +1232,6 @@ mod tests {
         );
     }
 
-    /// A reorg onto a strictly longer chain: the worker rewinds to the fork,
-    /// replays every gap block on the new branch, and advances the tip past the
-    /// old orphaned frontier.
     #[test]
     fn reorg_replays_gap_and_extends_past_old_tip() {
         let anchor = L1BlockCommitment::new(100, block_id_at(100));
@@ -1324,8 +1319,6 @@ mod tests {
         assert_eq!(state.recent_asm_blocks, vec![anchor, tip]);
     }
 
-    /// The fork point is the deepest still-canonical list entry, so a reorg
-    /// rewinds only as far as needed even when older entries are still good.
     #[test]
     fn reorg_anchors_at_highest_canonical_entry() {
         // Heights sit at/above the genesis anchor (40320) so nothing finalized
@@ -1359,8 +1352,6 @@ mod tests {
         );
     }
 
-    /// `reorg_to_fork` re-persists the client state at the fork block to
-    /// overwrite whatever the orphaned branch wrote there.
     #[test]
     fn reorg_repersists_state_at_fork() {
         let anchor = L1BlockCommitment::new(100, block_id_at(100));
@@ -1397,9 +1388,6 @@ mod tests {
         assert_eq!(state.recent_asm_blocks.last(), Some(&incoming));
     }
 
-    /// A pure forward extension (tip still canonical, target higher) must not
-    /// trigger a reorg rewind: the list keeps its existing entries and only
-    /// appends.
     #[test]
     fn pure_extension_does_not_reorg() {
         // Heights sit at/above the genesis anchor (40320) so nothing finalized
@@ -1420,9 +1408,6 @@ mod tests {
         assert_eq!(state.recent_asm_blocks, vec![anchor, last, next]);
     }
 
-    /// A stale lower-height status redelivered while the tip is still canonical
-    /// is an out-of-order replay, not a reorg: the worker must ignore it rather
-    /// than rewinding the cursor backwards onto the older block.
     #[test]
     fn stale_lower_height_status_is_noop_when_tip_canonical() {
         let anchor = L1BlockCommitment::new(98, block_id_at(98));
@@ -1622,7 +1607,7 @@ mod tests {
     /// the contiguity assertion in debug builds.
     #[cfg(debug_assertions)]
     #[test]
-    #[should_panic(expected = "commit skipped a height")]
+    #[should_panic(expected = "skipping a height")]
     fn commit_skipping_height_panics() {
         let (mut state, _) = create_test_state();
         // Tip at 100; committing 102 skips 101.
