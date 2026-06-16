@@ -99,7 +99,6 @@ reth-cli-commands.workspace = true
 reth-cli-runner.workspace = true
 reth-cli-util.workspace = true
 reth-db.workspace = true
-reth-evm.workspace = true
 reth-network.workspace = true
 reth-network-api.workspace = true
 reth-node-builder.workspace = true

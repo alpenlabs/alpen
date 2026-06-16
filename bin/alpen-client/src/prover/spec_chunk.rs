@@ -25,9 +25,8 @@ use strata_ee_chain_types::{
 use strata_ee_chunk_runtime::{PrivateInput, RawBlockData, RawChunkData};
 use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader};
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
+use alpen_reth_node::BlockWitnessRecord;
 use strata_proofimpl_alpen_chunk::{EeChunkProgram, EeChunkProofInput};
-
-use crate::block_witness::BlockWitnessRecord;
 
 /// Chunk-id-shaped task identifier for paas.
 ///

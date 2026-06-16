@@ -1,7 +1,5 @@
 //! Reth node for the Alpen codebase.
 
-#[cfg(feature = "sequencer")]
-mod block_witness;
 mod dummy_ol_client;
 #[cfg(feature = "sequencer")]
 mod gas_data_provider;
@@ -39,7 +37,6 @@ use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcServer};
 #[cfg(feature = "sequencer")]
 use alpen_ee_sequencer::{
     block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
-    BlockWitnessProducer,
 };
 use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
 use alpen_reth_evm::evm::AlpenEvmFactory;
@@ -421,11 +418,12 @@ fn main() {
                 info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
 
                 // Per-block accessed-state capture. The CHUNK proof's witness is
-                // now produced inline in block production (see `block_witness` /
-                // `RethBlockWitnessProducer`); this exex remains only to feed the
-                // ACCOUNT proof's batch-range witness (`RangeWitnessExtractor`
-                // reads `AccessedStateStore`). Retiring it is the separate acct
-                // migration tracked in experimental/evgeniy/ee-proper-witness.md.
+                // now produced inline during payload build (see the EE node's
+                // `try_build_payload` / `AlpenRethPayloadEngine`); this exex
+                // remains only to feed the ACCOUNT proof's batch-range witness
+                // (`RangeWitnessExtractor` reads `AccessedStateStore`). Retiring
+                // it is the separate acct migration tracked in
+                // experimental/evgeniy/ee-proper-witness.md.
                 node_builder = node_builder.install_exex("accessed_state", {
                     let accessed_state_store = storage.clone();
                     |ctx| async {
@@ -513,6 +511,7 @@ fn main() {
                     node.payload_builder_handle.clone(),
                     node.beacon_engine_handle.clone(),
                     ext.beneficiary_address,
+                    storage.clone(),
                 ));
 
                 let exec_chain_handle = services::exec_chain::start_exec_chain_service(
@@ -538,8 +537,8 @@ fn main() {
                     FixedBlockCountSealing::new(ext.batch_sealing_block_count);
                 let block_data_provider = Arc::new(BlockCountDataProvider);
 
-                // Per-block proof witnesses are produced inline in the
-                // block-production path (`RethBlockWitnessProducer`), and the
+                // Per-block proof witnesses are captured inline during payload
+                // build and persisted by `AlpenRethPayloadEngine`, and the
                 // chunk prover's `ChunkSpec::fetch_input` assembles a chunk
                 // proof input from those per-block records. There is no
                 // chunk-seal extraction step and no chunk-spanning multiproof.
@@ -829,15 +828,12 @@ fn main() {
 
                 node.task_executor
                     .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
-                // Inline per-block proof-witness producer. Block production
-                // blocks on this (see `block_builder_task`), so every block's
-                // depth-0 witness is captured while the block is at tip.
-                let witness_producer: Arc<dyn BlockWitnessProducer> =
-                    Arc::new(block_witness::RethBlockWitnessProducer::new(
-                        node.provider.clone(),
-                        node.evm_config.clone(),
-                        storage.clone(),
-                    ));
+                // Per-block proof witnesses are captured inline during payload
+                // build (in the EE node's `try_build_payload`) and persisted by
+                // the payload engine (`AlpenRethPayloadEngine`) before the
+                // payload is returned, so the block builder runs no separate
+                // witness step. The chunk prover's `ChunkSpec::fetch_input`
+                // assembles a chunk proof input from those per-block records.
                 node.task_executor.spawn_critical(
                     "block_assembly",
                     block_builder_task(
@@ -846,7 +842,6 @@ fn main() {
                         ol_chain_tracker,
                         payload_engine,
                         storage.clone(),
-                        witness_producer,
                     ),
                 );
 

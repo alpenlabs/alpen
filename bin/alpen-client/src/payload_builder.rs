@@ -1,12 +1,16 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use alloy_eips::eip4895::Withdrawal;
 use alloy_primitives::{Address, B256};
 use alloy_rpc_types_engine::{ForkchoiceState, PayloadAttributes};
 use alpen_ee_common::{
-    sats_to_gwei, ExecutionEngine, ExecutionEngineError, PayloadBuildAttributes,
-    PayloadBuilderEngine,
+    sats_to_gwei, BlockWitnessStore, EnginePayload, ExecutionEngine, ExecutionEngineError,
+    PayloadBuildAttributes, PayloadBuilderEngine,
 };
+use strata_acct_types::Hash;
 use alpen_ee_engine::AlpenRethExecEngine;
 use alpen_reth_node::{
     AlpenBuiltPayload, AlpenEngineTypes, AlpenPayloadAttributes, AlpenPayloadBuilderAttributes,
@@ -55,11 +59,22 @@ async fn sleep_before_missing_parent_retry(
     sleep(Duration::from_millis(MISSING_PARENT_RETRY_DELAY_MS)).await;
 }
 
-#[derive(Debug)]
 pub(crate) struct AlpenRethPayloadEngine {
     payload_builder_handle: PayloadBuilderHandle<AlpenEngineTypes>,
     exec_engine: AlpenRethExecEngine,
     beneficiary_address: Address,
+    /// Sink for the depth-0 per-block proof witness captured inline during
+    /// payload build. The witness rides back on the built payload; this engine
+    /// persists it before returning, so a block is never produced without it.
+    block_witness_store: Arc<dyn BlockWitnessStore>,
+}
+
+impl std::fmt::Debug for AlpenRethPayloadEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlpenRethPayloadEngine")
+            .field("beneficiary_address", &self.beneficiary_address)
+            .finish_non_exhaustive()
+    }
 }
 
 impl AlpenRethPayloadEngine {
@@ -67,11 +82,13 @@ impl AlpenRethPayloadEngine {
         payload_builder_handle: PayloadBuilderHandle<AlpenEngineTypes>,
         beacon_engine_handle: ConsensusEngineHandle<AlpenEngineTypes>,
         beneficiary_address: Address,
+        block_witness_store: Arc<dyn BlockWitnessStore>,
     ) -> Self {
         Self {
             payload_builder_handle,
             exec_engine: AlpenRethExecEngine::new(beacon_engine_handle),
             beneficiary_address,
+            block_witness_store,
         }
     }
 
@@ -125,7 +142,7 @@ impl AlpenRethPayloadEngine {
         let build_started = Instant::now();
         debug!("requesting payload builder job");
         let mut missing_parent_retries = 0;
-        let payload = loop {
+        let mut payload = loop {
             let payload_id = match self
                 .payload_builder_handle
                 .send_new_payload(payload_builder_attrs.clone())
@@ -233,6 +250,21 @@ impl AlpenRethPayloadEngine {
                 }
             }
         };
+
+        // Persist the depth-0 per-block proof witness captured inline during
+        // build and carried back on the payload. Block production blocks on
+        // this (the builder loop retries on error), so a block is never
+        // advanced without its witness, and the witness's multiproofs are
+        // always shallow (captured while the block was at tip).
+        let block_hash: Hash = payload.blockhash();
+        let witness = payload
+            .take_block_witness()
+            .ok_or_else(|| eyre!("payload {block_hash:?} built without inline witness"))?;
+        self.block_witness_store
+            .put_block_witness(block_hash, witness)
+            .await
+            .map_err(|e| eyre!("persist block witness {block_hash:?}: {e}"))?;
+        info!(?block_hash, "persisted block witness");
 
         Ok(payload)
     }

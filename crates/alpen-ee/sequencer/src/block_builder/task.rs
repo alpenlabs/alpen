@@ -15,10 +15,7 @@ use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use thiserror::Error;
 use tracing::{debug, error, warn};
 
-use crate::{
-    block_builder::{BlockBuilderConfig, BlockWitnessProducer},
-    ol_chain_tracker::OLChainTrackerHandle,
-};
+use crate::{block_builder::BlockBuilderConfig, ol_chain_tracker::OLChainTrackerHandle};
 
 /// Error type for block builder that distinguishes retriable from real errors.
 #[derive(Debug, Error)]
@@ -157,7 +154,6 @@ pub async fn block_builder_task<
     ol_chain_handle: OLChainTrackerHandle,
     payload_builder: Arc<TPayloadBuilder>,
     storage: Arc<TStorage>,
-    witness_producer: Arc<dyn BlockWitnessProducer>,
 ) {
     let last_local_block = exec_chain_handle
         .get_best_block()
@@ -178,7 +174,6 @@ pub async fn block_builder_task<
             &ol_chain_handle,
             payload_builder.as_ref(),
             storage.as_ref(),
-            witness_producer.as_ref(),
             &clock,
         )
         .await
@@ -206,7 +201,6 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
     ol_chain_handle: &OLChainTrackerHandle,
     payload_builder: &TEngine,
     storage: &impl ExecBlockStorage,
-    witness_producer: &dyn BlockWitnessProducer,
     clock: &impl Clock,
 ) -> Result<(Hash, BlockTarget), BlockBuilderError> {
     // if we are not ready, sleep
@@ -223,7 +217,8 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
     )
     .await?;
 
-    // submit the built payload back to engine so reth knows the block
+    // submit the built payload back to engine so reth knows the block (inserts
+    // it into the engine tree as VALID, not yet canonical)
     payload_builder
         .submit_payload(
             <TEngine::TEnginePayload as EnginePayload>::from_bytes(payload.as_bytes())
@@ -232,36 +227,10 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .await
         .context("block_builder: submit payload to engine")?;
 
-    // Canonicalize the freshly built block before capturing its witness. The
-    // payload submission above only inserts the block into the engine tree as
-    // VALID; `block_by_hash` (used by witness capture) sees only canonical or
-    // pending blocks. Drive the forkchoice update here — instead of relying on
-    // the OL tracker's asynchronous FCU — so block acceptance is synchronous
-    // and self-contained, and the block is canonical at tip when we capture.
-    // Safe/finalized are left zero to retain their current values.
-    payload_builder
-        .update_consensus_state(ForkchoiceState {
-            head_block_hash: B256::from_slice(blockhash.as_ref()),
-            safe_block_hash: B256::ZERO,
-            finalized_block_hash: B256::ZERO,
-        })
-        .await
-        .context("block_builder: canonicalize block via forkchoice update")?;
-
-    // Block acceptance blocks on witness production: now that the block is
-    // canonical at tip, synchronously compute + persist its depth-0 proof
-    // witness before the block is saved/advanced. A failure fails the block —
-    // the builder loop retries — so a block is never accepted without its
-    // witness, and the witness's multiproofs are always shallow.
-    witness_producer
-        .produce_block_witness(blockhash)
-        .await
-        .context("block_builder: produce block witness")?;
-
-    // cache next block target
+    // cache next block target before the block is consumed by the save below
     let next_block_target = compute_next_block_target(&block, config);
 
-    // save block outputs
+    // save block outputs to Alpen storage (the source of truth)
     storage
         .save_exec_block(block, payload)
         .await
@@ -272,6 +241,24 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .new_block(blockhash)
         .await
         .context("block_builder: submit new exec block")?;
+
+    // Canonicalize the freshly built block LAST. The payload submission above
+    // only inserts the block into the engine tree as VALID; drive the
+    // forkchoice update here — instead of relying on the OL tracker's
+    // asynchronous FCU — so block acceptance is synchronous and self-contained,
+    // and the block is canonical at tip for the next build. Performing it after
+    // the storage save closes the partial-commit window: the engine's canonical
+    // head never advances past a block Alpen storage has not accepted, so a
+    // failure leaves the engine behind storage (safe, self-healing) rather than
+    // ahead. Safe/finalized are left zero to retain their current values.
+    payload_builder
+        .update_consensus_state(ForkchoiceState {
+            head_block_hash: B256::from_slice(blockhash.as_ref()),
+            safe_block_hash: B256::ZERO,
+            finalized_block_hash: B256::ZERO,
+        })
+        .await
+        .context("block_builder: canonicalize block via forkchoice update")?;
 
     // TODO(STR-3682): should this wait for block
 
