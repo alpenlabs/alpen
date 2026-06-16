@@ -280,6 +280,24 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
 }
 
 impl<C: WatcherServiceContext> WatcherState<C> {
+    /// Resolves the current envelope signing mode, deferring on failure.
+    ///
+    /// The signing mode is derived from dynamic ASM state, so a transient
+    /// failure (e.g. a `DbError`) or a currently non-signable predicate (e.g.
+    /// `NeverAccept`/`Sp1Groth16` after a rotation) must not be fatal: the
+    /// writer service treats a `process_input` error as terminal. Returns
+    /// `None` after logging so callers can defer and let the tick loop
+    /// re-evaluate on the next pass instead of permanently killing the writer.
+    fn resolve_signing_mode(&self) -> Option<EnvelopeSigningMode> {
+        match self.ctx.signing_mode() {
+            Ok(mode) => Some(mode),
+            Err(err) => {
+                warn!(%err, "could not resolve envelope signing mode; deferring to next tick");
+                None
+            }
+        }
+    }
+
     /// Builds envelope txs and transitions to `PendingRevealTxSign` or `Unpublished`.
     ///
     /// When an external signer is configured, signs the commit tx
@@ -292,7 +310,10 @@ impl<C: WatcherServiceContext> WatcherState<C> {
     ) -> anyhow::Result<()> {
         debug!(current_status=?payloadentry.status);
 
-        match self.ctx.signing_mode()? {
+        let Some(signing_mode) = self.resolve_signing_mode() else {
+            return Ok(());
+        };
+        match signing_mode {
             EnvelopeSigningMode::External { pubkey } => match self
                 .ctx
                 .create_envelopes(self.curr_payloadidx, &payloadentry, pubkey)
@@ -384,7 +405,10 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 return Ok(());
             };
 
-            match self.ctx.signing_mode()? {
+            let Some(signing_mode) = self.resolve_signing_mode() else {
+                return Ok(());
+            };
+            match signing_mode {
                 EnvelopeSigningMode::External { pubkey } if pubkey == envelope.envelope_pubkey => {}
                 _ => {
                     warn!("envelope signing mode changed, resetting to Unsigned");
@@ -415,7 +439,13 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 .await?;
             return Ok(());
         };
-        match self.ctx.signing_mode()? {
+        let Some(signing_mode) = self.resolve_signing_mode() else {
+            // Preserve the cached envelope so a transient failure does not force
+            // a needless rebuild + external re-sign on the next tick.
+            self.envelope_cache.insert(self.curr_payloadidx, envelope);
+            return Ok(());
+        };
+        match signing_mode {
             EnvelopeSigningMode::External { pubkey } if pubkey == envelope.envelope_pubkey => {}
             _ => {
                 warn!("envelope signing mode changed, resetting to Unsigned");
@@ -664,6 +694,7 @@ mod tests {
         stored: Mutex<HashMap<u64, BundledPayloadEntry>>,
         broadcast_handle: Arc<L1BroadcastHandle>,
         signing_mode: Mutex<EnvelopeSigningMode>,
+        signing_mode_fails: Mutex<bool>,
         create_failure: Option<MockEnvelopeFailure>,
         sign_failure: Option<MockEnvelopeFailure>,
         rpc_errors: Mutex<Vec<String>>,
@@ -682,6 +713,7 @@ mod tests {
                 stored: Mutex::new(HashMap::new()),
                 broadcast_handle: get_broadcast_handle(),
                 signing_mode: Mutex::new(signing_mode),
+                signing_mode_fails: Mutex::new(false),
                 create_failure: None,
                 sign_failure: None,
                 rpc_errors: Mutex::new(Vec::new()),
@@ -724,6 +756,10 @@ mod tests {
         fn set_signing_mode(&self, signing_mode: EnvelopeSigningMode) {
             *self.signing_mode.lock().unwrap() = signing_mode;
         }
+
+        fn set_signing_mode_failure(&self, fails: bool) {
+            *self.signing_mode_fails.lock().unwrap() = fails;
+        }
     }
 
     impl WatcherServiceContext for MockWatcherContext {
@@ -741,6 +777,9 @@ mod tests {
         }
 
         fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
+            if *self.signing_mode_fails.lock().unwrap() {
+                anyhow::bail!("mock signing mode failure");
+            }
             Ok(*self.signing_mode.lock().unwrap())
         }
 
@@ -921,6 +960,42 @@ mod tests {
             L1BundleStatus::Unsigned
         );
         assert_eq!(state.ctx.rpc_error_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_signing_mode_error_defers_then_recovers() {
+        let ctx = MockWatcherContext::new(true);
+        ctx.set_signing_mode_failure(true);
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+
+        // An unresolvable signing mode (transient DB error, or a non-signable
+        // predicate after a rotation) must defer to the next tick, not kill the
+        // writer. The service treats a `process_input` error as terminal.
+        let response = WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+        assert!(matches!(response, Response::Continue));
+        assert_eq!(
+            state.ctx.get_stored(0).unwrap().status,
+            L1BundleStatus::Unsigned
+        );
+        assert!(state.envelope_cache.is_empty());
+        // A signing-mode failure is not a Bitcoin RPC error, so none is reported.
+        assert_eq!(state.ctx.rpc_error_count(), 0);
+
+        // Once the signing mode resolves again, the tick loop makes progress.
+        state.ctx.set_signing_mode_failure(false);
+        let response = WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+        assert!(matches!(response, Response::Continue));
+        assert!(matches!(
+            state.ctx.get_stored(0).unwrap().status,
+            L1BundleStatus::PendingRevealTxSign(_)
+        ));
     }
 
     #[tokio::test]
