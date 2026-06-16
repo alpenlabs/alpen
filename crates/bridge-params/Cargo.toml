@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
+borsh.workspace = true
 serde.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true

@@ -28,8 +28,33 @@ impl ExecSegment {
     }
 }
 
-/// Public Parameters that proof asserts
-pub type EvmEeProofOutput = Vec<ExecSegment>;
+/// Public statement proven by the EVM EE STF proof.
+#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct EvmEeProofOutput {
+    /// Bridge parameters used while executing the proved blocks.
+    bridge_params: BridgeParams,
+    /// Execution updates derived from the proved blocks.
+    segments: Vec<ExecSegment>,
+}
+
+impl EvmEeProofOutput {
+    pub fn new(bridge_params: BridgeParams, segments: Vec<ExecSegment>) -> Self {
+        Self {
+            bridge_params,
+            segments,
+        }
+    }
+
+    /// Bridge parameters committed as part of the public proof statement.
+    pub fn bridge_params(&self) -> &BridgeParams {
+        &self.bridge_params
+    }
+
+    /// Execution segments committed as part of the public proof statement.
+    pub fn segments(&self) -> &[ExecSegment] {
+        &self.segments
+    }
+}
 
 /// Input to the block execution
 pub type EvmBlockStfInput = EthClientExecutorInput;

@@ -5,7 +5,7 @@ pub mod primitives;
 pub mod program;
 pub mod utils;
 
-pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
+pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput, EvmEeProofOutput};
 use rsp_client_executor::io::EthClientExecutorInput;
 use strata_bridge_params::BridgeParams;
 use utils::generate_exec_update;
@@ -36,7 +36,7 @@ pub fn process_block_transaction_outer(zkvm: &(impl ZkVmEnvBorsh + ZkVmEnvSerde)
         exec_updates.push(generate_exec_update(&output));
     }
 
-    zkvm.commit_borsh(&exec_updates);
+    zkvm.commit_borsh(&EvmEeProofOutput::new(bridge_params, exec_updates));
 }
 
 #[cfg(test)]

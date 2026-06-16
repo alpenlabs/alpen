@@ -2,6 +2,7 @@
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+use borsh::{BorshDeserialize, BorshSerialize, io};
 use serde::{Deserialize, Serialize, de::Error as DeError};
 use ssz_derive::{Decode, Encode};
 use thiserror::Error;
@@ -71,6 +72,29 @@ impl ssz::Decode for BridgeParams {
         let raw = LegacyBridgeParamsRaw::from_ssz_bytes(bytes)?;
         Self::new(raw.denomination, raw.max_withdrawal_amount)
             .map_err(|e| ssz::DecodeError::BytesInvalid(e.to_string()))
+    }
+}
+
+impl BorshSerialize for BridgeParams {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        BorshSerialize::serialize(&self.denomination, writer)?;
+        BorshSerialize::serialize(&self.max_withdrawal_amount, writer)?;
+        BorshSerialize::serialize(&self.max_withdrawal_descriptor_len, writer)
+    }
+}
+
+impl BorshDeserialize for BridgeParams {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let denomination = u64::deserialize_reader(reader)?;
+        let max_withdrawal_amount = Option::<u64>::deserialize_reader(reader)?;
+        let max_withdrawal_descriptor_len = u32::deserialize_reader(reader)?;
+
+        Self::new_with_descriptor_limit(
+            denomination,
+            max_withdrawal_amount,
+            max_withdrawal_descriptor_len,
+        )
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 }
 
