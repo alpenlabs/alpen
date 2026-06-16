@@ -26,6 +26,16 @@ retry_interval = 5_000
 [btcio.reader]
 client_poll_dur_ms = 10_000
 
+[btcio.writer]
+write_poll_dur_ms = 5_000
+fee_policy = "bitcoind"
+bitcoind_conf_target = 1
+reveal_amount = 1_000
+bundle_interval_ms = 500
+
+[btcio.broadcaster]
+poll_interval_ms = 5_000
+
 [sync]
 l1_follow_distance = 6
 max_reorg_depth = 4
