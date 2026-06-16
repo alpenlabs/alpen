@@ -35,6 +35,6 @@ mod storage;
 
 pub(crate) use batch_prover::PaasBatchProver;
 pub(crate) use hooks::{AcctReceiptHook, ChunkReceiptHook};
-pub(crate) use spec_acct::{AcctSpec, BatchTask};
+pub(crate) use spec_acct::{AcctRangeWitnessFn, AcctSpec, BatchTask};
 pub(crate) use spec_chunk::{ChunkSpec, ChunkTask};
 pub(crate) use storage::{EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager};

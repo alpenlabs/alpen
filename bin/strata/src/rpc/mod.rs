@@ -35,7 +35,9 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
-use crate::run_context::RunContext;
+#[cfg(feature = "sequencer")]
+use crate::helpers::sequencer_schnorr_key;
+use crate::run_context::{NodeRole, RunContext};
 #[cfg(feature = "sequencer")]
 use crate::sequencer::OLSeqRpcServer;
 
@@ -55,11 +57,12 @@ struct RpcDeps {
     submit_rpc_bearer_token: Option<SecretString>,
     genesis_l1_height: L1Height,
     max_headers_range: usize,
+    node_role: NodeRole,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
-    mempool_handle: Arc<MempoolHandle>,
-    #[cfg(feature = "sequencer")]
-    fcm_handle: Arc<FcmServiceHandle>,
+    /// [`None`] on checkpoint-sync nodes; `submit_transaction` returns an
+    /// unavailable error in that case.
+    mempool_handle: Option<Arc<MempoolHandle>>,
     #[cfg(feature = "sequencer")]
     seq_deps: Option<SeqRpcDeps>,
 }
@@ -74,6 +77,9 @@ struct SeqRpcDeps {
     /// Block assembly handle.
     blockasm_handle: Arc<BlockasmHandle>,
 
+    /// Fork-choice manager handle.
+    fcm_handle: Arc<FcmServiceHandle>,
+
     /// Schnorr public key for verifying reveal-tx signatures submitted via RPC.
     sequencer_pubkey: Option<Buf32>,
 }
@@ -84,11 +90,13 @@ impl SeqRpcDeps {
     fn new(
         envelope_handle: Arc<EnvelopeHandle>,
         blockasm_handle: Arc<BlockasmHandle>,
+        fcm_handle: Arc<FcmServiceHandle>,
         sequencer_pubkey: Option<Buf32>,
     ) -> Self {
         Self {
             envelope_handle,
             blockasm_handle,
+            fcm_handle,
             sequencer_pubkey,
         }
     }
@@ -101,6 +109,11 @@ impl SeqRpcDeps {
     /// Returns the block assembly handle.
     fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
         &self.blockasm_handle
+    }
+
+    /// Returns the fork-choice manager handle.
+    fn fcm_handle(&self) -> &Arc<FcmServiceHandle> {
+        &self.fcm_handle
     }
 }
 
@@ -134,10 +147,17 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     // Bundle RPC dependencies from context for the async task
     #[cfg(feature = "sequencer")]
     let seq_deps = runctx.sequencer_handles().map(|handles| {
-        let sequencer_pubkey = runctx.params().rollup.cred_rule.schnorr_key().copied();
+        // A sequencer node always runs FCM — start_sync_services produces
+        // SyncServiceHandle::Fcm on the is_sequencer branch.
+        let fcm_handle = runctx
+            .fcm_handle()
+            .expect("sequencer node must have an FCM sync handle")
+            .clone();
+        let sequencer_pubkey = sequencer_schnorr_key(runctx.asm_params());
         SeqRpcDeps::new(
             handles.envelope_handle().clone(),
             handles.blockasm_handle().clone(),
+            fcm_handle,
             sequencer_pubkey,
         )
     });
@@ -153,11 +173,10 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         submit_rpc_bearer_token: runctx.config().client.submit_rpc_bearer_token.clone(),
         genesis_l1_height: runctx.asm_params().anchor.block.height(),
         max_headers_range: runctx.config().client.max_headers_range,
+        node_role: runctx.node_role(),
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
-        mempool_handle: runctx.mempool_handle().clone(),
-        #[cfg(feature = "sequencer")]
-        fcm_handle: runctx.fcm_handle().clone(),
+        mempool_handle: runctx.mempool_handle().cloned(),
         #[cfg(feature = "sequencer")]
         seq_deps,
     };
@@ -165,7 +184,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     runctx
         .executor()
         .spawn_critical_async("main-rpc", spawn_public_rpc(deps.clone()));
-    if runctx.config().client.is_sequencer {
+    if deps.node_role.serves_sequencer_rpc() {
         runctx
             .executor()
             .spawn_critical_async("admin-rpc", spawn_admin_rpc(deps.clone()));
@@ -179,7 +198,15 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
 fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     let mut module = build_public_static_rpc_module();
 
-    // Create and register OL client RPC server
+    register_client_rpc(&mut module, deps)?;
+    if deps.node_role.serves_fullnode_rpc() {
+        register_fullnode_rpc(&mut module, deps)?;
+    }
+
+    Ok(module)
+}
+
+fn register_client_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()> {
     let client_provider = NodeRpcProvider::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
@@ -193,9 +220,10 @@ fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
         .merge(ol_module)
-        .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))?;
+        .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))
+}
 
-    // Create and register OL fullnode RPC listener
+fn register_fullnode_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()> {
     let fullnode_provider = NodeRpcProvider::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
@@ -209,9 +237,7 @@ fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_listener);
     module
         .merge(ol_fullnode_module)
-        .map_err(|e| anyhow!("Failed to merge OL fullnode RPC module: {}", e))?;
-
-    Ok(module)
+        .map_err(|e| anyhow!("Failed to merge OL fullnode RPC module: {}", e))
 }
 
 fn build_public_static_rpc_module() -> RpcModule<()> {
@@ -252,7 +278,7 @@ fn build_admin_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
             deps.status_channel.clone(),
             sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
-            deps.fcm_handle.clone(),
+            sequencer_deps.fcm_handle().clone(),
             sequencer_deps.sequencer_pubkey,
         );
         let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_listener);

@@ -6,7 +6,7 @@ use serde_json as _;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, L1Height, OLBlockId, OLTxId};
 use strata_ol_rpc_types::*;
 use strata_ol_sequencer::BlockCompletionData;
-use strata_primitives::{HexBytes, HexBytes32, HexBytes64};
+use strata_primitives::{HexBytes, HexBytes32, HexBytes64, OLBlockCommitment};
 
 /// Common OL RPC methods that are served by all kinds of nodes(DA, block executing).
 #[strata_open_rpc_macros::open_rpc(namespace = "strata", tag = "Client Node")]
@@ -29,31 +29,6 @@ pub trait OLClientRpc {
     #[method(name = "getCheckpointInfo")]
     async fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>>;
 
-    /// Get account-specific summaries for blocks in a slot range.
-    ///
-    /// Returns the account's state (balance, sequence number, inbox position) at each block
-    /// in the range `[start_slot, end_slot]`. This is useful for clients that need to track
-    /// how an account's state evolved over a series of blocks, such as snark account provers
-    /// that need to know inbox messages and state transitions.
-    ///
-    /// Results are returned in ascending slot order. Only blocks on the canonical chain
-    /// are included; the implementation walks parent references to ensure chain continuity.
-    #[method(name = "getBlocksSummaries")]
-    async fn get_blocks_summaries(
-        &self,
-        account_id: AccountId,
-        start_slot: u64,
-        end_slot: u64,
-    ) -> RpcResult<Vec<RpcAccountBlockSummary>>;
-
-    /// Get snark account state of an account at a specified block.
-    #[method(name = "getSnarkAccountState")]
-    async fn get_snark_account_state(
-        &self,
-        account_id: AccountId,
-        block_or_tag: OLBlockOrTag,
-    ) -> RpcResult<Option<RpcSnarkAccountState>>;
-
     /// Get the epoch commitment for the epoch in which an account was first created.
     ///
     /// Resolves the creation epoch and returns the corresponding
@@ -71,6 +46,56 @@ pub trait OLClientRpc {
         &self,
         l1_height: L1Height,
     ) -> RpcResult<Option<HexBytes32>>;
+
+    /// Get account-specific summaries for blocks in a slot range.
+    ///
+    /// Returns the account's state (balance, sequence number, inbox position) at each block
+    /// in the range `[start_slot, end_slot]`. This is useful for clients that need to track
+    /// how an account's state evolved over a series of blocks, such as snark account provers
+    /// that need to know inbox messages and state transitions.
+    ///
+    /// Results are returned in ascending slot order. Only blocks on the canonical chain
+    /// are included; the implementation walks parent references to ensure chain continuity.
+    #[method(name = "getBlocksSummaries")]
+    async fn get_blocks_summaries(
+        &self,
+        account_id: AccountId,
+        start_slot: u64,
+        end_slot: u64,
+    ) -> RpcResult<Vec<RpcAccountBlockSummary>>;
+
+    /// Get indexed inbox messages for a Snark account.
+    ///
+    /// The range is half-open: `[start, end)`. Returned entries are ordered by
+    /// increasing inbox index. An empty range returns an empty list.
+    #[method(name = "getSnarkAcctInboxMsgRange")]
+    async fn get_snark_acct_inbox_msg_range(
+        &self,
+        account_id: AccountId,
+        start: u64,
+        end: u64,
+    ) -> RpcResult<Vec<RpcIndexedEntry<RpcMessageEntry>>>;
+
+    /// Get Snark account state at a CSS-safe chain tag.
+    #[method(name = "getSnarkAccountStateByTag")]
+    async fn get_snark_account_state_by_tag(
+        &self,
+        account_id: AccountId,
+        tag: OLBlockTag,
+    ) -> RpcResult<Option<RpcSnarkAccountState>>;
+
+    /// Get published manifest metadata for a Snark account update.
+    ///
+    /// The consumed inbox range inside the resulting [`RpcSnarkAcctUpdateManifest`] is half-open:
+    /// `[prev_next_msg_idx, new_next_msg_idx)`.
+    /// `prev_next_msg_idx` is the first message consumed by this update, and
+    /// `new_next_msg_idx` is the first message not consumed.
+    #[method(name = "getSnarkAcctUpdateManifest")]
+    async fn get_snark_acct_update_manifest(
+        &self,
+        account_id: AccountId,
+        seq_no: u64,
+    ) -> RpcResult<RpcSnarkAcctUpdateManifest>;
 }
 
 /// OL RPC methods served by sequencer nodes for transaction submission.
@@ -122,6 +147,14 @@ pub trait OLFullNodeRpc {
     /// blocks in ascending slot order.
     #[method(name = "getRecentBlocks")]
     async fn get_recent_blocks(&self, count: u64) -> RpcResult<Vec<RpcOLBlockSummary>>;
+
+    /// Get Snark account state at an exact OL block commitment.
+    #[method(name = "getSnarkAccountStateAtBlock")]
+    async fn get_snark_account_state_at_block(
+        &self,
+        account_id: AccountId,
+        block: OLBlockCommitment,
+    ) -> RpcResult<Option<RpcSnarkAccountState>>;
 
     /// Get all transactions in the canonical OL block at the given slot.
     #[method(name = "getBlockTransactions")]

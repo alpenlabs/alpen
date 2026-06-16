@@ -13,6 +13,7 @@ pub use account::GenesisSnarkAccountData;
 use arbitrary::Arbitrary;
 pub use header::GenesisHeaderParams;
 use serde::{Deserialize, Serialize};
+pub use strata_bridge_params::BridgeParams;
 use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 
 /// Top-level OL genesis parameters.
@@ -33,6 +34,10 @@ pub struct OLParams {
     /// Last L1 block known at genesis time, treated as the initial verified L1 tip.
     #[serde(default)]
     pub last_l1_block: L1BlockCommitment,
+
+    /// Withdrawal denomination and optional cap.
+    #[serde(default)]
+    pub bridge_params: BridgeParams,
 }
 
 impl OLParams {
@@ -42,7 +47,12 @@ impl OLParams {
             header: GenesisHeaderParams::default(),
             accounts: BTreeMap::new(),
             last_l1_block,
+            ..Default::default()
         }
+    }
+
+    pub fn bridge_params(&self) -> &BridgeParams {
+        &self.bridge_params
     }
 
     /// Builds an [`EpochCommitment`] from the genesis header parameters.
@@ -94,6 +104,7 @@ mod tests {
             header: serde_json::from_str("{}").unwrap(),
             accounts,
             last_l1_block: L1BlockCommitment::default(),
+            ..Default::default()
         }
     }
 

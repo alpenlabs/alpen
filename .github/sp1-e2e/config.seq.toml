@@ -7,6 +7,9 @@ rpc_port = 8432
 admin_rpc_host = "0.0.0.0"
 admin_rpc_port = 8434
 admin_rpc_bearer_token = "dev-only-change-me"
+submit_rpc_host = "0.0.0.0"
+submit_rpc_port = 8435
+submit_rpc_bearer_token = "dev-only-submit-token"
 l2_blocks_fetch_limit = 1_000
 datadir = "/app/data"
 db_retry_count = 5
@@ -23,27 +26,13 @@ client_poll_dur_ms = 5_000
 
 [btcio.writer]
 write_poll_dur_ms = 5_000
-fee_policy = "bitcoind"
+fee_policy = "fixed"
+fixed_fee_rate = 5
 reveal_amount = 330
 bundle_interval_ms = 1_000
 
 [btcio.broadcaster]
 poll_interval_ms = 1_000
-
-[sync]
-l1_follow_distance = 6
-max_reorg_depth = 4
-client_poll_dur_ms = 2000
-client_checkpoint_interval = 10
-
-[exec.reth]
-rpc_url = "alpen-client:8551"
-secret = "/app/keys/jwt.hex"
-
-[relayer]
-refresh_interval = 10
-stale_duration = 120
-relay_misc = true
 
 [prover]
 backend = "sp1"

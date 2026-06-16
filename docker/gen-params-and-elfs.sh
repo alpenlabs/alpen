@@ -53,18 +53,18 @@ wait_for_bitcoin() {
 # Wipes and recreates OUTPUT_DIR if the genesis block hash doesn't match.
 validate_params() {
     mkdir -p "${OUTPUT_DIR}"
-    local l1_view="${OUTPUT_DIR}/genesis-l1-view.json"
+    local l1_anchor="${OUTPUT_DIR}/l1-anchor.json"
 
-    if [ ! -f "${l1_view}" ]; then
+    if [ ! -f "${l1_anchor}" ]; then
         return 0
     fi
 
     local params_height params_blkid
-    params_height=$(jq -r '.blk.height' "${l1_view}" 2>/dev/null || echo "")
-    params_blkid=$(jq -r '.blk.blkid' "${l1_view}" 2>/dev/null || echo "")
+    params_height=$(jq -r '.block.height' "${l1_anchor}" 2>/dev/null || echo "")
+    params_blkid=$(jq -r '.block.blkid' "${l1_anchor}" 2>/dev/null || echo "")
 
     if [ -z "${params_height}" ] || [ -z "${params_blkid}" ]; then
-        echo "invalid L1 view, regenerating..."
+        echo "invalid L1 anchor, regenerating..."
         rm -rf "${OUTPUT_DIR}"
         mkdir -p "${OUTPUT_DIR}"
         return 0

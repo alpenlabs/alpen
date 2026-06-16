@@ -43,9 +43,11 @@ impl L1BlockManager {
         )
     )]
     pub fn put_block_data(&self, manifest: AsmManifest) -> DbResult<()> {
-        let blockid = manifest.blkid();
-        self.manifest_cache.purge_blocking(blockid);
-        self.ops.put_block_data_blocking(manifest)
+        let blockid = *manifest.blkid();
+        self.manifest_cache.purge_blocking(&blockid);
+        self.ops.put_block_data_blocking(manifest)?;
+        self.manifest_cache.purge_blocking(&blockid);
+        Ok(())
     }
 
     /// Save an [`AsmManifest`] to database. Does not add block to tracked canonical chain.
@@ -59,9 +61,11 @@ impl L1BlockManager {
         )
     )]
     pub async fn put_block_data_async(&self, manifest: AsmManifest) -> DbResult<()> {
-        let blockid = manifest.blkid();
-        self.manifest_cache.purge_async(blockid).await;
-        self.ops.put_block_data_async(manifest).await
+        let blockid = *manifest.blkid();
+        self.manifest_cache.purge_async(&blockid).await;
+        self.ops.put_block_data_async(manifest).await?;
+        self.manifest_cache.purge_async(&blockid).await;
+        Ok(())
     }
 
     /// Append [`L1BlockId`] to tracked canonical chain at the specified height.
@@ -77,6 +81,8 @@ impl L1BlockManager {
         )
     )]
     pub fn extend_canonical_chain(&self, blockid: &L1BlockId, height: L1Height) -> DbResult<()> {
+        self.blockheight_cache.purge_blocking(&height);
+
         if let Some((tip_height, _tip_blockid)) = self.get_canonical_chain_tip()? {
             if height != tip_height + 1 {
                 error!(expected = %(tip_height + 1), got = %height, "attempted to extend canonical chain out of order");
@@ -87,7 +93,9 @@ impl L1BlockManager {
         };
 
         self.ops
-            .set_canonical_chain_entry_blocking(height, *blockid)
+            .set_canonical_chain_entry_blocking(height, *blockid)?;
+        self.blockheight_cache.purge_blocking(&height);
+        Ok(())
     }
 
     /// Append [`L1BlockId`] to tracked canonical chain at the specified height.
@@ -107,6 +115,8 @@ impl L1BlockManager {
         blockid: &L1BlockId,
         height: L1Height,
     ) -> DbResult<()> {
+        self.blockheight_cache.purge_async(&height).await;
+
         if let Some((tip_height, _tip_blockid)) = self.get_canonical_chain_tip_async().await? {
             if height != tip_height + 1 {
                 error!(expected = %(tip_height + 1), got = %height, "attempted to extend canonical chain out of order");
@@ -118,7 +128,9 @@ impl L1BlockManager {
 
         self.ops
             .set_canonical_chain_entry_async(height, *blockid)
-            .await
+            .await?;
+        self.blockheight_cache.purge_async(&height).await;
+        Ok(())
     }
 
     /// Reverts tracked canonical chain to `height`.

@@ -12,12 +12,13 @@ path = "src/main.rs"
 
 [dependencies]
 alpen-reth-primitives.workspace = true
+strata-asm-params.workspace = true
 strata-asm-proto-bridge-v1-txs.workspace = true
+strata-bridge-params.workspace = true
 strata-cli-common.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-ol-bridge-types.workspace = true
-strata-params.workspace = true
 strata-primitives.workspace = true
 
 aes-gcm-siv = "0.11.1"

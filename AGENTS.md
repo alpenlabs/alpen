@@ -126,7 +126,7 @@ The workspace default members include the main runtime and testing binaries, but
 
 Core ASM code is imported from the `alpenlabs/asm` git dependency family (`strata-asm-*`) pinned in root `Cargo.toml`. Local crates consume ASM manifests, logs, parameters, subprotocol transaction types, and the ASM worker.
 
-### OL Domain (`crates/ol/`, `crates/ol-chain-types/`, `crates/ol-chainstate-types/`)
+### OL Domain (`crates/ol/`)
 
 Orchestration Layer implementation.
 
@@ -147,13 +147,11 @@ Orchestration Layer implementation.
 | `ol/sequencer` | OL sequencing helpers and state |
 | `ol/rpc/api` | OL JSON-RPC API traits and client/server glue |
 | `ol/rpc/types` | OL RPC request and response types |
-| `ol-chain-types` | Legacy OL chain types still used by storage and compatibility paths |
-| `ol-chainstate-types` | OL chainstate type definitions |
 | `bridge-types` | Bridge operation and message types shared with OL/EE |
 | `ledger-types` | Ledger entry and account ledger types |
 | `checkpoint-types` | Checkpoint and batch types |
 
-### EE Domain (`crates/alpen-ee/`, `crates/evm-ee/`, `crates/evmexec/`, `crates/eectl/`, `crates/ee-*`, `crates/simple-ee/`)
+### EE Domain (`crates/alpen-ee/`, `crates/evm-ee/`, `crates/ee-*`, `crates/simple-ee/`)
 
 Execution Environment implementation.
 
@@ -173,8 +171,6 @@ Execution Environment implementation.
 | `alpen-ee/rpc/server` | Alpen EE RPC server implementation |
 | `alpen-ee/rpc/types` | Alpen EE RPC wire types |
 | `evm-ee` | EVM execution environment integration |
-| `evmexec` | EVM execution logic |
-| `eectl` | EE controller |
 | `ee-acct-types` | EE account types (SSZ) |
 | `ee-acct-runtime` | EE account runtime |
 | `ee-chain-types` | EE chain types (SSZ) |
@@ -299,8 +295,6 @@ Worker patterns and service infrastructure.
 | `chainexec` | Chain execution context |
 | `chaintsn` | Chain transition logic |
 | `consensus-logic` | Fork choice and sync management |
-| `sequencer` | Block production and checkpoint handling |
-| `sync` | Synchronization logic |
 
 ### Test Utilities (`crates/test-utils/`)
 

@@ -72,12 +72,18 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     // external/global ASM MMR at `genesis_l1_height + 1` (first post-genesis manifest at leaf 0).
     // If OL genesis appends the genesis manifest here, OL state's MMR gets an extra leading leaf
     // and ledger-reference proofs become permanently off-by-one against the global ASM MMR.
-    let genesis_components = BlockComponents::new_manifests(vec![]);
+    // Genesis is the epoch terminal for epoch 0 (it carries no manifests, but
+    // terminality is set explicitly via the header flag).
+    let genesis_components = BlockComponents::new_manifests(vec![]).as_terminal();
 
     // Execute genesis block through the OL STF.
     let block_context = BlockContext::new(&genesis_info, None);
-    let genesis_block =
-        execute_and_complete_block(&mut ol_state, block_context, genesis_components)?;
+    let genesis_block = execute_and_complete_block(
+        &mut ol_state,
+        block_context,
+        genesis_components,
+        *params.bridge_params(),
+    )?;
     let ol_state = ol_state.into_inner();
 
     // Create signed header (genesis uses zero signature).

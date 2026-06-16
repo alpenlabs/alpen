@@ -7,7 +7,9 @@ members = [
   "crates/alpen-ee/exec-chain",
   "crates/alpen-ee/common",
   "crates/alpen-ee/config",
-  "crates/alpen-ee/da",
+  "crates/alpen-ee/da/provider",
+  "crates/alpen-ee/da/runtime",
+  "crates/alpen-ee/da/types",
   "crates/alpen-ee/database",
   "crates/alpen-ee/engine",
   "crates/alpen-ee/genesis",
@@ -17,9 +19,6 @@ members = [
   "crates/alpen-ee/rpc/types",
   "crates/alpen-ee/sequencer",
   "crates/btcio",
-  "crates/chainexec",
-  "crates/chaintsn",
-  "crates/chain-worker",
   "crates/chain-worker-new",
   "crates/checkpoint-types",
   "crates/cli-common",
@@ -37,9 +36,7 @@ members = [
   "crates/ee-acct-types",
   "crates/ee-chain-types",
   "crates/ee-chunk-runtime",
-  "crates/eectl",
   "crates/evm-ee",
-  "crates/evmexec",
   "crates/key-derivation",
   "crates/ledger-types",
   "crates/mpt",
@@ -58,10 +55,9 @@ members = [
   "crates/ol/state-support-types",
   "crates/ol/state-types",
   "crates/ol/stf",
-  "crates/ol-chainstate-types",
   "crates/paas",
   "crates/prover-core",
-  "crates/params",
+  "crates/bridge-params",
   "crates/primitives",
   "crates/proof-impl/evm-ee-stf",
   "crates/proof-impl/alpen-chunk",
@@ -75,12 +71,8 @@ members = [
   "crates/reth/node",
   "crates/reth/rpc",
   "crates/reth/witness",
-  "crates/rpc/api",
   "crates/rpc/open-rpc",
   "crates/rpc/open-rpc-macros",
-  "crates/rpc/types",
-  "crates/rpc/utils",
-  "crates/sequencer",
   "crates/simple-ee",
   "crates/snark-acct-runtime",
   "crates/snark-acct-sys",
@@ -89,9 +81,7 @@ members = [
   "crates/status",
   "crates/storage",
   "crates/storage-common",
-  "crates/sync",
   "crates/test-utils/btcio",
-  "crates/test-utils/evm-ee",
   "crates/test-utils/l2",
   "crates/test-utils/ssz",
   "crates/test-utils/test-utils",
@@ -129,7 +119,7 @@ rust.rust_2018_idioms = { level = "deny", priority = -1 }
 rust.unreachable_pub = "warn"
 rust.unused_crate_dependencies = "deny"
 rust.unused_must_use = "deny"
-# rust.missing_docs = "warn" # TODO: we need to enable this in the near future
+# rust.missing_docs = "warn" # TODO(STR-3693): we need to enable this in the near future
 clippy.allow_attributes = "warn"
 clippy.allow_attributes_without_reason = "warn"
 clippy.absolute_paths = "warn"
@@ -140,7 +130,9 @@ alpen-chainspec = { path = "crates/reth/chainspec" }
 alpen-ee-block-assembly = { path = "crates/alpen-ee/block-assembly" }
 alpen-ee-common = { path = "crates/alpen-ee/common" }
 alpen-ee-config = { path = "crates/alpen-ee/config" }
-alpen-ee-da = { path = "crates/alpen-ee/da" }
+alpen-ee-da-provider = { path = "crates/alpen-ee/da/provider" }
+alpen-ee-da-runtime = { path = "crates/alpen-ee/da/runtime" }
+alpen-ee-da-types = { path = "crates/alpen-ee/da/types" }
 alpen-ee-database = { path = "crates/alpen-ee/database", default-features = false }
 alpen-ee-engine = { path = "crates/alpen-ee/engine" }
 alpen-ee-exec-chain = { path = "crates/alpen-ee/exec-chain" }
@@ -156,14 +148,12 @@ alpen-reth-exex = { path = "crates/reth/exex" }
 alpen-reth-node = { path = "crates/reth/node" }
 alpen-reth-primitives = { path = "crates/reth/primitives" }
 alpen-reth-rpc = { path = "crates/reth/rpc" }
-alpen-reth-statediff = { path = "crates/reth/statediff" }
+alpen-reth-statediff = { path = "crates/reth/statediff", default-features = false }
 alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
+strata-bridge-params = { path = "crates/bridge-params" }
 strata-btcio = { path = "crates/btcio" }
-strata-chain-worker = { path = "crates/chain-worker" }
 strata-chain-worker-new = { path = "crates/chain-worker-new" }
-strata-chainexec = { path = "crates/chainexec" }
-strata-chaintsn = { path = "crates/chaintsn" }
 strata-checkpoint-types = { path = "crates/checkpoint-types" }
 strata-cli-common = { path = "crates/cli-common" }
 strata-codec-utils = { path = "crates/codec-utils" }
@@ -180,18 +170,14 @@ strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
 strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-ee-chunk-runtime = { path = "crates/ee-chunk-runtime" }
-strata-eectl = { path = "crates/eectl" }
 strata-evm-ee = { path = "crates/evm-ee" }
-strata-evmexec = { path = "crates/evmexec" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-ledger-types = { path = "crates/ledger-types" }
 strata-mpt = { path = "crates/mpt" }
 strata-node-context = { path = "crates/node-context" }
 strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-bridge-types = { path = "crates/bridge-types" }
-strata-ol-chain-types = { path = "crates/ol-chain-types" }
 strata-ol-chain-types-new = { path = "crates/ol/chain-types" }
-strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
 strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
 strata-ol-da = { path = "crates/ol/da" }
 strata-ol-genesis = { path = "crates/ol/genesis" }
@@ -208,17 +194,12 @@ strata-ol-stf = { path = "crates/ol/stf" }
 strata-open-rpc = { path = "crates/rpc/open-rpc" }
 strata-open-rpc-macros = { path = "crates/rpc/open-rpc-macros" }
 strata-paas = { path = "crates/paas" }
-strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-alpen-acct = { path = "crates/proof-impl/alpen-acct" }
 strata-proofimpl-alpen-chunk = { path = "crates/proof-impl/alpen-chunk" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-prover-core = { path = "crates/prover-core" }
-strata-rpc-api = { path = "crates/rpc/api" }
-strata-rpc-types = { path = "crates/rpc/types" }
-strata-rpc-utils = { path = "crates/rpc/utils" }
-strata-sequencer = { path = "crates/sequencer" }
 strata-simple-ee = { path = "crates/simple-ee" }
 strata-snark-acct-runtime = { path = "crates/snark-acct-runtime" }
 strata-snark-acct-sys = { path = "crates/snark-acct-sys" }
@@ -227,59 +208,60 @@ strata-state = { path = "crates/state" }
 strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }
 strata-storage-common = { path = "crates/storage-common" }
-strata-sync = { path = "crates/sync" }
 strata-test-utils = { path = "crates/test-utils/test-utils" }
 strata-test-utils-btcio = { path = "crates/test-utils/btcio" }
-strata-test-utils-evm-ee = { path = "crates/test-utils/evm-ee" }
 strata-test-utils-l2 = { path = "crates/test-utils/l2" }
 strata-test-utils-ssz = { path = "crates/test-utils/ssz" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
-strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
+strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
 strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
   "derive",
-], tag = "v0.1.0-alpha-rc21" }
-strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
-strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
-strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
-strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
-strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
-strata-logging = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc22" }
-strata-metrics = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc22" }
+], tag = "v0.1.0-alpha-rc25" }
+strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
+strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
+strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
+strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
+strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
+strata-logging = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
 strata-merkle = { git = "https://github.com/alpenlabs/strata-common", features = [
   "legacy_compact",
-], tag = "v0.1.0-alpha-rc21" }
-strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
-strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
-strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
-strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc21" }
+], tag = "v0.1.0-alpha-rc25" }
+strata-merkle-node-store = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
+strata-metrics = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
+strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
+strata-predicate = { git = "https://github.com/alpenlabs/strata-common", features = [
+  "serde",
+], tag = "v0.1.0-alpha-rc25" }
+strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
+strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc25" }
 
 # asm
-strata-asm-common = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-logs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-manifest-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-params = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-admin = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-admin-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-bridge-v1 = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-bridge-v1-msgs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-bridge-v1-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-bridge-v1-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-checkpoint-msgs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-checkpoint-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-checkpoint-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-debug-v1 = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-proto-txs-test-utils = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-spec = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-spec-debug = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-stf = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-asm-worker = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-btc-verification = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-checkpoint-verification = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-test-utils-btc = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
-strata-test-utils-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.9" }
+strata-asm-common = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-logs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-manifest-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-params = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-admin = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-admin-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-bridge-v1 = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-bridge-v1-msgs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-bridge-v1-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-bridge-v1-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-checkpoint-msgs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-checkpoint-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-checkpoint-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-debug-v1 = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-proto-txs-test-utils = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-spec = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-spec-debug = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-stf = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-asm-worker = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-btc-verification = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-checkpoint-verification = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-test-utils-btc = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
+strata-test-utils-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.13" }
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
@@ -288,10 +270,10 @@ typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", features = [
   "arbitrary",
   "ssz",
-], tag = "v0.1-beta.1" }
-zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1-beta.1" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1-beta.1" }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1-beta.1" }
+], tag = "v0.1-beta.4" }
+zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1-beta.4" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1-beta.4" }
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1-beta.4" }
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
@@ -412,10 +394,13 @@ bdk_esplora = { version = "0.20.1", features = [
 bdk_wallet = "1.0.0"
 bincode = "1.3"
 bitcoin = { version = "0.32.6", features = ["serde"] }
-bitcoin-bosd = { git = "https://github.com/alpenlabs/bitcoin-bosd", version = "0.10.0", tag = "v0.10.0", features = [
+bitcoin-bosd = { git = "https://github.com/alpenlabs/bitcoin-bosd", version = "0.11.0", tag = "v0.11.0", features = [
   "ssz",
 ] }
-bitcoind-async-client = { version = "0.10.7", features = ["29_0", "raw_rpc"] }
+bitcoind-async-client = { version = "0.10.8", default-features = false, features = [
+  "30_2",
+  "raw_rpc",
+] }
 bitvec = { version = "1.0.1", features = ["serde"] }
 borsh = { version = "1.6.1", features = ["derive"] }
 bytes = "1.11.1"
@@ -423,7 +408,7 @@ cfg-if = "1.0.0"
 chrono = "0.4.44"
 ciborium = "0.2"
 clap = { version = "4.5.60", default-features = false, features = ["derive"] }
-corepc-node = { version = "0.10.0", features = ["29_0"] }
+corepc-node = { version = "0.12.0", features = ["30_2"] }
 criterion = { version = "0.8.2", features = ["html_reports"] }
 deadpool = "0.13.0"
 digest = "0.10"
@@ -491,13 +476,22 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 uuid = { version = "1.23", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+
+# Disable debug_assertions in bitreq to dodge a known concurrency race in its
+# `next_request_id >= readable_request_id` invariant, which fires under
+# concurrent bitcoind RPC traffic in coverage/debug builds. Tracked upstream at
+# https://github.com/rust-bitcoin/corepc/issues/583 (PR #584 unmerged).
+#
+# TODO(STR-3554): remove this when PR merged
+[profile.dev.package.bitreq]
+debug-assertions = false
 
 # This is needed for custom build of SP1
 [profile.release.build-override]

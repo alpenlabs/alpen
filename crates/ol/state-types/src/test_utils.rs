@@ -11,10 +11,7 @@ use strata_merkle::Mmr64B32;
 use strata_ol_params::OLParams;
 use strata_predicate::PredicateKey;
 
-use crate::ssz_generated::ssz::state::{
-    EpochalState, GlobalState, OLAccountState, OLAccountTypeState, OLSnarkAccountState, OLState,
-    ProofState, TsnlAccountEntry, TsnlLedgerAccountsTable,
-};
+use crate::ssz_generated::ssz::state::*;
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub fn create_test_genesis_state() -> OLState {
@@ -53,7 +50,7 @@ pub fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
                     cp_slot,
                     OLBlockId::from(cp_blkid),
                 ),
-                manifests_mmr: Mmr64B32 {
+                l1_block_refs_mmr: Mmr64B32 {
                     entries: 0,
                     roots: Default::default(),
                 },
@@ -136,6 +133,7 @@ pub fn ol_state_strategy() -> impl Strategy<Value = OLState> {
         .prop_map(|(epoch, global, ledger)| OLState {
             epoch,
             global,
+            intraepoch: IntraepochState::default(),
             ledger,
         })
 }

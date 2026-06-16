@@ -67,7 +67,11 @@ class AlpenClientFactory(flexitest.Factory):
         ol_submit_endpoint: str | None = None,
         ol_submit_token: str | None = None,
         da_config: EeDaConfig | None = None,
+        batch_sealing_block_count: int = 100,
         dev_track_latest_epoch: bool = False,
+        bridge_denomination: int = 100_000_000,
+        max_withdrawal_amount: int | None = 1_000_000_000,
+        beneficiary_address: str | None = None,
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -118,12 +122,13 @@ class AlpenClientFactory(flexitest.Factory):
             "--port", str(p2p_port),
             "--http",
             "--http.port", str(http_port),
-            "--http.api", "eth,net,admin,debug",
+            "--http.api", "eth,net,admin,debug,alpen",
             "--authrpc.port", str(authrpc_port),
             "--health-check-host", "127.0.0.1",
             "--health-check-port", "0",
             "--p2p-secret-key", str(p2p_secret_key_file),
             "--custom-chain", custom_chain,
+            "--batch-sealing-block-count", str(batch_sealing_block_count),
             "-vvvv",
             # Functional tests don't ship the SP1 guest ELFs, so run the
             # EE chunk + acct provers on the zkaleido NativeHost.
@@ -154,6 +159,14 @@ class AlpenClientFactory(flexitest.Factory):
             # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
             cmd.append("-d")
 
+        # Withdrawal denomination and cap (bridge params)
+        cmd.extend(["--bridge-denomination", str(bridge_denomination)])
+        if max_withdrawal_amount is not None:
+            cmd.extend(["--max-withdrawal-amount", str(max_withdrawal_amount)])
+
+        if beneficiary_address is not None:
+            cmd.extend(["--beneficiary-address", beneficiary_address])
+
         # DA pipeline configuration
         if da_config is not None:
             # fmt: off
@@ -162,9 +175,10 @@ class AlpenClientFactory(flexitest.Factory):
                 "--btc-rpc-url", da_config.btc_rpc_url,
                 "--btc-rpc-user", da_config.btc_rpc_user,
                 "--btc-rpc-password", da_config.btc_rpc_password,
+                "--btcio-fee-policy", "fixed",
+                "--btcio-fee-rate", "1.0",
                 "--l1-reorg-safe-depth", str(da_config.l1_reorg_safe_depth),
                 "--genesis-l1-height", str(da_config.genesis_l1_height),
-                "--batch-sealing-block-count", str(da_config.batch_sealing_block_count),
             ])
             # fmt: on
 
@@ -217,6 +231,8 @@ class AlpenClientFactory(flexitest.Factory):
         datadir_override: str | None = None,
         sequencer_http: str | None = None,
         ol_endpoint: str | None = None,
+        bridge_denomination: int = 100_000_000,
+        max_withdrawal_amount: int | None = 1_000_000_000,
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -266,7 +282,7 @@ class AlpenClientFactory(flexitest.Factory):
             "--port", str(p2p_port),
             "--http",
             "--http.port", str(http_port),
-            "--http.api", "eth,net,admin,debug",
+            "--http.api", "eth,net,admin,debug,alpen",
             "--authrpc.port", str(authrpc_port),
             "--health-check-host", "127.0.0.1",
             "--health-check-port", "0",
@@ -304,6 +320,11 @@ class AlpenClientFactory(flexitest.Factory):
         else:
             # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
             cmd.append("-d")
+
+        # Withdrawal denomination and cap (bridge params)
+        cmd.extend(["--bridge-denomination", str(bridge_denomination)])
+        if max_withdrawal_amount is not None:
+            cmd.extend(["--max-withdrawal-amount", str(max_withdrawal_amount)])
 
         http_url = f"http://127.0.0.1:{http_port}"
 

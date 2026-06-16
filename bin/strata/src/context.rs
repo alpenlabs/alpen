@@ -22,7 +22,6 @@ use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
-use strata_params::{Params, RollupParams, SyncParams};
 #[cfg(feature = "prover")]
 use strata_predicate::PredicateTypeId;
 use strata_primitives::{L1BlockCommitment, OLBlockCommitment};
@@ -62,12 +61,11 @@ pub(crate) fn init_node_context(
         .ok_or(InitError::MissingAsmParams)?;
     let asm_params = load_asm_params(asm_params_path)?;
 
-    // Validate params
-    let params_path = args
-        .rollup_params
-        .as_ref()
-        .ok_or(InitError::MissingRollupParams)?;
-    let params = resolve_and_validate_params(params_path, &config, &asm_params)?;
+    // When the integrated prover is enabled, validate that its backend matches the
+    // checkpoint predicate the runtime ASM will enforce.
+    #[cfg(feature = "prover")]
+    validate_integrated_prover_compatibility(&config, &asm_params)?;
+
     let blockasm_config = config
         .sequencer
         .as_ref()
@@ -85,12 +83,11 @@ pub(crate) fn init_node_context(
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
 
     // Init status channel
-    let status_channel = init_status_channel(params.rollup(), &storage)?;
+    let status_channel = init_status_channel(&asm_params, &storage)?;
 
     let nodectx = NodeContext::new(
         handle,
         config,
-        params,
         blockasm_config,
         Arc::new(asm_params),
         ol_params.into(),
@@ -137,10 +134,6 @@ fn get_config(args: Args) -> Result<Config, InitError> {
 }
 
 fn validate_config(config: Config) -> Result<Config, InitError> {
-    if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
-        return Err(InitError::MissingSyncEndpoint);
-    }
-
     if config.client.is_sequencer
         && config
             .client
@@ -196,30 +189,6 @@ fn validate_config(config: Config) -> Result<Config, InitError> {
 fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
     let config_str = fs::read_to_string(path)?;
     toml::from_str(&config_str).map_err(InitError::TomlParse)
-}
-
-pub(crate) fn resolve_and_validate_params(
-    path: &Path,
-    config: &Config,
-    asm_params: &AsmParams,
-) -> Result<Arc<Params>, InitError> {
-    let rollup_params = load_rollup_params(path)?;
-    rollup_params.check_well_formed()?;
-    #[cfg(feature = "prover")]
-    validate_integrated_prover_compatibility(config, asm_params)?;
-    #[cfg(not(feature = "prover"))]
-    let _ = asm_params;
-
-    let params = Params {
-        rollup: rollup_params,
-        run: SyncParams {
-            l1_follow_distance: config.sync.l1_follow_distance,
-            client_checkpoint_interval: config.sync.client_checkpoint_interval,
-            l2_blocks_fetch_limit: config.client.l2_blocks_fetch_limit,
-        },
-    }
-    .into();
-    Ok(params)
 }
 
 #[cfg(feature = "prover")]
@@ -301,13 +270,6 @@ fn expected_backend_for_checkpoint_predicate(
     }
 }
 
-fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
-    let json = fs::read_to_string(path)?;
-    let rollup_params =
-        serde_json::from_str::<RollupParams>(&json).map_err(|err| SerdeError::new(json, err))?;
-    Ok(rollup_params)
-}
-
 fn populate_sequencer_runtime_config(config: &mut Config, args: &Args) -> Result<(), InitError> {
     if !config.client.is_sequencer {
         return Ok(());
@@ -384,7 +346,7 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, Ini
     )
     .map_err(|e| InitError::BitcoinClientCreation(e.to_string()))?;
 
-    // TODO remove this
+    // TODO(STR-3694): remove this
     if config.network != Network::Regtest {
         warn!("network not set to regtest, ignoring");
     }
@@ -393,10 +355,10 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, Ini
 
 /// Status channel initialization
 fn init_status_channel(
-    params: &RollupParams,
+    asm_params: &AsmParams,
     storage: &NodeStorage,
 ) -> Result<Arc<StatusChannel>, InitError> {
-    let gen_l1 = params.genesis_l1_view.blk;
+    let gen_l1 = asm_params.anchor.block;
     let csman = storage.client_state();
     let (cur_block, cur_state) = csman
         .fetch_most_recent_state()
@@ -550,12 +512,7 @@ mod tests {
             submit_rpc_port = 8435
             l2_blocks_fetch_limit = 1_000
             datadir = "/path/to/data/directory"
-            sync_endpoint = "9.9.9.9:8432"
             db_retry_count = 5
-
-            [sync]
-            l1_follow_distance = 6
-            client_checkpoint_interval = 10
 
             [btcio.reader]
             client_poll_dur_ms = 200
@@ -570,9 +527,6 @@ mod tests {
             [btcio.broadcaster]
             poll_interval_ms = 1_000
 
-            [exec.reth]
-            rpc_url = "http://localhost:8551"
-            secret = "jwt.hex"
             "#,
         )
         .unwrap()

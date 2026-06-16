@@ -17,7 +17,7 @@ pub use traits::{
     prover::{BatchProver, ProofGenerationStatus},
     storage::{
         require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
-        require_latest_batch, AccessedStateStore, BatchStorage, ChunkWitnessStore,
+        require_latest_batch, AccessedStateStore, BatchStorage, ChunkStorage, ChunkWitnessStore,
         ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
     },
 };
@@ -27,26 +27,25 @@ pub use traits::{
     ol_client::{MockOLClient, MockSequencerOLClient},
     prover::MockBatchProver,
     storage::{
-        batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
-        InMemoryStorage, MockAccessedStateStore, MockBatchStorage, MockChunkWitnessStore,
-        MockExecBlockStorage, MockStorage,
+        batch_storage_test_fns, chunk_storage_test_fns, exec_block_storage_test_fns,
+        tests as storage_test_fns, InMemoryStorage, MockAccessedStateStore, MockBatchStorage,
+        MockChunkStorage, MockChunkWitnessStore, MockExecBlockStorage, MockStorage,
     },
 };
 pub use types::{
     accessed_state::{AccessedAccount, AccessedStateRecord},
-    batch::{Batch, BatchId, BatchStatus, L1DaBlockRef},
+    batch::{Batch, BatchId, BatchStatus, L1DaBlockInfo, L1DaBlockRef},
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
     chunk_witness::{ChunkWitnessExtractFn, ChunkWitnessRecord},
     consensus_heads::ConsensusHeads,
-    da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderSummary, DA_BLOB_VERSION},
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::{ExecBlockPayload, ExecBlockRecord},
     fees::{
         FeeBreakdown, FeeModelConfig, FeeModelError, FeeQuoteInputs, GasEquivalentQuote,
         L1FeeRateSource, DA_OVERHEAD_MULTIPLIER_SCALE_BPS,
     },
-    ol_account_epoch_summary::OLEpochSummary,
+    ol_account_epoch_summary::{SnarkAccountEpochSummary, SnarkAccountUpdateInfo},
     ol_chain_status::{OLChainStatus, OLFinalizedStatus},
     payload_builder::{DepositInfo, PayloadBuildAttributes},
     prover::{Proof, ProofId},
@@ -54,5 +53,5 @@ pub use types::{
 pub use utils::{
     clock::{Clock, SystemClock},
     conversions::sats_to_gwei,
-    ledger_refs::{build_ledger_refs_from_da, LedgerRefsError},
+    ledger_refs::build_ledger_refs_from_da,
 };

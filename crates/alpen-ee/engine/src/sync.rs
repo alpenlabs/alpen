@@ -11,6 +11,9 @@ use reth_provider::{
     BlockNumReader,
 };
 use strata_acct_types::Hash;
+use strata_common::retry::{
+    policies::ExponentialBackoff, retry_with_backoff_async, DEFAULT_ENGINE_CALL_MAX_RETRIES,
+};
 use tracing::{debug, info};
 
 use crate::SyncError;
@@ -43,6 +46,24 @@ impl<'a, N: NodeTypesWithDB + ProviderNodeTypes> BlockExistenceChecker for RethB
     }
 }
 
+/// Checks whether a block exists in the execution layer with bounded retry.
+///
+/// This retry is intentionally scoped to Reth provider lookups, which may fail transiently during
+/// startup. It does not retry storage reads, payload decoding, or engine submissions, which should
+/// continue to fail fast when they indicate local state corruption or invalid payloads.
+async fn block_exists_with_retry<C>(checker: &C, blockhash: Hash) -> Result<bool, SyncError>
+where
+    C: BlockExistenceChecker,
+{
+    retry_with_backoff_async(
+        "reth_provider_block_exists",
+        DEFAULT_ENGINE_CALL_MAX_RETRIES,
+        &ExponentialBackoff::default(),
+        || async { checker.block_exists(blockhash) },
+    )
+    .await
+}
+
 /// Syncs missing blocks in Alpen's execution engine using payloads stored in sequencer database.
 ///
 /// Compares the finalized chain in the sequencer's database with the blocks present in Reth. If
@@ -57,7 +78,6 @@ impl<'a, N: NodeTypesWithDB + ProviderNodeTypes> BlockExistenceChecker for RethB
 /// # Returns
 ///
 /// `Ok(())` if sync completed successfully, or an error if sync failed.
-// TODO: retry on network errors
 pub async fn sync_chainstate_to_engine<N, E, S>(
     storage: &S,
     provider: &BlockchainProvider<N>,
@@ -109,7 +129,7 @@ where
         let Some(block) = storage.get_finalized_block_at_height(height as u64).await? else {
             return Err(SyncError::MissingExecBlock(height as u64));
         };
-        checker.block_exists(block.blockhash())
+        block_exists_with_retry(checker, block.blockhash()).await
     })
     .await?
     .map(|height| height + 1) // sync from next block
@@ -259,7 +279,7 @@ where
 
     for hash in unfinalized_hashes {
         // Check if block exists in Reth
-        if checker.block_exists(hash)? {
+        if block_exists_with_retry(checker, hash).await? {
             continue; // Skip if already present
         }
 
@@ -487,6 +507,7 @@ mod tests {
             ol_block,
             timestamp_ms,
             parent_hash,
+            0,
             0,
             vec![],
         )
@@ -878,27 +899,67 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_propagates_provider_error() {
-            // Scenario: Block checker returns error
-            // Expected:       Provider error propagated
+        async fn test_retries_transient_block_existence_error() {
+            // Scenario: First block existence check fails, then succeeds
+            // Local storage:  [0, 1, 2]
+            // Reth:           [0, 1, 2]
+            // Expected:       Sync completes without submitting payloads
 
             let chain = create_exec_block_chain(&[0, 1, 2]);
             let mut mock_storage = MockExecBlockStorage::new();
             let mut mock_checker = MockBlockExistenceChecker::new();
             let mock_engine = MockExecutionEngine::new();
+            let attempts = Arc::new(Mutex::new(0usize));
 
             setup_mock_storage_with_chain(&mut mock_storage, chain);
 
-            mock_checker
-                .expect_block_exists()
-                .returning(|_| Err(SyncError::EmptyFinalizedChain));
+            let attempts_for_checker = attempts.clone();
+            mock_checker.expect_block_exists().returning(move |_| {
+                let mut attempts = attempts_for_checker.lock().unwrap();
+                *attempts += 1;
+                if *attempts == 1 {
+                    return Err(SyncError::EmptyFinalizedChain);
+                }
+                Ok(true)
+            });
 
             let result =
                 sync_chainstate_to_engine_internal(&mock_storage, &mock_checker, &mock_engine)
                     .await;
 
-            // The checker returns EmptyFinalizedChain error which gets propagated
+            assert!(result.is_ok());
+            assert_eq!(mock_engine.submitted_payloads().len(), 0);
+            assert!(*attempts.lock().unwrap() > 1);
+        }
+
+        #[tokio::test]
+        async fn test_returns_error_when_block_existence_retry_budget_exhausted() {
+            // Scenario: Block checker keeps returning an error
+            // Expected:       Final error propagated after exhausting retry budget
+
+            let chain = create_exec_block_chain(&[0, 1, 2]);
+            let mut mock_storage = MockExecBlockStorage::new();
+            let mut mock_checker = MockBlockExistenceChecker::new();
+            let mock_engine = MockExecutionEngine::new();
+            let attempts = Arc::new(Mutex::new(0usize));
+
+            setup_mock_storage_with_chain(&mut mock_storage, chain);
+
+            let attempts_for_checker = attempts.clone();
+            mock_checker.expect_block_exists().returning(move |_| {
+                *attempts_for_checker.lock().unwrap() += 1;
+                Err(SyncError::EmptyFinalizedChain)
+            });
+
+            let result =
+                sync_chainstate_to_engine_internal(&mock_storage, &mock_checker, &mock_engine)
+                    .await;
+
             assert!(matches!(result, Err(SyncError::EmptyFinalizedChain)));
+            assert_eq!(
+                *attempts.lock().unwrap(),
+                usize::from(DEFAULT_ENGINE_CALL_MAX_RETRIES) + 1
+            );
         }
 
         #[tokio::test]

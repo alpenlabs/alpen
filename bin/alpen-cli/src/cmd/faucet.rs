@@ -72,12 +72,9 @@ pub async fn faucet(
 
     let (address, claim) = match network_type {
         NetworkType::Signet => {
-            let mut l1w = SignetWallet::new(
-                &seed,
-                settings.params.network,
-                settings.signet_backend.clone(),
-            )
-            .internal_error("Failed to load signet wallet")?;
+            let mut l1w =
+                SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
+                    .internal_error("Failed to load signet wallet")?;
 
             let addr = match &args.address {
                 None => {
@@ -91,10 +88,10 @@ pub async fn faucet(
                         "Invalid signet address: '{a}'. Must be a valid Bitcoin address.",
                     ))?;
                     unchecked
-                        .require_network(settings.params.network)
+                        .require_network(settings.network)
                         .user_error(format!(
                             "Provided address '{a}' is not valid for network '{}'",
-                            settings.params.network
+                            settings.network
                         ))?
                 }
             };

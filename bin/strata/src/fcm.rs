@@ -98,6 +98,38 @@ impl FcmStorage for StrataFcmContext {
             .await
     }
 
+    async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool> {
+        self.storage
+            .ol_block()
+            .clear_block_high_watermark_async(expected)
+            .await
+    }
+
+    async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>> {
+        self.storage
+            .ol_block()
+            .get_block_high_watermark_async()
+            .await
+    }
+
+    async fn rollback_block_state_indexing(
+        &self,
+        epoch: Epoch,
+        cutoff: OLBlockCommitment,
+    ) -> DbResult<()> {
+        self.storage
+            .ol_state_indexing()
+            .rollback_to_block_async(epoch, cutoff)
+            .await
+    }
+
+    async fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
+        self.storage
+            .ol_checkpoint()
+            .del_epoch_summary_async(epoch)
+            .await
+    }
+
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,

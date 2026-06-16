@@ -1,6 +1,8 @@
 //! Account-specific interaction handling, such as messages.
 
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
+use strata_acct_types::{
+    AccountId, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount, MsgPayload,
+};
 use strata_ledger_types::*;
 use strata_msg_fmt::MsgRef;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
@@ -8,12 +10,7 @@ use strata_ol_msg_types::OLMessageExt;
 use strata_snark_acct_sys as snark_sys;
 use tracing::*;
 
-use crate::{
-    constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL},
-    context::BasicExecContext,
-    errors::ExecResult,
-    output::OutputCtx,
-};
+use crate::{context::BasicExecContext, errors::ExecResult, output::OutputCtx};
 
 /// Processes a message by delivering it to its destination, which might involve
 /// touching the ledger state.
@@ -132,16 +129,12 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
         return Ok(());
     };
 
-    // 2. Check if the withdrawal amount is a positive exact multiple of the denomination
-    let withdrawal_amt = payload.value();
-
-    // TODO(STR-2974) move to params struct
-    let withdrawal_denom: u64 = 100_000_000;
-
-    // 3. Verify the amount is a positive exact multiple of the denomination.
-    let amt_raw: u64 = withdrawal_amt.into();
-    if amt_raw == 0 || !amt_raw.is_multiple_of(withdrawal_denom) {
-        // Sweep to limbo.
+    // 2. Validate the withdrawal amount against params.
+    let amt_raw: u64 = payload.value().into();
+    let valid = context
+        .bridge_params()
+        .is_some_and(|wp| wp.validate_withdrawal_amount(amt_raw));
+    if !valid {
         warn!(%sender, %amt_raw, "limboing bad amount sent to bridge gateway acct");
         handle_misplaced_funds(state, coin)?;
         return Ok(());
@@ -152,7 +145,7 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     let dest = withdrawal_data.into_dest_desc();
     let dest_desc_len = dest.len();
     let log_data = SimpleWithdrawalIntentLogData {
-        amt: withdrawal_amt.into(),
+        amt: amt_raw,
         selected_operator,
         dest,
     };

@@ -3,12 +3,13 @@
 use strata_acct_types::MessageEntry;
 
 use crate::{
-    LedgerRefs, ProofState, UpdateOutputs,
+    LedgerRefs, ProofState, Seqno, UpdateOutputs,
     ssz_generated::ssz::proof_interface::UpdateProofPubParams,
 };
 
 impl UpdateProofPubParams {
     pub fn new(
+        seq_no: Seqno,
         cur_state: ProofState,
         new_state: ProofState,
         message_inputs: Vec<MessageEntry>,
@@ -17,6 +18,7 @@ impl UpdateProofPubParams {
         extra_data: Vec<u8>,
     ) -> Self {
         Self {
+            seq_no: *seq_no.inner(),
             cur_state,
             new_state,
             message_inputs: message_inputs
@@ -28,6 +30,10 @@ impl UpdateProofPubParams {
                 .try_into()
                 .expect("extra data must fit within SSZ max length"),
         }
+    }
+
+    pub fn seq_no(&self) -> Seqno {
+        Seqno::new(self.seq_no)
     }
 
     pub fn cur_state(&self) -> ProofState {
@@ -58,11 +64,12 @@ impl UpdateProofPubParams {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
+    use ssz::Encode as _;
     use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
-    use crate::{AccumulatorClaim, OutputMessage, OutputTransfer};
+    use crate::{AccumulatorClaim, OutputMessage, OutputTransfer, Seqno};
 
     fn proof_state_strategy() -> impl Strategy<Value = ProofState> {
         (any::<[u8; 32]>(), any::<u64>()).prop_map(|(inner_state, next_idx)| ProofState {
@@ -105,7 +112,7 @@ mod tests {
 
     fn ledger_refs_strategy() -> impl Strategy<Value = LedgerRefs> {
         prop::collection::vec(accumulator_claim_strategy(), 0..3).prop_map(|refs| LedgerRefs {
-            asm_manifest_refs: refs
+            l1_block_refs: refs
                 .try_into()
                 .expect("ledger refs must fit within SSZ max length"),
         })
@@ -140,6 +147,7 @@ mod tests {
 
     fn update_proof_pub_params_strategy() -> impl Strategy<Value = UpdateProofPubParams> {
         (
+            any::<u64>(),
             proof_state_strategy(),
             proof_state_strategy(),
             prop::collection::vec(message_entry_strategy(), 0..3),
@@ -148,8 +156,17 @@ mod tests {
             prop::collection::vec(any::<u8>(), 0..32),
         )
             .prop_map(
-                |(cur_state, new_state, message_inputs, ledger_refs, outputs, extra_data)| {
+                |(
+                    seq_no,
+                    cur_state,
+                    new_state,
+                    message_inputs,
+                    ledger_refs,
+                    outputs,
+                    extra_data,
+                )| {
                     UpdateProofPubParams {
+                        seq_no,
                         cur_state,
                         new_state,
                         message_inputs: message_inputs
@@ -166,4 +183,32 @@ mod tests {
     }
 
     ssz_proptest!(UpdateProofPubParams, update_proof_pub_params_strategy());
+
+    /// Regression test for the Zellic replay finding: two
+    /// `UpdateProofPubParams` that are otherwise identical but built for
+    /// different `seq_no` values must produce different SSZ encodings.
+    /// `compute_update_claim` (in `strata-snark-acct-sys`) hashes this SSZ
+    /// encoding into the proof claim, so this property is what prevents an
+    /// older proof from being replayed at a later `seq_no`.
+    #[test]
+    fn pub_params_encoding_binds_seq_no() {
+        let proof_state = ProofState::new([0u8; 32].into(), 0);
+        let make = |seq_no: u64| {
+            UpdateProofPubParams::new(
+                Seqno::new(seq_no),
+                proof_state.clone(),
+                proof_state.clone(),
+                Vec::new(),
+                LedgerRefs::new_empty(),
+                UpdateOutputs::new_empty(),
+                Vec::new(),
+            )
+            .as_ssz_bytes()
+        };
+        assert_ne!(
+            make(7),
+            make(8),
+            "claim must differ across seq_no to prevent proof replay"
+        );
+    }
 }

@@ -1,10 +1,12 @@
 //! Tests for inbox operations including message insertion, processing, and validation
 
 use ssz_primitives::FixedBytes;
-use strata_acct_types::{AcctError, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof};
+use strata_acct_types::{
+    AcctError, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof,
+};
 use strata_ledger_types::ISnarkAccountState;
 
-use crate::{BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
+use crate::{SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
 
 fn msg_payload_from_bytes(data: Vec<u8>) -> MsgPayload {
     MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data)

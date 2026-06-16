@@ -107,13 +107,26 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             .await
             .map_err(|e| internal_error(e.to_string()))?;
 
-        let blkid = block.header().compute_blkid();
-
-        self.storage
+        let commitment = self
+            .storage
             .ol_block()
-            .put_block_data_async(block)
+            .put_block_data_with_high_watermark_async(block)
             .await
             .map_err(db_error)?;
+        let blkid = *commitment.blkid();
+
+        if let Err(error) = self
+            .blockasm_handle
+            .record_persisted_block(template_id)
+            .await
+        {
+            warn!(
+                %blkid,
+                ?template_id,
+                error = %error,
+                "failed to mark block template completed after durable storage commit"
+            );
+        }
 
         let submitted = self
             .fcm_handle

@@ -10,18 +10,12 @@ db = [
   "dep:strata-db-types",
   "dep:strata-primitives",
   "dep:strata-state",
-  "dep:strata-ol-chain-types",
   "dep:tempfile",
 ]
 sled = ["db", "dep:strata-db-store-sled", "dep:typed-sled"]
 
 [[bench]]
 name = "l1_database"
-harness = false
-required-features = ["db"]
-
-[[bench]]
-name = "l2_database"
 harness = false
 required-features = ["db"]
 
@@ -39,7 +33,6 @@ strata-asm-manifest-types = { workspace = true, optional = true, features = [
 ] }
 strata-db-store-sled = { workspace = true, optional = true }
 strata-db-types = { workspace = true, optional = true }
-strata-ol-chain-types = { workspace = true, optional = true }
 strata-primitives = { workspace = true, optional = true }
 strata-state = { workspace = true, optional = true }
 

@@ -3,7 +3,7 @@ use strata_acct_types::Hash;
 /// Unique identifier to a proof.
 pub type ProofId = Hash;
 
-// TODO: proper proof type
+// TODO(STR-3682): proper proof type
 #[derive(Debug)]
 pub struct Proof(Vec<u8>);
 

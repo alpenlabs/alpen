@@ -16,6 +16,8 @@ use strata_identifiers::RBuf32;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use tracing::{debug, warn};
 
+use crate::errors::CsmWorkerResult;
+
 /// Identification of the L1 transaction that carries a validated checkpoint,
 /// along with its decoded payload.
 ///
@@ -124,7 +126,7 @@ fn verify_checkpoint(
     envelope: &strata_asm_proto_checkpoint_txs::EnvelopeCheckpoint,
     current_l1_height: u32,
     verified_aux_data: &VerifiedAuxData,
-) -> anyhow::Result<()> {
+) -> CsmWorkerResult<()> {
     let coverage = verify_sequencer_predicate(
         checkpoint_state.sequencer_predicate(),
         &envelope.envelope_pubkey,

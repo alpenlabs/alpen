@@ -7,7 +7,8 @@ use std::{
 
 use async_trait::async_trait;
 use strata_acct_types::{
-    AccountId, AccumulatorClaim, MessageEntry, RawMerkleProof, tree_hash::TreeHash,
+    AccountId, AccumulatorClaim, MessageEntry, RawMerkleProof,
+    tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
@@ -20,6 +21,7 @@ use strata_ol_state_support_types::IComputeStateRootWithWrites;
 use strata_ol_state_types::IStateBatchApplicable;
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
+use tracing::debug;
 
 use crate::{BlockAssemblyError, BlockAssemblyResult, MempoolProvider};
 
@@ -72,6 +74,10 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
     ) -> BlockAssemblyResult<Option<Arc<Self::State>>>;
 
     /// Fetch ASM manifests from `start_height`, returning at most `max_count` in ascending order.
+    ///
+    /// Implementations must restrict results to manifests buried deeply enough on L1 that
+    /// a reorg cannot rewrite them; shallow manifests must be excluded so an L1 reorg
+    /// cannot cascade into an OL reorg.
     async fn fetch_asm_manifests_from(
         &self,
         start_height: L1Height,
@@ -98,10 +104,10 @@ pub trait AccumulatorProofGenerator: Send + Sync + 'static {
         at_leaf_count: u64,
     ) -> BlockAssemblyResult<Vec<RawMerkleProof>>;
 
-    /// Validates claims and generates L1 header reference proofs.
-    fn generate_asm_manifest_proofs<T: IStateAccessor>(
+    /// Validates claims and generates L1 block ref proofs.
+    fn generate_l1_block_ref_proofs<T: IStateAccessor>(
         &self,
-        asm_manifest_refs: &[AccumulatorClaim],
+        l1_block_refs: &[AccumulatorClaim],
         state: &T,
     ) -> BlockAssemblyResult<LedgerRefProofs>;
 }
@@ -117,23 +123,31 @@ pub struct BlockAssemblyContext<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     state_provider: S,
+    l1_reorg_safe_depth: u32,
 }
 
 impl<M, S> Debug for BlockAssemblyContext<M, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BlockAssemblyContext")
             .field("storage", &"<NodeStorage>")
+            .field("l1_reorg_safe_depth", &self.l1_reorg_safe_depth)
             .finish_non_exhaustive()
     }
 }
 
 impl<M, S> BlockAssemblyContext<M, S> {
     /// Create a new block assembly context.
-    pub fn new(storage: Arc<NodeStorage>, mempool_provider: M, state_provider: S) -> Self {
+    pub fn new(
+        storage: Arc<NodeStorage>,
+        mempool_provider: M,
+        state_provider: S,
+        l1_reorg_safe_depth: u32,
+    ) -> Self {
         Self {
             storage,
             mempool_provider,
             state_provider,
+            l1_reorg_safe_depth,
         }
     }
 }
@@ -180,17 +194,28 @@ where
         let asm_tip_height = match self
             .storage
             .asm()
-            .fetch_most_recent_state()
+            .fetch_most_recent_state_blocking()
             .map_err(BlockAssemblyError::Db)?
         {
             Some((commitment, _)) => commitment.height(),
             None => return Ok(Vec::new()),
         };
-        let end_height = asm_tip_height.min(start_height.saturating_add(max_count - 1));
 
-        if start_height > end_height {
+        // A manifest at height `h` is buried iff it has at least `safe_depth` confirmations
+        // on L1: `asm_tip - h + 1 >= safe_depth`, i.e. `h <= asm_tip - (safe_depth - 1)`.
+        let safe_depth = self.l1_reorg_safe_depth.max(1);
+        let buried_tip = asm_tip_height.saturating_sub(safe_depth - 1);
+        debug!(
+            %asm_tip_height,
+            %buried_tip,
+            %start_height,
+            l1_reorg_safe_depth = self.l1_reorg_safe_depth,
+            "fetching asm manifests"
+        );
+        if start_height > buried_tip {
             return Ok(Vec::new());
         }
+        let end_height = buried_tip.min(start_height.saturating_add(max_count - 1));
 
         let mut manifests = Vec::new();
         for height in start_height..=end_height {
@@ -256,7 +281,9 @@ where
             .get_handle(MmrId::SnarkMsgInbox(target));
         let expected_hashes: Vec<Hash> = messages
             .iter()
-            .map(|message| <MessageEntry as TreeHash>::tree_hash_root(message).into())
+            .map(|message| {
+                <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(message).into()
+            })
             .collect();
         let merkle_proofs = mmr_handle
             .generate_proofs_for(start_idx, &expected_hashes, at_leaf_count)
@@ -330,21 +357,25 @@ where
             .collect())
     }
 
-    fn generate_asm_manifest_proofs<T: IStateAccessor>(
+    fn generate_l1_block_ref_proofs<T: IStateAccessor>(
         &self,
-        asm_manifest_refs: &[AccumulatorClaim],
+        l1_block_refs: &[AccumulatorClaim],
         state: &T,
     ) -> BlockAssemblyResult<LedgerRefProofs> {
-        if asm_manifest_refs.is_empty() {
+        if l1_block_refs.is_empty() {
             return Ok(LedgerRefProofs::new(Vec::new()));
         }
 
-        let mmr_handle = self.storage.mmr_index().as_ref().get_handle(MmrId::Asm);
-        let at_leaf_count = state.asm_manifests_mmr().num_entries();
+        let mmr_handle = self
+            .storage
+            .mmr_index()
+            .as_ref()
+            .get_handle(MmrId::L1BlockRefs);
+        let at_leaf_count = state.l1_block_refs_mmr().num_entries();
 
-        // Claims already carry MMR leaf indices (not L1 heights), so use them
-        // directly for proof generation.
-        let indices_and_hashes: Vec<_> = asm_manifest_refs
+        // The L1 block refs MMR is height-indexed, so claim indices are both raw
+        // L1 heights and MMR leaf indices.
+        let indices_and_hashes: Vec<_> = l1_block_refs
             .iter()
             .map(|claim| (claim.idx(), claim.entry_hash()))
             .collect();
@@ -353,7 +384,7 @@ where
             .generate_proofs_for_indices(&indices_and_hashes, at_leaf_count)
             .map_err(|err| match err {
                 DbError::MmrLeafHashMismatch { idx, expected, got } => {
-                    BlockAssemblyError::AsmManifestHashMismatch {
+                    BlockAssemblyError::L1BlockRefHashMismatch {
                         idx,
                         expected,
                         actual: got,
@@ -362,11 +393,11 @@ where
                 other => BlockAssemblyError::Db(other),
             })?;
 
-        let asm_manifest_proofs = merkle_proofs
+        let l1_block_ref_proofs = merkle_proofs
             .into_iter()
             .map(|merkle_proof| merkle_proof.inner.clone())
             .collect();
-        Ok(LedgerRefProofs::new(asm_manifest_proofs))
+        Ok(LedgerRefProofs::new(l1_block_ref_proofs))
     }
 }
 
@@ -386,7 +417,7 @@ mod tests {
     // =========================================================================
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_proof_gen_success() {
+    async fn test_l1_block_ref_proof_gen_success() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
@@ -401,23 +432,23 @@ mod tests {
             .expect("stored state missing");
         let claims = vec![
             fixture
-                .asm_manifest_ref(1)
+                .l1_block_ref(1)
                 .expect("claim for L1 height 1 should exist"),
         ];
 
         let ctx = create_test_context(fixture.storage().clone());
-        let result = ctx.generate_asm_manifest_proofs(
+        let result = ctx.generate_l1_block_ref_proofs(
             &claims,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
         );
 
         assert!(result.is_ok(), "Should succeed with valid claim");
         let proofs = result.unwrap();
-        assert_eq!(proofs.asm_manifest_proofs().len(), 1);
+        assert_eq!(proofs.l1_block_ref_proofs().len(), 1);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_proof_gen_multiple_claims() {
+    async fn test_l1_block_ref_proof_gen_multiple_claims() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
@@ -430,21 +461,21 @@ mod tests {
             .await
             .expect("fetch stored state")
             .expect("stored state missing");
-        let claims = fixture.asm_manifest_refs().to_vec();
+        let claims = fixture.l1_block_refs().to_vec();
 
         let ctx = create_test_context(fixture.storage().clone());
-        let result = ctx.generate_asm_manifest_proofs(
+        let result = ctx.generate_l1_block_ref_proofs(
             &claims,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
         );
 
         assert!(result.is_ok(), "Should succeed with multiple valid claims");
         let proofs = result.unwrap();
-        assert_eq!(proofs.asm_manifest_proofs().len(), 3);
+        assert_eq!(proofs.l1_block_ref_proofs().len(), 3);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_proof_gen_hash_mismatch() {
+    async fn test_l1_block_ref_proof_gen_hash_mismatch() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
@@ -458,7 +489,7 @@ mod tests {
             .expect("fetch stored state")
             .expect("stored state missing");
         let seeded_claim = fixture
-            .asm_manifest_ref(1)
+            .l1_block_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create claim with correct MMR index but wrong hash.
@@ -468,7 +499,7 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_asm_manifest_proofs(
+        let result = ctx.generate_l1_block_ref_proofs(
             &[claim],
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
         );
@@ -481,19 +512,19 @@ mod tests {
         assert!(
             matches!(
                 err,
-                BlockAssemblyError::AsmManifestHashMismatch {
+                BlockAssemblyError::L1BlockRefHashMismatch {
                     idx: 1,
                     expected,
                     actual
                 } if expected == wrong_hash && actual == expected_hash
             ),
-            "Expected AsmManifestHashMismatch, got: {:?}",
+            "Expected L1BlockRefHashMismatch, got: {:?}",
             err
         );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_proof_gen_missing_index() {
+    async fn test_l1_block_ref_proof_gen_missing_index() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
@@ -507,7 +538,7 @@ mod tests {
             .expect("fetch stored state")
             .expect("stored state missing");
         let seeded_claim = fixture
-            .asm_manifest_ref(1)
+            .l1_block_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create claim with non-existent MMR index (999 doesn't exist, MMR has 1 entry)
@@ -516,7 +547,7 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_asm_manifest_proofs(
+        let result = ctx.generate_l1_block_ref_proofs(
             &[claim],
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
         );
@@ -535,7 +566,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_claim_with_only_genesis_prefill() {
+    async fn test_l1_block_ref_claim_with_only_genesis_prefill() {
         // The MMR is height-indexed; with no real manifests seeded, the only
         // leaf present is the genesis sentinel at index 0. A claim quoting any
         // hash other than the sentinel must fail with a hash mismatch.
@@ -554,19 +585,19 @@ mod tests {
         let claim = AccumulatorClaim::new(0, test_hash(42));
         let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_asm_manifest_proofs(
+        let result = ctx.generate_l1_block_ref_proofs(
             &[claim],
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
         );
 
         assert!(matches!(
             result,
-            Err(BlockAssemblyError::AsmManifestHashMismatch { idx: 0, .. })
+            Err(BlockAssemblyError::L1BlockRefHashMismatch { idx: 0, .. })
         ));
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_proof_gen_empty_claims() {
+    async fn test_l1_block_ref_proof_gen_empty_claims() {
         let account_id = test_account_id(1);
         let fixture_builder =
             TestStorageFixtureBuilder::new().with_account(TestAccount::new(account_id, 100_000));
@@ -581,11 +612,11 @@ mod tests {
         let ctx = create_test_context(fixture.storage().clone());
 
         let result = ctx
-            .generate_asm_manifest_proofs(&[], &MemoryStateBaseLayer::new(state.as_ref().clone()));
+            .generate_l1_block_ref_proofs(&[], &MemoryStateBaseLayer::new(state.as_ref().clone()));
 
         assert!(result.is_ok(), "Should succeed with empty claims");
         let proofs = result.unwrap();
-        assert!(proofs.asm_manifest_proofs().is_empty());
+        assert!(proofs.l1_block_ref_proofs().is_empty());
     }
 
     // =========================================================================

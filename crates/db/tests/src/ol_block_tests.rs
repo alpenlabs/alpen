@@ -1,5 +1,8 @@
-use strata_db_types::traits::{BlockStatus, OLBlockDatabase};
-use strata_identifiers::{Buf32, OLBlockId};
+use strata_db_types::{
+    traits::{BlockStatus, OLBlockDatabase},
+    DbError,
+};
+use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::OLBlock;
 
 pub fn test_get_nonexistent_block(db: &impl OLBlockDatabase) {
@@ -45,6 +48,13 @@ pub fn test_get_blocks_at_empty_height(db: &impl OLBlockDatabase) {
     assert!(block_ids.is_empty());
 }
 
+pub fn test_get_empty_block_high_watermark(db: &impl OLBlockDatabase) {
+    let high_watermark = db
+        .get_block_high_watermark()
+        .expect("test: get block high-watermark");
+    assert!(high_watermark.is_none());
+}
+
 // Proptest-based tests for random block data
 pub fn proptest_put_and_get_random_block(db: &impl OLBlockDatabase, block: OLBlock) {
     let block_id = block.header().compute_blkid();
@@ -77,6 +87,260 @@ pub fn proptest_put_twice_idempotent(db: &impl OLBlockDatabase, block: OLBlock) 
         .expect("test: get blocks at height");
     assert_eq!(blocks.len(), 1);
     assert!(blocks.contains(&block_id));
+}
+
+pub fn proptest_put_block_data_does_not_advance_high_watermark(
+    db: &impl OLBlockDatabase,
+    block: OLBlock,
+) {
+    db.put_block_data(block)
+        .expect("test: put block without high-watermark");
+
+    let high_watermark = db
+        .get_block_high_watermark()
+        .expect("test: get block high-watermark");
+    assert!(high_watermark.is_none());
+}
+
+pub fn proptest_put_block_data_with_high_watermark(
+    db: &impl OLBlockDatabase,
+    mut block1: OLBlock,
+    mut block2: OLBlock,
+) {
+    let slot = 10u64;
+    block1.signed_header.header.slot = slot;
+    block1.signed_header.header.timestamp = 1;
+    block2.signed_header.header.slot = slot;
+    block2.signed_header.header.timestamp = 2;
+
+    let block1_id = block1.header().compute_blkid();
+    let block2_id = block2.header().compute_blkid();
+    let block1_commitment = OLBlockCommitment::new(slot, block1_id);
+
+    let applied = db
+        .put_block_data_with_high_watermark(block1.clone())
+        .expect("test: put block with high-watermark");
+    assert_eq!(applied, block1_commitment);
+    assert_eq!(
+        db.get_block_high_watermark()
+            .expect("test: get block high-watermark"),
+        Some(block1_commitment)
+    );
+    assert_eq!(
+        db.get_block_status(block1_id)
+            .expect("test: get block status"),
+        Some(BlockStatus::Unchecked)
+    );
+
+    let err = db
+        .put_block_data_with_high_watermark(block2.clone())
+        .expect_err("test: same-slot block should not advance high-watermark");
+    match err {
+        DbError::BlockHighWatermarkConflict { attempted, current } => {
+            assert_eq!(attempted, OLBlockCommitment::new(slot, block2_id));
+            assert_eq!(current, block1_commitment);
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    assert!(db
+        .get_block_data(block2_id)
+        .expect("test: get rejected block")
+        .is_none());
+    assert_eq!(
+        db.get_blocks_at_height(slot)
+            .expect("test: get blocks at rejected slot"),
+        vec![block1_id]
+    );
+
+    let next_slot = slot + 1;
+    block2.signed_header.header.slot = next_slot;
+    let block2_next_id = block2.header().compute_blkid();
+    let block2_next_commitment = OLBlockCommitment::new(next_slot, block2_next_id);
+
+    let applied = db
+        .put_block_data_with_high_watermark(block2)
+        .expect("test: put next-slot block with high-watermark");
+    assert_eq!(applied, block2_next_commitment);
+    assert_eq!(
+        db.get_block_high_watermark()
+            .expect("test: get advanced block high-watermark"),
+        Some(block2_next_commitment)
+    );
+}
+
+pub fn proptest_clear_block_high_watermark(
+    db: &impl OLBlockDatabase,
+    mut block1: OLBlock,
+    mut block2: OLBlock,
+) {
+    let slot = 10u64;
+    block1.signed_header.header.slot = slot;
+    block1.signed_header.header.timestamp = 1;
+    block2.signed_header.header.slot = slot;
+    block2.signed_header.header.timestamp = 2;
+
+    let block1_id = block1.header().compute_blkid();
+    let block2_id = block2.header().compute_blkid();
+    let block1_commitment = OLBlockCommitment::new(slot, block1_id);
+    let block2_commitment = OLBlockCommitment::new(slot, block2_id);
+
+    let cleared = db
+        .clear_block_high_watermark(block1_commitment)
+        .expect("test: clear empty block high-watermark");
+    assert!(!cleared);
+
+    db.put_block_data_with_high_watermark(block1.clone())
+        .expect("test: put block with high-watermark");
+
+    let cleared = db
+        .clear_block_high_watermark(block2_commitment)
+        .expect("test: clear mismatched block high-watermark");
+    assert!(!cleared);
+    assert_eq!(
+        db.get_block_high_watermark()
+            .expect("test: get block high-watermark"),
+        Some(block1_commitment)
+    );
+
+    let cleared = db
+        .clear_block_high_watermark(block1_commitment)
+        .expect("test: clear current block high-watermark");
+    assert!(cleared);
+    assert_eq!(
+        db.get_block_high_watermark()
+            .expect("test: get cleared block high-watermark"),
+        None
+    );
+    assert_eq!(
+        db.get_block_data(block1_id)
+            .expect("test: get block after high-watermark clear")
+            .map(|block| block.header().compute_blkid()),
+        Some(block1_id)
+    );
+    assert_eq!(
+        db.get_block_status(block1_id)
+            .expect("test: get block status after high-watermark clear"),
+        Some(BlockStatus::Unchecked)
+    );
+    assert_eq!(
+        db.get_blocks_at_height(slot)
+            .expect("test: get blocks at slot after high-watermark clear"),
+        vec![block1_id]
+    );
+
+    db.put_block_data_with_high_watermark(block2)
+        .expect("test: put same-slot replacement after high-watermark clear");
+    assert_eq!(
+        db.get_block_high_watermark()
+            .expect("test: get replacement block high-watermark"),
+        Some(block2_commitment)
+    );
+    assert_eq!(
+        db.get_blocks_at_height(slot)
+            .expect("test: get blocks at replacement slot")
+            .len(),
+        2
+    );
+}
+
+pub fn proptest_high_watermark_monotonic_under_mixed_puts(
+    db: &impl OLBlockDatabase,
+    ops: Vec<(u8, OLBlock)>,
+) {
+    let mut expected_high_watermark: Option<OLBlockCommitment> = None;
+
+    for (op_selector, block) in ops {
+        let use_high_watermark = op_selector % 2 == 0;
+        let slot = block.header().slot();
+        let block_id = block.header().compute_blkid();
+        let commitment = OLBlockCommitment::new(slot, block_id);
+
+        if use_high_watermark {
+            match expected_high_watermark {
+                Some(expected_current) if slot <= expected_current.slot() => {
+                    let err = db
+                        .put_block_data_with_high_watermark(block)
+                        .expect_err("test: non-advancing guarded put should fail");
+                    match err {
+                        DbError::BlockHighWatermarkConflict { attempted, current } => {
+                            assert_eq!(attempted, commitment);
+                            assert_eq!(current, expected_current);
+                        }
+                        other => panic!("unexpected error: {other:?}"),
+                    }
+                }
+                _ => {
+                    let applied = db
+                        .put_block_data_with_high_watermark(block)
+                        .expect("test: advancing guarded put should succeed");
+                    assert_eq!(applied, commitment);
+                    expected_high_watermark = Some(commitment);
+                }
+            }
+        } else {
+            db.put_block_data(block)
+                .expect("test: unguarded put should succeed");
+        }
+
+        assert_eq!(
+            db.get_block_high_watermark()
+                .expect("test: get block high-watermark"),
+            expected_high_watermark,
+            "high-watermark should equal the max successful guarded slot"
+        );
+    }
+}
+
+pub fn proptest_rollback_block_high_watermark(
+    db: &impl OLBlockDatabase,
+    mut block1: OLBlock,
+    mut block2: OLBlock,
+) {
+    block1.signed_header.header.slot = 10;
+    block2.signed_header.header.slot = 11;
+
+    let block1_commitment = db
+        .put_block_data_with_high_watermark(block1)
+        .expect("test: put target block with high-watermark");
+    let block2_commitment = db
+        .put_block_data_with_high_watermark(block2)
+        .expect("test: put later block with high-watermark");
+
+    let rolled_back = db
+        .rollback_block_high_watermark(block1_commitment)
+        .expect("test: roll back block high-watermark");
+    assert!(rolled_back);
+    assert_eq!(
+        db.get_block_high_watermark()
+            .expect("test: get rolled-back block high-watermark"),
+        Some(block1_commitment)
+    );
+
+    let unchanged = db
+        .rollback_block_high_watermark(block2_commitment)
+        .expect("test: non-rollback target above current high-watermark");
+    assert!(!unchanged);
+    assert_eq!(
+        db.get_block_high_watermark()
+            .expect("test: get unchanged block high-watermark"),
+        Some(block1_commitment)
+    );
+}
+
+pub fn proptest_rollback_block_high_watermark_missing_target(
+    db: &impl OLBlockDatabase,
+    mut block: OLBlock,
+) {
+    block.signed_header.header.slot = 10;
+    db.put_block_data_with_high_watermark(block)
+        .expect("test: put block with high-watermark");
+
+    let missing_target = OLBlockCommitment::new(9, OLBlockId::from(Buf32::from([0xeeu8; 32])));
+    let err = db
+        .rollback_block_high_watermark(missing_target)
+        .expect_err("test: missing rollback target should fail");
+    assert!(matches!(err, DbError::NonExistentEntry));
 }
 
 pub fn proptest_delete_random_block(db: &impl OLBlockDatabase, block: OLBlock) {
@@ -206,6 +470,12 @@ macro_rules! ol_block_db_tests {
             $crate::ol_block_tests::test_get_blocks_at_empty_height(&db);
         }
 
+        #[test]
+        fn test_get_empty_block_high_watermark() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_get_empty_block_high_watermark(&db);
+        }
+
         proptest::proptest! {
             #[test]
             fn proptest_put_and_get_random_block(block in ol_test_utils::ol_block_strategy()) {
@@ -217,6 +487,47 @@ macro_rules! ol_block_db_tests {
             fn proptest_put_twice_idempotent(block in ol_test_utils::ol_block_strategy()) {
                 let db = $setup_expr;
                 $crate::ol_block_tests::proptest_put_twice_idempotent(&db, block);
+            }
+
+            #[test]
+            fn proptest_put_block_data_does_not_advance_high_watermark(block in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_put_block_data_does_not_advance_high_watermark(&db, block);
+            }
+
+            #[test]
+            fn proptest_put_block_data_with_high_watermark(block1 in ol_test_utils::ol_block_strategy(), block2 in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_put_block_data_with_high_watermark(&db, block1, block2);
+            }
+
+            #[test]
+            fn proptest_clear_block_high_watermark(block1 in ol_test_utils::ol_block_strategy(), block2 in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_clear_block_high_watermark(&db, block1, block2);
+            }
+
+            #[test]
+            fn proptest_high_watermark_monotonic_under_mixed_puts(
+                ops in proptest::collection::vec((0u8..=1, ol_test_utils::ol_block_strategy()), 0..32)
+            ) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_high_watermark_monotonic_under_mixed_puts(&db, ops);
+            }
+
+            #[test]
+            fn proptest_rollback_block_high_watermark(
+                block1 in ol_test_utils::ol_block_strategy(),
+                block2 in ol_test_utils::ol_block_strategy()
+            ) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_rollback_block_high_watermark(&db, block1, block2);
+            }
+
+            #[test]
+            fn proptest_rollback_block_high_watermark_missing_target(block in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_rollback_block_high_watermark_missing_target(&db, block);
             }
 
             #[test]

@@ -1,6 +1,6 @@
 use alpen_ee_common::{
     build_ledger_refs_from_da, Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef,
-    ProofId, SequencerOLClient,
+    ProofId,
 };
 use eyre::{eyre, OptionExt, Result};
 use futures::{future::try_join_all, FutureExt};
@@ -20,7 +20,6 @@ pub(super) async fn build_update_from_batch(
     batch: &Batch,
     da_refs: &[L1DaBlockRef],
     proof_id: &ProofId,
-    ol_client: &(impl SequencerOLClient + Send + Sync),
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
 ) -> Result<SnarkAccountUpdate> {
@@ -44,9 +43,8 @@ pub(super) async fn build_update_from_batch(
         .update_seq_no()
         .ok_or_else(|| eyre!("cannot build update for genesis batch"))?;
 
-    // Ledger refs MUST be byte-identical to what the prover commits — see
-    // `build_ledger_refs_from_da` in alpen-ee-common.
-    let ledger_refs = build_ledger_refs_from_da(da_refs, ol_client).await?;
+    // Ledger refs MUST be byte-identical to what the prover commits.
+    let ledger_refs = build_ledger_refs_from_da(da_refs);
     let update_operation = build_update_operation(seq_no, ledger_refs, blocks)?;
 
     // Should we re-check that proof is valid ?
@@ -67,7 +65,7 @@ fn build_update_operation(
     let (inner_state, new_tip_blkid, new_tip_state_root, next_inbox_msg_idx) = {
         let last_block = blocks.last().ok_or_eyre("blocks cannot be empty")?;
         let inner_state: Hash =
-            TreeHash::<Sha256Hasher>::tree_hash_root(last_block.account_state())
+            TreeHash::tree_hash_root::<Sha256Hasher>(last_block.account_state())
                 .0
                 .into();
         let new_tip_blkid = last_block.package().exec_blkid();

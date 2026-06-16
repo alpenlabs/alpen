@@ -17,7 +17,7 @@ pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: Se
     let local_finalized_ol_block = *finalized_exec_block.ol_block();
 
     // chain status according to OL
-    // TODO: retry
+    // TODO(STR-3682): retry
     let ol_chain_status = ol_client.chain_status().await?;
     let remote_finalized_ol_block = ol_chain_status.finalized().to_block_commitment();
 
@@ -37,8 +37,8 @@ pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: Se
         ));
     }
 
-    // TODO: retry
-    // TODO: chunk calls by slot range
+    // TODO(STR-3682): retry
+    // TODO(STR-3682): chunk calls by slot range
     let blocks = get_inbox_messages_checked(
         ol_client,
         local_finalized_ol_block.slot(),

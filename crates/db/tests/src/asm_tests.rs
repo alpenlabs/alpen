@@ -54,7 +54,7 @@ pub fn test_put_get_aux_data(db: &impl AsmDatabase) {
     assert_eq!(retrieved, aux_data);
 }
 
-// TODO(QQ): add more tests.
+// TODO(STR-2653): add more tests.
 #[macro_export]
 macro_rules! asm_state_db_tests {
     ($setup_expr:expr) => {

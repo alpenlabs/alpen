@@ -136,6 +136,8 @@ jobs:
 
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -171,12 +173,11 @@ jobs:
           ls -la artifacts/ artifacts/elfs/sp1/
 
           # Echo VKs for cross-validation against ci-genparams workflow
-          CHECKPOINT_VK=$(./target/release/strata-datatool genparams \
-            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json | jq -r '.checkpoint_predicate')
+          CHECKPOINT_VK=$(./target/release/strata-datatool gen-checkpoint-predicate)
           echo "Checkpoint VK (ci-build): ${CHECKPOINT_VK}"
 
           ALPEN_VK=$(./target/release/strata-datatool gen-ol-params \
-            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json | jq -r '.accounts | to_entries[0].value.predicate')
+            --l1-anchor-file .github/fixtures/l1-anchor.json | jq -r '.accounts | to_entries[0].value.predicate')
           echo "Alpen VK (ci-build): ${ALPEN_VK}"
 
       - name: Upload SP1 artifacts
@@ -228,7 +229,7 @@ jobs:
 
       # Authenticate to the shared ECR account
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v4
         env:
           ROLE_ARN: ${{ secrets.SHARED_ECR_ROLE_ARN }}
         with:
@@ -237,7 +238,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@19d944daaa35f0fa1d3f7f8af1d3f2e5de25c5b7 # v2
+        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419 # v2
         with:
           mask-password: "true"
 
@@ -325,43 +326,11 @@ jobs:
           echo "Successfully pushed: ${FULL_IMAGE}"
 
   # ---------------------------------------------------------------------------
-  # Dispatch CD to deployments repo
-  # ---------------------------------------------------------------------------
-  dispatch-cd:
-    name: Dispatch CD to deployments
-    needs: [build-and-push]
-    if: always() && needs.build-and-push.result == 'success'
-    runs-on: ubuntu-latest
-    permissions: {}
-    environment: prod
-    steps:
-      - name: Trigger deployments repo
-        env:
-          GH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
-          SHORT_TAG: ${{ needs.build-and-push.outputs.short_tag }}
-          COMMIT_SHA: ${{ needs.build-and-push.outputs.commit_sha }}
-        run: |
-          jq -n \
-            --arg tag "$SHORT_TAG" \
-            --arg sha "$COMMIT_SHA" \
-            --arg ref "${GITHUB_REF_NAME}" \
-            '{
-              event_type: "new-arch-deploy",
-              client_payload: {
-                tag: $tag,
-                commit_sha: $sha,
-                ref: $ref
-              }
-            }' | gh api repos/alpenlabs/deployments/dispatches --method POST --input -
-
-          echo "Dispatched CD to deployments repo with tag=${SHORT_TAG}"
-
-  # ---------------------------------------------------------------------------
   # Summary
   # ---------------------------------------------------------------------------
   summary:
     name: Build Summary
-    needs: [build-and-push, dispatch-cd]
+    needs: [build-and-push]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
@@ -371,7 +340,6 @@ jobs:
           SHORT_TAG: ${{ needs.build-and-push.outputs.short_tag }}
           COMMIT_SHA: ${{ needs.build-and-push.outputs.commit_sha }}
           BUILD_RESULT: ${{ needs.build-and-push.result }}
-          CD_RESULT: ${{ needs.dispatch-cd.result }}
         run: |
           {
             echo "## Build Summary"
@@ -381,7 +349,6 @@ jobs:
             echo "| **Commit** | \`${COMMIT_SHA}\` |"
             echo "| **Image Tag** | \`${SHORT_TAG}\` |"
             echo "| **Ref** | \`${GITHUB_REF_NAME}\` |"
-            echo "| **CD Dispatch** | \`${CD_RESULT}\` |"
             echo ""
             echo "### Build Status"
             echo "Overall: **${BUILD_RESULT}**"

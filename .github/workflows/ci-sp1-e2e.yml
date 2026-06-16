@@ -15,6 +15,10 @@ on:
         description: "Image tag to test (default: current SHA short)"
         required: false
         type: string
+      checkout_ref:
+        description: "Repo ref to checkout (default: image commit SHA)"
+        required: false
+        type: string
 
 env:
   AWS_REGION: us-east-1
@@ -32,47 +36,59 @@ jobs:
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
       short_tag: ${{ steps.check.outputs.short_tag }}
+      commit_sha: ${{ steps.check.outputs.commit_sha }}
+      checkout_ref: ${{ steps.check.outputs.checkout_ref }}
     steps:
       - name: Check for new commits since last success
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          INPUT_CHECKOUT_REF: ${{ inputs.checkout_ref }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
+          set_output() {
+            echo "$1=$2" >> "$GITHUB_OUTPUT"
+          }
+
+          REPO="${{ github.repository }}"
+
           if [ -n "${INPUT_IMAGE_TAG}" ]; then
-            # Manual dispatch with explicit tag
+            # Manual tag: resolve the full commit SHA that produced the image.
             SHORT_TAG="${INPUT_IMAGE_TAG}"
             SHORT_TAG="${SHORT_TAG:0:7}"
-            echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
-            echo "Manual trigger with tag ${SHORT_TAG} — running"
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            BUILD_SHA=$(gh run list -R "${REPO}" \
+              --workflow ci-build.yml \
+              --status success \
+              --limit 100 \
+              --json headSha \
+              --jq ".[] | select(.headSha | startswith(\"${SHORT_TAG}\")) | .headSha" | head -n1)
+          else
+            # Scheduled/default run: use the latest successful main image build.
+            BUILD_SHA=$(gh run list -R "${REPO}" \
+              --workflow ci-build.yml \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json headSha \
+              --jq '.[0].headSha // ""')
+            SHORT_TAG="${BUILD_SHA:0:7}"
           fi
-
-          # Find the latest successful image build on main
-          REPO="${{ github.repository }}"
-          BUILD_SHA=$(gh run list -R "${REPO}" \
-            --workflow ci-build.yml \
-            --branch main \
-            --status success \
-            --limit 1 \
-            --json headSha \
-            --jq '.[0].headSha // ""')
 
           if [ -z "${BUILD_SHA}" ]; then
-            echo "::error::No successful image build found on main"
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "::error::No successful ci-build found for ${SHORT_TAG:-main}"
+            set_output should_run false
             exit 0
           fi
 
-          SHORT_TAG="${BUILD_SHA:0:7}"
-          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
-          echo "Latest image build: ${SHORT_TAG}"
+          set_output short_tag "${SHORT_TAG}"
+          set_output commit_sha "${BUILD_SHA}"
+          set_output checkout_ref "${INPUT_CHECKOUT_REF:-${BUILD_SHA}}"
+          echo "Selected image build: ${SHORT_TAG} (${BUILD_SHA})"
 
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
-            echo "Manual trigger — running with latest build ${SHORT_TAG}"
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Manual trigger — running"
+            set_output should_run true
             exit 0
           fi
 
@@ -87,10 +103,10 @@ jobs:
 
           if [ "${LAST_SUCCESS}" = "${BUILD_SHA}" ]; then
             echo "Already tested build ${SHORT_TAG} — skipping"
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            set_output should_run false
           else
             echo "New build ${SHORT_TAG} not yet tested — running"
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            set_output should_run true
           fi
 
   sp1-e2e:
@@ -107,10 +123,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
+          ref: ${{ needs.check-new-commits.outputs.checkout_ref }}
           persist-credentials: false
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v4
         env:
           ROLE_ARN: ${{ secrets.SHARED_ECR_ROLE_ARN }}
         with:
@@ -119,7 +136,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@19d944daaa35f0fa1d3f7f8af1d3f2e5de25c5b7 # v2
+        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419 # v2
         with:
           mask-password: "true"
 
@@ -171,12 +188,32 @@ jobs:
         if: always()
         run: cat .github/sp1-e2e/e2e-env.txt 2>/dev/null || echo "No env collected"
 
+      - name: WARN/ERROR summary
+        if: always()
+        run: |
+          SUMMARY_FILE=".github/sp1-e2e/e2e-warn-error-summary.txt"
+          if [ ! -s "${SUMMARY_FILE}" ]; then
+            echo "No WARN/ERROR summary collected"
+            exit 0
+          fi
+
+          cat "${SUMMARY_FILE}"
+          {
+            echo "## WARN/ERROR log summary"
+            echo
+            echo '```text'
+            head -300 "${SUMMARY_FILE}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sp1-e2e-logs
-          path: .github/sp1-e2e/e2e-logs.txt
+          path: |
+            .github/sp1-e2e/e2e-logs.txt
+            .github/sp1-e2e/e2e-warn-error-summary.txt
           retention-days: 7
 
       - name: Notify Slack on failure
@@ -190,8 +227,24 @@ jobs:
             echo "SLACK_WEBHOOK_URL not set — skipping notification"
             exit 0
           fi
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq jq > /dev/null
+          fi
+
+          REASON_FILE=".github/sp1-e2e/e2e-failure-reason.txt"
+          if [ -s "${REASON_FILE}" ]; then
+            FAILURE_REASON="$(cat "${REASON_FILE}")"
+          else
+            FAILURE_REASON="Workflow failed before SP1 E2E produced a failure reason. Check the failed job step."
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg image_tag "${IMAGE_TAG}" \
+            --arg run_url "${RUN_URL}" \
+            --arg reason "${FAILURE_REASON}" \
+            '{text: "🚨 *SP1 E2E Test Failed* — commit `\($image_tag)`\n<\($run_url)|View run>\nReason: \($reason)"}')
+
           curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
             -H 'Content-Type: application/json' \
-            -d "{
-              \"text\": \"🚨 *SP1 E2E Test Failed* — commit \`${IMAGE_TAG}\`\n<${RUN_URL}|View run>\nZK proof regression detected. Investigate immediately.\"
-            }"
+            -d "${PAYLOAD}"

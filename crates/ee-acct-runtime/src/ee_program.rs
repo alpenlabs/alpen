@@ -60,13 +60,9 @@ impl<E: ExecutionEnvironment> SnarkAccountProgram for EeSnarkAccountProgram<E> {
         state: &mut Self::State,
         extra_data: &Self::ExtraData,
     ) -> ProgramResult<(), Self::Error> {
-        // Update final execution head block.
+        // Apply the claimed final execution metadata. Verified updates check
+        // this against the chunk transition chain in `finalize_verification`.
         state.set_last_exec_blkid(*extra_data.new_tip_blkid());
-        // TODO(STR-1369): bind this root to the verified chunk output before
-        // treating it as a hard EE account commitment. `EeVerificationState`
-        // currently verifies only the tip block id; once `ChunkTransition`
-        // carries parent/tip state roots, track the verified root and reject
-        // mismatched `UpdateExtraData.new_tip_state_root`.
         state.set_last_exec_state_root(*extra_data.new_tip_state_root());
 
         Ok(())
@@ -102,7 +98,7 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
             vinput.ee(),
             vinput.chunk_predicate_key(),
             state,
-            ulinfo.outputs().clone(), // TODO ugh, avoid this clone
+            ulinfo.outputs().clone(), // TODO(STR-3685): ugh, avoid this clone
             vinput.input_chunks(),
             vinput.raw_partial_pre_state(),
         ))
@@ -137,6 +133,9 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
         if *extra_data.new_tip_blkid() != vstate.cur_verified_exec_blkid() {
             return Err(ProgramError::InvalidExtraData);
         }
+        if *extra_data.new_tip_state_root() != vstate.cur_verified_exec_state_root() {
+            return Err(ProgramError::InvalidExtraData);
+        }
 
         // Make sure the state matches what we verified.
         //
@@ -144,6 +143,9 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
         // `pre_finalize_state`, but it doesn't hurt to have an extra sanity
         // check.
         if state.last_exec_blkid() != vstate.cur_verified_exec_blkid() {
+            return Err(ProgramError::InvalidExtraData);
+        }
+        if state.last_exec_state_root() != vstate.cur_verified_exec_state_root() {
             return Err(ProgramError::InvalidExtraData);
         }
 
@@ -186,12 +188,12 @@ pub(crate) fn apply_decoded_message(
         }
 
         DecodedEeMessageData::SubjTransfer(_data) => {
-            // TODO handle subject transfers
+            // TODO(STR-3685): handle subject transfers
         }
 
         DecodedEeMessageData::Commit(_data) => {
             // Just ignore this one for now because we're not handling it.
-            // TODO support this
+            // TODO(STR-3685): support this
         }
     }
 

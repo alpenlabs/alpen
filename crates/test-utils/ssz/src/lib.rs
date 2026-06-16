@@ -68,8 +68,8 @@ macro_rules! ssz_proptest {
             #[test]
             fn tree_hash_deterministic(val in $strategy) {
                 use $crate::tree_hash::{TreeHash, Sha256Hasher};
-                let hash1 = <$type as TreeHash<Sha256Hasher>>::tree_hash_root(&val);
-                let hash2 = <$type as TreeHash<Sha256Hasher>>::tree_hash_root(&val);
+                let hash1 = <$type as TreeHash>::tree_hash_root::<Sha256Hasher>(&val);
+                let hash2 = <$type as TreeHash>::tree_hash_root::<Sha256Hasher>(&val);
                 $crate::proptest::prop_assert_eq!(hash1, hash2);
             }
         }
@@ -91,8 +91,8 @@ macro_rules! ssz_proptest {
             fn tree_hash_deterministic(inner_val in $inner_strategy) {
                 use $crate::tree_hash::{TreeHash, Sha256Hasher};
                 let val = <$type>::$constructor(inner_val);
-                let hash1 = <$type as TreeHash<Sha256Hasher>>::tree_hash_root(&val);
-                let hash2 = <$type as TreeHash<Sha256Hasher>>::tree_hash_root(&val);
+                let hash1 = <$type as TreeHash>::tree_hash_root::<Sha256Hasher>(&val);
+                let hash2 = <$type as TreeHash>::tree_hash_root::<Sha256Hasher>(&val);
                 $crate::proptest::prop_assert_eq!(hash1, hash2);
             }
 
@@ -100,8 +100,8 @@ macro_rules! ssz_proptest {
             fn tree_hash_transparent(inner_val in $inner_strategy) {
                 use $crate::tree_hash::{TreeHash, Sha256Hasher};
                 let val = <$type>::$constructor(inner_val);
-                let wrapper_hash = <$type as TreeHash<Sha256Hasher>>::tree_hash_root(&val);
-                let inner_hash = <$inner as TreeHash<Sha256Hasher>>::tree_hash_root(&inner_val);
+                let wrapper_hash = <$type as TreeHash>::tree_hash_root::<Sha256Hasher>(&val);
+                let inner_hash = <$inner as TreeHash>::tree_hash_root::<Sha256Hasher>(&inner_val);
                 $crate::proptest::prop_assert_eq!(wrapper_hash, inner_hash);
             }
         }

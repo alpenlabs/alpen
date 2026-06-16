@@ -13,13 +13,17 @@ use tracing::{debug, info};
 pub(crate) fn extract_deposits(
     pending_inputs: &[PendingInputEntry],
     max_deposits: NonZero<u8>,
+    next_deposit_idx: u64,
 ) -> Vec<DepositInfo> {
     pending_inputs
         .iter()
-        .map(|entry| match entry {
-            PendingInputEntry::Deposit(data) => {
-                DepositInfo::new(subject_to_address_unchecked(&data.dest()), data.value())
-            }
+        .enumerate()
+        .map(|(idx, entry)| match entry {
+            PendingInputEntry::Deposit(data) => DepositInfo::new(
+                next_deposit_idx + idx as u64,
+                subject_to_address_unchecked(&data.dest()),
+                data.value(),
+            ),
         })
         .take(max_deposits.get() as usize)
         .collect()
@@ -33,12 +37,18 @@ pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
     parent_exec_blkid: Hash,
     timestamp_ms: u64,
     max_deposits_per_block: NonZero<u8>,
+    deposit_counter: u64,
     payload_builder: &E,
-) -> eyre::Result<(E::TEnginePayload, UpdateExtraData)> {
+) -> eyre::Result<(E::TEnginePayload, UpdateExtraData, u64)> {
     let parent = B256::from_slice(parent_exec_blkid.as_slice());
     let timestamp_sec = timestamp_ms / 1_000;
 
-    let deposits = extract_deposits(account_state.pending_inputs(), max_deposits_per_block);
+    let deposits = extract_deposits(
+        account_state.pending_inputs(),
+        max_deposits_per_block,
+        deposit_counter,
+    );
+    let deposits_processed = deposits.len() as u64;
     let processed_inputs = deposits.len() as u32;
     // dont handle forced inclusions currently
     let processed_fincls = 0;
@@ -73,7 +83,11 @@ pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
         processed_fincls,
     );
 
-    Ok((payload, update_extra_data))
+    Ok((
+        payload,
+        update_extra_data,
+        deposit_counter + deposits_processed,
+    ))
 }
 
 #[cfg(test)]
@@ -96,12 +110,14 @@ mod tests {
         // SubjectId with valid EVM address: [0x00..0x00 (12 bytes), 0xaa..0xaa (20 bytes)]
         let mut subject_bytes = [0u8; 32];
         subject_bytes[12..32].copy_from_slice(&[0xaa; 20]);
+        let next_deposit_idx = 5;
 
         let inputs = vec![make_deposit(subject_bytes, 1000)];
-        let deposits = extract_deposits(&inputs, NonZero::new(10).unwrap());
+        let deposits = extract_deposits(&inputs, NonZero::new(10).unwrap(), next_deposit_idx);
 
         assert_eq!(deposits.len(), 1);
         assert_eq!(deposits[0].address(), Address::from([0xaa; 20]));
+        assert_eq!(deposits[0].idx(), 5);
     }
 
     #[test]
@@ -126,13 +142,17 @@ mod tests {
             make_deposit(subject5, 5000),
         ];
         let max = NonZero::new(3).unwrap();
+        let next_deposit_idx = 9;
 
-        let deposits = extract_deposits(&inputs, max);
+        let deposits = extract_deposits(&inputs, max, next_deposit_idx);
 
         assert_eq!(deposits.len(), 3);
         // Verify order is preserved (first 3)
         assert_eq!(deposits[0].amount(), BitcoinAmount::from_sat(1000));
+        assert_eq!(deposits[0].idx(), 9);
         assert_eq!(deposits[1].amount(), BitcoinAmount::from_sat(2000));
+        assert_eq!(deposits[1].idx(), 10);
         assert_eq!(deposits[2].amount(), BitcoinAmount::from_sat(3000));
+        assert_eq!(deposits[2].idx(), 11);
     }
 }

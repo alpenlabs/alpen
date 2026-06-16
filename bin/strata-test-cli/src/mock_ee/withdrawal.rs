@@ -6,12 +6,14 @@
 use anyhow::Context;
 use k256::schnorr::{signature::Signer, Signature, SigningKey};
 use ssz::Encode;
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
+use strata_acct_types::{
+    AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload, BRIDGE_GATEWAY_ACCT_ID,
+};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
-use strata_ol_stf::BRIDGE_GATEWAY_ACCT_ID;
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, ProofState, UpdateOperationData, UpdateOutputs, UpdateProofPubParams,
+    LedgerRefs, OutputMessage, ProofState, Seqno, UpdateOperationData, UpdateOutputs,
+    UpdateProofPubParams,
 };
 
 /// Deterministic BIP-340 signing key whose verifying key matches the
@@ -70,7 +72,7 @@ pub(crate) fn build_snark_withdrawal_json(
     //
     // The mock withdrawal does not advance the snark account's inner state
     // or inbox index, so `cur_state == new_state == proof_state`.
-    let claim_ssz = sign_claim_ssz(&proof_state, &proof_state, &outputs);
+    let claim_ssz = sign_claim_ssz(Seqno::new(seq_no), &proof_state, &proof_state, &outputs);
     let signature = bip340_test_sign(&claim_ssz);
     let update_proof_hex = hex::encode(signature);
 
@@ -99,11 +101,13 @@ pub(crate) fn build_snark_withdrawal_json(
 /// Reconstructs the `UpdateProofPubParams` claim the OL builds in
 /// `snark_acct_sys::compute_update_claim` and returns its SSZ encoding.
 fn sign_claim_ssz(
+    seq_no: Seqno,
     cur_state: &ProofState,
     new_state: &ProofState,
     outputs: &UpdateOutputs,
 ) -> Vec<u8> {
     let pub_params = UpdateProofPubParams::new(
+        seq_no,
         cur_state.clone(),
         new_state.clone(),
         Vec::<MessageEntry>::new(),
@@ -177,10 +181,11 @@ mod tests {
         target_bytes[31] = 0x42;
         let target = AccountId::new(target_bytes);
         let inner_state = Hash::from([1u8; 32]);
+        let seq_no = 5;
 
         let json = build_snark_withdrawal_json(
             target,
-            5,
+            seq_no,
             inner_state,
             3,
             b"bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_vec(),
@@ -197,11 +202,11 @@ mod tests {
         let decoded = UpdateOperationData::from_ssz_bytes(&ssz_bytes).expect("valid SSZ");
 
         // Verify decoded fields
-        assert_eq!(decoded.seq_no(), 5);
+        assert_eq!(decoded.seq_no(), seq_no);
         assert_eq!(decoded.new_proof_state().inner_state(), inner_state);
         assert_eq!(decoded.new_proof_state().next_inbox_msg_idx(), 3);
         assert_eq!(decoded.processed_messages().len(), 0);
-        assert_eq!(decoded.ledger_refs().asm_manifest_refs().len(), 0);
+        assert_eq!(decoded.ledger_refs().l1_block_refs().len(), 0);
         assert_eq!(decoded.outputs().transfers().len(), 0);
         assert_eq!(decoded.outputs().messages().len(), 1);
 
@@ -270,7 +275,7 @@ mod tests {
     /// verifying key wired into functional-test params and the
     /// `bip340-schnorr-test` datatool variant. If this fails, either the
     /// SK bytes here drifted from `strata_proofimpl_alpen_acct` or the hex
-    /// pinned in `entry.py` / `RollupParams` defaults drifted.
+    /// pinned in `entry.py` / the ASM params defaults drifted.
     #[test]
     fn test_alpen_acct_test_signing_key_pubkey_matches_pinned_hex() {
         let sk = SigningKey::from_bytes(&ALPEN_ACCT_TEST_SK_BYTES).unwrap();
@@ -291,10 +296,11 @@ mod tests {
         target_bytes[31] = 0x42;
         let target = AccountId::new(target_bytes);
         let inner_state = Hash::from([1u8; 32]);
+        let seq_no = 5;
 
         let json = build_snark_withdrawal_json(
             target,
-            5,
+            seq_no,
             inner_state,
             3,
             b"bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_vec(),
@@ -316,7 +322,7 @@ mod tests {
                 .expect("withdrawal message payload bytes must fit within SSZ max length");
         let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
         let outputs = UpdateOutputs::new(vec![], vec![output_message]);
-        let claim_ssz = sign_claim_ssz(&proof_state, &proof_state, &outputs);
+        let claim_ssz = sign_claim_ssz(Seqno::new(seq_no), &proof_state, &proof_state, &outputs);
 
         let proof_hex = json["payload"]["update_proof"].as_str().unwrap();
         let proof_bytes = hex::decode(proof_hex).unwrap();

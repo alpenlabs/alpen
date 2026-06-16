@@ -3,10 +3,9 @@
 use std::collections::BTreeMap;
 
 use strata_acct_types::{
-    AccountId, AccountSerial, BitcoinAmount, Mmr64,
+    AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64,
     tree_hash::{Sha256Hasher, TreeHash},
 };
-use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
@@ -97,8 +96,26 @@ impl IStateAccessor for MemoryStateBaseLayer {
         self.state.epoch.total_ledger_balance()
     }
 
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
-        self.state.epoch.asm_manifests_mmr()
+    fn l1_block_refs_mmr(&self) -> &Mmr64 {
+        self.state.epoch.l1_block_refs_mmr()
+    }
+
+    // ===== Intraepoch state methods =====
+
+    fn pending_asm_logs_len(&self) -> usize {
+        self.state.intraepoch_state().pending_asm_logs().len()
+    }
+
+    fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
+        self.state
+            .intraepoch_state()
+            .pending_asm_logs()
+            .get(idx)
+            .map(PendingAsmLog::from)
+    }
+
+    fn pending_asm_logs_full(&self) -> bool {
+        self.state.intraepoch_state().is_pending_logs_full()
     }
 
     // ===== Account methods =====
@@ -120,7 +137,7 @@ impl IStateAccessor for MemoryStateBaseLayer {
     }
 
     fn compute_state_root(&self) -> StateResult<Buf32> {
-        Ok(TreeHash::<Sha256Hasher>::tree_hash_root(&self.state).into())
+        Ok(TreeHash::tree_hash_root::<Sha256Hasher>(&self.state).into())
     }
 }
 
@@ -155,8 +172,8 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
         self.state.epoch.set_cur_epoch(epoch);
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        self.state.epoch.append_manifest(height, mf);
+    fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
+        self.state.epoch.append_l1_block_rec(height, rec);
     }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
@@ -165,6 +182,17 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.state.epoch.set_total_ledger_balance(amt);
+    }
+
+    fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
+        let ssz_entry = entry.into();
+        self.state
+            .intraepoch_state_mut()
+            .try_append_pending_log(ssz_entry)
+    }
+
+    fn reset_intraepoch_state(&mut self) {
+        self.state.intraepoch_state_mut().reset();
     }
 
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
@@ -230,7 +258,7 @@ impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
             state.apply_write_batch(wb.clone())?;
         }
 
-        Ok(TreeHash::<Sha256Hasher>::tree_hash_root(&state).into())
+        Ok(TreeHash::tree_hash_root::<Sha256Hasher>(&state).into())
     }
 }
 

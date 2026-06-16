@@ -1,9 +1,9 @@
-// TODO should some of these types be moved to a more generic "exec env types"
+// TODO(STR-3685): should some of these types be moved to a more generic "exec env types"
 // crate?  so that ee-chunk-runtime doesn't have to depend on this crate?  maybe
 // do this after repo restructure
 
 use strata_codec::Codec;
-use strata_ee_chain_types::ExecInputs;
+use strata_ee_chain_types::{ExecHeaderSummary, ExecInputs};
 use strata_identifiers::Hash;
 
 use crate::{errors::EnvResult, inputs::ExecPayload, outputs::ExecBlockOutput};
@@ -34,6 +34,9 @@ pub trait ExecHeader: Codec + Clone + Sized {
 
     /// Gets the state root field.
     fn get_state_root(&self) -> Hash;
+
+    /// Gets the execution-environment-specific summary committed for this header.
+    fn get_exec_header_summary(&self) -> ExecHeaderSummary;
 
     /// Computes the exec block ID.
     fn compute_block_id(&self) -> Hash;

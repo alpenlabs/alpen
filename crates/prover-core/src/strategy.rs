@@ -8,6 +8,8 @@ use std::sync::Arc;
 #[cfg(feature = "remote")]
 use std::time::Duration;
 
+#[cfg(feature = "remote")]
+use tokio::runtime::{Builder, Runtime};
 use zkaleido::{ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram};
 
 use crate::{
@@ -43,10 +45,19 @@ where
     }
 }
 
-/// Remote execution: `start_proving` + poll + `get_proof` via a `LocalSet`.
+/// Remote execution: `start_proving` + poll + `get_proof`.
 ///
-/// `ZkVmRemoteProver` returns `!Send` futures, so we spin up a current-thread
-/// runtime with `LocalSet` inside `spawn_blocking` to contain them.
+/// `ZkVmRemoteProver` exposes `!Send` futures, so each `prove()` drives them on
+/// a `LocalSet`. Crucially those futures run on a **single long-lived runtime**
+/// owned by the strategy, not a fresh runtime per call.
+///
+/// SP1 SDK >=6.2 caches its gRPC channel for the whole process, and a tonic
+/// channel is just an mpsc handle to a background worker `tokio::spawn`'d on the
+/// runtime that was active when the channel was first built. A per-call runtime
+/// would be dropped after the first prove, killing that worker and leaving the
+/// cached channel permanently unusable — every later call would then fail with
+/// "Service was not ready: transport error". The shared runtime keeps the worker
+/// alive for as long as the strategy exists (i.e. the process).
 ///
 /// On crash recovery, if `ctx.saved` contains a serialized `ProofId`, we skip
 /// `start_proving` and resume polling directly — no double submission.
@@ -54,14 +65,48 @@ where
 pub(crate) struct RemoteStrategy<Host> {
     host: Arc<Host>,
     poll_interval: Duration,
+    /// Long-lived runtime shared across every `prove()` call so the SP1 gRPC
+    /// channel's background worker (spawned on first use) outlives individual
+    /// proves. See the type-level docs for why this must not be per-call.
+    ///
+    /// `Option` only so [`Drop`] can take it and shut it down without blocking;
+    /// it is `Some` for the entire normal lifetime.
+    rt: Option<Runtime>,
+}
+
+#[cfg(feature = "remote")]
+impl<Host> Drop for RemoteStrategy<Host> {
+    fn drop(&mut self) {
+        // The default `Runtime` drop performs a *blocking* shutdown, which
+        // panics if it runs inside an async context — and these strategies are
+        // dropped during async service teardown (the bins build remote provers
+        // inside the tokio runtime). `shutdown_background` releases the runtime
+        // without blocking, so it is safe to drop from any context.
+        if let Some(rt) = self.rt.take() {
+            rt.shutdown_background();
+        }
+    }
 }
 
 #[cfg(feature = "remote")]
 impl<Host> RemoteStrategy<Host> {
     pub(crate) fn new(host: Host, poll_interval: Duration) -> Self {
+        // Multi-thread (not current-thread): concurrent fanned-out `prove()`
+        // calls each run on their own `spawn_blocking` thread and `block_on`
+        // this runtime simultaneously; a current-thread runtime would serialize
+        // them. The remote prove future itself runs on the calling thread via
+        // the per-call `LocalSet`; these worker threads only drive the shared
+        // gRPC channel and its IO, so a small pool is plenty.
+        let rt = Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("paas-remote-prover")
+            .enable_all()
+            .build()
+            .expect("build remote-prover runtime");
         Self {
             host: Arc::new(host),
             poll_interval,
+            rt: Some(rt),
         }
     }
 }
@@ -77,18 +122,21 @@ where
         input: &<H::Program as ZkVmProgram>::Input,
         mut ctx: ProveContext,
     ) -> ProverResult<ProofReceiptWithMetadata> {
-        use tokio::{runtime::Builder, task::LocalSet};
-
-        let rt = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| ProverError::Storage(format!("tokio runtime: {e}")))?;
+        use tokio::task::LocalSet;
 
         let local = LocalSet::new();
         let host = self.host.clone();
         let poll_interval = self.poll_interval;
 
-        local.block_on(&rt, async move {
+        // Drive on the strategy's long-lived runtime (see the type-level docs):
+        // a fresh per-call runtime would kill SP1's process-cached gRPC channel
+        // worker after the first prove. `rt` is `Some` for the whole lifetime;
+        // it is only taken in `Drop`.
+        let rt = self
+            .rt
+            .as_ref()
+            .expect("remote-prover runtime present outside Drop");
+        local.block_on(rt, async move {
             // Try to resume from saved metadata (prior crash).
             let proof_id = if let Some(saved) = ctx.saved.take() {
                 match Host::ProofId::try_from(saved) {
@@ -175,10 +223,6 @@ where
                     )));
                 }
                 RemoteProofStatus::Requested | RemoteProofStatus::InProgress => {
-                    sleep(poll_interval).await;
-                }
-                RemoteProofStatus::Unknown => {
-                    tracing::warn!(%proof_id, "unknown remote proof status, retrying");
                     sleep(poll_interval).await;
                 }
             }

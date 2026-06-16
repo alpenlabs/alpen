@@ -1,7 +1,9 @@
 //! Traits for the chain worker to interface with the underlying system.
 
+use strata_asm_common::AsmManifest;
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
@@ -72,16 +74,46 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     // =========================================================================
 
     /// Stores an epoch summary in the database.
+    ///
+    /// Called as the last durable step of terminal block execution: a stored
+    /// summary indicates the whole epoch finalization persisted.
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()>;
 
-    /// Fetches a specific epoch summary by its commitment.
-    fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary>;
+    /// Fetches canonical epoch summary for an epoch index.
+    fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>>;
 
-    /// Fetches all summaries for an epoch index.
-    fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>>;
-
-    /// Merges write batches up to the given epoch into the finalized state.
+    /// Merges write batches of the epoch described by `summary` and stores
+    /// the merged state at the epoch's terminal commitment.
     ///
-    /// This means we have to load fewer write batches when reconstructing state.
-    fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()>;
+    /// Takes the summary by value-reference rather than reading it from
+    /// storage so it can run before [`store_summary`](Self::store_summary),
+    /// keeping the summary the last durable step.
+    fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()>;
+
+    /// Seeds the DB-side L1 block refs MMR mirror with sentinel leaves matching
+    /// the in-state MMR's genesis prefill. Called once at chain worker init.
+    /// Idempotent across restarts.
+    fn prefill_l1_block_refs_mmr(&self) -> WorkerResult<()>;
+
+    /// Fetches the checkpoint payload observed on L1 for the given epoch.
+    ///
+    /// This is the payload extracted from a buried L1 checkpoint, used by
+    /// checkpoint sync to reconstruct epoch state.
+    fn fetch_checkpoint_payload(
+        &self,
+        epoch: &EpochCommitment,
+    ) -> WorkerResult<Option<CheckpointPayload>>;
+
+    /// Fetches ASM manifests for the inclusive L1 height range `[from, to]`.
+    ///
+    /// Used to replay manifest processing during DA-based epoch reconstruction.
+    fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>>;
+
+    /// Applies epoch-granular state index writes for a reconstructed epoch,
+    /// derived from the epoch's execution `output`.
+    fn apply_epoch_indexing(
+        &self,
+        epoch: &EpochCommitment,
+        output: &OLBlockExecutionOutput,
+    ) -> WorkerResult<()>;
 }

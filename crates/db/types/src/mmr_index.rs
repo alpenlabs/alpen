@@ -2,10 +2,11 @@
 //!
 //! These are the primitive types used by [`crate::traits::MmrIndexDatabase`] and its callers.
 
-use std::{collections::BTreeMap, fmt};
+use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_identifiers::{AccountId, Hash};
+pub use strata_merkle_node_store::{LeafPos, NodePos};
 
 /// Opaque serialized form of [`MmrId`], used as a database key.
 pub type RawMmrId = Vec<u8>;
@@ -20,6 +21,8 @@ pub enum MmrId {
     Asm,
     /// Snark message inbox MMR (per-account scope).
     SnarkMsgInbox(AccountId),
+    /// OL L1 block refs MMR (singleton, no account scope).
+    L1BlockRefs,
 }
 
 impl MmrId {
@@ -42,158 +45,6 @@ pub fn num_leaves_to_mmr_size(leaves_count: u64) -> u64 {
     );
     let peak_count = leaves_count.count_ones() as u64;
     2 * leaves_count - peak_count
-}
-
-/// Zero-based index of a leaf in an MMR (always at height 0).
-///
-/// A thin newtype over `u64` that prevents accidental use of internal-node
-/// positions in preimage APIs, which are leaf-only by definition.
-#[derive(
-    Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
-#[serde(transparent)]
-pub struct LeafPos(u64);
-
-impl LeafPos {
-    /// Constructs a leaf position from a zero-based leaf index.
-    pub fn new(index: u64) -> Self {
-        Self(index)
-    }
-
-    /// Returns the zero-based leaf index.
-    pub fn index(self) -> u64 {
-        self.0
-    }
-
-    /// Returns this leaf's position in the full MMR node tree (height 0).
-    pub fn node_pos(self) -> NodePos {
-        NodePos::new(0, self.0)
-    }
-}
-
-impl fmt::Display for LeafPos {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "leaf({})", self.0)
-    }
-}
-
-impl fmt::Debug for LeafPos {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LeafPos({})", self.0)
-    }
-}
-
-/// Structured position of a node in an MMR, given by `(height, index)`.
-///
-/// `height` is 0 for leaves. `index` is the zero-based offset within the
-/// level at `height`. Fields are private to keep the encoding details stable.
-#[derive(
-    Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
-pub struct NodePos {
-    height: u8,
-    index: u64,
-}
-
-impl NodePos {
-    /// Constructs a node position from height and index.
-    pub fn new(height: u8, index: u64) -> Self {
-        Self { height, index }
-    }
-
-    /// Returns the height of this node (0 = leaf).
-    pub fn height(self) -> u8 {
-        self.height
-    }
-
-    /// Returns the zero-based index within this node's level.
-    pub fn index(self) -> u64 {
-        self.index
-    }
-
-    /// Returns this node's parent position, or `None` on height overflow.
-    pub fn parent(self) -> Option<Self> {
-        Some(Self {
-            height: self.height.checked_add(1)?,
-            index: self.index >> 1,
-        })
-    }
-
-    /// Returns this node's parent position, panicking on height overflow.
-    pub fn parent_unchecked(self) -> Self {
-        assert!(
-            self.height < u8::MAX,
-            "NodePos::parent_unchecked height overflow"
-        );
-        Self {
-            height: self.height + 1,
-            index: self.index >> 1,
-        }
-    }
-
-    /// Returns true if this node is the left child of its parent.
-    pub fn is_left_child(self) -> bool {
-        self.index.is_multiple_of(2)
-    }
-
-    /// Returns this node's sibling position.
-    pub fn neighbor(self) -> Self {
-        Self {
-            height: self.height,
-            index: self.index ^ 1,
-        }
-    }
-
-    /// Returns this node's left child when `height > 0`.
-    pub fn left_child(self) -> Option<Self> {
-        if self.height == 0 {
-            return None;
-        }
-
-        debug_assert!(
-            self.index <= (u64::MAX / 2),
-            "NodePos::left_child index overflow"
-        );
-
-        Some(Self {
-            height: self.height - 1,
-            index: self.index * 2,
-        })
-    }
-
-    /// Returns this node's right child when `height > 0`.
-    pub fn right_child(self) -> Option<Self> {
-        if self.height == 0 {
-            return None;
-        }
-
-        debug_assert!(
-            self.index <= ((u64::MAX - 1) / 2),
-            "NodePos::right_child index overflow"
-        );
-
-        Some(Self {
-            height: self.height - 1,
-            index: self.index * 2 + 1,
-        })
-    }
-
-    /// Returns both children of this node when `height > 0`.
-    pub fn children(self) -> Option<(Self, Self)> {
-        Some((self.left_child()?, self.right_child()?))
-    }
-}
-
-impl fmt::Display for NodePos {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "node(h={}, i={})", self.height, self.index)
-    }
-}
-
-impl fmt::Debug for NodePos {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "NodePos(h={}, i={})", self.height, self.index)
-    }
 }
 
 /// Scoped node reference for a specific MMR namespace.
@@ -471,56 +322,10 @@ mod tests {
         prop::array::uniform32(0u8..).prop_map(Hash::from)
     }
 
+    // NOTE: `NodePos`/`LeafPos` position math (parent/sibling/children/etc.) is
+    // owned and tested by the `strata-merkle-node-store` crate. These tests
+    // cover only the local batch/table types built on those positions.
     proptest! {
-        #[test]
-        fn prop_parent_height_and_index(h in 0u8..10u8, i in 0u64..1024u64) {
-            let node = NodePos::new(h, i);
-            let parent = node.parent().unwrap();
-            prop_assert_eq!(parent.height(), h + 1);
-            prop_assert_eq!(parent.index(), i >> 1);
-        }
-
-        #[test]
-        fn prop_neighbor_same_height_xor_index(h in 0u8..=10u8, i in 0u64..1024u64) {
-            let node = NodePos::new(h, i);
-            let nb = node.neighbor();
-            prop_assert_eq!(nb.height(), h);
-            prop_assert_eq!(nb.index(), i ^ 1);
-        }
-
-        #[test]
-        fn prop_left_right_child_positions(h in 1u8..=10u8, i in 0u64..512u64) {
-            let node = NodePos::new(h, i);
-            let lc = node.left_child().unwrap();
-            let rc = node.right_child().unwrap();
-            prop_assert_eq!(lc.height(), h - 1);
-            prop_assert_eq!(rc.height(), h - 1);
-            prop_assert_eq!(lc.index(), i * 2);
-            prop_assert_eq!(rc.index(), i * 2 + 1);
-        }
-
-        #[test]
-        fn prop_leaf_has_no_children(i in 0u64..1024u64) {
-            let leaf = NodePos::new(0, i);
-            prop_assert!(leaf.left_child().is_none());
-            prop_assert!(leaf.right_child().is_none());
-            prop_assert!(leaf.children().is_none());
-        }
-
-        #[test]
-        fn prop_children_agrees_with_left_right(h in 1u8..=10u8, i in 0u64..512u64) {
-            let node = NodePos::new(h, i);
-            let (lc, rc) = node.children().unwrap();
-            prop_assert_eq!(lc, node.left_child().unwrap());
-            prop_assert_eq!(rc, node.right_child().unwrap());
-        }
-
-        #[test]
-        fn prop_is_left_child_iff_even_index(h in 0u8..=10u8, i in 0u64..1024u64) {
-            let node = NodePos::new(h, i);
-            prop_assert_eq!(node.is_left_child(), i % 2 == 0);
-        }
-
         #[test]
         fn prop_put_node_overwrites(
             pos in node_pos_strat(),
@@ -589,19 +394,6 @@ mod tests {
             expected.dedup();
             prop_assert_eq!(keys, expected);
         }
-    }
-
-    #[test]
-    fn parent_returns_none_on_overflow() {
-        let node = NodePos::new(u8::MAX, 0);
-        assert!(node.parent().is_none());
-    }
-
-    #[test]
-    #[should_panic(expected = "NodePos::parent_unchecked height overflow")]
-    fn parent_unchecked_panics_on_overflow() {
-        let node = NodePos::new(u8::MAX, 0);
-        let _ = node.parent_unchecked();
     }
 
     #[test]

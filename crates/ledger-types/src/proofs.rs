@@ -31,8 +31,8 @@ pub trait TxProofVerifier {
         claim: &AccumulatorClaim,
     ) -> Result<(), ProofVerifyError>;
 
-    /// Verifies an ASM history MMR proof.
-    fn verify_asm_history_mmr_proof_next(
+    /// Verifies an OL L1 block refs MMR proof.
+    fn verify_l1_block_ref_mmr_proof_next(
         &mut self,
         claim: &AccumulatorClaim,
     ) -> Result<(), ProofVerifyError>;
@@ -77,12 +77,12 @@ impl TxProofVerifier for TxProofIndexer {
         Ok(())
     }
 
-    fn verify_asm_history_mmr_proof_next(
+    fn verify_l1_block_ref_mmr_proof_next(
         &mut self,
         claim: &AccumulatorClaim,
     ) -> Result<(), ProofVerifyError> {
         self.accumulator_checks
-            .push(AccProofCheck::AsmHistory(claim.clone()));
+            .push(AccProofCheck::L1BlockRef(claim.clone()));
         Ok(())
     }
 
@@ -102,7 +102,7 @@ impl TxProofVerifier for TxProofIndexer {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AccProofCheck {
     Inbox(AccumulatorClaim),
-    AsmHistory(AccumulatorClaim),
+    L1BlockRef(AccumulatorClaim),
 }
 
 /// Describes a ref to some predicate that exists in the context of the tx

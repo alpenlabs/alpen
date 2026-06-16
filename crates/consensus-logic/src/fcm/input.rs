@@ -15,7 +15,7 @@ pub enum FcmEvent {
 #[derive(Debug)]
 pub struct FcmInput {
     fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
-    // TODO: Rename CheckpointState to sth like ClientStateAtL1
+    // TODO(STR-3673): Rename CheckpointState to sth like ClientStateAtL1
     checkpoint_state_rx: watch::Receiver<CheckpointState>,
 }
 

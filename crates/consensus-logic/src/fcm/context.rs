@@ -28,6 +28,33 @@ pub trait CsmStatusReader: Send + Sync {
 pub trait FcmStorage: UnfinalizedOLBlockSource {
     async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool>;
 
+    async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool>;
+
+    /// Returns the latest OL block committed through the high-watermark path,
+    /// if any.
+    async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>>;
+
+    /// Rolls back per-block OL state-indexing writes in `epoch` attributed to
+    /// blocks with slots strictly greater than `cutoff.slot()`.
+    ///
+    /// Called when a block is marked invalid to drop its indexing writes, so
+    /// a replacement block at the same slot can apply its own without
+    /// conflicting against the indexing high-watermark. Idempotent; a no-op
+    /// when the rejected block never reached the persist step.
+    async fn rollback_block_state_indexing(
+        &self,
+        epoch: Epoch,
+        cutoff: OLBlockCommitment,
+    ) -> DbResult<()>;
+
+    /// Deletes the epoch summary keyed by exactly this epoch commitment.
+    ///
+    /// Called when a terminal block is marked invalid to drop the summary it
+    /// may have stored before failing, so a stale summary cannot shadow the
+    /// replacement terminal's summary in canonical epoch lookups. Returns
+    /// `true` when a summary existed and was deleted.
+    async fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,

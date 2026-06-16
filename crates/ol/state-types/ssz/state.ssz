@@ -6,6 +6,7 @@ import strata_snark_acct_types
 
 MAX_LEDGER_ACCOUNTS = 1 << 24
 MAX_ACCOUNT_SERIALS = 1 << 24
+MAX_PENDING_ASM_LOGS = 1 << 16
 
 ### Top-level OL state
 class OLState(Container):
@@ -14,6 +15,11 @@ class OLState(Container):
 
     ### Global state
     global: GlobalState
+
+    ### Transient state that exists within an epoch.
+    ###
+    ### Reset at the end.
+    intraepoch: IntraepochState
 
     ### Ledger accounts table
     ledger: TsnlLedgerAccountsTable
@@ -75,6 +81,18 @@ class ProofState(Container):
     ### Next message read index
     next_msg_read_idx: uint64
 
+
+class IntraepochState(Container):
+    #~# external_kind: container
+    pending_asm_logs: List[PendingAsmLogEntry, MAX_PENDING_ASM_LOGS]
+
+
+class PendingAsmLogEntry(Container):
+    height: uint32
+    #~# external_kind: container
+    log: strata_asm_manifest_types.AsmLogEntry
+
+
 ### Epoch-level state
 class EpochalState(Container):
     ### Total funds in the ledger
@@ -91,14 +109,14 @@ class EpochalState(Container):
     #~# external_kind: container
     checkpointed_epoch: strata_identifiers.EpochCommitment
 
-    ### Manifests MMR
+    ### L1 block refs MMR
     ###
     ### Indices into this MMR are L1 block heights. At genesis the MMR is
     ### prefilled with dummy sentinel values of `[0xff, 32]`, so the first
-    ### real appended manifest (for genesis_l1_height + 1) lands at the
+    ### real appended L1 block ref (for genesis_l1_height + 1) lands at the
     ### correct height-indexed position.
     #~# external_kind: container
-    manifests_mmr: strata_acct_types.Mmr64
+    l1_block_refs_mmr: strata_acct_types.Mmr64
 
 ### Global state tracking current slot
 class GlobalState(Container):

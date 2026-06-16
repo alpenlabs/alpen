@@ -347,7 +347,8 @@ impl OLMempoolRejectReason {
             | OLMempoolError::Database(_)
             | OLMempoolError::StateProvider(_)
             | OLMempoolError::Serialization(_)
-            | OLMempoolError::ServiceClosed(_) => None,
+            | OLMempoolError::ServiceClosed(_)
+            | OLMempoolError::NotAvailable => None,
         }
     }
 }
@@ -728,7 +729,7 @@ mod tests {
                 ),
             ];
 
-            entries.sort_by(|a, b| a.ordering_key.cmp(&b.ordering_key));
+            entries.sort_by_key(|a| a.ordering_key);
             let timestamps: Vec<u64> = entries
                 .iter()
                 .map(|e| e.ordering_key.timestamp_micros())

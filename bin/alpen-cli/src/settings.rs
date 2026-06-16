@@ -9,20 +9,33 @@ use std::{
 
 use alloy::primitives::Address as AlpenAddress;
 use bdk_bitcoind_rpc::bitcoincore_rpc::{Auth, Client};
-use bdk_wallet::bitcoin::{Amount, XOnlyPublicKey};
+use bdk_wallet::bitcoin::{Amount, Network, XOnlyPublicKey};
 use config::Config;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use shrex::Hex;
-use strata_params::RollupParams;
+use strata_asm_params::AsmParams;
+use strata_bridge_params::BridgeParams;
+use strata_l1_txfmt::MagicBytes;
 use terrors::OneOf;
 
 #[cfg(feature = "test-mode")]
 use crate::{constants::SEED_LEN, seed::Seed};
 use crate::{
-    constants::{DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_FEE, DEFAULT_FINALITY_DEPTH},
+    constants::*,
     signet::{backend::SignetBackend, EsploraClient},
 };
+
+/// Environment variable overriding the project directories root.
+const PROJ_DIRS_ENV: &str = "PROJ_DIRS";
+/// Environment variable overriding the CLI config file path.
+const CONFIG_FILE_ENV: &str = "CLI_CONFIG";
+/// Environment variable overriding the ASM params file path.
+const ASM_PARAMS_ENV: &str = "STRATA_NETWORK_PARAMS";
+/// Default file name for the CLI config within the config directory.
+const DEFAULT_CONFIG_FILENAME: &str = "config.toml";
+/// Default file name for the ASM params within the config directory.
+const DEFAULT_ASM_PARAMS_FILENAME: &str = "asm-params.json";
 
 /// Settings deserialized from the config file.
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,8 +66,12 @@ pub struct SettingsFromFile {
     pub bridge_fee_sats: Option<u64>,
     /// The number of confirmations to consider a Bitcoin transaction final.
     pub finality_depth: Option<u32>,
-    /// Path to the rollup params JSON file.
-    pub rollup_params_path: Option<PathBuf>,
+    /// Denomination in satoshis. Defaults to 100_000_000 (1 BTC).
+    pub withdrawal_denomination_sats: Option<u64>,
+    /// Maximum withdrawal amount in satoshis. Defaults to 1_000_000_000 (10 BTC).
+    pub max_withdrawal_amount_sats: Option<u64>,
+    /// Path to the ASM params JSON file.
+    pub asm_params_path: Option<PathBuf>,
     /// Seed that can be passed directly for functional test.
     #[cfg(feature = "test-mode")]
     pub seed: Hex<[u8; SEED_LEN]>,
@@ -78,26 +95,39 @@ pub struct Settings {
     pub signet_backend: Arc<dyn SignetBackend>,
     pub bridge_fee: Amount,
     pub finality_depth: u32,
-    pub params: RollupParams,
+    pub bridge_params: BridgeParams,
+    /// L1 network, sourced from the ASM anchor.
+    pub network: Network,
+    /// SPS-50 magic bytes, sourced from the ASM params.
+    pub magic_bytes: MagicBytes,
+    /// At-rest deposit denomination, sourced from the ASM Bridge subprotocol config.
+    pub deposit_amount: Amount,
+    /// Deposit-request reclaim delay, sourced from the ASM Bridge subprotocol config.
+    pub recovery_delay: u16,
     #[cfg(feature = "test-mode")]
     pub seed: Seed,
 }
 
-pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| match var("PROJ_DIRS").ok() {
+pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| match var(PROJ_DIRS_ENV).ok() {
     Some(path) => ProjectDirs::from_path(path.into()).expect("valid project path"),
     None => ProjectDirs::from("io", "alpenlabs", "alpen").expect("project dir should be available"),
 });
 
-pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var("CLI_CONFIG").ok() {
+pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var(CONFIG_FILE_ENV).ok() {
     Some(path) => PathBuf::from_str(&path).expect("valid config path"),
-    None => PROJ_DIRS.config_dir().to_owned().join("config.toml"),
+    None => PROJ_DIRS
+        .config_dir()
+        .to_owned()
+        .join(DEFAULT_CONFIG_FILENAME),
 });
 
-pub static ROLLUP_PARAMS_FILE: LazyLock<PathBuf> =
-    LazyLock::new(|| match var("STRATA_NETWORK_PARAMS").ok() {
-        Some(path) => PathBuf::from_str(&path).expect("valid rollup params path"),
-        None => PROJ_DIRS.config_dir().to_owned().join("rollup_params.json"),
-    });
+pub static ASM_PARAMS_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var(ASM_PARAMS_ENV).ok() {
+    Some(path) => PathBuf::from_str(&path).expect("valid asm params path"),
+    None => PROJ_DIRS
+        .config_dir()
+        .to_owned()
+        .join(DEFAULT_ASM_PARAMS_FILENAME),
+});
 
 impl Settings {
     pub fn load() -> Result<Self, OneOf<(io::Error, config::ConfigError)>> {
@@ -138,19 +168,28 @@ impl Settings {
             _ => panic!("invalid config for signet - configure for esplora or bitcoind"),
         };
 
-        // Load rollup params from config, environment variable, or default location
+        // Load ASM params from config, environment variable, or default location
         let params_path = from_file
-            .rollup_params_path
-            .unwrap_or_else(|| ROLLUP_PARAMS_FILE.clone());
+            .asm_params_path
+            .unwrap_or_else(|| ASM_PARAMS_FILE.clone());
 
         let params_json = read_to_string(&params_path).map_err(OneOf::new)?;
-        let params: RollupParams = serde_json::from_str(&params_json).map_err(|e| {
+        let asm_params: AsmParams = serde_json::from_str(&params_json).map_err(|e| {
             OneOf::new(config::ConfigError::Message(format!(
-                "Failed to parse rollup params {}: {}",
+                "Failed to parse ASM params {}: {}",
                 params_path.display(),
                 e
             )))
         })?;
+        let bridge_config = asm_params.bridge_config().ok_or_else(|| {
+            OneOf::new(config::ConfigError::Message(
+                "ASM params missing Bridge subprotocol config".to_string(),
+            ))
+        })?;
+        let network = asm_params.anchor.network;
+        let magic_bytes = asm_params.magic;
+        let deposit_amount = Amount::from_sat(bridge_config.denomination.to_sat());
+        let recovery_delay = bridge_config.recovery_delay;
 
         Ok(Settings {
             esplora: from_file.esplora,
@@ -177,7 +216,19 @@ impl Settings {
                 .map(Amount::from_sat)
                 .unwrap_or(DEFAULT_BRIDGE_FEE),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
-            params,
+            bridge_params: BridgeParams::new(
+                from_file
+                    .withdrawal_denomination_sats
+                    .unwrap_or(DEFAULT_DENOMINATION_SATS),
+                from_file
+                    .max_withdrawal_amount_sats
+                    .or(Some(DEFAULT_MAX_WITHDRAWAL_SATS)),
+            )
+            .expect("invalid withdrawal params in config"),
+            network,
+            magic_bytes,
+            deposit_amount,
+            recovery_delay,
             #[cfg(feature = "test-mode")]
             seed: Seed::from_file(from_file.seed),
         })
@@ -202,6 +253,7 @@ mod tests {
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
+            seed = "000102030405060708090a0b0c0d0e0f"
         "#;
 
         // Deserialize from TOML string

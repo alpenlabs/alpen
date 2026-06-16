@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use strata_ol_chain_types::L2BlockId;
+use strata_primitives::l2::L2BlockId;
 use tracing::*;
 
 use crate::{errors::Error, unfinalized_tracker};
@@ -170,7 +170,7 @@ pub fn compute_tip_update(
         return Ok(None);
     }
 
-    // TODO figure out if this is actually just a revert
+    // TODO(STR-2140): figure out if this is actually just a revert
 
     // Now reverse so that common ancestor is at the beginning
     down_blocks.reverse();

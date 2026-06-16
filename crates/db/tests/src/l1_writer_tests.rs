@@ -173,7 +173,8 @@ pub fn test_put_intent_new_entry(db: &impl L1WriterDatabase) {
     assert_eq!(stored_intent, Some(intent));
 }
 
-// TODO: This and the above test are identical. Merge them or make them test different scenarios.
+// TODO(STR-2653): This and the above test are identical. Merge them or make them test different
+// scenarios.
 pub fn test_put_intent_entry(db: &impl L1WriterDatabase) {
     let intent: IntentEntry = ArbitraryGenerator::new().generate();
     let intent_id: Buf32 = [0; 32].into();

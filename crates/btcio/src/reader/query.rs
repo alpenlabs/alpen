@@ -95,7 +95,7 @@ fn calculate_target_next_block(
     l1_manager: &L1BlockManager,
     horz_height: L1Height,
 ) -> anyhow::Result<L1Height> {
-    // TODO switch to checking the L1 tip in the consensus/client state
+    // TODO(STR-3691): switch to checking the L1 tip in the consensus/client state
     let target_next_block = l1_manager
         .get_canonical_chain_tip()?
         .map(|(height, _)| height + 1)
@@ -269,7 +269,7 @@ async fn poll_for_new_blocks<R: Reader>(
             return Ok(vec![revert_ev]);
         }
     } else {
-        // TODO make this case a bit more structured
+        // TODO(STR-3691): make this case a bit more structured
         error!("unable to find common block with client chain, something is seriously wrong here!");
         bail!("things are broken with l1 reader");
     }

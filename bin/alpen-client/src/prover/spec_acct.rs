@@ -5,22 +5,28 @@
 //! `ReceiptStore`) and the prior batch's end-state, then assembles
 //! `ee_acct_runtime::PrivateInput` + `snark_acct_runtime::PrivateInput`.
 //!
-//! `LedgerRefs` are derived from the batch's DA refs using the same
-//! canonical L1 header commitment and MMR-index mapping as the OL
-//! submitter — they must be byte-identical for the verifier-side claim
-//! reconstruction to match the prover-committed pub-params SSZ.
+//! `LedgerRefs` are derived from the batch's reduced L1 block refs
+//! (`{block_hash, wtxids_root}` at the L1 height index) using the same helper
+//! as the OL submitter, so the submitted update and proof pub-params stay
+//! byte-identical.
 
 use std::{fmt, sync::Arc};
 
+use alloy_primitives::B256;
 use alpen_ee_common::{
-    build_ledger_refs_from_da, BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef,
-    LedgerRefsError, SequencerOLClient, Storage,
+    build_ledger_refs_from_da, BatchId, BatchStatus, BatchStorage, ChunkStorage, ExecBlockStorage,
+    L1DaBlockRef, Storage,
 };
+use alpen_ee_da_runtime::builders::{build_da_witness, DaDedupResolver, DaWitnessBuildError};
 use alpen_ee_database::EeNodeStorage;
+use alpen_reth_db::StateDiffProvider;
+use alpen_reth_witness::RangeWitnessData;
 use async_trait::async_trait;
+use bitcoind_async_client::Client as BtcClient;
 use rsp_primitives::genesis::Genesis;
 use ssz::{Decode, Encode as _};
 use strata_acct_types::Hash;
+use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
 use strata_ee_acct_types::UpdateExtraData;
@@ -29,10 +35,14 @@ use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStor
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
 use strata_snark_acct_types::{
-    OutputMessage, OutputTransfer, ProofState, UpdateOutputs, UpdateProofPubParams,
+    OutputMessage, OutputTransfer, ProofState, Seqno, UpdateOutputs, UpdateProofPubParams,
 };
+use tokio::task;
 
 use super::ChunkTask;
+
+pub(crate) type AcctRangeWitnessFn =
+    dyn Fn(B256, B256) -> eyre::Result<RangeWitnessData> + Send + Sync;
 
 /// Batch-id-shaped task identifier for paas. Newtype over [`BatchId`]
 /// for the same reasons [`super::ChunkTask`] wraps `ChunkId`.
@@ -147,25 +157,41 @@ impl From<AcctProofInputError> for PaasError {
 pub(crate) struct AcctSpec {
     chunk_receipts: Arc<dyn ReceiptStore>,
     batch_storage: Arc<dyn BatchStorage>,
+    chunk_storage: Arc<dyn ChunkStorage>,
     storage: Arc<EeNodeStorage>,
-    ol_client: Arc<dyn SequencerOLClient + Send + Sync>,
+    btc_client: Arc<BtcClient>,
+    state_diff_provider: Arc<dyn StateDiffProvider>,
+    range_witness_fn: Arc<AcctRangeWitnessFn>,
     genesis: Genesis,
+    bridge_params: BridgeParams,
 }
 
 impl AcctSpec {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor mirrors the struct fields"
+    )]
     pub(crate) fn new(
         chunk_receipts: Arc<dyn ReceiptStore>,
         batch_storage: Arc<dyn BatchStorage>,
+        chunk_storage: Arc<dyn ChunkStorage>,
         storage: Arc<EeNodeStorage>,
-        ol_client: Arc<dyn SequencerOLClient + Send + Sync>,
+        btc_client: Arc<BtcClient>,
+        state_diff_provider: Arc<dyn StateDiffProvider>,
+        range_witness_fn: Arc<AcctRangeWitnessFn>,
         genesis: Genesis,
+        bridge_params: BridgeParams,
     ) -> Self {
         Self {
             chunk_receipts,
             batch_storage,
+            chunk_storage,
             storage,
-            ol_client,
+            btc_client,
+            state_diff_provider,
+            range_witness_fn,
             genesis,
+            bridge_params,
         }
     }
 }
@@ -180,7 +206,7 @@ impl ProofSpec for AcctSpec {
 
         // 1. Chunk inputs: per-chunk transitions + their proofs, in order.
         let chunks: Vec<ChunkInput> =
-            collect_chunk_inputs_for_batch(&*self.batch_storage, &*self.chunk_receipts, batch_id)
+            collect_chunk_inputs_for_batch(&*self.chunk_storage, &*self.chunk_receipts, batch_id)
                 .await?;
         if chunks.is_empty() {
             return Err(PaasError::PermanentFailure(format!(
@@ -266,17 +292,28 @@ impl ProofSpec for AcctSpec {
 
         // 4. ee_acct private input.
         //
-        //    `raw_prev_header` and `raw_partial_pre_state` are carried
-        //    through the acct guest but not consumed for verification
-        //    today — the guest verifies chunk proofs via predicate key
-        //    and checks state transitions via UpdateProofPubParams. The
-        //    pre-state fields are reserved for future DA blob consistency
-        //    verification inside the acct guest.
-        //
-        // TODO(STR-1369): once DA verification is added to the acct
-        //   guest, source these from the batch's range witness (same
-        //   RangeWitnessExtractor used by ChunkSpec).
-        let ee_private_input = EePrivateInput::new(Vec::new(), Vec::new(), chunks.clone());
+        //    The acct guest uses this sparse pre-state to apply the DA blob's
+        //    batch state diff and compare the result with the final chunk's
+        //    tip state root. This spans the full batch, not just one chunk.
+        let batch_block_hashes: Vec<Hash> = batch.blocks_iter().collect();
+        let first_batch_block = batch_block_hashes.first().copied().ok_or_else(|| {
+            PaasError::PermanentFailure(format!("batch {batch_id} has no execution blocks"))
+        })?;
+        let first_block_hash = B256::from(first_batch_block.0);
+        let last_block_hash = B256::from(batch.last_block().0);
+        let range_witness_fn = self.range_witness_fn.clone();
+        let range_data =
+            task::spawn_blocking(move || (range_witness_fn)(first_block_hash, last_block_hash))
+                .await
+                .map_err(|e| {
+                    PaasError::TransientFailure(format!("batch witness extraction join: {e}"))
+                })?
+                .map_err(|e| {
+                    PaasError::TransientFailure(format!("batch witness extraction: {e}"))
+                })?;
+
+        let ee_private_input =
+            EePrivateInput::new(Vec::new(), range_data.raw_partial_pre_state, chunks.clone());
 
         // 5. Build UpdateProofPubParams from ExecBlockRecords.
         //
@@ -285,11 +322,10 @@ impl ProofSpec for AcctSpec {
         //    messages, outputs, next_inbox_msg_idx, and new_tip_blkid.
         //    This is the authoritative source (same data the update
         //    submitter reads), so proof-input and submission agree.
-        let block_hashes: Vec<Hash> = batch.blocks_iter().collect();
         let mut processed_inputs: u32 = 0;
         let mut messages = Vec::new();
         let mut update_outputs = UpdateOutputs::new_empty();
-        for block_hash in &block_hashes {
+        for block_hash in &batch_block_hashes {
             let record = self
                 .storage
                 .get_exec_block(*block_hash)
@@ -364,15 +400,14 @@ impl ProofSpec for AcctSpec {
             UpdateExtraData::new(new_tip_blkid, new_tip_state_root, processed_inputs, 0);
         let extra_data_bytes = encode_to_vec(&extra_data)
             .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
-        let ledger_refs = build_ledger_refs_from_da(&da_refs, self.ol_client.as_ref())
-            .await
-            .map_err(|e| match e {
-                LedgerRefsError::FetchCommitment { .. } => PaasError::TransientFailure(format!(
-                    "build ledger refs for batch {batch_id}: {e}"
-                )),
-            })?;
+        let ledger_refs = build_ledger_refs_from_da(&da_refs);
+
+        let seq_no = batch.update_seq_no().ok_or_else(|| {
+            PaasError::TransientFailure(format!("batch {batch_id} has no assigned update seq_no"))
+        })?;
 
         let pub_params = UpdateProofPubParams::new(
+            Seqno::new(seq_no),
             cur_state,
             new_state,
             messages,
@@ -389,13 +424,24 @@ impl ProofSpec for AcctSpec {
             .map(|_| Coinput::new(Vec::new()))
             .collect();
 
-        let update_private_input =
+        let snark_acct_private_input =
             UpdatePrivateInput::new(pub_params, pre_ee_state.as_ssz_bytes(), coinputs);
+        let da_dedup_resolver = DaDedupResolver::new(&*self.state_diff_provider, &*self.storage);
+        let da_witness = build_da_witness(
+            &da_refs,
+            &batch_block_hashes,
+            &*self.btc_client,
+            &da_dedup_resolver,
+        )
+        .await
+        .map_err(map_witness_build_err)?;
 
         Ok(EeAcctProofInput {
             genesis: self.genesis.clone(),
             ee_private_input,
-            update_private_input,
+            snark_acct_private_input,
+            da_witness,
+            bridge_params: self.bridge_params,
         })
     }
 }
@@ -423,6 +469,25 @@ fn da_refs_from_status(batch_id: BatchId, status: BatchStatus) -> ProverResult<V
     }
 }
 
+/// Maps a [`DaWitnessBuildError`] from the DA-runtime builder onto the prover's
+/// retry-aware error categories.
+fn map_witness_build_err(err: DaWitnessBuildError) -> PaasError {
+    use DaWitnessBuildError as E;
+    let message = err.to_string();
+    match err {
+        E::GetBlock { .. } | E::StateDiffProvider { .. } | E::BytecodeStore { .. } => {
+            PaasError::Storage(message)
+        }
+        E::StateDiffMissing(_) | E::BytecodeMissing(_) => PaasError::TransientFailure(message),
+        E::EmptyDaRefs
+        | E::BlockHasNoTransactions(_)
+        | E::WtxidsRootMismatch { .. }
+        | E::DaTxNotFound { .. }
+        | E::Parse(_)
+        | E::Reassembly(_) => PaasError::PermanentFailure(message),
+    }
+}
+
 /// Decodes a `ChunkInput`'s transition bytes. `PermanentFailure` on malformed.
 fn decode_chunk_transition(ci: &ChunkInput) -> ProverResult<ChunkTransition> {
     ci.try_decode_chunk_transition()
@@ -437,11 +502,11 @@ fn decode_chunk_transition(ci: &ChunkInput) -> ProverResult<ChunkTransition> {
 /// (paas will retry on tick); returns `PermanentFailure` if a stored
 /// receipt fails to decode as a [`ChunkTransition`] (data corruption).
 async fn collect_chunk_inputs_for_batch(
-    batch_storage: &dyn BatchStorage,
+    chunk_storage: &dyn ChunkStorage,
     chunk_receipts: &dyn ReceiptStore,
     batch_id: BatchId,
 ) -> ProverResult<Vec<ChunkInput>> {
-    let chunk_ids = batch_storage
+    let chunk_ids = chunk_storage
         .get_batch_chunks(batch_id)
         .await
         .map_err(|e| PaasError::Storage(format!("get_batch_chunks({batch_id}): {e}")))?

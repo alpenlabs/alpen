@@ -1,0 +1,18 @@
+[package]
+edition = "2021"
+name = "alpen-ee-da-types"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-reth-statediff.workspace = true
+strata-codec.workspace = true
+strata-crypto.workspace = true
+strata-l1-envelope-fmt.workspace = true
+
+bitcoin.workspace = true
+rkyv.workspace = true
+rkyv_impl.workspace = true
+thiserror.workspace = true

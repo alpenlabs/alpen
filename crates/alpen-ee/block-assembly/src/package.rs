@@ -87,7 +87,7 @@ pub(crate) fn build_block_package<TPayload: EnginePayload>(
 ) -> ExecBlockPackage {
     // 1. build block commitment
     let exec_blkid = payload.blockhash();
-    // TODO: get using `EvmExecutionEnvironment`
+    // TODO(STR-3682): get using `EvmExecutionEnvironment`
     let raw_block_encoded_hash = Hash::new([0u8; 32]);
     let commitment = ExecBlockCommitment::new(exec_blkid, raw_block_encoded_hash);
 

@@ -107,7 +107,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             utxo_count = utxos.len(),
             spendable_utxo_count,
             spendable_value_sats,
-            fee_rate,
+            ?fee_rate,
             "loaded wallet state for chunked envelope signing"
         );
 

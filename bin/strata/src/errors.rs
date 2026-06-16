@@ -4,7 +4,6 @@ use std::{io, path};
 
 use format_serde_error::SerdeError;
 use strata_db_types::DbError;
-use strata_params::ParamsError;
 use thiserror::Error;
 use toml::de;
 
@@ -22,12 +21,6 @@ pub(crate) enum InitError {
     #[error("config: {0}")]
     MalformedConfig(#[from] ConfigError),
 
-    #[error("params: {0}")]
-    MalformedParams(#[from] ParamsError),
-
-    #[error("missing rollup params path in arguments")]
-    MissingRollupParams,
-
     #[error("missing ASM params path in arguments")]
     MissingAsmParams,
 
@@ -42,9 +35,6 @@ pub(crate) enum InitError {
 
     #[error("failed to create node storage: {0}")]
     StorageCreation(String),
-
-    #[error("missing sync endpoint (required for non-sequencer nodes)")]
-    MissingSyncEndpoint,
 
     #[error("missing sequencer config file: {0}")]
     MissingSequencerConfig(path::PathBuf),

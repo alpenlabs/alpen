@@ -1,7 +1,8 @@
 use k256::schnorr::SigningKey;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
-use ssz::Decode;
+use ssz::{Decode, Encode};
+use strata_bridge_params::BridgeParams;
 use strata_ee_chain_types::ChunkTransition;
 use strata_ee_chunk_runtime::PrivateInput;
 use strata_predicate::{PredicateKey, PredicateTypeId};
@@ -21,6 +22,7 @@ fn test_signing_key() -> SigningKey {
 pub struct EeChunkProofInput {
     pub genesis: Genesis,
     pub private_input: PrivateInput,
+    pub bridge_params: BridgeParams,
 }
 
 #[derive(Debug)]
@@ -47,6 +49,7 @@ impl ZkVmProgram for EeChunkProgram {
         let rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.private_input)
             .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
         builder.write_buf(&rkyv_bytes)?;
+        builder.write_buf(&input.bridge_params.as_ssz_bytes())?;
         builder.build()
     }
 
@@ -85,6 +88,7 @@ impl EeChunkProgram {
 mod tests {
     use std::{fs, path::PathBuf, sync::Arc};
 
+    use alpen_reth_evm::evm::AlpenEvmFactory;
     use reth_primitives_traits::Block as _;
     use rsp_client_executor::io::EthClientExecutorInput;
     use serde::Deserialize;
@@ -145,11 +149,13 @@ mod tests {
         let body = EvmBlockBody::from_alloy_body(witness.current_block.body().clone());
         let block = EvmBlock::new(evm_header, body);
         let tip_blkid: Hash = block.get_header().compute_block_id();
+        let tip_state_root = block.get_header().get_state_root();
+        let tip_exec_header_summary = block.get_header().get_exec_header_summary();
 
         // Execute the block to get outputs.
         let chain_spec: Arc<reth_chainspec::ChainSpec> =
             Arc::new((&witness.genesis).try_into().unwrap());
-        let ee = EvmExecutionEnvironment::new(chain_spec);
+        let ee = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
         let exec_payload = ExecPayload::new(&header, block.get_body());
         let inputs = ExecInputs::new_empty();
         let output = ee
@@ -158,8 +164,14 @@ mod tests {
         let outputs = output.outputs().clone();
 
         // Build chunk transition.
-        let chunk_transition =
-            ChunkTransition::new(parent_blkid, tip_blkid, inputs.clone(), outputs.clone());
+        let chunk_transition = ChunkTransition::new(
+            parent_blkid,
+            tip_blkid,
+            tip_state_root,
+            tip_exec_header_summary,
+            inputs.clone(),
+            outputs.clone(),
+        );
 
         // Encode block, header, and state for the private input.
         let raw_block_data =
@@ -179,6 +191,7 @@ mod tests {
         let proof_input = EeChunkProofInput {
             genesis: witness.genesis,
             private_input,
+            bridge_params: BridgeParams::default(),
         };
 
         // Run the full native execution pipeline.

@@ -1,14 +1,11 @@
 use std::num::NonZeroU8;
 
-use strata_acct_types::AccountId;
+use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_ID};
 
 /// Default target blocktime in millis
 const DEFAULT_BLOCKTIME_MS: u64 = 5_000;
 /// Default number of deposits to process per ee block.
 const DEFAULT_DEPOSITS_PER_BLOCK: NonZeroU8 = NonZeroU8::new(16).expect("16 is always NonZero");
-/// Default bridge gateway account on OL.
-// TODO(STR-3358): Don't hardcode here
-const DEFAULT_BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(0x10);
 /// Default time to wait on errors during block building.
 const DEFAULT_ERROR_BACKOFF_MS: u64 = 100;
 
@@ -29,7 +26,7 @@ impl Default for BlockBuilderConfig {
         Self {
             blocktime_ms: DEFAULT_BLOCKTIME_MS,
             max_deposits_per_block: DEFAULT_DEPOSITS_PER_BLOCK,
-            bridge_gateway_account_id: DEFAULT_BRIDGE_GATEWAY_ACCOUNT,
+            bridge_gateway_account_id: BRIDGE_GATEWAY_ACCT_ID,
             error_backoff_ms: DEFAULT_ERROR_BACKOFF_MS,
         }
     }

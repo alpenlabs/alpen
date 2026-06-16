@@ -212,6 +212,25 @@ impl OLCheckpointManager {
             .del_checkpoint_payload_entries_from_epoch_blocking(start_epoch)
     }
 
+    /// Deletes locally-built OL checkpoint payload entries from the specified epoch onwards.
+    pub async fn del_local_checkpoint_payload_entries_from_epoch_async(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        self.ops
+            .del_local_checkpoint_payload_entries_from_epoch_async(start_epoch)
+            .await
+    }
+
+    /// Deletes locally-built OL checkpoint payload entries from the specified epoch onwards.
+    pub fn del_local_checkpoint_payload_entries_from_epoch_blocking(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        self.ops
+            .del_local_checkpoint_payload_entries_from_epoch_blocking(start_epoch)
+    }
+
     /// Stores an OL checkpoint signing entry by epoch commitment.
     pub async fn put_checkpoint_signing_entry_async(
         &self,

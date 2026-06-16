@@ -3,8 +3,7 @@
 use std::{cell::RefCell, iter};
 
 use strata_acct_types::AccountSerial;
-use strata_codec::{Codec, encode_to_vec};
-use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog};
+use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog, OLLogType};
 
 use crate::errors::{ExecError, ExecResult};
 
@@ -12,7 +11,7 @@ use crate::errors::{ExecError, ExecResult};
 #[derive(Clone, Debug)]
 pub struct ExecOutputBuffer {
     // maybe we'll have stuff other than logs in the future
-    // TODO don't use refcell, this sucks
+    // TODO(STR-3677): don't use refcell, this sucks
     logs: RefCell<Vec<OLLog>>,
 }
 
@@ -72,8 +71,8 @@ pub trait OutputCtx {
     }
 
     /// Records a typed log.  Returns an error if the block log cap would be exceeded.
-    fn emit_typed_log(&self, source: AccountSerial, body: &impl Codec) -> ExecResult<()> {
-        let encoded_body = encode_to_vec(body)?;
+    fn emit_typed_log(&self, source: AccountSerial, body: &impl OLLogType) -> ExecResult<()> {
+        let encoded_body = body.encode_log()?;
         self.emit_log(OLLog::new(source, encoded_body))
     }
 }

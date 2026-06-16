@@ -235,6 +235,7 @@ mod tests {
             0,
             parent_blockhash,
             0,
+            0,
             vec![],
         )
     }

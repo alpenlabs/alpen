@@ -88,6 +88,9 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     /// Current verified chain tip.
     cur_verified_exec_blkid: Hash,
 
+    /// Current verified execution state root.
+    cur_verified_exec_state_root: Hash,
+
     /// Outputs we expect to have.
     expected_outputs: UpdateOutputs,
 
@@ -98,7 +101,7 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     input_chunks: &'a [ArchivedChunkInput],
 
     /// Partial pre-state corresponding to the last verified block.
-    // TODO use this to support DA
+    // TODO(STR-3685): use this to support DA
     raw_partial_pre_state: &'a [u8],
 }
 
@@ -117,6 +120,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             ee,
             chunk_predicate_key,
             cur_verified_exec_blkid: state.last_exec_blkid(),
+            cur_verified_exec_state_root: state.last_exec_state_root(),
             expected_outputs,
             accumulated_outputs: UpdateOutputs::new_empty(),
             input_chunks,
@@ -136,6 +140,10 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
 
     pub fn cur_verified_exec_blkid(&self) -> Hash {
         self.cur_verified_exec_blkid
+    }
+
+    pub fn cur_verified_exec_state_root(&self) -> Hash {
+        self.cur_verified_exec_state_root
     }
 
     /// Returns the raw partial pre-state.
@@ -212,6 +220,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
 
         // Advance the verified tip.
         self.cur_verified_exec_blkid = transition.tip_exec_blkid();
+        self.cur_verified_exec_state_root = transition.tip_state_root();
 
         Ok(())
     }
@@ -273,6 +282,7 @@ impl<'a, E: ExecutionEnvironment> Clone for EeVerificationState<'a, E> {
             ee: self.ee,
             chunk_predicate_key: self.chunk_predicate_key,
             cur_verified_exec_blkid: self.cur_verified_exec_blkid,
+            cur_verified_exec_state_root: self.cur_verified_exec_state_root,
             expected_outputs: self.expected_outputs.clone(),
             accumulated_outputs: self.accumulated_outputs.clone(),
             input_chunks: self.input_chunks,

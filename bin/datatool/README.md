@@ -4,7 +4,7 @@ This is a tool for doing basic operations with Strata keys and data.
 
 ## Usage
 
-The basic flow to generate a params file with it looks like this:
+The basic flow to generate the params files looks like this:
 
 ```sh
 # Generate keys for the different parties each on different machines.
@@ -14,42 +14,34 @@ strata-datatool genxpriv operator2.bin
 
 # Generate the pubkeys, also on their original machines.
 strata-datatool genseqpubkey -f sequencer.bin
-strata-datatool genopxpub -f operator1.bin
-strata-datatool genopxpub -f operator2.bin
+strata-datatool genoppubkey -f operator1.bin
+strata-datatool genoppubkey -f operator2.bin
 
-# Take the generated pubkeys and generate the params file with it.
-# Option 1: With Bitcoin RPC connection (fetches genesis L1 view from Bitcoin node)
+# Generate the genesis L1 anchor file (requires Bitcoin RPC connection).
 cargo build --bin strata-datatool --features btc-client
 strata-datatool \
     --bitcoin-rpc-url http://localhost:18332 \
     --bitcoin-rpc-user rpcuser \
     --bitcoin-rpc-password rpcpass \
-    genparams \
-    -n 'hello-world-network' \
-    -s XGUgTAJNpexzrjgnbMvGtDBCZEwxd6KQE4PNDWE6YLZYBTGoS \
-    -b tpubDASVk1m5cxpmUbwVEZEQb8maDVx9kDxBhSLCqsKHJJmZ8htSegpHx7G3RFudZCdDLtNKTosQiBLbbFsVA45MemurWenzn16Y1ft7NkQekcD \
-    -b tpubDBX9KQsqK2LMCszkDHvANftHzhJdhipe9bi9MNUD3S2bsY1ikWEZxE53VBgYN8WoNXk9g9eRzhx6UfJcQr3XqkA27aSxXvKu5TYFZJEAjCd \
+    gen-l1-anchor \
     --genesis-l1-height 100 \
-    -o params.json
+    --output l1-anchor.json
 
-# Option 2: Using pre-generated genesis L1 view file (no Bitcoin RPC needed)
-strata-datatool genparams \
+# Generate the OL params (provides the genesis OL block id consumed by ASM params).
+strata-datatool gen-ol-params \
+    --l1-anchor-file l1-anchor.json \
+    -o ol-params.json
+
+# Generate the ASM params from the operator/sequencer pubkeys and the OL params.
+strata-datatool gen-asm-params \
     -n 'hello-world-network' \
-    -s XGUgTAJNpexzrjgnbMvGtDBCZEwxd6KQE4PNDWE6YLZYBTGoS \
-    -b tpubDASVk1m5cxpmUbwVEZEQb8maDVx9kDxBhSLCqsKHJJmZ8htSegpHx7G3RFudZCdDLtNKTosQiBLbbFsVA45MemurWenzn16Y1ft7NkQekcD \
-    -b tpubDBX9KQsqK2LMCszkDHvANftHzhJdhipe9bi9MNUD3S2bsY1ikWEZxE53VBgYN8WoNXk9g9eRzhx6UfJcQr3XqkA27aSxXvKu5TYFZJEAjCd \
-    --genesis-l1-view-file genesis_l1_view.json \
-    -o params.json
-
-# Generate a genesis L1 view file (requires Bitcoin RPC connection)
-cargo build --bin strata-datatool --features btc-client
-strata-datatool \
-    --bitcoin-rpc-url http://localhost:18332 \
-    --bitcoin-rpc-user rpcuser \
-    --bitcoin-rpc-password rpcpass \
-    genl1view \
-    --genesis-l1-height 100 \
-    --output genesis_l1_view.json
+    -s <sequencer-x-only-pubkey> \
+    -b <operator1-compressed-pubkey> \
+    -b <operator2-compressed-pubkey> \
+    --ol-params ol-params.json \
+    --safe-harbour-address <p2tr-bosd-descriptor> \
+    --l1-anchor-file l1-anchor.json \
+    -o asm-params.json
 ```
 
 ## Envvars
@@ -61,7 +53,7 @@ Alternatively, instead of passing `-f`, you can pass `-E` and define either
 
 Before proceeding, make sure that you have SP1 correctly set up by following the installation instructions provided [here](https://docs.succinct.xyz/docs/sp1/getting-started/install)
 
-To ensure that the RollupParams contain the correct verifying key, build the binary in release mode and confirm that SP1 is set up correctly by following its installation instructions.
+The checkpoint verifying key is baked into the ASM checkpoint predicate. To ensure it is the correct verifying key, build the binary in release mode and confirm that SP1 is set up correctly by following its installation instructions.
 
 For production usage—since SP1 verification key generation is platform and workspace dependent—build the data tool in release mode with the sp1-docker-builder feature:
 
@@ -75,8 +67,8 @@ Because building the guest code in Docker can be time-consuming, you can generat
 cargo build --bin strata-datatool -F "sp1-builder" --release
 ```
 
-Additionally, the generated ELF can be exported after building the datatool as specified above:
+Print the resolved checkpoint predicate (the SP1 verifying key under `sp1-builder`):
 
 ```bash
-strata-datatool genparams --elf-dir <ELF-PATH>
+strata-datatool gen-checkpoint-predicate
 ```

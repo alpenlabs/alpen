@@ -3,7 +3,7 @@
 use ssz_types::VariableList;
 use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
 use strata_identifiers::Buf32;
-use tree_hash::TreeHash;
+use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::{
     AccountId, BitcoinAmount, SentTransfer,
@@ -159,7 +159,11 @@ impl Codec for MsgPayload {
         let value = BitcoinAmount::decode(dec)?;
 
         let len_vi = Varint::decode(dec)?;
-        let mut buf = vec![0; len_vi.inner() as usize];
+        let len = len_vi.inner() as usize;
+        if len > MAX_MSG_PAYLOAD_DATA_BYTES as usize {
+            return Err(CodecError::OverflowContainer);
+        }
+        let mut buf = vec![0; len];
         dec.read_buf(&mut buf)?;
         let data = VariableList::new(buf).map_err(|_| CodecError::OverflowContainer)?;
 
@@ -214,7 +218,9 @@ impl MessageEntry {
 
     /// Computes the commitment that we store in the MMR accumulator.
     pub fn compute_msg_commitment(&self) -> Buf32 {
-        <Self as TreeHash>::tree_hash_root(self).0.into()
+        <Self as TreeHash>::tree_hash_root::<Sha256Hasher>(self)
+            .0
+            .into()
     }
 }
 

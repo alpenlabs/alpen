@@ -43,7 +43,7 @@ pub fn verify_and_process_update<'i, P: SnarkAccountProgramVerification>(
         });
     }
 
-    // TODO maybe we should remove the inbox indexes from the pub params?
+    // TODO(STR-3685): maybe we should remove the inbox indexes from the pub params?
     if update.cur_state().next_inbox_msg_idx() + msg_count as u64
         != update.new_state().next_inbox_msg_idx()
     {
@@ -136,9 +136,14 @@ fn verify_coinput_and_process_message<P: SnarkAccountProgramVerification>(
 /// Applies an update unconditionally without verification.
 ///
 /// This is used outside the proof, after verifying the proof, to reconstruct
-/// the actual state from DA.  It decodes the extra data and messages from the
+/// the actual state from DA. It decodes the extra data and messages from the
 /// [`UpdateManifest`] and applies them to the state, skipping coinput
 /// verification and the `finalize_verification` step.
+///
+/// If the manifest carries an expected post-state root
+/// ([`UpdateManifest::new_state_root`] is `Some`), the computed post-state
+/// is asserted against it. When `None` (e.g. checkpoint-sync sources), the
+/// assertion is skipped.
 ///
 /// Correctness is implied by the orchestration layer permitting the state
 /// transition in the first place, since that requires a snark proof.
@@ -170,8 +175,10 @@ pub fn apply_update_unconditionally<P: SnarkAccountProgram>(
     // 6. Finalize state.
     program.finalize_state(state, extra_data)?;
 
-    // 7. Verify post-state matches manifest.
-    if state.compute_state_root() != manifest.new_state().inner_state() {
+    // 7. Verify post-state matches manifest, if provided.
+    if let Some(expected_root) = manifest.new_state_root()
+        && state.compute_state_root() != expected_root
+    {
         return Err(ProgramError::MismatchedPostState);
     }
 
@@ -337,14 +344,12 @@ mod tests {
     fn make_manifest(
         msg_entries: Vec<MessageEntry>,
         extra: TestExtraData,
-        expected_post_value: u64,
+        expected_post_value: Option<u64>,
     ) -> UpdateManifest {
         let extra_data = strata_codec::encode_to_vec(&extra).unwrap();
-        let expected_state = TestState {
-            value: expected_post_value,
-        };
-        let new_state = ProofState::new(expected_state.compute_state_root(), 0);
-        UpdateManifest::new(new_state, extra_data, msg_entries)
+        let new_state_root =
+            expected_post_value.map(|v| TestState { value: v }.compute_state_root());
+        UpdateManifest::new(new_state_root, extra_data, msg_entries)
     }
 
     #[test]
@@ -375,7 +380,38 @@ mod tests {
         let manifest = make_manifest(
             vec![make_msg_entry(5), make_msg_entry(3)],
             TestExtraData { multiplier: 2 },
-            16,
+            Some(16),
+        );
+
+        let result = apply_update_unconditionally(&program, &mut state, &manifest);
+        assert!(result.is_ok());
+        assert_eq!(state.value, 16);
+    }
+
+    #[test]
+    fn test_apply_unconditionally_rejects_wrong_post_state() {
+        let program = TestProgram;
+        let mut state = TestState { value: 0 };
+        // Real post-state is 16; manifest claims 99.
+        let manifest = make_manifest(
+            vec![make_msg_entry(5), make_msg_entry(3)],
+            TestExtraData { multiplier: 2 },
+            Some(99),
+        );
+
+        let result = apply_update_unconditionally(&program, &mut state, &manifest);
+        assert!(matches!(result, Err(ProgramError::MismatchedPostState)));
+    }
+
+    #[test]
+    fn test_apply_unconditionally_skips_check_when_no_post_state() {
+        let program = TestProgram;
+        let mut state = TestState { value: 0 };
+        // No expected post-state in manifest; update applies without check.
+        let manifest = make_manifest(
+            vec![make_msg_entry(5), make_msg_entry(3)],
+            TestExtraData { multiplier: 2 },
+            None,
         );
 
         let result = apply_update_unconditionally(&program, &mut state, &manifest);
@@ -418,7 +454,7 @@ mod tests {
         let manifest = make_manifest(
             vec![make_msg_entry(5), unknown_entry, make_msg_entry(3)],
             TestExtraData { multiplier: 1 },
-            8,
+            Some(8),
         );
 
         let result = apply_update_unconditionally(&program, &mut state, &manifest);

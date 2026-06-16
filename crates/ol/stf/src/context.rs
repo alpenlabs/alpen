@@ -8,6 +8,7 @@
 //! ensuring that we don't box ourselves into a design corner where we can't do
 //! DA-based state reconstruction.
 
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{Epoch, OLBlockHeader, OLLog, Slot};
 
@@ -158,7 +159,7 @@ impl<'b> BlockContext<'b> {
             return OLBlockCommitment::null();
         };
 
-        // FIXME uhhh this actually does the same destructuring as above but
+        // FIXME(STR-3677): uhhh this actually does the same destructuring as above but
         // LLVM should be able to figure it out after inlining
         let blkid = self.compute_parent_blkid();
         OLBlockCommitment::new(ph.slot(), blkid)
@@ -207,10 +208,15 @@ impl EpochInitialContext {
 }
 
 /// Basic execution context which can be used for tracking outputs.
+///
+/// Optionally carries withdrawal parameters for transaction processing paths
+/// that validate withdrawal amounts. Manifest processing paths leave this as
+/// `None`.
 #[derive(Debug)]
 pub struct BasicExecContext<'b> {
     block_info: BlockInfo,
     output_buffer: &'b ExecOutputBuffer,
+    bridge_params: Option<BridgeParams>,
 }
 
 impl<'b> BasicExecContext<'b> {
@@ -218,7 +224,13 @@ impl<'b> BasicExecContext<'b> {
         Self {
             block_info,
             output_buffer,
+            bridge_params: None,
         }
+    }
+
+    pub fn with_bridge_params(mut self, bridge_params: BridgeParams) -> Self {
+        self.bridge_params = Some(bridge_params);
+        self
     }
 
     fn block_info(&self) -> &BlockInfo {
@@ -235,6 +247,10 @@ impl<'b> BasicExecContext<'b> {
 
     pub fn epoch(&self) -> Epoch {
         self.block_info.epoch()
+    }
+
+    pub fn bridge_params(&self) -> Option<&BridgeParams> {
+        self.bridge_params.as_ref()
     }
 }
 

@@ -6,6 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use strata_bridge_params::BridgeParams;
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
@@ -82,7 +83,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         BlockAssemblyError::InvalidAccumulatorClaim(_)
         | BlockAssemblyError::Acct(_)
         | BlockAssemblyError::State(_)
-        | BlockAssemblyError::AsmManifestHashMismatch { .. }
+        | BlockAssemblyError::L1BlockRefHashMismatch { .. }
         | BlockAssemblyError::InboxEntryHashMismatch { .. }
         | BlockAssemblyError::AccountNotFound(_)
         | BlockAssemblyError::InboxProofCountMismatch { .. } => MempoolTxInvalidReason::Invalid,
@@ -115,6 +116,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::Mempool(_)
         | BlockAssemblyError::StateProvider(_)
         | BlockAssemblyError::NoPendingTemplateForParent(_)
+        | BlockAssemblyError::TemplateAlreadyCompletedForParent { .. }
         | BlockAssemblyError::Other(_)
         | BlockAssemblyError::RequestChannelClosed
         | BlockAssemblyError::ResponseChannelClosed
@@ -138,7 +140,10 @@ pub(crate) struct ConstructBlockOutput<S> {
     pub(crate) failed_txs: Vec<FailedMempoolTx>,
     /// The post state after applying all transactions.
     // Used by tests to chain blocks without re-executing through STF.
-    #[cfg_attr(not(test), expect(dead_code, reason = "only used by tests"))]
+    #[cfg_attr(
+        all(not(test), not(feature = "test-utils")),
+        expect(dead_code, reason = "only used by tests")
+    )]
     pub(crate) post_state: S,
     /// Accumulated DA data for the constructed block.
     pub(crate) accumulated_da: AccumulatedDaData,
@@ -160,6 +165,7 @@ pub(crate) async fn generate_block_template_inner<C, E>(
     sequencer_config: &SequencerConfig,
     block_generation_config: BlockGenerationConfig,
     parent_da: AccumulatedDaData,
+    bridge_params: BridgeParams,
 ) -> BlockAssemblyResult<BlockTemplateResult>
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator + MempoolProvider,
@@ -198,6 +204,7 @@ where
         block_epoch,
         mempool_txs,
         parent_da,
+        bridge_params,
     )
     .await?;
 
@@ -257,6 +264,7 @@ pub(crate) async fn construct_block<C, E>(
     block_epoch: Epoch,
     mempool_txs: Vec<(OLTxId, OLTransaction)>,
     parent_da: AccumulatedDaData,
+    bridge_params: BridgeParams,
 ) -> BlockAssemblyResult<ConstructBlockOutput<C::State>>
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator,
@@ -307,6 +315,7 @@ where
         accumulated_batch,
         mempool_txs,
         accumulated_da,
+        bridge_params,
     );
 
     // Phase 3: Seal the epoch if the policy says so or the checkpoint payload is near the
@@ -361,7 +370,7 @@ async fn fetch_asm_manifests_for_terminal_block<
 >(
     ctx: &C,
     parent_state: &S,
-) -> BlockAssemblyResult<Option<OLL1ManifestContainer>> {
+) -> BlockAssemblyResult<Option<OLAsmManifestContainer>> {
     let last_l1_height = parent_state.last_l1_height();
     let start_height = last_l1_height
         .checked_add(1)
@@ -380,7 +389,7 @@ async fn fetch_asm_manifests_for_terminal_block<
         "fetched asm manifests for terminal block",
     );
 
-    let container = OLL1ManifestContainer::new(manifests)?;
+    let container = OLAsmManifestContainer::new(manifests)?;
 
     // Return the container regardless of whether manifests is empty or not. Because otherwise, if
     // for some reasons L1 is slow, epoch sealing policy is not respected.
@@ -431,6 +440,7 @@ where
     skip_all,
     fields(component = "ol_block_assembly", tx_count = mempool_txs.len())
 )]
+#[expect(clippy::too_many_arguments, reason = "all arguments are required")]
 fn process_transactions<P, S>(
     proof_gen: &P,
     block_context: &BlockContext<'_>,
@@ -439,6 +449,7 @@ fn process_transactions<P, S>(
     accumulated_batch: WriteBatch<S::AccountState>,
     mempool_txs: Vec<(OLTxId, OLTransaction)>,
     accumulated_da: AccumulatedDaData,
+    bridge_params: BridgeParams,
 ) -> ProcessTransactionsOutput<S>
 where
     P: AccumulatorProofGenerator,
@@ -513,7 +524,8 @@ where
         // Step 3: Create per-tx output buffer and execute transaction.
         // Logs are only merged into main buffer on success; on failure they're discarded.
         let tx_buffer = ExecOutputBuffer::new_empty();
-        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &tx_buffer);
+        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &tx_buffer)
+            .with_bridge_params(bridge_params);
         let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
 
         debug!(%txid, kind = %tx.payload().type_id(), "processing transaction");
@@ -629,7 +641,7 @@ fn build_block_template<S>(
     accumulated_batch: WriteBatch<S::AccountState>,
     output_buffer: ExecOutputBuffer,
     successful_txs: Vec<OLTransaction>,
-    manifest_container: Option<OLL1ManifestContainer>,
+    manifest_container: Option<OLAsmManifestContainer>,
 ) -> BlockAssemblyResult<(FullBlockTemplate, S)>
 where
     S: BlockAssemblyStateAccess,
@@ -638,34 +650,33 @@ where
     let mut final_state = parent_state.as_ref().clone();
     final_state.apply_write_batch(accumulated_batch)?;
 
-    // Compute preseal state root (after transactions, before manifest processing)
-    let preseal_state_root = final_state.compute_state_root()?;
+    // Assembly policy: a block that carries manifests is treated as the epoch
+    // terminal. The STF decouples manifest inclusion from terminality (logs are
+    // buffered into intraepoch state regardless), but block assembly currently
+    // only emits manifests at epoch boundaries, so this preserves the existing
+    // external behavior while leaving the infrastructure free to change later.
+    let is_terminal = manifest_container.is_some();
 
-    // For terminal blocks, process manifests to get final state root
-    // For non-terminal blocks, preseal root IS the final root
-    let (post_state_roots, l1_update) = if let Some(mc) = manifest_container {
-        // Terminal block: process manifests to advance epoch and update state
-        // Use the same output_buffer to accumulate logs from manifest processing
-        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output_buffer);
-        process_block_manifests(&mut final_state, &mc, &basic_ctx).map_err(|e| {
-            error!(
-                component = "ol_block_assembly",
-                ?e,
-                "manifest processing failed"
-            );
+    // Buffer any manifests carried by this block into intraepoch state.
+    if let Some(mc) = &manifest_container {
+        process_block_manifests(&mut final_state, mc.manifests()).map_err(|e| {
+            error!(?e, "manifest buffering failed");
             BlockAssemblyError::BlockConstruction(e)
         })?;
+    }
 
-        let final_state_root = final_state.compute_state_root()?;
-        let post_commitment =
-            BlockPostStateCommitments::Terminal(preseal_state_root, final_state_root);
-        let update = OLL1Update::new(preseal_state_root, mc);
-        (post_commitment, Some(update))
-    } else {
-        // Non-terminal block: no manifest processing needed
-        let post_commitment = BlockPostStateCommitments::Common(preseal_state_root);
-        (post_commitment, None)
-    };
+    // At the epoch terminal, drain the buffered ASM logs, reset intraepoch
+    // state, and advance the epoch.
+    if is_terminal {
+        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output_buffer);
+        process_epoch_terminal(&mut final_state, &basic_ctx).map_err(|e| {
+            error!(?e, "epoch terminal processing failed");
+            BlockAssemblyError::BlockConstruction(e)
+        })?;
+    }
+
+    // The single final state root after all of the block's processing.
+    let state_root = final_state.compute_state_root()?;
 
     // Defense-in-depth: per-tx and manifest emission paths enforce the cap at
     // emit time, and this preserves an explicit terminal assembly invariant
@@ -678,23 +689,26 @@ where
     let logs = output_buffer.into_logs();
 
     // Build exec outputs to get header state root
-    let exec_outputs = BlockExecOutputs::new(post_state_roots, logs);
+    let exec_outputs = BlockExecOutputs::new(state_root, logs);
     let logs_root = exec_outputs.compute_block_logs_root();
-    let header_state_root = *exec_outputs.header_post_state_root();
+    let header_state_root = *exec_outputs.state_root();
 
     // Extract slot/epoch from block context
     let block_slot = block_context.slot();
     let block_epoch = block_context.epoch();
     let parent_blkid = block_context.compute_parent_blkid();
 
-    // Build tx segment and body (terminal if l1_update is provided)
+    // Build tx segment and body, attaching any manifests this block carries.
     let tx_segment = OLTxSegment::new(successful_txs)?;
-    let body = OLBlockBody::new(tx_segment, l1_update);
+    let mut body = OLBlockBody::new_common(tx_segment);
+    if let Some(mc) = manifest_container {
+        body.set_manifests(mc);
+    }
     let body_root = body.compute_hash_commitment();
 
-    // Set flags from body
+    // Terminality is the explicit assembly policy decision above.
     let mut flags = BlockFlags::zero();
-    flags.set_is_terminal(body.is_body_terminal());
+    flags.set_is_terminal(is_terminal);
 
     // Use timestamp from config if provided, otherwise compute from system time.
     // OL block timestamps are expressed in milliseconds since Unix epoch.
@@ -797,10 +811,10 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
     let mut all_acc_proofs = Vec::new();
     for check in proof_indexer.accumulator_checks() {
         match check {
-            AccProofCheck::AsmHistory(claim) => {
+            AccProofCheck::L1BlockRef(claim) => {
                 let proofs =
-                    proof_gen.generate_asm_manifest_proofs(slice::from_ref(claim), state)?;
-                all_acc_proofs.extend(proofs.asm_manifest_proofs().iter().cloned());
+                    proof_gen.generate_l1_block_ref_proofs(slice::from_ref(claim), state)?;
+                all_acc_proofs.extend(proofs.l1_block_ref_proofs().iter().cloned());
             }
             AccProofCheck::Inbox(claim) => {
                 let inbox_proofs = proof_gen.generate_inbox_proofs_for_claims(
@@ -818,7 +832,7 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
         target = ?target,
         acc_proof_count = all_acc_proofs.len(),
         pred_check_count = proof_indexer.predicate_checks().len(),
-        manifests_mmr_entries = state.asm_manifests_mmr().num_entries(),
+        l1_block_refs_mmr_entries = state.l1_block_refs_mmr().num_entries(),
         "generated proofs for snark update via indexer"
     );
 
@@ -852,7 +866,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_proof_gen_success() {
+    async fn test_l1_block_ref_proof_gen_success() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
@@ -865,13 +879,13 @@ mod tests {
             .await
             .expect("fetch stored state")
             .expect("stored state missing");
-        let asm_manifest_claim = fixture
-            .asm_manifest_ref(1)
+        let l1_block_ref_claim = fixture
+            .l1_block_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create tx with claims from the tracker using builder
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(vec![asm_manifest_claim])
+            .with_l1_block_ref_claims(vec![l1_block_ref_claim])
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
@@ -1015,7 +1029,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_claim_hash_mismatch() {
+    async fn test_l1_block_ref_claim_hash_mismatch() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
@@ -1029,7 +1043,7 @@ mod tests {
             .expect("fetch stored state")
             .expect("stored state missing");
         let seeded_claim = fixture
-            .asm_manifest_ref(1)
+            .l1_block_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create claim with correct MMR index but wrong hash.
@@ -1042,7 +1056,7 @@ mod tests {
         let invalid_claims = vec![AccumulatorClaim::new(seeded_claim.idx(), wrong_hash)];
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(invalid_claims)
+            .with_l1_block_ref_claims(invalid_claims)
             .build();
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
@@ -1053,14 +1067,14 @@ mod tests {
         assert!(result.is_err(), "Should fail with hash mismatch");
         let err = result.unwrap_err();
         assert!(
-            matches!(err, BlockAssemblyError::AsmManifestHashMismatch { .. }),
-            "Expected AsmManifestHashMismatch, got: {:?}",
+            matches!(err, BlockAssemblyError::L1BlockRefHashMismatch { .. }),
+            "Expected L1BlockRefHashMismatch, got: {:?}",
             err
         );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_claim_missing_index() {
+    async fn test_l1_block_ref_claim_missing_index() {
         // Seed one L1 header so we can reuse its hash with a missing index.
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
@@ -1075,7 +1089,7 @@ mod tests {
             .expect("fetch stored state")
             .expect("stored state missing");
         let seeded_claim = fixture
-            .asm_manifest_ref(1)
+            .l1_block_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create claim with non-existent index.
@@ -1086,7 +1100,7 @@ mod tests {
         )];
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(invalid_claims)
+            .with_l1_block_ref_claims(invalid_claims)
             .build();
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
@@ -1109,7 +1123,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_asm_manifest_claim_with_only_genesis_prefill() {
+    async fn test_l1_block_ref_claim_with_only_genesis_prefill() {
         // No real manifests are seeded, so the MMR contains only the genesis
         // sentinel at index 0. A claim quoting an arbitrary hash at that index
         // must be rejected as a hash mismatch.
@@ -1129,7 +1143,7 @@ mod tests {
             .expect("stored state missing");
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(invalid_claims)
+            .with_l1_block_ref_claims(invalid_claims)
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
@@ -1141,7 +1155,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(BlockAssemblyError::AsmManifestHashMismatch { idx: 0, .. })
+            Err(BlockAssemblyError::L1BlockRefHashMismatch { idx: 0, .. })
         ));
     }
 
@@ -1328,15 +1342,15 @@ mod tests {
             .await
             .expect("fetch stored state")
             .expect("stored state missing");
-        let asm_manifest_claims = vec![
+        let l1_block_ref_claims = vec![
             fixture
-                .asm_manifest_ref(1)
+                .l1_block_ref(1)
                 .expect("claim for L1 height 1 should exist"),
         ];
 
         // Create tx with BOTH L1 claims and inbox messages
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_asm_manifest_claims(asm_manifest_claims.clone())
+            .with_l1_block_ref_claims(l1_block_ref_claims.clone())
             .with_processed_messages(messages.clone())
             .build();
 
@@ -1353,13 +1367,13 @@ mod tests {
         let acc_proofs = tx_proofs
             .accumulator_proofs()
             .expect("should have accumulator proofs");
-        let n_asm_manifests = asm_manifest_claims.len();
+        let n_l1_block_refs = l1_block_ref_claims.len();
         let n_inbox = messages.len();
         assert_eq!(
             acc_proofs.proofs().len(),
-            n_asm_manifests + n_inbox,
-            "Should have {n_asm_manifests} L1 header + {n_inbox} inbox = {} total accumulator proofs",
-            n_asm_manifests + n_inbox
+            n_l1_block_refs + n_inbox,
+            "Should have {n_l1_block_refs} L1 block refs + {n_inbox} inbox = {} total accumulator proofs",
+            n_l1_block_refs + n_inbox
         );
 
         // Verify predicate satisfier exists
@@ -1421,14 +1435,13 @@ mod tests {
         expected_heights: &[L1Height],
     ) {
         let body = block_template.body();
-        let l1_update = body.l1_update();
+        let manifest_cont = body.manifests();
         assert!(
-            l1_update.is_some(),
-            "Terminal block should contain L1 update"
+            manifest_cont.is_some(),
+            "Terminal block should contain manifests"
         );
 
-        let manifest_cont = l1_update.unwrap().manifest_cont();
-        let manifests = manifest_cont.manifests();
+        let manifests = manifest_cont.unwrap().manifests();
         assert_eq!(
             manifests.len(),
             expected_heights.len(),
@@ -1450,10 +1463,9 @@ mod tests {
     // Helper to validate non-terminal block without L1 updates
     fn check_non_terminal_block(block_template: &FullBlockTemplate) {
         let body = block_template.body();
-        let l1_update = body.l1_update();
         assert!(
-            l1_update.is_none(),
-            "Non-terminal block should NOT contain L1 update"
+            body.manifests().is_none(),
+            "Non-terminal block should NOT contain manifests"
         );
     }
 
@@ -1804,21 +1816,12 @@ mod tests {
 
         assert_eq!(tx_count, 0, "terminal empty block should have zero txs");
         assert!(
-            body.l1_update().is_some(),
-            "terminal block should include l1_update even when tx segment is empty"
-        );
-        assert!(
-            body.is_body_terminal(),
-            "terminal body must report terminal status"
+            body.manifests().is_some(),
+            "terminal block should include manifests even when tx segment is empty"
         );
         assert!(
             template.header().is_terminal(),
             "terminal header flag must be set"
-        );
-        assert_eq!(
-            template.header().is_terminal(),
-            body.is_body_terminal(),
-            "header terminal flag must match body terminal status"
         );
     }
 
@@ -1863,21 +1866,12 @@ mod tests {
 
         assert_eq!(tx_count, 0, "non-terminal empty block should have zero txs");
         assert!(
-            body.l1_update().is_none(),
-            "non-terminal empty block should not include l1_update"
-        );
-        assert!(
-            !body.is_body_terminal(),
-            "non-terminal body must not report terminal status"
+            body.manifests().is_none(),
+            "non-terminal empty block should not include manifests"
         );
         assert!(
             !template.header().is_terminal(),
             "non-terminal header flag must not be set"
-        );
-        assert_eq!(
-            template.header().is_terminal(),
-            body.is_body_terminal(),
-            "header terminal flag must match body terminal status"
         );
         // Empty log sets must commit to the canonical zero logs root.
         assert_eq!(
@@ -2024,21 +2018,22 @@ mod tests {
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        // Valid tx for account1: L1 header claims exist in both MMRs for the requested L1 height.
+        // Valid tx for account1: L1 block ref claims exist in both MMRs for the requested L1
+        // height.
         let valid_claims = vec![
-            env.asm_manifest_ref(1)
+            env.l1_block_ref(1)
                 .expect("claim for L1 height 1 should exist"),
         ];
         let valid_tx = MempoolSnarkTxBuilder::new(account1)
             .with_seq_no(0)
-            .with_asm_manifest_claims(valid_claims)
+            .with_l1_block_ref_claims(valid_claims)
             .build();
         let valid_txid = valid_tx.compute_txid();
 
         // Invalid tx for account2: non-existent MMR index (no corresponding MMR leaf)
         let fake_hash = test_hash(99);
         let max_seeded_idx = env
-            .asm_manifest_refs()
+            .l1_block_refs()
             .iter()
             .map(|claim| claim.idx())
             .max()
@@ -2047,7 +2042,7 @@ mod tests {
         let invalid_claims = vec![AccumulatorClaim::new(missing_idx, fake_hash)];
         let invalid_tx = MempoolSnarkTxBuilder::new(account2)
             .with_seq_no(0)
-            .with_asm_manifest_claims(invalid_claims)
+            .with_l1_block_ref_claims(invalid_claims)
             .build();
         let invalid_txid = invalid_tx.compute_txid();
 
@@ -2567,6 +2562,7 @@ mod tests {
             accumulated_batch,
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
+            BridgeParams::default(),
         );
 
         assert!(
@@ -2623,6 +2619,7 @@ mod tests {
             accumulated_batch,
             vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
             AccumulatedDaData::new_empty(),
+            BridgeParams::default(),
         );
 
         assert_eq!(
@@ -2667,6 +2664,7 @@ mod tests {
             accumulated_batch,
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
+            BridgeParams::default(),
         );
 
         assert!(
@@ -2706,6 +2704,7 @@ mod tests {
             accumulated_batch,
             mempool_txs,
             seeded_da,
+            BridgeParams::default(),
         )
     }
 
@@ -2880,13 +2879,13 @@ mod tests {
             .await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let mut claims: Vec<_> = env.asm_manifest_refs().to_vec();
+        let mut claims: Vec<_> = env.l1_block_refs().to_vec();
         claims.extend(claims.clone());
         assert_eq!(claims.len(), 50, "stress setup should build 50 claims");
 
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
-            .with_asm_manifest_claims(claims)
+            .with_l1_block_ref_claims(claims)
             .build();
         let txid = tx.compute_txid();
 

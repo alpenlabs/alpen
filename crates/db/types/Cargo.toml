@@ -14,9 +14,8 @@ strata-codec.workspace = true
 strata-csm-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
-strata-ol-chain-types.workspace = true
+strata-merkle-node-store.workspace = true
 strata-ol-chain-types-new.workspace = true
-strata-ol-chainstate-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
@@ -28,7 +27,6 @@ anyhow.workspace = true
 arbitrary.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
-parking_lot = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
 typed-sled.workspace = true
@@ -36,7 +34,6 @@ typed-sled.workspace = true
 [features]
 default = []
 mocks = []
-stubs = ["dep:parking_lot"]
 
 [dev-dependencies]
 proptest.workspace = true

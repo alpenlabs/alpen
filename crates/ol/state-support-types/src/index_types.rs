@@ -2,11 +2,10 @@
 //!
 //! This module contains types that capture operations performed on state
 //! for later use by indexers. These are produced by the `IndexerState` layer.
-// TODO make the field names here more consistent, which should also reflect in
+// TODO(STR-3677): make the field names here more consistent, which should also reflect in
 // the spec and state accessor fn/arg names
 
-use strata_acct_types::{AccountId, Hash, MessageEntry};
-use strata_asm_manifest_types::AsmManifest;
+use strata_acct_types::{AccountId, Hash, L1BlockRecord, MessageEntry};
 use strata_identifiers::L1Height;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
@@ -54,157 +53,71 @@ impl InboxMessageWrite {
 // Snark state update tracking
 // ============================================================================
 
-/// A direct set via `set_proof_state_directly`.
-#[derive(Clone, Debug)]
-pub struct SAStateSetOp {
-    /// The account whose state was updated.
-    account_id: AccountId,
-
-    /// The new inner state root.
-    state: Hash,
-
-    /// The next read index.
-    next_read_idx: u64,
-
-    /// The seqno after the update.
-    seqno: Seqno,
-}
-
-impl SAStateSetOp {
-    pub fn new(account_id: AccountId, state: Hash, next_read_idx: u64, seqno: Seqno) -> Self {
-        Self {
-            account_id,
-            state,
-            next_read_idx,
-            seqno,
-        }
-    }
-
-    pub fn account_id(&self) -> AccountId {
-        self.account_id
-    }
-
-    pub fn state(&self) -> [u8; 32] {
-        self.state.into()
-    }
-
-    pub fn next_read_idx(&self) -> u64 {
-        self.next_read_idx
-    }
-
-    pub fn seqno(&self) -> Seqno {
-        self.seqno
-    }
-}
-
-/// An update via `update_inner_state` with extra data for DA.
-#[derive(Clone, Debug)]
-pub struct SAStateUpdateOp {
-    /// The account whose state was updated.
-    account_id: AccountId,
-
-    /// The new inner state root.
-    inner_state: Hash,
-
-    /// The next read index.
-    next_read_idx: u64,
-
-    /// The seqno after the update.
-    seqno: Seqno,
-
-    /// The extra data associated with this update (for DA).
-    extra_data: Vec<u8>,
-}
-
-impl SAStateUpdateOp {
-    pub fn new(
-        account_id: AccountId,
-        inner_state: Hash,
-        next_read_idx: u64,
-        seqno: Seqno,
-        extra_data: Vec<u8>,
-    ) -> Self {
-        Self {
-            account_id,
-            inner_state,
-            next_read_idx,
-            seqno,
-            extra_data,
-        }
-    }
-
-    pub fn account_id(&self) -> AccountId {
-        self.account_id
-    }
-
-    pub fn inner_state(&self) -> [u8; 32] {
-        self.inner_state.into()
-    }
-
-    pub fn next_read_idx(&self) -> u64 {
-        self.next_read_idx
-    }
-
-    pub fn seqno(&self) -> Seqno {
-        self.seqno
-    }
-
-    pub fn extra_data(&self) -> &[u8] {
-        &self.extra_data
-    }
-}
-
-/// A tracked snark account state update.
+/// A tracked snark account state update, recorded for each `set_proof_state` call.
 ///
-/// This captures both `set_proof_state_directly` and `update_inner_state` calls.
+/// Extra data associated with the update is no longer tracked here; it is sourced from the
+/// emitted `SnarkAccountUpdateLogData` logs at indexing time.
 #[derive(Clone, Debug)]
-pub enum SnarkAcctStateUpdate {
-    /// A direct set via `set_proof_state_directly`.
-    DirectSet(SAStateSetOp),
+pub struct SnarkAcctStateUpdate {
+    /// The account whose state was updated.
+    account_id: AccountId,
 
-    /// An update via `update_inner_state` with extra data for DA.
-    Update(SAStateUpdateOp),
+    /// The new inner state root, if known.
+    ///
+    /// Present on block-sync updates; `None` for checkpoint-sync updates
+    /// rebuilt from logs, which carry no per-update intermediate root.
+    state: Option<Hash>,
+
+    /// The inbox cursor before this update.
+    prev_next_read_idx: u64,
+
+    /// The inbox cursor after this update.
+    next_read_idx: u64,
+
+    /// The seqno after the update.
+    seqno: Seqno,
 }
 
 impl SnarkAcctStateUpdate {
+    pub fn new(
+        account_id: AccountId,
+        state: Option<Hash>,
+        prev_next_read_idx: u64,
+        next_read_idx: u64,
+        seqno: Seqno,
+    ) -> Self {
+        Self {
+            account_id,
+            state,
+            prev_next_read_idx,
+            next_read_idx,
+            seqno,
+        }
+    }
+
     /// Returns the account ID for this update.
     pub fn account_id(&self) -> AccountId {
-        match self {
-            Self::DirectSet(s) => s.account_id,
-            Self::Update(s) => s.account_id,
-        }
+        self.account_id
     }
 
-    /// Returns the state hash for this update.
-    pub fn state(&self) -> Hash {
-        match self {
-            Self::DirectSet(s) => s.state,
-            Self::Update(s) => s.inner_state,
-        }
+    /// Returns the new inner state root, or `None` for checkpoint-sync updates.
+    pub fn state(&self) -> Option<Hash> {
+        self.state
     }
 
-    /// Returns the next read index for this update.
+    /// Returns the inbox cursor before this update.
+    pub fn prev_next_read_idx(&self) -> u64 {
+        self.prev_next_read_idx
+    }
+
+    /// Returns the inbox cursor after this update.
     pub fn next_read_idx(&self) -> u64 {
-        match self {
-            Self::DirectSet(s) => s.next_read_idx,
-            Self::Update(s) => s.next_read_idx,
-        }
+        self.next_read_idx
     }
 
     /// Returns the seqno for this update.
     pub fn seqno(&self) -> Seqno {
-        match self {
-            Self::DirectSet(s) => s.seqno,
-            Self::Update(s) => s.seqno,
-        }
-    }
-
-    /// Returns the extra data for this update.
-    pub fn extra_data(&self) -> Option<&[u8]> {
-        match self {
-            Self::DirectSet(_) => None,
-            Self::Update(u) => Some(u.extra_data()),
-        }
+        self.seqno
     }
 }
 
@@ -237,17 +150,17 @@ impl PredicateKeyUpdate {
 }
 
 // ============================================================================
-// Manifest tracking
+// L1 block record tracking
 // ============================================================================
 
-/// A tracked manifest write.
+/// A tracked L1 block record write.
 #[derive(Clone, Debug)]
-pub struct ManifestWrite {
-    /// The L1 block height associated with the manifest.
+pub struct L1BlockRecordWrite {
+    /// The L1 block height associated with the record.
     pub height: L1Height,
 
-    /// The manifest that was appended.
-    pub manifest: AsmManifest,
+    /// The L1 block record that was appended.
+    pub record: L1BlockRecord,
 }
 
 // ============================================================================
@@ -282,7 +195,7 @@ impl AccountCreatedWrite {
 pub struct IndexerWrites {
     created_accounts: Vec<AccountCreatedWrite>,
     inbox_messages: Vec<InboxMessageWrite>,
-    manifests: Vec<ManifestWrite>,
+    l1_block_records: Vec<L1BlockRecordWrite>,
     snark_acct_state_updates: Vec<SnarkAcctStateUpdate>,
     predicate_key_updates: Vec<PredicateKeyUpdate>,
 }
@@ -303,14 +216,22 @@ impl IndexerWrites {
         self.inbox_messages.push(write);
     }
 
-    /// Records a manifest write.
-    pub fn push_manifest(&mut self, write: ManifestWrite) {
-        self.manifests.push(write);
+    /// Records an L1 block record write.
+    pub fn push_l1_block_record(&mut self, write: L1BlockRecordWrite) {
+        self.l1_block_records.push(write);
     }
 
     /// Records a snark state update.
     pub fn push_snark_acct_update(&mut self, update: SnarkAcctStateUpdate) {
         self.snark_acct_state_updates.push(update);
+    }
+
+    /// Replaces all tracked snark state updates with `updates`.
+    ///
+    /// This is required to collect the granular snark updates during checkpoint sync because diff
+    /// only doesn't contain the granular updates, which has to come from OL logs in the checkpoint.
+    pub fn set_snark_acct_state_updates(&mut self, updates: Vec<SnarkAcctStateUpdate>) {
+        self.snark_acct_state_updates = updates;
     }
 
     /// Records a predicate key update.
@@ -328,9 +249,9 @@ impl IndexerWrites {
         &self.inbox_messages
     }
 
-    /// Returns all tracked manifest writes.
-    pub fn manifests(&self) -> &[ManifestWrite] {
-        &self.manifests
+    /// Returns all tracked L1 block record writes.
+    pub fn l1_block_records(&self) -> &[L1BlockRecordWrite] {
+        &self.l1_block_records
     }
 
     /// Returns all tracked snark state updates.
@@ -347,7 +268,7 @@ impl IndexerWrites {
     pub fn is_empty(&self) -> bool {
         self.created_accounts.is_empty()
             && self.inbox_messages.is_empty()
-            && self.manifests.is_empty()
+            && self.l1_block_records.is_empty()
             && self.snark_acct_state_updates.is_empty()
             && self.predicate_key_updates.is_empty()
     }
@@ -356,7 +277,7 @@ impl IndexerWrites {
     pub fn extend(&mut self, other: IndexerWrites) {
         self.created_accounts.extend(other.created_accounts);
         self.inbox_messages.extend(other.inbox_messages);
-        self.manifests.extend(other.manifests);
+        self.l1_block_records.extend(other.l1_block_records);
         self.snark_acct_state_updates
             .extend(other.snark_acct_state_updates);
         self.predicate_key_updates

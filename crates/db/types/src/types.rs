@@ -10,13 +10,11 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
+use strata_checkpoint_types::Checkpoint;
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
 use strata_identifiers::{Buf32, Buf64, OLTxId, RBuf32};
 use strata_l1_txfmt::MagicBytes;
-use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::L1Height;
-use zkaleido::Proof;
 
 /// Taproot script-spend sighash for the reveal transaction.
 pub type Sighash = Buf32;
@@ -322,21 +320,6 @@ impl CheckpointEntry {
         self.checkpoint
     }
 
-    /// Creates a new instance for a freshly defined checkpoint.
-    #[expect(
-        deprecated,
-        reason = "legacy old code CheckpointEntry is retained for compatibility"
-    )]
-    pub fn new_pending_proof(info: BatchInfo, chainstate: &Chainstate) -> Self {
-        let sidecar =
-            CheckpointSidecar::new(borsh::to_vec(chainstate).expect("serialize chainstate"));
-        let checkpoint = Checkpoint::new(info, Proof::default(), sidecar);
-        Self::new(
-            checkpoint,
-            CheckpointProvingStatus::PendingProof,
-            CheckpointConfStatus::Pending,
-        )
-    }
     #[expect(
         deprecated,
         reason = "legacy old code CheckpointEntry is retained for compatibility"

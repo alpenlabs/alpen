@@ -26,8 +26,10 @@ use crate::{
 };
 
 mod args;
+mod checkpoint_reconcile;
 mod config;
 mod context;
+mod css;
 mod errors;
 mod fcm;
 mod genesis;
@@ -76,9 +78,10 @@ fn main() -> Result<()> {
     // Check for db consistency, external rpc clients reachable, etc.
     run_startup_checks(&nodectx)?;
 
-    // Extract the envelope pubkey from rollup params if configured.
+    // Extract the envelope pubkey from the ASM checkpoint sequencer predicate, if it
+    // is a schnorr key. Determines whether checkpoint envelopes are signed externally.
     let envelope_pubkey: Option<[u8; 32]> =
-        nodectx.params().rollup.cred_rule.schnorr_key().map(|k| k.0);
+        helpers::sequencer_schnorr_key(nodectx.asm_params()).map(|k| k.0);
 
     // Start services, and do genesis if necessary.
     let (runctx, proof_notify) = start_strata_services(nodectx, envelope_pubkey)?;

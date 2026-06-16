@@ -109,7 +109,7 @@ impl EeAccountState {
 
 impl IInnerState for EeAccountState {
     fn compute_state_root(&self) -> Hash {
-        <Self as TreeHash<Sha256Hasher>>::tree_hash_root(self).into()
+        <Self as TreeHash>::tree_hash_root::<Sha256Hasher>(self).into()
     }
 }
 

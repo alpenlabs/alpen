@@ -104,10 +104,6 @@ pub struct ClientConfig {
     #[serde(default = "default_p2p_port")]
     pub p2p_port: u16,
 
-    /// Endpoint that the client will use for syncing blocks. In this case sequencer's rpc
-    /// endpoint.
-    pub sync_endpoint: Option<String>,
-
     /// How many l2 blocks to fetch at once while syncing.
     pub l2_blocks_fetch_limit: u64,
 
@@ -177,12 +173,6 @@ fn default_block_template_ttl_secs() -> u64 {
 
 fn default_ol_block_time_ms() -> u64 {
     DEFAULT_OL_BLOCK_TIME_MS
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncConfig {
-    pub l1_follow_distance: u64,
-    pub client_checkpoint_interval: u32,
 }
 
 /// Configuration owned by OL block assembly.
@@ -348,17 +338,6 @@ pub struct BitcoindConfig {
     pub retry_interval: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RethELConfig {
-    pub rpc_url: String,
-    pub secret: PathBuf,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecConfig {
-    pub reth: RethELConfig,
-}
-
 /// Default number of workers for the selected prover backend.
 const DEFAULT_PROVER_WORKERS: usize = 1;
 
@@ -453,8 +432,6 @@ pub struct Config {
     pub client: ClientConfig,
     pub bitcoind: BitcoindConfig,
     pub btcio: BtcioConfig,
-    pub sync: SyncConfig,
-    pub exec: ExecConfig,
 
     /// Sequencer configuration (only required if client.is_sequencer = true).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -475,6 +452,8 @@ pub struct Config {
 
 #[cfg(test)]
 mod test {
+    use bitcoin::FeeRate;
+
     use super::*;
     use crate::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
 
@@ -497,21 +476,11 @@ mod test {
             submit_rpc_port = 8435
             submit_rpc_bearer_token = "dev-only-submit-token"
             l2_blocks_fetch_limit = 1_000
-            sync_endpoint = "9.9.9.9:8432"
             datadir = "/path/to/data/directory"
             sequencer_bitcoin_address = "some_addr"
             sequencer_key = "/path/to/sequencer_key"
             seq_pubkey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             db_retry_count = 5
-
-            [sync]
-            l1_follow_distance = 6
-            client_poll_dur_ms = 200
-            client_checkpoint_interval = 10
-
-            [exec.reth]
-            rpc_url = "http://localhost:8551"
-            secret = "1234567890abcdef"
 
             [btcio.reader]
             client_poll_dur_ms = 200
@@ -602,14 +571,8 @@ mod test {
             l2_blocks_fetch_limit = 1_000
             datadir = "/path/to/data/directory"
             sequencer_bitcoin_address = "some_addr"
-            sync_endpoint = "9.9.9.9:8432"
             seq_pubkey = "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"
             db_retry_count = 5
-
-            [sync]
-            l1_follow_distance = 6
-            client_poll_dur_ms = 200
-            client_checkpoint_interval = 10
 
             [btcio.reader]
             client_poll_dur_ms = 200
@@ -623,15 +586,6 @@ mod test {
 
             [btcio.broadcaster]
             poll_interval_ms = 1_000
-
-            [exec.reth]
-            rpc_url = "http://localhost:8551"
-            secret = "1234567890abcdef"
-
-            [relayer]
-            refresh_interval = 10
-            stale_duration = 120
-            relay_misc = true
         "#;
 
         let config = toml::from_str::<Config>(config_string_fullnode);
@@ -947,6 +901,27 @@ mod test {
     }
 
     #[test]
+    fn test_writer_config_loads_fixed_sub_sat_fee_rate() {
+        let config: WriterConfig = toml::from_str(
+            r#"
+            write_poll_dur_ms = 200
+            fee_policy = "fixed"
+            fixed_fee_rate = 0.5
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+            "#,
+        )
+        .expect("writer config should parse");
+
+        assert_eq!(
+            config.l1_fee_policy_config.fee_policy(),
+            &FeePolicy::Fixed {
+                fee_rate: FeeRate::from_sat_per_kwu(125),
+            }
+        );
+    }
+
+    #[test]
     fn test_writer_config_serializes_bitcoind_conf_target() {
         let config = WriterConfig {
             write_poll_dur_ms: 200,
@@ -959,5 +934,22 @@ mod test {
 
         assert!(toml.contains("fee_policy = \"bitcoind\""));
         assert!(toml.contains("bitcoind_conf_target = 6"));
+    }
+
+    #[test]
+    fn test_writer_config_serializes_fixed_fee_rate() {
+        let config = WriterConfig {
+            write_poll_dur_ms: 200,
+            reveal_amount: 100,
+            bundle_interval_ms: 1_000,
+            l1_fee_policy_config: L1FeePolicyConfig::new(FeePolicy::Fixed {
+                fee_rate: FeeRate::from_sat_per_kwu(125),
+            }),
+        };
+
+        let toml = toml::to_string(&config).expect("writer config should serialize");
+
+        assert!(toml.contains("fee_policy = \"fixed\""));
+        assert!(toml.contains("fixed_fee_rate = 0.5"));
     }
 }

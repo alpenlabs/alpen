@@ -1,6 +1,6 @@
 use alpen_ee_common::{
-    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
-    SequencerOLClient,
+    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, SequencerOLClient,
+    SnarkAccountEpochSummary, SnarkAccountUpdateInfo,
 };
 use async_trait::async_trait;
 use http::{header::AUTHORIZATION, HeaderMap, HeaderValue};
@@ -18,9 +18,9 @@ use strata_identifiers::{
 };
 use strata_ol_rpc_api::{OLClientRpcClient, OLSubmitRpcClient};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
+    OLBlockTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
 };
-use strata_snark_acct_types::{ProofState, SnarkAccountUpdate, UpdateInputData};
+use strata_snark_acct_types::{ProofState, SnarkAccountUpdate};
 use tracing::info;
 
 /// Max retries for startup RPC calls where the OL node may still be booting.
@@ -180,7 +180,7 @@ impl OLClient for RpcOLClient {
         .await
     }
 
-    async fn epoch_summary(&self, epoch: Epoch) -> Result<OLEpochSummary, OLClientError> {
+    async fn epoch_summary(&self, epoch: Epoch) -> Result<SnarkAccountEpochSummary, OLClientError> {
         retry_with_backoff_async(
             "ol_client_epoch_summary",
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
@@ -189,16 +189,31 @@ impl OLClient for RpcOLClient {
                 let epoch_summary =
                     call_read_rpc!(self, get_acct_epoch_summary(self.account_id, epoch))?;
 
-                let updates: Vec<UpdateInputData> = epoch_summary
+                let updates: Vec<SnarkAccountUpdateInfo> = epoch_summary
                     .update_inputs()
                     .iter()
-                    .map(UpdateInputData::try_from)
-                    .collect::<Result<_, _>>()
-                    .map_err(|e| OLClientError::rpc(e.to_string()))?;
+                    .map(|u| {
+                        let messages = u
+                            .messages
+                            .iter()
+                            .cloned()
+                            .map(MessageEntry::try_from)
+                            .collect::<Result<_, _>>()
+                            .map_err(|e| OLClientError::rpc(e.to_string()))?;
+                        Ok(SnarkAccountUpdateInfo::new(
+                            u.seq_no,
+                            u.extra_data.0.clone(),
+                            messages,
+                            u.new_state_root.as_ref().map(|root| root.0.into()),
+                            u.next_inbox_msg_idx,
+                        ))
+                    })
+                    .collect::<Result<_, OLClientError>>()?;
 
-                Ok(OLEpochSummary::new(
+                Ok(SnarkAccountEpochSummary::new(
                     epoch_summary.epoch_commitment(),
                     epoch_summary.prev_epoch_commitment(),
+                    Hash::from(epoch_summary.final_state_root().0),
                     updates,
                 ))
             },
@@ -256,7 +271,7 @@ impl SequencerOLClient for RpcOLClient {
     async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError> {
         let snark_account_state = call_read_rpc!(
             self,
-            get_snark_account_state(self.account_id, OLBlockOrTag::Latest)
+            get_snark_account_state_by_tag(self.account_id, OLBlockTag::Latest)
         )?
         .ok_or_else(|| OLClientError::Rpc("missing latest account state".into()))?;
 
@@ -297,7 +312,7 @@ impl SequencerOLClient for RpcOLClient {
         let next_inbox_msg_idx = operation.new_proof_state().next_inbox_msg_idx();
         let l1_ref_heights: Vec<_> = operation
             .ledger_refs()
-            .asm_manifest_refs()
+            .l1_block_refs()
             .iter()
             .map(|claim| claim.idx())
             .collect();

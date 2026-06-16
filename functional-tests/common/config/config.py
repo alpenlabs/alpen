@@ -18,16 +18,9 @@ class ClientConfig:
     submit_rpc_port: int = field(default=0)
     submit_rpc_bearer_token: str | None = field(default=None)
     p2p_port: int = field(default=0)
-    sync_endpoint: str | None = field(default=None)
     l2_blocks_fetch_limit: int = field(default=10)
     datadir: str = field(default="datadir")
     db_retry_count: int = field(default=3)
-
-
-@dataclass
-class SyncConfig:
-    l1_follow_distance: int = field(default=6)
-    client_checkpoint_interval: int = field(default=20)
 
 
 @dataclass
@@ -49,7 +42,8 @@ class ReaderConfig:
 class WriterConfig:
     write_poll_dur_ms: int = field(default=200)
     reveal_amount: int = field(default=546)  # The dust amount
-    fee_policy: str = field(default="bitcoind")
+    fee_policy: str = field(default="fixed")
+    fixed_fee_rate: float = field(default=1.0)
     bundle_interval_ms: int = field(default=200)
     mempool_base_url: str | None = field(default=None)
 
@@ -61,27 +55,11 @@ class BroadcasterConfig:
 
 @dataclass
 class BtcioConfig:
+    # Declared first so the scalar serializes before the sub-tables in TOML.
+    l1_reorg_safe_depth: int = field(default=6)
     reader: ReaderConfig = field(default_factory=ReaderConfig)
     writer: WriterConfig = field(default_factory=WriterConfig)
     broadcaster: BroadcasterConfig = field(default_factory=BroadcasterConfig)
-
-
-@dataclass
-class RethELConfig:
-    rpc_url: str = field(default="")
-    secret: str = field(default="")
-
-
-@dataclass
-class ExecConfig:
-    reth: RethELConfig = field(default_factory=RethELConfig)
-
-
-@dataclass
-class RelayerConfig:
-    refresh_interval: int = field(default=200)
-    stale_duration: int = field(default=20)
-    relay_misc: bool = field(default=True)
 
 
 @dataclass
@@ -154,15 +132,20 @@ class EpochSealingConfig:
     def new_fixed_slot(cls, slots: int):
         return cls("FixedSlot", slots)
 
+    def next_terminal_slot_after(self, slot: int) -> int:
+        """Returns the next terminal slot strictly after ``slot``."""
+        if self.policy != "FixedSlot":
+            raise ValueError(f"unsupported epoch sealing policy: {self.policy}")
+        if self.slots_per_epoch is None or self.slots_per_epoch <= 0:
+            raise ValueError(f"invalid slots_per_epoch: {self.slots_per_epoch!r}")
+        return ((slot // self.slots_per_epoch) + 1) * self.slots_per_epoch
+
 
 @dataclass
 class StrataConfig:
     client: ClientConfig = field(default_factory=ClientConfig)
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)
     btcio: BtcioConfig = field(default_factory=BtcioConfig)
-    sync: SyncConfig = field(default_factory=SyncConfig)
-    exec: ExecConfig = field(default_factory=ExecConfig)
-    relayer: RelayerConfig = field(default_factory=RelayerConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     prover: ProverConfig | None = field(default=None)
 

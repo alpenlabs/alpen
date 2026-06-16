@@ -25,6 +25,8 @@ pub struct BlockAssemblyInputs<'a> {
     pub max_deposits_per_block: NonZero<u8>,
     /// Account id for bridge gateway on ol.
     pub bridge_gateway_account_id: AccountId,
+    /// Monotonically incrementing index for next deposit to use.
+    pub next_deposit_idx: u64,
 }
 
 /// Outputs from block assembly
@@ -36,6 +38,8 @@ pub struct BlockAssemblyOutputs {
     pub payload: ExecBlockPayload,
     /// EeAccountState after applying the new block.
     pub account_state: EeAccountState,
+    /// Monotonically incrementing index for next deposit to use.
+    pub next_deposit_idx: u64,
 }
 
 /// Builds the next block using `inputs` and `payload_builder`.
@@ -50,6 +54,7 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
         timestamp_ms,
         max_deposits_per_block,
         bridge_gateway_account_id,
+        next_deposit_idx,
     } = inputs;
 
     // 1. apply new inbox messages to account state
@@ -57,11 +62,12 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
         .context("build_next_exec_block: failed to apply input messages")?;
 
     // 2. build exec block payload
-    let (payload, update_extra_data) = build_exec_payload(
+    let (payload, update_extra_data, next_deposit_idx) = build_exec_payload(
         &mut account_state,
         parent_exec_blkid,
         timestamp_ms,
         max_deposits_per_block,
+        next_deposit_idx,
         payload_builder,
     )
     .await?;
@@ -83,5 +89,6 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
                 .context("build_next_exec_block: failed to serialized payload")?,
         ),
         account_state,
+        next_deposit_idx,
     })
 }

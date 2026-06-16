@@ -1,12 +1,12 @@
 //! Database serialization types for Batch and Chunk storage.
 
 use alpen_ee_common::{
-    Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, L1DaBlockRef, ProofId,
+    Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, L1DaBlockInfo, L1DaBlockRef, ProofId,
 };
 use bitcoin::{hashes::Hash as _, Txid, Wtxid};
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_acct_types::Hash;
-use strata_identifiers::L1BlockCommitment;
+use strata_identifiers::{Buf32, L1BlockCommitment, WtxidsRoot};
 
 /// Database representation of a (Txid, Wtxid) pair.
 ///
@@ -100,6 +100,8 @@ impl TryFrom<DBBatch> for Batch {
 pub(crate) struct DBL1DaBlockRef {
     /// L1BlockCommitment serialized via its Borsh impl.
     block: L1BlockCommitment,
+    /// Witness transaction Merkle root for the L1 block.
+    wtxids_root: [u8; 32],
     /// This batch's DA txs in this L1 block as raw `(txid, wtxid)` pairs.
     txns: Vec<DBTxidPair>,
 }
@@ -107,7 +109,8 @@ pub(crate) struct DBL1DaBlockRef {
 impl From<L1DaBlockRef> for DBL1DaBlockRef {
     fn from(value: L1DaBlockRef) -> Self {
         Self {
-            block: value.block,
+            block: value.block.commitment,
+            wtxids_root: value.block.wtxids_root().as_ref().to_owned(),
             txns: value
                 .txns
                 .into_iter()
@@ -120,7 +123,10 @@ impl From<L1DaBlockRef> for DBL1DaBlockRef {
 impl From<DBL1DaBlockRef> for L1DaBlockRef {
     fn from(value: DBL1DaBlockRef) -> Self {
         Self {
-            block: value.block,
+            block: L1DaBlockInfo::new(
+                value.block,
+                WtxidsRoot::from(Buf32::from(value.wtxids_root)),
+            ),
             txns: value
                 .txns
                 .into_iter()
@@ -246,6 +252,8 @@ pub(crate) struct DBChunk {
     idx: u64,
     prev_block: [u8; 32],
     last_block: [u8; 32],
+    last_blocknum: u64,
+    batch_idx: u64,
     inner_blocks: Vec<[u8; 32]>,
 }
 
@@ -255,6 +263,8 @@ impl From<Chunk> for DBChunk {
             idx: value.idx(),
             prev_block: value.prev_block().into(),
             last_block: value.last_block().into(),
+            last_blocknum: value.last_blocknum(),
+            batch_idx: value.batch_idx(),
             inner_blocks: value.inner_blocks().iter().map(|h| (*h).into()).collect(),
         }
     }
@@ -267,6 +277,8 @@ impl From<DBChunk> for Chunk {
             value.idx,
             Hash::from(value.prev_block),
             Hash::from(value.last_block),
+            value.last_blocknum,
+            value.batch_idx,
             inner_blocks,
         )
     }

@@ -3,7 +3,16 @@ name: Ethereum Execution Spec tests against main branch (via fntests).
 on:
   schedule:
     - cron: "30 1 * * *" # every day at 1:30 AM UTC
-  workflow_dispatch: # manual run
+  workflow_dispatch:
+    inputs:
+      eest_pytest_args:
+        description: "Optional EEST pytest selector/options for subset debugging."
+        required: false
+        default: ""
+      proof_timeout:
+        description: "Max seconds to wait for EE chunk proof coverage."
+        required: false
+        default: "3600"
 
 env:
   CARGO_TERM_COLOR: always
@@ -30,7 +39,7 @@ jobs:
     name: Run functional tests
     runs-on: ubuntu-latest
     needs: extract-rust-version
-    timeout-minutes: 120 # TODO: change to 60 once the exex witness generation is optimized.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repository
@@ -71,6 +80,8 @@ jobs:
 
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
@@ -81,57 +92,74 @@ jobs:
         uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
 
       - name: Build Cargo project
-        run: cargo build --locked -F debug-utils -F sequencer --bin strata --bin strata-signer --bin strata-datatool --bin strata-test-cli
+        run: |
+          cargo build --locked --release -F sequencer -F debug-utils -F test-mode -F debug-asm -F prover --bin strata --bin strata-signer --bin alpen-client --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
 
-      - name: Run basic env in fntests
+      - name: Run alpen EEST env in fntests
         env:
           NO_COLOR: "1"
           LOG_LEVEL: "info"
         run: |
           sudo apt-get install -y screen
-          NEWPATH="$(realpath target/debug/)"
+          NEWPATH="$(realpath target/release/)"
           export PATH="${NEWPATH}:${PATH}"
-          which strata
+          which alpen-client
           cd functional-tests
-          screen -dmS basic_env uv run python entry.py --keep-alive basic
-          sleep 20  # Wait for the service to start
+          screen -L -Logfile alpen_eest_env.screen.log -dmS alpen_eest_env uv run python entry.py --keep-alive alpen_eest
+          if ! ../contrib/wait-for-json-rpc.sh http://localhost:30303 240; then
+            cat alpen_eest_env.screen.log || true
+            [ ! -d _dd ] || find _dd -type f -name "service.log" -print -exec tail -100 {} \;
+            exit 1
+          fi
 
       - name: Run tests
         id: runtests
+        env:
+          EEST_PYTEST_ARGS: ${{ github.event.inputs.eest_pytest_args || '' }}
         run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          git clone https://github.com/alpenlabs/execution-spec-tests
-          cd execution-spec-tests
-          uv python install 3.11
-          uv python pin 3.11
-          uv sync --all-extras
-          uv run solc-select use 0.8.24 --always-install
-          uv run execute remote \
-            -m state_test \
-            --fork=Prague \
-            --rpc-endpoint=http://localhost:12603 \
-            --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-            --rpc-chain-id 2892 \
-            --tx-wait-timeout 30 \
-            -v
+          args=(
+            --rpc-endpoint http://localhost:30303
+            --fork Prague
+            --tx-wait-timeout 120
+          )
+          if [[ -n "${EEST_PYTEST_ARGS}" ]]; then
+            args+=(--pytest-args "${EEST_PYTEST_ARGS}")
+          fi
+          ./contrib/run-eest-remote.sh "${args[@]}"
         continue-on-error: true
 
-      - name: Generate a proof of EE blocks execution.
-        working-directory: docker
+      - name: Capture EEST end block
+        if: always() && steps.runtests.outcome != 'skipped'
         run: |
-          chmod +x test_ee_proof.sh
-          ./test_ee_proof.sh local
+          END_BLOCK="$(curl -sf -X POST http://localhost:30303 \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+            | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["result"], 16))')"
+          echo "EEST_END_BLOCK=${END_BLOCK}" >> "${GITHUB_ENV}"
+
+      - name: Assert EEST blocks covered by EE chunk proofs
+        if: always() && steps.runtests.outcome != 'skipped'
+        env:
+          EEST_PROOF_TIMEOUT: ${{ github.event.inputs.proof_timeout || '3600' }}
+        run: |
+          if ! ./contrib/assert-eest-prover-pipeline.sh \
+              --rpc-endpoint http://localhost:30303 \
+              --bitcoin-rpc-url http://user:password@localhost:18444 \
+              --bitcoin-wallet testwallet \
+              --start-block 1 \
+              --end-block "${EEST_END_BLOCK}" \
+              --timeout "${EEST_PROOF_TIMEOUT}"; then
+            cat functional-tests/alpen_eest_env.screen.log || true
+            [ ! -d functional-tests/_dd ] || find functional-tests/_dd -type f -name "service.log" -print -exec tail -200 {} \;
+            exit 1
+          fi
 
       - name: Stop service
         if: always()
         run: |
-          screen -S basic_env -X quit
+          screen -S alpen_eest_env -X quit || true
 
       - name: Check tests execution
-        # the purpose of the workflow is twofold:
-        # - run the EF tests
-        # - make sure EE proof is completed with EF txns (regardless if some tests have failed)
-        # Thus, we check the whole logic here.
         if: steps.runtests.outcome == 'failure'
         run: |
           echo "Functional tests failed"

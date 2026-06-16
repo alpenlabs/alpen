@@ -8,7 +8,10 @@ use strata_primitives::l1::L1BlockCommitment;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
-use crate::{context::CsmWorkerContext, state::CsmWorkerState, status::CsmWorkerStatus};
+use crate::{
+    context::CsmWorkerContext, errors::CsmWorkerResult, state::CsmWorkerState,
+    status::CsmWorkerStatus,
+};
 
 /// CSM worker service that acts as a listener to ASM worker status updates.
 ///
@@ -92,7 +95,7 @@ fn refresh_finalized_checkpoint<C: CsmWorkerContext>(
     state: &mut CsmWorkerState<C>,
     asm_block: L1BlockCommitment,
     finalized: L1Checkpoint,
-) -> anyhow::Result<()> {
+) -> CsmWorkerResult<()> {
     let last_seen = state.last_committed_state.get_last_checkpoint();
     let refreshed = ClientState::new(Some(finalized), last_seen);
     state.ctx.put_client_state_update(
@@ -133,7 +136,7 @@ mod tests {
         Arc<strata_storage::NodeStorage>,
         L1BlockCommitment,
     ) {
-        let params = strata_test_utils_l2::gen_params();
+        let params = strata_test_utils_l2::gen_asm_params();
         let db = get_test_sled_backend();
         let pool = threadpool::ThreadPool::new(4);
         let storage = Arc::new(create_node_storage(db, pool).expect("create storage"));
@@ -153,7 +156,7 @@ mod tests {
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),
-            params.rollup.genesis_l1_view.blk,
+            params.anchor.block,
             arbgen.generate(),
             None,
             None,
@@ -165,8 +168,8 @@ mod tests {
             storage.clone(),
             status_channel,
             finality_depth,
-            params.rollup.magic_bytes,
-            params.rollup.genesis_l1_view.blk,
+            params.magic,
+            params.anchor.block,
         )
         .with_l1_fetch_failure();
 

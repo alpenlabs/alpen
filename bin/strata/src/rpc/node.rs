@@ -19,11 +19,12 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
+    OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
     RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
-    RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary, RpcOLChainStatus, RpcOLTransaction,
-    RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
+    RpcIndexedEntry, RpcMessageEntry, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
+    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState,
+    RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -54,6 +55,12 @@ struct AccountRecords {
     updates_by_block: HashMap<OLBlockCommitment, Vec<UpdateInputData>>,
     inbox: Vec<InboxMessageRecord>,
 }
+
+/// Maximum number of Snark account inbox messages returned by one RPC call.
+///
+/// This is a server-side page-size and DoS guard, not a protocol limit. Callers
+/// that need a larger inbox span should split it into multiple requests.
+const MAX_SNARK_ACCT_INBOX_MSG_RANGE: u64 = 1_000;
 
 fn local_inbox_message_range(
     account_id: AccountId,
@@ -198,45 +205,60 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             })
     }
 
-    /// Resolves an [`OLBlockOrTag`] to a concrete [`OLBlockCommitment`].
-    ///
-    /// `Latest`, `Confirmed`, and `Finalized` come from the OL sync status.
-    /// `OLBlockId` requires fetching the block to read its slot. `Slot` looks
-    /// up the canonical block at that slot.
-    async fn resolve_block_or_tag(
-        &self,
-        block_or_tag: OLBlockOrTag,
-    ) -> RpcResult<OLBlockCommitment> {
-        Ok(match block_or_tag {
-            OLBlockOrTag::Latest => {
-                self.provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?
-                    .tip
-            }
-            OLBlockOrTag::Confirmed => self
-                .provider
-                .get_ol_sync_status()
-                .ok_or_else(|| internal_error("OL sync status not available"))?
-                .confirmed_epoch
-                .to_block_commitment(),
-            OLBlockOrTag::Finalized => self
-                .provider
-                .get_ol_sync_status()
-                .ok_or_else(|| internal_error("OL sync status not available"))?
-                .finalized_epoch
-                .to_block_commitment(),
-            OLBlockOrTag::OLBlockId(block_id) => {
-                let block = self.get_block(block_id).await?;
-                OLBlockCommitment::new(block.header().slot(), block_id)
-            }
-            OLBlockOrTag::Slot(slot) => self
-                .provider
-                .get_canonical_block_at(slot)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?,
+    /// Resolves an [`OLBlockTag`] to a concrete [`OLBlockCommitment`].
+    async fn resolve_block_tag(&self, tag: OLBlockTag) -> RpcResult<OLBlockCommitment> {
+        let sync_status = self
+            .provider
+            .get_ol_sync_status()
+            .ok_or_else(|| internal_error("OL sync status not available"))?;
+
+        Ok(match tag {
+            OLBlockTag::Latest => sync_status.tip,
+            OLBlockTag::Confirmed => sync_status.confirmed_epoch.to_block_commitment(),
+            OLBlockTag::Finalized => sync_status.finalized_epoch.to_block_commitment(),
         })
+    }
+
+    async fn get_snark_account_state_at_block(
+        &self,
+        account_id: AccountId,
+        block_commitment: OLBlockCommitment,
+    ) -> RpcResult<Option<RpcSnarkAccountState>> {
+        // Get OL state at the resolved block
+        let ol_state = self
+            .provider
+            .get_toplevel_ol_state(block_commitment)
+            .await
+            .map_err(|e| {
+                error!(?e, %block_commitment, "Failed to get OL state");
+                db_error(e)
+            })?
+            .ok_or_else(|| {
+                not_found_error(format!("No OL state found for block {block_commitment}"))
+            })?;
+
+        // Get account state
+        let Some(account_state) = ol_state.get_account_state(&account_id) else {
+            return Ok(None); // Account doesn't exist
+        };
+
+        // Try to get snark account state; return None if not a snark account
+        match account_state.as_snark_account() {
+            Ok(snark_state) => {
+                let seq_no: u64 = *snark_state.seqno().inner();
+                let inner_state = snark_state.inner_state_root().0.into();
+                let next_inbox_msg_idx = snark_state.next_inbox_msg_idx();
+                let update_vk = snark_state.update_vk().clone();
+
+                Ok(Some(RpcSnarkAccountState::new(
+                    seq_no,
+                    inner_state,
+                    next_inbox_msg_idx,
+                    update_vk,
+                )))
+            }
+            Err(_) => Ok(None), // Not a snark account
+        }
     }
 
     /// Walks the canonical chain backwards from `end_slot` to `start_slot`,
@@ -302,9 +324,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     }
 
     /// Fetches per-(account, epoch) update and inbox records over
-    /// `[first_epoch, last_epoch]`. Updates are grouped by block commitment,
-    /// filtered to `block_commitments`. Out-of-chain and checkpoint-sync
-    /// records still advance the inbox cursor so in-chain slices stay accurate.
+    /// `[first_epoch, last_epoch]`. Updates are grouped by block commitment
+    /// and filtered to `block_commitments`.
     async fn fetch_records_in_epoch_range(
         &self,
         account_id: AccountId,
@@ -312,32 +333,12 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         last_epoch: Epoch,
         block_commitments: &HashSet<OLBlockCommitment>,
     ) -> RpcResult<AccountRecords> {
-        // Seed the cursor once. If the account isn't found in the prior epoch's
-        // terminal state — either because `first_epoch == 0` (no prior epoch
-        // to query) or because it didn't exist as a snark account at that
-        // point — start at 0. Both cases mean "no prior record of the account
-        // in queryable state, so its inbox starts at 0."
-        let mut cursor: u64 = if first_epoch == 0 {
-            0
-        } else {
-            let (_, prev_ol_state) = self
-                .get_toplevel_ol_state_for_epoch(first_epoch - 1)
-                .await?;
-            prev_ol_state
-                .get_account_state(&account_id)
-                .and_then(|s| s.as_snark_account().ok())
-                .map_or(0, |s| s.next_inbox_msg_idx())
-        };
-
-        // Walk records across all epochs in one pass. Out-of-chain and
-        // checkpoint-sync rows advance the cursor without emitting; in-chain
-        // records emit a `Pending` triple capturing the inbox slice they
-        // consumed. Inbox indexing is monotonic per account across epoch
-        // boundaries, so the cursor flows through without re-seeding.
+        // Walk records across all epochs in one pass. In-chain records emit a
+        // `Pending` triple capturing the inbox slice they consumed.
         struct Pending {
             block_commitment: OLBlockCommitment,
             seq_no: u64,
-            final_state_root: Hash,
+            new_state_root: Hash,
             extra_data: Vec<u8>,
             cursor_start: u64,
             cursor_end: u64,
@@ -353,18 +354,18 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 .map_err(db_error)?
             {
                 for r in records {
-                    let prev_cursor = cursor;
-                    let next_cursor = r.next_inbox_idx();
-                    cursor = next_cursor;
-
-                    // Checkpoint-sync rows: epoch-scoped, not block-scoped.
+                    // Skip rows with no block attribution: checkpoint-sync,
+                    // or CSS-terminal-stamped rows (root present but block
+                    // absent). This endpoint is the block-scoped view.
                     let Some(meta) = r.update_meta() else {
+                        continue;
+                    };
+                    let Some(block_commitment) = meta.block_commitment().copied() else {
                         continue;
                     };
 
                     // Out-of-chain blocks: belong to a sibling/orphan that's
                     // not on the queried canonical chain.
-                    let block_commitment = *meta.block_commitment();
                     if !block_commitments.contains(&block_commitment) {
                         continue;
                     }
@@ -385,10 +386,10 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     pending.push(Pending {
                         block_commitment,
                         seq_no: r.seq_no(),
-                        final_state_root: meta.final_state_root(),
+                        new_state_root: meta.new_state_root(),
                         extra_data,
-                        cursor_start: prev_cursor,
-                        cursor_end: next_cursor,
+                        cursor_start: r.prev_next_inbox_idx(),
+                        cursor_end: r.next_inbox_idx(),
                     });
                 }
             }
@@ -429,7 +430,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                         p.seq_no,
                         messages,
                         UpdateStateData::new(
-                            ProofState::new(p.final_state_root, p.cursor_end),
+                            ProofState::new(p.new_state_root, p.cursor_end),
                             p.extra_data,
                         ),
                     ));
@@ -445,7 +446,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                         p.seq_no,
                         Vec::new(),
                         UpdateStateData::new(
-                            ProofState::new(p.final_state_root, p.cursor_end),
+                            ProofState::new(p.new_state_root, p.cursor_end),
                             p.extra_data,
                         ),
                     ));
@@ -554,6 +555,19 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
 
         Ok((epoch_commitment, ol_state))
     }
+
+    /// Returns the account's current Snark update seqno at the tip epoch.
+    async fn current_snark_account_seq_no(
+        &self,
+        account_id: AccountId,
+        tip_epoch: Epoch,
+    ) -> RpcResult<Option<u64>> {
+        let (_, tip_ol_state) = self.get_toplevel_ol_state_for_epoch(tip_epoch).await?;
+        Ok(tip_ol_state
+            .get_account_state(&account_id)
+            .and_then(|state| state.as_snark_account().ok())
+            .map(|state| *state.seqno().inner()))
+    }
 }
 
 #[async_trait]
@@ -567,6 +581,11 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         let account_state = ol_state
             .get_account_state(&account_id)
             .ok_or_else(|| not_found_error(format!("Account {account_id} not found")))?;
+
+        let snark_state = account_state.as_snark_account().map_err(|_| {
+            invalid_params_error(format!("Account {account_id} is not a snark account"))
+        })?;
+        let final_state_root: HexBytes32 = snark_state.inner_state_root().0.into();
 
         let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
 
@@ -582,24 +601,11 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 )));
             }
 
-            // Inbox-message ranges are contiguous per record:
-            // [prev_record.next_inbox_idx, this.next_inbox_idx). The first
-            // record's lower bound is the prior epoch's terminal next_inbox_idx.
-            // Epoch 0 is genesis: no prior terminal state, no collectable messages.
             let skip_fetch = epoch == 0;
-            let mut cursor = if skip_fetch {
-                0
-            } else {
-                let (_, prev_ol_state) = self.get_toplevel_ol_state_for_epoch(epoch - 1).await?;
-                prev_ol_state
-                    .get_account_state(&account_id)
-                    .and_then(|s| s.as_snark_account().ok())
-                    .map_or(0, |s| s.next_inbox_msg_idx())
-            };
 
             struct Pending {
                 seq_no: u64,
-                final_state_root: Hash,
+                new_state_root: Option<Hash>,
                 extra_data: Vec<u8>,
                 cursor_start: u64,
                 cursor_end: u64,
@@ -607,16 +613,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
             let mut pending = Vec::with_capacity(records.len());
             for r in &records {
-                let cursor_start = cursor;
-                let cursor_end = r.next_inbox_idx();
-                cursor = cursor_end;
-
-                let meta = r.update_meta().ok_or_else(|| {
-                    internal_error(format!(
-                        "record for account {account_id} epoch {epoch} missing update_meta \
-                         (checkpoint-sync row not serveable here)"
-                    ))
-                })?;
+                let new_state_root = r.update_meta().map(|m| m.new_state_root());
                 let extra_data = r
                     .extra_data()
                     .ok_or_else(|| {
@@ -629,10 +626,10 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
                 pending.push(Pending {
                     seq_no: r.seq_no(),
-                    final_state_root: meta.final_state_root(),
+                    new_state_root,
                     extra_data,
-                    cursor_start,
-                    cursor_end,
+                    cursor_start: r.prev_next_inbox_idx(),
+                    cursor_end: r.next_inbox_idx(),
                 });
             }
 
@@ -662,7 +659,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 };
                 out.push(RpcUpdateInputData {
                     seq_no: p.seq_no,
-                    proof_state: ProofState::new(p.final_state_root, p.cursor_end).into(),
+                    next_inbox_msg_idx: p.cursor_end,
+                    new_state_root: p.new_state_root.map(|root| root.0.into()),
                     extra_data: p.extra_data.into(),
                     messages: messages.into_iter().map(Into::into).collect(),
                 });
@@ -676,6 +674,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             epoch_commitment,
             prev_epoch_commitment,
             account_state.balance().to_sat(),
+            final_state_root,
             updates,
         ))
     }
@@ -757,7 +756,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         let confirmation_status = if let Some(obs) = l1_ref {
             let l1_reference = RpcCheckpointL1Ref::new(obs.l1_commitment, obs.txid, obs.wtxid);
             let observed_height = obs.l1_commitment.height();
-            let Some(tip) = self.provider.get_l1_tip_height() else {
+            let Some(tip) = self.provider.get_l1_tip_height().await.map_err(db_error)? else {
                 return Err(internal_error(
                     "L1 tip height unavailable while constructing checkpoint info",
                 ));
@@ -788,6 +787,39 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             l2_range,
             confirmation_status,
         }))
+    }
+
+    async fn get_account_genesis_epoch_commitment(
+        &self,
+        account_id: AccountId,
+    ) -> RpcResult<EpochCommitment> {
+        let epoch = self
+            .provider
+            .get_account_creation_epoch(account_id)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                not_found_error(format!("No creation epoch found for account {account_id}"))
+            })?;
+
+        self.provider
+            .get_canonical_epoch_commitment_at(epoch)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
+    }
+
+    async fn get_asm_manifest_commitment(
+        &self,
+        l1_height: L1Height,
+    ) -> RpcResult<Option<HexBytes32>> {
+        let manifest = self
+            .provider
+            .get_block_manifest_at_height(l1_height)
+            .await
+            .map_err(db_error)?;
+
+        Ok(manifest.map(|m| HexBytes32::from(*m.compute_hash().as_ref())))
     }
 
     async fn get_blocks_summaries(
@@ -863,12 +895,50 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
         Ok(summaries)
     }
-
-    async fn get_account_genesis_epoch_commitment(
+    async fn get_snark_acct_inbox_msg_range(
         &self,
         account_id: AccountId,
-    ) -> RpcResult<EpochCommitment> {
-        let epoch = self
+        start: u64,
+        end: u64,
+    ) -> RpcResult<Vec<RpcIndexedEntry<RpcMessageEntry>>> {
+        if start > end {
+            return Err(invalid_params_error("start must be <= end"));
+        }
+        let requested_message_count = end - start;
+        if requested_message_count > MAX_SNARK_ACCT_INBOX_MSG_RANGE {
+            return Err(invalid_params_error(format!(
+                "Inbox message range too big \
+                 (count {requested_message_count}, max {MAX_SNARK_ACCT_INBOX_MSG_RANGE})",
+            )));
+        }
+
+        // NOTE: This intentionally does not pre-validate account existence or
+        // account type. The provider/MMR path owns that behavior: empty ranges
+        // return empty, while non-empty missing inbox data surfaces as a
+        // storage error.
+        let messages = self
+            .provider
+            .get_account_inbox_messages(account_id, start, end)
+            .await
+            .map_err(db_error)?;
+        debug_assert!(
+            u64::try_from(messages.len()).expect("message count must fit in u64") <= end - start,
+            "provider returned more inbox messages than requested range"
+        );
+
+        Ok(messages
+            .into_iter()
+            .enumerate()
+            .map(|(offset, message)| RpcIndexedEntry::new(start + offset as u64, message.into()))
+            .collect())
+    }
+
+    async fn get_snark_acct_update_manifest(
+        &self,
+        account_id: AccountId,
+        seq_no: u64,
+    ) -> RpcResult<RpcSnarkAcctUpdateManifest> {
+        let creation_epoch = self
             .provider
             .get_account_creation_epoch(account_id)
             .await
@@ -876,69 +946,65 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .ok_or_else(|| {
                 not_found_error(format!("No creation epoch found for account {account_id}"))
             })?;
-
-        self.provider
-            .get_canonical_epoch_commitment_at(epoch)
-            .await
-            .map_err(db_error)?
-            .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
-    }
-
-    async fn get_asm_manifest_commitment(
-        &self,
-        l1_height: L1Height,
-    ) -> RpcResult<Option<HexBytes32>> {
-        let manifest = self
+        let tip_epoch = self
             .provider
-            .get_block_manifest_at_height(l1_height)
-            .await
-            .map_err(db_error)?;
+            .get_ol_sync_status()
+            .ok_or_else(|| internal_error("OL sync status not available"))?
+            .tip_epoch;
+        if let Some(current_seq_no) = self
+            .current_snark_account_seq_no(account_id, tip_epoch)
+            .await?
+        {
+            // Account state stores the next operation seqno. Published manifests
+            // can only exist for operation seqnos below that upper bound.
+            if seq_no >= current_seq_no {
+                return Err(not_found_error(format!(
+                    "No Snark account update manifest found for account {account_id} seq_no {seq_no}"
+                )));
+            }
+        }
+        for epoch in creation_epoch..=tip_epoch {
+            let Some(records) = self
+                .provider
+                .get_account_update_records(epoch, account_id)
+                .await
+                .map_err(db_error)?
+            else {
+                continue;
+            };
 
-        Ok(manifest.map(|m| HexBytes32::from(*m.compute_hash().as_ref())))
+            for record in records {
+                let operation_seq_no = record.orig_acct_seq_no().ok_or_else(|| {
+                    internal_error(format!(
+                        "update record for account {account_id} epoch {epoch} has invalid \
+                         post-state seq_no 0",
+                    ))
+                })?;
+
+                if operation_seq_no != seq_no {
+                    continue;
+                }
+
+                return Ok(RpcSnarkAcctUpdateManifest::from_account_update_record(
+                    &record,
+                    operation_seq_no,
+                ));
+            }
+        }
+
+        Err(not_found_error(format!(
+            "No Snark account update manifest found for account {account_id} seq_no {seq_no}"
+        )))
     }
 
-    async fn get_snark_account_state(
+    async fn get_snark_account_state_by_tag(
         &self,
         account_id: AccountId,
-        block_or_tag: OLBlockOrTag,
+        tag: OLBlockTag,
     ) -> RpcResult<Option<RpcSnarkAccountState>> {
-        let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
-
-        // Get OL state at the resolved block
-        let ol_state = self
-            .provider
-            .get_toplevel_ol_state(block_commitment)
+        let block_commitment = self.resolve_block_tag(tag).await?;
+        self.get_snark_account_state_at_block(account_id, block_commitment)
             .await
-            .map_err(|e| {
-                error!(?e, %block_commitment, "Failed to get OL state");
-                db_error(e)
-            })?
-            .ok_or_else(|| {
-                not_found_error(format!("No OL state found for block {block_commitment}"))
-            })?;
-
-        // Get account state
-        let Some(account_state) = ol_state.get_account_state(&account_id) else {
-            return Ok(None); // Account doesn't exist
-        };
-
-        // Try to get snark account state; return None if not a snark account
-        match account_state.as_snark_account() {
-            Ok(snark_state) => {
-                let seq_no: u64 = *snark_state.seqno().inner();
-                let inner_state = snark_state.inner_state_root().0.into();
-                let next_inbox_msg_idx = snark_state.next_inbox_msg_idx();
-                let update_vk = snark_state.update_vk().clone();
-
-                Ok(Some(RpcSnarkAccountState::new(
-                    seq_no,
-                    inner_state,
-                    next_inbox_msg_idx,
-                    update_vk,
-                )))
-            }
-            Err(_) => Ok(None), // Not a snark account
-        }
     }
 }
 
@@ -1112,6 +1178,14 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         }
         summaries.reverse();
         Ok(summaries)
+    }
+
+    async fn get_snark_account_state_at_block(
+        &self,
+        account_id: AccountId,
+        block: OLBlockCommitment,
+    ) -> RpcResult<Option<RpcSnarkAccountState>> {
+        OLRpcServer::get_snark_account_state_at_block(self, account_id, block).await
     }
 
     async fn get_block_transactions(&self, slot: u64) -> RpcResult<Vec<RpcOLTxDetail>> {

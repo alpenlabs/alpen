@@ -6,19 +6,16 @@ use std::{
 };
 
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
+use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
-use strata_ol_stf::execute_block_batch_preseal;
+use strata_ol_stf::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
-use zkaleido::{ProofReceiptWithMetadata, ZkVm};
-use zkaleido_sp1_groth16_verifier::{
-    GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, VK_HASH_PREFIX_LENGTH,
-};
 
 pub(crate) type StateDiffRaw = Vec<u8>;
 
@@ -146,6 +143,7 @@ pub struct ProverConfig {
 /// for the prover to deliver them. Without it, returns empty proofs.
 pub(crate) struct CheckpointWorkerContextImpl {
     storage: Arc<NodeStorage>,
+    bridge_params: BridgeParams,
     /// When present, a prover is running and `get_proof` waits for proofs.
     /// When absent, `get_proof` returns empty immediately.
     prover: Option<ProverConfig>,
@@ -155,40 +153,25 @@ impl CheckpointWorkerContextImpl {
     /// Creates a new context without a prover.
     ///
     /// `get_proof` always returns empty bytes.
-    pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
+    pub(crate) fn new(storage: Arc<NodeStorage>, bridge_params: BridgeParams) -> Self {
         Self {
             storage,
+            bridge_params,
             prover: None,
         }
     }
 
     /// Creates a new context with an integrated prover.
-    pub(crate) fn with_prover(storage: Arc<NodeStorage>, prover: ProverConfig) -> Self {
+    pub(crate) fn with_prover(
+        storage: Arc<NodeStorage>,
+        bridge_params: BridgeParams,
+        prover: ProverConfig,
+    ) -> Self {
         Self {
             storage,
+            bridge_params,
             prover: Some(prover),
         }
-    }
-
-    /// Normalizes proof bytes for checkpoint payload encoding.
-    ///
-    /// SP1 Groth16 proofs persisted by the SP1 host include a 4-byte verifying-key hash prefix.
-    /// ASM checkpoint predicate verification expects the raw Groth16 witness bytes (128/256 bytes),
-    /// so strip that SP1 prefix when present. The producing backend is read off the receipt's
-    /// metadata rather than carried in the proof key.
-    fn payload_proof_bytes(receipt: &ProofReceiptWithMetadata) -> Vec<u8> {
-        let proof_bytes = receipt.receipt().proof().as_bytes();
-        let prefixed_compressed_len = GROTH16_PROOF_COMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
-        let prefixed_uncompressed_len = GROTH16_PROOF_UNCOMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
-
-        if matches!(receipt.metadata().zkvm(), ZkVm::SP1)
-            && (proof_bytes.len() == prefixed_compressed_len
-                || proof_bytes.len() == prefixed_uncompressed_len)
-        {
-            return proof_bytes[VK_HASH_PREFIX_LENGTH..].to_vec();
-        }
-
-        proof_bytes.to_vec()
     }
 
     /// Attempts to read a non-empty proof from the proof DB for the given epoch commitment.
@@ -197,7 +180,7 @@ impl CheckpointWorkerContextImpl {
     /// proof is available yet.
     fn try_read_proof(&self, commitment: EpochCommitment) -> anyhow::Result<Option<Vec<u8>>> {
         if let Some(receipt) = self.storage.checkpoint_proof().get_proof(&commitment)? {
-            let proof_bytes = Self::payload_proof_bytes(&receipt);
+            let proof_bytes = receipt.receipt().proof().as_bytes().to_vec();
             if proof_bytes.is_empty() {
                 warn!(%commitment, "empty proof receipt found");
                 return Ok(None);
@@ -329,7 +312,8 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         &self,
         summary: &EpochSummary,
     ) -> anyhow::Result<(StateDiffRaw, Vec<OLLog>)> {
-        let (statediff, logs, terminal_header) = replay_epoch_and_compute_da(self, summary)?;
+        let (statediff, logs, terminal_header) =
+            replay_epoch_and_compute_da(self, summary, self.bridge_params)?;
         assert_terminal_commitment_matches(&terminal_header, summary.terminal())?;
         Ok((statediff, logs))
     }
@@ -364,6 +348,7 @@ fn assert_terminal_commitment_matches(
 fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     ctx: &C,
     summary: &EpochSummary,
+    bridge_params: BridgeParams,
 ) -> anyhow::Result<(Vec<u8>, Vec<OLLog>, OLBlockHeader)> {
     let epoch_blocks = collect_epoch_blocks(summary, ctx)?;
 
@@ -379,8 +364,13 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
 
     let mut da_state = DaAccumulatingState::new(ol_state);
 
-    let logs = execute_block_batch_preseal(&mut da_state, &epoch_blocks, &prev_terminal_header)
-        .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
+    let logs = execute_block_batch_predrain(
+        &mut da_state,
+        &epoch_blocks,
+        &prev_terminal_header,
+        bridge_params,
+    )
+    .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
 
     let terminal_header = epoch_blocks.ensured_last().header().clone();
 

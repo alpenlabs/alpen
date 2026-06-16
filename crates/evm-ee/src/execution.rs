@@ -14,7 +14,7 @@ use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::EthPrimitives;
 use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
+use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayload};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     BlockAssembler, EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecPartialState, ExecPayload,
@@ -28,13 +28,6 @@ use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
     utils::{build_and_recover_block, compute_hashed_post_state, validate_deposits_against_block},
 };
-
-/// Address where withdrawal intent msgs are forwarded.
-// TODO(STR-3358): de-duplicate with the default bridge gateway account in
-// `crates/alpen-ee/sequencer/src/block_builder/config.rs` once a shared home
-// for bridge account constants exists.
-const BRIDGE_GATEWAY_REF: u8 = 0x10;
-const BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(BRIDGE_GATEWAY_REF);
 
 /// EVM Execution Environment for Alpen.
 ///
@@ -70,15 +63,16 @@ fn convert_withdrawal_intents_to_messages(
         // Create message to bridge gateway with withdrawal amount and encoded data
         let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(intent.amt), msg_data)
             .expect("withdrawal message payload bytes must fit within SSZ max length");
-        let message = OutputMessage::new(BRIDGE_GATEWAY_ACCOUNT, payload);
+        let message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload);
         outputs.add_message(message);
     }
 }
 
 impl EvmExecutionEnvironment {
-    /// Creates a new EvmExecutionEnvironment with the given chain specification.
-    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, AlpenEvmFactory::default());
+    /// Creates a new EvmExecutionEnvironment with the given chain specification
+    /// and EVM factory.
+    pub fn new(chain_spec: Arc<ChainSpec>, evm_factory: AlpenEvmFactory) -> Self {
+        let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, evm_factory);
         Self { evm_config }
     }
 }
@@ -94,7 +88,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         exec_payload: &ExecPayload<'_, Self::Block>,
         inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
-        // TODO Split this function up into multiple stages, there's a lot going
+        // TODO(STR-3683): Split this function up into multiple stages, there's a lot going
         // on here.  There's also check happening here that should be done in
         // `check_outputs_against_header`.  We don't have to clone the state,
         // those checks are managed by the chunk runtime.
@@ -157,7 +151,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // Step 10: Get state root from header intrinsics (verification happens during merge)
         // This avoids an expensive state clone that would be needed to compute the root here.
         //
-        // FIXME This is not correct behavior, the state root is a "result" of
+        // FIXME(STR-3683): This is not correct behavior, the state root is a "result" of
         // processing the block, so it *can't* be an intrinsic, see the doc
         // comment for `Intrinsics`.  I think we may be doing unnecessary checks
         // here.
@@ -186,7 +180,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // an expensive state clone. The actual verification happens when the state
         // is mutated and we can compute the root directly without cloning.
         //
-        // FIXME this should be checked here
+        // FIXME(STR-3683): this should be checked here
         // Note: The following are verified during execution in execute_block_body():
         // - transactions_root, ommers_hash, withdrawals_root: by validate_body_against_header()
         // - receipts_root, logs_bloom, gas_used: by validate_block_post_execution()
@@ -312,7 +306,7 @@ mod tests {
         let [message] = outputs.output_messages() else {
             panic!("expected exactly one withdrawal output message");
         };
-        assert_eq!(message.dest(), AccountId::special(BRIDGE_GATEWAY_REF));
+        assert_eq!(message.dest(), BRIDGE_GATEWAY_ACCT_ID);
         assert_eq!(
             message.payload().value(),
             BitcoinAmount::from_sat(withdrawal_sats)
@@ -349,7 +343,7 @@ mod tests {
             serde_json::from_str(&json_content).expect("Failed to parse test data");
 
         let chain_spec: Arc<ChainSpec> = Arc::new((&test_data.witness.genesis).try_into().unwrap());
-        let env = EvmExecutionEnvironment::new(chain_spec);
+        let env = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
         let header = test_data.witness.current_block.header().clone();
         let evm_header = EvmHeader::new(header.clone());
         let mut state = EvmPartialState::new(
@@ -401,7 +395,7 @@ mod tests {
 
         // Create execution environment
         let chain_spec: Arc<ChainSpec> = Arc::new((&test_data.witness.genesis).try_into().unwrap());
-        let env = EvmExecutionEnvironment::new(chain_spec);
+        let env = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
 
         // Use the pre-state directly from witness data (it already has all the proofs!)
         let pre_state = EvmPartialState::new(

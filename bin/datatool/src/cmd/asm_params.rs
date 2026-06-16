@@ -7,8 +7,8 @@ use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
     ConfirmationDepths, SubprotocolInstance,
 };
+use strata_asm_proto_bridge_v1_types::SafeHarbourAddress;
 use strata_btc_types::BitcoinAmount;
-use strata_btc_verification::L1Anchor;
 use strata_crypto::{
     keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig, EvenPublicKey,
 };
@@ -16,6 +16,7 @@ use strata_l1_txfmt::MagicBytes;
 use strata_ol_genesis::build_genesis_artifacts;
 use strata_ol_params::OLParams;
 use strata_predicate::{PredicateKey, PredicateTypeId};
+use strata_primitives::bitcoin_bosd::{Descriptor, DescriptorType};
 
 use crate::{
     args::{CmdContext, SubcAsmParams},
@@ -23,8 +24,8 @@ use crate::{
     util::parse_abbr_amt,
 };
 
-/// The default deposit amount in sats (10 BTC).
-const DEFAULT_DEPOSIT_SATS: u64 = 1_000_000_000;
+/// The default deposit amount in sats (1 BTC).
+const DEFAULT_DEPOSIT_SATS: u64 = 100_000_000;
 
 /// The default assignment duration in blocks.
 const DEFAULT_ASSIGNMENT_DURATION: u16 = 64;
@@ -54,9 +55,9 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         "ALPN".parse().expect("default magic bytes should be valid")
     };
 
-    // Get genesis L1 view.
-    let genesis_l1_view = super::params::retrieve_genesis_l1_view(
-        cmd.genesis_l1_view_file.as_deref(),
+    // Get the genesis L1 anchor.
+    let anchor = super::genesis_info::retrieve_l1_anchor(
+        cmd.l1_anchor_file.as_deref(),
         cmd.genesis_l1_height,
         ctx,
     )?;
@@ -94,14 +95,18 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         strata_admin_multisig_update: depth,
         strata_seq_manager_multisig_update: depth,
         alpen_admin_multisig_update: depth,
+        strata_security_council_multisig_update: depth,
         operator_update: depth,
         sequencer_update: depth,
         ol_stf_vk_update: depth,
         asm_stf_vk_update: depth,
         ee_stf_vk_update: depth,
+        defcon3: depth,
+        safe_harbour_address_update: depth,
     };
 
     let admin = AdministrationInitConfig::new(
+        threshold.clone(),
         threshold.clone(),
         threshold.clone(),
         threshold,
@@ -115,11 +120,11 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let ol_params: OLParams = serde_json::from_str(&ol_params_str)
         .map_err(|e| anyhow::anyhow!("failed to parse OL params: {e}"))?;
 
-    if ol_params.last_l1_block != genesis_l1_view.blk {
+    if ol_params.last_l1_block != anchor.block {
         anyhow::bail!(
             "OL params and ASM params have different genesis L1 block: OL={:?}, ASM={:?}",
             ol_params.last_l1_block,
-            genesis_l1_view.blk
+            anchor.block
         );
     }
     let genesis_artifacts = build_genesis_artifacts(&ol_params)
@@ -129,7 +134,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     // Build checkpoint config.
     let sequencer_predicate = resolve_sequencer_predicate(cmd.seq_pk.as_deref())?;
     let checkpoint_predicate = resolve_checkpoint_predicate(cmd.checkpoint_predicate)?;
-    let genesis_l1_height = genesis_l1_view.blk.height();
+    let genesis_l1_height = anchor.block.height();
 
     let checkpoint = CheckpointInitConfig {
         sequencer_predicate,
@@ -145,6 +150,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         .transpose()?
         .unwrap_or(DEFAULT_DEPOSIT_SATS);
 
+    let safe_harbour_address = resolve_safe_harbour_address(&cmd.safe_harbour_address)?;
     let operators: Vec<EvenPublicKey> = pubkeys.into_iter().map(EvenPublicKey::from).collect();
 
     let bridge = BridgeV1InitConfig {
@@ -155,15 +161,10 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
             .unwrap_or(DEFAULT_ASSIGNMENT_DURATION),
         operator_fee: BitcoinAmount::from_sat(cmd.operator_fee.unwrap_or(DEFAULT_OPERATOR_FEE)),
         recovery_delay: cmd.recovery_delay.unwrap_or(DEFAULT_RECOVERY_DELAY),
+        safe_harbour_address,
     };
 
     // Assemble ASM params.
-    let anchor = L1Anchor {
-        block: genesis_l1_view.blk,
-        next_target: genesis_l1_view.next_target,
-        epoch_start_timestamp: genesis_l1_view.epoch_start_timestamp,
-        network: ctx.bitcoin_network,
-    };
     let asm_params = AsmParams {
         magic,
         anchor,
@@ -198,6 +199,26 @@ fn resolve_sequencer_predicate(seq_pk: Option<&str>) -> anyhow::Result<Predicate
     ))
 }
 
+fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarbourAddress> {
+    let descriptor = descriptor.trim();
+    anyhow::ensure!(
+        !descriptor.is_empty(),
+        "safe harbour descriptor must not be empty"
+    );
+
+    let descriptor = descriptor
+        .parse::<Descriptor>()
+        .map_err(|e| anyhow::anyhow!("invalid safe harbour descriptor: {e}"))?;
+    anyhow::ensure!(
+        descriptor.type_tag() == DescriptorType::P2tr,
+        "safe harbour descriptor must be P2TR, got {}",
+        descriptor.type_tag()
+    );
+
+    SafeHarbourAddress::try_from(descriptor)
+        .map_err(|e| anyhow::anyhow!("invalid safe harbour descriptor: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,5 +244,26 @@ mod tests {
 
         assert_eq!(predicate.id(), PredicateTypeId::Bip340Schnorr.as_u8());
         assert_eq!(predicate.condition(), expected_pubkey.as_slice());
+    }
+
+    #[test]
+    fn safe_harbour_address_accepts_p2tr_descriptor() {
+        let xonly = XOnlyPublicKey::from_str(TEST_SEQ_PK).expect("x-only hex should parse");
+        let descriptor =
+            Descriptor::new_p2tr(&xonly.serialize()).expect("x-only pubkey should be valid p2tr");
+
+        let resolved = resolve_safe_harbour_address(&descriptor.to_string())
+            .expect("p2tr descriptor should resolve");
+
+        assert_eq!(resolved.as_descriptor(), &descriptor);
+    }
+
+    #[test]
+    fn safe_harbour_address_rejects_non_p2tr_descriptor() {
+        let descriptor = Descriptor::new_p2wpkh(&[1; 20]);
+
+        let err = resolve_safe_harbour_address(&descriptor.to_string()).unwrap_err();
+
+        assert!(err.to_string().contains("must be P2TR"));
     }
 }

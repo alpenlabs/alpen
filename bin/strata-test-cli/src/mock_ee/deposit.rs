@@ -110,7 +110,7 @@ fn build_and_sign_tx(
 
     sync_wallet(&mut wallet, &client)?;
 
-    let fee_rate = FeeRate::from_sat_per_vb_unchecked(2);
+    let fee_rate = FeeRate::from_sat_per_vb_u32(2);
 
     let mut psbt = {
         let mut builder = wallet.build_tx();

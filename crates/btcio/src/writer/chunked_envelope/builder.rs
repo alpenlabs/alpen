@@ -17,7 +17,7 @@ use bitcoin::{
     secp256k1::{XOnlyPublicKey, SECP256K1},
     taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
     transaction::Version,
-    Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+    Address, Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
@@ -25,8 +25,8 @@ use strata_l1_txfmt::MagicBytes;
 
 use super::commit_op_return::build_commit_op_return;
 use crate::writer::builder::{
-    choose_utxos, get_size, sign_reveal_transaction, EnvelopeConfig, EnvelopeError,
-    BITCOIN_DUST_LIMIT,
+    choose_utxos, fee_sats_for_vsize, get_size, sign_reveal_transaction, EnvelopeConfig,
+    EnvelopeError, BITCOIN_DUST_LIMIT,
 };
 
 /// Intermediate state for each reveal before tx construction.
@@ -38,7 +38,7 @@ struct RevealArtifact {
 
 /// One unsigned commit tx and N signed reveal txs.
 #[derive(Debug)]
-pub(crate) struct ChunkedEnvelopeTxs {
+pub struct ChunkedEnvelopeTxs {
     pub commit_tx: Transaction,
     pub reveal_txs: Vec<Transaction>,
 }
@@ -52,7 +52,7 @@ pub(crate) struct ChunkedEnvelopeTxs {
 ///
 /// The SPS-51 envelope framing applied to reveals lets the sigCheck transitively
 /// authenticate the commit whose outputs the reveals spend.
-pub(crate) fn build_chunked_envelope_txs(
+pub fn build_chunked_envelope_txs(
     config: &EnvelopeConfig,
     chunks: &[Vec<u8>],
     magic_bytes: &MagicBytes,
@@ -62,6 +62,13 @@ pub(crate) fn build_chunked_envelope_txs(
 ) -> Result<ChunkedEnvelopeTxs, EnvelopeError> {
     if chunks.is_empty() {
         return Err(EnvelopeError::EmptyPayload);
+    }
+
+    // The guest currently infers reveal count from the consecutive P2TR outputs
+    // after the commit OP_RETURN. P2TR change would extend that run and make the
+    // guest require a non-existent reveal.
+    if config.sequencer_address.script_pubkey().is_p2tr() {
+        return Err(EnvelopeError::P2trChangeAddressUnsupported);
     }
 
     let sequencer_xonly = XOnlyPublicKey::from_keypair(sequencer_keypair).0;
@@ -85,7 +92,7 @@ pub(crate) fn build_chunked_envelope_txs(
             config.fee_rate,
             &reveal_script,
             &spend_info,
-        );
+        )?;
 
         artifacts.push(RevealArtifact {
             reveal_script,
@@ -119,7 +126,11 @@ pub(crate) fn build_chunked_envelope_txs(
             Some(&artifact.reveal_script),
             Some(&control_block),
         );
-        let required = config.reveal_amount + (reveal_vsize as u64) * config.fee_rate;
+        let reveal_fee = fee_sats_for_vsize(reveal_vsize, config.fee_rate)?;
+        let required = config
+            .reveal_amount
+            .checked_add(reveal_fee)
+            .ok_or(EnvelopeError::FeeOverflow)?;
         if commit_output.value < Amount::from_sat(required) {
             return Err(EnvelopeError::NotEnoughUtxos(
                 required,
@@ -163,10 +174,10 @@ pub(crate) fn build_chunked_envelope_txs(
 fn calculate_reveal_commit_value(
     sequencer_address: &Address,
     reveal_amount: u64,
-    fee_rate: u64,
+    fee_rate: FeeRate,
     reveal_script: &ScriptBuf,
     spend_info: &TaprootSpendInfo,
-) -> u64 {
+) -> Result<u64, EnvelopeError> {
     let reveal_output = TxOut {
         value: Amount::from_sat(reveal_amount),
         script_pubkey: sequencer_address.script_pubkey(),
@@ -179,8 +190,11 @@ fn calculate_reveal_commit_value(
         &[reveal_output],
         Some(reveal_script),
         Some(&control_block),
-    ) as u64;
-    reveal_amount + reveal_vsize * fee_rate
+    );
+    let reveal_fee = fee_sats_for_vsize(reveal_vsize, fee_rate)?;
+    reveal_amount
+        .checked_add(reveal_fee)
+        .ok_or(EnvelopeError::FeeOverflow)
 }
 
 /// Builds the commit tx with `[OP_RETURN, P2TR_0, ..., P2TR_{N-1}, change?]`.
@@ -231,8 +245,10 @@ fn build_multi_output_commit(
     );
 
     loop {
-        let fee = (last_size as u64) * config.fee_rate;
-        let needed = total_output + fee;
+        let fee = fee_sats_for_vsize(last_size, config.fee_rate)?;
+        let needed = total_output
+            .checked_add(fee)
+            .ok_or(EnvelopeError::FeeOverflow)?;
         let (chosen, sum) = choose_utxos(&spendable, needed)?;
 
         let inputs: Vec<TxIn> = chosen.iter().map(|u| make_txin(u.txid, u.vout)).collect();
@@ -344,7 +360,7 @@ mod tests {
             ctx.btcio_params.magic_bytes,
             ctx.sequencer_address.clone(),
             Network::Regtest,
-            1000,
+            FeeRate::from_sat_per_vb_u32(1_000),
             546,
             None,
         )
@@ -437,5 +453,41 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_chunked_envelope_txs_rejects_p2tr_change_address() {
+        let kp = test_keypair();
+        let p2tr_address = Address::p2tr(
+            SECP256K1,
+            XOnlyPublicKey::from_keypair(&kp).0,
+            None,
+            Network::Regtest,
+        );
+        let ctx = get_writer_context();
+        let config = EnvelopeConfig::new(
+            ctx.btcio_params.magic_bytes,
+            p2tr_address,
+            Network::Regtest,
+            FeeRate::from_sat_per_vb_u32(1_000),
+            546,
+            None,
+        );
+        let chunks = vec![vec![0u8; 150]];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+
+        let result = build_chunked_envelope_txs(
+            &config,
+            &chunks,
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &kp,
+            get_mock_utxos(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(EnvelopeError::P2trChangeAddressUnsupported)
+        ));
     }
 }

@@ -12,8 +12,8 @@ mod handle;
 mod mempool_provider;
 mod service;
 mod state;
-#[cfg(test)]
-mod test_utils;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 #[cfg(test)]
 mod tests;
 mod types;

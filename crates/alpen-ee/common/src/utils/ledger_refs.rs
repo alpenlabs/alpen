@@ -7,90 +7,79 @@
 //! match the prover-committed pub-params SSZ and Groth16 verification
 //! will fail.
 
-use std::collections::HashMap;
+use strata_acct_types::{l1_block_record_leaf_hash, AccumulatorClaim};
+use strata_snark_acct_types::LedgerRefs;
 
-use futures::future::try_join_all;
-use strata_acct_types::Hash;
-use strata_identifiers::L1Height;
-use strata_snark_acct_types::{AccumulatorClaim, LedgerRefs};
-
-use crate::{
-    traits::ol_client::{OLClientError, SequencerOLClient},
-    types::batch::L1DaBlockRef,
-};
-
-/// Errors produced when building [`LedgerRefs`] from a batch's DA refs.
-#[derive(Debug, thiserror::Error)]
-pub enum LedgerRefsError {
-    /// Failed to fetch the canonical L1 header commitment for a given height.
-    #[error("get_asm_manifest_commitment({height}): {source}")]
-    FetchCommitment {
-        height: L1Height,
-        #[source]
-        source: OLClientError,
-    },
-}
+use crate::types::batch::L1DaBlockRef;
 
 /// Builds canonical [`LedgerRefs`] from `da_refs`.
 ///
-/// Resolves each L1 height to its canonical L1 header commitment via
-/// `ol_client`, uses the raw L1 height as the MMR leaf index (the OL
-/// ASM-manifests MMR is height-indexed, prefilled at genesis with
-/// dummy-hash leaves), then sorts and dedups by index (multiple DA txns
-/// may land in one L1 block).
-///
-/// The `?Sized` relaxation on the `impl SequencerOLClient` bound is
-/// required so that callers may pass a `&dyn SequencerOLClient`; the
-/// implicit `Sized` bound on `impl Trait` would otherwise reject it.
-pub async fn build_ledger_refs_from_da(
-    da_refs: &[L1DaBlockRef],
-    ol_client: &(impl SequencerOLClient + ?Sized),
-) -> Result<LedgerRefs, LedgerRefsError> {
-    let asm_manifest_commitments =
-        fetch_asm_manifest_commitments_by_height(da_refs, ol_client).await?;
-    Ok(build_ledger_refs(da_refs, &asm_manifest_commitments))
-}
-
-async fn fetch_asm_manifest_commitments_by_height(
-    da_refs: &[L1DaBlockRef],
-    ol_client: &(impl SequencerOLClient + ?Sized),
-) -> Result<HashMap<L1Height, Hash>, LedgerRefsError> {
-    let mut heights: Vec<L1Height> = da_refs.iter().map(|da_ref| da_ref.block.height()).collect();
-    heights.sort_unstable();
-    heights.dedup();
-
-    let pairs = try_join_all(heights.into_iter().map(|height| async move {
-        let hash = ol_client
-            .get_asm_manifest_commitment(height)
-            .await
-            .map_err(|source| LedgerRefsError::FetchCommitment { height, source })?;
-        Ok::<_, LedgerRefsError>((height, hash))
-    }))
-    .await?;
-
-    Ok(pairs.into_iter().collect())
-}
-
-fn build_ledger_refs(
-    da_refs: &[L1DaBlockRef],
-    asm_manifest_commitments: &HashMap<L1Height, Hash>,
-) -> LedgerRefs {
-    let mut asm_manifest_refs: Vec<AccumulatorClaim> = da_refs
+/// Uses the raw L1 height as the MMR leaf index, and commits each entry to its
+/// `{block_hash, wtxids_root}` via [`l1_block_record_leaf_hash`]; then sorts and
+/// dedups by index because multiple DA txns from the same batch may land in one
+/// L1 block.
+pub fn build_ledger_refs_from_da(da_refs: &[L1DaBlockRef]) -> LedgerRefs {
+    let mut l1_block_refs: Vec<AccumulatorClaim> = da_refs
         .iter()
         .map(|da_ref| {
             let height = da_ref.block.height();
-            // `fetch_asm_manifest_commitments_by_height` populates an entry for
-            // every height present in `da_refs`, so a miss here is a bug, not
-            // a transient error — leave it as an `expect` to surface that.
-            let hash = *asm_manifest_commitments
-                .get(&height)
-                .expect("commitment map covers every DA-ref height");
-            AccumulatorClaim::new(height as u64, *hash.as_ref())
+            let entry_hash = l1_block_record_leaf_hash(
+                da_ref.block.blkid().as_ref(),
+                da_ref.block.wtxids_root().as_ref(),
+            );
+            AccumulatorClaim::new(height as u64, entry_hash)
         })
         .collect();
 
-    asm_manifest_refs.sort_by_key(|c| c.idx());
-    asm_manifest_refs.dedup_by_key(|c| c.idx());
+    l1_block_refs.sort_by_key(|c| c.idx());
+    l1_block_refs.dedup_by_key(|c| c.idx());
 
-    LedgerRefs::new(asm_manifest_refs)
+    LedgerRefs::new(l1_block_refs)
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, WtxidsRoot};
+
+    use super::*;
+    use crate::types::batch::L1DaBlockInfo;
+
+    fn da_ref(height: u32, block_byte: u8, wtxids_byte: u8) -> L1DaBlockRef {
+        let block_hash = [block_byte; 32];
+        let wtxids_root = [wtxids_byte; 32];
+        let block = L1DaBlockInfo::new(
+            L1BlockCommitment::new(height, L1BlockId::from(Buf32::from(block_hash))),
+            WtxidsRoot::from(Buf32::from(wtxids_root)),
+        );
+        L1DaBlockRef::new(block, Vec::new())
+    }
+
+    #[test]
+    fn build_ledger_refs_commits_l1_block_ref_hash() {
+        let refs = [da_ref(7, 1, 2)];
+
+        let ledger_refs = build_ledger_refs_from_da(&refs);
+        let claims = ledger_refs.l1_block_refs();
+
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].idx(), 7);
+        assert_eq!(
+            claims[0].entry_hash().as_ref(),
+            l1_block_record_leaf_hash(&[1; 32], &[2; 32]).as_slice()
+        );
+    }
+
+    #[test]
+    fn build_ledger_refs_sorts_and_dedups_by_height() {
+        let refs = [da_ref(9, 9, 9), da_ref(4, 4, 4), da_ref(9, 9, 9)];
+
+        let ledger_refs = build_ledger_refs_from_da(&refs);
+        let indices: Vec<_> = ledger_refs
+            .l1_block_refs()
+            .iter()
+            .map(AccumulatorClaim::idx)
+            .collect();
+
+        assert_eq!(indices, [4, 9]);
+    }
 }

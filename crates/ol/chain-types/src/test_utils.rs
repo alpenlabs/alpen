@@ -6,6 +6,8 @@
 #![allow(unreachable_pub, reason = "test utils module")]
 
 use proptest::prelude::*;
+use rand::RngCore;
+use secp256k1::{Keypair, SECP256K1};
 use strata_acct_types::{
     AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, MessageEntry, MsgPayload, TxEffects,
 };
@@ -20,6 +22,27 @@ use crate::{block_flags::BlockFlags, ssz_generated::ssz::block::*, *};
 /// Creates a [`PredicateKey`] for a BIP-340 Schnorr sequencer pubkey.
 pub fn schnorr_predicate(pubkey: &Buf32) -> PredicateKey {
     PredicateKey::new(PredicateTypeId::Bip340Schnorr, pubkey.as_slice().to_vec())
+}
+
+/// Generates a random, valid BIP-340 Schnorr keypair as `(secret_key, x_only_pubkey)` for tests.
+///
+/// The public key is the x-only key derived from the secret key, so signatures produced over the
+/// secret key with `sign_schnorr_sig` verify against a [`schnorr_predicate`] built from the public
+/// key.
+pub fn test_schnorr_keypair() -> (Buf32, Buf32) {
+    // Mirror `EvenPublicKey`'s `Arbitrary` impl: clamp the random bytes so the scalar is always
+    // below the secp256k1 curve order (which starts with `0xFF`) and non-zero, making the secret
+    // key infallibly valid.
+    let mut sk_bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut sk_bytes);
+    sk_bytes[0] &= 0xFE;
+    sk_bytes[31] |= 1;
+
+    let keypair = Keypair::from_seckey_slice(SECP256K1, &sk_bytes)
+        .expect("clamped bytes are always a valid secret key");
+    let sk = Buf32::from(keypair.secret_bytes());
+    let pk = Buf32::from(keypair.x_only_public_key().0.serialize());
+    (sk, pk)
 }
 
 /// Strategy for generating random [`OLLog`] values.
@@ -39,11 +62,10 @@ pub fn ol_tx_segment_strategy() -> impl Strategy<Value = OLTxSegment> {
     })
 }
 
-pub fn l1_update_strategy() -> impl Strategy<Value = Option<OLL1Update>> {
-    prop::option::of(buf32_strategy().prop_map(|preseal_state_root| OLL1Update {
-        preseal_state_root,
-        manifest_cont: OLL1ManifestContainer::new(vec![]).expect("empty manifest should succeed"),
-    }))
+pub fn manifests_strategy() -> impl Strategy<Value = Option<OLAsmManifestContainer>> {
+    prop::option::of(Just(
+        OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed"),
+    ))
 }
 
 pub fn ol_block_header_strategy() -> impl Strategy<Value = OLBlockHeader> {
@@ -85,10 +107,10 @@ pub fn signed_ol_block_header_strategy() -> impl Strategy<Value = SignedOLBlockH
 }
 
 pub fn ol_block_body_strategy() -> impl Strategy<Value = OLBlockBody> {
-    (ol_tx_segment_strategy(), l1_update_strategy()).prop_map(|(tx_segment, l1_update)| {
+    (ol_tx_segment_strategy(), manifests_strategy()).prop_map(|(tx_segment, manifests)| {
         OLBlockBody {
             tx_segment: Some(tx_segment).into(),
-            l1_update: l1_update.into(),
+            manifests: manifests.into(),
         }
     })
 }
@@ -167,7 +189,7 @@ pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
                         .try_into()
                         .expect("messages must fit within SSZ max length"),
                     ledger_refs: SauTxLedgerRefs {
-                        asm_history_proofs: ssz_types::Optional::None,
+                        l1_block_ref_claims: ssz_types::Optional::None,
                     },
                 },
             },

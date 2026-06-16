@@ -4,7 +4,7 @@ Strata RPC types
 
 from typing import TypedDict
 
-HexBytes32 = str  # TODO: stricter
+HexBytes32 = str  # TODO(STR-3692): stricter
 HexBytes = str
 
 
@@ -53,9 +53,10 @@ class ProofState(TypedDict):
     next_inbox_msg_idx: int
 
 
-class UpdateInputData(TypedDict):
+class EpochUpdateData(TypedDict):
     seq_no: int
-    proof_state: ProofState
+    next_inbox_msg_idx: int
+    new_state_root: HexBytes32 | None
     extra_data: HexBytes
     messages: list[MessageEntry]
 
@@ -64,4 +65,5 @@ class AccountEpochSummary(TypedDict):
     epoch_commitment: EpochCommitment
     prev_epoch_commitment: EpochCommitment
     balance: int
-    update_inputs: list[UpdateInputData]
+    final_state_root: HexBytes32
+    update_inputs: list[EpochUpdateData]

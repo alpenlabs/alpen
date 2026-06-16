@@ -36,6 +36,11 @@ pub struct UpdateBuilder<'i, P: SnarkAccountProgramVerification> {
     next_msg_idx: usize,
     ledger_refs: LedgerRefs,
     outputs: UpdateOutputs,
+    /// If set, overrides the seqno that would otherwise be derived from the
+    /// snark account state.  Used for building updates that target a seqno
+    /// other than the one currently expected on-chain (e.g. when building a
+    /// sequence of updates ahead of submission).
+    override_seq_no: Option<Seqno>,
 }
 
 impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
@@ -79,7 +84,23 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
             next_msg_idx: 0,
             ledger_refs,
             outputs,
+            override_seq_no: None,
         })
+    }
+
+    /// Returns the seqno that finalized updates will be tagged with.
+    ///
+    /// Defaults to the snark account state's expected next seqno; returns the
+    /// override if one has been set via [`Self::set_override_seq_no`].
+    pub fn resolved_seq_no(&self) -> Seqno {
+        self.override_seq_no
+            .unwrap_or_else(|| self.snark_state.seq_no())
+    }
+
+    /// Sets an override seqno used in place of the snark account state's
+    /// expected seqno when finalizing.
+    pub fn set_override_seq_no(&mut self, seq_no: Option<Seqno>) {
+        self.override_seq_no = seq_no;
     }
 
     /// Appends a message without processing it.
@@ -243,6 +264,7 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
             coinputs: self.coinputs.clone(),
             ledger_refs: self.ledger_refs.clone(),
             outputs: self.outputs.clone(),
+            seq_no: self.resolved_seq_no(),
         })
     }
 
@@ -277,6 +299,7 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
             coinputs: self.coinputs.clone(),
             ledger_refs: self.ledger_refs.clone(),
             outputs: self.outputs.clone(),
+            seq_no: self.resolved_seq_no(),
         })
     }
 
@@ -312,17 +335,17 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     /// Builds [`UpdateOperationData`] and raw coinputs.
     ///
     /// Calls `pre_finalize_state`, `finalize_verification`, `finalize_state`.
-    /// Clones internal state so the builder can be reused.
+    /// Tags the operation with [`Self::resolved_seq_no`]. Clones internal state
+    /// so the builder can be reused.
     pub fn build_operation_data(
         &mut self,
-        seq_no: u64,
         extra_data: P::ExtraData,
     ) -> ProgramResult<(UpdateOperationData, Vec<Vec<u8>>), P::Error>
     where
         P::VState<'i>: Clone,
     {
         let finalized = self.finalize_verified(extra_data)?;
-        finalized.into_operation_data(seq_no)
+        finalized.into_operation_data()
     }
 
     /// Builds [`UpdateOperationData`] and raw coinputs without running
@@ -330,15 +353,15 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     ///
     /// Calls `pre_finalize_state`, `finalize_state` (skips
     /// `finalize_verification`). Useful for the construction side where
-    /// the builder has already validated chunks locally. Clones internal state
-    /// so the builder can be reused.
+    /// the builder has already validated chunks locally. Tags the operation
+    /// with [`Self::resolved_seq_no`]. Clones internal state so the builder can
+    /// be reused.
     pub fn build_operation_data_unverified(
         &mut self,
-        seq_no: u64,
         extra_data: P::ExtraData,
     ) -> ProgramResult<(UpdateOperationData, Vec<Vec<u8>>), P::Error> {
         let finalized = self.finalize_unverified(extra_data)?;
-        finalized.into_operation_data(seq_no)
+        finalized.into_operation_data()
     }
 }
 
@@ -352,6 +375,9 @@ struct FinalizedUpdate<P: SnarkAccountProgramVerification> {
     coinputs: Vec<Vec<u8>>,
     ledger_refs: LedgerRefs,
     outputs: UpdateOutputs,
+    /// Seqno to tag this update with — either the snark account's expected
+    /// next seqno or an explicit override.
+    seq_no: Seqno,
 }
 
 impl<P: SnarkAccountProgramVerification> FinalizedUpdate<P> {
@@ -377,6 +403,7 @@ impl<P: SnarkAccountProgramVerification> FinalizedUpdate<P> {
         let coinputs = self.coinputs.into_iter().map(Coinput::new).collect();
 
         let pub_params = strata_snark_acct_types::UpdateProofPubParams::new(
+            self.seq_no,
             ProofState::new(self.pre_state.compute_state_root(), pre_inbox_idx),
             new_proof_state,
             self.messages,
@@ -389,25 +416,22 @@ impl<P: SnarkAccountProgramVerification> FinalizedUpdate<P> {
     }
 
     fn into_manifest(self) -> ProgramResult<UpdateManifest, P::Error> {
-        let new_proof_state = self.new_proof_state();
+        let new_state_root = self.new_proof_state().inner_state();
         let extra_data_buf = self.encode_extra_data()?;
 
         Ok(UpdateManifest::new(
-            new_proof_state,
+            Some(new_state_root),
             extra_data_buf,
             self.messages,
         ))
     }
 
-    fn into_operation_data(
-        self,
-        seq_no: u64,
-    ) -> ProgramResult<(UpdateOperationData, Vec<Vec<u8>>), P::Error> {
+    fn into_operation_data(self) -> ProgramResult<(UpdateOperationData, Vec<Vec<u8>>), P::Error> {
         let new_proof_state = self.new_proof_state();
         let extra_data_buf = self.encode_extra_data()?;
 
         let op = UpdateOperationData::new(
-            seq_no,
+            *self.seq_no.inner(),
             new_proof_state,
             self.messages,
             self.ledger_refs,

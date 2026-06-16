@@ -26,8 +26,9 @@ use cmd::{
     create_mock_deposit::create_mock_deposit,
     create_withdrawal_fulfillment::create_withdrawal_fulfillment,
     extract_p2tr_pubkey::extract_p2tr_pubkey, get_address::get_address,
-    musig_aggregate_pks::musig_aggregate_pks, sign_schnorr_sig::sign_schnorr_sig,
-    xonlypk_to_descriptor::xonlypk_to_descriptor, Commands, TopLevel,
+    musig_aggregate_pks::musig_aggregate_pks, post_ee_da_envelope::post_ee_da_envelope,
+    sign_schnorr_sig::sign_schnorr_sig, xonlypk_to_descriptor::xonlypk_to_descriptor, Commands,
+    TopLevel,
 };
 
 fn main() {
@@ -44,6 +45,7 @@ fn main() {
         Commands::MusigAggregatePks(args) => musig_aggregate_pks(args),
         Commands::ExtractP2trPubkey(args) => extract_p2tr_pubkey(args),
         Commands::ConvertToXonlyPk(args) => convert_to_xonly_pk(args),
+        Commands::PostEeDaEnvelope(args) => post_ee_da_envelope(args),
         Commands::SignSchnorrSig(args) => sign_schnorr_sig(args),
         Commands::XonlypkToDescriptor(args) => xonlypk_to_descriptor(args),
     };

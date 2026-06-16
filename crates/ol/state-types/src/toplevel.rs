@@ -7,9 +7,7 @@ use strata_ol_params::OLParams;
 
 use crate::{
     MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeState, OLSnarkAccountState, WriteBatch,
-    ssz_generated::ssz::state::{
-        EpochalState, GlobalState, OLAccountState, OLState, TsnlLedgerAccountsTable,
-    },
+    ssz_generated::ssz::state::*,
 };
 
 impl OLState {
@@ -28,7 +26,7 @@ impl OLState {
         // references an L1 block at or before genesis — as long as the OL
         // state and the DB-side ASM MMR agree on it.
         let prefill_count = params.last_l1_block.height() as u64 + 1;
-        let manifests_mmr =
+        let l1_block_refs_mmr =
             <Mmr64 as Mmr<StrataHasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF, prefill_count);
 
         let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
@@ -63,12 +61,14 @@ impl OLState {
             params.header.epoch,
             params.last_l1_block,
             checkpointed_epoch,
-            manifests_mmr,
+            l1_block_refs_mmr,
         );
+        let intraepoch = IntraepochState::default();
 
         Ok(Self {
             epoch,
             global,
+            intraepoch,
             ledger,
         })
     }
@@ -79,6 +79,14 @@ impl OLState {
 
     pub fn epoch_state(&self) -> &EpochalState {
         &self.epoch
+    }
+
+    pub fn intraepoch_state(&self) -> &IntraepochState {
+        &self.intraepoch
+    }
+
+    pub fn intraepoch_state_mut(&mut self) -> &mut IntraepochState {
+        &mut self.intraepoch
     }
 
     /// Checks that a batch can be applied safely.
@@ -140,6 +148,25 @@ impl OLState {
             }
         }
 
+        // Check that appending the pending ASM logs won't overflow the buffer.
+        // On apply, a `reset` clears the buffer before the appended entries are
+        // pushed, so the starting count is zero in that case; otherwise we build
+        // on top of the entries already present in the state.
+        let intraepoch_writes = batch.intraepoch_writes();
+        let starting_logs = if intraepoch_writes.reset {
+            0
+        } else {
+            self.intraepoch.pending_asm_logs().len() as u64
+        };
+        let appended_logs = intraepoch_writes.appended_pending_asm_logs.len() as u64;
+        if starting_logs + appended_logs > MAX_PENDING_ASM_LOGS {
+            return Err(StateError::PendingAsmLogsOverflow {
+                current: starting_logs,
+                adding: appended_logs,
+                max: MAX_PENDING_ASM_LOGS,
+            });
+        }
+
         Ok(())
     }
 
@@ -152,7 +179,7 @@ impl OLState {
     pub fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountState>) -> StateResult<()> {
         // Safety check first so we can use `.expect`.
         self.check_write_batch_safe(&batch)?;
-        let (global_writes, epochal_writes, ledger) = batch.into_parts();
+        let (global_writes, epochal_writes, intraepoch_writes, ledger) = batch.into_parts();
 
         // Separate new accounts from updates.
         let (new_accounts, updated_accounts) = ledger.into_new_and_updated();
@@ -215,8 +242,20 @@ impl OLState {
             self.epoch.set_total_ledger_balance(amt);
         }
 
-        if let Some(mmr) = epochal_writes.asm_manifests_mmr {
-            self.epoch.manifests_mmr = mmr;
+        if let Some(mmr) = epochal_writes.l1_block_refs_mmr {
+            self.epoch.l1_block_refs_mmr = mmr;
+        }
+
+        // Apply intraepoch state writes.
+        if intraepoch_writes.reset {
+            self.intraepoch.reset();
+        }
+        for entry in intraepoch_writes.appended_pending_asm_logs {
+            // This panic is safe.
+            let ssz_entry = entry.into();
+            self.intraepoch
+                .try_append_pending_log(ssz_entry)
+                .expect("ol/state: unable to append pending ASM log");
         }
 
         Ok(())
@@ -425,6 +464,38 @@ mod tests {
 
         let account_2 = state.get_account_state(&account_id_2).unwrap();
         assert_eq!(account_2.balance(), BitcoinAmount::from_sat(2000));
+    }
+
+    #[test]
+    fn test_apply_batch_pending_asm_logs_overflow_errors() {
+        use strata_asm_manifest_types::AsmLogEntry;
+        use strata_ledger_types::PendingAsmLog;
+
+        let mut state = create_test_genesis_state();
+
+        // Build a batch that appends one more pending ASM log than the buffer
+        // can hold. The fresh state starts with an empty buffer and we don't
+        // reset, so the appended count alone must exceed the cap.
+        let overflow_count = MAX_PENDING_ASM_LOGS + 1;
+        let mut batch = WriteBatch::default();
+        let logs = &mut batch.intraepoch_writes_mut().appended_pending_asm_logs;
+        for _ in 0..overflow_count {
+            let entry = AsmLogEntry::from_raw(vec![]).expect("test: empty log entry");
+            logs.push(PendingAsmLog::new(0, entry));
+        }
+
+        // The safety check should reject this before any mutation happens.
+        let err = state
+            .apply_write_batch(batch)
+            .expect_err("test: expected pending ASM logs overflow");
+        assert!(matches!(
+            err,
+            StateError::PendingAsmLogsOverflow {
+                current: 0,
+                adding,
+                max,
+            } if adding == overflow_count && max == MAX_PENDING_ASM_LOGS
+        ));
     }
 
     #[test]

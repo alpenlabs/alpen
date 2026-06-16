@@ -7,6 +7,9 @@ use revm_primitives::{Address, B256};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_da_framework::{decode_map_with, encode_map_with};
 
+/// Maximum size for encoded bytes (2 MiB).
+const MAX_CODEC_BYTES: usize = 2 << 20;
+
 use super::{AccountChange, StorageDiff};
 use crate::codec::{CodecAddress, CodecB256};
 
@@ -44,6 +47,9 @@ struct CodecBytes(Bytes);
 
 impl Codec for CodecBytes {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        if self.0.len() > MAX_CODEC_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
         // Encode length as u32, then raw bytes
         (self.0.len() as u32).encode(enc)?;
         enc.write_buf(&self.0)?;
@@ -52,6 +58,9 @@ impl Codec for CodecBytes {
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let len = u32::decode(dec)? as usize;
+        if len > MAX_CODEC_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
         let mut buf = vec![0u8; len];
         dec.read_buf(&mut buf)?;
         Ok(Self(Bytes::from(buf)))

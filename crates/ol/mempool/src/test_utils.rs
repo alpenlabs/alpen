@@ -79,7 +79,7 @@ pub(crate) fn create_test_snark_update() -> SnarkAccountUpdate {
     let ledger_refs = strata_snark_acct_types::LedgerRefs::new(
         operation
             .ledger_refs()
-            .asm_history_proofs()
+            .l1_block_ref_claims()
             .map(|c| c.claims.iter().cloned().collect())
             .unwrap_or_default(),
     );
@@ -128,12 +128,12 @@ pub(crate) fn create_test_snark_tx_from_update(
         operation.extra_data().to_vec(),
     );
 
-    let asm_hist_refs = operation.ledger_refs().asm_manifest_refs();
-    let sau_ledger_refs = if asm_hist_refs.is_empty() {
+    let l1_block_refs = operation.ledger_refs().l1_block_refs();
+    let sau_ledger_refs = if l1_block_refs.is_empty() {
         SauTxLedgerRefs::new_empty()
     } else {
-        let claim_list =
-            ClaimList::new(asm_hist_refs.to_vec()).expect("snark update has too many ASM claims");
+        let claim_list = ClaimList::new(l1_block_refs.to_vec())
+            .expect("snark update has too many L1 block refs");
         SauTxLedgerRefs::new_with_claims(claim_list)
     };
 
@@ -237,7 +237,7 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     layer
         .update_account(account_id, |account| {
             let snark_account = account.as_snark_account_mut().unwrap();
-            snark_account.set_proof_state_directly(Hash::zero(), 0, Seqno::from(seq_no));
+            snark_account.set_proof_state(Hash::zero(), 0, Seqno::from(seq_no));
         })
         .unwrap();
 
@@ -340,7 +340,7 @@ pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
     let ledger_refs = strata_snark_acct_types::LedgerRefs::new(
         operation_data
             .ledger_refs()
-            .asm_history_proofs()
+            .l1_block_ref_claims()
             .map(|c| c.claims.iter().cloned().collect())
             .unwrap_or_default(),
     );
@@ -405,7 +405,7 @@ pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
         if layer.create_new_account(account_id, new_acct).is_ok() {
             let _ = layer.update_account(account_id, |account| {
                 let snark_account = account.as_snark_account_mut().unwrap();
-                snark_account.set_proof_state_directly(Hash::zero(), 0, Seqno::from(0));
+                snark_account.set_proof_state(Hash::zero(), 0, Seqno::from(0));
             });
         }
     }

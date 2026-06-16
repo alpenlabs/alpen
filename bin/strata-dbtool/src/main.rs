@@ -30,7 +30,7 @@ use crate::{
             ee_delete_acct_proof, ee_delete_chunk_receipt, ee_get_acct_proof, ee_get_chunk_receipt,
         },
         l1::{get_l1_block, get_l1_summary},
-        ol::{get_ol_block, get_ol_summary},
+        ol::{delete_ol_block, get_ol_block, get_ol_blocks_at_slot, get_ol_summary},
         ol_state::{get_ol_state, revert_ol_state},
         prover_task::{
             abandon_prover_task, abandon_prover_tasks, backfill_checkpoint_proof_task,
@@ -57,7 +57,11 @@ fn main() {
         Command::GetOLState(args) => with_ol_db(&datadir, |db| get_ol_state(db, args)),
         Command::RevertOLState(args) => with_ol_db(&datadir, |db| revert_ol_state(db, args)),
         Command::GetOlBlock(args) => with_ol_db(&datadir, |db| get_ol_block(db, args)),
+        Command::GetOlBlocksAtSlot(args) => {
+            with_ol_db(&datadir, |db| get_ol_blocks_at_slot(db, args))
+        }
         Command::GetOlSummary(args) => with_ol_db(&datadir, |db| get_ol_summary(db, args)),
+        Command::DeleteOlBlock(args) => with_ol_db(&datadir, |db| delete_ol_block(db, args)),
         Command::GetL1Block(args) => with_ol_db(&datadir, |db| get_l1_block(db, args)),
         Command::GetL1Summary(args) => with_ol_db(&datadir, |db| get_l1_summary(db, args)),
         Command::GetWriterSummary(args) => with_ol_db(&datadir, |db| get_writer_summary(db, args)),

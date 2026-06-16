@@ -99,7 +99,7 @@ pub(crate) fn get_ol_state(
         block_id: &block_id,
         current_slot: block_slot,
         current_epoch: block_epoch,
-        is_epoch_finishing: ol_block.body().l1_update().is_some(),
+        is_epoch_finishing: ol_block.header().is_terminal(),
         previous_epoch: recorded_epoch,
         finalized_epoch: &finalized_epoch,
         l1_next_expected_height: l1_safe_block_height.saturating_add(1),
@@ -123,6 +123,7 @@ pub(crate) fn revert_ol_state(
                 Box::new(target_block_id),
             )
         })?;
+    let target_commitment = OLBlockCommitment::new(target_slot, target_block_id);
 
     let target_block = db
         .ol_block_db()
@@ -134,7 +135,7 @@ pub(crate) fn revert_ol_state(
                 Box::new(target_block_id),
             )
         })?;
-    let target_slot_is_terminal = target_block.body().l1_update().is_some();
+    let target_slot_is_terminal = target_block.header().is_terminal();
 
     let dry_run = !args.force;
 
@@ -181,6 +182,11 @@ pub(crate) fn revert_ol_state(
     let mut commitments_to_delete = Vec::new();
     let mut blocks_to_mark_unchecked = Vec::new();
     let mut blocks_to_delete = Vec::new();
+    let high_watermark_to_rollback = db
+        .ol_block_db()
+        .get_block_high_watermark()
+        .internal_error("Failed to get OL block high-watermark")?
+        .filter(|high_watermark| high_watermark.slot() > target_slot);
 
     for slot in target_slot + 1..=chain_tip_slot {
         let block_ids = db
@@ -231,11 +237,12 @@ pub(crate) fn revert_ol_state(
     };
 
     if !dry_run {
-        revert_indexing(
-            db,
-            target_epoch,
-            OLBlockCommitment::new(target_slot, target_block_id),
-        )?;
+        revert_indexing(db, target_epoch, target_commitment)?;
+        if high_watermark_to_rollback.is_some() {
+            db.ol_block_db()
+                .rollback_block_high_watermark(target_commitment)
+                .internal_error("Failed to roll back OL block high-watermark")?;
+        }
     }
 
     let mut checkpoints_to_delete = Vec::new();
@@ -281,6 +288,9 @@ pub(crate) fn revert_ol_state(
         blocks_to_mark_unchecked.len()
     );
     println!("Blocks to delete: {}", blocks_to_delete.len());
+    if let Some(high_watermark) = high_watermark_to_rollback {
+        println!("Block high-watermark rollback: {high_watermark} -> {target_commitment}");
+    }
     println!("Checkpoints to delete: {}", checkpoints_to_delete.len());
     println!(
         "Epoch summaries to delete: {}",

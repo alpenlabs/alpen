@@ -14,7 +14,9 @@
 //! existing tests in `tests/multi_operations.rs`, which now also assert the
 //! limbo balance grew.
 
-use strata_acct_types::{BitcoinAmount, MsgPayload};
+use strata_acct_types::{
+    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount, MsgPayload,
+};
 use strata_codec::encode_to_vec;
 use strata_identifiers::{AccountSerial, SubjectId};
 use strata_ledger_types::{IAccountState, IStateAccessor};
@@ -22,7 +24,7 @@ use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 
 use crate::{
-    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, account_processing,
+    account_processing,
     assembly::BlockComponents,
     context::{BasicExecContext, BlockInfo},
     output::ExecOutputBuffer,
@@ -235,7 +237,7 @@ fn limbo_deposit_with_malformed_descriptor() {
         &mut state,
         &BlockInfo::new_genesis(1_000_000),
         None,
-        BlockComponents::new_manifests(vec![manifest]),
+        BlockComponents::new_manifests(vec![manifest]).as_terminal(),
     )
     .expect("genesis manifest with bad descriptor should still execute");
 
@@ -269,7 +271,7 @@ fn limbo_deposit_to_unknown_account_serial() {
         &mut state,
         &BlockInfo::new_genesis(1_000_000),
         None,
-        BlockComponents::new_manifests(vec![manifest]),
+        BlockComponents::new_manifests(vec![manifest]).as_terminal(),
     )
     .expect("genesis manifest with unknown serial should still execute");
 

@@ -2,20 +2,16 @@
 
 use std::time::Duration;
 
-use alpen_ee_common::{
-    Batch, BatchId, BatchStorage, BlockNumHash, Chunk, ChunkWitnessStore, ExecBlockStorage,
-};
+use alpen_ee_common::{Batch, BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
 use tokio::{sync::mpsc, time};
 use tracing::{debug, error, warn};
 
-use super::{
-    ctx::BatchBuilderCtx, BatchBuilderState, BatchPolicy, BatchSealingPolicy, BlockDataProvider,
-};
+use super::{ctx::BatchBuilderCtx, events::BatchBuilderEvent, BatchBuilderState};
 use crate::{
     batch_builder::reorg::{check_and_handle_reorg, ReorgReport},
-    chunk_witness_task::ChunkExtractRequest,
+    sealing_policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy},
 };
 
 /// Polling interval for checking pending block data availability.
@@ -73,21 +69,19 @@ async fn get_block_range(
 ///
 /// Returns the sealed batch ID, or `None` if accumulator was empty.
 ///
-/// When `chunk_witness_tx` is provided, publishes a
-/// [`ChunkExtractRequest`] on the channel for the background
-/// `chunk_witness_task` to process. Extraction itself runs off this
-/// task's hot path; sealing does not wait for it.
-async fn seal_batch<P: BatchPolicy>(
+/// Chunk creation is handled by the downstream chunk builder, which
+/// receives a [`BatchBuilderEvent::BlockProcessed`] with `batch_sealed`
+/// set.
+async fn seal_batch<P: AccumulationPolicy>(
     state: &mut BatchBuilderState<P>,
-    storage: &(impl BatchStorage + ChunkWitnessStore),
-    chunk_witness_tx: Option<&mpsc::Sender<ChunkExtractRequest>>,
+    storage: &impl BatchStorage,
 ) -> Result<Option<BatchId>> {
     if state.accumulator().is_empty() {
         return Ok(None);
     }
 
     let prev_block = state.prev_batch_end();
-    let (inner_blocks, last_block) = state.accumulator_mut().drain_for_batch();
+    let (inner_blocks, last_block) = state.accumulator_mut().drain();
     let inner_blocks: Vec<Hash> = inner_blocks.into_iter().map(|b| b.hash()).collect();
 
     let batch_idx = state.next_batch_idx();
@@ -96,7 +90,7 @@ async fn seal_batch<P: BatchPolicy>(
         prev_block.hash(),
         last_block.hash(),
         last_block.blocknum(),
-        inner_blocks.clone(),
+        inner_blocks,
     )
     .map_err(|err| eyre!(err))?;
     let batch_id = batch.id();
@@ -109,60 +103,6 @@ async fn seal_batch<P: BatchPolicy>(
     );
 
     storage.save_next_batch(batch).await?;
-
-    // One chunk per batch, spanning the whole batch.
-    //
-    // TODO(STR-1369): replace with a real chunking/batching policy
-    // (e.g. sub-batch chunker driven by prover cost). Today the PAAS
-    // chunk + acct provers only need the chunk records to exist and
-    // be linked to the batch — cardinality is a policy knob.
-    let next_chunk_idx = storage
-        .get_latest_chunk()
-        .await?
-        .map(|(c, _)| c.idx() + 1)
-        .unwrap_or(0);
-    let chunk = Chunk::new(
-        next_chunk_idx,
-        prev_block.hash(),
-        last_block.hash(),
-        inner_blocks,
-    );
-    let chunk_id = chunk.id();
-    // The chunk's first block (inner_blocks[0] if non-empty, else
-    // last_block). The extractor needs this — NOT `chunk_id.prev_block`,
-    // which is the last block of the *previous* chunk and lives in reth
-    // as a block, not as the chunk's range start.
-    let first_block_hash = chunk
-        .blocks_iter()
-        .next()
-        .expect("chunk has at least last_block");
-    let last_block_hash = chunk.last_block();
-    storage.save_next_chunk(chunk).await?;
-    storage.set_batch_chunks(batch_id, vec![chunk_id]).await?;
-
-    if let Some(tx) = chunk_witness_tx {
-        // Hand the chunk off to the background witness task. `send`
-        // backpressures the builder if the extractor is sustainedly
-        // behind (channel full), but does not block on the per-chunk
-        // extraction itself. Channel closure means the task has died —
-        // log so it's visible, but keep sealing; chunks without a
-        // witness produce `TransientFailure` at proof time and can be
-        // backfilled later.
-        let req = ChunkExtractRequest {
-            chunk_id,
-            first_block: first_block_hash,
-            last_block: last_block_hash,
-        };
-        if let Err(e) = tx.send(req).await {
-            warn!(
-                ?chunk_id,
-                error = %e,
-                "chunk witness channel closed; chunk sealed without witness — \
-                 chunk will remain proof-blocked until manually backfilled"
-            );
-        }
-    }
-
     state.advance_batch(last_block);
 
     Ok(Some(batch_id))
@@ -180,10 +120,10 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
     mut state: BatchBuilderState<P>,
     mut ctx: BatchBuilderCtx<P, D, S, BS, ES>,
 ) where
-    P: BatchPolicy,
+    P: AccumulationPolicy,
     D: BlockDataProvider<P>,
-    S: BatchSealingPolicy<P>,
-    BS: BatchStorage + ChunkWitnessStore,
+    S: SealingPolicy<P>,
+    BS: BatchStorage,
     ES: ExecBlockStorage,
 {
     let mut pending_poll_interval = time::interval(PENDING_BLOCK_POLL_INTERVAL);
@@ -223,10 +163,10 @@ async fn handle_new_tip<P, D, S, BS, ES>(
     new_tip: BlockNumHash,
 ) -> Result<()>
 where
-    P: BatchPolicy,
+    P: AccumulationPolicy,
     D: BlockDataProvider<P>,
-    S: BatchSealingPolicy<P>,
-    BS: BatchStorage + ChunkWitnessStore,
+    S: SealingPolicy<P>,
+    BS: BatchStorage,
     ES: ExecBlockStorage,
 {
     // Check and handle reorgs first
@@ -244,18 +184,32 @@ where
         }
         ReorgReport::ShallowReorg => {
             // Shallow reorg. Pending blocks and accumulator reset.
-            // Latest batch has not changed.
-            // Continue execution with new state.
+            // Latest sealed batch has not changed.
+            emit_event(
+                &ctx.event_tx,
+                BatchBuilderEvent::reorg(
+                    state.prev_batch_end(),
+                    state.next_batch_idx().saturating_sub(1),
+                ),
+            )
+            .await;
         }
         ReorgReport::Reorg(batch_id) => {
-            // Unfinalized batch is has been reorg'd.
+            // Unfinalized batch has been reorg'd.
             // Latest batch reverted. Pending blocks and accumulator reset.
-            // notify new latest batch
+            // State is already reset by check_and_handle_reorg;
             let _ = ctx.latest_batch_tx.send(batch_id);
-            // Continue execution with new state.
+            emit_event(
+                &ctx.event_tx,
+                BatchBuilderEvent::reorg(
+                    state.prev_batch_end(),
+                    state.next_batch_idx().saturating_sub(1),
+                ),
+            )
+            .await;
         }
         ReorgReport::DeepReorg => {
-            // TODO: unrecoverable error
+            // TODO(STR-3682): unrecoverable error
             return Err(eyre!("deep reorg detected"));
         }
     }
@@ -294,10 +248,10 @@ async fn process_pending_blocks<P, D, S, BS, ES>(
     ctx: &BatchBuilderCtx<P, D, S, BS, ES>,
 ) -> Result<()>
 where
-    P: BatchPolicy,
+    P: AccumulationPolicy,
     D: BlockDataProvider<P>,
-    S: BatchSealingPolicy<P>,
-    BS: BatchStorage + ChunkWitnessStore,
+    S: SealingPolicy<P>,
+    BS: BatchStorage,
     ES: ExecBlockStorage,
 {
     let mut processed = 0;
@@ -311,10 +265,7 @@ where
         // Try to get block data (non-blocking check)
         let Some(block_data) = ctx.block_data_provider.get_block_data(block.hash()).await? else {
             // Data not ready yet, stop processing
-            println!(
-                "processing pending blocks, block data not yet ready {:?}",
-                block.hash()
-            );
+            debug!(hash = %block.hash(), "block data not yet ready");
             break;
         };
 
@@ -322,29 +273,45 @@ where
         state.pop_pending_block();
 
         // Check if adding this block would exceed threshold
+        let mut batch_sealed = None;
         if !state.accumulator().is_empty()
-            && ctx
-                .sealing_policy
-                .would_exceed(state.accumulator(), &block_data)
+            && state
+                .accumulator()
+                .would_exceed(&ctx.sealing_policy, &block_data)
         {
-            if let Some(batch_id) = seal_batch(
-                state,
-                ctx.batch_storage.as_ref(),
-                ctx.chunk_witness_tx.as_ref(),
-            )
-            .await?
-            {
+            if let Some(batch_id) = seal_batch(state, ctx.batch_storage.as_ref()).await? {
                 // Notify watchers of new batch
                 let _ = ctx.latest_batch_tx.send(batch_id);
+                batch_sealed = Some(batch_id);
             }
         }
 
         // Add block to accumulator
         state.accumulator_mut().add_block(block, &block_data);
 
+        // Notify downstream (chunk builder) of the processed block.
+        // `batch_sealed` is set when this block triggered a batch seal
+        // — the sealed batch contains the *previous* accumulator's
+        // blocks, and this block is the first of the next batch.
+        emit_event(
+            &ctx.event_tx,
+            BatchBuilderEvent::block_processed(block, state.next_batch_idx(), batch_sealed),
+        )
+        .await;
+
         debug!(hash = %block.hash(), "Processed block");
         processed += 1;
     }
 
     Ok(())
+}
+
+/// Send a [`BatchBuilderEvent`] if the channel is configured. Logs a warning
+/// if the receiver has been dropped (should not happen in production).
+async fn emit_event(tx: &Option<mpsc::Sender<BatchBuilderEvent>>, event: BatchBuilderEvent) {
+    if let Some(tx) = tx {
+        if let Err(e) = tx.send(event).await {
+            warn!(error = %e, "batch event channel closed; event dropped");
+        }
+    }
 }

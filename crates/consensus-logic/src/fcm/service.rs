@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use metrics::{counter, histogram};
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
@@ -193,7 +193,7 @@ async fn process_fc_message<C: FcmContext>(
                     prev_epoch,
                     confirmed_epoch,
                     finalized_epoch,
-                    // FIXME this is a bit convoluted, could this be simpler?
+                    // FIXME(STR-3673): this is a bit convoluted, could this be simpler?
                     safe_l1: last_l1_blk,
                 };
 
@@ -207,7 +207,14 @@ async fn process_fc_message<C: FcmContext>(
                 BlockStatus::Invalid
             };
 
-            fcm_state.ctx().set_block_status(*blkid, status).await?;
+            let block = OLBlockCommitment::new(slot, *blkid);
+            set_block_status_and_clear_invalid_high_watermark(
+                fcm_state,
+                &block_bundle,
+                block,
+                status,
+            )
+            .await?;
             if ok {
                 counter!("strata_fcm_blocks_accepted_total").increment(1);
             } else {
@@ -217,6 +224,105 @@ async fn process_fc_message<C: FcmContext>(
     }
 
     Ok(())
+}
+
+async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
+    fcm_state: &FcmServiceState<C>,
+    bundle: &OLBlock,
+    block: OLBlockCommitment,
+    status: BlockStatus,
+) -> anyhow::Result<bool> {
+    let updated = fcm_state
+        .ctx()
+        .set_block_status(*block.blkid(), status)
+        .await?;
+
+    if matches!(status, BlockStatus::Invalid) {
+        // TODO(STR-2141): `BlockStatus::Invalid` also represents local execution failures.
+        // Revisit high-watermark clearing once FCM distinguishes consensus-invalid blocks
+        // from transient execution failures.
+
+        // A rejected terminal block may have stored its epoch summary before
+        // failing (the summary is the last exec step, but post-exec failures
+        // can still invalidate the block afterwards). Drop it so it cannot
+        // shadow the replacement terminal's summary in canonical lookups.
+        // Keyed exactly by the rejected block's own commitment, this can
+        // never touch another block's summary, so it runs regardless of the
+        // high-watermark gate below.
+        if bundle.header().is_terminal() {
+            let summary_commitment =
+                EpochCommitment::new(bundle.header().epoch(), block.slot(), *block.blkid());
+            let deleted = fcm_state
+                .ctx()
+                .del_epoch_summary(summary_commitment)
+                .await
+                .inspect_err(|err| {
+                    error!(
+                        %block,
+                        %err,
+                        "failed to delete epoch summary of invalid OL terminal block"
+                    );
+                })
+                .context("failed to delete epoch summary of invalid OL terminal block")?;
+            if deleted {
+                info!(%block, "deleted epoch summary of invalid OL terminal block");
+            }
+        }
+
+        // The cleanup below only applies to the block the sequencer is
+        // currently stuck on. An invalid block that is not the high-watermark
+        // (e.g. a stale or forked proposal arriving after a valid block at
+        // this slot was accepted) must not trigger a rollback: the indexing
+        // rows past its parent slot belong to the accepted canonical chain.
+        let high_watermark = fcm_state.ctx().get_block_high_watermark().await?;
+        if high_watermark != Some(block) {
+            debug!(%block, "invalid OL block is not the high-watermark; skipping indexing rollback");
+            return Ok(updated);
+        }
+
+        // Drop any state-indexing writes the rejected block persisted before
+        // it failed, so a replacement block at this slot doesn't conflict
+        // against the indexing high-watermark. The high-watermark is advanced
+        // when a block is stored and execution follows storage, so with the
+        // rejected block at the high-watermark the epoch's indexing writes
+        // past its parent slot can only be its own. Must land before the
+        // high-watermark clear below, since the clear is what unblocks
+        // building the replacement.
+        let cutoff = OLBlockCommitment::new(
+            block.slot().saturating_sub(1),
+            *bundle.header().parent_blkid(),
+        );
+        fcm_state
+            .ctx()
+            .rollback_block_state_indexing(bundle.header().epoch(), cutoff)
+            .await
+            .inspect_err(|err| {
+                error!(
+                    %block,
+                    %err,
+                    "failed to roll back state indexing for invalid OL block; replacement generation for this slot remains blocked"
+                );
+            })
+            .context("failed to roll back state indexing for invalid OL block")?;
+
+        let cleared = fcm_state
+            .ctx()
+            .clear_block_high_watermark(block)
+            .await
+            .inspect_err(|err| {
+                error!(
+                    %block,
+                    %err,
+                    "failed to clear high-watermark for invalid OL block; replacement generation for this slot remains blocked"
+                );
+            })
+            .context("failed to clear invalid OL block high-watermark")?;
+        if cleared {
+            info!(%block, "cleared invalid OL block high-watermark");
+        }
+    }
+
+    Ok(updated)
 }
 
 async fn handle_new_state_update<C: FcmContext>(
@@ -284,10 +390,13 @@ async fn handle_new_block<C: FcmContext>(
             .set_block_status(*blkid, BlockStatus::Valid)
             .await?;
     } else {
-        fcm_state
-            .ctx()
-            .set_block_status(*blkid, BlockStatus::Invalid)
-            .await?;
+        set_block_status_and_clear_invalid_high_watermark(
+            fcm_state,
+            bundle,
+            bc,
+            BlockStatus::Invalid,
+        )
+        .await?;
         return Ok(false);
     }
 
@@ -313,7 +422,7 @@ async fn handle_new_block<C: FcmContext>(
         .collect();
     let best_block = pick_best_block_async(&cur_tip, &tips, fcm_state.ctx()).await?;
 
-    // TODO make configurable
+    // TODO(STR-3050): make configurable
     let depth = 100;
 
     let tip_update = compute_tip_update(&cur_tip, &best_block, depth, fcm_state.chain_tracker())?;
@@ -336,21 +445,13 @@ async fn handle_new_block<C: FcmContext>(
         Err(e) => {
             warn!(err = ?e, "failed to compute CL STF");
 
-            // Specifically state transition errors we want to handle
-            // specially so that we can remember to not accept the block again.
-            if let Some(Error::InvalidStateTsn(inv_blkid, _)) = e.downcast_ref() {
-                warn!(
-                    ?blkid,
-                    ?inv_blkid,
-                    "invalid block on seemingly good fork, rejecting block"
-                );
-
-                Ok(false)
-            } else {
-                // Everything else we should fail on, signalling indeterminate
-                // status for the block.
-                Err(e)
-            }
+            // TODO(STR-2170): the legacy chain worker surfaced a typed
+            // `InvalidStateTsn` error that let us reject a bad block and remember
+            // not to retry it (returning `Ok(false)`). The new OL STF path does
+            // not yet expose such a detectable error, so for now we propagate all
+            // apply failures. Restore block rejection once the OL chain worker
+            // exposes an invalid-transition error to match on here.
+            Err(e)
         }
     };
 
@@ -380,7 +481,7 @@ async fn handle_epoch_finalization<C: FcmContext>(
 
     info!(?next_finalizable_epoch, "updated finalized tip");
     //trace!(?fin_report, "finalization report");
-    // TODO do something with the finalization report?
+    // TODO(STR-3580): do something with the finalization report?
 
     Ok(Some(next_finalizable_epoch))
 }
@@ -456,7 +557,7 @@ async fn apply_tip_update<C: FcmContext>(
     match update {
         // Easy case.
         TipUpdate::ExtendTip(_cur, _new) => {
-            // TODO: what's the relation between _new and bundle
+            // TODO(STR-3673): what's the relation between _new and bundle
             // Update the tip block in the FCM state.
             let blk_cmmt =
                 OLBlockCommitment::new(bundle.header().slot(), bundle.header().compute_blkid());
@@ -532,7 +633,7 @@ async fn apply_tip_update<C: FcmContext>(
                 return Err(Error::OLApplyTipMismatch(expected_tip, final_tip).into());
             }
 
-            // TODO any cleanup?
+            // TODO(STR-3673): any cleanup?
 
             counter!("strata_fcm_reorgs_total").increment(1);
             histogram!("strata_fcm_reorg_depth").record(reorg_depth as f64);
@@ -615,8 +716,9 @@ mod tests {
     use strata_db_types::{traits::BlockStatus, DbResult};
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
     use strata_ol_chain_types_new::{
-        test_utils::schnorr_predicate, BlockFlags, OLBlock, OLBlockBody, OLBlockCredential,
-        OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+        test_utils::{schnorr_predicate, test_schnorr_keypair},
+        BlockFlags, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment,
+        SignedOLBlockHeader,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::OLState;
@@ -625,12 +727,7 @@ mod tests {
         BlockComponents, BlockInfo, CompletedBlock,
     };
     use strata_predicate::PredicateKey;
-    use strata_primitives::{
-        crypto::sign_schnorr_sig,
-        l1::L1BlockId,
-        utils::{get_test_schnorr_keys, SchnorrKeypair},
-        Buf64, OLBlockId,
-    };
+    use strata_primitives::{crypto::sign_schnorr_sig, l1::L1BlockId, Buf64, OLBlockId};
 
     use super::*;
     use crate::{
@@ -653,8 +750,11 @@ mod tests {
         statuses: HashMap<OLBlockId, BlockStatus>,
         blocks_by_slot: BTreeMap<Slot, Vec<OLBlockId>>,
         canonical_blocks: HashMap<Slot, OLBlockCommitment>,
+        block_high_watermark: Option<OLBlockCommitment>,
         states: HashMap<OLBlockCommitment, Arc<OLState>>,
         canonical_epochs: HashMap<Epoch, EpochCommitment>,
+        indexing_rollbacks: Vec<(Epoch, OLBlockCommitment)>,
+        epoch_summary_deletes: Vec<EpochCommitment>,
     }
 
     impl StubFcmStorage {
@@ -717,6 +817,22 @@ mod tests {
                 .unwrap()
                 .canonical_epochs
                 .insert(epoch.epoch(), epoch);
+        }
+
+        fn set_block_high_watermark(&self, block: OLBlockCommitment) {
+            self.inner.lock().unwrap().block_high_watermark = Some(block);
+        }
+
+        fn block_high_watermark(&self) -> Option<OLBlockCommitment> {
+            self.inner.lock().unwrap().block_high_watermark
+        }
+
+        fn indexing_rollbacks(&self) -> Vec<(Epoch, OLBlockCommitment)> {
+            self.inner.lock().unwrap().indexing_rollbacks.clone()
+        }
+
+        fn epoch_summary_deletes(&self) -> Vec<EpochCommitment> {
+            self.inner.lock().unwrap().epoch_summary_deletes.clone()
         }
     }
 
@@ -800,6 +916,38 @@ mod tests {
             Ok(block_exists)
         }
 
+        async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool> {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.block_high_watermark != Some(expected) {
+                return Ok(false);
+            }
+
+            inner.block_high_watermark = None;
+            Ok(true)
+        }
+
+        async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>> {
+            Ok(self.inner.lock().unwrap().block_high_watermark)
+        }
+
+        async fn rollback_block_state_indexing(
+            &self,
+            epoch: Epoch,
+            cutoff: OLBlockCommitment,
+        ) -> DbResult<()> {
+            self.inner
+                .lock()
+                .unwrap()
+                .indexing_rollbacks
+                .push((epoch, cutoff));
+            Ok(())
+        }
+
+        async fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
+            self.inner.lock().unwrap().epoch_summary_deletes.push(epoch);
+            Ok(false)
+        }
+
         async fn get_toplevel_ol_state(
             &self,
             commitment: OLBlockCommitment,
@@ -878,6 +1026,28 @@ mod tests {
     impl FcmStorage for StubFcmContext {
         async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
             self.storage.set_block_status(blkid, status).await
+        }
+
+        async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool> {
+            self.storage.clear_block_high_watermark(expected).await
+        }
+
+        async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>> {
+            self.storage.get_block_high_watermark().await
+        }
+
+        async fn rollback_block_state_indexing(
+            &self,
+            epoch: Epoch,
+            cutoff: OLBlockCommitment,
+        ) -> DbResult<()> {
+            self.storage
+                .rollback_block_state_indexing(epoch, cutoff)
+                .await
+        }
+
+        async fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
+            self.storage.del_epoch_summary(epoch).await
         }
 
         async fn get_toplevel_ol_state(
@@ -976,7 +1146,7 @@ mod tests {
             &mut genesis_state,
             &BlockInfo::new_genesis(1_000),
             None,
-            BlockComponents::new_manifests(vec![genesis_manifest]),
+            BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal(),
         )
         .expect("genesis executes");
         let genesis = ExecutedBlock::new(genesis_completed, &genesis_state);
@@ -1335,10 +1505,6 @@ mod tests {
         Ok(())
     }
 
-    fn make_keypair() -> SchnorrKeypair {
-        get_test_schnorr_keys()[0].clone()
-    }
-
     fn make_block(slot: u64, signature: Option<Buf64>) -> OLBlock {
         let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
         let header = OLBlockHeader::new(
@@ -1369,6 +1535,23 @@ mod tests {
         let header = OLBlockHeader::new(
             1_000 + slot,
             BlockFlags::from(0),
+            slot,
+            0,
+            parent,
+            body.compute_hash_commitment(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+    }
+
+    fn make_terminal_storage_block(slot: Slot, parent: OLBlockId) -> OLBlock {
+        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
+        let mut flags = BlockFlags::from(0);
+        flags.set_is_terminal(true);
+        let header = OLBlockHeader::new(
+            1_000 + slot,
+            flags,
             slot,
             0,
             parent,
@@ -1504,6 +1687,228 @@ mod tests {
         assert_eq!(statuses[0].finalized_epoch, genesis_epoch);
     }
 
+    #[tokio::test]
+    async fn process_fc_message_clears_high_watermark_for_invalid_block() -> anyhow::Result<()> {
+        let (_, pk) = test_schnorr_keypair();
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        let block = make_storage_block(1, genesis_blkid);
+        let blkid = block.header().compute_blkid();
+        let block_commitment = OLBlockCommitment::new(block.header().slot(), blkid);
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_ol_block(block);
+        ctx.storage().set_block_high_watermark(block_commitment);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state).await?;
+
+        assert_eq!(
+            ctx.storage().get_block_status(blkid).await?,
+            Some(BlockStatus::Invalid)
+        );
+        assert_eq!(ctx.storage().block_high_watermark(), None);
+        // The rejected block's indexing writes are rolled back to its parent,
+        // so a replacement block at the same slot can apply its own.
+        assert_eq!(
+            ctx.storage().indexing_rollbacks(),
+            vec![(0, genesis_commitment)]
+        );
+        // Non-terminal blocks never store a summary, so none is deleted.
+        assert!(ctx.storage().epoch_summary_deletes().is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_deletes_summary_for_invalid_terminal_block() -> anyhow::Result<()> {
+        let (_, pk) = test_schnorr_keypair();
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        let block = make_terminal_storage_block(1, genesis_blkid);
+        let blkid = block.header().compute_blkid();
+        let block_commitment = OLBlockCommitment::new(block.header().slot(), blkid);
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_ol_block(block);
+        ctx.storage().set_block_high_watermark(block_commitment);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state).await?;
+
+        assert_eq!(
+            ctx.storage().get_block_status(blkid).await?,
+            Some(BlockStatus::Invalid)
+        );
+        assert_eq!(ctx.storage().block_high_watermark(), None);
+        assert_eq!(
+            ctx.storage().indexing_rollbacks(),
+            vec![(0, genesis_commitment)]
+        );
+        // A rejected terminal block's epoch summary is dropped so it cannot
+        // shadow the replacement terminal's summary in canonical lookups.
+        assert_eq!(
+            ctx.storage().epoch_summary_deletes(),
+            vec![EpochCommitment::new(0, 1, blkid)]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_skips_indexing_rollback_for_non_high_watermark_block(
+    ) -> anyhow::Result<()> {
+        let (_, pk) = test_schnorr_keypair();
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        // An accepted canonical block holds the high-watermark at slot 1...
+        let canonical = make_storage_block(1, genesis_blkid);
+        let canonical_commitment = OLBlockCommitment::new(
+            canonical.header().slot(),
+            canonical.header().compute_blkid(),
+        );
+
+        // ...and an unsigned fork block at the same slot arrives afterwards.
+        let fork = make_storage_block(1, OLBlockId::from(Buf32::from([7u8; 32])));
+        let fork_blkid = fork.header().compute_blkid();
+        assert_ne!(fork_blkid, *canonical_commitment.blkid());
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_executed_block(
+            canonical,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_ol_block(fork);
+        ctx.storage().set_block_high_watermark(canonical_commitment);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(fork_blkid), &mut fcm_state).await?;
+
+        assert_eq!(
+            ctx.storage().get_block_status(fork_blkid).await?,
+            Some(BlockStatus::Invalid)
+        );
+        // The fork block is not the high-watermark: the canonical chain's
+        // indexing rows must stay untouched and the high-watermark kept.
+        assert_eq!(ctx.storage().indexing_rollbacks(), vec![]);
+        assert_eq!(
+            ctx.storage().block_high_watermark(),
+            Some(canonical_commitment)
+        );
+        // Non-terminal blocks never store a summary, so none is deleted.
+        assert!(ctx.storage().epoch_summary_deletes().is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_deletes_summary_for_invalid_non_high_watermark_terminal_block(
+    ) -> anyhow::Result<()> {
+        let (_, pk) = test_schnorr_keypair();
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        // An accepted canonical block holds the high-watermark at slot 1...
+        let canonical = make_storage_block(1, genesis_blkid);
+        let canonical_commitment = OLBlockCommitment::new(
+            canonical.header().slot(),
+            canonical.header().compute_blkid(),
+        );
+
+        // ...and an unsigned *terminal* fork block at the same slot arrives.
+        let fork = make_terminal_storage_block(1, OLBlockId::from(Buf32::from([7u8; 32])));
+        let fork_blkid = fork.header().compute_blkid();
+
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_executed_block(
+            canonical,
+            make_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_ol_block(fork);
+        ctx.storage().set_block_high_watermark(canonical_commitment);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(fork_blkid), &mut fcm_state).await?;
+
+        assert_eq!(
+            ctx.storage().get_block_status(fork_blkid).await?,
+            Some(BlockStatus::Invalid)
+        );
+        // The exact-keyed summary delete runs even though the fork is not the
+        // high-watermark: a stale summary keyed by the rejected terminal must
+        // not shadow canonical epoch lookups.
+        assert_eq!(
+            ctx.storage().epoch_summary_deletes(),
+            vec![EpochCommitment::new(0, 1, fork_blkid)]
+        );
+        // The suffix-shaped cleanup stays gated: no indexing rollback and the
+        // canonical high-watermark is kept.
+        assert_eq!(ctx.storage().indexing_rollbacks(), vec![]);
+        assert_eq!(
+            ctx.storage().block_high_watermark(),
+            Some(canonical_commitment)
+        );
+
+        Ok(())
+    }
+
     #[test]
     fn accepts_unsigned_block_when_always_accept() {
         let predicate = PredicateKey::always_accept();
@@ -1517,8 +1922,8 @@ mod tests {
 
     #[test]
     fn rejects_unsigned_block_when_checked() {
-        let keypair = make_keypair();
-        let predicate = schnorr_predicate(&keypair.pk);
+        let (_, pk) = test_schnorr_keypair();
+        let predicate = schnorr_predicate(&pk);
         let block = make_block(1, None);
         let blkid = block.header().compute_blkid();
 
@@ -1530,8 +1935,8 @@ mod tests {
 
     #[test]
     fn rejects_invalid_signature() {
-        let keypair = make_keypair();
-        let predicate = schnorr_predicate(&keypair.pk);
+        let (_, pk) = test_schnorr_keypair();
+        let predicate = schnorr_predicate(&pk);
         let block = make_block(1, Some(Buf64::zero()));
         let blkid = block.header().compute_blkid();
 
@@ -1554,10 +1959,10 @@ mod tests {
 
     #[test]
     fn accepts_valid_signature() {
-        let keypair = make_keypair();
-        let predicate = schnorr_predicate(&keypair.pk);
+        let (sk, pk) = test_schnorr_keypair();
+        let predicate = schnorr_predicate(&pk);
         let block = make_block(1, Some(Buf64::zero()));
-        let signature = sign_block(&block, &keypair.sk);
+        let signature = sign_block(&block, &sk);
         let block = make_block(1, Some(signature));
         let blkid = block.header().compute_blkid();
 
@@ -1568,8 +1973,8 @@ mod tests {
 
     #[test]
     fn rejects_genesis_block_proposal() {
-        let keypair = make_keypair();
-        let predicate = schnorr_predicate(&keypair.pk);
+        let (_, pk) = test_schnorr_keypair();
+        let predicate = schnorr_predicate(&pk);
         let block = make_block(0, None);
         let blkid = block.header().compute_blkid();
 

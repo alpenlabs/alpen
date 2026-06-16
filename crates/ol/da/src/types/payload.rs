@@ -37,7 +37,7 @@ pub fn decode_ol_da_payload_bytes(bytes: &[u8]) -> Result<OLDaPayloadV1, CodecEr
     decode_buf_exact(bytes)
 }
 
-/// Preseal OL state diff (global + ledger).
+/// Epoch OL state diff (global + ledger).
 #[derive(Debug, Default, Codec)]
 pub struct StateDiff {
     /// Global state diff.
@@ -288,7 +288,7 @@ fn apply_snark_diff<T: IAccountStateMut>(
     let mut next_proof_state =
         DaProofState::new(snark.inner_state_root(), snark.next_inbox_msg_idx());
     diff.proof_state.apply(&mut next_proof_state, &())?;
-    snark.set_proof_state_directly(
+    snark.set_proof_state(
         next_proof_state.inner().inner_state(),
         next_proof_state.inner().next_inbox_msg_idx(),
         next_seqno,

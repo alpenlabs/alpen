@@ -28,15 +28,11 @@ pub async fn balance(
     let network_type = args
         .network_type
         .parse()
-        .user_error(format!("Invalid network type '{}'", &args.network_type))?;
+        .user_error(format!("Invalid network type '{}'", args.network_type))?;
 
     if let NetworkType::Signet = network_type {
-        let mut l1w = SignetWallet::new(
-            &seed,
-            settings.params.network,
-            settings.signet_backend.clone(),
-        )
-        .internal_error("Failed to load signet wallet")?;
+        let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
+            .internal_error("Failed to load signet wallet")?;
 
         l1w.sync()
             .await

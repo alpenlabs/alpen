@@ -18,7 +18,7 @@ import os
 import sys
 
 import flexitest
-from flexitest.runtime import load_candidate_modules, scan_dir_for_modules
+from flexitest.runtime import load_module_at, scan_dir_for_modules
 
 # Import environments
 from common.config import EpochSealingConfig, ServiceType
@@ -28,6 +28,7 @@ from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
 from envconfigs.alpen_client import AlpenClientEnv
 from envconfigs.el_ol import EeOLEnv
+from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
 from envconfigs.strata import StrataEnvConfig
 
 # Import factories
@@ -189,6 +190,22 @@ def filter_tests(
     return filtered
 
 
+def load_candidate_test_modules(modules: dict[str, str]) -> list[str]:
+    """Load modules and return only names that registered runnable tests."""
+    registered_start = len(flexitest._TEST_UNITS)
+    for name, path in modules.items():
+        load_module_at(name, path)
+
+    test_names = []
+    seen = set()
+    for test_class in flexitest._TEST_UNITS[registered_start:]:
+        test_name = test_class.__module__
+        if test_name not in seen:
+            test_names.append(test_name)
+            seen.add(test_name)
+    return test_names
+
+
 def list_tests(modules: dict[str, str], test_dir: str) -> None:
     """
     List all available tests with their groups.
@@ -255,6 +272,8 @@ def main(argv: list[str]) -> int:
     # Handle --list mode
     if args.list:
         modules = flexitest.runtime.scan_dir_for_modules(test_dir)
+        candidate_names = frozenset(load_candidate_test_modules(modules))
+        modules = {name: path for name, path in modules.items() if name in candidate_names}
         list_tests(modules, test_dir)
         return 0
 
@@ -301,6 +320,13 @@ def main(argv: list[str]) -> int:
         ),
         # Alpen-client (EE) environments
         "alpen_ee": AlpenClientEnv(enable_l1_da=True),
+        # EEST needs the externally observable OL/EE path, not a
+        # test-only client surface.
+        "alpen_eest": EeOLEnv(
+            fullnode_count=0,
+            pre_generate_blocks=110,
+            batch_sealing_block_count=5,
+        ),
         "alpen_ee_discovery": AlpenClientEnv(
             enable_discovery=True, pure_discovery=True, enable_l1_da=True
         ),
@@ -337,6 +363,7 @@ def main(argv: list[str]) -> int:
             dev_track_latest_epoch=True,
             batch_sealing_block_count=5,
         ),
+        "el_ol_checkpoint_sync": EeOLCheckpointSyncEnv(pre_generate_blocks=110),
     }
 
     # Set up test runtime
@@ -364,7 +391,7 @@ def main(argv: list[str]) -> int:
                 print("\nUse --list to see available tests and groups.")
             return 1
 
-        tests = load_candidate_modules(filtered_modules)
+        tests = load_candidate_test_modules(filtered_modules)
         runtime.prepare_registered_tests()
 
     # Run tests

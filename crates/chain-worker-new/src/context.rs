@@ -6,25 +6,35 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ssz::Encode;
-use strata_acct_types::{MessageEntry, tree_hash::TreeHash};
+use strata_acct_types::{
+    MessageEntry,
+    tree_hash::{Sha256Hasher, TreeHash},
+};
+use strata_asm_common::AsmManifest;
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
+use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites},
 };
 use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
+use strata_msg_fmt::{Msg, MsgRef};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
-use strata_params::Params;
+use strata_ol_chain_types_new::{
+    OLBlock, OLBlockHeader, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
+    SnarkAccountUpdateLogData,
+};
+use strata_ol_params::OLParams;
+use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
-    MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
-    OLStateManager,
+    L1BlockManager, MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager,
+    OLStateIndexingManager, OLStateManager,
 };
 use tokio::{runtime::Handle, sync::watch};
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::{
     errors::{WorkerError, WorkerResult},
@@ -54,6 +64,9 @@ pub struct ChainWorkerContextImpl {
     /// Manager for OL state indexing data (per-block writes, epoch finalization).
     ol_state_indexing_mgr: Arc<OLStateIndexingManager>,
 
+    /// Manager for L1 block data, used to read ASM manifests by height.
+    l1_block_mgr: Arc<L1BlockManager>,
+
     /// Manager for append-only MMR proof indices.
     mmr_index_mgr: Arc<MmrIndexManager>,
 
@@ -63,8 +76,13 @@ pub struct ChainWorkerContextImpl {
     /// Channel for emitting epoch summary events.
     epoch_summary_tx: watch::Sender<Option<EpochCommitment>>,
 
-    /// Rollup params
-    params: Arc<Params>,
+    /// OL genesis params. Source of truth for the genesis L1 height used to
+    /// prefill the L1 block refs MMR mirror (matches the in-state MMR which is
+    /// seeded from `OLParams.last_l1_block.height()` at OL genesis).
+    ol_params: Arc<OLParams>,
+
+    /// Withdrawal denomination and cap.
+    bridge_params: BridgeParams,
 
     /// Runtime handle
     handle: Handle,
@@ -79,10 +97,12 @@ impl ChainWorkerContextImpl {
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
             ol_state_indexing_mgr: nodectx.storage().ol_state_indexing().clone(),
+            l1_block_mgr: nodectx.storage().l1().clone(),
             mmr_index_mgr: nodectx.storage().mmr_index().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
-            params: nodectx.params().clone(),
+            ol_params: nodectx.ol_params().clone(),
+            bridge_params: *nodectx.ol_params().bridge_params(),
             handle: nodectx.executor().handle().clone(),
         }
     }
@@ -95,8 +115,8 @@ impl ChainWorkerContextImpl {
         &self.status_channel
     }
 
-    pub fn params(&self) -> &Params {
-        &self.params
+    pub fn bridge_params(&self) -> BridgeParams {
+        self.bridge_params
     }
 
     pub fn handle(&self) -> &Handle {
@@ -172,13 +192,14 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         self.ol_state_mgr
             .put_write_batch_blocking(commitment, wb.clone())?;
 
-        let writes = build_indexing_writes(commitment, output);
+        let writes = build_indexing_writes(commitment, output)?;
         match self
             .ol_state_indexing_mgr
             .apply_block_indexing_blocking(epoch, commitment, writes)
         {
             Ok(()) => {
                 index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+                index_l1_block_ref_mmr_writes(&self.mmr_index_mgr, output)?;
             }
             Err(DbError::BlockIndexingConflict {
                 attempted,
@@ -186,6 +207,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
                 ..
             }) if attempted == commitment && last_applied == commitment => {
                 index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+                index_l1_block_ref_mmr_writes(&self.mmr_index_mgr, output)?;
                 debug!(%commitment, "block indexing already applied; treating as retry");
             }
             Err(e) => return Err(e.into()),
@@ -242,34 +264,18 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(())
     }
 
-    fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary> {
-        self.ol_checkpoint_mgr
-            .get_epoch_summary_blocking(*epoch)?
-            .ok_or(WorkerError::MissingEpochSummary(*epoch))
-    }
-
-    fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>> {
-        // Get all epoch commitments for this epoch index
-        let epoch_commitments = self
+    fn fetch_canonical_epoch_summary_at(&self, epoch: u32) -> WorkerResult<Option<EpochSummary>> {
+        let commitment = self
             .ol_checkpoint_mgr
-            .get_epoch_commitments_at_blocking(epoch)?;
-
-        // Fetch the summary for each commitment
-        let mut summaries = Vec::with_capacity(epoch_commitments.len());
-        for commitment in epoch_commitments {
-            if let Some(summary) = self
-                .ol_checkpoint_mgr
-                .get_epoch_summary_blocking(commitment)?
-            {
-                summaries.push(summary);
-            }
+            .get_canonical_epoch_commitment_at_blocking(epoch)?;
+        if let Some(com) = commitment {
+            Ok(self.ol_checkpoint_mgr.get_epoch_summary_blocking(com)?)
+        } else {
+            Ok(None)
         }
-
-        Ok(summaries)
     }
 
-    fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
-        let summary = self.fetch_summary(epoch)?;
+    fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
         let terminal = *summary.terminal();
         let prev_terminal = *summary.prev_terminal();
 
@@ -295,14 +301,10 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         // Reverse to get forward order (excluding prev_terminal which is already finalized)
         chain.reverse();
 
-        // Get base state from prev_terminal (or genesis)
-        let mut current_state = if prev_terminal.is_null() {
-            self.fetch_ol_state(OLBlockCommitment::null())?
-                .ok_or(WorkerError::MissingPreState(OLBlockCommitment::null()))?
-        } else {
-            self.fetch_ol_state(prev_terminal)?
-                .ok_or(WorkerError::MissingPreState(prev_terminal))?
-        };
+        // Fetch prev state.
+        let mut cur_state = self
+            .fetch_ol_state(prev_terminal)?
+            .ok_or(WorkerError::MissingPreState(prev_terminal))?;
 
         // Apply write batches in canonical order.
         // Every block in the canonical chain must have a write batch - a missing one
@@ -311,29 +313,74 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             let wb = self
                 .fetch_write_batch(commitment)?
                 .ok_or(WorkerError::MissingWriteBatch(commitment))?;
-            current_state
+            cur_state
                 .apply_write_batch(wb)
                 .map_err(|e| WorkerError::Unexpected(format!("failed to apply batch: {e}")))?;
         }
 
         // Store the final merged state at the terminal commitment
         self.ol_state_mgr
-            .put_toplevel_ol_state_blocking(terminal, current_state)?;
+            .put_toplevel_ol_state_blocking(terminal, cur_state)?;
 
+        Ok(())
+    }
+
+    fn prefill_l1_block_refs_mmr(&self) -> WorkerResult<()> {
+        // Same source as the in-state MMR's genesis prefill so the two MMRs
+        // stay byte-identical from leaf 0.
+        let genesis_l1_height = self.ol_params.last_l1_block.height() as u64;
+        prefill_l1_block_refs_mmr_blocking(&self.mmr_index_mgr, genesis_l1_height)
+    }
+
+    fn fetch_checkpoint_payload(
+        &self,
+        epoch: &EpochCommitment,
+    ) -> WorkerResult<Option<CheckpointPayload>> {
+        Ok(self
+            .ol_checkpoint_mgr
+            .get_checkpoint_l1_observed_payload_blocking(*epoch)?)
+    }
+
+    fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>> {
+        let mut manifests = Vec::new();
+        for height in from..=to {
+            let manifest = self
+                .l1_block_mgr
+                .get_block_manifest_at_height(height)?
+                .ok_or(WorkerError::MissingDependency("l1 manifest"))?;
+            manifests.push(manifest);
+        }
+        Ok(manifests)
+    }
+
+    fn apply_epoch_indexing(
+        &self,
+        epoch: &EpochCommitment,
+        output: &OLBlockExecutionOutput,
+    ) -> WorkerResult<()> {
+        let writes = build_checkpoint_indexing_writes(output)?;
+        self.ol_state_indexing_mgr
+            .apply_epoch_indexing_blocking(*epoch, writes)?;
+        index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
         Ok(())
     }
 }
 
 /// Builds an [`IndexingWrites`] payload from a block-execution output.
 ///
-/// Reads everything from the block's [`IndexerWrites`]: account-creation
-/// events, snark-account update records (each tagged with the block's
-/// commitment + final state root), and inbox-message writes (encoded as SSZ
-/// bytes). Per-account vecs preserve insertion order.
+/// Reads account-creation events, snark-account update records (each tagged with the block's
+/// commitment + final state root), and inbox-message writes (encoded as SSZ bytes) from the
+/// block's [`IndexerWrites`]. Per-account vecs preserve insertion order.
+///
+/// Each snark-account update's `extra_data` is sourced from the emitted
+/// [`SnarkAccountUpdateLogData`] logs rather than from the state-accessor layer. Every tracked
+/// snark state update corresponds to exactly one such log (both are produced together when an
+/// update transaction is processed), so the ordered updates are paired 1:1 with the ordered
+/// snark-update logs.
 fn build_indexing_writes(
     commitment: OLBlockCommitment,
     output: &OLBlockExecutionOutput,
-) -> IndexingWrites {
+) -> WorkerResult<IndexingWrites> {
     let indexer_writes = output.indexer_writes();
 
     let created_accounts: Vec<AccountId> = indexer_writes
@@ -342,20 +389,42 @@ fn build_indexing_writes(
         .map(|c| c.account_id())
         .collect();
 
+    let snark_updates = indexer_writes.snark_state_updates();
+    let snark_update_logs = collect_snark_update_logs(output.logs())?;
+    if snark_updates.len() != snark_update_logs.len() {
+        return Err(WorkerError::SnarkUpdateLogCountMismatch {
+            expected: snark_updates.len(),
+            found: snark_update_logs.len(),
+        });
+    }
+
     let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
-    for update in indexer_writes.snark_state_updates() {
-        let meta = AccountUpdateMeta::new(commitment, update.state());
+    for (update, log) in snark_updates.iter().zip(snark_update_logs.iter()) {
+        // The paired log must describe the same state transition as the tracked update.
+        if log.new_msg_idx() != update.next_read_idx() {
+            return Err(WorkerError::SnarkUpdateLogMismatch {
+                expected: update.next_read_idx(),
+                found: log.new_msg_idx(),
+            });
+        }
+        let state = update
+            .state()
+            .expect("block-sync snark update must carry a state root");
+        let meta = AccountUpdateMeta::new(Some(commitment), state);
         let record = AccountUpdateRecord::new(
             Some(meta),
             *update.seqno().inner(),
+            update.prev_next_read_idx(),
             update.next_read_idx(),
-            update.extra_data().map(<[u8]>::to_vec),
+            Some(log.extra_data().to_vec()),
         );
         account_updates
             .entry(update.account_id())
             .or_default()
             .push(record);
     }
+
+    debug_assert_contiguous_update_ranges(&account_updates);
 
     let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> = BTreeMap::new();
     for write in indexer_writes.inbox_messages() {
@@ -367,7 +436,105 @@ fn build_indexing_writes(
             .push(record);
     }
 
-    IndexingWrites::new(created_accounts, account_updates, account_inbox_writes)
+    Ok(IndexingWrites::new(
+        created_accounts,
+        account_updates,
+        account_inbox_writes,
+    ))
+}
+
+/// Decodes the [`SnarkAccountUpdateLogData`] logs from `logs`, in emission order, skipping logs
+/// of other types.
+fn collect_snark_update_logs<'a>(
+    logs: impl IntoIterator<Item = &'a OLLog>,
+) -> WorkerResult<Vec<SnarkAccountUpdateLogData>> {
+    let mut out = Vec::new();
+    for log in logs {
+        let msg = MsgRef::try_from(log.payload())?;
+        if msg.ty() == SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID {
+            out.push(SnarkAccountUpdateLogData::try_decode_log(&msg)?);
+        }
+    }
+    Ok(out)
+}
+
+fn debug_assert_contiguous_update_ranges(
+    account_updates: &BTreeMap<AccountId, Vec<AccountUpdateRecord>>,
+) {
+    for (account_id, records) in account_updates {
+        for pair in records.windows(2) {
+            debug_assert_eq!(
+                pair[1].prev_next_inbox_idx(),
+                pair[0].next_inbox_idx(),
+                "non-contiguous snark update inbox range for account {account_id}",
+            );
+        }
+    }
+}
+
+/// Builds an [`IndexingWrites`] payload for a DA-reconstructed epoch.
+///
+/// Like [`build_indexing_writes`] but with no per-block attribution and no
+/// per-update state root: update records carry `update_meta: None`. The
+/// post-epoch root lives on the epoch summary.
+pub(crate) fn build_checkpoint_indexing_writes(
+    output: &OLBlockExecutionOutput,
+) -> WorkerResult<IndexingWrites> {
+    let indexer_writes = output.indexer_writes();
+
+    let created_accounts: Vec<AccountId> = indexer_writes
+        .created_accounts()
+        .iter()
+        .map(|c| c.account_id())
+        .collect();
+
+    let snark_updates = indexer_writes.snark_state_updates();
+    let snark_update_logs = collect_snark_update_logs(output.logs())?;
+    if snark_updates.len() != snark_update_logs.len() {
+        return Err(WorkerError::SnarkUpdateLogCountMismatch {
+            expected: snark_updates.len(),
+            found: snark_update_logs.len(),
+        });
+    }
+
+    let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
+    for (update, log) in snark_updates.iter().zip(snark_update_logs.iter()) {
+        if log.new_msg_idx() != update.next_read_idx() {
+            return Err(WorkerError::SnarkUpdateLogMismatch {
+                expected: update.next_read_idx(),
+                found: log.new_msg_idx(),
+            });
+        }
+        let record = AccountUpdateRecord::new(
+            None,
+            *update.seqno().inner(),
+            update.prev_next_read_idx(),
+            update.next_read_idx(),
+            Some(log.extra_data().to_vec()),
+        );
+        account_updates
+            .entry(update.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    debug_assert_contiguous_update_ranges(&account_updates);
+
+    let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> = BTreeMap::new();
+    for write in indexer_writes.inbox_messages() {
+        let entry_bytes = write.entry().as_ssz_bytes();
+        let record = InboxMessageRecord::new(entry_bytes, None);
+        account_inbox_writes
+            .entry(write.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    Ok(IndexingWrites::new(
+        created_accounts,
+        account_updates,
+        account_inbox_writes,
+    ))
 }
 
 /// Applies snark inbox writes to the MMR proof index.
@@ -376,52 +543,75 @@ fn build_indexing_writes(
 /// historical nodes from [`MmrIndexManager`] to generate proofs for later snark
 /// account updates, so the chain worker mirrors each accepted inbox append into
 /// the proof index. The operation is idempotent for crash-restart retries.
-fn index_inbox_mmr_writes(
+pub(crate) fn index_inbox_mmr_writes(
     mmr_index_mgr: &MmrIndexManager,
     output: &OLBlockExecutionOutput,
 ) -> WorkerResult<()> {
     for write in output.indexer_writes().inbox_messages() {
-        let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(write.entry()).into();
+        let expected_hash: Hash =
+            <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(write.entry()).into();
         let entry_bytes = write.entry().as_ssz_bytes();
-        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(write.account_id()));
-        let leaf_count = handle.get_num_leaves_blocking()?;
+        let account_id = write.account_id();
+        let idx = write.index();
+        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
+        handle
+            .idempotent_append_leaf_with_preimage_blocking(idx, expected_hash, entry_bytes)
+            .inspect_err(|e| {
+                error!(%account_id, idx, %e, "snark inbox MMR write failed");
+            })?;
+    }
 
-        if write.index() < leaf_count {
-            let Some(existing_hash) = handle.get_leaf_blocking(write.index())? else {
-                return Err(
-                    DbError::MmrLeafNotFoundForAccount(write.index(), write.account_id()).into(),
-                );
-            };
+    Ok(())
+}
 
-            if existing_hash != expected_hash {
-                return Err(DbError::MmrLeafHashMismatch {
-                    idx: write.index(),
-                    expected: expected_hash,
-                    got: existing_hash,
-                }
-                .into());
-            }
-
-            continue;
-        }
-
-        if write.index() > leaf_count {
-            return Err(DbError::MmrIndexOutOfRange {
-                requested: write.index(),
-                cur: leaf_count,
-            }
-            .into());
-        }
-
-        let appended_idx = handle.append_leaf_with_preimage_blocking(expected_hash, entry_bytes)?;
-        if appended_idx != write.index() {
+/// Seeds the L1 block refs MMR mirror with sentinel leaves for indices
+/// `0..=genesis_l1_height`, matching the in-state MMR's genesis prefill.
+///
+/// Run once at chain worker initialization. Idempotent: no-op if the mirror
+/// already contains the expected leaves (crash-restart safe).
+pub(crate) fn prefill_l1_block_refs_mmr_blocking(
+    mmr_index_mgr: &MmrIndexManager,
+    genesis_l1_height: u64,
+) -> WorkerResult<()> {
+    let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+    let leaf_count = handle.get_num_leaves_blocking()?;
+    for expected_idx in leaf_count..=genesis_l1_height {
+        let appended_idx = handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
+        if appended_idx != expected_idx {
             return Err(WorkerError::Unexpected(format!(
-                "snark inbox MMR append index mismatch for account {}: expected {}, got {}",
-                write.account_id(),
-                write.index(),
-                appended_idx
+                "L1 block refs MMR prefill index mismatch: expected {expected_idx}, got {appended_idx}"
             )));
         }
+    }
+    Ok(())
+}
+
+/// Applies terminal-block L1 block ref writes to the MMR proof index.
+///
+/// The in-state accumulator stores only MMR peaks. Block assembly needs the
+/// historical nodes to prove reduced `{block_hash, wtxids_root}` refs in later
+/// snark-account updates, so the chain worker mirrors each accepted manifest
+/// append into the DB-side proof index. The operation is idempotent for
+/// crash-restart retries.
+///
+/// Assumes the mirror has already been seeded via
+/// [`prefill_l1_block_refs_mmr_blocking`] at chain worker initialization.
+fn index_l1_block_ref_mmr_writes(
+    mmr_index_mgr: &MmrIndexManager,
+    output: &OLBlockExecutionOutput,
+) -> WorkerResult<()> {
+    let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+    for write in output.indexer_writes().l1_block_records() {
+        let expected_idx = write.height as u64;
+        let l1_block_ref = &write.record;
+        let expected_hash: Hash = l1_block_ref.leaf_hash().into();
+        let preimage = l1_block_ref.as_ssz_bytes();
+
+        handle
+            .idempotent_append_leaf_with_preimage_blocking(expected_idx, expected_hash, preimage)
+            .inspect_err(|e| {
+                error!(idx = expected_idx, %e, "L1 block refs MMR write failed");
+            })?;
     }
 
     Ok(())
@@ -431,10 +621,13 @@ fn index_inbox_mmr_writes(
 mod tests {
     use std::sync::Arc;
 
-    use strata_acct_types::{BitcoinAmount, MsgPayload};
+    use strata_acct_types::{AccountSerial, BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_db_store_sled::{MmrIndexDb, SledDbConfig};
     use strata_identifiers::Buf32;
-    use strata_ol_state_support_types::{InboxMessageWrite, IndexerWrites};
+    use strata_ol_state_support_types::{
+        InboxMessageWrite, IndexerWrites, L1BlockRecordWrite, SnarkAcctStateUpdate,
+    };
+    use strata_snark_acct_types::Seqno;
 
     use super::*;
 
@@ -460,7 +653,93 @@ mod tests {
             indexer_writes.push_inbox_message(InboxMessageWrite::new(account_id, entry, index));
         }
 
-        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes)
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes, vec![])
+    }
+
+    #[test]
+    fn test_build_indexing_writes_sources_extra_data_from_logs() {
+        let account_id = AccountId::from([7u8; 32]);
+        let serial = AccountSerial::from(7u32);
+        let state = Hash::from([9u8; 32]);
+        let next_read_idx = 3u64;
+        let seqno = Seqno::from(5);
+        let extra = vec![0xaau8, 0xbb, 0xcc];
+
+        let mut indexer_writes = IndexerWrites::new();
+        indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
+            account_id,
+            Some(state),
+            0,
+            next_read_idx,
+            seqno,
+        ));
+
+        // The matching log carries the extra_data that must end up in the index record.
+        let log_data = SnarkAccountUpdateLogData::new(next_read_idx, extra.clone()).unwrap();
+        let log = OLLog::new(serial, log_data.encode_log().unwrap());
+
+        let output = OLBlockExecutionOutput::new(
+            Buf32::zero(),
+            WriteBatch::default(),
+            indexer_writes,
+            vec![log],
+        );
+
+        let writes = build_indexing_writes(OLBlockCommitment::null(), &output).unwrap();
+
+        let records = writes
+            .account_updates()
+            .get(&account_id)
+            .expect("account update should be present");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].extra_data(), Some(extra.as_slice()));
+        assert_eq!(records[0].prev_next_inbox_idx(), 0);
+        assert_eq!(records[0].next_inbox_idx(), next_read_idx);
+    }
+
+    #[test]
+    fn test_build_indexing_writes_rejects_missing_log() {
+        // A tracked snark update with no corresponding emitted log is a correlation failure.
+        let mut indexer_writes = IndexerWrites::new();
+        indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
+            AccountId::from([1u8; 32]),
+            Some(Hash::from([0u8; 32])),
+            0,
+            0,
+            Seqno::from(1),
+        ));
+
+        let output = OLBlockExecutionOutput::new(
+            Buf32::zero(),
+            WriteBatch::default(),
+            indexer_writes,
+            vec![],
+        );
+
+        let err = build_indexing_writes(OLBlockCommitment::null(), &output).unwrap_err();
+        assert!(matches!(
+            err,
+            WorkerError::SnarkUpdateLogCountMismatch {
+                expected: 1,
+                found: 0
+            }
+        ));
+    }
+
+    fn output_with_l1_block_records(
+        writes: impl IntoIterator<Item = L1BlockRecordWrite>,
+    ) -> OLBlockExecutionOutput {
+        let mut indexer_writes = IndexerWrites::new();
+        for write in writes {
+            indexer_writes.push_l1_block_record(write);
+        }
+
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes, vec![])
+    }
+
+    fn l1_block_record_write(height: u32, seed: u8) -> L1BlockRecordWrite {
+        let record = L1BlockRecord::new([seed; 32], [seed.wrapping_add(1); 32]);
+        L1BlockRecordWrite { height, record }
     }
 
     fn assert_mmr_entry(
@@ -470,13 +749,31 @@ mod tests {
         entry: &MessageEntry,
     ) {
         let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
-        let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(entry).into();
+        let expected_hash: Hash =
+            <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(entry).into();
 
         assert_eq!(
             handle.get_leaf_blocking(index).unwrap(),
             Some(expected_hash)
         );
         assert_eq!(handle.get_blocking(index).unwrap(), entry.as_ssz_bytes());
+    }
+
+    fn assert_l1_block_ref_entry(
+        mmr_index_mgr: &MmrIndexManager,
+        index: u64,
+        write: &L1BlockRecordWrite,
+    ) {
+        let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+        let l1_block_ref = &write.record;
+        let expected_hash: Hash = l1_block_ref.leaf_hash().into();
+        let expected_preimage = l1_block_ref.as_ssz_bytes();
+
+        assert_eq!(
+            handle.get_leaf_blocking(index).unwrap(),
+            Some(expected_hash)
+        );
+        assert_eq!(handle.get_blocking(index).unwrap(), expected_preimage);
     }
 
     #[test]
@@ -532,5 +829,73 @@ mod tests {
         assert_eq!(handle.get_num_leaves_blocking().unwrap(), 2);
         assert_mmr_entry(&mmr_index_mgr, account_id, 0, &entry_one);
         assert_mmr_entry(&mmr_index_mgr, account_id, 1, &entry_two);
+    }
+
+    #[test]
+    fn prefill_then_index_seeds_genesis_and_stores_refs() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let first_real = l1_block_record_write(1, 10);
+        let output = output_with_l1_block_records([first_real.clone()]);
+
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 2);
+        assert_eq!(
+            handle.get_leaf_blocking(0).unwrap(),
+            Some(MMR_SENTINEL_DUMMY_LEAF_HASH)
+        );
+        assert_l1_block_ref_entry(&mmr_index_mgr, 1, &first_real);
+    }
+
+    #[test]
+    fn prefill_is_idempotent_across_repeated_calls() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+
+        // Multiple invocations must not append duplicate sentinels.
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 3).unwrap();
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 3).unwrap();
+
+        let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 4);
+    }
+
+    #[test]
+    fn index_l1_block_ref_mmr_writes_is_idempotent() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let first_real = l1_block_record_write(1, 10);
+        let second_real = l1_block_record_write(2, 20);
+        let output = output_with_l1_block_records([first_real.clone(), second_real.clone()]);
+
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
+        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 3);
+        assert_l1_block_ref_entry(&mmr_index_mgr, 1, &first_real);
+        assert_l1_block_ref_entry(&mmr_index_mgr, 2, &second_real);
+    }
+
+    #[test]
+    fn index_l1_block_ref_mmr_writes_rejects_existing_hash_mismatch() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let first_real = l1_block_record_write(1, 10);
+        let conflicting_first_real = l1_block_record_write(1, 11);
+
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output_with_l1_block_records([first_real]))
+            .unwrap();
+        let err = index_l1_block_ref_mmr_writes(
+            &mmr_index_mgr,
+            &output_with_l1_block_records([conflicting_first_real]),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            WorkerError::Database(DbError::MmrLeafHashMismatch { idx: 1, .. })
+        ));
     }
 }

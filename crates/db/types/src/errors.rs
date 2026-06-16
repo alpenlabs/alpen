@@ -1,14 +1,10 @@
 use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment};
-use strata_ol_chain_types::L2BlockId;
-use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, L1Height};
+use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockId, L1Height};
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 use typed_sled::error::Error;
 
-use crate::{
-    chainstate::WriteBatchId,
-    mmr_index::{LeafPos, NodePos},
-};
+use crate::mmr_index::{LeafPos, NodePos};
 
 /// Pure MMR algorithm errors - domain-specific, no storage concepts.
 #[derive(Debug, Clone, Error)]
@@ -63,12 +59,6 @@ pub enum DbError {
 
     #[error("missing L2 state (slot {0})")]
     MissingL2State(u64),
-
-    #[error("missing state instance")]
-    MissingStateInstance,
-
-    #[error("missing write batch (id {0})")]
-    MissingWriteBatch(WriteBatchId),
 
     #[error("missing slot write batch (id {0})")]
     MissingSlotWriteBatch(L2BlockId),
@@ -153,7 +143,7 @@ pub enum DbError {
     MmrIndexOutOfRange { requested: u64, cur: u64 },
 
     /// MMR preimage payload not found at leaf position.
-    #[error("MMR preimage payload not found at leaf position {0}")]
+    #[error("MMR preimage payload not found at leaf position {0:?}")]
     MmrPayloadNotFound(LeafPos),
 
     /// Tree position is out of bounds for current MMR size.
@@ -165,7 +155,7 @@ pub enum DbError {
     MmrInvalidRange { start: u64, end: u64 },
 
     /// MMR node not found at the given tree position.
-    #[error("MMR node not found at position {0}")]
+    #[error("MMR node not found at position {0:?}")]
     MmrNodeNotFound(NodePos),
 
     /// MMR index batch precondition failed.
@@ -191,6 +181,14 @@ pub enum DbError {
         epoch: Epoch,
         attempted: OLBlockCommitment,
         last_applied: OLBlockCommitment,
+    },
+
+    /// `put_block_data_with_high_watermark` was called for a block whose slot does not strictly
+    /// advance past the current high-watermark.
+    #[error("block high-watermark conflict: attempted {attempted}, current {current}")]
+    BlockHighWatermarkConflict {
+        attempted: OLBlockCommitment,
+        current: OLBlockCommitment,
     },
 
     #[error("{0}")]

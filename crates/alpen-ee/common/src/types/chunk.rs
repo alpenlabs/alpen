@@ -55,18 +55,31 @@ pub struct Chunk {
     prev_block: Hash,
     /// Last block of this chunk. A chunk cannot be empty.
     last_block: Hash,
+    /// Block number of [`last_block`].
+    last_blocknum: u64,
+    /// Index of the batch this chunk belongs to.
+    batch_idx: u64,
     /// Rest of the blocks in the chunk.
     inner_blocks: Vec<Hash>,
 }
 
 impl Chunk {
     /// Create a new chunk.
-    pub fn new(idx: u64, prev_block: Hash, last_block: Hash, inner_blocks: Vec<Hash>) -> Self {
+    pub fn new(
+        idx: u64,
+        prev_block: Hash,
+        last_block: Hash,
+        last_blocknum: u64,
+        batch_idx: u64,
+        inner_blocks: Vec<Hash>,
+    ) -> Self {
         debug_assert_ne!(prev_block, last_block);
         Self {
             idx,
             prev_block,
             last_block,
+            last_blocknum,
+            batch_idx,
             inner_blocks,
         }
     }
@@ -89,6 +102,16 @@ impl Chunk {
     /// Last block of this chunk.
     pub fn last_block(&self) -> Hash {
         self.last_block
+    }
+
+    /// Block number of the last block.
+    pub fn last_blocknum(&self) -> u64 {
+        self.last_blocknum
+    }
+
+    /// Index of the batch this chunk belongs to.
+    pub fn batch_idx(&self) -> u64 {
+        self.batch_idx
     }
 
     /// Get the inner blocks (blocks between prev_block and last_block, exclusive of last_block).

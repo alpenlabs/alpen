@@ -17,9 +17,9 @@ pub enum BlockAssemblyError {
     #[error("invalid L1 block height range (from {from_height} to {to_height})")]
     InvalidRange { from_height: u64, to_height: u64 },
 
-    /// L1 header claim hash does not match MMR entry.
-    #[error("L1 header hash mismatch at index {idx} (expected {expected}, got {actual})")]
-    AsmManifestHashMismatch {
+    /// L1 block ref claim hash does not match MMR entry.
+    #[error("L1 block ref hash mismatch at index {idx} (expected {expected}, got {actual})")]
+    L1BlockRefHashMismatch {
         idx: u64,
         expected: Hash,
         actual: Hash,
@@ -59,6 +59,13 @@ pub enum BlockAssemblyError {
     /// No mapping found in parent block ID -> template ID cache.
     #[error("no pending template found for parent id: {0}")]
     NoPendingTemplateForParent(OLBlockId),
+
+    /// A template for this parent already produced a block.
+    #[error("template already completed for parent id {parent}: {block}")]
+    TemplateAlreadyCompletedForParent {
+        parent: OLBlockId,
+        block: OLBlockCommitment,
+    },
 
     /// Invalid signature for block template completion.
     #[error("invalid signature for template: {0}")]

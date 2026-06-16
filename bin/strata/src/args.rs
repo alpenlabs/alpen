@@ -59,10 +59,6 @@ pub(crate) struct Args {
     #[argh(switch, description = "is sequencer")]
     pub sequencer: bool,
 
-    /// Rollup params path that will override the params in the config toml.
-    #[argh(option, description = "rollup params")]
-    pub rollup_params: Option<PathBuf>,
-
     /// Path to the sequencer runtime config TOML file.
     #[argh(option, description = "sequencer runtime config")]
     pub sequencer_config: Option<PathBuf>,
@@ -182,12 +178,7 @@ mod tests {
             rpc_port = 8432
             l2_blocks_fetch_limit = 1_000
             datadir = "/path/to/data/directory"
-            sync_endpoint = "9.9.9.9:8432"
             db_retry_count = 5
-
-            [sync]
-            l1_follow_distance = 6
-            client_checkpoint_interval = 10
 
             [btcio.reader]
             client_poll_dur_ms = 200
@@ -201,10 +192,6 @@ mod tests {
 
             [btcio.broadcaster]
             poll_interval_ms = 1_000
-
-            [exec.reth]
-            rpc_url = "http://localhost:8551"
-            secret = "jwt.hex"
             "#,
         )
         .unwrap()
@@ -267,7 +254,6 @@ mod tests {
             config: PathBuf::from("config.toml"),
             datadir: None,
             sequencer: false,
-            rollup_params: None,
             sequencer_config: None,
             ol_params: None,
             asm_params: None,

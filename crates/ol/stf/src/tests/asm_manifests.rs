@@ -2,7 +2,7 @@
 
 use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{CheckpointTipUpdate, constants::DEPOSIT_LOG_TYPE_ID};
+use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
 use strata_asm_proto_checkpoint_types::CheckpointTip;
 use strata_identifiers::{
     Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId,
@@ -45,7 +45,7 @@ fn test_manifest_processing_rejects_height_gap() {
         &mut state,
         &BlockInfo::new_genesis(1_000_000),
         None,
-        BlockComponents::new_manifests(vec![asm_manifest]),
+        BlockComponents::new_manifests(vec![asm_manifest]).as_terminal(),
     );
 
     match result {
@@ -55,7 +55,7 @@ fn test_manifest_processing_rejects_height_gap() {
 
     assert_eq!(state.last_l1_height(), 0);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT
     );
 }
@@ -102,7 +102,7 @@ fn test_manifest_processing_accepts_empty_manifest_container() {
     assert_eq!(state.cur_epoch(), 1);
     assert_eq!(state.last_l1_height(), 0);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT
     );
 }
@@ -121,7 +121,7 @@ fn test_manifest_processing_accepts_max_manifest_count() {
     assert_eq!(state.cur_epoch(), 1);
     assert_eq!(state.last_l1_height(), MAX_SEALING_MANIFEST_COUNT as u32);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT + MAX_SEALING_MANIFEST_COUNT
     );
 }
@@ -144,7 +144,7 @@ fn test_manifest_processing_skips_unknown_and_unparsable_logs() {
     assert_eq!(state.cur_epoch(), 1);
     assert_eq!(state.last_l1_height(), 1);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT + 1
     );
 }
@@ -201,8 +201,8 @@ fn test_manifest_processing_updates_checkpoint_tip() {
 
 #[test]
 fn test_manifest_processing_skips_malformed_deposit_log() {
-    let malformed_deposit_log =
-        AsmLogEntry::from_msg(DEPOSIT_LOG_TYPE_ID, vec![0xff]).expect("deposit log should encode");
+    let malformed_deposit_log = AsmLogEntry::from_msg(AsmLogTypeId::Deposit.into(), vec![0xff])
+        .expect("deposit log should encode");
     let asm_manifest = FixtureAsmManifestBuilder::new_at_height(1)
         .with_log(malformed_deposit_log)
         .build();
@@ -215,7 +215,7 @@ fn test_manifest_processing_skips_malformed_deposit_log() {
     assert_eq!(state.cur_epoch(), 1);
     assert_eq!(state.last_l1_height(), 1);
     assert_eq!(
-        state.asm_manifests_mmr().num_entries(),
+        state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT + 1
     );
     assert_eq!(state.limbo_funds(), BitcoinAmount::zero());

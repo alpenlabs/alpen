@@ -26,15 +26,11 @@
 /crates/btcio/ @storopoli @irnb @bewakes
 /crates/alpen-ee/ @storopoli @sapinb @delbonis @purusang @evgenyzdanovich
 /crates/ee-*/ @storopoli @sapinb @delbonis
-/crates/eectl/ @sapinb @delbonis @evgenyzdanovich
 /crates/evm-ee/ @sapinb @evgenyzdanovich
-/crates/evmexec/ @sapinb @evgenyzdanovich
 /crates/simple-ee/ @storopoli @sapinb @delbonis
 /crates/reth/ @sapinb @evgenyzdanovich @MdTeach
 
 /crates/ol/ @delbonis @krsnapaudel @bewakes
-/crates/ol-chain-types/ @delbonis @krsnapaudel @bewakes
-/crates/ol-chainstate-types/ @delbonis @krsnapaudel @bewakes
 /crates/acct-types/ @delbonis @krsnapaudel @bewakes
 /crates/bridge-types/ @delbonis @krsnapaudel @bewakes
 /crates/ledger-types/ @delbonis @krsnapaudel @bewakes
@@ -44,9 +40,7 @@
 /crates/consensus-logic/ @prajwolrg @delbonis @krsnapaudel
 /crates/csm-*/ @prajwolrg @krsnapaudel @bewakes
 /crates/node-context/ @prajwolrg @krsnapaudel @bewakes
-/crates/sequencer/ @prajwolrg @delbonis @krsnapaudel
 /crates/state/ @delbonis @krsnapaudel @bewakes
-/crates/sync/ @prajwolrg @krsnapaudel @bewakes
 
 /crates/db/ @krsnapaudel @bewakes @delbonis
 /crates/storage/ @krsnapaudel @bewakes @delbonis

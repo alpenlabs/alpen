@@ -10,14 +10,53 @@ use revm::{
     interpreter::interpreter::EthInterpreter,
     Context, Inspector, MainBuilder, MainContext,
 };
-use revm_primitives::hardfork::SpecId;
+use revm_primitives::{hardfork::SpecId, U256};
+use strata_bridge_params::BridgeParams;
 
-use crate::{apis::AlpenAlloyEvm, precompiles::factory};
+use crate::{
+    apis::AlpenAlloyEvm,
+    precompiles::factory,
+    utils::{u256_from, WEI_PER_BTC, WEI_PER_SAT},
+};
 
 /// Custom EVM configuration.
-#[derive(Debug, Clone, Default)]
-#[non_exhaustive]
-pub struct AlpenEvmFactory;
+///
+/// Carries withdrawal denomination and optional cap (in wei) for bridge
+/// precompile validation. Use [`AlpenEvmFactory::new`] to construct, or
+/// [`Default`] for the standard 1 BTC denomination / 10 BTC cap.
+#[derive(Debug, Clone)]
+pub struct AlpenEvmFactory {
+    denomination_wei: U256,
+    max_withdrawal_wei: Option<U256>,
+}
+
+impl Default for AlpenEvmFactory {
+    fn default() -> Self {
+        Self {
+            denomination_wei: u256_from(WEI_PER_BTC),
+            max_withdrawal_wei: Some(u256_from(WEI_PER_BTC * 10)),
+        }
+    }
+}
+
+impl AlpenEvmFactory {
+    pub fn new(denomination_wei: U256, max_withdrawal_wei: Option<U256>) -> Self {
+        Self {
+            denomination_wei,
+            max_withdrawal_wei,
+        }
+    }
+
+    /// Creates an [`AlpenEvmFactory`] from [`BridgeParams`] (sats-denominated),
+    /// converting to wei.
+    pub fn from_bridge_params(bp: &BridgeParams) -> Self {
+        let denom_wei = U256::from(bp.denomination()) * WEI_PER_SAT;
+        let max_wei = bp
+            .max_withdrawal_amount()
+            .map(|m| U256::from(m) * WEI_PER_SAT);
+        Self::new(denom_wei, max_wei)
+    }
+}
 
 impl EvmFactory for AlpenEvmFactory {
     type Evm<DB: Database, I: Inspector<EthEvmContext<DB>, EthInterpreter>> = AlpenAlloyEvm<DB, I>;
@@ -30,7 +69,11 @@ impl EvmFactory for AlpenEvmFactory {
     type Precompiles = PrecompilesMap;
 
     fn create_evm<DB: Database>(&self, db: DB, input: EvmEnv) -> Self::Evm<DB, NoOpInspector> {
-        let precompiles = factory::create_precompiles_map(input.cfg_env.spec);
+        let precompiles = factory::create_precompiles_map(
+            input.cfg_env.spec,
+            self.denomination_wei,
+            self.max_withdrawal_wei,
+        );
 
         let evm = Context::mainnet()
             .with_db(db)

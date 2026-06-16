@@ -19,7 +19,7 @@ jobs:
   mutants-test:
     name: Generate mutants on diff against default branch and test
     runs-on: ubuntu-latest
-    continue-on-error: true # FIXME: remove this if all mutants are covered
+    continue-on-error: true # FIXME(STR-3693): remove this if all mutants are covered
     strategy:
       fail-fast: false # Collect all mutants even if some are missed
       matrix:
@@ -42,7 +42,7 @@ jobs:
           cache-on-failure: true
 
       - name: Install `cargo-mutants`
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2
+        uses: taiki-e/install-action@b550161ef8a7bc4f2a671c0b03a18ac9ccedea1e # v2
         with:
           tool: cargo-mutants
 

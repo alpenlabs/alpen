@@ -3,16 +3,18 @@
 mod batch_builder;
 mod batch_lifecycle;
 mod block_builder;
+pub mod chunk_builder;
 mod chunk_witness_task;
 mod ol_chain_tracker;
+pub mod sealing_policy;
+
 #[cfg(test)]
 pub(crate) mod test_utils;
 mod update_submitter;
 
 pub use batch_builder::{
-    create_batch_builder, init_batch_builder_state, Accumulator, BatchBuilderHandle,
-    BatchBuilderState, BatchPolicy, BatchSealingPolicy, BlockCountData, BlockCountDataProvider,
-    BlockCountPolicy, BlockCountValue, BlockDataProvider, FixedBlockCountSealing,
+    create_batch_builder, init_batch_builder_state, BatchBuilderEvent, BatchBuilderHandle,
+    BatchBuilderState,
 };
 pub use batch_lifecycle::{
     create_batch_lifecycle_task, init_lifecycle_state, BatchLifecycleHandle, BatchLifecycleState,

@@ -1,4 +1,7 @@
-use strata_acct_types::{Hash, MessageEntry, Mmr64, StrataHasher, tree_hash::TreeHash};
+use strata_acct_types::{
+    Hash, MessageEntry, Mmr64, StrataHasher,
+    tree_hash::{Sha256Hasher, TreeHash},
+};
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, Mmr, Mmr64B32};
 use strata_predicate::PredicateKey;
@@ -59,25 +62,13 @@ impl ISnarkAccountState for OLSnarkAccountState {
 }
 
 impl ISnarkAccountStateMut for OLSnarkAccountState {
-    fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
+    fn set_proof_state(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
         self.proof_state = ProofState::new(state, next_read_idx);
         self.seqno = seqno;
     }
 
-    fn update_inner_state(
-        &mut self,
-        state: Hash,
-        next_read_idx: u64,
-        seqno: Seqno,
-        _extra_data: &[u8],
-    ) -> StateResult<()> {
-        // Set the proof state but ignore extra data in this context.
-        self.set_proof_state_directly(state, next_read_idx, seqno);
-        Ok(())
-    }
-
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> StateResult<()> {
-        let hash = <MessageEntry as TreeHash>::tree_hash_root(&entry);
+        let hash = <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(&entry);
         Mmr::<StrataHasher>::add_leaf(&mut self.inbox_mmr, hash.into_inner())
             .expect("ol/state: mmr add_leaf");
         Ok(())

@@ -63,26 +63,27 @@ use std::{any::type_name, collections::BTreeMap, mem};
 use ssz_primitives::FixedBytes;
 use ssz_types::VariableList;
 use strata_acct_types::{
-    AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
-    RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects, tree_hash::TreeHash,
+    AccountId, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash, MessageEntry, Mmr64,
+    MsgPayload, RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
+    tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
-use strata_codec::{Codec, VarVec, decode_buf_exact, encode_to_vec};
+use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
-    AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
+    AccountSerial, Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
     SubjectIdBytes, WtxidsRoot,
 };
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
-use strata_msg_fmt::{Msg, OwnedMsg};
+use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::*;
 use strata_ol_msg_types::{
     DEFAULT_OPERATOR_FEE, DEPOSIT_MSG_TYPE_ID, DepositMsgData, WITHDRAWAL_MSG_TYPE_ID,
     WithdrawalMsgData,
 };
-use strata_ol_params::OLParams;
+use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{
     MMR_SENTINEL_DUMMY_LEAF, OLAccountState, OLSnarkAccountState, OLState,
@@ -101,17 +102,29 @@ use crate::{
     verification::verify_block,
 };
 
+/// Genesis block timestamp used by the shared epoch runner.
+pub const EPOCH_RUNNER_GENESIS_TIMESTAMP: u64 = 1_000_000;
+
+/// Per-slot timestamp step used by the shared epoch runner.
+pub const EPOCH_RUNNER_SLOT_TIMESTAMP_STEP: u64 = 1_000;
+
+/// L1 height of an epoch's terminal manifest under the shared epoch runner.
+///
+/// Genesis carries the manifest at height 1; the non-terminal blocks of the
+/// epoch under test carry none, so the terminal manifest is always at height 2.
+pub const EPOCH_RUNNER_TERMINAL_L1_HEIGHT: u32 = 2;
+
+/// Standard numeric account IDs used by tests.
+pub const TEST_SNARK_ACCOUNT_ID: u32 = 100;
+pub const TEST_RECIPIENT_ID: u32 = 200;
+pub const TEST_NONEXISTENT_ID: u32 = 999;
+
 /// Builds an account ID with predictable bytes.
 pub fn make_account_id(index: u32) -> AccountId {
     let mut bytes = [0u8; 32];
     bytes[0..4].copy_from_slice(&index.to_le_bytes());
     AccountId::from(bytes)
 }
-
-/// Standard numeric account IDs used by tests.
-pub const TEST_SNARK_ACCOUNT_ID: u32 = 100;
-pub const TEST_RECIPIENT_ID: u32 = 200;
-pub const TEST_NONEXISTENT_ID: u32 = 999;
 
 /// Builds a state root with predictable bytes.
 pub fn make_state_root(variant: u8) -> Hash {
@@ -136,6 +149,14 @@ pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
         OLTransactionData::from_gam_bytes(dest, vec![])
             .expect("message payload bytes must fit within SSZ max length"),
         TxProofs::new_empty(),
+    )
+}
+
+/// Wraps a [`CompletedBlock`] into an [`OLBlock`] with a zero signature.
+pub fn to_ol_block(cb: &CompletedBlock) -> OLBlock {
+    OLBlock::new(
+        SignedOLBlockHeader::new(cb.header().clone(), Buf64::zero()),
+        cb.body().clone(),
     )
 }
 
@@ -206,7 +227,7 @@ pub fn make_deposit_message_entry(
         .expect("deposit message should be valid")
         .to_vec();
     MessageEntry::new(
-        crate::BRIDGE_GATEWAY_ACCT_ID,
+        BRIDGE_GATEWAY_ACCT_ID,
         epoch,
         MsgPayload::from_bytes(amount, deposit_data)
             .expect("message payload bytes must fit within SSZ max length"),
@@ -225,12 +246,12 @@ pub fn make_withdrawal_payload(dest_desc: Vec<u8>) -> Vec<u8> {
 
 /// Builds terminal genesis components with one empty manifest at L1 height 1.
 pub fn build_terminal_genesis_components() -> BlockComponents {
-    BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)])
+    BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]).as_terminal()
 }
 
 /// Builds terminal block components with one empty manifest at `next_l1_height`.
 pub fn build_terminal_block_components(next_l1_height: L1Height) -> BlockComponents {
-    BlockComponents::new_manifests(vec![make_empty_manifest(next_l1_height, 0)])
+    BlockComponents::new_manifests(vec![make_empty_manifest(next_l1_height, 0)]).as_terminal()
 }
 
 /// Builds terminal genesis components with transactions and one empty manifest at L1 height 1.
@@ -238,9 +259,10 @@ pub fn build_terminal_tx_components(txs: Vec<OLTransaction>) -> BlockComponents 
     BlockComponents::new(
         OLTxSegment::new(txs).expect("tx segment should be within limits"),
         Some(
-            OLL1ManifestContainer::new(vec![make_empty_manifest(1, 0)])
+            OLAsmManifestContainer::new(vec![make_empty_manifest(1, 0)])
                 .expect("single manifest should succeed"),
         ),
+        true,
     )
 }
 
@@ -267,7 +289,7 @@ pub fn build_empty_chain(
         vec![],
     )
     .expect("genesis manifest should be valid");
-    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
+    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal();
     let genesis = execute_block(state, &genesis_info, None, genesis_components)?;
     blocks.push(genesis);
 
@@ -293,7 +315,7 @@ pub fn build_empty_chain(
                 vec![],
             )
             .expect("dummy manifest should be valid");
-            BlockComponents::new_manifests(vec![dummy_manifest])
+            BlockComponents::new_manifests(vec![dummy_manifest]).as_terminal()
         } else {
             BlockComponents::new_empty()
         };
@@ -354,7 +376,7 @@ pub fn build_chain_with_transactions(
     )
     .expect("genesis manifest should be valid");
     let genesis_info = BlockInfo::new_genesis(1_000_000);
-    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
+    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal();
     let genesis =
         execute_block(state, &genesis_info, None, genesis_components).expect("genesis should work");
     blocks.push(genesis);
@@ -385,9 +407,10 @@ pub fn build_chain_with_transactions(
                 OLTxSegment::new(vec![make_gam_tx(gam_target)])
                     .expect("tx segment should be within limits"),
                 Some(
-                    OLL1ManifestContainer::new(vec![dummy_manifest])
+                    OLAsmManifestContainer::new(vec![dummy_manifest])
                         .expect("single manifest should succeed"),
                 ),
+                true,
             )
         } else if i % 4 == 1 {
             // GAM to snark account: populates the snark's inbox for later processing
@@ -449,7 +472,7 @@ pub fn execute_block(
     components: BlockComponents,
 ) -> ExecResult<CompletedBlock> {
     let block_context = BlockContext::new(block_info, parent_header);
-    execute_and_complete_block(state, block_context, components)
+    execute_and_complete_block(state, block_context, components, BridgeParams::default())
 }
 
 /// Executes a block and returns the construct output, which includes both the completed block and
@@ -461,7 +484,7 @@ pub fn execute_block_with_outputs(
     components: BlockComponents,
 ) -> ExecResult<ConstructBlockOutput> {
     let block_context = BlockContext::new(block_info, parent_header);
-    construct_block(state, block_context, components)
+    construct_block(state, block_context, components, BridgeParams::default())
 }
 
 /// Executes a transaction in a non-genesis block.
@@ -545,7 +568,13 @@ pub fn assert_verification_succeeds<S: IStateAccessorMut>(
     parent_header: Option<OLBlockHeader>,
     body: &strata_ol_chain_types_new::OLBlockBody,
 ) {
-    let result = verify_block(state, header, parent_header.as_ref(), body);
+    let result = verify_block(
+        state,
+        header,
+        parent_header.as_ref(),
+        body,
+        BridgeParams::default(),
+    );
     assert!(
         result.is_ok(),
         "Block verification failed when it should have succeeded: {:?}",
@@ -561,7 +590,13 @@ pub fn assert_verification_fails_with(
     body: &strata_ol_chain_types_new::OLBlockBody,
     error_matcher: impl Fn(&ExecError) -> bool,
 ) {
-    let result = verify_block(state, header, parent_header.as_ref(), body);
+    let result = verify_block(
+        state,
+        header,
+        parent_header.as_ref(),
+        body,
+        BridgeParams::default(),
+    );
     assert!(
         result.is_err(),
         "Block verification succeeded when it should have failed"
@@ -771,7 +806,7 @@ impl OLStfFixtureBuilder {
     /// Executes terminal genesis and returns the live fixture plus outputs.
     pub fn execute_genesis_with_outputs(mut self) -> FixtureGenesisOutput {
         let genesis_info = BlockInfo::new_genesis(1_000_000);
-        let genesis_components = BlockComponents::new_manifests(self.manifests);
+        let genesis_components = BlockComponents::new_manifests(self.manifests).as_terminal();
         let output =
             execute_block_with_outputs(&mut self.state, &genesis_info, None, genesis_components)
                 .expect("fixture genesis should execute");
@@ -783,7 +818,7 @@ impl OLStfFixtureBuilder {
 
     fn execute_genesis_result(mut self) -> ExecResult<OLStfFixture> {
         let genesis_info = BlockInfo::new_genesis(1_000_000);
-        let genesis_components = BlockComponents::new_manifests(self.manifests);
+        let genesis_components = BlockComponents::new_manifests(self.manifests).as_terminal();
         let genesis_block =
             execute_block(&mut self.state, &genesis_info, None, genesis_components)?;
 
@@ -888,7 +923,7 @@ impl OLStfFixture {
                 let account_state = account
                     .as_snark_account_mut()
                     .expect("account should be a snark account");
-                account_state.set_proof_state_directly(
+                account_state.set_proof_state(
                     account_state.inner_state_root(),
                     account_state.next_inbox_msg_idx(),
                     Seqno::from(seqno),
@@ -941,6 +976,7 @@ impl OLStfFixture {
             slot: None,
             epoch: None,
             timestamp: None,
+            terminal: false,
         }
     }
 
@@ -1094,6 +1130,9 @@ pub struct FixtureBlockBuilder<'a> {
     slot: Option<Slot>,
     epoch: Option<Epoch>,
     timestamp: Option<u64>,
+    /// Whether this block is the epoch terminal. Terminality is explicit;
+    /// carrying manifests does not by itself make a block terminal.
+    terminal: bool,
 }
 
 impl<'a> FixtureBlockBuilder<'a> {
@@ -1115,15 +1154,24 @@ impl<'a> FixtureBlockBuilder<'a> {
         self
     }
 
-    /// Adds an ASM manifest to this terminal block.
+    /// Adds an ASM manifest to this block. Manifests may be included in any
+    /// block; use [`FixtureBlockBuilder::terminal`] to mark the epoch terminal.
     pub fn with_manifest(mut self, manifest: AsmManifest) -> Self {
         self.manifests.push(manifest);
         self
     }
 
-    /// Adds ASM manifests to this terminal block.
+    /// Adds ASM manifests to this block. Manifests may be included in any
+    /// block; use [`FixtureBlockBuilder::terminal`] to mark the epoch terminal.
     pub fn with_manifests(mut self, manifests: impl IntoIterator<Item = AsmManifest>) -> Self {
         self.manifests.extend(manifests);
+        self
+    }
+
+    /// Marks this block as the epoch terminal, which drains the buffered ASM
+    /// logs, resets intraepoch state, and advances the epoch.
+    pub fn terminal(mut self) -> Self {
+        self.terminal = true;
         self
     }
 
@@ -1201,13 +1249,13 @@ impl<'a> FixtureBlockBuilder<'a> {
             slot,
             epoch,
             timestamp,
+            terminal,
         } = self;
         let slot = slot.unwrap_or(fixture.next_slot);
         let epoch = epoch.unwrap_or(fixture.next_epoch);
         let timestamp = timestamp.unwrap_or(fixture.next_timestamp);
         let block_info = BlockInfo::new(timestamp, slot, epoch);
-        let is_terminal = !manifests.is_empty();
-        let components = Self::components_from(txs, manifests);
+        let components = Self::components_from(txs, manifests, terminal);
         let parent_header = fixture.last_block.header().clone();
         let block = execute_block(
             &mut fixture.state,
@@ -1217,7 +1265,7 @@ impl<'a> FixtureBlockBuilder<'a> {
         )?;
 
         fixture.next_slot = slot + 1;
-        fixture.next_epoch = epoch + u32::from(is_terminal);
+        fixture.next_epoch = epoch + u32::from(terminal);
         fixture.next_timestamp = timestamp + 1_000;
         fixture.last_block = block.clone();
 
@@ -1235,13 +1283,13 @@ impl<'a> FixtureBlockBuilder<'a> {
             slot,
             epoch,
             timestamp,
+            terminal,
         } = self;
         let slot = slot.unwrap_or(fixture.next_slot);
         let epoch = epoch.unwrap_or(fixture.next_epoch);
         let timestamp = timestamp.unwrap_or(fixture.next_timestamp);
         let block_info = BlockInfo::new(timestamp, slot, epoch);
-        let is_terminal = !manifests.is_empty();
-        let components = Self::components_from(txs, manifests);
+        let components = Self::components_from(txs, manifests, terminal);
         let parent_header = fixture.last_block.header().clone();
         let output = execute_block_with_outputs(
             &mut fixture.state,
@@ -1251,21 +1299,27 @@ impl<'a> FixtureBlockBuilder<'a> {
         )?;
 
         fixture.next_slot = slot + 1;
-        fixture.next_epoch = epoch + u32::from(is_terminal);
+        fixture.next_epoch = epoch + u32::from(terminal);
         fixture.next_timestamp = timestamp + 1_000;
         fixture.last_block = output.completed_block().clone();
 
         Ok(FixtureBlockOutput { output })
     }
 
-    fn components_from(txs: Vec<OLTransaction>, manifests: Vec<AsmManifest>) -> BlockComponents {
-        if manifests.is_empty() {
-            return BlockComponents::new_txs_from_ol_transactions(txs);
-        }
-
+    fn components_from(
+        txs: Vec<OLTransaction>,
+        manifests: Vec<AsmManifest>,
+        terminal: bool,
+    ) -> BlockComponents {
+        let manifest_container = if manifests.is_empty() {
+            None
+        } else {
+            Some(OLAsmManifestContainer::new(manifests).expect("manifests should be within limits"))
+        };
         BlockComponents::new(
             OLTxSegment::new(txs).expect("tx segment should be within limits"),
-            Some(OLL1ManifestContainer::new(manifests).expect("manifests should be within limits")),
+            manifest_container,
+            terminal,
         )
     }
 }
@@ -1478,17 +1532,20 @@ impl FixtureGenesisOutput {
     }
 
     /// Finds and decodes a typed log emitted by `serial`.
-    pub fn find_typed_log<T: Codec>(&self, serial: AccountSerial) -> Option<T> {
+    pub fn find_typed_log<T: OLLogType>(&self, serial: AccountSerial) -> Option<T> {
         self.output
             .outputs()
             .logs()
             .iter()
-            .find(|l| l.account_serial() == serial)
-            .and_then(|l| decode_buf_exact::<T>(l.payload()).ok())
+            .filter(|l| l.account_serial() == serial)
+            .find_map(|l| {
+                let msg = MsgRef::try_from(l.payload()).ok()?;
+                T::try_decode_log(&msg).ok()
+            })
     }
 
     /// Decodes the typed log emitted by `serial`, panicking if it is missing.
-    pub fn expect_typed_log<T: Codec>(&self, serial: AccountSerial) -> T {
+    pub fn expect_typed_log<T: OLLogType>(&self, serial: AccountSerial) -> T {
         self.find_typed_log(serial).unwrap_or_else(|| {
             panic!(
                 "expected log of type {} for account serial {serial:?}",
@@ -1515,13 +1572,16 @@ impl FixtureBlockOutput {
     }
 
     /// Finds and decodes a typed log emitted by `serial`.
-    pub fn find_typed_log<T: Codec>(&self, serial: AccountSerial) -> Option<T> {
+    pub fn find_typed_log<T: OLLogType>(&self, serial: AccountSerial) -> Option<T> {
         self.output
             .outputs()
             .logs()
             .iter()
-            .find(|l| l.account_serial() == serial)
-            .and_then(|l| decode_buf_exact::<T>(l.payload()).ok())
+            .filter(|l| l.account_serial() == serial)
+            .find_map(|l| {
+                let msg = MsgRef::try_from(l.payload()).ok()?;
+                T::try_decode_log(&msg).ok()
+            })
     }
 
     /// Returns true if any emitted log uses `serial`.
@@ -1534,7 +1594,7 @@ impl FixtureBlockOutput {
     }
 
     /// Finds and decodes a typed log emitted by `serial`, failing if missing.
-    pub fn expect_typed_log<T: Codec>(&self, serial: AccountSerial) -> T {
+    pub fn expect_typed_log<T: OLLogType>(&self, serial: AccountSerial) -> T {
         self.find_typed_log(serial).unwrap_or_else(|| {
             panic!(
                 "fixture block output should contain typed log {} from account serial {:?}",
@@ -1568,7 +1628,7 @@ impl InboxMmrTracker {
 
     /// Adds a message entry to the tracker and returns a raw merkle proof for it.
     pub fn add_message(&mut self, entry: &MessageEntry) -> RawMerkleProof {
-        let hash = <MessageEntry as TreeHash>::tree_hash_root(entry);
+        let hash = <MessageEntry as TreeHash>::tree_hash_root::<Sha256Hasher>(entry);
 
         let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
             &mut self.mmr,
@@ -1611,6 +1671,21 @@ impl InboxMmrTracker {
     pub fn num_entries(&self) -> u64 {
         self.mmr.num_entries()
     }
+
+    /// Returns the current (i.e. updated through every later `add_message`)
+    /// merkle proof for the leaf at `leaf_idx`.
+    pub fn proof_for(&self, leaf_idx: usize) -> RawMerkleProof {
+        let proof = &self.proofs[leaf_idx];
+        RawMerkleProof {
+            cohashes: proof
+                .cohashes()
+                .iter()
+                .map(|h| FixedBytes::from(*h))
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("proof cohashes should fit into RawMerkleProof"),
+        }
+    }
 }
 
 /// Tracks ASM manifests in a parallel MMR to generate proofs for ledger references.
@@ -1649,14 +1724,17 @@ impl ManifestMmrTracker {
         }
     }
 
-    /// Adds a manifest to the tracker and returns a RawMerkleProof for it.
+    /// Adds a manifest's L1 block ref to the tracker and returns a proof for it.
     pub fn add_manifest(&mut self, manifest: &AsmManifest) -> (u64, RawMerkleProof) {
-        let hash = <AsmManifest as TreeHash>::tree_hash_root(manifest);
+        let hash = strata_acct_types::l1_block_record_leaf_hash(
+            manifest.blkid().as_ref(),
+            manifest.wtxids_root().as_ref(),
+        );
         let index = self.mmr.num_entries();
 
         let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
             &mut self.mmr,
-            hash.into_inner(),
+            hash,
             &mut self.proofs,
         )
         .expect("mmr: can't add leaf");
@@ -1716,7 +1794,7 @@ pub fn setup_genesis_with_snark_accounts(
     }
 
     let genesis_info = BlockInfo::new_genesis(1_000_000);
-    let genesis_components = BlockComponents::new_manifests(vec![]);
+    let genesis_components = BlockComponents::new_manifests(vec![]).as_terminal();
     execute_block(state, &genesis_info, None, genesis_components).expect("Genesis should execute")
 }
 
@@ -1961,4 +2039,111 @@ impl SnarkUpdateBuilder {
 
         OLTransaction::new(data, tx_proofs)
     }
+}
+
+/// Returns the (`OLAccountState`, `OLSnarkAccountState`) for `snark_id`,
+/// panicking if not found or not a snark account.
+pub fn get_snark_state_expect(
+    state: &MemoryStateBaseLayer,
+    snark_id: AccountId,
+) -> (&OLAccountState, &OLSnarkAccountState) {
+    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    (snark_account, snark_account.as_snark_account().unwrap())
+}
+
+/// The inbox message a GAM block delivers and a snark update consumes in tests.
+pub fn snark_inbox_msg() -> MessageEntry {
+    snark_inbox_msg_with_data(b"inbox msg")
+}
+
+/// Variant of [`snark_inbox_msg`] with caller-supplied payload bytes, for
+/// tests that need multiple distinguishable inbox messages.
+pub fn snark_inbox_msg_with_data(data: &[u8]) -> MessageEntry {
+    MessageEntry::new(
+        crate::SEQUENCER_ACCT_ID,
+        1,
+        MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data.to_vec())
+            .expect("inbox msg payload"),
+    )
+}
+
+/// Seeds the standard test recipient and snark accounts.
+///
+/// Inserts an empty account under [`TEST_RECIPIENT_ID`] and creates a snark
+/// account under [`TEST_SNARK_ACCOUNT_ID`] with an `always_accept` predicate
+/// and a deterministic initial state root. Returns the snark account's serial.
+pub fn epoch_runner_seed_accounts(state: &mut MemoryStateBaseLayer) -> AccountSerial {
+    insert_empty_account(state, make_account_id(TEST_RECIPIENT_ID));
+    state
+        .create_new_account(
+            make_account_id(TEST_SNARK_ACCOUNT_ID),
+            NewAccountData::new(
+                BitcoinAmount::from_sat(100_000_000),
+                NewAccountTypeState::Snark {
+                    update_vk: PredicateKey::always_accept(),
+                    initial_state_root: make_state_root(1),
+                },
+            ),
+        )
+        .expect("create snark account")
+}
+
+/// Executes the genesis (epoch 0 terminal) block under the shared epoch runner.
+pub fn epoch_runner_run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
+    execute_block(
+        state,
+        &BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP),
+        None,
+        BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]).as_terminal(),
+    )
+    .expect("genesis block")
+}
+
+/// Executes one block at the slot following `parent` with the given
+/// `components`, appends it to `blocks`, and returns its header.
+pub fn epoch_runner_run_block(
+    state: &mut MemoryStateBaseLayer,
+    blocks: &mut Vec<OLBlock>,
+    parent: &OLBlockHeader,
+    components: BlockComponents,
+) -> OLBlockHeader {
+    let slot = parent.slot() + 1;
+    let cb = execute_block(
+        state,
+        &BlockInfo::new(
+            EPOCH_RUNNER_GENESIS_TIMESTAMP + slot * EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+            slot,
+            1,
+        ),
+        Some(parent),
+        components,
+    )
+    .expect("epoch block");
+    blocks.push(to_ol_block(&cb));
+    cb.header().clone()
+}
+
+/// Executes the terminal block carrying `manifest`, closing the epoch, and
+/// returns the [`CompletedBlock`] (so callers can read the body the way the
+/// checkpoint payload assembler does).
+pub fn epoch_runner_run_terminal(
+    state: &mut MemoryStateBaseLayer,
+    blocks: &mut Vec<OLBlock>,
+    parent: &OLBlockHeader,
+    manifest: AsmManifest,
+) -> CompletedBlock {
+    let slot = parent.slot() + 1;
+    let cb = execute_block(
+        state,
+        &BlockInfo::new(
+            EPOCH_RUNNER_GENESIS_TIMESTAMP + slot * EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+            slot,
+            1,
+        ),
+        Some(parent),
+        BlockComponents::new_manifests(vec![manifest]).as_terminal(),
+    )
+    .expect("terminal block");
+    blocks.push(to_ol_block(&cb));
+    cb
 }

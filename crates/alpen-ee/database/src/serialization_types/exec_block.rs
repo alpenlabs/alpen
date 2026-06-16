@@ -18,6 +18,7 @@ pub(crate) struct DBExecBlockRecord {
     package_ssz: Vec<u8>,
     account_state: DBEeAccountState,
     next_inbox_msg_idx: u64,
+    next_deposit_idx: u64,
     messages: Vec<DBMessageEntry>,
 }
 
@@ -28,6 +29,7 @@ impl From<ExecBlockRecord> for DBExecBlockRecord {
         let timestamp_ms = value.timestamp_ms();
         let ol_block = *value.ol_block();
         let next_inbox_msg_idx = value.next_inbox_msg_idx();
+        let next_deposit_idx = value.next_deposit_idx();
         let (package, account_state, messages) = value.into_parts();
         let package_ssz = package.as_ssz_bytes();
         let account_state = account_state.into();
@@ -41,6 +43,7 @@ impl From<ExecBlockRecord> for DBExecBlockRecord {
             package_ssz,
             account_state,
             next_inbox_msg_idx,
+            next_deposit_idx,
             messages,
         }
     }
@@ -61,6 +64,7 @@ impl TryFrom<DBExecBlockRecord> for ExecBlockRecord {
             value.timestamp_ms,
             value.parent_blockhash,
             value.next_inbox_msg_idx,
+            value.next_deposit_idx,
             value.messages.into_iter().map(Into::into).collect(),
         ))
     }

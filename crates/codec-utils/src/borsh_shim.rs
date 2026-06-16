@@ -3,6 +3,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
 
+/// Maximum byte length for a single Borsh-encoded object (16 MiB).
+const MAX_BORSH_OBJECT_BYTES: usize = 16 << 20;
+
 /// Wraps a Borsh type so that it can be transparently [`Codec`]ed.
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, BorshSerialize, BorshDeserialize)]
 pub struct CodecBorsh<T: BorshSerialize + BorshDeserialize>(pub T);
@@ -27,6 +30,10 @@ impl<T: BorshSerialize + BorshDeserialize> Codec for CodecBorsh<T> {
         let len = Varint::decode(dec)?;
         let len_usize = len.inner() as usize;
 
+        if len_usize > MAX_BORSH_OBJECT_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
+
         // Read a buffer of that size.
         let mut buffer = vec![0u8; len_usize];
         dec.read_buf(&mut buffer)?;
@@ -40,6 +47,10 @@ impl<T: BorshSerialize + BorshDeserialize> Codec for CodecBorsh<T> {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Encode convert the inner value to Borsh.
         let bytes = borsh::to_vec(&self.0).map_err(|_| CodecError::MalformedField("borsh"))?;
+
+        if bytes.len() > MAX_BORSH_OBJECT_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
 
         // First encode the length as a varint.
         let len = Varint::new_usize(bytes.len()).ok_or(CodecError::OverflowContainer)?;

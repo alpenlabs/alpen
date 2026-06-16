@@ -25,9 +25,7 @@ DEV_CHAIN_ID = 2892
 # Protocol Addresses
 # =============================================================================
 # System addresses for fee distribution in Alpen EVM.
-# These are hardcoded in the chain spec.
-BASEFEE_ADDRESS = "0x5400000000000000000000000000000000000010"
-BENEFICIARY_ADDRESS = "0x5400000000000000000000000000000000000011"
+DEFAULT_BENEFICIARY_ADDRESS = "0x5400000000000000000000000000000000000010"
 
 # =============================================================================
 # Unit Conversions
@@ -39,6 +37,10 @@ GWEI_TO_WEI = 1_000_000_000
 # EE Timing
 # =============================================================================
 DEFAULT_EE_BLOCK_TIME_MS = 1_000
+# Debug Reth payload import can spend several seconds validating state roots
+# after DA/prover tasks are enabled, so wait budgets are intentionally looser
+# than the sequencer's target block cadence.
+DEFAULT_EE_BLOCK_WAIT_SECONDS = 10.0
 DEFAULT_BLOCK_WAIT_SLACK_SECONDS = 5
 
 # =============================================================================
@@ -64,6 +66,8 @@ class ServiceType(str, Enum):
     AlpenClient = "alpen_client"
     Bitcoin = "bitcoin"
     Strata = "strata"
+    StrataFullnode = "strata_fullnode"
+    StrataCheckpointNode = "strata_ckpt_node"
     AlpenSequencer = "alpen_sequencer"
     AlpenFullNode = "alpen_fullnode"
     StrataSigner = "strata_signer"

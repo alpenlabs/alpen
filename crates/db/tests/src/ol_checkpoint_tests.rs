@@ -736,6 +736,64 @@ pub fn test_l1_observed_payload_separate_from_sequencer_payload(db: &impl OLChec
     assert_eq!(from_l1, sequencer_payload);
 }
 
+pub fn test_del_local_checkpoint_payload_entries_preserves_l1_observations(
+    db: &impl OLCheckpointDatabase,
+) {
+    let observed_payload = payload_for_epoch(10);
+    let observed_key = checkpoint_epoch_commitment(&observed_payload);
+    let observed_ref = l1_ref_entry(110);
+    db.put_checkpoint_payload_entry(observed_key, observed_payload.clone())
+        .expect("put local observed payload");
+    db.put_checkpoint_l1_observation(observed_key, observed_payload.clone(), observed_ref.clone())
+        .expect("put l1 observation");
+    db.put_checkpoint_signing_entry(observed_key, 10)
+        .expect("put signing entry");
+
+    let unsigned_payload = payload_for_epoch(11);
+    let unsigned_key = checkpoint_epoch_commitment(&unsigned_payload);
+    db.put_checkpoint_payload_entry(unsigned_key, unsigned_payload)
+        .expect("put unsigned payload");
+    assert_eq!(
+        db.get_next_unsigned_checkpoint_epoch()
+            .expect("get unsigned before local cleanup"),
+        Some(Epoch::from(11u32))
+    );
+
+    let mut deleted = db
+        .del_local_checkpoint_payload_entries_from_epoch(Epoch::from(10u32))
+        .expect("delete local payloads");
+    deleted.sort();
+    let mut expected = vec![observed_key, unsigned_key];
+    expected.sort();
+    assert_eq!(deleted, expected);
+
+    assert!(db
+        .get_checkpoint_payload_entry(observed_key)
+        .expect("get deleted local payload")
+        .is_none());
+    assert!(db
+        .get_checkpoint_signing_entry(observed_key)
+        .expect("get deleted signing")
+        .is_none());
+    assert_eq!(
+        db.get_next_unsigned_checkpoint_epoch()
+            .expect("get unsigned after local cleanup"),
+        None
+    );
+
+    let stored_ref = db
+        .get_checkpoint_l1_ref(observed_key)
+        .expect("get preserved l1 ref")
+        .expect("l1 ref should remain");
+    assert_eq!(stored_ref, observed_ref);
+
+    let stored_observed_payload = db
+        .get_checkpoint_l1_observed_payload(observed_key)
+        .expect("get preserved l1-observed payload")
+        .expect("l1-observed payload should remain");
+    assert_eq!(stored_observed_payload, observed_payload);
+}
+
 pub fn test_get_last_checkpoint_l1_ref_epoch_empty(db: &impl OLCheckpointDatabase) {
     assert!(db
         .get_last_checkpoint_l1_ref_epoch()
@@ -914,6 +972,12 @@ macro_rules! ol_checkpoint_db_tests {
         fn test_l1_observed_payload_separate_from_sequencer_payload() {
             let db = $setup_expr;
             $crate::ol_checkpoint_tests::test_l1_observed_payload_separate_from_sequencer_payload(&db);
+        }
+
+        #[test]
+        fn test_del_local_checkpoint_payload_entries_preserves_l1_observations() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_del_local_checkpoint_payload_entries_preserves_l1_observations(&db);
         }
 
         #[test]

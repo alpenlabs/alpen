@@ -4,6 +4,9 @@ use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
 
+/// Maximum byte length for a single SSZ-encoded object (16 MiB).
+const MAX_SSZ_OBJECT_BYTES: usize = 16 << 20;
+
 /// Wraps an SSZ type so that it can be transparently [`Codec`]ed.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Decode, Encode)]
 #[ssz(struct_behaviour = "transparent")]
@@ -33,6 +36,10 @@ impl<T: Decode + Encode> Codec for CodecSsz<T> {
         let len = Varint::decode(dec)?;
         let len_usize = len.inner() as usize;
 
+        if len_usize > MAX_SSZ_OBJECT_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
+
         // Read a buffer of that size.
         let mut buffer = vec![0u8; len_usize];
         dec.read_buf(&mut buffer)?;
@@ -46,6 +53,10 @@ impl<T: Decode + Encode> Codec for CodecSsz<T> {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Encode convert the inner value to SSZ.
         let bytes = self.0.as_ssz_bytes();
+
+        if bytes.len() > MAX_SSZ_OBJECT_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
 
         // First encode the length as a varint.
         let len = Varint::new_usize(bytes.len()).ok_or(CodecError::OverflowContainer)?;

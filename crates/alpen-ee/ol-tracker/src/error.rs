@@ -1,6 +1,9 @@
 use std::result;
 
 use alpen_ee_common::{OLClientError, StorageError};
+use strata_ee_acct_types::EnvError;
+use strata_identifiers::Hash;
+use strata_snark_acct_runtime::ProgramError;
 use thiserror::Error;
 
 /// Error type for OL tracker operations.
@@ -37,6 +40,15 @@ pub enum OLTrackerError {
     #[error("expected to have genesis epoch data in storage")]
     MissingGenesisEpoch,
 
+    /// Reconstructed epoch state root does not match the expected terminal root
+    /// from the OL summary.
+    #[error("epoch terminal state root mismatch (observed {observed}, expected {expected})")]
+    TerminalStateRootMismatch { observed: Hash, expected: Hash },
+
+    /// Failure applying a snark-account update during epoch replay.
+    #[error("process update: {0}")]
+    ProcessUpdate(#[from] ProgramError<EnvError>),
+
     /// Generic error for unexpected conditions (may be recoverable depending on cause)
     #[error("{0}")]
     Other(String),
@@ -49,6 +61,8 @@ impl OLTrackerError {
             // Non-recoverable: requires manual intervention
             OLTrackerError::NoForkPointFound { .. } => false,
             OLTrackerError::MissingGenesisEpoch => false,
+            OLTrackerError::TerminalStateRootMismatch { .. } => false,
+            OLTrackerError::ProcessUpdate(_) => false,
 
             // All others are potentially recoverable
             OLTrackerError::Storage(_)

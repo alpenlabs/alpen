@@ -9,7 +9,7 @@ use crate::define_sled_database;
 define_sled_database!(
     pub struct AsmDBSled {
         asm_state_tree: AsmStateSchema,
-        // TODO(refactor) - it should operate on manifests instead of logs.
+        // TODO(STR-2653): it should operate on manifests instead of logs.
         asm_log_tree: AsmLogSchema,
         asm_aux_data_tree: AsmAuxDataSchema,
     }

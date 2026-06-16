@@ -155,7 +155,7 @@ impl<S> EeDaContextDb<S> {
     }
 }
 
-impl<S: StateDiffProvider + Send + Sync + 'static> EeDaContextDb<S> {
+impl<S: StateDiffProvider + 'static> EeDaContextDb<S> {
     /// Collects deployed bytecodes from block state diffs and marks them in
     /// the filter so future batches can omit them.
     fn update_bytecode_filter(&self, block_hashes: &[B256]) -> DbResult<()> {
@@ -182,7 +182,7 @@ impl<S: StateDiffProvider + Send + Sync + 'static> EeDaContextDb<S> {
     }
 }
 
-impl<S: StateDiffProvider + Send + Sync + 'static> EeDaContext for EeDaContextDb<S> {
+impl<S: StateDiffProvider + 'static> EeDaContext for EeDaContextDb<S> {
     fn is_code_hash_published(&self, code_hash: &B256) -> DbResult<bool> {
         let exists = self
             .published_code_hashes

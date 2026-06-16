@@ -44,6 +44,15 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
         self.initialized = true;
     }
 
+    /// Returns the canonical commitment of the most recently summarized epoch,
+    /// or `None` if no epoch has been summarized yet.
+    pub(crate) fn last_summarized_commitment(&self) -> anyhow::Result<Option<EpochCommitment>> {
+        let Some(epoch_index) = self.ctx.get_last_summarized_epoch()? else {
+            return Ok(None);
+        };
+        self.ctx.get_canonical_epoch_commitment_at(epoch_index)
+    }
+
     /// Handles a completed epoch, catching up from last checkpoint to latest summary.
     ///
     /// The `target` commitment identifies the epoch that was completed. We process
@@ -195,6 +204,7 @@ mod tests {
     use strata_asm_proto_checkpoint_types::{
         CheckpointPayload, CheckpointTip, test_utils::checkpoint_sidecar_strategy,
     };
+    use strata_bridge_params::BridgeParams;
     use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{
@@ -243,7 +253,7 @@ mod tests {
             stub_ol_logs: Vec<OLLog>,
         ) -> Self {
             Self {
-                inner: CheckpointWorkerContextImpl::new(storage),
+                inner: CheckpointWorkerContextImpl::new(storage, BridgeParams::default()),
                 stub_state_diff,
                 stub_ol_logs,
             }
@@ -369,7 +379,7 @@ mod tests {
                     .expect("put checkpoint");
             }
 
-            let ctx = CheckpointWorkerContextImpl::new(storage);
+            let ctx = CheckpointWorkerContextImpl::new(storage, BridgeParams::default());
             let mut state = OLCheckpointServiceState::new(ctx);
             state.initialize();
 

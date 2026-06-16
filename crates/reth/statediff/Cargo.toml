@@ -8,10 +8,11 @@ workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
-alpen-chainspec.workspace = true
-eyre.workspace = true
+alpen-chainspec = { workspace = true, optional = true }
+eyre = { workspace = true, optional = true }
 revm.workspace = true
 revm-primitives.workspace = true
+rsp-mpt.workspace = true
 serde.workspace = true
 strata-codec.workspace = true
 strata-da-framework.workspace = true
@@ -24,5 +25,6 @@ proptest.workspace = true
 serde_json.workspace = true
 
 [features]
-default = []
+default = ["chainspec"]
+chainspec = ["dep:alpen-chainspec", "dep:eyre"]
 serde = []

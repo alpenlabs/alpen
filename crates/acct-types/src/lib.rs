@@ -28,7 +28,8 @@ mod ssz_generated {
     include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 }
 
-pub use constants::SYSTEM_RESERVED_ACCTS;
+pub use accumulators::{append_l1_block_rec_to_mmr, l1_block_record_leaf_hash};
+pub use constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, SYSTEM_RESERVED_ACCTS};
 pub use errors::{AcctError, AcctResult};
 pub use messages::{MsgPayloadData, MsgPayloadError};
 pub use mmr::{

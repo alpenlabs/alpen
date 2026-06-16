@@ -11,6 +11,7 @@ use bdk_wallet::{
     KeychainKind,
 };
 use indicatif::ProgressBar;
+use strata_bridge_params::BridgeParams;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_ol_bridge_types::OperatorSelection;
 use strata_primitives::bitcoin_bosd::Descriptor;
@@ -55,21 +56,17 @@ pub async fn withdraw(
                 "Invalid signet address: '{a}'. Must be a valid Bitcoin address."
             ))?;
             let checked = unchecked
-                .require_network(settings.params.network)
+                .require_network(settings.network)
                 .user_error(format!(
                     "Provided address '{a}' is not valid for network '{}'",
-                    settings.params.network
+                    settings.network
                 ))?;
             Ok(checked)
         })
         .transpose()?;
 
-    let mut l1w = SignetWallet::new(
-        &seed,
-        settings.params.network,
-        settings.signet_backend.clone(),
-    )
-    .internal_error("Failed to load signet wallet")?;
+    let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
+        .internal_error("Failed to load signet wallet")?;
     l1w.sync()
         .await
         .internal_error("Failed to sync signet wallet")?;
@@ -86,8 +83,7 @@ pub async fn withdraw(
         }
     };
 
-    let denomination = settings.params.deposit_amount;
-    let bridge_out_amount = resolve_withdrawal_amount(args.amount, denomination)?;
+    let bridge_out_amount = resolve_withdrawal_amount(args.amount, &settings.bridge_params)?;
     println!("Bridging out {} to {address}", bridge_out_amount);
 
     let bosd: Descriptor = address
@@ -127,63 +123,74 @@ pub async fn withdraw(
     Ok(())
 }
 
-/// Resolves the withdrawal amount from an optional user-provided value and the denomination.
+/// Resolves the withdrawal amount from an optional user-provided value.
 ///
-/// Returns the validated amount, or a [`DisplayedError`] if the amount is invalid.
+/// Defaults to one denomination if no amount is provided.
 fn resolve_withdrawal_amount(
     amount_sats: Option<u64>,
-    denomination: Amount,
+    bridge_params: &BridgeParams,
 ) -> Result<Amount, DisplayedError> {
-    match amount_sats {
-        Some(sats) => {
-            if sats == 0 || !sats.is_multiple_of(denomination.to_sat()) {
-                return Err(DisplayedError::UserError(
-                    format!("Amount must be a positive multiple of {denomination}"),
-                    Box::new(()),
-                ));
-            }
-            Ok(Amount::from_sat(sats))
+    let sats = amount_sats.unwrap_or(bridge_params.denomination());
+    if !bridge_params.validate_withdrawal_amount(sats) {
+        let denom = bridge_params.denomination();
+        let mut msg = format!("Amount must be a positive multiple of {denom} sats");
+        if let Some(max) = bridge_params.max_withdrawal_amount() {
+            msg.push_str(&format!(" and at most {max} sats"));
         }
-        None => Ok(denomination),
+        return Err(DisplayedError::UserError(msg, Box::new(())));
     }
+    Ok(Amount::from_sat(sats))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const DENOM: Amount = Amount::from_sat(100_000_000); // 1 BTC
+    fn params() -> BridgeParams {
+        BridgeParams::new(100_000_000, Some(1_000_000_000)).unwrap()
+    }
 
     #[test]
     fn test_none_defaults_to_denomination() {
-        let result = resolve_withdrawal_amount(None, DENOM).unwrap();
-        assert_eq!(result, DENOM);
+        let result = resolve_withdrawal_amount(None, &params()).unwrap();
+        assert_eq!(result, Amount::from_sat(100_000_000));
     }
 
     #[test]
     fn test_exact_denomination_accepted() {
-        let result = resolve_withdrawal_amount(Some(100_000_000), DENOM).unwrap();
+        let result = resolve_withdrawal_amount(Some(100_000_000), &params()).unwrap();
         assert_eq!(result, Amount::from_sat(100_000_000));
     }
 
     #[test]
     fn test_exact_multiple_accepted() {
-        let result = resolve_withdrawal_amount(Some(300_000_000), DENOM).unwrap();
+        let result = resolve_withdrawal_amount(Some(300_000_000), &params()).unwrap();
         assert_eq!(result, Amount::from_sat(300_000_000));
     }
 
     #[test]
     fn test_zero_rejected() {
-        assert!(resolve_withdrawal_amount(Some(0), DENOM).is_err());
+        assert!(resolve_withdrawal_amount(Some(0), &params()).is_err());
     }
 
     #[test]
     fn test_non_multiple_rejected() {
-        assert!(resolve_withdrawal_amount(Some(150_000_000), DENOM).is_err());
+        assert!(resolve_withdrawal_amount(Some(150_000_000), &params()).is_err());
     }
 
     #[test]
     fn test_below_denomination_rejected() {
-        assert!(resolve_withdrawal_amount(Some(50_000_000), DENOM).is_err());
+        assert!(resolve_withdrawal_amount(Some(50_000_000), &params()).is_err());
+    }
+
+    #[test]
+    fn test_exceeds_cap_rejected() {
+        assert!(resolve_withdrawal_amount(Some(1_100_000_000), &params()).is_err());
+    }
+
+    #[test]
+    fn test_at_cap_accepted() {
+        let result = resolve_withdrawal_amount(Some(1_000_000_000), &params()).unwrap();
+        assert_eq!(result, Amount::from_sat(1_000_000_000));
     }
 }

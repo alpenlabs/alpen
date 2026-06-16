@@ -24,6 +24,11 @@ rpc_user = "rpcuser"
 rpc_password = "rpcpassword"
 network = "regtest"
 
+[btcio]
+# Depth, in L1 blocks, after which an L1 block is considered safe from reorgs.
+# Set to 0 to follow the L1 tip with no reorg buffer.
+l1_reorg_safe_depth = 4
+
 [btcio.reader]
 client_poll_dur_ms = 200
 
@@ -38,29 +43,14 @@ fee_policy = "mempool"
 # mempool_fallback_conf_target = 6
 # Optional when fee_policy = "bitcoind"
 # bitcoind_conf_target = 6
-# Required when fee_policy = "fixed"
-# fixed_fee_rate = 5
+# Required when fee_policy = "fixed" (sat/vB; fractional values allowed)
+# fixed_fee_rate = 0.5
 mempool_base_url = "https://mempool.space"
 reveal_amount = 100
 bundle_interval_ms = 1000
 
 [btcio.broadcaster]
 poll_interval_ms = 1000
-
-[sync]
-l1_follow_distance = 6
-max_reorg_depth = 4
-client_poll_dur_ms = 2000
-client_checkpoint_interval = 10
-
-[exec.reth]
-rpc_url = "reth:8551"
-secret = "configs/jwt.hex"
-
-[relayer]
-refresh_interval = 10
-stale_duration = 120
-relay_misc = true
 
 # Uncomment for real SP1 proving (requires strata built with prover,sp1 features)
 # [prover]

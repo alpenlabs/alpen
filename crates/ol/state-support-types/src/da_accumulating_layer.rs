@@ -6,7 +6,7 @@ use std::{
     mem::take,
 };
 
-use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, Mmr64};
+use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, L1BlockRecord, Mmr64};
 use strata_asm_proto_checkpoint_types::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
     CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
@@ -524,8 +524,9 @@ impl EpochDaAccumulator {
 
 /// State accessor that accumulates DA-covered writes for a single epoch.
 ///
-/// This wrapper should only be used for preseal execution; epoch sealing
-/// updates derived from L1 must be applied on a non-DA tracking accessor.
+/// This wrapper should only be used for pre-drain execution (the per-block
+/// phases up to but excluding the epoch-terminal drain); the drain effects
+/// derived from L1 manifests must be applied on a non-DA tracking accessor.
 #[derive(Debug)]
 pub struct DaAccumulatingState<S: IStateAccessor> {
     /// Wrapped state accessor.
@@ -661,8 +662,22 @@ impl<S: IStateAccessor> IStateAccessor for DaAccumulatingState<S> {
         self.inner.total_ledger_balance()
     }
 
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
-        self.inner.asm_manifests_mmr()
+    fn l1_block_refs_mmr(&self) -> &Mmr64 {
+        self.inner.l1_block_refs_mmr()
+    }
+
+    // ===== Intraepoch state methods =====
+
+    fn pending_asm_logs_len(&self) -> usize {
+        self.inner.pending_asm_logs_len()
+    }
+
+    fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
+        self.inner.get_pending_asm_log(idx)
+    }
+
+    fn pending_asm_logs_full(&self) -> bool {
+        self.inner.pending_asm_logs_full()
     }
 
     // ===== Account methods =====
@@ -748,8 +763,8 @@ where
         self.inner.set_cur_epoch(epoch);
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: strata_asm_manifest_types::AsmManifest) {
-        self.inner.append_manifest(height, mf);
+    fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
+        self.inner.append_l1_block_rec(height, rec);
     }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
@@ -812,6 +827,16 @@ where
         }
 
         Ok(serial)
+    }
+
+    // Intraepoch state is not persisted in DA; passthrough without tracking.
+
+    fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
+        self.inner.try_append_pending_asm_log(entry)
+    }
+
+    fn reset_intraepoch_state(&mut self) {
+        self.inner.reset_intraepoch_state();
     }
 }
 

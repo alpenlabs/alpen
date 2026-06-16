@@ -14,7 +14,7 @@ use tracing::warn;
 /// Context for accumulators/keys we verify proofs against when verifying a
 /// proof.
 pub(crate) struct TxProofVerificationContext<'a> {
-    asm_history_mmr: &'a Mmr64,
+    l1_block_refs_mmr: &'a Mmr64,
     local_inbox_mmr: Option<&'a Mmr64B32>,
     local_predicate_key: Option<&'a PredicateKey>,
 }
@@ -24,7 +24,7 @@ impl<'a> TxProofVerificationContext<'a> {
         state: &'a S,
         account: &'a S::AccountState,
     ) -> Self {
-        let asm_history_mmr = state.asm_manifests_mmr();
+        let l1_block_refs_mmr = state.l1_block_refs_mmr();
 
         let (local_inbox_mmr, local_predicate_key) = match account.type_state() {
             AccountTypeStateRef::Empty => (None, None),
@@ -34,7 +34,7 @@ impl<'a> TxProofVerificationContext<'a> {
         };
 
         Self {
-            asm_history_mmr,
+            l1_block_refs_mmr,
             local_inbox_mmr,
             local_predicate_key,
         }
@@ -174,11 +174,11 @@ impl TxProofVerifier for TxProofVerifierImpl<'_> {
         self.verify_next_mmr_proof(inbox_mmr, claim)
     }
 
-    fn verify_asm_history_mmr_proof_next(
+    fn verify_l1_block_ref_mmr_proof_next(
         &mut self,
         claim: &AccumulatorClaim,
     ) -> Result<(), ProofVerifyError> {
-        self.verify_next_mmr_proof(self.state_ctx.asm_history_mmr, claim)
+        self.verify_next_mmr_proof(self.state_ctx.l1_block_refs_mmr, claim)
     }
 
     fn verify_local_predicate_next(&mut self, claim: &[u8]) -> Result<(), ProofVerifyError> {

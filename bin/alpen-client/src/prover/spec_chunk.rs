@@ -8,17 +8,18 @@
 
 use std::{fmt, sync::Arc};
 
-use alpen_ee_common::{BatchStorage, ChunkId, ChunkWitnessStore, ExecBlockStorage};
+use alpen_ee_common::{ChunkId, ChunkStorage, ChunkWitnessStore, ExecBlockStorage};
 use alpen_ee_database::EeNodeStorage;
 use async_trait::async_trait;
 use reth_primitives::Block;
 use reth_primitives_traits::Block as _;
 use rsp_primitives::genesis::Genesis;
 use strata_acct_types::Hash;
+use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{ExecBlock, ExecHeader};
 use strata_ee_chain_types::{
-    ChunkTransition, ExecInputs, ExecOutputs, OutputMessage, OutputTransfer,
+    ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs, OutputMessage, OutputTransfer,
 };
 use strata_ee_chunk_runtime::{PrivateInput, RawBlockData, RawChunkData};
 use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader};
@@ -106,21 +107,24 @@ impl TryFrom<Vec<u8>> for ChunkTask {
 /// - **`ExecBlockStorage`** — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
 ///   `ExecOutputs`.
 pub(crate) struct ChunkSpec {
-    batch_storage: Arc<dyn BatchStorage>,
+    chunk_storage: Arc<dyn ChunkStorage>,
     storage: Arc<EeNodeStorage>,
     genesis: Genesis,
+    bridge_params: BridgeParams,
 }
 
 impl ChunkSpec {
     pub(crate) fn new(
-        batch_storage: Arc<dyn BatchStorage>,
+        chunk_storage: Arc<dyn ChunkStorage>,
         storage: Arc<EeNodeStorage>,
         genesis: Genesis,
+        bridge_params: BridgeParams,
     ) -> Self {
         Self {
-            batch_storage,
+            chunk_storage,
             storage,
             genesis,
+            bridge_params,
         }
     }
 }
@@ -135,7 +139,7 @@ impl ProofSpec for ChunkSpec {
 
         // 1. Read the chunk's block list.
         let (chunk, _status) = self
-            .batch_storage
+            .chunk_storage
             .get_chunk_by_id(chunk_id)
             .await
             .map_err(|e| PaasError::Storage(format!("get_chunk_by_id({chunk_id:?}): {e}")))?
@@ -235,6 +239,11 @@ impl ProofSpec for ChunkSpec {
         let mut aggregated_inputs = ExecInputs::new_empty();
         let mut aggregated_outputs = ExecOutputs::new_empty();
         let mut tip_blkid = parent_blkid;
+        // Safe placeholder values: `block_hashes` was checked non-empty above
+        // and the witness block count must match it, so the loop below always
+        // overwrites these with the terminal block's verified metadata.
+        let mut tip_state_root = Hash::zero();
+        let mut tip_exec_header_summary = ExecHeaderSummary::new_empty();
 
         for (block_hash, alloy_block) in block_hashes.iter().zip(&alloy_blocks) {
             // Authoritative inputs/outputs from ExecBlockRecord.
@@ -256,6 +265,8 @@ impl ProofSpec for ChunkSpec {
             let body = EvmBlockBody::from_alloy_body(alloy_block.body().clone());
             let block = EvmBlock::new(evm_header, body);
             tip_blkid = block.get_header().compute_block_id();
+            tip_state_root = block.get_header().get_state_root();
+            tip_exec_header_summary = block.get_header().get_exec_header_summary();
 
             extend_exec_inputs(&mut aggregated_inputs, &block_inputs);
             extend_exec_outputs(&mut aggregated_outputs, &block_outputs);
@@ -275,6 +286,8 @@ impl ProofSpec for ChunkSpec {
         let chunk_transition = ChunkTransition::new(
             parent_blkid,
             tip_blkid,
+            tip_state_root,
+            tip_exec_header_summary,
             aggregated_inputs,
             aggregated_outputs,
         );
@@ -290,14 +303,15 @@ impl ProofSpec for ChunkSpec {
         Ok(EeChunkProofInput {
             genesis: self.genesis.clone(),
             private_input,
+            bridge_params: self.bridge_params,
         })
     }
 }
 
 /// Chunk-level aggregation of per-block [`ExecOutputs`].
 ///
-/// TODO(STR-1369): move to upstream `ExecOutputs::extend_from`; outputs
-/// must be bit-identical across chunk execution → DA blob → pub_params.
+/// TODO(STR-3553): move to upstream `ExecOutputs::extend_from`; outputs
+/// must be bit-identical across chunk execution -> DA blob -> pub_params.
 fn extend_exec_outputs(dst: &mut ExecOutputs, src: &ExecOutputs) {
     for t in src.output_transfers() {
         dst.add_transfer(OutputTransfer::new(t.dest(), t.value()));

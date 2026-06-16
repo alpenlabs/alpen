@@ -4,11 +4,12 @@
 //! assembly as they perform all of the block validation checks including
 //! outputs (corresponding with headers/checkpoints/etc).
 
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_ledger_types::*;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
-    MAX_LOGS_PER_BLOCK, OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLLog,
+    AsmManifest, MAX_LOGS_PER_BLOCK, OLAsmManifestContainer, OLBlockBody, OLBlockHeader, OLLog,
     OLTxSegment,
 };
 use strata_ol_da::DaScheme;
@@ -25,102 +26,63 @@ use crate::{
 
 /// Commitments that we are checking against a block.
 ///
-/// This is ultimately derived from the header (and maybe L1 update data).
+/// This is ultimately derived from the header.
 #[derive(Copy, Clone, Debug)]
 pub struct BlockExecExpectations {
-    post_state_roots: BlockPostStateCommitments,
+    state_root: Buf32,
     logs_root: Buf32,
 }
 
 impl BlockExecExpectations {
-    pub(crate) fn new(post_state_roots: BlockPostStateCommitments, logs_root: Buf32) -> Self {
+    pub(crate) fn new(state_root: Buf32, logs_root: Buf32) -> Self {
         Self {
-            post_state_roots,
+            state_root,
             logs_root,
         }
     }
 
-    pub(crate) fn from_block_parts(header: &OLBlockHeader, body: &OLBlockBody) -> Self {
-        let psr = BlockPostStateCommitments::from_block_parts(header, body);
-        Self::new(psr, *header.logs_root())
+    pub(crate) fn from_block_parts(header: &OLBlockHeader, _body: &OLBlockBody) -> Self {
+        Self::new(*header.state_root(), *header.logs_root())
+    }
+
+    /// The single final state root committed in the header.
+    pub(crate) fn state_root(&self) -> &Buf32 {
+        &self.state_root
     }
 }
 
-/// Describes the state roots we might compute in the different phases.
-#[derive(Copy, Clone, Debug)]
-pub enum BlockPostStateCommitments {
-    /// For regular, non-terminal blocks.  This is just the header state root.
-    Common(Buf32),
-
-    /// For epoch terminal blocks.  This is both the header state root and the
-    /// preseal root.
-    ///
-    /// (preseal, header)
-    Terminal(Buf32, Buf32),
-}
-
-impl BlockPostStateCommitments {
-    /// Constructs the post-state commitment from a block header and body.
-    ///
-    /// This exists so we can avoid caring about if we have a full signed block
-    /// or not.
-    pub fn from_block_parts(header: &OLBlockHeader, body: &OLBlockBody) -> Self {
-        if let Some(l1u) = body.l1_update() {
-            Self::Terminal(*l1u.preseal_state_root(), *header.state_root())
-        } else {
-            Self::Common(*header.state_root())
-        }
-    }
-
-    /// Constructs the post-state commitment from a block.
-    pub fn from_block(block: &OLBlock) -> Self {
-        Self::from_block_parts(block.header(), block.body())
-    }
-
-    /// The state root we check in the header.
-    pub fn header_state_root(&self) -> &Buf32 {
-        match self {
-            BlockPostStateCommitments::Common(r) => r,
-            BlockPostStateCommitments::Terminal(_, r) => r,
-        }
-    }
-
-    /// The "pre-sealing" state root we check in the L1 update.
-    pub fn preseal_state_root(&self) -> Option<&Buf32> {
-        match self {
-            BlockPostStateCommitments::Terminal(r, _) => Some(r),
-            _ => None,
-        }
-    }
-}
-
-/// Inputs to block execution, derived from the body.
+/// Inputs to block execution, derived from the header and body.
 #[derive(Copy, Clone, Debug)]
 pub struct BlockExecInput<'b> {
     tx_segment: &'b OLTxSegment,
-    manifest_container: Option<&'b OLL1ManifestContainer>,
+    manifest_container: Option<&'b OLAsmManifestContainer>,
+    is_terminal: bool,
 }
 
 impl<'b> BlockExecInput<'b> {
     /// Constructs a new instance.
     pub fn new(
         tx_segment: &'b OLTxSegment,
-        manifest_container: Option<&'b OLL1ManifestContainer>,
+        manifest_container: Option<&'b OLAsmManifestContainer>,
+        is_terminal: bool,
     ) -> Self {
         Self {
             tx_segment,
             manifest_container,
+            is_terminal,
         }
     }
 
-    /// Constructs a new instance by getting refs from a block's body.
-    pub fn from_body(body: &'b OLBlockBody) -> Self {
+    /// Constructs a new instance from a block's header and body.
+    ///
+    /// Terminality is read from the authoritative `IS_TERMINAL` header flag.
+    pub fn from_block_parts(header: &OLBlockHeader, body: &'b OLBlockBody) -> Self {
         // tx_segment is optional in the body, but BlockExecInput requires it.
         // Blocks without transactions should have an empty tx_segment, not None.
         let tx_segment = body
             .tx_segment()
             .expect("block body should have tx_segment for execution");
-        Self::new(tx_segment, body.l1_update().map(|u| u.manifest_cont()))
+        Self::new(tx_segment, body.manifests(), header.is_terminal())
     }
 
     /// Returns the transaction segment.
@@ -128,19 +90,19 @@ impl<'b> BlockExecInput<'b> {
         self.tx_segment
     }
 
-    /// Returns the zmanifest container if present.
-    pub fn manifest_container(&self) -> Option<&'b OLL1ManifestContainer> {
+    /// Returns the manifest container if present.
+    pub fn manifest_container(&self) -> Option<&'b OLAsmManifestContainer> {
         self.manifest_container
     }
 
-    /// Checks if the body implied by this input is implied to be a terminal block.
-    pub fn is_body_terminal(&self) -> bool {
-        self.manifest_container().is_some()
+    /// Whether this block is the epoch terminal.
+    pub fn is_terminal(&self) -> bool {
+        self.is_terminal
     }
 }
 
-/// Verifies a block end-to-end. Composes [`verify_block_preseal`] and
-/// [`apply_block_manifests`].
+/// Verifies a block end-to-end. Composes [`verify_block_predrain`] and
+/// [`apply_epoch_terminal`].
 #[tracing::instrument(
     skip_all,
     fields(
@@ -155,11 +117,12 @@ pub fn verify_block<S: IStateAccessorMut>(
     header: &OLBlockHeader,
     parent_header: Option<&OLBlockHeader>,
     body: &OLBlockBody,
+    bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
 
-    let mut logs = verify_block_preseal(state, header, parent_header, body)?;
-    logs.extend(apply_block_manifests(state, header, body)?);
+    let mut logs = verify_block_predrain(state, header, parent_header, body, bridge_params)?;
+    logs.extend(apply_epoch_terminal(state, header, body)?);
 
     // Verify logs size.
     let max = MAX_LOGS_PER_BLOCK as usize;
@@ -178,9 +141,12 @@ pub fn verify_block<S: IStateAccessorMut>(
     Ok(logs)
 }
 
-/// Runs the pre-manifest stages of block verification and the preseal
-/// state root check. Returns the tx-segment logs. Pair with
-/// [`apply_block_manifests`] for full verification.
+/// Runs the pre-drain stages of block verification (tx segment + manifest
+/// buffering) and, for non-terminal blocks, the state root check. Returns the
+/// tx-segment logs. Pair with [`apply_epoch_terminal`] for full verification.
+///
+/// Terminal blocks defer their state-root check to [`apply_epoch_terminal`],
+/// since the single committed header root reflects the post-drain state.
 #[tracing::instrument(
     skip_all,
     fields(
@@ -190,11 +156,12 @@ pub fn verify_block<S: IStateAccessorMut>(
         tx_count = body.tx_segment().map(|s| s.txs().len()).unwrap_or(0),
     ),
 )]
-pub fn verify_block_preseal<S: IStateAccessorMut>(
+pub fn verify_block_predrain<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<&OLBlockHeader>,
     body: &OLBlockBody,
+    bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     // 0. Do preliminary sanity checks.
     verify_header_continuity(header, parent_header)?;
@@ -216,47 +183,44 @@ pub fn verify_block_preseal<S: IStateAccessorMut>(
 
     // 3. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
-    let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
+    let basic_ctx =
+        BasicExecContext::new(block_info, &output_buffer).with_bridge_params(bridge_params);
     let tx_ctx = TxExecContext::new(&basic_ctx, parent_header);
     if let Some(tx_segment) = body.tx_segment() {
         transaction_processing::process_block_tx_segment(state, tx_segment, &tx_ctx)?;
     }
 
-    // 4. Check the state root.
-    // - if it not a terminal, then check against the header state root
-    // - if it *is* a terminal, then check against the preseal state root
-    let pre_manifest_state_root = state.compute_state_root()?;
-    let expected_root = if header.is_terminal() {
-        exp.post_state_roots.preseal_state_root().ok_or_else(|| {
+    // 4. Buffer any manifests carried by this block (allowed in any block).
+    if let Some(manifest_container) = body.manifests() {
+        manifest_processing::process_block_manifests(state, manifest_container.manifests())?;
+    }
+
+    // 5. For non-terminal blocks, the header state root reflects the state
+    // after buffering, so check it now. Terminal blocks check the root after
+    // the drain in `apply_epoch_terminal`.
+    if !header.is_terminal() {
+        let computed_root = state.compute_state_root()?;
+        if &computed_root != exp.state_root() {
             error!(
+                computed = %computed_root,
+                expected = %exp.state_root(),
                 slot = header.slot(),
                 epoch = header.epoch(),
-                "terminal block missing preseal state root"
+                check = "state_root",
+                "non-terminal block state root mismatch"
             );
-            ExecError::ChainIntegrity
-        })?
-    } else {
-        exp.post_state_roots.header_state_root()
-    };
-    if &pre_manifest_state_root != expected_root {
-        error!(
-            computed = %pre_manifest_state_root,
-            expected = %expected_root,
-            slot = header.slot(),
-            epoch = header.epoch(),
-            is_terminal = header.is_terminal(),
-            check = "preseal_state_root",
-            "preseal state root mismatch"
-        );
-        return Err(ExecError::ChainIntegrity);
+            return Err(ExecError::ChainIntegrity);
+        }
     }
 
     Ok(output_buffer.into_logs())
 }
 
-/// Runs manifest processing and the post-manifest state root check.
-/// Returns the manifest-emitted logs.
-pub fn apply_block_manifests<S: IStateAccessorMut>(
+/// Runs the epoch-terminal drain (for terminal blocks) and the post-drain
+/// state root check against the header. Returns the drain-emitted logs.
+///
+/// This is a no-op for non-terminal blocks.
+pub fn apply_epoch_terminal<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     body: &OLBlockBody,
@@ -267,23 +231,20 @@ pub fn apply_block_manifests<S: IStateAccessorMut>(
     let output_buffer = ExecOutputBuffer::new_empty();
     let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
 
-    // 5. If it's the last block of an epoch, then call process_block_manifests,
-    // then really check the header state root.
-    if let Some(manifest_container) = body.l1_update().map(|u| u.manifest_cont()) {
-        manifest_processing::process_block_manifests(state, manifest_container, &basic_ctx)?;
+    // If this is the epoch terminal, drain the buffered ASM logs, reset
+    // intraepoch state, advance the epoch, then check the header state root.
+    if header.is_terminal() {
+        manifest_processing::process_epoch_terminal(state, &basic_ctx)?;
 
-        // After processing manifests, check the actual final state root against the header.
         let final_state_root = state.compute_state_root()?;
-        let expected_root = exp.post_state_roots.header_state_root();
-        if &final_state_root != expected_root {
+        if &final_state_root != exp.state_root() {
             error!(
                 computed = %final_state_root,
-                expected = %expected_root,
+                expected = %exp.state_root(),
                 slot = header.slot(),
                 epoch = header.epoch(),
-                is_terminal = header.is_terminal(),
-                check = "post_manifest_state_root",
-                "post-manifest state root mismatch"
+                check = "terminal_state_root",
+                "terminal block state root mismatch"
             );
             return Err(ExecError::ChainIntegrity);
         }
@@ -356,16 +317,15 @@ pub fn verify_block_structure(header: &OLBlockHeader, body: &OLBlockBody) -> Exe
         return Err(ExecError::BlockStructureMismatch);
     }
 
-    // Check that the terminal flag matches if there's an L1 update.
-    if body.l1_update().is_some() != header.is_terminal() {
-        return Err(ExecError::InconsistentBodyTerminality);
-    }
+    // Terminality is signalled authoritatively by the header `IS_TERMINAL`
+    // flag and is independent of whether the body carries manifests, so there
+    // is no body/terminal consistency check here.
 
     Ok(())
 }
 
 /// Helper function to compute logs root.
-// TODO move this somewhere?
+// TODO(STR-3677): move this somewhere?
 fn compute_logs_root(logs: &[OLLog]) -> Buf32 {
     if logs.is_empty() {
         return Buf32::zero();
@@ -397,6 +357,15 @@ pub struct EpochExecExpectations {
     epoch_post_state_root: Buf32,
 }
 
+impl EpochExecExpectations {
+    /// Constructs expectations from the epoch's final post-state root.
+    pub fn new(epoch_post_state_root: Buf32) -> Self {
+        Self {
+            epoch_post_state_root,
+        }
+    }
+}
+
 /// Verifies a full-epoch transition, relying on a diff.
 ///
 /// The manifests are expected to be produced synthetically based on what's
@@ -405,30 +374,11 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,
     diff: D::Diff,
-    manifests: &OLL1ManifestContainer,
+    manifests: &[AsmManifest],
     exp: &EpochExecExpectations,
 ) -> ExecResult<()> {
-    // 1. Apply the initial processing by calling process_epoch_initial.
-    let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
-    chain_processing::process_epoch_initial(state, &init_ctx)?;
+    apply_da_epoch::<S, D>(state, epoch_info, diff, manifests)?;
 
-    // 2. Apply the DA diff.
-    D::apply_to_state(diff, state).map_err(|e| {
-        error!(
-            error = %e,
-            epoch = epoch_info.epoch(),
-            "DA scheme failed to apply diff during epoch verification"
-        );
-        ExecError::ChainIntegrity
-    })?;
-
-    // 3. As if it were the last block of an epoch, call process_block_manifests.
-    let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
-    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
-    manifest_processing::process_block_manifests(state, manifests, &term_ctx)?;
-    output.verify_logs_within_block_limit()?;
-
-    // 4. Verify the final state root.
     let final_state_root = state.compute_state_root()?;
     if final_state_root != exp.epoch_post_state_root {
         error!(
@@ -444,31 +394,41 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     Ok(())
 }
 
-/// Verifies the preseal state root of an epoch using a DA diff only.
+/// Reconstructs a full-epoch transition from a DA diff.
 ///
-/// Unlike [`verify_epoch_with_diff`], this does **not** replay manifest
-/// processing or check the final post-manifest state root. Use this when
-/// manifest processing has already been proven separately (e.g. during
-/// block-by-block execution in the checkpoint proof program) to avoid
-/// duplicate proving work inside the zkVM guest.
-pub fn verify_epoch_preseal_with_diff<S: IStateAccessor, D: DaScheme<S>>(
+/// Like [`verify_epoch_with_diff`] but without the post-state root check.
+///
+/// Use this only when the diff has already been verified to bind the post-state root via an
+/// upstream proof — e.g. the CSM-verified `CheckpointPayload` path that drives checkpoint sync.
+/// Do not use with peer-supplied or RPC-supplied diffs.
+pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,
     diff: D::Diff,
-    expected_preseal_root: &Buf32,
+    manifests: &[AsmManifest],
 ) -> ExecResult<()> {
-    // 1. Apply the initial processing by calling process_epoch_initial.
     let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
     chain_processing::process_epoch_initial(state, &init_ctx)?;
 
-    // 2. Apply the DA diff.
-    D::apply_to_state(diff, state).map_err(|_| ExecError::ChainIntegrity)?;
+    D::apply_to_state(diff, state).map_err(|e| {
+        error!(
+            error = %e,
+            epoch = epoch_info.epoch(),
+            "DA scheme failed to apply diff during epoch reconstruction"
+        );
+        ExecError::ChainIntegrity
+    })?;
 
-    // 3. Verify the pre-seal state root after applying the DA diff.
-    let preseal_state_root = state.compute_state_root()?;
-    if &preseal_state_root != expected_preseal_root {
-        return Err(ExecError::ChainIntegrity);
-    }
+    // As if it were the epoch terminal, replay the manifest buffering and
+    // then drain the buffered logs. The DA diff (step 2) reproduces the
+    // ledger/global tx effects; replaying the manifests here reproduces the
+    // intraepoch/MMR/epochal state and the deferred drain effects, which the
+    // DA diff does not carry.
+    let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
+    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+    manifest_processing::process_block_manifests(state, manifests)?;
+    manifest_processing::process_epoch_terminal(state, &term_ctx)?;
+    output.verify_logs_within_block_limit()?;
 
     Ok(())
 }
@@ -479,7 +439,7 @@ mod tests {
     use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_identifiers::AccountSerial;
     use strata_ol_chain_types_new::{
-        BlockFlags, OLBlockId, OLL1ManifestContainer, OLL1Update, OLLog, OLTxSegment,
+        BlockFlags, OLAsmManifestContainer, OLBlockId, OLLog, OLTxSegment,
     };
     use strata_ol_da::{
         AccountInit, AccountTypeInit, GlobalStateDiff, LedgerDiff, NewAccountEntry, OLDaPayloadV1,
@@ -502,8 +462,7 @@ mod tests {
     }
 
     fn compute_assembly_logs_root(logs: Vec<OLLog>) -> Buf32 {
-        BlockExecOutputs::new(BlockPostStateCommitments::Common(Buf32::zero()), logs)
-            .compute_block_logs_root()
+        BlockExecOutputs::new(Buf32::zero(), logs).compute_block_logs_root()
     }
 
     fn setup_epoch1_diff_state() -> (MemoryStateBaseLayer, EpochInfo) {
@@ -537,27 +496,11 @@ mod tests {
         decode_buf_exact(&encoded).expect("state diff should decode")
     }
 
-    fn compute_preseal_root_after_epoch_diff(
-        state: &MemoryStateBaseLayer,
-        epoch_info: &EpochInfo,
-        state_diff: StateDiff,
-    ) -> Buf32 {
-        let mut expected_state = state.clone();
-        let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
-        chain_processing::process_epoch_initial(&mut expected_state, &init_ctx)
-            .expect("epoch initial processing should succeed");
-        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(state_diff), &mut expected_state)
-            .expect("state-changing epoch diff should apply");
-        expected_state
-            .compute_state_root()
-            .expect("preseal state root should compute")
-    }
-
     fn compute_post_epoch_root_after_diff(
         state: &MemoryStateBaseLayer,
         epoch_info: &EpochInfo,
         state_diff: StateDiff,
-        manifests: &OLL1ManifestContainer,
+        manifests: &OLAsmManifestContainer,
     ) -> Buf32 {
         let mut expected_state = state.clone();
         let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
@@ -567,8 +510,10 @@ mod tests {
             .expect("state-changing epoch diff should apply");
         let output = ExecOutputBuffer::new_empty();
         let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
-        manifest_processing::process_block_manifests(&mut expected_state, manifests, &term_ctx)
-            .expect("manifest processing should succeed");
+        manifest_processing::process_block_manifests(&mut expected_state, manifests.manifests())
+            .expect("manifest buffering should succeed");
+        manifest_processing::process_epoch_terminal(&mut expected_state, &term_ctx)
+            .expect("epoch terminal processing should succeed");
         expected_state
             .compute_state_root()
             .expect("post-epoch state root should compute")
@@ -628,7 +573,10 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_block_structure_rejects_terminal_header_without_l1_update() {
+    fn test_verify_block_structure_accepts_terminal_header_without_manifests() {
+        // Terminality is now signalled by the header flag and is independent of
+        // manifest presence, so a terminal block carrying no manifests is
+        // structurally valid.
         let tx_segment = OLTxSegment::new(vec![]).expect("tx segment should be within limits");
         let body = OLBlockBody::new(tx_segment, None);
         let body_root = body.compute_hash_commitment();
@@ -646,19 +594,15 @@ mod tests {
             Buf32::zero(),
         );
 
-        assert!(matches!(
-            verify_block_structure(&header, &body)
-                .expect_err("inconsistent terminality should fail structure"),
-            ExecError::InconsistentBodyTerminality
-        ));
+        assert!(verify_block_structure(&header, &body).is_ok());
     }
 
     #[test]
-    fn test_verify_block_structure_rejects_nonterminal_header_with_l1_update() {
+    fn test_verify_block_structure_accepts_nonterminal_header_with_manifests() {
+        // Manifests may be included in any block, including non-terminal ones.
         let tx_segment = OLTxSegment::new(vec![]).expect("tx segment should be within limits");
-        let manifests = OLL1ManifestContainer::new(vec![]).expect("empty manifests should fit");
-        let l1_update = OLL1Update::new(Buf32::zero(), manifests);
-        let body = OLBlockBody::new(tx_segment, Some(l1_update));
+        let manifests = OLAsmManifestContainer::new(vec![]).expect("empty manifests should fit");
+        let body = OLBlockBody::new(tx_segment, Some(manifests));
         let body_root = body.compute_hash_commitment();
 
         let header = OLBlockHeader::new(
@@ -672,18 +616,14 @@ mod tests {
             Buf32::zero(),
         );
 
-        assert!(matches!(
-            verify_block_structure(&header, &body)
-                .expect_err("inconsistent terminality should fail structure"),
-            ExecError::InconsistentBodyTerminality
-        ));
+        assert!(verify_block_structure(&header, &body).is_ok());
     }
 
     #[test]
     fn test_verify_epoch_with_diff_final_root_mismatch() {
         let (mut state, epoch_info) = setup_epoch1_diff_state();
         let diff = OLDaPayloadV1::new(state_changing_epoch_diff());
-        let manifests = OLL1ManifestContainer::new(vec![]).expect("empty manifests");
+        let manifests = OLAsmManifestContainer::new(vec![]).expect("empty manifests");
         let exp = EpochExecExpectations {
             epoch_post_state_root: Buf32::from([9u8; 32]),
         };
@@ -692,7 +632,7 @@ mod tests {
             &mut state,
             &epoch_info,
             diff,
-            &manifests,
+            manifests.manifests(),
             &exp,
         );
         assert!(matches!(
@@ -703,18 +643,17 @@ mod tests {
 
     #[test]
     fn test_verify_epoch_with_diff_accepts_matching_root() {
-        // Non-empty manifest at the next L1 height (no logs) so
-        // `process_block_manifests` advances `last_l1_height` and updates the
-        // asm-manifests MMR — distinct from the preseal case which never
-        // reaches manifest processing. Per-log behavior is covered in
-        // `asm_manifests.rs`.
+        // Non-empty manifest at the next L1 height (no logs) so the replayed
+        // `buffer_block_manifests` advances `last_l1_height` and updates the
+        // asm-manifests MMR, and `process_epoch_terminal` advances the epoch.
+        // Per-log behavior is covered in `asm_manifests.rs`.
         let (mut state, epoch_info) = setup_epoch1_diff_state();
         let state_diff = state_changing_epoch_diff();
         let next_manifest = FixtureAsmManifestBuilder::new_at_height(state.last_l1_height() + 1)
             .with_variant(2)
             .build();
-        let manifests =
-            OLL1ManifestContainer::new(vec![next_manifest]).expect("manifest container should fit");
+        let manifests = OLAsmManifestContainer::new(vec![next_manifest])
+            .expect("manifest container should fit");
 
         let expected_post_root = compute_post_epoch_root_after_diff(
             &state,
@@ -730,49 +669,10 @@ mod tests {
             &mut state,
             &epoch_info,
             OLDaPayloadV1::new(state_diff),
-            &manifests,
+            manifests.manifests(),
             &exp,
         )
         .expect("matching post-epoch root should verify");
-    }
-
-    #[test]
-    fn test_verify_epoch_preseal_with_diff_accepts_matching_root() {
-        let (mut state, epoch_info) = setup_epoch1_diff_state();
-        let state_diff = state_changing_epoch_diff();
-        let expected_preseal_root = compute_preseal_root_after_epoch_diff(
-            &state,
-            &epoch_info,
-            duplicate_epoch_diff(&state_diff),
-        );
-        let diff = OLDaPayloadV1::new(state_diff);
-
-        verify_epoch_preseal_with_diff::<_, OLDaSchemeV1>(
-            &mut state,
-            &epoch_info,
-            diff,
-            &expected_preseal_root,
-        )
-        .expect("matching preseal root should verify");
-    }
-
-    #[test]
-    fn test_verify_epoch_preseal_with_diff_rejects_root_mismatch() {
-        let (mut state, epoch_info) = setup_epoch1_diff_state();
-        let diff = OLDaPayloadV1::new(state_changing_epoch_diff());
-        let wrong_preseal_root = Buf32::from([9u8; 32]);
-
-        let res = verify_epoch_preseal_with_diff::<_, OLDaSchemeV1>(
-            &mut state,
-            &epoch_info,
-            diff,
-            &wrong_preseal_root,
-        );
-
-        assert!(matches!(
-            res.expect_err("mismatched preseal root should fail epoch verification"),
-            ExecError::ChainIntegrity
-        ));
     }
 
     #[test]

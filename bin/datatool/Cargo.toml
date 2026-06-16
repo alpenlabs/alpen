@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 alpen-chainspec.workspace = true
 strata-asm-params.workspace = true
+strata-asm-proto-bridge-v1-types.workspace = true
 strata-btc-types.workspace = true
 strata-btc-verification.workspace = true
 strata-crypto.workspace = true
@@ -22,14 +23,12 @@ strata-key-derivation.workspace = true
 strata-l1-txfmt.workspace = true
 strata-ol-genesis.workspace = true
 strata-ol-params.workspace = true
-strata-params.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-alpen-acct.workspace = true
 strata-proofimpl-checkpoint.workspace = true
 strata-snark-acct-runtime.workspace = true
 
-borsh = { workspace = true, optional = true }
 sp1-verifier = { workspace = true, optional = true }
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
 zkaleido-sp1-groth16-verifier = { workspace = true, optional = true }
@@ -51,7 +50,6 @@ default = ["btc-client"]
 btc-client = ["dep:bitcoind-async-client", "dep:tokio"]
 sp1-builder = [
   "strata-sp1-guest-builder/sp1-dev",
-  "dep:borsh",
   "dep:sp1-verifier",
   "dep:zkaleido-sp1-groth16-verifier",
 ]

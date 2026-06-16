@@ -1,6 +1,6 @@
 //! Message parsing utilities for orchestration layer messages.
-// TODO this is some weird thing claude invented, I've seen it before but it seems tedious to keep
-// maintained, maybe we should get rid of it?
+// TODO(STR-3677): this is some weird thing claude invented, I've seen it before but it seems
+// tedious to keep maintained, maybe we should get rid of it?
 
 use strata_codec::decode_buf_exact;
 use strata_msg_fmt::{Msg, MsgRef};

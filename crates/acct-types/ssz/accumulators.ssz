@@ -1,3 +1,5 @@
+import strata_identifiers
+
 ### Claim that an entry exists in a linear accumulator at some index
 class AccumulatorClaim(Container):
     ### Index in the accumulator
@@ -5,3 +7,12 @@ class AccumulatorClaim(Container):
 
     ### Hash of the entry
     entry_hash: Bytes32
+
+### L1 block record committed into the OL L1 block refs MMR. Its tree-hash root
+### is the MMR leaf, so it is principally a ledger primitive (not snark-acct).
+class L1BlockRecord(Container):
+    ### Bitcoin block hash for the L1 block that contains DA reveal txs.
+    block_hash: strata_identifiers.RBuf32
+
+    ### Witness transaction Merkle root for that L1 block.
+    wtxids_root: strata_identifiers.RBuf32

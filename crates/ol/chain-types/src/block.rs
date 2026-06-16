@@ -11,8 +11,8 @@ use crate::{
     error::ChainTypesError,
     ssz_generated::ssz::{
         block::{
-            MAX_SEALING_MANIFEST_COUNT, MAX_TXS_PER_BLOCK, OLBlock, OLBlockBody, OLBlockCredential,
-            OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLTxSegment, SignedOLBlockHeader,
+            MAX_SEALING_MANIFEST_COUNT, MAX_TXS_PER_BLOCK, OLAsmManifestContainer, OLBlock,
+            OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
         },
         transaction::OLTransaction,
     },
@@ -145,10 +145,10 @@ impl OLBlockHeader {
 }
 
 impl OLBlockBody {
-    pub fn new(tx_segment: OLTxSegment, l1_update: Option<OLL1Update>) -> Self {
+    pub fn new(tx_segment: OLTxSegment, manifests: Option<OLAsmManifestContainer>) -> Self {
         Self {
             tx_segment: Some(tx_segment).into(),
-            l1_update: l1_update.into(),
+            manifests: manifests.into(),
         }
     }
 
@@ -157,9 +157,9 @@ impl OLBlockBody {
         Self::new(tx_segment, None)
     }
 
-    // TODO convert to builder?
-    pub fn set_l1_update(&mut self, l1_update: OLL1Update) {
-        self.l1_update = Some(l1_update).into();
+    // TODO(STR-3677): convert to builder?
+    pub fn set_manifests(&mut self, manifests: OLAsmManifestContainer) {
+        self.manifests = Some(manifests).into();
     }
 
     pub fn tx_segment(&self) -> Option<&OLTxSegment> {
@@ -169,9 +169,13 @@ impl OLBlockBody {
         }
     }
 
-    pub fn l1_update(&self) -> Option<&OLL1Update> {
-        match &self.l1_update {
-            ssz_types::Optional::Some(update) => Some(update),
+    /// Returns the ASM manifest container included in this block, if any.
+    ///
+    /// Manifests may appear in any block within an epoch; their presence does
+    /// not imply the block is an epoch terminal.
+    pub fn manifests(&self) -> Option<&OLAsmManifestContainer> {
+        match &self.manifests {
+            ssz_types::Optional::Some(manifests) => Some(manifests),
             ssz_types::Optional::None => None,
         }
     }
@@ -180,12 +184,6 @@ impl OLBlockBody {
     pub fn compute_hash_commitment(&self) -> Buf32 {
         let encoded = self.as_ssz_bytes();
         hash::raw(&encoded)
-    }
-
-    /// Checks if the body looks like an epoch terminal.  Ie. if the L1 update
-    /// is present.  This has to match the `IS_TERMINAL` flag in the header.
-    pub fn is_body_terminal(&self) -> bool {
-        self.l1_update().is_some()
     }
 }
 
@@ -205,24 +203,7 @@ impl OLTxSegment {
     }
 }
 
-impl OLL1Update {
-    pub fn new(preseal_state_root: Buf32, manifest_cont: OLL1ManifestContainer) -> Self {
-        Self {
-            preseal_state_root,
-            manifest_cont,
-        }
-    }
-
-    pub fn preseal_state_root(&self) -> &Buf32 {
-        &self.preseal_state_root
-    }
-
-    pub fn manifest_cont(&self) -> &OLL1ManifestContainer {
-        &self.manifest_cont
-    }
-}
-
-impl OLL1ManifestContainer {
+impl OLAsmManifestContainer {
     pub fn new(manifests: Vec<AsmManifest>) -> Result<Self, ChainTypesError> {
         let provided = manifests.len();
         Ok(Self {
@@ -250,8 +231,8 @@ mod tests {
     use crate::{
         block_flags::BlockFlags,
         ssz_generated::ssz::block::{
-            OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLL1ManifestContainer,
-            OLL1Update, OLTxSegment, SignedOLBlockHeader,
+            OLAsmManifestContainer, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader,
+            OLTxSegment, SignedOLBlockHeader,
         },
         test_utils::{
             ol_block_body_strategy, ol_block_header_strategy, ol_block_strategy,
@@ -277,31 +258,22 @@ mod tests {
         }
     }
 
-    mod l1_update {
-        use strata_identifiers::test_utils::buf32_strategy;
-
+    mod ol_manifest_container {
         use super::*;
 
-        fn l1_update_non_option_strategy() -> impl Strategy<Value = OLL1Update> {
-            buf32_strategy().prop_map(|preseal_state_root| OLL1Update {
-                preseal_state_root,
-                manifest_cont: OLL1ManifestContainer::new(vec![])
-                    .expect("empty manifest should succeed"),
-            })
+        fn manifest_container_strategy() -> impl Strategy<Value = OLAsmManifestContainer> {
+            Just(OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed"))
         }
 
-        ssz_proptest!(OLL1Update, l1_update_non_option_strategy());
+        ssz_proptest!(OLAsmManifestContainer, manifest_container_strategy());
 
         #[test]
-        fn test_zero_height() {
-            let update = OLL1Update {
-                preseal_state_root: Buf32::zero(),
-                manifest_cont: OLL1ManifestContainer::new(vec![])
-                    .expect("empty manifest should succeed"),
-            };
-            let encoded = update.as_ssz_bytes();
-            let decoded = OLL1Update::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(update, decoded);
+        fn test_empty_container() {
+            let container =
+                OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed");
+            let encoded = container.as_ssz_bytes();
+            let decoded = OLAsmManifestContainer::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(container, decoded);
         }
     }
 
@@ -348,11 +320,9 @@ mod tests {
                         .expect("transactions must fit within SSZ max length"),
                 })
                 .into(),
-                l1_update: Some(OLL1Update {
-                    preseal_state_root: Buf32::zero(),
-                    manifest_cont: OLL1ManifestContainer::new(vec![])
-                        .expect("empty manifest should succeed"),
-                })
+                manifests: Some(
+                    OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed"),
+                )
                 .into(),
             };
             let encoded = body.as_ssz_bytes();
@@ -391,11 +361,9 @@ mod tests {
                             .expect("transactions must fit within SSZ max length"),
                     })
                     .into(),
-                    l1_update: Some(OLL1Update {
-                        preseal_state_root: Buf32::zero(),
-                        manifest_cont: OLL1ManifestContainer::new(vec![])
-                            .expect("empty manifest should succeed"),
-                    })
+                    manifests: Some(
+                        OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed"),
+                    )
                     .into(),
                 },
             };

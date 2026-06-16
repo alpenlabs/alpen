@@ -1,6 +1,8 @@
 //! Reth node for the Alpen codebase.
 
 mod dummy_ol_client;
+#[cfg(feature = "sequencer")]
+mod gas_data_provider;
 mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
@@ -19,7 +21,8 @@ use std::{env, process, sync::Arc, time::Duration};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::{
-    chain_status_checked, BatchStorage, BlockNumHash, ExecBlockStorage, OLClient, Storage,
+    chain_status_checked, BatchStorage, BlockNumHash, ChunkStorage, ExecBlockStorage, OLClient,
+    Storage,
 };
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
@@ -36,6 +39,7 @@ use alpen_ee_sequencer::{
     block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
 };
 use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
+use alpen_reth_evm::evm::AlpenEvmFactory;
 #[cfg(feature = "sequencer")]
 use alpen_reth_exex::{AccessedStateGenerator, StateDiffGenerator};
 use alpen_reth_node::{
@@ -60,6 +64,7 @@ use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
+use strata_bridge_params::{BridgeParams, DEFAULT_DENOMINATION_SATS, DEFAULT_MAX_WITHDRAWAL_SATS};
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
     broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
@@ -67,7 +72,10 @@ use strata_btcio::{
 };
 use strata_common::healthz::{start_health_check_server, HealthCheckState};
 #[cfg(feature = "sequencer")]
-use strata_config::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
+use strata_config::btcio::{
+    fee_rate_from_sat_per_vb, fee_rate_to_sat_per_vb, FeePolicy, L1FeePolicyConfig,
+    MempoolExplorerFeePolicy, WriterConfig,
+};
 use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
 use strata_logging::{init_logging_from_config, LoggingInitConfig};
@@ -78,8 +86,9 @@ use tracing::{error, info};
 
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
+    pub(super) use alloy_primitives::{address, Address};
     pub(super) use alpen_ee_common::{ChunkWitnessExtractFn, ChunkWitnessRecord};
-    pub(super) use alpen_ee_da::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
+    pub(super) use alpen_ee_da_provider::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
     pub(super) use alpen_reth_witness::RangeWitnessExtractor;
     pub(super) use strata_paas::{
         ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig, TaskStore,
@@ -95,10 +104,13 @@ mod sequencer_imports {
         header_summary::RethHeaderSummaryProvider,
         payload_builder::AlpenRethPayloadEngine,
         prover::{
-            AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec, EeBatchProofDbManager,
-            EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
+            AcctRangeWitnessFn, AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec,
+            EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
         },
     };
+
+    pub(super) const DEFAULT_BENEFICIARY_ADDRESS: Address =
+        address!("5400000000000000000000000000000000000010");
 }
 
 #[cfg(feature = "sequencer")]
@@ -126,6 +138,10 @@ const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
 /// requests.
 #[cfg(all(feature = "sequencer", feature = "sp1"))]
 const DEFAULT_SP1_DEADLINE_SECS: u64 = 4 * 60 * 60;
+
+/// Default capacity for the batch builder → chunk builder event channel.
+#[cfg(feature = "sequencer")]
+const DEFAULT_BATCH_EVENT_CHANNEL_CAPACITY: usize = 64;
 
 fn main() {
     sigsegv_handler::install();
@@ -162,13 +178,20 @@ fn main() {
 
             // --- CONFIGS ---
 
+            // Resolve withdrawal cap: 0 → no cap, omitted → default 10 BTC.
+            let resolved_max_withdrawal = match ext.max_withdrawal_amount {
+                Some(0) => None,
+                Some(v) => Some(v),
+                None => Some(DEFAULT_MAX_WITHDRAWAL_SATS),
+            };
+
             let datadir = builder.config().datadir().data_dir().to_path_buf();
 
-            // TODO: read config, params from file
+            // TODO(STR-2982): read config, params from file
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
-            // TODO: this must also be read from the params file
-            // TODO: define how we want to deterministically generate the AccountId
+            // TODO(STR-3675): this must also be read from the params file
+            // TODO(STR-3675): define how we want to deterministically generate the AccountId
             const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
 
             info!(blockhash=%genesis_info.blockhash(), "EE genesis info");
@@ -355,8 +378,13 @@ fn main() {
             .await
             .map_err(|e| eyre::eyre!("failed to start ol tracker service: {e}"))?;
 
+            let evm_factory = AlpenEvmFactory::from_bridge_params(
+                &BridgeParams::new(ext.bridge_denomination, resolved_max_withdrawal)
+                    .expect("invalid withdrawal params"),
+            );
             let node_args = AlpenNodeArgs {
                 sequencer_http: ext.sequencer_http.clone(),
+                evm_factory,
             };
 
             let consensus_watcher = ol_tracker.consensus_watcher();
@@ -405,9 +433,11 @@ fn main() {
 
             node_builder = node_builder.extend_rpc_modules({
                 let consensus_watcher = consensus_watcher.clone();
+                let storage = storage.clone();
                 move |ctx| {
                     let provider = ctx.provider().clone();
-                    let ee_rpc_server = EeRpcServer::new(provider, consensus_watcher);
+                    let ee_rpc_server =
+                        EeRpcServer::new(provider, consensus_watcher, storage.clone());
                     ctx.modules.merge_configured(ee_rpc_server.into_rpc())?;
                     Ok(())
                 }
@@ -465,11 +495,21 @@ fn main() {
                 use alpen_ee_sequencer::{
                     backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
                     create_batch_builder, create_batch_lifecycle_task,
-                    create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
+                    create_update_submitter_task,
+                    sealing_policy::{
+                        block_count_policy::{BlockCountDataProvider, FixedBlockCountSealing},
+                        gas_limit_policy::MaxGasSealing,
+                        or_policy::OrSealing,
+                    },
+                    BatchBuilderEvent,
                 };
+
+                use crate::gas_data_provider::RethGasDataProvider;
+
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
                     node.beacon_engine_handle.clone(),
+                    ext.beneficiary_address,
                 ));
 
                 let exec_chain_handle = services::exec_chain::start_exec_chain_service(
@@ -547,13 +587,13 @@ fn main() {
                 // a panic in either path warrants taking the node down
                 // rather than silently producing un-provable chunks.
                 let chunk_witness_backfill_task = {
-                    let batch_storage: Arc<dyn BatchStorage> = storage.clone();
+                    let chunk_storage: Arc<dyn ChunkStorage> = storage.clone();
                     let witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
                         storage.clone();
                     let tx = chunk_witness_tx.clone();
                     async move {
                         if let Err(e) = backfill_missing_chunk_witnesses(
-                            batch_storage.as_ref(),
+                            chunk_storage.as_ref(),
                             witness_store.as_ref(),
                             &tx,
                         )
@@ -563,6 +603,12 @@ fn main() {
                         }
                     }
                 };
+
+                // Channel from batch builder → chunk builder.
+                let (batch_event_tx, batch_event_rx) = mpsc::channel::<BatchBuilderEvent>(
+                    ext.batch_event_channel_capacity
+                        .unwrap_or(DEFAULT_BATCH_EVENT_CHANNEL_CAPACITY),
+                );
 
                 let (batch_builder_handle, batch_builder_task) = create_batch_builder(
                     latest_batch.id(),
@@ -574,7 +620,7 @@ fn main() {
                     storage.clone(),
                     storage.clone(),
                     exec_chain_handle.clone(),
-                    Some(chunk_witness_tx),
+                    Some(batch_event_tx),
                 );
 
                 // --- DA pipeline ---
@@ -639,7 +685,7 @@ fn main() {
                     eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair")
                 })?;
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
-                    btc_client,
+                    btc_client.clone(),
                     writer_config,
                     btcio_params,
                     sequencer_address,
@@ -664,8 +710,9 @@ fn main() {
                     blob_provider.clone(),
                     envelope_handle,
                     broadcast_ops,
+                    btc_client.clone(),
                     magic_bytes,
-                ));
+                )?);
 
                 // Spawn btcio tasks.
                 node.task_executor
@@ -696,28 +743,45 @@ fn main() {
                     Arc::new(EeChunkReceiptStore::new(prover_db.clone()));
                 let batch_proofs = Arc::new(EeBatchProofDbManager::new(prover_db));
                 let batch_storage_dyn: Arc<dyn BatchStorage> = storage.clone();
+                let chunk_storage_dyn: Arc<dyn ChunkStorage> = storage.clone();
 
                 let genesis = {
                     use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
                     ext.custom_chain.genesis().config.clone().into_rsp()
                 };
 
+                let bridge_params =
+                    BridgeParams::new(ext.bridge_denomination, resolved_max_withdrawal)
+                        .expect("invalid withdrawal params");
+
                 let chunk_builder = ProverBuilder::new(ChunkSpec::new(
-                    batch_storage_dyn.clone(),
+                    chunk_storage_dyn.clone(),
                     storage.clone(),
                     genesis.clone(),
+                    bridge_params,
                 ))
                 .task_store(task_store.clone())
                 .receipt_store(chunk_receipts.clone())
-                .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
+                .receipt_hook(ChunkReceiptHook::new(chunk_storage_dyn.clone()))
                 .retry(RetryConfig::default());
+
+                let acct_range_witness_fn: Arc<AcctRangeWitnessFn> = {
+                    let extractor = range_witness_extractor.clone();
+                    Arc::new(move |first_block, last_block| {
+                        extractor.extract_range_witness(first_block, last_block)
+                    })
+                };
 
                 let acct_builder = ProverBuilder::new(AcctSpec::new(
                     chunk_receipts.clone(),
                     batch_storage_dyn.clone(),
+                    chunk_storage_dyn.clone(),
                     storage.clone(),
-                    ol_client.clone(),
+                    btc_client.clone(),
+                    dbs.witness_db(),
+                    acct_range_witness_fn,
                     genesis,
+                    bridge_params,
                 ))
                 .task_store(task_store)
                 .receipt_hook(AcctReceiptHook::new(
@@ -786,7 +850,7 @@ fn main() {
                 let batch_prover = Arc::new(PaasBatchProver::new(
                     chunk_handle,
                     acct_handle,
-                    batch_storage_dyn,
+                    chunk_storage_dyn,
                     batch_proofs,
                 ));
 
@@ -825,6 +889,54 @@ fn main() {
                     ),
                 );
 
+                // --- Chunk builder service ---
+                let chunk_block_count = ext
+                    .chunk_sealing_block_count
+                    .unwrap_or(ext.batch_sealing_block_count);
+                let genesis_blocknumhash =
+                    BlockNumHash::new(genesis_info.blockhash().0.into(), genesis_info.blocknum());
+
+                // Validate --chunk-sealing-gas-limit if configured.
+                //
+                // EIP-1559 lets the per-block gas limit drift from genesis by
+                // ±1/1024 per block, so the actual block gas limit at runtime
+                // may be slightly higher than genesis. We use 2× the genesis
+                // gas limit as a conservative floor to accommodate this drift
+                // while still catching obvious misconfigurations.
+                if let Some(configured) = ext.chunk_sealing_gas_limit {
+                    let min_chunk_gas = ext.custom_chain.genesis().gas_limit.saturating_mul(2);
+                    eyre::ensure!(
+                        configured >= min_chunk_gas,
+                        "--chunk-sealing-gas-limit ({configured}) is below the minimum \
+                         ({min_chunk_gas}, 2× genesis block gas limit {}). A single block \
+                         can use up to the per-block gas limit, so the chunk budget must \
+                         be large enough to always fit at least one block.",
+                        ext.custom_chain.genesis().gas_limit,
+                    );
+                }
+
+                // u64::MAX effectively disables the gas policy while keeping a
+                // single monomorphic code path (no dyn / enum branching).
+                let chunk_gas_limit = ext.chunk_sealing_gas_limit.unwrap_or(u64::MAX);
+                let chunk_sealing_policy = OrSealing::new(
+                    FixedBlockCountSealing::new(chunk_block_count),
+                    MaxGasSealing::new(chunk_gas_limit),
+                );
+
+                services::chunk_builder::start_chunk_builder_service(
+                    genesis_blocknumhash,
+                    storage.clone(),
+                    storage.clone(),
+                    storage.clone(),
+                    chunk_sealing_policy,
+                    RethGasDataProvider::new(node.provider.clone()),
+                    Some(chunk_witness_tx),
+                    batch_event_rx,
+                    &service_executor,
+                )
+                .await
+                .map_err(|e| eyre::eyre!("failed to launch chunk builder service: {e}"))?;
+
                 node.task_executor
                     .spawn_critical("ee_batch_builder", batch_builder_task);
                 node.task_executor
@@ -835,8 +947,6 @@ fn main() {
                     .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
                 node.task_executor
                     .spawn_critical("ee_update_submitter", update_submitter_task);
-                // TODO: proof generation
-                // TODO: post update to OL
             }
 
             health_check_state.mark_ready();
@@ -991,6 +1101,37 @@ pub struct AdditionalConfig {
     #[arg(long, default_value = "100")]
     pub batch_sealing_block_count: u64,
 
+    /// Number of blocks per chunk before sealing.
+    /// Defaults to `batch_sealing_block_count` if not set.
+    #[arg(long, required = false)]
+    pub chunk_sealing_block_count: Option<u64>,
+
+    /// Cumulative gas limit per chunk before sealing.
+    /// When set, a chunk is sealed when either the block count or the gas
+    /// limit is reached (whichever comes first). When omitted, only the
+    /// block count policy is used.
+    #[arg(long, required = false)]
+    pub chunk_sealing_gas_limit: Option<u64>,
+
+    /// Capacity of the batch builder → chunk builder event channel.
+    /// Defaults to 64 if not set.
+    #[cfg(feature = "sequencer")]
+    #[arg(long, required = false)]
+    pub batch_event_channel_capacity: Option<usize>,
+
+    /// Bridge denomination in satoshis (1 BTC default).
+    #[arg(long, default_value_t = DEFAULT_DENOMINATION_SATS)]
+    pub bridge_denomination: u64,
+
+    /// Maximum withdrawal amount in satoshis.
+    ///
+    /// When omitted, defaults to 1_000_000_000 (10 BTC) at runtime.
+    /// Pass 0 to disable the cap entirely. Kept as `Option` (no
+    /// `default_value`) so we can distinguish "not set" (→ safe default)
+    /// from an explicit value.
+    #[arg(long)]
+    pub max_withdrawal_amount: Option<u64>,
+
     /// Use the zkaleido `NativeHost` for the EE chunk + acct provers
     /// instead of the SP1 remote host.
     ///
@@ -1028,7 +1169,7 @@ pub struct AdditionalConfig {
     /// Fixed fee rate in sat/vB. Required when policy is `fixed`.
     #[cfg(feature = "sequencer")]
     #[arg(long)]
-    pub btcio_fee_rate: Option<u64>,
+    pub btcio_fee_rate: Option<f64>,
 
     /// mempool.space-compatible base URL. Required when policy is `mempool`.
     #[cfg(feature = "sequencer")]
@@ -1049,6 +1190,10 @@ pub struct AdditionalConfig {
     #[cfg(feature = "sequencer")]
     #[arg(long, default_value_t = DEFAULT_BTCIO_RETRY_INTERVAL_MS)]
     pub btcio_retry_interval: u64,
+
+    #[cfg(feature = "sequencer")]
+    #[arg(long, default_value_t = DEFAULT_BENEFICIARY_ADDRESS)]
+    pub beneficiary_address: Address,
 }
 
 impl AdditionalConfig {
@@ -1224,9 +1369,11 @@ fn resolve_writer_config(ext: &AdditionalConfig) -> eyre::Result<WriterConfig> {
             conf_target: ext.btcio_conf_target,
         },
         BtcioFeePolicyArg::Fixed => {
-            let fee_rate = ext.btcio_fee_rate.ok_or_else(|| {
+            let fee_rate_sat_per_vb = ext.btcio_fee_rate.ok_or_else(|| {
                 eyre::eyre!("--btcio-fee-rate is required when --btcio-fee-policy=fixed")
             })?;
+            let fee_rate = fee_rate_from_sat_per_vb(fee_rate_sat_per_vb)
+                .map_err(|err| eyre::eyre!("invalid --btcio-fee-rate: {err}"))?;
             FeePolicy::Fixed { fee_rate }
         }
         BtcioFeePolicyArg::Mempool => {
@@ -1261,7 +1408,7 @@ fn log_writer_config(cfg: &WriterConfig) {
             info!(
                 target: "alpen-client",
                 policy = "fixed",
-                fee_rate_sat_vb = fee_rate,
+                fee_rate_sat_vb = fee_rate_to_sat_per_vb(*fee_rate),
                 "btcio writer configured",
             );
         }
@@ -1284,11 +1431,13 @@ fn log_writer_config(cfg: &WriterConfig) {
 
 #[cfg(all(test, feature = "sequencer"))]
 mod resolve_writer_config_tests {
+    use bitcoind_async_client::corepc_types::bitcoin::FeeRate;
+
     use super::*;
 
     fn args(
         policy: BtcioFeePolicyArg,
-        fee_rate: Option<u64>,
+        fee_rate: Option<f64>,
         mempool_url: Option<&str>,
     ) -> AdditionalConfig {
         let argv = ["alpen-client", "--sequencer-pubkey", &"0".repeat(64)];
@@ -1307,8 +1456,24 @@ mod resolve_writer_config_tests {
 
     #[test]
     fn fixed_one_sat_vb() {
-        let cfg = resolve_writer_config(&args(BtcioFeePolicyArg::Fixed, Some(1), None)).unwrap();
-        assert_eq!(cfg.fee_policy(), &FeePolicy::Fixed { fee_rate: 1 });
+        let cfg = resolve_writer_config(&args(BtcioFeePolicyArg::Fixed, Some(1.0), None)).unwrap();
+        assert_eq!(
+            cfg.fee_policy(),
+            &FeePolicy::Fixed {
+                fee_rate: FeeRate::from_sat_per_vb_u32(1)
+            }
+        );
+    }
+
+    #[test]
+    fn fixed_half_sat_vb() {
+        let cfg = resolve_writer_config(&args(BtcioFeePolicyArg::Fixed, Some(0.5), None)).unwrap();
+        assert_eq!(
+            cfg.fee_policy(),
+            &FeePolicy::Fixed {
+                fee_rate: FeeRate::from_sat_per_kwu(125)
+            }
+        );
     }
 
     #[test]

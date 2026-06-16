@@ -9,8 +9,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub(crate) use strata_checkpoint_types::CheckpointProofTask as CheckpointTask;
 use strata_identifiers::{Epoch, EpochCommitment};
+use strata_ol_params::BridgeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_ol_stf::execute_block_batch_preseal;
+use strata_ol_stf::execute_block_batch_predrain;
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::NodeStorage;
@@ -23,11 +24,15 @@ use super::errors::ProverError;
 #[derive(Clone)]
 pub(crate) struct CheckpointSpec {
     storage: Arc<NodeStorage>,
+    bridge_params: BridgeParams,
 }
 
 impl CheckpointSpec {
-    pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
-        Self { storage }
+    pub(crate) fn new(storage: Arc<NodeStorage>, bridge_params: BridgeParams) -> Self {
+        Self {
+            storage,
+            bridge_params,
+        }
     }
 }
 
@@ -40,9 +45,10 @@ impl ProofSpec for CheckpointSpec {
         let commitment = task.0;
         debug!(epoch = %commitment.epoch, "fetching checkpoint proof input");
         let storage = Arc::clone(&self.storage);
+        let bridge_params = self.bridge_params;
         // All storage access is blocking; hop to a blocking thread so we
         // don't stall the async runtime while reading blocks and state.
-        spawn_blocking(move || fetch_input_blocking(storage, commitment))
+        spawn_blocking(move || fetch_input_blocking(storage, commitment, bridge_params))
             .await
             .map_err(|e| PaasError::TransientFailure(format!("input fetch join: {e}")))?
             .map_err(PaasError::from)
@@ -52,6 +58,7 @@ impl ProofSpec for CheckpointSpec {
 fn fetch_input_blocking(
     storage: Arc<NodeStorage>,
     task_commitment: EpochCommitment,
+    bridge_params: BridgeParams,
 ) -> Result<CheckpointProverInput, ProverError> {
     let epoch: Epoch = task_commitment.epoch;
     let epoch_index = u64::from(epoch);
@@ -147,7 +154,7 @@ fn fetch_input_blocking(
     let da_state_diff_bytes = {
         let mut da_state =
             DaAccumulatingState::new(MemoryStateBaseLayer::new((*start_state).clone()));
-        execute_block_batch_preseal(&mut da_state, &blocks, &parent)
+        execute_block_batch_predrain(&mut da_state, &blocks, &parent, bridge_params)
             .map_err(|e| ProverError::DaComputation(e.to_string()))?;
         da_state
             .take_completed_epoch_da_blob()
@@ -169,5 +176,6 @@ fn fetch_input_blocking(
         blocks,
         parent,
         da_state_diff_bytes,
+        bridge_params,
     })
 }
