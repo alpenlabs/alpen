@@ -193,7 +193,6 @@ pub async fn block_builder_task<
     }
 }
 
-#[expect(clippy::too_many_arguments, reason = "block-production wiring")]
 async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
     next_block_target: &BlockTarget,
     config: &BlockBuilderConfig,

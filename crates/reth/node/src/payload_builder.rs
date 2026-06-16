@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{io, sync::Arc};
 
 use alloy_consensus::{Header, Transaction};
 use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
@@ -320,9 +320,9 @@ where
         block_rlp,
         parent_header.header(),
     )
-    .map_err(|e| PayloadBuilderError::other(std::io::Error::other(format!("witness capture: {e}"))))?;
+    .map_err(|e| PayloadBuilderError::other(io::Error::other(format!("witness capture: {e}"))))?;
     let block_witness = captured.encode_record().map_err(|e| {
-        PayloadBuilderError::other(std::io::Error::other(format!("witness encode: {e}")))
+        PayloadBuilderError::other(io::Error::other(format!("witness encode: {e}")))
     })?;
 
     let requests = chain_spec

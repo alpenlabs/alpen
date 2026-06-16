@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -10,7 +11,6 @@ use alpen_ee_common::{
     sats_to_gwei, BlockWitnessStore, EnginePayload, ExecutionEngine, ExecutionEngineError,
     PayloadBuildAttributes, PayloadBuilderEngine,
 };
-use strata_acct_types::Hash;
 use alpen_ee_engine::AlpenRethExecEngine;
 use alpen_reth_node::{
     AlpenBuiltPayload, AlpenEngineTypes, AlpenPayloadAttributes, AlpenPayloadBuilderAttributes,
@@ -18,6 +18,7 @@ use alpen_reth_node::{
 use eyre::{eyre, Context};
 use reth_node_builder::{ConsensusEngineHandle, PayloadBuilderAttributes, PayloadKind};
 use reth_payload_builder::{PayloadBuilderError, PayloadBuilderHandle};
+use strata_acct_types::Hash;
 use tokio::time::sleep;
 use tracing::{debug, info, info_span, warn, Instrument};
 
@@ -69,8 +70,8 @@ pub(crate) struct AlpenRethPayloadEngine {
     block_witness_store: Arc<dyn BlockWitnessStore>,
 }
 
-impl std::fmt::Debug for AlpenRethPayloadEngine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for AlpenRethPayloadEngine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AlpenRethPayloadEngine")
             .field("beneficiary_address", &self.beneficiary_address)
             .finish_non_exhaustive()
