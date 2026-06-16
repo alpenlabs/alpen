@@ -15964,6 +15964,7 @@ dependencies = [
  "ssz_types",
  "strata-acct-types",
  "strata-asm-common",
+ "strata-asm-proto-checkpoint-types",
  "strata-codec",
  "strata-crypto",
  "strata-identifiers",

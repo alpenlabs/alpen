@@ -41,12 +41,12 @@ use strata_identifiers::{
 };
 use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::*;
-use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
+use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::{
-    ClaimList, LogDecodeError, OLBlock, OLBlockBody, OLLog, OLLogType, OLTransaction,
-    OLTransactionData, OLTxSegment, ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData,
-    SauTxPayload, SauTxProofState, SauTxUpdateData, SignedOLBlockHeader,
-    SimpleWithdrawalIntentLogData, TransactionPayload, TxProofs, test_utils as ol_test_utils,
+    ClaimList, OLBlock, OLBlockBody, OLLog, OLLogDecodeError, OLTransaction, OLTransactionData,
+    OLTxSegment, ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData, SauTxPayload,
+    SauTxProofState, SauTxUpdateData, SignedOLBlockHeader, SimpleWithdrawalIntentLogData,
+    TransactionPayload, TxProofs, test_utils as ol_test_utils,
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
@@ -1496,17 +1496,17 @@ pub(crate) fn extract_withdrawal_intents(
     output: &ConstructBlockOutput<MemoryStateBaseLayer>,
 ) -> Vec<(
     AccountSerial,
-    Result<SimpleWithdrawalIntentLogData, LogDecodeError>,
+    Result<SimpleWithdrawalIntentLogData, OLLogDecodeError>,
 )> {
     output
         .accumulated_da
         .logs()
         .iter()
         .filter_map(|log| {
-            let msg = MsgRef::try_from(log.payload()).ok()?;
-            match SimpleWithdrawalIntentLogData::try_decode_log(&msg) {
-                // A type mismatch just means this log isn't a withdrawal intent; skip it.
-                Err(LogDecodeError::TypeMismatch(..)) => None,
+            match log.try_into_log::<SimpleWithdrawalIntentLogData>() {
+                // A type mismatch (or a non-envelope payload) just means this log isn't a
+                // withdrawal intent; skip it.
+                Err(OLLogDecodeError::TypeMismatch { .. } | OLLogDecodeError::Envelope(_)) => None,
                 result => Some((log.account_serial(), result)),
             }
         })
