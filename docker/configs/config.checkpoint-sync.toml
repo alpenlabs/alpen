@@ -23,6 +23,9 @@ network = "signet"
 retry_count = 255
 retry_interval = 5_000
 
+[btcio]
+l1_reorg_safe_depth = 4
+
 [btcio.reader]
 client_poll_dur_ms = 10_000
 
@@ -35,9 +38,3 @@ bundle_interval_ms = 500
 
 [btcio.broadcaster]
 poll_interval_ms = 5_000
-
-[sync]
-l1_follow_distance = 6
-max_reorg_depth = 4
-client_poll_dur_ms = 2000
-client_checkpoint_interval = 10
