@@ -357,13 +357,6 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         warn!(%fork_block, %incoming, "reorg detected; rewinding to fork point");
 
-        // Delete the orphaned branch's rows so a restart can't bootstrap from an
-        // orphan that's above the canonical tip.
-        let orphans = self.recent_asm_blocks.split_off(fork_idx + 1);
-        for orphan in &orphans {
-            self.ctx.del_client_state(orphan)?;
-        }
-
         // It is expected to have client state persisted below the tip, which means below the fork
         // point as well.
         let persisted = self.ctx.get_client_state_at(&fork_block)?;
@@ -375,16 +368,25 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             })?;
         let derived = derive_state(&self.ctx, &fork_block, &fork_clstate)?;
         let new_clstate = derived.new_clstate;
-        self.confirmed_epoch = new_clstate.get_last_epoch();
-        self.finalized_epoch = new_clstate.get_declared_final_epoch();
-        self.observed_checkpoints = derived.observed_checkpoints;
 
-        // Re-persist at the fork to overwrite the orphaned branch's row, but
-        // publish only when the re-derived state actually changed.
+        // Re-persist at the fork to overwrite the orphaned branch's row. After
+        // this succeeds, durable storage reflects the rewound tip.
         self.ctx.put_client_state_update(
             &fork_block,
             ClientUpdateOutput::new_state(new_clstate.clone()),
         )?;
+
+        // Delete the orphaned branch's rows so a restart can't bootstrap from an
+        // orphan that's above the canonical tip.
+        for orphan in &self.recent_asm_blocks[fork_idx + 1..] {
+            self.ctx.del_client_state(orphan)?;
+        }
+
+        // Persistence done; commit the rewind to in-memory state.
+        self.recent_asm_blocks.truncate(fork_idx + 1);
+        self.confirmed_epoch = new_clstate.get_last_epoch();
+        self.finalized_epoch = new_clstate.get_declared_final_epoch();
+        self.observed_checkpoints = derived.observed_checkpoints;
         if persisted.as_ref() != Some(&new_clstate) {
             self.ctx
                 .publish_client_state(new_clstate.clone(), fork_block);
