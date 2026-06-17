@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 
-use crate::{BatchId, Proof, ProofId};
+use crate::{BatchId, ChunkId, Proof, ProofId};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ProofGenerationStatus {
     /// Proof generation requested and proof is getting generated.
     /// Temporary failure are retried internally while status remains pending.
@@ -16,15 +16,23 @@ pub enum ProofGenerationStatus {
     Failed { reason: String },
 }
 
-/// Interface between Prover and Batch assembly
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
-pub trait BatchProver: Sized {
-    /// Request proof generation for batch_id.
-    /// Ok(()) -> proof generation has been queued
+pub trait ChunkProver {
+    /// Request proof generation for a sealed chunk.
+    async fn request_proof_generation(&self, chunk_id: ChunkId) -> eyre::Result<()>;
+
+    /// Check the prover task status for a chunk proof.
+    async fn check_proof_status(&self, chunk_id: ChunkId) -> eyre::Result<ProofGenerationStatus>;
+}
+
+#[cfg_attr(feature = "test-utils", mockall::automock)]
+#[async_trait]
+pub trait BatchProver {
+    /// Request acct proof generation for batch_id.
     async fn request_proof_generation(&self, batch_id: BatchId) -> eyre::Result<()>;
 
-    /// Check if proof is generated for batch_id.
+    /// Check if acct proof is generated for batch_id.
     ///
     /// The generated proof is expected to be persisted, available to be fetched at any time
     /// afterwards with the returned proof_id.

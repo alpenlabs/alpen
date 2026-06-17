@@ -4,6 +4,7 @@ mod batch_builder;
 mod batch_lifecycle;
 mod block_builder;
 pub mod chunk_builder;
+mod chunk_lifecycle;
 mod ol_chain_tracker;
 pub mod sealing_policy;
 
@@ -19,6 +20,7 @@ pub use batch_lifecycle::{
     create_batch_lifecycle_task, init_lifecycle_state, BatchLifecycleHandle, BatchLifecycleState,
 };
 pub use block_builder::{block_builder_task, BlockBuilderConfig};
+pub use chunk_lifecycle::chunk_lifecycle_task;
 pub use ol_chain_tracker::{
     build_ol_chain_tracker, init_ol_chain_tracker_state, InboxMessages, OLChainTrackerHandle,
     OLChainTrackerState,
