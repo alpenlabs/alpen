@@ -130,7 +130,7 @@ mod sequencer_imports {
         payload_builder::AlpenRethPayloadEngine,
         prover::{
             AcctRangeWitnessFn, AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec,
-            EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
+            EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager, PaasEeProver,
         },
     };
 
@@ -546,7 +546,7 @@ fn main() {
 
                 use alpen_ee_common::{require_latest_batch, BlockNumHash};
                 use alpen_ee_sequencer::{
-                    create_batch_builder, create_batch_lifecycle_task,
+                    chunk_lifecycle_task, create_batch_builder, create_batch_lifecycle_task,
                     create_update_submitter_task,
                     sealing_policy::{
                         block_count_policy::{BlockCountDataProvider, FixedBlockCountSealing},
@@ -792,7 +792,7 @@ fn main() {
                 ))
                 .retry(RetryConfig::default());
 
-                let batch_prover = launch_validated_ee_batch_prover(
+                let ee_prover = launch_validated_ee_prover(
                     ol_client.as_ref(),
                     &service_executor,
                     EeProverBuilders {
@@ -819,15 +819,17 @@ fn main() {
                     batch_lifecycle_state,
                     batch_builder_handle.latest_batch_watcher(),
                     batch_da_provider,
-                    batch_prover.clone(),
+                    ee_prover.clone(),
                     storage.clone(),
                 );
+
+                let chunk_lifecycle = chunk_lifecycle_task(ee_prover.clone(), storage.clone());
 
                 let update_submitter_task = create_update_submitter_task(
                     ol_client,
                     storage.clone(),
                     storage.clone(),
-                    batch_prover,
+                    ee_prover.clone(),
                     batch_lifecycle_handle.latest_proof_ready_watcher(),
                     status_watcher,
                 );
@@ -906,6 +908,11 @@ fn main() {
                     "ee_batch_builder",
                     batch_builder_task
                         .instrument(info_span!("ee_batch_builder", component = "alpen")),
+                );
+                node.task_executor.spawn_critical(
+                    "ee_chunk_lifecycle",
+                    chunk_lifecycle
+                        .instrument(info_span!("ee_chunk_lifecycle", component = "alpen")),
                 );
                 node.task_executor.spawn_critical(
                     "ee_batch_lifecycle",
@@ -1216,14 +1223,14 @@ fn validate_ee_params_genesis(
 }
 
 #[cfg(feature = "sequencer")]
-async fn launch_validated_ee_batch_prover(
+async fn launch_validated_ee_prover(
     ol_client: &(impl SequencerOLClient + Send + Sync),
     service_executor: &ServiceExecutor,
     builders: EeProverBuilders,
     stores: EeProverStores,
     use_native_prover: bool,
     sp1_deadline_secs: Option<u64>,
-) -> eyre::Result<Arc<PaasBatchProver>> {
+) -> eyre::Result<Arc<PaasEeProver>> {
     let ol_account_update_vk = ol_client
         .get_latest_account_update_vk()
         .await
@@ -1245,7 +1252,7 @@ async fn launch_validated_ee_batch_prover(
     let (chunk_handle, acct_handle) =
         launch_ee_prover_services(service_executor, prover_config.provers).await?;
 
-    Ok(Arc::new(PaasBatchProver::new(
+    Ok(Arc::new(PaasEeProver::new(
         chunk_handle,
         acct_handle,
         stores.chunk_storage,

@@ -42,7 +42,7 @@ impl ReceiptHook<ChunkSpec> for ChunkReceiptHook {
         _receipt: &ProofReceiptWithMetadata,
     ) -> ProverResult<()> {
         let chunk_id = task.0;
-        let proof_id = chunk_id.last_block();
+        let proof_id = task.proof_id();
         info!(?chunk_id, %proof_id, "marking chunk as proof-ready");
         self.chunk_storage
             .update_chunk_status(chunk_id, ChunkStatus::ProofReady(proof_id))
