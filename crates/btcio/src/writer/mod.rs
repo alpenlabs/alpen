@@ -12,6 +12,6 @@ pub(crate) mod test_utils;
 
 pub use bundler::BundlerBuilder;
 pub use chunked_envelope::{create_chunked_envelope_task, ChunkedEnvelopeHandle};
-pub use context::WriterContext;
+pub use context::{EnvelopeSigningMode, EnvelopeSigningModeProvider, WriterContext};
 pub use handle::EnvelopeHandle;
 pub use watcher::WatcherBuilder;

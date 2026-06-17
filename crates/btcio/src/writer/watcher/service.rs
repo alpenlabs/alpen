@@ -11,6 +11,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use serde::Serialize;
 use strata_btc_types::{Buf32BitcoinExt, TxidExt};
@@ -27,7 +28,7 @@ use crate::{
     status::{apply_status_updates, L1StatusUpdate},
     writer::{
         builder::{EnvelopeData, EnvelopeError},
-        context::WriterContext,
+        context::{EnvelopeSigningMode, WriterContext},
         signer::{
             complete_reveal_and_broadcast, create_payload_envelopes,
             sign_and_broadcast_payload_envelopes,
@@ -57,14 +58,14 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         entry: BundledPayloadEntry,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
-    /// Returns `true` when the node is configured with an external signer
-    /// (`CredRule::SchnorrKey`). When `false`, the watcher signs in-process.
-    fn needs_external_signing(&self) -> bool;
+    /// Returns the current envelope signing mode.
+    fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode>;
 
     fn create_envelopes(
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
+        envelope_pubkey: XOnlyPublicKey,
     ) -> impl Future<Output = Result<EnvelopeData, EnvelopeError>> + Send;
 
     fn sign_and_broadcast(
@@ -129,16 +130,17 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
             .map_err(Into::into)
     }
 
-    fn needs_external_signing(&self) -> bool {
-        self.context.envelope_pubkey.is_some()
+    fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
+        self.context.signing_mode()
     }
 
     async fn create_envelopes(
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
+        envelope_pubkey: XOnlyPublicKey,
     ) -> Result<EnvelopeData, EnvelopeError> {
-        create_payload_envelopes(idx, entry, self.context.clone()).await
+        create_payload_envelopes(idx, entry, self.context.clone(), envelope_pubkey).await
     }
 
     async fn sign_and_broadcast(
@@ -278,11 +280,29 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
 }
 
 impl<C: WatcherServiceContext> WatcherState<C> {
+    /// Resolves the current envelope signing mode, deferring on failure.
+    ///
+    /// The signing mode is derived from dynamic ASM state, so a transient
+    /// failure (e.g. a `DbError`) or a currently non-signable predicate (e.g.
+    /// `NeverAccept`/`Sp1Groth16` after a rotation) must not be fatal: the
+    /// writer service treats a `process_input` error as terminal. Returns
+    /// `None` after logging so callers can defer and let the tick loop
+    /// re-evaluate on the next pass instead of permanently killing the writer.
+    fn resolve_signing_mode(&self) -> Option<EnvelopeSigningMode> {
+        match self.ctx.signing_mode() {
+            Ok(mode) => Some(mode),
+            Err(err) => {
+                warn!(%err, "could not resolve envelope signing mode; deferring to next tick");
+                None
+            }
+        }
+    }
+
     /// Builds envelope txs and transitions to `PendingRevealTxSign` or `Unpublished`.
     ///
-    /// When an external signer is configured (`needs_external_signing`), signs the commit tx
+    /// When an external signer is configured, signs the commit tx
     /// via wallet, caches the envelope, and waits for the reveal signature via RPC.
-    /// When no external signer is needed (`CredRule::Unchecked`), signs both in-process
+    /// When no external signer is needed, signs both in-process
     /// and transitions directly to `Unpublished`.
     async fn handle_unsigned_or_needs_resign(
         &mut self,
@@ -290,10 +310,13 @@ impl<C: WatcherServiceContext> WatcherState<C> {
     ) -> anyhow::Result<()> {
         debug!(current_status=?payloadentry.status);
 
-        if self.ctx.needs_external_signing() {
-            match self
+        let Some(signing_mode) = self.resolve_signing_mode() else {
+            return Ok(());
+        };
+        match signing_mode {
+            EnvelopeSigningMode::External { pubkey } => match self
                 .ctx
-                .create_envelopes(self.curr_payloadidx, &payloadentry)
+                .create_envelopes(self.curr_payloadidx, &payloadentry, pubkey)
                 .await
             {
                 Ok(envelope) => {
@@ -325,9 +348,8 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 Err(err) => {
                     return Err(err.into());
                 }
-            }
-        } else {
-            match self
+            },
+            EnvelopeSigningMode::InProcess => match self
                 .ctx
                 .sign_and_broadcast(self.curr_payloadidx, &payloadentry)
                 .await
@@ -354,7 +376,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 Err(err) => {
                     return Err(err.into());
                 }
-            }
+            },
         }
 
         Ok(())
@@ -369,6 +391,38 @@ impl<C: WatcherServiceContext> WatcherState<C> {
         payloadentry: BundledPayloadEntry,
     ) -> anyhow::Result<()> {
         let Some(sig) = &payloadentry.payload_signature else {
+            let Some(envelope) = self.envelope_cache.get(&self.curr_payloadidx) else {
+                // Cache miss (e.g. restart) — reset to Unsigned to rebuild
+                // envelope from scratch (new UTXOs, new sighash).
+                // Safe: nothing has been broadcast yet.
+                warn!("envelope not in cache, resetting to Unsigned");
+                let mut updated_entry = payloadentry.clone();
+                updated_entry.payload_signature = None;
+                updated_entry.status = L1BundleStatus::Unsigned;
+                self.ctx
+                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .await?;
+                return Ok(());
+            };
+
+            let Some(signing_mode) = self.resolve_signing_mode() else {
+                return Ok(());
+            };
+            match signing_mode {
+                EnvelopeSigningMode::External { pubkey } if pubkey == envelope.envelope_pubkey => {}
+                _ => {
+                    warn!("envelope signing mode changed, resetting to Unsigned");
+                    let mut updated_entry = payloadentry.clone();
+                    updated_entry.payload_signature = None;
+                    updated_entry.status = L1BundleStatus::Unsigned;
+                    self.ctx
+                        .put_payload_entry(self.curr_payloadidx, updated_entry)
+                        .await?;
+                    self.envelope_cache.remove(&self.curr_payloadidx);
+                    return Ok(());
+                }
+            }
+
             trace!("waiting for signer to provide reveal signature");
             return Ok(());
         };
@@ -385,6 +439,25 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 .await?;
             return Ok(());
         };
+        let Some(signing_mode) = self.resolve_signing_mode() else {
+            // Preserve the cached envelope so a transient failure does not force
+            // a needless rebuild + external re-sign on the next tick.
+            self.envelope_cache.insert(self.curr_payloadidx, envelope);
+            return Ok(());
+        };
+        match signing_mode {
+            EnvelopeSigningMode::External { pubkey } if pubkey == envelope.envelope_pubkey => {}
+            _ => {
+                warn!("envelope signing mode changed, resetting to Unsigned");
+                let mut updated_entry = payloadentry.clone();
+                updated_entry.payload_signature = None;
+                updated_entry.status = L1BundleStatus::Unsigned;
+                self.ctx
+                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .await?;
+                return Ok(());
+            }
+        }
         match self
             .ctx
             .complete_reveal_and_broadcast(self.curr_payloadidx, &envelope, sig.as_ref())
@@ -613,13 +686,15 @@ mod tests {
             Buf32([42u8; 32]),
             reveal_script,
             taproot_spend_info,
+            pubkey,
         )
     }
 
     struct MockWatcherContext {
         stored: Mutex<HashMap<u64, BundledPayloadEntry>>,
         broadcast_handle: Arc<L1BroadcastHandle>,
-        external_signing: bool,
+        signing_mode: Mutex<EnvelopeSigningMode>,
+        signing_mode_fails: Mutex<bool>,
         create_failure: Option<MockEnvelopeFailure>,
         sign_failure: Option<MockEnvelopeFailure>,
         rpc_errors: Mutex<Vec<String>>,
@@ -627,10 +702,18 @@ mod tests {
 
     impl MockWatcherContext {
         fn new(external_signing: bool) -> Self {
+            let signing_mode = if external_signing {
+                EnvelopeSigningMode::External {
+                    pubkey: minimal_envelope_data().envelope_pubkey,
+                }
+            } else {
+                EnvelopeSigningMode::InProcess
+            };
             Self {
                 stored: Mutex::new(HashMap::new()),
                 broadcast_handle: get_broadcast_handle(),
-                external_signing,
+                signing_mode: Mutex::new(signing_mode),
+                signing_mode_fails: Mutex::new(false),
                 create_failure: None,
                 sign_failure: None,
                 rpc_errors: Mutex::new(Vec::new()),
@@ -669,6 +752,14 @@ mod tests {
         fn rpc_error_count(&self) -> usize {
             self.rpc_errors.lock().unwrap().len()
         }
+
+        fn set_signing_mode(&self, signing_mode: EnvelopeSigningMode) {
+            *self.signing_mode.lock().unwrap() = signing_mode;
+        }
+
+        fn set_signing_mode_failure(&self, fails: bool) {
+            *self.signing_mode_fails.lock().unwrap() = fails;
+        }
     }
 
     impl WatcherServiceContext for MockWatcherContext {
@@ -685,14 +776,18 @@ mod tests {
             Ok(())
         }
 
-        fn needs_external_signing(&self) -> bool {
-            self.external_signing
+        fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
+            if *self.signing_mode_fails.lock().unwrap() {
+                anyhow::bail!("mock signing mode failure");
+            }
+            Ok(*self.signing_mode.lock().unwrap())
         }
 
         async fn create_envelopes(
             &self,
             _idx: u64,
             _entry: &BundledPayloadEntry,
+            _envelope_pubkey: XOnlyPublicKey,
         ) -> Result<EnvelopeData, EnvelopeError> {
             if let Some(failure) = self.create_failure {
                 return Err(failure.into_error());
@@ -868,6 +963,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_signing_mode_error_defers_then_recovers() {
+        let ctx = MockWatcherContext::new(true);
+        ctx.set_signing_mode_failure(true);
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+
+        // An unresolvable signing mode (transient DB error, or a non-signable
+        // predicate after a rotation) must defer to the next tick, not kill the
+        // writer. The service treats a `process_input` error as terminal.
+        let response = WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+        assert!(matches!(response, Response::Continue));
+        assert_eq!(
+            state.ctx.get_stored(0).unwrap().status,
+            L1BundleStatus::Unsigned
+        );
+        assert!(state.envelope_cache.is_empty());
+        // A signing-mode failure is not a Bitcoin RPC error, so none is reported.
+        assert_eq!(state.ctx.rpc_error_count(), 0);
+
+        // Once the signing mode resolves again, the tick loop makes progress.
+        state.ctx.set_signing_mode_failure(false);
+        let response = WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+        assert!(matches!(response, Response::Continue));
+        assert!(matches!(
+            state.ctx.get_stored(0).unwrap().status,
+            L1BundleStatus::PendingRevealTxSign(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_pending_reveal_resets_when_signing_mode_changes_without_sig() {
+        let ctx = MockWatcherContext::new(true);
+
+        let envelope = minimal_envelope_data();
+        let mut entry = test_unsigned_entry();
+        entry.status = L1BundleStatus::PendingRevealTxSign(Buf32([42u8; 32]));
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.envelope_cache.insert(0, envelope);
+        state.ctx.set_signing_mode(EnvelopeSigningMode::InProcess);
+
+        state.handle_pending_reveal_tx_sign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Unsigned);
+        assert!(!state.envelope_cache.contains_key(&0));
+    }
+
+    #[tokio::test]
     async fn test_schnorr_key_reveal_sig_transitions_to_unpublished() {
         let ctx = MockWatcherContext::new(true);
         let bcast_handle = ctx.broadcast_handle.clone();
@@ -902,5 +1053,34 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    async fn test_pending_reveal_resets_when_signing_mode_changes_with_sig() {
+        let ctx = MockWatcherContext::new(true);
+
+        let envelope = minimal_envelope_data();
+        let commit_txid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+        let mut entry = test_unsigned_entry();
+        entry.status = L1BundleStatus::PendingRevealTxSign(Buf32([42u8; 32]));
+        entry.payload_signature = Some(Buf64([1u8; 64]));
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.envelope_cache.insert(0, envelope);
+        state.ctx.set_signing_mode(EnvelopeSigningMode::InProcess);
+
+        state.handle_pending_reveal_tx_sign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Unsigned);
+        assert!(!state.envelope_cache.contains_key(&0));
+        assert!(state
+            .ctx
+            .broadcast_handle
+            .get_tx_entry_by_id_async(commit_txid)
+            .await
+            .unwrap()
+            .is_none());
     }
 }
