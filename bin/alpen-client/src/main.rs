@@ -105,7 +105,7 @@ mod sequencer_imports {
         payload_builder::AlpenRethPayloadEngine,
         prover::{
             AcctRangeWitnessFn, AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec,
-            EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
+            EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager, PaasEeProver,
         },
     };
 
@@ -493,8 +493,8 @@ fn main() {
 
                 use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobSource};
                 use alpen_ee_sequencer::{
-                    backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
-                    create_batch_builder, create_batch_lifecycle_task,
+                    backfill_missing_chunk_witnesses, chunk_lifecycle_task, chunk_witness_channel,
+                    chunk_witness_task, create_batch_builder, create_batch_lifecycle_task,
                     create_update_submitter_task,
                     sealing_policy::{
                         block_count_policy::{BlockCountDataProvider, FixedBlockCountSealing},
@@ -847,7 +847,7 @@ fn main() {
                     .await
                     .map_err(|e| eyre::eyre!("launching acct prover service: {e}"))?;
 
-                let batch_prover = Arc::new(PaasBatchProver::new(
+                let ee_prover = Arc::new(PaasEeProver::new(
                     chunk_handle,
                     acct_handle,
                     chunk_storage_dyn,
@@ -861,17 +861,19 @@ fn main() {
                     batch_lifecycle_state,
                     batch_builder_handle.latest_batch_watcher(),
                     batch_da_provider,
-                    batch_prover.clone(),
+                    ee_prover.clone(),
                     storage.clone(),
                     blob_provider,
                     da_context_db,
                 );
 
+                let chunk_lifecycle = chunk_lifecycle_task(ee_prover.clone(), storage.clone());
+
                 let update_submitter_task = create_update_submitter_task(
                     ol_client,
                     storage.clone(),
                     storage.clone(),
-                    batch_prover,
+                    ee_prover.clone(),
                     batch_lifecycle_handle.latest_proof_ready_watcher(),
                     status_watcher,
                 );
@@ -943,6 +945,8 @@ fn main() {
                     .spawn_critical("ee_chunk_witness", chunk_witness_task_fut);
                 node.task_executor
                     .spawn_critical("ee_chunk_witness_backfill", chunk_witness_backfill_task);
+                node.task_executor
+                    .spawn_critical("ee_chunk_lifecycle", chunk_lifecycle);
                 node.task_executor
                     .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
                 node.task_executor

@@ -235,9 +235,8 @@ mod tests {
     #[tokio::test]
     async fn advance_rebuilds_when_tip_reverts_below_floor() {
         let storage = InMemoryStorage::new_empty();
-        let mut state = ChunkProofCursor::default();
         // Pretend the floor advanced to 5 in a previous life, then everything was reverted away.
-        state.floor = 5;
+        let mut state = ChunkProofCursor { floor: 5 };
         state.advance(&storage, 0).await.unwrap();
         assert_eq!(state.floor(), 0);
     }

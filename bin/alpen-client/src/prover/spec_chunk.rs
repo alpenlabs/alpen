@@ -8,7 +8,7 @@
 
 use std::{fmt, sync::Arc};
 
-use alpen_ee_common::{ChunkId, ChunkStorage, ChunkWitnessStore, ExecBlockStorage};
+use alpen_ee_common::{ChunkId, ChunkStorage, ChunkWitnessStore, ExecBlockStorage, ProofId};
 use alpen_ee_database::EeNodeStorage;
 use async_trait::async_trait;
 use reth_primitives::Block;
@@ -33,6 +33,12 @@ use strata_proofimpl_alpen_chunk::{EeChunkProgram, EeChunkProofInput};
 /// adding paas-specific traits to the domain type.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ChunkTask(pub ChunkId);
+
+impl ChunkTask {
+    pub(crate) fn proof_id(self) -> ProofId {
+        self.0.last_block()
+    }
+}
 
 impl fmt::Display for ChunkTask {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
