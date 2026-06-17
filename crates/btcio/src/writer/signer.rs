@@ -174,7 +174,7 @@ mod test {
 
     fn unsigned_test_entry() -> BundledPayloadEntry {
         let tag = TagData::new(1, 1, vec![]).unwrap();
-        let payload = L1Payload::new(vec![vec![1; 150]; 1], tag);
+        let payload = L1Payload::new(vec![vec![1; 150]; 1], tag).unwrap();
         BundledPayloadEntry::new_unsigned(payload)
     }
 

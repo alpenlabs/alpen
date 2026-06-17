@@ -899,7 +899,7 @@ mod tests {
 
         let tag = TagData::new(1, 1, vec![]).unwrap();
         // Use 150 bytes to meet minimum envelope payload size of 126 bytes
-        let payload = L1Payload::new(vec![vec![0u8; 150]], tag);
+        let payload = L1Payload::new(vec![vec![0u8; 150]], tag).unwrap();
 
         use bitcoin::secp256k1::{Secp256k1, SecretKey};
         let secp = Secp256k1::new();

@@ -185,7 +185,8 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             let encoded = encode_to_vec(&codec_payload)
                 .map_err(|e| internal_error(format!("failed to encode checkpoint: {e}")))?;
 
-            let l1_payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone());
+            let l1_payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone())
+                .map_err(|e| internal_error(format!("failed to build checkpoint payload: {e}")))?;
             let sighash = hash::raw(&checkpoint_payload.as_ssz_bytes());
 
             let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, l1_payload);
