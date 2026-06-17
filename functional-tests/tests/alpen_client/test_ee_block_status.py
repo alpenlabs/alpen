@@ -27,19 +27,52 @@ class TestEeBlockStatus(BaseTest):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("el_ol")
 
-    def assert_statuses_consistent(self, alpen_seq, alpen_rpc, up_to_block: int) -> dict:
-        """Assert statuses are monotonically non-increasing for non-genesis blocks.
+    def assert_epoch_matches_status(self, response: dict) -> None:
+        """Assert the checkpoint epoch presence and shape match the returned status.
 
-        Collects statuses for blocks 0..N, then checks ordering only within block 1..N.
+        Pending blocks carry no ``checkpoint_epoch`` key; confirmed and finalized
+        blocks carry an integer ``checkpoint_epoch`` for the OL checkpoint that
+        contains the block.
+        """
+        status = response["status"]
+        checkpoint_epoch = response.get("checkpoint_epoch")
+        if status == "pending":
+            assert checkpoint_epoch is None, (
+                f"Pending block should not have a checkpoint_epoch, got {checkpoint_epoch!r}"
+            )
+        else:
+            assert isinstance(checkpoint_epoch, int), (
+                f"{status} block should have integer checkpoint_epoch, got {checkpoint_epoch!r}"
+            )
+
+    def assert_statuses_consistent(self, alpen_seq, alpen_rpc, up_to_block: int) -> dict:
+        """Assert status and checkpoint-epoch ordering across blocks 0..N.
+
+        Statuses must be monotonically non-increasing for non-genesis blocks, and
+        the per-block containing checkpoint epoch must be monotonically
+        non-decreasing with block number (a lower block cannot be checkpointed in a
+        later epoch than a higher block). Genesis is checkpointed in epoch 0.
+
         Returns a dict mapping block number to status string.
         """
         statuses = {}
+        epochs = {}
         for i in range(up_to_block + 1):
             block = alpen_rpc.eth_getBlockByNumber(hex(i), False)
             assert block is not None, f"Failed to get block {i}"
-            status = alpen_seq.get_block_status(block["hash"])
+            response = alpen_seq.get_block_status(block["hash"])
+            self.assert_epoch_matches_status(response)
+            status = response["status"]
             statuses[i] = status
-            logger.info(f"  Block {i}: {status}")
+            epochs[i] = response.get("checkpoint_epoch")
+            logger.info(
+                "  Block %s: status=%s checkpoint_epoch=%s",
+                i,
+                status,
+                epochs[i],
+            )
+
+        assert epochs[0] == 0, f"Genesis should be checkpointed in epoch 0, got {epochs[0]!r}"
 
         for i in range(2, up_to_block + 1):
             prev = self.STATUS_ORDER.index(statuses[i - 1])
@@ -49,25 +82,33 @@ class TestEeBlockStatus(BaseTest):
                 f"than block {i} ({statuses[i]})"
             )
 
+        # Containing epoch is non-decreasing with block number for checkpointed blocks.
+        for i in range(1, up_to_block + 1):
+            if epochs[i] is None or epochs[i - 1] is None:
+                continue
+            assert epochs[i - 1] <= epochs[i], (
+                f"Block {i - 1} epoch ({epochs[i - 1]}) should be <= block {i} epoch ({epochs[i]})"
+            )
+
         return statuses
 
     def wait_for_fullnode_match(
         self,
         alpen_fullnode: AlpenClientService,
         block_hash: str,
-        expected_status: str,
+        expected_response: dict,
         timeout: int = FULLNODE_SYNC_TIMEOUT,
     ) -> None:
-        """Poll the fullnode until its status for ``block_hash`` matches ``expected_status``.
+        """Poll the fullnode until its status response for ``block_hash`` matches.
 
         Absorbs the OLTracker polling lag between sequencer and fullnode
         without making the test flaky.
         """
         wait_until(
-            lambda: alpen_fullnode.get_block_status(block_hash) == expected_status,
+            lambda: alpen_fullnode.get_block_status(block_hash) == expected_response,
             error_with=(
-                f"Fullnode status for {block_hash} did not converge to "
-                f"{expected_status!r} within {timeout}s "
+                f"Fullnode status response for {block_hash} did not converge to "
+                f"{expected_response!r} within {timeout}s "
                 f"(last={alpen_fullnode.get_block_status(block_hash)!r})"
             ),
             timeout=timeout,
@@ -84,9 +125,10 @@ class TestEeBlockStatus(BaseTest):
         for i in range(up_to_block + 1):
             block = alpen_rpc.eth_getBlockByNumber(hex(i), False)
             assert block is not None, f"Failed to get block {i}"
-            seq_status = alpen_seq.get_block_status(block["hash"])
-            self.wait_for_fullnode_match(alpen_fullnode, block["hash"], seq_status)
-            logger.info(f"  Block {i}: fullnode converged to {seq_status}")
+            seq_response = alpen_seq.get_block_status(block["hash"])
+            self.assert_epoch_matches_status(seq_response)
+            self.wait_for_fullnode_match(alpen_fullnode, block["hash"], seq_response)
+            logger.info("  Block %s: fullnode converged to %s", i, seq_response)
 
     def main(self, ctx):
         alpen_seq: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
@@ -138,17 +180,24 @@ class TestEeBlockStatus(BaseTest):
             )
             assert e.code == -32602, f"Expected invalid params (-32602), got {e.code}"
 
-        initial_status = alpen_seq.get_block_status(target_hash)
-        logger.info(f"Block {self.TARGET_BLOCK_NUMBER} initial status: {initial_status}")
+        initial_response = alpen_seq.get_block_status(target_hash)
+        self.assert_epoch_matches_status(initial_response)
+        initial_status = initial_response["status"]
+        logger.info(
+            "Block %s initial status response: %s",
+            self.TARGET_BLOCK_NUMBER,
+            initial_response,
+        )
 
-        # Fullnode should converge to the same status for the target block.
-        self.wait_for_fullnode_match(alpen_fullnode, target_hash, initial_status)
+        # Fullnode should converge to the same status response for the target block.
+        self.wait_for_fullnode_match(alpen_fullnode, target_hash, initial_response)
 
-        # Block 0 should be finalized.
+        # Block 0 should be finalized at genesis epoch 0.
         block_0 = alpen_rpc.eth_getBlockByNumber("0x0", False)
-        status_0 = alpen_seq.get_block_status(block_0["hash"])
-        logger.info(f"Block 0 status: {status_0}")
-        assert status_0 == "finalized", f"Expected finalized, got {status_0}"
+        response_0 = alpen_seq.get_block_status(block_0["hash"])
+        logger.info("Block 0 status response: %s", response_0)
+        assert response_0["status"] == "finalized", f"Expected finalized, got {response_0}"
+        assert response_0["checkpoint_epoch"] == 0, f"Expected checkpoint_epoch 0, got {response_0}"
 
         if initial_status == "finalized":
             logger.info("Initial status consistency check:")
@@ -168,7 +217,7 @@ class TestEeBlockStatus(BaseTest):
 
         # Mine until target block is confirmed.
         status = bitcoin.mine_until(
-            check=lambda: alpen_seq.get_block_status(target_hash),
+            check=lambda: alpen_seq.get_block_status(target_hash)["status"],
             predicate=lambda s: s in ("confirmed", "finalized"),
             error_with=(f"Block {self.TARGET_BLOCK_NUMBER} did not reach confirmed status"),
         )
@@ -191,7 +240,7 @@ class TestEeBlockStatus(BaseTest):
 
         # Mine until target block is finalized.
         status = bitcoin.mine_until(
-            check=lambda: alpen_seq.get_block_status(target_hash),
+            check=lambda: alpen_seq.get_block_status(target_hash)["status"],
             predicate=lambda s: s == "finalized",
             error_with=(f"Block {self.TARGET_BLOCK_NUMBER} did not reach finalized status"),
         )
