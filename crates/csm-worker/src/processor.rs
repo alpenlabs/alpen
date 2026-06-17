@@ -16,7 +16,7 @@ use crate::{
     checkpoint_extract::{CheckpointVerificationContext, extract_matching_checkpoint},
     context::CsmWorkerContext,
     errors::{CsmWorkerError, CsmWorkerResult},
-    state::{CsmWorkerState, derive_state, reorg_floor_height},
+    state::{CsmWorkerState, compute_reorg_floor_height, derive_state},
 };
 
 /// The in-flight CSM update produced by processing one ASM block's logs.
@@ -115,7 +115,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         next_state: Arc<ClientState>,
     ) -> CsmWorkerResult<()> {
         // A commit either extends the tip by one or replaces it at the same
-        // height (a reorg whose fork sits at the incoming height). It never
+        // height (a reorg whose pivot sits at the incoming height). It never
         // skips a height.
         let last = self
             .recent_asm_blocks
@@ -144,13 +144,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let Some(tip) = self.recent_asm_blocks.last() else {
             return;
         };
-        debug_assert!(
-            self.recent_asm_blocks
-                .windows(2)
-                .all(|w| w[0].height() <= w[1].height()),
-            "recent_asm_blocks must be ascending for floor pruning"
-        );
-        let floor = reorg_floor_height(&self.ctx, &self.last_committed_state, tip.height());
+        let floor = compute_reorg_floor_height(&self.ctx, &self.last_committed_state, tip.height());
         let keep_from = self
             .recent_asm_blocks
             .iter()
@@ -216,20 +210,23 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             return Ok(());
         }
 
+        // A pure extension resumes from `last`; otherwise the reorg rewinds and
+        // tells us the pivot to resume from.
         let is_pure_extension = last_still_canonical && asm_block.height() > last.height();
-        if !is_pure_extension {
-            self.reorg_to_fork(&asm_block)?;
+        let resume_block = if is_pure_extension {
+            last
+        } else {
+            self.calculate_pivot_and_reorg(&asm_block)?
+        };
+
+        // A drop-tip reorg can rewind directly onto `asm_block`; it is already
+        // committed as the pivot, so re-processing it would duplicate the entry.
+        if resume_block == asm_block {
+            return Ok(());
         }
 
-        // Non-empty: `last` was extracted above and reorg keeps the fork entry.
-        let resume_height = self
-            .recent_asm_blocks
-            .last()
-            .expect("recent_asm_blocks is non-empty")
-            .height();
-
         // Replay gap blocks, then the target.
-        for height in (resume_height + 1)..asm_block.height() {
+        for height in (resume_block.height() + 1)..asm_block.height() {
             let gap_block = self.ctx.get_canonical_l1_block(height)?.ok_or_else(|| {
                 CsmWorkerError::MissingData {
                     what: "canonical L1 block",
@@ -245,60 +242,66 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         Ok(())
     }
 
-    /// Rewinds the worker to the fork point shared with the chain leading to
-    /// `incoming`, re-deriving cursors and persisted state there.
+    /// Rewinds the worker to the pivot block — the deepest entry still on the
+    /// canonical chain leading to `incoming` — and returns it as the block to
+    /// resume processing from.
     ///
-    /// Errors if the fork lies at or below the finalized anchor (index 0).
-    fn reorg_to_fork(&mut self, incoming: &L1BlockCommitment) -> CsmWorkerResult<()> {
+    /// Side effects, all relative to the pivot: truncates `recent_asm_blocks` to
+    /// it, re-persists its client-state row, deletes the orphaned rows above it,
+    /// and resets `last_committed_state`. A crash partway through the deletes is
+    /// recovered by `delete_orphan_rows_above` on the next restart.
+    ///
+    /// Errors if the pivot lies at or below the finalized anchor (index 0).
+    fn calculate_pivot_and_reorg(
+        &mut self,
+        incoming: &L1BlockCommitment,
+    ) -> CsmWorkerResult<L1BlockCommitment> {
         // No match means the divergence reaches past the finalized anchor.
-        let Some(fork_idx) = self.find_fork_index()? else {
+        let Some(pivot_idx) = self.find_pivot_index()? else {
             return Err(CsmWorkerError::ReorgPastFinality {
                 finalized: self.recent_asm_blocks[0],
                 incoming: *incoming,
             });
         };
-        let fork_block = self.recent_asm_blocks[fork_idx];
+        let pivot_block = self.recent_asm_blocks[pivot_idx];
 
-        warn!(%fork_block, %incoming, "reorg detected; rewinding to fork point");
+        warn!(%pivot_block, %incoming, "reorg detected; rewinding to pivot block");
 
-        // It is expected to have client state persisted below the tip, which means below the fork
-        // point as well.
-        let persisted = self.ctx.get_client_state_at(&fork_block)?;
-        let fork_clstate = persisted
+        // It is expected to have client state persisted below the tip, which
+        // means below the pivot as well.
+        let persisted = self.ctx.get_client_state_at(&pivot_block)?;
+        let pivot_clstate = persisted
             .clone()
             .ok_or_else(|| CsmWorkerError::MissingData {
-                what: "client state at fork block",
-                detail: fork_block.to_string(),
+                what: "client state at pivot block",
+                detail: pivot_block.to_string(),
             })?;
-        let new_clstate = derive_state(&self.ctx, &fork_block, &fork_clstate)?;
+        let new_clstate = derive_state(&self.ctx, &pivot_block, &pivot_clstate)?;
 
-        // Re-persist at the fork to overwrite the orphaned branch's row.
+        // Re-persist at the pivot to overwrite the orphaned branch's row.
         self.ctx.put_client_state_update(
-            &fork_block,
+            &pivot_block,
             ClientUpdateOutput::new_state(new_clstate.clone()),
         )?;
 
-        // Delete the orphaned branch's rows so a restart can't bootstrap from an
-        // orphan that's above the canonical tip. A crash partway through is
-        // recovered by bootstrap's `delete_orphan_rows_above` on restart.
-        for orphan in &self.recent_asm_blocks[fork_idx + 1..] {
+        for orphan in &self.recent_asm_blocks[pivot_idx + 1..] {
             self.ctx.del_client_state(orphan)?;
         }
 
         // Persistence done; commit the rewind to in-memory state.
-        self.recent_asm_blocks.truncate(fork_idx + 1);
+        self.recent_asm_blocks.truncate(pivot_idx + 1);
 
         // Publish if necessary.
         if persisted.as_ref() != Some(&new_clstate) {
             self.ctx
-                .publish_client_state(new_clstate.clone(), fork_block);
+                .publish_client_state(new_clstate.clone(), pivot_block);
         }
         self.last_committed_state = Arc::new(new_clstate);
-        Ok(())
+        Ok(pivot_block)
     }
 
-    /// Highest list index whose block still matches the canonical L1 chain.
-    fn find_fork_index(&self) -> CsmWorkerResult<Option<usize>> {
+    /// Highest index in recent asm blocks whose block still matches the canonical L1 chain.
+    fn find_pivot_index(&self) -> CsmWorkerResult<Option<usize>> {
         for idx in (0..self.recent_asm_blocks.len()).rev() {
             let block = self.recent_asm_blocks[idx];
             // A missing block (above a reverted tip) or a mismatched blkid both
@@ -528,7 +531,7 @@ mod tests {
         let params = create_test_params_arc();
         let (storage, status_channel) = create_test_storage();
         let ctx = default_stub_ctx(&params, storage.clone(), status_channel);
-        let state = CsmWorkerState::bootstrap(ctx).unwrap();
+        let state = CsmWorkerState::init_from_context(ctx).unwrap();
         (state, storage)
     }
 
@@ -542,7 +545,7 @@ mod tests {
         let params = create_test_params_arc();
         let (storage, status_channel) = create_test_storage();
         let ctx = configure(default_stub_ctx(&params, storage.clone(), status_channel));
-        let state = CsmWorkerState::bootstrap(ctx).unwrap();
+        let state = CsmWorkerState::init_from_context(ctx).unwrap();
         (state, storage)
     }
 
@@ -1243,7 +1246,7 @@ mod tests {
         }
         ctx = ctx.with_canonical_block(tip.height(), *tip.blkid());
 
-        let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap");
+        let state = CsmWorkerState::init_from_context(ctx).expect("bootstrap");
 
         let expected: Vec<_> = (floor..tip.height())
             .map(|height| L1BlockCommitment::new(height, block_id_at(height)))

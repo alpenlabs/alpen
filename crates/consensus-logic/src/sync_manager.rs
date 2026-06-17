@@ -56,7 +56,7 @@ fn spawn_csm_listener(
         storage.clone(),
         status_channel,
     );
-    let csm_state = CsmWorkerState::bootstrap(ctx)?;
+    let csm_state = CsmWorkerState::init_from_context(ctx)?;
 
     // Get the starting block from CSM's last processed block
     // If CSM hasn't processed any blocks yet, we get the latest ASM state from storage

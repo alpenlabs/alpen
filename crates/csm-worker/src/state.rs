@@ -41,13 +41,17 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
 }
 
 impl<C: CsmWorkerContext> CsmWorkerState<C> {
-    /// Bootstraps a new CSM worker state from worker context.
+    /// Inits a new CSM worker state from worker context.
     ///
     /// Also eagerly updates, persists and publishes the client state.
-    pub fn bootstrap(ctx: C) -> CsmWorkerResult<Self> {
-        let (loaded_block, loaded_clstate) = ctx
-            .fetch_most_recent_client_state()?
-            .unwrap_or((ctx.genesis_l1_block(), ClientState::default()));
+    pub fn init_from_context(ctx: C) -> CsmWorkerResult<Self> {
+        // This is the last block CSM committed, which may lag the L1 tip. That is
+        // fine: the first status update replays the gap to catch up, and finality
+        // is re-derived below rather than trusted from this row.
+        let loaded = ctx.fetch_most_recent_client_state()?;
+        let storage_empty = loaded.is_none();
+        let (loaded_block, loaded_clstate) =
+            loaded.unwrap_or((ctx.genesis_l1_block(), ClientState::default()));
 
         // Resolve the canonical just in case the loaded one is already orphaned.
         let (recent_l1blk, recent_clstate) =
@@ -61,14 +65,16 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         let new_clstate = Arc::new(derive_state(&ctx, &recent_l1blk, &recent_clstate)?);
 
-        // Persist and publish only when the derived state actually changed.
-        if *new_clstate != recent_clstate {
+        // Persist and publish when the derived state changed, or to seed the
+        // anchor row on empty storage — a later reorg may pivot to it and read
+        // its client state back.
+        if storage_empty || *new_clstate != recent_clstate {
             let new_update = ClientUpdateOutput::new_state(new_clstate.as_ref().clone());
             ctx.put_client_state_update(&recent_l1blk, new_update)?;
             ctx.publish_client_state(new_clstate.as_ref().clone(), recent_l1blk);
         }
 
-        let recent_asm_blocks = init_recent_asm_blocks(&ctx, &new_clstate, recent_l1blk)?;
+        let recent_asm_blocks = load_recent_asm_blocks(&ctx, &new_clstate, recent_l1blk)?;
 
         Ok(Self {
             ctx,
@@ -90,7 +96,10 @@ fn resolve_canonical_tip<C: CsmWorkerContext>(
     candidate_blk: L1BlockCommitment,
     candidate_clstate: ClientState,
 ) -> CsmWorkerResult<(L1BlockCommitment, ClientState)> {
-    let floor = reorg_floor_height(ctx, &candidate_clstate, candidate_blk.height());
+    // At or below the floor a block is reorg-safe by definition, so it is taken
+    // as-is without a canonicality check. An orphan there would mean a finalized
+    // block was reorged — a finality violation outside this resolver's scope.
+    let floor = compute_reorg_floor_height(ctx, &candidate_clstate, candidate_blk.height());
     if candidate_blk.height() <= floor
         || ctx.get_canonical_l1_block(candidate_blk.height())? == Some(candidate_blk)
     {
@@ -143,12 +152,12 @@ fn delete_orphan_rows_above<C: CsmWorkerContext>(
 
 /// Builds the recent-ASM-blocks list from the reorg-safe floor (index 0) up to
 /// `tip`, the last block CSM committed client state for.
-fn init_recent_asm_blocks<C: CsmWorkerContext>(
+fn load_recent_asm_blocks<C: CsmWorkerContext>(
     ctx: &C,
     clstate: &ClientState,
     tip: L1BlockCommitment,
 ) -> CsmWorkerResult<Vec<L1BlockCommitment>> {
-    let floor = reorg_floor_height(ctx, clstate, tip.height());
+    let floor = compute_reorg_floor_height(ctx, clstate, tip.height());
 
     let mut blocks = Vec::new();
     for height in floor..tip.height() {
@@ -168,7 +177,7 @@ fn init_recent_asm_blocks<C: CsmWorkerContext>(
 ///
 /// A block is reorg-safe once it is either buried `depth` deep under `tip` or at
 /// or below the last finalized checkpoint.
-pub(crate) fn reorg_floor_height<C: CsmWorkerContext>(
+pub(crate) fn compute_reorg_floor_height<C: CsmWorkerContext>(
     ctx: &C,
     clstate: &ClientState,
     tip: L1Height,
@@ -287,7 +296,7 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::{CsmWorkerState, derive_state, reorg_floor_height};
+    use super::{CsmWorkerState, compute_reorg_floor_height, derive_state};
     use crate::test_utils::StubCtx;
 
     fn create_test_params() -> Arc<AsmParams> {
@@ -512,7 +521,7 @@ mod tests {
             ctx =
                 ctx.with_canonical_block(height, L1BlockId::from(Buf32::from([height as u8; 32])));
         }
-        let state = CsmWorkerState::bootstrap(ctx).expect("state init");
+        let state = CsmWorkerState::init_from_context(ctx).expect("state init");
 
         assert_eq!(
             state.last_committed_state.get_last_epoch(),
@@ -610,7 +619,7 @@ mod tests {
             ctx =
                 ctx.with_canonical_block(height, L1BlockId::from(Buf32::from([height as u8; 32])));
         }
-        let state = CsmWorkerState::bootstrap(ctx).expect("state init");
+        let state = CsmWorkerState::init_from_context(ctx).expect("state init");
 
         assert_eq!(
             state.last_committed_state.get_declared_final_epoch(),
@@ -666,7 +675,7 @@ mod tests {
 
         let ctx = stub_ctx_at_genesis_zero(depth);
         let clstate = finalized_state_at(checkpoint);
-        assert_eq!(reorg_floor_height(&ctx, &clstate, tip), depth_floor);
+        assert_eq!(compute_reorg_floor_height(&ctx, &clstate, tip), depth_floor);
     }
 
     /// When the finalized checkpoint is deeper (higher) than the depth bound, the
@@ -680,7 +689,7 @@ mod tests {
 
         let ctx = stub_ctx_at_genesis_zero(depth);
         let clstate = finalized_state_at(checkpoint);
-        assert_eq!(reorg_floor_height(&ctx, &clstate, tip), checkpoint);
+        assert_eq!(compute_reorg_floor_height(&ctx, &clstate, tip), checkpoint);
     }
 
     /// A blkid deterministically derived from a byte tag.
@@ -697,6 +706,38 @@ mod tests {
                 ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
             )
             .expect("put client state row");
+    }
+
+    /// On empty storage, bootstrap must persist the genesis anchor row so a
+    /// later reorg that pivots back to it can read its client state instead of
+    /// failing with `MissingData`.
+    #[test]
+    fn bootstrap_persists_anchor_on_empty_storage() {
+        let params = create_test_params();
+        let db = get_test_sled_backend();
+        let pool = threadpool::ThreadPool::new(4);
+        let storage = Arc::new(create_node_storage(db, pool).expect("create storage"));
+        let mut arbgen = ArbitraryGenerator::new();
+        let status_channel = Arc::new(StatusChannel::new(
+            arbgen.generate(),
+            params.anchor.block,
+            arbgen.generate(),
+            None,
+            None,
+        ));
+
+        let genesis = params.anchor.block;
+        let ctx = StubCtx::new(storage.clone(), status_channel, 4, params.magic, genesis);
+        CsmWorkerState::init_from_context(ctx).expect("bootstrap");
+
+        assert!(
+            storage
+                .client_state()
+                .get_state_blocking(genesis)
+                .expect("query genesis row")
+                .is_some(),
+            "genesis anchor row must be persisted on empty-storage bootstrap"
+        );
     }
 
     /// A stored tip higher than the canonical tip (chain reverted below it) is an
@@ -727,7 +768,7 @@ mod tests {
         }
         ctx = ctx.with_canonical_block(40329, *canonical_tip.blkid());
 
-        let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap");
+        let state = CsmWorkerState::init_from_context(ctx).expect("bootstrap");
 
         assert_eq!(state.recent_asm_blocks.last(), Some(&canonical_tip));
         assert_ne!(state.recent_asm_blocks.last(), Some(&orphan));
@@ -757,7 +798,7 @@ mod tests {
         }
         ctx = ctx.with_canonical_block(40329, *canonical_tip.blkid());
 
-        CsmWorkerState::bootstrap(ctx).expect("bootstrap");
+        CsmWorkerState::init_from_context(ctx).expect("bootstrap");
 
         assert!(
             storage
@@ -849,7 +890,7 @@ mod tests {
         ctx = ctx.with_canonical_block(height - 1, *fork.blkid());
         ctx = ctx.with_canonical_block(height, *canonical.blkid());
 
-        let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap");
+        let state = CsmWorkerState::init_from_context(ctx).expect("bootstrap");
 
         assert_ne!(state.recent_asm_blocks.last(), Some(&orphan));
         assert_eq!(state.recent_asm_blocks.last(), Some(&fork));

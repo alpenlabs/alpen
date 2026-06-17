@@ -135,7 +135,7 @@ mod tests {
         // extension whose processing fails on the L1 fetch (not a reorg).
         .with_canonical_block(last_height, *last.blkid());
 
-        let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap state");
+        let state = CsmWorkerState::init_from_context(ctx).expect("bootstrap state");
 
         (state, storage, last)
     }
@@ -229,7 +229,7 @@ mod tests {
             params.anchor.block,
         );
 
-        let state = CsmWorkerState::bootstrap(ctx).expect("bootstrap state");
+        let state = CsmWorkerState::init_from_context(ctx).expect("bootstrap state");
         (state, storage, last)
     }
 
