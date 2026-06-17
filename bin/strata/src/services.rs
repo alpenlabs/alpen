@@ -36,7 +36,7 @@ mod sequencer_services {
     use strata_db_types::traits::DatabaseBackend;
     use strata_node_context::NodeContext;
     use strata_ol_block_assembly::{
-        BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
+        BlockasmBuilder, BlockasmHandle, FixedSlotSealing, LimitAwareSealing, MempoolProviderImpl,
     };
     use strata_ol_mempool::MempoolHandle;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
@@ -192,7 +192,7 @@ mod sequencer_services {
         };
 
         let mempool_provider = MempoolProviderImpl::new(mempool_handle);
-        let epoch_sealing = FixedSlotSealing::new(slots_per_epoch);
+        let epoch_sealing = LimitAwareSealing::new(FixedSlotSealing::new(slots_per_epoch));
         let state_provider = OLStateManagerProviderImpl::new(nodectx.storage().ol_state().clone());
 
         let l1_reorg_safe_depth = nodectx.config().btcio.l1_reorg_safe_depth;

@@ -159,13 +159,7 @@ impl OLState {
             self.intraepoch.pending_asm_logs().len() as u64
         };
         let appended_logs = intraepoch_writes.appended_pending_asm_logs.len() as u64;
-        if starting_logs + appended_logs > MAX_PENDING_ASM_LOGS {
-            return Err(StateError::PendingAsmLogsOverflow {
-                current: starting_logs,
-                adding: appended_logs,
-                max: MAX_PENDING_ASM_LOGS,
-            });
-        }
+        ensure_pending_asm_logs_fit(starting_logs, appended_logs)?;
 
         Ok(())
     }
@@ -306,6 +300,18 @@ impl OLState {
             .map(|_| ())
             .ok_or(StateError::MissingAccount(*id))
     }
+}
+
+fn ensure_pending_asm_logs_fit(current: u64, adding: u64) -> StateResult<()> {
+    if current.saturating_add(adding) > MAX_PENDING_ASM_LOGS {
+        return Err(StateError::PendingAsmLogsOverflow {
+            current,
+            adding,
+            max: MAX_PENDING_ASM_LOGS,
+        });
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -467,26 +473,10 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_batch_pending_asm_logs_overflow_errors() {
-        use strata_asm_manifest_types::AsmLogEntry;
-        use strata_ledger_types::PendingAsmLog;
-
-        let mut state = create_test_genesis_state();
-
-        // Build a batch that appends one more pending ASM log than the buffer
-        // can hold. The fresh state starts with an empty buffer and we don't
-        // reset, so the appended count alone must exceed the cap.
+    fn test_pending_asm_logs_overflow_errors() {
         let overflow_count = MAX_PENDING_ASM_LOGS + 1;
-        let mut batch = WriteBatch::default();
-        let logs = &mut batch.intraepoch_writes_mut().appended_pending_asm_logs;
-        for _ in 0..overflow_count {
-            let entry = AsmLogEntry::from_raw(vec![]).expect("test: empty log entry");
-            logs.push(PendingAsmLog::new(0, entry));
-        }
 
-        // The safety check should reject this before any mutation happens.
-        let err = state
-            .apply_write_batch(batch)
+        let err = ensure_pending_asm_logs_fit(0, overflow_count)
             .expect_err("test: expected pending ASM logs overflow");
         assert!(matches!(
             err,

@@ -4,14 +4,21 @@ use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
 use strata_asm_proto_checkpoint_types::CheckpointTip;
+use strata_bridge_params::BridgeParams;
+use strata_codec::decode_buf_exact;
 use strata_identifiers::{
     Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::MAX_TYPE;
 use strata_ol_chain_types_new::MAX_SEALING_MANIFEST_COUNT;
+use strata_ol_da::OLDaPayloadV1;
+use strata_ol_state_support_types::DaAccumulatingState;
 
-use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
+use crate::{
+    assembly::BlockComponents, context::BlockInfo, errors::ExecError, execute_block_batch_predrain,
+    test_utils::*,
+};
 
 const GENESIS_MANIFEST_SENTINEL_COUNT: u64 = 1;
 
@@ -175,6 +182,95 @@ fn test_manifest_processing_skips_unknown_serial_deposit() {
     assert_eq!(account_state.inbox_mmr().num_entries(), 0);
     assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(100_000_000));
     assert_eq!(state.last_l1_height(), 1);
+}
+
+#[test]
+fn test_deposit_terminal_drain_has_no_logs_or_predrain_effects() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let deposit_amount = BitcoinAmount::from_sat(100_000_000);
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::zero())
+        })
+        .execute_genesis();
+    let snark_serial = fixture.account_serial(snark_acct_id);
+    let parent_state = fixture.state().clone();
+    let parent_header = fixture.parent_header().clone();
+
+    let output = fixture
+        .child_block()
+        .terminal()
+        .with_manifest(make_deposit_manifest_for_account(
+            1,
+            1,
+            snark_serial,
+            SubjectId::from([42u8; 32]),
+            deposit_amount,
+        ))
+        .execute_with_outputs();
+
+    assert_eq!(
+        output.log_count(),
+        0,
+        "ASM deposit terminal drain must not emit OL logs"
+    );
+    assert_eq!(fixture.account_balance(snark_acct_id), deposit_amount);
+
+    let mut predrain_state = DaAccumulatingState::new(parent_state);
+    let predrain_logs = execute_block_batch_predrain(
+        &mut predrain_state,
+        &[to_ol_block(output.completed_block())],
+        &parent_header,
+        BridgeParams::default(),
+    )
+    .expect("pre-drain checkpoint replay should succeed");
+    assert_eq!(
+        predrain_logs.len(),
+        0,
+        "checkpoint pre-drain replay must not include ASM drain logs"
+    );
+    let da_blob = predrain_state
+        .take_completed_epoch_da_blob()
+        .expect("checkpoint DA finalization should succeed")
+        .expect("checkpoint DA blob should encode");
+    let da_payload: OLDaPayloadV1 =
+        decode_buf_exact(&da_blob).expect("checkpoint DA payload should decode");
+    assert!(
+        da_payload
+            .state_diff
+            .ledger
+            .account_diffs
+            .entries()
+            .is_empty(),
+        "checkpoint pre-drain DA must not include ASM drain account diffs"
+    );
+    assert!(
+        da_payload
+            .state_diff
+            .ledger
+            .new_accounts
+            .entries()
+            .is_empty(),
+        "checkpoint pre-drain DA must not include ASM drain account creations"
+    );
+    let predrain_account = predrain_state
+        .inner()
+        .get_account_state(snark_acct_id)
+        .expect("account lookup should succeed")
+        .expect("snark account should exist");
+    assert_eq!(
+        predrain_account.balance(),
+        BitcoinAmount::zero(),
+        "checkpoint pre-drain replay must not apply ASM drain state effects"
+    );
+    let predrain_snark_account = predrain_account
+        .as_snark_account()
+        .expect("account should be a snark account");
+    assert_eq!(
+        predrain_snark_account.inbox_mmr().num_entries(),
+        0,
+        "checkpoint pre-drain replay must not apply ASM drain inbox effects"
+    );
 }
 
 #[test]

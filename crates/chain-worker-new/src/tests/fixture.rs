@@ -20,7 +20,7 @@ use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
 };
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_new::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
@@ -33,8 +33,8 @@ use strata_ol_stf::{
         TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
         epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
         epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
-        make_deposit_manifest_for_account, make_genesis_state, make_state_root,
-        snark_inbox_msg_with_data,
+        make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state,
+        make_state_root, snark_inbox_msg_with_data,
     },
     verify_block,
 };
@@ -45,9 +45,21 @@ pub enum EpochShape {
     /// Empty filler blocks plus a terminal carrying a deposit manifest. No
     /// snark updates: covers the path where `ol_logs` is empty.
     DepositManifestOnly,
+
+    /// Empty filler blocks plus an empty terminal. Covers a sealed epoch with
+    /// no new L1 manifests.
+    NoNewManifests,
+
     /// Multiple OL txs, plus a terminal deposit manifest. Exercises per-update record
     /// reconstruction from `ol_logs` (N > 1) alongside deposit-manifest indexing.
     SnarkMultiUpdateAndDeposit,
+
+    /// ASM manifests are carried by non-terminal blocks; the terminal block has no
+    /// manifests.
+    ManifestsInNonTerminalBlocks,
+
+    /// More ASM manifests than the epoch manifest cap allows.
+    ManifestsExceedEpochCap,
 }
 
 /// One built OL epoch with the reference values for cross-mode comparison.
@@ -92,7 +104,7 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
 
     // Build the epoch's blocks per shape.
     let mut blocks: Vec<OLBlock> = Vec::new();
-    let terminal_manifest = match shape {
+    let manifests_by_height = match shape {
         EpochShape::DepositManifestOnly => {
             let mut prev = genesis.header().clone();
             for _ in 0..4 {
@@ -106,7 +118,20 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
                 BitcoinAmount::from_sat(150_000_000),
             );
             run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
-            manifest
+            vec![(TERMINAL_L1_HEIGHT, manifest)]
+        }
+        EpochShape::NoNewManifests => {
+            let mut prev = genesis.header().clone();
+            for _ in 0..4 {
+                prev = run_block(&mut state, &mut blocks, &prev, BlockComponents::new_empty());
+            }
+            run_block(
+                &mut state,
+                &mut blocks,
+                &prev,
+                BlockComponents::new_empty().as_terminal(),
+            );
+            Vec::new()
         }
         EpochShape::SnarkMultiUpdateAndDeposit => {
             let prev = run_snark_multi_update_blocks(&mut state, &mut blocks, genesis.header());
@@ -118,7 +143,73 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
                 BitcoinAmount::from_sat(150_000_000),
             );
             run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
-            manifest
+            vec![(TERMINAL_L1_HEIGHT, manifest)]
+        }
+        EpochShape::ManifestsInNonTerminalBlocks => {
+            let mut prev = genesis.header().clone();
+            let manifest_a = make_empty_manifest(TERMINAL_L1_HEIGHT, 2);
+            prev = run_block(
+                &mut state,
+                &mut blocks,
+                &prev,
+                BlockComponents::new_manifests(vec![manifest_a.clone()]),
+            );
+
+            let manifest_b = make_empty_manifest(TERMINAL_L1_HEIGHT + 1, 3);
+            prev = run_block(
+                &mut state,
+                &mut blocks,
+                &prev,
+                BlockComponents::new_manifests(vec![manifest_b.clone()]),
+            );
+            run_block(
+                &mut state,
+                &mut blocks,
+                &prev,
+                BlockComponents::new_empty().as_terminal(),
+            );
+
+            vec![
+                (TERMINAL_L1_HEIGHT, manifest_a),
+                (TERMINAL_L1_HEIGHT + 1, manifest_b),
+            ]
+        }
+        EpochShape::ManifestsExceedEpochCap => {
+            let max_per_block = MAX_SEALING_MANIFEST_COUNT as u32;
+            let mut manifests_by_height =
+                Vec::with_capacity(MAX_SEALING_MANIFEST_COUNT as usize + 1);
+
+            let first_chunk: Vec<_> = (TERMINAL_L1_HEIGHT..TERMINAL_L1_HEIGHT + max_per_block)
+                .map(|height| {
+                    let manifest = make_empty_manifest(height, height as u8);
+                    manifests_by_height.push((height, manifest.clone()));
+                    manifest
+                })
+                .collect();
+            let mut prev = run_block(
+                &mut state,
+                &mut blocks,
+                genesis.header(),
+                BlockComponents::new_manifests(first_chunk),
+            );
+
+            let overflow_height = TERMINAL_L1_HEIGHT + max_per_block;
+            let overflow_manifest = make_empty_manifest(overflow_height, overflow_height as u8);
+            manifests_by_height.push((overflow_height, overflow_manifest.clone()));
+            prev = run_block(
+                &mut state,
+                &mut blocks,
+                &prev,
+                BlockComponents::new_manifests(vec![overflow_manifest]),
+            );
+            run_block(
+                &mut state,
+                &mut blocks,
+                &prev,
+                BlockComponents::new_empty().as_terminal(),
+            );
+
+            manifests_by_height
         }
     };
 
@@ -172,8 +263,14 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
     // DA blob and per-update OL logs the checkpoint payload carries.
     let (da_blob, ol_logs) = rebuild_da_and_logs(&pre_epoch_layer, &blocks, genesis.header());
 
-    let checkpoint_payload =
-        assemble_checkpoint_payload(da_blob, ol_logs, &terminal_header, terminal_commitment);
+    let tip_l1_height = post_epoch_l1.height();
+    let checkpoint_payload = assemble_checkpoint_payload(
+        da_blob,
+        ol_logs,
+        &terminal_header,
+        terminal_commitment,
+        tip_l1_height,
+    );
 
     BuiltEpoch {
         epoch_commitment,
@@ -181,7 +278,7 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
         prev_summary,
         prev_terminal: genesis_commitment,
         pre_epoch_state,
-        manifests_by_height: vec![(TERMINAL_L1_HEIGHT, terminal_manifest)],
+        manifests_by_height,
         checkpoint_payload,
         block_sync_state_root,
         block_sync_summary,
@@ -195,6 +292,7 @@ fn assemble_checkpoint_payload(
     ol_logs: Vec<CheckpointOLLog>,
     terminal_header: &OLBlockHeader,
     terminal_commitment: OLBlockCommitment,
+    tip_l1_height: u32,
 ) -> CheckpointPayload {
     let complement = TerminalHeaderComplement::new(
         terminal_header.timestamp(),
@@ -204,11 +302,7 @@ fn assemble_checkpoint_payload(
     );
     let sidecar =
         CheckpointSidecar::new(da_blob, ol_logs, complement).expect("build checkpoint sidecar");
-    let tip = CheckpointTip::new(
-        terminal_header.epoch(),
-        TERMINAL_L1_HEIGHT,
-        terminal_commitment,
-    );
+    let tip = CheckpointTip::new(terminal_header.epoch(), tip_l1_height, terminal_commitment);
     CheckpointPayload::new(tip, sidecar, Vec::new()).expect("build checkpoint payload")
 }
 

@@ -232,7 +232,7 @@ mod tests {
     use strata_csm_types::{ClientState, L1Status};
     use strata_identifiers::{Buf32, Buf64, EpochCommitment, L1BlockCommitment, L1BlockId};
     use strata_ol_block_assembly::{
-        BlockCompletionData, BlockasmBuilder, FixedSlotSealing,
+        BlockCompletionData, BlockasmBuilder, FixedSlotSealing, LimitAwareSealing,
         test_utils::{MockMempoolProvider, TestStorageFixtureBuilder},
     };
     use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
@@ -266,7 +266,7 @@ mod tests {
             Arc::new(BlockAssemblyConfig::new(Duration::from_millis(1_000))),
             storage,
             Arc::new(MockMempoolProvider::new()),
-            FixedSlotSealing::new(10),
+            LimitAwareSealing::new(FixedSlotSealing::new(10)),
             state_provider,
             SequencerConfig::default(),
             PredicateKey::always_accept(),

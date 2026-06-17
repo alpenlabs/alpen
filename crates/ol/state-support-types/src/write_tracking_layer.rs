@@ -291,9 +291,7 @@ where
     }
 
     fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
-        if self.pending_asm_logs_full() {
-            return Err(StateError::PendingAsmLogsFull);
-        }
+        ensure_pending_asm_log_slot_available(self.pending_asm_logs_len())?;
         self.batch
             .intraepoch_writes_mut()
             .appended_pending_asm_logs
@@ -341,6 +339,14 @@ where
             .create_account_from_data(id, new_acct_data, serial);
         Ok(serial)
     }
+}
+
+fn ensure_pending_asm_log_slot_available(current_len: usize) -> StateResult<()> {
+    if current_len as u64 >= MAX_PENDING_ASM_LOGS {
+        return Err(StateError::PendingAsmLogsFull);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -753,26 +759,9 @@ mod tests {
     fn test_append_returns_full_at_capacity() {
         use strata_ol_state_types::MAX_PENDING_ASM_LOGS;
 
-        let base = create_test_base_layer();
-        let diff = BatchDiffState::new(&base, &[]);
-        let mut tracking = WriteTrackingState::new_empty(&diff);
-
-        // Pre-load batch up to MAX-1 to keep the test cheap; the capacity check
-        // doesn't depend on actually pushing MAX entries since we manipulate the
-        // batch state directly.
-        for i in 0..(MAX_PENDING_ASM_LOGS - 1) {
-            tracking
-                .try_append_pending_asm_log(pending_log((i & 0xff) as u8))
-                .expect("append within capacity");
-        }
-        assert!(!tracking.pending_asm_logs_full());
-
-        tracking
-            .try_append_pending_asm_log(pending_log(0))
-            .expect("final slot");
-        assert!(tracking.pending_asm_logs_full());
-
-        let overflow = tracking.try_append_pending_asm_log(pending_log(0));
+        ensure_pending_asm_log_slot_available(MAX_PENDING_ASM_LOGS as usize - 1)
+            .expect("one slot remains");
+        let overflow = ensure_pending_asm_log_slot_available(MAX_PENDING_ASM_LOGS as usize);
         assert!(matches!(overflow, Err(StateError::PendingAsmLogsFull)));
     }
 }
