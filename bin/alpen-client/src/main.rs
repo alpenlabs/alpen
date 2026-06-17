@@ -422,8 +422,8 @@ fn main() {
                 // `try_build_payload` / `AlpenRethPayloadEngine`); this exex
                 // remains only to feed the ACCOUNT proof's batch-range witness
                 // (`RangeWitnessExtractor` reads `AccessedStateStore`). Retiring
-                // it is the separate acct migration tracked in
-                // experimental/evgeniy/ee-proper-witness.md.
+                // it is a separate acct-proof migration tracked as follow-up
+                // work to STR-3649.
                 node_builder = node_builder.install_exex("accessed_state", {
                     let accessed_state_store = storage.clone();
                     |ctx| async {

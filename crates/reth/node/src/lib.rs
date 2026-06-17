@@ -11,9 +11,7 @@ mod pool;
 
 pub mod args;
 pub use alpen_reth_primitives::WithdrawalIntent;
-pub use block_witness::{
-    build_block_witness_from_executed_state, BlockWitnessRecord, CapturedBlockWitness,
-};
+pub use block_witness::{build_block_witness_from_executed_state, BlockWitnessRecord};
 pub use engine::{AlpenEngineTypes, AlpenEngineValidator};
 pub use gossip::{
     AlpenGossipCommand, AlpenGossipConnection, AlpenGossipConnectionHandler, AlpenGossipEvent,

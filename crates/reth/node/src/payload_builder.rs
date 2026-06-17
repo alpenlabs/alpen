@@ -312,7 +312,7 @@ where
     // the payload build, so a block is never produced without its witness.
     let block_num = block.header().number;
     let block_rlp = alloy_rlp::encode(block.sealed_block().clone_block());
-    let captured = build_block_witness_from_executed_state(
+    let record = build_block_witness_from_executed_state(
         &db,
         &state_provider,
         &client,
@@ -321,7 +321,7 @@ where
         parent_header.header(),
     )
     .map_err(|e| PayloadBuilderError::other(io::Error::other(format!("witness capture: {e}"))))?;
-    let block_witness = captured.encode_record().map_err(|e| {
+    let block_witness = record.encode().map_err(|e| {
         PayloadBuilderError::other(io::Error::other(format!("witness encode: {e}")))
     })?;
 

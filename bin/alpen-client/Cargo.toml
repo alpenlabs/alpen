@@ -53,7 +53,6 @@ alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
 alpen-reth-witness.workspace = true
 bitcoind-async-client = { workspace = true, optional = true }
-borsh.workspace = true
 ssz.workspace = true
 strata-acct-types.workspace = true
 strata-bridge-params.workspace = true

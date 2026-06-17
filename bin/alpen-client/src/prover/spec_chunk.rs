@@ -12,7 +12,6 @@ use alpen_ee_common::{BlockWitnessStore, ChunkId, ChunkStorage, ExecBlockStorage
 use alpen_ee_database::EeNodeStorage;
 use alpen_reth_node::BlockWitnessRecord;
 use async_trait::async_trait;
-use borsh::BorshDeserialize;
 use reth_primitives::Block;
 use reth_primitives_traits::Block as _;
 use rsp_primitives::genesis::Genesis;
@@ -24,7 +23,7 @@ use strata_ee_chain_types::{
     ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs, OutputMessage, OutputTransfer,
 };
 use strata_ee_chunk_runtime::{PrivateInput, RawBlockData, RawChunkData};
-use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader};
+use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader, EvmPartialState};
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_alpen_chunk::{EeChunkProgram, EeChunkProofInput};
 
@@ -100,10 +99,13 @@ impl TryFrom<Vec<u8>> for ChunkTask {
 
 /// Chunk proof specification.
 ///
-/// The input is assembled entirely from per-block records — no chunk-spanning witness:
-/// - **`BlockWitnessStore`** — one [`BlockWitnessRecord`] per block (the depth-0 transition witness
-///   plus the RLP block and parent header), written inline in the block-production path. A missing
-///   record returns `TransientFailure` so paas retries with backoff.
+/// The input is assembled from per-block records, then collapsed into one
+/// chunk-level pre-state:
+/// - **`BlockWitnessStore`** — one [`BlockWitnessRecord`] per block (raw depth-0 witness parts:
+///   trie-node bag, bytecodes, BLOCKHASH ancestor headers, plus the RLP block and parent header),
+///   written inline in the block-production path. Their node bags are unioned into a single
+///   chunk-level sparse pre-state anchored at the chunk's start root. A missing record returns
+///   `TransientFailure` so paas retries with backoff.
 /// - **`ExecBlockStorage`** — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
 ///   `ExecOutputs`.
 ///
@@ -159,9 +161,10 @@ impl ProofSpec for ChunkSpec {
             )));
         }
 
-        // 2. Assemble per-block data from the per-block witness records. Each record (written
-        //    inline at block production) carries the block's depth-0 transition witness, the RLP
-        //    block, and its parent header.
+        // 2. Assemble per-block data and accumulate the chunk-level witness union. Each record
+        //    (written inline at block production) carries the raw depth-0 witness parts (trie-node
+        //    bag, bytecodes, BLOCKHASH ancestor headers) plus the RLP block and parent header. We
+        //    union the node bags across the chunk and build one chunk-level pre-state below.
         let mut block_datas: Vec<RawBlockData> = Vec::with_capacity(block_hashes.len());
         let mut aggregated_inputs = ExecInputs::new_empty();
         let mut aggregated_outputs = ExecOutputs::new_empty();
@@ -171,6 +174,13 @@ impl ProofSpec for ChunkSpec {
         let mut tip_blkid = Hash::zero();
         let mut tip_state_root = Hash::zero();
         let mut tip_exec_header_summary = ExecHeaderSummary::new_empty();
+
+        // Chunk-level witness union (the first block to touch any node captures
+        // it at its unmodified, i.e. chunk-start, version — so the union of the
+        // per-block node bags fully covers the chunk's start state).
+        let mut union_witness_state: Vec<Vec<u8>> = Vec::new();
+        let mut union_codes: Vec<Vec<u8>> = Vec::new();
+        let mut union_ancestor_headers_rlp: Vec<Vec<u8>> = Vec::new();
 
         for (idx, block_hash) in block_hashes.iter().enumerate() {
             // Per-block witness record: depth-0 witness + RLP block + parent
@@ -189,7 +199,7 @@ impl ProofSpec for ChunkSpec {
                          block-production capture may still be in flight or the record was deleted"
                     ))
                 })?;
-            let record = BlockWitnessRecord::try_from_slice(&bytes).map_err(|e| {
+            let record = BlockWitnessRecord::decode(&bytes).map_err(|e| {
                 PaasError::PermanentFailure(format!(
                     "decode block witness record for {block_hash:?}: {e}"
                 ))
@@ -248,17 +258,43 @@ impl ProofSpec for ChunkSpec {
                     &block,
                     block_inputs,
                     block_outputs,
-                    record.raw_partial_pre_state,
                 )
                 .map_err(|e| {
                     PaasError::PermanentFailure(format!("encode block {block_hash:?}: {e}"))
                 })?,
             );
+
+            // Accumulate this block's raw witness parts into the chunk union.
+            union_witness_state.extend(record.witness_state);
+            union_codes.extend(record.codes);
+            union_ancestor_headers_rlp.extend(record.ancestor_headers);
         }
 
         // 3. Parent header (from the first block's witness) — wrap + encode for the guest, and
         //    confirm it matches the chunk's prev_block.
         let prev_header = prev_header.expect("non-empty chunk has a first block");
+
+        // Build the single chunk-level pre-state from the union of the per-block
+        // witness node bags, anchored at the chunk's start (prev header) state
+        // root. `from_witness_parts` reconstructs the sparse trie purely
+        // in-memory from the node bag — no historical-state access, no OOM.
+        let chunk_start_state_root = prev_header.state_root;
+        let ancestor_headers: Vec<alloy_consensus::Header> = union_ancestor_headers_rlp
+            .iter()
+            .map(|raw| alloy_rlp::decode_exact(&raw[..]))
+            .collect::<Result<_, _>>()
+            .map_err(|e| {
+                PaasError::PermanentFailure(format!("decode chunk ancestor header: {e}"))
+            })?;
+        let chunk_pre_state = EvmPartialState::from_witness_parts(
+            union_witness_state,
+            chunk_start_state_root,
+            union_codes,
+            ancestor_headers,
+        );
+        let raw_chunk_pre_state = encode_to_vec(&chunk_pre_state)
+            .map_err(|e| PaasError::PermanentFailure(format!("encode chunk pre-state: {e}")))?;
+
         let parent_evm_header = EvmHeader::new(prev_header);
         let parent_blkid: Hash = parent_evm_header.compute_block_id();
         if parent_blkid != chunk_id.prev_block() {
@@ -281,7 +317,12 @@ impl ProofSpec for ChunkSpec {
         );
 
         let raw_chunk = RawChunkData::new(block_datas, parent_blkid);
-        let private_input = PrivateInput::new(chunk_transition, raw_chunk, raw_prev_header);
+        let private_input = PrivateInput::new(
+            chunk_transition,
+            raw_chunk,
+            raw_prev_header,
+            raw_chunk_pre_state,
+        );
 
         Ok(EeChunkProofInput {
             genesis: self.genesis.clone(),
