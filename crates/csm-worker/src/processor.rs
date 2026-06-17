@@ -8,7 +8,7 @@ use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
-use strata_primitives::{l1::is_l1_reorg_safe, prelude::*};
+use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use tracing::*;
 
@@ -16,7 +16,7 @@ use crate::{
     checkpoint_extract::{CheckpointVerificationContext, extract_matching_checkpoint},
     context::CsmWorkerContext,
     errors::{CsmWorkerError, CsmWorkerResult},
-    state::CsmWorkerState,
+    state::{CsmWorkerState, compute_reorg_floor_height, reload_client_state},
 };
 
 /// The in-flight CSM update produced by processing one ASM block's logs.
@@ -27,10 +27,6 @@ pub(crate) struct PendingCsmUpdate {
     /// Last epoch a checkpoint log was processed for.
     pub(crate) last_processed_epoch: Option<Epoch>,
 
-    /// Checkpoint observations made during this block, applied to the worker's
-    /// finality cursors only after a successful commit.
-    pub(crate) observations: Vec<L1Checkpoint>,
-
     /// Per-block verification fixtures, built once on the first checkpoint tip log.
     pub(crate) ckpt_verification_ctx: Option<CheckpointVerificationContext>,
 }
@@ -40,7 +36,6 @@ impl PendingCsmUpdate {
         Self {
             cur_state,
             last_processed_epoch,
-            observations: Vec::new(),
             ckpt_verification_ctx: None,
         }
     }
@@ -102,9 +97,6 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         let new_checkpoint =
             self.mark_ol_checkpoint_l1_observed(pending, checkpoint_tip_update, asm_block)?;
-        // `last_finalized_checkpoint` is left as the previous value here; the
-        // service loop refreshes it once `advance_finalization` declares a new
-        // finalized epoch based on L1 depth.
         pending.cur_state = Arc::new(ClientState::new(
             pending.cur_state.get_last_finalized_checkpoint(),
             Some(new_checkpoint),
@@ -122,14 +114,45 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         asm_block: L1BlockCommitment,
         next_state: Arc<ClientState>,
     ) -> CsmWorkerResult<()> {
-        let state = next_state.as_ref().clone();
+        // A commit either extends the tip by one or replaces it at the same
+        // height (a reorg whose pivot sits at the incoming height). It never
+        // skips a height.
+        let last = self
+            .recent_asm_blocks
+            .last()
+            .expect("recent_asm_blocks is non-empty");
+        let extends_tip = asm_block.height() == last.height() + 1;
+        let same_height_reorg = asm_block.height() == last.height();
+        debug_assert!(
+            extends_tip || same_height_reorg,
+            "received asm block skipping a height: tip {last}, block {asm_block}"
+        );
+
+        let state = reload_client_state(&self.ctx, &asm_block, &next_state)?;
         self.ctx
-            .put_client_state_update(&asm_block, ClientUpdateOutput::new(state.clone(), vec![]))?;
-        self.last_asm_block = Some(asm_block);
-        self.last_committed_state = next_state;
-        // Publish the client state to status channel.
+            .put_client_state_update(&asm_block, ClientUpdateOutput::new_state(state.clone()))?;
+        self.recent_asm_blocks.push(asm_block);
+        self.last_committed_state = Arc::new(state.clone());
+        self.prune_below_reorg_floor();
         self.ctx.publish_client_state(state, asm_block);
         Ok(())
+    }
+
+    /// Drops blocks below the reorg-safe floor; index 0 stays the deepest point
+    /// a reorg could reach.
+    fn prune_below_reorg_floor(&mut self) {
+        let Some(tip) = self.recent_asm_blocks.last() else {
+            return;
+        };
+        let floor = compute_reorg_floor_height(&self.ctx, &self.last_committed_state, tip.height());
+        let keep_from = self
+            .recent_asm_blocks
+            .iter()
+            .position(|b| b.height() >= floor)
+            .unwrap_or(self.recent_asm_blocks.len());
+        // Always retain at least the tip so the window is never empty.
+        let keep_from = keep_from.min(self.recent_asm_blocks.len().saturating_sub(1));
+        self.recent_asm_blocks.drain(..keep_from);
     }
 
     /// Processes every log of a single ASM block and commits it as one unit.
@@ -152,112 +175,23 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         // Commit succeeded; fold pending outputs onto the worker.
         self.last_processed_epoch = pending.last_processed_epoch;
-        self.apply_observations(pending.observations);
 
         Ok(())
-    }
-
-    /// Folds checkpoint observations made during a successfully committed block
-    /// into the worker's finality cursors.
-    fn apply_observations(&mut self, observations: impl IntoIterator<Item = L1Checkpoint>) {
-        for checkpoint in observations {
-            self.apply_checkpoint_observation(checkpoint);
-        }
-    }
-
-    /// Folds a single checkpoint observation into the worker's finality
-    /// cursors: bumps `confirmed_epoch` monotonically and queues the
-    /// observation for incremental depth-driven finalization if it's still
-    /// ahead of `finalized_epoch` and not already present.
-    fn apply_checkpoint_observation(&mut self, checkpoint: L1Checkpoint) {
-        let commitment = EpochCommitment::from(&checkpoint);
-
-        // Update cached confirmed epoch monotonically.
-        if self
-            .confirmed_epoch
-            .is_none_or(|current| commitment.epoch() > current.epoch())
-        {
-            self.confirmed_epoch = Some(commitment);
-        }
-
-        // Queue only non-finalized candidates and avoid duplicates.
-        if self
-            .finalized_epoch
-            .is_none_or(|current| commitment.epoch() > current.epoch())
-            && !self
-                .observed_checkpoints
-                .iter()
-                .any(|existing| EpochCommitment::from(existing) == commitment)
-        {
-            self.observed_checkpoints.push_back(checkpoint);
-        }
-    }
-
-    /// Walks the observation queue and advances `finalized_epoch` for every
-    /// candidate buried at least `finality_depth` deep under `current_l1_tip`.
-    ///
-    /// Returns the most recently finalized `L1Checkpoint` if `finalized_epoch`
-    /// advanced, else `None`. The caller uses the returned record to refresh
-    /// `ClientState.last_finalized_checkpoint` so it reflects depth-driven
-    /// finality rather than the (since-removed) observation heuristic.
-    pub(crate) fn advance_finalization(
-        &mut self,
-        current_l1_tip: L1Height,
-    ) -> Option<L1Checkpoint> {
-        let prev_finalized = self.finalized_epoch;
-        let finality_depth = self.ctx.l1_reorg_safe_depth();
-        let mut latest_finalized: Option<L1Checkpoint> = None;
-
-        while let Some(candidate) = self.observed_checkpoints.front() {
-            let commitment = EpochCommitment::from(candidate);
-            if self
-                .finalized_epoch
-                .is_some_and(|current| commitment.epoch() <= current.epoch())
-            {
-                self.observed_checkpoints.pop_front();
-                continue;
-            }
-
-            if !is_l1_reorg_safe(
-                candidate.l1_reference.l1_commitment.height(),
-                current_l1_tip,
-                finality_depth,
-            ) {
-                break;
-            }
-
-            let finalized = self
-                .observed_checkpoints
-                .pop_front()
-                .expect("front returned Some above");
-            if self
-                .finalized_epoch
-                .is_none_or(|current| commitment.epoch() > current.epoch())
-            {
-                self.finalized_epoch = Some(commitment);
-            }
-            latest_finalized = Some(finalized);
-        }
-
-        if self.finalized_epoch != prev_finalized {
-            latest_finalized
-        } else {
-            None
-        }
     }
 
     /// Processes `asm_block` and its logs, first replaying any ASM blocks skipped
     /// between the last committed block and `asm_block`.
     ///
-    ///  On error the cursor stays at the last contiguous block, so restarts resume safely.
+    ///  On error the worker state stays the same, so restarts resume safely.
     pub(crate) fn process_asm_block(
         &mut self,
         asm_block: L1BlockCommitment,
         logs: &[AsmLogEntry],
     ) -> CsmWorkerResult<()> {
-        let last = self.last_asm_block.ok_or(CsmWorkerError::NoLastAsmBlock)?;
-        let last_height = last.height();
-        let target_height = asm_block.height();
+        let last = *self
+            .recent_asm_blocks
+            .last()
+            .ok_or(CsmWorkerError::NoAnchorAsmBlock)?;
 
         // Exact duplicate — ASM redelivered the same status, nothing to do.
         if asm_block == last {
@@ -265,42 +199,118 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             return Ok(());
         }
 
-        // TODO(STR-3466): Strictly behind — either a stale message or a deeper reorg.
-        if target_height < last_height {
-            warn!(
-                %asm_block,
-                last_height,
-                "ASM block strictly behind last committed; skipping (possible deeper reorg)"
-            );
+        // A clean forward extension keeps `last` on the canonical chain. A
+        // missing block (height above a reverted tip) means it diverged.
+        let last_still_canonical = self.ctx.get_canonical_l1_block(last.height())? == Some(last);
+
+        // Stale redelivery: a lower-height status while the tip is still
+        // canonical is an out-of-order replay, not a reorg.
+        if last_still_canonical && asm_block.height() < last.height() {
+            debug!(%asm_block, %last, "ignoring stale lower-height ASM status");
             return Ok(());
         }
 
-        // Same height, different blkid — the chain reorged out our last tip.
-        // TODO(STR-3466): with this ticket the two conditionals can be collapsed into one `<=`
-        // check.
-        if target_height == last_height {
-            warn!(
-                %asm_block,
-                last_blkid = ?last.blkid(),
-                "same-height ASM block with different blkid; processing as reorged tip"
-            );
-            // Directly process the logs in one block reorg.
-            return self.process_asm_logs(asm_block, logs);
+        // A pure extension resumes from `last`; otherwise the reorg rewinds and
+        // tells us the pivot to resume from.
+        let is_pure_extension = last_still_canonical && asm_block.height() > last.height();
+        let resume_block = if is_pure_extension {
+            last
+        } else {
+            self.calculate_pivot_and_reorg(&asm_block)?
+        };
+
+        // A drop-tip reorg can rewind directly onto `asm_block`; it is already
+        // committed as the pivot, so re-processing it would duplicate the entry.
+        if resume_block == asm_block {
+            return Ok(());
         }
 
-        for height in (last_height + 1)..=target_height {
-            let (block, block_logs) = if height == target_height {
-                (asm_block, logs.to_vec())
-            } else {
-                // fetch from db.
-                let gap_block = self.ctx.get_canonical_l1_block(height)?;
-                let gap_state = self.ctx.get_asm_state(&gap_block)?;
-                info!(%gap_block, "replaying ASM block skipped by status channel");
-                (gap_block, gap_state.logs().clone())
-            };
-            self.process_asm_logs(block, &block_logs)?;
+        // Replay gap blocks, then the target.
+        for height in (resume_block.height() + 1)..asm_block.height() {
+            let gap_block = self.ctx.get_canonical_l1_block(height)?.ok_or_else(|| {
+                CsmWorkerError::MissingData {
+                    what: "canonical L1 block",
+                    detail: format!("height {height}"),
+                }
+            })?;
+            let gap_state = self.ctx.get_asm_state(&gap_block)?;
+            info!(%gap_block, "replaying ASM block skipped by status channel");
+            self.process_asm_logs(gap_block, gap_state.logs())?;
         }
+        // Process the target.
+        self.process_asm_logs(asm_block, logs)?;
         Ok(())
+    }
+
+    /// Rewinds the worker to the pivot block — the deepest entry still on the
+    /// canonical chain leading to `incoming` — and returns it as the block to
+    /// resume processing from.
+    ///
+    /// Side effects, all relative to the pivot: truncates `recent_asm_blocks` to
+    /// it, re-persists its client-state row, deletes the orphaned rows above it,
+    /// and resets `last_committed_state`. A crash partway through the deletes is
+    /// recovered by `delete_orphan_rows_above` on the next restart.
+    ///
+    /// Errors if the pivot lies at or below the finalized anchor (index 0).
+    fn calculate_pivot_and_reorg(
+        &mut self,
+        incoming: &L1BlockCommitment,
+    ) -> CsmWorkerResult<L1BlockCommitment> {
+        // No match means the divergence reaches past the finalized anchor.
+        let Some(pivot_idx) = self.find_pivot_index()? else {
+            return Err(CsmWorkerError::ReorgPastFinality {
+                finalized: self.recent_asm_blocks[0],
+                incoming: *incoming,
+            });
+        };
+        let pivot_block = self.recent_asm_blocks[pivot_idx];
+
+        warn!(%pivot_block, %incoming, "reorg detected; rewinding to pivot block");
+
+        // It is expected to have client state persisted below the tip, which
+        // means below the pivot as well.
+        let persisted = self.ctx.get_client_state_at(&pivot_block)?;
+        let pivot_clstate = persisted
+            .clone()
+            .ok_or_else(|| CsmWorkerError::MissingData {
+                what: "client state at pivot block",
+                detail: pivot_block.to_string(),
+            })?;
+        let new_clstate = reload_client_state(&self.ctx, &pivot_block, &pivot_clstate)?;
+
+        // Re-persist at the pivot to overwrite the orphaned branch's row.
+        self.ctx.put_client_state_update(
+            &pivot_block,
+            ClientUpdateOutput::new_state(new_clstate.clone()),
+        )?;
+
+        for orphan in &self.recent_asm_blocks[pivot_idx + 1..] {
+            self.ctx.del_client_state(orphan)?;
+        }
+
+        // Persistence done; commit the rewind to in-memory state.
+        self.recent_asm_blocks.truncate(pivot_idx + 1);
+
+        // Publish if necessary.
+        if persisted.as_ref() != Some(&new_clstate) {
+            self.ctx
+                .publish_client_state(new_clstate.clone(), pivot_block);
+        }
+        self.last_committed_state = Arc::new(new_clstate);
+        Ok(pivot_block)
+    }
+
+    /// Highest index in recent asm blocks whose block still matches the canonical L1 chain.
+    fn find_pivot_index(&self) -> CsmWorkerResult<Option<usize>> {
+        for idx in (0..self.recent_asm_blocks.len()).rev() {
+            let block = self.recent_asm_blocks[idx];
+            // A missing block (above a reverted tip) or a mismatched blkid both
+            // mean this entry diverged; keep walking down.
+            if self.ctx.get_canonical_l1_block(block.height())? == Some(block) {
+                return Ok(Some(idx));
+            }
+        }
+        Ok(None)
     }
 
     fn get_checkpoint_verification_context(
@@ -327,8 +337,8 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         })
     }
 
-    /// Validates a checkpoint tip update against the parent ASM state, writes
-    /// the L1-ref observation to the DB, and updates the observations on the `pending` container.
+    /// Validates a checkpoint tip update against the parent ASM state and writes
+    /// the L1-ref observation to the DB.
     fn mark_ol_checkpoint_l1_observed(
         &self,
         pending: &mut PendingCsmUpdate,
@@ -363,7 +373,6 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         )?;
 
         let checkpoint = L1Checkpoint::new(*tip, observation);
-        pending.observations.push(checkpoint.clone());
 
         debug!(
             ?commitment,
@@ -404,7 +413,7 @@ fn decode_checkpoint_section(asm_state: &AsmState) -> CsmWorkerResult<Checkpoint
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{iter::once, sync::Arc};
 
     use bitcoin::Network;
     use strata_asm_common::{
@@ -413,7 +422,9 @@ mod tests {
     };
     use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_params::AsmParams;
+    use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
     use strata_btc_verification::L1Anchor;
+    use strata_checkpoint_types::EpochSummary;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::RBuf32;
@@ -421,7 +432,7 @@ mod tests {
     use strata_primitives::prelude::*;
     use strata_state::asm_state::AsmState;
     use strata_status::StatusChannel;
-    use strata_storage::create_node_storage;
+    use strata_storage::{NodeStorage, create_node_storage};
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{errors::CsmWorkerError, state::CsmWorkerState, test_utils::StubCtx};
@@ -454,6 +465,19 @@ mod tests {
     /// tests can register and resolve gap blocks consistently.
     fn block_id_at(height: u32) -> L1BlockId {
         L1BlockId::from(Buf32::from([height as u8; 32]))
+    }
+
+    /// Persists an empty client-state row at `block`, mirroring what a prior
+    /// CSM run leaves behind for every committed (at/below-tip) block. The reorg
+    /// path re-derives the fork's state from this row.
+    fn seed_client_state_row(storage: &strata_storage::NodeStorage, block: &L1BlockCommitment) {
+        storage
+            .client_state()
+            .put_update_blocking(
+                block,
+                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+            )
+            .expect("seed client state row");
     }
 
     fn create_test_params_arc() -> Arc<AsmParams> {
@@ -507,7 +531,7 @@ mod tests {
         let params = create_test_params_arc();
         let (storage, status_channel) = create_test_storage();
         let ctx = default_stub_ctx(&params, storage.clone(), status_channel);
-        let state = CsmWorkerState::new(ctx).unwrap();
+        let state = CsmWorkerState::init_from_context(ctx).unwrap();
         (state, storage)
     }
 
@@ -521,7 +545,7 @@ mod tests {
         let params = create_test_params_arc();
         let (storage, status_channel) = create_test_storage();
         let ctx = configure(default_stub_ctx(&params, storage.clone(), status_channel));
-        let state = CsmWorkerState::new(ctx).unwrap();
+        let state = CsmWorkerState::init_from_context(ctx).unwrap();
         (state, storage)
     }
 
@@ -609,7 +633,7 @@ mod tests {
         let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
 
         let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_fetch_failure());
-        state.last_asm_block = Some(asm_block);
+        state.recent_asm_blocks = vec![asm_block];
         let mut pending = fresh_pending(&state);
         let err = state
             .process_log(&mut pending, &log, &asm_block)
@@ -633,6 +657,9 @@ mod tests {
     #[test]
     fn commit_block_persists_state_and_advances_cursor() {
         let (mut state, storage) = create_test_state();
+        // Seed the list tip just below the block so the commit extends it
+        // contiguously (commit_block asserts no height is skipped).
+        state.recent_asm_blocks = vec![L1BlockCommitment::new(299, block_id_at(299))];
         let asm_block = L1BlockCommitment::new(300, L1BlockId::from(Buf32::from([7; 32])));
         let next_state = state.last_committed_state.clone();
 
@@ -640,7 +667,7 @@ mod tests {
             .commit_block(asm_block, next_state)
             .expect("commit should succeed");
 
-        assert_eq!(state.last_asm_block, Some(asm_block));
+        assert_eq!(state.recent_asm_blocks.last(), Some(&asm_block));
         let (persisted_block, _) = storage
             .client_state()
             .fetch_most_recent_state()
@@ -659,7 +686,7 @@ mod tests {
         let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
 
         let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_fetch_failure());
-        state.last_asm_block = Some(asm_block);
+        state.recent_asm_blocks = vec![asm_block];
 
         // The genesis client-state row seeded by `create_test_storage`.
         let (before_block, _) = storage
@@ -697,23 +724,18 @@ mod tests {
     /// pre-block values must be byte-identical after the failure.
     #[test]
     fn commit_failure_leaves_cursors_unchanged() {
-        let (mut state, storage) = create_test_state_with_ctx(|c| c.with_commit_failure());
         let last = L1BlockCommitment::new(100, block_id_at(100));
-        state.last_asm_block = Some(last);
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            c.with_commit_failure()
+                .with_canonical_block(100, block_id_at(100))
+        });
+        state.recent_asm_blocks = vec![last];
 
-        // Seed cursors with a known baseline so we can detect any partial
-        // advancement that survives the failed commit.
-        let baseline_epoch = EpochCommitment::from_terminal(
-            7,
-            OLBlockCommitment::new(70, OLBlockId::from(Buf32::from([7; 32]))),
-        );
+        // Seed a cursor baseline so we can detect any partial advancement that
+        // survives the failed commit.
         state.last_processed_epoch = Some(7);
-        state.confirmed_epoch = Some(baseline_epoch);
-        state.finalized_epoch = Some(baseline_epoch);
         let baseline_last_processed_epoch = state.last_processed_epoch;
-        let baseline_confirmed_epoch = state.confirmed_epoch;
-        let baseline_finalized_epoch = state.finalized_epoch;
-        let baseline_observed_checkpoints = state.observed_checkpoints.clone();
+        let baseline_committed_state = state.last_committed_state.clone();
 
         let next = L1BlockCommitment::new(101, block_id_at(101));
         let err = state
@@ -725,12 +747,10 @@ mod tests {
         );
 
         // Commit cursor pinned at the last committed block.
-        assert_eq!(state.last_asm_block, Some(last));
-        // Every cursor unchanged.
+        assert_eq!(state.recent_asm_blocks.last(), Some(&last));
+        // Cursors unchanged.
         assert_eq!(state.last_processed_epoch, baseline_last_processed_epoch);
-        assert_eq!(state.confirmed_epoch, baseline_confirmed_epoch);
-        assert_eq!(state.finalized_epoch, baseline_finalized_epoch);
-        assert_eq!(state.observed_checkpoints, baseline_observed_checkpoints);
+        assert_eq!(state.last_committed_state, baseline_committed_state);
         assert!(
             storage
                 .client_state()
@@ -745,16 +765,17 @@ mod tests {
     /// directly, with no gap-fill.
     #[test]
     fn contiguous_block_commits_directly() {
-        let (mut state, storage) = create_test_state();
         let last = L1BlockCommitment::new(100, block_id_at(100));
-        state.last_asm_block = Some(last);
+        let (mut state, storage) =
+            create_test_state_with_ctx(|c| c.with_canonical_block(100, block_id_at(100)));
+        state.recent_asm_blocks = vec![last];
 
         let next = L1BlockCommitment::new(101, block_id_at(101));
         state
             .process_asm_block(next, &[create_non_checkpoint_log_type()])
             .expect("contiguous block should process");
 
-        assert_eq!(state.last_asm_block, Some(next));
+        assert_eq!(state.recent_asm_blocks.last(), Some(&next));
         let (persisted, _) = storage
             .client_state()
             .fetch_most_recent_state()
@@ -773,7 +794,7 @@ mod tests {
         let target = L1BlockCommitment::new(104, block_id_at(104));
 
         let (mut state, storage) = create_test_state_with_ctx(|c| {
-            let mut c = c;
+            let mut c = c.with_canonical_block(100, block_id_at(100));
             for height in 101..=103 {
                 c = c.with_canonical_asm_state(
                     height,
@@ -783,14 +804,14 @@ mod tests {
             }
             c
         });
-        state.last_asm_block = Some(last);
+        state.recent_asm_blocks = vec![last];
 
         state
             .process_asm_block(target, &[create_non_checkpoint_log_type()])
             .expect("gap-fill should replay skipped blocks and commit target");
 
         // Cursor advanced all the way to the target.
-        assert_eq!(state.last_asm_block, Some(target));
+        assert_eq!(state.recent_asm_blocks.last(), Some(&target));
         // The last persisted client-state row is keyed on the target block,
         // and each gap block was committed in turn (105 distinct keys exist).
         let (persisted, _) = storage
@@ -822,14 +843,15 @@ mod tests {
 
         let (mut state, storage) = create_test_state_with_ctx(|c| {
             // Block 101 resolves, but 102 fails to resolve.
-            c.with_canonical_asm_state(
-                101,
-                block_id_at(101),
-                make_asm_state(vec![create_non_checkpoint_log_type()]),
-            )
-            .with_canonical_failure_at(102)
+            c.with_canonical_block(100, block_id_at(100))
+                .with_canonical_asm_state(
+                    101,
+                    block_id_at(101),
+                    make_asm_state(vec![create_non_checkpoint_log_type()]),
+                )
+                .with_canonical_failure_at(102)
         });
-        state.last_asm_block = Some(last);
+        state.recent_asm_blocks = vec![last];
 
         let (before_block, _) = storage
             .client_state()
@@ -843,8 +865,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                CsmWorkerError::MissingData { what, ref detail }
-                    if what == "canonical L1 block" && detail.contains("height 102")
+                CsmWorkerError::MissingData { what, .. } if what == "canonical L1 block"
             ),
             "unexpected error: {err}"
         );
@@ -852,8 +873,8 @@ mod tests {
         // Block 101 was committed before the failure; the cursor advanced to
         // 101 but no further — it did not jump to the target.
         assert_eq!(
-            state.last_asm_block,
-            Some(L1BlockCommitment::new(101, block_id_at(101)))
+            state.recent_asm_blocks.last(),
+            Some(&L1BlockCommitment::new(101, block_id_at(101)))
         );
         assert!(
             storage
@@ -868,185 +889,568 @@ mod tests {
         let _ = before_block;
     }
 
-    /// A same-height block with a different blkid is treated as a reorged
-    /// tip: its logs are processed and the cursor advances to the new blkid.
+    // --- reorg handling ---
+
     #[test]
-    fn same_height_reorg_processes_new_tip() {
-        let (mut state, storage) = create_test_state();
-        let old_blkid = block_id_at(100);
-        let new_blkid = block_id_at(0xFE);
-        let last = L1BlockCommitment::new(100, old_blkid);
-        state.last_asm_block = Some(last);
-
-        let reorged = L1BlockCommitment::new(100, new_blkid);
-        state
-            .process_asm_block(reorged, &[create_non_checkpoint_log_type()])
-            .expect("same-height reorg should process the new tip");
-
-        assert_eq!(
-            state.last_asm_block,
-            Some(reorged),
-            "cursor must advance to the reorged-in blkid"
-        );
-        let row = storage
-            .client_state()
-            .get_update_blocking(&reorged)
-            .expect("query client state");
-        assert!(
-            row.is_some(),
-            "client-state row must be persisted under the new blkid"
-        );
-    }
-
-    /// A status for a block at or behind the last committed block is a no-op
-    #[test]
-    fn stale_or_duplicate_block_is_ignored() {
-        let (mut state, storage) = create_test_state();
+    fn duplicate_asm_block_is_noop() {
         let last = L1BlockCommitment::new(100, block_id_at(100));
-        state.last_asm_block = Some(last);
+        // No canonical block registered: any lookup would fail, proving the
+        // duplicate path returns before consulting the canonical chain.
+        let (mut state, storage) = create_test_state();
+        state.recent_asm_blocks = vec![last];
 
-        let (before, _) = storage
-            .client_state()
-            .fetch_most_recent_state()
-            .expect("query client state")
-            .expect("seeded client state");
-
-        // Same height as last.
         state
             .process_asm_block(last, &[create_non_checkpoint_log_type()])
-            .expect("duplicate block should be a no-op");
-        // Behind last.
-        let behind = L1BlockCommitment::new(50, block_id_at(50));
-        state
-            .process_asm_block(behind, &[create_non_checkpoint_log_type()])
-            .expect("stale block should be a no-op");
+            .expect("duplicate block should be a no-op and not error");
 
-        assert_eq!(state.last_asm_block, Some(last));
-        let (after, _) = storage
+        assert_eq!(state.recent_asm_blocks, vec![last]);
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&last)
+                .expect("query client state")
+                .is_none(),
+            "duplicate must not persist a client-state row"
+        );
+    }
+
+    #[test]
+    fn same_last_processed_height_reorg_replaces_tip() {
+        let anchor = L1BlockCommitment::new(99, block_id_at(99));
+        let orphan_100 = L1BlockCommitment::new(100, block_id_at(100));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            c.with_canonical_block(99, block_id_at(99))
+                .with_canonical_block(100, block_id_at(101))
+        });
+        state.recent_asm_blocks = vec![anchor, orphan_100];
+
+        // CSM persisted a client state at the fork block (anchor) in a prior
+        // run; the reorg re-derives from it.
+        seed_client_state_row(&storage, &anchor);
+        // The orphaned tip left a row behind from the prior run.
+        seed_client_state_row(&storage, &orphan_100);
+
+        // Canonical chain: anchor stays at 99, and height 100 is now a
+        // different block than the orphaned tip the worker committed.
+        let canonical_100 = L1BlockCommitment::new(100, block_id_at(101));
+
+        state
+            .process_asm_block(canonical_100, &[create_non_checkpoint_log_type()])
+            .expect("same-height reorg should rewind and re-commit");
+
+        // Orphan tip dropped; canonical block now sits at height 100.
+        assert_eq!(state.recent_asm_blocks.last(), Some(&canonical_100));
+        assert!(
+            !state.recent_asm_blocks.contains(&orphan_100),
+            "orphaned tip must be pruned from the list"
+        );
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&orphan_100)
+                .expect("query client state")
+                .is_none(),
+            "orphaned tip's row must be deleted"
+        );
+        let (persisted, _) = storage
             .client_state()
             .fetch_most_recent_state()
             .expect("query client state")
-            .expect("client state still present");
-        assert_eq!(
-            before, after,
-            "no commit should happen for stale/dup blocks"
-        );
-    }
-
-    /// Builds an observation queue entry at `epoch` anchored to L1 `height`.
-    fn observation_at(epoch: u32, l1_height: L1Height) -> L1Checkpoint {
-        let l2_commitment = OLBlockCommitment::new(
-            epoch as u64 * 10,
-            OLBlockId::from(Buf32::from([epoch as u8; 32])),
-        );
-        let tip = strata_asm_proto_checkpoint_types::CheckpointTip {
-            epoch,
-            l1_height,
-            l2_commitment,
-        };
-        let l1_block = L1BlockCommitment::new(l1_height, block_id_at(l1_height));
-        let l1_ref = CheckpointL1Ref::new(
-            l1_block,
-            RBuf32::from([epoch as u8; 32]),
-            RBuf32::from([epoch as u8; 32]),
-        );
-        L1Checkpoint::new(tip, l1_ref)
-    }
-
-    /// Empty queue is a trivial no-op and never advances `finalized_epoch`.
-    #[test]
-    fn advance_finalization_empty_queue_is_noop() {
-        let (mut state, _) = create_test_state();
-        assert!(state.observed_checkpoints.is_empty());
-
-        let finalized = state.advance_finalization(1_000);
-        assert!(finalized.is_none());
-        assert_eq!(state.finalized_epoch, None);
+            .expect("client state row");
+        assert_eq!(persisted, canonical_100);
     }
 
     #[test]
-    fn advance_finalization_below_depth_does_not_advance() {
-        let (mut state, _) = create_test_state();
-        state.observed_checkpoints.push_back(observation_at(1, 100));
+    fn reorg_truncates_to_fork_then_replays() {
+        let anchor = L1BlockCommitment::new(100, block_id_at(100));
+        let orphan_101 = L1BlockCommitment::new(101, block_id_at(101));
+        let orphan_102 = L1BlockCommitment::new(102, block_id_at(102));
+        let target = L1BlockCommitment::new(102, block_id_at(202));
 
-        // tip at 101 has 2 confirmations, below threshold of 3.
-        let finalized = state.advance_finalization(101);
-        assert!(finalized.is_none());
-        assert_eq!(state.finalized_epoch, None);
-        assert_eq!(state.observed_checkpoints.len(), 1);
-    }
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // Anchor at 100 stays canonical; 101 and 102 diverge.
+            c.with_canonical_block(100, block_id_at(100))
+                .with_canonical_block(101, block_id_at(201))
+                .with_canonical_block(102, block_id_at(202))
+                .with_canonical_asm_state(
+                    101,
+                    block_id_at(201),
+                    make_asm_state(vec![create_non_checkpoint_log_type()]),
+                )
+        });
+        state.recent_asm_blocks = vec![anchor, orphan_101, orphan_102];
 
-    #[test]
-    fn advance_finalization_single_advance() {
-        let (mut state, _) = create_test_state();
-        let candidate = observation_at(1, 100);
-        let commitment = EpochCommitment::from(&candidate);
-        state.observed_checkpoints.push_back(candidate.clone());
+        // CSM persisted a client state at the fork block in a prior run.
+        seed_client_state_row(&storage, &anchor);
 
-        // tip at 102 has 3 confirmations = depth threshold.
-        let finalized = state.advance_finalization(102);
-        assert_eq!(finalized.as_ref(), Some(&candidate));
-        assert_eq!(state.finalized_epoch, Some(commitment));
-        assert!(state.observed_checkpoints.is_empty());
-    }
+        state
+            .process_asm_block(target, &[create_non_checkpoint_log_type()])
+            .expect("reorg should truncate to fork and replay to target");
 
-    #[test]
-    fn advance_finalization_multi_advance_in_one_call() {
-        let (mut state, _) = create_test_state();
-        let candidate_1 = observation_at(1, 100);
-        let candidate_2 = observation_at(2, 101);
-        let commitment_2 = EpochCommitment::from(&candidate_2);
-        state.observed_checkpoints.push_back(candidate_1);
-        state.observed_checkpoints.push_back(candidate_2.clone());
-
-        // tip at 103 so both candidates have ≥ 3 confirmations.
-        let finalized = state.advance_finalization(103);
-        assert_eq!(finalized.as_ref(), Some(&candidate_2));
-        assert_eq!(state.finalized_epoch, Some(commitment_2));
-        assert!(state.observed_checkpoints.is_empty());
-    }
-
-    #[test]
-    fn advance_finalization_stops_at_shallow_candidate() {
-        let (mut state, _) = create_test_state();
-        let candidate_1 = observation_at(1, 100);
-        let commitment_1 = EpochCommitment::from(&candidate_1);
-        let candidate_2 = observation_at(2, 102);
-        state.observed_checkpoints.push_back(candidate_1.clone());
-        state.observed_checkpoints.push_back(candidate_2.clone());
-
-        // tip at 102 so epoch 1 has 3 confirmations (buried), epoch 2 has 1.
-        let finalized = state.advance_finalization(102);
-        assert_eq!(finalized.as_ref(), Some(&candidate_1));
-        assert_eq!(state.finalized_epoch, Some(commitment_1));
-        assert_eq!(state.observed_checkpoints.len(), 1);
-        assert_eq!(
-            state
-                .observed_checkpoints
-                .front()
-                .map(EpochCommitment::from),
-            Some(EpochCommitment::from_terminal(
-                2,
-                OLBlockCommitment::new(20, OLBlockId::from(Buf32::from([2u8; 32])))
-            ))
-        );
-    }
-
-    #[test]
-    fn advance_finalization_pops_already_finalized() {
-        let (mut state, _) = create_test_state();
-        let candidate = observation_at(1, 100);
-        let commitment_1 = EpochCommitment::from(&candidate);
-        state.finalized_epoch = Some(commitment_1);
-        // Stale entry for an epoch ≤ finalized.
-        state.observed_checkpoints.push_back(candidate);
-
-        let finalized = state.advance_finalization(200);
+        assert_eq!(state.recent_asm_blocks.last(), Some(&target));
         assert!(
-            finalized.is_none(),
-            "popping a stale entry must not register as an advance"
+            !state.recent_asm_blocks.contains(&orphan_101)
+                && !state.recent_asm_blocks.contains(&orphan_102),
+            "orphaned branch must be pruned"
         );
-        assert_eq!(state.finalized_epoch, Some(commitment_1));
-        assert!(state.observed_checkpoints.is_empty());
+        // Canonical 101 was replayed before the target.
+        let (persisted, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row");
+        assert_eq!(persisted, target);
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&L1BlockCommitment::new(101, block_id_at(201)))
+                .expect("query client state")
+                .is_some(),
+            "canonical 101 should have been committed during replay"
+        );
+    }
+
+    #[test]
+    fn reorg_replays_gap_and_extends_past_old_tip() {
+        let anchor = L1BlockCommitment::new(100, block_id_at(100));
+        let orphan_101 = L1BlockCommitment::new(101, block_id_at(101));
+        let orphan_102 = L1BlockCommitment::new(102, block_id_at(102));
+        // New chain forks at 100 and runs longer, ending above the old tip (102).
+        let target = L1BlockCommitment::new(105, block_id_at(205));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // 100 stays canonical; 101..=104 are the new branch's gap blocks.
+            let mut c = c.with_canonical_block(100, block_id_at(100));
+            for height in 101..=104 {
+                c = c.with_canonical_asm_state(
+                    height,
+                    block_id_at(100 + height),
+                    make_asm_state(vec![create_non_checkpoint_log_type()]),
+                );
+            }
+            c.with_canonical_block(105, block_id_at(205))
+        });
+        state.recent_asm_blocks = vec![anchor, orphan_101, orphan_102];
+
+        // CSM persisted a client state at the fork block in a prior run.
+        seed_client_state_row(&storage, &anchor);
+
+        state
+            .process_asm_block(target, &[create_non_checkpoint_log_type()])
+            .expect("reorg should rewind, replay the gap, and extend past the old tip");
+
+        // Tip landed at the new target, well past the old frontier.
+        assert_eq!(state.recent_asm_blocks.last(), Some(&target));
+        assert!(
+            !state.recent_asm_blocks.contains(&orphan_101)
+                && !state.recent_asm_blocks.contains(&orphan_102),
+            "orphaned branch must be pruned"
+        );
+        // Each replayed gap block on the new chain got a committed row.
+        for height in 101..=104 {
+            let block = L1BlockCommitment::new(height, block_id_at(100 + height));
+            assert!(
+                storage
+                    .client_state()
+                    .get_update_blocking(&block)
+                    .expect("query client state")
+                    .is_some(),
+                "new-chain gap block {height} should have been replayed and committed"
+            );
+        }
+        // Most-recent persisted state is keyed at the target.
+        let (persisted, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row");
+        assert_eq!(persisted, target);
+    }
+
+    #[test]
+    fn reorg_past_finality_errors() {
+        let anchor = L1BlockCommitment::new(100, block_id_at(100));
+        let tip = L1BlockCommitment::new(101, block_id_at(101));
+        let incoming = L1BlockCommitment::new(101, block_id_at(201));
+
+        // Even the anchor's height resolves to a different block, so no list
+        // entry matches the canonical chain.
+        let (mut state, _) = create_test_state_with_ctx(|c| {
+            c.with_canonical_block(100, block_id_at(150))
+                .with_canonical_block(101, block_id_at(201))
+        });
+        state.recent_asm_blocks = vec![anchor, tip];
+
+        let err = state
+            .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
+            .expect_err("reorg past finality should error");
+        assert!(
+            matches!(
+                err,
+                CsmWorkerError::ReorgPastFinality { finalized, incoming: inc }
+                    if finalized == anchor && inc == incoming
+            ),
+            "unexpected error: {err}"
+        );
+
+        // Worker stays pinned at the original list.
+        assert_eq!(state.recent_asm_blocks, vec![anchor, tip]);
+    }
+
+    #[test]
+    fn reorg_anchors_at_highest_canonical_entry() {
+        // Heights sit at/above the genesis anchor (40320) so nothing finalized
+        // means pruning never drops a still-canonical entry; only the reorg
+        // rewind shapes the list.
+        let anchor = L1BlockCommitment::new(40320, block_id_at(20));
+        let good_mid = L1BlockCommitment::new(40321, block_id_at(21));
+        let orphan_tip = L1BlockCommitment::new(40322, block_id_at(22));
+        let target = L1BlockCommitment::new(40322, block_id_at(202));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // 40320 and 40321 still canonical; only 40322 diverged.
+            c.with_canonical_block(40320, block_id_at(20))
+                .with_canonical_block(40321, block_id_at(21))
+                .with_canonical_block(40322, block_id_at(202))
+        });
+        state.recent_asm_blocks = vec![anchor, good_mid, orphan_tip];
+
+        // CSM persisted a client state at the fork block (good_mid) in a prior run.
+        seed_client_state_row(&storage, &good_mid);
+
+        state
+            .process_asm_block(target, &[create_non_checkpoint_log_type()])
+            .expect("reorg should anchor at the highest canonical entry");
+
+        // good_mid survived (fork point), orphan_tip replaced by target.
+        assert_eq!(
+            state.recent_asm_blocks,
+            vec![anchor, good_mid, target],
+            "list should rewind only to the highest canonical entry"
+        );
+    }
+
+    #[test]
+    fn reorg_repersists_state_at_fork() {
+        let anchor = L1BlockCommitment::new(100, block_id_at(100));
+        let orphan_tip = L1BlockCommitment::new(101, block_id_at(101));
+        let incoming = L1BlockCommitment::new(101, block_id_at(201));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            c.with_canonical_block(100, block_id_at(100))
+                .with_canonical_block(101, block_id_at(201))
+        });
+        state.recent_asm_blocks = vec![anchor, orphan_tip];
+
+        // Seed a stale row at the fork block so we can see it overwritten.
+        storage
+            .client_state()
+            .put_update_blocking(
+                &anchor,
+                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+            )
+            .expect("seed fork row");
+
+        state
+            .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
+            .expect("reorg should re-persist at the fork");
+
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&anchor)
+                .expect("query client state")
+                .is_some(),
+            "fork block must carry a re-derived client-state row"
+        );
+        assert_eq!(state.recent_asm_blocks.last(), Some(&incoming));
+    }
+
+    #[test]
+    fn pure_extension_does_not_reorg() {
+        // Heights sit at/above the genesis anchor (40320) so nothing finalized
+        // means pruning leaves every entry in place.
+        let anchor = L1BlockCommitment::new(40320, block_id_at(20));
+        let last = L1BlockCommitment::new(40321, block_id_at(21));
+        let next = L1BlockCommitment::new(40322, block_id_at(22));
+
+        let (mut state, _) =
+            create_test_state_with_ctx(|c| c.with_canonical_block(40321, block_id_at(21)));
+        state.recent_asm_blocks = vec![anchor, last];
+
+        state
+            .process_asm_block(next, &[create_non_checkpoint_log_type()])
+            .expect("pure extension should commit directly");
+
+        // Both prior entries survive and the new block is appended.
+        assert_eq!(state.recent_asm_blocks, vec![anchor, last, next]);
+    }
+
+    #[test]
+    fn stale_lower_height_status_is_noop_when_tip_canonical() {
+        let anchor = L1BlockCommitment::new(98, block_id_at(98));
+        let mid = L1BlockCommitment::new(99, block_id_at(99));
+        let tip = L1BlockCommitment::new(100, block_id_at(100));
+        // A legitimate older canonical block (height 99) redelivered out of order.
+        let stale = L1BlockCommitment::new(99, block_id_at(99));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // Tip at 100 is still canonical (no reorg happened); 99 too.
+            c.with_canonical_block(99, block_id_at(99))
+                .with_canonical_block(100, block_id_at(100))
+        });
+        state.recent_asm_blocks = vec![anchor, mid, tip];
+
+        state
+            .process_asm_block(stale, &[create_non_checkpoint_log_type()])
+            .expect("stale lower-height status must be a no-op");
+
+        // Tip unchanged: not rewound onto the older block.
+        assert_eq!(state.recent_asm_blocks.last(), Some(&tip));
+        assert_eq!(state.recent_asm_blocks, vec![anchor, mid, tip]);
+        // No row written at the stale height, and the cursor still sits at the tip.
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&stale)
+                .expect("query client state")
+                .is_none(),
+            "stale block must not persist a client-state row"
+        );
+    }
+
+    #[test]
+    fn bootstrap_seeds_full_reorg_window() {
+        let params = create_test_params_arc();
+        let (storage, status_channel) = create_test_storage();
+
+        // Nothing finalized, so the floor is the depth bound: with depth 3 and
+        // tip 40325 the window spans [40323 ..= 40325].
+        let floor = 40323;
+        let tip = L1BlockCommitment::new(40325, block_id_at(25));
+        // Store initial client state to db.
+        storage
+            .client_state()
+            .put_update_blocking(
+                &tip,
+                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+            )
+            .expect("seed client state at tip");
+
+        // Build context with a canonical block at every intermediate height,
+        // and at the tip so bootstrap takes the canonical (non-orphan) path.
+        let mut ctx = default_stub_ctx(&params, storage.clone(), status_channel);
+        for height in floor..tip.height() {
+            ctx = ctx.with_canonical_block(height, block_id_at(height));
+        }
+        ctx = ctx.with_canonical_block(tip.height(), *tip.blkid());
+
+        let state = CsmWorkerState::init_from_context(ctx).expect("bootstrap");
+
+        let expected: Vec<_> = (floor..tip.height())
+            .map(|height| L1BlockCommitment::new(height, block_id_at(height)))
+            .chain(once(tip))
+            .collect();
+        assert_eq!(
+            state.recent_asm_blocks, expected,
+            "bootstrap must seed the full reorg-safe window"
+        );
+    }
+
+    /// Seeds an OL-checkpoint observation (epoch summary + L1 ref + payload) at
+    /// `l1_height`, mirroring the wiring `load_observed_checkpoints` reads.
+    /// Returns the resulting epoch commitment.
+    fn seed_ol_checkpoint_observation(
+        storage: &NodeStorage,
+        epoch: u32,
+        l1_height: L1Height,
+    ) -> EpochCommitment {
+        let ol_checkpoint = storage.ol_checkpoint();
+        let payload = create_test_checkpoint_payload(epoch);
+        let ol_terminal = *payload.new_tip().l2_commitment();
+        let summary = EpochSummary::new(
+            epoch,
+            ol_terminal,
+            L2BlockCommitment::new(0, L2BlockId::default()),
+            L1BlockCommitment::new(l1_height, block_id_at(l1_height)),
+            Buf32::zero(),
+        );
+        let commitment = summary.get_epoch_commitment();
+        ol_checkpoint
+            .insert_epoch_summary_blocking(summary)
+            .expect("insert epoch summary");
+        ol_checkpoint
+            .put_checkpoint_l1_observation_blocking(
+                commitment,
+                payload,
+                CheckpointL1Ref::new(
+                    L1BlockCommitment::new(l1_height, block_id_at(l1_height)),
+                    RBuf32::from([epoch as u8; 32]),
+                    RBuf32::from([epoch as u8; 32]),
+                ),
+            )
+            .expect("insert epoch observation");
+        commitment
+    }
+
+    /// Once a checkpoint finalizes via `commit_block`, the reorg window floor
+    /// sits at the finalized height. A later reorg whose fork reaches below that
+    /// floor finds no canonical match and is rejected as `ReorgPastFinality`,
+    /// rather than rolling back finalized state.
+    #[test]
+    fn reorg_below_finalized_is_rejected() {
+        // Heights sit above the genesis anchor (40320) so the genesis term of
+        // the reorg floor never dominates the finalized/depth terms.
+        let depth = TEST_L1_REORG_SAFE_DEPTH; // 3
+        let floor_start: L1Height = 40399;
+        let ckpt_height: L1Height = 40400;
+        let finalize_tip: L1Height = ckpt_height + depth - 1; // 40402
+
+        // Canonical chain diverges from the committed branch at every height in
+        // the window (ids offset by 100), so the post-finalization reorg reaches
+        // past the floor with no canonical match anywhere in the window.
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            let mut c = c;
+            for height in floor_start..=finalize_tip {
+                c = c.with_canonical_block(height, block_id_at(height + 100));
+            }
+            c
+        });
+
+        // Seed a finalized window directly: the committed branch spans
+        // floor_start..=finalize_tip, with epoch 1 (observed at ckpt_height)
+        // already finalized.
+        let commitment = seed_ol_checkpoint_observation(&storage, 1, ckpt_height);
+        state.recent_asm_blocks = (floor_start..=finalize_tip)
+            .map(|h| L1BlockCommitment::new(h, block_id_at(h)))
+            .collect();
+        let finalized = L1Checkpoint::new(
+            *create_test_checkpoint_payload(1).new_tip(),
+            storage
+                .ol_checkpoint()
+                .get_checkpoint_l1_ref_blocking(commitment)
+                .expect("ref")
+                .expect("seeded ref"),
+        );
+        state.last_committed_state = Arc::new(ClientState::new(Some(finalized), None));
+
+        // Pruning against the finalized state pins the floor at the finalized
+        // height, dropping the pre-finalization entry at 99.
+        state.prune_below_reorg_floor();
+        assert_eq!(
+            state.recent_asm_blocks[0].height(),
+            ckpt_height,
+            "window floor must pin at the finalized height"
+        );
+        seed_client_state_row(&storage, &state.recent_asm_blocks[0]);
+
+        // Incoming reorg at the tip height, on the canonical branch that
+        // diverges from every committed entry down to and below the floor.
+        let incoming = L1BlockCommitment::new(finalize_tip, block_id_at(finalize_tip + 100));
+        let err = state
+            .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
+            .expect_err("a reorg below finalized height must error");
+        assert!(
+            matches!(err, CsmWorkerError::ReorgPastFinality { .. }),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn reorg_excludes_observations_above_fork() {
+        let anchor = L1BlockCommitment::new(100, block_id_at(100));
+        let orphan_tip = L1BlockCommitment::new(101, block_id_at(101));
+        let incoming = L1BlockCommitment::new(101, block_id_at(201));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // Fork lands at the anchor (height 100); 101 diverged. Epoch 2's
+            // checkpoint rode the orphaned 101 block, so its L1 observation is
+            // not on the canonical chain (canonical 101 is a different block).
+            c.with_canonical_block(90, block_id_at(90))
+                .with_canonical_block(100, block_id_at(100))
+                .with_canonical_block(101, block_id_at(201))
+        });
+        state.recent_asm_blocks = vec![anchor, orphan_tip];
+
+        // CSM persisted a client state at the fork block in a prior run.
+        seed_client_state_row(&storage, &anchor);
+
+        // Epoch 1 observed at canonical L1 height 90; epoch 2 observed at the
+        // orphaned 101 block (block_id_at(101) != canonical block_id_at(201)).
+        let commitment_1 = seed_ol_checkpoint_observation(&storage, 1, 90);
+        let commitment_2 = seed_ol_checkpoint_observation(&storage, 2, 101);
+
+        state
+            .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
+            .expect("reorg should re-derive state at the fork");
+
+        // Epoch 1 is buried 100 - 90 = 10 >= depth, so it is both confirmed and
+        // finalized. The orphaned epoch 2 must not leak into either.
+        let clstate = &state.last_committed_state;
+        assert_eq!(clstate.get_last_epoch(), Some(commitment_1));
+        assert_eq!(clstate.get_declared_final_epoch(), Some(commitment_1));
+        assert_ne!(clstate.get_last_epoch(), Some(commitment_2));
+    }
+
+    #[test]
+    fn shorter_chain_reorg_rewinds_to_fork() {
+        let anchor = L1BlockCommitment::new(40323, block_id_at(23));
+        let good_24 = L1BlockCommitment::new(40324, block_id_at(24));
+        let orphan_25 = L1BlockCommitment::new(40325, block_id_at(25));
+        // New canonical tip is 40324; 40325 was reorged away. Incoming sits
+        // below the old committed tip (40325) at a height that is canonical.
+        let incoming = L1BlockCommitment::new(40324, block_id_at(24));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // Canonical chain only reaches 40324; 40325 is not registered.
+            c.with_canonical_block(40323, block_id_at(23))
+                .with_canonical_block(40324, block_id_at(24))
+        });
+        state.recent_asm_blocks = vec![anchor, good_24, orphan_25];
+
+        // CSM persisted a client state at the fork block (good_24) in a prior run.
+        seed_client_state_row(&storage, &good_24);
+        // The reorged-away tip left a higher-keyed row behind.
+        seed_client_state_row(&storage, &orphan_25);
+
+        state
+            .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
+            .expect("shorter-chain reorg should rewind to the fork and commit");
+
+        assert_eq!(state.recent_asm_blocks.last(), Some(&incoming));
+        assert!(
+            !state.recent_asm_blocks.contains(&orphan_25),
+            "orphaned higher entry must be pruned"
+        );
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&orphan_25)
+                .expect("query client state")
+                .is_none(),
+            "orphaned higher row must be deleted"
+        );
+        let (persisted, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row");
+        assert_eq!(persisted, incoming);
+    }
+
+    /// `commit_block` must never skip a height: a non-contiguous commit trips
+    /// the contiguity assertion in debug builds.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "skipping a height")]
+    fn commit_skipping_height_panics() {
+        let (mut state, _) = create_test_state();
+        // Tip at 100; committing 102 skips 101.
+        state.recent_asm_blocks = vec![L1BlockCommitment::new(100, block_id_at(100))];
+        let skipping = L1BlockCommitment::new(102, block_id_at(102));
+        let next_state = state.last_committed_state.clone();
+
+        let _ = state.commit_block(skipping, next_state);
     }
 }
