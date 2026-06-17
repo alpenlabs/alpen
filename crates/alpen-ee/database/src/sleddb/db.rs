@@ -830,7 +830,7 @@ impl EeNodeDb for EeNodeDBSled {
     fn save_next_chunk(&self, chunk: Chunk) -> DbResult<()> {
         let idx = chunk.idx();
         let chunk_id: DBChunkId = chunk.id().into();
-        let db_chunk = DBChunkWithStatus::new(chunk, ChunkStatus::ProvingNotStarted);
+        let db_chunk = DBChunkWithStatus::new(chunk, ChunkStatus::Sealed);
 
         (&self.chunk_by_idx_tree, &self.chunk_id_to_idx_tree).transaction_with_retry(
             self.config.backoff.as_ref(),

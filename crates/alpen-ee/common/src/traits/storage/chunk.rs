@@ -62,8 +62,9 @@ pub trait ChunkStorage: Send + Sync {
     /// Get the chunk-id list previously set for a batch.
     ///
     /// Returns `None` if [`set_batch_chunks`](ChunkStorage::set_batch_chunks)
-    /// has never been called for `batch_id`. Used by the prover to fan out
-    /// chunk-proof tasks.
+    /// has never been called for `batch_id`. The batch lifecycle uses this to
+    /// gate acct proof submission, and the acct proof input builder uses it to
+    /// collect chunk receipts.
     async fn get_batch_chunks(
         &self,
         batch_id: BatchId,
@@ -85,6 +86,12 @@ macro_rules! chunk_storage_tests {
         async fn test_update_chunk_status() {
             let storage = $setup_expr;
             $crate::chunk_storage_test_fns::test_update_chunk_status(&storage).await;
+        }
+
+        #[tokio::test]
+        async fn test_update_missing_chunk_status_errors() {
+            let storage = $setup_expr;
+            $crate::chunk_storage_test_fns::test_update_missing_chunk_status_errors(&storage).await;
         }
 
         #[tokio::test]
@@ -126,7 +133,7 @@ pub mod tests {
     use strata_identifiers::Buf32;
 
     use super::*;
-    use crate::{Batch, BatchStorage, Chunk, ChunkStatus, ProofId};
+    use crate::{Batch, BatchStorage, Chunk, ChunkStatus, ProofId, StorageError};
 
     fn create_test_hash(value: u8) -> Hash {
         let mut bytes = [0u8; 32];
@@ -163,7 +170,7 @@ pub mod tests {
         // Retrieve by idx
         let (retrieved, status) = storage.get_chunk_by_idx(0).await.unwrap().unwrap();
         assert_eq!(retrieved.idx(), 0);
-        assert!(matches!(status, ChunkStatus::ProvingNotStarted));
+        assert!(matches!(status, ChunkStatus::Sealed));
 
         // Retrieve by id
         let (retrieved, _) = storage.get_chunk_by_id(chunk0.id()).await.unwrap().unwrap();
@@ -186,6 +193,24 @@ pub mod tests {
         // Verify status was updated
         let (_, status) = storage.get_chunk_by_idx(0).await.unwrap().unwrap();
         assert!(matches!(status, ChunkStatus::ProofReady(_)));
+    }
+
+    /// Updating the status of a chunk that does not exist must error on every backend, rather than
+    /// silently succeeding.
+    pub async fn test_update_missing_chunk_status_errors(
+        storage: &(impl ChunkStorage + BatchStorage),
+    ) {
+        let missing = create_test_chunk(0, 0, 1);
+        let proof_id = ProofId::from(Buf32::new([9u8; 32]));
+
+        let result = storage
+            .update_chunk_status(missing.id(), ChunkStatus::ProofReady(proof_id))
+            .await;
+
+        assert!(
+            matches!(result, Err(StorageError::ChunkNotFound(_))),
+            "expected ChunkNotFound when updating a missing chunk, got {result:?}"
+        );
     }
 
     /// Test reverting chunks.

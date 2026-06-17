@@ -166,7 +166,7 @@ impl ChunkStorage for InMemoryStorage {
         }
 
         id_to_idx.insert(chunk.id(), chunk.idx());
-        chunks.insert(chunk.idx(), (chunk, ChunkStatus::ProvingNotStarted));
+        chunks.insert(chunk.idx(), (chunk, ChunkStatus::Sealed));
         Ok(())
     }
 
@@ -179,12 +179,16 @@ impl ChunkStorage for InMemoryStorage {
         let idx = id_to_idx.get(&chunk_id).copied();
         drop(id_to_idx);
 
-        if let Some(idx) = idx {
-            let mut chunks = self.chunks.write().unwrap();
-            if let Some((chunk, _)) = chunks.remove(&idx) {
-                chunks.insert(idx, (chunk, status));
-            }
-        }
+        let Some(idx) = idx else {
+            return Err(StorageError::ChunkNotFound(chunk_id));
+        };
+
+        let mut chunks = self.chunks.write().unwrap();
+        let Some((chunk, _)) = chunks.remove(&idx) else {
+            return Err(StorageError::ChunkNotFound(chunk_id));
+        };
+
+        chunks.insert(idx, (chunk, status));
         Ok(())
     }
 
