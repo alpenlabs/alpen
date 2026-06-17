@@ -1,6 +1,7 @@
 //! Reth node for the Alpen codebase.
 
 mod dummy_ol_client;
+mod ee_reconcile;
 #[cfg(feature = "sequencer")]
 mod gas_data_provider;
 mod genesis;
@@ -349,6 +350,13 @@ fn main() {
                     BlockNumHash::new(hash, 0)
                 }
             };
+
+            // Revert any locally-built batches/chunks the OL has not accepted so
+            // they re-prove under the (possibly rotated) ELF. EE analog of #1926.
+            // Must run before the batch builder initializes.
+            ee_reconcile::reconcile_unaccepted_ee_artifacts(storage.as_ref(), ol_client.as_ref())
+                .await
+                .context("EE artifact reconciliation should not fail")?;
 
             let batch_builder_state = init_batch_builder_state(storage.as_ref())
                 .await
