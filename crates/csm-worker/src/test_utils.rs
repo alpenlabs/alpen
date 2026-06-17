@@ -1,6 +1,9 @@
 //! Shared test helpers for the CSM worker.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use bitcoin::Block;
 use strata_asm_common::AuxData;
@@ -49,6 +52,9 @@ pub(crate) struct StubCtx {
     /// When set, `put_client_state_update` fails, simulating a commit failure
     /// after a block's logs were processed.
     fail_client_state_update: bool,
+    /// Epochs whose canonical commitment reads as absent, modeling an OL reorg
+    /// that orphaned the epoch's checkpoint.
+    orphaned_epochs: HashSet<Epoch>,
 }
 
 impl StubCtx {
@@ -70,7 +76,15 @@ impl StubCtx {
             canonical_blocks: HashMap::new(),
             canonical_fail_height: None,
             fail_client_state_update: false,
+            orphaned_epochs: HashSet::new(),
         }
+    }
+
+    /// Marks `epoch`'s canonical commitment as absent, as if an OL reorg
+    /// orphaned its checkpoint.
+    pub(crate) fn with_orphaned_epoch(mut self, epoch: Epoch) -> Self {
+        self.orphaned_epochs.insert(epoch);
+        self
     }
 
     /// Configures `get_l1_block` to return an error on any blockid.
@@ -234,6 +248,9 @@ impl CsmWorkerContext for StubCtx {
         &self,
         epoch: Epoch,
     ) -> CsmWorkerResult<Option<EpochCommitment>> {
+        if self.orphaned_epochs.contains(&epoch) {
+            return Ok(None);
+        }
         Ok(self
             .storage
             .ol_checkpoint()

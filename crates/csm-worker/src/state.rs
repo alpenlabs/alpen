@@ -17,10 +17,6 @@ use crate::{
 ///
 /// This state is used by the CSM worker which acts as a listener to ASM worker
 /// status updates, processing checkpoint logs from the checkpoint subprotocol.
-///
-/// Every field is either the last durably committed value or a running cursor
-/// advanced only after a successful commit. Per-block scratch state lives in
-/// `BlockScratch` and never touches this struct on failure.
 #[expect(
     missing_debug_implementations,
     reason = "context generic doesn't require Debug"
@@ -38,18 +34,6 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
 
     /// Last epoch we processed a checkpoint for.
     pub(crate) last_processed_epoch: Option<Epoch>,
-
-    /// Latest checkpoint epoch observed on L1.
-    pub(crate) confirmed_epoch: Option<EpochCommitment>,
-
-    /// Latest checkpoint epoch finalized by L1 depth, derived from observation facts and tip.
-    pub(crate) finalized_epoch: Option<EpochCommitment>,
-
-    /// Ordered observed checkpoint candidates used for incremental depth derivation.
-    ///
-    /// Items are appended after a successful block commit and consumed as
-    /// finalized depth progresses.
-    pub(crate) observed_checkpoints: VecDeque<L1Checkpoint>,
 }
 
 impl<C: CsmWorkerContext> CsmWorkerState<C> {
@@ -66,9 +50,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let (recent_l1blk, recent_clstate) =
             resolve_canonical_tip(&ctx, loaded_block, loaded_clstate)?;
 
-        let derived = derive_state(&ctx, &recent_l1blk, &recent_clstate)?;
-
-        let new_clstate = Arc::new(derived.new_clstate);
+        let new_clstate = Arc::new(derive_state(&ctx, &recent_l1blk, &recent_clstate)?);
 
         // Persist and publish only when the derived state actually changed.
         if *new_clstate != recent_clstate {
@@ -78,17 +60,12 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         }
 
         let recent_asm_blocks = init_recent_asm_blocks(&ctx, &new_clstate, recent_l1blk)?;
-        let confirmed_epoch = new_clstate.get_last_epoch();
-        let finalized_epoch = new_clstate.get_declared_final_epoch();
 
         Ok(Self {
             ctx,
             recent_asm_blocks,
             last_committed_state: new_clstate,
             last_processed_epoch: None,
-            confirmed_epoch,
-            finalized_epoch,
-            observed_checkpoints: derived.observed_checkpoints,
         })
     }
 
@@ -173,19 +150,12 @@ pub(crate) fn finalized_l1_height(clstate: &ClientState) -> Option<L1Height> {
         .map(|ckpt| ckpt.height())
 }
 
-/// Client state and surviving observation queue derived as of an L1 tip.
-pub(crate) struct DerivedState {
-    pub(crate) observed_checkpoints: VecDeque<L1Checkpoint>,
-    /// Client state rebuilt from the derived checkpoints.
-    pub(crate) new_clstate: ClientState,
-}
-
-/// Derives client state and newly observed checkpoints from storage as of `cur_block`.
+/// Derives the client state from storage as of `cur_block`.
 pub(crate) fn derive_state<C: CsmWorkerContext>(
     ctx: &C,
     cur_block: &L1BlockCommitment,
     cur_clstate: &ClientState,
-) -> CsmWorkerResult<DerivedState> {
+) -> CsmWorkerResult<ClientState> {
     let current_csm_tip = cur_block.height();
     let finality_depth = ctx.l1_reorg_safe_depth().max(1);
     let last_finalized_epoch = cur_clstate.get_declared_final_epoch();
@@ -193,10 +163,10 @@ pub(crate) fn derive_state<C: CsmWorkerContext>(
         .map(|epoch| epoch.epoch().saturating_add(1))
         .unwrap_or(0);
 
-    let mut observed_checkpoints =
+    let observed_checkpoints =
         load_observed_checkpoints(ctx, observation_start_epoch, current_csm_tip)?;
 
-    // Derive new finalized checkpoint from last finalized and finalized ones among the observed.
+    // Highest-epoch observation buried deep enough to be reorg-safe.
     let new_finalized_ckpt = observed_checkpoints
         .iter()
         .rev()
@@ -213,22 +183,7 @@ pub(crate) fn derive_state<C: CsmWorkerContext>(
         .cloned()
         .or_else(|| new_finalized_ckpt.clone());
 
-    let finalized_epoch = new_finalized_ckpt.as_ref().map(EpochCommitment::from);
-    let new_clstate = ClientState::new(new_finalized_ckpt, confirmed_ckpt);
-
-    // Drop candidates that are already finalized, leaving only newer observations
-    // for incremental finality advancement.
-    while observed_checkpoints
-        .front()
-        .is_some_and(|ckpt| finalized_epoch.is_some_and(|fin| ckpt.tip.epoch <= fin.epoch()))
-    {
-        observed_checkpoints.pop_front();
-    }
-
-    Ok(DerivedState {
-        observed_checkpoints,
-        new_clstate,
-    })
+    Ok(ClientState::new(new_finalized_ckpt, confirmed_ckpt))
 }
 
 /// Loads observed checkpoint candidates from the OL checkpoint DB via `ctx`,
@@ -288,11 +243,146 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::{CsmWorkerState, reorg_floor_height};
+    use super::{CsmWorkerState, derive_state, reorg_floor_height};
     use crate::test_utils::StubCtx;
 
     fn create_test_params() -> Arc<AsmParams> {
         Arc::new(strata_test_utils_l2::gen_asm_params())
+    }
+
+    /// Seeds an observed checkpoint at `epoch` anchored to L1 `l1_height` and
+    /// returns its epoch commitment.
+    fn seed_observation(
+        storage: &strata_storage::NodeStorage,
+        epoch: u32,
+        l1_height: L1Height,
+    ) -> EpochCommitment {
+        let ol_checkpoint = storage.ol_checkpoint();
+        let payload = create_test_checkpoint_payload(epoch);
+        let ol_terminal = *payload.new_tip().l2_commitment();
+        let summary = EpochSummary::new(
+            epoch,
+            ol_terminal,
+            L2BlockCommitment::new(0, L2BlockId::default()),
+            L1BlockCommitment::new(
+                l1_height,
+                L1BlockId::from(Buf32::from([l1_height as u8; 32])),
+            ),
+            Buf32::zero(),
+        );
+        let commitment = summary.get_epoch_commitment();
+        ol_checkpoint
+            .insert_epoch_summary_blocking(summary)
+            .expect("insert epoch summary");
+        ol_checkpoint
+            .put_checkpoint_l1_observation_blocking(
+                commitment,
+                payload,
+                CheckpointL1Ref::new(
+                    L1BlockCommitment::new(
+                        l1_height,
+                        L1BlockId::from(Buf32::from([l1_height as u8; 32])),
+                    ),
+                    RBuf32::from([epoch as u8; 32]),
+                    RBuf32::from([epoch as u8; 32]),
+                ),
+            )
+            .expect("insert epoch observation");
+        commitment
+    }
+
+    /// Builds a `StubCtx` over freshly seeded storage with reorg depth 3.
+    fn derive_ctx() -> (StubCtx, Arc<strata_storage::NodeStorage>) {
+        let params = create_test_params();
+        let (storage, status_channel) = create_test_storage_and_status(params.clone());
+        let ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            3,
+            params.magic,
+            params.anchor.block,
+        );
+        (ctx, storage)
+    }
+
+    /// An observation only `depth - 1` deep is not yet finalized.
+    #[test]
+    fn derive_state_below_depth_does_not_finalize() {
+        let (ctx, storage) = derive_ctx();
+        seed_observation(&storage, 1, 100);
+
+        // tip 101 -> 2 confirmations, below the depth-3 threshold.
+        let tip = L1BlockCommitment::new(101, L1BlockId::default());
+        let clstate = derive_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
+
+        assert_eq!(clstate.get_declared_final_epoch(), None);
+    }
+
+    /// An observation buried `depth` deep finalizes.
+    #[test]
+    fn derive_state_finalizes_at_depth() {
+        let (ctx, storage) = derive_ctx();
+        let commitment = seed_observation(&storage, 1, 100);
+
+        // tip 102 -> 3 confirmations = depth threshold.
+        let tip = L1BlockCommitment::new(102, L1BlockId::default());
+        let clstate = derive_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
+
+        assert_eq!(clstate.get_declared_final_epoch(), Some(commitment));
+        assert_eq!(clstate.get_last_epoch(), Some(commitment));
+    }
+
+    /// With several safe observations, finality lands at the highest epoch and
+    /// confirmed tracks the latest observation seen on L1.
+    #[test]
+    fn derive_state_finalizes_highest_safe() {
+        let (ctx, storage) = derive_ctx();
+        seed_observation(&storage, 1, 100);
+        let commitment_2 = seed_observation(&storage, 2, 101);
+
+        // tip 103 -> both observations are >= depth-3 deep.
+        let tip = L1BlockCommitment::new(103, L1BlockId::default());
+        let clstate = derive_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
+
+        assert_eq!(clstate.get_declared_final_epoch(), Some(commitment_2));
+        assert_eq!(clstate.get_last_epoch(), Some(commitment_2));
+    }
+
+    /// Confirmed tracks an observation that is seen but not yet finalized, while
+    /// finality stays at the deeper one.
+    #[test]
+    fn derive_state_confirmed_ahead_of_finalized() {
+        let (ctx, storage) = derive_ctx();
+        let commitment_1 = seed_observation(&storage, 1, 100);
+        let commitment_2 = seed_observation(&storage, 2, 102);
+
+        // tip 102 -> epoch 1 is 3 deep (finalized); epoch 2 is 1 deep (seen only).
+        let tip = L1BlockCommitment::new(102, L1BlockId::default());
+        let clstate = derive_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
+
+        assert_eq!(clstate.get_declared_final_epoch(), Some(commitment_1));
+        assert_eq!(clstate.get_last_epoch(), Some(commitment_2));
+    }
+
+    /// A prior finalized checkpoint is retained when no newer observation is yet
+    /// safe to finalize.
+    #[test]
+    fn derive_state_keeps_prior_finalized() {
+        let (ctx, storage) = derive_ctx();
+        let prior = seed_observation(&storage, 1, 100);
+
+        // First derive at tip 102 finalizes epoch 1; reuse that as the baseline.
+        let tip_1 = L1BlockCommitment::new(102, L1BlockId::default());
+        let baseline = derive_state(&ctx, &tip_1, &ClientState::new(None, None)).expect("derive");
+        assert_eq!(baseline.get_declared_final_epoch(), Some(prior));
+
+        seed_observation(&storage, 2, 103);
+
+        // tip 103: epoch 2 only 1 deep, so no new finality; prior must persist.
+        let tip_2 = L1BlockCommitment::new(103, L1BlockId::default());
+        let clstate = derive_state(&ctx, &tip_2, &baseline).expect("derive");
+
+        assert_eq!(clstate.get_declared_final_epoch(), Some(prior));
     }
 
     fn create_test_storage_and_status(
@@ -394,14 +484,8 @@ mod tests {
         }
         let state = CsmWorkerState::bootstrap(ctx).expect("state init");
 
-        assert_eq!(state.confirmed_epoch, Some(commitment_2));
-        assert_eq!(state.finalized_epoch, Some(commitment_1));
-        assert_eq!(state.observed_checkpoints.len(), 1);
         assert_eq!(
-            state
-                .observed_checkpoints
-                .front()
-                .map(EpochCommitment::from),
+            state.last_committed_state.get_last_epoch(),
             Some(commitment_2)
         );
 
@@ -498,7 +582,6 @@ mod tests {
         }
         let state = CsmWorkerState::bootstrap(ctx).expect("state init");
 
-        assert_eq!(state.finalized_epoch, Some(commitment_1));
         assert_eq!(
             state.last_committed_state.get_declared_final_epoch(),
             Some(commitment_1)

@@ -8,7 +8,7 @@ use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
-use strata_primitives::{l1::is_l1_reorg_safe, prelude::*};
+use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use tracing::*;
 
@@ -27,10 +27,6 @@ pub(crate) struct PendingCsmUpdate {
     /// Last epoch a checkpoint log was processed for.
     pub(crate) last_processed_epoch: Option<Epoch>,
 
-    /// Checkpoint observations made during this block, applied to the worker's
-    /// finality cursors only after a successful commit.
-    pub(crate) observations: Vec<L1Checkpoint>,
-
     /// Per-block verification fixtures, built once on the first checkpoint tip log.
     pub(crate) ckpt_verification_ctx: Option<CheckpointVerificationContext>,
 }
@@ -40,7 +36,6 @@ impl PendingCsmUpdate {
         Self {
             cur_state,
             last_processed_epoch,
-            observations: Vec::new(),
             ckpt_verification_ctx: None,
         }
     }
@@ -102,9 +97,6 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         let new_checkpoint =
             self.mark_ol_checkpoint_l1_observed(pending, checkpoint_tip_update, asm_block)?;
-        // `last_finalized_checkpoint` is left as the previous value here; the
-        // service loop refreshes it once `advance_finalization` declares a new
-        // finalized epoch based on L1 depth.
         pending.cur_state = Arc::new(ClientState::new(
             pending.cur_state.get_last_finalized_checkpoint(),
             Some(new_checkpoint),
@@ -136,22 +128,18 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             "received asm block skipping a height: tip {last}, block {asm_block}"
         );
 
-        let state = next_state.as_ref().clone();
+        let state = derive_state(&self.ctx, &asm_block, &next_state)?;
         self.ctx
             .put_client_state_update(&asm_block, ClientUpdateOutput::new_state(state.clone()))?;
         self.recent_asm_blocks.push(asm_block);
-        self.last_committed_state = next_state;
+        self.last_committed_state = Arc::new(state.clone());
         self.prune_below_reorg_floor();
-        // Publish the client state to status channel.
         self.ctx.publish_client_state(state, asm_block);
         Ok(())
     }
 
     /// Drops blocks below the reorg-safe floor; index 0 stays the deepest point
-    /// a reorg could reach. The floor is `max(tip - depth, finalized checkpoint)`
-    /// (see [`reorg_floor_height`]), computed against the most recently
-    /// processed block, so the window never drops a block that could still
-    /// reorg yet stays bounded by `depth` when checkpoint-finality stalls.
+    /// a reorg could reach.
     fn prune_below_reorg_floor(&mut self) {
         let Some(tip) = self.recent_asm_blocks.last() else {
             return;
@@ -187,98 +175,8 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         // Commit succeeded; fold pending outputs onto the worker.
         self.last_processed_epoch = pending.last_processed_epoch;
-        self.apply_observations(pending.observations);
 
         Ok(())
-    }
-
-    /// Folds checkpoint observations made during a successfully committed block
-    /// into the worker's finality cursors.
-    fn apply_observations(&mut self, observations: impl IntoIterator<Item = L1Checkpoint>) {
-        for checkpoint in observations {
-            self.apply_checkpoint_observation(checkpoint);
-        }
-    }
-
-    /// Folds a single checkpoint observation into the worker's finality
-    /// cursors: bumps `confirmed_epoch` monotonically and queues the
-    /// observation for incremental depth-driven finalization if it's still
-    /// ahead of `finalized_epoch` and not already present.
-    fn apply_checkpoint_observation(&mut self, checkpoint: L1Checkpoint) {
-        let commitment = EpochCommitment::from(&checkpoint);
-
-        // Update cached confirmed epoch monotonically.
-        if self
-            .confirmed_epoch
-            .is_none_or(|current| commitment.epoch() > current.epoch())
-        {
-            self.confirmed_epoch = Some(commitment);
-        }
-
-        // Queue only non-finalized candidates and avoid duplicates.
-        if self
-            .finalized_epoch
-            .is_none_or(|current| commitment.epoch() > current.epoch())
-            && !self
-                .observed_checkpoints
-                .iter()
-                .any(|existing| EpochCommitment::from(existing) == commitment)
-        {
-            self.observed_checkpoints.push_back(checkpoint);
-        }
-    }
-
-    /// Walks the observation queue and advances `finalized_epoch` for every
-    /// candidate buried at least `finality_depth` deep under `current_l1_tip`.
-    ///
-    /// Returns the most recently finalized `L1Checkpoint` if `finalized_epoch`
-    /// advanced, else `None`. The caller uses the returned record to refresh
-    /// `ClientState.last_finalized_checkpoint` so it reflects depth-driven
-    /// finality rather than the (since-removed) observation heuristic.
-    pub(crate) fn advance_finalization(
-        &mut self,
-        current_l1_tip: L1Height,
-    ) -> Option<L1Checkpoint> {
-        let prev_finalized = self.finalized_epoch;
-        let finality_depth = self.ctx.l1_reorg_safe_depth();
-        let mut latest_finalized: Option<L1Checkpoint> = None;
-
-        while let Some(candidate) = self.observed_checkpoints.front() {
-            let commitment = EpochCommitment::from(candidate);
-            if self
-                .finalized_epoch
-                .is_some_and(|current| commitment.epoch() <= current.epoch())
-            {
-                self.observed_checkpoints.pop_front();
-                continue;
-            }
-
-            if !is_l1_reorg_safe(
-                candidate.l1_reference.l1_commitment.height(),
-                current_l1_tip,
-                finality_depth,
-            ) {
-                break;
-            }
-
-            let finalized = self
-                .observed_checkpoints
-                .pop_front()
-                .expect("front returned Some above");
-            if self
-                .finalized_epoch
-                .is_none_or(|current| commitment.epoch() > current.epoch())
-            {
-                self.finalized_epoch = Some(commitment);
-            }
-            latest_finalized = Some(finalized);
-        }
-
-        if self.finalized_epoch != prev_finalized {
-            latest_finalized
-        } else {
-            None
-        }
     }
 
     /// Processes `asm_block` and its logs, first replaying any ASM blocks skipped
@@ -366,11 +264,9 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
                 what: "client state at fork block",
                 detail: fork_block.to_string(),
             })?;
-        let derived = derive_state(&self.ctx, &fork_block, &fork_clstate)?;
-        let new_clstate = derived.new_clstate;
+        let new_clstate = derive_state(&self.ctx, &fork_block, &fork_clstate)?;
 
-        // Re-persist at the fork to overwrite the orphaned branch's row. After
-        // this succeeds, durable storage reflects the rewound tip.
+        // Re-persist at the fork to overwrite the orphaned branch's row.
         self.ctx.put_client_state_update(
             &fork_block,
             ClientUpdateOutput::new_state(new_clstate.clone()),
@@ -384,9 +280,8 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         // Persistence done; commit the rewind to in-memory state.
         self.recent_asm_blocks.truncate(fork_idx + 1);
-        self.confirmed_epoch = new_clstate.get_last_epoch();
-        self.finalized_epoch = new_clstate.get_declared_final_epoch();
-        self.observed_checkpoints = derived.observed_checkpoints;
+
+        // Publish if necessary.
         if persisted.as_ref() != Some(&new_clstate) {
             self.ctx
                 .publish_client_state(new_clstate.clone(), fork_block);
@@ -432,8 +327,8 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         })
     }
 
-    /// Validates a checkpoint tip update against the parent ASM state, writes
-    /// the L1-ref observation to the DB, and updates the observations on the `pending` container.
+    /// Validates a checkpoint tip update against the parent ASM state and writes
+    /// the L1-ref observation to the DB.
     fn mark_ol_checkpoint_l1_observed(
         &self,
         pending: &mut PendingCsmUpdate,
@@ -468,7 +363,6 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         )?;
 
         let checkpoint = L1Checkpoint::new(*tip, observation);
-        pending.observations.push(checkpoint.clone());
 
         debug!(
             ?commitment,
@@ -827,19 +721,11 @@ mod tests {
         });
         state.recent_asm_blocks = vec![last];
 
-        // Seed cursors with a known baseline so we can detect any partial
-        // advancement that survives the failed commit.
-        let baseline_epoch = EpochCommitment::from_terminal(
-            7,
-            OLBlockCommitment::new(70, OLBlockId::from(Buf32::from([7; 32]))),
-        );
+        // Seed a cursor baseline so we can detect any partial advancement that
+        // survives the failed commit.
         state.last_processed_epoch = Some(7);
-        state.confirmed_epoch = Some(baseline_epoch);
-        state.finalized_epoch = Some(baseline_epoch);
         let baseline_last_processed_epoch = state.last_processed_epoch;
-        let baseline_confirmed_epoch = state.confirmed_epoch;
-        let baseline_finalized_epoch = state.finalized_epoch;
-        let baseline_observed_checkpoints = state.observed_checkpoints.clone();
+        let baseline_committed_state = state.last_committed_state.clone();
 
         let next = L1BlockCommitment::new(101, block_id_at(101));
         let err = state
@@ -852,11 +738,9 @@ mod tests {
 
         // Commit cursor pinned at the last committed block.
         assert_eq!(state.recent_asm_blocks.last(), Some(&last));
-        // Every cursor unchanged.
+        // Cursors unchanged.
         assert_eq!(state.last_processed_epoch, baseline_last_processed_epoch);
-        assert_eq!(state.confirmed_epoch, baseline_confirmed_epoch);
-        assert_eq!(state.finalized_epoch, baseline_finalized_epoch);
-        assert_eq!(state.observed_checkpoints, baseline_observed_checkpoints);
+        assert_eq!(state.last_committed_state, baseline_committed_state);
         assert!(
             storage
                 .client_state()
@@ -993,123 +877,6 @@ mod tests {
         // Genesis row is still the most recent fully-walkable anchor's
         // predecessor; the key point is the target was never persisted.
         let _ = before_block;
-    }
-
-    /// Builds an observation queue entry at `epoch` anchored to L1 `height`.
-    fn observation_at(epoch: u32, l1_height: L1Height) -> L1Checkpoint {
-        let l2_commitment = OLBlockCommitment::new(
-            epoch as u64 * 10,
-            OLBlockId::from(Buf32::from([epoch as u8; 32])),
-        );
-        let tip = strata_asm_proto_checkpoint_types::CheckpointTip {
-            epoch,
-            l1_height,
-            l2_commitment,
-        };
-        let l1_block = L1BlockCommitment::new(l1_height, block_id_at(l1_height));
-        let l1_ref = CheckpointL1Ref::new(
-            l1_block,
-            RBuf32::from([epoch as u8; 32]),
-            RBuf32::from([epoch as u8; 32]),
-        );
-        L1Checkpoint::new(tip, l1_ref)
-    }
-
-    /// Empty queue is a trivial no-op and never advances `finalized_epoch`.
-    #[test]
-    fn advance_finalization_empty_queue_is_noop() {
-        let (mut state, _) = create_test_state();
-        assert!(state.observed_checkpoints.is_empty());
-
-        let finalized = state.advance_finalization(1_000);
-        assert!(finalized.is_none());
-        assert_eq!(state.finalized_epoch, None);
-    }
-
-    #[test]
-    fn advance_finalization_below_depth_does_not_advance() {
-        let (mut state, _) = create_test_state();
-        state.observed_checkpoints.push_back(observation_at(1, 100));
-
-        // tip at 101 has 2 confirmations, below threshold of 3.
-        let finalized = state.advance_finalization(101);
-        assert!(finalized.is_none());
-        assert_eq!(state.finalized_epoch, None);
-        assert_eq!(state.observed_checkpoints.len(), 1);
-    }
-
-    #[test]
-    fn advance_finalization_single_advance() {
-        let (mut state, _) = create_test_state();
-        let candidate = observation_at(1, 100);
-        let commitment = EpochCommitment::from(&candidate);
-        state.observed_checkpoints.push_back(candidate.clone());
-
-        // tip at 102 has 3 confirmations = depth threshold.
-        let finalized = state.advance_finalization(102);
-        assert_eq!(finalized.as_ref(), Some(&candidate));
-        assert_eq!(state.finalized_epoch, Some(commitment));
-        assert!(state.observed_checkpoints.is_empty());
-    }
-
-    #[test]
-    fn advance_finalization_multi_advance_in_one_call() {
-        let (mut state, _) = create_test_state();
-        let candidate_1 = observation_at(1, 100);
-        let candidate_2 = observation_at(2, 101);
-        let commitment_2 = EpochCommitment::from(&candidate_2);
-        state.observed_checkpoints.push_back(candidate_1);
-        state.observed_checkpoints.push_back(candidate_2.clone());
-
-        // tip at 103 so both candidates have ≥ 3 confirmations.
-        let finalized = state.advance_finalization(103);
-        assert_eq!(finalized.as_ref(), Some(&candidate_2));
-        assert_eq!(state.finalized_epoch, Some(commitment_2));
-        assert!(state.observed_checkpoints.is_empty());
-    }
-
-    #[test]
-    fn advance_finalization_stops_at_shallow_candidate() {
-        let (mut state, _) = create_test_state();
-        let candidate_1 = observation_at(1, 100);
-        let commitment_1 = EpochCommitment::from(&candidate_1);
-        let candidate_2 = observation_at(2, 102);
-        state.observed_checkpoints.push_back(candidate_1.clone());
-        state.observed_checkpoints.push_back(candidate_2.clone());
-
-        // tip at 102 so epoch 1 has 3 confirmations (buried), epoch 2 has 1.
-        let finalized = state.advance_finalization(102);
-        assert_eq!(finalized.as_ref(), Some(&candidate_1));
-        assert_eq!(state.finalized_epoch, Some(commitment_1));
-        assert_eq!(state.observed_checkpoints.len(), 1);
-        assert_eq!(
-            state
-                .observed_checkpoints
-                .front()
-                .map(EpochCommitment::from),
-            Some(EpochCommitment::from_terminal(
-                2,
-                OLBlockCommitment::new(20, OLBlockId::from(Buf32::from([2u8; 32])))
-            ))
-        );
-    }
-
-    #[test]
-    fn advance_finalization_pops_already_finalized() {
-        let (mut state, _) = create_test_state();
-        let candidate = observation_at(1, 100);
-        let commitment_1 = EpochCommitment::from(&candidate);
-        state.finalized_epoch = Some(commitment_1);
-        // Stale entry for an epoch ≤ finalized.
-        state.observed_checkpoints.push_back(candidate);
-
-        let finalized = state.advance_finalization(200);
-        assert!(
-            finalized.is_none(),
-            "popping a stale entry must not register as an advance"
-        );
-        assert_eq!(state.finalized_epoch, Some(commitment_1));
-        assert!(state.observed_checkpoints.is_empty());
     }
 
     // --- reorg handling ---
@@ -1517,6 +1284,69 @@ mod tests {
         commitment
     }
 
+    /// Once a checkpoint finalizes via `commit_block`, the reorg window floor
+    /// sits at the finalized height. A later reorg whose fork reaches below that
+    /// floor finds no canonical match and is rejected as `ReorgPastFinality`,
+    /// rather than rolling back finalized state.
+    #[test]
+    fn reorg_below_finalized_is_rejected() {
+        // Heights sit above the genesis anchor (40320) so the genesis term of
+        // the reorg floor never dominates the finalized/depth terms.
+        let depth = TEST_L1_REORG_SAFE_DEPTH; // 3
+        let floor_start: L1Height = 40399;
+        let ckpt_height: L1Height = 40400;
+        let finalize_tip: L1Height = ckpt_height + depth - 1; // 40402
+
+        // Canonical chain diverges from the committed branch at every height in
+        // the window (ids offset by 100), so the post-finalization reorg reaches
+        // past the floor with no canonical match anywhere in the window.
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            let mut c = c;
+            for height in floor_start..=finalize_tip {
+                c = c.with_canonical_block(height, block_id_at(height + 100));
+            }
+            c
+        });
+
+        // Seed a finalized window directly: the committed branch spans
+        // floor_start..=finalize_tip, with epoch 1 (observed at ckpt_height)
+        // already finalized.
+        let commitment = seed_ol_checkpoint_observation(&storage, 1, ckpt_height);
+        state.recent_asm_blocks = (floor_start..=finalize_tip)
+            .map(|h| L1BlockCommitment::new(h, block_id_at(h)))
+            .collect();
+        let finalized = L1Checkpoint::new(
+            *create_test_checkpoint_payload(1).new_tip(),
+            storage
+                .ol_checkpoint()
+                .get_checkpoint_l1_ref_blocking(commitment)
+                .expect("ref")
+                .expect("seeded ref"),
+        );
+        state.last_committed_state = Arc::new(ClientState::new(Some(finalized), None));
+
+        // Pruning against the finalized state pins the floor at the finalized
+        // height, dropping the pre-finalization entry at 99.
+        state.prune_below_reorg_floor();
+        assert_eq!(
+            state.recent_asm_blocks[0].height(),
+            ckpt_height,
+            "window floor must pin at the finalized height"
+        );
+        seed_client_state_row(&storage, &state.recent_asm_blocks[0]);
+
+        // Incoming reorg at the tip height, on the canonical branch that
+        // diverges from every committed entry down to and below the floor.
+        let incoming = L1BlockCommitment::new(finalize_tip, block_id_at(finalize_tip + 100));
+        let err = state
+            .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
+            .expect_err("a reorg below finalized height must error");
+        assert!(
+            matches!(err, CsmWorkerError::ReorgPastFinality { .. }),
+            "unexpected error: {err}"
+        );
+    }
+
     #[test]
     fn reorg_excludes_observations_above_fork() {
         let anchor = L1BlockCommitment::new(100, block_id_at(100));
@@ -1524,17 +1354,19 @@ mod tests {
         let incoming = L1BlockCommitment::new(101, block_id_at(201));
 
         let (mut state, storage) = create_test_state_with_ctx(|c| {
-            // Fork lands at the anchor (height 100); 101 diverged.
+            // Fork lands at the anchor (height 100); 101 diverged. Epoch 2's
+            // checkpoint rode the orphaned branch, so its canonical commitment
+            // is gone after the reorg.
             c.with_canonical_block(100, block_id_at(100))
                 .with_canonical_block(101, block_id_at(201))
+                .with_orphaned_epoch(2)
         });
         state.recent_asm_blocks = vec![anchor, orphan_tip];
 
         // CSM persisted a client state at the fork block in a prior run.
         seed_client_state_row(&storage, &anchor);
 
-        // Epoch 1 observed at L1 height 90 (at/below the fork at 100); epoch 2
-        // observed at the orphaned tip (height 101, above the fork).
+        // Epoch 1 observed at L1 height 90; epoch 2 observed at the orphaned tip.
         let commitment_1 = seed_ol_checkpoint_observation(&storage, 1, 90);
         let commitment_2 = seed_ol_checkpoint_observation(&storage, 2, 101);
 
@@ -1542,21 +1374,12 @@ mod tests {
             .process_asm_block(incoming, &[create_non_checkpoint_log_type()])
             .expect("reorg should re-derive state at the fork");
 
-        // Only the at/below-fork observation survives. Epoch 1 is buried
-        // 100 - 90 = 10 >= depth, so it is both confirmed and finalized.
-        assert_eq!(
-            state.confirmed_epoch,
-            Some(commitment_1),
-            "above-fork observation must not leak in as confirmed"
-        );
-        assert_eq!(state.finalized_epoch, Some(commitment_1));
-        assert!(
-            !state
-                .observed_checkpoints
-                .iter()
-                .any(|c| EpochCommitment::from(c) == commitment_2),
-            "above-fork observation must not be queued post-reorg"
-        );
+        // Epoch 1 is buried 100 - 90 = 10 >= depth, so it is both confirmed and
+        // finalized. The orphaned epoch 2 must not leak into either.
+        let clstate = &state.last_committed_state;
+        assert_eq!(clstate.get_last_epoch(), Some(commitment_1));
+        assert_eq!(clstate.get_declared_final_epoch(), Some(commitment_1));
+        assert_ne!(clstate.get_last_epoch(), Some(commitment_2));
     }
 
     #[test]
