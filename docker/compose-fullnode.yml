@@ -77,14 +77,11 @@ services:
     command:
       - --sequencer-http
       - ${SEQUENCER_HTTP:-}
-      - --p2p-secret-key
-      - /app/keys/fn-p2p.hex
       - --bootnodes
       - ${BOOTNODE_ENODE:-}
       - --trusted-peers
       - ${TRUSTED_PEERS:-${BOOTNODE_ENODE:-}}
     volumes:
-      - ./configs/generated/fn-p2p.hex:/app/keys/fn-p2p.hex:ro
       - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
       - alpen-fullnode-data:/app/data
     ports:
