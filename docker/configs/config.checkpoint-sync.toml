@@ -1,0 +1,40 @@
+# Checkpoint-sync OL node config.
+#
+# This node reconstructs OL state from L1-buried checkpoints. It runs no block
+# assembly, writer/broadcaster, checkpoint proving, or submit RPC.
+
+[client]
+rpc_host = "0.0.0.0"
+rpc_port = 8432
+l2_blocks_fetch_limit = 1_000
+datadir = "/app/data"
+db_retry_count = 5
+is_sequencer = false
+
+[logging]
+metrics_host = "0.0.0.0"
+metrics_port = 9615
+
+[bitcoind]
+rpc_url = "http://bitcoind:38332"
+rpc_user = "rpcuser"
+rpc_password = "rpcpassword"
+network = "signet"
+retry_count = 255
+retry_interval = 5_000
+
+[btcio]
+l1_reorg_safe_depth = 4
+
+[btcio.reader]
+client_poll_dur_ms = 10_000
+
+[btcio.writer]
+write_poll_dur_ms = 5_000
+fee_policy = "bitcoind"
+bitcoind_conf_target = 1
+reveal_amount = 1_000
+bundle_interval_ms = 500
+
+[btcio.broadcaster]
+poll_interval_ms = 5_000

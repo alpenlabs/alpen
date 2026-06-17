@@ -25,8 +25,13 @@ The retained secondary compose files have narrower test/debug purposes:
 
 | Compose | Purpose |
 |---|---|
+| `compose-checkpoint-sync.yml` | Checkpoint-sync OL node; use with a signet fullnode and mount pre-generated params under `configs/generated/` |
 | `docker-compose-eest.yml` | Ethereum execution spec test environment |
 | `docker-compose-p2p-test.yml` | Minimal EE P2P/gossip test |
+
+For checkpoint-sync, run `compose-signet.yml` in fullnode mode (`MINERENABLED=0`)
+with the target network's `SIGNETCHALLENGE` and an `ADDNODE` peer, then start
+`compose-checkpoint-sync.yml`.
 
 ## Just Recipes
 
