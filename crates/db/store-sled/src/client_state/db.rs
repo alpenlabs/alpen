@@ -25,7 +25,8 @@ impl ClientStateDatabase for ClientStateDBSled {
     }
 
     fn get_latest_client_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
-        // Relying on the lexicographical order of L1BlockCommitment.
+        // The seek-key codec sorts rows by numeric height, so the last entry is
+        // the highest block.
         let mut iter = self.client_update_tree.iter().rev();
         let res = iter.next().map(|r| r.map(|(k, v)| (k, v.into_state())));
         Ok(res.transpose()?)

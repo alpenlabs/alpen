@@ -144,6 +144,12 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let Some(tip) = self.recent_asm_blocks.last() else {
             return;
         };
+        debug_assert!(
+            self.recent_asm_blocks
+                .windows(2)
+                .all(|w| w[0].height() <= w[1].height()),
+            "recent_asm_blocks must be ascending for floor pruning"
+        );
         let floor = reorg_floor_height(&self.ctx, &self.last_committed_state, tip.height());
         let keep_from = self
             .recent_asm_blocks
@@ -273,7 +279,8 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         )?;
 
         // Delete the orphaned branch's rows so a restart can't bootstrap from an
-        // orphan that's above the canonical tip.
+        // orphan that's above the canonical tip. A crash partway through is
+        // recovered by bootstrap's `delete_orphan_rows_above` on restart.
         for orphan in &self.recent_asm_blocks[fork_idx + 1..] {
             self.ctx.del_client_state(orphan)?;
         }

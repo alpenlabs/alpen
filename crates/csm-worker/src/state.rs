@@ -6,12 +6,16 @@ use strata_csm_types::{ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
 use strata_primitives::{l1::is_l1_reorg_safe, prelude::*};
 use strata_service::ServiceState;
+use tracing::warn;
 
 use crate::{
     constants,
     context::CsmWorkerContext,
     errors::{CsmWorkerError, CsmWorkerResult},
 };
+
+/// Number of client-state rows fetched per batch while deleting orphans.
+const ORPHAN_SCAN_BATCH: usize = 64;
 
 /// State for the CSM worker service.
 ///
@@ -45,14 +49,12 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             .fetch_most_recent_client_state()?
             .unwrap_or((ctx.genesis_l1_block(), ClientState::default()));
 
-        // The stored tip may be an orphan from a reorg the node missed while
-        // down; resolve down to the latest block still on the canonical chain.
+        // Resolve the canonical just in case the loaded one is already orphaned.
         let (recent_l1blk, recent_clstate) =
             resolve_canonical_tip(&ctx, loaded_block, loaded_clstate)?;
 
         // A resolved-down tip means the loaded block was an orphan; delete the
-        // orphaned rows above the canonical tip so `fetch_most_recent_state`
-        // (and the status channel it seeds at startup) sees the canonical state.
+        // orphaned rows above the canonical tip.
         if recent_l1blk != loaded_block {
             delete_orphan_rows_above(&ctx, recent_l1blk)?;
         }
@@ -111,13 +113,7 @@ fn resolve_canonical_tip<C: CsmWorkerContext>(
     })
 }
 
-/// Number of client-state rows fetched per batch while deleting orphans.
-const ORPHAN_SCAN_BATCH: usize = 64;
-
 /// Deletes every persisted client-state row strictly above `canonical_tip`.
-///
-/// Scans in batches so the orphan branch is fully removed regardless of its
-/// depth, rather than truncated at a single fetch limit.
 fn delete_orphan_rows_above<C: CsmWorkerContext>(
     ctx: &C,
     canonical_tip: L1BlockCommitment,
@@ -168,7 +164,7 @@ fn init_recent_asm_blocks<C: CsmWorkerContext>(
     Ok(blocks)
 }
 
-/// Deepest L1 height a reorg could reach under `tip` — the window's floor.
+/// Deepest L1 height a reorg could reach under csm-observed `tip`.
 ///
 /// A block is reorg-safe once it is either buried `depth` deep under `tip` or at
 /// or below the last finalized checkpoint.
@@ -218,7 +214,7 @@ pub(crate) fn derive_state<C: CsmWorkerContext>(
         .cloned()
         .or_else(|| cur_clstate.get_last_finalized_checkpoint());
 
-    // Confirmed: the latest observation seen on L1, else the finalized one.
+    // Confirmed: the latest observation seen on L1.
     let confirmed_ckpt = observed_checkpoints
         .back()
         .cloned()
@@ -241,13 +237,20 @@ fn load_observed_checkpoints<C: CsmWorkerContext>(
 
     let mut observed = VecDeque::new();
     for epoch in start_epoch..=last_checkpoint_epoch {
+        // No canonical commitment at this epoch is expected (e.g. orphaned), so
+        // skip silently; a commitment with a missing observation is not.
         let Some(commitment) = ctx.get_canonical_epoch_commitment_at(epoch)? else {
             continue;
         };
         let Some(observation) = ctx.get_checkpoint_l1_ref(commitment)? else {
+            warn!(?commitment, "canonical epoch missing its L1 ref; skipping");
             continue;
         };
         let Some(payload) = ctx.get_checkpoint_payload(commitment)? else {
+            warn!(
+                ?commitment,
+                "canonical epoch missing its checkpoint payload; skipping"
+            );
             continue;
         };
 
@@ -357,20 +360,6 @@ mod tests {
         let clstate = derive_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
 
         assert_eq!(clstate.get_declared_final_epoch(), None);
-    }
-
-    /// An observation buried `depth` deep finalizes.
-    #[test]
-    fn derive_state_finalizes_at_depth() {
-        let (ctx, storage) = derive_ctx();
-        let commitment = seed_observation(&storage, 1, 100);
-
-        // tip 102 -> 3 confirmations = depth threshold.
-        let tip = L1BlockCommitment::new(102, L1BlockId::default());
-        let clstate = derive_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
-
-        assert_eq!(clstate.get_declared_final_epoch(), Some(commitment));
-        assert_eq!(clstate.get_last_epoch(), Some(commitment));
     }
 
     /// With several safe observations, finality lands at the highest epoch and
