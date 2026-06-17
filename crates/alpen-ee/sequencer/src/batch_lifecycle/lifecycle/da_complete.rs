@@ -1,5 +1,7 @@
 use alloy_primitives::B256;
-use alpen_ee_common::{Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, DaStatus};
+use alpen_ee_common::{
+    Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, ChunkStorage, DaStatus,
+};
 use eyre::Result;
 use tracing::{debug, error, warn};
 
@@ -19,7 +21,7 @@ pub(crate) async fn try_advance_da_complete<D, P, S>(
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage,
+    S: BatchStorage + ChunkStorage,
 {
     loop {
         let target_idx = state.da_complete().idx() + 1;

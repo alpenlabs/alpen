@@ -2,7 +2,9 @@
 
 use std::time::Duration;
 
-use alpen_ee_common::{require_latest_batch, BatchDaProvider, BatchProver, BatchStorage};
+use alpen_ee_common::{
+    require_latest_batch, BatchDaProvider, BatchProver, BatchStorage, ChunkStorage,
+};
 use eyre::Result;
 use tokio::time;
 use tracing::{error, warn};
@@ -23,7 +25,10 @@ const POLL_INTERVAL: Duration = Duration::from_secs(10);
 /// Main batch lifecycle task.
 ///
 /// This task monitors sealed batches and manages their progression through
-/// the lifecycle states: Sealed → DaPending → DaComplete → ProofPending → ProofReady.
+/// the batch/acct lifecycle states: Sealed → DaPending → DaComplete → ProofPending → ProofReady.
+///
+/// Chunk proofs are dispatched independently and tracked on [`alpen_ee_common::ChunkStatus`].
+/// `ProofPending` and `ProofReady` in this task refer to the acct proof for the batch.
 ///
 /// Both event triggers (new batch notification, poll tick) trigger frontier
 /// advancement checks.
@@ -33,7 +38,7 @@ pub(crate) async fn batch_lifecycle_task<D, P, S>(
 ) where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage,
+    S: BatchStorage + ChunkStorage,
 {
     let mut poll_interval = time::interval(POLL_INTERVAL);
 
@@ -68,7 +73,7 @@ pub(crate) async fn process_cycle<D, P, S>(
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage,
+    S: BatchStorage + ChunkStorage,
 {
     // Get latest batch
     let (latest_batch, _) = require_latest_batch(ctx.batch_storage.as_ref()).await?;
@@ -103,8 +108,8 @@ mod tests {
 
     use alloy_primitives::B256;
     use alpen_ee_common::{
-        DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, MockDaBlobSource,
-        ProofGenerationStatus,
+        ChunkStatus, DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver,
+        MockDaBlobSource, ProofGenerationStatus,
     };
     use alpen_reth_db::{DbResult, EeDaContext};
     use eyre::eyre;
@@ -137,7 +142,7 @@ mod tests {
     }
 
     impl MockedCtxBuilder {
-        fn build<S: BatchStorage>(
+        fn build<S: BatchStorage + ChunkStorage>(
             self,
             batch_storage: Arc<S>,
         ) -> BatchLifecycleCtx<MockBatchDaProvider, MockBatchProver, S> {
@@ -352,7 +357,7 @@ mod tests {
 
         // cycle 3
         let ctx = MockedCtxBuilder::new()
-            // request proof generation fails
+            // acct proof request fails
             .with(|b| {
                 b.prover
                     .expect_request_proof_generation()
@@ -401,6 +406,57 @@ mod tests {
         // state remains in ProofReady
         process_cycle(&mut state, &ctx).await.unwrap();
         assert_eq!(read_batch_statuses(&storage), [ProofReady]);
+    }
+
+    #[tokio::test]
+    async fn test_da_complete_waits_for_chunk_proofs_before_acct_proof() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+
+        use TestBatchStatus::*;
+        let batches = fill_storage(storage.as_ref(), &[DaComplete]).await;
+        let batch_id = batches[1].id();
+        let chunk_id = storage
+            .get_batch_chunks(batch_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+
+        storage
+            .update_chunk_status(chunk_id, ChunkStatus::Sealed)
+            .await
+            .unwrap();
+
+        let mut state = init_lifecycle_state(storage.as_ref()).await.unwrap();
+        let ctx = MockedCtxBuilder::new().build(storage.clone());
+
+        process_cycle(&mut state, &ctx).await.unwrap();
+
+        assert_eq!(read_batch_statuses(&storage), [DaComplete]);
+        assert_eq!(state.proof_pending().idx(), 0);
+
+        storage
+            .update_chunk_status(chunk_id, ChunkStatus::ProofReady(test_proof_id(1)))
+            .await
+            .unwrap();
+
+        let ctx = MockedCtxBuilder::new()
+            .with(|b| {
+                b.prover
+                    .expect_request_proof_generation()
+                    .returning(|_| Ok(()));
+                b.prover
+                    .expect_check_proof_status()
+                    .returning(|_| Ok(ProofGenerationStatus::Pending));
+            })
+            .build(storage.clone());
+
+        process_cycle(&mut state, &ctx).await.unwrap();
+
+        assert_eq!(read_batch_statuses(&storage), [ProofPending]);
+        assert_eq!(state.proof_pending().idx(), 1);
     }
 
     #[tokio::test]

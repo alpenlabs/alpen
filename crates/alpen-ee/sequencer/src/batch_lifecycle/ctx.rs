@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage, DaBlobSource};
+use alpen_ee_common::{
+    BatchDaProvider, BatchId, BatchProver, BatchStorage, ChunkStorage, DaBlobSource,
+};
 use alpen_reth_db::EeDaContext;
 use tokio::sync::watch;
 
@@ -14,7 +16,7 @@ pub(crate) struct BatchLifecycleCtx<D, P, S>
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage,
+    S: BatchStorage + ChunkStorage,
 {
     /// Receiver for new sealed batch notifications from batch_builder.
     pub sealed_batch_rx: watch::Receiver<BatchId>,
@@ -22,10 +24,10 @@ where
     /// Provider for posting and checking DA status.
     pub da_provider: Arc<D>,
 
-    /// Provider for requesting and checking proof generation.
+    /// Provider for requesting and checking acct proof generation.
     pub prover: Arc<P>,
 
-    /// Storage for batches.
+    /// Storage for batches and their chunk associations.
     pub batch_storage: Arc<S>,
 
     /// Provider for DA blobs, also used to check per block state diff availability.

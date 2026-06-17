@@ -2,7 +2,9 @@
 
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage, DaBlobSource};
+use alpen_ee_common::{
+    BatchDaProvider, BatchId, BatchProver, BatchStorage, ChunkStorage, DaBlobSource,
+};
 use alpen_reth_db::EeDaContext;
 use tokio::sync::watch;
 
@@ -47,7 +49,7 @@ pub fn create_batch_lifecycle_task<D, P, S>(
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage,
+    S: BatchStorage + ChunkStorage,
 {
     let (proof_ready_tx, proof_ready_rx) = watch::channel(initial_proof_ready_batch_id);
 
