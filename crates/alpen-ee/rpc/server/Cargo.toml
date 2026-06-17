@@ -15,4 +15,5 @@ async-trait.workspace = true
 jsonrpsee = { workspace = true, features = ["server"] }
 reth-node-builder.workspace = true
 reth-provider.workspace = true
+strata-identifiers.workspace = true
 tokio.workspace = true

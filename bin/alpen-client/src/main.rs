@@ -443,8 +443,12 @@ fn main() {
                 let storage = storage.clone();
                 move |ctx| {
                     let provider = ctx.provider().clone();
-                    let ee_rpc_server =
-                        EeRpcServer::new(provider, consensus_watcher, storage.clone());
+                    let ee_rpc_server = EeRpcServer::new(
+                        provider,
+                        consensus_watcher,
+                        storage.clone(),
+                        storage.clone(),
+                    );
                     ctx.modules.merge_configured(ee_rpc_server.into_rpc())?;
                     Ok(())
                 }
