@@ -2,7 +2,7 @@
 
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage};
+use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage, ChunkStorage};
 use tokio::sync::watch;
 
 use super::{ctx::BatchLifecycleCtx, state::BatchLifecycleState, task::batch_lifecycle_task};
@@ -40,7 +40,7 @@ pub fn create_batch_lifecycle_task<D, P, S>(
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage,
+    S: BatchStorage + ChunkStorage,
 {
     let (proof_ready_tx, proof_ready_rx) = watch::channel(initial_proof_ready_batch_id);
 

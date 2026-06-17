@@ -41,17 +41,21 @@ impl Frontier {
 
 /// State for tracking batch lifecycle progress.
 ///
-/// The lifecycle manager processes batches sequentially through their lifecycle states.
+/// The lifecycle manager processes batches sequentially through their batch/acct lifecycle states.
 /// Each frontier tracks the latest batch that has reached that status (by both idx and id).
 ///
 /// Batch Lifecycle States:
 /// Genesis → Sealed → DaPending → DaComplete → ProofPending → ProofReady
 ///
+/// Chunk proofs are tracked separately through [`alpen_ee_common::ChunkStatus`].
+/// `ProofPending` means the acct proof has been requested, and `ProofReady` means the acct proof is
+/// available for update submission.
+///
 /// 4 Frontiers (each tracks the latest batch at that status or beyond):
 /// 1. da_pending     - latest batch with DA posted (status >= DaPending)
 /// 2. da_complete    - latest batch with DA complete (status >= DaComplete)
-/// 3. proof_pending  - latest batch with proof requested (status >= ProofPending)
-/// 4. proof_ready    - latest batch with proof complete (status == ProofReady)
+/// 3. proof_pending  - latest batch with acct proof requested (status >= ProofPending)
+/// 4. proof_ready    - latest batch with acct proof complete (status == ProofReady)
 ///
 /// To process the next batch for a transition, use `frontier.idx + 1`.
 ///
@@ -66,10 +70,10 @@ pub struct BatchLifecycleState {
     /// Latest batch with DA complete (status >= DaComplete).
     da_complete: Frontier,
 
-    /// Latest batch with proof requested (status >= ProofPending).
+    /// Latest batch with acct proof requested (status >= ProofPending).
     proof_pending: Frontier,
 
-    /// Latest batch with proof complete (status == ProofReady).
+    /// Latest batch with acct proof complete (status == ProofReady).
     proof_ready: Frontier,
 }
 

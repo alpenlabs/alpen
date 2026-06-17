@@ -1,12 +1,13 @@
 use alpen_ee_common::{
-    Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, ProofGenerationStatus,
+    Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, ChunkStorage,
+    ProofGenerationStatus,
 };
 use eyre::Result;
 use tracing::{debug, debug_span, error, warn, Instrument};
 
 use crate::batch_lifecycle::{ctx::BatchLifecycleCtx, state::BatchLifecycleState};
 
-/// Try to complete proof for the next batch (ProofPending → ProofReady).
+/// Try to complete acct proof for the next batch (ProofPending → ProofReady).
 pub(crate) async fn try_advance_proof_ready<D, P, S>(
     state: &mut BatchLifecycleState,
     latest_batch: &Batch,
@@ -15,7 +16,7 @@ pub(crate) async fn try_advance_proof_ready<D, P, S>(
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage,
+    S: BatchStorage + ChunkStorage,
 {
     // Next batch to process is current frontier + 1
     let target_idx = state.proof_ready().idx() + 1;
@@ -80,10 +81,12 @@ where
                     }
 
                     ProofGenerationStatus::NotStarted => {
-                        // We've marked the batch as proof pending, but prover says proof generation has
-                        // not started. Try to re-request proof generation and hope for the best.
+                        // We've marked the batch as proof pending, but prover says acct proof
+                        // generation has not started. Re-request acct proof generation only; chunk
+                        // proof generation is driven by the chunk lifecycle.
                         warn!(
-                            "Expected proof generation to have been started. Retrying proof generation"
+                            "Expected acct proof generation to have been started. Retrying acct \
+                             proof generation"
                         );
 
                         ctx.prover.request_proof_generation(batch_id).await?;

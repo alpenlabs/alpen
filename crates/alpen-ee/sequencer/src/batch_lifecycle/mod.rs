@@ -2,11 +2,15 @@
 //!
 //! The batch lifecycle manager bridges the gap between the batch builder
 //! (which creates `Sealed` batches) and the update submitter (which consumes
-//! `ProofReady` batches). It manages the intermediate lifecycle states:
+//! `ProofReady` batches). It manages the intermediate batch/acct lifecycle states:
 //!
 //! ```text
 //! Sealed → DaPending → DaComplete → ProofPending → ProofReady
 //! ```
+//!
+//! `ProofPending` and `ProofReady` refer to the acct proof for the batch. Chunk proofs are tracked
+//! separately by `ChunkStatus`; a batch only advances from `DaComplete` to `ProofPending` after all
+//! chunks assigned to the batch are `ProofReady`.
 //!
 //! # Architecture
 //!
@@ -14,8 +18,9 @@
 //! sequentially through their lifecycle. It uses:
 //!
 //! - [`BatchDaProvider`] trait for posting DA and checking DA readiness
-//! - [`BatchProver`] trait for requesting and checking proof generation
+//! - [`BatchProver`] trait for requesting and checking acct proof generation
 //! - [`BatchStorage`] for persisting batch status updates
+//! - [`ChunkStorage`] for reading batch-to-chunk links and chunk proof readiness
 //!
 //! # Usage
 //!
@@ -52,7 +57,9 @@
 //! [`BatchDaProvider`]: alpen_ee_common::BatchDaProvider
 //! [`BatchProver`]: alpen_ee_common::BatchProver
 //! [`BatchStorage`]: alpen_ee_common::BatchStorage
+//! [`ChunkStorage`]: alpen_ee_common::ChunkStorage
 
+mod acct_proof_gate;
 mod ctx;
 mod handle;
 mod lifecycle;

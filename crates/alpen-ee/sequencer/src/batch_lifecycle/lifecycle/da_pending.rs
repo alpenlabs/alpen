@@ -1,4 +1,6 @@
-use alpen_ee_common::{Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage};
+use alpen_ee_common::{
+    Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, ChunkStorage,
+};
 use eyre::Result;
 use tracing::{debug, warn};
 
@@ -18,7 +20,7 @@ pub(crate) async fn try_advance_da_pending<D, P, S>(
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage,
+    S: BatchStorage + ChunkStorage,
 {
     loop {
         let batch_idx = state.da_pending().idx() + 1;

@@ -1,8 +1,8 @@
 //! Shared test utilities for batch_lifecycle tests.
 
 use alpen_ee_common::{
-    Batch, BatchId, BatchStatus, BatchStorage, InMemoryStorage, L1DaBlockInfo, L1DaBlockRef,
-    ProofId,
+    Batch, BatchId, BatchStatus, BatchStorage, Chunk, ChunkStatus, ChunkStorage, InMemoryStorage,
+    L1DaBlockInfo, L1DaBlockRef, ProofId,
 };
 use bitcoin::{hashes::Hash as _, BlockHash, Txid, Wtxid};
 use strata_acct_types::Hash;
@@ -90,7 +90,7 @@ pub(crate) enum TestBatchStatus {
 /// - Batches are linked: each batch's prev_block = previous batch's last_block
 /// - DA/proof data is auto-generated using batch index
 pub(crate) async fn fill_storage(
-    storage: &impl BatchStorage,
+    storage: &(impl BatchStorage + ChunkStorage),
     statuses: &[TestBatchStatus],
 ) -> Vec<Batch> {
     // Save genesis batch (idx=0, last_block=test_hash(0))
@@ -105,6 +105,25 @@ pub(crate) async fn fill_storage(
 
         let batch = make_batch(idx, prev_n, last_n);
         storage.save_next_batch(batch.clone()).await.unwrap();
+
+        let chunk = Chunk::new(
+            i as u64,
+            batch.prev_block(),
+            batch.last_block(),
+            batch.last_blocknum(),
+            batch.idx(),
+            vec![],
+        );
+        let chunk_id = chunk.id();
+        storage.save_next_chunk(chunk).await.unwrap();
+        storage
+            .set_batch_chunks(batch.id(), vec![chunk_id])
+            .await
+            .unwrap();
+        storage
+            .update_chunk_status(chunk_id, ChunkStatus::ProofReady(test_proof_id(last_n)))
+            .await
+            .unwrap();
 
         // Convert TestBatchStatus to BatchStatus with dummy data
         let status = match test_status {
