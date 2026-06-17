@@ -156,7 +156,7 @@ fn process_update_tx<S: IStateAccessorMut>(
     })??;
 
     // Emit log after successful update.
-    let log = SnarkAccountUpdateLogData::from_sau_data(upd)
+    let log = snark_update_log_from_sau_data(upd)
         .expect("extra_data bounded by SSZ MAX_EXTRA_DATA_BYTES(1024) exceeds VarVec bound");
     context.emit_typed_log(serial, &log)?;
     Ok(())

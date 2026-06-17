@@ -231,6 +231,7 @@ strata-merkle = { git = "https://github.com/alpenlabs/strata-common", features =
 strata-merkle-node-store = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc26" }
 strata-metrics = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc26" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc26" }
+strata-ol-logs = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc26" }
 strata-predicate = { git = "https://github.com/alpenlabs/strata-common", features = [
   "serde",
 ], tag = "v0.1.0-alpha-rc26" }
