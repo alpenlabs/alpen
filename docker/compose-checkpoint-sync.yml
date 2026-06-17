@@ -28,7 +28,7 @@ services:
       - alpen_network
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz && curl -sf -X POST http://localhost:8432 -H 'content-type: application/json' --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"strata_getChainStatus\",\"params\":[]}' | grep -q '\"result\"'"]
       interval: 5s
       timeout: 5s
       retries: 30

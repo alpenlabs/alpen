@@ -1,0 +1,113 @@
+services:
+  bitcoind:
+    image: ${SIGNET_IMAGE:-public.ecr.aws/r1l9t0r6/tn1/signet:4485b8f}
+    environment:
+      MINERENABLED: 0
+      MINE_GENESIS: 0
+      MAXTXFEE: 10
+      SIGNETCHALLENGE: ${SIGNETCHALLENGE:-}
+      ADDNODE: ${ADDNODE:-}
+      RPCUSER: ${BITCOIND_RPC_USER:-bitcoin}
+      RPCPASSWORD: ${BITCOIND_RPC_PASSWORD:-bitcoin}
+      RPCBIND: 0.0.0.0:38332
+      RPCALLOWIP: 0.0.0.0/0
+    volumes:
+      - bitcoind-data:/root/.bitcoin
+    ports:
+      - "38332:38332"
+    networks:
+      - alpen_network
+    healthcheck:
+      test: >-
+        bitcoin-cli -signet
+        -rpcuser=${BITCOIND_RPC_USER:-bitcoin}
+        -rpcpassword=${BITCOIND_RPC_PASSWORD:-bitcoin}
+        getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  strata-checkpoint-sync:
+    build:
+      context: ..
+      dockerfile: docker/strata-checkpoint-sync/Dockerfile
+    image: ${CHECKPOINT_SYNC_IMAGE:-strata-checkpoint-sync:latest}
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    environment:
+      CONFIG_PATH: /app/configs/config.checkpoint-sync.toml
+      OL_PARAMS_PATH: /app/configs/generated/ol-params.json
+      ASM_PARAMS_PATH: /app/configs/generated/asm-params.json
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-bitcoin}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-bitcoin}
+      RUST_BACKTRACE: 1
+    volumes:
+      - ./configs/config.checkpoint-sync.toml:/app/configs/config.checkpoint-sync.toml:ro
+      - ./configs/generated/ol-params.json:/app/configs/generated/ol-params.json:ro
+      - ./configs/generated/asm-params.json:/app/configs/generated/asm-params.json:ro
+      - strata-checkpoint-sync-data:/app/data
+    ports:
+      - "8433:8432"
+      - "9616:9615"
+    networks:
+      - alpen_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz && curl -sf -X POST http://localhost:8432 -H 'content-type: application/json' --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"strata_getChainStatus\",\"params\":[]}' | grep -q '\"result\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  alpen-fullnode:
+    platform: linux/amd64
+    image: ${ALPEN_IMAGE:-alpen-client:latest}
+    depends_on:
+      strata-checkpoint-sync:
+        condition: service_healthy
+    environment:
+      RUST_LOG: ${RUST_LOG:-info,alpen_gossip=info}
+      SEQUENCER_PUBKEY: ${SEQUENCER_PUBKEY:-}
+      GENESIS_L1_HEIGHT: ${GENESIS_L1_HEIGHT:-}
+      CHAIN_SPEC: ${CHAIN_SPEC:-testnet3}
+      OL_CLIENT_URL: ws://strata-checkpoint-sync:8432
+    command:
+      - --sequencer-http
+      - ${SEQUENCER_HTTP:-}
+      - --p2p-secret-key
+      - /app/keys/fn-p2p.hex
+      - --bootnodes
+      - ${BOOTNODE_ENODE:-}
+      - --trusted-peers
+      - ${TRUSTED_PEERS:-${BOOTNODE_ENODE:-}}
+    volumes:
+      - ./configs/generated/fn-p2p.hex:/app/keys/fn-p2p.hex:ro
+      - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
+      - alpen-fullnode-data:/app/data
+    ports:
+      - "9545:8545"
+      - "9546:8546"
+      - "30303:30303/tcp"
+      - "30303:30303/udp"
+    networks:
+      - alpen_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  bitcoind-data:
+  strata-checkpoint-sync-data:
+  alpen-fullnode-data:
+
+networks:
+  alpen_network:
+    driver: bridge
+    name: alpen_network
