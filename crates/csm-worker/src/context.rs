@@ -89,25 +89,15 @@ pub trait CsmWorkerContext: Send + Sync {
     /// state yet.
     fn genesis_l1_block(&self) -> L1BlockCommitment;
 
-    /// Returns the epoch of the most recent L1-observed checkpoint, or `None`
-    /// if nothing has been observed yet.
-    fn get_last_checkpoint_l1_ref_epoch(&self) -> CsmWorkerResult<Option<EpochCommitment>>;
-
-    /// Returns the canonical epoch commitment at `epoch`, if recorded.
-    fn get_canonical_epoch_commitment_at(
+    /// Returns all observed epoch commitment and L1 ref pairs at or above
+    /// `start_epoch`, ordered by ascending epoch.
+    fn get_checkpoint_l1_refs_from(
         &self,
-        epoch: Epoch,
-    ) -> CsmWorkerResult<Option<EpochCommitment>>;
-
-    /// Returns the recorded L1 ref for an observed checkpoint at `commitment`.
-    fn get_checkpoint_l1_ref(
-        &self,
-        commitment: EpochCommitment,
-    ) -> CsmWorkerResult<Option<CheckpointL1Ref>>;
+        start_epoch: Epoch,
+    ) -> CsmWorkerResult<Vec<(EpochCommitment, CheckpointL1Ref)>>;
 
     /// Returns the L1-observed checkpoint payload at `commitment` (carries the
-    /// tip the checkpoint declared). Paired with [`Self::get_checkpoint_l1_ref`]
-    /// to reconstruct the full observation record at bootstrap.
+    /// tip the checkpoint declared).
     fn get_checkpoint_payload(
         &self,
         commitment: EpochCommitment,

@@ -1,9 +1,6 @@
 //! Shared test helpers for the CSM worker.
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use bitcoin::Block;
 use strata_asm_common::AuxData;
@@ -52,9 +49,6 @@ pub(crate) struct StubCtx {
     /// When set, `put_client_state_update` fails, simulating a commit failure
     /// after a block's logs were processed.
     fail_client_state_update: bool,
-    /// Epochs whose canonical commitment reads as absent, modeling an OL reorg
-    /// that orphaned the epoch's checkpoint.
-    orphaned_epochs: HashSet<Epoch>,
 }
 
 impl StubCtx {
@@ -76,15 +70,7 @@ impl StubCtx {
             canonical_blocks: HashMap::new(),
             canonical_fail_height: None,
             fail_client_state_update: false,
-            orphaned_epochs: HashSet::new(),
         }
-    }
-
-    /// Marks `epoch`'s canonical commitment as absent, as if an OL reorg
-    /// orphaned its checkpoint.
-    pub(crate) fn with_orphaned_epoch(mut self, epoch: Epoch) -> Self {
-        self.orphaned_epochs.insert(epoch);
-        self
     }
 
     /// Configures `get_l1_block` to return an error on any blockid.
@@ -251,34 +237,14 @@ impl CsmWorkerContext for StubCtx {
         self.genesis_l1_block
     }
 
-    fn get_last_checkpoint_l1_ref_epoch(&self) -> CsmWorkerResult<Option<EpochCommitment>> {
-        Ok(self
-            .storage
-            .ol_checkpoint()
-            .get_last_checkpoint_l1_ref_epoch_blocking()?)
-    }
-
-    fn get_canonical_epoch_commitment_at(
+    fn get_checkpoint_l1_refs_from(
         &self,
-        epoch: Epoch,
-    ) -> CsmWorkerResult<Option<EpochCommitment>> {
-        if self.orphaned_epochs.contains(&epoch) {
-            return Ok(None);
-        }
+        start_epoch: Epoch,
+    ) -> CsmWorkerResult<Vec<(EpochCommitment, CheckpointL1Ref)>> {
         Ok(self
             .storage
             .ol_checkpoint()
-            .get_canonical_epoch_commitment_at_blocking(epoch)?)
-    }
-
-    fn get_checkpoint_l1_ref(
-        &self,
-        commitment: EpochCommitment,
-    ) -> CsmWorkerResult<Option<CheckpointL1Ref>> {
-        Ok(self
-            .storage
-            .ol_checkpoint()
-            .get_checkpoint_l1_ref_blocking(commitment)?)
+            .get_checkpoint_l1_refs_from_blocking(start_epoch)?)
     }
 
     fn get_checkpoint_payload(

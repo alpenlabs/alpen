@@ -63,7 +63,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             delete_orphan_rows_above(&ctx, recent_l1blk)?;
         }
 
-        let new_clstate = Arc::new(derive_state(&ctx, &recent_l1blk, &recent_clstate)?);
+        let new_clstate = Arc::new(reload_client_state(&ctx, &recent_l1blk, &recent_clstate)?);
 
         // Persist and publish when the derived state changed, or to seed the
         // anchor row on empty storage — a later reorg may pivot to it and read
@@ -196,8 +196,8 @@ pub(crate) fn finalized_l1_height(clstate: &ClientState) -> Option<L1Height> {
         .map(|ckpt| ckpt.height())
 }
 
-/// Derives the client state from storage as of `cur_block`.
-pub(crate) fn derive_state<C: CsmWorkerContext>(
+/// Reloads the client state from storage as of `cur_block`.
+pub(crate) fn reload_client_state<C: CsmWorkerContext>(
     ctx: &C,
     cur_block: &L1BlockCommitment,
     cur_clstate: &ClientState,
@@ -232,42 +232,33 @@ pub(crate) fn derive_state<C: CsmWorkerContext>(
     Ok(ClientState::new(new_finalized_ckpt, confirmed_ckpt))
 }
 
-/// Loads observed checkpoint candidates from the OL checkpoint DB via `ctx`,
+/// Loads observed checkpoint candidates from CSM's own observation index,
 /// starting from `start_epoch`.
 fn load_observed_checkpoints<C: CsmWorkerContext>(
     ctx: &C,
     start_epoch: Epoch,
     cur_csm_tip: L1Height,
 ) -> CsmWorkerResult<VecDeque<L1Checkpoint>> {
-    let Some(last_ep_with_l1ref) = ctx.get_last_checkpoint_l1_ref_epoch()? else {
-        return Ok(VecDeque::new());
-    };
-    let last_checkpoint_epoch = last_ep_with_l1ref.epoch();
-
     let mut observed = VecDeque::new();
-    for epoch in start_epoch..=last_checkpoint_epoch {
-        // No canonical commitment at this epoch is expected (e.g. orphaned), so
-        // skip silently; a commitment with a missing observation is not.
-        let Some(commitment) = ctx.get_canonical_epoch_commitment_at(epoch)? else {
+    for (commitment, observation) in ctx.get_checkpoint_l1_refs_from(start_epoch)? {
+        let l1_block = observation.l1_commitment;
+
+        if l1_block.height() > cur_csm_tip {
             continue;
-        };
-        let Some(observation) = ctx.get_checkpoint_l1_ref(commitment)? else {
-            warn!(?commitment, "canonical epoch missing its L1 ref; skipping");
+        }
+
+        // Drop observations recorded on an orphaned L1 block.
+        if ctx.get_canonical_l1_block(l1_block.height())? != Some(l1_block) {
             continue;
-        };
+        }
+
         let Some(payload) = ctx.get_checkpoint_payload(commitment)? else {
             warn!(
                 ?commitment,
-                "canonical epoch missing its checkpoint payload; skipping"
+                "observed checkpoint missing its payload; skipping"
             );
             continue;
         };
-
-        // Heights are strictly increasing in epoch order, so once one exceeds
-        // the tip every later one does too.
-        if observation.l1_commitment.height() > cur_csm_tip {
-            break;
-        }
 
         observed.push_back(L1Checkpoint::new(*payload.new_tip(), observation));
     }
@@ -296,7 +287,7 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::{CsmWorkerState, compute_reorg_floor_height, derive_state};
+    use super::{CsmWorkerState, compute_reorg_floor_height, reload_client_state};
     use crate::test_utils::StubCtx;
 
     fn create_test_params() -> Arc<AsmParams> {
@@ -344,18 +335,77 @@ mod tests {
         commitment
     }
 
-    /// Builds a `StubCtx` over freshly seeded storage with reorg depth 3.
+    /// Builds a `StubCtx` over freshly seeded storage with reorg depth 3, with
+    /// canonical L1 blocks registered to match `seed_observation`'s blkid scheme
+    /// (`[height as u8; 32]`) so observations read as canonical.
     fn derive_ctx() -> (StubCtx, Arc<strata_storage::NodeStorage>) {
         let params = create_test_params();
         let (storage, status_channel) = create_test_storage_and_status(params.clone());
-        let ctx = StubCtx::new(
+        let mut ctx = StubCtx::new(
             storage.clone(),
             status_channel,
             3,
             params.magic,
             params.anchor.block,
         );
+        for height in 0..=200 {
+            ctx =
+                ctx.with_canonical_block(height, L1BlockId::from(Buf32::from([height as u8; 32])));
+        }
         (ctx, storage)
+    }
+
+    /// An above-tip observation encountered before a valid below-tip one (epoch
+    /// order need not match L1-height order) must not terminate the scan and
+    /// hide the valid observation.
+    #[test]
+    fn derive_state_skips_above_tip_without_hiding_later() {
+        let (ctx, storage) = derive_ctx();
+        // epoch 1 observed high (above the tip), epoch 2 observed low (canonical,
+        // buried). Iteration is epoch-ordered, so the above-tip epoch 1 comes first.
+        seed_observation(&storage, 1, 105);
+        let commitment_2 = seed_observation(&storage, 2, 100);
+
+        let tip = L1BlockCommitment::new(102, L1BlockId::default());
+        let clstate =
+            reload_client_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
+
+        // epoch 2 at height 100 is buried 3 deep and must be found despite the
+        // above-tip epoch 1 appearing first.
+        assert_eq!(clstate.get_declared_final_epoch(), Some(commitment_2));
+        assert_eq!(clstate.get_last_epoch(), Some(commitment_2));
+    }
+
+    /// A checkpoint-sync node has observations but no epoch summaries (its OL is
+    /// reconstructed from finality, which hasn't advanced yet). Finality must
+    /// still derive from the observations alone.
+    #[test]
+    fn derive_state_works_without_epoch_summaries() {
+        let (ctx, storage) = derive_ctx();
+        let ol_checkpoint = storage.ol_checkpoint();
+
+        // Record only the L1 observation (ref + payload), no epoch summary.
+        let payload = create_test_checkpoint_payload(1);
+        let commitment = EpochCommitment::from_terminal(1, *payload.new_tip().l2_commitment());
+        ol_checkpoint
+            .put_checkpoint_l1_observation_blocking(
+                commitment,
+                payload,
+                CheckpointL1Ref::new(
+                    L1BlockCommitment::new(100, L1BlockId::from(Buf32::from([100u8; 32]))),
+                    RBuf32::from([1; 32]),
+                    RBuf32::from([2; 32]),
+                ),
+            )
+            .expect("insert observation");
+
+        // tip 102 -> epoch 1 buried 3 deep, finalized despite no epoch summary.
+        let tip = L1BlockCommitment::new(102, L1BlockId::default());
+        let clstate =
+            reload_client_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
+
+        assert_eq!(clstate.get_declared_final_epoch(), Some(commitment));
+        assert_eq!(clstate.get_last_epoch(), Some(commitment));
     }
 
     /// An observation only `depth - 1` deep is not yet finalized.
@@ -366,7 +416,8 @@ mod tests {
 
         // tip 101 -> 2 confirmations, below the depth-3 threshold.
         let tip = L1BlockCommitment::new(101, L1BlockId::default());
-        let clstate = derive_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
+        let clstate =
+            reload_client_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
 
         assert_eq!(clstate.get_declared_final_epoch(), None);
     }
@@ -381,7 +432,8 @@ mod tests {
 
         // tip 103 -> both observations are >= depth-3 deep.
         let tip = L1BlockCommitment::new(103, L1BlockId::default());
-        let clstate = derive_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
+        let clstate =
+            reload_client_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
 
         assert_eq!(clstate.get_declared_final_epoch(), Some(commitment_2));
         assert_eq!(clstate.get_last_epoch(), Some(commitment_2));
@@ -397,7 +449,8 @@ mod tests {
 
         // tip 102 -> epoch 1 is 3 deep (finalized); epoch 2 is 1 deep (seen only).
         let tip = L1BlockCommitment::new(102, L1BlockId::default());
-        let clstate = derive_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
+        let clstate =
+            reload_client_state(&ctx, &tip, &ClientState::new(None, None)).expect("derive");
 
         assert_eq!(clstate.get_declared_final_epoch(), Some(commitment_1));
         assert_eq!(clstate.get_last_epoch(), Some(commitment_2));
@@ -412,14 +465,15 @@ mod tests {
 
         // First derive at tip 102 finalizes epoch 1; reuse that as the baseline.
         let tip_1 = L1BlockCommitment::new(102, L1BlockId::default());
-        let baseline = derive_state(&ctx, &tip_1, &ClientState::new(None, None)).expect("derive");
+        let baseline =
+            reload_client_state(&ctx, &tip_1, &ClientState::new(None, None)).expect("derive");
         assert_eq!(baseline.get_declared_final_epoch(), Some(prior));
 
         seed_observation(&storage, 2, 103);
 
         // tip 103: epoch 2 only 1 deep, so no new finality; prior must persist.
         let tip_2 = L1BlockCommitment::new(103, L1BlockId::default());
-        let clstate = derive_state(&ctx, &tip_2, &baseline).expect("derive");
+        let clstate = reload_client_state(&ctx, &tip_2, &baseline).expect("derive");
 
         assert_eq!(clstate.get_declared_final_epoch(), Some(prior));
     }
@@ -476,7 +530,7 @@ mod tests {
                 commitment_1,
                 payload_1,
                 CheckpointL1Ref::new(
-                    L1BlockCommitment::new(17, L1BlockId::default()),
+                    L1BlockCommitment::new(17, L1BlockId::from(Buf32::from([17; 32]))),
                     RBuf32::from([1; 32]),
                     RBuf32::from([2; 32]),
                 ),
@@ -501,7 +555,7 @@ mod tests {
                 commitment_2,
                 payload_2,
                 CheckpointL1Ref::new(
-                    L1BlockCommitment::new(19, L1BlockId::default()),
+                    L1BlockCommitment::new(19, L1BlockId::from(Buf32::from([19; 32]))),
                     RBuf32::from([3; 32]),
                     RBuf32::from([4; 32]),
                 ),

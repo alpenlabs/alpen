@@ -175,31 +175,14 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         self.asm_params.anchor.block
     }
 
-    fn get_last_checkpoint_l1_ref_epoch(&self) -> CsmWorkerResult<Option<EpochCommitment>> {
-        Ok(self
-            .storage
-            .ol_checkpoint()
-            .get_last_checkpoint_l1_ref_epoch_blocking()?)
-    }
-
-    fn get_canonical_epoch_commitment_at(
+    fn get_checkpoint_l1_refs_from(
         &self,
-        epoch: Epoch,
-    ) -> CsmWorkerResult<Option<EpochCommitment>> {
+        start_epoch: Epoch,
+    ) -> CsmWorkerResult<Vec<(EpochCommitment, CheckpointL1Ref)>> {
         Ok(self
             .storage
             .ol_checkpoint()
-            .get_canonical_epoch_commitment_at_blocking(epoch)?)
-    }
-
-    fn get_checkpoint_l1_ref(
-        &self,
-        commitment: EpochCommitment,
-    ) -> CsmWorkerResult<Option<CheckpointL1Ref>> {
-        Ok(self
-            .storage
-            .ol_checkpoint()
-            .get_checkpoint_l1_ref_blocking(commitment)?)
+            .get_checkpoint_l1_refs_from_blocking(start_epoch)?)
     }
 
     fn get_checkpoint_payload(

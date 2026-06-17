@@ -16,7 +16,7 @@ use crate::{
     checkpoint_extract::{CheckpointVerificationContext, extract_matching_checkpoint},
     context::CsmWorkerContext,
     errors::{CsmWorkerError, CsmWorkerResult},
-    state::{CsmWorkerState, compute_reorg_floor_height, derive_state},
+    state::{CsmWorkerState, compute_reorg_floor_height, reload_client_state},
 };
 
 /// The in-flight CSM update produced by processing one ASM block's logs.
@@ -128,7 +128,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             "received asm block skipping a height: tip {last}, block {asm_block}"
         );
 
-        let state = derive_state(&self.ctx, &asm_block, &next_state)?;
+        let state = reload_client_state(&self.ctx, &asm_block, &next_state)?;
         self.ctx
             .put_client_state_update(&asm_block, ClientUpdateOutput::new_state(state.clone()))?;
         self.recent_asm_blocks.push(asm_block);
@@ -276,7 +276,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
                 what: "client state at pivot block",
                 detail: pivot_block.to_string(),
             })?;
-        let new_clstate = derive_state(&self.ctx, &pivot_block, &pivot_clstate)?;
+        let new_clstate = reload_client_state(&self.ctx, &pivot_block, &pivot_clstate)?;
 
         // Re-persist at the pivot to overwrite the orphaned branch's row.
         self.ctx.put_client_state_update(
@@ -1365,18 +1365,19 @@ mod tests {
 
         let (mut state, storage) = create_test_state_with_ctx(|c| {
             // Fork lands at the anchor (height 100); 101 diverged. Epoch 2's
-            // checkpoint rode the orphaned branch, so its canonical commitment
-            // is gone after the reorg.
-            c.with_canonical_block(100, block_id_at(100))
+            // checkpoint rode the orphaned 101 block, so its L1 observation is
+            // not on the canonical chain (canonical 101 is a different block).
+            c.with_canonical_block(90, block_id_at(90))
+                .with_canonical_block(100, block_id_at(100))
                 .with_canonical_block(101, block_id_at(201))
-                .with_orphaned_epoch(2)
         });
         state.recent_asm_blocks = vec![anchor, orphan_tip];
 
         // CSM persisted a client state at the fork block in a prior run.
         seed_client_state_row(&storage, &anchor);
 
-        // Epoch 1 observed at L1 height 90; epoch 2 observed at the orphaned tip.
+        // Epoch 1 observed at canonical L1 height 90; epoch 2 observed at the
+        // orphaned 101 block (block_id_at(101) != canonical block_id_at(201)).
         let commitment_1 = seed_ol_checkpoint_observation(&storage, 1, 90);
         let commitment_2 = seed_ol_checkpoint_observation(&storage, 2, 101);
 
