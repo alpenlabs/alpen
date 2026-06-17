@@ -155,6 +155,7 @@ impl From<DbError> for StorageError {
             DbError::CannotDeleteFinalizedBlock(hash) => {
                 StorageError::CannotDeleteFinalizedBlock(format!("{:?}", hash))
             }
+            DbError::ChunkNotFound(chunk_id) => StorageError::ChunkNotFound(chunk_id),
             e => StorageError::database(e.to_string()),
         }
     }

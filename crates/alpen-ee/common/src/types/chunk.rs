@@ -4,15 +4,17 @@ use strata_acct_types::Hash;
 
 use crate::ProofId;
 
-/// Lifecycle states for chunk
-#[derive(Debug, Clone)]
+/// Lifecycle states for a chunk.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChunkStatus {
-    /// Proving has not started yet.
-    ProvingNotStarted,
+    /// The chunk is sealed and no proof task has been submitted yet.
+    Sealed,
     /// Proving started. Pending proof generation.
     ProofPending(String),
     /// Valid proof ready.
     ProofReady(ProofId),
+    /// Proof generation failed permanently and requires operator intervention.
+    ProofFailed(String),
 }
 
 /// Unique, deterministic identifier for a chunk.
