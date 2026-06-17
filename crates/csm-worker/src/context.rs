@@ -31,6 +31,14 @@ pub trait CsmWorkerContext: Send + Sync {
     /// Deletes the client state row at the given L1 block.
     fn del_client_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<()>;
 
+    /// Returns up to `max_count` persisted client-state block keys at or above
+    /// `from_block`, in ascending order.
+    fn get_client_state_blocks_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> CsmWorkerResult<Vec<L1BlockCommitment>>;
+
     /// Publishes the current client state and the L1 block it is anchored at.
     fn publish_client_state(&self, state: ClientState, block: L1BlockCommitment);
 

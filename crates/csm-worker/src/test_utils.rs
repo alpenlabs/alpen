@@ -151,6 +151,20 @@ impl CsmWorkerContext for StubCtx {
         Ok(())
     }
 
+    fn get_client_state_blocks_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> CsmWorkerResult<Vec<L1BlockCommitment>> {
+        Ok(self
+            .storage
+            .client_state()
+            .get_updates_from(from_block, max_count)?
+            .into_iter()
+            .map(|(block, _)| block)
+            .collect())
+    }
+
     fn put_checkpoint_l1_observation(
         &self,
         commitment: EpochCommitment,

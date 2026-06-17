@@ -50,6 +50,13 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let (recent_l1blk, recent_clstate) =
             resolve_canonical_tip(&ctx, loaded_block, loaded_clstate)?;
 
+        // A resolved-down tip means the loaded block was an orphan; delete the
+        // orphaned rows above the canonical tip so `fetch_most_recent_state`
+        // (and the status channel it seeds at startup) sees the canonical state.
+        if recent_l1blk != loaded_block {
+            delete_orphan_rows_above(&ctx, recent_l1blk)?;
+        }
+
         let new_clstate = Arc::new(derive_state(&ctx, &recent_l1blk, &recent_clstate)?);
 
         // Persist and publish only when the derived state actually changed.
@@ -102,6 +109,40 @@ fn resolve_canonical_tip<C: CsmWorkerContext>(
         what: "canonical client state at or above reorg floor",
         detail: candidate_blk.to_string(),
     })
+}
+
+/// Number of client-state rows fetched per batch while deleting orphans.
+const ORPHAN_SCAN_BATCH: usize = 64;
+
+/// Deletes every persisted client-state row strictly above `canonical_tip`.
+///
+/// Scans in batches so the orphan branch is fully removed regardless of its
+/// depth, rather than truncated at a single fetch limit.
+fn delete_orphan_rows_above<C: CsmWorkerContext>(
+    ctx: &C,
+    canonical_tip: L1BlockCommitment,
+) -> CsmWorkerResult<()> {
+    let mut cursor = canonical_tip;
+    loop {
+        let batch = ctx.get_client_state_blocks_from(cursor, ORPHAN_SCAN_BATCH)?;
+        let full = batch.len() >= ORPHAN_SCAN_BATCH;
+        let mut advanced = false;
+        for block in batch {
+            if block > canonical_tip {
+                ctx.del_client_state(&block)?;
+            }
+            if block > cursor {
+                cursor = block;
+                advanced = true;
+            }
+        }
+        // The scan is inclusive of `cursor`, so a batch that adds no higher
+        // block means nothing remains above it.
+        if !advanced || !full {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Builds the recent-ASM-blocks list from the reorg-safe floor (index 0) up to
@@ -701,6 +742,90 @@ mod tests {
 
         assert_eq!(state.recent_asm_blocks.last(), Some(&canonical_tip));
         assert_ne!(state.recent_asm_blocks.last(), Some(&orphan));
+    }
+
+    /// Bootstrap deletes orphan rows above the canonical tip, so a subsequent
+    /// `fetch_most_recent_state` returns the canonical row rather than the orphan.
+    #[test]
+    fn bootstrap_deletes_orphan_rows() {
+        let params = create_test_params();
+        let (storage, status_channel) = create_test_storage_and_status(params.clone());
+
+        let canonical_tip = L1BlockCommitment::new(40329, blkid(201));
+        let orphan = L1BlockCommitment::new(40330, blkid(202));
+        put_client_state_row(&storage, &canonical_tip);
+        put_client_state_row(&storage, &orphan);
+
+        let mut ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            4,
+            params.magic,
+            params.anchor.block,
+        );
+        for height in 40326..=40329 {
+            ctx = ctx.with_canonical_block(height, blkid(height as u8));
+        }
+        ctx = ctx.with_canonical_block(40329, *canonical_tip.blkid());
+
+        CsmWorkerState::bootstrap(ctx).expect("bootstrap");
+
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&orphan)
+                .expect("query orphan")
+                .is_none(),
+            "orphan row must be deleted"
+        );
+        let (recent, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query")
+            .expect("row");
+        assert_eq!(recent, canonical_tip);
+    }
+
+    /// An orphan branch deeper than one scan batch is fully deleted, proving the
+    /// batched scan terminates and does not truncate. Exercises the deletion
+    /// helper directly, since `resolve_canonical_tip` caps orphan depth at the
+    /// reorg window before bootstrap would reach this path.
+    #[test]
+    fn delete_orphan_rows_spans_multiple_batches() {
+        let params = create_test_params();
+        let (storage, status_channel) = create_test_storage_and_status(params.clone());
+
+        let canonical_tip = L1BlockCommitment::new(40329, blkid(201));
+        put_client_state_row(&storage, &canonical_tip);
+
+        // Seed more orphan rows than a single scan batch holds.
+        let orphan_count = (super::ORPHAN_SCAN_BATCH + 5) as u32;
+        for i in 0..orphan_count {
+            let orphan = L1BlockCommitment::new(
+                40330 + i,
+                L1BlockId::from(Buf32::from([(i % 251 + 3) as u8; 32])),
+            );
+            put_client_state_row(&storage, &orphan);
+        }
+
+        let ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            4,
+            params.magic,
+            params.anchor.block,
+        );
+        super::delete_orphan_rows_above(&ctx, canonical_tip).expect("delete orphans");
+
+        let (recent, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query")
+            .expect("row");
+        assert_eq!(
+            recent, canonical_tip,
+            "every orphan row above the canonical tip must be deleted"
+        );
     }
 
     /// Two rows at the same height: the orphan sorts higher so `get_latest`
