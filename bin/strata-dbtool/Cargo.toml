@@ -11,9 +11,20 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-alpen-reth-node.workspace = true
+alloy-eips.workspace = true
 alpen-ee-common.workspace = true
+alpen-ee-da-types.workspace = true
 alpen-ee-database.workspace = true
+alpen-reth-node.workspace = true
+alpen-reth-statediff = { workspace = true, features = ["chainspec"] }
+argh.workspace = true
+hex.workspace = true
+reth-node-api.workspace = true
+reth-primitives-traits.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sled.workspace = true
 ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-logs.workspace = true
@@ -31,20 +42,13 @@ strata-ol-state-types.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
 strata-storage.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
 typed-sled.workspace = true
 zkaleido.workspace = true
 
-alloy-eips.workspace = true
-argh.workspace = true
-hex.workspace = true
-reth-node-api.workspace = true
-reth-primitives-traits.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-sled.workspace = true
-tokio.workspace = true
-tracing-subscriber.workspace = true
-
 [dev-dependencies]
+strata-codec.workspace = true
+strata-l1-txfmt.workspace = true
 strata-ol-params.workspace = true
 strata-predicate.workspace = true
