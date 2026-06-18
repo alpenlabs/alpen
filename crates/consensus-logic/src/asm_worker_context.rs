@@ -77,6 +77,8 @@ impl L1DataProvider for AsmWorkerCtx {
         })
     }
 
+    // TODO(STR-3813): maintain a local L1 block-id -> height index instead of
+    // round-tripping to the Bitcoin client for every lookup on the hot path.
     fn get_l1_block_height(&self, blockid: &L1BlockId) -> WorkerResult<u64> {
         let hash = blockid.to_block_hash();
         let backoff = ExponentialBackoff::new(200, 15, 10);
