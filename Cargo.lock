@@ -15402,12 +15402,15 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "serde_json",
  "strata-asm-proto-checkpoint-types",
  "strata-btc-types",
  "strata-checkpoint-types",
  "strata-identifiers",
+ "strata-l1-txfmt",
  "strata-primitives",
  "strata-test-utils",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
