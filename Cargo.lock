@@ -16692,6 +16692,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-csm-types",
  "strata-db-store-sled",
+ "strata-db-tests",
  "strata-db-types",
  "strata-identifiers",
  "strata-merkle",
