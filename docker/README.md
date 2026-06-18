@@ -34,6 +34,14 @@ For operator-style fullnode validation, use `compose-fullnode.yml` so the local
 Signet fullnode, checkpoint-sync node, and Alpen EE fullnode share one compose
 project and network.
 
+Create the fullnode environment file before starting that stack:
+
+```bash
+cp .env.alpen-fullnode.example .env
+# Edit .env for the target network, image tag, Signet peer, and Alpen EE peer.
+docker compose -f compose-fullnode.yml up -d
+```
+
 Before running host-shell checks that reference values from `.env`, export the
 file into the current shell. Docker Compose reads `.env` automatically, but
 commands such as `bitcoin-cli -rpcuser="$BITCOIND_RPC_USER"` do not.
