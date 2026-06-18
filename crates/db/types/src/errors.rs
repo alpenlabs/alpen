@@ -113,9 +113,14 @@ pub enum DbError {
     #[error("resource busy")]
     Busy,
 
-    /// A database worker task failed in an way that could not be determined.
-    #[error("worker task exited strangely")]
-    WorkerFailedStrangely,
+    /// A database worker task did not return a result.
+    ///
+    /// Produced when a blocking database task panics or is cancelled (its
+    /// [`tokio::task::JoinError`] is stringified into the payload), or when a
+    /// worker drops its response channel before sending. The payload describes
+    /// the underlying failure.
+    #[error("worker task failed to return a result: {0}")]
+    WorkerFailedStrangely(String),
 
     /// This happens in a cache when we were a second call to a database entry after a primary one
     /// was started whose result we would use failed.  This is meant to be a transient error that
@@ -224,8 +229,15 @@ impl From<Error> for DbError {
 impl From<OpsError> for DbError {
     fn from(value: OpsError) -> Self {
         match value {
-            OpsError::WorkerFailedStrangely => DbError::WorkerFailedStrangely,
+            OpsError::WorkerFailedStrangely => DbError::WorkerFailedStrangely(value.to_string()),
         }
+    }
+}
+
+#[cfg(feature = "proxies")]
+impl From<tokio::task::JoinError> for DbError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        DbError::WorkerFailedStrangely(err.to_string())
     }
 }
 

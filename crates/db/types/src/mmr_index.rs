@@ -8,6 +8,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_identifiers::{AccountId, Hash};
 pub use strata_merkle_node_store::{LeafPos, NodePos};
 
+use crate::DbResult;
+
 /// Opaque serialized form of [`MmrId`], used as a database key.
 pub type RawMmrId = Vec<u8>;
 
@@ -306,6 +308,54 @@ impl MmrBatchWrite {
 
         out
     }
+}
+
+/// Storage-only MMR indexing database interface.
+///
+/// This interface intentionally contains only primitive reads and one
+/// backend-agnostic atomic batch write entry point.
+#[cfg_attr(
+    feature = "proxies",
+    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:mmr_index")
+)]
+pub trait MmrIndexDatabase: Send + Sync + 'static {
+    /// Returns the node hash for a namespace and node position.
+    fn get_node(&self, mmr_id: RawMmrId, pos: NodePos) -> DbResult<Option<Hash>>;
+
+    /// Returns optional preimage bytes for a namespace and leaf position.
+    fn get_preimage(&self, mmr_id: RawMmrId, pos: LeafPos) -> DbResult<Option<Vec<u8>>>;
+
+    /// Returns optional preimage bytes for a namespace and leaf range.
+    ///
+    /// The returned vector has one slot per leaf in `[start, end_exclusive)`.
+    /// Missing preimages are returned as `None`.
+    ///
+    /// Empty ranges return an empty vector. Backends must reject reversed
+    /// ranges with [`crate::DbError::MmrInvalidRange`].
+    fn get_preimage_range(
+        &self,
+        mmr_id: RawMmrId,
+        start: LeafPos,
+        end_exclusive: LeafPos,
+    ) -> DbResult<Vec<Option<Vec<u8>>>>;
+
+    /// Returns the current leaf count for a namespace.
+    ///
+    /// Implementations should return `0` when the namespace has no leaves.
+    fn get_leaf_count(&self, mmr_id: RawMmrId) -> DbResult<u64>;
+
+    /// Fetches requested nodes and available parent path nodes in one read.
+    ///
+    /// If `preimages` is true, implementations should also include available
+    /// preimages for requested leaf positions.
+    // NOTE: Takes an owned Vec so generated async/chan wrappers can move the
+    // argument into 'static worker closures without borrowing/lifetime issues.
+    fn fetch_node_paths(&self, nodes: Vec<MmrNodePos>, preimages: bool) -> DbResult<MmrNodeTable>;
+
+    /// Applies an atomic batch write with compare-and-set preconditions.
+    ///
+    /// If any precondition fails, no writes are applied.
+    fn apply_update(&self, batch: MmrBatchWrite) -> DbResult<()>;
 }
 
 #[cfg(test)]

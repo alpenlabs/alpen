@@ -224,6 +224,7 @@ strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = 
 ], tag = "v0.3.0-rc.1" }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
 strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
+strata-db-macros = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
 strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }

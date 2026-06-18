@@ -4372,7 +4372,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -15509,6 +15509,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-db-macros"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.3.0-rc.1#36468e192a3dad031fa962f7f6539df5f49abe7d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "strata-db-store-sled"
 version = "0.1.0"
 dependencies = [
@@ -15580,6 +15590,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-codec",
  "strata-csm-types",
+ "strata-db-macros",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-merkle",
@@ -15591,6 +15602,8 @@ dependencies = [
  "strata-state",
  "strata-storage-common",
  "thiserror 2.0.18",
+ "tokio",
+ "tracing",
  "typed-sled",
  "zkaleido",
 ]
