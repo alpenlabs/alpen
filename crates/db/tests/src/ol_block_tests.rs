@@ -55,6 +55,98 @@ pub fn test_get_empty_block_high_watermark(db: &impl OLBlockDatabase) {
     assert!(high_watermark.is_none());
 }
 
+fn canonical_id(byte: u8) -> OLBlockId {
+    OLBlockId::from(Buf32::from([byte; 32]))
+}
+
+pub fn test_get_canonical_block_empty(db: &impl OLBlockDatabase) {
+    let result = db
+        .get_canonical_block(7)
+        .expect("test: get canonical at empty slot");
+    assert!(result.is_none());
+}
+
+pub fn test_replace_canonical_suffix_extend(db: &impl OLBlockDatabase) {
+    // Seed slots 0..=4, then extend by appending slot 5 with an empty truncation.
+    let seed: Vec<(u64, OLBlockId)> = (0..=4).map(|s| (s, canonical_id(s as u8))).collect();
+    db.replace_canonical_suffix(0, &seed)
+        .expect("test: seed canonical");
+
+    db.replace_canonical_suffix(4, &[(5, canonical_id(50))])
+        .expect("test: extend canonical");
+
+    for (slot, id) in &seed {
+        assert_eq!(db.get_canonical_block(*slot).unwrap(), Some(*id));
+    }
+    assert_eq!(db.get_canonical_block(5).unwrap(), Some(canonical_id(50)));
+}
+
+pub fn test_replace_canonical_suffix_reorg_shorter(db: &impl OLBlockDatabase) {
+    // Seed slots 0..=9, then reorg at pivot 5 onto a shorter branch (slots 6,7).
+    let seed: Vec<(u64, OLBlockId)> = (0..=9).map(|s| (s, canonical_id(s as u8))).collect();
+    db.replace_canonical_suffix(0, &seed)
+        .expect("test: seed canonical");
+
+    let branch = [(6u64, canonical_id(0x60)), (7u64, canonical_id(0x70))];
+    db.replace_canonical_suffix(5, &branch)
+        .expect("test: reorg canonical");
+
+    // Slots 0..=5 untouched.
+    for s in 0..=5u64 {
+        assert_eq!(db.get_canonical_block(s).unwrap(), Some(canonical_id(s as u8)));
+    }
+    // Slots 6,7 rewritten to the new branch.
+    assert_eq!(db.get_canonical_block(6).unwrap(), Some(canonical_id(0x60)));
+    assert_eq!(db.get_canonical_block(7).unwrap(), Some(canonical_id(0x70)));
+    // Slots 8,9 from the abandoned branch are gone.
+    assert_eq!(db.get_canonical_block(8).unwrap(), None);
+    assert_eq!(db.get_canonical_block(9).unwrap(), None);
+}
+
+pub fn test_replace_canonical_suffix_revert_empty_branch(db: &impl OLBlockDatabase) {
+    // Seed slots 0..=4, then revert to slot 2 with an empty branch.
+    let seed: Vec<(u64, OLBlockId)> = (0..=4).map(|s| (s, canonical_id(s as u8))).collect();
+    db.replace_canonical_suffix(0, &seed)
+        .expect("test: seed canonical");
+
+    db.replace_canonical_suffix(2, &[])
+        .expect("test: revert canonical");
+
+    for s in 0..=2u64 {
+        assert_eq!(db.get_canonical_block(s).unwrap(), Some(canonical_id(s as u8)));
+    }
+    assert_eq!(db.get_canonical_block(3).unwrap(), None);
+    assert_eq!(db.get_canonical_block(4).unwrap(), None);
+}
+
+pub fn test_replace_canonical_suffix_pivot_max(db: &impl OLBlockDatabase) {
+    // pivot == u64::MAX: there is no slot above it, so nothing is truncated and
+    // the existing entry survives. Guards against `pivot + 1` overflow.
+    db.replace_canonical_suffix(u64::MAX, &[(u64::MAX, canonical_id(0xaa))])
+        .expect("test: seed canonical at max slot");
+
+    db.replace_canonical_suffix(u64::MAX, &[])
+        .expect("test: replace suffix at max pivot");
+
+    assert_eq!(
+        db.get_canonical_block(u64::MAX).unwrap(),
+        Some(canonical_id(0xaa))
+    );
+}
+
+pub fn test_replace_canonical_suffix_idempotent(db: &impl OLBlockDatabase) {
+    let seed: Vec<(u64, OLBlockId)> = (0..=4).map(|s| (s, canonical_id(s as u8))).collect();
+    db.replace_canonical_suffix(0, &seed)
+        .expect("test: seed canonical");
+    // Re-applying the same suffix is a no-op.
+    db.replace_canonical_suffix(0, &seed)
+        .expect("test: re-apply canonical");
+
+    for (slot, id) in &seed {
+        assert_eq!(db.get_canonical_block(*slot).unwrap(), Some(*id));
+    }
+}
+
 // Proptest-based tests for random block data
 pub fn proptest_put_and_get_random_block(db: &impl OLBlockDatabase, block: OLBlock) {
     let block_id = block.header().compute_blkid();
@@ -474,6 +566,42 @@ macro_rules! ol_block_db_tests {
         fn test_get_empty_block_high_watermark() {
             let db = $setup_expr;
             $crate::ol_block_tests::test_get_empty_block_high_watermark(&db);
+        }
+
+        #[test]
+        fn test_get_canonical_block_empty() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_get_canonical_block_empty(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_extend() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_extend(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_reorg_shorter() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_reorg_shorter(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_revert_empty_branch() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_revert_empty_branch(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_pivot_max() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_pivot_max(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_idempotent() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_idempotent(&db);
         }
 
         proptest::proptest! {

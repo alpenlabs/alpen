@@ -9,6 +9,7 @@ use typed_sled::error::Error as TSledError;
 
 use super::schemas::{
     OLBlockHeightSchema, OLBlockHighWatermarkSchema, OLBlockSchema, OLBlockStatusSchema,
+    OLCanonicalBlockSchema,
 };
 use crate::{
     define_sled_database,
@@ -23,6 +24,7 @@ define_sled_database!(
         blk_status_tree: OLBlockStatusSchema,
         blk_height_tree: OLBlockHeightSchema,
         blk_high_watermark_tree: OLBlockHighWatermarkSchema,
+        blk_canonical_tree: OLCanonicalBlockSchema,
     }
 );
 
@@ -226,6 +228,39 @@ impl OLBlockDatabase for OLBlockDBSled {
 
             slot -= 1;
         }
+    }
+
+    fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>> {
+        Ok(self.blk_canonical_tree.get(&slot)?)
+    }
+
+    fn replace_canonical_suffix(
+        &self,
+        pivot_slot: Slot,
+        blocks: &[(Slot, OLBlockId)],
+    ) -> DbResult<()> {
+        // Enumerate canonical entries strictly above the pivot to drop. Read
+        // outside the transaction; keys are big-endian so the range is ordered.
+        // At Slot::MAX there is nothing above the pivot, so the range is empty.
+        let mut slots_to_drop = Vec::new();
+        if let Some(start_slot) = pivot_slot.checked_add(1) {
+            for item in self.blk_canonical_tree.range(start_slot..)? {
+                let (slot, _) = item?;
+                slots_to_drop.push(slot);
+            }
+        }
+
+        self.config
+            .with_retry((&self.blk_canonical_tree,), |(ct,)| {
+                for slot in &slots_to_drop {
+                    ct.remove(slot)?;
+                }
+                for (slot, id) in blocks {
+                    ct.insert(slot, id)?;
+                }
+                Ok(())
+            })
+            .map_err(to_db_error)
     }
 }
 
