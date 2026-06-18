@@ -19,19 +19,14 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 pub use strata_btc_types::payload::{BlobSpec, PayloadDest, PayloadSpec};
 use strata_identifiers::Buf32;
+use strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE;
 use strata_l1_txfmt::TagData;
-
-/// Maximum total size, in bytes, of an [`L1Payload`]'s data.
-///
-/// Mirrors the maximum envelope payload size enforced by the envelope builder;
-/// the per-chunk Bitcoin script-element splitting happens below this layer.
-pub const MAX_L1_PAYLOAD_SIZE: usize = 395_000;
 
 /// Error constructing an [`L1Payload`].
 #[derive(Debug, thiserror::Error)]
 pub enum L1PayloadError {
-    /// The combined data chunks exceed [`MAX_L1_PAYLOAD_SIZE`].
-    #[error("payload of {total} bytes exceeds maximum of {MAX_L1_PAYLOAD_SIZE}")]
+    /// The combined data chunks exceed [`MAX_ENVELOPE_PAYLOAD_SIZE`].
+    #[error("payload of {total} bytes exceeds maximum of {MAX_ENVELOPE_PAYLOAD_SIZE}")]
     PayloadTooLarge {
         /// Combined length of all chunks.
         total: usize,
@@ -42,7 +37,7 @@ pub enum L1PayloadError {
 ///
 /// Each element of `data` is a logical payload that the envelope builder writes
 /// as a single envelope, splitting it into Bitcoin script-element-sized pushes
-/// internally. The total size is bounded by [`MAX_L1_PAYLOAD_SIZE`].
+/// internally. The total size is bounded by [`MAX_ENVELOPE_PAYLOAD_SIZE`].
 ///
 /// The serde representation flattens the [`TagData`] fields alongside the
 /// payload (`{payload, subproto_id, tx_type, aux_data}`).
@@ -61,10 +56,10 @@ impl L1Payload {
     /// # Errors
     ///
     /// Returns [`L1PayloadError::PayloadTooLarge`] if the combined length of the
-    /// chunks exceeds [`MAX_L1_PAYLOAD_SIZE`].
+    /// chunks exceeds [`MAX_ENVELOPE_PAYLOAD_SIZE`].
     pub fn new(payload: Vec<Vec<u8>>, tag: TagData) -> Result<Self, L1PayloadError> {
         let total: usize = payload.iter().map(Vec::len).sum();
-        if total > MAX_L1_PAYLOAD_SIZE {
+        if total > MAX_ENVELOPE_PAYLOAD_SIZE {
             return Err(L1PayloadError::PayloadTooLarge { total });
         }
         Ok(Self { data: payload, tag })
@@ -184,7 +179,7 @@ impl PayloadIntent {
 
 #[cfg(test)]
 mod tests {
-    use super::{L1Payload, L1PayloadError, TagData, MAX_L1_PAYLOAD_SIZE};
+    use super::{L1Payload, L1PayloadError, TagData, MAX_ENVELOPE_PAYLOAD_SIZE};
 
     fn tag() -> TagData {
         TagData::new(1, 1, vec![]).unwrap()
@@ -201,7 +196,7 @@ mod tests {
 
     #[test]
     fn rejects_payload_over_total_max() {
-        let payload = vec![vec![0u8; MAX_L1_PAYLOAD_SIZE + 1]];
+        let payload = vec![vec![0u8; MAX_ENVELOPE_PAYLOAD_SIZE + 1]];
         assert!(matches!(
             L1Payload::new(payload, tag()),
             Err(L1PayloadError::PayloadTooLarge { .. })
