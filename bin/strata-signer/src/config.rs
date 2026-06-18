@@ -3,6 +3,7 @@
 use std::{fmt, net::IpAddr, path::PathBuf};
 
 use serde::Deserialize;
+use zeroize::ZeroizeOnDrop;
 
 use crate::constants::DEFAULT_POLL_INTERVAL_MS;
 
@@ -10,14 +11,25 @@ const DEFAULT_HEALTH_CHECK_HOST: &str = "0.0.0.0";
 const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
 
 /// Secret configuration value that redacts itself from debug output.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, ZeroizeOnDrop)]
 #[serde(transparent)]
 pub(crate) struct SecretString(String);
 
 impl SecretString {
+    /// Converts a non-empty string into a secret.
+    pub(crate) fn new_non_empty(secret: String) -> Option<Self> {
+        (!secret.is_empty()).then(|| Self(secret))
+    }
+
     /// Returns the underlying secret value.
     pub(crate) fn expose_secret(&self) -> &str {
         &self.0
+    }
+}
+
+impl From<String> for SecretString {
+    fn from(secret: String) -> Self {
+        Self(secret)
     }
 }
 
@@ -37,7 +49,7 @@ pub(crate) struct SignerConfig {
     pub(crate) sequencer_admin_endpoint: String,
 
     /// Bearer token used to authenticate with the sequencer admin RPC.
-    pub(crate) sequencer_admin_bearer_token: SecretString,
+    pub(crate) sequencer_admin_bearer_token: Option<SecretString>,
 
     /// Duty poll interval in milliseconds.
     #[serde(default = "default_duty_poll_interval")]
@@ -107,13 +119,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_signer_config_requires_admin_token() {
+    fn test_signer_config_allows_missing_admin_token() {
         let config = r#"
             sequencer_key = "/tmp/sequencer.key"
             sequencer_admin_endpoint = "ws://127.0.0.1:8434"
         "#;
 
-        assert!(toml::from_str::<SignerConfig>(config).is_err());
+        let config = toml::from_str::<SignerConfig>(config).unwrap();
+        assert!(config.sequencer_admin_bearer_token.is_none());
     }
 
     #[test]
@@ -127,8 +140,11 @@ mod tests {
         let config = toml::from_str::<SignerConfig>(config).unwrap();
         assert_eq!(config.sequencer_admin_endpoint, "ws://127.0.0.1:8434");
         assert_eq!(
-            config.sequencer_admin_bearer_token.expose_secret(),
-            "test-token"
+            config
+                .sequencer_admin_bearer_token
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("test-token")
         );
         assert_eq!(config.health_check_host, DEFAULT_HEALTH_CHECK_HOST);
         assert_eq!(config.health_check_port, DEFAULT_HEALTH_CHECK_PORT);

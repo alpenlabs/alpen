@@ -15319,6 +15319,7 @@ dependencies = [
  "proptest",
  "serde",
  "toml 0.5.11",
+ "zeroize",
 ]
 
 [[package]]
