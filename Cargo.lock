@@ -16759,9 +16759,7 @@ name = "strata-storage-common"
 version = "0.3.0-alpha.1"
 dependencies = [
  "lru 0.18.0",
- "paste",
  "thiserror 2.0.18",
- "threadpool",
  "tokio",
  "tracing",
 ]
