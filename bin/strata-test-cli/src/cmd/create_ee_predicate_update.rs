@@ -28,9 +28,11 @@ use strata_asm_proto_admin_txs::{
         MultisigAction, UpdateAction,
     },
     parser::SignedPayload,
-    test_utils::create_signature_set,
+    signing_message::SigningMessage,
+    test_utils::sign_ecdsa_bip137,
 };
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
 use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
 use strata_l1_txfmt::ParseConfig;
 use strata_predicate::PredicateKey;
@@ -52,9 +54,16 @@ pub struct CreateEePredicateUpdateArgs {
     #[argh(option, from_str_fn(parse_predicate_key))]
     pub predicate: PredicateKey,
 
-    /// admin xpriv used to sign the update action
+    /// admin xpriv used to sign the update action; repeat once per signer for a
+    /// threshold (M-of-N) update. Pairs positionally with `--signer-index`.
     #[argh(option)]
-    pub admin_xpriv: String,
+    pub admin_xpriv: Vec<String>,
+
+    /// member index (position in the admin key set) for the matching
+    /// `--admin-xpriv`; repeat once per signer. Defaults to `[0]` for a single
+    /// signer when omitted (1-of-N backward compatibility).
+    #[argh(option)]
+    pub signer_index: Vec<u8>,
 
     /// bitcoin RPC URL
     #[argh(option)]
@@ -89,9 +98,16 @@ pub struct CreateCheckpointPredicateUpdateArgs {
     #[argh(option, from_str_fn(parse_predicate_key))]
     pub predicate: PredicateKey,
 
-    /// admin xpriv used to sign the update action
+    /// admin xpriv used to sign the update action; repeat once per signer for a
+    /// threshold (M-of-N) update. Pairs positionally with `--signer-index`.
     #[argh(option)]
-    pub admin_xpriv: String,
+    pub admin_xpriv: Vec<String>,
+
+    /// member index (position in the admin key set) for the matching
+    /// `--admin-xpriv`; repeat once per signer. Defaults to `[0]` for a single
+    /// signer when omitted (1-of-N backward compatibility).
+    #[argh(option)]
+    pub signer_index: Vec<u8>,
 
     /// bitcoin RPC URL
     #[argh(option)]
@@ -129,11 +145,18 @@ enum PredicateUpdateTarget {
     OlStfVk,
 }
 
+/// A single admin signer: an xpriv and its member index in the admin key set.
+#[derive(Clone, Debug)]
+struct AdminSigner {
+    xpriv: String,
+    signer_index: u8,
+}
+
 #[derive(Debug)]
 struct PredicateUpdateRequest {
     seq_no: u64,
     predicate: PredicateKey,
-    admin_xpriv: String,
+    signers: Vec<AdminSigner>,
     btc_url: String,
     btc_user: String,
     btc_password: String,
@@ -142,13 +165,64 @@ struct PredicateUpdateRequest {
     target: PredicateUpdateTarget,
 }
 
+/// Pairs the repeatable `--admin-xpriv` and `--signer-index` args into signers.
+///
+/// When `--signer-index` is omitted, it defaults to `[0]` and exactly one
+/// `--admin-xpriv` is required, preserving single-sig (1-of-N) behaviour.
+/// Otherwise the two lists must be non-empty and of equal length.
+fn build_signers(
+    admin_xprivs: Vec<String>,
+    mut signer_indices: Vec<u8>,
+) -> Result<Vec<AdminSigner>, DisplayedError> {
+    if admin_xprivs.is_empty() {
+        return Err(DisplayedError::UserError(
+            "at least one --admin-xpriv is required".to_owned(),
+            Box::new(()),
+        ));
+    }
+
+    if signer_indices.is_empty() {
+        if admin_xprivs.len() != 1 {
+            return Err(DisplayedError::UserError(
+                "--signer-index must be provided once per --admin-xpriv when supplying \
+                 multiple signers"
+                    .to_owned(),
+                Box::new(()),
+            ));
+        }
+        // Single-sig backward compatibility: default to member index 0.
+        signer_indices = vec![0];
+    }
+
+    if admin_xprivs.len() != signer_indices.len() {
+        return Err(DisplayedError::UserError(
+            format!(
+                "--admin-xpriv (count {}) and --signer-index (count {}) must match",
+                admin_xprivs.len(),
+                signer_indices.len()
+            ),
+            Box::new(()),
+        ));
+    }
+
+    Ok(admin_xprivs
+        .into_iter()
+        .zip(signer_indices)
+        .map(|(xpriv, signer_index)| AdminSigner {
+            xpriv,
+            signer_index,
+        })
+        .collect())
+}
+
 pub(crate) fn create_ee_predicate_update(
     args: CreateEePredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
+    let signers = build_signers(args.admin_xpriv, args.signer_index)?;
     create_predicate_update(PredicateUpdateRequest {
         seq_no: args.seq_no,
         predicate: args.predicate,
-        admin_xpriv: args.admin_xpriv,
+        signers,
         btc_url: args.btc_url,
         btc_user: args.btc_user,
         btc_password: args.btc_password,
@@ -161,10 +235,11 @@ pub(crate) fn create_ee_predicate_update(
 pub(crate) fn create_checkpoint_predicate_update(
     args: CreateCheckpointPredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
+    let signers = build_signers(args.admin_xpriv, args.signer_index)?;
     create_predicate_update(PredicateUpdateRequest {
         seq_no: args.seq_no,
         predicate: args.predicate,
-        admin_xpriv: args.admin_xpriv,
+        signers,
         btc_url: args.btc_url,
         btc_user: args.btc_user,
         btc_password: args.btc_password,
@@ -210,14 +285,17 @@ fn build_admin_commit_reveal_pair(
         bail!("commit_output_sats must be > {MIN_REVEAL_OUTPUT_SATS}");
     }
 
-    let xpriv = Xpriv::from_str(&args.admin_xpriv).context("invalid admin xpriv")?;
-    let admin_secret_key = xpriv.private_key;
+    // Derive each signer's secret key together with its admin member index.
+    let indexed_secret_keys = derive_indexed_secret_keys(&args.signers)?;
 
     let action = build_predicate_update_action(args.predicate.clone(), args.target);
-    let signed_payload = create_signed_payload(action.clone(), args.seq_no, &admin_secret_key);
+    let signed_payload = create_signed_payload(action.clone(), args.seq_no, &indexed_secret_keys)?;
 
     let envelope_bytes = signed_payload.as_ssz_bytes();
-    let (envelope_keypair, envelope_xonly) = generate_keypair(admin_secret_key)?;
+    // The envelope keypair only controls the taproot reveal spend; it is unrelated
+    // to the admin multisig. Reuse the first signer's key for it.
+    let (envelope_secret_key, _) = indexed_secret_keys[0];
+    let (envelope_keypair, envelope_xonly) = generate_keypair(envelope_secret_key)?;
     let (reveal_script, taproot_spend_info, reveal_address) =
         build_reveal_script_and_address(&envelope_bytes, envelope_xonly)?;
 
@@ -303,13 +381,42 @@ fn build_predicate_update_action(
     MultisigAction::Update(update)
 }
 
+/// Derives the secret key for each configured signer, paired with its admin
+/// member index.
+fn derive_indexed_secret_keys(signers: &[AdminSigner]) -> anyhow::Result<Vec<(SecretKey, u8)>> {
+    signers
+        .iter()
+        .map(|signer| {
+            let xpriv = Xpriv::from_str(&signer.xpriv).context("invalid admin xpriv")?;
+            Ok((xpriv.private_key, signer.signer_index))
+        })
+        .collect()
+}
+
+/// Builds the threshold [`SignatureSet`] for `action` and wraps it in a
+/// [`SignedPayload`].
+///
+/// Each provided `(secret_key, member_index)` produces one [`IndexedSignature`]
+/// over the canonical admin signing message, mirroring exactly what the ASM
+/// admin subprotocol verifies. Building the signatures directly (rather than via
+/// `create_signature_set`, which indexes `privkeys[index]`) lets us pair each
+/// key with its own member index without constructing a sparse key slice.
 fn create_signed_payload(
     action: MultisigAction,
     seq_no: u64,
-    admin_secret_key: &SecretKey,
-) -> SignedPayload {
-    let signatures = create_signature_set(slice::from_ref(admin_secret_key), &[0], &action, seq_no);
-    SignedPayload::new(seq_no, action, signatures)
+    indexed_secret_keys: &[(SecretKey, u8)],
+) -> anyhow::Result<SignedPayload> {
+    let message_hash = SigningMessage::for_action(&action, seq_no).compute_sighash();
+    let signatures: Vec<IndexedSignature> = indexed_secret_keys
+        .iter()
+        .map(|(secret_key, index)| {
+            let sig = sign_ecdsa_bip137(&message_hash.0, secret_key);
+            IndexedSignature::new(*index, sig)
+        })
+        .collect();
+    let signature_set = SignatureSet::new(signatures)
+        .map_err(|e| anyhow::anyhow!("failed to build signature set: {e}"))?;
+    Ok(SignedPayload::new(seq_no, action, signature_set))
 }
 
 fn generate_keypair(secret_key: SecretKey) -> anyhow::Result<(UntweakedKeypair, XOnlyPublicKey)> {
@@ -455,4 +562,119 @@ fn broadcast_reveal_with_retry(client: &Client, reveal_tx: &Transaction) -> anyh
     }
 
     bail!("exhausted reveal broadcast retries")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZero;
+
+    use bdk_wallet::bitcoin::{
+        bip32::Xpriv,
+        secp256k1::{PublicKey, SECP256K1},
+        NetworkKind,
+    };
+    use strata_asm_proto_admin_txs::signing_message::SigningMessage;
+    use strata_crypto::{
+        keys::compressed::CompressedPublicKey,
+        threshold_signature::{
+            verify_threshold_signatures, ThresholdConfig, ThresholdSignatureError,
+        },
+    };
+    use strata_predicate::PredicateKey;
+
+    use super::*;
+
+    /// Builds a deterministic master xpriv from a single-byte seed.
+    fn test_xpriv(seed: u8) -> Xpriv {
+        let seed_bytes = [seed; 32];
+        Xpriv::new_master(NetworkKind::Test, &seed_bytes).expect("valid xpriv")
+    }
+
+    /// Builds a threshold-2 config over the member pubkeys derived from `xprivs`,
+    /// ordered by member index.
+    fn threshold2_config(xprivs: &[Xpriv]) -> ThresholdConfig {
+        let pubkeys: Vec<CompressedPublicKey> = xprivs
+            .iter()
+            .map(|xpriv| {
+                let pk = PublicKey::from_secret_key(SECP256K1, &xpriv.private_key);
+                CompressedPublicKey::from(pk)
+            })
+            .collect();
+        ThresholdConfig::try_new(pubkeys, NonZero::new(2).expect("non-zero threshold"))
+            .expect("valid threshold config")
+    }
+
+    /// Assembles a [`SignedPayload`] for an `EeStfVk` predicate update from the
+    /// given signers, exercising the full CLI signing path
+    /// (arg pairing -> xpriv parse -> threshold signature set).
+    fn signed_payload_for(xprivs: &[&Xpriv], signer_indices: &[u8], seq_no: u64) -> SignedPayload {
+        let admin_xprivs: Vec<String> = xprivs.iter().map(|x| x.to_string()).collect();
+        let signers =
+            build_signers(admin_xprivs, signer_indices.to_vec()).expect("valid signer arg pairing");
+        let indexed_secret_keys =
+            derive_indexed_secret_keys(&signers).expect("derive signer secret keys");
+
+        let action = build_predicate_update_action(
+            PredicateKey::always_accept(),
+            PredicateUpdateTarget::EeStfVk,
+        );
+        create_signed_payload(action, seq_no, &indexed_secret_keys)
+            .expect("assemble signed payload")
+    }
+
+    /// 2-of-3: a quorum-sized signature set verifies against the threshold-2 config
+    /// using the exact ASM verification API.
+    #[test]
+    fn two_of_three_signed_payload_is_accepted() {
+        let seq_no = 1;
+        let xprivs = [test_xpriv(1), test_xpriv(2), test_xpriv(3)];
+        let config = threshold2_config(&xprivs);
+
+        // Signers at member indices 0 and 2.
+        let payload = signed_payload_for(&[&xprivs[0], &xprivs[2]], &[0, 2], seq_no);
+        assert_eq!(payload.signatures.len(), 2);
+
+        let message_hash = SigningMessage::for_action(&payload.action, seq_no).compute_sighash();
+        let result =
+            verify_threshold_signatures(&config, payload.signatures.signatures(), &message_hash.0);
+        assert!(result.is_ok(), "2-of-3 must be accepted: {result:?}");
+    }
+
+    /// 1-of-3: a single signature is below the threshold and must be rejected by
+    /// the ASM verification API.
+    #[test]
+    fn one_of_three_signed_payload_is_rejected() {
+        let seq_no = 1;
+        let xprivs = [test_xpriv(1), test_xpriv(2), test_xpriv(3)];
+        let config = threshold2_config(&xprivs);
+
+        // Single signer at member index 0 (backward-compatible default path).
+        let payload = signed_payload_for(&[&xprivs[0]], &[], seq_no);
+        assert_eq!(payload.signatures.len(), 1);
+
+        let message_hash = SigningMessage::for_action(&payload.action, seq_no).compute_sighash();
+        let result =
+            verify_threshold_signatures(&config, payload.signatures.signatures(), &message_hash.0);
+        assert!(
+            matches!(
+                result,
+                Err(ThresholdSignatureError::InsufficientSignatures {
+                    provided: 1,
+                    required: 2
+                })
+            ),
+            "1-of-3 must be rejected as insufficient: {result:?}"
+        );
+    }
+
+    /// Mismatched `--admin-xpriv` / `--signer-index` counts are rejected at arg
+    /// parsing time.
+    #[test]
+    fn mismatched_signer_arg_counts_are_rejected() {
+        let xprivs = [test_xpriv(1), test_xpriv(2)];
+        let admin_xprivs: Vec<String> = xprivs.iter().map(|x| x.to_string()).collect();
+        // Two keys but only one index.
+        let result = build_signers(admin_xprivs, vec![0]);
+        assert!(result.is_err(), "mismatched counts must be rejected");
+    }
 }

@@ -79,17 +79,48 @@ def build_snark_withdrawal(
     return json.loads(result)
 
 
+def _admin_signer_args(
+    admin_xpriv: str | None,
+    signers: list[tuple[str, int]] | None,
+) -> list[str]:
+    """Builds the repeatable ``--admin-xpriv`` / ``--signer-index`` CLI args.
+
+    Two mutually exclusive shapes are supported:
+
+    - ``admin_xpriv``: a single signer (1-of-N). ``--signer-index`` is omitted
+      and defaults to member index 0 in the CLI.
+    - ``signers``: a list of ``(xpriv, member_index)`` tuples for a threshold
+      (M-of-N) update; one ``--admin-xpriv`` / ``--signer-index`` pair is
+      emitted per signer.
+    """
+    if (admin_xpriv is None) == (signers is None):
+        raise ValueError("provide exactly one of admin_xpriv or signers")
+
+    if admin_xpriv is not None:
+        return ["--admin-xpriv", admin_xpriv]
+
+    args: list[str] = []
+    for xpriv, index in signers:
+        args += ["--admin-xpriv", xpriv, "--signer-index", str(index)]
+    return args
+
+
 def create_ee_predicate_update(
     seq_no: int,
     predicate: str,
-    admin_xpriv: str,
     btc_url: str,
     btc_user: str,
     btc_password: str,
+    admin_xpriv: str | None = None,
+    signers: list[tuple[str, int]] | None = None,
     fee_rate: int = 2,
     commit_output_sats: int = 20_000,
 ) -> dict:
     """Broadcast an admin EE predicate update commit/reveal transaction pair.
+
+    Pass ``admin_xpriv`` for a single-signer (1-of-N) update, or ``signers``
+    (a list of ``(xpriv, member_index)`` tuples) for a threshold (M-of-N)
+    update such as staging-v2's 2-of-3 admin multisig.
 
     Returns:
         JSON dict with commit_txid and reveal_txid.
@@ -99,7 +130,7 @@ def create_ee_predicate_update(
         "create-ee-predicate-update",
         "--seq-no", str(seq_no),
         "--predicate", predicate,
-        "--admin-xpriv", admin_xpriv,
+        *_admin_signer_args(admin_xpriv, signers),
         "--btc-url", btc_url,
         "--btc-user", btc_user,
         "--btc-password", btc_password,
@@ -115,19 +146,26 @@ def create_ee_predicate_update(
 def create_checkpoint_predicate_update(
     seq_no: int,
     predicate: str,
-    admin_xpriv: str,
     btc_url: str,
     btc_user: str,
     btc_password: str,
+    admin_xpriv: str | None = None,
+    signers: list[tuple[str, int]] | None = None,
     fee_rate: int = 2,
     commit_output_sats: int = 20_000,
 ) -> dict:
+    """Broadcast an admin OL checkpoint predicate update.
+
+    Pass ``admin_xpriv`` for a single-signer (1-of-N) update, or ``signers``
+    (a list of ``(xpriv, member_index)`` tuples) for a threshold (M-of-N)
+    update.
+    """
     # fmt: off
     args = [
         "create-checkpoint-predicate-update",
         "--seq-no", str(seq_no),
         "--predicate", predicate,
-        "--admin-xpriv", admin_xpriv,
+        *_admin_signer_args(admin_xpriv, signers),
         "--btc-url", btc_url,
         "--btc-user", btc_user,
         "--btc-password", btc_password,
