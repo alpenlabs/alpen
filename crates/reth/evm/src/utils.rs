@@ -18,6 +18,7 @@ pub(crate) const fn u256_from(val: u128) -> U256 {
 }
 
 /// Number of wei per rollup BTC (1e18).
+#[cfg(test)]
 pub(crate) const WEI_PER_BTC: u128 = 1_000_000_000_000_000_000u128;
 
 /// Number of wei per satoshi (1e10).

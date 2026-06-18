@@ -2,6 +2,7 @@ use alpen_reth_primitives::{WithdrawalCalldata, WithdrawalIntentEvent};
 use reth_evm::precompiles::PrecompileInput;
 use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
 use revm_primitives::{Bytes, Log, LogData, U256};
+use strata_bridge_params::BridgeParams;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::{constants::BRIDGEOUT_PRECOMPILE_ADDRESS, utils::wei_to_sats};
@@ -22,9 +23,7 @@ const BRIDGEOUT_CALLDATA_BYTE_GAS: u64 = 16;
 /// - Any other value: operator index
 pub(crate) fn bridge_context_call(
     mut input: PrecompileInput<'_>,
-    denomination_wei: U256,
-    max_withdrawal_wei: Option<U256>,
-    max_withdrawal_descriptor_len: u32,
+    bridge_params: BridgeParams,
 ) -> PrecompileResult {
     if !input.is_direct_call() {
         return Err(PrecompileError::other(
@@ -44,18 +43,11 @@ pub(crate) fn bridge_context_call(
     })?;
 
     // Validate that this is a valid BOSD.
-    validate_bosd(&calldata.bosd, max_withdrawal_descriptor_len)?;
+    validate_bosd(&calldata.bosd, &bridge_params)?;
 
-    let withdrawal_amount = input.value;
-
-    // Verify that the transaction value is a positive exact multiple of the withdrawal denomination
-    validate_withdrawal_amount(withdrawal_amount, denomination_wei, max_withdrawal_wei)?;
-
-    // Convert wei to satoshis
-    let (sats, _) = wei_to_sats(withdrawal_amount);
-
-    // Try converting sats (U256) into u64 amount
-    let amount = sats_to_withdrawal_amount(sats)?;
+    // Verify that the transaction value is a positive exact multiple of the withdrawal
+    // denomination.
+    let amount = validate_withdrawal_amount(input.value, &bridge_params)?;
 
     // Log the bridge withdrawal intent
     let evt = WithdrawalIntentEvent {
@@ -97,35 +89,38 @@ fn bridgeout_gas_cost(calldata_len: usize) -> Result<u64, PrecompileError> {
         .ok_or_else(|| PrecompileError::Fatal("Bridgeout gas cost overflow".into()))
 }
 
-/// Validates that the withdrawal amount is a positive exact multiple of the denomination
-/// and within the optional cap.
+/// Validates that the withdrawal amount is a positive exact multiple of the denomination and cap.
 fn validate_withdrawal_amount(
-    amount: U256,
-    denomination_wei: U256,
-    max_withdrawal_wei: Option<U256>,
-) -> Result<(), PrecompileError> {
-    if amount.is_zero() || !(amount % denomination_wei).is_zero() {
+    amount_wei: U256,
+    bridge_params: &BridgeParams,
+) -> Result<u64, PrecompileError> {
+    let (amount_sats, remainder_wei) = wei_to_sats(amount_wei);
+    if !remainder_wei.is_zero() {
         return Err(PrecompileError::other(format!(
-            "Invalid withdrawal value: must be a positive exact multiple of {denomination_wei} wei",
+            "Invalid withdrawal value {amount_wei}: must be an exact number of satoshis",
         )));
     }
-    if let Some(max) = max_withdrawal_wei {
-        if amount > max {
-            return Err(PrecompileError::other(format!(
-                "Withdrawal value {amount} exceeds maximum allowed {max} wei",
-            )));
-        }
+
+    let amount_sats = sats_to_withdrawal_amount(amount_sats)?;
+
+    if !bridge_params.validate_withdrawal_amount(amount_sats) {
+        return Err(PrecompileError::other(format!(
+            "Invalid withdrawal value: {amount_sats} sats must be a positive exact multiple of {} sats and within {:?} sats",
+            bridge_params.denomination(),
+            bridge_params.max_withdrawal_amount()
+        )));
     }
-    Ok(())
+
+    Ok(amount_sats)
 }
 
 /// Validates that input is a valid BOSD [`Descriptor`] within the configured limit.
-fn validate_bosd(data: &[u8], max_withdrawal_descriptor_len: u32) -> Result<(), PrecompileError> {
-    if data.len() > max_withdrawal_descriptor_len as usize {
+fn validate_bosd(data: &[u8], bridge_params: &BridgeParams) -> Result<(), PrecompileError> {
+    if !bridge_params.validate_withdrawal_descriptor_len(data.len()) {
         return Err(PrecompileError::other(format!(
             "Invalid BOSD: descriptor length {} exceeds maximum {}",
             data.len(),
-            max_withdrawal_descriptor_len
+            bridge_params.max_withdrawal_descriptor_len()
         )));
     }
 
@@ -254,8 +249,12 @@ mod tests {
 
     // --- withdrawal amount validation tests ---
 
-    fn max_withdrawal() -> Option<U256> {
-        Some(FIXED_WITHDRAWAL_WEI * U256::from(10))
+    fn bridge_params() -> BridgeParams {
+        BridgeParams::default()
+    }
+
+    fn bridge_params_without_cap() -> BridgeParams {
+        BridgeParams::new(100_000_000, None).unwrap()
     }
 
     fn valid_bridgeout_calldata() -> Vec<u8> {
@@ -280,7 +279,7 @@ mod tests {
             internals: EvmInternals::new(&mut journal, &block_env),
         };
 
-        let error = bridge_context_call(input, FIXED_WITHDRAWAL_WEI, max_withdrawal()).unwrap_err();
+        let error = bridge_context_call(input, bridge_params()).unwrap_err();
 
         assert_eq!(
             error,
@@ -303,84 +302,75 @@ mod tests {
             internals: EvmInternals::new(&mut journal, &block_env),
         };
 
-        assert!(bridge_context_call(input, FIXED_WITHDRAWAL_WEI, max_withdrawal()).is_ok());
+        assert!(bridge_context_call(input, bridge_params()).is_ok());
     }
 
     #[test]
     fn test_validate_withdrawal_exact_denomination() {
-        assert!(validate_withdrawal_amount(
-            FIXED_WITHDRAWAL_WEI,
-            FIXED_WITHDRAWAL_WEI,
-            max_withdrawal()
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn test_validate_withdrawal_exact_multiple() {
-        assert!(validate_withdrawal_amount(
-            FIXED_WITHDRAWAL_WEI * U256::from(3),
-            FIXED_WITHDRAWAL_WEI,
-            max_withdrawal()
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn test_validate_withdrawal_zero_rejected() {
-        assert!(
-            validate_withdrawal_amount(U256::ZERO, FIXED_WITHDRAWAL_WEI, max_withdrawal()).is_err()
+        assert_eq!(
+            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI, &bridge_params()).unwrap(),
+            100_000_000
         );
     }
 
     #[test]
+    fn test_validate_withdrawal_exact_multiple() {
+        assert_eq!(
+            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI * U256::from(3), &bridge_params())
+                .unwrap(),
+            300_000_000
+        );
+    }
+
+    #[test]
+    fn test_validate_withdrawal_zero_rejected() {
+        assert!(validate_withdrawal_amount(U256::ZERO, &bridge_params()).is_err());
+    }
+
+    #[test]
     fn test_validate_withdrawal_non_multiple_rejected() {
-        assert!(validate_withdrawal_amount(
-            FIXED_WITHDRAWAL_WEI + U256::from(1),
-            FIXED_WITHDRAWAL_WEI,
-            max_withdrawal()
-        )
-        .is_err());
+        assert!(
+            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI + U256::from(1), &bridge_params())
+                .is_err()
+        );
     }
 
     #[test]
     fn test_validate_withdrawal_below_denomination_rejected() {
-        assert!(validate_withdrawal_amount(
-            FIXED_WITHDRAWAL_WEI - U256::from(1),
-            FIXED_WITHDRAWAL_WEI,
-            max_withdrawal()
-        )
-        .is_err());
+        assert!(
+            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI - U256::from(1), &bridge_params())
+                .is_err()
+        );
     }
 
     #[test]
     fn test_validate_withdrawal_exceeds_cap() {
         assert!(validate_withdrawal_amount(
             FIXED_WITHDRAWAL_WEI * U256::from(11),
-            FIXED_WITHDRAWAL_WEI,
-            max_withdrawal()
+            &bridge_params()
         )
         .is_err());
     }
 
     #[test]
     fn test_validate_withdrawal_at_cap() {
-        assert!(validate_withdrawal_amount(
-            FIXED_WITHDRAWAL_WEI * U256::from(10),
-            FIXED_WITHDRAWAL_WEI,
-            max_withdrawal()
-        )
-        .is_ok());
+        assert_eq!(
+            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI * U256::from(10), &bridge_params())
+                .unwrap(),
+            1_000_000_000
+        );
     }
 
     #[test]
     fn test_validate_withdrawal_no_cap() {
-        assert!(validate_withdrawal_amount(
-            FIXED_WITHDRAWAL_WEI * U256::from(100),
-            FIXED_WITHDRAWAL_WEI,
-            None
-        )
-        .is_ok());
+        assert_eq!(
+            validate_withdrawal_amount(
+                FIXED_WITHDRAWAL_WEI * U256::from(100),
+                &bridge_params_without_cap()
+            )
+            .unwrap(),
+            10_000_000_000
+        );
     }
 
     #[test]
@@ -388,7 +378,7 @@ mod tests {
         let mut bosd = vec![0u8; MAX_DESCRIPTOR_LEN as usize];
         bosd[0] = 0x00;
 
-        assert!(validate_bosd(&bosd, MAX_DESCRIPTOR_LEN).is_ok());
+        assert!(validate_bosd(&bosd, &bridge_params()).is_ok());
     }
 
     #[test]
@@ -396,13 +386,13 @@ mod tests {
         let mut bosd = vec![0u8; MAX_DESCRIPTOR_LEN as usize + 1];
         bosd[0] = 0x00;
 
-        assert!(validate_bosd(&bosd, MAX_DESCRIPTOR_LEN).is_err());
+        assert!(validate_bosd(&bosd, &bridge_params()).is_err());
     }
 
     #[test]
     fn test_validate_bosd_rejects_malformed_descriptor() {
         let bosd = [0x03, 0x01, 0x02, 0x03];
 
-        assert!(validate_bosd(&bosd, MAX_DESCRIPTOR_LEN).is_err());
+        assert!(validate_bosd(&bosd, &bridge_params()).is_err());
     }
 }
