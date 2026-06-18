@@ -25,7 +25,7 @@ use strata_l1_txfmt::TagData;
 ///
 /// Mirrors the maximum envelope payload size enforced by the envelope builder;
 /// the per-chunk Bitcoin script-element splitting happens below this layer.
-pub(crate) const MAX_L1_PAYLOAD_SIZE: usize = 395_000;
+pub const MAX_L1_PAYLOAD_SIZE: usize = 395_000;
 
 /// Error constructing an [`L1Payload`].
 #[derive(Debug, thiserror::Error)]
@@ -230,7 +230,10 @@ mod tests {
         assert_eq!(obj["subproto_id"], 5);
         assert_eq!(obj["tx_type"], 9);
         assert_eq!(obj["aux_data"], serde_json::json!([0xAA, 0xBB]));
-        assert!(!obj.contains_key("tag"), "tag must be flattened, not nested");
+        assert!(
+            !obj.contains_key("tag"),
+            "tag must be flattened, not nested"
+        );
 
         let decoded: L1Payload = serde_json::from_value(value).unwrap();
         assert_eq!(decoded, payload);
