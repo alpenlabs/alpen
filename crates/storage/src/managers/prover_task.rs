@@ -9,11 +9,11 @@
 
 use std::sync::Arc;
 
-use strata_db_types::{errors::DbError, traits::ProverTaskDatabase, DbResult};
+use strata_db_types::{errors::DbError, prover_task::ProverTaskDatabase, DbResult};
 use strata_paas::{ProverError, ProverResult, TaskRecord, TaskRecordData, TaskStatus, TaskStore};
-use threadpool::ThreadPool;
+use tokio::runtime::Handle;
 
-use crate::ops::prover_task::{Context, ProverTaskDbOps};
+use crate::ops::prover_task::ProverTaskDbOps;
 
 #[expect(
     missing_debug_implementations,
@@ -24,8 +24,8 @@ pub struct ProverTaskDbManager {
 }
 
 impl ProverTaskDbManager {
-    pub fn new(pool: ThreadPool, db: Arc<impl ProverTaskDatabase + 'static>) -> Self {
-        let ops = Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl ProverTaskDatabase + 'static>) -> Self {
+        let ops = ProverTaskDbOps::new(handle, db);
         Self { ops }
     }
 

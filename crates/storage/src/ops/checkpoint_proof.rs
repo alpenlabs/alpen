@@ -1,15 +1,3 @@
-//! Checkpoint-proof database operation interface.
+//! Checkpoint-proof database ops, re-exported from the `gen_proxy`-generated proxy.
 
-use strata_db_types::traits::CheckpointProofDatabase;
-use strata_identifiers::EpochCommitment;
-use zkaleido::ProofReceiptWithMetadata;
-
-use crate::{exec::*, instrumentation::components};
-
-inst_ops_simple! {
-    (<D: CheckpointProofDatabase> => CheckpointProofDbOps, component = components::STORAGE_CHECKPOINT_PROOF) {
-        put_proof(epoch: EpochCommitment, proof: ProofReceiptWithMetadata) => ();
-        get_proof(epoch: EpochCommitment) => Option<ProofReceiptWithMetadata>;
-        del_proof(epoch: EpochCommitment) => bool;
-    }
-}
+pub use strata_db_types::checkpoint_proof::CheckpointProofDatabaseProxy as CheckpointProofDbOps;

@@ -4,15 +4,11 @@
 use std::sync::Arc;
 
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_db_types::{traits::ClientStateDatabase, DbResult};
+use strata_db_types::{client_state::ClientStateDatabase, DbResult};
 use strata_primitives::{l1::L1BlockCommitment, L1Height};
-use threadpool::ThreadPool;
-use tokio::sync::Mutex;
+use tokio::{runtime::Handle, sync::Mutex};
 
-use crate::{
-    cache,
-    ops::client_state::{ClientStateOps, Context},
-};
+use crate::{cache, ops::client_state::ClientStateOps};
 
 #[expect(
     missing_debug_implementations,
@@ -29,8 +25,8 @@ pub struct ClientStateManager {
 }
 
 impl ClientStateManager {
-    pub fn new(pool: ThreadPool, db: Arc<impl ClientStateDatabase + 'static>) -> DbResult<Self> {
-        let ops = Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl ClientStateDatabase + 'static>) -> DbResult<Self> {
+        let ops = ClientStateOps::new(handle, db);
         let update_cache = cache::CacheTable::new(64.try_into().unwrap());
         let state_cache = cache::CacheTable::new(64.try_into().unwrap());
 
@@ -205,15 +201,15 @@ impl CurStateTracker {
 #[cfg(test)]
 mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::traits::DatabaseBackend;
+    use strata_db_types::backend::DatabaseBackend;
     use strata_identifiers::L1BlockId;
 
     use super::*;
 
     fn setup_manager() -> ClientStateManager {
-        let pool = ThreadPool::new(1);
+        let handle = crate::test_runtime_handle();
         let db = Arc::new(get_test_sled_backend());
-        ClientStateManager::new(pool, db.client_state_db()).expect("open client state manager")
+        ClientStateManager::new(handle, db.client_state_db()).expect("open client state manager")
     }
 
     fn block_at(height: L1Height) -> L1BlockCommitment {

@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use strata_db_types::{
-    ol_state_index::{AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites},
-    traits::OLStateIndexingDatabase,
+    ol_state_index::{
+        AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites,
+        OLStateIndexingDatabase,
+    },
     DbResult,
 };
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment};
-use threadpool::ThreadPool;
+use tokio::runtime::Handle;
 
-use crate::ops::ol_state_indexing::{Context, OLStateIndexingOps};
+use crate::ops::ol_state_indexing::OLStateIndexingOps;
 
 // NOTE: A cache layer (block-keyed and/or epoch-keyed) can be added later as required.
 
@@ -23,8 +25,8 @@ pub struct OLStateIndexingManager {
 
 impl OLStateIndexingManager {
     /// Creates a new [`OLStateIndexingManager`].
-    pub fn new(pool: ThreadPool, db: Arc<impl OLStateIndexingDatabase + 'static>) -> Self {
-        let ops = Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl OLStateIndexingDatabase + 'static>) -> Self {
+        let ops = OLStateIndexingOps::new(handle, db);
         Self { ops }
     }
 

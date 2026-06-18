@@ -16729,7 +16729,6 @@ name = "strata-storage"
 version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
- "async-trait",
  "futures",
  "proptest",
  "strata-asm-common",
@@ -16748,7 +16747,6 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "strata-storage-common",
- "threadpool",
  "tokio",
  "tracing",
  "zkaleido",

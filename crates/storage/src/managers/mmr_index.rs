@@ -3,17 +3,16 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use strata_db_types::{
-    num_leaves_to_mmr_size, traits::MmrIndexDatabase, DbError, DbResult, LeafPos, MmrBatchWrite,
+    mmr_index::MmrIndexDatabase, num_leaves_to_mmr_size, DbError, DbResult, LeafPos, MmrBatchWrite,
     MmrId, MmrNodePos, MmrNodeTable, NodePos, NodeTable, RawMmrId,
 };
 use strata_identifiers::Hash;
 use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use strata_merkle_node_store::peak_positions;
-use threadpool::ThreadPool;
-use tokio::task::spawn_blocking;
+use tokio::{runtime::Handle, task::spawn_blocking};
 
 use super::mmr_algorithm;
-use crate::ops::mmr_index::{Context, MmrIndexOps};
+use crate::ops::mmr_index::MmrIndexOps;
 
 fn is_mmr_precondition_failed(err: &DbError) -> bool {
     matches!(err, DbError::MmrPreconditionFailed { .. })
@@ -94,21 +93,21 @@ pub struct MmrAppendRequest {
 }
 
 impl MmrIndexManager {
-    pub fn new(pool: ThreadPool, db: Arc<impl MmrIndexDatabase + 'static>) -> Self {
-        Self::with_config(pool, db, MmrIndexManagerConfig::default())
+    pub fn new(handle: Handle, db: Arc<impl MmrIndexDatabase + 'static>) -> Self {
+        Self::with_config(handle, db, MmrIndexManagerConfig::default())
     }
 
     pub fn with_config(
-        pool: ThreadPool,
+        handle: Handle,
         db: Arc<impl MmrIndexDatabase + 'static>,
         config: MmrIndexManagerConfig,
     ) -> Self {
-        let ops = Arc::new(Context::new(db).into_ops(pool));
+        let ops = Arc::new(MmrIndexOps::new(handle, db));
         Self { ops, config }
     }
 
     pub fn with_max_retries(
-        pool: ThreadPool,
+        handle: Handle,
         db: Arc<impl MmrIndexDatabase + 'static>,
         max_retries: usize,
     ) -> Self {
@@ -117,7 +116,7 @@ impl MmrIndexManager {
                 max_precondition_retries: max_retries,
             },
         };
-        Self::with_config(pool, db, config)
+        Self::with_config(handle, db, config)
     }
 
     pub fn get_handle(&self, mmr_id: MmrId) -> MmrIndexHandle {
@@ -222,7 +221,7 @@ impl MmrIndexManager {
         let this = self.clone();
         spawn_blocking(move || this.append_many_blocking(requests))
             .await
-            .map_err(|_| DbError::WorkerFailedStrangely)?
+            .map_err(DbError::from)?
     }
 }
 
@@ -300,7 +299,7 @@ impl MmrIndexHandle {
         let this = self.clone();
         spawn_blocking(move || this.append_leaf_blocking(hash))
             .await
-            .map_err(|_| DbError::WorkerFailedStrangely)?
+            .map_err(DbError::from)?
     }
 
     pub fn append_leaf_blocking(&self, hash: Hash) -> DbResult<u64> {
@@ -379,7 +378,7 @@ impl MmrIndexHandle {
         let this = self.clone();
         spawn_blocking(move || this.append_leaf_with_preimage_blocking(hash, preimage))
             .await
-            .map_err(|_| DbError::WorkerFailedStrangely)?
+            .map_err(DbError::from)?
     }
 
     /// Appends a preimage and stores it as bytes in the preimage table.
@@ -411,14 +410,14 @@ impl MmrIndexHandle {
         let this = self.clone();
         spawn_blocking(move || this.append_with_hasher_blocking::<H>(preimage))
             .await
-            .map_err(|_| DbError::WorkerFailedStrangely)?
+            .map_err(DbError::from)?
     }
 
     pub async fn pop_leaf(&self) -> DbResult<Option<Hash>> {
         let this = self.clone();
         spawn_blocking(move || this.pop_leaf_blocking())
             .await
-            .map_err(|_| DbError::WorkerFailedStrangely)?
+            .map_err(DbError::from)?
     }
 
     pub fn pop_leaf_blocking(&self) -> DbResult<Option<Hash>> {
@@ -524,7 +523,7 @@ impl MmrIndexHandle {
                 .ok_or(DbError::MmrPayloadNotFound(LeafPos::new(index)))
         })
         .await
-        .map_err(|_| DbError::WorkerFailedStrangely)?
+        .map_err(DbError::from)?
     }
 
     /// Reads raw preimage bytes for `[start, end_exclusive)`.
@@ -532,7 +531,7 @@ impl MmrIndexHandle {
         let this = self.clone();
         spawn_blocking(move || this.get_range_blocking(start, end_exclusive))
             .await
-            .map_err(|_| DbError::WorkerFailedStrangely)?
+            .map_err(DbError::from)?
     }
 
     /// Generates contiguous proofs with leaf-hash validation from one prefetch snapshot.
@@ -704,9 +703,9 @@ mod tests {
     use super::*;
 
     fn setup_handle() -> MmrIndexHandle {
-        let pool = ThreadPool::new(1);
+        let handle = crate::test_runtime_handle();
         let backend = get_test_sled_backend();
-        let manager = MmrIndexManager::new(pool, backend.mmr_index_db());
+        let manager = MmrIndexManager::new(handle, backend.mmr_index_db());
         manager.get_handle(MmrId::Asm)
     }
 

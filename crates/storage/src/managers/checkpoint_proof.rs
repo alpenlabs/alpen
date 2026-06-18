@@ -7,12 +7,12 @@
 
 use std::sync::Arc;
 
-use strata_db_types::{traits::CheckpointProofDatabase, DbResult};
+use strata_db_types::{checkpoint_proof::CheckpointProofDatabase, DbResult};
 use strata_identifiers::EpochCommitment;
-use threadpool::ThreadPool;
+use tokio::runtime::Handle;
 use zkaleido::ProofReceiptWithMetadata;
 
-use crate::ops::checkpoint_proof::{CheckpointProofDbOps, Context};
+use crate::ops::checkpoint_proof::CheckpointProofDbOps;
 
 #[expect(
     missing_debug_implementations,
@@ -23,8 +23,8 @@ pub struct CheckpointProofDbManager {
 }
 
 impl CheckpointProofDbManager {
-    pub fn new(pool: ThreadPool, db: Arc<impl CheckpointProofDatabase + 'static>) -> Self {
-        let ops = Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl CheckpointProofDatabase + 'static>) -> Self {
+        let ops = CheckpointProofDbOps::new(handle, db);
         Self { ops }
     }
 
