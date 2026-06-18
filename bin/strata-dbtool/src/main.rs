@@ -33,6 +33,7 @@ use crate::{
         },
         ee_revert::ee_revert_batches,
         l1::{get_l1_block, get_l1_summary},
+        mmr::{get_mmr_leaf, get_mmr_summary},
         ol::{delete_ol_block, get_ol_block, get_ol_blocks_at_slot, get_ol_summary},
         ol_state::{get_ol_state, revert_ol_state},
         prover_task::{
@@ -65,6 +66,8 @@ fn main() {
         }
         Command::GetOlSummary(args) => with_ol_db(&datadir, |db| get_ol_summary(db, args)),
         Command::DeleteOlBlock(args) => with_ol_db(&datadir, |db| delete_ol_block(db, args)),
+        Command::GetMmrSummary(args) => with_ol_db(&datadir, |db| get_mmr_summary(db, args)),
+        Command::GetMmrLeaf(args) => with_ol_db(&datadir, |db| get_mmr_leaf(db, args)),
         Command::GetL1Block(args) => with_ol_db(&datadir, |db| get_l1_block(db, args)),
         Command::GetL1Summary(args) => with_ol_db(&datadir, |db| get_l1_summary(db, args)),
         Command::GetWriterSummary(args) => with_ol_db(&datadir, |db| get_writer_summary(db, args)),
