@@ -81,9 +81,12 @@ impl L1Payload {
     }
 }
 
-// `TagData` does not implement borsh, so encode the payload chunks and the
-// decomposed tag fields directly, routing decode through `TagData::new` and
-// `L1Payload::new` to preserve their invariants.
+// Borsh is hand-rolled rather than derived for two reasons: `TagData` does not
+// implement borsh, and the upstream `L1Payload` only gets borsh via
+// `impl_borsh_via_ssz!`, which routes through the SSZ encoding that enforces the
+// 520-byte per-chunk cap this type exists to avoid. So encode the payload chunks
+// and the decomposed tag fields directly, routing decode through `TagData::new`
+// and `L1Payload::new` to preserve their invariants.
 impl BorshSerialize for L1Payload {
     fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         BorshSerialize::serialize(&self.data, writer)?;
