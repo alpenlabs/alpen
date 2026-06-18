@@ -6,6 +6,7 @@ use strata_acct_types::{
     SentMessage, TxEffects,
 };
 use strata_identifiers::{Buf32, OLTxId, Slot};
+use strata_ol_logs::SnarkAccountUpdateLogData;
 use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::ssz_generated::ssz::{proofs::*, transaction::*};
@@ -227,6 +228,17 @@ impl SauTxUpdateData {
 
     pub fn extra_data(&self) -> &[u8] {
         &self.extra_data
+    }
+
+    /// Builds the [`SnarkAccountUpdateLogData`] emitted for this update.
+    ///
+    /// Returns `None` if the update's extra data exceeds the log payload bound. That bound
+    /// matches the SSZ `SAU_MAX_EXTRA_DATA_BYTES` cap, so a well-formed update always fits.
+    pub fn get_log_data(&self) -> Option<SnarkAccountUpdateLogData> {
+        SnarkAccountUpdateLogData::new(
+            self.proof_state().new_next_msg_idx(),
+            self.extra_data().to_vec(),
+        )
     }
 }
 
