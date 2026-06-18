@@ -60,6 +60,14 @@ pub(crate) fn init_ol_genesis(
         .ol_checkpoint()
         .insert_epoch_summary_blocking(epoch_summary)?;
 
+    // Record the genesis block as canonical at slot 0 LAST. `ensure_ol_genesis`
+    // treats canonical slot 0 as the "genesis exists" marker, so it must not be
+    // durable until the genesis state and epoch summary above are written — else a
+    // crash in between would make restart skip genesis with missing data.
+    storage
+        .ol_block()
+        .replace_canonical_suffix_blocking(0, vec![(0, genesis_blkid)])?;
+
     info!(%genesis_blkid, slot = 0, "OL genesis initialization complete");
     Ok(commitment)
 }

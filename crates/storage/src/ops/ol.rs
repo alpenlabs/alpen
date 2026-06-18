@@ -16,6 +16,8 @@ inst_ops_simple! {
         rollback_block_high_watermark(target: OLBlockCommitment) => bool;
         del_block_data(id: OLBlockId) => bool;
         get_blocks_at_height(slot: u64) => Vec<OLBlockId>;
+        get_canonical_block(slot: Slot) => Option<OLBlockId>;
+        replace_canonical_suffix(pivot_slot: Slot, blocks: Vec<(Slot, OLBlockId)>) => ();
         get_tip_slot() => Slot;
         get_block_status(id: OLBlockId) => Option<BlockStatus>;
         set_block_status(id: OLBlockId, status: BlockStatus) => bool;

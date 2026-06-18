@@ -237,7 +237,7 @@ impl OLBlockDatabase for OLBlockDBSled {
     fn replace_canonical_suffix(
         &self,
         pivot_slot: Slot,
-        blocks: &[(Slot, OLBlockId)],
+        blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()> {
         // Enumerate canonical entries strictly above the pivot to drop. Read
         // outside the transaction; keys are big-endian so the range is ordered.
@@ -255,7 +255,7 @@ impl OLBlockDatabase for OLBlockDBSled {
                 for slot in &slots_to_drop {
                     ct.remove(slot)?;
                 }
-                for (slot, id) in blocks {
+                for (slot, id) in &blocks {
                     ct.insert(slot, id)?;
                 }
                 Ok(())

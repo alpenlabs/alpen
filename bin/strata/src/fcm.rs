@@ -147,6 +147,17 @@ impl FcmStorage for StrataFcmContext {
             .await
     }
 
+    async fn replace_canonical_suffix(
+        &self,
+        pivot_slot: Slot,
+        blocks: Vec<(Slot, OLBlockId)>,
+    ) -> DbResult<()> {
+        self.storage
+            .ol_block()
+            .replace_canonical_suffix_async(pivot_slot, blocks)
+            .await
+    }
+
     async fn get_canonical_epoch_commitment_at(
         &self,
         epoch: Epoch,

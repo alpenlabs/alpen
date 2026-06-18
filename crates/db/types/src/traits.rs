@@ -667,7 +667,7 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     fn replace_canonical_suffix(
         &self,
         pivot_slot: Slot,
-        blocks: &[(Slot, OLBlockId)],
+        blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()>;
 }
 

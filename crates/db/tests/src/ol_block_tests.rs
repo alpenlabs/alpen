@@ -69,10 +69,10 @@ pub fn test_get_canonical_block_empty(db: &impl OLBlockDatabase) {
 pub fn test_replace_canonical_suffix_extend(db: &impl OLBlockDatabase) {
     // Seed slots 0..=4, then extend by appending slot 5 with an empty truncation.
     let seed: Vec<(u64, OLBlockId)> = (0..=4).map(|s| (s, canonical_id(s as u8))).collect();
-    db.replace_canonical_suffix(0, &seed)
+    db.replace_canonical_suffix(0, seed.clone())
         .expect("test: seed canonical");
 
-    db.replace_canonical_suffix(4, &[(5, canonical_id(50))])
+    db.replace_canonical_suffix(4, vec![(5, canonical_id(50))])
         .expect("test: extend canonical");
 
     for (slot, id) in &seed {
@@ -84,16 +84,19 @@ pub fn test_replace_canonical_suffix_extend(db: &impl OLBlockDatabase) {
 pub fn test_replace_canonical_suffix_reorg_shorter(db: &impl OLBlockDatabase) {
     // Seed slots 0..=9, then reorg at pivot 5 onto a shorter branch (slots 6,7).
     let seed: Vec<(u64, OLBlockId)> = (0..=9).map(|s| (s, canonical_id(s as u8))).collect();
-    db.replace_canonical_suffix(0, &seed)
+    db.replace_canonical_suffix(0, seed)
         .expect("test: seed canonical");
 
-    let branch = [(6u64, canonical_id(0x60)), (7u64, canonical_id(0x70))];
-    db.replace_canonical_suffix(5, &branch)
+    let branch = vec![(6u64, canonical_id(0x60)), (7u64, canonical_id(0x70))];
+    db.replace_canonical_suffix(5, branch)
         .expect("test: reorg canonical");
 
     // Slots 0..=5 untouched.
     for s in 0..=5u64 {
-        assert_eq!(db.get_canonical_block(s).unwrap(), Some(canonical_id(s as u8)));
+        assert_eq!(
+            db.get_canonical_block(s).unwrap(),
+            Some(canonical_id(s as u8))
+        );
     }
     // Slots 6,7 rewritten to the new branch.
     assert_eq!(db.get_canonical_block(6).unwrap(), Some(canonical_id(0x60)));
@@ -106,14 +109,17 @@ pub fn test_replace_canonical_suffix_reorg_shorter(db: &impl OLBlockDatabase) {
 pub fn test_replace_canonical_suffix_revert_empty_branch(db: &impl OLBlockDatabase) {
     // Seed slots 0..=4, then revert to slot 2 with an empty branch.
     let seed: Vec<(u64, OLBlockId)> = (0..=4).map(|s| (s, canonical_id(s as u8))).collect();
-    db.replace_canonical_suffix(0, &seed)
+    db.replace_canonical_suffix(0, seed)
         .expect("test: seed canonical");
 
-    db.replace_canonical_suffix(2, &[])
+    db.replace_canonical_suffix(2, Vec::new())
         .expect("test: revert canonical");
 
     for s in 0..=2u64 {
-        assert_eq!(db.get_canonical_block(s).unwrap(), Some(canonical_id(s as u8)));
+        assert_eq!(
+            db.get_canonical_block(s).unwrap(),
+            Some(canonical_id(s as u8))
+        );
     }
     assert_eq!(db.get_canonical_block(3).unwrap(), None);
     assert_eq!(db.get_canonical_block(4).unwrap(), None);
@@ -122,10 +128,10 @@ pub fn test_replace_canonical_suffix_revert_empty_branch(db: &impl OLBlockDataba
 pub fn test_replace_canonical_suffix_pivot_max(db: &impl OLBlockDatabase) {
     // pivot == u64::MAX: there is no slot above it, so nothing is truncated and
     // the existing entry survives. Guards against `pivot + 1` overflow.
-    db.replace_canonical_suffix(u64::MAX, &[(u64::MAX, canonical_id(0xaa))])
+    db.replace_canonical_suffix(u64::MAX, vec![(u64::MAX, canonical_id(0xaa))])
         .expect("test: seed canonical at max slot");
 
-    db.replace_canonical_suffix(u64::MAX, &[])
+    db.replace_canonical_suffix(u64::MAX, Vec::new())
         .expect("test: replace suffix at max pivot");
 
     assert_eq!(
@@ -136,10 +142,10 @@ pub fn test_replace_canonical_suffix_pivot_max(db: &impl OLBlockDatabase) {
 
 pub fn test_replace_canonical_suffix_idempotent(db: &impl OLBlockDatabase) {
     let seed: Vec<(u64, OLBlockId)> = (0..=4).map(|s| (s, canonical_id(s as u8))).collect();
-    db.replace_canonical_suffix(0, &seed)
+    db.replace_canonical_suffix(0, seed.clone())
         .expect("test: seed canonical");
     // Re-applying the same suffix is a no-op.
-    db.replace_canonical_suffix(0, &seed)
+    db.replace_canonical_suffix(0, seed.clone())
         .expect("test: re-apply canonical");
 
     for (slot, id) in &seed {

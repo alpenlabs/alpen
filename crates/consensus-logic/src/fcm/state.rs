@@ -297,6 +297,12 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     let cur_tip_block = determine_start_tip(&chain_tracker, fcm_ctx.as_ref()).await?;
     debug!(?chain_tracker, "init chain tracker");
 
+    // Force the canonical index to match the reconstructed chain before any
+    // consumer reads it. A crash can leave the index ahead of, behind, or forked
+    // from fork choice; this repairs all of those by rewriting the unfinalized
+    // suffix from the reconstructed tip.
+    reconcile_canonical_index(&chain_tracker, cur_tip_block, fcm_ctx.as_ref()).await?;
+
     // Load in that block's ol_state.
     let tip_blkid = cur_tip_block;
     let ol_state = fcm_ctx
@@ -357,4 +363,62 @@ async fn determine_start_tip(
     }
 
     Ok(L2BlockCommitment::new(best_slot, *best))
+}
+
+/// Rewrites the canonical index to match the reconstructed chain.
+///
+/// Only the unfinalized suffix is rewritten; slots at or below the finalized tip are left untouched
+/// since finalized history never forks.
+async fn reconcile_canonical_index(
+    unfin: &UnfinalizedBlockTracker,
+    tip: L2BlockCommitment,
+    storage: &(impl FcmStorage + ?Sized),
+) -> anyhow::Result<()> {
+    let finalized_slot = unfin.finalized_epoch().last_slot();
+
+    // Slots strictly decrease child->parent (enforced by `attach_block`), so a
+    // non-decrease means a corrupt parent link; erroring out also bounds the walk.
+    let mut chain = Vec::new();
+    let mut cursor = *tip.blkid();
+    let mut prev_slot: Option<u64> = None;
+    while let Some(parent) = unfin.get_parent(&cursor) {
+        let slot = unfin
+            .get_slot(&cursor)
+            .ok_or_else(|| anyhow!("fcm: reconstructed block {cursor} missing from tracker"))?;
+        if let Some(prev) = prev_slot {
+            if slot >= prev {
+                return Err(anyhow!(
+                    "fcm: non-decreasing slot {slot} >= {prev} walking parents from tip {}; corrupt parent link",
+                    tip.blkid()
+                ));
+            }
+        }
+        prev_slot = Some(slot);
+        chain.push((slot, cursor));
+        cursor = *parent;
+    }
+
+    // The walk must land on the finalized tip; otherwise the chain doesn't trace
+    // back to finalized history — corruption, not recoverable.
+    let finalized_tip = *unfin.finalized_tip();
+    if cursor != finalized_tip {
+        return Err(anyhow!(
+            "fcm: reconstructed chain tip {} does not trace back to finalized tip {finalized_tip}",
+            tip.blkid()
+        ));
+    }
+
+    // The finalized slot is left untouched, so verify it is already canonical.
+    let canonical_finalized = storage.get_canonical_block_at(finalized_slot).await?;
+    if canonical_finalized.map(|c| *c.blkid()) != Some(finalized_tip) {
+        return Err(anyhow!(
+            "fcm: canonical block at finalized slot {finalized_slot} is {canonical_finalized:?}, expected finalized tip {finalized_tip}"
+        ));
+    }
+
+    chain.reverse();
+    storage
+        .replace_canonical_suffix(finalized_slot, chain)
+        .await?;
+    Ok(())
 }

@@ -5,6 +5,7 @@ use metrics::{counter, histogram};
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
 use strata_db_types::traits::BlockStatus;
+use strata_identifiers::Slot;
 use strata_ol_chain_types_new::{
     sequencer_predicate_requires_signature, verify_sequencer_predicate_signature, OLBlock,
 };
@@ -618,15 +619,20 @@ async fn apply_tip_update<C: FcmContext>(
         TipUpdate::ExtendTip(_cur, _new) => {
             // TODO(STR-3673): what's the relation between _new and bundle
             // Update the tip block in the FCM state.
-            let blk_cmmt =
-                OLBlockCommitment::new(bundle.header().slot(), bundle.header().compute_blkid());
+            let slot = bundle.header().slot();
+            let blkid = bundle.header().compute_blkid();
+            let blk_cmmt = OLBlockCommitment::new(slot, blkid);
             let ol_state = fcm_state
                 .ctx()
                 .get_toplevel_ol_state(blk_cmmt)
                 .await?
                 .ok_or(Error::MissingOLState(blk_cmmt))?;
 
+            // Capture the old tip slot before the update; it is the truncation pivot.
+            let pivot_slot = fcm_state.cur_best_block().slot();
             fcm_state.update_tip_block(blk_cmmt, ol_state).await?;
+
+            record_canonical_suffix(fcm_state, pivot_slot, vec![(slot, blkid)]).await?;
 
             Ok(())
         }
@@ -641,8 +647,11 @@ async fn apply_tip_update<C: FcmContext>(
             // blocks we're applying.
             intermediate.push(new);
 
+            let pivot_slot = fcm_state.cur_best_block().slot();
+            let mut applied = Vec::with_capacity(intermediate.len());
             for blkid in intermediate {
                 advance_fcm_to_block(blkid, fcm_state).await?;
+                applied.push((fcm_state.get_block_slot(blkid).await?, blkid));
             }
 
             let final_tip = fcm_state.cur_best_block();
@@ -651,6 +660,8 @@ async fn apply_tip_update<C: FcmContext>(
             if final_tip != expected_tip {
                 return Err(Error::OLApplyTipMismatch(expected_tip, final_tip).into());
             }
+
+            record_canonical_suffix(fcm_state, pivot_slot, applied).await?;
 
             Ok(())
         }
@@ -677,8 +688,10 @@ async fn apply_tip_update<C: FcmContext>(
                 return Err(Error::InvalidOLReorgEmptyDownPivot(cur_best, pivot_block).into());
             }
 
+            let mut applied = Vec::new();
             for blkid in reorg.apply_iter().copied() {
                 advance_fcm_to_block(blkid, fcm_state).await?;
+                applied.push((fcm_state.get_block_slot(blkid).await?, blkid));
             }
 
             let final_tip = fcm_state.cur_best_block();
@@ -692,8 +705,11 @@ async fn apply_tip_update<C: FcmContext>(
                 return Err(Error::OLApplyTipMismatch(expected_tip, final_tip).into());
             }
 
-            // TODO(STR-3673): any cleanup?
+            // Truncate the abandoned branch above the pivot and write the new one.
+            record_canonical_suffix(fcm_state, pivot_slot, applied).await?;
 
+            // TODO(STR-3673): canonical-index cleanup is handled above; revisit
+            // whether any other post-reorg cleanup is still needed here.
             counter!("strata_fcm_reorgs_total").increment(1);
             histogram!("strata_fcm_reorg_depth").record(reorg_depth as f64);
 
@@ -704,9 +720,26 @@ async fn apply_tip_update<C: FcmContext>(
             let slot = fcm_state.get_block_slot(new).await?;
             let block = OLBlockCommitment::new(slot, new);
             revert_ol_state_to_block(&block, fcm_state).await?;
+
+            // Revert to a lower tip; truncate everything above it, write nothing.
+            record_canonical_suffix(fcm_state, slot, Vec::new()).await?;
+
             Ok(())
         }
     }
+}
+
+/// Single canonical write path for fork-choice tip moves.
+async fn record_canonical_suffix<C: FcmContext>(
+    fcm_state: &FcmServiceState<C>,
+    pivot_slot: Slot,
+    blocks: Vec<(Slot, OLBlockId)>,
+) -> anyhow::Result<()> {
+    fcm_state
+        .ctx()
+        .replace_canonical_suffix(pivot_slot, blocks)
+        .await?;
+    Ok(())
 }
 
 /// Advances the in-memory OL state to an already-executed block.
@@ -850,7 +883,8 @@ mod tests {
             if !blocks_at_slot.contains(&blkid) {
                 blocks_at_slot.push(blkid);
             }
-            inner.canonical_blocks.entry(slot).or_insert(commitment);
+            // The canonical index is written only via `replace_canonical_suffix`,
+            // mirroring the real DB where plain block puts do not touch it.
             if let Some(state) = state {
                 inner.states.insert(commitment, Arc::new(state));
             }
@@ -876,6 +910,17 @@ mod tests {
                 .unwrap()
                 .canonical_epochs
                 .insert(epoch.epoch(), epoch);
+        }
+
+        /// Seeds the canonical slot-0 entry, mirroring what real genesis does.
+        /// Plain block puts do not touch the canonical index, so tests that boot
+        /// FCM must seed slot 0 explicitly or the startup loop never resolves.
+        fn seed_canonical_genesis(&self, genesis_blkid: OLBlockId) {
+            self.inner
+                .lock()
+                .unwrap()
+                .canonical_blocks
+                .insert(0, OLBlockCommitment::new(0, genesis_blkid));
         }
 
         fn set_block_high_watermark(&self, block: OLBlockCommitment) {
@@ -1024,6 +1069,21 @@ mod tests {
                 .copied())
         }
 
+        async fn replace_canonical_suffix(
+            &self,
+            pivot_slot: Slot,
+            blocks: Vec<(Slot, OLBlockId)>,
+        ) -> DbResult<()> {
+            let mut inner = self.inner.lock().unwrap();
+            inner.canonical_blocks.retain(|slot, _| *slot <= pivot_slot);
+            for (slot, id) in blocks {
+                inner
+                    .canonical_blocks
+                    .insert(slot, OLBlockCommitment::new(slot, id));
+            }
+            Ok(())
+        }
+
         async fn get_canonical_epoch_commitment_at(
             &self,
             epoch: Epoch,
@@ -1120,6 +1180,16 @@ mod tests {
             self.storage.get_canonical_block_at(slot).await
         }
 
+        async fn replace_canonical_suffix(
+            &self,
+            pivot_slot: Slot,
+            blocks: Vec<(Slot, OLBlockId)>,
+        ) -> DbResult<()> {
+            self.storage
+                .replace_canonical_suffix(pivot_slot, blocks)
+                .await
+        }
+
         async fn get_canonical_epoch_commitment_at(
             &self,
             epoch: Epoch,
@@ -1174,6 +1244,7 @@ mod tests {
                 seed_executed_block(ctx.storage(), block, BlockStatus::Valid);
             }
             ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+            ctx.storage().seed_canonical_genesis(genesis.blkid());
 
             Self { ctx: Arc::new(ctx) }
         }
@@ -1421,6 +1492,7 @@ mod tests {
         );
         seed_executed_block(ctx.storage(), &genesis, BlockStatus::Valid);
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+        ctx.storage().seed_canonical_genesis(genesis.blkid());
 
         let tracker = empty_tracker(&genesis);
         let inner = FcmInnerState::new(
@@ -1607,6 +1679,57 @@ mod tests {
         Ok(())
     }
 
+    /// A reorg from branch A to branch B must rewrite the canonical index to the
+    /// new branch and drop the abandoned branch's entries, including any slot the
+    /// shorter branch no longer reaches.
+    #[tokio::test]
+    async fn reorg_rewrites_canonical_index_and_drops_abandoned_branch() -> anyhow::Result<()> {
+        let fork = TestFork::new();
+        let fixture = fork.fixture();
+        seed_executed_block(fixture.ctx.storage(), &fork.b3, BlockStatus::Valid);
+        let tracker = fork.tracker_without_b3();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &fork.a2);
+
+        // Seed the canonical index as if branch A were the live chain.
+        fixture
+            .ctx
+            .storage()
+            .replace_canonical_suffix(0, vec![(1, fork.a1.blkid()), (2, fork.a2.blkid())])
+            .await?;
+
+        process_fc_message(
+            &ForkChoiceMessage::NewBlock(fork.b3.blkid()),
+            &mut fcm_state,
+        )
+        .await?;
+
+        let storage = fixture.ctx.storage();
+        // Branch B is now canonical at every slot.
+        assert_eq!(
+            storage.get_canonical_block_at(1).await?,
+            Some(fork.b1.commitment())
+        );
+        assert_eq!(
+            storage.get_canonical_block_at(2).await?,
+            Some(fork.b2.commitment())
+        );
+        assert_eq!(
+            storage.get_canonical_block_at(3).await?,
+            Some(fork.b3.commitment())
+        );
+        // Branch A's blocks no longer win their slots.
+        assert_ne!(
+            storage.get_canonical_block_at(1).await?,
+            Some(fork.a1.commitment())
+        );
+        assert_ne!(
+            storage.get_canonical_block_at(2).await?,
+            Some(fork.a2.commitment())
+        );
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn long_extend_applies_intermediate_blocks_to_new_tip() -> anyhow::Result<()> {
         let chain = LinearChain::new();
@@ -1765,6 +1888,7 @@ mod tests {
                 .put_toplevel_ol_state(commitment, make_genesis_state().state().clone());
         }
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+        ctx.storage().seed_canonical_genesis(genesis_blkid);
 
         let mut fcm_state =
             init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
@@ -1798,6 +1922,13 @@ mod tests {
 
         assert_eq!(storage.get_ol_block(blkid).await.unwrap(), Some(block));
         assert_eq!(storage.get_blocks_at_height(1).await.unwrap(), vec![blkid]);
+        // A plain put does not make a block canonical; that requires an explicit
+        // canonical write.
+        assert_eq!(storage.get_canonical_block_at(1).await.unwrap(), None);
+        storage
+            .replace_canonical_suffix(0, vec![(1, blkid)])
+            .await
+            .unwrap();
         assert_eq!(
             storage.get_canonical_block_at(1).await.unwrap(),
             Some(commitment)
@@ -1885,6 +2016,7 @@ mod tests {
         ctx.storage()
             .put_toplevel_ol_state(block_commitment, make_genesis_state().state().clone());
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+        ctx.storage().seed_canonical_genesis(genesis_blkid);
 
         let mut fcm_state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone())
             .await
@@ -1940,6 +2072,7 @@ mod tests {
             .await?;
         ctx.storage().set_block_high_watermark(block_commitment);
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+        ctx.storage().seed_canonical_genesis(genesis_blkid);
 
         let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
         assert_eq!(fcm_state.take_startup_replay_candidates(), vec![blkid]);
@@ -1988,6 +2121,7 @@ mod tests {
         ctx.storage().put_ol_block(block);
         ctx.storage().set_block_high_watermark(block_commitment);
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+        ctx.storage().seed_canonical_genesis(genesis_blkid);
 
         let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
 
@@ -2051,6 +2185,7 @@ mod tests {
         ctx.storage().put_ol_block(fork);
         ctx.storage().set_block_high_watermark(canonical_commitment);
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+        ctx.storage().seed_canonical_genesis(genesis_blkid);
 
         let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
 
@@ -2111,6 +2246,7 @@ mod tests {
         ctx.storage().put_ol_block(fork);
         ctx.storage().set_block_high_watermark(canonical_commitment);
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+        ctx.storage().seed_canonical_genesis(genesis_blkid);
 
         let mut fcm_state = init_fcm_service_state(schnorr_predicate(&pk), ctx.clone()).await?;
 

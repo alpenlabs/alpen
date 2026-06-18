@@ -222,32 +222,60 @@ impl OLBlockManager {
         self.get_canonical_block_at_async(tip).await
     }
 
-    /// Gets the canonical block commitment at given height.
+    /// Gets the canonical block commitment at given slot. Blocking.
+    ///
+    /// Reads the canonical index recorded by fork choice. Returns `None` for slots above the
+    /// canonical tip or not yet written.
     pub fn get_canonical_block_at_blocking(
         &self,
-        tip: Slot,
+        slot: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
-        let blocks = self.get_blocks_at_height_blocking(tip)?;
-        // TODO(STR-2105): determine how to get the canonical block. for now it is just the first
-        // one
-        Ok(blocks
-            .first()
-            .cloned()
-            .map(|id| OLBlockCommitment::new(tip, id)))
+        Ok(self
+            .ops
+            .get_canonical_block_blocking(slot)?
+            .map(|id| OLBlockCommitment::new(slot, id)))
     }
 
-    /// Gets the canonical block commitment at given height.
+    /// Gets the canonical block commitment at given slot. Async.
+    ///
+    /// Reads the canonical index recorded by fork choice. Returns `None` for slots above the
+    /// canonical tip or not yet written.
     pub async fn get_canonical_block_at_async(
         &self,
-        tip: Slot,
+        slot: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
-        let blocks = self.get_blocks_at_height_async(tip).await?;
-        // TODO(STR-2105): determine how to get the canonical block. for now, it is just the first
-        // one
-        Ok(blocks
-            .first()
-            .cloned()
-            .map(|id| OLBlockCommitment::new(tip, id)))
+        Ok(self
+            .ops
+            .get_canonical_block_async(slot)
+            .await?
+            .map(|id| OLBlockCommitment::new(slot, id)))
+    }
+
+    /// Replaces the canonical index suffix above `pivot_slot` with `blocks`. Async.
+    ///
+    /// Truncates every canonical entry above `pivot_slot`, then writes `blocks`, in one
+    /// transaction.
+    pub async fn replace_canonical_suffix_async(
+        &self,
+        pivot_slot: Slot,
+        blocks: Vec<(Slot, OLBlockId)>,
+    ) -> DbResult<()> {
+        self.ops
+            .replace_canonical_suffix_async(pivot_slot, blocks)
+            .await
+    }
+
+    /// Replaces the canonical index suffix above `pivot_slot` with `blocks`. Blocking.
+    ///
+    /// Truncates every canonical entry above `pivot_slot`, then writes `blocks`, in one
+    /// transaction.
+    pub fn replace_canonical_suffix_blocking(
+        &self,
+        pivot_slot: Slot,
+        blocks: Vec<(Slot, OLBlockId)>,
+    ) -> DbResult<()> {
+        self.ops
+            .replace_canonical_suffix_blocking(pivot_slot, blocks)
     }
 }
 
@@ -372,6 +400,47 @@ mod tests {
                 assert_eq!(block_ids.len(), 2);
                 assert!(block_ids.contains(&block_id1));
                 assert!(block_ids.contains(&block_id2));
+            });
+        }
+
+        #[test]
+        fn proptest_canonical_at_returns_indexed_block_not_first(
+            mut stale in ol_test_utils::ol_block_strategy(),
+            mut canonical in ol_test_utils::ol_block_strategy(),
+        ) {
+            let slot = 7u64;
+            stale.signed_header.header.slot = slot;
+            canonical.signed_header.header.slot = slot;
+            let stale_id = stale.header().compute_blkid();
+            let canonical_id = canonical.header().compute_blkid();
+            prop_assume!(stale_id != canonical_id);
+
+            let rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                let manager = setup_manager();
+
+                // Stale block lands in the height index first, so `.first()` returns it.
+                manager.put_block_data_async(stale).await.expect("put stale");
+                manager.put_block_data_async(canonical).await.expect("put canonical");
+                let at_height = manager
+                    .get_blocks_at_height_async(slot)
+                    .await
+                    .expect("get blocks at height");
+                assert_eq!(at_height.first(), Some(&stale_id));
+
+                // Fork choice records the canonical (second) block at the slot.
+                manager
+                    .replace_canonical_suffix_async(slot - 1, vec![(slot, canonical_id)])
+                    .await
+                    .expect("seed canonical");
+
+                let got = manager
+                    .get_canonical_block_at_async(slot)
+                    .await
+                    .expect("get canonical")
+                    .expect("canonical present");
+                assert_eq!(got.blkid(), &canonical_id);
+                assert_ne!(got.blkid(), &stale_id);
             });
         }
 
