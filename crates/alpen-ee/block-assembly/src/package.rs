@@ -55,19 +55,26 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
 ) -> ExecOutputs {
     let mut outputs = ExecOutputs::new_empty();
     for withdrawal_intent in payload.withdrawal_intents() {
+        let dest_desc_len = withdrawal_intent.destination.to_bytes().len();
         let Some(msg_payload) = create_withdrawal_init_message_payload(
             withdrawal_intent.destination.clone(),
             BitcoinAmount::from_sat(withdrawal_intent.amt),
             withdrawal_intent.selected_operator,
         ) else {
-            warn!("skipping withdrawal: failed to create withdrawal message");
+            warn!(
+                amount_sat = withdrawal_intent.amt,
+                selected_operator = withdrawal_intent.selected_operator.raw(),
+                dest_desc_len,
+                destination = ?withdrawal_intent.destination,
+                "skipping withdrawal: failed to create withdrawal message",
+            );
             continue;
         };
         info!(
             amount_sat = withdrawal_intent.amt,
             selected_operator = withdrawal_intent.selected_operator.raw(),
-            dest_desc_len = withdrawal_intent.destination.to_bytes().len(),
-            %bridge_gateway_account_id,
+            dest_desc_len,
+            destination = ?withdrawal_intent.destination,
             "created withdrawal output message for bridge gateway",
         );
         outputs.add_message(OutputMessage::new(bridge_gateway_account_id, msg_payload));
