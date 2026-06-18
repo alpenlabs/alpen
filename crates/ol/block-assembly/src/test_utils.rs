@@ -1561,7 +1561,7 @@ pub(crate) fn extract_withdrawal_intents(
             let msg = MsgRef::try_from(log.payload()).ok()?;
             match SimpleWithdrawalIntentLogData::try_decode_log(&msg) {
                 // A type mismatch just means this log isn't a withdrawal intent; skip it.
-                Err(LogDecodeError::TypeMismatch(..)) => None,
+                Err(LogDecodeError::TypeMismatch { .. }) => None,
                 result => Some((log.account_serial(), result)),
             }
         })

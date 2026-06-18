@@ -12,15 +12,13 @@ ssz_primitives.workspace = true
 ssz_types.workspace = true
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
-strata-codec.workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
-strata-msg-fmt.workspace = true
+strata-ol-logs.workspace = true
 strata-predicate.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
-arbitrary = { optional = true, workspace = true }
 int-enum.workspace = true
 proptest = { optional = true, workspace = true }
 rand = { optional = true, workspace = true }
@@ -28,7 +26,6 @@ secp256k1 = { optional = true, workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]
-arbitrary.workspace = true
 proptest.workspace = true
 rand.workspace = true
 secp256k1.workspace = true
@@ -40,7 +37,6 @@ ssz_codegen.workspace = true
 
 [features]
 test-utils = [
-  "dep:arbitrary",
   "dep:proptest",
   "dep:rand",
   "dep:secp256k1",

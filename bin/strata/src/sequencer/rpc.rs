@@ -181,11 +181,15 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             .map_err(db_error)?
             .is_none()
         {
+            // TODO(STR-3814): move this checkpoint encoding + L1Payload
+            // construction out of the RPC handler into a dedicated component so
+            // it can be reused and tested independently of the RPC layer.
             let codec_payload = CodecSsz::new(checkpoint_payload.clone());
             let encoded = encode_to_vec(&codec_payload)
                 .map_err(|e| internal_error(format!("failed to encode checkpoint: {e}")))?;
 
-            let l1_payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone());
+            let l1_payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone())
+                .map_err(|e| internal_error(format!("failed to build checkpoint payload: {e}")))?;
             let sighash = hash::raw(&checkpoint_payload.as_ssz_bytes());
 
             let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, l1_payload);
