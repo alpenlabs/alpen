@@ -15493,6 +15493,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-db-migrate"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-database",
+ "anyhow",
+ "argh",
+ "sled",
+ "strata-db-store-sled",
+ "tracing",
+ "tracing-subscriber 0.3.23",
+]
+
+[[package]]
 name = "strata-db-store-sled"
 version = "0.1.0"
 dependencies = [
@@ -15502,6 +15515,7 @@ dependencies = [
  "ciborium",
  "proptest",
  "rkyv",
+ "serde",
  "sled",
  "ssz",
  "ssz_derive",

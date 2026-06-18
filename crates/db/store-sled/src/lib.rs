@@ -13,6 +13,9 @@ pub mod mempool;
 pub mod mmr_index;
 pub mod ol;
 pub mod ol_checkpoint;
+pub mod ol_migration;
+#[cfg(test)]
+mod ol_migration_probe;
 pub mod ol_state;
 pub mod ol_state_index;
 pub mod prover;
@@ -51,6 +54,7 @@ use writer::db::L1WriterDBSled;
 
 pub use crate::{
     init::{init_core_dbs, open_sled_database},
+    ol_migration::{migrate_ol_db, OlMigrationReport, OL_SCHEMA_VERSION},
     prover::ProofDBSled,
 };
 

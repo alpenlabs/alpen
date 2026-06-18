@@ -91,6 +91,7 @@ members = [
   "bin/datatool",
   "bin/alpen-cli",
   "bin/strata-dbtool",
+  "bin/strata-db-migrate",
   "bin/alpen-client",
   "bin/strata",
   "bin/strata-signer",

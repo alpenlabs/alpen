@@ -71,7 +71,7 @@ impl TryFrom<DBExecBlockRecord> for ExecBlockRecord {
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
-struct DBMessageEntry {
+pub(crate) struct DBMessageEntry {
     source: [u8; 32],
     incl_epoch: u32,
     payload_value_sats: u64,
