@@ -344,7 +344,7 @@ fn verify_tip_ol_state(storage: &NodeStorage, tip_commitment: OLBlockCommitment)
         .is_some();
 
     if !has_tip_state {
-        bail!("startup: missing OL state for tip block");
+        bail!("startup: missing OL state for tip block {}", tip_commitment);
     }
 
     Ok(())
