@@ -176,12 +176,12 @@ impl OLBlockManager {
         self.ops.get_blocks_at_height_blocking(slot)
     }
 
-    /// Gets the tip slot (highest slot with valid block). Async.
+    /// Gets the canonical tip slot. Async.
     pub async fn get_tip_slot_async(&self) -> DbResult<Slot> {
         self.ops.get_tip_slot_async().await
     }
 
-    /// Gets the tip slot (highest slot with valid block). Blocking.
+    /// Gets the canonical tip slot. Blocking.
     pub fn get_tip_slot_blocking(&self) -> DbResult<Slot> {
         self.ops.get_tip_slot_blocking()
     }

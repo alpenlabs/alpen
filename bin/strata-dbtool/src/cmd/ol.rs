@@ -1,7 +1,7 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::traits::{BlockStatus, DatabaseBackend, OLBlockDatabase};
-use strata_identifiers::{Epoch, OLBlockId, Slot};
+use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
 use strata_primitives::l1::L1BlockId;
 
@@ -131,7 +131,7 @@ pub(crate) fn get_ol_summary(
     db: &impl DatabaseBackend,
     args: GetOLSummaryArgs,
 ) -> Result<(), DisplayedError> {
-    // Get the tip block (highest slot) from OL block database.
+    // Get the canonical tip block from OL block database.
     let tip_block_id = get_chain_tip_ol_block_id(db)?;
     let tip_block_data = get_ol_block_data(db, tip_block_id)?.ok_or_else(|| {
         DisplayedError::InternalError(
@@ -234,12 +234,29 @@ pub(crate) fn delete_ol_block(
         ));
     }
 
+    let canonical_block = db
+        .ol_block_db()
+        .get_canonical_block(slot)
+        .internal_error(format!("Failed to get canonical block at slot {slot}"))?;
+    if canonical_block == Some(block_id) {
+        return Err(DisplayedError::UserError(
+            "Refusing to delete canonical OL block".to_string(),
+            Box::new(block_id),
+        ));
+    }
+
     // A stored child means this block is (or was) extended by some chain;
     // deleting it would leave that child without a parent in the database.
+    let Some(next_slot) = slot.checked_add(1) else {
+        return Err(DisplayedError::UserError(
+            "Refusing to delete max-slot OL block".to_string(),
+            Box::new(block_id),
+        ));
+    };
     let blocks_at_next_slot = db
         .ol_block_db()
-        .get_blocks_at_height(slot + 1)
-        .internal_error(format!("Failed to get blocks at slot {}", slot + 1))?;
+        .get_blocks_at_height(next_slot)
+        .internal_error(format!("Failed to get blocks at slot {next_slot}"))?;
     for child_id in blocks_at_next_slot {
         let Some(child) = get_ol_block_data(db, child_id)? else {
             continue;
@@ -281,26 +298,33 @@ pub(crate) fn delete_ol_block(
 }
 
 fn get_chain_tip_ol_block_id(db: &impl DatabaseBackend) -> Result<OLBlockId, DisplayedError> {
+    Ok(*get_canonical_ol_tip(db)?.blkid())
+}
+
+pub(crate) fn get_canonical_ol_tip(
+    db: &impl DatabaseBackend,
+) -> Result<OLBlockCommitment, DisplayedError> {
     let tip_slot = db
         .ol_block_db()
         .get_tip_slot()
         .internal_error("Failed to get OL tip slot")?;
-
-    get_canonical_ol_block_at_slot(db, tip_slot)
+    let tip_blkid = get_canonical_ol_block_at_slot(db, tip_slot)?;
+    Ok(OLBlockCommitment::new(tip_slot, tip_blkid))
 }
 
 pub(crate) fn get_canonical_ol_block_at_slot(
     db: &impl DatabaseBackend,
     slot: Slot,
 ) -> Result<OLBlockId, DisplayedError> {
-    let blocks = db
-        .ol_block_db()
-        .get_blocks_at_height(slot)
-        .internal_error("Failed to fetch OL blocks at slot")?;
-
-    blocks.first().copied().ok_or_else(|| {
-        DisplayedError::InternalError("No OL blocks found at slot".to_string(), Box::new(slot))
-    })
+    db.ol_block_db()
+        .get_canonical_block(slot)
+        .internal_error("Failed to fetch canonical OL block at slot")?
+        .ok_or_else(|| {
+            DisplayedError::InternalError(
+                "No canonical OL block found at slot".to_string(),
+                Box::new(slot),
+            )
+        })
 }
 
 pub(crate) fn get_ol_block_slot_and_epoch(
