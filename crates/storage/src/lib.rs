@@ -3,7 +3,53 @@
 mod cache;
 mod instrumentation;
 mod managers;
-pub mod ops;
+
+/// Database ops wrappers, re-exported from the `gen_proxy`-generated proxies in
+/// [`strata_db_types`] under their legacy `*Ops` names.
+pub mod ops {
+    pub mod asm {
+        pub use strata_db_types::asm::AsmDatabaseProxy as AsmDataOps;
+    }
+    pub mod checkpoint_proof {
+        pub use strata_db_types::checkpoint_proof::CheckpointProofDatabaseProxy as CheckpointProofDbOps;
+    }
+    pub mod chunked_envelope {
+        pub use strata_db_types::chunked_envelope::L1ChunkedEnvelopeDatabaseProxy as ChunkedEnvelopeOps;
+    }
+    pub mod client_state {
+        pub use strata_db_types::client_state::ClientStateDatabaseProxy as ClientStateOps;
+    }
+    pub mod l1 {
+        pub use strata_db_types::l1::L1DatabaseProxy as L1DataOps;
+    }
+    pub mod l1tx_broadcast {
+        pub use strata_db_types::l1_broadcast::L1BroadcastDatabaseProxy as BroadcastDbOps;
+    }
+    pub mod mempool {
+        pub use strata_db_types::mempool::MempoolDatabaseProxy as MempoolDataOps;
+    }
+    pub mod mmr_index {
+        pub use strata_db_types::mmr_index::MmrIndexDatabaseProxy as MmrIndexOps;
+    }
+    pub mod ol {
+        pub use strata_db_types::ol_block::OLBlockDatabaseProxy as OLBlockOps;
+    }
+    pub mod ol_checkpoint {
+        pub use strata_db_types::ol_checkpoint::OLCheckpointDatabaseProxy as OLCheckpointOps;
+    }
+    pub mod ol_state {
+        pub use strata_db_types::ol_state::OLStateDatabaseProxy as OLStateOps;
+    }
+    pub mod ol_state_indexing {
+        pub use strata_db_types::ol_state_index::OLStateIndexingDatabaseProxy as OLStateIndexingOps;
+    }
+    pub mod prover_task {
+        pub use strata_db_types::prover_task::ProverTaskDatabaseProxy as ProverTaskDbOps;
+    }
+    pub mod writer {
+        pub use strata_db_types::l1_writer::L1WriterDatabaseProxy as EnvelopeDataOps;
+    }
+}
 
 use std::sync::Arc;
 
