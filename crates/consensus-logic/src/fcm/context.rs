@@ -62,11 +62,11 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
 
     async fn get_canonical_block_at(&self, slot: Slot) -> DbResult<Option<OLBlockCommitment>>;
 
-    /// Replaces canonical blocks from `start_slot` with `blocks`.
-    async fn replace_canonical_blocks_from(
+    /// Replaces the canonical suffix from `start_slot` with `block_ids`.
+    async fn replace_canonical_suffix_from(
         &self,
         start_slot: Slot,
-        blocks: Vec<(Slot, OLBlockId)>,
+        block_ids: Vec<OLBlockId>,
     ) -> DbResult<()>;
 
     async fn get_canonical_epoch_commitment_at(

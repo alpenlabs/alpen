@@ -15,7 +15,7 @@ use crate::{
     unfinalized_tracker::UnfinalizedBlockTracker,
 };
 
-type CanonicalSuffix = Vec<(Slot, OLBlockId)>;
+type CanonicalSuffix = Vec<OLBlockId>;
 
 /// Runtime container for the FCM service.
 ///
@@ -360,7 +360,7 @@ pub(crate) async fn reconcile_canonical_blocks_index(
         return Err(Error::FcmCanonicalSuffixAboveMaxSlot(pivot_slot));
     };
     storage
-        .replace_canonical_blocks_from(start_slot, canon_blocks)
+        .replace_canonical_suffix_from(start_slot, canon_blocks)
         .await?;
     Ok(())
 }
@@ -402,7 +402,7 @@ async fn canonical_blocks_from_tip(
             });
         }
 
-        suffix.push((slot, blkid));
+        suffix.push(blkid);
     }
 
     unreachable!("validated parent chain always includes the finalized tip")

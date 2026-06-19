@@ -147,14 +147,14 @@ impl FcmStorage for StrataFcmContext {
             .await
     }
 
-    async fn replace_canonical_blocks_from(
+    async fn replace_canonical_suffix_from(
         &self,
         start_slot: Slot,
-        blocks: Vec<(Slot, OLBlockId)>,
+        block_ids: Vec<OLBlockId>,
     ) -> DbResult<()> {
         self.storage
             .ol_block()
-            .replace_canonical_blocks_from_async(start_slot, blocks)
+            .replace_canonical_suffix_from_async(start_slot, block_ids)
             .await
     }
 

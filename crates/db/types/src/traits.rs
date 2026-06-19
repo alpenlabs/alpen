@@ -660,18 +660,18 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Returns `None` for slots above the current canonical tip or never written.
     fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>>;
 
-    /// Replaces canonical blocks from `start_slot`.
+    /// Replaces the canonical suffix from `start_slot`.
     ///
     /// Atomically removes every canonical entry for slots greater than or equal to `start_slot`,
-    /// then writes each `(slot, id)` in `blocks`.
+    /// then writes each block ID into a contiguous suffix starting at `start_slot`.
     ///
     /// Single-writer contract: fork choice is the sole writer of the canonical index. Callers must
     /// not invoke this concurrently with another canonical write; the atomicity guarantee covers
     /// the remove-then-insert against readers, not against a competing writer.
-    fn replace_canonical_blocks_from(
+    fn replace_canonical_suffix_from(
         &self,
         start_slot: Slot,
-        blocks: Vec<(Slot, OLBlockId)>,
+        block_ids: Vec<OLBlockId>,
     ) -> DbResult<()>;
 }
 

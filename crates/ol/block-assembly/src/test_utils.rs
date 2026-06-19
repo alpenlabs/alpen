@@ -1392,9 +1392,9 @@ impl TestStorageFixtureBuilder {
             fixture
                 .storage()
                 .ol_block()
-                .replace_canonical_blocks_from_async(
+                .replace_canonical_suffix_from_async(
                     parent_header.slot(),
-                    vec![(parent_header.slot(), *commitment.blkid())],
+                    vec![*commitment.blkid()],
                 )
                 .await
                 .expect("Failed to store parent block in canonical index");

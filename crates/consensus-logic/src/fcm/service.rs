@@ -632,7 +632,7 @@ async fn apply_tip_update<C: FcmContext>(
             let pivot_slot = fcm_state.cur_best_block().slot();
             fcm_state.update_tip_block(blk_cmmt, ol_state).await?;
 
-            record_canonical_suffix(fcm_state, pivot_slot, vec![(slot, blkid)]).await?;
+            record_canonical_suffix(fcm_state, pivot_slot, vec![blkid]).await?;
 
             Ok(())
         }
@@ -651,7 +651,7 @@ async fn apply_tip_update<C: FcmContext>(
             let mut applied = Vec::with_capacity(intermediate.len());
             for blkid in intermediate {
                 advance_fcm_to_block(blkid, fcm_state).await?;
-                applied.push((fcm_state.get_block_slot(blkid).await?, blkid));
+                applied.push(blkid);
             }
 
             let final_tip = fcm_state.cur_best_block();
@@ -691,7 +691,7 @@ async fn apply_tip_update<C: FcmContext>(
             let mut applied = Vec::new();
             for blkid in reorg.apply_iter().copied() {
                 advance_fcm_to_block(blkid, fcm_state).await?;
-                applied.push((fcm_state.get_block_slot(blkid).await?, blkid));
+                applied.push(blkid);
             }
 
             let final_tip = fcm_state.cur_best_block();
@@ -731,18 +731,18 @@ async fn apply_tip_update<C: FcmContext>(
 async fn record_canonical_suffix<C: FcmContext>(
     fcm_state: &FcmServiceState<C>,
     pivot_slot: Slot,
-    blocks: Vec<(Slot, OLBlockId)>,
+    block_ids: Vec<OLBlockId>,
 ) -> anyhow::Result<()> {
     let Some(start_slot) = pivot_slot.checked_add(1) else {
         // Truncating above the maximum slot is a no-op; only a non-empty suffix is impossible.
-        if blocks.is_empty() {
+        if block_ids.is_empty() {
             return Ok(());
         }
         return Err(Error::FcmCanonicalSuffixAboveMaxSlot(pivot_slot).into());
     };
     fcm_state
         .ctx()
-        .replace_canonical_blocks_from(start_slot, blocks)
+        .replace_canonical_suffix_from(start_slot, block_ids)
         .await?;
     Ok(())
 }
@@ -1072,14 +1072,27 @@ mod tests {
                 .copied())
         }
 
-        async fn replace_canonical_blocks_from(
+        async fn replace_canonical_suffix_from(
             &self,
             start_slot: Slot,
-            blocks: Vec<(Slot, OLBlockId)>,
+            block_ids: Vec<OLBlockId>,
         ) -> DbResult<()> {
             let mut inner = self.inner.lock().unwrap();
             inner.canonical_blocks.retain(|slot, _| *slot < start_slot);
-            for (slot, id) in blocks {
+            let block_count = block_ids.len();
+            for (offset, id) in block_ids.into_iter().enumerate() {
+                let offset = u64::try_from(offset).map_err(|_| {
+                    strata_db_types::DbError::OLCanonicalSuffixOverflow {
+                        start_slot,
+                        block_count,
+                    }
+                })?;
+                let slot = start_slot.checked_add(offset).ok_or({
+                    strata_db_types::DbError::OLCanonicalSuffixOverflow {
+                        start_slot,
+                        block_count,
+                    }
+                })?;
                 inner
                     .canonical_blocks
                     .insert(slot, OLBlockCommitment::new(slot, id));
@@ -1183,13 +1196,13 @@ mod tests {
             self.storage.get_canonical_block_at(slot).await
         }
 
-        async fn replace_canonical_blocks_from(
+        async fn replace_canonical_suffix_from(
             &self,
             start_slot: Slot,
-            blocks: Vec<(Slot, OLBlockId)>,
+            block_ids: Vec<OLBlockId>,
         ) -> DbResult<()> {
             self.storage
-                .replace_canonical_blocks_from(start_slot, blocks)
+                .replace_canonical_suffix_from(start_slot, block_ids)
                 .await
         }
 
@@ -1697,7 +1710,7 @@ mod tests {
         fixture
             .ctx
             .storage()
-            .replace_canonical_blocks_from(1, vec![(1, fork.a1.blkid()), (2, fork.a2.blkid())])
+            .replace_canonical_suffix_from(1, vec![fork.a1.blkid(), fork.a2.blkid()])
             .await?;
 
         process_fc_message(
@@ -1742,13 +1755,9 @@ mod tests {
 
         let storage = fixture.ctx.storage();
         storage
-            .replace_canonical_blocks_from(
+            .replace_canonical_suffix_from(
                 1,
-                vec![
-                    (1, chain.x1.blkid()),
-                    (2, chain.x2.blkid()),
-                    (3, chain.x3.blkid()),
-                ],
+                vec![chain.x1.blkid(), chain.x2.blkid(), chain.x3.blkid()],
             )
             .await?;
 
@@ -1778,13 +1787,9 @@ mod tests {
         // Simulate a crash that left the index pointing past the recovered tip (x1): slots 2 and 3
         // still hold blocks no longer canonical.
         storage
-            .replace_canonical_blocks_from(
+            .replace_canonical_suffix_from(
                 1,
-                vec![
-                    (1, chain.x1.blkid()),
-                    (2, chain.x2.blkid()),
-                    (3, chain.x3.blkid()),
-                ],
+                vec![chain.x1.blkid(), chain.x2.blkid(), chain.x3.blkid()],
             )
             .await?;
 
@@ -1996,7 +2001,7 @@ mod tests {
         // canonical write.
         assert_eq!(storage.get_canonical_block_at(1).await.unwrap(), None);
         storage
-            .replace_canonical_blocks_from(1, vec![(1, blkid)])
+            .replace_canonical_suffix_from(1, vec![blkid])
             .await
             .unwrap();
         assert_eq!(

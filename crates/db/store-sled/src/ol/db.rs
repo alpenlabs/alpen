@@ -234,11 +234,28 @@ impl OLBlockDatabase for OLBlockDBSled {
         Ok(self.blk_canonical_tree.get(&slot)?)
     }
 
-    fn replace_canonical_blocks_from(
+    fn replace_canonical_suffix_from(
         &self,
         start_slot: Slot,
-        blocks: Vec<(Slot, OLBlockId)>,
+        block_ids: Vec<OLBlockId>,
     ) -> DbResult<()> {
+        let block_count = block_ids.len();
+        let mut blocks = Vec::with_capacity(block_count);
+        for (offset, block_id) in block_ids.into_iter().enumerate() {
+            let offset = u64::try_from(offset).map_err(|_| DbError::OLCanonicalSuffixOverflow {
+                start_slot,
+                block_count,
+            })?;
+            let slot =
+                start_slot
+                    .checked_add(offset)
+                    .ok_or(DbError::OLCanonicalSuffixOverflow {
+                        start_slot,
+                        block_count,
+                    })?;
+            blocks.push((slot, block_id));
+        }
+
         // Collect the suffix slots before the transaction: sled's transactional tree has no range
         // scan. Safe under the single-writer contract (fork choice is the sole writer), so no
         // concurrent insert can land in the range between this read and the commit below.
