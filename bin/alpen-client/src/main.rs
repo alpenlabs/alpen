@@ -95,6 +95,9 @@ mod sequencer_imports {
     };
     pub(super) use strata_proofimpl_alpen_acct::EeAcctProgram;
     pub(super) use strata_proofimpl_alpen_chunk::EeChunkProgram;
+    pub(super) use strata_proofimpl_predicate_keys::{
+        NativeAlpenChunkPredicateKey, PredicateKeyProvider,
+    };
     #[cfg(feature = "sp1")]
     pub(super) use strata_zkvm_hosts::sp1::{alpen_acct_host, alpen_chunk_host};
     #[cfg(feature = "sp1")]
@@ -802,7 +805,10 @@ fn main() {
                         "EE chunk + acct provers: native host (dev/test only)"
                     );
                     let chunk = chunk_builder.native(EeChunkProgram::native_host());
-                    let acct_program = EeAcctProgram::new(EeChunkProgram::test_predicate_key());
+                    let chunk_predicate_key = NativeAlpenChunkPredicateKey
+                        .predicate_key()
+                        .expect("native chunk predicate key must be available");
+                    let acct_program = EeAcctProgram::new(chunk_predicate_key);
                     let acct = acct_builder.native(acct_program.native_host());
                     (chunk, acct)
                 } else {

@@ -27,10 +27,12 @@ prover = [
   "dep:strata-ol-stf",
   "dep:strata-paas",
   "dep:strata-proofimpl-checkpoint",
+  "dep:strata-proofimpl-predicate-keys",
   "dep:zkaleido",
 ]
 sp1 = [
   "prover",
+  "strata-proofimpl-predicate-keys/sp1",
   "strata-paas/remote",
   "dep:strata-zkvm-hosts",
   "dep:zkaleido-sp1-host",
@@ -81,6 +83,7 @@ strata-paas = { workspace = true, optional = true }
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-checkpoint = { workspace = true, optional = true }
+strata-proofimpl-predicate-keys = { workspace = true, optional = true }
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
 strata-status.workspace = true

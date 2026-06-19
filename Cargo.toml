@@ -63,6 +63,7 @@ members = [
   "crates/proof-impl/alpen-chunk",
   "crates/proof-impl/alpen-acct",
   "crates/proof-impl/checkpoint",
+  "crates/proof-impl/predicate-keys",
   "crates/zkvm/hosts",
   "crates/reth/chainspec",
   "crates/reth/db",
@@ -200,6 +201,7 @@ strata-proofimpl-alpen-acct = { path = "crates/proof-impl/alpen-acct" }
 strata-proofimpl-alpen-chunk = { path = "crates/proof-impl/alpen-chunk" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
+strata-proofimpl-predicate-keys = { path = "crates/proof-impl/predicate-keys" }
 strata-prover-core = { path = "crates/prover-core" }
 strata-simple-ee = { path = "crates/simple-ee" }
 strata-snark-acct-runtime = { path = "crates/snark-acct-runtime" }

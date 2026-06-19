@@ -76,6 +76,7 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-alpen-acct.workspace = true
 strata-proofimpl-alpen-chunk.workspace = true
+strata-proofimpl-predicate-keys.workspace = true
 strata-service.workspace = true
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true

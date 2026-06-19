@@ -5,11 +5,7 @@
 //! This tool is intended for use in testing and development only. It generates
 //! keys and other data that should not be used in production.
 
-#[cfg(feature = "sp1-builder")]
-use sp1_verifier as _;
 use strata_btc_verification as _;
-#[cfg(feature = "sp1-builder")]
-use zkaleido_sp1_groth16_verifier as _;
 
 mod acct_predicate;
 mod args;
