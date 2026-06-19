@@ -9,7 +9,7 @@ use strata_identifiers::{EpochCommitment, OLBlockId};
 use crate::DbResult;
 
 /// Database interface for EE node account state management.
-#[strata_db_macros::gen_proxy(error = crate::error::DbError, tracing_component = "storage:ee_node")]
+#[strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:ee_node")]
 pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Stores EE account state for a given OL epoch commitment.
     fn store_ee_account_state(

@@ -201,8 +201,10 @@ pub fn create_node_storage(db: Arc<SledBackend>, handle: Handle) -> anyhow::Resu
 #[cfg(any(test, feature = "test-utils"))]
 pub fn test_runtime_handle() -> Handle {
     use std::sync::OnceLock;
-    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| tokio::runtime::Runtime::new().expect("test: build runtime"))
+
+    use tokio::runtime::Runtime;
+    static RT: OnceLock<Runtime> = OnceLock::new();
+    RT.get_or_init(|| Runtime::new().expect("test: build runtime"))
         .handle()
         .clone()
 }

@@ -6,7 +6,10 @@
 /// whose `tracing_component` attribute mirrors this exact value. The constant
 /// is retained as the canonical registry even though the proxy references the
 /// string literal directly.
-#[allow(dead_code, reason = "mirrored into gen_proxy `tracing_component` attribute")]
+#[expect(
+    dead_code,
+    reason = "mirrored into gen_proxy `tracing_component` attribute"
+)]
 pub(crate) mod components {
     /// EENodeDatabase operations. Fields: account_id, blkid, finalized_height
     pub(crate) const STORAGE_EE_NODE: &str = "storage:ee_node";

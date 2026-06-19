@@ -41,7 +41,7 @@ mod sequencer_services {
     use strata_ol_mempool::MempoolHandle;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_service::DumbTickHandle;
-    use strata_storage::{ops::writer::EnvelopeDataOps, BroadcastDbOps};
+    use strata_storage::{BroadcastDbOps, ops::writer::EnvelopeDataOps};
     use tokio::sync::mpsc;
 
     use crate::{

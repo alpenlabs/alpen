@@ -81,7 +81,10 @@ use strata_l1_txfmt::MagicBytes;
 use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, L1Height};
-use tokio::sync::{mpsc, watch};
+use tokio::{
+    runtime::Handle,
+    sync::{mpsc, watch},
+};
 use tracing::{error, info};
 
 #[cfg(feature = "sequencer")]
@@ -270,7 +273,7 @@ fn main() {
             let dbs = init_db_storage(&datadir, config.db_retry_count())
                 .context("failed to load alpen database")?;
 
-            let db_handle = tokio::runtime::Handle::current();
+            let db_handle = Handle::current();
             let storage: Arc<_> = dbs.node_storage(db_handle.clone()).into();
 
             let ol_client = if ext.dummy_ol_client {

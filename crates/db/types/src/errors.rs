@@ -5,6 +5,8 @@ use strata_primitives::l2::L2BlockId;
 use strata_primitives::L1Height;
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
+#[cfg(feature = "proxies")]
+use tokio::task::JoinError;
 use typed_sled::error::Error;
 
 use crate::mmr_index::{LeafPos, NodePos};
@@ -238,8 +240,8 @@ impl From<OpsError> for DbError {
 }
 
 #[cfg(feature = "proxies")]
-impl From<tokio::task::JoinError> for DbError {
-    fn from(err: tokio::task::JoinError) -> Self {
+impl From<JoinError> for DbError {
+    fn from(err: JoinError) -> Self {
         DbError::WorkerFailedStrangely(err.to_string())
     }
 }

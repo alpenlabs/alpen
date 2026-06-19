@@ -4,6 +4,7 @@ use strata_acct_types::Hash;
 use strata_identifiers::OLBlockId;
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
+use tokio::task::JoinError;
 use typed_sled::error::Error as SledError;
 
 pub type DbResult<T> = Result<T, DbError>;
@@ -120,8 +121,8 @@ impl DbError {
     }
 }
 
-impl From<tokio::task::JoinError> for DbError {
-    fn from(err: tokio::task::JoinError) -> Self {
+impl From<JoinError> for DbError {
+    fn from(err: JoinError) -> Self {
         DbError::WorkerPanic(err.to_string())
     }
 }

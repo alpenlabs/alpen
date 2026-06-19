@@ -8,7 +8,7 @@
 /// values; the manager layer also tags its own spans with them. Some entries
 /// are therefore only referenced from the (string-literal) proxy attributes,
 /// so the module allows dead code to keep the full registry documented here.
-#[allow(
+#[expect(
     dead_code,
     reason = "mirrored into gen_proxy `tracing_component` attributes"
 )]

@@ -435,7 +435,7 @@ mod tests {
     use bitcoin::{BlockHash, Network, Work, hashes::Hash};
     use bitcoind_async_client::corepc_types::model::GetBlockchainInfo;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{ol_block::BlockStatus, MmrId};
+    use strata_db_types::{MmrId, ol_block::BlockStatus};
     use strata_identifiers::{Buf32, L1BlockId};
     use strata_ol_params::OLParams;
     use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
