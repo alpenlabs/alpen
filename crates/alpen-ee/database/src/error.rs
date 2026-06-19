@@ -96,6 +96,11 @@ pub enum DbError {
     #[error("db ops: {0}")]
     DbOpsError(#[from] OpsError),
 
+    /// A database worker task spawned on the blocking pool panicked or was
+    /// cancelled before returning a result.
+    #[error("db worker task failed to return a result: {0}")]
+    WorkerPanic(String),
+
     /// Sled database error.
     #[error("sled: {0}")]
     Sled(String),
@@ -112,6 +117,12 @@ pub enum DbError {
 impl DbError {
     pub(crate) fn skipped_ol_slot(expected: u64, got: u64) -> DbError {
         DbError::SkippedOLSlot { expected, got }
+    }
+}
+
+impl From<tokio::task::JoinError> for DbError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        DbError::WorkerPanic(err.to_string())
     }
 }
 

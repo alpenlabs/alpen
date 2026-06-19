@@ -270,11 +270,8 @@ fn main() {
             let dbs = init_db_storage(&datadir, config.db_retry_count())
                 .context("failed to load alpen database")?;
 
-            let db_pool = threadpool::Builder::new()
-                .num_threads(8)
-                .thread_name("ee-db-pool".into())
-                .build();
-            let storage: Arc<_> = dbs.node_storage(db_pool.clone()).into();
+            let db_handle = tokio::runtime::Handle::current();
+            let storage: Arc<_> = dbs.node_storage(db_handle.clone()).into();
 
             let ol_client = if ext.dummy_ol_client {
                 use strata_identifiers::Buf32;
@@ -603,9 +600,9 @@ fn main() {
                     .await
                     .map_err(|e| eyre::eyre!("failed to get sequencer address: {e}"))?;
 
-                // Wrap raw DBs in ops using the shared DB threadpool.
-                let broadcast_ops = Arc::new(dbs.broadcast_ops(db_pool.clone()));
-                let envelope_ops = Arc::new(dbs.chunked_envelope_ops(db_pool));
+                // Wrap raw DBs in ops using the shared runtime handle.
+                let broadcast_ops = Arc::new(dbs.broadcast_ops(db_handle.clone()));
+                let envelope_ops = Arc::new(dbs.chunked_envelope_ops(db_handle));
 
                 // Launch broadcaster service and create chunked envelope task.
                 let broadcast_poll_interval = 5_000;

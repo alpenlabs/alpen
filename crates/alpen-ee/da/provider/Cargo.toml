@@ -29,6 +29,5 @@ tracing.workspace = true
 [dev-dependencies]
 strata-db-store-sled.workspace = true
 strata-l1-envelope-fmt.workspace = true
-strata-storage.workspace = true
-threadpool.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }
 tokio.workspace = true
