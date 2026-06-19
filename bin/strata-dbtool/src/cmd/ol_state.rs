@@ -11,6 +11,10 @@ use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 
 use super::{
     checkpoint::{get_latest_checkpoint_last_slot, get_latest_finalized_checkpoint_epoch},
+    mmr::{
+        execute_mmr_index_revert_plan, get_mmr_index_revert_plan, print_mmr_index_revert_summary,
+        validate_mmr_index_revert_plan, validate_mmr_index_revert_prefixes,
+    },
     ol::get_ol_block_slot_and_epoch,
 };
 use crate::{
@@ -174,6 +178,20 @@ pub(crate) fn revert_ol_state(
         ));
     }
 
+    let target_state = db
+        .ol_state_db()
+        .get_toplevel_ol_state(target_commitment)
+        .internal_error("Failed to read target OL state")?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                "OL state not found for target block".to_string(),
+                Box::new(target_commitment),
+            )
+        })?;
+    let mmr_revert_plan = get_mmr_index_revert_plan(db, &target_state)?;
+    validate_mmr_index_revert_plan(&mmr_revert_plan)?;
+    validate_mmr_index_revert_prefixes(db, &mmr_revert_plan)?;
+
     println!("OL state chain tip slot {chain_tip_slot}");
     println!("OL state finalized slot {finalized_slot}");
     println!("Latest checkpointed slot {checkpoint_last_slot}");
@@ -184,7 +202,7 @@ pub(crate) fn revert_ol_state(
     let mut commitments_to_delete = Vec::new();
     let mut blocks_to_mark_unchecked = Vec::new();
     let mut blocks_to_delete = Vec::new();
-    let high_watermark_to_rollback = db
+    let high_watermark_to_revert = db
         .ol_block_db()
         .get_block_high_watermark()
         .internal_error("Failed to get OL block high-watermark")?
@@ -210,25 +228,31 @@ pub(crate) fn revert_ol_state(
                 if args.delete_blocks {
                     blocks_to_delete.push(block_id);
                 }
-
-                if !dry_run {
-                    db.ol_state_db()
-                        .del_ol_write_batch(commitment)
-                        .internal_error("Failed to delete OL write batch")?;
-                    db.ol_state_db()
-                        .del_toplevel_ol_state(commitment)
-                        .internal_error("Failed to delete OL state")?;
-                    db.ol_block_db()
-                        .set_block_status(block_id, BlockStatus::Unchecked)
-                        .internal_error("Failed to set OL block status")?;
-
-                    if args.delete_blocks {
-                        db.ol_block_db()
-                            .del_block_data(block_id)
-                            .internal_error("Failed to delete OL block")?;
-                    }
-                }
             }
+        }
+    }
+
+    // OL cleanup stores and the MMR index DB do not share a transaction.
+    // The MMR preflight above validates counts and peaks before any mutation,
+    // but a later storage failure can still leave partial effects.
+    if !dry_run {
+        for commitment in &commitments_to_delete {
+            db.ol_state_db()
+                .del_ol_write_batch(*commitment)
+                .internal_error("Failed to delete OL write batch")?;
+            db.ol_state_db()
+                .del_toplevel_ol_state(*commitment)
+                .internal_error("Failed to delete OL state")?;
+        }
+        for block_id in &blocks_to_mark_unchecked {
+            db.ol_block_db()
+                .set_block_status(*block_id, BlockStatus::Unchecked)
+                .internal_error("Failed to set OL block status")?;
+        }
+        for block_id in &blocks_to_delete {
+            db.ol_block_db()
+                .del_block_data(*block_id)
+                .internal_error("Failed to delete OL block")?;
         }
     }
 
@@ -240,10 +264,10 @@ pub(crate) fn revert_ol_state(
 
     if !dry_run {
         revert_indexing(db, target_epoch, target_commitment)?;
-        if high_watermark_to_rollback.is_some() {
+        if high_watermark_to_revert.is_some() {
             db.ol_block_db()
                 .rollback_block_high_watermark(target_commitment)
-                .internal_error("Failed to roll back OL block high-watermark")?;
+                .internal_error("Failed to revert OL block high-watermark")?;
         }
         db.ol_block_db()
             .replace_canonical_suffix_from(target_slot, vec![target_block_id])
@@ -280,6 +304,10 @@ pub(crate) fn revert_ol_state(
         }
     }
 
+    if !dry_run {
+        execute_mmr_index_revert_plan(db, &mmr_revert_plan)?;
+    }
+
     let mode = if dry_run { "DRY RUN" } else { "EXECUTED" };
     println!("========================================");
     println!("{mode} SUMMARY");
@@ -288,13 +316,21 @@ pub(crate) fn revert_ol_state(
         "OL states/write batches to delete: {}",
         commitments_to_delete.len()
     );
+    println!("OL state-indexing revert target: epoch {target_epoch} slot {target_slot}");
     println!(
         "Blocks to mark unchecked: {}",
         blocks_to_mark_unchecked.len()
     );
     println!("Blocks to delete: {}", blocks_to_delete.len());
-    if let Some(high_watermark) = high_watermark_to_rollback {
-        println!("Block high-watermark rollback: {high_watermark} -> {target_commitment}");
+    if let Some(high_watermark) = high_watermark_to_revert {
+        println!(
+            "Block high-watermark current: {}",
+            format_ol_commitment(&high_watermark)
+        );
+        println!(
+            "Block high-watermark revert target: {}",
+            format_ol_commitment(&target_commitment)
+        );
     }
     println!("Canonical block index rewrite from slot: {target_slot}");
     println!("Checkpoints to delete: {}", checkpoints_to_delete.len());
@@ -302,7 +338,7 @@ pub(crate) fn revert_ol_state(
         "Epoch summaries to delete: {}",
         epoch_summaries_to_delete.len()
     );
-    println!("Indexing rollback target: epoch {target_epoch} slot {target_slot}");
+    print_mmr_index_revert_summary(&mmr_revert_plan);
 
     if dry_run {
         println!();
@@ -312,7 +348,21 @@ pub(crate) fn revert_ol_state(
     Ok(())
 }
 
-/// Rolls back the indexing DB so its `last_applied_block` and per-block
+/// Formats an OL block commitment with the full block ID for operator summaries.
+///
+/// [`OLBlockCommitment`] implements [`std::fmt::Display`] with an abbreviated
+/// block ID, which is useful in compact logs but not enough for dbtool revert
+/// output. The revert summary prints full IDs so operators can copy/paste the
+/// exact source and target commitments.
+fn format_ol_commitment(commitment: &OLBlockCommitment) -> String {
+    format!(
+        "{}@{}",
+        commitment.slot(),
+        hex::encode(commitment.blkid().as_ref())
+    )
+}
+
+/// Reverts the indexing DB so its `last_applied_block` and per-block
 /// records line up with the reverted tip. Without this, re-execution past
 /// `target_slot` errors with `BlockIndexingConflict`.
 fn revert_indexing(
@@ -322,9 +372,191 @@ fn revert_indexing(
 ) -> Result<(), DisplayedError> {
     db.ol_state_indexing_db()
         .rollback_to_epoch(target_epoch)
-        .internal_error("Failed to roll back indexing for later epochs")?;
+        .internal_error("Failed to revert indexing for later epochs")?;
     db.ol_state_indexing_db()
         .rollback_to_block(target_epoch, target_commitment)
-        .internal_error("Failed to roll back indexing within target epoch")?;
+        .internal_error("Failed to revert indexing within target epoch")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::{
+        mmr_index::MmrIndexDatabase,
+        ol_block::{BlockStatus, OLBlockDatabase},
+        ol_state::OLStateDatabase,
+        MmrId,
+    };
+    use strata_identifiers::{Buf32, Buf64, Hash, L1BlockCommitment, OLBlockId};
+    use strata_ol_chain_types::{
+        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    };
+    use strata_ol_params::OLParams;
+    use strata_ol_state_types::{OLState, MMR_SENTINEL_DUMMY_LEAF_HASH};
+    use strata_storage::MmrIndexManager;
+    use tokio::runtime::Runtime;
+
+    use super::*;
+
+    fn genesis_target_state() -> OLState {
+        OLState::from_genesis_params(&OLParams::new_empty(L1BlockCommitment::default()))
+            .expect("valid genesis params")
+    }
+
+    fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlock {
+        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeader::new(
+            0,
+            BlockFlags::zero(),
+            slot,
+            epoch,
+            parent_blkid,
+            body.compute_hash_commitment(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+
+        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+    }
+
+    #[test]
+    fn revert_ol_state_force_noops_when_target_is_already_tip() {
+        let db = get_test_sled_backend();
+        let target_state = genesis_target_state();
+        let target_block = make_block(0, 0, OLBlockId::from(Buf32::zero()));
+        let target_block_id = target_block.header().compute_blkid();
+        let target_commitment = OLBlockCommitment::new(0, target_block_id);
+
+        db.ol_block_db()
+            .put_block_data(target_block)
+            .expect("seed target block");
+        db.ol_block_db()
+            .replace_canonical_suffix_from(0, vec![target_block_id])
+            .expect("seed canonical target block");
+        db.ol_block_db()
+            .set_block_status(target_block_id, BlockStatus::Valid)
+            .expect("mark target valid");
+        db.ol_state_db()
+            .put_toplevel_ol_state(target_commitment, target_state.clone())
+            .expect("seed target state");
+
+        let runtime = Runtime::new().expect("create runtime");
+        let manager = MmrIndexManager::new(runtime.handle().clone(), db.mmr_index_db());
+        let l1_handle = manager.get_handle(MmrId::L1BlockRefs);
+        l1_handle
+            .append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)
+            .expect("append L1 sentinel");
+        l1_handle
+            .append_leaf_blocking(Hash::from([0x11; 32]))
+            .expect("append extra L1 leaf");
+
+        revert_ol_state(
+            db.as_ref(),
+            RevertOLStateArgs {
+                block_id: hex::encode(target_block_id.as_ref()),
+                delete_blocks: false,
+                revert_checkpointed_blocks: false,
+                force: true,
+                l1_reorg_safe_depth: 0,
+            },
+        )
+        .expect("revert OL state");
+
+        assert_eq!(
+            l1_handle.get_num_leaves_blocking().expect("L1 leaf count"),
+            2
+        );
+        assert_eq!(
+            db.ol_block_db()
+                .get_block_status(target_block_id)
+                .expect("target block status"),
+            Some(BlockStatus::Valid)
+        );
+        assert!(db
+            .ol_state_db()
+            .get_toplevel_ol_state(target_commitment)
+            .expect("target state")
+            .is_some());
+        assert_eq!(
+            db.mmr_index_db()
+                .get_leaf_count(MmrId::L1BlockRefs.to_bytes())
+                .expect("L1 leaf count row"),
+            2
+        );
+    }
+
+    #[test]
+    fn revert_ol_state_rejects_non_prefix_mmr() {
+        let db = get_test_sled_backend();
+        let target_state = genesis_target_state();
+        let tip_state = genesis_target_state();
+        let target_block = make_block(0, 0, OLBlockId::from(Buf32::zero()));
+        let target_block_id = target_block.header().compute_blkid();
+        let target_commitment = OLBlockCommitment::new(0, target_block_id);
+        let tip_block = make_block(1, 0, target_block_id);
+        let tip_block_id = tip_block.header().compute_blkid();
+        let tip_commitment = OLBlockCommitment::new(1, tip_block_id);
+
+        db.ol_block_db()
+            .put_block_data(target_block)
+            .expect("seed target block");
+        db.ol_block_db()
+            .put_block_data(tip_block)
+            .expect("seed tip block");
+        db.ol_block_db()
+            .replace_canonical_suffix_from(0, vec![target_block_id, tip_block_id])
+            .expect("seed canonical blocks");
+        db.ol_block_db()
+            .set_block_status(target_block_id, BlockStatus::Valid)
+            .expect("mark target valid");
+        db.ol_block_db()
+            .set_block_status(tip_block_id, BlockStatus::Valid)
+            .expect("mark tip valid");
+        db.ol_state_db()
+            .put_toplevel_ol_state(target_commitment, target_state)
+            .expect("seed target state");
+        db.ol_state_db()
+            .put_toplevel_ol_state(tip_commitment, tip_state)
+            .expect("seed tip state");
+
+        let runtime = Runtime::new().expect("create runtime");
+        let manager = MmrIndexManager::new(runtime.handle().clone(), db.mmr_index_db());
+        let l1_handle = manager.get_handle(MmrId::L1BlockRefs);
+        l1_handle
+            .append_leaf_blocking(Hash::from([0x11; 32]))
+            .expect("append non-target L1 first leaf");
+        l1_handle
+            .append_leaf_blocking(Hash::from([0x22; 32]))
+            .expect("append extra L1 leaf");
+
+        let err = revert_ol_state(
+            db.as_ref(),
+            RevertOLStateArgs {
+                block_id: hex::encode(target_block_id.as_ref()),
+                delete_blocks: false,
+                revert_checkpointed_blocks: false,
+                force: true,
+                l1_reorg_safe_depth: 0,
+            },
+        )
+        .expect_err("non-prefix MMR should abort revert");
+
+        assert!(err.to_string().contains("does not match target prefix"));
+        assert!(db
+            .ol_state_db()
+            .get_toplevel_ol_state(tip_commitment)
+            .expect("tip state")
+            .is_some());
+        assert_eq!(
+            db.ol_block_db()
+                .get_block_status(tip_block_id)
+                .expect("tip block status"),
+            Some(BlockStatus::Valid)
+        );
+        assert_eq!(
+            l1_handle.get_num_leaves_blocking().expect("L1 leaf count"),
+            2
+        );
+    }
 }
