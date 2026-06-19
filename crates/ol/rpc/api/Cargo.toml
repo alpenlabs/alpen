@@ -16,8 +16,5 @@ strata-primitives = { workspace = true, features = ["jsonschema"] }
 
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 
-[dev-dependencies]
-serde_json.workspace = true
-
 [features]
 client = ["jsonrpsee/client"]

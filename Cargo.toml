@@ -73,6 +73,7 @@ members = [
   "crates/reth/witness",
   "crates/rpc/open-rpc",
   "crates/rpc/open-rpc-macros",
+  "crates/rpc/open-rpc-spec",
   "crates/simple-ee",
   "crates/snark-acct-runtime",
   "crates/snark-acct-sys",
