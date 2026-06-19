@@ -1,12 +1,16 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmManifest;
-use strata_db_types::{l1::L1Database, DbError, DbResult};
-use strata_primitives::{l1::L1BlockId, L1Height};
+use strata_db_types::l1::L1Database;
+use strata_db_types::{DbError, DbResult};
+use strata_primitives::l1::L1BlockId;
+use strata_primitives::L1Height;
 use tokio::runtime::Handle;
 use tracing::{error, instrument};
 
-use crate::{cache::CacheTable, instrumentation::components, ops};
+use crate::cache::CacheTable;
+use crate::instrumentation::components;
+use crate::ops;
 
 /// Caching manager of L1 block data
 #[expect(

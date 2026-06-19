@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use ops::mempool::MempoolDataOps;
-use strata_db_types::{
-    mempool::{MempoolDatabase, MempoolTxData},
-    DbResult,
-};
+use strata_db_types::mempool::{MempoolDatabase, MempoolTxData};
+use strata_db_types::DbResult;
 use strata_identifiers::OLTxId;
 use tokio::runtime::Handle;
 

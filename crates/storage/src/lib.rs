@@ -8,20 +8,18 @@ pub mod ops;
 use std::sync::Arc;
 
 use anyhow::Context;
-pub use managers::{
-    asm::AsmStateManager,
-    checkpoint_proof::CheckpointProofDbManager,
-    client_state::ClientStateManager,
-    l1::L1BlockManager,
-    mempool::MempoolDbManager,
-    mmr_index::{MmrAppendRequest, MmrIndexHandle, MmrIndexManager, MmrStateView},
-    ol::OLBlockManager,
-    ol_checkpoint::OLCheckpointManager,
-    ol_state::OLStateManager,
-    ol_state_indexing::OLStateIndexingManager,
-    prover_task::ProverTaskDbManager,
-    writer::L1WriterManager,
-};
+pub use managers::asm::AsmStateManager;
+pub use managers::checkpoint_proof::CheckpointProofDbManager;
+pub use managers::client_state::ClientStateManager;
+pub use managers::l1::L1BlockManager;
+pub use managers::mempool::MempoolDbManager;
+pub use managers::mmr_index::{MmrAppendRequest, MmrIndexHandle, MmrIndexManager, MmrStateView};
+pub use managers::ol::OLBlockManager;
+pub use managers::ol_checkpoint::OLCheckpointManager;
+pub use managers::ol_state::OLStateManager;
+pub use managers::ol_state_indexing::OLStateIndexingManager;
+pub use managers::prover_task::ProverTaskDbManager;
+pub use managers::writer::L1WriterManager;
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_store_sled::SledBackend;
 use strata_db_types::backend::DatabaseBackend;
@@ -139,10 +137,7 @@ impl NodeStorage {
 
 /// Given a raw database, creates storage managers and returns a [`NodeStorage`]
 /// instance around the underlying raw database.
-pub fn create_node_storage(
-    db: Arc<SledBackend>,
-    handle: Handle,
-) -> anyhow::Result<NodeStorage> {
+pub fn create_node_storage(db: Arc<SledBackend>, handle: Handle) -> anyhow::Result<NodeStorage> {
     // Extract database references
     let asm_db = db.asm_db();
     let l1_db = db.l1_db();

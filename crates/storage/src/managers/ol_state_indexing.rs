@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
-use strata_db_types::{
-    ol_state_index::{
-        AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites,
-        OLStateIndexingDatabase,
-    },
-    DbResult,
+use strata_db_types::ol_state_index::{
+    AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites,
+    OLStateIndexingDatabase,
 };
+use strata_db_types::DbResult;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment};
 use tokio::runtime::Handle;
 

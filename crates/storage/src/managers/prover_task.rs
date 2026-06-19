@@ -9,7 +9,9 @@
 
 use std::sync::Arc;
 
-use strata_db_types::{errors::DbError, prover_task::ProverTaskDatabase, DbResult};
+use strata_db_types::errors::DbError;
+use strata_db_types::prover_task::ProverTaskDatabase;
+use strata_db_types::DbResult;
 use strata_paas::{ProverError, ProverResult, TaskRecord, TaskRecordData, TaskStatus, TaskStore};
 use tokio::runtime::Handle;
 

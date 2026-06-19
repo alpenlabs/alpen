@@ -4,11 +4,15 @@
 use std::sync::Arc;
 
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_db_types::{client_state::ClientStateDatabase, DbResult};
-use strata_primitives::{l1::L1BlockCommitment, L1Height};
-use tokio::{runtime::Handle, sync::Mutex};
+use strata_db_types::client_state::ClientStateDatabase;
+use strata_db_types::DbResult;
+use strata_primitives::l1::L1BlockCommitment;
+use strata_primitives::L1Height;
+use tokio::runtime::Handle;
+use tokio::sync::Mutex;
 
-use crate::{cache, ops::client_state::ClientStateOps};
+use crate::cache;
+use crate::ops::client_state::ClientStateOps;
 
 #[expect(
     missing_debug_implementations,

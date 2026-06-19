@@ -2,10 +2,8 @@
 
 use std::sync::Arc;
 
-use strata_db_types::{
-    ol_block::{BlockStatus, OLBlockDatabase},
-    DbResult,
-};
+use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
+use strata_db_types::DbResult;
 use strata_identifiers::{OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
 use strata_primitives::OLBlockCommitment;
@@ -285,7 +283,8 @@ mod tests {
 
     use proptest::prelude::*;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{backend::DatabaseBackend, ol_block::BlockStatus};
+    use strata_db_types::backend::DatabaseBackend;
+    use strata_db_types::ol_block::BlockStatus;
     use strata_identifiers::{Buf32, OLBlockId};
     use strata_ol_chain_types_new::test_utils as ol_test_utils;
     use tokio::runtime::Runtime;

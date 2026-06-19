@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use strata_db_types::{
-    l1_writer::{BundledPayloadEntry, L1WriterDatabase},
-    DbResult,
-};
+use strata_db_types::l1_writer::{BundledPayloadEntry, L1WriterDatabase};
+use strata_db_types::DbResult;
 use tokio::runtime::Handle;
 
 use crate::ops;

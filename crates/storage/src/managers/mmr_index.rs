@@ -1,15 +1,18 @@
 //! High-level manager for MMR index database access.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::collections::BTreeSet;
+use std::sync::Arc;
 
+use strata_db_types::mmr_index::MmrIndexDatabase;
 use strata_db_types::{
-    mmr_index::MmrIndexDatabase, num_leaves_to_mmr_size, DbError, DbResult, LeafPos, MmrBatchWrite,
-    MmrId, MmrNodePos, MmrNodeTable, NodePos, NodeTable, RawMmrId,
+    num_leaves_to_mmr_size, DbError, DbResult, LeafPos, MmrBatchWrite, MmrId, MmrNodePos,
+    MmrNodeTable, NodePos, NodeTable, RawMmrId,
 };
 use strata_identifiers::Hash;
 use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use strata_merkle_node_store::peak_positions;
-use tokio::{runtime::Handle, task::spawn_blocking};
+use tokio::runtime::Handle;
+use tokio::task::spawn_blocking;
 
 use super::mmr_algorithm;
 use crate::ops::mmr_index::MmrIndexOps;

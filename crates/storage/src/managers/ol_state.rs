@@ -1,14 +1,17 @@
 //! High-level OL state interface.
 
-use std::{num::NonZeroUsize, sync::Arc};
+use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 use futures::TryFutureExt;
-use strata_db_types::{ol_state::OLStateDatabase, DbResult};
+use strata_db_types::ol_state::OLStateDatabase;
+use strata_db_types::DbResult;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use tokio::runtime::Handle;
 
-use crate::{cache::CacheTable, ops::ol_state::OLStateOps};
+use crate::cache::CacheTable;
+use crate::ops::ol_state::OLStateOps;
 
 /// Default cache capacity for OL state and write batch caches.
 const DEFAULT_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(64).expect("64 is non-zero");
@@ -193,10 +196,10 @@ mod tests {
     use proptest::prelude::*;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::backend::DatabaseBackend;
-    use strata_identifiers::{test_utils::ol_block_commitment_strategy, OLBlockCommitment};
-    use strata_ol_state_types::{
-        test_utils::ol_state_strategy, OLAccountState, OLState, WriteBatch,
-    };
+    use strata_identifiers::test_utils::ol_block_commitment_strategy;
+    use strata_identifiers::OLBlockCommitment;
+    use strata_ol_state_types::test_utils::ol_state_strategy;
+    use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
     use tokio::runtime::Runtime;
 
     use super::*;

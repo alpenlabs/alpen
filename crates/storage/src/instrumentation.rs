@@ -8,7 +8,10 @@
 /// values; the manager layer also tags its own spans with them. Some entries
 /// are therefore only referenced from the (string-literal) proxy attributes,
 /// so the module allows dead code to keep the full registry documented here.
-#[allow(dead_code, reason = "mirrored into gen_proxy `tracing_component` attributes")]
+#[allow(
+    dead_code,
+    reason = "mirrored into gen_proxy `tracing_component` attributes"
+)]
 pub(crate) mod components {
     /// L1Database operations. Fields: blkid, height
     pub(crate) const STORAGE_L1: &str = "storage:l1";

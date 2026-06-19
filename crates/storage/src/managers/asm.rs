@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use strata_asm_common::AuxData;
-use strata_db_types::{asm::AsmDatabase, DbResult};
+use strata_db_types::asm::AsmDatabase;
+use strata_db_types::DbResult;
 use strata_primitives::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
 use tokio::runtime::Handle;

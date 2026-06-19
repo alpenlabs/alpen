@@ -5,7 +5,9 @@ use std::sync::Arc;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{common::L1PayloadIntentIndex, ol_checkpoint::OLCheckpointDatabase, DbResult};
+use strata_db_types::common::L1PayloadIntentIndex;
+use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
+use strata_db_types::DbResult;
 use strata_identifiers::{Epoch, EpochCommitment};
 use tokio::runtime::Handle;
 
@@ -478,9 +480,8 @@ mod tests {
     use std::sync::Arc;
 
     use proptest::prelude::*;
-    use strata_asm_proto_checkpoint_types::{
-        test_utils::create_test_checkpoint_payload, CheckpointPayload,
-    };
+    use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
+    use strata_asm_proto_checkpoint_types::CheckpointPayload;
     use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     // The upstream `checkpoint_payload_strategy` can generate sidecars whose total OL log
@@ -489,13 +490,10 @@ mod tests {
     // on [`strata_db_tests::ol_checkpoint_tests::checkpoint_payload_strategy`].
     use strata_db_tests::ol_checkpoint_tests::checkpoint_payload_strategy;
     use strata_db_types::backend::DatabaseBackend;
-    use strata_identifiers::{
-        test_utils::{
-            buf32_strategy, epoch_strategy, l1_block_commitment_strategy,
-            ol_block_commitment_strategy,
-        },
-        Epoch, EpochCommitment,
+    use strata_identifiers::test_utils::{
+        buf32_strategy, epoch_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy,
     };
+    use strata_identifiers::{Epoch, EpochCommitment};
     use tokio::runtime::Runtime;
 
     use super::*;

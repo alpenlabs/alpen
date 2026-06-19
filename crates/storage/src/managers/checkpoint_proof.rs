@@ -7,7 +7,8 @@
 
 use std::sync::Arc;
 
-use strata_db_types::{checkpoint_proof::CheckpointProofDatabase, DbResult};
+use strata_db_types::checkpoint_proof::CheckpointProofDatabase;
+use strata_db_types::DbResult;
 use strata_identifiers::EpochCommitment;
 use tokio::runtime::Handle;
 use zkaleido::ProofReceiptWithMetadata;
