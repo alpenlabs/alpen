@@ -4,7 +4,6 @@ mod block;
 mod block_flags;
 mod error;
 mod log;
-mod log_payloads;
 mod proofs;
 mod transaction;
 mod validation;
@@ -34,7 +33,8 @@ mod ssz_generated {
 }
 
 pub use block_flags::*;
-pub use log_payloads::*;
+// Re-export the OL log types (canonically defined in `strata-ol-logs`).
+pub use log::*;
 // Re-export generated SSZ types with their canonical names
-pub use ssz_generated::ssz::{block::*, log::*, proofs::*, transaction::*};
+pub use ssz_generated::ssz::{block::*, proofs::*, transaction::*};
 pub use validation::*;

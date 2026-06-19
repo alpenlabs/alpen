@@ -14,5 +14,5 @@ class TerminalBlockAssemblyFastL1Test(TerminalBlockAssemblyBase):
     l1_mining_interval_seconds = 2.0
     terminal_blocks_to_validate = 2
     terminal_slot_timeout_seconds = 180
-    # Conservative floor: fast L1 should pack several manifests into each terminal block.
-    min_l1_manifests_in_terminal_block = 2
+    # Conservative floor: fast L1 should contribute several manifests to each epoch.
+    min_l1_manifests_in_epoch = 2

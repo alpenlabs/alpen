@@ -8,10 +8,10 @@ use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 
 use crate::{
-    BlockAssemblyError, FixedSlotSealing,
+    BlockAssemblyError, FixedSlotSealing, LimitAwareSealing,
     block_assembly::generate_block_template_inner,
     context::BlockAssemblyContext,
-    da_tracker::AccumulatedDaData,
+    resource_state::EpochResourceState,
     test_utils::{
         FailingStateProvider, MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider,
         TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv, TestStorageFixtureBuilder, create_test_storage,
@@ -40,7 +40,7 @@ async fn test_missing_parent_fails() {
         env.epoch_sealing_policy(),
         env.sequencer_config(),
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -61,7 +61,7 @@ async fn test_state_provider_failure_propagates() {
         1,
         OLBlockId::from(Buf32::from([7; 32])),
     ));
-    let epoch_sealing_policy = FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH);
+    let epoch_sealing_policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
     let sequencer_config = SequencerConfig::default();
 
     let err = generate_block_template_inner(
@@ -69,7 +69,7 @@ async fn test_state_provider_failure_propagates() {
         &epoch_sealing_policy,
         &sequencer_config,
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -93,7 +93,7 @@ async fn test_get_transactions_failure_propagates() {
         env.epoch_sealing_policy(),
         env.sequencer_config(),
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -133,7 +133,7 @@ async fn test_generation_stage_does_not_report_invalid_txs() {
         env.epoch_sealing_policy(),
         env.sequencer_config(),
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -166,7 +166,7 @@ async fn test_no_report_when_all_txs_valid() {
         env.epoch_sealing_policy(),
         env.sequencer_config(),
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -206,7 +206,7 @@ async fn test_exact_failed_txs_payload() {
         env.epoch_sealing_policy(),
         env.sequencer_config(),
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -255,7 +255,7 @@ async fn test_mixed_failures_keep_order_and_reason() {
         env.epoch_sealing_policy(),
         env.sequencer_config(),
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -298,7 +298,7 @@ async fn test_max_txs_returns_only_fetched_failures() {
         env.epoch_sealing_policy(),
         &sequencer_config,
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -335,7 +335,7 @@ async fn test_exec_failure_maps_to_failed() {
         env.epoch_sealing_policy(),
         env.sequencer_config(),
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -369,7 +369,7 @@ async fn test_duplicate_txid_one_fails() {
         env.epoch_sealing_policy(),
         env.sequencer_config(),
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await
@@ -406,7 +406,7 @@ async fn test_duplicate_txid_both_fail() {
         env.epoch_sealing_policy(),
         env.sequencer_config(),
         config,
-        AccumulatedDaData::new_empty(),
+        EpochResourceState::new_empty(),
         BridgeParams::default(),
     )
     .await

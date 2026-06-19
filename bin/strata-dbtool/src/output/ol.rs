@@ -46,6 +46,15 @@ pub(crate) struct OLBlocksAtSlotInfo<'a> {
     pub(crate) block_ids: &'a [OLBlockId],
 }
 
+/// Result of deleting one OL block.
+#[derive(serde::Serialize)]
+pub(crate) struct OLBlockDeleteInfo<'a> {
+    pub(crate) block_id: &'a OLBlockId,
+    pub(crate) slot: Slot,
+    pub(crate) remaining_block_ids: &'a [OLBlockId],
+    pub(crate) dry_run: bool,
+}
+
 impl<'a> Formattable for OLBlockInfo<'a> {
     fn format_porcelain(&self) -> String {
         let mut output = Vec::new();
@@ -142,6 +151,29 @@ impl Formattable for OLBlocksAtSlotInfo<'_> {
                 format!("{block_id:?}"),
             ));
         }
+
+        output.join("\n")
+    }
+}
+
+impl Formattable for OLBlockDeleteInfo<'_> {
+    fn format_porcelain(&self) -> String {
+        let mut output = Vec::new();
+
+        output.push(porcelain_field("block_id", format!("{:?}", self.block_id)));
+        output.push(porcelain_field("slot", self.slot));
+
+        for (index, block_id) in self.remaining_block_ids.iter().enumerate() {
+            output.push(porcelain_field(
+                &format!("remaining_block_ids.{index}"),
+                format!("{block_id:?}"),
+            ));
+        }
+
+        output.push(porcelain_field(
+            "dry_run",
+            super::helpers::porcelain_bool(self.dry_run),
+        ));
 
         output.join("\n")
     }

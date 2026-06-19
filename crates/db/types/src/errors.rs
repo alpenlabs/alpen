@@ -143,7 +143,7 @@ pub enum DbError {
     MmrIndexOutOfRange { requested: u64, cur: u64 },
 
     /// MMR preimage payload not found at leaf position.
-    #[error("MMR preimage payload not found at leaf position {0}")]
+    #[error("MMR preimage payload not found at leaf position {0:?}")]
     MmrPayloadNotFound(LeafPos),
 
     /// Tree position is out of bounds for current MMR size.
@@ -155,7 +155,7 @@ pub enum DbError {
     MmrInvalidRange { start: u64, end: u64 },
 
     /// MMR node not found at the given tree position.
-    #[error("MMR node not found at position {0}")]
+    #[error("MMR node not found at position {0:?}")]
     MmrNodeNotFound(NodePos),
 
     /// MMR index batch precondition failed.

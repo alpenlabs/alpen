@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use strata_acct_types::AccountSerial;
+use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
@@ -20,8 +21,8 @@ use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_new::{
-    BlockFlags, MAX_SEALING_MANIFEST_COUNT, OLAsmManifestContainer, OLBlock, OLBlockHeader, OLLog,
-    OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
+    BlockFlags, MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLLogType,
+    SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
@@ -40,6 +41,14 @@ use crate::{
     output::OLBlockExecutionOutput,
     traits::ChainWorkerContext,
 };
+
+#[derive(Clone, Copy)]
+struct SnarkAccountCursor {
+    seqno: Seqno,
+    next_inbox_msg_idx: u64,
+}
+
+type SnarkAccountCursors = HashMap<AccountSerial, SnarkAccountCursor>;
 
 /// Mutable state for the chain worker.
 ///
@@ -169,190 +178,7 @@ impl ChainWorkerServiceState {
         block_commitment: &OLBlockCommitment,
     ) -> WorkerResult<()> {
         self.check_initialized()?;
-
-        let blkid = block_commitment.blkid();
-        debug!(%blkid, "Trying to execute block");
-
-        // Fetch block and parent context
-        let (block, parent_header, parent_commitment) =
-            self.fetch_block_with_parent(block_commitment)?;
-
-        // Execute STF and get output and new state
-        let (output, new_state) =
-            self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
-
-        // Handle epoch terminal if needed
-        debug!(slot=%block.header().slot(), is_terminal=%block.header().is_terminal(), "Checking if block is terminal");
-        if block.header().is_terminal() {
-            self.handle_terminal_block_exec_post_ops(&block, &output, &new_state)?;
-            // Send the epoch commitment to receiver
-            // TODO(STR-3673): it seems to be done for each block at the moment. Ideally we would do
-            // it just here.
-        }
-
-        // Persist results (including the full state)
-        self.persist_execution_output(&block, *block_commitment, &output, new_state)?;
-
-        // Merge the epoch's write batches into the terminal state. Must run
-        // after persist_execution_output, since the merge reads every block's
-        // write batch including the terminal block's, stored just above.
-        if block.header().is_terminal() {
-            let epoch = EpochCommitment {
-                epoch: block.header().epoch(),
-                last_slot: block_commitment.slot(),
-                last_blkid: *block_commitment.blkid(),
-            };
-            self.ctx.merge_epoch_data(&epoch)?;
-        }
-
-        Ok(())
-    }
-
-    /// Fetches a block and its parent header from the context.
-    ///
-    /// Returns the block, optional parent header, and parent commitment.
-    fn fetch_block_with_parent(
-        &self,
-        block_commitment: &OLBlockCommitment,
-    ) -> WorkerResult<(OLBlock, Option<OLBlockHeader>, OLBlockCommitment)> {
-        let blkid = block_commitment.blkid();
-
-        let block = self
-            .ctx
-            .fetch_block(blkid)?
-            .ok_or(WorkerError::MissingOLBlock(*blkid))?;
-
-        let parent_blkid = block.header().parent_blkid();
-        let parent_commitment = if parent_blkid.is_null() {
-            OLBlockCommitment::null()
-        } else {
-            // Parent slot is the block's slot - 1.
-            let parent_slot = block.header().slot().saturating_sub(1);
-            OLBlockCommitment::new(parent_slot, *parent_blkid)
-        };
-
-        let parent_header = if parent_commitment.is_null() {
-            None
-        } else {
-            Some(
-                self.ctx
-                    .fetch_header(parent_commitment.blkid())?
-                    .ok_or(WorkerError::MissingOLBlock(*parent_commitment.blkid()))?,
-            )
-        };
-
-        Ok((block, parent_header, parent_commitment))
-    }
-
-    /// Executes the STF on a block and returns the execution output.
-    ///
-    /// This fetches parent state, builds the state stack, runs verification,
-    /// and extracts the resulting write batch and indexer writes.
-    #[instrument(
-        skip_all,
-        fields(
-            slot = block.header().slot(),
-            epoch = block.header().epoch(),
-            is_terminal = block.header().is_terminal(),
-            %parent_commitment,
-        ),
-        err,
-    )]
-    fn execute_stf(
-        &self,
-        block: &OLBlock,
-        parent_header: Option<&OLBlockHeader>,
-        parent_commitment: OLBlockCommitment,
-    ) -> WorkerResult<(OLBlockExecutionOutput, OLState)> {
-        // Fetch parent state and wrap in MemoryStateBaseLayer for IStateAccessor
-        let parent_state_raw = self
-            .ctx
-            .fetch_ol_state(parent_commitment)?
-            .ok_or(WorkerError::MissingPreState(parent_commitment))?;
-        let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
-
-        // Execute and extract outputs
-        let (write_batch, indexer_writes, logs) = run_stf_verification(
-            &parent_state,
-            block,
-            parent_header,
-            self.ctx.bridge_params(),
-        )?;
-
-        // Apply write batch to parent state to get new state
-        let mut new_state = parent_state;
-        new_state
-            .apply_write_batch(write_batch.clone())
-            .map_err(|source| WorkerError::ApplyWriteBatch {
-                commitment: parent_commitment,
-                source,
-            })?;
-        let new_state = new_state.into_inner();
-
-        // Use the state root from the header (verify_block validated it).
-        // Note: logs are validated internally by verify_block via the logs_root commitment.
-        let computed_state_root = *block.header().state_root();
-
-        Ok((
-            OLBlockExecutionOutput::new(computed_state_root, write_batch, indexer_writes, logs),
-            new_state,
-        ))
-    }
-
-    /// Persists the execution output and state to storage.
-    ///
-    /// Handles crash-restart cases like indexing already applied or wrong indexing applied
-    /// gracefully.
-    fn persist_execution_output(
-        &self,
-        block: &OLBlock,
-        block_commitment: OLBlockCommitment,
-        output: &OLBlockExecutionOutput,
-        new_state: OLState,
-    ) -> WorkerResult<()> {
-        match self.ctx.store_block_output(block, block_commitment, output) {
-            Ok(()) => {}
-            Err(WorkerError::Database(DbError::BlockIndexingConflict {
-                attempted,
-                last_applied,
-                ..
-            })) if attempted == block_commitment && last_applied == block_commitment => {
-                debug!(
-                    %block_commitment,
-                    "block indexing already applied for this exact block; \
-                     treating as crash-restart retry and continuing persist"
-                );
-            }
-            Err(e) => return Err(e),
-        }
-
-        self.ctx.store_toplevel_state(block_commitment, new_state)?;
-
-        Ok(())
-    }
-
-    /// Takes the block and post-state and inserts database entries to reflect
-    /// the epoch being finished on-chain.
-    ///
-    /// Returns the completed epoch's commitment so the caller can merge its
-    /// epoch data once the terminal block's write batch is persisted.
-    fn handle_terminal_block_exec_post_ops(
-        &mut self,
-        block: &OLBlock,
-        last_block_output: &OLBlockExecutionOutput,
-        new_state: &OLState,
-    ) -> WorkerResult<EpochCommitment> {
-        let completed_epoch = block.header().epoch();
-
-        let prev_terminal = get_prev_terminal(&self.ctx, completed_epoch)?;
-        let summary =
-            build_epoch_summary(block.header(), last_block_output, new_state, prev_terminal);
-        let epoch = summary.get_epoch_commitment();
-
-        debug!(?summary, "completed chain epoch");
-        self.ctx.store_summary(summary)?;
-
-        Ok(epoch)
+        exec_block(&self.ctx, self.ctx.bridge_params(), block_commitment)
     }
 
     /// Updates the current tip as managed by the worker.
@@ -364,7 +190,7 @@ impl ChainWorkerServiceState {
     /// Marks an epoch as finalized(buried).
     ///
     /// By the time this runs the epoch's terminal state has already been merged
-    /// and stored — by [`Self::handle_terminal_block_exec_post_ops`] for full
+    /// and stored — by [`handle_terminal_block_exec_post_ops`] for full
     /// sync, or by `apply_checkpoint` for checkpoint sync. This verifies that
     /// state is present, then records the epoch as finalized.
     pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
@@ -396,6 +222,203 @@ impl ChainWorkerServiceState {
 
         Ok(())
     }
+}
+
+/// Executes a block via the OL STF and persists its outputs.
+///
+/// For terminal blocks the execution output is persisted *before* the epoch
+/// post-ops run: [`handle_terminal_block_exec_post_ops`] stamps the epoch
+/// commitment onto the indexing row that persisting a block of the epoch
+/// creates. In a single-block epoch (e.g. one sealed immediately by the
+/// checkpoint size policy) this block's persist is the only thing that
+/// creates that row, so stamping first fails with a missing-row error.
+pub(crate) fn exec_block(
+    ctx: &impl ChainWorkerContext,
+    bridge_params: BridgeParams,
+    block_commitment: &OLBlockCommitment,
+) -> WorkerResult<()> {
+    let blkid = block_commitment.blkid();
+    debug!(%blkid, "Trying to execute block");
+
+    // Fetch block and parent context
+    let (block, parent_header, parent_commitment) = fetch_block_with_parent(ctx, block_commitment)?;
+
+    // Execute STF and get output and new state
+    let (output, new_state) = execute_stf(
+        ctx,
+        bridge_params,
+        &block,
+        parent_header.as_ref(),
+        parent_commitment,
+    )?;
+
+    let is_terminal = block.header().is_terminal();
+    debug!(slot=%block.header().slot(), is_terminal, "Checking if block is terminal");
+
+    if is_terminal {
+        // Persist results (including the full state) before the terminal
+        // post-ops; see the doc comment above.
+        persist_execution_output(ctx, &block, *block_commitment, &output, new_state.clone())?;
+
+        // Handle epoch terminal
+        // TODO(STR-3673): the epoch commitment seems to be sent to the
+        // receiver for each block at the moment. Ideally we would do it just
+        // here.
+        handle_terminal_block_exec_post_ops(ctx, &block, &output, &new_state)?;
+    } else {
+        // Persist results (including the full state)
+        persist_execution_output(ctx, &block, *block_commitment, &output, new_state)?;
+    }
+
+    Ok(())
+}
+
+/// Fetches a block and its parent header from the context.
+///
+/// Returns the block, optional parent header, and parent commitment.
+fn fetch_block_with_parent(
+    ctx: &impl ChainWorkerContext,
+    block_commitment: &OLBlockCommitment,
+) -> WorkerResult<(OLBlock, Option<OLBlockHeader>, OLBlockCommitment)> {
+    let blkid = block_commitment.blkid();
+
+    let block = ctx
+        .fetch_block(blkid)?
+        .ok_or(WorkerError::MissingOLBlock(*blkid))?;
+
+    let parent_blkid = block.header().parent_blkid();
+    let parent_commitment = if parent_blkid.is_null() {
+        OLBlockCommitment::null()
+    } else {
+        // Parent slot is the block's slot - 1.
+        let parent_slot = block.header().slot().saturating_sub(1);
+        OLBlockCommitment::new(parent_slot, *parent_blkid)
+    };
+
+    let parent_header = if parent_commitment.is_null() {
+        None
+    } else {
+        Some(
+            ctx.fetch_header(parent_commitment.blkid())?
+                .ok_or(WorkerError::MissingOLBlock(*parent_commitment.blkid()))?,
+        )
+    };
+
+    Ok((block, parent_header, parent_commitment))
+}
+
+/// Executes the STF on a block and returns the execution output.
+///
+/// This fetches parent state, builds the state stack, runs verification,
+/// and extracts the resulting write batch and indexer writes.
+#[instrument(
+    skip_all,
+    fields(
+        slot = block.header().slot(),
+        epoch = block.header().epoch(),
+        is_terminal = block.header().is_terminal(),
+        %parent_commitment,
+    ),
+    err,
+)]
+fn execute_stf(
+    ctx: &impl ChainWorkerContext,
+    bridge_params: BridgeParams,
+    block: &OLBlock,
+    parent_header: Option<&OLBlockHeader>,
+    parent_commitment: OLBlockCommitment,
+) -> WorkerResult<(OLBlockExecutionOutput, OLState)> {
+    // Fetch parent state and wrap in MemoryStateBaseLayer for IStateAccessor
+    let parent_state_raw = ctx
+        .fetch_ol_state(parent_commitment)?
+        .ok_or(WorkerError::MissingPreState(parent_commitment))?;
+    let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
+
+    // Execute and extract outputs
+    let (write_batch, indexer_writes, logs) =
+        run_stf_verification(&parent_state, block, parent_header, bridge_params)?;
+
+    // Apply write batch to parent state to get new state
+    let mut new_state = parent_state;
+    new_state
+        .apply_write_batch(write_batch.clone())
+        .map_err(|source| WorkerError::ApplyWriteBatch {
+            commitment: parent_commitment,
+            source,
+        })?;
+    let new_state = new_state.into_inner();
+
+    // Use the state root from the header (verify_block validated it).
+    // Note: logs are validated internally by verify_block via the logs_root commitment.
+    let computed_state_root = *block.header().state_root();
+
+    Ok((
+        OLBlockExecutionOutput::new(computed_state_root, write_batch, indexer_writes, logs),
+        new_state,
+    ))
+}
+
+/// Persists the execution output and state to storage.
+///
+/// Handles crash-restart cases like indexing already applied or wrong indexing applied
+/// gracefully.
+fn persist_execution_output(
+    ctx: &impl ChainWorkerContext,
+    block: &OLBlock,
+    block_commitment: OLBlockCommitment,
+    output: &OLBlockExecutionOutput,
+    new_state: OLState,
+) -> WorkerResult<()> {
+    match ctx.store_block_output(block, block_commitment, output) {
+        Ok(()) => {}
+        Err(WorkerError::Database(DbError::BlockIndexingConflict {
+            attempted,
+            last_applied,
+            ..
+        })) if attempted == block_commitment && last_applied == block_commitment => {
+            debug!(
+                %block_commitment,
+                "block indexing already applied for this exact block; \
+                 treating as crash-restart retry and continuing persist"
+            );
+        }
+        Err(e) => return Err(e),
+    }
+
+    ctx.store_toplevel_state(block_commitment, new_state)?;
+
+    Ok(())
+}
+
+/// Takes the block and post-state and inserts database entries to reflect
+/// the epoch being finished on-chain.
+///
+/// Expects the terminal block's own output to be persisted already: the merge
+/// reads every block's write batch including the terminal block's, and epoch
+/// finalization stamps the epoch commitment onto an existing indexing row.
+///
+/// The summary is stored last, after the epoch data merge: a stored summary
+/// (and the notification it emits) indicates the whole epoch finalization
+/// persisted. A failure anywhere earlier leaves no summary behind for a
+/// block that may then be rejected.
+fn handle_terminal_block_exec_post_ops(
+    ctx: &impl ChainWorkerContext,
+    block: &OLBlock,
+    last_block_output: &OLBlockExecutionOutput,
+    new_state: &OLState,
+) -> WorkerResult<()> {
+    let completed_epoch = block.header().epoch();
+
+    let prev_terminal = get_prev_terminal(ctx, completed_epoch)?;
+    let summary = build_epoch_summary(block.header(), last_block_output, new_state, prev_terminal);
+
+    // Merge the epoch's write batches into the terminal state.
+    ctx.merge_epoch_data(&summary)?;
+
+    debug!(?summary, "completed chain epoch");
+    ctx.store_summary(summary)?;
+
+    Ok(())
 }
 
 /// Gets the terminal commitment of the epoch before `cur_epoch`.
@@ -457,7 +480,7 @@ pub(crate) fn apply_checkpoint_epoch(
             source,
         }
     })?;
-    let (manifest_cont, epoch_info) =
+    let (manifests, epoch_info) =
         assemble_da_inputs(ctx, epoch, &base_state, sidecar, tip, prev_terminal)?;
 
     // The sidecar carries logs in its own wire type; convert to the OL chain-types
@@ -468,21 +491,16 @@ pub(crate) fn apply_checkpoint_epoch(
         .map(|log| OLLog::new(log.account_serial(), log.payload().to_vec()))
         .collect();
 
-    // Read each snark account's seqno as of the previous epoch's terminal state.
-    // The set of affected accounts is inferred from `ol_logs`, which records the
-    // changes made during the epoch (we don't directly have the per-account input set).
-    let pre_seqnos = collect_pre_seqnos(&base_state, &ol_logs)?;
+    // Read each snark account's seqno and inbox cursor as of the previous
+    // epoch's terminal state. The set of affected accounts is inferred from
+    // `ol_logs`, which records the changes made during the epoch.
+    let pre_cursors = collect_pre_snark_account_cursors(&base_state, &ol_logs)?;
 
     // Reconstruct: wrap the base state in the write-tracking + indexer stack,
     // run apply_da_epoch, then extract the batch and indexer writes.
     let tracking_state = WriteTrackingState::new_empty(&base_state);
     let mut indexer_state = IndexerState::new(tracking_state);
-    apply_da_epoch::<_, OLDaSchemeV1>(
-        &mut indexer_state,
-        &epoch_info,
-        da_payload,
-        manifest_cont.manifests(),
-    )?;
+    apply_da_epoch::<_, OLDaSchemeV1>(&mut indexer_state, &epoch_info, da_payload, &manifests)?;
     let indexer_state_root =
         indexer_state
             .compute_state_root()
@@ -494,8 +512,12 @@ pub(crate) fn apply_checkpoint_epoch(
 
     // Replace the DA-collapsed snark records (one per account) with per-update
     // records derived from the epoch's `ol_logs`.
-    let (rebuilt_snark_updates, derived_seqnos) =
-        rebuild_snark_records_from_logs(&indexer_state, &ol_logs, &pre_seqnos)?;
+    let (rebuilt_snark_updates, derived_cursors) =
+        rebuild_snark_records_from_logs(&indexer_state, &ol_logs, &pre_cursors)?;
+    let derived_seqnos: HashMap<AccountSerial, Seqno> = derived_cursors
+        .iter()
+        .map(|(&serial, cursor)| (serial, cursor.seqno))
+        .collect();
 
     let (tracking_state, mut indexer_writes) = indexer_state.into_parts();
     let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
@@ -556,11 +578,12 @@ pub(crate) fn apply_checkpoint_epoch(
     })
 }
 
-/// Validates the epoch's L1 range and builds the manifest container and
-/// [`EpochInfo`] used to drive [`apply_da_epoch`].
+/// Validates the epoch's L1 range and builds the manifest list and [`EpochInfo`]
+/// used to drive [`apply_da_epoch`].
 ///
-/// Fails if the L1 range derived from the base state and payload tip is
-/// inverted or exceeds [`MAX_SEALING_MANIFEST_COUNT`].
+/// The manifests cover the whole epoch, so this intentionally uses a [`Vec`]
+/// instead of the per-block `OLAsmManifestContainer`. The range is still capped
+/// by the epoch manifest limit before any manifests are fetched.
 fn assemble_da_inputs(
     ctx: &impl ChainWorkerContext,
     epoch: EpochCommitment,
@@ -568,36 +591,34 @@ fn assemble_da_inputs(
     sidecar: &CheckpointSidecar,
     tip: &CheckpointTip,
     prev_terminal: OLBlockCommitment,
-) -> WorkerResult<(OLAsmManifestContainer, EpochInfo)> {
-    let from_height = base_state.last_l1_height().checked_add(1).ok_or_else(|| {
-        WorkerError::Unexpected(format!(
-            "L1 height overflow at base state for {epoch}: {}",
-            base_state.last_l1_height()
-        ))
-    })?;
+) -> WorkerResult<(Vec<AsmManifest>, EpochInfo)> {
+    let base_l1_height = base_state.last_l1_height();
     let to_height = tip.l1_height();
-    if to_height < from_height {
+    if to_height < base_l1_height {
         return Err(WorkerError::L1RangeInverted {
             epoch: epoch.epoch(),
-            from: from_height,
+            from: base_l1_height.saturating_add(1),
             to: to_height,
         });
     }
-    let range_len = to_height - from_height + 1;
-    if range_len > MAX_SEALING_MANIFEST_COUNT as u32 {
-        return Err(WorkerError::L1RangeTooLarge {
-            epoch: epoch.epoch(),
-            len: range_len,
-            max: MAX_SEALING_MANIFEST_COUNT as u32,
-        });
-    }
-    let manifests = ctx.fetch_l1_manifests(from_height, to_height)?;
-    let manifest_cont = OLAsmManifestContainer::new(manifests).map_err(|e| {
-        WorkerError::ManifestContainerBuild {
-            epoch: epoch.epoch(),
-            detail: e.to_string(),
+    let manifests = if to_height == base_l1_height {
+        Vec::new()
+    } else {
+        let from_height = base_l1_height.checked_add(1).ok_or_else(|| {
+            WorkerError::Unexpected(format!(
+                "L1 height overflow at base state for {epoch}: {base_l1_height}",
+            ))
+        })?;
+        let range_len = to_height - from_height + 1;
+        if range_len > MAX_SEALING_MANIFEST_COUNT as u32 {
+            return Err(WorkerError::L1RangeTooLarge {
+                epoch: epoch.epoch(),
+                len: range_len,
+                max: MAX_SEALING_MANIFEST_COUNT as u32,
+            });
         }
-    })?;
+        ctx.fetch_l1_manifests(from_height, to_height)?
+    };
 
     let terminal = tip.l2_commitment();
     let terminal_info = BlockInfo::new(
@@ -607,7 +628,7 @@ fn assemble_da_inputs(
     );
     let epoch_info = EpochInfo::new(terminal_info, prev_terminal);
 
-    Ok((manifest_cont, epoch_info))
+    Ok((manifests, epoch_info))
 }
 
 /// Cross-checks the reconstructed epoch against the checkpoint's bindings.
@@ -713,23 +734,24 @@ fn verify_snark_seqno_invariant<S: IStateAccessor>(
     Ok(())
 }
 
-/// Reads each affected snark account's seqno from the prior epoch's terminal
-/// state. The account set is inferred from `ol_logs` (a record of changes made
-/// during the epoch).
-fn collect_pre_seqnos<S: IStateAccessor>(
+/// Reads each affected snark account's pre-epoch cursor state.
+///
+/// The account set is inferred from `ol_logs` (a record of changes made during
+/// the epoch).
+fn collect_pre_snark_account_cursors<S: IStateAccessor>(
     base_state: &S,
     ol_logs: &[OLLog],
-) -> WorkerResult<HashMap<AccountSerial, Seqno>> {
-    let mut pre_seqnos = HashMap::new();
+) -> WorkerResult<SnarkAccountCursors> {
+    let mut pre_cursors = HashMap::new();
     for log in ol_logs {
         let serial = log.account_serial();
         if MsgRef::try_from(log.payload())?.ty() != SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID {
             continue;
         }
-        if pre_seqnos.contains_key(&serial) {
+        if pre_cursors.contains_key(&serial) {
             continue;
         }
-        let seqno = match base_state
+        let cursor = match base_state
             .find_account_id_by_serial(serial)
             .map_err(|source| WorkerError::AccountStateRead {
                 stage: "pre-state serial lookup",
@@ -743,27 +765,36 @@ fn collect_pre_seqnos<S: IStateAccessor>(
             })? {
                 Some(state) => state
                     .as_snark_account()
-                    .map(|s| s.seqno())
+                    .map(|s| SnarkAccountCursor {
+                        seqno: s.seqno(),
+                        next_inbox_msg_idx: s.next_inbox_msg_idx(),
+                    })
                     .map_err(|source| WorkerError::AccountStateRead {
                         stage: "pre-state as_snark_account",
                         source,
                     })?,
-                None => Seqno::zero(),
+                None => SnarkAccountCursor {
+                    seqno: Seqno::zero(),
+                    next_inbox_msg_idx: 0,
+                },
             },
-            None => Seqno::zero(),
+            None => SnarkAccountCursor {
+                seqno: Seqno::zero(),
+                next_inbox_msg_idx: 0,
+            },
         };
-        pre_seqnos.insert(serial, seqno);
+        pre_cursors.insert(serial, cursor);
     }
-    Ok(pre_seqnos)
+    Ok(pre_cursors)
 }
 
 /// Rebuilds per-update snark index records from the epoch's OL logs.
 fn rebuild_snark_records_from_logs<S: IStateAccessor>(
     state: &S,
     ol_logs: &[OLLog],
-    pre_seqnos: &HashMap<AccountSerial, Seqno>,
-) -> WorkerResult<(Vec<SnarkAcctStateUpdate>, HashMap<AccountSerial, Seqno>)> {
-    let mut next_seqno: HashMap<AccountSerial, Seqno> = HashMap::new();
+    pre_cursors: &SnarkAccountCursors,
+) -> WorkerResult<(Vec<SnarkAcctStateUpdate>, SnarkAccountCursors)> {
+    let mut next_cursor: SnarkAccountCursors = HashMap::new();
     let mut records = Vec::with_capacity(ol_logs.len());
 
     for log in ol_logs {
@@ -786,22 +817,31 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
             })?
             .ok_or(WorkerError::UnknownAccountSerial(serial))?;
 
-        let cur = next_seqno
-            .entry(serial)
-            .or_insert_with(|| pre_seqnos.get(&serial).copied().unwrap_or_else(Seqno::zero));
-        *cur = cur.incr();
-        let seqno = *cur;
+        let cur = next_cursor.entry(serial).or_insert_with(|| {
+            pre_cursors
+                .get(&serial)
+                .copied()
+                .unwrap_or(SnarkAccountCursor {
+                    seqno: Seqno::zero(),
+                    next_inbox_msg_idx: 0,
+                })
+        });
+        let prev_next_read_idx = cur.next_inbox_msg_idx;
+        cur.seqno = cur.seqno.incr();
+        cur.next_inbox_msg_idx = log_data.new_msg_idx;
+        let seqno = cur.seqno;
 
         // No per-update inner state root is available from checkpoint logs.
         records.push(SnarkAcctStateUpdate::new(
             account_id,
             None,
+            prev_next_read_idx,
             log_data.new_msg_idx,
             seqno,
         ));
     }
 
-    Ok((records, next_seqno))
+    Ok((records, next_cursor))
 }
 
 /// The values produced by reconstructing one epoch from its checkpoint,

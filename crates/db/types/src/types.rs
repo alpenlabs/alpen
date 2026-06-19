@@ -604,7 +604,8 @@ mod tests {
     fn bundled_payload_entry_formats_full_reversed_txids() {
         let commit_bytes = bytes_from_start(0x10);
         let reveal_bytes = bytes_from_start(0x40);
-        let payload = L1Payload::new(vec![vec![1, 2, 3]], TagData::new(1, 1, vec![]).unwrap());
+        let payload =
+            L1Payload::new(vec![vec![1, 2, 3]], TagData::new(1, 1, vec![]).unwrap()).unwrap();
         let entry = BundledPayloadEntry::new(
             payload,
             L1TxId::from(commit_bytes),

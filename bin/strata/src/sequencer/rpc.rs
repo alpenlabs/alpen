@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
 use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
-use strata_btcio::writer::EnvelopeHandle;
+use strata_btcio::writer::{EnvelopeHandle, EnvelopeSigningMode, EnvelopeSigningModeProvider};
 use strata_codec::encode_to_vec;
 use strata_codec_utils::CodecSsz;
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
@@ -48,10 +48,8 @@ pub(crate) struct OLSeqRpcServer {
     /// Fork choice manager handle.
     fcm_handle: Arc<FcmServiceHandle>,
 
-    /// Schnorr public key for verifying reveal-tx signatures.
-    ///
-    /// `None` when the sequencer runs with `CredRule::Unchecked` — verification is skipped.
-    sequencer_pubkey: Option<Buf32>,
+    /// Source for the active checkpoint sequencer key.
+    signing_mode_provider: Arc<dyn EnvelopeSigningModeProvider>,
 }
 
 impl OLSeqRpcServer {
@@ -62,7 +60,7 @@ impl OLSeqRpcServer {
         blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
-        sequencer_pubkey: Option<Buf32>,
+        signing_mode_provider: Arc<dyn EnvelopeSigningModeProvider>,
     ) -> Self {
         Self {
             storage,
@@ -70,8 +68,17 @@ impl OLSeqRpcServer {
             blockasm_handle,
             envelope_handle,
             fcm_handle,
-            sequencer_pubkey,
+            signing_mode_provider,
         }
+    }
+}
+
+fn current_pubkey(
+    signing_mode_provider: &dyn EnvelopeSigningModeProvider,
+) -> anyhow::Result<Option<Buf32>> {
+    match signing_mode_provider.signing_mode()? {
+        EnvelopeSigningMode::InProcess => Ok(None),
+        EnvelopeSigningMode::External { pubkey } => Ok(Some(Buf32(pubkey.serialize()))),
     }
 }
 
@@ -174,11 +181,15 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             .map_err(db_error)?
             .is_none()
         {
+            // TODO(STR-3814): move this checkpoint encoding + L1Payload
+            // construction out of the RPC handler into a dedicated component so
+            // it can be reused and tested independently of the RPC layer.
             let codec_payload = CodecSsz::new(checkpoint_payload.clone());
             let encoded = encode_to_vec(&codec_payload)
                 .map_err(|e| internal_error(format!("failed to encode checkpoint: {e}")))?;
 
-            let l1_payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone());
+            let l1_payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone())
+                .map_err(|e| internal_error(format!("failed to build checkpoint payload: {e}")))?;
             let sighash = hash::raw(&checkpoint_payload.as_ssz_bytes());
 
             let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, l1_payload);
@@ -230,8 +241,8 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         }
 
         let sig = Buf64(sig.0);
-        if self
-            .sequencer_pubkey
+        if current_pubkey(self.signing_mode_provider.as_ref())
+            .map_err(|e| internal_error(e.to_string()))?
             .is_some_and(|pk| !verify_schnorr_sig(&sig, &stored_sighash, &pk))
         {
             return Err(internal_error(format!(

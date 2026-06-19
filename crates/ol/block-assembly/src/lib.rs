@@ -5,11 +5,11 @@ mod builder;
 mod checkpoint_size;
 mod command;
 mod context;
-mod da_tracker;
 mod epoch_sealing;
 mod error;
 mod handle;
 mod mempool_provider;
+mod resource_state;
 mod service;
 mod state;
 #[cfg(any(test, feature = "test-utils"))]
@@ -23,7 +23,7 @@ pub use context::{
     AccumulatorProofGenerator, BlockAssemblyAnchorContext, BlockAssemblyContext,
     BlockAssemblyStateAccess,
 };
-pub use epoch_sealing::{EpochSealingPolicy, FixedSlotSealing};
+pub use epoch_sealing::{CadencePolicy, EpochSealingPolicy, FixedSlotSealing, LimitAwareSealing};
 pub use error::BlockAssemblyError;
 pub use handle::BlockasmHandle;
 pub use mempool_provider::{MempoolProvider, MempoolProviderImpl};

@@ -264,12 +264,6 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(())
     }
 
-    fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary> {
-        self.ol_checkpoint_mgr
-            .get_epoch_summary_blocking(*epoch)?
-            .ok_or(WorkerError::MissingEpochSummary(*epoch))
-    }
-
     fn fetch_canonical_epoch_summary_at(&self, epoch: u32) -> WorkerResult<Option<EpochSummary>> {
         let commitment = self
             .ol_checkpoint_mgr
@@ -281,8 +275,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         }
     }
 
-    fn merge_epoch_data(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
-        let summary = self.fetch_summary(epoch)?;
+    fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
         let terminal = *summary.terminal();
         let prev_terminal = *summary.prev_terminal();
 
@@ -421,6 +414,7 @@ fn build_indexing_writes(
         let record = AccountUpdateRecord::new(
             Some(meta),
             *update.seqno().inner(),
+            update.prev_next_read_idx(),
             update.next_read_idx(),
             Some(log.extra_data().to_vec()),
         );
@@ -429,6 +423,8 @@ fn build_indexing_writes(
             .or_default()
             .push(record);
     }
+
+    debug_assert_contiguous_update_ranges(&account_updates);
 
     let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> = BTreeMap::new();
     for write in indexer_writes.inbox_messages() {
@@ -460,6 +456,20 @@ fn collect_snark_update_logs<'a>(
         }
     }
     Ok(out)
+}
+
+fn debug_assert_contiguous_update_ranges(
+    account_updates: &BTreeMap<AccountId, Vec<AccountUpdateRecord>>,
+) {
+    for (account_id, records) in account_updates {
+        for pair in records.windows(2) {
+            debug_assert_eq!(
+                pair[1].prev_next_inbox_idx(),
+                pair[0].next_inbox_idx(),
+                "non-contiguous snark update inbox range for account {account_id}",
+            );
+        }
+    }
 }
 
 /// Builds an [`IndexingWrites`] payload for a DA-reconstructed epoch.
@@ -498,6 +508,7 @@ pub(crate) fn build_checkpoint_indexing_writes(
         let record = AccountUpdateRecord::new(
             None,
             *update.seqno().inner(),
+            update.prev_next_read_idx(),
             update.next_read_idx(),
             Some(log.extra_data().to_vec()),
         );
@@ -506,6 +517,8 @@ pub(crate) fn build_checkpoint_indexing_writes(
             .or_default()
             .push(record);
     }
+
+    debug_assert_contiguous_update_ranges(&account_updates);
 
     let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> = BTreeMap::new();
     for write in indexer_writes.inbox_messages() {
@@ -656,6 +669,7 @@ mod tests {
         indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
             account_id,
             Some(state),
+            0,
             next_read_idx,
             seqno,
         ));
@@ -679,6 +693,7 @@ mod tests {
             .expect("account update should be present");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].extra_data(), Some(extra.as_slice()));
+        assert_eq!(records[0].prev_next_inbox_idx(), 0);
         assert_eq!(records[0].next_inbox_idx(), next_read_idx);
     }
 
@@ -689,6 +704,7 @@ mod tests {
         indexer_writes.push_snark_acct_update(SnarkAcctStateUpdate::new(
             AccountId::from([1u8; 32]),
             Some(Hash::from([0u8; 32])),
+            0,
             0,
             Seqno::from(1),
         ));

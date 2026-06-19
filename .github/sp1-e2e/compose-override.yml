@@ -28,16 +28,14 @@ services:
     image: ${ECR_REGISTRY}/alpen-client:${IMAGE_TAG}
     platform: linux/amd64
     shm_size: '8gb'
-    command:
-      - --btcio-fee-policy
-      - fixed
-      - --btcio-fee-rate
-      - "5"
+    command: []
     environment:
       - SEQUENCER_MODE=true
       - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
       - OL_SUBMIT_URL=ws://strata:8435
       - STRATA_SUBMIT_RPC_TOKEN=dev-only-submit-token
+      - BTCIO_FEE_POLICY=fixed
+      - BTCIO_FEE_RATE=5
     env_file:
       - ../.github/sp1-e2e/.env.ci
       - ./configs/generated/.env.alpen

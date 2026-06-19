@@ -68,7 +68,10 @@ pub struct SnarkAcctStateUpdate {
     /// rebuilt from logs, which carry no per-update intermediate root.
     state: Option<Hash>,
 
-    /// The next read index.
+    /// The inbox cursor before this update.
+    prev_next_read_idx: u64,
+
+    /// The inbox cursor after this update.
     next_read_idx: u64,
 
     /// The seqno after the update.
@@ -79,12 +82,14 @@ impl SnarkAcctStateUpdate {
     pub fn new(
         account_id: AccountId,
         state: Option<Hash>,
+        prev_next_read_idx: u64,
         next_read_idx: u64,
         seqno: Seqno,
     ) -> Self {
         Self {
             account_id,
             state,
+            prev_next_read_idx,
             next_read_idx,
             seqno,
         }
@@ -100,7 +105,12 @@ impl SnarkAcctStateUpdate {
         self.state
     }
 
-    /// Returns the next read index for this update.
+    /// Returns the inbox cursor before this update.
+    pub fn prev_next_read_idx(&self) -> u64 {
+        self.prev_next_read_idx
+    }
+
+    /// Returns the inbox cursor after this update.
     pub fn next_read_idx(&self) -> u64 {
         self.next_read_idx
     }

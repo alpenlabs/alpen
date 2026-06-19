@@ -14,7 +14,7 @@ use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use node::*;
 use provider::NodeRpcProvider;
 #[cfg(feature = "sequencer")]
-use strata_btcio::writer::EnvelopeHandle;
+use strata_btcio::writer::{EnvelopeHandle, EnvelopeSigningModeProvider};
 #[cfg(feature = "debug-utils")]
 use strata_common::{BAIL_SENDER, KNOWN_BAIL_TAGS};
 use strata_config::SecretString;
@@ -27,8 +27,6 @@ use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
-#[cfg(feature = "sequencer")]
-use strata_primitives::buf::Buf32;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tower::ServiceBuilder;
@@ -36,7 +34,7 @@ use tower_http::cors::CorsLayer;
 use tracing::info;
 
 #[cfg(feature = "sequencer")]
-use crate::helpers::sequencer_schnorr_key;
+use crate::checkpoint_auth::CheckpointSequencerKeyProvider;
 use crate::run_context::{NodeRole, RunContext};
 #[cfg(feature = "sequencer")]
 use crate::sequencer::OLSeqRpcServer;
@@ -80,8 +78,8 @@ struct SeqRpcDeps {
     /// Fork-choice manager handle.
     fcm_handle: Arc<FcmServiceHandle>,
 
-    /// Schnorr public key for verifying reveal-tx signatures submitted via RPC.
-    sequencer_pubkey: Option<Buf32>,
+    /// Source for verifying reveal-tx signatures submitted via RPC.
+    signing_mode_provider: Arc<dyn EnvelopeSigningModeProvider>,
 }
 
 #[cfg(feature = "sequencer")]
@@ -91,13 +89,13 @@ impl SeqRpcDeps {
         envelope_handle: Arc<EnvelopeHandle>,
         blockasm_handle: Arc<BlockasmHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
-        sequencer_pubkey: Option<Buf32>,
+        signing_mode_provider: Arc<dyn EnvelopeSigningModeProvider>,
     ) -> Self {
         Self {
             envelope_handle,
             blockasm_handle,
             fcm_handle,
-            sequencer_pubkey,
+            signing_mode_provider,
         }
     }
 
@@ -114,6 +112,10 @@ impl SeqRpcDeps {
     /// Returns the fork-choice manager handle.
     fn fcm_handle(&self) -> &Arc<FcmServiceHandle> {
         &self.fcm_handle
+    }
+
+    fn signing_mode_provider(&self) -> &Arc<dyn EnvelopeSigningModeProvider> {
+        &self.signing_mode_provider
     }
 }
 
@@ -153,12 +155,13 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
             .fcm_handle()
             .expect("sequencer node must have an FCM sync handle")
             .clone();
-        let sequencer_pubkey = sequencer_schnorr_key(runctx.asm_params());
         SeqRpcDeps::new(
             handles.envelope_handle().clone(),
             handles.blockasm_handle().clone(),
             fcm_handle,
-            sequencer_pubkey,
+            Arc::new(CheckpointSequencerKeyProvider::new(
+                runctx.storage().clone(),
+            )),
         )
     });
 
@@ -279,7 +282,7 @@ fn build_admin_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
             sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
             sequencer_deps.fcm_handle().clone(),
-            sequencer_deps.sequencer_pubkey,
+            sequencer_deps.signing_mode_provider().clone(),
         );
         let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_listener);
         module

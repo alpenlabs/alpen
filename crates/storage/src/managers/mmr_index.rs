@@ -8,6 +8,7 @@ use strata_db_types::{
 };
 use strata_identifiers::Hash;
 use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
+use strata_merkle_node_store::peak_positions;
 use threadpool::ThreadPool;
 use tokio::task::spawn_blocking;
 
@@ -186,7 +187,7 @@ impl MmrIndexManager {
                 mmr_algorithm::compute_append_plan(request.hash.0, leaf_count, &node_table)?;
 
             let mmr_batch = batch.entry(mmr_id);
-            mmr_batch.add_node_precond(append_plan.leaf_pos.node_pos(), None);
+            mmr_batch.add_node_precond(append_plan.leaf_pos.to_node_pos(), None);
             mmr_batch.set_expected_leaf_count(leaf_count);
             mmr_batch.set_leaf_count(leaf_count + 1);
 
@@ -279,7 +280,7 @@ impl MmrIndexHandle {
         let mut batch = MmrBatchWrite::from_preconds_table(prefetched);
         let mmr_batch = batch.entry(mmr_id);
 
-        mmr_batch.add_node_precond(result.leaf_pos.node_pos(), None);
+        mmr_batch.add_node_precond(result.leaf_pos.to_node_pos(), None);
         mmr_batch.set_expected_leaf_count(leaf_count);
         mmr_batch.set_leaf_count(leaf_count + 1);
         for (node_pos, node_hash) in result.nodes_to_write {
@@ -341,7 +342,7 @@ impl MmrIndexHandle {
         if expected_idx < leaf_count {
             let Some(existing_hash) = self.get_leaf_blocking(expected_idx)? else {
                 return Err(DbError::MmrNodeNotFound(
-                    LeafPos::new(expected_idx).node_pos(),
+                    LeafPos::new(expected_idx).to_node_pos(),
                 ));
             };
 
@@ -461,7 +462,7 @@ impl MmrIndexHandle {
     }
 
     pub fn get_leaf_blocking(&self, leaf_index: u64) -> DbResult<Option<Hash>> {
-        self.get_node_blocking(LeafPos::new(leaf_index).node_pos())
+        self.get_node_blocking(LeafPos::new(leaf_index).to_node_pos())
     }
 
     pub fn get_node_blocking(&self, pos: NodePos) -> DbResult<Option<Hash>> {
@@ -555,7 +556,7 @@ impl MmrIndexHandle {
 
         let mut positions =
             mmr_algorithm::compute_proofs_fetch_positions(start, end, at_leaf_count)?;
-        positions.extend((start..=end).map(|i| LeafPos::new(i).node_pos()));
+        positions.extend((start..=end).map(|i| LeafPos::new(i).to_node_pos()));
 
         let prefetched = self.fetch_node_paths_blocking(positions, false)?;
         let node_table = Self::get_scoped_node_table(&prefetched, &self.mmr_id_bytes());
@@ -563,7 +564,7 @@ impl MmrIndexHandle {
         for (offset, expected_hash) in expected_hashes.iter().enumerate() {
             let idx = start + offset as u64;
             let actual = node_table
-                .get_node(LeafPos::new(idx).node_pos())
+                .get_node(LeafPos::new(idx).to_node_pos())
                 .copied()
                 .ok_or(DbError::MmrLeafNotFound(idx))?;
             if actual != *expected_hash {
@@ -596,7 +597,7 @@ impl MmrIndexHandle {
                     cur: at_leaf_count,
                 });
             }
-            positions.insert(LeafPos::new(*idx).node_pos());
+            positions.insert(LeafPos::new(*idx).to_node_pos());
             for pos in mmr_algorithm::compute_proof_fetch_positions(*idx, at_leaf_count)? {
                 positions.insert(pos);
             }
@@ -607,7 +608,7 @@ impl MmrIndexHandle {
 
         for (idx, expected_hash) in indices_and_hashes {
             let actual = node_table
-                .get_node(LeafPos::new(*idx).node_pos())
+                .get_node(LeafPos::new(*idx).to_node_pos())
                 .copied()
                 .ok_or(DbError::MmrLeafNotFound(*idx))?;
             if actual != *expected_hash {
@@ -671,12 +672,13 @@ impl MmrIndexHandle {
 
     pub fn get_state_at(&self, at_leaf_count: u64) -> DbResult<MmrStateView> {
         let mmr_id = self.mmr_id_bytes();
-        let peak_positions = mmr_algorithm::compute_peak_positions(at_leaf_count);
-        let prefetched = self.fetch_node_paths_blocking(peak_positions.iter().copied(), false)?;
+        let peak_node_positions = peak_positions(at_leaf_count);
+        let prefetched =
+            self.fetch_node_paths_blocking(peak_node_positions.iter().copied(), false)?;
         let node_table = Self::get_scoped_node_table(&prefetched, &mmr_id);
 
-        let mut peaks = Vec::with_capacity(peak_positions.len());
-        for peak_pos in peak_positions {
+        let mut peaks = Vec::with_capacity(peak_node_positions.len());
+        for peak_pos in peak_node_positions {
             let peak_hash = node_table
                 .get_node(peak_pos)
                 .copied()

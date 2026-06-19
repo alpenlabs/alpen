@@ -13,28 +13,32 @@ const DEFAULT_HEALTH_CHECK_HOST: &str = "0.0.0.0";
 const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
 
 /// Configs overridable by environment. Mostly for sensitive data.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct EnvArgs {
-    admin_rpc_token: Option<String>,
-    submit_rpc_token: Option<String>,
+    admin_rpc_token: Option<SecretString>,
+    submit_rpc_token: Option<SecretString>,
 }
 
 impl EnvArgs {
     /// Loads environment variables that should override the config.
     pub(crate) fn from_env() -> Result<Self, InitError> {
         Ok(Self {
-            admin_rpc_token: env::var(STRATA_ADMIN_RPC_TOKEN).ok(),
-            submit_rpc_token: env::var(STRATA_SUBMIT_RPC_TOKEN).ok(),
+            admin_rpc_token: env::var(STRATA_ADMIN_RPC_TOKEN)
+                .ok()
+                .and_then(SecretString::new_non_empty),
+            submit_rpc_token: env::var(STRATA_SUBMIT_RPC_TOKEN)
+                .ok()
+                .and_then(SecretString::new_non_empty),
         })
     }
 
     /// Applies environment-only overrides directly to the parsed config.
     pub(crate) fn apply_to_config(&self, config: &mut Config) {
         if let Some(token) = &self.admin_rpc_token {
-            config.client.admin_rpc_bearer_token = Some(SecretString::from(token.clone()));
+            config.client.admin_rpc_bearer_token = Some(token.clone());
         }
         if let Some(token) = &self.submit_rpc_token {
-            config.client.submit_rpc_bearer_token = Some(SecretString::from(token.clone()));
+            config.client.submit_rpc_bearer_token = Some(token.clone());
         }
     }
 }
@@ -211,9 +215,14 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_env_token_is_ignored() {
+        assert!(SecretString::new_non_empty(String::new()).is_none());
+    }
+
+    #[test]
     fn test_env_args_admin_token_applies_directly_to_config() {
         let env_args = EnvArgs {
-            admin_rpc_token: Some("test-token".to_string()),
+            admin_rpc_token: Some(SecretString::from("test-token".to_string())),
             submit_rpc_token: None,
         };
         let mut config = test_config();
@@ -233,7 +242,7 @@ mod tests {
     fn test_env_args_submit_token_applies_directly_to_config() {
         let env_args = EnvArgs {
             admin_rpc_token: None,
-            submit_rpc_token: Some("test-submit-token".to_string()),
+            submit_rpc_token: Some(SecretString::from("test-submit-token".to_string())),
         };
         let mut config = test_config();
 
@@ -245,6 +254,38 @@ mod tests {
                 .as_ref()
                 .map(SecretString::expose_secret),
             Some("test-submit-token")
+        );
+    }
+
+    #[test]
+    fn test_env_args_without_tokens_preserve_existing_config_tokens() {
+        let env_args = EnvArgs {
+            admin_rpc_token: None,
+            submit_rpc_token: None,
+        };
+        let mut config = test_config();
+        config.client.admin_rpc_bearer_token =
+            Some(SecretString::from("config-admin-token".to_string()));
+        config.client.submit_rpc_bearer_token =
+            Some(SecretString::from("config-submit-token".to_string()));
+
+        env_args.apply_to_config(&mut config);
+
+        assert_eq!(
+            config
+                .client
+                .admin_rpc_bearer_token
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("config-admin-token")
+        );
+        assert_eq!(
+            config
+                .client
+                .submit_rpc_bearer_token
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("config-submit-token")
         );
     }
 

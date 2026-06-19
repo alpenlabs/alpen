@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use strata_asm_worker::AsmWorkerHandle;
+use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_primitives::L1BlockCommitment;
 use strata_state::BlockSubmitter;
 
@@ -19,11 +20,15 @@ impl AsmBlockSubmitter {
 
 #[async_trait]
 impl BlockSubmitter for AsmBlockSubmitter {
-    fn submit_block(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
-        self.handle.submit_block(block)
+    fn submit_block_blocking(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
+        self.handle.submit_block(block.blkid().to_block_hash())?;
+        Ok(())
     }
 
-    async fn submit_block_async(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
-        self.handle.submit_block_async(block).await
+    async fn submit_block(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
+        self.handle
+            .submit_block_async(block.blkid().to_block_hash())
+            .await?;
+        Ok(())
     }
 }

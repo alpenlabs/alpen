@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc, time};
+use std::{collections::VecDeque, mem, sync::Arc, time};
 
 use anyhow::anyhow;
 use metrics::{counter, gauge};
@@ -30,18 +30,23 @@ impl<C: FcmContext> FcmServiceState<C> {
         self.inner_state.cur_olstate.clone()
     }
 
-    /// Gets the most recently finalized epoch, even if it's one that we haven't
-    /// accepted as a new base yet due to missing intermediary blocks.
-    fn get_most_recently_finalized_epoch(&self) -> &EpochCommitment {
+    /// Gets the latest finalized epoch observed by FCM.
+    ///
+    /// This may be newer than [`UnfinalizedBlockTracker::finalized_epoch`] when
+    /// CSM has reported a finalized epoch but FCM's finalized epoch has not
+    /// advanced to it yet because the terminal block is not finalizable.
+    pub(crate) fn latest_observed_finalized_epoch(&self) -> &EpochCommitment {
         self.inner_state
             .epochs_pending_finalization
             .back()
             .unwrap_or(self.inner_state.chain_tracker.finalized_epoch())
     }
 
-    /// Does handling to accept an epoch as finalized before we've actually validated it.
-    pub(crate) fn attach_epoch_pending_finalization(&mut self, epoch: EpochCommitment) -> bool {
-        let last_finalized_epoch = self.get_most_recently_finalized_epoch();
+    /// Records a finalized epoch observed from FCM's context.
+    ///
+    /// Returns whether the epoch was queued for FCM finalization.
+    pub(crate) fn record_observed_finalized_epoch(&mut self, epoch: EpochCommitment) -> bool {
+        let latest_observed_finalized_epoch = self.latest_observed_finalized_epoch();
 
         if epoch.is_null() {
             warn!("tried to finalize null epoch");
@@ -49,11 +54,35 @@ impl<C: FcmContext> FcmServiceState<C> {
         }
 
         // Some checks to make sure we don't go backwards.
-        if last_finalized_epoch.last_slot() > 0 {
-            let epoch_advances = epoch.epoch() > last_finalized_epoch.epoch();
-            let block_advances = epoch.last_slot() > last_finalized_epoch.last_slot();
+        if latest_observed_finalized_epoch.last_slot() > 0 {
+            let epoch_advances = epoch.epoch() > latest_observed_finalized_epoch.epoch();
+            let block_advances = epoch.last_slot() > latest_observed_finalized_epoch.last_slot();
+
+            if epoch == *latest_observed_finalized_epoch {
+                debug!(
+                    ?latest_observed_finalized_epoch,
+                    "finalized epoch already observed, ignoring"
+                );
+                return false;
+            }
+
             if !epoch_advances || !block_advances {
-                warn!(?last_finalized_epoch, received = ?epoch, "received invalid or out of order epoch");
+                let epoch_regresses = epoch.epoch() < latest_observed_finalized_epoch.epoch();
+                let block_regresses =
+                    epoch.last_slot() < latest_observed_finalized_epoch.last_slot();
+                if epoch_regresses && block_regresses {
+                    warn!(
+                        ?latest_observed_finalized_epoch,
+                        received = ?epoch,
+                        "received out-of-order epoch"
+                    );
+                } else {
+                    warn!(
+                        ?latest_observed_finalized_epoch,
+                        received = ?epoch,
+                        "received inconsistent epoch ordering"
+                    );
+                }
                 return false;
             }
         }
@@ -72,6 +101,10 @@ impl<C: FcmContext> FcmServiceState<C> {
 
     pub(crate) fn cur_best_block(&self) -> OLBlockCommitment {
         self.inner_state.cur_best_block
+    }
+
+    pub(crate) fn take_startup_replay_candidates(&mut self) -> Vec<OLBlockId> {
+        mem::take(&mut self.inner_state.startup_replay_candidates)
     }
 
     pub(crate) fn chain_tracker_mut(&mut self) -> &mut UnfinalizedBlockTracker {
@@ -212,6 +245,7 @@ pub(crate) struct FcmInnerState {
     chain_tracker: UnfinalizedBlockTracker,
     cur_best_block: L2BlockCommitment,
     cur_olstate: Arc<OLState>,
+    startup_replay_candidates: Vec<OLBlockId>,
     epochs_pending_finalization: VecDeque<EpochCommitment>,
 }
 
@@ -220,11 +254,13 @@ impl FcmInnerState {
         chain_tracker: UnfinalizedBlockTracker,
         cur_best_block: L2BlockCommitment,
         cur_olstate: Arc<OLState>,
+        startup_replay_candidates: Vec<OLBlockId>,
     ) -> Self {
         Self {
             chain_tracker,
             cur_best_block,
             cur_olstate,
+            startup_replay_candidates,
             epochs_pending_finalization: VecDeque::new(),
         }
     }
@@ -254,7 +290,7 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
 
     // Populate the unfinalized block tracker.
     let mut chain_tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
-    chain_tracker
+    let startup_replay_candidates = chain_tracker
         .load_unfinalized_ol_blocks_async(fcm_ctx.as_ref())
         .await?;
 
@@ -268,7 +304,12 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
         .await?
         .ok_or(Error::MissingOLState(tip_blkid))?;
 
-    let fcm_inner = FcmInnerState::new(chain_tracker, cur_tip_block, ol_state);
+    let fcm_inner = FcmInnerState::new(
+        chain_tracker,
+        cur_tip_block,
+        ol_state,
+        startup_replay_candidates,
+    );
     gauge!("strata_ol_tip_slot").set(cur_tip_block.slot() as f64);
     gauge!("strata_fcm_finalized_epoch").set(finalized_epoch.epoch() as f64);
     gauge!("strata_fcm_finalized_slot").set(finalized_epoch.last_slot() as f64);

@@ -2,6 +2,7 @@ use std::{fmt, net::IpAddr, path::PathBuf, time::Duration};
 
 use bitcoin::Network;
 use serde::{Deserialize, Serialize};
+use zeroize::ZeroizeOnDrop;
 
 use crate::btcio::BtcioConfig;
 
@@ -42,11 +43,16 @@ const DEFAULT_BLOCK_TEMPLATE_TTL_SECS: u64 = 60;
 const DEFAULT_OL_BLOCK_TIME_MS: u64 = 5_000;
 
 /// Secret configuration value that redacts itself from debug output.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ZeroizeOnDrop)]
 #[serde(transparent)]
 pub struct SecretString(String);
 
 impl SecretString {
+    /// Converts a non-empty string into a secret.
+    pub fn new_non_empty(secret: String) -> Option<Self> {
+        (!secret.is_empty()).then(|| Self(secret))
+    }
+
     /// Returns the underlying secret value.
     pub fn expose_secret(&self) -> &str {
         &self.0

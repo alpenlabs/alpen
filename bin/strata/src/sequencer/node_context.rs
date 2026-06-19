@@ -96,7 +96,18 @@ impl SequencerContext for NodeSequencerContext {
             .as_millis() as u64;
 
         let time_since_parent = target_ts.saturating_sub(parent_ts);
-        let threshold_ms = self.ol_block_time_ms * (100 + BLOCK_TS_DRIFT_TOLERANCE_PCT) / 100;
+        if is_too_soon(parent_ts, target_ts, self.ol_block_time_ms) {
+            debug!(
+                time_since_parent,
+                block_time_ms = self.ol_block_time_ms,
+                parent_ts,
+                target_ts,
+                "template generation skipped: too soon after parent"
+            );
+            return Ok(None);
+        }
+
+        let threshold_ms = late_block_threshold_ms(self.ol_block_time_ms);
         if time_since_parent > threshold_ms {
             warn!(
                 time_since_parent,
@@ -197,6 +208,18 @@ fn target_slot_at_or_below_high_watermark(
     high_watermark.is_some_and(|high_watermark| target_slot <= high_watermark.slot())
 }
 
+fn is_too_soon(parent_ts: u64, target_ts: u64, block_time_ms: u64) -> bool {
+    target_ts.saturating_sub(parent_ts) < early_block_threshold_ms(block_time_ms)
+}
+
+fn early_block_threshold_ms(block_time_ms: u64) -> u64 {
+    block_time_ms.saturating_mul(100 - BLOCK_TS_DRIFT_TOLERANCE_PCT) / 100
+}
+
+fn late_block_threshold_ms(block_time_ms: u64) -> u64 {
+    block_time_ms.saturating_mul(100 + BLOCK_TS_DRIFT_TOLERANCE_PCT) / 100
+}
+
 fn should_release_completed_tombstone(status: Option<BlockStatus>) -> bool {
     matches!(status, Some(BlockStatus::Invalid))
 }
@@ -207,19 +230,28 @@ mod tests {
 
     use strata_config::{BlockAssemblyConfig, SequencerConfig};
     use strata_csm_types::{ClientState, L1Status};
-    use strata_identifiers::{Buf32, Buf64, L1BlockCommitment, L1BlockId};
+    use strata_identifiers::{Buf32, Buf64, EpochCommitment, L1BlockCommitment, L1BlockId};
     use strata_ol_block_assembly::{
-        BlockCompletionData, BlockasmBuilder, FixedSlotSealing,
+        BlockCompletionData, BlockasmBuilder, FixedSlotSealing, LimitAwareSealing,
         test_utils::{MockMempoolProvider, TestStorageFixtureBuilder},
     };
+    use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
     use strata_ol_params::OLParams;
+    use strata_ol_sequencer::SequencerBuilder;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_predicate::PredicateKey;
+    use strata_service::AsyncServiceInput;
+    use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
     use strata_storage::NodeStorage;
     use strata_tasks::TaskManager;
-    use tokio::runtime::Handle;
+    use tokio::{runtime::Handle, time::timeout};
 
     use super::*;
+
+    const TEST_BLOCK_TIME_MS: u64 = 60_000;
+    const TEST_MIN_SPACING_PCT: u64 = 100 - BLOCK_TS_DRIFT_TOLERANCE_PCT;
+    const TEST_MIN_SPACING_MS: u64 = TEST_BLOCK_TIME_MS * TEST_MIN_SPACING_PCT / 100;
+    const TEST_TICK_INTERVAL_MS: u64 = 10;
 
     fn high_watermark(slot: u64) -> OLBlockCommitment {
         OLBlockCommitment::new(slot, OLBlockId::from(Buf32::from([slot as u8; 32])))
@@ -234,7 +266,7 @@ mod tests {
             Arc::new(BlockAssemblyConfig::new(Duration::from_millis(1_000))),
             storage,
             Arc::new(MockMempoolProvider::new()),
-            FixedSlotSealing::new(10),
+            LimitAwareSealing::new(FixedSlotSealing::new(10)),
             state_provider,
             SequencerConfig::default(),
             PredicateKey::always_accept(),
@@ -247,8 +279,7 @@ mod tests {
         (task_manager, Arc::new(blockasm))
     }
 
-    fn test_status_channel() -> Arc<StatusChannel> {
-        let l1_block = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
+    fn test_status_channel(l1_block: L1BlockCommitment) -> Arc<StatusChannel> {
         Arc::new(StatusChannel::new(
             ClientState::default(),
             l1_block,
@@ -256,6 +287,109 @@ mod tests {
             None,
             None,
         ))
+    }
+
+    fn test_l1_commitment(height: u32, block_id: L1BlockId) -> L1BlockCommitment {
+        L1BlockCommitment::new(height, block_id)
+    }
+
+    fn now_ms() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("test: system time before unix epoch")
+            .as_millis() as u64
+    }
+
+    async fn prepare_recent_parent_fixture() -> (
+        TaskManager,
+        Arc<BlockasmHandle>,
+        Arc<NodeStorage>,
+        Arc<StatusChannel>,
+        OLBlockCommitment,
+    ) {
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_genesis_parent_and_l1_manifest_count(0)
+            .build_fixture()
+            .await;
+        let storage = fixture.storage().clone();
+
+        let parent_block = storage
+            .ol_block()
+            .get_block_data_async(*parent_commitment.blkid())
+            .await
+            .expect("test: fetch parent block")
+            .expect("test: parent block exists");
+        let parent_state = storage
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("test: fetch parent state")
+            .expect("test: parent state exists");
+
+        let parent_header = parent_block.header();
+        let recent_header = OLBlockHeader::new(
+            now_ms(),
+            parent_header.flags(),
+            parent_header.slot(),
+            parent_header.epoch(),
+            *parent_header.parent_blkid(),
+            *parent_header.body_root(),
+            *parent_header.state_root(),
+            *parent_header.logs_root(),
+        );
+        let recent_commitment =
+            OLBlockCommitment::new(recent_header.slot(), recent_header.compute_blkid());
+        let recent_parent_block = OLBlock::new(
+            SignedOLBlockHeader::new(recent_header.clone(), Buf64::zero()),
+            parent_block.body().clone(),
+        );
+
+        storage
+            .ol_state()
+            .put_toplevel_ol_state_async(recent_commitment, parent_state.as_ref().clone())
+            .await
+            .expect("test: store recent parent state");
+        storage
+            .ol_block()
+            .put_block_data_async(recent_parent_block)
+            .await
+            .expect("test: store recent parent block");
+
+        let safe_l1 = test_l1_commitment(1, L1BlockId::from(Buf32::from([1; 32])));
+        let status_channel = test_status_channel(safe_l1);
+        let safe_l1 = status_channel.get_cur_checkpoint_state().block;
+        status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(OLSyncStatus::new(
+            recent_commitment,
+            recent_header.epoch(),
+            recent_header.is_terminal(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            safe_l1,
+        )));
+
+        let (task_manager, blockasm_handle) = start_test_blockasm(storage.clone()).await;
+        (
+            task_manager,
+            blockasm_handle,
+            storage,
+            status_channel,
+            recent_commitment,
+        )
+    }
+
+    async fn assert_no_pending_template(
+        blockasm_handle: &BlockasmHandle,
+        parent_commitment: OLBlockCommitment,
+    ) {
+        let err = blockasm_handle
+            .get_block_template(*parent_commitment.blkid())
+            .await
+            .expect_err("test: no template should be pending for too-recent parent");
+        assert!(
+            matches!(err, BlockAssemblyError::NoPendingTemplateForParent(parent) if parent == *parent_commitment.blkid()),
+            "unexpected block template lookup error: {err}"
+        );
     }
 
     #[test]
@@ -275,6 +409,56 @@ mod tests {
             6,
             Some(&high_watermark)
         ));
+    }
+
+    #[test]
+    fn too_soon_check_uses_lower_drift_tolerance() {
+        let parent_ts = 1_000_000;
+        let block_time_ms = 3_600_000;
+        let min_spacing_ms = early_block_threshold_ms(block_time_ms);
+        assert_eq!(
+            early_block_threshold_ms(TEST_BLOCK_TIME_MS),
+            TEST_MIN_SPACING_MS
+        );
+
+        assert!(is_too_soon(
+            parent_ts,
+            parent_ts + Duration::from_secs(5 * 60).as_millis() as u64,
+            block_time_ms
+        ));
+        assert!(is_too_soon(
+            parent_ts,
+            parent_ts + min_spacing_ms - 1,
+            block_time_ms
+        ));
+        assert!(!is_too_soon(
+            parent_ts,
+            parent_ts + min_spacing_ms,
+            block_time_ms
+        ));
+        assert!(!is_too_soon(
+            parent_ts,
+            parent_ts + block_time_ms - 1,
+            block_time_ms
+        ));
+        assert!(!is_too_soon(
+            parent_ts,
+            parent_ts + block_time_ms + 1,
+            block_time_ms
+        ));
+    }
+
+    #[test]
+    fn too_soon_check_treats_backwards_clock_as_too_soon() {
+        assert!(is_too_soon(1_000_000, 999_999, 3_600_000));
+    }
+
+    #[test]
+    fn drift_thresholds_saturate_before_scaling() {
+        assert_eq!(early_block_threshold_ms(1_000), 800);
+        assert_eq!(early_block_threshold_ms(u64::MAX), u64::MAX / 100);
+        assert_eq!(late_block_threshold_ms(1_000), 1_200);
+        assert_eq!(late_block_threshold_ms(u64::MAX), u64::MAX / 100);
     }
 
     #[test]
@@ -343,7 +527,7 @@ mod tests {
         let sequencer_context = NodeSequencerContext::new(
             blockasm_handle.clone(),
             storage,
-            test_status_channel(),
+            test_status_channel(test_l1_commitment(1, L1BlockId::from(Buf32::from([1; 32])))),
             SequencerConfig::default().ol_block_time_ms,
         );
 
@@ -362,5 +546,51 @@ mod tests {
             parent_commitment.slot() + 1
         );
         assert_ne!(replacement_template.get_blockid(), stale_template_id);
+    }
+
+    #[tokio::test]
+    async fn block_generation_is_skipped_when_interval_not_reached() {
+        let (_task_manager, blockasm_handle, storage, status_channel, parent_commitment) =
+            prepare_recent_parent_fixture().await;
+        let sequencer_context = NodeSequencerContext::new(
+            blockasm_handle.clone(),
+            storage,
+            status_channel,
+            TEST_BLOCK_TIME_MS,
+        );
+
+        let generated_parent = sequencer_context
+            .generate_template_for_tip()
+            .await
+            .expect("test: too-recent generation should not error");
+
+        assert_eq!(generated_parent, None);
+        assert_no_pending_template(&blockasm_handle, parent_commitment).await;
+    }
+
+    #[tokio::test]
+    async fn generation_tick_leaves_block_generation_skipped_when_interval_not_reached() {
+        let (task_manager, blockasm_handle, storage, status_channel, parent_commitment) =
+            prepare_recent_parent_fixture().await;
+        let executor = task_manager.create_executor();
+        let context = Arc::new(NodeSequencerContext::new(
+            blockasm_handle.clone(),
+            storage,
+            status_channel,
+            TEST_BLOCK_TIME_MS,
+        ));
+        let monitor = SequencerBuilder::new(context, Duration::from_millis(TEST_TICK_INTERVAL_MS))
+            .launch(&executor)
+            .await
+            .expect("test: launch sequencer service");
+        let mut status_listener = monitor.create_listener_input(&executor);
+
+        timeout(Duration::from_secs(1), status_listener.recv_next())
+            .await
+            .expect("test: generation tick should publish a service status")
+            .expect("test: status listener should not error")
+            .expect("test: status listener should receive a status");
+
+        assert_no_pending_template(&blockasm_handle, parent_commitment).await;
     }
 }

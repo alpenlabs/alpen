@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 bitcoin.workspace = true
 serde.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

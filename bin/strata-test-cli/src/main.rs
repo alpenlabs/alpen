@@ -20,15 +20,20 @@ mod taproot;
 mod utils;
 
 use cmd::{
-    build_snark_withdrawal::build_snark_withdrawal, compute_drt_output::compute_drt_output,
-    convert_to_xonly_pk::convert_to_xonly_pk, create_deposit_tx::create_deposit_tx,
-    create_ee_predicate_update::create_ee_predicate_update,
+    build_snark_withdrawal::build_snark_withdrawal,
+    compute_drt_output::compute_drt_output,
+    convert_to_xonly_pk::convert_to_xonly_pk,
+    create_deposit_tx::create_deposit_tx,
+    create_ee_predicate_update::{create_checkpoint_predicate_update, create_ee_predicate_update},
     create_mock_deposit::create_mock_deposit,
     create_withdrawal_fulfillment::create_withdrawal_fulfillment,
-    extract_p2tr_pubkey::extract_p2tr_pubkey, get_address::get_address,
-    musig_aggregate_pks::musig_aggregate_pks, post_ee_da_envelope::post_ee_da_envelope,
-    sign_schnorr_sig::sign_schnorr_sig, xonlypk_to_descriptor::xonlypk_to_descriptor, Commands,
-    TopLevel,
+    extract_p2tr_pubkey::extract_p2tr_pubkey,
+    get_address::get_address,
+    musig_aggregate_pks::musig_aggregate_pks,
+    post_ee_da_envelope::post_ee_da_envelope,
+    sign_schnorr_sig::sign_schnorr_sig,
+    xonlypk_to_descriptor::xonlypk_to_descriptor,
+    Commands, TopLevel,
 };
 
 fn main() {
@@ -39,6 +44,7 @@ fn main() {
         Commands::CreateWithdrawalFulfillment(args) => create_withdrawal_fulfillment(args),
         Commands::CreateMockDeposit(args) => create_mock_deposit(args),
         Commands::CreateEePredicateUpdate(args) => create_ee_predicate_update(args),
+        Commands::CreateCheckpointPredicateUpdate(args) => create_checkpoint_predicate_update(args),
         Commands::ComputeDrtOutput(args) => compute_drt_output(args),
         Commands::BuildSnarkWithdrawal(args) => build_snark_withdrawal(args),
         Commands::GetAddress(args) => get_address(args),

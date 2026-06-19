@@ -20,14 +20,14 @@ use std::collections::HashMap;
 use strata_acct_types::AccountId;
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::{
-    CheckpointPayload, CheckpointSidecar, OLLog, SimpleWithdrawalIntentLogData,
+    CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog, SimpleWithdrawalIntentLogData,
     TerminalHeaderComplement,
 };
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_new::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
 
@@ -144,11 +144,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
-    fn fetch_summary(&self, _epoch: &EpochCommitment) -> WorkerResult<EpochSummary> {
-        unimplemented!("not used by apply_checkpoint_epoch")
-    }
-
-    fn merge_epoch_data(&self, _epoch: &EpochCommitment) -> WorkerResult<()> {
+    fn merge_epoch_data(&self, _summary: &EpochSummary) -> WorkerResult<()> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
@@ -198,6 +194,24 @@ fn test_apply_checkpoint_deposit_manifest_only() {
 }
 
 #[test]
+fn test_apply_checkpoint_replays_empty_l1_range() {
+    let built = build_epoch(EpochShape::NoNewManifests);
+    assert!(
+        built.manifests_by_height.is_empty(),
+        "fixture should seal without new L1 manifests"
+    );
+    assert_eq!(
+        built.checkpoint_payload.new_tip().l1_height(),
+        built.prev_summary.new_l1().height(),
+        "checkpoint tip should not advance L1 height"
+    );
+    let (ctx, epoch) = mock_for(&built);
+
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built, &artifacts);
+}
+
+#[test]
 fn test_apply_checkpoint_snark_multi_update_and_deposit() {
     let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
     let (ctx, epoch) = mock_for(&built);
@@ -222,6 +236,83 @@ fn test_apply_checkpoint_snark_multi_update_and_deposit() {
             .len(),
         2,
         "block sync should produce one snark record per update tx"
+    );
+}
+
+#[test]
+fn test_apply_checkpoint_replays_manifests_spread_across_non_terminal_blocks() {
+    let built = build_epoch(EpochShape::ManifestsInNonTerminalBlocks);
+    assert!(
+        built.manifests_by_height.len() > 1,
+        "fixture should spread manifests across multiple blocks"
+    );
+    let (ctx, epoch) = mock_for(&built);
+
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built, &artifacts);
+}
+
+#[test]
+fn test_apply_checkpoint_rejects_manifests_exceeding_epoch_cap() {
+    let built = build_epoch(EpochShape::ManifestsExceedEpochCap);
+    assert_eq!(
+        built.manifests_by_height.len(),
+        MAX_SEALING_MANIFEST_COUNT as usize + 1,
+        "fixture should exceed the epoch manifest cap"
+    );
+    let (ctx, epoch) = mock_for(&built);
+
+    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("range should exceed manifest cap");
+    assert!(
+        matches!(
+            err,
+            WorkerError::L1RangeTooLarge {
+                len,
+                max,
+                ..
+            } if len == MAX_SEALING_MANIFEST_COUNT as u32 + 1
+                && max == MAX_SEALING_MANIFEST_COUNT as u32
+        ),
+        "expected L1RangeTooLarge, got {err:?}"
+    );
+}
+
+#[test]
+fn test_apply_checkpoint_missing_manifest_still_errors() {
+    let built = build_epoch(EpochShape::ManifestsInNonTerminalBlocks);
+    let missing_height = built.manifests_by_height[1].0;
+    let (mut ctx, epoch) = mock_for(&built);
+    ctx.manifests.remove(&missing_height);
+
+    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("missing manifest should fail");
+    assert!(
+        matches!(err, WorkerError::MissingDependency("mock l1 manifest")),
+        "expected missing manifest dependency, got {err:?}"
+    );
+}
+
+#[test]
+fn test_apply_checkpoint_inverted_l1_range_still_errors() {
+    let mut built = build_epoch(EpochShape::DepositManifestOnly);
+    let payload = built.checkpoint_payload.clone();
+    let base_l1_height = built.prev_summary.new_l1().height();
+    let inverted_tip = CheckpointTip::new(
+        payload.new_tip().epoch,
+        base_l1_height - 1,
+        *payload.new_tip().l2_commitment(),
+    );
+    built.checkpoint_payload = CheckpointPayload::new(
+        inverted_tip,
+        payload.sidecar().clone(),
+        payload.proof().to_vec(),
+    )
+    .expect("rebuild payload with inverted L1 tip");
+    let (ctx, epoch) = mock_for(&built);
+
+    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("inverted L1 range should fail");
+    assert!(
+        matches!(err, WorkerError::L1RangeInverted { from: 2, to: 0, .. }),
+        "expected inverted L1 range, got {err:?}"
     );
 }
 

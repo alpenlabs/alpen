@@ -16,10 +16,6 @@ use strata_ol_stf::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
-use zkaleido::{ProofReceiptWithMetadata, ZkVm};
-use zkaleido_sp1_groth16_verifier::{
-    GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, VK_HASH_PREFIX_LENGTH,
-};
 
 pub(crate) type StateDiffRaw = Vec<u8>;
 
@@ -178,34 +174,13 @@ impl CheckpointWorkerContextImpl {
         }
     }
 
-    /// Normalizes proof bytes for checkpoint payload encoding.
-    ///
-    /// SP1 Groth16 proofs persisted by the SP1 host include a 4-byte verifying-key hash prefix.
-    /// ASM checkpoint predicate verification expects the raw Groth16 witness bytes (128/256 bytes),
-    /// so strip that SP1 prefix when present. The producing backend is read off the receipt's
-    /// metadata rather than carried in the proof key.
-    fn payload_proof_bytes(receipt: &ProofReceiptWithMetadata) -> Vec<u8> {
-        let proof_bytes = receipt.receipt().proof().as_bytes();
-        let prefixed_compressed_len = GROTH16_PROOF_COMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
-        let prefixed_uncompressed_len = GROTH16_PROOF_UNCOMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
-
-        if matches!(receipt.metadata().zkvm(), ZkVm::SP1)
-            && (proof_bytes.len() == prefixed_compressed_len
-                || proof_bytes.len() == prefixed_uncompressed_len)
-        {
-            return proof_bytes[VK_HASH_PREFIX_LENGTH..].to_vec();
-        }
-
-        proof_bytes.to_vec()
-    }
-
     /// Attempts to read a non-empty proof from the proof DB for the given epoch commitment.
     ///
     /// Returns `Ok(Some(bytes))` if a valid proof is found, `Ok(None)` if no
     /// proof is available yet.
     fn try_read_proof(&self, commitment: EpochCommitment) -> anyhow::Result<Option<Vec<u8>>> {
         if let Some(receipt) = self.storage.checkpoint_proof().get_proof(&commitment)? {
-            let proof_bytes = Self::payload_proof_bytes(&receipt);
+            let proof_bytes = receipt.receipt().proof().as_bytes().to_vec();
             if proof_bytes.is_empty() {
                 warn!(%commitment, "empty proof receipt found");
                 return Ok(None);

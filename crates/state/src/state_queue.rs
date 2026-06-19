@@ -46,13 +46,6 @@ impl<T> StateQueue<T> {
         self.base_idx
     }
 
-    /// Returns a slice over the entries in the queue, without their positioning
-    /// information.  Consider if `.iter_entries` is more well-suited.
-    // TODO(STR-3688): is it bad to expose this?
-    pub fn entries(&self) -> &[T] {
-        &self.entries
-    }
-
     /// Returns the number of items in the queue.
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -96,7 +89,7 @@ impl<T> StateQueue<T> {
 
     /// Returns a mut ref to the front entry in the queue, if it exists.
     pub fn front_mut(&mut self) -> Option<&mut T> {
-        self.entries.last_mut()
+        self.entries.first_mut()
     }
 
     /// Returns the index of the element at the back of the queue, if there is
@@ -108,8 +101,7 @@ impl<T> StateQueue<T> {
     /// Returns the absolute index of and a reference to the back entry in the
     /// queue, if it exists.
     pub fn back_entry(&self) -> Option<(u64, &T)> {
-        // Is there a better way to do this?
-        self.entries.last().map(|e| (self.back_idx().unwrap(), e))
+        self.back_idx().zip(self.entries.last())
     }
 
     /// Returns a reference to the back entry in the queue, if it exists.
@@ -284,7 +276,6 @@ impl<T> StateQueue<T> {
 mod tests {
     use super::StateQueue;
 
-    // TODO(STR-3688): maybe add a queue that goes back and forth several times
     #[test]
     fn test_push_pop_arr() {
         let mut q = StateQueue::<u64>::new_empty();
@@ -365,6 +356,110 @@ mod tests {
         assert_eq!(q.back_idx(), Some(10));
         assert_eq!(q.back(), Some(&5));
 
-        // TODO(STR-3688): add more coverage here.
+        // Truncating to the current next index is a no-op.
+        assert!(q.truncate_abs(q.next_idx()));
+        assert_eq!(q.back(), Some(&5));
+
+        // Out-of-range targets leave the queue unchanged.
+        assert!(!q.truncate_abs(9));
+        assert!(!q.truncate_abs(20));
+        assert_eq!(q.back(), Some(&5));
+
+        // Truncating down to the base empties the queue while keeping the base.
+        assert!(q.truncate_abs(10));
+        assert!(q.is_empty());
+        assert_eq!(q.base_idx(), 10);
+        assert_eq!(q.next_idx(), 10);
+    }
+
+    #[test]
+    fn test_back_and_forth() {
+        let mut q = StateQueue::<u64>::new_empty();
+
+        // Repeatedly fill and drain so the base index advances across rounds.
+        for round in 0..4u64 {
+            let base = q.base_idx();
+            assert!(q.is_empty());
+
+            for i in 0..5 {
+                let idx = q.push_back(round * 100 + i);
+                assert_eq!(idx, base + i);
+            }
+            assert_eq!(q.front(), Some(&(round * 100)));
+            assert_eq!(q.back(), Some(&(round * 100 + 4)));
+            assert_eq!(q.front_idx(), Some(base));
+            assert_eq!(q.back_idx(), Some(base + 4));
+
+            for i in 0..5 {
+                assert_eq!(q.front_idx(), Some(base + i));
+                assert_eq!(q.pop_front(), Some(round * 100 + i));
+            }
+            assert_eq!(q.base_idx(), base + 5);
+        }
+    }
+
+    #[test]
+    fn test_absolute_access() {
+        let mut q = StateQueue::<u64>::new_at_index(10);
+
+        // An empty queue has no front or back entry.
+        assert_eq!(q.front_entry(), None);
+        assert_eq!(q.back_entry(), None);
+
+        q.push_back(100); // idx 10
+        q.push_back(101); // idx 11
+        q.push_back(102); // idx 12
+
+        assert_eq!(q.get_absolute(9), None);
+        assert_eq!(q.get_absolute(10), Some(&100));
+        assert_eq!(q.get_absolute(12), Some(&102));
+        assert_eq!(q.get_absolute(13), None);
+
+        assert!(!q.contains_abs(9));
+        assert!(q.contains_abs(10));
+        assert!(q.contains_abs(12));
+        assert!(!q.contains_abs(13));
+
+        assert_eq!(q.front_entry(), Some((10, &100)));
+        assert_eq!(q.back_entry(), Some((12, &102)));
+
+        let collected: Vec<_> = q.iter_entries().map(|(i, e)| (i, *e)).collect();
+        assert_eq!(collected, vec![(10, 100), (11, 101), (12, 102)]);
+    }
+
+    #[test]
+    fn test_front_mut() {
+        let mut q = StateQueue::<u64>::new_empty();
+        q.push_back(1);
+        q.push_back(2);
+
+        *q.front_mut().unwrap() = 99;
+        assert_eq!(q.front(), Some(&99));
+        assert_eq!(q.back(), Some(&2));
+    }
+
+    #[test]
+    fn test_drop() {
+        let mut q = StateQueue::<u64>::new_at_index(5);
+        for i in 0..5 {
+            q.push_back(i); // abs idx 5..10
+        }
+
+        // Cannot drop more than present.
+        assert!(!q.drop_n(6));
+        assert_eq!(q.base_idx(), 5);
+
+        assert!(q.drop_n(2));
+        assert_eq!(q.base_idx(), 7);
+        assert_eq!(q.front(), Some(&2));
+
+        // drop_abs to an earlier base fails; to current base is a no-op.
+        assert!(!q.drop_abs(6));
+        assert!(q.drop_abs(7));
+        assert_eq!(q.base_idx(), 7);
+
+        assert!(q.drop_abs(10));
+        assert!(q.is_empty());
+        assert_eq!(q.base_idx(), 10);
     }
 }

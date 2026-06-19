@@ -83,6 +83,19 @@ pub trait OLClientRpc {
         account_id: AccountId,
         tag: OLBlockTag,
     ) -> RpcResult<Option<RpcSnarkAccountState>>;
+
+    /// Get published manifest metadata for a Snark account update.
+    ///
+    /// The consumed inbox range inside the resulting [`RpcSnarkAcctUpdateManifest`] is half-open:
+    /// `[prev_next_msg_idx, new_next_msg_idx)`.
+    /// `prev_next_msg_idx` is the first message consumed by this update, and
+    /// `new_next_msg_idx` is the first message not consumed.
+    #[method(name = "getSnarkAcctUpdateManifest")]
+    async fn get_snark_acct_update_manifest(
+        &self,
+        account_id: AccountId,
+        seq_no: u64,
+    ) -> RpcResult<RpcSnarkAcctUpdateManifest>;
 }
 
 /// OL RPC methods served by sequencer nodes for transaction submission.

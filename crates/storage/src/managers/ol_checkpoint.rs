@@ -346,6 +346,15 @@ impl OLCheckpointManager {
         self.ops.get_last_checkpoint_l1_ref_epoch_blocking()
     }
 
+    /// Gets all observed `(epoch commitment, L1 ref)` pairs at or above
+    /// `start_epoch`, ordered by ascending epoch.
+    pub fn get_checkpoint_l1_refs_from_blocking(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<(EpochCommitment, CheckpointL1Ref)>> {
+        self.ops.get_checkpoint_l1_refs_from_blocking(start_epoch)
+    }
+
     /// Deletes an OL checkpoint L1 ref by epoch commitment.
     pub async fn del_checkpoint_l1_ref_async(&self, epoch: EpochCommitment) -> DbResult<bool> {
         self.ops.del_checkpoint_l1_ref_async(epoch).await
@@ -470,11 +479,15 @@ mod tests {
 
     use proptest::prelude::*;
     use strata_asm_proto_checkpoint_types::{
-        test_utils::{checkpoint_payload_strategy, create_test_checkpoint_payload},
-        CheckpointPayload,
+        test_utils::create_test_checkpoint_payload, CheckpointPayload,
     };
     use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    // The upstream `checkpoint_payload_strategy` can generate sidecars whose total OL log
+    // payload exceeds the 16 KiB cap and panics; use the size-bounded local strategy
+    // instead. See the note
+    // on [`strata_db_tests::ol_checkpoint_tests::checkpoint_payload_strategy`].
+    use strata_db_tests::ol_checkpoint_tests::checkpoint_payload_strategy;
     use strata_db_types::traits::DatabaseBackend;
     use strata_identifiers::{
         test_utils::{

@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{Context, Result, anyhow, bail};
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_db_types::traits::BlockStatus;
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_sequencer::{SequencerBuilder, SequencerServiceStatus};
 use strata_service::ServiceMonitor;
@@ -96,6 +96,50 @@ async fn process_startup_high_watermark_block(
             Ok(())
         }
         HighWatermarkBlockAction::Clear => {
+            // Drop the invalid block's state-indexing writes before clearing
+            // the high-watermark, so the replacement block built for this
+            // slot doesn't conflict against stale indexing rows. Idempotent;
+            // also covers a crash between the FCM-side rollback and clear.
+            let block = block.expect("decide_startup_high_watermark_block_action checked presence");
+            let cutoff = OLBlockCommitment::new(
+                high_watermark.slot().saturating_sub(1),
+                *block.header().parent_blkid(),
+            );
+            storage
+                .ol_state_indexing()
+                .rollback_to_block_async(block.header().epoch(), cutoff)
+                .await
+                .inspect_err(|err| {
+                    error!(
+                        block_id = %block_id,
+                        slot = high_watermark.slot(),
+                        %err,
+                        "failed to roll back state indexing for invalid high-watermark OL block on startup; replacement generation for this slot remains blocked"
+                    );
+                })
+                .context("failed to roll back state indexing for invalid high-watermark OL block on startup")?;
+
+            // An invalid terminal block may have stored its epoch summary
+            // before being rejected. Drop it so it cannot shadow the
+            // replacement terminal's summary in canonical lookups.
+            if block.header().is_terminal() {
+                let summary_commitment =
+                    EpochCommitment::new(block.header().epoch(), high_watermark.slot(), block_id);
+                storage
+                    .ol_checkpoint()
+                    .del_epoch_summary_async(summary_commitment)
+                    .await
+                    .inspect_err(|err| {
+                        error!(
+                            block_id = %block_id,
+                            slot = high_watermark.slot(),
+                            %err,
+                            "failed to delete epoch summary of invalid high-watermark OL terminal block on startup; replacement generation for this slot remains blocked"
+                        );
+                    })
+                    .context("failed to delete epoch summary of invalid high-watermark OL terminal block on startup")?;
+            }
+
             let cleared = storage
                 .ol_block()
                 .clear_block_high_watermark_async(high_watermark)
