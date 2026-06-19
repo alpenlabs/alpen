@@ -39,6 +39,25 @@ Create the fullnode environment file before starting that stack:
 ```bash
 cp .env.alpen-fullnode.example .env
 # Edit .env for the target network, image tag, Signet peer, and Alpen EE peer.
+```
+
+Prepare the required files that are mounted by the checkpoint-sync and Alpen
+fullnode services:
+
+```bash
+mkdir -p configs/generated
+
+openssl rand -hex 32 > configs/generated/jwt.hex
+sudo chown 10001:10001 configs/generated/jwt.hex
+sudo chmod 600 configs/generated/jwt.hex
+```
+
+Copy the target network params into `configs/generated/ol-params.json` and
+`configs/generated/asm-params.json` before starting the stack.
+
+Then start the fullnode stack:
+
+```bash
 docker compose -f compose-fullnode.yml up -d
 ```
 
