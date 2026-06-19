@@ -1,21 +1,21 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{
-    backend::DatabaseBackend,
-    ol_block::{BlockStatus, OLBlockDatabase},
-    ol_checkpoint::OLCheckpointDatabase,
-    ol_state::OLStateDatabase,
+    backend::DatabaseBackend, ol_block::OLBlockDatabase, ol_state::OLStateDatabase,
     ol_state_index::OLStateIndexingDatabase,
 };
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 
 use super::{
-    checkpoint::{get_latest_checkpoint_last_slot, get_latest_finalized_checkpoint_epoch},
+    checkpoint::{
+        delete_ol_checkpoint_data_from_epoch, get_last_ol_checkpoint_epoch,
+        get_latest_checkpoint_last_slot, get_latest_finalized_checkpoint_epoch,
+    },
     mmr::{
         execute_mmr_index_revert_plan, get_mmr_index_revert_plan, print_mmr_index_revert_summary,
         validate_mmr_index_revert_plan, validate_mmr_index_revert_prefixes,
     },
-    ol::get_ol_block_slot_and_epoch,
+    ol::{delete_ol_block_data, get_ol_block_slot_and_epoch, mark_ol_block_unchecked},
 };
 use crate::{
     cli::OutputFormat,
@@ -224,9 +224,10 @@ pub(crate) fn revert_ol_state(
 
             if has_state {
                 commitments_to_delete.push(commitment);
-                blocks_to_mark_unchecked.push(block_id);
                 if args.delete_blocks {
                     blocks_to_delete.push(block_id);
+                } else {
+                    blocks_to_mark_unchecked.push(block_id);
                 }
             }
         }
@@ -237,22 +238,12 @@ pub(crate) fn revert_ol_state(
     // but a later storage failure can still leave partial effects.
     if !dry_run {
         for commitment in &commitments_to_delete {
-            db.ol_state_db()
-                .del_ol_write_batch(*commitment)
-                .internal_error("Failed to delete OL write batch")?;
-            db.ol_state_db()
-                .del_toplevel_ol_state(*commitment)
-                .internal_error("Failed to delete OL state")?;
-        }
-        for block_id in &blocks_to_mark_unchecked {
-            db.ol_block_db()
-                .set_block_status(*block_id, BlockStatus::Unchecked)
-                .internal_error("Failed to set OL block status")?;
-        }
-        for block_id in &blocks_to_delete {
-            db.ol_block_db()
-                .del_block_data(*block_id)
-                .internal_error("Failed to delete OL block")?;
+            delete_ol_state_data(db, *commitment)?;
+            if args.delete_blocks {
+                delete_ol_block_data(db, *commitment.blkid())?;
+            } else {
+                mark_ol_block_unchecked(db, *commitment.blkid())?;
+            }
         }
     }
 
@@ -274,34 +265,13 @@ pub(crate) fn revert_ol_state(
             .internal_error("Failed to rewrite canonical OL block index")?;
     }
 
-    let mut checkpoints_to_delete = Vec::new();
-    let mut epoch_summaries_to_delete = Vec::new();
+    let checkpoints_to_delete: Vec<_> = get_last_ol_checkpoint_epoch(db)?
+        .map(|last_epoch| (first_epoch_to_clean..=last_epoch).collect())
+        .unwrap_or_default();
+    let epoch_summaries_to_delete = checkpoints_to_delete.clone();
 
-    if let Some(latest_epoch_commitment) = db
-        .ol_checkpoint_db()
-        .get_last_checkpoint_payload_epoch()
-        .internal_error("Failed to get last checkpoint epoch")?
-    {
-        let last_epoch = latest_epoch_commitment.epoch();
-        for epoch in first_epoch_to_clean..=last_epoch {
-            checkpoints_to_delete.push(epoch);
-            epoch_summaries_to_delete.push(epoch);
-        }
-
-        if !dry_run {
-            let _ = db
-                .ol_checkpoint_db()
-                .del_checkpoint_payload_entries_from_epoch(first_epoch_to_clean)
-                .internal_error("Failed to delete OL checkpoint payloads")?;
-            let _ = db
-                .ol_checkpoint_db()
-                .del_checkpoint_signing_entries_from_epoch(first_epoch_to_clean)
-                .internal_error("Failed to delete OL checkpoint signing entries")?;
-            let _ = db
-                .ol_checkpoint_db()
-                .del_epoch_summaries_from_epoch(first_epoch_to_clean)
-                .internal_error("Failed to delete OL epoch summaries")?;
-        }
+    if !dry_run {
+        delete_ol_checkpoint_data_from_epoch(db, first_epoch_to_clean)?;
     }
 
     if !dry_run {
@@ -360,6 +330,20 @@ fn format_ol_commitment(commitment: &OLBlockCommitment) -> String {
         commitment.slot(),
         hex::encode(commitment.blkid().as_ref())
     )
+}
+
+/// Deletes the OL write batch and toplevel state rows keyed by one block commitment.
+fn delete_ol_state_data(
+    db: &impl DatabaseBackend,
+    commitment: OLBlockCommitment,
+) -> Result<(), DisplayedError> {
+    db.ol_state_db()
+        .del_ol_write_batch(commitment)
+        .internal_error("Failed to delete OL write batch")?;
+    db.ol_state_db()
+        .del_toplevel_ol_state(commitment)
+        .internal_error("Failed to delete OL state")?;
+    Ok(())
 }
 
 /// Reverts the indexing DB so its `last_applied_block` and per-block
