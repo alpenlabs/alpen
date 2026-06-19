@@ -1389,6 +1389,16 @@ impl TestStorageFixtureBuilder {
                 .await
                 .expect("Failed to store parent block");
 
+            fixture
+                .storage()
+                .ol_block()
+                .update_canonical_blocks_above_async(
+                    parent_header.slot().saturating_sub(1),
+                    vec![(parent_header.slot(), *commitment.blkid())],
+                )
+                .await
+                .expect("Failed to store parent block in canonical index");
+
             commitment
         } else {
             // No parent slot - return null commitment for genesis testing

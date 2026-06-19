@@ -642,6 +642,11 @@ mod tests {
             .ol_state()
             .put_toplevel_ol_state_blocking(block_1_commitment, (*genesis_state).clone())
             .expect("test: insert block 1 state");
+        // Update the canonical index.
+        storage
+            .ol_block()
+            .update_canonical_blocks_above_blocking(1, vec![(1, block_1_blkid)])
+            .expect("test: canonical entry for slot 1");
 
         // Validate checks with tip at block 1.
         let result_after_block_1 = (|| {
@@ -696,6 +701,11 @@ mod tests {
             .ol_state()
             .put_toplevel_ol_state_blocking(block_2_commitment, (*genesis_state).clone())
             .expect("test: insert block 2 state");
+        // Update the canonical index.
+        storage
+            .ol_block()
+            .update_canonical_blocks_above_blocking(2, vec![(2, block_2_blkid)])
+            .expect("test: canonical entry for slot 2");
 
         // Validate checks with tip at block 2.
         let result_after_block_2 = (|| {
