@@ -62,13 +62,8 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
 
     async fn get_canonical_block_at(&self, slot: Slot) -> DbResult<Option<OLBlockCommitment>>;
 
-    /// Replaces the canonical index suffix above `pivot_slot` with `blocks`.
-    ///
-    /// Single write path for canonical-tip changes: truncates every canonical entry above
-    /// `pivot_slot`, then writes `blocks`, atomically. An extend passes an empty truncation; a
-    /// reorg truncates the abandoned branch and writes the new one; a revert passes an empty
-    /// `blocks`.
-    async fn replace_canonical_suffix(
+    /// Updates the canonical blocks above `pivot_slot` with `blocks`.
+    async fn update_canonical_blocks_above(
         &self,
         pivot_slot: Slot,
         blocks: Vec<(Slot, OLBlockId)>,

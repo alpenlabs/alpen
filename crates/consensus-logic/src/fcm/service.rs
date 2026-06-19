@@ -737,7 +737,7 @@ async fn record_canonical_suffix<C: FcmContext>(
 ) -> anyhow::Result<()> {
     fcm_state
         .ctx()
-        .replace_canonical_suffix(pivot_slot, blocks)
+        .update_canonical_blocks_above(pivot_slot, blocks)
         .await?;
     Ok(())
 }
@@ -883,8 +883,6 @@ mod tests {
             if !blocks_at_slot.contains(&blkid) {
                 blocks_at_slot.push(blkid);
             }
-            // The canonical index is written only via `replace_canonical_suffix`,
-            // mirroring the real DB where plain block puts do not touch it.
             if let Some(state) = state {
                 inner.states.insert(commitment, Arc::new(state));
             }
@@ -1069,7 +1067,7 @@ mod tests {
                 .copied())
         }
 
-        async fn replace_canonical_suffix(
+        async fn update_canonical_blocks_above(
             &self,
             pivot_slot: Slot,
             blocks: Vec<(Slot, OLBlockId)>,
@@ -1180,13 +1178,13 @@ mod tests {
             self.storage.get_canonical_block_at(slot).await
         }
 
-        async fn replace_canonical_suffix(
+        async fn update_canonical_blocks_above(
             &self,
             pivot_slot: Slot,
             blocks: Vec<(Slot, OLBlockId)>,
         ) -> DbResult<()> {
             self.storage
-                .replace_canonical_suffix(pivot_slot, blocks)
+                .update_canonical_blocks_above(pivot_slot, blocks)
                 .await
         }
 
@@ -1694,7 +1692,7 @@ mod tests {
         fixture
             .ctx
             .storage()
-            .replace_canonical_suffix(0, vec![(1, fork.a1.blkid()), (2, fork.a2.blkid())])
+            .update_canonical_blocks_above(0, vec![(1, fork.a1.blkid()), (2, fork.a2.blkid())])
             .await?;
 
         process_fc_message(
@@ -1926,7 +1924,7 @@ mod tests {
         // canonical write.
         assert_eq!(storage.get_canonical_block_at(1).await.unwrap(), None);
         storage
-            .replace_canonical_suffix(0, vec![(1, blkid)])
+            .update_canonical_blocks_above(0, vec![(1, blkid)])
             .await
             .unwrap();
         assert_eq!(

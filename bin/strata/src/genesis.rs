@@ -66,7 +66,7 @@ pub(crate) fn init_ol_genesis(
     // crash in between would make restart skip genesis with missing data.
     storage
         .ol_block()
-        .replace_canonical_suffix_blocking(0, vec![(0, genesis_blkid)])?;
+        .update_canonical_blocks_above_blocking(0, vec![(0, genesis_blkid)])?;
 
     info!(%genesis_blkid, slot = 0, "OL genesis initialization complete");
     Ok(commitment)

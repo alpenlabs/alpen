@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use metrics::{counter, gauge};
 use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
-use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
+use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;
 use tokio::time::sleep;
 use tracing::{debug, warn};
@@ -243,7 +243,7 @@ impl<C: FcmContext> ServiceState for FcmServiceState<C> {
 #[derive(Debug)]
 pub(crate) struct FcmInnerState {
     chain_tracker: UnfinalizedBlockTracker,
-    cur_best_block: L2BlockCommitment,
+    cur_best_block: OLBlockCommitment,
     cur_olstate: Arc<OLState>,
     startup_replay_candidates: Vec<OLBlockId>,
     epochs_pending_finalization: VecDeque<EpochCommitment>,
@@ -252,7 +252,7 @@ pub(crate) struct FcmInnerState {
 impl FcmInnerState {
     pub(crate) fn new(
         chain_tracker: UnfinalizedBlockTracker,
-        cur_best_block: L2BlockCommitment,
+        cur_best_block: OLBlockCommitment,
         cur_olstate: Arc<OLState>,
         startup_replay_candidates: Vec<OLBlockId>,
     ) -> Self {
@@ -334,7 +334,7 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
 async fn determine_start_tip(
     unfin: &UnfinalizedBlockTracker,
     storage: &(impl FcmStorage + ?Sized),
-) -> anyhow::Result<L2BlockCommitment> {
+) -> anyhow::Result<OLBlockCommitment> {
     let mut iter = unfin.chain_tips_iter();
 
     let mut best = iter.next().expect("fcm: no chain tips");
@@ -362,7 +362,7 @@ async fn determine_start_tip(
         }
     }
 
-    Ok(L2BlockCommitment::new(best_slot, *best))
+    Ok(OLBlockCommitment::new(best_slot, *best))
 }
 
 /// Rewrites the canonical index to match the reconstructed chain.
@@ -371,7 +371,7 @@ async fn determine_start_tip(
 /// since finalized history never forks.
 async fn reconcile_canonical_index(
     unfin: &UnfinalizedBlockTracker,
-    tip: L2BlockCommitment,
+    tip: OLBlockCommitment,
     storage: &(impl FcmStorage + ?Sized),
 ) -> anyhow::Result<()> {
     let finalized_slot = unfin.finalized_epoch().last_slot();
@@ -418,7 +418,7 @@ async fn reconcile_canonical_index(
 
     chain.reverse();
     storage
-        .replace_canonical_suffix(finalized_slot, chain)
+        .update_canonical_blocks_above(finalized_slot, chain)
         .await?;
     Ok(())
 }

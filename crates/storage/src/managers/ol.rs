@@ -251,31 +251,31 @@ impl OLBlockManager {
             .map(|id| OLBlockCommitment::new(slot, id)))
     }
 
-    /// Replaces the canonical index suffix above `pivot_slot` with `blocks`. Async.
+    /// Updates canonical blocks above `pivot_slot`.
     ///
-    /// Truncates every canonical entry above `pivot_slot`, then writes `blocks`, in one
-    /// transaction.
-    pub async fn replace_canonical_suffix_async(
+    /// Atomically removes every canonical entry for slots strictly greater than `pivot_slot`, then
+    /// writes each `(slot, id)` in `blocks`.
+    pub async fn update_canonical_blocks_above_async(
         &self,
         pivot_slot: Slot,
         blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()> {
         self.ops
-            .replace_canonical_suffix_async(pivot_slot, blocks)
+            .update_canonical_blocks_above_async(pivot_slot, blocks)
             .await
     }
 
-    /// Replaces the canonical index suffix above `pivot_slot` with `blocks`. Blocking.
+    /// Updates canonical blocks above `pivot_slot`.
     ///
-    /// Truncates every canonical entry above `pivot_slot`, then writes `blocks`, in one
-    /// transaction.
-    pub fn replace_canonical_suffix_blocking(
+    /// Atomically removes every canonical entry for slots strictly greater than `pivot_slot`, then
+    /// writes each `(slot, id)` in `blocks`.
+    pub fn update_canonical_blocks_above_blocking(
         &self,
         pivot_slot: Slot,
         blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()> {
         self.ops
-            .replace_canonical_suffix_blocking(pivot_slot, blocks)
+            .update_canonical_blocks_above_blocking(pivot_slot, blocks)
     }
 }
 
@@ -430,7 +430,7 @@ mod tests {
 
                 // Fork choice records the canonical (second) block at the slot.
                 manager
-                    .replace_canonical_suffix_async(slot - 1, vec![(slot, canonical_id)])
+                    .update_canonical_blocks_above_async(slot - 1, vec![(slot, canonical_id)])
                     .await
                     .expect("seed canonical");
 
