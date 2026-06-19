@@ -1,7 +1,8 @@
-use std::{collections::VecDeque, mem, sync::Arc, time};
+use std::{collections::VecDeque, iter, mem, sync::Arc, time};
 
 use anyhow::anyhow;
 use metrics::{counter, gauge};
+use strata_identifiers::Slot;
 use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
@@ -14,6 +15,8 @@ use crate::{
     fcm::context::{FcmContext, FcmStorage},
     unfinalized_tracker::UnfinalizedBlockTracker,
 };
+
+type CanonicalSuffix = Vec<(Slot, OLBlockId)>;
 
 /// Runtime container for the FCM service.
 ///
@@ -294,14 +297,11 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
         .load_unfinalized_ol_blocks_async(fcm_ctx.as_ref())
         .await?;
 
-    let cur_tip_block = determine_start_tip(&chain_tracker, fcm_ctx.as_ref()).await?;
+    let cur_tip_block = determine_start_tip(&chain_tracker)?;
     debug!(?chain_tracker, "init chain tracker");
 
-    // Force the canonical index to match the reconstructed chain before any
-    // consumer reads it. A crash can leave the index ahead of, behind, or forked
-    // from fork choice; this repairs all of those by rewriting the unfinalized
-    // suffix from the reconstructed tip.
-    reconcile_canonical_index(&chain_tracker, cur_tip_block, fcm_ctx.as_ref()).await?;
+    // Update the canonical blocks index just in case this might have drifted during the restarts.
+    reconcile_canonical_blocks_index(&chain_tracker, cur_tip_block, fcm_ctx.as_ref()).await?;
 
     // Load in that block's ol_state.
     let tip_blkid = cur_tip_block;
@@ -329,96 +329,116 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     ))
 }
 
-/// Determines the starting chain tip.  For now, this is just the block with the
-/// highest index, choosing the lowest ordered blockid in the case of ties.
-async fn determine_start_tip(
-    unfin: &UnfinalizedBlockTracker,
-    storage: &(impl FcmStorage + ?Sized),
-) -> anyhow::Result<OLBlockCommitment> {
-    let mut iter = unfin.chain_tips_iter();
-
-    let mut best = iter.next().expect("fcm: no chain tips");
-    let mut best_slot = storage
-        .get_ol_block(*best)
-        .await?
-        .ok_or(Error::MissingOLBlock(*best))?
-        .header()
-        .slot();
-
-    // Iterate through the remaining elements and choose.
-    for blkid in iter {
-        let blkid_slot = storage
-            .get_ol_block(*blkid)
-            .await?
-            .ok_or(Error::MissingOLBlock(*blkid))?
-            .header()
-            .slot();
-
-        if blkid_slot == best_slot && blkid < best {
-            best = blkid;
-        } else if blkid_slot > best_slot {
-            best = blkid;
-            best_slot = blkid_slot;
-        }
-    }
-
-    Ok(OLBlockCommitment::new(best_slot, *best))
+/// Determines the starting chain tip by choosing the highest-slot tip, using
+/// the lowest ordered block ID as the tie-breaker.
+fn determine_start_tip(unfin: &UnfinalizedBlockTracker) -> anyhow::Result<OLBlockCommitment> {
+    // Unfinalized block tracker only loads blocks which are valid and exist in db so no need to
+    // check for db existence at this point.
+    unfin
+        .chain_tip_blocks_iter()
+        .max_by(|a, b| {
+            a.slot()
+                .cmp(&b.slot())
+                .then_with(|| b.blkid().cmp(a.blkid()))
+        })
+        .ok_or_else(|| anyhow!("fcm: no chain tips"))
 }
 
 /// Rewrites the canonical index to match the reconstructed chain.
 ///
 /// Only the unfinalized suffix is rewritten; slots at or below the finalized tip are left untouched
 /// since finalized history never forks.
-async fn reconcile_canonical_index(
+async fn reconcile_canonical_blocks_index(
     unfin: &UnfinalizedBlockTracker,
     tip: OLBlockCommitment,
     storage: &(impl FcmStorage + ?Sized),
 ) -> anyhow::Result<()> {
-    let finalized_slot = unfin.finalized_epoch().last_slot();
+    let (pivot_slot, suffix) = canonical_suffix_from_tip(unfin, tip, storage).await?;
+    storage
+        .update_canonical_blocks_above(pivot_slot, suffix)
+        .await?;
+    Ok(())
+}
 
-    // Slots strictly decrease child->parent (enforced by `attach_block`), so a
-    // non-decrease means a corrupt parent link; erroring out also bounds the walk.
-    let mut chain = Vec::new();
-    let mut cursor = *tip.blkid();
-    let mut prev_slot: Option<u64> = None;
-    while let Some(parent) = unfin.get_parent(&cursor) {
-        let slot = unfin
-            .get_slot(&cursor)
-            .ok_or_else(|| anyhow!("fcm: reconstructed block {cursor} missing from tracker"))?;
-        if let Some(prev) = prev_slot {
-            if slot >= prev {
-                return Err(anyhow!(
-                    "fcm: non-decreasing slot {slot} >= {prev} walking parents from tip {}; corrupt parent link",
-                    tip.blkid()
-                ));
-            }
-        }
-        prev_slot = Some(slot);
-        chain.push((slot, cursor));
-        cursor = *parent;
-    }
-
-    // The walk must land on the finalized tip; otherwise the chain doesn't trace
-    // back to finalized history — corruption, not recoverable.
+/// Walks from `tip` toward the finalized tip until it reaches the first block
+/// already recorded as canonical.
+async fn canonical_suffix_from_tip(
+    unfin: &UnfinalizedBlockTracker,
+    tip: OLBlockCommitment,
+    storage: &(impl FcmStorage + ?Sized),
+) -> anyhow::Result<(Slot, CanonicalSuffix)> {
+    let parent_chain = construct_validated_parent_chain(unfin, tip)?;
     let finalized_tip = *unfin.finalized_tip();
-    if cursor != finalized_tip {
+
+    if parent_chain.last() != Some(&finalized_tip) {
         return Err(anyhow!(
             "fcm: reconstructed chain tip {} does not trace back to finalized tip {finalized_tip}",
             tip.blkid()
         ));
     }
 
-    // The finalized slot is left untouched, so verify it is already canonical.
-    let canonical_finalized = storage.get_canonical_block_at(finalized_slot).await?;
-    if canonical_finalized.map(|c| *c.blkid()) != Some(finalized_tip) {
-        return Err(anyhow!(
-            "fcm: canonical block at finalized slot {finalized_slot} is {canonical_finalized:?}, expected finalized tip {finalized_tip}"
-        ));
+    let mut suffix = Vec::new();
+
+    for blkid in parent_chain {
+        let slot = tracker_slot(unfin, blkid)?;
+
+        let canonical = storage.get_canonical_block_at(slot).await?;
+        if canonical.map(|c| *c.blkid()) == Some(blkid) {
+            suffix.reverse();
+            return Ok((slot, suffix));
+        }
+
+        if blkid == finalized_tip {
+            let finalized_slot = unfin.finalized_epoch().last_slot();
+            return Err(anyhow!(
+                "fcm: canonical block at finalized slot {finalized_slot} is {canonical:?}, expected finalized tip {finalized_tip}"
+            ));
+        }
+
+        suffix.push((slot, blkid));
     }
 
-    chain.reverse();
-    storage
-        .update_canonical_blocks_above(finalized_slot, chain)
-        .await?;
+    unreachable!("validated parent chain always includes the finalized tip")
+}
+
+fn construct_validated_parent_chain(
+    unfin: &UnfinalizedBlockTracker,
+    tip: OLBlockCommitment,
+) -> anyhow::Result<Vec<OLBlockId>> {
+    let mut chain = Vec::new();
+    let mut child_slot: Option<Slot> = None;
+    let parent_chain =
+        iter::successors(Some(*tip.blkid()), |blkid| unfin.get_parent(blkid).copied());
+
+    for blkid in parent_chain {
+        let slot = tracker_slot(unfin, blkid)?;
+        ensure_parent_slot_descends(slot, child_slot, tip)?;
+        child_slot = Some(slot);
+        chain.push(blkid);
+    }
+
+    Ok(chain)
+}
+
+fn tracker_slot(unfin: &UnfinalizedBlockTracker, blkid: OLBlockId) -> anyhow::Result<Slot> {
+    unfin
+        .get_slot(&blkid)
+        .ok_or_else(|| anyhow!("fcm: reconstructed block {blkid} missing from tracker"))
+}
+
+fn ensure_parent_slot_descends(
+    parent_slot: Slot,
+    child_slot: Option<Slot>,
+    tip: OLBlockCommitment,
+) -> anyhow::Result<()> {
+    if let Some(child_slot) = child_slot {
+        if parent_slot >= child_slot {
+            return Err(anyhow!(
+                "fcm: non-decreasing slot {parent_slot} >= {child_slot} walking parents from tip {}; corrupt parent link",
+                tip.blkid()
+            ));
+        }
+    }
+
     Ok(())
 }
