@@ -1,4 +1,6 @@
-use bitcoin::{consensus::deserialize, hashes::Hash, Transaction};
+use bitcoin::consensus::deserialize;
+use bitcoin::hashes::Hash;
+use bitcoin::Transaction;
 use strata_db_types::l1_broadcast::{L1BroadcastDatabase, L1TxEntry, L1TxStatus};
 use strata_primitives::buf::Buf32;
 

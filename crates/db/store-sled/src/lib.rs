@@ -21,7 +21,8 @@ pub mod test_utils;
 pub mod utils;
 pub mod writer;
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
+use std::sync::Arc;
 
 // Re-exports
 pub use asm::AsmDBSled;
@@ -37,20 +38,26 @@ use ol_checkpoint::db::OLCheckpointDBSled;
 use ol_state::db::OLStateDBSled;
 use ol_state_index::db::OLStateIndexingDBSled;
 use rkyv as _;
-use strata_db_types::{
-    asm::AsmDatabase, backend::DatabaseBackend, checkpoint_proof::CheckpointProofDatabase,
-    chunked_envelope::L1ChunkedEnvelopeDatabase, client_state::ClientStateDatabase, l1::L1Database,
-    l1_broadcast::L1BroadcastDatabase, l1_writer::L1WriterDatabase, mempool::MempoolDatabase,
-    ol_block::OLBlockDatabase, ol_checkpoint::OLCheckpointDatabase, ol_state::OLStateDatabase,
-    ol_state_index::OLStateIndexingDatabase, prover_task::ProverTaskDatabase, DbResult,
-};
+use strata_db_types::DbResult;
+use strata_db_types::asm::AsmDatabase;
+use strata_db_types::backend::DatabaseBackend;
+use strata_db_types::checkpoint_proof::CheckpointProofDatabase;
+use strata_db_types::chunked_envelope::L1ChunkedEnvelopeDatabase;
+use strata_db_types::client_state::ClientStateDatabase;
+use strata_db_types::l1::L1Database;
+use strata_db_types::l1_broadcast::L1BroadcastDatabase;
+use strata_db_types::l1_writer::L1WriterDatabase;
+use strata_db_types::mempool::MempoolDatabase;
+use strata_db_types::ol_block::OLBlockDatabase;
+use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
+use strata_db_types::ol_state::OLStateDatabase;
+use strata_db_types::ol_state_index::OLStateIndexingDatabase;
+use strata_db_types::prover_task::ProverTaskDatabase;
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
 
-pub use crate::{
-    init::{init_core_dbs, open_sled_database},
-    prover::ProofDBSled,
-};
+pub use crate::init::{init_core_dbs, open_sled_database};
+pub use crate::prover::ProofDBSled;
 
 pub const SLED_NAME: &str = "strata-client";
 

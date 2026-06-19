@@ -1,13 +1,13 @@
 use strata_asm_common::AsmManifest;
-use strata_db_types::{l1::L1Database, DbResult};
-use strata_primitives::{L1Height, l1::L1BlockId};
+use strata_db_types::DbResult;
+use strata_db_types::l1::L1Database;
+use strata_primitives::L1Height;
+use strata_primitives::l1::L1BlockId;
 use typed_sled::batch::SledBatch;
 
 use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema};
-use crate::{
-    define_sled_database,
-    utils::{first, to_db_error},
-};
+use crate::define_sled_database;
+use crate::utils::{first, to_db_error};
 
 define_sled_database!(
     pub struct L1DBSled {

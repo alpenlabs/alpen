@@ -1,5 +1,8 @@
 use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, Slot};
-use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockId, L1Height};
+use strata_primitives::epoch::EpochCommitment;
+use strata_primitives::l1::L1BlockId;
+use strata_primitives::l2::L2BlockId;
+use strata_primitives::L1Height;
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 use typed_sled::error::Error;

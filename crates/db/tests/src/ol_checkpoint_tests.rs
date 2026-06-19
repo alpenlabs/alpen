@@ -1,12 +1,15 @@
 use proptest::prelude::*;
+use strata_asm_proto_checkpoint_types::test_utils::{
+    checkpoint_tip_strategy, create_test_checkpoint_payload,
+};
 use strata_asm_proto_checkpoint_types::{
-    test_utils::{checkpoint_tip_strategy, create_test_checkpoint_payload},
     CheckpointPayload, CheckpointSidecar, OLLog, TerminalHeaderComplement,
     MAX_TOTAL_LOG_PAYLOAD_BYTES,
 };
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{common::L1PayloadIntentIndex, ol_checkpoint::OLCheckpointDatabase};
+use strata_db_types::common::L1PayloadIntentIndex;
+use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
 use strata_identifiers::{
     AccountSerial, Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment,
     OLBlockId, RBuf32,

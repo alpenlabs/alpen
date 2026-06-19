@@ -5,7 +5,8 @@ use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_identifiers::{Epoch, EpochCommitment};
 
-use crate::{common::L1PayloadIntentIndex, DbResult};
+use crate::common::L1PayloadIntentIndex;
+use crate::DbResult;
 
 /// Database for OL checkpoint data.
 #[cfg_attr(

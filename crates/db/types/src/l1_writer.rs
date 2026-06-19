@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use strata_csm_types::{L1Payload, PayloadIntent};
 use strata_identifiers::{Buf32, Buf64};
 
-use crate::{common::L1TxId, DbResult};
+use crate::common::L1TxId;
+use crate::DbResult;
 
 /// Taproot script-spend sighash for the reveal transaction.
 pub type Sighash = Buf32;

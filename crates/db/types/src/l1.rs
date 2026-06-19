@@ -1,7 +1,8 @@
 //! L1 data database interface.
 
 use strata_asm_common::AsmManifest;
-use strata_primitives::{l1::L1BlockId, L1Height};
+use strata_primitives::l1::L1BlockId;
+use strata_primitives::L1Height;
 
 use crate::DbResult;
 

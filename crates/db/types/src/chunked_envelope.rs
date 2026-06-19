@@ -6,10 +6,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 use strata_l1_txfmt::MagicBytes;
 
-use crate::{
-    common::{L1TxId, L1WtxId},
-    DbResult,
-};
+use crate::common::{L1TxId, L1WtxId};
+use crate::DbResult;
 
 /// A chunked envelope entry representing a commit tx funding N reveal txs.
 ///

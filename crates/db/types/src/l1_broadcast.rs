@@ -3,10 +3,8 @@
 use std::fmt;
 
 use arbitrary::Arbitrary;
-use bitcoin::{
-    consensus::{self, deserialize, serialize},
-    Transaction,
-};
+use bitcoin::consensus::{self, deserialize, serialize};
+use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_identifiers::Buf32;

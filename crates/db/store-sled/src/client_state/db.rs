@@ -1,5 +1,6 @@
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_db_types::{client_state::ClientStateDatabase, DbResult};
+use strata_db_types::DbResult;
+use strata_db_types::client_state::ClientStateDatabase;
 use strata_primitives::l1::L1BlockCommitment;
 
 use super::schemas::ClientUpdateOutputSchema;

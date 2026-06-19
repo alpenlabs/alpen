@@ -1,8 +1,6 @@
 use sled::transaction::ConflictableTransactionError;
-use strata_db_types::{
-    ol_block::{BlockStatus, OLBlockDatabase},
-    DbError, DbResult,
-};
+use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
+use strata_db_types::{DbError, DbResult};
 use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
 use typed_sled::error::Error as TSledError;
@@ -11,10 +9,8 @@ use super::schemas::{
     OLBlockHeightSchema, OLBlockHighWatermarkSchema, OLBlockSchema, OLBlockStatusSchema,
     OLCanonicalBlockSchema,
 };
-use crate::{
-    define_sled_database,
-    utils::{first, to_db_error},
-};
+use crate::define_sled_database;
+use crate::utils::{first, to_db_error};
 
 const OL_BLOCK_HIGH_WATERMARK_KEY: u8 = 0;
 

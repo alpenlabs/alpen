@@ -2,13 +2,11 @@
 
 use std::collections::BTreeMap;
 
-use strata_db_types::{
-    ol_state_index::{
-        AccountCreatedRecord, AccountUpdateMeta, AccountUpdateRecord, EpochIndexingData,
-        InboxMessageRecord, IndexingWrites, OLStateIndexingDatabase,
-    },
-    DbError,
+use strata_db_types::ol_state_index::{
+    AccountCreatedRecord, AccountUpdateMeta, AccountUpdateRecord, EpochIndexingData,
+    InboxMessageRecord, IndexingWrites, OLStateIndexingDatabase,
 };
+use strata_db_types::DbError;
 use strata_identifiers::{AccountId, Buf32, EpochCommitment, Hash, OLBlockCommitment, OLBlockId};
 
 fn acct(seed: u8) -> AccountId {
