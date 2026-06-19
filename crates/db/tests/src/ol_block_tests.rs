@@ -55,6 +55,215 @@ pub fn test_get_empty_block_high_watermark(db: &impl OLBlockDatabase) {
     assert!(high_watermark.is_none());
 }
 
+fn canonical_id(byte: u8) -> OLBlockId {
+    OLBlockId::from(Buf32::from([byte; 32]))
+}
+
+pub fn test_get_canonical_block_empty(db: &impl OLBlockDatabase) {
+    let result = db
+        .get_canonical_block(7)
+        .expect("test: get canonical at empty slot");
+    assert!(result.is_none());
+    let err = db
+        .get_tip_slot()
+        .expect_err("test: empty canonical index has no tip slot");
+    assert!(matches!(err, DbError::NotBootstrapped));
+}
+
+pub fn test_replace_canonical_suffix_from_extend(db: &impl OLBlockDatabase) {
+    // Seed slots 0..=4, then extend by appending slot 5 with an empty truncation.
+    let seed: Vec<OLBlockId> = (0..=4).map(|s| canonical_id(s as u8)).collect();
+    db.replace_canonical_suffix_from(0, seed.clone())
+        .expect("test: seed canonical");
+
+    db.replace_canonical_suffix_from(5, vec![canonical_id(50)])
+        .expect("test: extend canonical");
+
+    for (slot, id) in seed.iter().enumerate() {
+        assert_eq!(db.get_canonical_block(slot as u64).unwrap(), Some(*id));
+    }
+    assert_eq!(db.get_canonical_block(5).unwrap(), Some(canonical_id(50)));
+}
+
+pub fn test_replace_canonical_suffix_from_reorg_shorter(db: &impl OLBlockDatabase) {
+    // Seed slots 0..=9, then reorg at pivot 5 onto a shorter branch (slots 6,7).
+    let seed: Vec<OLBlockId> = (0..=9).map(|s| canonical_id(s as u8)).collect();
+    db.replace_canonical_suffix_from(0, seed)
+        .expect("test: seed canonical");
+
+    let branch = vec![canonical_id(0x60), canonical_id(0x70)];
+    db.replace_canonical_suffix_from(6, branch)
+        .expect("test: reorg canonical");
+
+    // Slots 0..=5 untouched.
+    for s in 0..=5u64 {
+        assert_eq!(
+            db.get_canonical_block(s).unwrap(),
+            Some(canonical_id(s as u8))
+        );
+    }
+    // Slots 6,7 rewritten to the new branch.
+    assert_eq!(db.get_canonical_block(6).unwrap(), Some(canonical_id(0x60)));
+    assert_eq!(db.get_canonical_block(7).unwrap(), Some(canonical_id(0x70)));
+    // Slots 8,9 from the abandoned branch are gone.
+    assert_eq!(db.get_canonical_block(8).unwrap(), None);
+    assert_eq!(db.get_canonical_block(9).unwrap(), None);
+}
+
+pub fn test_replace_canonical_suffix_from_revert_empty_branch(db: &impl OLBlockDatabase) {
+    // Seed slots 0..=4, then revert to slot 2 with an empty branch.
+    let seed: Vec<OLBlockId> = (0..=4).map(|s| canonical_id(s as u8)).collect();
+    db.replace_canonical_suffix_from(0, seed)
+        .expect("test: seed canonical");
+
+    db.replace_canonical_suffix_from(3, Vec::new())
+        .expect("test: revert canonical");
+
+    for s in 0..=2u64 {
+        assert_eq!(
+            db.get_canonical_block(s).unwrap(),
+            Some(canonical_id(s as u8))
+        );
+    }
+    assert_eq!(db.get_canonical_block(3).unwrap(), None);
+    assert_eq!(db.get_canonical_block(4).unwrap(), None);
+    assert_eq!(db.get_tip_slot().unwrap(), 2);
+}
+
+pub fn test_replace_canonical_suffix_from_max(db: &impl OLBlockDatabase) {
+    db.replace_canonical_suffix_from(u64::MAX, vec![canonical_id(0xaa)])
+        .expect("test: seed canonical at max slot");
+
+    db.replace_canonical_suffix_from(u64::MAX, vec![canonical_id(0xbb)])
+        .expect("test: replace suffix from max slot");
+
+    assert_eq!(
+        db.get_canonical_block(u64::MAX).unwrap(),
+        Some(canonical_id(0xbb))
+    );
+}
+
+pub fn test_replace_canonical_suffix_from_overflow(db: &impl OLBlockDatabase) {
+    let err = db
+        .replace_canonical_suffix_from(u64::MAX, vec![canonical_id(0xaa), canonical_id(0xbb)])
+        .expect_err("test: overflowing canonical suffix must fail");
+    assert!(matches!(
+        err,
+        DbError::OLCanonicalSuffixOverflow {
+            start_slot: u64::MAX,
+            block_count: 2,
+        }
+    ));
+}
+
+pub fn test_replace_canonical_suffix_from_idempotent(db: &impl OLBlockDatabase) {
+    let seed: Vec<OLBlockId> = (0..=4).map(|s| canonical_id(s as u8)).collect();
+    db.replace_canonical_suffix_from(0, seed.clone())
+        .expect("test: seed canonical");
+    // Re-applying the same suffix is a no-op.
+    db.replace_canonical_suffix_from(0, seed.clone())
+        .expect("test: re-apply canonical");
+
+    for (slot, id) in seed.iter().enumerate() {
+        assert_eq!(db.get_canonical_block(slot as u64).unwrap(), Some(*id));
+    }
+    assert_eq!(db.get_tip_slot().unwrap(), 4);
+}
+
+pub fn test_delete_canonical_block_clears_canonical_index(
+    db: &impl OLBlockDatabase,
+    mut block: OLBlock,
+) {
+    block.signed_header.header.slot = 11;
+    let block_id = block.header().compute_blkid();
+
+    db.put_block_data(block).expect("test: put block");
+    db.replace_canonical_suffix_from(11, vec![block_id])
+        .expect("test: seed canonical");
+
+    assert_eq!(db.get_tip_slot().expect("test: get tip slot"), 11);
+
+    db.del_block_data(block_id).expect("test: delete block");
+
+    assert_eq!(
+        db.get_canonical_block(11)
+            .expect("test: get deleted canonical slot"),
+        None
+    );
+    let err = db
+        .get_tip_slot()
+        .expect_err("test: deleted canonical tip leaves no tip slot");
+    assert!(matches!(err, DbError::NotBootstrapped));
+}
+
+pub fn test_delete_canonical_block_truncates_canonical_suffix(
+    db: &impl OLBlockDatabase,
+    mut block1: OLBlock,
+    mut block2: OLBlock,
+    mut block3: OLBlock,
+) {
+    block1.signed_header.header.slot = 10;
+    block2.signed_header.header.slot = 11;
+    block3.signed_header.header.slot = 12;
+    let block1_id = block1.header().compute_blkid();
+    let block2_id = block2.header().compute_blkid();
+    let block3_id = block3.header().compute_blkid();
+
+    db.put_block_data(block1).expect("test: put block 1");
+    db.put_block_data(block2).expect("test: put block 2");
+    db.put_block_data(block3).expect("test: put block 3");
+    db.replace_canonical_suffix_from(10, vec![block1_id, block2_id, block3_id])
+        .expect("test: seed canonical suffix");
+
+    db.del_block_data(block2_id)
+        .expect("test: delete middle canonical block");
+
+    assert_eq!(
+        db.get_canonical_block(10)
+            .expect("test: get canonical slot 10"),
+        Some(block1_id)
+    );
+    assert_eq!(
+        db.get_canonical_block(11)
+            .expect("test: get canonical slot 11"),
+        None
+    );
+    assert_eq!(
+        db.get_canonical_block(12)
+            .expect("test: get canonical slot 12"),
+        None
+    );
+    assert_eq!(db.get_tip_slot().expect("test: get truncated tip slot"), 10);
+}
+
+pub fn test_delete_noncanonical_block_preserves_canonical_index(
+    db: &impl OLBlockDatabase,
+    mut canonical: OLBlock,
+    mut noncanonical: OLBlock,
+) {
+    canonical.signed_header.header.slot = 7;
+    noncanonical.signed_header.header.slot = 7;
+    let canonical_id = canonical.header().compute_blkid();
+    let noncanonical_id = noncanonical.header().compute_blkid();
+    if canonical_id == noncanonical_id {
+        return;
+    }
+
+    db.put_block_data(canonical).expect("test: put canonical");
+    db.put_block_data(noncanonical)
+        .expect("test: put noncanonical");
+    db.replace_canonical_suffix_from(7, vec![canonical_id])
+        .expect("test: seed canonical");
+
+    db.del_block_data(noncanonical_id)
+        .expect("test: delete noncanonical block");
+
+    assert_eq!(
+        db.get_canonical_block(7).expect("test: get canonical slot"),
+        Some(canonical_id)
+    );
+}
+
 // Proptest-based tests for random block data
 pub fn proptest_put_and_get_random_block(db: &impl OLBlockDatabase, block: OLBlock) {
     let block_id = block.header().compute_blkid();
@@ -422,19 +631,24 @@ pub fn proptest_get_tip_slot(db: &impl OLBlockDatabase, mut block1: OLBlock, mut
     block1.signed_header.header.slot = 5u64;
     block2.signed_header.header.slot = 10u64;
 
+    let block_id1 = block1.header().compute_blkid();
     let block_id2 = block2.header().compute_blkid();
 
     // Put blocks
     db.put_block_data(block1).expect("test: put block 1");
     db.put_block_data(block2).expect("test: put block 2");
 
-    // Set block2 as valid (higher slot)
+    // Set block2 as valid, but keep the canonical index at block1.
+    db.set_block_status(block_id1, BlockStatus::Valid)
+        .expect("test: set block 1 status");
     db.set_block_status(block_id2, BlockStatus::Valid)
         .expect("test: set block 2 status");
+    db.replace_canonical_suffix_from(5, vec![block_id1])
+        .expect("test: seed canonical index");
 
-    // Get tip slot - should be 10 (highest valid slot)
+    // Get tip slot - should be 5 (highest canonical slot), not the higher valid fork.
     let tip_slot = db.get_tip_slot().expect("test: get tip slot");
-    assert_eq!(tip_slot, 10u64);
+    assert_eq!(tip_slot, 5u64);
 }
 
 #[macro_export]
@@ -476,7 +690,78 @@ macro_rules! ol_block_db_tests {
             $crate::ol_block_tests::test_get_empty_block_high_watermark(&db);
         }
 
+        #[test]
+        fn test_get_canonical_block_empty() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_get_canonical_block_empty(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_from_extend() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_from_extend(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_from_reorg_shorter() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_from_reorg_shorter(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_from_revert_empty_branch() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_from_revert_empty_branch(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_from_max() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_from_max(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_from_overflow() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_from_overflow(&db);
+        }
+
+        #[test]
+        fn test_replace_canonical_suffix_from_idempotent() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_replace_canonical_suffix_from_idempotent(&db);
+        }
+
         proptest::proptest! {
+            #[test]
+            fn test_delete_canonical_block_clears_canonical_index(block in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::test_delete_canonical_block_clears_canonical_index(&db, block);
+            }
+
+            #[test]
+            fn test_delete_canonical_block_truncates_canonical_suffix(
+                block1 in ol_test_utils::ol_block_strategy(),
+                block2 in ol_test_utils::ol_block_strategy(),
+                block3 in ol_test_utils::ol_block_strategy(),
+            ) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::test_delete_canonical_block_truncates_canonical_suffix(
+                    &db, block1, block2, block3,
+                );
+            }
+
+            #[test]
+            fn test_delete_noncanonical_block_preserves_canonical_index(
+                canonical in ol_test_utils::ol_block_strategy(),
+                noncanonical in ol_test_utils::ol_block_strategy(),
+            ) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::test_delete_noncanonical_block_preserves_canonical_index(
+                    &db, canonical, noncanonical,
+                );
+            }
+
             #[test]
             fn proptest_put_and_get_random_block(block in ol_test_utils::ol_block_strategy()) {
                 let db = $setup_expr;

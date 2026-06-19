@@ -9,6 +9,7 @@ use typed_sled::error::Error as TSledError;
 
 use super::schemas::{
     OLBlockHeightSchema, OLBlockHighWatermarkSchema, OLBlockSchema, OLBlockStatusSchema,
+    OLCanonicalBlockSchema,
 };
 use crate::{
     define_sled_database,
@@ -23,6 +24,7 @@ define_sled_database!(
         blk_status_tree: OLBlockStatusSchema,
         blk_height_tree: OLBlockHeightSchema,
         blk_high_watermark_tree: OLBlockHighWatermarkSchema,
+        blk_canonical_tree: OLCanonicalBlockSchema,
     }
 );
 
@@ -164,17 +166,34 @@ impl OLBlockDatabase for OLBlockDBSled {
             None => return Ok(false),
         };
         let slot = block.header().slot();
+        let mut canonical_slots_to_drop = Vec::new();
+        if self.blk_canonical_tree.get(&slot)? == Some(id) {
+            for item in self.blk_canonical_tree.range(slot..)? {
+                let (canonical_slot, _) = item?;
+                canonical_slots_to_drop.push(canonical_slot);
+            }
+        }
 
         self.config
             .with_retry(
-                (&self.blk_tree, &self.blk_status_tree, &self.blk_height_tree),
-                |(bt, bst, bht)| {
+                (
+                    &self.blk_tree,
+                    &self.blk_status_tree,
+                    &self.blk_height_tree,
+                    &self.blk_canonical_tree,
+                ),
+                |(bt, bst, bht, ct)| {
                     let mut blocks_at_slot = bht.get(&slot)?.unwrap_or(Vec::new());
                     blocks_at_slot.retain(|&bid| bid != id);
 
                     bt.remove(&id)?;
                     bst.remove(&id)?;
                     bht.insert(&slot, &blocks_at_slot)?;
+                    if ct.get(&slot)? == Some(id) {
+                        for canonical_slot in &canonical_slots_to_drop {
+                            ct.remove(canonical_slot)?;
+                        }
+                    }
                     Ok(true)
                 },
             )
@@ -199,33 +218,58 @@ impl OLBlockDatabase for OLBlockDBSled {
     }
 
     fn get_tip_slot(&self) -> DbResult<Slot> {
-        let bht = &self.blk_height_tree;
-        let mut slot = bht.last()?.map(first).ok_or(DbError::NotBootstrapped)?;
+        self.blk_canonical_tree
+            .last()?
+            .map(first)
+            .ok_or(DbError::NotBootstrapped)
+    }
 
-        loop {
-            let blocks = self.get_blocks_at_height(slot)?;
-            // Check if any valid blocks exist at this slot.
-            // Multiple blocks at the same slot can be marked Valid during forks.
-            let has_valid = blocks
-                .into_iter()
-                .filter_map(|blkid| match self.get_block_status(blkid) {
-                    Ok(Some(BlockStatus::Valid)) => Some(Ok(())),
-                    Ok(_) => None,
-                    Err(e) => Some(Err(e)),
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+    fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>> {
+        Ok(self.blk_canonical_tree.get(&slot)?)
+    }
 
-            // Return the highest slot that has at least one valid block.
-            if !has_valid.is_empty() {
-                return Ok(slot);
-            }
-
-            if slot == 0 {
-                return Err(DbError::NotBootstrapped);
-            }
-
-            slot -= 1;
+    fn replace_canonical_suffix_from(
+        &self,
+        start_slot: Slot,
+        block_ids: Vec<OLBlockId>,
+    ) -> DbResult<()> {
+        let block_count = block_ids.len();
+        let mut blocks = Vec::with_capacity(block_count);
+        for (offset, block_id) in block_ids.into_iter().enumerate() {
+            let offset = u64::try_from(offset).map_err(|_| DbError::OLCanonicalSuffixOverflow {
+                start_slot,
+                block_count,
+            })?;
+            let slot =
+                start_slot
+                    .checked_add(offset)
+                    .ok_or(DbError::OLCanonicalSuffixOverflow {
+                        start_slot,
+                        block_count,
+                    })?;
+            blocks.push((slot, block_id));
         }
+
+        // Collect the suffix slots before the transaction: sled's transactional tree has no range
+        // scan.
+        let mut slots_to_drop = Vec::new();
+        for item in self.blk_canonical_tree.range(start_slot..)? {
+            let (slot, _) = item?;
+            slots_to_drop.push(slot);
+        }
+
+        // Now actually remove and insert new canonical blocks inside a transaction.
+        self.config
+            .with_retry((&self.blk_canonical_tree,), |(ct,)| {
+                for slot in &slots_to_drop {
+                    ct.remove(slot)?;
+                }
+                for (slot, id) in &blocks {
+                    ct.insert(slot, id)?;
+                }
+                Ok(())
+            })
+            .map_err(to_db_error)
     }
 }
 

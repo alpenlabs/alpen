@@ -31,9 +31,7 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
 
     /// Fetches the current chain tip from the database.
     ///
-    /// Returns the highest slot block that has been stored. If there are multiple
-    /// blocks at the tip slot (forks), returns one of them.
-    /// Returns `None` if no blocks have been stored yet.
+    /// Returns the canonical OL tip, or `None` if no canonical block has been stored yet.
     fn fetch_chain_tip(&self) -> WorkerResult<Option<OLBlockCommitment>>;
 
     // =========================================================================

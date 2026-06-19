@@ -651,9 +651,27 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;
 
-    /// Returns the highest slot that has a valid OL block, or an error at genesis or when no valid
-    /// block exists.
+    /// Returns the highest slot recorded in the canonical OL block index.
     fn get_tip_slot(&self) -> DbResult<Slot>;
+
+    /// Gets the canonical OL block id at a slot, as recorded by fork choice.
+    ///
+    /// Returns `None` for slots above the current canonical tip or never written.
+    fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>>;
+
+    /// Replaces the canonical suffix from `start_slot`.
+    ///
+    /// Atomically removes every canonical entry for slots greater than or equal to `start_slot`,
+    /// then writes each block ID into a contiguous suffix starting at `start_slot`.
+    ///
+    /// Single-writer contract: callers must not invoke this concurrently with another canonical
+    /// write; the atomicity guarantee covers the remove-then-insert against readers, not against a
+    /// competing writer.
+    fn replace_canonical_suffix_from(
+        &self,
+        start_slot: Slot,
+        block_ids: Vec<OLBlockId>,
+    ) -> DbResult<()>;
 }
 
 /// Database for OL state indexing data.

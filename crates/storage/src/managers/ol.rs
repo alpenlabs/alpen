@@ -176,12 +176,12 @@ impl OLBlockManager {
         self.ops.get_blocks_at_height_blocking(slot)
     }
 
-    /// Gets the tip slot (highest slot with valid block). Async.
+    /// Gets the canonical tip slot. Async.
     pub async fn get_tip_slot_async(&self) -> DbResult<Slot> {
         self.ops.get_tip_slot_async().await
     }
 
-    /// Gets the tip slot (highest slot with valid block). Blocking.
+    /// Gets the canonical tip slot. Blocking.
     pub fn get_tip_slot_blocking(&self) -> DbResult<Slot> {
         self.ops.get_tip_slot_blocking()
     }
@@ -222,32 +222,60 @@ impl OLBlockManager {
         self.get_canonical_block_at_async(tip).await
     }
 
-    /// Gets the canonical block commitment at given height.
+    /// Gets the canonical block commitment at given slot. Blocking.
+    ///
+    /// Reads the canonical index recorded by fork choice. Returns `None` for slots above the
+    /// canonical tip or not yet written.
     pub fn get_canonical_block_at_blocking(
         &self,
-        tip: Slot,
+        slot: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
-        let blocks = self.get_blocks_at_height_blocking(tip)?;
-        // TODO(STR-2105): determine how to get the canonical block. for now it is just the first
-        // one
-        Ok(blocks
-            .first()
-            .cloned()
-            .map(|id| OLBlockCommitment::new(tip, id)))
+        Ok(self
+            .ops
+            .get_canonical_block_blocking(slot)?
+            .map(|id| OLBlockCommitment::new(slot, id)))
     }
 
-    /// Gets the canonical block commitment at given height.
+    /// Gets the canonical block commitment at given slot. Async.
+    ///
+    /// Reads the canonical index recorded by fork choice. Returns `None` for slots above the
+    /// canonical tip or not yet written.
     pub async fn get_canonical_block_at_async(
         &self,
-        tip: Slot,
+        slot: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
-        let blocks = self.get_blocks_at_height_async(tip).await?;
-        // TODO(STR-2105): determine how to get the canonical block. for now, it is just the first
-        // one
-        Ok(blocks
-            .first()
-            .cloned()
-            .map(|id| OLBlockCommitment::new(tip, id)))
+        Ok(self
+            .ops
+            .get_canonical_block_async(slot)
+            .await?
+            .map(|id| OLBlockCommitment::new(slot, id)))
+    }
+
+    /// Replaces the canonical suffix from `start_slot`.
+    ///
+    /// Atomically removes every canonical entry for slots greater than or equal to `start_slot`,
+    /// then writes each block ID into a contiguous suffix starting at `start_slot`.
+    pub async fn replace_canonical_suffix_from_async(
+        &self,
+        start_slot: Slot,
+        block_ids: Vec<OLBlockId>,
+    ) -> DbResult<()> {
+        self.ops
+            .replace_canonical_suffix_from_async(start_slot, block_ids)
+            .await
+    }
+
+    /// Replaces the canonical suffix from `start_slot`.
+    ///
+    /// Atomically removes every canonical entry for slots greater than or equal to `start_slot`,
+    /// then writes each block ID into a contiguous suffix starting at `start_slot`.
+    pub fn replace_canonical_suffix_from_blocking(
+        &self,
+        start_slot: Slot,
+        block_ids: Vec<OLBlockId>,
+    ) -> DbResult<()> {
+        self.ops
+            .replace_canonical_suffix_from_blocking(start_slot, block_ids)
     }
 }
 
@@ -376,6 +404,47 @@ mod tests {
         }
 
         #[test]
+        fn proptest_canonical_at_returns_indexed_block_not_first(
+            mut stale in ol_test_utils::ol_block_strategy(),
+            mut canonical in ol_test_utils::ol_block_strategy(),
+        ) {
+            let slot = 7u64;
+            stale.signed_header.header.slot = slot;
+            canonical.signed_header.header.slot = slot;
+            let stale_id = stale.header().compute_blkid();
+            let canonical_id = canonical.header().compute_blkid();
+            prop_assume!(stale_id != canonical_id);
+
+            let rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                let manager = setup_manager();
+
+                // Stale block lands in the height index first, so `.first()` returns it.
+                manager.put_block_data_async(stale).await.expect("put stale");
+                manager.put_block_data_async(canonical).await.expect("put canonical");
+                let at_height = manager
+                    .get_blocks_at_height_async(slot)
+                    .await
+                    .expect("get blocks at height");
+                assert_eq!(at_height.first(), Some(&stale_id));
+
+                // Fork choice records the canonical (second) block at the slot.
+                manager
+                    .replace_canonical_suffix_from_async(slot, vec![canonical_id])
+                    .await
+                    .expect("seed canonical");
+
+                let got = manager
+                    .get_canonical_block_at_async(slot)
+                    .await
+                    .expect("get canonical")
+                    .expect("canonical present");
+                assert_eq!(got.blkid(), &canonical_id);
+                assert_ne!(got.blkid(), &stale_id);
+            });
+        }
+
+        #[test]
         fn proptest_get_blocks_at_height_blocking(mut block1 in ol_test_utils::ol_block_strategy(), mut block2 in ol_test_utils::ol_block_strategy()) {
             let manager = setup_manager();
             let slot = 10u64;
@@ -410,18 +479,24 @@ mod tests {
                 block1.signed_header.header.slot = 5u64;
                 block2.signed_header.header.slot = 10u64;
 
+                let block_id1 = block1.header().compute_blkid();
                 let block_id2 = block2.header().compute_blkid();
 
                 // Put blocks
                 manager.put_block_data_async(block1).await.expect("put block 1");
                 manager.put_block_data_async(block2).await.expect("put block 2");
 
-                // Set block2 as valid (higher slot)
+                // Set block2 as valid, but keep the canonical index at block1.
+                manager.set_block_status_async(block_id1, BlockStatus::Valid).await.expect("set status");
                 manager.set_block_status_async(block_id2, BlockStatus::Valid).await.expect("set status");
+                manager
+                    .replace_canonical_suffix_from_async(5, vec![block_id1])
+                    .await
+                    .expect("seed canonical index");
 
-                // Get tip slot - should be 10 (highest valid slot)
+                // Get tip slot - should be 5 (highest canonical slot), not the higher valid fork.
                 let tip_slot = manager.get_tip_slot_async().await.expect("get tip slot");
-                assert_eq!(tip_slot, 10u64);
+                assert_eq!(tip_slot, 5u64);
             });
         }
 
@@ -433,18 +508,23 @@ mod tests {
             block1.signed_header.header.slot = 5u64;
             block2.signed_header.header.slot = 10u64;
 
+            let block_id1 = block1.header().compute_blkid();
             let block_id2 = block2.header().compute_blkid();
 
             // Put blocks
             manager.put_block_data_blocking(block1).expect("put block 1");
             manager.put_block_data_blocking(block2).expect("put block 2");
 
-            // Set block2 as valid (higher slot)
+            // Set block2 as valid, but keep the canonical index at block1.
+            manager.set_block_status_blocking(block_id1, BlockStatus::Valid).expect("set status");
             manager.set_block_status_blocking(block_id2, BlockStatus::Valid).expect("set status");
+            manager
+                .replace_canonical_suffix_from_blocking(5, vec![block_id1])
+                .expect("seed canonical index");
 
-            // Get tip slot - should be 10 (highest valid slot)
+            // Get tip slot - should be 5 (highest canonical slot), not the higher valid fork.
             let tip_slot = manager.get_tip_slot_blocking().expect("get tip slot");
-            assert_eq!(tip_slot, 10u64);
+            assert_eq!(tip_slot, 5u64);
         }
     }
 
