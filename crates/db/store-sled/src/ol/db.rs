@@ -239,7 +239,9 @@ impl OLBlockDatabase for OLBlockDBSled {
         start_slot: Slot,
         blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()> {
-        // First collect all slots to remove from the suffix.
+        // Collect the suffix slots before the transaction: sled's transactional tree has no range
+        // scan. Safe under the single-writer contract (fork choice is the sole writer), so no
+        // concurrent insert can land in the range between this read and the commit below.
         let mut slots_to_drop = Vec::new();
         for item in self.blk_canonical_tree.range(start_slot..)? {
             let (slot, _) = item?;

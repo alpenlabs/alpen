@@ -1,6 +1,5 @@
 use std::{collections::VecDeque, iter, mem, sync::Arc, time};
 
-use anyhow::anyhow;
 use metrics::{counter, gauge};
 use strata_identifiers::Slot;
 use strata_ol_state_types::OLState;
@@ -163,7 +162,7 @@ impl<C: FcmContext> FcmServiceState<C> {
         self.chain_tracker_mut().update_finalized_epoch(&epoch)?;
 
         // Clear out old pending entries.
-        self.clear_pending_epochs(epoch)?;
+        self.clear_pending_epochs(epoch);
 
         counter!("strata_fcm_epochs_finalized_total").increment(1);
         gauge!("strata_fcm_finalized_epoch").set(epoch.epoch() as f64);
@@ -172,7 +171,7 @@ impl<C: FcmContext> FcmServiceState<C> {
         Ok(())
     }
 
-    fn clear_pending_epochs(&mut self, epoch: EpochCommitment) -> anyhow::Result<()> {
+    fn clear_pending_epochs(&mut self, epoch: EpochCommitment) {
         let epoch_pending_fin = &mut self.inner_state.epochs_pending_finalization;
         while epoch_pending_fin
             .front()
@@ -180,10 +179,9 @@ impl<C: FcmContext> FcmServiceState<C> {
         {
             epoch_pending_fin
                 .pop_front()
-                .ok_or(anyhow!("pop on empty epoch_pending dequeue"))?;
+                .expect("front checked before popping pending finalized epoch");
         }
         self.record_pending_epochs();
-        Ok(())
     }
 
     fn record_pending_epochs(&self) {
@@ -331,7 +329,7 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
 
 /// Determines the starting chain tip by choosing the highest-slot tip, using
 /// the lowest ordered block ID as the tie-breaker.
-fn determine_start_tip(unfin: &UnfinalizedBlockTracker) -> anyhow::Result<OLBlockCommitment> {
+fn determine_start_tip(unfin: &UnfinalizedBlockTracker) -> Result<OLBlockCommitment, Error> {
     // Unfinalized block tracker only loads blocks which are valid and exist in db so no need to
     // check for db existence at this point.
     unfin
@@ -341,26 +339,25 @@ fn determine_start_tip(unfin: &UnfinalizedBlockTracker) -> anyhow::Result<OLBloc
                 .cmp(&b.slot())
                 .then_with(|| b.blkid().cmp(a.blkid()))
         })
-        .ok_or_else(|| anyhow!("fcm: no chain tips"))
+        .ok_or(Error::FcmNoChainTips)
 }
 
 /// Rewrites the canonical index to match the reconstructed chain.
 ///
 /// Only the unfinalized suffix is rewritten; slots at or below the finalized tip are left untouched
 /// since finalized history never forks.
-async fn reconcile_canonical_blocks_index(
+pub(crate) async fn reconcile_canonical_blocks_index(
     unfin: &UnfinalizedBlockTracker,
     tip: OLBlockCommitment,
     storage: &(impl FcmStorage + ?Sized),
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let (pivot_slot, canon_blocks) = canonical_blocks_from_tip(unfin, tip, storage).await?;
-    if canon_blocks.is_empty() {
-        return Ok(());
-    }
     let Some(start_slot) = pivot_slot.checked_add(1) else {
-        return Err(anyhow!(
-            "fcm: canonical suffix above max slot {pivot_slot} is non-empty"
-        ));
+        // An empty suffix at the max slot means nothing above the tip to truncate.
+        if canon_blocks.is_empty() {
+            return Ok(());
+        }
+        return Err(Error::FcmCanonicalSuffixAboveMaxSlot(pivot_slot));
     };
     storage
         .replace_canonical_blocks_from(start_slot, canon_blocks)
@@ -374,15 +371,15 @@ async fn canonical_blocks_from_tip(
     unfin: &UnfinalizedBlockTracker,
     tip: OLBlockCommitment,
     storage: &(impl FcmStorage + ?Sized),
-) -> anyhow::Result<(Slot, CanonicalSuffix)> {
+) -> Result<(Slot, CanonicalSuffix), Error> {
     let parent_chain = construct_validated_parent_chain(unfin, tip)?;
     let finalized_tip = *unfin.finalized_tip();
 
     if parent_chain.last() != Some(&finalized_tip) {
-        return Err(anyhow!(
-            "fcm: reconstructed chain tip {} does not trace back to finalized tip {finalized_tip}",
-            tip.blkid()
-        ));
+        return Err(Error::FcmCanonicalChainNotFinalized {
+            tip: *tip.blkid(),
+            finalized_tip,
+        });
     }
 
     let mut suffix = Vec::new();
@@ -398,9 +395,11 @@ async fn canonical_blocks_from_tip(
 
         if blkid == finalized_tip {
             let finalized_slot = unfin.finalized_epoch().last_slot();
-            return Err(anyhow!(
-                "fcm: canonical block at finalized slot {finalized_slot} is {canonical:?}, expected finalized tip {finalized_tip}"
-            ));
+            return Err(Error::FcmCanonicalFinalizedMismatch {
+                finalized_slot,
+                canonical,
+                finalized_tip,
+            });
         }
 
         suffix.push((slot, blkid));
@@ -412,7 +411,7 @@ async fn canonical_blocks_from_tip(
 fn construct_validated_parent_chain(
     unfin: &UnfinalizedBlockTracker,
     tip: OLBlockCommitment,
-) -> anyhow::Result<Vec<OLBlockId>> {
+) -> Result<Vec<OLBlockId>, Error> {
     let mut chain = Vec::new();
     let mut child_slot: Option<Slot> = None;
     let parent_chain =
@@ -428,23 +427,24 @@ fn construct_validated_parent_chain(
     Ok(chain)
 }
 
-fn tracker_slot(unfin: &UnfinalizedBlockTracker, blkid: OLBlockId) -> anyhow::Result<Slot> {
+fn tracker_slot(unfin: &UnfinalizedBlockTracker, blkid: OLBlockId) -> Result<Slot, Error> {
     unfin
         .get_slot(&blkid)
-        .ok_or_else(|| anyhow!("fcm: reconstructed block {blkid} missing from tracker"))
+        .ok_or(Error::FcmCanonicalTrackerMissingBlock(blkid))
 }
 
 fn ensure_parent_slot_descends(
     parent_slot: Slot,
     child_slot: Option<Slot>,
     tip: OLBlockCommitment,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     if let Some(child_slot) = child_slot {
         if parent_slot >= child_slot {
-            return Err(anyhow!(
-                "fcm: non-decreasing slot {parent_slot} >= {child_slot} walking parents from tip {}; corrupt parent link",
-                tip.blkid()
-            ));
+            return Err(Error::FcmCanonicalParentSlotNotDescending {
+                parent_slot,
+                child_slot,
+                tip,
+            });
         }
     }
 

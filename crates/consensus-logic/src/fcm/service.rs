@@ -708,8 +708,6 @@ async fn apply_tip_update<C: FcmContext>(
             // Truncate the abandoned branch above the pivot and write the new one.
             record_canonical_suffix(fcm_state, pivot_slot, applied).await?;
 
-            // TODO(STR-3673): canonical-index cleanup is handled above; revisit
-            // whether any other post-reorg cleanup is still needed here.
             counter!("strata_fcm_reorgs_total").increment(1);
             histogram!("strata_fcm_reorg_depth").record(reorg_depth as f64);
 
@@ -735,13 +733,12 @@ async fn record_canonical_suffix<C: FcmContext>(
     pivot_slot: Slot,
     blocks: Vec<(Slot, OLBlockId)>,
 ) -> anyhow::Result<()> {
-    if blocks.is_empty() {
-        return Ok(());
-    }
     let Some(start_slot) = pivot_slot.checked_add(1) else {
-        return Err(anyhow!(
-            "fcm: canonical suffix above max slot {pivot_slot} is non-empty"
-        ));
+        // Truncating above the maximum slot is a no-op; only a non-empty suffix is impossible.
+        if blocks.is_empty() {
+            return Ok(());
+        }
+        return Err(Error::FcmCanonicalSuffixAboveMaxSlot(pivot_slot).into());
     };
     fcm_state
         .ctx()
@@ -833,7 +830,7 @@ mod tests {
     use crate::{
         fcm::{
             context::{ChainController, CsmStatusReader},
-            state::FcmInnerState,
+            state::{reconcile_canonical_blocks_index, FcmInnerState},
         },
         tip_update::TipUpdate,
         unfinalized_tracker::{UnfinalizedBlockTracker, UnfinalizedOLBlockSource},
@@ -1732,6 +1729,73 @@ mod tests {
             storage.get_canonical_block_at(2).await?,
             Some(fork.a2.commitment())
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn revert_truncates_canonical_index_above_new_tip() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        let tracker = chain.tracker_through_x3();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &chain.x3);
+
+        let storage = fixture.ctx.storage();
+        storage
+            .replace_canonical_blocks_from(
+                1,
+                vec![
+                    (1, chain.x1.blkid()),
+                    (2, chain.x2.blkid()),
+                    (3, chain.x3.blkid()),
+                ],
+            )
+            .await?;
+
+        let update = expected_tip_update(&chain.x3, &chain.x1, fcm_state.chain_tracker())?;
+        assert!(matches!(update, TipUpdate::Revert(..)));
+
+        apply_tip_update(update, &mut fcm_state, &chain.x1.block).await?;
+
+        assert_eq!(fcm_state.cur_best_block(), chain.x1.commitment());
+        assert_eq!(
+            storage.get_canonical_block_at(1).await?,
+            Some(chain.x1.commitment())
+        );
+        assert_eq!(storage.get_canonical_block_at(2).await?, None);
+        assert_eq!(storage.get_canonical_block_at(3).await?, None);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reconcile_truncates_stale_canonical_entries_on_restart() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        let tracker = tracker_with_blocks(&chain.genesis, &[&chain.x1]);
+
+        let storage = fixture.ctx.storage();
+        // Simulate a crash that left the index pointing past the recovered tip (x1): slots 2 and 3
+        // still hold blocks no longer canonical.
+        storage
+            .replace_canonical_blocks_from(
+                1,
+                vec![
+                    (1, chain.x1.blkid()),
+                    (2, chain.x2.blkid()),
+                    (3, chain.x3.blkid()),
+                ],
+            )
+            .await?;
+
+        reconcile_canonical_blocks_index(&tracker, chain.x1.commitment(), storage).await?;
+
+        assert_eq!(
+            storage.get_canonical_block_at(1).await?,
+            Some(chain.x1.commitment())
+        );
+        assert_eq!(storage.get_canonical_block_at(2).await?, None);
+        assert_eq!(storage.get_canonical_block_at(3).await?, None);
 
         Ok(())
     }

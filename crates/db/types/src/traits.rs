@@ -664,6 +664,10 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     ///
     /// Atomically removes every canonical entry for slots greater than or equal to `start_slot`,
     /// then writes each `(slot, id)` in `blocks`.
+    ///
+    /// Single-writer contract: fork choice is the sole writer of the canonical index. Callers must
+    /// not invoke this concurrently with another canonical write; the atomicity guarantee covers
+    /// the remove-then-insert against readers, not against a competing writer.
     fn replace_canonical_blocks_from(
         &self,
         start_slot: Slot,
