@@ -17,7 +17,7 @@ inst_ops_simple! {
         del_block_data(id: OLBlockId) => bool;
         get_blocks_at_height(slot: u64) => Vec<OLBlockId>;
         get_canonical_block(slot: Slot) => Option<OLBlockId>;
-        update_canonical_blocks_above(pivot_slot: Slot, blocks: Vec<(Slot, OLBlockId)>) => ();
+        replace_canonical_blocks_from(start_slot: Slot, blocks: Vec<(Slot, OLBlockId)>) => ();
         get_tip_slot() => Slot;
         get_block_status(id: OLBlockId) => Option<BlockStatus>;
         set_block_status(id: OLBlockId, status: BlockStatus) => bool;

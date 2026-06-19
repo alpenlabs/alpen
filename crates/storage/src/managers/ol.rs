@@ -251,31 +251,31 @@ impl OLBlockManager {
             .map(|id| OLBlockCommitment::new(slot, id)))
     }
 
-    /// Updates canonical blocks above `pivot_slot`.
+    /// Replaces canonical blocks from `start_slot`.
     ///
-    /// Atomically removes every canonical entry for slots strictly greater than `pivot_slot`, then
-    /// writes each `(slot, id)` in `blocks`.
-    pub async fn update_canonical_blocks_above_async(
+    /// Atomically removes every canonical entry for slots greater than or equal to `start_slot`,
+    /// then writes each `(slot, id)` in `blocks`.
+    pub async fn replace_canonical_blocks_from_async(
         &self,
-        pivot_slot: Slot,
+        start_slot: Slot,
         blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()> {
         self.ops
-            .update_canonical_blocks_above_async(pivot_slot, blocks)
+            .replace_canonical_blocks_from_async(start_slot, blocks)
             .await
     }
 
-    /// Updates canonical blocks above `pivot_slot`.
+    /// Replaces canonical blocks from `start_slot`.
     ///
-    /// Atomically removes every canonical entry for slots strictly greater than `pivot_slot`, then
-    /// writes each `(slot, id)` in `blocks`.
-    pub fn update_canonical_blocks_above_blocking(
+    /// Atomically removes every canonical entry for slots greater than or equal to `start_slot`,
+    /// then writes each `(slot, id)` in `blocks`.
+    pub fn replace_canonical_blocks_from_blocking(
         &self,
-        pivot_slot: Slot,
+        start_slot: Slot,
         blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()> {
         self.ops
-            .update_canonical_blocks_above_blocking(pivot_slot, blocks)
+            .replace_canonical_blocks_from_blocking(start_slot, blocks)
     }
 }
 
@@ -430,7 +430,7 @@ mod tests {
 
                 // Fork choice records the canonical (second) block at the slot.
                 manager
-                    .update_canonical_blocks_above_async(slot - 1, vec![(slot, canonical_id)])
+                    .replace_canonical_blocks_from_async(slot, vec![(slot, canonical_id)])
                     .await
                     .expect("seed canonical");
 

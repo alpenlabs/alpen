@@ -234,18 +234,16 @@ impl OLBlockDatabase for OLBlockDBSled {
         Ok(self.blk_canonical_tree.get(&slot)?)
     }
 
-    fn update_canonical_blocks_above(
+    fn replace_canonical_blocks_from(
         &self,
-        pivot_slot: Slot,
+        start_slot: Slot,
         blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()> {
-        // First collect all slots to remove above the pivot.
+        // First collect all slots to remove from the suffix.
         let mut slots_to_drop = Vec::new();
-        if let Some(start_slot) = pivot_slot.checked_add(1) {
-            for item in self.blk_canonical_tree.range(start_slot..)? {
-                let (slot, _) = item?;
-                slots_to_drop.push(slot);
-            }
+        for item in self.blk_canonical_tree.range(start_slot..)? {
+            let (slot, _) = item?;
+            slots_to_drop.push(slot);
         }
 
         // Now actually remove and insert new canonical blocks inside a transaction.

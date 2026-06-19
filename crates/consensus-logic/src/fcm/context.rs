@@ -62,10 +62,10 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
 
     async fn get_canonical_block_at(&self, slot: Slot) -> DbResult<Option<OLBlockCommitment>>;
 
-    /// Updates the canonical blocks above `pivot_slot` with `blocks`.
-    async fn update_canonical_blocks_above(
+    /// Replaces canonical blocks from `start_slot` with `blocks`.
+    async fn replace_canonical_blocks_from(
         &self,
-        pivot_slot: Slot,
+        start_slot: Slot,
         blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()>;
 

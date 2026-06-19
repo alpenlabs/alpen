@@ -645,7 +645,7 @@ mod tests {
         // Update the canonical index.
         storage
             .ol_block()
-            .update_canonical_blocks_above_blocking(1, vec![(1, block_1_blkid)])
+            .replace_canonical_blocks_from_blocking(1, vec![(1, block_1_blkid)])
             .expect("test: canonical entry for slot 1");
 
         // Validate checks with tip at block 1.
@@ -704,7 +704,7 @@ mod tests {
         // Update the canonical index.
         storage
             .ol_block()
-            .update_canonical_blocks_above_blocking(2, vec![(2, block_2_blkid)])
+            .replace_canonical_blocks_from_blocking(2, vec![(2, block_2_blkid)])
             .expect("test: canonical entry for slot 2");
 
         // Validate checks with tip at block 2.

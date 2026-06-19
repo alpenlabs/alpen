@@ -353,16 +353,24 @@ async fn reconcile_canonical_blocks_index(
     tip: OLBlockCommitment,
     storage: &(impl FcmStorage + ?Sized),
 ) -> anyhow::Result<()> {
-    let (pivot_slot, suffix) = canonical_suffix_from_tip(unfin, tip, storage).await?;
+    let (pivot_slot, canon_blocks) = canonical_blocks_from_tip(unfin, tip, storage).await?;
+    if canon_blocks.is_empty() {
+        return Ok(());
+    }
+    let Some(start_slot) = pivot_slot.checked_add(1) else {
+        return Err(anyhow!(
+            "fcm: canonical suffix above max slot {pivot_slot} is non-empty"
+        ));
+    };
     storage
-        .update_canonical_blocks_above(pivot_slot, suffix)
+        .replace_canonical_blocks_from(start_slot, canon_blocks)
         .await?;
     Ok(())
 }
 
 /// Walks from `tip` toward the finalized tip until it reaches the first block
 /// already recorded as canonical.
-async fn canonical_suffix_from_tip(
+async fn canonical_blocks_from_tip(
     unfin: &UnfinalizedBlockTracker,
     tip: OLBlockCommitment,
     storage: &(impl FcmStorage + ?Sized),

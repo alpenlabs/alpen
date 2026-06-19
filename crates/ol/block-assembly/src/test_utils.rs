@@ -1392,8 +1392,8 @@ impl TestStorageFixtureBuilder {
             fixture
                 .storage()
                 .ol_block()
-                .update_canonical_blocks_above_async(
-                    parent_header.slot().saturating_sub(1),
+                .replace_canonical_blocks_from_async(
+                    parent_header.slot(),
                     vec![(parent_header.slot(), *commitment.blkid())],
                 )
                 .await

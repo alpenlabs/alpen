@@ -735,9 +735,17 @@ async fn record_canonical_suffix<C: FcmContext>(
     pivot_slot: Slot,
     blocks: Vec<(Slot, OLBlockId)>,
 ) -> anyhow::Result<()> {
+    if blocks.is_empty() {
+        return Ok(());
+    }
+    let Some(start_slot) = pivot_slot.checked_add(1) else {
+        return Err(anyhow!(
+            "fcm: canonical suffix above max slot {pivot_slot} is non-empty"
+        ));
+    };
     fcm_state
         .ctx()
-        .update_canonical_blocks_above(pivot_slot, blocks)
+        .replace_canonical_blocks_from(start_slot, blocks)
         .await?;
     Ok(())
 }
@@ -1067,13 +1075,13 @@ mod tests {
                 .copied())
         }
 
-        async fn update_canonical_blocks_above(
+        async fn replace_canonical_blocks_from(
             &self,
-            pivot_slot: Slot,
+            start_slot: Slot,
             blocks: Vec<(Slot, OLBlockId)>,
         ) -> DbResult<()> {
             let mut inner = self.inner.lock().unwrap();
-            inner.canonical_blocks.retain(|slot, _| *slot <= pivot_slot);
+            inner.canonical_blocks.retain(|slot, _| *slot < start_slot);
             for (slot, id) in blocks {
                 inner
                     .canonical_blocks
@@ -1178,13 +1186,13 @@ mod tests {
             self.storage.get_canonical_block_at(slot).await
         }
 
-        async fn update_canonical_blocks_above(
+        async fn replace_canonical_blocks_from(
             &self,
-            pivot_slot: Slot,
+            start_slot: Slot,
             blocks: Vec<(Slot, OLBlockId)>,
         ) -> DbResult<()> {
             self.storage
-                .update_canonical_blocks_above(pivot_slot, blocks)
+                .replace_canonical_blocks_from(start_slot, blocks)
                 .await
         }
 
@@ -1692,7 +1700,7 @@ mod tests {
         fixture
             .ctx
             .storage()
-            .update_canonical_blocks_above(0, vec![(1, fork.a1.blkid()), (2, fork.a2.blkid())])
+            .replace_canonical_blocks_from(1, vec![(1, fork.a1.blkid()), (2, fork.a2.blkid())])
             .await?;
 
         process_fc_message(
@@ -1924,7 +1932,7 @@ mod tests {
         // canonical write.
         assert_eq!(storage.get_canonical_block_at(1).await.unwrap(), None);
         storage
-            .update_canonical_blocks_above(0, vec![(1, blkid)])
+            .replace_canonical_blocks_from(1, vec![(1, blkid)])
             .await
             .unwrap();
         assert_eq!(

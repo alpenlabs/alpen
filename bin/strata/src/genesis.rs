@@ -63,7 +63,7 @@ pub(crate) fn init_ol_genesis(
     // Update the canonical block index for first block.
     storage
         .ol_block()
-        .update_canonical_blocks_above_blocking(0, vec![(0, genesis_blkid)])?;
+        .replace_canonical_blocks_from_blocking(0, vec![(0, genesis_blkid)])?;
 
     info!(%genesis_blkid, slot = 0, "OL genesis initialization complete");
     Ok(commitment)

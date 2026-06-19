@@ -660,13 +660,13 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Returns `None` for slots above the current canonical tip or never written.
     fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>>;
 
-    /// Updates canonical blocks above `pivot_slot`.
+    /// Replaces canonical blocks from `start_slot`.
     ///
-    /// Atomically removes every canonical entry for slots strictly greater than `pivot_slot`, then
-    /// writes each `(slot, id)` in `blocks`.
-    fn update_canonical_blocks_above(
+    /// Atomically removes every canonical entry for slots greater than or equal to `start_slot`,
+    /// then writes each `(slot, id)` in `blocks`.
+    fn replace_canonical_blocks_from(
         &self,
-        pivot_slot: Slot,
+        start_slot: Slot,
         blocks: Vec<(Slot, OLBlockId)>,
     ) -> DbResult<()>;
 }
