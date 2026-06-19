@@ -295,7 +295,7 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
         .load_unfinalized_ol_blocks_async(fcm_ctx.as_ref())
         .await?;
 
-    let cur_tip_block = determine_start_tip(&chain_tracker)?;
+    let cur_tip_block = determine_start_tip(&chain_tracker, fcm_ctx.as_ref()).await?;
     debug!(?chain_tracker, "init chain tracker");
 
     // Update the canonical blocks index just in case this might have drifted during the restarts.
@@ -327,16 +327,31 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     ))
 }
 
-/// Determines the starting chain tip by choosing the highest-slot tip, using
-/// the lowest ordered block ID as the tie-breaker.
-fn determine_start_tip(unfin: &UnfinalizedBlockTracker) -> Result<OLBlockCommitment, Error> {
+/// Determines the starting chain tip by choosing the highest-slot tip.
+///
+/// If multiple tips share the highest slot, the previously persisted canonical
+/// block wins. If no highest-slot tip matches the persisted canonical index,
+/// the lowest ordered block ID wins as a deterministic fallback.
+async fn determine_start_tip(
+    unfin: &UnfinalizedBlockTracker,
+    storage: &(impl FcmStorage + ?Sized),
+) -> Result<OLBlockCommitment, Error> {
     // Unfinalized block tracker only loads blocks which are valid and exist in db so no need to
     // check for db existence at this point.
+    let Some(max_slot) = unfin.chain_tip_blocks_iter().map(|tip| tip.slot()).max() else {
+        return Err(Error::FcmNoChainTips);
+    };
+
+    let canonical_at_max_slot = storage.get_canonical_block_at(max_slot).await?;
+
     unfin
         .chain_tip_blocks_iter()
+        .filter(|tip| tip.slot() == max_slot)
         .max_by(|a, b| {
-            a.slot()
-                .cmp(&b.slot())
+            let a_is_canonical = Some(*a.blkid()) == canonical_at_max_slot.map(|c| *c.blkid());
+            let b_is_canonical = Some(*b.blkid()) == canonical_at_max_slot.map(|c| *c.blkid());
+            a_is_canonical
+                .cmp(&b_is_canonical)
                 .then_with(|| b.blkid().cmp(a.blkid()))
         })
         .ok_or(Error::FcmNoChainTips)

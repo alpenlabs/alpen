@@ -1806,6 +1806,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn startup_preserves_canonical_tip_on_equal_slot_forks() -> anyhow::Result<()> {
+        let fork = TestFork::new();
+        let fixture = fork.fixture();
+        let (canonical_1, canonical_2, other_2) = if fork.a2.blkid() > fork.b2.blkid() {
+            (&fork.a1, &fork.a2, &fork.b2)
+        } else {
+            (&fork.b1, &fork.b2, &fork.a2)
+        };
+        assert!(canonical_2.blkid() > other_2.blkid());
+
+        fixture
+            .ctx
+            .storage()
+            .replace_canonical_suffix_from(1, vec![canonical_1.blkid(), canonical_2.blkid()])
+            .await?;
+
+        let fcm_state = init_fcm_service_state(PredicateKey::always_accept(), fixture.ctx).await?;
+
+        assert_eq!(fcm_state.cur_best_block(), canonical_2.commitment());
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn long_extend_applies_intermediate_blocks_to_new_tip() -> anyhow::Result<()> {
         let chain = LinearChain::new();
         let fixture = chain.fixture_without_x4();
