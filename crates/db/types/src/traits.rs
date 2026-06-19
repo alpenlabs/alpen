@@ -651,8 +651,7 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;
 
-    /// Returns the highest slot that has a valid OL block, or an error at genesis or when no valid
-    /// block exists.
+    /// Returns the highest slot recorded in the canonical OL block index.
     fn get_tip_slot(&self) -> DbResult<Slot>;
 
     /// Gets the canonical OL block id at a slot, as recorded by fork choice.

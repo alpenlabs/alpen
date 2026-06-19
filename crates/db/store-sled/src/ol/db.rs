@@ -166,17 +166,34 @@ impl OLBlockDatabase for OLBlockDBSled {
             None => return Ok(false),
         };
         let slot = block.header().slot();
+        let mut canonical_slots_to_drop = Vec::new();
+        if self.blk_canonical_tree.get(&slot)? == Some(id) {
+            for item in self.blk_canonical_tree.range(slot..)? {
+                let (canonical_slot, _) = item?;
+                canonical_slots_to_drop.push(canonical_slot);
+            }
+        }
 
         self.config
             .with_retry(
-                (&self.blk_tree, &self.blk_status_tree, &self.blk_height_tree),
-                |(bt, bst, bht)| {
+                (
+                    &self.blk_tree,
+                    &self.blk_status_tree,
+                    &self.blk_height_tree,
+                    &self.blk_canonical_tree,
+                ),
+                |(bt, bst, bht, ct)| {
                     let mut blocks_at_slot = bht.get(&slot)?.unwrap_or(Vec::new());
                     blocks_at_slot.retain(|&bid| bid != id);
 
                     bt.remove(&id)?;
                     bst.remove(&id)?;
                     bht.insert(&slot, &blocks_at_slot)?;
+                    if ct.get(&slot)? == Some(id) {
+                        for canonical_slot in &canonical_slots_to_drop {
+                            ct.remove(canonical_slot)?;
+                        }
+                    }
                     Ok(true)
                 },
             )
@@ -201,33 +218,10 @@ impl OLBlockDatabase for OLBlockDBSled {
     }
 
     fn get_tip_slot(&self) -> DbResult<Slot> {
-        let bht = &self.blk_height_tree;
-        let mut slot = bht.last()?.map(first).ok_or(DbError::NotBootstrapped)?;
-
-        loop {
-            let blocks = self.get_blocks_at_height(slot)?;
-            // Check if any valid blocks exist at this slot.
-            // Multiple blocks at the same slot can be marked Valid during forks.
-            let has_valid = blocks
-                .into_iter()
-                .filter_map(|blkid| match self.get_block_status(blkid) {
-                    Ok(Some(BlockStatus::Valid)) => Some(Ok(())),
-                    Ok(_) => None,
-                    Err(e) => Some(Err(e)),
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-
-            // Return the highest slot that has at least one valid block.
-            if !has_valid.is_empty() {
-                return Ok(slot);
-            }
-
-            if slot == 0 {
-                return Err(DbError::NotBootstrapped);
-            }
-
-            slot -= 1;
-        }
+        self.blk_canonical_tree
+            .last()?
+            .map(first)
+            .ok_or(DbError::NotBootstrapped)
     }
 
     fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>> {
@@ -257,8 +251,7 @@ impl OLBlockDatabase for OLBlockDBSled {
         }
 
         // Collect the suffix slots before the transaction: sled's transactional tree has no range
-        // scan. Safe under the single-writer contract (fork choice is the sole writer), so no
-        // concurrent insert can land in the range between this read and the commit below.
+        // scan.
         let mut slots_to_drop = Vec::new();
         for item in self.blk_canonical_tree.range(start_slot..)? {
             let (slot, _) = item?;
