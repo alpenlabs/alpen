@@ -1,4 +1,6 @@
-use strata_db_types::traits::{CheckpointProofDatabase, ProverTaskDatabase};
+use strata_db_types::{
+    checkpoint_proof::CheckpointProofDatabase, prover_task::ProverTaskDatabase,
+};
 use strata_identifiers::EpochCommitment;
 use strata_paas::{TaskRecordData, TaskStatus};
 use zkaleido::{

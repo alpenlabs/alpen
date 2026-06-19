@@ -1,5 +1,5 @@
 use strata_asm_common::AuxData;
-use strata_db_types::{DbResult, traits::AsmDatabase};
+use strata_db_types::{asm::AsmDatabase, DbResult};
 use strata_primitives::l1::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
 

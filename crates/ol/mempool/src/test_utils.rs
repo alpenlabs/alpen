@@ -30,7 +30,6 @@ use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
 use strata_storage::create_node_storage;
-use threadpool::ThreadPool;
 
 use crate::{state::MempoolContext, types::OLMempoolConfig};
 
@@ -364,14 +363,14 @@ pub(crate) fn create_test_context<P: StateProvider>(
     config: OLMempoolConfig,
     provider: Arc<P>,
 ) -> MempoolContext<P> {
-    let pool = ThreadPool::new(1);
-
     // Create a minimal test storage using a test sled database
     // In real usage, this would be a full NodeStorage with all managers
     // For tests, we create a minimal storage since validation isn't called yet
     let test_db = get_test_sled_backend();
-    let test_storage =
-        Arc::new(create_node_storage(test_db, pool).expect("Failed to create test NodeStorage"));
+    let test_storage = Arc::new(
+        create_node_storage(test_db, strata_storage::test_runtime_handle())
+            .expect("Failed to create test NodeStorage"),
+    );
 
     MempoolContext::new(config, test_storage, provider)
 }

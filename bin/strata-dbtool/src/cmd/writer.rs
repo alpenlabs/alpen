@@ -1,8 +1,7 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{
-    traits::{DatabaseBackend, L1WriterDatabase},
-    types::L1TxId,
+    backend::DatabaseBackend, common::L1TxId, l1_writer::L1WriterDatabase,
 };
 
 use super::checkpoint::{get_checkpoint_at_epoch, get_checkpoint_epoch_range};

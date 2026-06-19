@@ -14711,7 +14711,6 @@ dependencies = [
  "strata-tasks",
  "strata-zkvm-hosts",
  "thiserror 2.0.18",
- "threadpool",
  "tokio",
  "toml 0.5.11",
  "tower 0.5.3",
@@ -15179,7 +15178,6 @@ dependencies = [
  "strata-tasks",
  "strata-test-utils",
  "thiserror 2.0.18",
- "threadpool",
  "tokio",
  "tracing",
 ]
@@ -15216,7 +15214,6 @@ dependencies = [
  "strata-status",
  "strata-storage",
  "thiserror 2.0.18",
- "threadpool",
  "tokio",
  "tracing",
  "typed-sled",
@@ -15457,7 +15454,6 @@ dependencies = [
  "strata-test-utils-checkpoint",
  "strata-test-utils-l2",
  "thiserror 2.0.18",
- "threadpool",
  "tracing",
 ]
 
@@ -15956,7 +15952,6 @@ dependencies = [
  "strata-storage",
  "strata-tasks",
  "thiserror 2.0.18",
- "threadpool",
  "tokio",
  "tracing",
 ]
@@ -16026,7 +16021,6 @@ dependencies = [
  "strata-storage",
  "strata-tasks",
  "thiserror 2.0.18",
- "threadpool",
  "tokio",
  "tracing",
 ]
@@ -16118,7 +16112,6 @@ dependencies = [
  "strata-storage",
  "strata-tasks",
  "thiserror 2.0.18",
- "threadpool",
  "tokio",
  "tracing",
 ]

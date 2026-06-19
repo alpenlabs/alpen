@@ -4,11 +4,11 @@ use std::collections::BTreeSet;
 
 use sled::transaction::ConflictableTransactionError;
 use strata_db_types::{
-    AccountCreatedRecord, DbError, DbResult,
     ol_state_index::{
-        AccountEpochKey, AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites,
+        AccountCreatedRecord, AccountEpochKey, AccountUpdateRecord, EpochIndexingData,
+        InboxMessageRecord, IndexingWrites, OLStateIndexingDatabase,
     },
-    traits::OLStateIndexingDatabase,
+    DbError, DbResult,
 };
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment};
 use typed_sled::{SledTree, error::Error as TSledError, tree::SledTransactionalTree};

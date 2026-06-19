@@ -1,7 +1,7 @@
 use sled::transaction::ConflictableTransactionError;
 use strata_db_types::{
+    ol_block::{BlockStatus, OLBlockDatabase},
     DbError, DbResult,
-    traits::{BlockStatus, OLBlockDatabase},
 };
 use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;

@@ -1,4 +1,8 @@
-use strata_db_types::{DbResult, errors::DbError, traits::L1BroadcastDatabase, types::L1TxEntry};
+use strata_db_types::{
+    errors::DbError,
+    l1_broadcast::{L1BroadcastDatabase, L1TxEntry},
+    DbResult,
+};
 use strata_primitives::buf::Buf32;
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};

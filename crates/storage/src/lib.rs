@@ -196,10 +196,15 @@ pub fn create_node_storage(
 }
 
 /// Returns a tokio runtime [`Handle`] backed by a process-lifetime runtime, for
-/// constructing managers in synchronous unit tests that only exercise the
-/// `*_blocking` database paths.
-#[cfg(test)]
-pub(crate) fn test_runtime_handle() -> Handle {
+/// constructing storage managers in tests.
+///
+/// Database proxies dispatch blocking work via this handle, so tests that build
+/// a [`NodeStorage`] (or individual managers) need one. The backing runtime is
+/// created once and lives for the process, so the handle stays valid for both
+/// the `*_blocking` and `*_async` paths regardless of the calling test's own
+/// runtime.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn test_runtime_handle() -> Handle {
     use std::sync::OnceLock;
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RT.get_or_init(|| tokio::runtime::Runtime::new().expect("test: build runtime"))

@@ -1,5 +1,5 @@
 use proptest::{collection::vec, prelude::*};
-use strata_db_types::{traits::MmrIndexDatabase, DbError, LeafPos, MmrBatchWrite, NodePos};
+use strata_db_types::{mmr_index::MmrIndexDatabase, DbError, LeafPos, MmrBatchWrite, NodePos};
 use strata_identifiers::Hash;
 
 pub fn raw_mmr_id_strategy() -> impl Strategy<Value = Vec<u8>> {

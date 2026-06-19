@@ -4,11 +4,10 @@ use std::collections::BTreeMap;
 
 use strata_db_types::{
     ol_state_index::{
-        AccountUpdateMeta, AccountUpdateRecord, EpochIndexingData, InboxMessageRecord,
-        IndexingWrites,
+        AccountCreatedRecord, AccountUpdateMeta, AccountUpdateRecord, EpochIndexingData,
+        InboxMessageRecord, IndexingWrites, OLStateIndexingDatabase,
     },
-    traits::OLStateIndexingDatabase,
-    AccountCreatedRecord, DbError,
+    DbError,
 };
 use strata_identifiers::{AccountId, Buf32, EpochCommitment, Hash, OLBlockCommitment, OLBlockId};
 

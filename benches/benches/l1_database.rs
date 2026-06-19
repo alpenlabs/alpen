@@ -16,7 +16,7 @@ use arbitrary::Arbitrary;
 use bitcoin as _;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use strata_asm_manifest_types::AsmManifest;
-use strata_db_types::traits::L1Database;
+use strata_db_types::l1::L1Database;
 #[allow(
     unused_imports,
     clippy::allow_attributes,

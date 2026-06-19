@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_ol_sequencer::{BlockGenerationConfig, SequencerContext, SequencerContextError};

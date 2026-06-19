@@ -1,7 +1,4 @@
-use strata_db_types::{
-    traits::L1WriterDatabase,
-    types::{BundledPayloadEntry, IntentEntry, IntentStatus},
-};
+use strata_db_types::l1_writer::{BundledPayloadEntry, IntentEntry, IntentStatus, L1WriterDatabase};
 use strata_primitives::buf::Buf32;
 use strata_test_utils::ArbitraryGenerator;
 

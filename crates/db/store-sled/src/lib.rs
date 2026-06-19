@@ -38,13 +38,11 @@ use ol_state::db::OLStateDBSled;
 use ol_state_index::db::OLStateIndexingDBSled;
 use rkyv as _;
 use strata_db_types::{
-    DbResult,
-    traits::{
-        AsmDatabase, CheckpointProofDatabase, ClientStateDatabase, DatabaseBackend,
-        L1BroadcastDatabase, L1ChunkedEnvelopeDatabase, L1Database, L1WriterDatabase,
-        MempoolDatabase, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
-        OLStateIndexingDatabase, ProverTaskDatabase,
-    },
+    asm::AsmDatabase, backend::DatabaseBackend, checkpoint_proof::CheckpointProofDatabase,
+    chunked_envelope::L1ChunkedEnvelopeDatabase, client_state::ClientStateDatabase, l1::L1Database,
+    l1_broadcast::L1BroadcastDatabase, l1_writer::L1WriterDatabase, mempool::MempoolDatabase,
+    ol_block::OLBlockDatabase, ol_checkpoint::OLCheckpointDatabase, ol_state::OLStateDatabase,
+    ol_state_index::OLStateIndexingDatabase, prover_task::ProverTaskDatabase, DbResult,
 };
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;

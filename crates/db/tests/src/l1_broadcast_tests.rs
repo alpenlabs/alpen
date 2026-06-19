@@ -1,8 +1,5 @@
 use bitcoin::{consensus::deserialize, hashes::Hash, Transaction};
-use strata_db_types::{
-    traits::L1BroadcastDatabase,
-    types::{L1TxEntry, L1TxStatus},
-};
+use strata_db_types::l1_broadcast::{L1BroadcastDatabase, L1TxEntry, L1TxStatus};
 use strata_primitives::buf::Buf32;
 
 pub fn test_get_last_tx_entry(db: &impl L1BroadcastDatabase) {

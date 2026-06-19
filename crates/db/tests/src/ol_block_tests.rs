@@ -1,5 +1,5 @@
 use strata_db_types::{
-    traits::{BlockStatus, OLBlockDatabase},
+    ol_block::{BlockStatus, OLBlockDatabase},
     DbError,
 };
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};

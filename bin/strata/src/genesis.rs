@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use strata_db_types::{MmrId, ol_state_index::IndexingWrites, traits::BlockStatus};
+use strata_db_types::{ol_block::BlockStatus, ol_state_index::IndexingWrites, MmrId};
 use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts};
 use strata_ol_params::OLParams;
 use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;

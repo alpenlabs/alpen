@@ -1,4 +1,4 @@
-use strata_db_types::{DbResult, traits::OLStateDatabase};
+use strata_db_types::{ol_state::OLStateDatabase, DbResult};
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 

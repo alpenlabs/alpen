@@ -1,8 +1,7 @@
 use strata_db_types::{
-    DbResult,
     errors::DbError,
-    traits::L1WriterDatabase,
-    types::{BundledPayloadEntry, IntentEntry, IntentStatus},
+    l1_writer::{BundledPayloadEntry, IntentEntry, IntentStatus, L1WriterDatabase},
+    DbResult,
 };
 use strata_primitives::buf::Buf32;
 

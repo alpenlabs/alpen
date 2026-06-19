@@ -1,6 +1,9 @@
 //! Sled-backed mempool database implementation.
 
-use strata_db_types::{DbResult, traits::MempoolDatabase, types::MempoolTxData};
+use strata_db_types::{
+    mempool::{MempoolDatabase, MempoolTxData},
+    DbResult,
+};
 use strata_identifiers::OLTxId;
 
 use super::schemas::{MempoolTxEntry, MempoolTxSchema};

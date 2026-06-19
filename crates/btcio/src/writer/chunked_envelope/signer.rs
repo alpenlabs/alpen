@@ -13,8 +13,10 @@ use std::sync::Arc;
 use bitcoin::consensus::encode::serialize as btc_serialize;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_btc_types::{TxidExt, WtxidExt};
-use strata_db_types::types::{
-    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, L1TxId, L1WtxId, RevealTxMeta,
+use strata_db_types::{
+    chunked_envelope::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, RevealTxMeta},
+    common::{L1TxId, L1WtxId},
+    l1_broadcast::L1TxEntry,
 };
 use tracing::*;
 
@@ -181,7 +183,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 
 #[cfg(test)]
 mod tests {
-    use strata_db_types::types::RevealTxMeta;
+    use strata_db_types::chunked_envelope::RevealTxMeta;
 
     use super::*;
 

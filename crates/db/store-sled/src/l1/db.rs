@@ -1,5 +1,5 @@
 use strata_asm_common::AsmManifest;
-use strata_db_types::{DbResult, traits::*};
+use strata_db_types::{l1::L1Database, DbResult};
 use strata_primitives::{L1Height, l1::L1BlockId};
 use typed_sled::batch::SledBatch;
 

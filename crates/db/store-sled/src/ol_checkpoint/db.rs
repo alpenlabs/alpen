@@ -2,7 +2,7 @@ use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
-    DbError, DbResult, traits::OLCheckpointDatabase, types::L1PayloadIntentIndex,
+    common::L1PayloadIntentIndex, ol_checkpoint::OLCheckpointDatabase, DbError, DbResult,
 };
 use strata_identifiers::{Epoch, EpochCommitment};
 use typed_sled::error;

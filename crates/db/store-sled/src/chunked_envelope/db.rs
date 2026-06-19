@@ -1,4 +1,7 @@
-use strata_db_types::{DbResult, traits::L1ChunkedEnvelopeDatabase, types::ChunkedEnvelopeEntry};
+use strata_db_types::{
+    chunked_envelope::{ChunkedEnvelopeEntry, L1ChunkedEnvelopeDatabase},
+    DbResult,
+};
 
 use super::schemas::ChunkedEnvelopeSchema;
 use crate::{define_sled_database, utils::first};

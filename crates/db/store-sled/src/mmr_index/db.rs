@@ -1,6 +1,6 @@
 use strata_db_types::{
-    DbError, DbResult, LeafPos, MmrBatchWrite, MmrIndexPrecondition, MmrNodePos, MmrNodeTable,
-    NodePos, RawMmrId, traits::MmrIndexDatabase,
+    mmr_index::MmrIndexDatabase, DbError, DbResult, LeafPos, MmrBatchWrite, MmrIndexPrecondition,
+    MmrNodePos, MmrNodeTable, NodePos, RawMmrId,
 };
 use strata_identifiers::Hash;
 use typed_sled::{error, tree::SledTransactionalTree};

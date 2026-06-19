@@ -45,12 +45,11 @@ pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {
     get_config(args.clone())
 }
 
-pub(crate) fn init_storage(config: &Config) -> Result<Arc<NodeStorage>, InitError> {
+pub(crate) fn init_storage(config: &Config, handle: Handle) -> Result<Arc<NodeStorage>, InitError> {
     let db = init_db::init_database(&config.client)
         .map_err(|e| InitError::StorageCreation(e.to_string()))?;
-    let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
     let storage = Arc::new(
-        create_node_storage(db, pool).map_err(|e| InitError::StorageCreation(e.to_string()))?,
+        create_node_storage(db, handle).map_err(|e| InitError::StorageCreation(e.to_string()))?,
     );
     Ok(storage)
 }
@@ -85,7 +84,7 @@ pub(crate) fn init_node_context(
     let ol_params = load_ol_params(ol_params_path)?;
 
     // Init storage
-    let storage = init_storage(&config)?;
+    let storage = init_storage(&config, handle.clone())?;
 
     // Init bitcoin client
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;

@@ -5,7 +5,7 @@ use bitcoind_async_client::{
     Client, corepc_types::model::GetBlockchainInfo, error::ClientError, traits::Reader,
 };
 use strata_btc_types::BlockHashExt;
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::OLBlock;
@@ -435,12 +435,11 @@ mod tests {
     use bitcoin::{BlockHash, Network, Work, hashes::Hash};
     use bitcoind_async_client::corepc_types::model::GetBlockchainInfo;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{MmrId, traits::BlockStatus};
+    use strata_db_types::{ol_block::BlockStatus, MmrId};
     use strata_identifiers::{Buf32, L1BlockId};
     use strata_ol_params::OLParams;
     use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use strata_storage::{NodeStorage, create_node_storage};
-    use threadpool::ThreadPool;
 
     use super::*;
     use crate::genesis::init_ol_genesis;
@@ -610,8 +609,8 @@ mod tests {
 
     fn setup_storage_with_genesis() -> (NodeStorage, OLBlockCommitment) {
         let db = get_test_sled_backend();
-        let pool = ThreadPool::new(1);
-        let storage = create_node_storage(db, pool).expect("test: create node storage");
+        let storage = create_node_storage(db, strata_storage::test_runtime_handle())
+            .expect("test: create node storage");
         let genesis_l1_block = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
         let params = OLParams::new_empty(genesis_l1_block);
         let genesis_commitment = init_ol_genesis(&params, &storage).expect("test: init ol genesis");
@@ -737,8 +736,8 @@ mod tests {
     #[test]
     fn test_genesis_entries_missing() {
         let db = get_test_sled_backend();
-        let pool = ThreadPool::new(1);
-        let storage = create_node_storage(db, pool).expect("test: create node storage");
+        let storage = create_node_storage(db, strata_storage::test_runtime_handle())
+            .expect("test: create node storage");
 
         let commitment = get_ol_genesis_block(&storage).expect("test: query genesis OL block");
         assert!(commitment.is_none());

@@ -1,5 +1,5 @@
 use strata_csm_types::ClientUpdateOutput;
-use strata_db_types::traits::ClientStateDatabase;
+use strata_db_types::client_state::ClientStateDatabase;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
 use strata_test_utils::ArbitraryGenerator;
 

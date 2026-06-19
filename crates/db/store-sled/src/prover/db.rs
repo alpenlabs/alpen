@@ -1,7 +1,6 @@
 use strata_db_types::{
+    checkpoint_proof::CheckpointProofDatabase, errors::DbError, prover_task::ProverTaskDatabase,
     DbResult,
-    errors::DbError,
-    traits::{CheckpointProofDatabase, ProverTaskDatabase},
 };
 use strata_identifiers::EpochCommitment;
 use strata_paas::TaskRecordData;

@@ -29,6 +29,11 @@ tokio.workspace = true
 tracing.workspace = true
 zkaleido.workspace = true
 
+[features]
+# Exposes `test_runtime_handle()` for downstream crates that construct storage
+# managers in their own tests.
+test-utils = []
+
 [dev-dependencies]
 proptest.workspace = true
 strata-asm-proto-checkpoint-types = { workspace = true, features = [

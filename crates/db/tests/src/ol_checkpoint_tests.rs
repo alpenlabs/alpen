@@ -6,7 +6,7 @@ use strata_asm_proto_checkpoint_types::{
 };
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{traits::OLCheckpointDatabase, types::L1PayloadIntentIndex};
+use strata_db_types::{common::L1PayloadIntentIndex, ol_checkpoint::OLCheckpointDatabase};
 use strata_identifiers::{
     AccountSerial, Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment,
     OLBlockId, RBuf32,
