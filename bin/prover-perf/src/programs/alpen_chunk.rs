@@ -78,7 +78,8 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
     let chain_spec: Arc<reth_chainspec::ChainSpec> =
         Arc::new((&witness.genesis).try_into().unwrap());
     let ee = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
-    let exec_payload = ExecPayload::new(&header, block.get_body());
+    let header_intrinsics = block.get_header().get_intrinsics();
+    let exec_payload = ExecPayload::new(&header_intrinsics, block.get_body());
     let inputs = ExecInputs::new_empty();
     let output = ee
         .execute_block_body(&pre_state, &exec_payload, &inputs)

@@ -5,27 +5,28 @@
 
 use std::sync::Arc;
 
-use alloy_consensus::Header;
-use alpen_reth_evm::{accumulate_logs_bloom, evm::AlpenEvmFactory, extract_withdrawal_intents};
+use alloy_consensus::Block as AlloyBlock;
+use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
 use reth_consensus_common::validation::validate_body_against_header;
-use reth_evm::execute::{BasicBlockExecutor, Executor};
+use reth_evm::execute::{BasicBlockExecutor, BlockExecutionOutput, Executor};
 use reth_evm_ethereum::EthEvmConfig;
-use reth_primitives::EthPrimitives;
+use reth_primitives::{
+    EthPrimitives, Receipt as EthereumReceipt, RecoveredBlock, TransactionSigned,
+};
 use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayload};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
-    BlockAssembler, EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecPartialState, ExecPayload,
-    ExecutionEnvironment,
+    EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecPayload, ExecutionEnvironment,
 };
 use strata_ee_chain_types::{ExecInputs, ExecOutputs, OutputMessage};
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 
 use crate::{
-    types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
+    types::{EvmBlock, EvmBlockOutput, EvmPartialState, EvmWriteBatch},
     utils::{build_and_recover_block, compute_hashed_post_state, validate_deposits_against_block},
 };
 
@@ -75,11 +76,42 @@ impl EvmExecutionEnvironment {
         let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, evm_factory);
         Self { evm_config }
     }
+
+    fn validate_execution_inputs(
+        &self,
+        block: &RecoveredBlock<AlloyBlock<TransactionSigned>>,
+        inputs: &ExecInputs,
+    ) -> EnvResult<()> {
+        EthPrimitives::validate_header(
+            block.sealed_block().sealed_header(),
+            self.evm_config.chain_spec().clone(),
+        )
+        .map_err(|_| EnvError::InvalidBlock)?;
+        validate_body_against_header(block.body(), block.header())
+            .map_err(|_| EnvError::InvalidBlock)?;
+        validate_deposits_against_block(block, inputs)
+    }
+
+    fn execute_recovered_block(
+        &self,
+        block: &RecoveredBlock<AlloyBlock<TransactionSigned>>,
+        pre_state: &EvmPartialState,
+    ) -> EnvResult<BlockExecutionOutput<EthereumReceipt>> {
+        let db = {
+            let wit_db = pre_state.create_witness_db();
+            WrapDatabaseRef(wit_db)
+        };
+        let block_executor = BasicBlockExecutor::new(&self.evm_config, db);
+        block_executor
+            .execute(block)
+            .map_err(|_| EnvError::InvalidBlock)
+    }
 }
 
 impl ExecutionEnvironment for EvmExecutionEnvironment {
     type PartialState = EvmPartialState;
     type WriteBatch = EvmWriteBatch;
+    type BlockOutput = EvmBlockOutput;
     type Block = EvmBlock;
 
     fn execute_block_body(
@@ -88,102 +120,57 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         exec_payload: &ExecPayload<'_, Self::Block>,
         inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
-        // TODO(STR-3683): Split this function up into multiple stages, there's a lot going
-        // on here.  There's also check happening here that should be done in
-        // `check_outputs_against_header`.  We don't have to clone the state,
-        // those checks are managed by the chunk runtime.
-
         // Step 1: Build block from exec_payload and recover senders
         let block = build_and_recover_block(exec_payload)?;
 
-        // Step 2: Validate header early (cheap structural consistency check)
-        // This validates header fields follow consensus rules (difficulty, nonce, gas limits, etc.)
-        EthPrimitives::validate_header(
-            block.sealed_block().sealed_header(),
-            self.evm_config.chain_spec().clone(),
-        )
-        .map_err(|_| EnvError::InvalidBlock)?;
+        // Step 2: Validate execution inputs against the synthesized execution header.
+        // The full block header is checked separately by `verify_outputs_against_header`.
+        self.validate_execution_inputs(&block, inputs)?;
 
-        // Step 2b: Validate body against header (transactions_root, ommers_hash, withdrawals_root)
-        validate_body_against_header(block.body(), block.header())
-            .map_err(|_| EnvError::InvalidBlock)?;
+        // Step 3: Execute the block.
+        let execution_output = self.execute_recovered_block(&block, pre_state)?;
 
-        // Step 2c: Validate deposits from ExecInputs against block withdrawals
-        // The withdrawals header field is hijacked to represent deposits from the OL.
-        // We need to ensure the authenticated deposits from ExecInputs match what's in the block.
-        validate_deposits_against_block(&block, inputs)?;
+        // Step 4: Accumulate execution commitments.
+        let header_intrinsics = exec_payload.header_intrinsics();
+        let block_output =
+            EvmBlockOutput::from_header_and_output(header_intrinsics, &execution_output);
 
-        // Step 3: Prepare witness database from partial state
-        let db = {
-            let wit_db = pre_state.create_witness_db();
-            WrapDatabaseRef(wit_db)
-        };
-
-        // Step 4: Create block executor
-        let block_executor = BasicBlockExecutor::new(&self.evm_config, db);
-
-        // Step 5: Execute the block (expensive operation)
-        let execution_output = block_executor
-            .execute(&block)
-            .map_err(|_| EnvError::InvalidBlock)?;
-
-        // Step 6: Validate block post-execution
-        EthPrimitives::validate_block_post_execution(
-            &block,
-            self.evm_config.chain_spec().clone(),
-            &execution_output,
-        )
-        .map_err(|_| EnvError::InvalidBlock)?;
-
-        // Step 7: Accumulate logs bloom
-        let logs_bloom = accumulate_logs_bloom(&execution_output.result.receipts);
-
-        // Step 8: Collect withdrawal intents
+        // Step 5: Collect withdrawal intents.
         let transactions = block.into_transactions();
         let withdrawal_intents =
             extract_withdrawal_intents(&transactions, &execution_output.receipts).collect();
 
-        // Step 9: Convert execution outcome to HashedPostState
-        let header_intrinsics = exec_payload.header_intrinsics();
-        let hashed_post_state =
-            compute_hashed_post_state(execution_output, header_intrinsics.number);
+        // Step 6: Convert execution outcome to HashedPostState.
+        let block_number = header_intrinsics.number();
+        let hashed_post_state = compute_hashed_post_state(execution_output, block_number);
 
-        // Step 10: Get state root from header intrinsics (verification happens during merge)
-        // This avoids an expensive state clone that would be needed to compute the root here.
-        //
-        // FIXME(STR-3683): This is not correct behavior, the state root is a "result" of
-        // processing the block, so it *can't* be an intrinsic, see the doc
-        // comment for `Intrinsics`.  I think we may be doing unnecessary checks
-        // here.
-        let intrinsics_state_root = header_intrinsics.state_root;
+        // Step 7: Split state writes from execution-derived header commitments.
+        let write_batch = EvmWriteBatch::new(hashed_post_state);
 
-        // Step 11: Create WriteBatch with intrinsics state root (to be verified during merge)
-        let write_batch = EvmWriteBatch::new(
-            hashed_post_state,
-            intrinsics_state_root.0.into(),
-            logs_bloom,
-        );
-
-        // Step 12: Create ExecOutputs with withdrawal intent messages
+        // Step 8: Create ExecOutputs with withdrawal intent messages.
         let mut outputs = ExecOutputs::new_empty();
         convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
 
-        Ok(ExecBlockOutput::new(write_batch, outputs))
+        Ok(ExecBlockOutput::new(write_batch, block_output, outputs))
     }
 
     fn verify_outputs_against_header(
         &self,
-        _header: &<Self::Block as strata_ee_acct_types::ExecBlock>::Header,
-        _outputs: &ExecBlockOutput<Self>,
+        header: &<Self::Block as strata_ee_acct_types::ExecBlock>::Header,
+        outputs: &ExecBlockOutput<Self>,
     ) -> EnvResult<()> {
-        // State root verification is deferred to merge_write_into_state to avoid
-        // an expensive state clone. The actual verification happens when the state
-        // is mutated and we can compute the root directly without cloning.
-        //
-        // FIXME(STR-3683): this should be checked here
-        // Note: The following are verified during execution in execute_block_body():
-        // - transactions_root, ommers_hash, withdrawals_root: by validate_body_against_header()
-        // - receipts_root, logs_bloom, gas_used: by validate_block_post_execution()
+        let header = header.header();
+        let block_output = outputs.block_output();
+
+        if header.gas_used > header.gas_limit
+            || block_output.receipts_root() != header.receipts_root
+            || block_output.logs_bloom() != header.logs_bloom
+            || block_output.gas_used() != header.gas_used
+            || block_output.blob_gas_used() != header.blob_gas_used
+            || block_output.requests_hash() != header.requests_hash
+        {
+            return Err(EnvError::InvalidBlock);
+        }
 
         Ok(())
     }
@@ -195,15 +182,6 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
     ) -> EnvResult<()> {
         // Merge the HashedPostState into the EthereumState
         state.merge_write_batch(wb);
-
-        // Verify state root AFTER merge (avoids expensive clone that would be needed
-        // to compute the root before mutation)
-        let computed_state_root = state.compute_state_root()?;
-        let intrinsics_state_root = wb.intrinsics_state_root();
-
-        if computed_state_root != intrinsics_state_root {
-            return Err(EnvError::InvalidBlock);
-        }
 
         Ok(())
     }
@@ -218,44 +196,6 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
     }
 }
 
-impl BlockAssembler for EvmExecutionEnvironment {
-    fn complete_header(
-        &self,
-        exec_payload: &ExecPayload<'_, Self::Block>,
-        output: &ExecBlockOutput<Self>,
-    ) -> EnvResult<<Self::Block as strata_ee_acct_types::ExecBlock>::Header> {
-        let intrinsics = exec_payload.header_intrinsics();
-        let state_root = output.write_batch().intrinsics_state_root();
-        let logs_bloom = output.write_batch().logs_bloom();
-
-        let header = Header {
-            parent_hash: intrinsics.parent_hash,
-            ommers_hash: intrinsics.ommers_hash,
-            beneficiary: intrinsics.beneficiary,
-            state_root: state_root.0.into(),
-            transactions_root: intrinsics.transactions_root,
-            receipts_root: intrinsics.receipts_root,
-            logs_bloom,
-            difficulty: intrinsics.difficulty,
-            number: intrinsics.number,
-            gas_limit: intrinsics.gas_limit,
-            gas_used: intrinsics.gas_used,
-            timestamp: intrinsics.timestamp,
-            extra_data: intrinsics.extra_data.clone(),
-            mix_hash: intrinsics.mix_hash,
-            nonce: intrinsics.nonce,
-            base_fee_per_gas: intrinsics.base_fee_per_gas,
-            withdrawals_root: intrinsics.withdrawals_root,
-            blob_gas_used: intrinsics.blob_gas_used,
-            excess_blob_gas: intrinsics.excess_blob_gas,
-            parent_beacon_block_root: intrinsics.parent_beacon_block_root,
-            requests_hash: intrinsics.requests_hash,
-        };
-
-        Ok(EvmHeader::new(header))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, fs, path::PathBuf};
@@ -263,10 +203,10 @@ mod tests {
     use alloy_consensus::Sealable;
     use reth_primitives_traits::Block as RethBlockTrait;
     use revm::{DatabaseRef, state::Bytecode};
-    use revm_primitives::B256;
+    use revm_primitives::{B256, alloy_primitives::Bloom};
     use rsp_client_executor::io::EthClientExecutorInput;
     use serde::Deserialize;
-    use strata_ee_acct_types::ExecBlock;
+    use strata_ee_acct_types::{ExecBlock, ExecHeader};
     use strata_msg_fmt::{Msg, MsgRef};
     use strata_ol_bridge_types::OperatorSelection;
     use strata_ol_msg_types::OLMessageExt;
@@ -415,7 +355,8 @@ mod tests {
         let block = EvmBlock::new(evm_header, evm_body);
 
         // Create exec payload and inputs
-        let exec_payload = ExecPayload::new(&header, block.get_body());
+        let intrinsics = block.get_header().get_intrinsics();
+        let exec_payload = ExecPayload::new(&intrinsics, block.get_body());
         let inputs = ExecInputs::new_empty();
 
         // Execute the block
@@ -439,5 +380,65 @@ mod tests {
                 "Verification should succeed: our computed state_root should match witness header"
             );
         }
+    }
+
+    #[test]
+    fn verify_outputs_rejects_mismatched_non_state_commitments() {
+        #[derive(Deserialize, Debug)]
+        struct TestData {
+            witness: EthClientExecutorInput,
+        }
+
+        let test_data_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("test-utils/data/evm_ee/witness_params.json");
+
+        let json_content = fs::read_to_string(&test_data_path)
+            .expect("Failed to read witness_params.json from test-utils/data/evm_ee");
+
+        let test_data: TestData =
+            serde_json::from_str(&json_content).expect("Failed to parse test data");
+
+        let chain_spec: Arc<ChainSpec> = Arc::new((&test_data.witness.genesis).try_into().unwrap());
+        let env = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
+        let pre_state = EvmPartialState::new(
+            test_data.witness.parent_state,
+            rehashed_fixture_bytecodes(test_data.witness.bytecodes),
+            test_data.witness.ancestor_headers,
+        );
+
+        let header = test_data.witness.current_block.header().clone();
+        let evm_header = EvmHeader::new(header.clone());
+        let block_body = test_data.witness.current_block.body().clone();
+        let evm_body = EvmBlockBody::from_alloy_body(block_body);
+        let block = EvmBlock::new(evm_header, evm_body);
+        let intrinsics = block.get_header().get_intrinsics();
+        let exec_payload = ExecPayload::new(&intrinsics, block.get_body());
+        let inputs = ExecInputs::new_empty();
+        let output = env
+            .execute_block_body(&pre_state, &exec_payload, &inputs)
+            .expect("block execution should succeed");
+
+        let mut bad_receipts_root = header.clone();
+        bad_receipts_root.receipts_root = B256::from([0x11; 32]);
+        assert!(
+            env.verify_outputs_against_header(&EvmHeader::new(bad_receipts_root), &output)
+                .is_err()
+        );
+
+        let mut bad_logs_bloom = header.clone();
+        bad_logs_bloom.logs_bloom = Bloom::from([0x22; 256]);
+        assert!(
+            env.verify_outputs_against_header(&EvmHeader::new(bad_logs_bloom), &output)
+                .is_err()
+        );
+
+        let mut bad_gas_used = header;
+        bad_gas_used.gas_used = bad_gas_used.gas_used.saturating_add(1);
+        assert!(
+            env.verify_outputs_against_header(&EvmHeader::new(bad_gas_used), &output)
+                .is_err()
+        );
     }
 }

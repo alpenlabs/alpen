@@ -1,6 +1,6 @@
 //! EVM block implementation.
 
-use alloy_consensus::proofs::calculate_transaction_root;
+use reth_consensus_common::validation::validate_body_against_header;
 use strata_codec::impl_type_flat_struct;
 use strata_ee_acct_types::ExecBlock;
 
@@ -27,12 +27,7 @@ impl ExecBlock for EvmBlock {
     }
 
     fn check_header_matches_body(header: &Self::Header, body: &Self::Body) -> bool {
-        // Validate that the transactions root in the header matches the body's
-        // transactions.
-        let computed_tx_root = calculate_transaction_root(body.transactions());
-        let header_tx_root = header.header().transactions_root;
-
-        computed_tx_root == header_tx_root
+        validate_body_against_header(body.body(), header.header()).is_ok()
     }
 
     fn get_header(&self) -> &Self::Header {
