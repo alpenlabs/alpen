@@ -126,6 +126,36 @@ fn get_ol_genesis_block(storage: &NodeStorage) -> Result<Option<OLBlockCommitmen
     Ok(genesis_commitment)
 }
 
+/// Ensures the canonical block index has the genesis entry.
+///
+/// This backfills DBs created before the canonical OL block index existed. FCM
+/// reconciles the unfinalized suffix after startup once slot 0 gives it a
+/// stable canonical base.
+fn ensure_canonical_genesis_block(
+    storage: &NodeStorage,
+    genesis_commitment: OLBlockCommitment,
+) -> Result<()> {
+    let canonical_genesis = storage
+        .ol_block()
+        .get_canonical_block_at_blocking(0)
+        .context("startup: failed to query canonical OL genesis block")?;
+    if canonical_genesis == Some(genesis_commitment) {
+        return Ok(());
+    }
+    if let Some(canonical_genesis) = canonical_genesis {
+        bail!(
+            "startup: canonical OL genesis block mismatch: expected {genesis_commitment}, got {canonical_genesis}"
+        );
+    }
+
+    storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(0, vec![*genesis_commitment.blkid()])
+        .context("startup: failed to backfill canonical OL genesis block")?;
+
+    Ok(())
+}
+
 /// Verifies that OL state exists for the resolved genesis block commitment.
 fn verify_genesis_ol_state(
     storage: &NodeStorage,
@@ -298,6 +328,7 @@ pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
     }
 
     if let Some(genesis_commitment) = genesis_commitment {
+        ensure_canonical_genesis_block(ctx.storage().as_ref(), genesis_commitment)?;
         verify_genesis_ol_state(ctx.storage().as_ref(), genesis_commitment)?;
         verify_genesis_epoch_summary(ctx.storage().as_ref(), genesis_commitment)?;
 
@@ -553,6 +584,31 @@ mod tests {
             .expect("test: genesis epoch summary should exist");
 
         assert_eq!(commitment, genesis_commitment);
+    }
+
+    #[test]
+    fn test_missing_canonical_genesis_index_is_backfilled() {
+        let (storage, genesis_commitment) = setup_storage_with_genesis();
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, Vec::new())
+            .expect("test: clear canonical index");
+
+        storage
+            .ol_block()
+            .get_canonical_tip_blocking()
+            .expect_err("test: missing canonical index has no tip");
+
+        ensure_canonical_genesis_block(&storage, genesis_commitment)
+            .expect("test: backfill canonical genesis");
+
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_canonical_tip_blocking()
+                .expect("test: get canonical tip after backfill"),
+            Some(genesis_commitment)
+        );
     }
 
     #[test]
