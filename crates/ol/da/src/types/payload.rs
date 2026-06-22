@@ -319,8 +319,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        AccountDiffEntry, DaMessageEntry, DaProofStateDiff, NewAccountEntry, SnarkAccountInit,
-        U16LenList,
+        AccountDiffEntry, DaMessageEntry, DaProofStateDiff, DaScheme, NewAccountEntry,
+        OLDaSchemeV1, SnarkAccountInit, U16LenList,
     };
 
     fn test_account_id(seed: u8) -> AccountId {
@@ -336,7 +336,10 @@ mod tests {
 
         /// Empty new-account init with the given balance.
         pub(super) fn empty_init(balance_sats: u64) -> AccountInit {
-            AccountInit::new(BitcoinAmount::from_sat(balance_sats), AccountTypeInit::Empty)
+            AccountInit::new(
+                BitcoinAmount::from_sat(balance_sats),
+                AccountTypeInit::Empty,
+            )
         }
 
         /// Snark new-account init with the given balance, state root, and VK bytes.
@@ -382,7 +385,12 @@ mod tests {
         }
 
         /// Inbox message entry with a fixed-length payload of `byte`.
-        pub(super) fn inbox_msg(source: AccountId, incl_epoch: u32, len: usize, byte: u8) -> DaMessageEntry {
+        pub(super) fn inbox_msg(
+            source: AccountId,
+            incl_epoch: u32,
+            len: usize,
+            byte: u8,
+        ) -> DaMessageEntry {
             let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![byte; len])
                 .expect("message payload bytes must fit SSZ max length");
             DaMessageEntry::new(source, incl_epoch, payload)
@@ -393,7 +401,10 @@ mod tests {
             new_accounts: Vec<NewAccountEntry>,
             account_diffs: Vec<AccountDiffEntry>,
         ) -> LedgerDiff {
-            LedgerDiff::new(U16LenList::new(new_accounts), U16LenList::new(account_diffs))
+            LedgerDiff::new(
+                U16LenList::new(new_accounts),
+                U16LenList::new(account_diffs),
+            )
         }
 
         /// Global diff with optional slot and limbo deltas.
@@ -691,5 +702,175 @@ mod tests {
             .expect("account exists");
         let snark = account.as_snark_account().expect("snark account");
         assert_eq!(*snark.seqno().inner(), 1);
+    }
+
+    /// Account handle: id plus the serial it was created at.
+    #[derive(Clone, Copy)]
+    struct AcctRef {
+        id: AccountId,
+        serial: AccountSerial,
+    }
+
+    struct PreStateAccounts {
+        state: MemoryStateBaseLayer,
+        empty: AcctRef,
+        snark: AcctRef,
+    }
+
+    /// Returns genesis plus one empty account and one snark account, preserving created serials.
+    fn pre_state_with_accounts() -> PreStateAccounts {
+        let mut state = make_genesis_state();
+        let empty_id = test_account_id(0x10);
+        let snark_id = test_account_id(0x11);
+
+        let empty_serial = state
+            .create_new_account(
+                empty_id,
+                NewAccountData::new(BitcoinAmount::from_sat(1_000), NewAccountTypeState::Empty),
+            )
+            .expect("create empty account");
+        let snark_serial = state
+            .create_new_account(
+                snark_id,
+                NewAccountData::new(
+                    BitcoinAmount::from_sat(500),
+                    NewAccountTypeState::Snark {
+                        update_vk: PredicateKey::always_accept(),
+                        initial_state_root: Hash::from([0x11u8; 32]),
+                    },
+                ),
+            )
+            .expect("create snark account");
+        PreStateAccounts {
+            state,
+            empty: AcctRef {
+                id: empty_id,
+                serial: empty_serial,
+            },
+            snark: AcctRef {
+                id: snark_id,
+                serial: snark_serial,
+            },
+        }
+    }
+
+    /// Applying a populated diff yields the same state as performing the equivalent mutations
+    /// directly through the accessor API. Strong check is state-root equality; per-field reads
+    /// keep failures diagnosable.
+    #[test]
+    fn test_apply_equivalence_global_and_accounts() {
+        let pre_accounts = pre_state_with_accounts();
+        let new_id = test_account_id(0x20);
+        let inbox_root = Hash::from([0x22u8; 32]);
+        let inbox_msg = build::inbox_msg(test_account_id(0x30), 9, 12, 0x7A);
+
+        // Diff-driven path.
+        let mut applied = pre_accounts.state.clone();
+        let diff = StateDiff::new(
+            build::global(4, Some(SignedVarInt::positive(800))),
+            build::ledger(
+                vec![NewAccountEntry::new(new_id, build::empty_init(2_000))],
+                vec![
+                    AccountDiffEntry::new(
+                        pre_accounts.empty.serial,
+                        build::balance_diff(SignedVarInt::positive(250)),
+                    ),
+                    AccountDiffEntry::new(
+                        pre_accounts.snark.serial,
+                        AccountDiff::new(
+                            DaCounter::new_unchanged(),
+                            build::snark_diff(2, Some(inbox_root), 1, vec![inbox_msg.clone()]),
+                        ),
+                    ),
+                ],
+            ),
+        );
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(diff), &mut applied)
+            .expect("apply diff via scheme");
+
+        // Trusted construction: same effects, applied directly.
+        let mut expected = pre_accounts.state.clone();
+        expected.set_cur_slot(expected.cur_slot() + 4);
+        expected
+            .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from_sat(800)))
+            .expect("add limbo");
+        expected
+            .create_new_account(
+                new_id,
+                NewAccountData::new(BitcoinAmount::from_sat(2_000), NewAccountTypeState::Empty),
+            )
+            .expect("create new account");
+        expected
+            .update_account(pre_accounts.empty.id, |acct| {
+                acct.add_balance(Coin::new_unchecked(BitcoinAmount::from_sat(250)));
+                Ok::<(), DaError>(())
+            })
+            .expect("update empty")
+            .expect("balance ok");
+        expected
+            .update_account(pre_accounts.snark.id, |acct| {
+                let snark = acct.as_snark_account_mut().expect("snark");
+                let next_seqno = Seqno::new(*snark.seqno().inner() + 2);
+                snark.set_proof_state(inbox_root, snark.next_inbox_msg_idx() + 1, next_seqno);
+                snark
+                    .insert_inbox_message(MessageEntry::new(
+                        inbox_msg.source,
+                        inbox_msg.incl_epoch,
+                        inbox_msg.payload.clone(),
+                    ))
+                    .expect("insert inbox");
+                Ok::<(), DaError>(())
+            })
+            .expect("update snark")
+            .expect("snark ok");
+
+        // Strong equivalence.
+        assert_eq!(
+            applied.compute_state_root().expect("applied root"),
+            expected.compute_state_root().expect("expected root"),
+        );
+
+        // Diagnosable per-field checks.
+        assert_eq!(applied.cur_slot(), expected.cur_slot());
+        assert_eq!(applied.limbo_funds(), expected.limbo_funds());
+        for id in [pre_accounts.empty.id, pre_accounts.snark.id, new_id] {
+            let a = applied
+                .get_account_state(id)
+                .unwrap()
+                .expect("applied acct");
+            let e = expected
+                .get_account_state(id)
+                .unwrap()
+                .expect("expected acct");
+            assert_eq!(a.balance(), e.balance(), "balance mismatch for {id:?}");
+        }
+        let a_snark = applied
+            .get_account_state(pre_accounts.snark.id)
+            .unwrap()
+            .unwrap()
+            .as_snark_account()
+            .expect("snark");
+        assert_eq!(*a_snark.seqno().inner(), 2);
+        assert_eq!(a_snark.inner_state_root(), inbox_root);
+        assert_eq!(a_snark.next_inbox_msg_idx(), 1);
+    }
+
+    /// An empty diff is the DA-write identity: `is_default` is true and apply leaves state
+    /// (including its root) unchanged.
+    #[test]
+    fn test_apply_empty_diff_is_noop() {
+        let pre_accounts = pre_state_with_accounts();
+        let before_root = pre_accounts
+            .state
+            .compute_state_root()
+            .expect("root before");
+
+        let mut state = pre_accounts.state.clone();
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(StateDiff::default());
+        assert!(DaWrite::is_default(&ol_diff));
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(StateDiff::default()), &mut state)
+            .expect("apply empty diff");
+
+        assert_eq!(state.compute_state_root().expect("root after"), before_root);
     }
 }
