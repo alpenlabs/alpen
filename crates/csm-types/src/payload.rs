@@ -17,10 +17,116 @@ use std::io::{self, Read, Write};
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-pub use strata_btc_types::payload::{BlobSpec, PayloadDest, PayloadSpec};
 use strata_identifiers::Buf32;
 use strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE;
 use strata_l1_txfmt::TagData;
+
+/// DA destination identifier. This will eventually be used to enable storing
+/// payloads on alternative availability schemes.
+///
+/// Defined locally since `strata-btc-types` dropped its payload types in
+/// v0.3.0; only the L1 settlement destination is currently supported.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    BorshDeserialize,
+    BorshSerialize,
+    Serialize,
+    Deserialize,
+)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
+pub enum PayloadDest {
+    /// If we expect the DA to be on the L1 chain that we settle to. This is
+    /// always the strongest DA layer we have access to.
+    L1 = 0,
+}
+
+/// Manual `Arbitrary` impl so that we always generate L1 DA if we add future
+/// ones that would work in totally different ways.
+impl<'a> Arbitrary<'a> for PayloadDest {
+    fn arbitrary(_u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self::L1)
+    }
+}
+
+/// Summary of a DA blob expected on a DA layer. Specifies the target and a
+/// commitment to the payload.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Arbitrary,
+    BorshDeserialize,
+    BorshSerialize,
+    Serialize,
+    Deserialize,
+)]
+pub struct BlobSpec {
+    /// Target settlement layer we're expecting the DA on.
+    dest: PayloadDest,
+
+    /// Commitment to the payload (probably just a hash or a merkle root) that we
+    /// expect to see committed to DA.
+    commitment: Buf32,
+}
+
+impl BlobSpec {
+    /// The target we expect the DA payload to be stored on.
+    pub fn dest(&self) -> PayloadDest {
+        self.dest
+    }
+
+    /// Commitment to the payload.
+    pub fn commitment(&self) -> &Buf32 {
+        &self.commitment
+    }
+}
+
+/// Summary of a DA payload to be included on a DA layer. Specifies the target
+/// and a commitment to the payload.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Arbitrary,
+    BorshDeserialize,
+    BorshSerialize,
+    Serialize,
+    Deserialize,
+)]
+pub struct PayloadSpec {
+    /// Target settlement layer we're expecting the DA on.
+    dest: PayloadDest,
+
+    /// Commitment to the payload (probably just a hash or a merkle root) that we
+    /// expect to see committed to DA.
+    commitment: Buf32,
+}
+
+impl PayloadSpec {
+    /// The target we expect the DA payload to be stored on.
+    pub fn dest(&self) -> PayloadDest {
+        self.dest
+    }
+
+    /// Commitment to the payload.
+    pub fn commitment(&self) -> &Buf32 {
+        &self.commitment
+    }
+}
 
 /// Error constructing an [`L1Payload`].
 #[derive(Debug, thiserror::Error)]

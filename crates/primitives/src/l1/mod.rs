@@ -1,5 +1,5 @@
 // Re-export from strata-btc-types and strata-identifiers for backward compatibility
-pub use strata_btc_types::{payload, *};
+pub use strata_btc_types::*;
 pub use strata_identifiers::{L1BlockCommitment, L1BlockId, L1Height};
 
 /// Computes how many confirmations an L1 block at `observed_height` has under

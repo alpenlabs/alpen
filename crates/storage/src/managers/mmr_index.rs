@@ -672,7 +672,7 @@ impl MmrIndexHandle {
 
     pub fn get_state_at(&self, at_leaf_count: u64) -> DbResult<MmrStateView> {
         let mmr_id = self.mmr_id_bytes();
-        let peak_node_positions = peak_positions(at_leaf_count);
+        let peak_node_positions: Vec<_> = peak_positions(at_leaf_count).collect();
         let prefetched =
             self.fetch_node_paths_blocking(peak_node_positions.iter().copied(), false)?;
         let node_table = Self::get_scoped_node_table(&prefetched, &mmr_id);
