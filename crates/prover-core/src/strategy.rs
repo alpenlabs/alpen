@@ -51,9 +51,11 @@ where
 
 /// Remote execution: `start_proving` + poll + `get_proof`.
 ///
-/// `ZkVmRemoteProver` exposes `!Send` futures, so each `prove()` drives them on
-/// a `LocalSet`. Crucially those futures run on a **single long-lived runtime**
-/// owned by the strategy, not a fresh runtime per call.
+/// Each `prove()` drives the remote futures on a **single long-lived runtime**
+/// owned by the strategy, not a fresh runtime per call. The futures are `Send`
+/// (zkaleido v0.3.0-rc.1+ defines `ZkVmRemoteProgram::start_proving` as
+/// `-> impl Future + Send`), so they run directly on the multi-thread runtime —
+/// no `LocalSet` thread-pinning needed.
 ///
 /// SP1 SDK >=6.2 caches its gRPC channel for the whole process, and a tonic
 /// channel is just an mpsc handle to a background worker `tokio::spawn`'d on the
@@ -101,8 +103,8 @@ impl<Host> RemoteStrategy<Host> {
         // calls each run on their own `spawn_blocking` thread and `block_on`
         // this runtime simultaneously; a current-thread runtime would serialize
         // them. The remote prove future itself runs on the calling thread via
-        // the per-call `LocalSet`; these worker threads only drive the shared
-        // gRPC channel and its IO, so a small pool is plenty.
+        // `Runtime::block_on`; these worker threads only drive the shared gRPC
+        // channel and its IO, so a small pool is plenty.
         let rt = Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("paas-remote-prover")
@@ -164,9 +166,6 @@ where
         input: &<H::Program as ZkVmProgram>::Input,
         mut ctx: ProveContext,
     ) -> ProverResult<ProofReceiptWithMetadata> {
-        use tokio::task::LocalSet;
-
-        let local = LocalSet::new();
         let host = self.host.clone();
         let poll_interval = self.poll_interval;
 
@@ -178,7 +177,7 @@ where
             .rt
             .as_ref()
             .expect("remote-prover runtime present outside Drop");
-        local.block_on(rt, async move {
+        rt.block_on(async move {
             // Try to resume from saved metadata (prior crash).
             let proof_id = if let Some(saved) = ctx.saved.take() {
                 match Host::ProofId::try_from(saved) {
