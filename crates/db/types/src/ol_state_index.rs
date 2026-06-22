@@ -1,4 +1,4 @@
-//! Record types for the [`OLStateIndexingDatabase`] schema.
+//! Types around the [`OLStateIndexingDatabase`] schema.
 //!
 //! Captures the indexing data persisted for later querying. Account-type-agnostic:
 //! any account may produce any kind of indexing record.
@@ -6,8 +6,6 @@
 //! Records derive [`serde::Serialize`] / [`serde::Deserialize`] and are persisted
 //! as CBOR. Fields whose native types lack serde derives (e.g. `MessageEntry`)
 //! are stored in their raw SSZ byte form; callers convert at the boundaries.
-//!
-//! [`OLStateIndexingDatabase`]: crate::traits::OLStateIndexingDatabase
 
 use std::collections::BTreeMap;
 

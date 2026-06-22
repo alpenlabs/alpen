@@ -1,6 +1,6 @@
-//! MMR indexing types: [`NodePos`], batch-write structs, and preconditions.
+//! MMR indexing types.
 //!
-//! These are the primitive types used by [`crate::traits::MmrIndexDatabase`] and its callers.
+//! [`MmrIndexDatabase`], [`NodePos`], batch-write structs, preconditions, etc.
 
 use std::collections::BTreeMap;
 
