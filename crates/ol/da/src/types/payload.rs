@@ -317,7 +317,10 @@ mod tests {
     use strata_ol_stf::test_utils::make_genesis_state;
     use strata_predicate::PredicateKey;
 
-    use super::*;
+    use super::{
+        super::{MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES},
+        *,
+    };
     use crate::{
         AccountDiffEntry, DaMessageEntry, DaProofStateDiff, DaScheme, NewAccountEntry,
         OLDaSchemeV1, SnarkAccountInit, U16LenList,
@@ -872,5 +875,144 @@ mod tests {
             .expect("apply empty diff");
 
         assert_eq!(state.compute_state_root().expect("root after"), before_root);
+    }
+
+    #[test]
+    fn test_validate_rejects_account_diff_serial_out_of_range() {
+        // serial 5 == pre_state_next_serial, so it is not yet allocated.
+        let diff = account_diffs_at(&[5]);
+        let result = validate_ledger_entries(AccountSerial::from(5u32), &diff);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff(
+                "account diff serial out of range"
+            ))
+        ));
+    }
+
+    /// Builds a state diff whose account-diff serials are exactly `serials`, in order.
+    fn account_diffs_at(serials: &[u32]) -> StateDiff {
+        StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger(
+                Vec::new(),
+                serials
+                    .iter()
+                    .map(|s| {
+                        AccountDiffEntry::new(
+                            AccountSerial::from(*s),
+                            build::balance_diff(SignedVarInt::positive(1)),
+                        )
+                    })
+                    .collect(),
+            ),
+        )
+    }
+
+    #[test]
+    fn test_validate_rejects_duplicate_account_diff_serial() {
+        let diff = account_diffs_at(&[1, 1]);
+        let result = validate_ledger_entries(AccountSerial::from(5u32), &diff);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff(
+                "account diff serials not strictly increasing"
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_validate_rejects_decreasing_account_diff_serial() {
+        let diff = account_diffs_at(&[3, 2]);
+        let result = validate_ledger_entries(AccountSerial::from(5u32), &diff);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff(
+                "account diff serials not strictly increasing"
+            ))
+        ));
+    }
+
+    /// Gaps are allowed: account diffs reference existing accounts by serial and need not be
+    /// contiguous. Only strictly-increasing + in-range is required.
+    #[test]
+    fn test_validate_accepts_gapped_account_diff_serials() {
+        let diff = account_diffs_at(&[1, 3]);
+        assert!(validate_ledger_entries(AccountSerial::from(5u32), &diff).is_ok());
+    }
+
+    #[test]
+    fn test_apply_rejects_snark_diff_on_non_snark_account() {
+        let pre_accounts = pre_state_with_accounts();
+        let mut state = pre_accounts.state.clone();
+
+        // Snark diff targeting the empty (non-snark) account.
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger(
+                Vec::new(),
+                vec![AccountDiffEntry::new(
+                    pre_accounts.empty.serial,
+                    AccountDiff::new(
+                        DaCounter::new_unchanged(),
+                        build::snark_diff(1, None, 0, Vec::new()),
+                    ),
+                )],
+            ),
+        );
+        let result = OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(diff), &mut state);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "snark diff applied to non-snark account"
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_poll_context_rejects_malformed_vk() {
+        let pre_accounts = pre_state_with_accounts();
+        // Bytes that are not a valid predicate key.
+        let bad_vk = vec![0xFFu8; 3];
+        let init = AccountInit::new(
+            BitcoinAmount::from_sat(1),
+            AccountTypeInit::Snark(SnarkAccountInit::new(Hash::from([0u8; 32]), bad_vk)),
+        );
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger(
+                vec![NewAccountEntry::new(test_account_id(0x40), init)],
+                Vec::new(),
+            ),
+        );
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
+        let result = DaWrite::poll_context(&ol_diff, &pre_accounts.state, &());
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff("invalid predicate key"))
+        ));
+    }
+
+    #[test]
+    fn test_snark_init_vk_round_trips_at_max_len() {
+        // MAX_VK_BYTES is the largest value representable by the u16 length prefix.
+        let vk = vec![0xABu8; MAX_VK_BYTES];
+        let init = SnarkAccountInit::new(Hash::from([1u8; 32]), vk);
+        let encoded = encode_to_vec(&init).expect("encode max-len vk");
+        let decoded: SnarkAccountInit = decode_buf_exact(&encoded).expect("decode max-len vk");
+        assert_eq!(decoded, init);
+    }
+
+    #[test]
+    fn test_da_message_entry_round_trips_at_max_payload() {
+        let payload = MsgPayload::from_bytes(
+            BitcoinAmount::from_sat(0),
+            vec![0x5Au8; MAX_MSG_PAYLOAD_BYTES],
+        )
+        .expect("payload at boundary fits SSZ max");
+        let entry = DaMessageEntry::new(test_account_id(7), 3, payload);
+        let encoded = encode_to_vec(&entry).expect("encode boundary entry");
+        let decoded: DaMessageEntry = decode_buf_exact(&encoded).expect("decode boundary entry");
+        assert_eq!(decoded, entry);
     }
 }
