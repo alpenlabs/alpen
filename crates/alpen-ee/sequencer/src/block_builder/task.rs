@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use alloy_primitives::B256;
 use alpen_ee_block_assembly::{build_next_exec_block, BlockAssemblyInputs, BlockAssemblyOutputs};
 use alpen_ee_common::{
-    Clock, EnginePayload, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, ForkchoiceState,
+    Clock, EnginePayload, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage,
     PayloadBuilderEngine, SystemClock,
 };
 use alpen_ee_exec_chain::ExecChainHandle;
@@ -241,23 +240,13 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .await
         .context("block_builder: submit new exec block")?;
 
-    // Canonicalize the freshly built block LAST. The payload submission above
-    // only inserts the block into the engine tree as VALID; drive the
-    // forkchoice update here — instead of relying on the OL tracker's
-    // asynchronous FCU — so block acceptance is synchronous and self-contained,
-    // and the block is canonical at tip for the next build. Performing it after
-    // the storage save closes the partial-commit window: the engine's canonical
-    // head never advances past a block Alpen storage has not accepted, so a
-    // failure leaves the engine behind storage (safe, self-healing) rather than
-    // ahead. Safe/finalized are left zero to retain their current values.
-    payload_builder
-        .update_consensus_state(ForkchoiceState {
-            head_block_hash: B256::from_slice(blockhash.as_ref()),
-            safe_block_hash: B256::ZERO,
-            finalized_block_hash: B256::ZERO,
-        })
-        .await
-        .context("block_builder: canonicalize block via forkchoice update")?;
+    // Canonicalization (forkchoice update) is intentionally NOT performed here.
+    // The engine control task is the single owner of reth's canonical head: the
+    // `new_block` submission above propagates the new tip through
+    // exec-chain -> preconf -> engine control, which drives the forkchoice
+    // update. Driving it here as well raced that task's cached head and could
+    // make reth silently drop OL safe/finalized updates (a behind-canonical
+    // head FCU is a no-op for safe/finalized in reth).
 
     // TODO(STR-3682): should this wait for block
 
