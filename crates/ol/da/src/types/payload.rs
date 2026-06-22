@@ -306,9 +306,11 @@ fn apply_snark_diff<T: IAccountStateMut>(
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{AccountId, BitcoinAmount, Hash};
-    use strata_codec::encode_to_vec;
-    use strata_da_framework::{DaCounter, DaLinacc, DaWrite, SignedVarInt, counter_schemes};
+    use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_da_framework::{
+        DaCounter, DaLinacc, DaRegister, DaWrite, SignedVarInt, UnsignedVarInt, counter_schemes,
+    };
     use strata_identifiers::AccountSerial;
     use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
@@ -316,10 +318,167 @@ mod tests {
     use strata_predicate::PredicateKey;
 
     use super::*;
-    use crate::{AccountDiffEntry, DaProofStateDiff, NewAccountEntry, U16LenList};
+    use crate::{
+        AccountDiffEntry, DaMessageEntry, DaProofStateDiff, NewAccountEntry, SnarkAccountInit,
+        U16LenList,
+    };
 
     fn test_account_id(seed: u8) -> AccountId {
         AccountId::from([seed; 32])
+    }
+
+    /// Test-only builders for valid OL DA diff trees.
+    ///
+    /// These exist so apply/round-trip/golden tests share one faithful construction path instead
+    /// of hand-rolling diffs per test. Kept private to this module.
+    mod build {
+        use super::*;
+
+        /// Empty new-account init with the given balance.
+        pub(super) fn empty_init(balance_sats: u64) -> AccountInit {
+            AccountInit::new(BitcoinAmount::from_sat(balance_sats), AccountTypeInit::Empty)
+        }
+
+        /// Snark new-account init with the given balance, state root, and VK bytes.
+        pub(super) fn snark_init(balance_sats: u64, root: Hash, vk: Vec<u8>) -> AccountInit {
+            AccountInit::new(
+                BitcoinAmount::from_sat(balance_sats),
+                AccountTypeInit::Snark(SnarkAccountInit::new(root, vk)),
+            )
+        }
+
+        /// Balance-only account diff (signed delta in sats).
+        pub(super) fn balance_diff(delta: SignedVarInt) -> AccountDiff {
+            AccountDiff::new(DaCounter::new_changed(delta), SnarkAccountDiff::default())
+        }
+
+        /// Snark diff bumping seqno, setting proof state, and appending inbox messages.
+        pub(super) fn snark_diff(
+            seqno_incr: u16,
+            new_root: Option<Hash>,
+            next_idx_incr: u64,
+            inbox_msgs: Vec<DaMessageEntry>,
+        ) -> SnarkAccountDiff {
+            let inner_state = match new_root {
+                Some(r) => DaRegister::new_set(r),
+                None => DaRegister::new_unset(),
+            };
+            let next_idx = if next_idx_incr == 0 {
+                DaCounter::new_unchanged()
+            } else {
+                DaCounter::new_changed(UnsignedVarInt::new(next_idx_incr))
+            };
+            let proof_state = DaProofStateDiff::new(inner_state, next_idx);
+            let mut inbox = DaLinacc::new();
+            for m in inbox_msgs {
+                assert!(inbox.append_entry(m), "inbox write should accept entry");
+            }
+            let seq_no = if seqno_incr == 0 {
+                DaCounter::<counter_schemes::CtrU64ByU16>::new_unchanged()
+            } else {
+                DaCounter::new_changed(seqno_incr)
+            };
+            SnarkAccountDiff::new(seq_no, proof_state, inbox)
+        }
+
+        /// Inbox message entry with a fixed-length payload of `byte`.
+        pub(super) fn inbox_msg(source: AccountId, incl_epoch: u32, len: usize, byte: u8) -> DaMessageEntry {
+            let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![byte; len])
+                .expect("message payload bytes must fit SSZ max length");
+            DaMessageEntry::new(source, incl_epoch, payload)
+        }
+
+        /// Ledger diff from new accounts and account diffs.
+        pub(super) fn ledger(
+            new_accounts: Vec<NewAccountEntry>,
+            account_diffs: Vec<AccountDiffEntry>,
+        ) -> LedgerDiff {
+            LedgerDiff::new(U16LenList::new(new_accounts), U16LenList::new(account_diffs))
+        }
+
+        /// Global diff with optional slot and limbo deltas.
+        pub(super) fn global(slot_incr: u16, limbo_delta: Option<SignedVarInt>) -> GlobalStateDiff {
+            let cur_slot = if slot_incr == 0 {
+                DaCounter::new_unchanged()
+            } else {
+                DaCounter::new_changed(slot_incr)
+            };
+            let limbo = match limbo_delta {
+                Some(d) => DaCounter::new_changed(d),
+                None => DaCounter::new_unchanged(),
+            };
+            GlobalStateDiff::new(cur_slot, limbo)
+        }
+    }
+
+    /// A non-trivial state diff exercising global + new accounts (empty & snark) + account diffs
+    /// (balance & snark with inbox). Shared by round-trip and golden-fixture tests.
+    fn populated_state_diff() -> StateDiff {
+        let snark_acct = build::snark_init(
+            500,
+            Hash::from([0x11u8; 32]),
+            PredicateKey::always_accept().as_buf_ref().to_bytes(),
+        );
+        let new_accounts = vec![
+            NewAccountEntry::new(test_account_id(0xA1), build::empty_init(1_000)),
+            NewAccountEntry::new(test_account_id(0xA2), snark_acct),
+        ];
+
+        let inbox = vec![
+            build::inbox_msg(test_account_id(0xB1), 7, 4, 0xEE),
+            build::inbox_msg(test_account_id(0xB2), 8, 16, 0xCD),
+        ];
+        let account_diffs = vec![
+            AccountDiffEntry::new(
+                AccountSerial::from(0u32),
+                build::balance_diff(SignedVarInt::positive(250)),
+            ),
+            AccountDiffEntry::new(
+                AccountSerial::from(1u32),
+                AccountDiff::new(
+                    DaCounter::new_unchanged(),
+                    build::snark_diff(3, Some(Hash::from([0x22u8; 32])), 2, inbox),
+                ),
+            ),
+        ];
+
+        StateDiff::new(
+            build::global(5, Some(SignedVarInt::positive(900))),
+            build::ledger(new_accounts, account_diffs),
+        )
+    }
+
+    #[test]
+    fn test_populated_payload_round_trip() {
+        let payload = OLDaPayloadV1::new(populated_state_diff());
+        let encoded = encode_to_vec(&payload).expect("encode populated payload");
+
+        let decoded = decode_ol_da_payload_bytes(&encoded).expect("decode populated payload");
+        let reencoded = encode_to_vec(&decoded).expect("re-encode populated payload");
+
+        assert_eq!(encoded, reencoded);
+    }
+
+    #[test]
+    fn test_account_init_round_trip_empty_and_snark() {
+        for init in [
+            build::empty_init(42),
+            build::snark_init(7, Hash::from([0x33u8; 32]), vec![0xAB; 64]),
+        ] {
+            let encoded = encode_to_vec(&init).expect("encode account init");
+            let decoded: AccountInit = decode_buf_exact(&encoded).expect("decode account init");
+            assert_eq!(decoded, init);
+        }
+    }
+
+    #[test]
+    fn test_snark_account_diff_round_trip() {
+        let inbox = vec![build::inbox_msg(test_account_id(9), 1, 8, 0x55)];
+        let diff = build::snark_diff(2, Some(Hash::from([0x44u8; 32])), 1, inbox);
+        let encoded = encode_to_vec(&diff).expect("encode snark diff");
+        let decoded: SnarkAccountDiff = decode_buf_exact(&encoded).expect("decode snark diff");
+        let reencoded = encode_to_vec(&decoded).expect("re-encode snark diff");
+        assert_eq!(encoded, reencoded);
     }
 
     #[test]
