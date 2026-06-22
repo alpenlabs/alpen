@@ -64,6 +64,9 @@ services:
 
   alpen-fullnode:
     platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile.local
     image: ${ALPEN_IMAGE:-alpen-client:latest}
     depends_on:
       strata-checkpoint-sync:
