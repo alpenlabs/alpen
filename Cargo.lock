@@ -1617,13 +1617,9 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
- "alloy-rlp",
- "alloy-rpc-types-debug",
  "alpen-ee-common",
  "eyre",
- "reth-evm",
  "reth-primitives",
- "reth-primitives-traits",
  "reth-provider",
  "reth-revm",
  "reth-trie",

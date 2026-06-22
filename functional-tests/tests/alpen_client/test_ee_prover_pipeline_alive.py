@@ -15,11 +15,15 @@ extraction:
 
 Native mode runs the full guest program logic in plain Rust; only the
 zk proof generation itself is bypassed. So this test exercises:
-  - Inline per-block witness production (`RethBlockWitnessProducer` ->
-    `capture_block_witness` -> reth `ExecutionWitness` -> rsp
-    `from_execution_witness` -> `BlockWitnessStore`), which gates block
-    acceptance
-  - `ChunkSpec::fetch_input` (sled reads of the per-block `BlockWitnessRecord`s)
+  - Inline per-block witness production: during payload build,
+    `build_block_witness_from_executed_state` harvests the depth-0 witness
+    parts straight from the just-executed reth `State` (no re-execution) into a
+    `BlockWitnessRecord`, carried on the payload and persisted to the
+    `BlockWitnessStore`. A capture failure fails the payload build, so this
+    gates block acceptance.
+  - `ChunkSpec::fetch_input` (sled reads of the per-block `BlockWitnessRecord`s,
+    unioned into one chunk-level sparse state via
+    `EvmPartialState::from_witness_parts` / rsp `from_execution_witness`)
   - `AccessedStateGenerator` exex (per-block accessed-state writes, feeding
     the account proof's batch-range witness)
   - The `EeChunkProgram` guest (per-block state transition checks, MPT validation)
