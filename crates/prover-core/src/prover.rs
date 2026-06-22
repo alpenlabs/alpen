@@ -687,7 +687,7 @@ impl<H: ProofSpec> ProverBuilder<H> {
         self.build(Arc::new(NativeStrategy::new(host)))
     }
 
-    /// Build with a remote host (`start_proving` + poll via `LocalSet`).
+    /// Build with a remote host (`start_proving` + poll on a long-lived runtime).
     #[cfg(feature = "remote")]
     pub fn remote<Host>(self, host: Host) -> Prover<H>
     where
