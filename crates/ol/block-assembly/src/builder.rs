@@ -7,7 +7,6 @@ use std::{
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
-use strata_ol_params::OLParams;
 use strata_ol_state_provider::StateProvider;
 use strata_predicate::PredicateKey;
 use strata_service::ServiceBuilder;
@@ -50,7 +49,6 @@ where
         reason = "builder collects unrelated service inputs"
     )]
     pub fn new(
-        _ol_params: Arc<OLParams>,
         blockasm_config: Arc<BlockAssemblyConfig>,
         storage: Arc<NodeStorage>,
         mempool_provider: M,

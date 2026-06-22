@@ -199,7 +199,6 @@ mod sequencer_services {
 
         nodectx.task_manager().handle().block_on(async {
             BlockasmBuilder::new(
-                nodectx.ol_params().clone(),
                 blockasm_config,
                 nodectx.storage().clone(),
                 mempool_provider,

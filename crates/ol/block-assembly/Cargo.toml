@@ -24,7 +24,7 @@ strata-msg-fmt = { workspace = true, optional = true }
 strata-ol-chain-types-new.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-msg-types = { workspace = true, optional = true }
-strata-ol-params.workspace = true
+strata-ol-params = { workspace = true, optional = true }
 strata-ol-state-provider.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
@@ -61,6 +61,7 @@ test-utils = [
   "dep:strata-l1-txfmt",
   "dep:strata-msg-fmt",
   "dep:strata-ol-msg-types",
+  "dep:strata-ol-params",
   "dep:strata-state",
   "dep:threadpool",
   "strata-db-store-sled/test_utils",
@@ -80,6 +81,7 @@ strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-msg-types.workspace = true
+strata-ol-params.workspace = true
 strata-predicate.workspace = true
 strata-state.workspace = true
 threadpool.workspace = true
