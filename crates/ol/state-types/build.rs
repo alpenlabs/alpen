@@ -12,6 +12,7 @@ fn main() {
         "strata_acct_types",
         "strata_identifiers",
         "strata_asm_manifest_types",
+        "strata_bridge_params",
         "strata_snark_acct_types",
         "strata_predicate",
     ];

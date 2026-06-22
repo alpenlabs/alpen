@@ -134,6 +134,7 @@ pub fn ol_state_strategy() -> impl Strategy<Value = OLState> {
             epoch,
             global,
             intraepoch: IntraepochState::default(),
+            bridge_params: strata_bridge_params::BridgeParams::default(),
             ledger,
         })
 }

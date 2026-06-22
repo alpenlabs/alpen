@@ -1,6 +1,7 @@
 import strata_acct_types
 import strata_identifiers
 import strata_asm_manifest_types
+import strata_bridge_params
 import strata_predicate
 import strata_snark_acct_types
 
@@ -23,6 +24,10 @@ class OLState(Container):
     ###
     ### Reset at the end.
     intraepoch: IntraepochState
+
+    ### Bridge withdrawal denomination and cap.
+    #~# external_kind: container
+    bridge_params: strata_bridge_params.BridgeParams
 
     ### Ledger accounts table
     ledger: TsnlLedgerAccountsTable

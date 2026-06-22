@@ -11,7 +11,6 @@ strata-acct-types.workspace = true
 strata-asm-common = { workspace = true, optional = true }
 strata-asm-manifest-types.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
-strata-bridge-params.workspace = true
 strata-btc-verification = { workspace = true, optional = true }
 strata-codec = { workspace = true, optional = true }
 strata-common = { workspace = true, optional = true }

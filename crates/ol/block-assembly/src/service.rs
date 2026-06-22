@@ -165,7 +165,6 @@ where
         state.sequencer_config(),
         config,
         resource_state_before_block,
-        *state.ol_params().bridge_params(),
     )
     .await?;
 
@@ -277,7 +276,6 @@ mod tests {
     use strata_identifiers::{Buf32, Buf64, OLBlockCommitment};
     use strata_ol_chain_types_new::test_utils::{schnorr_predicate, test_schnorr_keypair};
     use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
-    use strata_ol_params::OLParams;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_predicate::PredicateKey;
 
@@ -327,7 +325,6 @@ mod tests {
         let mempool = env.mempool_arc();
 
         let state = BlockasmServiceState::new(
-            Arc::new(OLParams::default()),
             Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
             env.sequencer_config().clone(),
             sequencer_predicate,

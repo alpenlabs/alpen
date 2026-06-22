@@ -83,7 +83,7 @@ use strata_ol_msg_types::{
     DEFAULT_OPERATOR_FEE, DEPOSIT_MSG_TYPE_ID, DepositMsgData, WITHDRAWAL_MSG_TYPE_ID,
     WithdrawalMsgData,
 };
-use strata_ol_params::{BridgeParams, OLParams};
+use strata_ol_params::OLParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{
     MMR_SENTINEL_DUMMY_LEAF, OLAccountState, OLSnarkAccountState, OLState,
@@ -472,7 +472,7 @@ pub fn execute_block(
     components: BlockComponents,
 ) -> ExecResult<CompletedBlock> {
     let block_context = BlockContext::new(block_info, parent_header);
-    execute_and_complete_block(state, block_context, components, BridgeParams::default())
+    execute_and_complete_block(state, block_context, components)
 }
 
 /// Executes a block and returns the construct output, which includes both the completed block and
@@ -484,7 +484,7 @@ pub fn execute_block_with_outputs(
     components: BlockComponents,
 ) -> ExecResult<ConstructBlockOutput> {
     let block_context = BlockContext::new(block_info, parent_header);
-    construct_block(state, block_context, components, BridgeParams::default())
+    construct_block(state, block_context, components)
 }
 
 /// Executes a transaction in a non-genesis block.
@@ -568,13 +568,7 @@ pub fn assert_verification_succeeds<S: IStateAccessorMut>(
     parent_header: Option<OLBlockHeader>,
     body: &strata_ol_chain_types_new::OLBlockBody,
 ) {
-    let result = verify_block(
-        state,
-        header,
-        parent_header.as_ref(),
-        body,
-        BridgeParams::default(),
-    );
+    let result = verify_block(state, header, parent_header.as_ref(), body);
     assert!(
         result.is_ok(),
         "Block verification failed when it should have succeeded: {:?}",
@@ -590,13 +584,7 @@ pub fn assert_verification_fails_with(
     body: &strata_ol_chain_types_new::OLBlockBody,
     error_matcher: impl Fn(&ExecError) -> bool,
 ) {
-    let result = verify_block(
-        state,
-        header,
-        parent_header.as_ref(),
-        body,
-        BridgeParams::default(),
-    );
+    let result = verify_block(state, header, parent_header.as_ref(), body);
     assert!(
         result.is_err(),
         "Block verification succeeded when it should have failed"

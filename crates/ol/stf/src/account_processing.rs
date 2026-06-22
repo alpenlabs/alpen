@@ -131,9 +131,7 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
 
     // 2. Validate the withdrawal amount against params.
     let amt_raw: u64 = payload.value().into();
-    let valid = context
-        .bridge_params()
-        .is_some_and(|wp| wp.validate_withdrawal_amount(amt_raw));
+    let valid = state.bridge_params().validate_withdrawal_amount(amt_raw);
     if !valid {
         warn!(%sender, %amt_raw, "limboing bad amount sent to bridge gateway acct");
         handle_misplaced_funds(state, coin)?;

@@ -85,8 +85,7 @@ pub(crate) fn start_prover_service(
     // Build the spec + hook. The backend choice is fixed here at build
     // time rather than being part of task identity — the new paas erases
     // the host type inside the prove strategy.
-    let bridge_params = *runctx.ol_params().bridge_params();
-    let spec = CheckpointSpec::new(storage.clone(), bridge_params);
+    let spec = CheckpointSpec::new(storage.clone());
     let hook = CheckpointReceiptHook::new(proof_db.clone(), proof_notify);
 
     // Task store: the node's `ProverTaskDbManager` implements

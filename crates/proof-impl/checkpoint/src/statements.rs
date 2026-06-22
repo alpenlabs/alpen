@@ -7,7 +7,6 @@ use ssz::{Decode, Encode};
 use ssz_primitives::FixedBytes;
 use strata_asm_manifest_types::{AsmManifestRangeHash, compute_asm_manifests_hash};
 use strata_asm_proto_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalHeaderComplement};
-use strata_bridge_params::BridgeParams;
 use strata_crypto::hash;
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{AsmManifest, OLBlock, OLBlockHeader, OLLog, OLTxSegment};
@@ -60,13 +59,8 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv) {
     // Read DA diff witness bytes from zkVM input
     let da_state_diff_bytes = zkvm.read_buf();
 
-    // Read withdrawal params from zkVM input
-    let withdrawal_ssz_bytes = zkvm.read_buf();
-    let bridge_params = BridgeParams::from_ssz_bytes(&withdrawal_ssz_bytes)
-        .expect("failed to deserialize withdrawal params from SSZ bytes");
-
     // Execute the core STF logic to get the claim
-    let claim = process_ol_stf_core(state, blocks, parent, da_state_diff_bytes, bridge_params);
+    let claim = process_ol_stf_core(state, blocks, parent, da_state_diff_bytes);
 
     // Serialize and commit the checkpoint claim to the zkVM as public output
     let claim_ssz_bytes = claim.as_ssz_bytes();
@@ -96,7 +90,6 @@ pub fn process_ol_stf_core(
     blocks: Vec<OLBlock>,
     parent: OLBlockHeader,
     da_state_diff_bytes: Vec<u8>,
-    bridge_params: BridgeParams,
 ) -> CheckpointClaim {
     // Wrap OLState in MemoryStateBaseLayer to satisfy IStateAccessor requirements.
     let mut state = MemoryStateBaseLayer::new(state);
@@ -149,7 +142,7 @@ pub fn process_ol_stf_core(
         asm_manifests_hash,
         terminal_header,
         epoch_manifests,
-    } = execute_block_batch(&mut state, &blocks, &parent, bridge_params);
+    } = execute_block_batch(&mut state, &blocks, &parent);
 
     let start = parent.compute_block_commitment();
     let end = terminal_header.compute_block_commitment();
@@ -263,7 +256,6 @@ fn execute_block_batch(
     state: &mut MemoryStateBaseLayer,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
-    bridge_params: BridgeParams,
 ) -> EpochExecTrace {
     let mut parent = initial_parent.clone();
     let mut logs = Vec::new();
@@ -301,7 +293,7 @@ fn execute_block_batch(
         // Execute the block's state transition function.
         // This applies transactions, buffers manifests, and (at the terminal)
         // drains the buffered logs and updates state.
-        let output = construct_block(state, context, components, bridge_params).expect(
+        let output = construct_block(state, context, components).expect(
             "block execution failed; all blocks in proof input must be valid and executable",
         );
 

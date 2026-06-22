@@ -1,6 +1,7 @@
 //! Toplevel state.
 
 use strata_acct_types::{AccountId, AccountSerial, Mmr64, SYSTEM_RESERVED_ACCTS, StrataHasher};
+use strata_bridge_params::BridgeParams;
 use strata_ledger_types::{NewAccountData, StateError, StateResult};
 use strata_merkle::Mmr;
 use strata_ol_params::OLParams;
@@ -69,6 +70,7 @@ impl OLState {
             epoch,
             global,
             intraepoch,
+            bridge_params: *params.bridge_params(),
             ledger,
         })
     }
@@ -87,6 +89,10 @@ impl OLState {
 
     pub fn intraepoch_state_mut(&mut self) -> &mut IntraepochState {
         &mut self.intraepoch
+    }
+
+    pub fn bridge_params(&self) -> &BridgeParams {
+        &self.bridge_params
     }
 
     /// Checks that a batch can be applied safely.
@@ -317,8 +323,10 @@ fn ensure_pending_asm_logs_fit(current: u64, adding: u64) -> StateResult<()> {
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
+    use strata_bridge_params::BridgeParams;
     use strata_ledger_types::{IAccountState, NewAccountData};
     use strata_predicate::PredicateKey;
+    use tree_hash::{Sha256Hasher, TreeHash};
 
     use super::*;
     use crate::{OLAccountTypeState, OLSnarkAccountState, test_utils::create_test_genesis_state};
@@ -327,6 +335,23 @@ mod tests {
         let mut bytes = [0u8; 32];
         bytes[0] = seed;
         AccountId::from(bytes)
+    }
+
+    #[test]
+    fn test_bridge_params_are_committed_in_state_root() {
+        let mut params_a = OLParams::new_empty(Default::default());
+        let mut params_b = params_a.clone();
+        params_a.bridge_params =
+            BridgeParams::new(100_000_000, Some(1_000_000_000)).expect("valid bridge params");
+        params_b.bridge_params =
+            BridgeParams::new(50_000_000, Some(500_000_000)).expect("valid bridge params");
+
+        let state_a = OLState::from_genesis_params(&params_a).unwrap();
+        let state_b = OLState::from_genesis_params(&params_b).unwrap();
+        let root_a = state_a.tree_hash_root::<Sha256Hasher>();
+        let root_b = state_b.tree_hash_root::<Sha256Hasher>();
+
+        assert_ne!(root_a, root_b);
     }
 
     #[test]

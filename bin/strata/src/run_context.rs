@@ -85,11 +85,6 @@ impl RunContext {
         self.common.asm_params()
     }
 
-    #[cfg(feature = "prover")]
-    pub(crate) fn ol_params(&self) -> &Arc<strata_ol_params::OLParams> {
-        self.common.ol_params()
-    }
-
     /// Returns the storage.
     pub(crate) fn storage(&self) -> &Arc<NodeStorage> {
         self.common.storage()

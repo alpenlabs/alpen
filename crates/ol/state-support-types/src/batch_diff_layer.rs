@@ -7,6 +7,7 @@
 use std::fmt;
 
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{IStateAccessor, PendingAsmLog, StateResult};
 use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
@@ -117,6 +118,10 @@ impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAcc
             },
             || self.base.limbo_funds(),
         )
+    }
+
+    fn bridge_params(&self) -> &BridgeParams {
+        self.base.bridge_params()
     }
 
     // ===== Epochal state methods =====

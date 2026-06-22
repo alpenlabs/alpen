@@ -11,7 +11,6 @@
 //!
 //! Until then, empty blocks with a slot-delta-only DA payload keep the proof correct.
 
-use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_da_framework::DaCounter;
 use strata_identifiers::Buf64;
@@ -69,7 +68,6 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
         blocks,
         parent,
         da_state_diff_bytes,
-        bridge_params: BridgeParams::default(),
     }
 }
 

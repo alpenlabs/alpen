@@ -1,7 +1,6 @@
 use k256::schnorr::SigningKey;
 use ssz::{Decode, Encode};
 use strata_asm_proto_checkpoint_types::CheckpointClaim;
-use strata_bridge_params::BridgeParams;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::OLState;
 use strata_predicate::{PredicateKey, PredicateTypeId};
@@ -20,7 +19,6 @@ pub struct CheckpointProverInput {
     pub blocks: Vec<OLBlock>,
     pub parent: OLBlockHeader,
     pub da_state_diff_bytes: Vec<u8>,
-    pub bridge_params: BridgeParams,
 }
 
 #[derive(Debug)]
@@ -47,7 +45,6 @@ impl ZkVmProgram for CheckpointProgram {
         input_builder.write_buf(&input.blocks.as_ssz_bytes())?;
         input_builder.write_buf(&input.parent.as_ssz_bytes())?;
         input_builder.write_buf(&input.da_state_diff_bytes)?;
-        input_builder.write_buf(&input.bridge_params.as_ssz_bytes())?;
         input_builder.build()
     }
 
@@ -88,7 +85,6 @@ mod tests {
     use std::panic::catch_unwind;
 
     use strata_asm_proto_checkpoint_types::TerminalHeaderComplement;
-    use strata_bridge_params::BridgeParams;
     use strata_codec::encode_to_vec;
     use strata_crypto::hash;
     use strata_da_framework::DaCounter;
@@ -141,7 +137,6 @@ mod tests {
             blocks,
             parent,
             da_state_diff_bytes,
-            bridge_params: BridgeParams::default(),
         }
     }
 

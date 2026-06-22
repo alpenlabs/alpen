@@ -12,7 +12,6 @@ use std::{collections::HashMap, sync::Mutex};
 use strata_acct_types::BitcoinAmount;
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
-use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
@@ -215,8 +214,7 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         merged_epochs: Mutex::new(Vec::new()),
     };
 
-    exec_block(&ctx, BridgeParams::default(), &terminal_commitment)
-        .expect("single-block epoch executes");
+    exec_block(&ctx, &terminal_commitment).expect("single-block epoch executes");
 
     let summaries = ctx.stored_summaries.lock().unwrap();
     assert_eq!(summaries.len(), 1, "exactly one epoch summary stored");

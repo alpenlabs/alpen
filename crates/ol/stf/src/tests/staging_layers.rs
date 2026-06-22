@@ -6,7 +6,6 @@
 use std::collections::BTreeSet;
 
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload};
-use strata_bridge_params::BridgeParams;
 use strata_ledger_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, IStateAccessorMut, NewAccountData,
     NewAccountTypeState,
@@ -566,7 +565,6 @@ fn test_assembly_and_verify_write_tracking_reach_same_state() {
         block.header(),
         Some(&genesis_header),
         block.body(),
-        BridgeParams::default(),
     )
     .expect("assembled block should verify through staging layers");
 
@@ -629,7 +627,6 @@ fn test_verify_block_tracks_snark_inbox_writes() {
         block.header(),
         Some(&genesis_header),
         block.body(),
-        BridgeParams::default(),
     )
     .expect("GAM block should verify");
 
@@ -669,14 +666,8 @@ fn test_verify_block_through_write_tracking_stack() {
         let tracking = WriteTrackingState::new_empty(&verify_base);
         let mut indexer = IndexerState::new(tracking);
 
-        verify_block(
-            &mut indexer,
-            genesis.header(),
-            None,
-            genesis.body(),
-            BridgeParams::default(),
-        )
-        .expect("Genesis verification through write-tracking stack should succeed");
+        verify_block(&mut indexer, genesis.header(), None, genesis.body())
+            .expect("Genesis verification through write-tracking stack should succeed");
     }
 
     // Apply genesis writes to get post-genesis state for next block
@@ -685,14 +676,8 @@ fn test_verify_block_through_write_tracking_stack() {
         let tracking = WriteTrackingState::new_empty(&post_genesis);
         let mut indexer = IndexerState::new(tracking);
 
-        verify_block(
-            &mut indexer,
-            genesis.header(),
-            None,
-            genesis.body(),
-            BridgeParams::default(),
-        )
-        .expect("Genesis verification should succeed");
+        verify_block(&mut indexer, genesis.header(), None, genesis.body())
+            .expect("Genesis verification should succeed");
 
         let (tracking, _writes) = indexer.into_parts();
         post_genesis
@@ -710,7 +695,6 @@ fn test_verify_block_through_write_tracking_stack() {
             block1.header(),
             Some(genesis.header()),
             block1.body(),
-            BridgeParams::default(),
         )
         .expect("Block 1 verification through write-tracking stack should succeed");
     }
@@ -749,7 +733,7 @@ fn test_verify_terminal_block_through_write_tracking_stack() {
         let tracking = WriteTrackingState::new_empty(&verify_base);
         let mut indexer = IndexerState::new(tracking);
 
-        verify_block(&mut indexer, block.header(), parent_header.as_ref(), block.body(), BridgeParams::default()).unwrap_or_else(
+        verify_block(&mut indexer, block.header(), parent_header.as_ref(), block.body()).unwrap_or_else(
             |e| {
                 panic!(
                     "Block {} (slot {}, terminal={}) verification through write-tracking stack failed: {:?}",

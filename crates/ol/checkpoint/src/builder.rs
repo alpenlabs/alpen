@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use strata_bridge_params::BridgeParams;
 use strata_node_context::NodeContext;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::{ServiceBuilder, SyncAsyncInput, TokioWatchInput};
@@ -23,7 +22,6 @@ use crate::{
 /// Builder for constructing and launching an OL checkpoint service.
 pub struct OLCheckpointBuilder {
     storage: Option<Arc<NodeStorage>>,
-    bridge_params: BridgeParams,
     epoch_summary_rx: Option<watch::Receiver<Option<EpochCommitment>>>,
     prover: Option<ProverConfig>,
 }
@@ -33,16 +31,14 @@ impl OLCheckpointBuilder {
     pub fn new() -> Self {
         Self {
             storage: None,
-            bridge_params: BridgeParams::default(),
             epoch_summary_rx: None,
             prover: None,
         }
     }
 
-    /// Set storage and withdrawal params from [`NodeContext`].
+    /// Set storage from [`NodeContext`].
     pub fn with_node_context(mut self, nodectx: &NodeContext) -> Self {
         self.storage = Some(nodectx.storage().clone());
-        self.bridge_params = *nodectx.ol_params().bridge_params();
         self
     }
 
@@ -79,10 +75,8 @@ impl OLCheckpointBuilder {
         let input = SyncAsyncInput::new(input, runtime_handle);
 
         let ctx = match self.prover {
-            Some(prover) => {
-                CheckpointWorkerContextImpl::with_prover(storage, self.bridge_params, prover)
-            }
-            None => CheckpointWorkerContextImpl::new(storage, self.bridge_params),
+            Some(prover) => CheckpointWorkerContextImpl::with_prover(storage, prover),
+            None => CheckpointWorkerContextImpl::new(storage),
         };
         let state = OLCheckpointServiceState::new(ctx);
         let builder = ServiceBuilder::<OLCheckpointService<CheckpointWorkerContextImpl>, _>::new()

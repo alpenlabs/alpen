@@ -9,7 +9,6 @@ ssz_types = { workspace = true, optional = true }
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
-strata-bridge-params.workspace = true
 strata-codec.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true

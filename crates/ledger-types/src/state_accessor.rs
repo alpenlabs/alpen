@@ -1,4 +1,5 @@
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64};
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
 use crate::{
@@ -23,6 +24,9 @@ pub trait IStateAccessor {
 
     /// Gets the current amount of funds in limbo.
     fn limbo_funds(&self) -> BitcoinAmount;
+
+    /// Gets the committed bridge withdrawal parameters.
+    fn bridge_params(&self) -> &BridgeParams;
 
     // ===== Epochal state methods =====
 

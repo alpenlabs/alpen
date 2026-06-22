@@ -7,6 +7,7 @@
 use std::fmt;
 
 use strata_acct_types::*;
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_predicate::PredicateKey;
@@ -372,6 +373,11 @@ impl<S: IStateAccessor> IStateAccessor for IndexerState<S> {
     fn limbo_funds(&self) -> BitcoinAmount {
         self.inner.limbo_funds()
     }
+
+    fn bridge_params(&self) -> &BridgeParams {
+        self.inner.bridge_params()
+    }
+
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {

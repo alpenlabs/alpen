@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, VecDeque};
 use strata_acct_types::{
     AccountId, AccountTypeId, BitcoinAmount, Hash, L1BlockRecord, MessageEntry, Mmr64, MsgPayload,
 };
+use strata_bridge_params::BridgeParams;
 use strata_da_framework::decode_buf_exact;
 use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
@@ -615,6 +616,7 @@ struct TestState {
     last_l1_height: L1Height,
     asm_recorded_epoch: EpochCommitment,
     total_ledger_balance: BitcoinAmount,
+    bridge_params: BridgeParams,
     pending_asm_logs: Vec<PendingAsmLog>,
 }
 
@@ -631,6 +633,7 @@ impl TestState {
             last_l1_height: L1Height::from(0u32),
             asm_recorded_epoch: EpochCommitment::null(),
             total_ledger_balance: BitcoinAmount::ZERO,
+            bridge_params: BridgeParams::default(),
             pending_asm_logs: Vec::new(),
         }
     }
@@ -645,6 +648,10 @@ impl IStateAccessor for TestState {
 
     fn limbo_funds(&self) -> BitcoinAmount {
         self.limbo_funds
+    }
+
+    fn bridge_params(&self) -> &BridgeParams {
+        &self.bridge_params
     }
 
     fn cur_epoch(&self) -> u32 {

@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
@@ -121,7 +120,6 @@ pub(crate) struct EpochBlocks {
 pub(crate) async fn rebuild_epoch_resource_state_upto<C: BlockAssemblyAnchorContext>(
     blkid: OLBlockCommitment,
     epoch: Epoch,
-    bridge_params: BridgeParams,
     ctx: &C,
 ) -> Result<EpochResourceState, BlockAssemblyError>
 where
@@ -138,7 +136,6 @@ where
         &mut da_state,
         &epoch_blocks.blocks,
         &epoch_blocks.epoch_parent,
-        bridge_params,
     )
     .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
 
@@ -324,14 +321,9 @@ mod tests {
         env.put_block(boundary).await;
         env.put_block(target).await;
 
-        let err = rebuild_epoch_resource_state_upto(
-            target_commitment,
-            2,
-            BridgeParams::default(),
-            env.ctx(),
-        )
-        .await
-        .expect_err("missing boundary state should fail rebuild");
+        let err = rebuild_epoch_resource_state_upto(target_commitment, 2, env.ctx())
+            .await
+            .expect_err("missing boundary state should fail rebuild");
         assert!(
             matches!(err, BlockAssemblyError::EpochBoundaryStateNotFound(_)),
             "expected EpochBoundaryStateNotFound(_), got: {err:?}"

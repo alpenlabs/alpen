@@ -6,7 +6,6 @@
 //! around the meaningful ones.
 
 use strata_acct_types::{BitcoinAmount, MessageEntry};
-use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{Buf32, OLBlockCommitment, SubjectId};
 use strata_ledger_types::IStateAccessor;
@@ -225,7 +224,7 @@ fn reconstruct_epoch(
     blocks: &[OLBlock],
 ) -> Buf32 {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
-    execute_block_batch_predrain(&mut da, blocks, genesis.header(), BridgeParams::default())
+    execute_block_batch_predrain(&mut da, blocks, genesis.header())
         .expect("execute_block_batch_predrain");
     let da_blob = da
         .take_completed_epoch_da_blob()

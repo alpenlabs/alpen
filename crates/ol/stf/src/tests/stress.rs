@@ -3,7 +3,6 @@
 //! Covers large transaction, inbox, and proof batches.
 
 use strata_acct_types::{BitcoinAmount, MessageEntry, MsgPayload};
-use strata_bridge_params::BridgeParams;
 use strata_ledger_types::ISnarkAccountState;
 
 use crate::{SEQUENCER_ACCT_ID, test_utils::*, verify_block};
@@ -124,7 +123,6 @@ fn test_stress_processes_large_inbox_proof_batch() {
         sau_block.completed_block().header(),
         Some(&parent_header),
         sau_block.completed_block().body(),
-        BridgeParams::default(),
     )
     .expect("large-message SAU should verify");
 

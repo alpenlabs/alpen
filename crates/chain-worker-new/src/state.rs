@@ -14,7 +14,6 @@ use std::collections::HashMap;
 use strata_acct_types::AccountSerial;
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip};
-use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
@@ -178,7 +177,7 @@ impl ChainWorkerServiceState {
         block_commitment: &OLBlockCommitment,
     ) -> WorkerResult<()> {
         self.check_initialized()?;
-        exec_block(&self.ctx, self.ctx.bridge_params(), block_commitment)
+        exec_block(&self.ctx, block_commitment)
     }
 
     /// Updates the current tip as managed by the worker.
@@ -234,7 +233,6 @@ impl ChainWorkerServiceState {
 /// creates that row, so stamping first fails with a missing-row error.
 pub(crate) fn exec_block(
     ctx: &impl ChainWorkerContext,
-    bridge_params: BridgeParams,
     block_commitment: &OLBlockCommitment,
 ) -> WorkerResult<()> {
     let blkid = block_commitment.blkid();
@@ -244,13 +242,7 @@ pub(crate) fn exec_block(
     let (block, parent_header, parent_commitment) = fetch_block_with_parent(ctx, block_commitment)?;
 
     // Execute STF and get output and new state
-    let (output, new_state) = execute_stf(
-        ctx,
-        bridge_params,
-        &block,
-        parent_header.as_ref(),
-        parent_commitment,
-    )?;
+    let (output, new_state) = execute_stf(ctx, &block, parent_header.as_ref(), parent_commitment)?;
 
     let is_terminal = block.header().is_terminal();
     debug!(slot=%block.header().slot(), is_terminal, "Checking if block is terminal");
@@ -323,7 +315,6 @@ fn fetch_block_with_parent(
 )]
 fn execute_stf(
     ctx: &impl ChainWorkerContext,
-    bridge_params: BridgeParams,
     block: &OLBlock,
     parent_header: Option<&OLBlockHeader>,
     parent_commitment: OLBlockCommitment,
@@ -336,7 +327,7 @@ fn execute_stf(
 
     // Execute and extract outputs
     let (write_batch, indexer_writes, logs) =
-        run_stf_verification(&parent_state, block, parent_header, bridge_params)?;
+        run_stf_verification(&parent_state, block, parent_header)?;
 
     // Apply write batch to parent state to get new state
     let mut new_state = parent_state;
@@ -881,7 +872,6 @@ fn run_stf_verification(
     parent_state: &MemoryStateBaseLayer,
     block: &OLBlock,
     parent_header: Option<&OLBlockHeader>,
-    bridge_params: BridgeParams,
 ) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites, Vec<OLLog>)> {
     // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
     let tracking_state = WriteTrackingState::new_empty(parent_state);
@@ -892,7 +882,6 @@ fn run_stf_verification(
         block.header(),
         parent_header,
         block.body(),
-        bridge_params,
     )?;
 
     // Extract outputs

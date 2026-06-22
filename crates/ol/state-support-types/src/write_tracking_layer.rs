@@ -8,6 +8,7 @@ use std::{fmt, iter};
 use strata_acct_types::{
     AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64, append_l1_block_rec_to_mmr,
 };
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
@@ -99,6 +100,10 @@ where
             .limbo_funds_sats
             .map(BitcoinAmount::from_sat)
             .unwrap_or_else(|| self.base.limbo_funds())
+    }
+
+    fn bridge_params(&self) -> &BridgeParams {
+        self.base.bridge_params()
     }
 
     // ===== Epochal state methods =====

@@ -6,6 +6,7 @@ use strata_acct_types::{
     AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64,
     tree_hash::{Sha256Hasher, TreeHash},
 };
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
@@ -72,6 +73,10 @@ impl IStateAccessor for MemoryStateBaseLayer {
 
     fn limbo_funds(&self) -> BitcoinAmount {
         self.state.global.limbo_funds()
+    }
+
+    fn bridge_params(&self) -> &BridgeParams {
+        self.state.bridge_params()
     }
 
     // ===== Epochal state methods =====

@@ -10,6 +10,7 @@ ssz_primitives.workspace = true
 ssz_types.workspace = true
 strata-acct-types.workspace = true
 strata-asm-manifest-types.workspace = true
+strata-bridge-params.workspace = true
 strata-codec.workspace = true
 strata-codec-utils.workspace = true
 strata-identifiers.workspace = true

@@ -12,7 +12,6 @@ use strata_acct_types::{
 };
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
-use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
@@ -81,9 +80,6 @@ pub struct ChainWorkerContextImpl {
     /// seeded from `OLParams.last_l1_block.height()` at OL genesis).
     ol_params: Arc<OLParams>,
 
-    /// Withdrawal denomination and cap.
-    bridge_params: BridgeParams,
-
     /// Runtime handle
     handle: Handle,
 }
@@ -102,7 +98,6 @@ impl ChainWorkerContextImpl {
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             ol_params: nodectx.ol_params().clone(),
-            bridge_params: *nodectx.ol_params().bridge_params(),
             handle: nodectx.executor().handle().clone(),
         }
     }
@@ -113,10 +108,6 @@ impl ChainWorkerContextImpl {
 
     pub fn status_channel(&self) -> &StatusChannel {
         &self.status_channel
-    }
-
-    pub fn bridge_params(&self) -> BridgeParams {
-        self.bridge_params
     }
 
     pub fn handle(&self) -> &Handle {

@@ -50,7 +50,7 @@ use strata_ol_chain_types_new::{
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
-use strata_ol_params::{BridgeParams, OLParams};
+use strata_ol_params::OLParams;
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLState};
@@ -645,13 +645,8 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_new::OLBlockH
     let mut temp_state = create_test_genesis_state();
     let genesis_context = BlockContext::new(&genesis_info, None);
     let genesis_components = BlockComponents::new_empty();
-    let genesis_output = stf_construct_block(
-        &mut temp_state,
-        genesis_context,
-        genesis_components,
-        BridgeParams::default(),
-    )
-    .unwrap();
+    let genesis_output =
+        stf_construct_block(&mut temp_state, genesis_context, genesis_components).unwrap();
     genesis_output.completed_block().header().clone()
 }
 
@@ -1045,7 +1040,6 @@ impl TestEnv {
             self.sequencer_config(),
             config,
             resource_state_before_block,
-            BridgeParams::default(),
         )
         .await
     }
@@ -1352,13 +1346,8 @@ impl TestStorageFixtureBuilder {
                     BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal();
 
                 let block_context = BlockContext::new(&block_info, None);
-                let construct_output = stf_construct_block(
-                    &mut state,
-                    block_context,
-                    components,
-                    BridgeParams::default(),
-                )
-                .expect("Genesis block execution should succeed");
+                let construct_output = stf_construct_block(&mut state, block_context, components)
+                    .expect("Genesis block execution should succeed");
 
                 let completed_block = construct_output.completed_block();
                 let header = completed_block.header().clone();
@@ -1614,7 +1603,6 @@ pub(crate) async fn assemble_block_with_txs(
         block_epoch,
         txs,
         resource_state_before_block,
-        BridgeParams::default(),
     )
     .await
 }

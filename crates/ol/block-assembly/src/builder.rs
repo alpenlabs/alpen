@@ -28,7 +28,6 @@ where
     E: EpochSealingPolicy,
     P: StateProvider,
 {
-    ol_params: Arc<OLParams>,
     blockasm_config: Arc<BlockAssemblyConfig>,
     storage: Arc<NodeStorage>,
     mempool_provider: M,
@@ -51,7 +50,7 @@ where
         reason = "builder collects unrelated service inputs"
     )]
     pub fn new(
-        ol_params: Arc<OLParams>,
+        _ol_params: Arc<OLParams>,
         blockasm_config: Arc<BlockAssemblyConfig>,
         storage: Arc<NodeStorage>,
         mempool_provider: M,
@@ -62,7 +61,6 @@ where
         l1_reorg_safe_depth: u32,
     ) -> Self {
         Self {
-            ol_params,
             blockasm_config,
             storage,
             mempool_provider,
@@ -101,7 +99,6 @@ where
         ));
 
         let state = BlockasmServiceState::new(
-            self.ol_params,
             self.blockasm_config,
             self.sequencer_config,
             self.sequencer_predicate,
