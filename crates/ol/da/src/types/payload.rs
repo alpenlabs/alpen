@@ -18,7 +18,15 @@ use crate::DaError;
 
 /// Versioned OL DA payload containing the state diff.
 ///
-/// Wire format is `strata_codec` (not SSZ).
+/// Wire format is the `strata_codec` encoding of [`StateDiff`] (not SSZ).
+///
+/// # Compatibility window
+///
+/// V1 is the only format currently produced or consumed; there is no V2 and no in-band version
+/// byte. The byte layout is frozen by the golden fixture in this module's tests: any change to the
+/// encoding of [`StateDiff`] or its nested types breaks that test by design. Such a change is a
+/// wire-format break that requires a new payload version, not an edit to V1; on an intentional
+/// break, introduce the new version and regenerate the fixture rather than mutating V1 in place.
 #[derive(Debug, Codec)]
 pub struct OLDaPayloadV1 {
     /// State diff for the epoch.
@@ -330,10 +338,7 @@ mod tests {
         AccountId::from([seed; 32])
     }
 
-    /// Test-only builders for valid OL DA diff trees.
-    ///
-    /// These exist so apply/round-trip/golden tests share one faithful construction path instead
-    /// of hand-rolling diffs per test. Kept private to this module.
+    /// Builders for valid test OL DA diff trees.
     mod build {
         use super::*;
 
@@ -353,12 +358,12 @@ mod tests {
             )
         }
 
-        /// Balance-only account diff (signed delta in sats).
+        /// Balance-only account diff with a signed sats delta.
         pub(super) fn balance_diff(delta: SignedVarInt) -> AccountDiff {
             AccountDiff::new(DaCounter::new_changed(delta), SnarkAccountDiff::default())
         }
 
-        /// Snark diff bumping seqno, setting proof state, and appending inbox messages.
+        /// Snark diff with seqno, proof-state, and inbox changes.
         pub(super) fn snark_diff(
             seqno_incr: u16,
             new_root: Option<Hash>,
@@ -387,7 +392,7 @@ mod tests {
             SnarkAccountDiff::new(seq_no, proof_state, inbox)
         }
 
-        /// Inbox message entry with a fixed-length payload of `byte`.
+        /// Inbox message entry with a repeated-byte payload.
         pub(super) fn inbox_msg(
             source: AccountId,
             incl_epoch: u32,
@@ -425,8 +430,7 @@ mod tests {
         }
     }
 
-    /// A non-trivial state diff exercising global + new accounts (empty & snark) + account diffs
-    /// (balance & snark with inbox). Shared by round-trip and golden-fixture tests.
+    /// Shared non-trivial payload fixture for round-trip and golden tests.
     fn populated_state_diff() -> StateDiff {
         let snark_acct = build::snark_init(
             500,
@@ -707,7 +711,6 @@ mod tests {
         assert_eq!(*snark.seqno().inner(), 1);
     }
 
-    /// Account handle: id plus the serial it was created at.
     #[derive(Clone, Copy)]
     struct AcctRef {
         id: AccountId,
@@ -757,9 +760,7 @@ mod tests {
         }
     }
 
-    /// Applying a populated diff yields the same state as performing the equivalent mutations
-    /// directly through the accessor API. Strong check is state-root equality; per-field reads
-    /// keep failures diagnosable.
+    /// Compares DA apply with equivalent direct state mutations.
     #[test]
     fn test_apply_equivalence_global_and_accounts() {
         let pre_accounts = pre_state_with_accounts();
@@ -767,7 +768,6 @@ mod tests {
         let inbox_root = Hash::from([0x22u8; 32]);
         let inbox_msg = build::inbox_msg(test_account_id(0x30), 9, 12, 0x7A);
 
-        // Diff-driven path.
         let mut applied = pre_accounts.state.clone();
         let diff = StateDiff::new(
             build::global(4, Some(SignedVarInt::positive(800))),
@@ -791,7 +791,6 @@ mod tests {
         OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(diff), &mut applied)
             .expect("apply diff via scheme");
 
-        // Trusted construction: same effects, applied directly.
         let mut expected = pre_accounts.state.clone();
         expected.set_cur_slot(expected.cur_slot() + 4);
         expected
@@ -827,13 +826,11 @@ mod tests {
             .expect("update snark")
             .expect("snark ok");
 
-        // Strong equivalence.
         assert_eq!(
             applied.compute_state_root().expect("applied root"),
             expected.compute_state_root().expect("expected root"),
         );
 
-        // Diagnosable per-field checks.
         assert_eq!(applied.cur_slot(), expected.cur_slot());
         assert_eq!(applied.limbo_funds(), expected.limbo_funds());
         for id in [pre_accounts.empty.id, pre_accounts.snark.id, new_id] {
@@ -858,8 +855,6 @@ mod tests {
         assert_eq!(a_snark.next_inbox_msg_idx(), 1);
     }
 
-    /// An empty diff is the DA-write identity: `is_default` is true and apply leaves state
-    /// (including its root) unchanged.
     #[test]
     fn test_apply_empty_diff_is_noop() {
         let pre_accounts = pre_state_with_accounts();
@@ -879,7 +874,6 @@ mod tests {
 
     #[test]
     fn test_validate_rejects_account_diff_serial_out_of_range() {
-        // serial 5 == pre_state_next_serial, so it is not yet allocated.
         let diff = account_diffs_at(&[5]);
         let result = validate_ledger_entries(AccountSerial::from(5u32), &diff);
         assert!(matches!(
@@ -890,7 +884,7 @@ mod tests {
         ));
     }
 
-    /// Builds a state diff whose account-diff serials are exactly `serials`, in order.
+    /// Builds account diffs with exactly the given serials, in order.
     fn account_diffs_at(serials: &[u32]) -> StateDiff {
         StateDiff::new(
             GlobalStateDiff::default(),
@@ -933,8 +927,7 @@ mod tests {
         ));
     }
 
-    /// Gaps are allowed: account diffs reference existing accounts by serial and need not be
-    /// contiguous. Only strictly-increasing + in-range is required.
+    /// Account-diff serials need only be strictly increasing and in range.
     #[test]
     fn test_validate_accepts_gapped_account_diff_serials() {
         let diff = account_diffs_at(&[1, 3]);
@@ -946,7 +939,6 @@ mod tests {
         let pre_accounts = pre_state_with_accounts();
         let mut state = pre_accounts.state.clone();
 
-        // Snark diff targeting the empty (non-snark) account.
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
             build::ledger(
@@ -972,7 +964,6 @@ mod tests {
     #[test]
     fn test_poll_context_rejects_malformed_vk() {
         let pre_accounts = pre_state_with_accounts();
-        // Bytes that are not a valid predicate key.
         let bad_vk = vec![0xFFu8; 3];
         let init = AccountInit::new(
             BitcoinAmount::from_sat(1),
@@ -1014,5 +1005,32 @@ mod tests {
         let encoded = encode_to_vec(&entry).expect("encode boundary entry");
         let decoded: DaMessageEntry = decode_buf_exact(&encoded).expect("decode boundary entry");
         assert_eq!(decoded, entry);
+    }
+
+    /// Frozen wire-format fixture for [`OLDaPayloadV1`].
+    const GOLDEN_PAYLOAD_V1_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba030000000102070003032222222222222222222222222222222222222222222222222222222222222222020002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+
+    fn hex_to_bytes(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("valid hex"))
+            .collect()
+    }
+
+    #[test]
+    fn test_golden_payload_v1_wire_format_is_stable() {
+        let golden = hex_to_bytes(GOLDEN_PAYLOAD_V1_HEX);
+
+        let encoded = encode_to_vec(&OLDaPayloadV1::new(populated_state_diff()))
+            .expect("encode populated payload");
+        assert_eq!(
+            encoded, golden,
+            "wire format drifted from the golden fixture; if intentional, regenerate the constant \
+             and bump the compatibility note on OLDaPayloadV1"
+        );
+
+        let decoded = decode_ol_da_payload_bytes(&golden).expect("decode golden payload");
+        let reencoded = encode_to_vec(&decoded).expect("re-encode decoded golden");
+        assert_eq!(reencoded, golden);
     }
 }
