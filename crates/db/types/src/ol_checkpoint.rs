@@ -3,15 +3,19 @@
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_identifiers::{Epoch, EpochCommitment};
 
 use crate::common::L1PayloadIntentIndex;
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Database for OL checkpoint data.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:ol_checkpoint")
+    gen_proxy(error = DbError, tracing_component = "storage:ol_checkpoint")
 )]
 pub trait OLCheckpointDatabase: Send + Sync + 'static {
     /// Inserts an epoch summary retrievable by its epoch commitment.

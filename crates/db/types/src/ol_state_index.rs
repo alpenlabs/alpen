@@ -11,8 +11,12 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use strata_codec::Codec;
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, OLBlockCommitment};
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Global epoch-level indexing facts. Mutable until epoch finalization.
@@ -323,7 +327,7 @@ impl IndexingWrites {
 /// Both paths target the same tables; atomicity granularity differs.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:ol_state_indexing")
+    gen_proxy(error = DbError, tracing_component = "storage:ol_state_indexing")
 )]
 pub trait OLStateIndexingDatabase: Send + Sync + 'static {
     /// Atomically persists an epoch's indexing data in a single call.

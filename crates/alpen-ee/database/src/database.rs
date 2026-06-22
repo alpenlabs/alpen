@@ -3,13 +3,14 @@ use alpen_ee_common::{
     EeAccountStateAtEpoch, ExecBlockRecord,
 };
 use strata_acct_types::Hash;
+use strata_db_macros::gen_proxy;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{EpochCommitment, OLBlockId};
 
-use crate::DbResult;
+use crate::{DbError, DbResult};
 
 /// Database interface for EE node account state management.
-#[strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:ee_node")]
+#[gen_proxy(error = DbError, tracing_component = "storage:ee_node")]
 pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Stores EE account state for a given OL epoch commitment.
     fn store_ee_account_state(

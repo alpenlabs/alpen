@@ -1,8 +1,12 @@
 //! Checkpoint-proof database interface.
 
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_identifiers::EpochCommitment;
 use zkaleido::ProofReceiptWithMetadata;
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Checkpoint-proof storage.
@@ -13,7 +17,7 @@ use crate::DbResult;
 /// proofs will be `EeChunkProofDatabase`, `EeAcctProofDatabase`, etc.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:checkpoint_proof")
+    gen_proxy(error = DbError, tracing_component = "storage:checkpoint_proof")
 )]
 pub trait CheckpointProofDatabase: Send + Sync + 'static {
     /// Upserts a checkpoint proof for the given epoch.

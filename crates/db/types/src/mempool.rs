@@ -1,8 +1,12 @@
 //! OL mempool database interface and its record types.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_identifiers::OLTxId;
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Stored mempool transaction with ordering metadata.
@@ -36,7 +40,7 @@ impl MempoolTxData {
 /// Stores transactions as opaque bytes with ordering metadata.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:mempool")
+    gen_proxy(error = DbError, tracing_component = "storage:mempool")
 )]
 pub trait MempoolDatabase: Send + Sync + 'static {
     /// Store a transaction in the mempool.

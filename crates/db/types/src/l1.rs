@@ -1,9 +1,13 @@
 //! L1 data database interface.
 
 use strata_asm_common::AsmManifest;
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_primitives::l1::L1BlockId;
 use strata_primitives::L1Height;
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Database interface to control our view of L1 data.
@@ -11,7 +15,7 @@ use crate::DbResult;
 /// Ensure all operations are done through `L1BlockManager`
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:l1")
+    gen_proxy(error = DbError, tracing_component = "storage:l1")
 )]
 pub trait L1Database: Send + Sync + 'static {
     /// Stores an ASM manifest for a given L1 block.

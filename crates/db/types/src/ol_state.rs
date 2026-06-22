@@ -1,8 +1,12 @@
 //! Toplevel OL state database interface.
 
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Database trait for toplevel OL state storage.
@@ -11,7 +15,7 @@ use crate::DbResult;
 /// This allows retrieving state for any block in the chain.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:ol_state")
+    gen_proxy(error = DbError, tracing_component = "storage:ol_state")
 )]
 pub trait OLStateDatabase: Send + Sync + 'static {
     /// Stores a toplevel OLState snapshot for a given block commitment.

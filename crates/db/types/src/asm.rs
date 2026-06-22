@@ -1,15 +1,19 @@
 //! ASM state database interface.
 
 use strata_asm_common::AuxData;
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Database interface to control our view of ASM state.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:asm")
+    gen_proxy(error = DbError, tracing_component = "storage:asm")
 )]
 pub trait AsmDatabase: Send + Sync + 'static {
     /// Writes a new ASM state for a given l1 block.

@@ -1,14 +1,18 @@
 //! Client state database interface.
 
 use strata_csm_types::{ClientState, ClientUpdateOutput};
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_primitives::prelude::*;
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Db for client state updates and checkpoints.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:client_state")
+    gen_proxy(error = DbError, tracing_component = "storage:client_state")
 )]
 pub trait ClientStateDatabase: Send + Sync + 'static {
     /// Writes a new consensus output for a given l1 block.

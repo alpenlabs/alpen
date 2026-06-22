@@ -6,9 +6,13 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_csm_types::{L1Payload, PayloadIntent};
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_identifiers::{Buf32, Buf64};
 
 use crate::common::L1TxId;
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Taproot script-spend sighash for the reveal transaction.
@@ -152,7 +156,7 @@ pub enum L1BundleStatus {
 /// database and to fetch [`BundledPayloadEntry`] and indices from the database
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:l1_writer")
+    gen_proxy(error = DbError, tracing_component = "storage:l1_writer")
 )]
 pub trait L1WriterDatabase: Send + Sync + 'static {
     /// Store the [`BundledPayloadEntry`].

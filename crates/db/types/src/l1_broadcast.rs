@@ -7,9 +7,13 @@ use bitcoin::consensus::{self, deserialize, serialize};
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_identifiers::Buf32;
 use strata_primitives::L1Height;
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// This is the entry that gets saved to the database corresponding to a bitcoin transaction that
@@ -126,7 +130,7 @@ impl fmt::Display for L1TxStatus {
 /// transactions([`L1TxEntry`]), their indices and ids
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:l1_broadcast")
+    gen_proxy(error = DbError, tracing_component = "storage:l1_broadcast")
 )]
 pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// Updates/Inserts a txentry to database. Returns Some(idx) if newly inserted else None

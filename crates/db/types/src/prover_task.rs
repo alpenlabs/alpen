@@ -1,7 +1,11 @@
 //! Prover task database interface.
 
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_paas::TaskRecordData;
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Database interface backing [`strata_paas::TaskStore`] for the integrated
@@ -12,7 +16,7 @@ use crate::DbResult;
 /// called through a blocking threadpool by the `strata_storage` manager.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:prover_task")
+    gen_proxy(error = DbError, tracing_component = "storage:prover_task")
 )]
 pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Fetch a record by key. `None` if the key is absent.

@@ -5,9 +5,13 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_identifiers::{AccountId, Hash};
 pub use strata_merkle_node_store::{LeafPos, NodePos};
 
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// Opaque serialized form of [`MmrId`], used as a database key.
@@ -316,7 +320,7 @@ impl MmrBatchWrite {
 /// backend-agnostic atomic batch write entry point.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:mmr_index")
+    gen_proxy(error = DbError, tracing_component = "storage:mmr_index")
 )]
 pub trait MmrIndexDatabase: Send + Sync + 'static {
     /// Returns the node hash for a namespace and node position.

@@ -4,9 +4,13 @@ use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_l1_txfmt::MagicBytes;
 
 use crate::common::{L1TxId, L1WtxId};
+#[cfg(feature = "proxies")]
+use crate::DbError;
 use crate::DbResult;
 
 /// A chunked envelope entry representing a commit tx funding N reveal txs.
@@ -149,7 +153,7 @@ impl fmt::Display for ChunkedEnvelopeStatus {
 /// signing, broadcasting, and L1 confirmation.
 #[cfg_attr(
     feature = "proxies",
-    strata_db_macros::gen_proxy(error = crate::DbError, tracing_component = "storage:chunked_envelope")
+    gen_proxy(error = DbError, tracing_component = "storage:chunked_envelope")
 )]
 pub trait L1ChunkedEnvelopeDatabase: Send + Sync + 'static {
     /// Stores a [`ChunkedEnvelopeEntry`] at the given index.
