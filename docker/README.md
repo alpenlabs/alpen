@@ -59,6 +59,20 @@ sudo chmod 600 configs/generated/jwt.hex
 Copy the target network params into `configs/generated/ol-params.json` and
 `configs/generated/asm-params.json` before starting the stack.
 
+If the fullnode images are not already available locally or in a registry,
+set local image names in `.env`:
+
+```bash
+ALPEN_IMAGE=alpen-client:local
+CHECKPOINT_SYNC_IMAGE=strata-checkpoint-sync:local
+```
+
+Then build them from this checkout:
+
+```bash
+docker compose -f compose-fullnode.yml build strata-checkpoint-sync alpen-fullnode
+```
+
 Then start the fullnode stack:
 
 ```bash
