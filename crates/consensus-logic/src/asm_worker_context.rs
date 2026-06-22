@@ -77,6 +77,22 @@ impl L1DataProvider for AsmWorkerCtx {
         })
     }
 
+    fn get_l1_block_header_at_height(&self, height: u64) -> WorkerResult<Header> {
+        let backoff = ExponentialBackoff::new(200, 15, 10);
+        retry_with_backoff("asm_get_l1_block_header_at_height", 10, &backoff, || {
+            self.handle
+                .block_on(self.bitcoin_client.get_block_header_at(height))
+                .map_err(|e| {
+                    tracing::warn!(
+                        height,
+                        ?e,
+                        "failed to fetch L1 block header at height for ASM"
+                    );
+                    WorkerError::BtcRpc(format!("get_block_header_at({height}): {e}"))
+                })
+        })
+    }
+
     // TODO(STR-3813): maintain a local L1 block-id -> height index instead of
     // round-tripping to the Bitcoin client for every lookup on the hot path.
     fn get_l1_block_height(&self, blockid: &L1BlockId) -> WorkerResult<u64> {

@@ -44,6 +44,13 @@ fn map_write_plan_err(err: NodeStoreMmrError<Infallible>) -> DbError {
             requested: index,
             cur: leaf_count,
         },
+        NodeStoreMmrError::Pruned {
+            index,
+            pruned_before,
+        } => DbError::MmrIndexOutOfRange {
+            requested: index,
+            cur: pruned_before,
+        },
         NodeStoreMmrError::MaxCapacity => {
             DbError::Other("MMR has reached max capacity".to_string())
         }
