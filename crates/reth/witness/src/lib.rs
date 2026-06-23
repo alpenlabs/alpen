@@ -5,6 +5,8 @@
 //! (e.g., via chunking algorithms, batch boundaries, etc.). This crate simply extracts
 //! the witness data needed to prove execution of the given range.
 
+mod cache_db_provider;
 mod range_witness_extractor;
 
+pub use cache_db_provider::{AccessedState, CacheDBProvider, StorageKey};
 pub use range_witness_extractor::{RangeWitnessData, RangeWitnessExtractor};

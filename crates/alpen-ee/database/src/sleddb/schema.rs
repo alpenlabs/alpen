@@ -1,4 +1,4 @@
-use alpen_ee_common::{AccessedStateRecord, ChunkWitnessRecord};
+use alpen_ee_common::AccessedStateRecord;
 use strata_acct_types::Hash;
 use strata_db_store_sled::{
     define_table_with_default_codec, define_table_without_codec, /* impl_bincode_key_codec, */
@@ -76,12 +76,6 @@ define_table_with_default_codec!(
 );
 
 define_table_with_default_codec!(
-    /// Pre-computed chunk witness, written at chunk-seal time by the
-    /// batch builder and read by `ChunkSpec::fetch_input`.
-    (ChunkWitnessSchema) DBChunkId => ChunkWitnessRecord
-);
-
-define_table_with_default_codec!(
     /// Per-block accessed-state record, written by the
     /// `AccessedStateGenerator` exex after reth commits each block. Read
     /// by the chunk-builder at chunk-seal time to skip block re-execution
@@ -96,6 +90,13 @@ define_table_with_default_codec!(
     /// record. Keyed by code hash. Never deleted — many chunks reference
     /// the same contracts.
     (BytecodeSchema) Hash => Vec<u8>
+);
+
+define_table_with_default_codec!(
+    /// Per-block proof-witness (codec-encoded `EvmPartialState`), written by
+    /// the EE block-production / import path at commit time (depth-0) and read
+    /// by the chunk prover's input assembly. Keyed by execution block hash.
+    (BlockWitnessSchema) Hash => Vec<u8>
 );
 
 // Prover storage schemas.

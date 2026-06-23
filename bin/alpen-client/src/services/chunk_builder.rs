@@ -12,7 +12,7 @@ use alpen_ee_sequencer::{
         or_policy::{ComposedDataProvider, ComposedPolicy, OrSealing},
         BlockDataProvider,
     },
-    BatchBuilderEvent, ChunkExtractRequest,
+    BatchBuilderEvent,
 };
 use strata_service::{AsyncExecutor, ServiceBuilder, ServiceMonitor, TickingInput, TokioMpscInput};
 use tokio::sync::mpsc;
@@ -38,7 +38,6 @@ pub(crate) async fn start_chunk_builder_service<CS, BS, ES, GD>(
     block_storage: Arc<ES>,
     sealing_policy: ChunkSealing,
     gas_data_provider: GD,
-    chunk_witness_tx: Option<mpsc::Sender<ChunkExtractRequest>>,
     event_rx: mpsc::Receiver<BatchBuilderEvent>,
     executor: &impl AsyncExecutor,
 ) -> anyhow::Result<ServiceMonitor<ChunkBuilderStatus>>
@@ -72,7 +71,6 @@ where
         state,
         sealing_policy,
         block_data_provider,
-        chunk_witness_tx,
         chunk_storage,
         batch_storage,
         block_storage,

@@ -87,7 +87,6 @@ use tracing::{error, info};
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
     pub(super) use alloy_primitives::{address, Address};
-    pub(super) use alpen_ee_common::{ChunkWitnessExtractFn, ChunkWitnessRecord};
     pub(super) use alpen_ee_da_provider::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
     pub(super) use alpen_reth_witness::RangeWitnessExtractor;
     pub(super) use strata_paas::{
@@ -421,17 +420,20 @@ fn main() {
                 });
                 info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
 
-                // Per-block accessed-state capture. Re-executes each
-                // committed block with a `CacheDBProvider` to record the
-                // read set + bytecodes, which the chunk-builder consumes
-                // at chunk-seal time to skip its own re-execution loop.
+                // Per-block accessed-state capture. The CHUNK proof's witness is
+                // now produced inline during payload build (see the EE node's
+                // `try_build_payload` / `AlpenRethPayloadEngine`); this exex
+                // remains only to feed the ACCOUNT proof's batch-range witness
+                // (`RangeWitnessExtractor` reads `AccessedStateStore`). Retiring
+                // it is a separate acct-proof migration tracked as follow-up
+                // work to STR-3649.
                 node_builder = node_builder.install_exex("accessed_state", {
                     let accessed_state_store = storage.clone();
                     |ctx| async {
                         Ok(AccessedStateGenerator::new(ctx, accessed_state_store).start())
                     }
                 });
-                info!(target: "alpen-client", "installed AccessedStateGenerator exex");
+                info!(target: "alpen-client", "installed AccessedStateGenerator exex (account-proof range witness)");
             }
 
             node_builder = node_builder.extend_rpc_modules({
@@ -496,7 +498,6 @@ fn main() {
 
                 use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobSource};
                 use alpen_ee_sequencer::{
-                    backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
                     create_batch_builder, create_batch_lifecycle_task,
                     create_update_submitter_task,
                     sealing_policy::{
@@ -513,6 +514,7 @@ fn main() {
                     node.payload_builder_handle.clone(),
                     node.beacon_engine_handle.clone(),
                     ext.beneficiary_address,
+                    storage.clone(),
                 ));
 
                 let exec_chain_handle = services::exec_chain::start_exec_chain_service(
@@ -538,74 +540,11 @@ fn main() {
                     FixedBlockCountSealing::new(ext.batch_sealing_block_count);
                 let block_data_provider = Arc::new(BlockCountDataProvider);
 
-                // Chunk-spanning witness extractor. Single producer of
-                // `ChunkWitnessRecord`: the background `chunk_witness_task`
-                // invokes it once per chunk, off the batch builder's hot
-                // path. The chunk prover's `ChunkSpec::fetch_input` reads
-                // the persisted record from sled and has no extractor path
-                // of its own; a missing record returns `TransientFailure`
-                // and the task here retries on extraction errors (mainly
-                // covering the race against the `AccessedStateGenerator`
-                // exex).
-                let range_witness_extractor = Arc::new(RangeWitnessExtractor::new(
-                    node.provider.clone(),
-                    storage.clone(),
-                ));
-
-                // `ChunkWitnessExtractFn` is the production-time hook: takes
-                // chunk endpoints, returns the persisted `ChunkWitnessRecord`.
-                // Reth's alloy `Header` / `Block` are RLP-encoded here so the
-                // record stays Borsh-friendly for sled.
-                let chunk_witness_extract_fn: Arc<ChunkWitnessExtractFn> = {
-                    let extractor = range_witness_extractor.clone();
-                    Arc::new(move |first_block, last_block| {
-                        let first_b256 = alloy_primitives::B256::from(first_block.0);
-                        let last_b256 = alloy_primitives::B256::from(last_block.0);
-                        let data = extractor.extract_range_witness(first_b256, last_b256)?;
-                        let prev_header_rlp = alloy_rlp::encode(&data.prev_header);
-                        let blocks_rlp: Vec<Vec<u8>> =
-                            data.blocks.iter().map(alloy_rlp::encode).collect();
-                        Ok(ChunkWitnessRecord::new(
-                            data.raw_partial_pre_state,
-                            prev_header_rlp,
-                            blocks_rlp,
-                        ))
-                    })
-                };
-
-                let (chunk_witness_tx, chunk_witness_rx) = chunk_witness_channel();
-                let chunk_witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
-                    storage.clone();
-                let chunk_witness_task_fut = chunk_witness_task(
-                    chunk_witness_extract_fn,
-                    chunk_witness_store,
-                    chunk_witness_rx,
-                );
-
-                // Startup recovery for sealed-without-witness chunks.
-                // Covers crash-mid-extraction (mpsc request lost with the
-                // process) and any pre-existing chunks lacking a witness
-                // row. Spawned critical alongside `ee_chunk_witness`:
-                // witness assembly gates the entire proving pipeline, so
-                // a panic in either path warrants taking the node down
-                // rather than silently producing un-provable chunks.
-                let chunk_witness_backfill_task = {
-                    let chunk_storage: Arc<dyn ChunkStorage> = storage.clone();
-                    let witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
-                        storage.clone();
-                    let tx = chunk_witness_tx.clone();
-                    async move {
-                        if let Err(e) = backfill_missing_chunk_witnesses(
-                            chunk_storage.as_ref(),
-                            witness_store.as_ref(),
-                            &tx,
-                        )
-                        .await
-                        {
-                            error!(error = %e, "chunk witness backfill failed at startup");
-                        }
-                    }
-                };
+                // Per-block proof witnesses are captured inline during payload
+                // build and persisted by `AlpenRethPayloadEngine`, and the
+                // chunk prover's `ChunkSpec::fetch_input` assembles a chunk
+                // proof input from those per-block records. There is no
+                // chunk-seal extraction step and no chunk-spanning multiproof.
 
                 // Channel from batch builder → chunk builder.
                 let (batch_event_tx, batch_event_rx) = mpsc::channel::<BatchBuilderEvent>(
@@ -768,6 +707,17 @@ fn main() {
                 .receipt_hook(ChunkReceiptHook::new(chunk_storage_dyn.clone()))
                 .retry(RetryConfig::default());
 
+                // NOTE: the account prover still assembles its batch-range
+                // witness via `RangeWitnessExtractor`, which reads the
+                // per-block accessed-state records the (now removed)
+                // `AccessedStateGenerator` exex used to write. Migrating this to
+                // the inline per-block witnesses is the remaining step to fully
+                // retire the exex + the deep range multiproof (see
+                // experimental/evgeniy/ee-proper-witness.md).
+                let range_witness_extractor = Arc::new(RangeWitnessExtractor::new(
+                    node.provider.clone(),
+                    storage.clone(),
+                ));
                 let acct_range_witness_fn: Arc<AcctRangeWitnessFn> = {
                     let extractor = range_witness_extractor.clone();
                     Arc::new(move |first_block, last_block| {
@@ -884,6 +834,12 @@ fn main() {
 
                 node.task_executor
                     .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
+                // Per-block proof witnesses are captured inline during payload
+                // build (in the EE node's `try_build_payload`) and persisted by
+                // the payload engine (`AlpenRethPayloadEngine`) before the
+                // payload is returned, so the block builder runs no separate
+                // witness step. The chunk prover's `ChunkSpec::fetch_input`
+                // assembles a chunk proof input from those per-block records.
                 node.task_executor.spawn_critical(
                     "block_assembly",
                     block_builder_task(
@@ -936,7 +892,6 @@ fn main() {
                     storage.clone(),
                     chunk_sealing_policy,
                     RethGasDataProvider::new(node.provider.clone()),
-                    Some(chunk_witness_tx),
                     batch_event_rx,
                     &service_executor,
                 )
@@ -945,10 +900,6 @@ fn main() {
 
                 node.task_executor
                     .spawn_critical("ee_batch_builder", batch_builder_task);
-                node.task_executor
-                    .spawn_critical("ee_chunk_witness", chunk_witness_task_fut);
-                node.task_executor
-                    .spawn_critical("ee_chunk_witness_backfill", chunk_witness_backfill_task);
                 node.task_executor
                     .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
                 node.task_executor
