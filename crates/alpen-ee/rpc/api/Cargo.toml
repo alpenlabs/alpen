@@ -7,8 +7,8 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-alpen-ee-rpc-types = { workspace = true, features = ["jsonschema"] }
 alloy-primitives = { workspace = true, features = ["serde"] }
+alpen-ee-rpc-types = { workspace = true, features = ["jsonschema"] }
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 schemars.workspace = true
 strata-open-rpc.workspace = true
