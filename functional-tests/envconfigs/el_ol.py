@@ -26,6 +26,7 @@ class EeOLEnv(flexitest.EnvConfig):
                         Requires enable_discovery=True. (default False)
         pre_generate_blocks: How many bitcoin blocks to pre-generate
         batch_sealing_block_count: Number of EE blocks before sealing an alpen-client DA batch
+        custom_chain: Chain spec name, path, or inline JSON passed to alpen-client
     """
 
     def __init__(
@@ -41,6 +42,7 @@ class EeOLEnv(flexitest.EnvConfig):
         ol_block_time_ms: int | None = None,
         dev_track_latest_epoch: bool = False,
         batch_sealing_block_count: int = 10,
+        custom_chain: str = "dev",
     ):
         epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
@@ -56,6 +58,7 @@ class EeOLEnv(flexitest.EnvConfig):
             enable_l1_da=True,
             batch_sealing_block_count=batch_sealing_block_count,
             dev_track_latest_epoch=dev_track_latest_epoch,
+            custom_chain=custom_chain,
         )
         self.strata_config = StrataEnvConfig(
             pre_generate_blocks=pre_generate_blocks,

@@ -18,6 +18,11 @@ class TestRuntimeWithLogging(flexitest.TestRuntime):
         """Wraps test execution with test name tracking."""
         set_current_test(test_name)
         try:
-            return super()._exec_test(test_name, env)
+            result = super()._exec_test(test_name, env)
+            test_instance = self.tests[test_name]["inst"]
+            result_msg = getattr(test_instance, "result_msg", None)
+            if result.get("status") == "OK" and result_msg is not None:
+                result["msg"] = result_msg
+            return result
         finally:
             set_current_test(None)

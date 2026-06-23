@@ -40,6 +40,7 @@ class AlpenClientEnvParams:
     batch_sealing_block_count: int = 10
     dev_track_latest_epoch: bool = False
     beneficiary_address: str | None = None
+    custom_chain: str = "dev"
 
 
 class AlpenClientEnv(flexitest.EnvConfig):
@@ -58,6 +59,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         da_magic_bytes: 4-byte magic for OP_RETURN tagging (default: b"ALPN")
         l1_reorg_safe_depth: Confirmation depth for L1 transactions (default: 1)
         batch_sealing_block_count: Number of blocks before sealing a batch (default: 5)
+        custom_chain: Chain spec name, path, or inline JSON passed to alpen-client
     """
 
     def __init__(
@@ -71,6 +73,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         l1_reorg_safe_depth: int = 1,
         batch_sealing_block_count: int = 5,
         beneficiary_address: str | None = None,
+        custom_chain: str = "dev",
     ):
         self.env_params = AlpenClientEnvParams(
             fullnode_count=fullnode_count,
@@ -82,6 +85,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             l1_reorg_safe_depth=l1_reorg_safe_depth,
             batch_sealing_block_count=batch_sealing_block_count,
             beneficiary_address=beneficiary_address,
+            custom_chain=custom_chain,
         )
         if pure_discovery and not enable_discovery:
             raise ValueError("pure_discovery requires enable_discovery=True")
@@ -163,6 +167,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             batch_sealing_block_count=envparams.batch_sealing_block_count,
             dev_track_latest_epoch=envparams.dev_track_latest_epoch,
             beneficiary_address=envparams.beneficiary_address,
+            custom_chain=envparams.custom_chain,
         )
         sequencer.wait_for_ready(timeout=60)
         seq_enode = sequencer.get_enode()
@@ -189,6 +194,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 instance_id=i,
                 sequencer_http=seq_http_url,  # Forward transactions to sequencer
                 ol_endpoint=ol_endpoint,
+                custom_chain=envparams.custom_chain,
             )
             fullnode.wait_for_ready(timeout=60)
             fullnodes.append(fullnode)
