@@ -2,9 +2,7 @@
 
 use std::{collections::HashMap, fmt, sync::Arc};
 
-use alpen_ee_common::{
-    BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockInfo, L1DaBlockRef,
-};
+use alpen_ee_common::{BatchDaProvider, BatchId, DaStatus, L1DaBlockInfo, L1DaBlockRef};
 use alpen_ee_da_types::{wtxids_root_from_txs, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
@@ -20,7 +18,7 @@ use strata_identifiers::{Buf32, L1BlockCommitment, L1Height, WtxidsRoot};
 use strata_l1_txfmt::MagicBytes;
 use tracing::*;
 
-use crate::chunking::prepare_da_chunks;
+use crate::{chunking::prepare_da_chunks, DaBlobSource};
 
 /// Per-block accumulator: commit (when present) plus reveals tagged with
 /// their commit-output vout for stable ordering.

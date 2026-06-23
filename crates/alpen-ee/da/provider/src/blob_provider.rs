@@ -3,12 +3,14 @@
 use std::{fmt, sync::Arc};
 
 use alloy_primitives::B256;
-use alpen_ee_common::{BatchId, BatchStorage, DaBlobSource, HeaderSummaryProvider};
+use alpen_ee_common::{BatchId, BatchStorage, HeaderSummaryProvider};
 use alpen_ee_da_types::DaBlob;
 use alpen_reth_db::{EeDaContext, StateDiffProvider};
 use alpen_reth_statediff::BatchBuilder;
 use async_trait::async_trait;
 use tracing::*;
+
+use crate::DaBlobSource;
 
 /// [`DaBlobSource`] that builds encoded DA blobs from Reth state diffs.
 ///
