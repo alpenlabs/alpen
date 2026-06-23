@@ -20,6 +20,11 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
     assert_eq!(update, state);
 }
 
+/// Minimal [`AsmState`] for tests that only need a persistable value.
+pub fn make_test_asm_state() -> AsmState {
+    AsmState::new(make_anchor_state(), vec![])
+}
+
 fn make_anchor_state() -> AnchorState {
     let anchor = L1Anchor {
         block: L1BlockCommitment::default(),
