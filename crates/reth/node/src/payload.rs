@@ -102,6 +102,11 @@ pub struct AlpenBuiltPayload {
     // additional fields for strata
     /// Requested withdrawals
     pub(crate) withdrawal_intents: Vec<WithdrawalIntent>,
+    /// Encoded depth-0 per-block proof witness, captured inline during payload
+    /// build (see `try_build_payload`). Carried in-memory back to the sequencer
+    /// for persistence; `None` for payloads reconstructed from the wire (e.g.
+    /// `newPayload`), which never need it.
+    pub(crate) block_witness: Option<Vec<u8>>,
 }
 
 impl AlpenBuiltPayload {
@@ -109,11 +114,23 @@ impl AlpenBuiltPayload {
         Self {
             inner,
             withdrawal_intents,
+            block_witness: None,
         }
+    }
+
+    /// Attaches the encoded per-block proof witness captured during build.
+    pub fn with_block_witness(mut self, block_witness: Vec<u8>) -> Self {
+        self.block_witness = Some(block_witness);
+        self
     }
 
     pub fn withdrawal_intents(&self) -> &[WithdrawalIntent] {
         &self.withdrawal_intents
+    }
+
+    /// Takes the encoded per-block proof witness captured during build, if any.
+    pub fn take_block_witness(&mut self) -> Option<Vec<u8>> {
+        self.block_witness.take()
     }
 
     pub fn into_parts(self) -> (EthBuiltPayload, Vec<WithdrawalIntent>) {

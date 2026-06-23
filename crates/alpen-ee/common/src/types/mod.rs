@@ -2,7 +2,6 @@ pub(crate) mod accessed_state;
 pub(crate) mod batch;
 pub(crate) mod blocknumhash;
 pub(crate) mod chunk;
-pub(crate) mod chunk_witness;
 pub(crate) mod consensus_heads;
 pub(crate) mod ee_account_state;
 pub(crate) mod exec_record;

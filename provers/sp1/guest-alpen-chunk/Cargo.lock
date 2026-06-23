@@ -5093,6 +5093,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-consensus",
  "alloy-rlp",
+ "alloy-rpc-types-debug",
  "alpen-ee-da-types",
  "alpen-reth-evm",
  "alpen-reth-primitives",

@@ -215,7 +215,8 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
     )
     .await?;
 
-    // submit the built payload back to engine so reth knows the block
+    // submit the built payload back to engine so reth knows the block (inserts
+    // it into the engine tree as VALID, not yet canonical)
     payload_builder
         .submit_payload(
             <TEngine::TEnginePayload as EnginePayload>::from_bytes(payload.as_bytes())
@@ -224,10 +225,10 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .await
         .context("block_builder: submit payload to engine")?;
 
-    // cache next block target
+    // cache next block target before the block is consumed by the save below
     let next_block_target = compute_next_block_target(&block, config);
 
-    // save block outputs
+    // save block outputs to Alpen storage (the source of truth)
     storage
         .save_exec_block(block, payload)
         .await
@@ -238,6 +239,14 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .new_block(blockhash)
         .await
         .context("block_builder: submit new exec block")?;
+
+    // Canonicalization (forkchoice update) is intentionally NOT performed here.
+    // The engine control task is the single owner of reth's canonical head: the
+    // `new_block` submission above propagates the new tip through
+    // exec-chain -> preconf -> engine control, which drives the forkchoice
+    // update. Driving it here as well raced that task's cached head and could
+    // make reth silently drop OL safe/finalized updates (a behind-canonical
+    // head FCU is a no-op for safe/finalized in reth).
 
     // TODO(STR-3682): should this wait for block
 
