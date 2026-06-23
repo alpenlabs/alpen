@@ -87,7 +87,9 @@ use tracing::{error, info};
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
     pub(super) use alloy_primitives::{address, Address};
-    pub(super) use alpen_ee_da_provider::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
+    pub(super) use alpen_ee_da_provider::{
+        ChunkedEnvelopeDaProvider, DaBlobSource, StateDiffBlobProvider,
+    };
     pub(super) use alpen_reth_witness::RangeWitnessExtractor;
     pub(super) use strata_paas::{
         ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig, TaskStore,
@@ -496,7 +498,7 @@ fn main() {
             if ext.sequencer {
                 // sequencer specific tasks
 
-                use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobSource};
+                use alpen_ee_common::{require_latest_batch, BlockNumHash};
                 use alpen_ee_sequencer::{
                     create_batch_builder, create_batch_lifecycle_task,
                     create_update_submitter_task,
@@ -640,16 +642,15 @@ fn main() {
                 let header_summary =
                     Arc::new(RethHeaderSummaryProvider::new(node.provider.clone()));
 
-                let da_context_db = dbs.da_context_db();
                 let blob_provider: Arc<dyn DaBlobSource> = Arc::new(StateDiffBlobProvider::new(
                     storage.clone(),
                     dbs.witness_db(),
                     header_summary,
-                    da_context_db.clone(),
+                    dbs.da_context_db(),
                 ));
 
                 let batch_da_provider = Arc::new(ChunkedEnvelopeDaProvider::new(
-                    blob_provider.clone(),
+                    blob_provider,
                     envelope_handle,
                     broadcast_ops,
                     btc_client.clone(),
@@ -819,8 +820,6 @@ fn main() {
                     batch_da_provider,
                     batch_prover.clone(),
                     storage.clone(),
-                    blob_provider,
-                    da_context_db,
                 );
 
                 let update_submitter_task = create_update_submitter_task(

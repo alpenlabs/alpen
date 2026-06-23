@@ -101,39 +101,18 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use alloy_primitives::B256;
     use alpen_ee_common::{
-        DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, MockDaBlobSource,
-        ProofGenerationStatus,
+        DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, ProofGenerationStatus,
     };
-    use alpen_reth_db::{DbResult, EeDaContext};
     use eyre::eyre;
     use tokio::sync::watch;
 
     use super::*;
     use crate::batch_lifecycle::{state::init_lifecycle_state, test_utils::*};
 
-    /// Noop DA context for tests — reports nothing as published.
-    struct NoopDaContext;
-
-    impl EeDaContext for NoopDaContext {
-        fn is_code_hash_published(&self, _code_hash: &B256) -> DbResult<bool> {
-            Ok(false)
-        }
-
-        fn mark_code_hashes_published(&self, _code_hashes: &[B256]) -> DbResult<()> {
-            Ok(())
-        }
-
-        fn update_da_filter(&self, _block_hashes: &[B256]) -> DbResult<()> {
-            Ok(())
-        }
-    }
-
     struct MockedCtxBuilder {
         da_provider: MockBatchDaProvider,
         prover: MockBatchProver,
-        blob_provider: MockDaBlobSource,
     }
 
     impl MockedCtxBuilder {
@@ -143,8 +122,6 @@ mod tests {
         ) -> BatchLifecycleCtx<MockBatchDaProvider, MockBatchProver, S> {
             let da_provider = Arc::new(self.da_provider);
             let prover = Arc::new(self.prover);
-            let blob_provider: Arc<dyn alpen_ee_common::DaBlobSource> =
-                Arc::new(self.blob_provider);
             let (_sealed_batch_tx, sealed_batch_rx) = watch::channel(make_batch_id(0, 0));
             let (proof_ready_tx, _proof_ready_rx) = watch::channel(None);
 
@@ -152,24 +129,15 @@ mod tests {
                 batch_storage,
                 da_provider,
                 prover,
-                blob_provider,
                 sealed_batch_rx,
                 proof_ready_tx,
-                da_ctx: Arc::new(NoopDaContext),
             }
         }
 
         fn new() -> Self {
-            let mut blob_provider = MockDaBlobSource::new();
-            // Default: state diffs are always available
-            blob_provider
-                .expect_are_state_diffs_ready()
-                .returning(|_| true);
-
             Self {
                 da_provider: MockBatchDaProvider::new(),
                 prover: MockBatchProver::new(),
-                blob_provider,
             }
         }
 
@@ -180,6 +148,10 @@ mod tests {
             self.da_provider
                 .expect_check_da_status()
                 .returning(|_, _| Ok(DaStatus::Ready(vec![make_da_ref(1, 1)])));
+
+            self.da_provider
+                .expect_confirm_da_complete()
+                .returning(|_| Ok(()));
 
             self.prover
                 .expect_request_proof_generation()

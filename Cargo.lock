@@ -1421,11 +1421,9 @@ dependencies = [
 name = "alpen-ee-sequencer"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alloy-primitives",
  "alpen-ee-block-assembly",
  "alpen-ee-common",
  "alpen-ee-exec-chain",
- "alpen-reth-db",
  "anyhow",
  "async-trait",
  "bitcoin",

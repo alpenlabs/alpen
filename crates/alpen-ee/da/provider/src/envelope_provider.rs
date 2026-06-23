@@ -2,9 +2,7 @@
 
 use std::{collections::HashMap, fmt, sync::Arc};
 
-use alpen_ee_common::{
-    BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockInfo, L1DaBlockRef,
-};
+use alpen_ee_common::{BatchDaProvider, BatchId, DaStatus, L1DaBlockInfo, L1DaBlockRef};
 use alpen_ee_da_types::{wtxids_root_from_txs, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
@@ -20,7 +18,7 @@ use strata_identifiers::{Buf32, L1BlockCommitment, L1Height, WtxidsRoot};
 use strata_l1_txfmt::MagicBytes;
 use tracing::*;
 
-use crate::chunking::prepare_da_chunks;
+use crate::{chunking::prepare_da_chunks, DaBlobSource};
 
 /// Per-block accumulator: commit (when present) plus reveals tagged with
 /// their commit-output vout for stable ordering.
@@ -128,6 +126,10 @@ impl ChunkedEnvelopeDaProvider {
 #[async_trait]
 impl BatchDaProvider for ChunkedEnvelopeDaProvider {
     async fn post_batch_da(&self, batch_id: BatchId) -> eyre::Result<u64> {
+        if !self.blob_provider.are_state_diffs_ready(batch_id).await {
+            eyre::bail!("State diffs not ready, should retry later");
+        }
+
         let blob = self.blob_provider.get_blob(batch_id).await?;
         let chunks = prepare_da_chunks(&blob)?;
         ensure!(!chunks.is_empty(), "prepare_da_chunks returned empty");
@@ -200,6 +202,14 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
         }
         .instrument(check_da_status_span)
         .await
+    }
+
+    async fn confirm_da_complete(&self, batch_id: BatchId) -> eyre::Result<()> {
+        // The batch's DA is reorg-safe finalized: record its published data in
+        // the cross-batch dedup filter so future batches omit already-published
+        // bytecodes. The blob source owns the filter and derives the batch's
+        // blocks itself.
+        self.blob_provider.mark_batch_published(batch_id).await
     }
 }
 
@@ -313,7 +323,10 @@ fn compute_wtxids_root(block: &Block) -> eyre::Result<WtxidsRoot> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
 
     use alpen_ee_da_types::DaBlob;
     use async_trait::async_trait;
@@ -350,6 +363,54 @@ mod tests {
 
         async fn are_state_diffs_ready(&self, _batch_id: BatchId) -> bool {
             unreachable!("blob source is not used by check_da_status tests")
+        }
+
+        async fn mark_batch_published(&self, _batch_id: BatchId) -> eyre::Result<()> {
+            unreachable!("blob source is not used by check_da_status tests")
+        }
+    }
+
+    /// Reports state diffs as not ready; `get_blob` must never be reached
+    /// because `post_batch_da` bails on the readiness check first.
+    struct NotReadyBlobSource;
+
+    #[async_trait]
+    impl DaBlobSource for NotReadyBlobSource {
+        async fn get_blob(&self, _batch_id: BatchId) -> eyre::Result<DaBlob> {
+            unreachable!(
+                "post_batch_da must bail before fetching the blob when diffs are not ready"
+            )
+        }
+
+        async fn are_state_diffs_ready(&self, _batch_id: BatchId) -> bool {
+            false
+        }
+
+        async fn mark_batch_published(&self, _batch_id: BatchId) -> eyre::Result<()> {
+            unreachable!("post_batch_da test does not finalize DA")
+        }
+    }
+
+    /// Counts `mark_batch_published` calls so tests can assert that
+    /// `confirm_da_complete` records the batch in the dedup filter.
+    #[derive(Default)]
+    struct RecordingBlobSource {
+        marked: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl DaBlobSource for RecordingBlobSource {
+        async fn get_blob(&self, _batch_id: BatchId) -> eyre::Result<DaBlob> {
+            unreachable!("blob assembly is not exercised by confirm_da_complete tests")
+        }
+
+        async fn are_state_diffs_ready(&self, _batch_id: BatchId) -> bool {
+            unreachable!("readiness is not exercised by confirm_da_complete tests")
+        }
+
+        async fn mark_batch_published(&self, _batch_id: BatchId) -> eyre::Result<()> {
+            self.marked.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
     }
 
@@ -426,6 +487,7 @@ mod tests {
 
     fn make_provider_with_magic(
         magic_bytes: MagicBytes,
+        blob_provider: Arc<dyn DaBlobSource>,
     ) -> eyre::Result<(
         ChunkedEnvelopeDaProvider,
         Arc<ChunkedEnvelopeOps>,
@@ -441,7 +503,7 @@ mod tests {
                 .into_ops(threadpool::Builder::new().num_threads(2).build()),
         );
         let provider = ChunkedEnvelopeDaProvider::new(
-            Arc::new(NeverCalledBlobSource),
+            blob_provider,
             Arc::new(ChunkedEnvelopeHandle::new(chunked_ops.clone())),
             broadcast_ops.clone(),
             Arc::new(StaticL1BlockReader),
@@ -456,8 +518,11 @@ mod tests {
         Arc<ChunkedEnvelopeOps>,
         Arc<BroadcastDbOps>,
     ) {
-        make_provider_with_magic(MagicBytes::new(EE_DA_MAGIC_BYTES))
-            .expect("test provider magic matches EE DA magic")
+        make_provider_with_magic(
+            MagicBytes::new(EE_DA_MAGIC_BYTES),
+            Arc::new(NeverCalledBlobSource),
+        )
+        .expect("test provider magic matches EE DA magic")
     }
 
     fn finalized_tx_entry(height: u32) -> L1TxEntry {
@@ -472,10 +537,45 @@ mod tests {
 
     #[test]
     fn test_chunked_envelope_da_provider_rejects_wrong_magic_bytes() {
-        match make_provider_with_magic(MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD])) {
+        match make_provider_with_magic(
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+            Arc::new(NeverCalledBlobSource),
+        ) {
             Ok(_) => panic!("provider construction should fail for non-EE-DA magic bytes"),
             Err(err) => assert!(err.to_string().contains("EE DA magic bytes mismatch")),
         }
+    }
+
+    /// Ensures `post_batch_da` refuses to post while the batch's state diffs are
+    /// not yet ready, and bails before fetching the blob so the lifecycle simply
+    /// retries on a later tick.
+    #[tokio::test]
+    async fn test_post_batch_da_bails_when_state_diffs_not_ready() {
+        let (provider, _, _) = make_provider_with_magic(
+            MagicBytes::new(EE_DA_MAGIC_BYTES),
+            Arc::new(NotReadyBlobSource),
+        )
+        .expect("test provider magic matches EE DA magic");
+
+        let err = provider.post_batch_da(test_batch_id()).await.unwrap_err();
+        assert!(err.to_string().contains("State diffs not ready"));
+    }
+
+    /// Ensures `confirm_da_complete` records the batch in the cross-batch dedup
+    /// filter by delegating to the blob source.
+    #[tokio::test]
+    async fn test_confirm_da_complete_marks_batch_published() {
+        let marked = Arc::new(AtomicUsize::new(0));
+        let (provider, _, _) = make_provider_with_magic(
+            MagicBytes::new(EE_DA_MAGIC_BYTES),
+            Arc::new(RecordingBlobSource {
+                marked: marked.clone(),
+            }),
+        )
+        .expect("test provider magic matches EE DA magic");
+
+        provider.confirm_da_complete(test_batch_id()).await.unwrap();
+        assert_eq!(marked.load(Ordering::SeqCst), 1);
     }
 
     /// Ensures a persisted `envelope_idx` is treated as required state, not as

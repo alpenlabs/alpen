@@ -7,8 +7,19 @@ mod traits;
 mod types;
 mod utils;
 
+#[cfg(feature = "test-utils")]
 pub use traits::{
-    da::{BatchDaProvider, DaBlobSource, DaStatus, HeaderSummaryProvider},
+    da::MockBatchDaProvider,
+    ol_client::{MockOLClient, MockSequencerOLClient},
+    prover::MockBatchProver,
+    storage::{
+        batch_storage_test_fns, chunk_storage_test_fns, exec_block_storage_test_fns,
+        tests as storage_test_fns, InMemoryStorage, MockAccessedStateStore, MockBatchStorage,
+        MockBlockWitnessStore, MockChunkStorage, MockExecBlockStorage, MockStorage,
+    },
+};
+pub use traits::{
+    da::{BatchDaProvider, DaStatus, HeaderSummaryProvider},
     engine::{
         EnginePayload, ExecutionEngine, ExecutionEngineError, ForkchoiceState, PayloadBuilderEngine,
     },
@@ -21,17 +32,6 @@ pub use traits::{
         require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
         require_latest_batch, AccessedStateStore, BatchStorage, BlockWitnessStore, ChunkStorage,
         ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
-    },
-};
-#[cfg(feature = "test-utils")]
-pub use traits::{
-    da::{MockBatchDaProvider, MockDaBlobSource},
-    ol_client::{MockOLClient, MockSequencerOLClient},
-    prover::MockBatchProver,
-    storage::{
-        batch_storage_test_fns, chunk_storage_test_fns, exec_block_storage_test_fns,
-        tests as storage_test_fns, InMemoryStorage, MockAccessedStateStore, MockBatchStorage,
-        MockBlockWitnessStore, MockChunkStorage, MockExecBlockStorage, MockStorage,
     },
 };
 pub use types::{

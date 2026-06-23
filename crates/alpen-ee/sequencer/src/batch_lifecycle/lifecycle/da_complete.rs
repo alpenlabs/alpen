@@ -1,4 +1,3 @@
-use alloy_primitives::B256;
 use alpen_ee_common::{Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, DaStatus};
 use eyre::Result;
 use tracing::{debug, error, warn};
@@ -48,12 +47,10 @@ where
                     DaStatus::Ready(da_refs) => {
                         debug!(batch_idx = target_idx, batch_id = ?batch.id(), "DA ready");
 
-                        let block_hashes: Vec<B256> =
-                            batch.blocks_iter().map(|h| B256::from(h.0)).collect();
-                        if let Err(e) = ctx.da_ctx.update_da_filter(&block_hashes) {
+                        if let Err(e) = ctx.da_provider.confirm_da_complete(batch.id()).await {
                             warn!(
                                 error = %e,
-                                "failed to update DA filter; \
+                                "failed to confirm DA complete; \
                                  leaving batch in DaPending and retrying next lifecycle tick"
                             );
                             return Ok(());
