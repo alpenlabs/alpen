@@ -114,6 +114,49 @@ def extract_safe_harbour(template_dir: Path) -> str:
     raise ValueError("safe_harbour_address not found in asm-params template")
 
 
+def align_denomination(raw_path: Path, template_path: Path, out_path: Path) -> int:
+    """Write a copy of the datatool raw ol-params with bridge_params (denomination
+    + cap) taken from the template, to out_path.
+
+    The OL genesis STF hashes bridge_params into the genesis block, so the
+    genesis_ol_blkid that gen-asm-params derives from the raw is
+    denomination-dependent. gen-ol-params has no denomination flag (it emits the
+    datatool default), so without this the deployed ol-params denomination (from
+    the template) could differ from the value baked into genesis_ol_blkid and the
+    node would fail to bootstrap. Feeding this aligned copy to
+    gen-asm-params --ol-params keeps genesis_ol_blkid, the deployed ol-params, and
+    asm Bridge.denomination (via --deposit-sats) in agreement.
+
+    Writes to a new out_path rather than patching raw_path in place: the raw is
+    produced by datatool running as root in docker, so it is not writable by the
+    host runner user. Prints the denomination (sats) on stdout for the caller; all
+    diagnostics go to stderr so stdout stays a single clean integer.
+    """
+    tpl_bridge = load_json(template_path)["bridge_params"]
+    denom = int(tpl_bridge["denomination"])
+    maxw = tpl_bridge.get("max_withdrawal_amount")
+
+    # Mirror BridgeParams::new invariants (crates/bridge-params) to fail early
+    # instead of letting datatool reject the aligned ol-params mid-run.
+    if denom <= 0:
+        print("ERROR: template bridge denomination must be non-zero", file=sys.stderr)
+        sys.exit(1)
+    if maxw is not None and (maxw < denom or maxw % denom != 0):
+        print(
+            f"ERROR: max_withdrawal_amount {maxw} must be >= and a multiple of "
+            f"denomination {denom}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    raw = load_json(raw_path)
+    raw["bridge_params"] = {"denomination": denom, "max_withdrawal_amount": maxw}
+    write_json(out_path, raw)
+    print(f"  aligned ol-params bridge_params <- denomination={denom}, max_withdrawal_amount={maxw}", file=sys.stderr)
+    print(denom)
+    return denom
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -127,7 +170,19 @@ def main():
     keys_p.add_argument("--template-dir", required=True, help="Directory with pre-committed templates")
     keys_p.add_argument("--output-dir", required=True, help="Directory to write key files")
 
+    align_p = sub.add_parser(
+        "align-denomination",
+        help="Patch raw ol-params bridge denomination from template; print denomination (sats)",
+    )
+    align_p.add_argument("--raw", required=True, help="Path to datatool raw ol-params.json (read-only)")
+    align_p.add_argument("--template", required=True, help="Path to template ol-params.json (denomination source)")
+    align_p.add_argument("--out", required=True, help="Path to write the aligned ol-params.json")
+
     args = parser.parse_args()
+
+    if args.command == "align-denomination":
+        align_denomination(Path(args.raw), Path(args.template), Path(args.out))
+        return
 
     if args.command == "extract-keys":
         template_dir = Path(args.template_dir)

@@ -73,15 +73,36 @@ run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
     -o /out/ol-params-raw.json
 echo "  ol-params-raw.json generated"
 
+# Align the raw ol-params bridge denomination with the deployment template BEFORE
+# gen-asm-params computes genesis_ol_blkid. The OL genesis STF hashes bridge_params
+# (denomination + cap) into the genesis block, so genesis_ol_blkid is
+# denomination-dependent (crates/ol/genesis: execute_and_complete_block consumes
+# params.bridge_params()). gen-ol-params has no denomination flag and emits the
+# datatool default; without this patch a template denomination != that default
+# would make the node's runtime genesis diverge from the asm-params
+# genesis_ol_blkid and bootstrap would fail. Patch the raw (used for
+# genesis_ol_blkid) and pass the same value to --deposit-sats (Bridge.denomination)
+# so ol-params, genesis_ol_blkid, and asm Bridge.denomination all agree.
+# Aligned copy goes to a new file (not an in-place patch): the raw is written by
+# datatool as root in docker and is not writable by the host runner user.
+DEPOSIT_SATS=$(python3 "${SCRIPT_DIR}/params-helper.py" align-denomination \
+    --raw "${WORK_DIR}/ol-params-raw.json" \
+    --template "${TEMPLATE_DIR}/ol-params.json" \
+    --out "${WORK_DIR}/ol-params-aligned.json")
+echo "  ol-params bridge denomination aligned to template: ${DEPOSIT_SATS} sats"
+
 # The ASM checkpoint sequencer_predicate is static (from the template); the raw
 # generation only needs operators + safe-harbour, so no -s/sequencer key here.
+# Use the denomination-aligned ol-params so genesis_ol_blkid matches the deployed
+# ol-params (which carries the template denomination).
 run_datatool -- \
     gen-asm-params \
     -B /out/op-pks.txt \
     --checkpoint-predicate sp1-groth16 \
-    --ol-params /out/ol-params-raw.json \
+    --ol-params /out/ol-params-aligned.json \
     --genesis-l1-height "${GENESIS_L1_HEIGHT}" \
     --safe-harbour-address "${SAFE_HARBOUR}" \
+    --deposit-sats "${DEPOSIT_SATS}" \
     -o /out/asm-params-raw.json
 echo "  asm-params-raw.json generated"
 
