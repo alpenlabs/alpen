@@ -347,9 +347,8 @@ pub trait OLStateIndexingDatabase: Send + Sync + 'static {
     /// Appends to existing per-(account, epoch) entries, updates the common
     /// row's `created_accounts`, and inserts creation-epoch index entries
     /// for any newly created accounts. Errors with
-    /// [`DbError::BlockIndexingConflict`](crate::DbError::BlockIndexingConflict)
-    /// when `block.slot()` does not strictly advance past the last applied
-    /// block for `epoch`.
+    /// `DbError::BlockIndexingConflict` when `block.slot()` does not strictly
+    /// advance past the last applied block for `epoch`.
     fn apply_block_indexing(
         &self,
         epoch: Epoch,

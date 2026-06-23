@@ -50,7 +50,7 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     ///
     /// Block persistence semantics match [`Self::put_block_data`]. If the block's slot is not
     /// strictly greater than the current high-watermark slot, this writes nothing and returns
-    /// [`DbError::BlockHighWatermarkConflict`](crate::DbError::BlockHighWatermarkConflict).
+    /// `DbError::BlockHighWatermarkConflict`.
     fn put_block_data_with_high_watermark(&self, block: OLBlock) -> DbResult<OLBlockCommitment>;
 
     /// Clears the block high-watermark if it currently equals `expected`.
