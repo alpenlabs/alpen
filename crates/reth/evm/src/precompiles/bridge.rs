@@ -48,9 +48,7 @@ pub(crate) fn bridge_context_call(
     let (sats, _) = wei_to_sats(withdrawal_amount);
 
     // Try converting sats (U256) into u64 amount
-    let amount: u64 = sats.try_into().map_err(|_| {
-        PrecompileError::Fatal("Withdrawal amount exceeds maximum allowed value".into())
-    })?;
+    let amount = sats_to_withdrawal_amount(sats)?;
 
     // Log the bridge withdrawal intent
     let evt = WithdrawalIntentEvent {
@@ -75,6 +73,11 @@ pub(crate) fn bridge_context_call(
         })?;
 
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
+}
+
+fn sats_to_withdrawal_amount(sats: U256) -> Result<u64, PrecompileError> {
+    sats.try_into()
+        .map_err(|_| PrecompileError::other("Withdrawal amount exceeds maximum allowed value"))
 }
 
 fn bridgeout_gas_cost(calldata_len: usize) -> Result<u64, PrecompileError> {
@@ -218,6 +221,13 @@ mod tests {
     #[test]
     fn test_bridgeout_gas_cost_rejects_overflow() {
         assert!(bridgeout_gas_cost(usize::MAX).is_err());
+    }
+
+    #[test]
+    fn test_sats_to_withdrawal_amount_rejects_overflow_as_recoverable_error() {
+        let err = sats_to_withdrawal_amount(U256::from(u64::MAX) + U256::from(1)).unwrap_err();
+
+        assert!(matches!(err, PrecompileError::Other(_)));
     }
 
     // --- withdrawal amount validation tests ---
