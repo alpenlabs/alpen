@@ -649,7 +649,7 @@ fn main() {
                 ));
 
                 let batch_da_provider = Arc::new(ChunkedEnvelopeDaProvider::new(
-                    blob_provider.clone(),
+                    blob_provider,
                     envelope_handle,
                     broadcast_ops,
                     btc_client.clone(),
@@ -819,7 +819,6 @@ fn main() {
                     batch_da_provider,
                     batch_prover.clone(),
                     storage.clone(),
-                    blob_provider,
                     da_context_db,
                 );
 

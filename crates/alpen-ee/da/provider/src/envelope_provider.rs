@@ -128,6 +128,10 @@ impl ChunkedEnvelopeDaProvider {
 #[async_trait]
 impl BatchDaProvider for ChunkedEnvelopeDaProvider {
     async fn post_batch_da(&self, batch_id: BatchId) -> eyre::Result<u64> {
+        if !self.blob_provider.are_state_diffs_ready(batch_id).await {
+            eyre::bail!("State diffs not ready, should retry later");
+        }
+
         let blob = self.blob_provider.get_blob(batch_id).await?;
         let chunks = prepare_da_chunks(&blob)?;
         ensure!(!chunks.is_empty(), "prepare_da_chunks returned empty");
@@ -353,6 +357,23 @@ mod tests {
         }
     }
 
+    /// Reports state diffs as not ready; `get_blob` must never be reached
+    /// because `post_batch_da` bails on the readiness check first.
+    struct NotReadyBlobSource;
+
+    #[async_trait]
+    impl DaBlobSource for NotReadyBlobSource {
+        async fn get_blob(&self, _batch_id: BatchId) -> eyre::Result<DaBlob> {
+            unreachable!(
+                "post_batch_da must bail before fetching the blob when diffs are not ready"
+            )
+        }
+
+        async fn are_state_diffs_ready(&self, _batch_id: BatchId) -> bool {
+            false
+        }
+    }
+
     struct StaticL1BlockReader;
 
     #[async_trait]
@@ -426,6 +447,7 @@ mod tests {
 
     fn make_provider_with_magic(
         magic_bytes: MagicBytes,
+        blob_provider: Arc<dyn DaBlobSource>,
     ) -> eyre::Result<(
         ChunkedEnvelopeDaProvider,
         Arc<ChunkedEnvelopeOps>,
@@ -441,7 +463,7 @@ mod tests {
                 .into_ops(threadpool::Builder::new().num_threads(2).build()),
         );
         let provider = ChunkedEnvelopeDaProvider::new(
-            Arc::new(NeverCalledBlobSource),
+            blob_provider,
             Arc::new(ChunkedEnvelopeHandle::new(chunked_ops.clone())),
             broadcast_ops.clone(),
             Arc::new(StaticL1BlockReader),
@@ -456,8 +478,11 @@ mod tests {
         Arc<ChunkedEnvelopeOps>,
         Arc<BroadcastDbOps>,
     ) {
-        make_provider_with_magic(MagicBytes::new(EE_DA_MAGIC_BYTES))
-            .expect("test provider magic matches EE DA magic")
+        make_provider_with_magic(
+            MagicBytes::new(EE_DA_MAGIC_BYTES),
+            Arc::new(NeverCalledBlobSource),
+        )
+        .expect("test provider magic matches EE DA magic")
     }
 
     fn finalized_tx_entry(height: u32) -> L1TxEntry {
@@ -472,10 +497,28 @@ mod tests {
 
     #[test]
     fn test_chunked_envelope_da_provider_rejects_wrong_magic_bytes() {
-        match make_provider_with_magic(MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD])) {
+        match make_provider_with_magic(
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+            Arc::new(NeverCalledBlobSource),
+        ) {
             Ok(_) => panic!("provider construction should fail for non-EE-DA magic bytes"),
             Err(err) => assert!(err.to_string().contains("EE DA magic bytes mismatch")),
         }
+    }
+
+    /// Ensures `post_batch_da` refuses to post while the batch's state diffs are
+    /// not yet ready, and bails before fetching the blob so the lifecycle simply
+    /// retries on a later tick.
+    #[tokio::test]
+    async fn test_post_batch_da_bails_when_state_diffs_not_ready() {
+        let (provider, _, _) = make_provider_with_magic(
+            MagicBytes::new(EE_DA_MAGIC_BYTES),
+            Arc::new(NotReadyBlobSource),
+        )
+        .expect("test provider magic matches EE DA magic");
+
+        let err = provider.post_batch_da(test_batch_id()).await.unwrap_err();
+        assert!(err.to_string().contains("State diffs not ready"));
     }
 
     /// Ensures a persisted `envelope_idx` is treated as required state, not as
