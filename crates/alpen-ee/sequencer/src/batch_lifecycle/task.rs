@@ -101,33 +101,14 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use alloy_primitives::B256;
     use alpen_ee_common::{
         DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, ProofGenerationStatus,
     };
-    use alpen_reth_db::{DbResult, EeDaContext};
     use eyre::eyre;
     use tokio::sync::watch;
 
     use super::*;
     use crate::batch_lifecycle::{state::init_lifecycle_state, test_utils::*};
-
-    /// Noop DA context for tests — reports nothing as published.
-    struct NoopDaContext;
-
-    impl EeDaContext for NoopDaContext {
-        fn is_code_hash_published(&self, _code_hash: &B256) -> DbResult<bool> {
-            Ok(false)
-        }
-
-        fn mark_code_hashes_published(&self, _code_hashes: &[B256]) -> DbResult<()> {
-            Ok(())
-        }
-
-        fn update_da_filter(&self, _block_hashes: &[B256]) -> DbResult<()> {
-            Ok(())
-        }
-    }
 
     struct MockedCtxBuilder {
         da_provider: MockBatchDaProvider,
@@ -150,7 +131,6 @@ mod tests {
                 prover,
                 sealed_batch_rx,
                 proof_ready_tx,
-                da_ctx: Arc::new(NoopDaContext),
             }
         }
 
@@ -168,6 +148,10 @@ mod tests {
             self.da_provider
                 .expect_check_da_status()
                 .returning(|_, _| Ok(DaStatus::Ready(vec![make_da_ref(1, 1)])));
+
+            self.da_provider
+                .expect_confirm_da_complete()
+                .returning(|_| Ok(()));
 
             self.prover
                 .expect_request_proof_generation()

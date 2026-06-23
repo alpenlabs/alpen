@@ -44,6 +44,15 @@ pub trait BatchDaProvider: Send + Sync {
     /// block references, not yet requested, or has permanently failed.
     async fn check_da_status(&self, batch_id: BatchId, envelope_idx: u64)
         -> eyre::Result<DaStatus>;
+
+    /// Notifies the provider that the batch's DA reached completion, allowing it to perform
+    /// DA-internal bookkeeping such as cross-batch deduplication.
+    ///
+    /// Invoked once by the batch lifecycle on the `DaPending -> DaComplete`
+    /// transition, before the new status is persisted. On error the batch stays
+    /// in `DaPending` and the lifecycle retries, so implementations must be
+    /// idempotent.
+    async fn confirm_da_complete(&self, batch_id: BatchId) -> eyre::Result<()>;
 }
 
 /// Provides EVM block header summaries by block number.

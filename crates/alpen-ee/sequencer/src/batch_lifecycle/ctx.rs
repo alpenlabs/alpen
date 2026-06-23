@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage};
-use alpen_reth_db::EeDaContext;
 use tokio::sync::watch;
 
 /// Context holding all dependencies for the batch lifecycle task.
@@ -30,7 +29,4 @@ where
 
     /// Sender to notify about batches reaching ProofReady state.
     pub proof_ready_tx: watch::Sender<Option<BatchId>>,
-
-    /// DA filter for cross-batch deduplication (bytecodes, extensible for addresses etc.).
-    pub da_ctx: Arc<dyn EeDaContext + Send + Sync>,
 }

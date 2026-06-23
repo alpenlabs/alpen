@@ -3,7 +3,6 @@
 use std::{future::Future, sync::Arc};
 
 use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage};
-use alpen_reth_db::EeDaContext;
 use tokio::sync::watch;
 
 use super::{ctx::BatchLifecycleCtx, state::BatchLifecycleState, task::batch_lifecycle_task};
@@ -37,7 +36,6 @@ pub fn create_batch_lifecycle_task<D, P, S>(
     da_provider: Arc<D>,
     prover: Arc<P>,
     batch_storage: Arc<S>,
-    da_ctx: Arc<dyn EeDaContext + Send + Sync>,
 ) -> (BatchLifecycleHandle, impl Future<Output = ()>)
 where
     D: BatchDaProvider,
@@ -52,7 +50,6 @@ where
         prover,
         batch_storage,
         proof_ready_tx,
-        da_ctx,
     };
 
     let handle = BatchLifecycleHandle {

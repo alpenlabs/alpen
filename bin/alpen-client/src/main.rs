@@ -642,12 +642,11 @@ fn main() {
                 let header_summary =
                     Arc::new(RethHeaderSummaryProvider::new(node.provider.clone()));
 
-                let da_context_db = dbs.da_context_db();
                 let blob_provider: Arc<dyn DaBlobSource> = Arc::new(StateDiffBlobProvider::new(
                     storage.clone(),
                     dbs.witness_db(),
                     header_summary,
-                    da_context_db.clone(),
+                    dbs.da_context_db(),
                 ));
 
                 let batch_da_provider = Arc::new(ChunkedEnvelopeDaProvider::new(
@@ -821,7 +820,6 @@ fn main() {
                     batch_da_provider,
                     batch_prover.clone(),
                     storage.clone(),
-                    da_context_db,
                 );
 
                 let update_submitter_task = create_update_submitter_task(
