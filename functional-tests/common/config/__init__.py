@@ -9,6 +9,7 @@ from common.config.config import (
     ClientConfig,
     EeDaConfig,
     EpochSealingConfig,
+    FeeModelConfig,
     LoggingConfig,
     ProverConfig,
     ReaderConfig,
@@ -50,6 +51,7 @@ __all__ = [
     "ProverConfig",
     "SequencerConfig",
     "SequencerRuntimeConfig",
+    "FeeModelConfig",
     "EeDaConfig",
     "EpochSealingConfig",
     # constants.py

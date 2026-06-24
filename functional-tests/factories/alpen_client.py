@@ -10,7 +10,7 @@ from pathlib import Path
 
 import flexitest
 
-from common.config import EeDaConfig
+from common.config import EeDaConfig, FeeModelConfig
 from common.config.constants import DEFAULT_EE_BLOCK_TIME_MS
 from common.datatool import generate_ee_params
 from common.services import AlpenClientProps, AlpenClientService
@@ -74,6 +74,7 @@ class AlpenClientFactory(flexitest.Factory):
         bridge_denomination: int = 100_000_000,
         max_withdrawal_amount: int | None = 1_000_000_000,
         beneficiary_address: str | None = None,
+        fee_model: FeeModelConfig | None = None,
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -173,6 +174,18 @@ class AlpenClientFactory(flexitest.Factory):
 
         if beneficiary_address is not None:
             cmd.extend(["--beneficiary-address", beneficiary_address])
+
+        if fee_model is not None:
+            cmd.extend(
+                [
+                    "--prover-fee-per-gas-wei",
+                    str(fee_model.prover_fee_per_gas_wei),
+                    "--da-overhead-multiplier-bps",
+                    str(fee_model.da_overhead_multiplier_bps),
+                    "--ol-overhead-wei",
+                    str(fee_model.ol_overhead_wei),
+                ]
+            )
 
         # DA pipeline configuration
         if da_config is not None:

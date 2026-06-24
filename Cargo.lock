@@ -1393,6 +1393,7 @@ dependencies = [
  "alpen-ee-rpc-types",
  "jsonrpsee",
  "schemars 1.2.1",
+ "strata-config",
  "strata-open-rpc",
 ]
 
@@ -1553,6 +1554,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "serde",
+ "strata-config",
  "strata-identifiers",
  "strata-primitives",
  "tokio",
@@ -15326,6 +15328,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
  "proptest",
+ "schemars 1.2.1",
  "serde",
  "toml 0.5.11",
  "zeroize",
