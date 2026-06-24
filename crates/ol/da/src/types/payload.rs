@@ -914,6 +914,103 @@ mod tests {
         assert_eq!(a_snark.next_inbox_msg_idx(), 1);
     }
 
+    /// Applies a rich diff (global + two new accounts + balance + snark sub-diff) through the real
+    /// apply path.
+    ///
+    /// Unlike the other apply tests, this creates two new accounts in one diff, exercising the
+    /// `expected_serial.incr()` loop and confirming both land at consecutive serials. The diff is
+    /// built inline against the pre-state's actual serials; the golden `populated_state_diff` is
+    /// codec-only (its account-diff serials are not seeded in any test pre-state).
+    #[test]
+    fn test_apply_rich_diff_with_multiple_new_accounts() {
+        let pre_accounts = pre_state_with_accounts();
+        let mut state = pre_accounts.state.clone();
+        let pre_slot = state.cur_slot();
+        let next_serial = state.next_account_serial();
+        let new_id_a = test_account_id(0xA1);
+        let new_id_b = test_account_id(0xA2);
+        let inbox_root = Hash::from([0x22u8; 32]);
+
+        let diff = StateDiff::new(
+            build::global_diff(5, Some(SignedVarInt::positive(900))),
+            build::ledger_diff(
+                vec![
+                    NewAccountEntry::new(new_id_a, build::empty_init(1_000)),
+                    NewAccountEntry::new(new_id_b, build::empty_init(500)),
+                ],
+                vec![
+                    AccountDiffEntry::new(
+                        pre_accounts.empty.serial,
+                        build::balance_diff(SignedVarInt::positive(250)),
+                    ),
+                    AccountDiffEntry::new(
+                        pre_accounts.snark.serial,
+                        AccountDiff::new(
+                            DaCounter::new_unchanged(),
+                            build::snark_diff(
+                                3,
+                                Some(inbox_root),
+                                2,
+                                vec![
+                                    build::inbox_msg(test_account_id(0xB1), 7, 4, 0xEE),
+                                    build::inbox_msg(test_account_id(0xB2), 8, 16, 0xCD),
+                                ],
+                            ),
+                        ),
+                    ),
+                ],
+            ),
+        );
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(diff), &mut state)
+            .expect("apply rich diff");
+
+        assert_eq!(state.cur_slot(), pre_slot + 5);
+        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(900));
+
+        let empty = state
+            .get_account_state(pre_accounts.empty.id)
+            .unwrap()
+            .expect("empty account");
+        assert_eq!(empty.balance(), BitcoinAmount::from_sat(1_250));
+
+        let snark = state
+            .get_account_state(pre_accounts.snark.id)
+            .unwrap()
+            .expect("snark account")
+            .as_snark_account()
+            .expect("is snark");
+        assert_eq!(*snark.seqno().inner(), 3);
+        assert_eq!(snark.inner_state_root(), inbox_root);
+        assert_eq!(snark.next_inbox_msg_idx(), 2);
+        assert_eq!(snark.inbox_mmr().num_entries(), 2);
+
+        // Both new accounts land at consecutive serials, in declaration order.
+        assert_eq!(
+            state.find_account_id_by_serial(next_serial).unwrap(),
+            Some(new_id_a)
+        );
+        assert_eq!(
+            state.find_account_id_by_serial(next_serial.incr()).unwrap(),
+            Some(new_id_b)
+        );
+        assert_eq!(
+            state
+                .get_account_state(new_id_a)
+                .unwrap()
+                .expect("new account a")
+                .balance(),
+            BitcoinAmount::from_sat(1_000)
+        );
+        assert_eq!(
+            state
+                .get_account_state(new_id_b)
+                .unwrap()
+                .expect("new account b")
+                .balance(),
+            BitcoinAmount::from_sat(500)
+        );
+    }
+
     #[test]
     fn test_apply_empty_diff_is_noop() {
         let pre_accounts = pre_state_with_accounts();
@@ -991,6 +1088,22 @@ mod tests {
     fn test_validate_accepts_gapped_account_diff_serials() {
         let diff = account_diffs_at(&[1, 3]);
         assert!(validate_ledger_entries(AccountSerial::from(5u32), &diff).is_ok());
+    }
+
+    /// Pins the in-range boundary: `pre_serial - 1` is the max accepted serial.
+    #[test]
+    fn test_validate_accepts_max_in_range_account_diff_serial() {
+        let pre_serial = 5u32;
+        let diff = account_diffs_at(&[pre_serial - 1]);
+        assert!(validate_ledger_entries(AccountSerial::from(pre_serial), &diff).is_ok());
+
+        let at_bound = account_diffs_at(&[pre_serial]);
+        assert!(matches!(
+            validate_ledger_entries(AccountSerial::from(pre_serial), &at_bound),
+            Err(DaError::InvalidLedgerDiff(
+                "account diff serial out of range"
+            ))
+        ));
     }
 
     #[test]
