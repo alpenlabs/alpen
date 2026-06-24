@@ -1,6 +1,8 @@
 use strata_db_types::DbResult;
 use strata_db_types::errors::DbError;
-use strata_db_types::l1_writer::{BundledPayloadEntry, IntentEntry, IntentStatus, L1WriterDatabase};
+use strata_db_types::l1_writer::{
+    BundledPayloadEntry, IntentEntry, IntentStatus, L1WriterDatabase,
+};
 use strata_primitives::buf::Buf32;
 
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
