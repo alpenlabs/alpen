@@ -20,6 +20,12 @@ use strata_primitives::{
 /// Size of the sequence number in bytes.
 const SEQ_NO_SIZE: usize = mem::size_of::<u64>();
 
+/// Size of the [`u32`] in bytes.
+const U32_SIZE: usize = mem::size_of::<u32>();
+
+/// Size of the fee config in bytes.
+const FEE_CONFIG_SIZE: usize = SEQ_NO_SIZE + U32_SIZE + SEQ_NO_SIZE;
+
 /// Message ID for gossip packages
 /// This is prepended to each Message
 const GOSSIP_PACKAGE_MSG_ID: u8 = 0x00;
@@ -32,6 +38,9 @@ pub struct AlpenGossipMessage {
 
     /// Sequence number.
     seq_no: u64,
+
+    /// Current static fee-model constants.
+    fee_config: StaticFeeModelConfig,
 }
 
 /// Alpen Gossip Package that contains the message and the signature.
@@ -49,8 +58,12 @@ pub struct AlpenGossipPackage {
 
 impl AlpenGossipMessage {
     /// Creates a new [`AlpenGossipMessage`].
-    pub fn new(header: Header, seq_no: u64) -> Self {
-        Self { header, seq_no }
+    pub fn new(header: Header, seq_no: u64, fee_config: StaticFeeModelConfig) -> Self {
+        Self {
+            header,
+            seq_no,
+            fee_config,
+        }
     }
 
     /// Gets the header of the [`AlpenGossipMessage`].
@@ -61,6 +74,11 @@ impl AlpenGossipMessage {
     /// Gets the sequence number of the [`AlpenGossipMessage`].
     pub fn seq_no(&self) -> u64 {
         self.seq_no
+    }
+
+    /// Gets the fee-model constants of the [`AlpenGossipMessage`].
+    pub fn fee_config(&self) -> StaticFeeModelConfig {
+        self.fee_config
     }
 
     /// Gets the hash of the [`AlpenGossipMessage`].
@@ -84,6 +102,7 @@ impl AlpenGossipMessage {
         let mut buf = BytesMut::new();
         self.header.encode(&mut buf);
         buf.put_u64(self.seq_no);
+        encode_fee_config(&self.fee_config, &mut buf);
         buf
     }
 
@@ -104,9 +123,34 @@ impl AlpenGossipMessage {
 
         // Decode the sequence number
         let seq_no = buf.get_u64();
+        let fee_config = decode_fee_config(buf)?;
 
-        Ok(Self { header, seq_no })
+        Ok(Self {
+            header,
+            seq_no,
+            fee_config,
+        })
     }
+}
+
+fn encode_fee_config(fee_config: &StaticFeeModelConfig, buf: &mut BytesMut) {
+    buf.put_u64(fee_config.prover_fee_per_gas_wei());
+    buf.put_u32(fee_config.da_overhead_multiplier_bps());
+    buf.put_u64(fee_config.ol_overhead_wei());
+}
+
+fn decode_fee_config(buf: &mut &[u8]) -> Result<StaticFeeModelConfig> {
+    ensure!(
+        buf.remaining() >= FEE_CONFIG_SIZE,
+        "buffer too short for fee config: need {FEE_CONFIG_SIZE} bytes, have {}",
+        buf.remaining()
+    );
+
+    Ok(StaticFeeModelConfig::new(
+        buf.get_u64(),
+        buf.get_u32(),
+        buf.get_u64(),
+    ))
 }
 
 impl AlpenGossipPackage {
@@ -216,13 +260,30 @@ mod tests {
         Just(Header::default())
     }
 
+    fn fee_config_strategy() -> impl Strategy<Value = StaticFeeModelConfig> {
+        (any::<u64>(), any::<u32>(), any::<u64>()).prop_map(
+            |(prover_fee_per_gas_wei, da_overhead_multiplier_bps, ol_overhead_wei)| {
+                StaticFeeModelConfig::new(
+                    prover_fee_per_gas_wei,
+                    da_overhead_multiplier_bps,
+                    ol_overhead_wei,
+                )
+            },
+        )
+    }
+
+    fn test_fee_config() -> StaticFeeModelConfig {
+        StaticFeeModelConfig::new(15, 10_000, 0)
+    }
+
     proptest! {
         #[test]
         fn test_message_encode_decode_roundtrip(
             header in header_strategy(),
-            seq_no in any::<u64>()
+            seq_no in any::<u64>(),
+            fee_config in fee_config_strategy()
         ) {
-            let original = AlpenGossipMessage::new(header, seq_no);
+            let original = AlpenGossipMessage::new(header, seq_no, fee_config);
             let encoded = original.encode();
             let decoded = AlpenGossipMessage::try_decode(&mut &encoded[..])
                 .expect("decode should succeed");
@@ -232,9 +293,10 @@ mod tests {
         #[test]
         fn test_message_encode_deterministic(
             header in header_strategy(),
-            seq_no in any::<u64>()
+            seq_no in any::<u64>(),
+            fee_config in fee_config_strategy()
         ) {
-            let msg = AlpenGossipMessage::new(header, seq_no);
+            let msg = AlpenGossipMessage::new(header, seq_no, fee_config);
             let encoded1 = msg.encode();
             let encoded2 = msg.encode();
             prop_assert_eq!(encoded1, encoded2, "encoding should be deterministic");
@@ -243,22 +305,25 @@ mod tests {
         #[test]
         fn test_message_getters(
             header in header_strategy(),
-            seq_no in any::<u64>()
+            seq_no in any::<u64>(),
+            fee_config in fee_config_strategy()
         ) {
-            let msg = AlpenGossipMessage::new(header.clone(), seq_no);
+            let msg = AlpenGossipMessage::new(header.clone(), seq_no, fee_config);
             prop_assert_eq!(msg.header(), &header);
             prop_assert_eq!(msg.seq_no(), seq_no);
+            prop_assert_eq!(msg.fee_config(), fee_config);
         }
 
         #[test]
         fn test_message_different_seq_no_different_encoding(
             header in header_strategy(),
             seq_no1 in any::<u64>(),
-            seq_no2 in any::<u64>()
+            seq_no2 in any::<u64>(),
+            fee_config in fee_config_strategy()
         ) {
             prop_assume!(seq_no1 != seq_no2);
-            let msg1 = AlpenGossipMessage::new(header.clone(), seq_no1);
-            let msg2 = AlpenGossipMessage::new(header, seq_no2);
+            let msg1 = AlpenGossipMessage::new(header.clone(), seq_no1, fee_config);
+            let msg2 = AlpenGossipMessage::new(header, seq_no2, fee_config);
             prop_assert_ne!(msg1.encode(), msg2.encode());
         }
     }
@@ -305,15 +370,29 @@ mod tests {
             .contains("buffer too short for sequence number"));
     }
 
+    #[test]
+    fn test_message_try_decode_truncated_fee_config() {
+        let mut encoded = AlpenGossipMessage::new(Header::default(), 1, test_fee_config()).encode();
+        encoded.truncate(encoded.len() - 1);
+
+        let result = AlpenGossipMessage::try_decode(&mut &encoded[..]);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("buffer too short for fee config"));
+    }
+
     proptest! {
         #[test]
         fn test_package_encode_decode_roundtrip(
             header in header_strategy(),
             seq_no in any::<u64>(),
+            fee_config in fee_config_strategy(),
             public_key in buf32_strategy(),
             signature in buf64_strategy()
         ) {
-            let message = AlpenGossipMessage::new(header, seq_no);
+            let message = AlpenGossipMessage::new(header, seq_no, fee_config);
             let original = AlpenGossipPackage::new(message, public_key, signature);
             let encoded = original.encode();
             let decoded = AlpenGossipPackage::try_decode(&mut &encoded[..])
@@ -325,10 +404,11 @@ mod tests {
         fn test_package_getters(
             header in header_strategy(),
             seq_no in any::<u64>(),
+            fee_config in fee_config_strategy(),
             public_key in buf32_strategy(),
             signature in buf64_strategy()
         ) {
-            let message = AlpenGossipMessage::new(header, seq_no);
+            let message = AlpenGossipMessage::new(header, seq_no, fee_config);
             let pkg = AlpenGossipPackage::new(message.clone(), public_key, signature);
             prop_assert_eq!(pkg.message(), &message);
             prop_assert_eq!(pkg.public_key(), &public_key);
@@ -339,14 +419,39 @@ mod tests {
         fn test_package_encode_deterministic(
             header in header_strategy(),
             seq_no in any::<u64>(),
+            fee_config in fee_config_strategy(),
             public_key in buf32_strategy(),
             signature in buf64_strategy()
         ) {
-            let message = AlpenGossipMessage::new(header, seq_no);
+            let message = AlpenGossipMessage::new(header, seq_no, fee_config);
             let pkg = AlpenGossipPackage::new(message, public_key, signature);
             let encoded1 = pkg.encode();
             let encoded2 = pkg.encode();
             prop_assert_eq!(encoded1, encoded2, "encoding should be deterministic");
         }
+    }
+
+    #[test]
+    fn test_signature_covers_fee_config() {
+        let public_key = "0x1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+            .parse::<Buf32>()
+            .expect("public key should parse");
+        let private_key = "0x0101010101010101010101010101010101010101010101010101010101010101"
+            .parse::<Buf32>()
+            .expect("private key should parse");
+
+        let package = AlpenGossipMessage::new(Header::default(), 1, test_fee_config())
+            .into_package(public_key, private_key);
+        assert!(package.validate_signature());
+
+        let altered_message = AlpenGossipMessage::new(
+            package.message().header().clone(),
+            package.message().seq_no(),
+            StaticFeeModelConfig::new(16, 10_000, 0),
+        );
+        let altered_package =
+            AlpenGossipPackage::new(altered_message, *package.public_key(), *package.signature());
+
+        assert!(!altered_package.validate_signature());
     }
 }
