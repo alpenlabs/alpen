@@ -29,7 +29,7 @@ use strata_acct_types::{
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
 };
-use strata_asm_manifest_types::AsmManifest;
+use strata_asm_manifest_types::{AsmLogEntry, AsmManifest};
 use strata_btc_verification::L1Anchor;
 use strata_codec::encode_to_vec;
 use strata_config::SequencerConfig;
@@ -71,15 +71,17 @@ pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
 }
 
 use crate::{
-    BlockAssemblyResult, FixedSlotSealing, MempoolProvider,
+    BlockAssemblyResult, FixedSlotSealing, LimitAwareSealing, MempoolProvider,
     block_assembly::{
         ConstructBlockOutput, calculate_block_slot_and_epoch, construct_block,
         generate_block_template_inner,
     },
     context::{BlockAssemblyAnchorContext, BlockAssemblyContext},
-    da_tracker::AccumulatedDaData,
+    resource_state::{AccumulatedDaData, EpochResourceState},
     types::{BlockGenerationConfig, BlockTemplateResult, FullBlockTemplate},
 };
+
+type TestEpochSealingPolicy = LimitAwareSealing<FixedSlotSealing>;
 
 /// Creates a test account ID with the given seed byte.
 pub(crate) fn test_account_id(id: u8) -> AccountId {
@@ -733,23 +735,43 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
     start: L1Height,
     end: L1Height,
 ) -> L1BlockCommitment {
-    // Create and store ASM manifests
-    let mut last_blkid = L1BlockId::from(Buf32::zero());
-    for height in start..=end {
-        // Generate deterministic but unique block ID for each height
-        let mut block_bytes = [0u8; 32];
-        block_bytes[0] = height as u8;
-        block_bytes[1] = (height >> 8) as u8;
-        last_blkid = L1BlockId::from(Buf32::from(block_bytes));
+    let manifests = (start..=end)
+        .map(|height| create_l1_manifest_with_logs(height, vec![]))
+        .collect();
 
-        let manifest = AsmManifest::new(
-            height,
-            last_blkid,
-            WtxidsRoot::from(Buf32::from([0u8; 32])),
-            vec![],
-        )
-        .expect("test manifest should be valid");
+    setup_asm_state_with_l1_manifests_list(storage, manifests).await
+}
 
+/// Creates a deterministic test L1 ASM manifest carrying `logs`.
+pub(crate) fn create_l1_manifest_with_logs(
+    height: L1Height,
+    logs: Vec<AsmLogEntry>,
+) -> AsmManifest {
+    // Generate deterministic but unique block ID for each height.
+    let mut block_bytes = [0u8; 32];
+    block_bytes[0] = height as u8;
+    block_bytes[1] = (height >> 8) as u8;
+    let blkid = L1BlockId::from(Buf32::from(block_bytes));
+
+    AsmManifest::new(
+        height,
+        blkid,
+        WtxidsRoot::from(Buf32::from([0u8; 32])),
+        logs,
+    )
+    .expect("test manifest should be valid")
+}
+
+async fn setup_asm_state_with_l1_manifests_list(
+    storage: &NodeStorage,
+    manifests: Vec<AsmManifest>,
+) -> L1BlockCommitment {
+    let last_manifest = manifests
+        .last()
+        .expect("test must seed at least one L1 manifest");
+    let l1_commitment = L1BlockCommitment::new(last_manifest.height(), *last_manifest.blkid());
+
+    for manifest in manifests {
         storage
             .l1()
             .put_block_data_async(manifest.clone())
@@ -757,13 +779,10 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
             .expect("Failed to store L1 manifest");
         storage
             .l1()
-            .extend_canonical_chain_async(manifest.blkid(), height)
+            .extend_canonical_chain_async(manifest.blkid(), manifest.height())
             .await
             .expect("Failed to extend L1 canonical chain");
     }
-
-    // Store ASM state at the highest L1 block
-    let l1_commitment = L1BlockCommitment::new(end, last_blkid);
 
     // Create minimal ASM state for testing
     let pow_state = HeaderVerificationState::init(L1Anchor {
@@ -893,7 +912,7 @@ pub(crate) struct TestEnv {
     ctx: Arc<BlockAssemblyContextImpl>,
     mempool: Arc<MockMempoolProvider>,
     sequencer_config: SequencerConfig,
-    epoch_sealing_policy: FixedSlotSealing,
+    epoch_sealing_policy: TestEpochSealingPolicy,
     parent_commitment: OLBlockCommitment,
 }
 
@@ -910,7 +929,9 @@ impl TestEnv {
             ctx: Arc::new(ctx),
             mempool,
             sequencer_config: SequencerConfig::default(),
-            epoch_sealing_policy: FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH),
+            epoch_sealing_policy: LimitAwareSealing::new(FixedSlotSealing::new(
+                TEST_SLOTS_PER_EPOCH,
+            )),
             parent_commitment,
         }
     }
@@ -995,7 +1016,7 @@ impl TestEnv {
     }
 
     /// Returns epoch sealing policy.
-    pub(crate) fn epoch_sealing_policy(&self) -> &FixedSlotSealing {
+    pub(crate) fn epoch_sealing_policy(&self) -> &TestEpochSealingPolicy {
         &self.epoch_sealing_policy
     }
 
@@ -1004,17 +1025,18 @@ impl TestEnv {
         BlockGenerationConfig::new(self.parent_commitment())
     }
 
-    /// Generates block template from mempool using current parent commitment and empty parent DA.
+    /// Generates block template from mempool using current parent commitment and empty epoch
+    /// resource state.
     pub(crate) async fn generate_block_template(&self) -> BlockAssemblyResult<BlockTemplateResult> {
-        self.generate_block_template_with_da(AccumulatedDaData::new_empty())
+        self.generate_block_template_with_resource_state(EpochResourceState::new_empty())
             .await
     }
 
-    /// Generates block template from mempool using current parent commitment and explicit parent
-    /// DA.
-    pub(crate) async fn generate_block_template_with_da(
+    /// Generates block template from mempool using current parent commitment and explicit epoch
+    /// resource state before the candidate block.
+    pub(crate) async fn generate_block_template_with_resource_state(
         &self,
-        parent_da: AccumulatedDaData,
+        resource_state_before_block: EpochResourceState,
     ) -> BlockAssemblyResult<BlockTemplateResult> {
         let config = self.parent_config();
         generate_block_template_inner(
@@ -1022,23 +1044,23 @@ impl TestEnv {
             self.epoch_sealing_policy(),
             self.sequencer_config(),
             config,
-            parent_da,
+            resource_state_before_block,
             BridgeParams::default(),
         )
         .await
     }
 
     /// Constructs a block directly from explicit txs using current parent commitment and empty
-    /// parent DA.
+    /// epoch resource state.
     pub(crate) async fn construct_block(
         &self,
         txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
-        self.construct_block_with_da(txs, AccumulatedDaData::new_empty())
+        self.construct_block_with_resource_state(txs, EpochResourceState::new_empty())
             .await
     }
 
-    /// Constructs an empty block using current parent commitment and empty parent DA.
+    /// Constructs an empty block using current parent commitment and empty epoch resource state.
     pub(crate) async fn construct_empty_block(
         &self,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
@@ -1046,20 +1068,52 @@ impl TestEnv {
             .await
     }
 
-    /// Constructs an empty block using current parent commitment and explicit parent DA.
+    /// Constructs an empty block using current parent commitment and explicit epoch DA before the
+    /// candidate block.
     pub(crate) async fn construct_empty_block_with_da(
         &self,
-        parent_da: AccumulatedDaData,
+        epoch_cumulative_da: AccumulatedDaData,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
-        self.construct_block_with_da(iter::empty::<(OLTxId, OLTransaction)>(), parent_da)
-            .await
+        self.construct_empty_block_with_resource_state(EpochResourceState::new(
+            epoch_cumulative_da,
+            0,
+        ))
+        .await
     }
 
-    /// Constructs a block directly from explicit txs and parent DA using current parent commitment.
+    /// Constructs a block directly from explicit txs and epoch DA before the candidate block using
+    /// current parent commitment.
     pub(crate) async fn construct_block_with_da(
         &self,
         txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
-        parent_da: AccumulatedDaData,
+        epoch_cumulative_da: AccumulatedDaData,
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+        self.construct_block_with_resource_state(
+            txs,
+            EpochResourceState::new(epoch_cumulative_da, 0),
+        )
+        .await
+    }
+
+    /// Constructs an empty block using current parent commitment and explicit epoch resource
+    /// state before the candidate block.
+    pub(crate) async fn construct_empty_block_with_resource_state(
+        &self,
+        resource_state_before_block: EpochResourceState,
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+        self.construct_block_with_resource_state(
+            iter::empty::<(OLTxId, OLTransaction)>(),
+            resource_state_before_block,
+        )
+        .await
+    }
+
+    /// Constructs a block directly from explicit txs and epoch resource state before the
+    /// candidate block.
+    pub(crate) async fn construct_block_with_resource_state(
+        &self,
+        txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
+        resource_state_before_block: EpochResourceState,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         let config = self.parent_config();
         assemble_block_with_txs(
@@ -1067,7 +1121,7 @@ impl TestEnv {
             self.epoch_sealing_policy(),
             &config,
             txs.into_iter().collect(),
-            parent_da,
+            resource_state_before_block,
         )
         .await
     }
@@ -1335,6 +1389,16 @@ impl TestStorageFixtureBuilder {
                 .await
                 .expect("Failed to store parent block");
 
+            fixture
+                .storage()
+                .ol_block()
+                .replace_canonical_suffix_from_async(
+                    parent_header.slot(),
+                    vec![*commitment.blkid()],
+                )
+                .await
+                .expect("Failed to store parent block in canonical index");
+
             commitment
         } else {
             // No parent slot - return null commitment for genesis testing
@@ -1499,14 +1563,15 @@ pub(crate) fn extract_withdrawal_intents(
     Result<SimpleWithdrawalIntentLogData, LogDecodeError>,
 )> {
     output
-        .accumulated_da
+        .resource_state
+        .da()
         .logs()
         .iter()
         .filter_map(|log| {
             let msg = MsgRef::try_from(log.payload()).ok()?;
             match SimpleWithdrawalIntentLogData::try_decode_log(&msg) {
                 // A type mismatch just means this log isn't a withdrawal intent; skip it.
-                Err(LogDecodeError::TypeMismatch(..)) => None,
+                Err(LogDecodeError::TypeMismatch { .. }) => None,
                 result => Some((log.account_serial(), result)),
             }
         })
@@ -1523,13 +1588,14 @@ pub(crate) fn seeded_da(n: usize) -> AccumulatedDaData {
 
 // ===== Assembly Pipeline Helper =====
 
-/// Assembles a block for `config` using tx list and parent DA snapshot.
+/// Assembles a block for `config` using tx list and epoch resource state before the candidate
+/// block.
 pub(crate) async fn assemble_block_with_txs(
     ctx: &BlockAssemblyContextImpl,
-    epoch_sealing_policy: &FixedSlotSealing,
+    epoch_sealing_policy: &TestEpochSealingPolicy,
     config: &BlockGenerationConfig,
     txs: Vec<(OLTxId, OLTransaction)>,
-    parent_da: AccumulatedDaData,
+    resource_state_before_block: EpochResourceState,
 ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
     let parent_state = ctx
         .fetch_state_for_tip(config.parent_block_commitment())
@@ -1547,7 +1613,7 @@ pub(crate) async fn assemble_block_with_txs(
         block_slot,
         block_epoch,
         txs,
-        parent_da,
+        resource_state_before_block,
         BridgeParams::default(),
     )
     .await

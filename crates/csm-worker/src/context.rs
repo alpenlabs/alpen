@@ -28,6 +28,17 @@ pub trait CsmWorkerContext: Send + Sync {
         output: ClientUpdateOutput,
     ) -> CsmWorkerResult<()>;
 
+    /// Deletes the client state row at the given L1 block.
+    fn del_client_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<()>;
+
+    /// Returns up to `max_count` persisted client-state block keys at or above
+    /// `from_block`, in ascending order.
+    fn get_client_state_blocks_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> CsmWorkerResult<Vec<L1BlockCommitment>>;
+
     /// Publishes the current client state and the L1 block it is anchored at.
     fn publish_client_state(&self, state: ClientState, block: L1BlockCommitment);
 
@@ -55,8 +66,12 @@ pub trait CsmWorkerContext: Send + Sync {
     /// Fetches the auxiliary data ASM consumed when processing `block`.
     fn get_aux_data(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AuxData>;
 
-    /// Resolves the canonical L1 block commitment at `height`.
-    fn get_canonical_l1_block(&self, height: L1Height) -> CsmWorkerResult<L1BlockCommitment>;
+    /// Resolves the canonical L1 block commitment at `height`, or `None` when
+    /// no canonical block exists there (e.g. a height above a reverted tip).
+    fn get_canonical_l1_block(
+        &self,
+        height: L1Height,
+    ) -> CsmWorkerResult<Option<L1BlockCommitment>>;
 
     /// Returns the most recently persisted client state, or `None` if storage
     /// has none yet.
@@ -64,29 +79,25 @@ pub trait CsmWorkerContext: Send + Sync {
         &self,
     ) -> CsmWorkerResult<Option<(L1BlockCommitment, ClientState)>>;
 
+    /// Returns the client state persisted at `block`, if any.
+    fn get_client_state_at(
+        &self,
+        block: &L1BlockCommitment,
+    ) -> CsmWorkerResult<Option<ClientState>>;
+
     /// L1 block that bootstrap should anchor to when storage has no client
     /// state yet.
     fn genesis_l1_block(&self) -> L1BlockCommitment;
 
-    /// Returns the epoch of the most recent L1-observed checkpoint, or `None`
-    /// if nothing has been observed yet.
-    fn get_last_checkpoint_l1_ref_epoch(&self) -> CsmWorkerResult<Option<EpochCommitment>>;
-
-    /// Returns the canonical epoch commitment at `epoch`, if recorded.
-    fn get_canonical_epoch_commitment_at(
+    /// Returns all observed epoch commitment and L1 ref pairs at or above
+    /// `start_epoch`, ordered by ascending epoch.
+    fn get_checkpoint_l1_refs_from(
         &self,
-        epoch: Epoch,
-    ) -> CsmWorkerResult<Option<EpochCommitment>>;
-
-    /// Returns the recorded L1 ref for an observed checkpoint at `commitment`.
-    fn get_checkpoint_l1_ref(
-        &self,
-        commitment: EpochCommitment,
-    ) -> CsmWorkerResult<Option<CheckpointL1Ref>>;
+        start_epoch: Epoch,
+    ) -> CsmWorkerResult<Vec<(EpochCommitment, CheckpointL1Ref)>>;
 
     /// Returns the L1-observed checkpoint payload at `commitment` (carries the
-    /// tip the checkpoint declared). Paired with [`Self::get_checkpoint_l1_ref`]
-    /// to reconstruct the full observation record at bootstrap.
+    /// tip the checkpoint declared).
     fn get_checkpoint_payload(
         &self,
         commitment: EpochCommitment,

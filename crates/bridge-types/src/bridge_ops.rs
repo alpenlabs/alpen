@@ -4,7 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use strata_identifiers::SubjectId;
-use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
+use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 
 use crate::OperatorSelection;
 
@@ -28,9 +28,6 @@ pub struct WithdrawalIntent {
     /// Destination [`Descriptor`] for the withdrawal
     destination: Descriptor,
 
-    /// withdrawal request transaction id
-    withdrawal_txid: Buf32,
-
     /// User's operator selection for withdrawal assignment.
     selected_operator: OperatorSelection,
 }
@@ -39,13 +36,11 @@ impl WithdrawalIntent {
     pub fn new(
         amt: BitcoinAmount,
         destination: Descriptor,
-        withdrawal_txid: Buf32,
         selected_operator: OperatorSelection,
     ) -> Self {
         Self {
             amt,
             destination,
-            withdrawal_txid,
             selected_operator,
         }
     }
@@ -60,10 +55,6 @@ impl WithdrawalIntent {
 
     pub fn destination(&self) -> &Descriptor {
         &self.destination
-    }
-
-    pub fn withdrawal_txid(&self) -> &Buf32 {
-        &self.withdrawal_txid
     }
 
     pub fn selected_operator(&self) -> OperatorSelection {
@@ -136,7 +127,7 @@ impl DepositIntent {
 mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
-    use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
+    use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 
     use super::WithdrawalIntent;
     use crate::OperatorSelection;
@@ -163,13 +154,11 @@ mod tests {
         fn withdrawal_intent_ssz_roundtrip(
             amt in any::<u64>(),
             destination in descriptor_strategy(),
-            withdrawal_txid in any::<[u8; 32]>(),
             selected_operator in operator_selection_strategy(),
         ) {
             let intent = WithdrawalIntent::new(
                 BitcoinAmount::from_sat(amt),
                 destination,
-                Buf32::from(withdrawal_txid),
                 selected_operator,
             );
 
@@ -185,7 +174,6 @@ mod tests {
         let encoded = (
             BitcoinAmount::from_sat(42),
             vec![0xFFu8; 3],
-            Buf32::from([7u8; 32]),
             OperatorSelection::any(),
         )
             .as_ssz_bytes();

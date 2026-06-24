@@ -1,0 +1,21 @@
+[package]
+name = "strata-proofimpl-predicate-keys"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+sp1 = ["dep:sp1-verifier", "dep:zkaleido-sp1-groth16-verifier"]
+
+[dependencies]
+hex.workspace = true
+strata-predicate.workspace = true
+strata-proofimpl-alpen-acct.workspace = true
+strata-proofimpl-alpen-chunk.workspace = true
+strata-proofimpl-checkpoint.workspace = true
+
+sp1-verifier = { workspace = true, optional = true }
+thiserror.workspace = true
+zkaleido-sp1-groth16-verifier = { workspace = true, optional = true }
+
+[lints]
+workspace = true

@@ -1,4 +1,4 @@
-use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment};
+use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, Slot};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockId, L1Height};
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
@@ -101,6 +101,14 @@ pub enum DbError {
 
     #[error("invalid argument")]
     InvalidArgument,
+
+    #[error(
+        "OL canonical suffix from slot {start_slot} with {block_count} blocks overflows slot range"
+    )]
+    OLCanonicalSuffixOverflow {
+        start_slot: Slot,
+        block_count: usize,
+    },
 
     #[error("resource busy")]
     Busy,

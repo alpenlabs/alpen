@@ -98,26 +98,16 @@ fn resolve_default() -> PredicateKey {
 
 #[cfg(feature = "sp1-builder")]
 fn build_sp1_predicate() -> PredicateKey {
-    use strata_predicate::PredicateTypeId;
     use strata_primitives::buf::Buf32;
+    use strata_proofimpl_predicate_keys::{PredicateKeyProvider, Sp1Groth16PredicateKey};
     use strata_sp1_guest_builder::GUEST_CHECKPOINT_VK_HASH_STR;
-    use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
     // Integrated prover submits checkpoint proofs, so the predicate must be
     // bound to the checkpoint program ID.
     let vk_buf32: Buf32 = GUEST_CHECKPOINT_VK_HASH_STR
         .parse()
         .expect("invalid sp1 checkpoint verifier key hash");
-    let sp1_verifier = SP1Groth16Verifier::load(
-        &sp1_verifier::GROTH16_VK_BYTES,
-        vk_buf32.0,
-        *sp1_verifier::VK_ROOT_BYTES,
-        true,
-    )
-    .expect("Failed to load SP1 Groth16 verifier");
-    // strata-predicate's Sp1Groth16 verifier reads the condition via
-    // `SP1Groth16Verifier::parse`, i.e. the verifier's canonical uncompressed
-    // encoding.
-    let condition_bytes = sp1_verifier.to_uncompressed_bytes();
-    PredicateKey::new(PredicateTypeId::Sp1Groth16, condition_bytes)
+    Sp1Groth16PredicateKey::new(vk_buf32.0)
+        .predicate_key()
+        .expect("failed to build SP1 Groth16 checkpoint predicate")
 }

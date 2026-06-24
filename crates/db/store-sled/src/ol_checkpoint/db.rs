@@ -399,6 +399,21 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         Ok(max_commitment)
     }
 
+    fn get_checkpoint_l1_refs_from(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<(EpochCommitment, CheckpointL1Ref)>> {
+        let mut refs = Vec::new();
+        for item in self.l1_ref_tree.iter() {
+            let (commitment, l1_ref) = item?;
+            if commitment.epoch() >= start_epoch {
+                refs.push((commitment, l1_ref));
+            }
+        }
+        refs.sort_by_key(|(commitment, _)| commitment.epoch());
+        Ok(refs)
+    }
+
     fn del_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<bool> {
         self.config.with_retry((&self.l1_ref_tree,), |(lot,)| {
             if !lot.contains_key(&epoch)? {

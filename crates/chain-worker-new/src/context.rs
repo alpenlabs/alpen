@@ -140,29 +140,11 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     }
 
     fn fetch_chain_tip(&self) -> WorkerResult<Option<OLBlockCommitment>> {
-        // Get the highest slot with a block
-        let tip_slot = self.ol_block_mgr.get_tip_slot_blocking()?;
-
-        // Slot 0 with no blocks means no chain yet
-        if tip_slot == 0 {
-            let blocks = self.fetch_blocks_at_slot(0)?;
-            if blocks.is_empty() {
-                return Ok(None);
-            }
+        match self.ol_block_mgr.get_canonical_tip_blocking() {
+            Ok(tip) => Ok(tip),
+            Err(DbError::NotBootstrapped) => Ok(None),
+            Err(err) => Err(err.into()),
         }
-
-        // Get blocks at the tip slot
-        let block_ids = self.fetch_blocks_at_slot(tip_slot)?;
-
-        // Return the first block at the tip slot
-        // If there are multiple (forks), we just pick one - the caller can
-        // use fork choice logic if needed
-        let blkid = match block_ids.first() {
-            Some(id) => *id,
-            None => return Ok(None),
-        };
-
-        Ok(Some(OLBlockCommitment::new(tip_slot, blkid)))
     }
 
     fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLState>> {

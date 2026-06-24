@@ -5,7 +5,8 @@ use bitcoind_async_client::{
     Client, corepc_types::model::GetBlockchainInfo, error::ClientError, traits::Reader,
 };
 use strata_btc_types::BlockHashExt;
-use strata_identifiers::{EpochCommitment, OLBlockCommitment};
+use strata_db_types::traits::BlockStatus;
+use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::OLBlock;
 use strata_primitives::L1BlockCommitment;
@@ -126,6 +127,117 @@ fn get_ol_genesis_block(storage: &NodeStorage) -> Result<Option<OLBlockCommitmen
     Ok(genesis_commitment)
 }
 
+/// Ensures the canonical block index is initialized for legacy DBs.
+///
+/// This backfills DBs created before the canonical OL block index existed. FCM
+/// reconciles the unfinalized suffix after startup once the finalized base is
+/// present in the canonical index.
+fn ensure_canonical_block_index(
+    storage: &NodeStorage,
+    genesis_commitment: OLBlockCommitment,
+    finalized_epoch: Option<EpochCommitment>,
+) -> Result<()> {
+    let canonical_genesis = storage
+        .ol_block()
+        .get_canonical_block_at_blocking(0)
+        .context("startup: failed to query canonical OL genesis block")?;
+    if let Some(canonical_genesis) = canonical_genesis
+        && canonical_genesis != genesis_commitment
+    {
+        bail!(
+            "startup: canonical OL genesis block mismatch: expected {genesis_commitment}, got {canonical_genesis}"
+        );
+    }
+
+    let finalized_commitment = finalized_epoch
+        .filter(|epoch| !epoch.is_null())
+        .map_or(genesis_commitment, |epoch| epoch.to_block_commitment());
+    let canonical_finalized = storage
+        .ol_block()
+        .get_canonical_block_at_blocking(finalized_commitment.slot())
+        .with_context(|| {
+            format!("startup: failed to query canonical finalized OL block {finalized_commitment}")
+        })?;
+    if canonical_finalized == Some(finalized_commitment)
+        && let Ok(Some(canonical_tip)) = storage.ol_block().get_canonical_tip_blocking()
+        && canonical_tip.slot() >= finalized_commitment.slot()
+    {
+        return Ok(());
+    }
+
+    // Keep this as a single suffix replacement so restart never observes a partially migrated
+    // finalized prefix. For scale: 10 million slots is about 305 MiB for Vec<OLBlockId> (32 bytes
+    // each) plus about 381 MiB for the temporary Vec<(Slot, OLBlockId)> built by the DB layer. A
+    // legacy DB has an empty canonical tree, so the suffix-removal side is effectively free. If
+    // this ever needs batching, the migration must stay resumable and must not let FCM start until
+    // canonical_at(finalized_slot) equals the declared finalized block.
+    let finalized_chain =
+        collect_finalized_canonical_chain(storage, genesis_commitment, finalized_commitment)
+            .context("startup: failed to collect finalized OL canonical blocks")?;
+
+    storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(0, finalized_chain)
+        .context("startup: failed to backfill canonical OL block index")?;
+
+    Ok(())
+}
+
+fn collect_finalized_canonical_chain(
+    storage: &NodeStorage,
+    genesis_commitment: OLBlockCommitment,
+    finalized_commitment: OLBlockCommitment,
+) -> Result<Vec<OLBlockId>> {
+    let mut reversed_chain = Vec::new();
+    let mut current = finalized_commitment;
+
+    loop {
+        let blkid = *current.blkid();
+        let block = storage
+            .ol_block()
+            .get_block_data_blocking(blkid)
+            .with_context(|| format!("startup: failed to query finalized OL block {current}"))?
+            .ok_or_else(|| anyhow!("startup: missing finalized OL block {current}"))?;
+
+        if block.header().slot() != current.slot() {
+            bail!(
+                "startup: finalized OL block slot mismatch: commitment {current}, block slot {}",
+                block.header().slot()
+            );
+        }
+
+        let status = storage
+            .ol_block()
+            .get_block_status_blocking(blkid)
+            .with_context(|| {
+                format!("startup: failed to query finalized OL block status {current}")
+            })?;
+        if status != Some(BlockStatus::Valid) {
+            bail!("startup: finalized OL block {current} is not valid");
+        }
+
+        reversed_chain.push(blkid);
+
+        if current.slot() == 0 {
+            if current != genesis_commitment {
+                bail!(
+                    "startup: finalized OL chain terminates at non-genesis block: expected {genesis_commitment}, got {current}"
+                );
+            }
+            if !block.header().parent_blkid().is_null() {
+                bail!("startup: genesis OL block must have null parent commitment");
+            }
+            break;
+        }
+
+        let parent_slot = current.slot() - 1;
+        current = OLBlockCommitment::new(parent_slot, *block.header().parent_blkid());
+    }
+
+    reversed_chain.reverse();
+    Ok(reversed_chain)
+}
+
 /// Verifies that OL state exists for the resolved genesis block commitment.
 fn verify_genesis_ol_state(
     storage: &NodeStorage,
@@ -232,7 +344,7 @@ fn verify_tip_ol_state(storage: &NodeStorage, tip_commitment: OLBlockCommitment)
         .is_some();
 
     if !has_tip_state {
-        bail!("startup: missing OL state for tip block");
+        bail!("startup: missing OL state for tip block {}", tip_commitment);
     }
 
     Ok(())
@@ -277,12 +389,15 @@ pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
         warn!(%reason, "startup: deferring Bitcoin RPC network check");
     }
 
-    let has_client_state = ctx
+    let latest_client_state = ctx
         .storage()
         .client_state()
         .fetch_most_recent_state()
-        .context("startup: failed to fetch most recent client state")?
-        .is_some();
+        .context("startup: failed to fetch most recent client state")?;
+    let has_client_state = latest_client_state.is_some();
+    let finalized_epoch = latest_client_state
+        .as_ref()
+        .and_then(|(_, state)| state.get_declared_final_epoch());
     let genesis_commitment = get_ol_genesis_block(ctx.storage().as_ref())?;
     let has_ol_genesis = genesis_commitment.is_some();
     validate_persisted_state_presence(has_client_state, has_ol_genesis)?;
@@ -298,6 +413,7 @@ pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
     }
 
     if let Some(genesis_commitment) = genesis_commitment {
+        ensure_canonical_block_index(ctx.storage().as_ref(), genesis_commitment, finalized_epoch)?;
         verify_genesis_ol_state(ctx.storage().as_ref(), genesis_commitment)?;
         verify_genesis_epoch_summary(ctx.storage().as_ref(), genesis_commitment)?;
 
@@ -556,6 +672,52 @@ mod tests {
     }
 
     #[test]
+    fn test_missing_canonical_index_is_backfilled_through_finalized_epoch() {
+        let (storage, genesis_commitment, tip_commitment) = setup_storage_with_non_genesis_tip();
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, Vec::new())
+            .expect("test: clear canonical index");
+
+        storage
+            .ol_block()
+            .get_canonical_tip_blocking()
+            .expect_err("test: missing canonical index has no tip");
+
+        let finalized_epoch = EpochCommitment::new(1, 1, *tip_commitment.blkid());
+        ensure_canonical_block_index(&storage, genesis_commitment, Some(finalized_epoch))
+            .expect("test: backfill canonical index");
+
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_canonical_tip_blocking()
+                .expect("test: get canonical tip after backfill"),
+            Some(tip_commitment)
+        );
+    }
+
+    #[test]
+    fn test_missing_canonical_index_without_finalized_epoch_backfills_genesis_only() {
+        let (storage, genesis_commitment, _) = setup_storage_with_non_genesis_tip();
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, Vec::new())
+            .expect("test: clear canonical index");
+
+        ensure_canonical_block_index(&storage, genesis_commitment, None)
+            .expect("test: backfill canonical index");
+
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_canonical_tip_blocking()
+                .expect("test: get canonical tip after backfill"),
+            Some(genesis_commitment)
+        );
+    }
+
+    #[test]
     fn test_l1_block_refs_mmr_prefilled_at_ol_genesis() {
         let (storage, _) = setup_storage_with_genesis();
         let handle = storage.mmr_index().get_handle(MmrId::L1BlockRefs);
@@ -642,6 +804,11 @@ mod tests {
             .ol_state()
             .put_toplevel_ol_state_blocking(block_1_commitment, (*genesis_state).clone())
             .expect("test: insert block 1 state");
+        // Update the canonical index.
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(1, vec![block_1_blkid])
+            .expect("test: canonical entry for slot 1");
 
         // Validate checks with tip at block 1.
         let result_after_block_1 = (|| {
@@ -696,6 +863,11 @@ mod tests {
             .ol_state()
             .put_toplevel_ol_state_blocking(block_2_commitment, (*genesis_state).clone())
             .expect("test: insert block 2 state");
+        // Update the canonical index.
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(2, vec![block_2_blkid])
+            .expect("test: canonical entry for slot 2");
 
         // Validate checks with tip at block 2.
         let result_after_block_2 = (|| {

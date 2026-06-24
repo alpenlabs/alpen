@@ -1,5 +1,5 @@
 use strata_db_types::errors::DbError;
-use strata_identifiers::Epoch;
+use strata_identifiers::{Epoch, Slot};
 use strata_predicate::PredicateError;
 use strata_primitives::{
     l1::{L1BlockCommitment, L1BlockId},
@@ -64,6 +64,47 @@ pub enum Error {
     /// FCM finished applying a tip update but did not land on the expected block ID.
     #[error("OL apply tip mismatch (expected {0}, got {1})")]
     OLApplyTipMismatch(OLBlockCommitment, OLBlockCommitment),
+
+    /// FCM could not select a chain tip during startup.
+    #[error("FCM has no chain tips")]
+    FcmNoChainTips,
+
+    /// FCM computed a non-empty canonical suffix above the maximum slot.
+    #[error("FCM canonical suffix above max slot {0} is non-empty")]
+    FcmCanonicalSuffixAboveMaxSlot(Slot),
+
+    /// FCM reconstructed a chain that does not land on the finalized tip.
+    #[error(
+        "FCM reconstructed chain tip {tip} does not trace back to finalized tip {finalized_tip}"
+    )]
+    FcmCanonicalChainNotFinalized {
+        tip: OLBlockId,
+        finalized_tip: OLBlockId,
+    },
+
+    /// FCM reached the finalized slot, but the canonical index points elsewhere.
+    #[error(
+        "FCM canonical block at finalized slot {finalized_slot} is {canonical:?}, expected finalized tip {finalized_tip}"
+    )]
+    FcmCanonicalFinalizedMismatch {
+        finalized_slot: Slot,
+        canonical: Option<OLBlockCommitment>,
+        finalized_tip: OLBlockId,
+    },
+
+    /// FCM reconstructed a block ID that is missing from the in-memory tracker.
+    #[error("FCM reconstructed block {0} missing from tracker")]
+    FcmCanonicalTrackerMissingBlock(OLBlockId),
+
+    /// FCM found a corrupt parent link while walking the reconstructed chain.
+    #[error(
+        "FCM non-decreasing slot {parent_slot} >= {child_slot} walking parents from tip {tip}; corrupt parent link"
+    )]
+    FcmCanonicalParentSlotNotDescending {
+        parent_slot: Slot,
+        child_slot: Slot,
+        tip: OLBlockCommitment,
+    },
 
     #[error("csm dropped")]
     CsmDropped,

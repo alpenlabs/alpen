@@ -7,7 +7,7 @@ use reth_primitives::{Receipt, TransactionSigned};
 use revm_primitives::{alloy_primitives::Bloom, Address, U256};
 use strata_identifiers::{SubjectId, SubjectIdBytes, SUBJ_ID_LEN};
 use strata_ol_bridge_types::OperatorSelection;
-use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
+use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::constants::BRIDGEOUT_PRECOMPILE_ADDRESS;
 
@@ -50,8 +50,7 @@ pub fn extract_withdrawal_intents<'a>(
     transactions
         .iter()
         .zip(receipts.iter())
-        .flat_map(|(tx, receipt)| {
-            let txid = Buf32((*tx.hash()).into());
+        .flat_map(|(_tx, receipt)| {
             receipt.logs.iter().filter_map(move |log| {
                 if log.address != BRIDGEOUT_PRECOMPILE_ADDRESS {
                     return None;
@@ -63,7 +62,6 @@ pub fn extract_withdrawal_intents<'a>(
                 Some(WithdrawalIntent {
                     amt: event.amount,
                     destination,
-                    withdrawal_txid: txid,
                     selected_operator: OperatorSelection::from_raw(event.selectedOperator),
                 })
             })

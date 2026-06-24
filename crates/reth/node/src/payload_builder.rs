@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{io, sync::Arc};
 
-use alloy_consensus::Transaction;
+use alloy_consensus::{Header, Transaction};
 use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_basic_payload_builder::*;
@@ -17,7 +17,7 @@ use reth_node_api::{ConfigureEvm, FullNodeTypes, NodeTypes, PayloadBuilderAttrib
 use reth_node_builder::{components::PayloadBuilderBuilder, BuilderContext, PayloadBuilderConfig};
 use reth_payload_builder::{BlobSidecars, EthBuiltPayload, PayloadBuilderError};
 use reth_primitives::{EthPrimitives, InvalidTransactionError, Receipt};
-use reth_provider::StateProviderFactory;
+use reth_provider::{HeaderProvider, StateProviderFactory};
 use reth_revm::database::StateProviderDatabase;
 use reth_transaction_pool::{
     error::InvalidPoolTransactionError, BestTransactions, BestTransactionsAttributes,
@@ -28,6 +28,7 @@ use revm_primitives::U256;
 use tracing::{debug, trace, warn};
 
 use crate::{
+    block_witness::build_block_witness_from_executed_state,
     engine::AlpenEngineTypes,
     payload::{AlpenBuiltPayload, AlpenPayloadBuilderAttributes},
 };
@@ -105,7 +106,10 @@ impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
 
 impl<Pool, Client> PayloadBuilder for AlpenPayloadBuilder<Pool, Client>
 where
-    Client: StateProviderFactory + ChainSpecProvider<ChainSpec = ChainSpec> + Clone,
+    Client: StateProviderFactory
+        + ChainSpecProvider<ChainSpec = ChainSpec>
+        + HeaderProvider<Header = Header>
+        + Clone,
     Pool: TransactionPool<Transaction: PoolTransaction<Consensus = TransactionSigned>>,
 {
     type Attributes = AlpenPayloadBuilderAttributes;
@@ -165,7 +169,9 @@ fn try_build_payload<Pool, Client, F>(
     best_txs: F,
 ) -> Result<BuildOutcome<AlpenBuiltPayload>, PayloadBuilderError>
 where
-    Client: StateProviderFactory + ChainSpecProvider<ChainSpec: EthereumHardforks>,
+    Client: StateProviderFactory
+        + ChainSpecProvider<ChainSpec: EthereumHardforks>
+        + HeaderProvider<Header = Header>,
     Pool: TransactionPool<Transaction: PoolTransaction<Consensus = TransactionSigned>>,
     F: FnOnce(BestTransactionsAttributes) -> BestTransactionsIter<Pool>,
 {
@@ -298,6 +304,27 @@ where
         ..
     } = builder.finish(&state_provider)?;
 
+    // Inline depth-0 proof-witness capture. The block was just executed into
+    // `db`; reuse that post-execution state (no re-execution) to read the
+    // access set, gather depth-0 trie nodes from the parent `state_provider`,
+    // and build the per-block partial-state witness. Encoded here and carried
+    // on the payload back to the sequencer, which persists it. A failure fails
+    // the payload build, so a block is never produced without its witness.
+    let block_num = block.header().number;
+    let block_rlp = alloy_rlp::encode(block.sealed_block().clone_block());
+    let record = build_block_witness_from_executed_state(
+        &db,
+        &state_provider,
+        &client,
+        block_num,
+        block_rlp,
+        parent_header.header(),
+    )
+    .map_err(|e| PayloadBuilderError::other(io::Error::other(format!("witness capture: {e}"))))?;
+    let block_witness = record.encode().map_err(|e| {
+        PayloadBuilderError::other(io::Error::other(format!("witness encode: {e}")))
+    })?;
+
     let requests = chain_spec
         .is_prague_active_at_timestamp(attributes.timestamp)
         .then_some(execution_result.requests);
@@ -316,7 +343,8 @@ where
     let withdrawal_intents: Vec<WithdrawalIntent> =
         extract_withdrawal_intents(&txns, &receipts).collect();
 
-    let strata_payload = AlpenBuiltPayload::new(eth_payload, withdrawal_intents);
+    let strata_payload =
+        AlpenBuiltPayload::new(eth_payload, withdrawal_intents).with_block_witness(block_witness);
 
     Ok(BuildOutcome::Better {
         payload: strata_payload,

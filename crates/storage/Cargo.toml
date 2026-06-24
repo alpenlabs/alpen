@@ -37,6 +37,7 @@ strata-asm-proto-checkpoint-types = { workspace = true, features = [
   "test-utils",
 ] }
 strata-db-store-sled.workspace = true
+strata-db-tests.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

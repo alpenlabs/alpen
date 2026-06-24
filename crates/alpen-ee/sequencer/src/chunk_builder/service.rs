@@ -5,7 +5,6 @@ use std::{fmt, marker::PhantomData, sync::Arc};
 use alpen_ee_common::{BatchStorage, ChunkStorage, ExecBlockStorage};
 use serde::Serialize;
 use strata_service::{AsyncService, Response, Service, ServiceState, TickMsg};
-use tokio::sync::mpsc;
 use tracing::error;
 
 use super::{
@@ -14,7 +13,7 @@ use super::{
 };
 use crate::{
     sealing_policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy},
-    BatchBuilderEvent, ChunkExtractRequest,
+    BatchBuilderEvent,
 };
 
 /// Create the chunk builder service state from its components.
@@ -22,7 +21,6 @@ pub fn create_chunk_builder_state<P, S, D, CS, BS, ES>(
     state: ChunkBuilderState<P>,
     sealing_policy: S,
     block_data_provider: Arc<D>,
-    chunk_witness_tx: Option<mpsc::Sender<ChunkExtractRequest>>,
     chunk_storage: Arc<CS>,
     batch_storage: Arc<BS>,
     block_storage: Arc<ES>,
@@ -40,7 +38,6 @@ where
         chunk_storage,
         sealing_policy,
         block_data_provider,
-        chunk_witness_tx,
         batch_storage,
         block_storage,
     }
@@ -63,7 +60,6 @@ where
     pub(crate) chunk_storage: Arc<CS>,
     pub(crate) sealing_policy: S,
     pub(crate) block_data_provider: Arc<D>,
-    pub(crate) chunk_witness_tx: Option<mpsc::Sender<ChunkExtractRequest>>,
     pub(crate) batch_storage: Arc<BS>,
     pub(crate) block_storage: Arc<ES>,
 }
@@ -167,7 +163,6 @@ where
                     state.chunk_storage.as_ref(),
                     &state.sealing_policy,
                     state.block_data_provider.as_ref(),
-                    state.chunk_witness_tx.as_ref(),
                 )
                 .await
             }

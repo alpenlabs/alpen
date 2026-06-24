@@ -13,6 +13,7 @@ services:
       SEQUENCER_CONFIG_PATH: /app/configs/sequencer.toml
       OL_PARAMS_PATH: /app/configs/generated/ol-params.json
       ASM_PARAMS_PATH: /app/configs/generated/asm-params.json
+      STRATA_ADMIN_RPC_TOKEN: ${STRATA_ADMIN_RPC_TOKEN:-dev-only-change-me}
       STRATA_SUBMIT_RPC_TOKEN: ${STRATA_SUBMIT_RPC_TOKEN:-dev-only-submit-token}
       RUST_BACKTRACE: 1
     volumes:
@@ -50,6 +51,8 @@ services:
     depends_on:
       strata:
         condition: service_healthy
+    environment:
+      STRATA_ADMIN_RPC_TOKEN: ${STRATA_ADMIN_RPC_TOKEN:-dev-only-change-me}
     volumes:
       # Signer reads only its config and the sequencer signing key.
       - ./configs/strata-signer:/app/configs/strata-signer:ro

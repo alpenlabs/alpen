@@ -1,10 +1,10 @@
-use std::{collections::VecDeque, mem, sync::Arc, time};
+use std::{collections::VecDeque, iter, mem, sync::Arc, time};
 
-use anyhow::anyhow;
 use metrics::{counter, gauge};
+use strata_identifiers::Slot;
 use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
-use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
+use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;
 use tokio::time::sleep;
 use tracing::{debug, warn};
@@ -14,6 +14,8 @@ use crate::{
     fcm::context::{FcmContext, FcmStorage},
     unfinalized_tracker::UnfinalizedBlockTracker,
 };
+
+type CanonicalSuffix = Vec<OLBlockId>;
 
 /// Runtime container for the FCM service.
 ///
@@ -160,7 +162,7 @@ impl<C: FcmContext> FcmServiceState<C> {
         self.chain_tracker_mut().update_finalized_epoch(&epoch)?;
 
         // Clear out old pending entries.
-        self.clear_pending_epochs(epoch)?;
+        self.clear_pending_epochs(epoch);
 
         counter!("strata_fcm_epochs_finalized_total").increment(1);
         gauge!("strata_fcm_finalized_epoch").set(epoch.epoch() as f64);
@@ -169,7 +171,7 @@ impl<C: FcmContext> FcmServiceState<C> {
         Ok(())
     }
 
-    fn clear_pending_epochs(&mut self, epoch: EpochCommitment) -> anyhow::Result<()> {
+    fn clear_pending_epochs(&mut self, epoch: EpochCommitment) {
         let epoch_pending_fin = &mut self.inner_state.epochs_pending_finalization;
         while epoch_pending_fin
             .front()
@@ -177,10 +179,9 @@ impl<C: FcmContext> FcmServiceState<C> {
         {
             epoch_pending_fin
                 .pop_front()
-                .ok_or(anyhow!("pop on empty epoch_pending dequeue"))?;
+                .expect("front checked before popping pending finalized epoch");
         }
         self.record_pending_epochs();
-        Ok(())
     }
 
     fn record_pending_epochs(&self) {
@@ -243,7 +244,7 @@ impl<C: FcmContext> ServiceState for FcmServiceState<C> {
 #[derive(Debug)]
 pub(crate) struct FcmInnerState {
     chain_tracker: UnfinalizedBlockTracker,
-    cur_best_block: L2BlockCommitment,
+    cur_best_block: OLBlockCommitment,
     cur_olstate: Arc<OLState>,
     startup_replay_candidates: Vec<OLBlockId>,
     epochs_pending_finalization: VecDeque<EpochCommitment>,
@@ -252,7 +253,7 @@ pub(crate) struct FcmInnerState {
 impl FcmInnerState {
     pub(crate) fn new(
         chain_tracker: UnfinalizedBlockTracker,
-        cur_best_block: L2BlockCommitment,
+        cur_best_block: OLBlockCommitment,
         cur_olstate: Arc<OLState>,
         startup_replay_candidates: Vec<OLBlockId>,
     ) -> Self {
@@ -297,6 +298,9 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     let cur_tip_block = determine_start_tip(&chain_tracker, fcm_ctx.as_ref()).await?;
     debug!(?chain_tracker, "init chain tracker");
 
+    // Update the canonical blocks index just in case this might have drifted during the restarts.
+    reconcile_canonical_blocks_index(&chain_tracker, cur_tip_block, fcm_ctx.as_ref()).await?;
+
     // Load in that block's ol_state.
     let tip_blkid = cur_tip_block;
     let ol_state = fcm_ctx
@@ -323,38 +327,141 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     ))
 }
 
-/// Determines the starting chain tip.  For now, this is just the block with the
-/// highest index, choosing the lowest ordered blockid in the case of ties.
+/// Determines the starting chain tip by choosing the highest-slot tip.
+///
+/// If multiple tips share the highest slot, the previously persisted canonical
+/// block wins. If no highest-slot tip matches the persisted canonical index,
+/// the lowest ordered block ID wins as a deterministic fallback.
 async fn determine_start_tip(
     unfin: &UnfinalizedBlockTracker,
     storage: &(impl FcmStorage + ?Sized),
-) -> anyhow::Result<L2BlockCommitment> {
-    let mut iter = unfin.chain_tips_iter();
+) -> Result<OLBlockCommitment, Error> {
+    // Unfinalized block tracker only loads blocks which are valid and exist in db so no need to
+    // check for db existence at this point.
+    let Some(max_slot) = unfin.chain_tip_blocks_iter().map(|tip| tip.slot()).max() else {
+        return Err(Error::FcmNoChainTips);
+    };
 
-    let mut best = iter.next().expect("fcm: no chain tips");
-    let mut best_slot = storage
-        .get_ol_block(*best)
-        .await?
-        .ok_or(Error::MissingOLBlock(*best))?
-        .header()
-        .slot();
+    let canonical_at_max_slot = storage.get_canonical_block_at(max_slot).await?;
 
-    // Iterate through the remaining elements and choose.
-    for blkid in iter {
-        let blkid_slot = storage
-            .get_ol_block(*blkid)
-            .await?
-            .ok_or(Error::MissingOLBlock(*blkid))?
-            .header()
-            .slot();
+    unfin
+        .chain_tip_blocks_iter()
+        .filter(|tip| tip.slot() == max_slot)
+        .max_by(|a, b| {
+            let a_is_canonical = Some(*a.blkid()) == canonical_at_max_slot.map(|c| *c.blkid());
+            let b_is_canonical = Some(*b.blkid()) == canonical_at_max_slot.map(|c| *c.blkid());
+            a_is_canonical
+                .cmp(&b_is_canonical)
+                .then_with(|| b.blkid().cmp(a.blkid()))
+        })
+        .ok_or(Error::FcmNoChainTips)
+}
 
-        if blkid_slot == best_slot && blkid < best {
-            best = blkid;
-        } else if blkid_slot > best_slot {
-            best = blkid;
-            best_slot = blkid_slot;
+/// Rewrites the canonical index to match the reconstructed chain.
+///
+/// Only the unfinalized suffix is rewritten; slots at or below the finalized tip are left untouched
+/// since finalized history never forks.
+pub(crate) async fn reconcile_canonical_blocks_index(
+    unfin: &UnfinalizedBlockTracker,
+    tip: OLBlockCommitment,
+    storage: &(impl FcmStorage + ?Sized),
+) -> Result<(), Error> {
+    let (pivot_slot, canon_blocks) = canonical_blocks_from_tip(unfin, tip, storage).await?;
+    let Some(start_slot) = pivot_slot.checked_add(1) else {
+        // An empty suffix at the max slot means nothing above the tip to truncate.
+        if canon_blocks.is_empty() {
+            return Ok(());
+        }
+        return Err(Error::FcmCanonicalSuffixAboveMaxSlot(pivot_slot));
+    };
+    storage
+        .replace_canonical_suffix_from(start_slot, canon_blocks)
+        .await?;
+    Ok(())
+}
+
+/// Walks from `tip` toward the finalized tip until it reaches the first block
+/// already recorded as canonical.
+async fn canonical_blocks_from_tip(
+    unfin: &UnfinalizedBlockTracker,
+    tip: OLBlockCommitment,
+    storage: &(impl FcmStorage + ?Sized),
+) -> Result<(Slot, CanonicalSuffix), Error> {
+    let parent_chain = construct_validated_parent_chain(unfin, tip)?;
+    let finalized_tip = *unfin.finalized_tip();
+
+    if parent_chain.last() != Some(&finalized_tip) {
+        return Err(Error::FcmCanonicalChainNotFinalized {
+            tip: *tip.blkid(),
+            finalized_tip,
+        });
+    }
+
+    let mut suffix = Vec::new();
+
+    for blkid in parent_chain {
+        let slot = tracker_slot(unfin, blkid)?;
+
+        let canonical = storage.get_canonical_block_at(slot).await?;
+        if canonical.map(|c| *c.blkid()) == Some(blkid) {
+            suffix.reverse();
+            return Ok((slot, suffix));
+        }
+
+        if blkid == finalized_tip {
+            let finalized_slot = unfin.finalized_epoch().last_slot();
+            return Err(Error::FcmCanonicalFinalizedMismatch {
+                finalized_slot,
+                canonical,
+                finalized_tip,
+            });
+        }
+
+        suffix.push(blkid);
+    }
+
+    unreachable!("validated parent chain always includes the finalized tip")
+}
+
+fn construct_validated_parent_chain(
+    unfin: &UnfinalizedBlockTracker,
+    tip: OLBlockCommitment,
+) -> Result<Vec<OLBlockId>, Error> {
+    let mut chain = Vec::new();
+    let mut child_slot: Option<Slot> = None;
+    let parent_chain =
+        iter::successors(Some(*tip.blkid()), |blkid| unfin.get_parent(blkid).copied());
+
+    for blkid in parent_chain {
+        let slot = tracker_slot(unfin, blkid)?;
+        ensure_parent_slot_descends(slot, child_slot, tip)?;
+        child_slot = Some(slot);
+        chain.push(blkid);
+    }
+
+    Ok(chain)
+}
+
+fn tracker_slot(unfin: &UnfinalizedBlockTracker, blkid: OLBlockId) -> Result<Slot, Error> {
+    unfin
+        .get_slot(&blkid)
+        .ok_or(Error::FcmCanonicalTrackerMissingBlock(blkid))
+}
+
+fn ensure_parent_slot_descends(
+    parent_slot: Slot,
+    child_slot: Option<Slot>,
+    tip: OLBlockCommitment,
+) -> Result<(), Error> {
+    if let Some(child_slot) = child_slot {
+        if parent_slot >= child_slot {
+            return Err(Error::FcmCanonicalParentSlotNotDescending {
+                parent_slot,
+                child_slot,
+                tip,
+            });
         }
     }
 
-    Ok(L2BlockCommitment::new(best_slot, *best))
+    Ok(())
 }

@@ -15,11 +15,18 @@ extraction:
 
 Native mode runs the full guest program logic in plain Rust; only the
 zk proof generation itself is bypassed. So this test exercises:
-  - `ChunkSpec::fetch_input` (sled reads of the new ChunkWitnessRecord)
-  - `AccessedStateGenerator` exex (per-block accessed-state writes,
-    plus bytecode cache lookups via `BytecodeSchema`)
-  - The batch builder's seal-time witness extraction
-  - The `EeChunkProgram` guest (state transition checks, MPT validation)
+  - Inline per-block witness production: during payload build,
+    `build_block_witness_from_executed_state` harvests the depth-0 witness
+    parts straight from the just-executed reth `State` (no re-execution) into a
+    `BlockWitnessRecord`, carried on the payload and persisted to the
+    `BlockWitnessStore`. A capture failure fails the payload build, so this
+    gates block acceptance.
+  - `ChunkSpec::fetch_input` (sled reads of the per-block `BlockWitnessRecord`s,
+    unioned into one chunk-level sparse state via
+    `EvmPartialState::from_witness_parts` / rsp `from_execution_witness`)
+  - `AccessedStateGenerator` exex (per-block accessed-state writes, feeding
+    the account proof's batch-range witness)
+  - The `EeChunkProgram` guest (per-block state transition checks, MPT validation)
   - The `EeAcctProgram` guest (update aggregation, pub-params construction)
   - The paas service framework (task lifecycle, receipt hooks, OL submission)
 
@@ -295,10 +302,10 @@ class TestEeProverPipelineAlive(BaseTest):
 
         _wait_for_log_signal(
             log_path,
-            r"persisted chunk witness",
+            r"persisted block witness",
             after_offset=log_offset,
             timeout=SIGNAL_TIMEOUT_SECS,
-            description="chunk witness persisted at seal time (batch builder)",
+            description="per-block witness persisted inline at block production",
             btc_rpc=btc_rpc,
             miner_addr=miner_addr,
         )

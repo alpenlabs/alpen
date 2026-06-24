@@ -7,9 +7,22 @@ mod traits;
 mod types;
 mod utils;
 
+#[cfg(feature = "test-utils")]
 pub use traits::{
-    da::{BatchDaProvider, DaBlobSource, DaStatus, HeaderSummaryProvider},
-    engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
+    da::MockBatchDaProvider,
+    ol_client::{MockOLClient, MockSequencerOLClient},
+    prover::{MockBatchProver, MockChunkProver},
+    storage::{
+        batch_storage_test_fns, chunk_storage_test_fns, exec_block_storage_test_fns,
+        tests as storage_test_fns, InMemoryStorage, MockAccessedStateStore, MockBatchStorage,
+        MockBlockWitnessStore, MockChunkStorage, MockExecBlockStorage, MockStorage,
+    },
+};
+pub use traits::{
+    da::{BatchDaProvider, DaStatus, HeaderSummaryProvider},
+    engine::{
+        EnginePayload, ExecutionEngine, ExecutionEngineError, ForkchoiceState, PayloadBuilderEngine,
+    },
     ol_client::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
         OLClient, OLClientError, SequencerOLClient,
@@ -17,19 +30,8 @@ pub use traits::{
     prover::{BatchProver, ChunkProver, ProofGenerationStatus},
     storage::{
         require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
-        require_latest_batch, AccessedStateStore, BatchStorage, ChunkStorage, ChunkWitnessStore,
+        require_latest_batch, AccessedStateStore, BatchStorage, BlockWitnessStore, ChunkStorage,
         ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
-    },
-};
-#[cfg(feature = "test-utils")]
-pub use traits::{
-    da::{MockBatchDaProvider, MockDaBlobSource},
-    ol_client::{MockOLClient, MockSequencerOLClient},
-    prover::{MockBatchProver, MockChunkProver},
-    storage::{
-        batch_storage_test_fns, chunk_storage_test_fns, exec_block_storage_test_fns,
-        tests as storage_test_fns, InMemoryStorage, MockAccessedStateStore, MockBatchStorage,
-        MockChunkStorage, MockChunkWitnessStore, MockExecBlockStorage, MockStorage,
     },
 };
 pub use types::{
@@ -37,7 +39,6 @@ pub use types::{
     batch::{Batch, BatchId, BatchStatus, L1DaBlockInfo, L1DaBlockRef},
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
-    chunk_witness::{ChunkWitnessExtractFn, ChunkWitnessRecord},
     consensus_heads::ConsensusHeads,
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::{ExecBlockPayload, ExecBlockRecord},

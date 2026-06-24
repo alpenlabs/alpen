@@ -35,10 +35,6 @@ where
         match status {
             BatchStatus::Sealed => {
                 let batch_id = batch.id();
-                if !ctx.blob_provider.are_state_diffs_ready(batch_id).await {
-                    warn!(batch_idx, ?batch_id, "State diffs not ready, waiting");
-                    return Ok(());
-                }
 
                 debug!(batch_idx, ?batch_id, "Posting DA");
 

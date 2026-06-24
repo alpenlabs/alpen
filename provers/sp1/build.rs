@@ -24,7 +24,7 @@ cfg_if! {
 struct VkHashes {
     /// Poseidon/BabyBear hash, used as the ELF program ID in guest `vks.rs`.
     hash_u32: [u32; 8],
-    /// BN254 program ID (`bytes32_raw()`), required by `SP1Groth16Verifier::load`.
+    /// BN254 program ID (see [`vk_program_id`]), required by `SP1Groth16Verifier::load`.
     program_id: [u8; 32],
 }
 
@@ -294,7 +294,31 @@ fn generate_elf_contents_and_vk_hash(program: &str) -> ([u32; 8], String, [u8; 3
     // Now, ensure cache validity
     let vk = ensure_cache_validity(program)
         .expect("Failed to ensure cache validity after building program");
-    (vk.hash_u32(), vk.bytes32(), vk.bytes32_raw())
+    (vk.hash_u32(), vk.bytes32(), vk_program_id(&vk))
+}
+
+/// Computes the BN254 program ID (`[u8; 32]`) for a verifying key.
+///
+/// Equivalent in value to `HashableKey::bytes32_raw`, but without its panic:
+/// `bytes32_raw` does `result[1..].copy_from_slice(&digest.to_bytes_be())`,
+/// which assumes the big-endian digest is exactly 31 bytes — yet `to_bytes_be`
+/// strips leading zero bytes, so a digest with extra leading zeros serializes
+/// shorter (e.g. 30 bytes) and the copy panics. `bytes32()` is the same value
+/// zero-padded to a fixed 32 bytes, so we decode that instead and stay robust
+/// to whatever digest a given guest ELF happens to produce.
+///
+/// N.B. The upstream fix: https://github.com/succinctlabs/sp1/pull/2508
+#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+fn vk_program_id(vk: &SP1VerifyingKey) -> [u8; 32] {
+    let bytes32 = vk.bytes32();
+    let hex = bytes32.strip_prefix("0x").unwrap_or(&bytes32);
+    assert_eq!(hex.len(), 64, "bytes32() must encode exactly 32 bytes");
+    let mut out = [0u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte =
+            u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).expect("bytes32() returns valid hex");
+    }
+    out
 }
 
 #[cfg(debug_assertions)]

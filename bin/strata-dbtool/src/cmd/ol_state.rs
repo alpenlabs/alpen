@@ -153,7 +153,6 @@ pub(crate) fn revert_ol_state(
         );
         return Ok(());
     }
-
     let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
         .unwrap_or_else(EpochCommitment::null);
     let finalized_slot = finalized_epoch.last_slot();
@@ -243,6 +242,9 @@ pub(crate) fn revert_ol_state(
                 .rollback_block_high_watermark(target_commitment)
                 .internal_error("Failed to roll back OL block high-watermark")?;
         }
+        db.ol_block_db()
+            .replace_canonical_suffix_from(target_slot, vec![target_block_id])
+            .internal_error("Failed to rewrite canonical OL block index")?;
     }
 
     let mut checkpoints_to_delete = Vec::new();
@@ -291,6 +293,7 @@ pub(crate) fn revert_ol_state(
     if let Some(high_watermark) = high_watermark_to_rollback {
         println!("Block high-watermark rollback: {high_watermark} -> {target_commitment}");
     }
+    println!("Canonical block index rewrite from slot: {target_slot}");
     println!("Checkpoints to delete: {}", checkpoints_to_delete.len());
     println!(
         "Epoch summaries to delete: {}",

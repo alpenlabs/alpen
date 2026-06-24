@@ -73,6 +73,25 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         self.status_channel.update_client_state(state, block);
     }
 
+    fn del_client_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<()> {
+        self.storage.client_state().del_update_blocking(block)?;
+        Ok(())
+    }
+
+    fn get_client_state_blocks_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> CsmWorkerResult<Vec<L1BlockCommitment>> {
+        Ok(self
+            .storage
+            .client_state()
+            .get_updates_from(from_block, max_count)?
+            .into_iter()
+            .map(|(block, _)| block)
+            .collect())
+    }
+
     fn put_checkpoint_l1_observation(
         &self,
         commitment: EpochCommitment,
@@ -128,16 +147,15 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
             })
     }
 
-    fn get_canonical_l1_block(&self, height: L1Height) -> CsmWorkerResult<L1BlockCommitment> {
-        let blkid = self
+    fn get_canonical_l1_block(
+        &self,
+        height: L1Height,
+    ) -> CsmWorkerResult<Option<L1BlockCommitment>> {
+        Ok(self
             .storage
             .l1()
             .get_canonical_blockid_at_height(height)?
-            .ok_or_else(|| CsmWorkerError::MissingData {
-                what: "canonical L1 block",
-                detail: format!("height {height}"),
-            })?;
-        Ok(L1BlockCommitment::new(height, blkid))
+            .map(|blkid| L1BlockCommitment::new(height, blkid)))
     }
 
     fn fetch_most_recent_client_state(
@@ -146,35 +164,25 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         Ok(self.storage.client_state().fetch_most_recent_state()?)
     }
 
+    fn get_client_state_at(
+        &self,
+        block: &L1BlockCommitment,
+    ) -> CsmWorkerResult<Option<ClientState>> {
+        Ok(self.storage.client_state().get_state_blocking(*block)?)
+    }
+
     fn genesis_l1_block(&self) -> L1BlockCommitment {
         self.asm_params.anchor.block
     }
 
-    fn get_last_checkpoint_l1_ref_epoch(&self) -> CsmWorkerResult<Option<EpochCommitment>> {
-        Ok(self
-            .storage
-            .ol_checkpoint()
-            .get_last_checkpoint_l1_ref_epoch_blocking()?)
-    }
-
-    fn get_canonical_epoch_commitment_at(
+    fn get_checkpoint_l1_refs_from(
         &self,
-        epoch: Epoch,
-    ) -> CsmWorkerResult<Option<EpochCommitment>> {
+        start_epoch: Epoch,
+    ) -> CsmWorkerResult<Vec<(EpochCommitment, CheckpointL1Ref)>> {
         Ok(self
             .storage
             .ol_checkpoint()
-            .get_canonical_epoch_commitment_at_blocking(epoch)?)
-    }
-
-    fn get_checkpoint_l1_ref(
-        &self,
-        commitment: EpochCommitment,
-    ) -> CsmWorkerResult<Option<CheckpointL1Ref>> {
-        Ok(self
-            .storage
-            .ol_checkpoint()
-            .get_checkpoint_l1_ref_blocking(commitment)?)
+            .get_checkpoint_l1_refs_from_blocking(start_epoch)?)
     }
 
     fn get_checkpoint_payload(

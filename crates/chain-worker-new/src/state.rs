@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use strata_acct_types::AccountSerial;
+use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
@@ -20,8 +21,8 @@ use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_new::{
-    BlockFlags, MAX_SEALING_MANIFEST_COUNT, OLAsmManifestContainer, OLBlock, OLBlockHeader, OLLog,
-    OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
+    BlockFlags, MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLLogType,
+    SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
@@ -479,7 +480,7 @@ pub(crate) fn apply_checkpoint_epoch(
             source,
         }
     })?;
-    let (manifest_cont, epoch_info) =
+    let (manifests, epoch_info) =
         assemble_da_inputs(ctx, epoch, &base_state, sidecar, tip, prev_terminal)?;
 
     // The sidecar carries logs in its own wire type; convert to the OL chain-types
@@ -499,12 +500,7 @@ pub(crate) fn apply_checkpoint_epoch(
     // run apply_da_epoch, then extract the batch and indexer writes.
     let tracking_state = WriteTrackingState::new_empty(&base_state);
     let mut indexer_state = IndexerState::new(tracking_state);
-    apply_da_epoch::<_, OLDaSchemeV1>(
-        &mut indexer_state,
-        &epoch_info,
-        da_payload,
-        manifest_cont.manifests(),
-    )?;
+    apply_da_epoch::<_, OLDaSchemeV1>(&mut indexer_state, &epoch_info, da_payload, &manifests)?;
     let indexer_state_root =
         indexer_state
             .compute_state_root()
@@ -582,11 +578,12 @@ pub(crate) fn apply_checkpoint_epoch(
     })
 }
 
-/// Validates the epoch's L1 range and builds the manifest container and
-/// [`EpochInfo`] used to drive [`apply_da_epoch`].
+/// Validates the epoch's L1 range and builds the manifest list and [`EpochInfo`]
+/// used to drive [`apply_da_epoch`].
 ///
-/// Fails if the L1 range derived from the base state and payload tip is
-/// inverted or exceeds [`MAX_SEALING_MANIFEST_COUNT`].
+/// The manifests cover the whole epoch, so this intentionally uses a [`Vec`]
+/// instead of the per-block `OLAsmManifestContainer`. The range is still capped
+/// by the epoch manifest limit before any manifests are fetched.
 fn assemble_da_inputs(
     ctx: &impl ChainWorkerContext,
     epoch: EpochCommitment,
@@ -594,36 +591,34 @@ fn assemble_da_inputs(
     sidecar: &CheckpointSidecar,
     tip: &CheckpointTip,
     prev_terminal: OLBlockCommitment,
-) -> WorkerResult<(OLAsmManifestContainer, EpochInfo)> {
-    let from_height = base_state.last_l1_height().checked_add(1).ok_or_else(|| {
-        WorkerError::Unexpected(format!(
-            "L1 height overflow at base state for {epoch}: {}",
-            base_state.last_l1_height()
-        ))
-    })?;
+) -> WorkerResult<(Vec<AsmManifest>, EpochInfo)> {
+    let base_l1_height = base_state.last_l1_height();
     let to_height = tip.l1_height();
-    if to_height < from_height {
+    if to_height < base_l1_height {
         return Err(WorkerError::L1RangeInverted {
             epoch: epoch.epoch(),
-            from: from_height,
+            from: base_l1_height.saturating_add(1),
             to: to_height,
         });
     }
-    let range_len = to_height - from_height + 1;
-    if range_len > MAX_SEALING_MANIFEST_COUNT as u32 {
-        return Err(WorkerError::L1RangeTooLarge {
-            epoch: epoch.epoch(),
-            len: range_len,
-            max: MAX_SEALING_MANIFEST_COUNT as u32,
-        });
-    }
-    let manifests = ctx.fetch_l1_manifests(from_height, to_height)?;
-    let manifest_cont = OLAsmManifestContainer::new(manifests).map_err(|e| {
-        WorkerError::ManifestContainerBuild {
-            epoch: epoch.epoch(),
-            detail: e.to_string(),
+    let manifests = if to_height == base_l1_height {
+        Vec::new()
+    } else {
+        let from_height = base_l1_height.checked_add(1).ok_or_else(|| {
+            WorkerError::Unexpected(format!(
+                "L1 height overflow at base state for {epoch}: {base_l1_height}",
+            ))
+        })?;
+        let range_len = to_height - from_height + 1;
+        if range_len > MAX_SEALING_MANIFEST_COUNT as u32 {
+            return Err(WorkerError::L1RangeTooLarge {
+                epoch: epoch.epoch(),
+                len: range_len,
+                max: MAX_SEALING_MANIFEST_COUNT as u32,
+            });
         }
-    })?;
+        ctx.fetch_l1_manifests(from_height, to_height)?
+    };
 
     let terminal = tip.l2_commitment();
     let terminal_info = BlockInfo::new(
@@ -633,7 +628,7 @@ fn assemble_da_inputs(
     );
     let epoch_info = EpochInfo::new(terminal_info, prev_terminal);
 
-    Ok((manifest_cont, epoch_info))
+    Ok((manifests, epoch_info))
 }
 
 /// Cross-checks the reconstructed epoch against the checkpoint's bindings.

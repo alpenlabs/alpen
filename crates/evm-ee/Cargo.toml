@@ -38,6 +38,7 @@ revm-primitives.workspace = true
 # Alloy for Ethereum types
 alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
 alloy-rlp.workspace = true
+alloy-rpc-types-debug.workspace = true
 
 # Serialization
 bincode.workspace = true

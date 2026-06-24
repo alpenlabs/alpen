@@ -10,6 +10,7 @@ workspace = true
 alpen-ee-common.workspace = true
 alpen-reth-db.workspace = true
 alpen-reth-statediff.workspace = true
+alpen-reth-witness.workspace = true
 strata-acct-types.workspace = true
 
 alloy-eips.workspace = true
@@ -25,7 +26,6 @@ reth-primitives.workspace = true
 reth-primitives-traits.workspace = true
 reth-provider.workspace = true
 reth-revm.workspace = true
-revm-primitives.workspace = true
 rsp-primitives.workspace = true
 tokio.workspace = true
 tracing.workspace = true

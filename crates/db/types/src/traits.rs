@@ -276,6 +276,13 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
     /// Get the highest epoch commitment that has an L1 ref.
     fn get_last_checkpoint_l1_ref_epoch(&self) -> DbResult<Option<EpochCommitment>>;
 
+    /// Get all observed `(epoch commitment, L1 ref)` pairs at or above
+    /// `start_epoch`, ordered by ascending epoch.
+    fn get_checkpoint_l1_refs_from(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<(EpochCommitment, CheckpointL1Ref)>>;
+
     /// Delete an OL checkpoint L1 ref by epoch commitment.
     ///
     /// Returns true if it existed and was deleted.
@@ -644,9 +651,27 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;
 
-    /// Returns the highest slot that has a valid OL block, or an error at genesis or when no valid
-    /// block exists.
+    /// Returns the highest slot recorded in the canonical OL block index.
     fn get_tip_slot(&self) -> DbResult<Slot>;
+
+    /// Gets the canonical OL block id at a slot, as recorded by fork choice.
+    ///
+    /// Returns `None` for slots above the current canonical tip or never written.
+    fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>>;
+
+    /// Replaces the canonical suffix from `start_slot`.
+    ///
+    /// Atomically removes every canonical entry for slots greater than or equal to `start_slot`,
+    /// then writes each block ID into a contiguous suffix starting at `start_slot`.
+    ///
+    /// Single-writer contract: callers must not invoke this concurrently with another canonical
+    /// write; the atomicity guarantee covers the remove-then-insert against readers, not against a
+    /// competing writer.
+    fn replace_canonical_suffix_from(
+        &self,
+        start_slot: Slot,
+        block_ids: Vec<OLBlockId>,
+    ) -> DbResult<()>;
 }
 
 /// Database for OL state indexing data.

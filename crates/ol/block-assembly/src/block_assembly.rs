@@ -16,18 +16,21 @@ use strata_ledger_types::{
 use strata_ol_chain_types_new::*;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
-use strata_ol_state_types::WriteBatch;
+use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
 use strata_ol_stf::*;
 use strata_snark_acct_types as _;
 use tracing::{debug, error, warn};
 
 use crate::{
-    AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, EpochSealingPolicy,
-    MempoolProvider,
-    checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict},
+    AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, MempoolProvider,
+    checkpoint_size::LogMetrics,
     context::BlockAssemblyAnchorContext,
-    da_tracker::AccumulatedDaData,
+    epoch_sealing::{
+        EpochSealingLimitAction, EpochSealingLimitVerdict, EpochSealingPolicy,
+        EpochSealingResourceStats,
+    },
     error::BlockAssemblyError,
+    resource_state::{AccumulatedDaData, EpochResourceState},
     types::{BlockGenerationConfig, BlockTemplateResult, FailedMempoolTx, FullBlockTemplate},
 };
 
@@ -41,8 +44,26 @@ struct ProcessTransactionsOutput<S: IStateAccessor> {
     accumulated_batch: WriteBatch<S::AccountState>,
     /// Accumulated da data after processing all transactions.
     accumulated_da: AccumulatedDaData,
-    /// Whether the estimated checkpoint payload is approaching the L1 envelope limit.
-    checkpoint_size_limit_reached: bool,
+    /// Non-cadence limits requesting an epoch seal, if any.
+    sealing_limit_verdict: EpochSealingLimitVerdict,
+}
+
+/// Inputs consumed while finalizing a block template.
+struct BuildBlockTemplateInput<A> {
+    accumulated_batch: WriteBatch<A>,
+    output_buffer: ExecOutputBuffer,
+    successful_txs: Vec<OLTransaction>,
+    is_terminal: bool,
+    manifest_container: Option<OLAsmManifestContainer>,
+}
+
+/// ASM manifests selected for the candidate OL block.
+///
+/// The selected manifests are still raw manifests; the caller wraps them in an
+/// [`OLAsmManifestContainer`] when the sequence is non-empty.
+struct SelectedAsmManifests {
+    manifests: Vec<AsmManifest>,
+    sealing_limit_verdict: EpochSealingLimitVerdict,
 }
 
 /// Maps an [`ExecError`] to a [`MempoolTxInvalidReason`].
@@ -145,8 +166,8 @@ pub(crate) struct ConstructBlockOutput<S> {
         expect(dead_code, reason = "only used by tests")
     )]
     pub(crate) post_state: S,
-    /// Accumulated DA data for the constructed block.
-    pub(crate) accumulated_da: AccumulatedDaData,
+    /// Resource state for the constructed block's epoch.
+    pub(crate) resource_state: EpochResourceState,
 }
 
 /// Generate a block template from the given configuration.
@@ -164,7 +185,7 @@ pub(crate) async fn generate_block_template_inner<C, E>(
     epoch_sealing_policy: &E,
     sequencer_config: &SequencerConfig,
     block_generation_config: BlockGenerationConfig,
-    parent_da: AccumulatedDaData,
+    resource_state_before_block: EpochResourceState,
     bridge_params: BridgeParams,
 ) -> BlockAssemblyResult<BlockTemplateResult>
 where
@@ -194,7 +215,7 @@ where
     // 3. Get transactions from mempool
     let mempool_txs = MempoolProvider::get_transactions(ctx, max_txs_per_block).await?;
 
-    // 4. Construct block (handles terminal detection and manifest fetching internally)
+    // 4. Construct block using the sealing policy decision and manifest fetch gate.
     let output = construct_block(
         ctx,
         epoch_sealing_policy,
@@ -203,7 +224,7 @@ where
         block_slot,
         block_epoch,
         mempool_txs,
-        parent_da,
+        resource_state_before_block,
         bridge_params,
     )
     .await?;
@@ -211,7 +232,7 @@ where
     Ok(BlockTemplateResult::new(
         output.template,
         output.failed_txs,
-        output.accumulated_da,
+        output.resource_state,
     ))
 }
 
@@ -244,8 +265,9 @@ pub(crate) fn calculate_block_slot_and_epoch<S: IStateAccessor>(
 /// 2. Executes block initialization (epoch initial + block start)
 /// 3. Validates each transaction against accumulated state
 /// 4. Filters out invalid transactions (proof failures, execution failures)
-/// 5. Detects terminal blocks and fetches L1 manifests
-/// 6. Builds the complete block with only valid transactions
+/// 5. Fetches and admits buried ASM manifests for this block
+/// 6. Applies the sealing policy
+/// 7. Builds the complete block with only valid transactions
 #[expect(clippy::too_many_arguments, reason = "can't get around the args")]
 #[tracing::instrument(
     skip_all,
@@ -263,7 +285,7 @@ pub(crate) async fn construct_block<C, E>(
     block_slot: Slot,
     block_epoch: Epoch,
     mempool_txs: Vec<(OLTxId, OLTransaction)>,
-    parent_da: AccumulatedDaData,
+    resource_state_before_block: EpochResourceState,
     bridge_params: BridgeParams,
 ) -> BlockAssemblyResult<ConstructBlockOutput<C::State>>
 where
@@ -296,9 +318,11 @@ where
     let output_buffer = ExecOutputBuffer::new_empty();
 
     // Phase 1: Execute block initialization (epoch initial + block start).
-    // `AccumulatedDaData` flows through each phase, accumulating state diffs and logs.
+    // Resource state flows through each phase, accumulating state diffs, logs, and manifest count.
+    let epoch_cumulative_da = resource_state_before_block.da().clone();
+    let epoch_cumulative_manifest_count = resource_state_before_block.manifest_count();
     let (accumulated_batch, accumulated_da) =
-        execute_block_initialization(parent_state.as_ref(), &block_context, parent_da);
+        execute_block_initialization(parent_state.as_ref(), &block_context, epoch_cumulative_da);
 
     // Phase 2: Process transactions, filtering out invalid ones.
     let ProcessTransactionsOutput {
@@ -306,94 +330,225 @@ where
         failed_txs,
         accumulated_batch,
         accumulated_da,
-        checkpoint_size_limit_reached,
+        mut sealing_limit_verdict,
     } = process_transactions(
         ctx,
+        epoch_sealing_policy,
         &block_context,
         &output_buffer,
         parent_state.as_ref(),
         accumulated_batch,
         mempool_txs,
         accumulated_da,
+        epoch_cumulative_manifest_count,
         bridge_params,
     );
 
-    // Phase 3: Seal the epoch if the policy says so or the checkpoint payload is near the
-    // L1 envelope limit. Fetch manifests for the terminal block (possibly empty if L1 is slow).
-    let should_seal =
-        epoch_sealing_policy.should_seal_epoch(block_slot) || checkpoint_size_limit_reached;
-    debug!(%block_slot, checkpoint_size_limit_reached, should_seal, "epoch seal decision");
-    let manifest_container = if should_seal {
-        fetch_asm_manifests_for_terminal_block(ctx, parent_state.as_ref()).await?
-    } else {
+    // Phase 3: Fetch buried ASM manifests for this block. Manifest selection may also request
+    // that this block becomes terminal.
+    let SelectedAsmManifests {
+        manifests: selected_asm_manifests,
+        sealing_limit_verdict: manifest_limit_verdict,
+    } = fetch_asm_manifests_for_block(
+        ctx,
+        epoch_sealing_policy,
+        parent_state.as_ref(),
+        epoch_cumulative_manifest_count,
+    )
+    .await?;
+    sealing_limit_verdict.merge(manifest_limit_verdict);
+    let selected_asm_manifest_count = u32::try_from(selected_asm_manifests.len())
+        .expect("selected ASM manifest count fits in u32");
+    let manifest_container = if selected_asm_manifests.is_empty() {
         None
+    } else {
+        Some(OLAsmManifestContainer::new(selected_asm_manifests)?)
     };
 
-    // Phase 4: Finalize block construction.
+    // Phase 4: Ask the sealing policy whether this block should be terminal.
+    let sealing_decision =
+        epoch_sealing_policy.should_seal_epoch(block_slot, &sealing_limit_verdict);
+    let should_seal = sealing_decision.should_seal();
+    debug!(
+        %block_slot,
+        ?sealing_limit_verdict,
+        ?sealing_decision,
+        should_seal,
+        "epoch seal decision"
+    );
+
+    // Phase 5: Finalize block construction.
     // Clone output_buffer: the clone goes to build_block_template (which adds manifest logs
     // for the header), the original is consumed below to append this block's tx logs to DA.
     debug!(
         successful_tx_count = successful_txs.len(),
         failed_tx_count = failed_txs.len(),
-        is_terminal = manifest_container.is_some(),
+        is_terminal = should_seal,
+        has_manifests = manifest_container.is_some(),
         "block construction summary",
     );
     let (template, post_state) = build_block_template(
         config,
         &block_context,
         &parent_state,
-        accumulated_batch,
-        output_buffer.clone(),
-        successful_txs,
-        manifest_container,
+        BuildBlockTemplateInput {
+            accumulated_batch,
+            output_buffer: output_buffer.clone(),
+            successful_txs,
+            is_terminal: should_seal,
+            manifest_container,
+        },
     )?;
 
-    // Append this block's logs to accumulated DA.
+    // Append this block's logs to accumulated DA and package the epoch resource state.
     let mut accumulated_da = accumulated_da;
     accumulated_da.append_logs(&output_buffer.into_logs());
+    let resource_state = EpochResourceState::new(
+        accumulated_da,
+        epoch_cumulative_manifest_count
+            .checked_add(selected_asm_manifest_count)
+            .expect("epoch ASM manifest count fits in u32"),
+    );
 
     Ok(ConstructBlockOutput {
         template,
         failed_txs,
         post_state,
-        accumulated_da,
+        resource_state,
     })
 }
 
-/// Fetches ASM manifests for a terminal block using `BlockAssemblyAnchorContext`.
+/// Fetches ASM manifests for a block using [`BlockAssemblyAnchorContext`].
 ///
-/// Terminal blocks include up to [`MAX_SEALING_MANIFEST_COUNT`] L1 blocks processed since the
-/// last terminal block.
-async fn fetch_asm_manifests_for_terminal_block<
-    C: BlockAssemblyAnchorContext,
-    S: IStateAccessor,
->(
+/// Each block may include a contiguous sequence of buried manifests after the
+/// parent state's last accepted L1 height. The sequence is capped by the per-block
+/// SSZ bound and by remaining pending ASM-log capacity.
+///
+/// `epoch_cumulative_manifest_count` is the number of ASM manifests already carried
+/// by preceding blocks in the current epoch.
+async fn fetch_asm_manifests_for_block<C, E, S>(
     ctx: &C,
+    epoch_sealing_policy: &E,
     parent_state: &S,
-) -> BlockAssemblyResult<Option<OLAsmManifestContainer>> {
+    epoch_cumulative_manifest_count: u32,
+) -> BlockAssemblyResult<SelectedAsmManifests>
+where
+    C: BlockAssemblyAnchorContext,
+    E: EpochSealingPolicy,
+    S: IStateAccessor,
+{
     let last_l1_height = parent_state.last_l1_height();
     let start_height = last_l1_height
         .checked_add(1)
         .ok_or_else(|| BlockAssemblyError::Other("l1 height overflow".to_string()))?;
 
     // Fetch manifests using BlockAssemblyAnchorContext trait
-    let manifests = ctx
+    let fetched_asm_manifests = ctx
         .fetch_asm_manifests_from(start_height, MAX_SEALING_MANIFEST_COUNT as u32)
         .await?;
 
-    let total_logs: usize = manifests.iter().map(|m| m.logs().len()).sum();
-    debug!(
-        start_height,
-        manifest_count = manifests.len(),
-        total_logs,
-        "fetched asm manifests for terminal block",
+    let fetched_asm_manifest_count = fetched_asm_manifests.len();
+    let fetched_asm_log_count: usize = fetched_asm_manifests.iter().map(|m| m.logs().len()).sum();
+
+    let remaining_pending_asm_log_slots =
+        (MAX_PENDING_ASM_LOGS as usize).saturating_sub(parent_state.pending_asm_logs_len());
+    let SelectedAsmManifests {
+        manifests: selected_asm_manifests,
+        sealing_limit_verdict,
+    } = select_asm_manifests(
+        epoch_sealing_policy,
+        fetched_asm_manifests,
+        remaining_pending_asm_log_slots,
+        epoch_cumulative_manifest_count,
     );
 
-    let container = OLAsmManifestContainer::new(manifests)?;
+    let selected_asm_manifest_count = selected_asm_manifests.len();
+    let selected_asm_log_count: usize = selected_asm_manifests.iter().map(|m| m.logs().len()).sum();
+    debug!(
+        start_height,
+        fetched_asm_manifest_count,
+        fetched_asm_log_count,
+        selected_asm_manifest_count,
+        selected_asm_log_count,
+        ?sealing_limit_verdict,
+        "fetched and selected asm manifests for block",
+    );
 
-    // Return the container regardless of whether manifests is empty or not. Because otherwise, if
-    // for some reasons L1 is slow, epoch sealing policy is not respected.
-    Ok(Some(container))
+    Ok(SelectedAsmManifests {
+        manifests: selected_asm_manifests,
+        sealing_limit_verdict,
+    })
+}
+
+/// Selects ASM manifests for the candidate OL block.
+///
+/// Pending ASM-log capacity is a hard admission bound only: when the next
+/// manifest would overflow the pending-log queue, selection stops and the block
+/// does not seal for that reason. The manifest-count sealing rule can request
+/// either including the boundary manifest and sealing or rejecting the boundary
+/// manifest and sealing with the previously selected manifests.
+///
+/// `epoch_cumulative_manifest_count` is the number of ASM manifests already carried
+/// by preceding blocks in the current epoch.
+///
+/// Selection does not budget terminal ASM-log drain output. The OL STF currently
+/// applies buffered ASM-log drain as state effects only, without OL logs or
+/// checkpoint DA output; if that invariant changes, selection must budget that
+/// output before admitting ASM manifests.
+fn select_asm_manifests<E: EpochSealingPolicy>(
+    epoch_sealing_policy: &E,
+    candidate_asm_manifests: Vec<AsmManifest>,
+    remaining_pending_asm_log_slots: usize,
+    epoch_cumulative_manifest_count: u32,
+) -> SelectedAsmManifests {
+    let mut selected_asm_manifests = Vec::new();
+    let mut selected_asm_log_count = 0usize;
+    let mut sealing_limit_verdict = EpochSealingLimitVerdict::within_limits();
+
+    for candidate_asm_manifest in candidate_asm_manifests {
+        let candidate_asm_log_count = candidate_asm_manifest.logs().len();
+        if selected_asm_log_count.saturating_add(candidate_asm_log_count)
+            > remaining_pending_asm_log_slots
+        {
+            // Pending ASM-log capacity is a hard admission bound, not a sealing trigger. Stop
+            // manifest inclusion and leave the remaining manifests for a later block; the epoch
+            // still seals only through cadence or another sealing limit.
+            break;
+        }
+
+        let candidate_manifest_count = epoch_cumulative_manifest_count
+            .saturating_add(
+                u32::try_from(selected_asm_manifests.len())
+                    .expect("selected ASM manifest count fits in u32"),
+            )
+            .saturating_add(1);
+        // Candidate count includes the manifest currently being evaluated: it is the
+        // epoch-cumulative manifest total if this candidate is admitted.
+        let stats =
+            EpochSealingResourceStats::new(0, LogMetrics::default(), candidate_manifest_count);
+        let verdict = epoch_sealing_policy.check_limits(&stats);
+
+        match verdict.most_restrictive_action() {
+            EpochSealingLimitAction::RejectCandidate => {
+                sealing_limit_verdict.merge(verdict);
+                break;
+            }
+            EpochSealingLimitAction::SealAfterAdmit => {
+                selected_asm_manifests.push(candidate_asm_manifest);
+                sealing_limit_verdict.merge(verdict);
+                break;
+            }
+            EpochSealingLimitAction::Continue => {
+                selected_asm_log_count += candidate_asm_log_count;
+                selected_asm_manifests.push(candidate_asm_manifest);
+            }
+        }
+    }
+
+    SelectedAsmManifests {
+        manifests: selected_asm_manifests,
+        sealing_limit_verdict,
+    }
 }
 
 /// Executes block initialization (epoch initial + block start) on a fresh write batch.
@@ -441,24 +596,27 @@ where
     fields(component = "ol_block_assembly", tx_count = mempool_txs.len())
 )]
 #[expect(clippy::too_many_arguments, reason = "all arguments are required")]
-fn process_transactions<P, S>(
+fn process_transactions<P, E, S>(
     proof_gen: &P,
+    epoch_sealing_policy: &E,
     block_context: &BlockContext<'_>,
     output_buffer: &ExecOutputBuffer,
     parent_state: &S,
     accumulated_batch: WriteBatch<S::AccountState>,
     mempool_txs: Vec<(OLTxId, OLTransaction)>,
     accumulated_da: AccumulatedDaData,
+    epoch_cumulative_manifest_count: u32,
     bridge_params: BridgeParams,
 ) -> ProcessTransactionsOutput<S>
 where
     P: AccumulatorProofGenerator,
+    E: EpochSealingPolicy,
     S: BlockAssemblyStateAccess,
     <<S as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     let mut successful_txs = Vec::new();
     let mut failed_txs = Vec::new();
-    let mut checkpoint_size_limit_reached = false;
+    let mut sealing_limit_verdict = EpochSealingLimitVerdict::within_limits();
 
     // Track log metrics incrementally for checkpoint size estimation.
     let mut log_metrics = LogMetrics::from_logs(accumulated_da.logs());
@@ -538,10 +696,15 @@ where
                 let mut tentative = log_metrics;
                 tentative.add_logs(&tx_logs);
                 let da_diff_size = staging_state.accumulator().estimated_encoded_size();
-                let verdict = checkpoint_size_verdict(da_diff_size, &tentative);
+                let stats = EpochSealingResourceStats::new(
+                    da_diff_size,
+                    tentative,
+                    epoch_cumulative_manifest_count,
+                );
+                let verdict = epoch_sealing_policy.check_limits(&stats);
 
-                match verdict {
-                    CheckpointSizeVerdict::HardLimitExceeded => {
+                match verdict.checkpoint_size_action() {
+                    EpochSealingLimitAction::RejectCandidate => {
                         debug!(
                             da_diff_size,
                             ?tentative,
@@ -551,10 +714,10 @@ where
                             WriteTrackingState::new(parent_state, backup_batch),
                             backup_accumulator,
                         );
-                        checkpoint_size_limit_reached = true;
+                        sealing_limit_verdict = verdict;
                         break;
                     }
-                    CheckpointSizeVerdict::SoftLimitReached => {
+                    EpochSealingLimitAction::SealAfterAdmit => {
                         debug!(
                             da_diff_size,
                             ?tentative,
@@ -569,10 +732,10 @@ where
                         } else {
                             successful_txs.push(tx);
                         }
-                        checkpoint_size_limit_reached = true;
+                        sealing_limit_verdict = verdict;
                         break;
                     }
-                    CheckpointSizeVerdict::WithinLimits => {
+                    EpochSealingLimitAction::Continue => {
                         if output_buffer.emit_logs(tx_logs).is_err() {
                             debug!(?txid, "block log cap exceeded, rolling back tx");
                             staging_state = DaAccumulatingState::new_with_accumulator(
@@ -627,7 +790,7 @@ where
         failed_txs,
         accumulated_batch,
         accumulated_da,
-        checkpoint_size_limit_reached,
+        sealing_limit_verdict,
     }
 }
 
@@ -638,24 +801,22 @@ fn build_block_template<S>(
     config: &BlockGenerationConfig,
     block_context: &BlockContext<'_>,
     parent_state: &Arc<S>,
-    accumulated_batch: WriteBatch<S::AccountState>,
-    output_buffer: ExecOutputBuffer,
-    successful_txs: Vec<OLTransaction>,
-    manifest_container: Option<OLAsmManifestContainer>,
+    input: BuildBlockTemplateInput<S::AccountState>,
 ) -> BlockAssemblyResult<(FullBlockTemplate, S)>
 where
     S: BlockAssemblyStateAccess,
 {
+    let BuildBlockTemplateInput {
+        accumulated_batch,
+        output_buffer,
+        successful_txs,
+        is_terminal,
+        manifest_container,
+    } = input;
+
     // Clone parent state and apply accumulated batch to get state after transactions
     let mut final_state = parent_state.as_ref().clone();
     final_state.apply_write_batch(accumulated_batch)?;
-
-    // Assembly policy: a block that carries manifests is treated as the epoch
-    // terminal. The STF decouples manifest inclusion from terminality (logs are
-    // buffered into intraepoch state regardless), but block assembly currently
-    // only emits manifests at epoch boundaries, so this preserves the existing
-    // external behavior while leaving the infrastructure free to change later.
-    let is_terminal = manifest_container.is_some();
 
     // Buffer any manifests carried by this block into intraepoch state.
     if let Some(mc) = &manifest_container {
@@ -706,7 +867,8 @@ where
     }
     let body_root = body.compute_hash_commitment();
 
-    // Terminality is the explicit assembly policy decision above.
+    // Terminality is the explicit assembly decision, independent of whether the
+    // block happens to carry manifests.
     let mut flags = BlockFlags::zero();
     flags.set_is_terminal(is_terminal);
 
@@ -845,13 +1007,14 @@ mod tests {
     const CHECKPOINT_MSG_VALUE_SATS: u64 = 100_000_000;
 
     use strata_acct_types::*;
+    use strata_asm_manifest_types::AsmLogEntry;
     use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
     use strata_identifiers::{Buf32, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
 
     use super::*;
-    use crate::test_utils::*;
+    use crate::{FixedSlotSealing, LimitAwareSealing, test_utils::*};
 
     type OlWriteBatch = WriteBatch<<MemoryStateBaseLayer as IStateAccessor>::AccountState>;
 
@@ -1429,23 +1592,32 @@ mod tests {
         );
     }
 
-    // Helper to validate terminal block with L1 updates
-    fn check_terminal_block_with_manifests(
+    // Helper to validate ASM manifest contents independently of terminality.
+    fn check_block_asm_manifests(
         block_template: &FullBlockTemplate,
         expected_heights: &[L1Height],
     ) {
         let body = block_template.body();
         let manifest_cont = body.manifests();
+        if expected_heights.is_empty() {
+            assert!(
+                manifest_cont.is_none(),
+                "Block should not carry an empty manifest container"
+            );
+            return;
+        }
+
         assert!(
             manifest_cont.is_some(),
-            "Terminal block should contain manifests"
+            "Block should contain ASM manifests {:?}",
+            expected_heights
         );
 
         let manifests = manifest_cont.unwrap().manifests();
         assert_eq!(
             manifests.len(),
             expected_heights.len(),
-            "Should have {} L1 manifests",
+            "Should have {} ASM manifests",
             expected_heights.len()
         );
 
@@ -1460,19 +1632,30 @@ mod tests {
         }
     }
 
-    // Helper to validate non-terminal block without L1 updates
-    fn check_non_terminal_block(block_template: &FullBlockTemplate) {
-        let body = block_template.body();
+    // Helper to validate non-terminality independently of manifest presence.
+    fn check_non_terminal_header(block_template: &FullBlockTemplate) {
         assert!(
-            body.manifests().is_none(),
-            "Non-terminal block should NOT contain manifests"
+            !block_template.header().is_terminal(),
+            "Block should not be terminal"
         );
+    }
+
+    fn check_terminal_header(block_template: &FullBlockTemplate) {
+        assert!(
+            block_template.header().is_terminal(),
+            "Block should be terminal"
+        );
+    }
+
+    fn raw_asm_log(seed: u8) -> AsmLogEntry {
+        AsmLogEntry::from_raw(vec![seed]).expect("raw test ASM log should fit")
     }
 
     // Helper to build blocks from start_commitment up to (but not including) target_slot.
     // Stores blocks and states so subsequent blocks can find their parent.
     async fn build_blocks_to_slot(env: &mut TestEnv, target_slot: u64) -> OLBlockCommitment {
         let mut current_commitment = env.parent_commitment();
+        let mut resource_state = EpochResourceState::new_empty();
 
         let start_slot = if current_commitment.is_null() {
             0
@@ -1482,10 +1665,15 @@ mod tests {
 
         for slot in start_slot..target_slot {
             let output = env
-                .construct_empty_block()
+                .construct_empty_block_with_resource_state(resource_state)
                 .await
                 .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
 
+            resource_state = if output.template.header().is_terminal() {
+                EpochResourceState::new_empty()
+            } else {
+                output.resource_state.clone()
+            };
             current_commitment = env.persist(&output).await;
         }
 
@@ -1519,7 +1707,8 @@ mod tests {
 
         let block_template = result.unwrap().into_template();
         check_block_slot_epoch(&block_template, 1, 1);
-        check_non_terminal_block(&block_template);
+        check_non_terminal_header(&block_template);
+        check_block_asm_manifests(&block_template, &[2, 3]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1571,105 +1760,105 @@ mod tests {
 
         let block_template = result.unwrap().into_template();
         check_block_slot_epoch(&block_template, 10, 1);
-        // After genesis processes manifest 1, only manifests 2 and 3 remain
-        check_terminal_block_with_manifests(&block_template, &[2, 3]);
+        check_terminal_header(&block_template);
+        check_block_asm_manifests(&block_template, &[]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_terminal_block_below_max_sealing_manifests() {
+    async fn test_non_terminal_block_below_max_sealing_manifests() {
         let manifest_count = SEALING_MANIFEST_CAP - 1;
         let env_builder = TestStorageFixtureBuilder::new()
             .with_genesis_parent_and_l1_manifest_count(manifest_count);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
-        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
         let parent_l1_height = env.parent_last_l1_height().await;
         let output = env
             .construct_empty_block()
             .await
-            .expect("terminal block generation should succeed");
+            .expect("block generation should succeed");
 
         let expected_heights: Vec<L1Height> =
             ((parent_l1_height + 1)..=(parent_l1_height + manifest_count)).collect();
-        check_terminal_block_with_manifests(&output.template, &expected_heights);
+        check_non_terminal_header(&output.template);
+        check_block_asm_manifests(&output.template, &expected_heights);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_terminal_block_caps_at_max_sealing_manifests() {
+    async fn test_manifest_budget_caps_and_seals_block() {
         let env_builder = TestStorageFixtureBuilder::new()
             .with_genesis_parent_and_l1_manifest_count(SEALING_MANIFEST_CAP + 1);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
-        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
         let parent_l1_height = env.parent_last_l1_height().await;
         let output = env
             .construct_empty_block()
             .await
-            .expect("terminal block generation should succeed");
+            .expect("block generation should succeed");
 
         let expected_heights: Vec<L1Height> =
             ((parent_l1_height + 1)..=(parent_l1_height + SEALING_MANIFEST_CAP)).collect();
-        check_terminal_block_with_manifests(&output.template, &expected_heights);
+        check_terminal_header(&output.template);
+        check_block_asm_manifests(&output.template, &expected_heights);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_terminal_block_at_exact_max_boundary() {
+    async fn test_manifest_budget_seals_at_exact_max_boundary() {
         let env_builder = TestStorageFixtureBuilder::new()
             .with_genesis_parent_and_l1_manifest_count(SEALING_MANIFEST_CAP);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
-        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
         let parent_l1_height = env.parent_last_l1_height().await;
         let output = env
             .construct_empty_block()
             .await
-            .expect("terminal block generation should succeed");
+            .expect("block generation should succeed");
 
         let expected_heights: Vec<L1Height> =
             ((parent_l1_height + 1)..=(parent_l1_height + SEALING_MANIFEST_CAP)).collect();
-        check_terminal_block_with_manifests(&output.template, &expected_heights);
+        check_terminal_header(&output.template);
+        check_block_asm_manifests(&output.template, &expected_heights);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_consecutive_terminal_blocks_drain_backlog() {
+    async fn test_manifest_backlog_drains_across_blocks() {
         let rollover_count: L1Height = 2;
         let env_builder = TestStorageFixtureBuilder::new()
             .with_genesis_parent_and_l1_manifest_count(SEALING_MANIFEST_CAP + rollover_count);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
         let first_parent_l1_height = env.parent_last_l1_height().await;
         let first_output = env
             .construct_empty_block()
             .await
-            .expect("first terminal block generation should succeed");
+            .expect("first block generation should succeed");
         let first_expected_heights: Vec<L1Height> = ((first_parent_l1_height + 1)
             ..=(first_parent_l1_height + SEALING_MANIFEST_CAP))
             .collect();
-        check_terminal_block_with_manifests(&first_output.template, &first_expected_heights);
+        check_terminal_header(&first_output.template);
+        check_block_asm_manifests(&first_output.template, &first_expected_heights);
         env.persist(&first_output).await;
 
-        let _current_commitment = build_blocks_to_slot(&mut env, 20).await;
         let second_parent_l1_height = env.parent_last_l1_height().await;
         let second_output = env
             .construct_empty_block()
             .await
-            .expect("second terminal block generation should succeed");
+            .expect("second block generation should succeed");
         let second_expected_heights: Vec<L1Height> =
             ((second_parent_l1_height + 1)..=(second_parent_l1_height + rollover_count)).collect();
-        check_terminal_block_with_manifests(&second_output.template, &second_expected_heights);
+        check_non_terminal_header(&second_output.template);
+        check_block_asm_manifests(&second_output.template, &second_expected_heights);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_terminal_fetch_stops_at_cap() {
+    async fn test_manifest_fetch_stops_at_cap() {
         let env_builder = TestStorageFixtureBuilder::new()
             .with_genesis_parent_and_l1_manifest_count(SEALING_MANIFEST_CAP + 1);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
-        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
         let parent_l1_height = env.parent_last_l1_height().await;
         let first_height_past_cap = parent_l1_height + SEALING_MANIFEST_CAP + 1;
 
@@ -1687,28 +1876,25 @@ mod tests {
         // ASM tip still points at the original height's blkid; the fetch path only reads its
         // height.
 
-        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
         let output = env
             .construct_empty_block()
             .await
-            .expect("terminal block generation should not read past cap");
+            .expect("block generation should not read past cap");
 
         let expected_heights: Vec<L1Height> =
             ((parent_l1_height + 1)..=(parent_l1_height + SEALING_MANIFEST_CAP)).collect();
-        check_terminal_block_with_manifests(&output.template, &expected_heights);
+        check_block_asm_manifests(&output.template, &expected_heights);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_terminal_block_manifest_boundary_from_last_l1_height() {
+    async fn test_manifest_boundary_from_last_l1_height() {
         // Set last_l1_height to 2, but only provide manifests starting at 3.
         let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(1)
             .with_asm_manifests([1, 2])
             .with_l1_manifest_height_range(3..=4);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
-        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
-
-        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         let result = env
             .generate_block_template()
@@ -1716,13 +1902,64 @@ mod tests {
             .expect("Block generation should succeed");
 
         let block_template = result.into_template();
-        check_terminal_block_with_manifests(&block_template, &[3, 4]);
+        check_block_asm_manifests(&block_template, &[3, 4]);
+    }
+
+    #[test]
+    fn test_pending_asm_log_capacity_limits_selected_manifests() {
+        let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
+        let selected = select_asm_manifests(
+            &policy,
+            vec![
+                create_l1_manifest_with_logs(2, vec![raw_asm_log(1)]),
+                create_l1_manifest_with_logs(3, vec![raw_asm_log(2)]),
+                create_l1_manifest_with_logs(4, vec![raw_asm_log(3)]),
+            ],
+            2,
+            0,
+        );
+
+        assert_eq!(
+            selected
+                .manifests
+                .iter()
+                .map(|manifest| manifest.height())
+                .collect::<Vec<_>>(),
+            vec![2, 3],
+            "selection should keep only the prefix that fits pending ASM-log capacity"
+        );
+        assert_eq!(
+            selected.sealing_limit_verdict.most_restrictive_action(),
+            EpochSealingLimitAction::Continue,
+            "pending ASM-log capacity should not request epoch sealing"
+        );
+    }
+
+    #[test]
+    fn test_full_pending_asm_log_capacity_selects_no_manifests_without_sealing() {
+        let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
+        let selected = select_asm_manifests(
+            &policy,
+            vec![create_l1_manifest_with_logs(2, vec![raw_asm_log(1)])],
+            0,
+            0,
+        );
+
+        assert!(
+            selected.manifests.is_empty(),
+            "selection should be empty when no pending ASM-log capacity remains"
+        );
+        assert_eq!(
+            selected.sealing_limit_verdict.most_restrictive_action(),
+            EpochSealingLimitAction::Continue,
+            "pending ASM-log capacity should not request epoch sealing"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_terminal_no_new_manifests() {
+    async fn test_terminal_block_omits_manifests_when_none_new() {
         // Parent already tracks manifests up to ASM tip height 3.
-        // Terminal fetch starts at 4, so L1 update must be present with an empty container.
+        // The terminal block should be valid without emitting an empty manifest container.
         let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(1)
             .with_l1_manifest_height_range(1..=3)
@@ -1737,11 +1974,12 @@ mod tests {
             .expect("terminal block generation should succeed");
 
         let template = output.into_template();
-        check_terminal_block_with_manifests(&template, &[]);
+        check_terminal_header(&template);
+        check_block_asm_manifests(&template, &[]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_terminal_start_above_latest_asm_height() {
+    async fn test_terminal_block_omits_manifests_when_start_above_asm_tip() {
         // Parent state claims a last_l1_height above ASM tip.
         // Fetch should return an empty manifest set (not an error).
         let env_builder = TestStorageFixtureBuilder::new()
@@ -1758,11 +1996,12 @@ mod tests {
             .expect("terminal block generation should succeed");
 
         let template = output.into_template();
-        check_terminal_block_with_manifests(&template, &[]);
+        check_terminal_header(&template);
+        check_block_asm_manifests(&template, &[]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_terminal_missing_manifest_in_range_errors() {
+    async fn test_missing_manifest_in_expected_range_errors() {
         // Parent last_l1_height = 1, ASM tip = 2, so terminal fetch expects manifest at height 2.
         // Corrupt L1 canonical chain so height 2 points to a blockid with no manifest body.
         let env_builder = TestStorageFixtureBuilder::new()
@@ -1770,7 +2009,7 @@ mod tests {
             .with_l1_manifest_height_range(1..=2)
             .with_asm_manifests([1]);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
-        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         let missing_manifest_blkid = L1BlockId::from(Buf32::from([0xAB; 32]));
         env.storage()
@@ -1784,11 +2023,10 @@ mod tests {
             .await
             .expect("insert missing-manifest canonical entry at height 2");
 
-        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
         let err = env
             .generate_block_template()
             .await
-            .expect_err("missing manifest in expected terminal range should error");
+            .expect_err("missing manifest in expected block range should error");
 
         assert!(
             matches!(err, BlockAssemblyError::Db(DbError::Other(_))),
@@ -1797,7 +2035,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_terminal_empty_block_invariants() {
+    async fn test_terminal_empty_block_omits_manifest_container() {
         let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
             .with_l1_manifest_height_range(1..=3);
@@ -1816,8 +2054,8 @@ mod tests {
 
         assert_eq!(tx_count, 0, "terminal empty block should have zero txs");
         assert!(
-            body.manifests().is_some(),
-            "terminal block should include manifests even when tx segment is empty"
+            body.manifests().is_none(),
+            "terminal block should omit the manifest container when no new manifests are available"
         );
         assert!(
             template.header().is_terminal(),
@@ -1844,14 +2082,16 @@ mod tests {
 
         let block_template = result.unwrap().into_template();
         check_block_slot_epoch(&block_template, 11, 2);
-        check_non_terminal_block(&block_template);
+        check_non_terminal_header(&block_template);
+        check_block_asm_manifests(&block_template, &[]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_non_terminal_empty_block_invariants() {
         let env_builder = TestStorageFixtureBuilder::new()
-            .with_parent_slot(0)
-            .with_l1_manifest_height_range(1..=3);
+            .with_parent_slot(1)
+            .with_l1_manifest_height_range(1..=3)
+            .with_asm_manifests([1, 2, 3]);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
@@ -1867,7 +2107,7 @@ mod tests {
         assert_eq!(tx_count, 0, "non-terminal empty block should have zero txs");
         assert!(
             body.manifests().is_none(),
-            "non-terminal empty block should not include manifests"
+            "non-terminal empty block should not include manifests when none are newly buried"
         );
         assert!(
             !template.header().is_terminal(),
@@ -1934,9 +2174,12 @@ mod tests {
             MempoolTxInvalidReason::Invalid,
         )];
 
-        let result =
-            BlockTemplateResult::new(template, failed_txs.clone(), AccumulatedDaData::new_empty());
-        let (out_template, out_failed, _da) = result.into_parts();
+        let result = BlockTemplateResult::new(
+            template,
+            failed_txs.clone(),
+            EpochResourceState::new_empty(),
+        );
+        let (out_template, out_failed, _resource_state) = result.into_parts();
 
         assert_eq!(
             out_template.get_blockid(),
@@ -2303,12 +2546,15 @@ mod tests {
             .expect("block 1 should construct");
         let included1 = included_txids(&output1.template);
         assert_eq!(included1.len(), 1);
-        let parent_da_2 = output1.accumulated_da.clone();
+        let resource_state_after_block1 = output1.resource_state.clone();
         let _current_commitment = env.persist(&output1).await;
 
         // Build block 2 with seq_no=1 against the state produced by block 1.
         let output2 = env
-            .construct_block_with_da(vec![(tx_seq1_id, tx_seq1)], parent_da_2)
+            .construct_block_with_resource_state(
+                vec![(tx_seq1_id, tx_seq1)],
+                resource_state_after_block1,
+            )
             .await
             .expect("block 2 should construct");
         let included2 = included_txids(&output2.template);
@@ -2556,12 +2802,14 @@ mod tests {
 
         let out = process_transactions(
             env.ctx(),
+            env.epoch_sealing_policy(),
             &block_context,
             &output_buffer,
             parent_state.as_ref(),
             accumulated_batch,
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
+            0,
             BridgeParams::default(),
         );
 
@@ -2613,12 +2861,14 @@ mod tests {
 
         let out = process_transactions(
             env.ctx(),
+            env.epoch_sealing_policy(),
             &block_context,
             &output_buffer,
             parent_state.as_ref(),
             accumulated_batch,
             vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
             AccumulatedDaData::new_empty(),
+            0,
             BridgeParams::default(),
         );
 
@@ -2658,12 +2908,14 @@ mod tests {
 
         let out = process_transactions(
             env.ctx(),
+            env.epoch_sealing_policy(),
             &block_context,
             &output_buffer,
             parent_state.as_ref(),
             accumulated_batch,
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
+            0,
             BridgeParams::default(),
         );
 
@@ -2698,12 +2950,14 @@ mod tests {
 
         process_transactions(
             env.ctx(),
+            env.epoch_sealing_policy(),
             &block_context,
             &output_buffer,
             parent_state.as_ref(),
             accumulated_batch,
             mempool_txs,
             seeded_da,
+            0,
             BridgeParams::default(),
         )
     }
@@ -2749,8 +3003,11 @@ mod tests {
             "deferred tx should not be marked invalid"
         );
         assert!(
-            out.checkpoint_size_limit_reached,
-            "soft verdict should mark checkpoint_size_limit_reached"
+            matches!(
+                out.sealing_limit_verdict.checkpoint_size_action(),
+                EpochSealingLimitAction::SealAfterAdmit
+            ),
+            "soft verdict should request checkpoint-size sealing"
         );
     }
 
@@ -2803,8 +3060,11 @@ mod tests {
             "hard-limit rollback should not mark tx invalid"
         );
         assert!(
-            out.checkpoint_size_limit_reached,
-            "hard verdict should mark checkpoint_size_limit_reached"
+            matches!(
+                out.sealing_limit_verdict.checkpoint_size_action(),
+                EpochSealingLimitAction::RejectCandidate
+            ),
+            "hard verdict should request checkpoint-size sealing"
         );
     }
 

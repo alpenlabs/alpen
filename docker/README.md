@@ -21,12 +21,21 @@ The primary local stack is split into two compose files:
 
 Bitcoin is decoupled from the OL/EE stack. `just docker-seq-up` starts signet, runs `gen-params-and-elfs.sh`, then starts the sequencer stack. Generated keys, params, and env files live under `configs/generated/` and are ignored by git.
 
+The external `strata-signer` reads the sequencer admin bearer token from
+`STRATA_ADMIN_RPC_TOKEN`, so deployments do not need to hardcode that secret in
+the signer config TOML.
+
 The retained secondary compose files have narrower test/debug purposes:
 
 | Compose | Purpose |
 |---|---|
+| `compose-checkpoint-sync.yml` | Checkpoint-sync OL node; use with a signet fullnode and mount pre-generated params under `configs/generated/` |
 | `docker-compose-eest.yml` | Ethereum execution spec test environment |
 | `docker-compose-p2p-test.yml` | Minimal EE P2P/gossip test |
+
+For checkpoint-sync, run `compose-signet.yml` in fullnode mode (`MINERENABLED=0`)
+with the target network's `SIGNETCHALLENGE` and an `ADDNODE` peer, then start
+`compose-checkpoint-sync.yml`.
 
 ## Just Recipes
 

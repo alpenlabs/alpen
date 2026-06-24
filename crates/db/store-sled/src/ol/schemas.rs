@@ -37,6 +37,12 @@ define_table_with_integer_key!(
     (OLBlockHeightSchema) u64 => Vec<OLBlockId>
 );
 
+define_table_with_integer_key!(
+    /// A table mapping each slot to its canonical OL block id, as selected by
+    /// fork choice. Maps slot to OLBlockId.
+    (OLCanonicalBlockSchema) u64 => OLBlockId
+);
+
 define_table_without_codec!(
     /// Stores the latest OL block committed through the high-watermark path.
     (OLBlockHighWatermarkSchema) u8 => OLBlockCommitment

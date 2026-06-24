@@ -202,14 +202,18 @@ mod tests {
 
     use proptest::prelude::*;
     use strata_asm_proto_checkpoint_types::{
-        CheckpointPayload, CheckpointTip, test_utils::checkpoint_sidecar_strategy,
+        CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
+        TerminalHeaderComplement,
     };
     use strata_bridge_params::BridgeParams;
     use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{
         AccountSerial, Buf64, Epoch, OLBlockCommitment,
-        test_utils::{buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy},
+        test_utils::{
+            buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy,
+            ol_block_id_strategy,
+        },
     };
     use strata_ol_chain_types_new::{
         BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLBlockId, OLLog, OLTxSegment,
@@ -235,6 +239,50 @@ mod tests {
                 .prop_map(|(account_serial, payload)| OLLog::new(account_serial, payload)),
             0..10,
         )
+    }
+
+    fn terminal_header_complement_strategy() -> impl Strategy<Value = TerminalHeaderComplement> {
+        (
+            any::<u64>(),
+            ol_block_id_strategy(),
+            buf32_strategy(),
+            buf32_strategy(),
+        )
+            .prop_map(|(timestamp, parent_blkid, body_root, logs_root)| {
+                TerminalHeaderComplement::new(timestamp, parent_blkid, body_root, logs_root)
+            })
+    }
+
+    /// Generates checkpoint OL logs whose *total* payload stays within the sidecar's
+    /// `MAX_TOTAL_LOG_PAYLOAD_BYTES` cap (at most 10 logs of up to 512 bytes each).
+    fn checkpoint_ol_logs_strategy() -> impl Strategy<Value = Vec<CheckpointOLLog>> {
+        prop::collection::vec(
+            (
+                any::<u32>().prop_map(AccountSerial::from),
+                prop::collection::vec(any::<u8>(), 0..=512),
+            )
+                .prop_map(|(account_serial, payload)| {
+                    CheckpointOLLog::new(account_serial, payload)
+                }),
+            0..10,
+        )
+    }
+
+    // TODO(STR-3804): drop this once https://github.com/alpenlabs/asm/pull/154 lands and we bump
+    // to a tag that includes it, then go back to
+    // `strata_asm_proto_checkpoint_types::test_utils::checkpoint_sidecar_strategy`. The upstream
+    // strategy can emit ~40 KiB of logs and `CheckpointSidecar::new` rejects anything over the
+    // 16 KiB cap, so it panics. The local `checkpoint_ol_logs_strategy` stays well under the cap.
+    fn checkpoint_sidecar_strategy() -> impl Strategy<Value = CheckpointSidecar> {
+        (
+            state_diff_strategy(),
+            checkpoint_ol_logs_strategy(),
+            terminal_header_complement_strategy(),
+        )
+            .prop_map(|(state_diff, ol_logs, terminal_header_complement)| {
+                CheckpointSidecar::new(state_diff, ol_logs, terminal_header_complement)
+                    .expect("valid sidecar")
+            })
     }
 
     /// Test context that delegates everything to the real impl but stubs out

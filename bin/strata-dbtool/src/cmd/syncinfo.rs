@@ -10,7 +10,7 @@ use super::{
         get_latest_finalized_checkpoint_epoch,
     },
     l1::get_l1_chain_tip,
-    ol::get_canonical_ol_block_at_slot,
+    ol::get_canonical_ol_tip,
 };
 use crate::{
     cli::OutputFormat,
@@ -38,12 +38,10 @@ pub(crate) fn get_syncinfo(
     // Get L1 tip
     let (l1_tip_height, l1_tip_block_id) = get_l1_chain_tip(db)?;
 
-    // Get OL tip slot and select canonical tip block using first block at that slot.
-    let ol_tip_height = db
-        .ol_block_db()
-        .get_tip_slot()
-        .internal_error("Failed to get OL tip slot")?;
-    let ol_tip_block_id = get_canonical_ol_block_at_slot(db, ol_tip_height)?;
+    // Get the canonical OL tip slot and block.
+    let ol_tip_commitment = get_canonical_ol_tip(db)?;
+    let ol_tip_height = ol_tip_commitment.slot();
+    let ol_tip_block_id = *ol_tip_commitment.blkid();
 
     // Get OL tip block status from OL block db.
     let ol_tip_block_status = db
@@ -63,7 +61,6 @@ pub(crate) fn get_syncinfo(
         })?;
 
     // Use the same chosen canonical tip commitment for OL state reads.
-    let ol_tip_commitment = OLBlockCommitment::new(ol_tip_height, ol_tip_block_id);
     let top_level_state = db
         .ol_state_db()
         .get_toplevel_ol_state(ol_tip_commitment)

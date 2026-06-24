@@ -3,9 +3,10 @@
 use std::collections::BTreeMap;
 
 use alloy_consensus::{BlockHeader, Header, Sealable, Sealed};
+use alloy_rpc_types_debug::ExecutionWitness;
 use itertools::Itertools;
 use revm::state::Bytecode;
-use revm_primitives::{B256, map::HashMap};
+use revm_primitives::{B256, Bytes, keccak256, map::HashMap};
 use rsp_mpt::EthereumState;
 use strata_acct_types::Hash;
 use strata_codec::{Codec, CodecError};
@@ -76,6 +77,43 @@ impl EvmPartialState {
             ancestor_headers,
             block_hashes,
         }
+    }
+
+    /// Builds an [`EvmPartialState`] from raw execution-witness parts, anchored
+    /// at `pre_state_root`.
+    ///
+    /// `witness_state` is the bag of RLP-encoded MPT nodes (the
+    /// [`ExecutionWitness::state`] format); `codes` are the loaded bytecodes
+    /// (keyed here by their keccak hash); `ancestor_headers` back the
+    /// `BLOCKHASH` opcode. The sparse trie is reconstructed via rsp's
+    /// `EthereumState::from_execution_witness`, which resolves the node bag
+    /// against `pre_state_root` — purely in-memory, with no historical-state
+    /// access. This is the entry point for assembling one chunk-level state
+    /// from the union of a chunk's per-block witness node bags.
+    ///
+    /// Host-side only (trie reconstruction); the guest consumes the encoded
+    /// result.
+    pub fn from_witness_parts(
+        witness_state: Vec<Vec<u8>>,
+        pre_state_root: B256,
+        codes: Vec<Vec<u8>>,
+        ancestor_headers: Vec<Header>,
+    ) -> Self {
+        let witness = ExecutionWitness {
+            state: witness_state.into_iter().map(Bytes::from).collect(),
+            ..Default::default()
+        };
+        let ethereum_state = EthereumState::from_execution_witness(&witness, pre_state_root);
+
+        let bytecodes = codes
+            .into_iter()
+            .map(|code| {
+                let bytes = Bytes::from(code);
+                (keccak256(&bytes), Bytecode::new_raw(bytes))
+            })
+            .collect();
+
+        Self::new(ethereum_state, bytecodes, ancestor_headers)
     }
 
     /// Gets a reference to the underlying EthereumState.

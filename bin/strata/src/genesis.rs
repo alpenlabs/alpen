@@ -60,6 +60,11 @@ pub(crate) fn init_ol_genesis(
         .ol_checkpoint()
         .insert_epoch_summary_blocking(epoch_summary)?;
 
+    // Update the canonical block index for first block.
+    storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(0, vec![genesis_blkid])?;
+
     info!(%genesis_blkid, slot = 0, "OL genesis initialization complete");
     Ok(commitment)
 }

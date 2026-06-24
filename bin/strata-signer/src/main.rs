@@ -16,7 +16,7 @@ use std::{
 };
 
 use anyhow::Context;
-use args::Args;
+use args::{Args, EnvArgs};
 use config::SignerConfig;
 use constants::SHUTDOWN_TIMEOUT_MS;
 use helpers::load_seqkey;
@@ -39,14 +39,14 @@ fn main() -> anyhow::Result<()> {
 
     // Load config from TOML file.
     let config_str = fs::read_to_string(&args.config)?;
-    let config: SignerConfig = toml::from_str(&config_str)?;
-    if config
+    let mut config: SignerConfig = toml::from_str(&config_str)?;
+    EnvArgs::from_env().apply_to_config(&mut config);
+    let sequencer_admin_bearer_token = config
         .sequencer_admin_bearer_token
-        .expose_secret()
-        .is_empty()
-    {
-        anyhow::bail!("sequencer_admin_bearer_token must be set and non-empty");
-    }
+        .as_ref()
+        .map(|token| token.expose_secret())
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("sequencer_admin_bearer_token must be set and non-empty"))?;
 
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -108,7 +108,7 @@ fn main() -> anyhow::Result<()> {
     // Set up RPC client.
     let ws_config = WsClientConfig {
         url: config.sequencer_admin_endpoint.clone(),
-        headers: admin_auth_headers(config.sequencer_admin_bearer_token.expose_secret())?,
+        headers: admin_auth_headers(sequencer_admin_bearer_token)?,
     };
     let rpc = Arc::new(ManagedWsClient::new_with_default_pool(ws_config));
 
