@@ -338,7 +338,10 @@ mod tests {
         AccountId::from([seed; 32])
     }
 
-    /// Builders for valid test OL DA diff trees.
+    /// Builders for test OL DA diff trees.
+    ///
+    /// Builders produce encodable trees; they are not guaranteed to be apply-valid (e.g. serials
+    /// need not match any pre-state).
     mod build {
         use super::*;
 
@@ -405,7 +408,7 @@ mod tests {
         }
 
         /// Ledger diff from new accounts and account diffs.
-        pub(super) fn ledger(
+        pub(super) fn ledger_diff(
             new_accounts: Vec<NewAccountEntry>,
             account_diffs: Vec<AccountDiffEntry>,
         ) -> LedgerDiff {
@@ -416,7 +419,10 @@ mod tests {
         }
 
         /// Global diff with optional slot and limbo deltas.
-        pub(super) fn global(slot_incr: u16, limbo_delta: Option<SignedVarInt>) -> GlobalStateDiff {
+        pub(super) fn global_diff(
+            slot_incr: u16,
+            limbo_delta: Option<SignedVarInt>,
+        ) -> GlobalStateDiff {
             let cur_slot = if slot_incr == 0 {
                 DaCounter::new_unchanged()
             } else {
@@ -461,8 +467,8 @@ mod tests {
         ];
 
         StateDiff::new(
-            build::global(5, Some(SignedVarInt::positive(900))),
-            build::ledger(new_accounts, account_diffs),
+            build::global_diff(5, Some(SignedVarInt::positive(900))),
+            build::ledger_diff(new_accounts, account_diffs),
         )
     }
 
@@ -656,7 +662,7 @@ mod tests {
         let account_diff = build::balance_diff(SignedVarInt::negative(501));
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
-            build::ledger(
+            build::ledger_diff(
                 Vec::new(),
                 vec![AccountDiffEntry::new(serial, account_diff)],
             ),
@@ -709,7 +715,7 @@ mod tests {
         let mut state = make_genesis_state();
         assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
 
-        let global_diff = build::global(0, Some(SignedVarInt::negative(1)));
+        let global_diff = build::global_diff(0, Some(SignedVarInt::negative(1)));
         let diff = StateDiff::new(global_diff, LedgerDiff::default());
 
         let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
@@ -823,8 +829,8 @@ mod tests {
 
         let mut applied = pre_accounts.state.clone();
         let diff = StateDiff::new(
-            build::global(4, Some(SignedVarInt::positive(800))),
-            build::ledger(
+            build::global_diff(4, Some(SignedVarInt::positive(800))),
+            build::ledger_diff(
                 vec![NewAccountEntry::new(new_id, build::empty_init(2_000))],
                 vec![
                     AccountDiffEntry::new(
@@ -941,7 +947,7 @@ mod tests {
     fn account_diffs_at(serials: &[u32]) -> StateDiff {
         StateDiff::new(
             GlobalStateDiff::default(),
-            build::ledger(
+            build::ledger_diff(
                 Vec::new(),
                 serials
                     .iter()
@@ -994,7 +1000,7 @@ mod tests {
 
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
-            build::ledger(
+            build::ledger_diff(
                 Vec::new(),
                 vec![AccountDiffEntry::new(
                     pre_accounts.empty.serial,
@@ -1024,7 +1030,7 @@ mod tests {
         );
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
-            build::ledger(
+            build::ledger_diff(
                 vec![NewAccountEntry::new(test_account_id(0x40), init)],
                 Vec::new(),
             ),
@@ -1088,5 +1094,104 @@ mod tests {
         let decoded = decode_ol_da_payload_bytes(&golden).expect("decode golden payload");
         let reencoded = encode_to_vec(&decoded).expect("re-encode decoded golden");
         assert_eq!(reencoded, golden);
+    }
+
+    /// Proptest strategies producing arbitrary, well-formed (encodable) [`StateDiff`] trees.
+    mod strategy {
+        use proptest::prelude::*;
+
+        use super::{build, *};
+
+        fn hash() -> impl Strategy<Value = Hash> {
+            any::<[u8; 32]>().prop_map(Hash::from)
+        }
+
+        fn account_id() -> impl Strategy<Value = AccountId> {
+            any::<[u8; 32]>().prop_map(AccountId::from)
+        }
+
+        fn signed_delta() -> impl Strategy<Value = SignedVarInt> {
+            (any::<bool>(), 1u64..1_000_000).prop_map(|(pos, mag)| {
+                if pos {
+                    SignedVarInt::positive(mag)
+                } else {
+                    SignedVarInt::negative(mag)
+                }
+            })
+        }
+
+        fn account_init() -> impl Strategy<Value = AccountInit> {
+            let empty = (0u64..1_000_000).prop_map(build::empty_init);
+            // VK length stays well under MAX_VK_BYTES; codec carries it as opaque bytes.
+            let snark = (
+                0u64..1_000_000,
+                hash(),
+                prop::collection::vec(any::<u8>(), 0..64),
+            )
+                .prop_map(|(bal, root, vk)| build::snark_init(bal, root, vk));
+            prop_oneof![empty, snark]
+        }
+
+        fn inbox_msg() -> impl Strategy<Value = DaMessageEntry> {
+            (account_id(), any::<u32>(), 0usize..256, any::<u8>())
+                .prop_map(|(src, epoch, len, byte)| build::inbox_msg(src, epoch, len, byte))
+        }
+
+        fn snark_diff() -> impl Strategy<Value = SnarkAccountDiff> {
+            (
+                any::<u16>(),
+                prop::option::of(hash()),
+                any::<u64>(),
+                prop::collection::vec(inbox_msg(), 0..4),
+            )
+                .prop_map(|(seqno, root, idx, msgs)| build::snark_diff(seqno, root, idx, msgs))
+        }
+
+        fn account_diff() -> impl Strategy<Value = AccountDiff> {
+            let balance_only = signed_delta().prop_map(build::balance_diff);
+            let snark_only =
+                snark_diff().prop_map(|s| AccountDiff::new(DaCounter::new_unchanged(), s));
+            // Both members set, exercising the compound mask.
+            let both = (signed_delta(), snark_diff())
+                .prop_map(|(d, s)| AccountDiff::new(DaCounter::new_changed(d), s));
+            prop_oneof![balance_only, snark_only, both]
+        }
+
+        fn global_diff() -> impl Strategy<Value = GlobalStateDiff> {
+            (any::<u16>(), prop::option::of(signed_delta()))
+                .prop_map(|(slot, limbo)| build::global_diff(slot, limbo))
+        }
+
+        /// Strategy for arbitrary encodable [`StateDiff`] trees, including empty/default shapes.
+        pub(super) fn state_diff() -> impl Strategy<Value = StateDiff> {
+            let new_accounts = prop::collection::vec(
+                (account_id(), account_init())
+                    .prop_map(|(id, init)| NewAccountEntry::new(id, init)),
+                0..4,
+            );
+            let account_diffs = prop::collection::vec(
+                (any::<u32>(), account_diff())
+                    .prop_map(|(s, d)| AccountDiffEntry::new(AccountSerial::from(s), d)),
+                0..4,
+            );
+            (global_diff(), new_accounts, account_diffs).prop_map(|(global, news, diffs)| {
+                StateDiff::new(global, build::ledger_diff(news, diffs))
+            })
+        }
+    }
+
+    proptest::proptest! {
+        /// Codec is a retraction: re-encoding a decoded payload reproduces the original bytes.
+        ///
+        /// This is structural, not semantic: it cannot detect lossy decode that re-encodes to the
+        /// same bytes. Value-level equality is blocked by missing `PartialEq` on `da-framework`
+        /// primitives.
+        #[test]
+        fn proptest_payload_codec_retraction(diff in strategy::state_diff()) {
+            let bytes = encode_to_vec(&OLDaPayloadV1::new(diff)).expect("encode payload");
+            let decoded = decode_ol_da_payload_bytes(&bytes).expect("decode payload");
+            let reencoded = encode_to_vec(&decoded).expect("re-encode payload");
+            proptest::prop_assert_eq!(reencoded, bytes);
+        }
     }
 }
