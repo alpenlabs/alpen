@@ -469,7 +469,6 @@ sled = "0.34.7"
 tempfile = "3.27.0"
 terrors = "0.3.0"
 thiserror = "2.0.11"
-threadpool = "1.8"
 tokio = { version = "1.52", features = ["full"] }
 tokio-stream = "0.1.17"
 toml = "0.5"

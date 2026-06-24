@@ -433,14 +433,13 @@ mod tests {
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
     use strata_status::StatusChannel;
-    use strata_storage::{create_node_storage, NodeStorage};
-    use threadpool::ThreadPool;
+    use strata_storage::{create_node_storage, test_runtime_handle, NodeStorage};
 
     use super::*;
     use crate::test_utils::TestBitcoinClient;
 
     fn test_storage() -> NodeStorage {
-        create_node_storage(get_test_sled_backend(), ThreadPool::new(1))
+        create_node_storage(get_test_sled_backend(), test_runtime_handle())
             .expect("test: create node storage")
     }
 
