@@ -241,17 +241,59 @@ fn default_l1_fee_rate_source() -> L1FeeRateSourceConfig {
     L1FeeRateSourceConfig::BtcioWriter
 }
 
+/// Static v1 fee-model constants.
+///
+/// Gossip encodes these fields manually in `encode_fee_config` / `decode_fee_config` and signs the
+/// encoded bytes, so changes to this field set must update the gossip wire format as well.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct StaticFeeModelConfig {
+    /// Static proving fee charged per unit of raw EVM gas.
+    pub prover_fee_per_gas_wei: u64,
+
+    /// Basis-points multiplier applied to the estimated DA fee.
+    pub da_overhead_multiplier_bps: u32,
+
+    /// Small additive fee charged for OL and infrastructure overhead.
+    pub ol_overhead_wei: u64,
+}
+
+impl StaticFeeModelConfig {
+    /// Creates static v1 fee-model constants.
+    pub const fn new(
+        prover_fee_per_gas_wei: u64,
+        da_overhead_multiplier_bps: u32,
+        ol_overhead_wei: u64,
+    ) -> Self {
+        Self {
+            prover_fee_per_gas_wei,
+            da_overhead_multiplier_bps,
+            ol_overhead_wei,
+        }
+    }
+
+    /// Returns the proving fee charged per unit of raw EVM gas.
+    pub const fn prover_fee_per_gas_wei(&self) -> u64 {
+        self.prover_fee_per_gas_wei
+    }
+
+    /// Returns the basis-points multiplier applied to the estimated DA fee.
+    pub const fn da_overhead_multiplier_bps(&self) -> u32 {
+        self.da_overhead_multiplier_bps
+    }
+
+    /// Returns the additive OL and infrastructure overhead fee.
+    pub const fn ol_overhead_wei(&self) -> u64 {
+        self.ol_overhead_wei
+    }
+}
+
 /// Configuration for the v1 L2 fee model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SequencerFeeModelConfig {
-    /// Static proving fee charged per unit of raw EVM gas.
-    pub(crate) prover_fee_per_gas_wei: u64,
-
-    /// Basis-points multiplier applied to the estimated DA fee.
-    pub(crate) da_overhead_multiplier_bps: u32,
-
-    /// Small additive fee charged for OL and infrastructure overhead.
-    pub(crate) ol_overhead_wei: u64,
+    /// Static fee-model constants shared with gossip and RPC.
+    #[serde(flatten)]
+    pub(crate) static_config: StaticFeeModelConfig,
 
     /// Source used to resolve the current L1 fee rate.
     #[serde(default = "default_l1_fee_rate_source")]
@@ -267,26 +309,33 @@ impl SequencerFeeModelConfig {
         l1_fee_rate_source: L1FeeRateSourceConfig,
     ) -> Self {
         Self {
-            prover_fee_per_gas_wei,
-            da_overhead_multiplier_bps,
-            ol_overhead_wei,
+            static_config: StaticFeeModelConfig::new(
+                prover_fee_per_gas_wei,
+                da_overhead_multiplier_bps,
+                ol_overhead_wei,
+            ),
             l1_fee_rate_source,
         }
     }
 
+    /// Returns the static fee-model constants.
+    pub fn static_config(&self) -> StaticFeeModelConfig {
+        self.static_config
+    }
+
     /// Returns the proving fee charged per unit of raw EVM gas.
     pub fn prover_fee_per_gas_wei(&self) -> u64 {
-        self.prover_fee_per_gas_wei
+        self.static_config.prover_fee_per_gas_wei()
     }
 
     /// Returns the basis-points multiplier applied to the estimated DA fee.
     pub fn da_overhead_multiplier_bps(&self) -> u32 {
-        self.da_overhead_multiplier_bps
+        self.static_config.da_overhead_multiplier_bps()
     }
 
     /// Returns the additive OL and infrastructure overhead fee.
     pub fn ol_overhead_wei(&self) -> u64 {
-        self.ol_overhead_wei
+        self.static_config.ol_overhead_wei()
     }
 
     /// Returns the source used to resolve the current L1 fee rate.

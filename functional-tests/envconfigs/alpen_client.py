@@ -8,7 +8,7 @@ from typing import cast
 
 import flexitest
 
-from common.config import EeDaConfig, ServiceType
+from common.config import EeDaConfig, FeeModelConfig, ServiceType
 from common.services.bitcoin import BitcoinService
 from factories.alpen_client import AlpenClientFactory, generate_sequencer_keypair
 from factories.bitcoin import BitcoinFactory
@@ -41,6 +41,7 @@ class AlpenClientEnvParams:
     batch_sealing_block_count: int = 10
     dev_track_latest_epoch: bool = False
     beneficiary_address: str | None = None
+    fee_model: FeeModelConfig | None = None
 
 
 class AlpenClientEnv(flexitest.EnvConfig):
@@ -72,6 +73,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         l1_reorg_safe_depth: int = 1,
         batch_sealing_block_count: int = 5,
         beneficiary_address: str | None = None,
+        fee_model: FeeModelConfig | None = None,
     ):
         self.env_params = AlpenClientEnvParams(
             fullnode_count=fullnode_count,
@@ -83,6 +85,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             l1_reorg_safe_depth=l1_reorg_safe_depth,
             batch_sealing_block_count=batch_sealing_block_count,
             beneficiary_address=beneficiary_address,
+            fee_model=fee_model,
         )
         if pure_discovery and not enable_discovery:
             raise ValueError("pure_discovery requires enable_discovery=True")
@@ -166,6 +169,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             batch_sealing_block_count=envparams.batch_sealing_block_count,
             dev_track_latest_epoch=envparams.dev_track_latest_epoch,
             beneficiary_address=envparams.beneficiary_address,
+            fee_model=envparams.fee_model,
         )
         sequencer.wait_for_ready(timeout=60)
         seq_enode = sequencer.get_enode()

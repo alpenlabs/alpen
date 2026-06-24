@@ -11,6 +11,7 @@ alloy-primitives = { workspace = true, features = ["serde"] }
 alpen-ee-rpc-types = { workspace = true, features = ["jsonschema"] }
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 schemars.workspace = true
+strata-config = { workspace = true, features = ["jsonschema"] }
 strata-open-rpc.workspace = true
 
 [features]

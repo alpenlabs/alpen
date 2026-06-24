@@ -10,6 +10,7 @@ workspace = true
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
 alpen-reth-rpc.workspace = true
+strata-config.workspace = true
 strata-primitives.workspace = true
 
 alloy-consensus.workspace = true
