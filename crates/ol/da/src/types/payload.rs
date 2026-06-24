@@ -338,6 +338,44 @@ mod tests {
         AccountId::from([seed; 32])
     }
 
+    /// Creates an empty account with the given balance, returning its serial.
+    fn seed_empty_account(
+        state: &mut MemoryStateBaseLayer,
+        id: AccountId,
+        sats: u64,
+    ) -> AccountSerial {
+        state
+            .create_new_account(
+                id,
+                NewAccountData::new(BitcoinAmount::from_sat(sats), NewAccountTypeState::Empty),
+            )
+            .expect("create empty account")
+    }
+
+    /// Reads an existing account's balance.
+    fn account_balance(state: &MemoryStateBaseLayer, id: AccountId) -> BitcoinAmount {
+        state
+            .get_account_state(id)
+            .expect("read account")
+            .expect("account exists")
+            .balance()
+    }
+
+    /// Applies a [`StateDiff`] to the state via [`OLStateDiff`] + [`DaWrite::apply`].
+    fn apply_ol_state_diff(
+        state: &mut MemoryStateBaseLayer,
+        diff: StateDiff,
+    ) -> Result<(), DaError> {
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
+        DaWrite::apply(&ol_diff, state, &())
+    }
+
+    /// Polls a [`StateDiff`] against the state via [`OLStateDiff`] + [`DaWrite::poll_context`].
+    fn poll_ol_state_diff(state: &MemoryStateBaseLayer, diff: StateDiff) -> Result<(), DaError> {
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
+        DaWrite::poll_context(&ol_diff, state, &())
+    }
+
     /// Builders for test OL DA diff trees.
     ///
     /// Builders produce encodable trees; they are not guaranteed to be apply-valid (e.g. serials
@@ -538,15 +576,14 @@ mod tests {
     #[test]
     fn test_validate_ledger_entries_rejects_duplicate_new_ids() {
         let account_id = test_account_id(1);
-        let init = AccountInit::new(BitcoinAmount::from_sat(1), AccountTypeInit::Empty);
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
-            LedgerDiff::new(
-                U16LenList::new(vec![
-                    NewAccountEntry::new(account_id, init.clone()),
-                    NewAccountEntry::new(account_id, init),
-                ]),
-                U16LenList::new(Vec::new()),
+            build::ledger_diff(
+                vec![
+                    NewAccountEntry::new(account_id, build::empty_init(1)),
+                    NewAccountEntry::new(account_id, build::empty_init(1)),
+                ],
+                Vec::new(),
             ),
         );
 
@@ -561,22 +598,17 @@ mod tests {
     fn test_ol_state_diff_poll_context_rejects_existing_new_account() {
         let mut state = make_genesis_state();
         let account_id = test_account_id(2);
-        let new_acct = NewAccountData::new(BitcoinAmount::from_sat(10), NewAccountTypeState::Empty);
-        state
-            .create_new_account(account_id, new_acct)
-            .expect("create account");
+        seed_empty_account(&mut state, account_id, 10);
 
-        let init = AccountInit::new(BitcoinAmount::from_sat(1), AccountTypeInit::Empty);
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
-            LedgerDiff::new(
-                U16LenList::new(vec![NewAccountEntry::new(account_id, init)]),
-                U16LenList::new(Vec::new()),
+            build::ledger_diff(
+                vec![NewAccountEntry::new(account_id, build::empty_init(1))],
+                Vec::new(),
             ),
         );
 
-        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
-        let result = DaWrite::poll_context(&ol_diff, &state, &());
+        let result = poll_ol_state_diff(&state, diff);
 
         assert!(matches!(
             result,
@@ -588,98 +620,80 @@ mod tests {
     fn test_ol_state_diff_apply_updates_balance() {
         let mut state = make_genesis_state();
         let account_id = test_account_id(3);
-        let new_acct =
-            NewAccountData::new(BitcoinAmount::from_sat(1_000), NewAccountTypeState::Empty);
-        let serial = state
-            .create_new_account(account_id, new_acct)
-            .expect("create account");
+        let serial = seed_empty_account(&mut state, account_id, 1_000);
 
         // Balance goes from 1_000 to 2_000, so the delta is +1_000
-        let account_diff = AccountDiff::new(
-            DaCounter::new_changed(SignedVarInt::positive(1_000)),
-            SnarkAccountDiff::default(),
-        );
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
-            LedgerDiff::new(
-                U16LenList::new(Vec::new()),
-                U16LenList::new(vec![AccountDiffEntry::new(serial, account_diff)]),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::positive(1_000)),
+                )],
             ),
         );
 
-        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
-        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply diff");
+        apply_ol_state_diff(&mut state, diff).expect("apply diff");
 
-        let account = state
-            .get_account_state(account_id)
-            .expect("read account")
-            .expect("account exists");
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(2_000));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::from_sat(2_000)
+        );
     }
 
     #[test]
     fn test_ol_state_diff_apply_decreases_balance() {
         let mut state = make_genesis_state();
         let account_id = test_account_id(30);
-        let new_acct =
-            NewAccountData::new(BitcoinAmount::from_sat(2_000), NewAccountTypeState::Empty);
-        let serial = state
-            .create_new_account(account_id, new_acct)
-            .expect("create account");
+        let serial = seed_empty_account(&mut state, account_id, 2_000);
 
-        let account_diff = AccountDiff::new(
-            DaCounter::new_changed(SignedVarInt::negative(750)),
-            SnarkAccountDiff::default(),
-        );
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
-            LedgerDiff::new(
-                U16LenList::new(Vec::new()),
-                U16LenList::new(vec![AccountDiffEntry::new(serial, account_diff)]),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::negative(750)),
+                )],
             ),
         );
 
-        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
-        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply diff");
+        apply_ol_state_diff(&mut state, diff).expect("apply diff");
 
-        let account = state
-            .get_account_state(account_id)
-            .expect("read account")
-            .expect("account exists");
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1_250));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::from_sat(1_250)
+        );
     }
 
     #[test]
     fn test_ol_state_diff_apply_rejects_insufficient_balance() {
         let mut state = make_genesis_state();
         let account_id = test_account_id(31);
-        let new_acct =
-            NewAccountData::new(BitcoinAmount::from_sat(500), NewAccountTypeState::Empty);
-        let serial = state
-            .create_new_account(account_id, new_acct)
-            .expect("create account");
+        let serial = seed_empty_account(&mut state, account_id, 500);
 
-        let account_diff = build::balance_diff(SignedVarInt::negative(501));
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
             build::ledger_diff(
                 Vec::new(),
-                vec![AccountDiffEntry::new(serial, account_diff)],
+                vec![AccountDiffEntry::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::negative(501)),
+                )],
             ),
         );
 
-        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
-        let result = DaWrite::apply(&ol_diff, &mut state, &());
+        let result = apply_ol_state_diff(&mut state, diff);
 
         assert!(matches!(
             result,
             Err(DaError::InvalidStateDiff("insufficient balance for diff"))
         ));
-        let account = state
-            .get_account_state(account_id)
-            .expect("read account")
-            .expect("account exists");
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(500));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::from_sat(500)
+        );
     }
 
     #[test]
@@ -687,25 +701,19 @@ mod tests {
         let mut state = make_genesis_state();
         assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
 
-        let global_diff = GlobalStateDiff::new(
-            DaCounter::new_unchanged(),
-            DaCounter::new_changed(SignedVarInt::positive(1_500)),
+        let diff = StateDiff::new(
+            build::global_diff(0, Some(SignedVarInt::positive(1_500))),
+            LedgerDiff::default(),
         );
-        let diff = StateDiff::new(global_diff, LedgerDiff::default());
-
-        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
-        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply limbo add diff");
+        apply_ol_state_diff(&mut state, diff).expect("apply limbo add diff");
 
         assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(1_500));
 
-        let global_diff = GlobalStateDiff::new(
-            DaCounter::new_unchanged(),
-            DaCounter::new_changed(SignedVarInt::negative(400)),
+        let diff = StateDiff::new(
+            build::global_diff(0, Some(SignedVarInt::negative(400))),
+            LedgerDiff::default(),
         );
-        let diff = StateDiff::new(global_diff, LedgerDiff::default());
-
-        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
-        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply limbo take diff");
+        apply_ol_state_diff(&mut state, diff).expect("apply limbo take diff");
 
         assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(1_100));
     }
@@ -715,11 +723,11 @@ mod tests {
         let mut state = make_genesis_state();
         assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
 
-        let global_diff = build::global_diff(0, Some(SignedVarInt::negative(1)));
-        let diff = StateDiff::new(global_diff, LedgerDiff::default());
-
-        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
-        let result = DaWrite::apply(&ol_diff, &mut state, &());
+        let diff = StateDiff::new(
+            build::global_diff(0, Some(SignedVarInt::negative(1))),
+            LedgerDiff::default(),
+        );
+        let result = apply_ol_state_diff(&mut state, diff);
 
         assert!(matches!(
             result,
@@ -753,14 +761,13 @@ mod tests {
         let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
-            LedgerDiff::new(
-                U16LenList::new(Vec::new()),
-                U16LenList::new(vec![AccountDiffEntry::new(serial, account_diff)]),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(serial, account_diff)],
             ),
         );
 
-        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
-        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply snark diff");
+        apply_ol_state_diff(&mut state, diff).expect("apply snark diff");
 
         let account = state
             .get_account_state(account_id)
@@ -994,19 +1001,11 @@ mod tests {
             Some(new_id_b)
         );
         assert_eq!(
-            state
-                .get_account_state(new_id_a)
-                .unwrap()
-                .expect("new account a")
-                .balance(),
+            account_balance(&state, new_id_a),
             BitcoinAmount::from_sat(1_000)
         );
         assert_eq!(
-            state
-                .get_account_state(new_id_b)
-                .unwrap()
-                .expect("new account b")
-                .balance(),
+            account_balance(&state, new_id_b),
             BitcoinAmount::from_sat(500)
         );
     }
@@ -1137,10 +1136,7 @@ mod tests {
     fn test_poll_context_rejects_malformed_vk() {
         let pre_accounts = pre_state_with_accounts();
         let bad_vk = vec![0xFFu8; 3];
-        let init = AccountInit::new(
-            BitcoinAmount::from_sat(1),
-            AccountTypeInit::Snark(SnarkAccountInit::new(Hash::from([0u8; 32]), bad_vk)),
-        );
+        let init = build::snark_init(1, Hash::from([0u8; 32]), bad_vk);
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
             build::ledger_diff(
@@ -1148,8 +1144,7 @@ mod tests {
                 Vec::new(),
             ),
         );
-        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
-        let result = DaWrite::poll_context(&ol_diff, &pre_accounts.state, &());
+        let result = poll_ol_state_diff(&pre_accounts.state, diff);
         assert!(matches!(
             result,
             Err(DaError::InvalidLedgerDiff("invalid predicate key"))
