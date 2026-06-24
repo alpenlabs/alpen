@@ -10,6 +10,7 @@ use reth_network_api::PeerId;
 use reth_primitives::Header;
 use reth_provider::CanonStateNotification;
 use strata_acct_types::Hash;
+use strata_config::StaticFeeModelConfig;
 use strata_primitives::buf::Buf32;
 use tokio::{
     select,
@@ -37,6 +38,7 @@ fn handle_gossip_event(
     connections: &mut HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
     highest_seq_no: &mut u64,
     preconf_tx: &watch::Sender<BlockNumHash>,
+    fee_config_tx: &watch::Sender<Option<StaticFeeModelConfig>>,
     config: &GossipConfig,
 ) -> bool {
     match event {
@@ -69,6 +71,7 @@ fn handle_gossip_event(
             connections,
             highest_seq_no,
             preconf_tx,
+            fee_config_tx,
             config,
         ),
     }
@@ -81,6 +84,7 @@ fn handle_gossip_package(
     connections: &HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
     highest_seq_no: &mut u64,
     preconf_tx: &watch::Sender<BlockNumHash>,
+    fee_config_tx: &watch::Sender<Option<StaticFeeModelConfig>>,
     config: &GossipConfig,
 ) -> bool {
     // Validate signature before processing
@@ -122,6 +126,25 @@ fn handle_gossip_package(
 
     // Update the highest sequence number seen
     *highest_seq_no = seq_no;
+
+    let fee_config = package.message().fee_config();
+    let previous_fee_config = *fee_config_tx.borrow();
+    if previous_fee_config != Some(fee_config) {
+        if fee_config_tx.send(Some(fee_config)).is_err() {
+            warn!(
+                target: "alpen-gossip",
+                "Failed to update fee config from gossip (no receivers)"
+            );
+        } else {
+            debug!(
+                target: "alpen-gossip",
+                prover_fee_per_gas_wei = fee_config.prover_fee_per_gas_wei(),
+                da_overhead_multiplier_bps = fee_config.da_overhead_multiplier_bps(),
+                ol_overhead_wei = fee_config.ol_overhead_wei(),
+                "Updated fee config from gossip"
+            );
+        }
+    }
 
     let block_hash = package.message().header().hash_slow();
 
@@ -170,6 +193,7 @@ fn handle_gossip_package(
 fn handle_state_event(
     res: Result<CanonStateNotification, broadcast::error::RecvError>,
     connections: &HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
+    fee_config_rx: &watch::Receiver<Option<StaticFeeModelConfig>>,
     config: &GossipConfig,
 ) -> bool {
     match res {
@@ -177,7 +201,7 @@ fn handle_state_event(
             if let CanonStateNotification::Commit { new } = event {
                 // Extract the last header from the new chain segment
                 if let Some(tip) = new.headers().last().map(|h| h.header().clone()) {
-                    broadcast_new_block(&tip, connections, config);
+                    broadcast_new_block(&tip, connections, fee_config_rx, config);
                 }
             }
             true // Continue loop
@@ -200,6 +224,7 @@ fn handle_state_event(
 fn broadcast_new_block(
     tip: &Header,
     connections: &HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
+    fee_config_rx: &watch::Receiver<Option<StaticFeeModelConfig>>,
     config: &GossipConfig,
 ) {
     if !config.sequencer_enabled {
@@ -224,12 +249,21 @@ fn broadcast_new_block(
             return;
         };
 
+        let Some(fee_config) = *fee_config_rx.borrow() else {
+            error!(
+                target: "alpen-gossip",
+                "Sequencer mode enabled but no fee config is available; skipping broadcast"
+            );
+            return;
+        };
+
         let msg = AlpenGossipMessage::new(
             tip.clone(),
             // NOTE: we use the block number as the sequence number
             //       because it's the block number from the header, which naturally
             //       provides monotonic, unique sequence numbers for gossip messages.
             tip.number,
+            fee_config,
         );
         let pkg = msg.into_package(config.sequencer_pubkey, sequencer_privkey);
 
@@ -259,6 +293,8 @@ pub(crate) async fn create_gossip_task(
     mut gossip_rx: mpsc::UnboundedReceiver<AlpenGossipEvent>,
     mut state_events: broadcast::Receiver<CanonStateNotification>,
     preconf_tx: watch::Sender<BlockNumHash>,
+    fee_config_tx: watch::Sender<Option<StaticFeeModelConfig>>,
+    fee_config_rx: watch::Receiver<Option<StaticFeeModelConfig>>,
     config: GossipConfig,
 ) {
     let mut connections: HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>> =
@@ -276,15 +312,152 @@ pub(crate) async fn create_gossip_task(
                     &mut connections,
                     &mut highest_seq_no,
                     &preconf_tx,
+                    &fee_config_tx,
                     &config,
                 );
             },
             res = state_events.recv() => {
-                if !handle_state_event(res, &connections, &config) {
+                if !handle_state_event(res, &connections, &fee_config_rx, &config) {
                     break;
                 }
             },
             else => { break; }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alpen_reth_node::AlpenGossipMessage;
+
+    use super::*;
+
+    fn test_peer_id() -> PeerId {
+        PeerId::repeat_byte(1)
+    }
+
+    fn sequencer_keys() -> (Buf32, Buf32) {
+        let private_key = "0x0101010101010101010101010101010101010101010101010101010101010101"
+            .parse::<Buf32>()
+            .expect("private key should parse");
+        let public_key = "0x1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+            .parse::<Buf32>()
+            .expect("public key should parse");
+        (private_key, public_key)
+    }
+
+    fn signed_package(
+        seq_no: u64,
+        fee_config: StaticFeeModelConfig,
+        public_key: Buf32,
+        private_key: Buf32,
+    ) -> AlpenGossipPackage {
+        let header = Header {
+            number: seq_no,
+            ..Header::default()
+        };
+        AlpenGossipMessage::new(header, seq_no, fee_config).into_package(public_key, private_key)
+    }
+
+    fn blocknumhash_sender() -> watch::Sender<BlockNumHash> {
+        let hash = Hash::from([0u8; 32]);
+        let (tx, _) = watch::channel(BlockNumHash::new(hash, 0));
+        tx
+    }
+
+    #[test]
+    fn test_valid_gossip_updates_fee_config() {
+        let (private_key, public_key) = sequencer_keys();
+        let config = GossipConfig {
+            sequencer_pubkey: public_key,
+            sequencer_enabled: false,
+            #[cfg(feature = "sequencer")]
+            sequencer_privkey: None,
+        };
+        let updated_fee_config = StaticFeeModelConfig::new(25, 12_500, 42);
+        let (fee_config_tx, fee_config_rx) = watch::channel(None);
+        let package = signed_package(1, updated_fee_config, public_key, private_key);
+        let mut highest_seq_no = 0;
+
+        handle_gossip_package(
+            test_peer_id(),
+            package,
+            &HashMap::new(),
+            &mut highest_seq_no,
+            &blocknumhash_sender(),
+            &fee_config_tx,
+            &config,
+        );
+
+        assert_eq!(*fee_config_rx.borrow(), Some(updated_fee_config));
+        assert_eq!(highest_seq_no, 1);
+    }
+
+    #[test]
+    fn test_unexpected_public_key_does_not_update_fee_config() {
+        let (private_key, public_key) = sequencer_keys();
+        let unexpected_public_key =
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+                .parse::<Buf32>()
+                .expect("public key should parse");
+        let config = GossipConfig {
+            sequencer_pubkey: unexpected_public_key,
+            sequencer_enabled: false,
+            #[cfg(feature = "sequencer")]
+            sequencer_privkey: None,
+        };
+        let (fee_config_tx, fee_config_rx) = watch::channel(None);
+        let package = signed_package(
+            1,
+            StaticFeeModelConfig::new(25, 12_500, 42),
+            public_key,
+            private_key,
+        );
+        let mut highest_seq_no = 0;
+
+        handle_gossip_package(
+            test_peer_id(),
+            package,
+            &HashMap::new(),
+            &mut highest_seq_no,
+            &blocknumhash_sender(),
+            &fee_config_tx,
+            &config,
+        );
+
+        assert_eq!(*fee_config_rx.borrow(), None);
+        assert_eq!(highest_seq_no, 0);
+    }
+
+    #[test]
+    fn test_stale_gossip_does_not_update_fee_config() {
+        let (private_key, public_key) = sequencer_keys();
+        let config = GossipConfig {
+            sequencer_pubkey: public_key,
+            sequencer_enabled: false,
+            #[cfg(feature = "sequencer")]
+            sequencer_privkey: None,
+        };
+        let (fee_config_tx, fee_config_rx) = watch::channel(None);
+        let package = signed_package(
+            1,
+            StaticFeeModelConfig::new(25, 12_500, 42),
+            public_key,
+            private_key,
+        );
+        let mut highest_seq_no = 1;
+
+        handle_gossip_package(
+            test_peer_id(),
+            package,
+            &HashMap::new(),
+            &mut highest_seq_no,
+            &blocknumhash_sender(),
+            &fee_config_tx,
+            &config,
+        );
+
+        assert_eq!(*fee_config_rx.borrow(), None);
+        assert_eq!(highest_seq_no, 1);
     }
 }
