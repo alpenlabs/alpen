@@ -6,6 +6,7 @@ use alloy_primitives::B256;
 use alpen_ee_common::{ChunkStatus, ChunkStorage, ConsensusHeads, OLBlockOrEpoch, Storage};
 use alpen_ee_rpc_api::{
     AlpenEeRpcServer, BlockStatus, BlockStatusResponse, ChunkProofCoverageResponse,
+    StaticFeeModelConfig,
 };
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
@@ -17,7 +18,9 @@ use reth_provider::{
 use strata_identifiers::Epoch;
 use tokio::sync::watch;
 
-use crate::errors::{block_not_found_error, internal_error, invalid_params_error};
+use crate::errors::{
+    block_not_found_error, fee_model_config_unavailable_error, internal_error, invalid_params_error,
+};
 
 /// Resolve `block_hash` to its canonical block number on `provider`.
 ///
@@ -115,6 +118,7 @@ pub struct EeRpcServer<N: NodeTypesWithDB + ProviderNodeTypes> {
     consensus_rx: watch::Receiver<ConsensusHeads>,
     chunk_storage: Arc<dyn ChunkStorage>,
     account_storage: Arc<dyn Storage>,
+    fee_model_config: Arc<dyn Fn() -> Option<StaticFeeModelConfig> + Send + Sync>,
 }
 
 impl<N: NodeTypesWithDB + ProviderNodeTypes> fmt::Debug for EeRpcServer<N> {
@@ -129,12 +133,14 @@ impl<N: NodeTypesWithDB + ProviderNodeTypes> EeRpcServer<N> {
         consensus_rx: watch::Receiver<ConsensusHeads>,
         chunk_storage: Arc<dyn ChunkStorage>,
         account_storage: Arc<dyn Storage>,
+        fee_model_config: Arc<dyn Fn() -> Option<StaticFeeModelConfig> + Send + Sync>,
     ) -> Self {
         Self {
             provider,
             consensus_rx,
             chunk_storage,
             account_storage,
+            fee_model_config,
         }
     }
 
@@ -314,6 +320,10 @@ where
             covered: false,
             first_uncovered_block: Some(first_uncovered_block),
         })
+    }
+
+    async fn get_fee_model_config(&self) -> RpcResult<StaticFeeModelConfig> {
+        (self.fee_model_config)().ok_or_else(fee_model_config_unavailable_error)
     }
 }
 
