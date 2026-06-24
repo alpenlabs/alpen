@@ -644,6 +644,39 @@ mod tests {
     }
 
     #[test]
+    fn test_ol_state_diff_apply_rejects_insufficient_balance() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(31);
+        let new_acct =
+            NewAccountData::new(BitcoinAmount::from_sat(500), NewAccountTypeState::Empty);
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create account");
+
+        let account_diff = build::balance_diff(SignedVarInt::negative(501));
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger(
+                Vec::new(),
+                vec![AccountDiffEntry::new(serial, account_diff)],
+            ),
+        );
+
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
+        let result = DaWrite::apply(&ol_diff, &mut state, &());
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff("insufficient balance for diff"))
+        ));
+        let account = state
+            .get_account_state(account_id)
+            .expect("read account")
+            .expect("account exists");
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(500));
+    }
+
+    #[test]
     fn test_ol_state_diff_apply_updates_limbo_funds() {
         let mut state = make_genesis_state();
         assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
@@ -669,6 +702,26 @@ mod tests {
         DaWrite::apply(&ol_diff, &mut state, &()).expect("apply limbo take diff");
 
         assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(1_100));
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_rejects_insufficient_limbo_funds() {
+        let mut state = make_genesis_state();
+        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
+
+        let global_diff = build::global(0, Some(SignedVarInt::negative(1)));
+        let diff = StateDiff::new(global_diff, LedgerDiff::default());
+
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
+        let result = DaWrite::apply(&ol_diff, &mut state, &());
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "insufficient limbo funds for diff"
+            ))
+        ));
+        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
     }
 
     #[test]
@@ -1008,6 +1061,9 @@ mod tests {
     }
 
     /// Frozen wire-format fixture for [`OLDaPayloadV1`].
+    ///
+    /// The hex was derived from the encoder and acts as a drift detector, not a hand-verified spec
+    /// oracle.
     const GOLDEN_PAYLOAD_V1_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba030000000102070003032222222222222222222222222222222222222222222222222222222222222222020002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
 
     fn hex_to_bytes(hex: &str) -> Vec<u8> {
