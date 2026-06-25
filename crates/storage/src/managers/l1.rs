@@ -1,12 +1,16 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmManifest;
-use strata_db_types::{traits::L1Database, DbError, DbResult};
-use strata_primitives::{l1::L1BlockId, L1Height};
-use threadpool::ThreadPool;
+use strata_db_types::l1::L1Database;
+use strata_db_types::{DbError, DbResult};
+use strata_primitives::l1::L1BlockId;
+use strata_primitives::L1Height;
+use tokio::runtime::Handle;
 use tracing::{error, instrument};
 
-use crate::{cache::CacheTable, instrumentation::components, ops};
+use crate::cache::CacheTable;
+use crate::instrumentation::components;
+use crate::ops;
 
 /// Caching manager of L1 block data
 #[expect(
@@ -21,8 +25,8 @@ pub struct L1BlockManager {
 
 impl L1BlockManager {
     /// Create new instance of [`L1BlockManager`]
-    pub fn new(pool: ThreadPool, db: Arc<impl L1Database + 'static>) -> Self {
-        let ops = ops::l1::Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl L1Database + 'static>) -> Self {
+        let ops = ops::l1::L1DataOps::new(handle, db);
         let manifest_cache = CacheTable::new(64.try_into().unwrap());
         let blockheight_cache = CacheTable::new(64.try_into().unwrap());
         Self {
@@ -229,7 +233,7 @@ impl L1BlockManager {
         blockid: &L1BlockId,
     ) -> DbResult<Option<AsmManifest>> {
         self.manifest_cache
-            .get_or_fetch(blockid, || self.ops.get_block_manifest_chan(*blockid))
+            .get_or_fetch(blockid, || self.ops.get_block_manifest_fut(*blockid).recv())
             .await
     }
 
@@ -268,7 +272,7 @@ impl L1BlockManager {
     ) -> DbResult<Option<L1BlockId>> {
         self.blockheight_cache
             .get_or_fetch(&height, || {
-                self.ops.get_canonical_blockid_at_height_chan(height)
+                self.ops.get_canonical_blockid_at_height_fut(height).recv()
             })
             .await
     }

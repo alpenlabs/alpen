@@ -1,9 +1,11 @@
+use strata_db_types::mmr_index::MmrIndexDatabase;
 use strata_db_types::{
     DbError, DbResult, LeafPos, MmrBatchWrite, MmrIndexPrecondition, MmrNodePos, MmrNodeTable,
-    NodePos, RawMmrId, traits::MmrIndexDatabase,
+    NodePos, RawMmrId,
 };
 use strata_identifiers::Hash;
-use typed_sled::{error, tree::SledTransactionalTree};
+use typed_sled::error;
+use typed_sled::tree::SledTransactionalTree;
 
 use super::schemas::{MmrIndexLeafCountSchema, MmrIndexNodeSchema, MmrIndexPreimageSchema};
 use crate::define_sled_database;

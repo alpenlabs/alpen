@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, anyhow, bail};
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_sequencer::{SequencerBuilder, SequencerServiceStatus};

@@ -1,10 +1,23 @@
 //! Database for the Alpen codebase.
 
+pub mod asm;
+pub mod backend;
+pub mod checkpoint_proof;
+pub mod chunked_envelope;
+pub mod client_state;
+pub mod common;
 pub mod errors;
-mod mmr_index;
+pub mod l1;
+pub mod l1_broadcast;
+pub mod l1_writer;
+pub mod legacy;
+pub mod mempool;
+pub mod mmr_index;
+pub mod ol_block;
+pub mod ol_checkpoint;
+pub mod ol_state;
 pub mod ol_state_index;
-pub mod traits;
-pub mod types;
+pub mod prover_task;
 
 /// Wrapper result type for database operations.
 pub type DbResult<T> = anyhow::Result<T, errors::DbError>;

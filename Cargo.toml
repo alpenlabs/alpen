@@ -224,6 +224,7 @@ strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = 
 ], tag = "v0.3.0-rc.1" }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
 strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
+strata-db-macros = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
 strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.1" }
@@ -468,7 +469,6 @@ sled = "0.34.7"
 tempfile = "3.27.0"
 terrors = "0.3.0"
 thiserror = "2.0.11"
-threadpool = "1.8"
 tokio = { version = "1.52", features = ["full"] }
 tokio-stream = "0.1.17"
 toml = "0.5"

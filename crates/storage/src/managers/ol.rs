@@ -2,14 +2,12 @@
 
 use std::sync::Arc;
 
-use strata_db_types::{
-    traits::{BlockStatus, OLBlockDatabase},
-    DbResult,
-};
+use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
+use strata_db_types::DbResult;
 use strata_identifiers::{OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
 use strata_primitives::OLBlockCommitment;
-use threadpool::ThreadPool;
+use tokio::runtime::Handle;
 
 use crate::{cache, ops};
 
@@ -24,8 +22,8 @@ pub struct OLBlockManager {
 }
 
 impl OLBlockManager {
-    pub fn new(pool: ThreadPool, db: Arc<impl OLBlockDatabase + 'static>) -> Self {
-        let ops = ops::ol::Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl OLBlockDatabase + 'static>) -> Self {
+        let ops = ops::ol::OLBlockOps::new(handle, db);
         let block_cache = cache::CacheTable::new(64.try_into().unwrap());
         Self { ops, block_cache }
     }
@@ -136,7 +134,7 @@ impl OLBlockManager {
     /// Gets a block either in the cache or from the underlying database.
     pub async fn get_block_data_async(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
         self.block_cache
-            .get_or_fetch(&id, || self.ops.get_block_data_chan(id))
+            .get_or_fetch(&id, || self.ops.get_block_data_fut(id).recv())
             .await
     }
 
@@ -285,19 +283,19 @@ mod tests {
 
     use proptest::prelude::*;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::traits::{BlockStatus, DatabaseBackend};
+    use strata_db_types::backend::DatabaseBackend;
+    use strata_db_types::ol_block::BlockStatus;
     use strata_identifiers::{Buf32, OLBlockId};
     use strata_ol_chain_types_new::test_utils as ol_test_utils;
-    use threadpool::ThreadPool;
     use tokio::runtime::Runtime;
 
     use super::*;
 
     fn setup_manager() -> OLBlockManager {
-        let pool = ThreadPool::new(1);
+        let handle = crate::test_runtime_handle();
         let db = Arc::new(get_test_sled_backend());
         let ol_block_db = db.ol_block_db();
-        OLBlockManager::new(pool, ol_block_db)
+        OLBlockManager::new(handle, ol_block_db)
     }
 
     proptest! {

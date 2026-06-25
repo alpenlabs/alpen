@@ -2,7 +2,7 @@ use std::{str, sync::Arc};
 
 use hex::encode_to_slice;
 use strata_db_types::{
-    types::{L1TxEntry, L1TxStatus},
+    l1_broadcast::{L1TxEntry, L1TxStatus},
     DbResult,
 };
 use strata_primitives::buf::Buf32;

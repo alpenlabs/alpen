@@ -2,7 +2,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use strata_db_types::types::IntentEntry;
+use strata_db_types::l1_writer::IntentEntry;
 use strata_service::{ServiceBuilder, ServiceMonitor, TickingInput, TokioMpscInput};
 use strata_storage::ops::writer::EnvelopeDataOps;
 use strata_tasks::TaskExecutor;

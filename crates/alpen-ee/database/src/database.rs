@@ -3,13 +3,14 @@ use alpen_ee_common::{
     EeAccountStateAtEpoch, ExecBlockRecord,
 };
 use strata_acct_types::Hash;
+use strata_db_macros::gen_proxy;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{EpochCommitment, OLBlockId};
-use strata_storage_common::inst_ops_generic;
 
-use crate::{error::DbError, instrumentation::components, DbResult};
+use crate::{DbError, DbResult};
 
 /// Database interface for EE node account state management.
+#[gen_proxy(error = DbError, tracing_component = "storage:ee_node")]
 pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Stores EE account state for a given OL epoch commitment.
     fn store_ee_account_state(
@@ -167,61 +168,5 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
 }
 
 pub(crate) mod ops {
-    use super::*;
-
-    inst_ops_generic! {
-        (<D: EeNodeDb> => EeNodeOps, DbError, component = components::STORAGE_EE_NODE) {
-            store_ee_account_state(ol_epoch: EpochCommitment, ee_account_state: EeAccountState) =>();
-            rollback_ee_account_state(to_epoch: u32) => ();
-            get_ol_blockid(epoch: u32) => Option<OLBlockId>;
-            ee_account_state(block_id: OLBlockId) => Option<EeAccountStateAtEpoch>;
-            best_ee_account_state() => Option<EeAccountStateAtEpoch>;
-
-            save_exec_block(block: ExecBlockRecord, payload: Vec<u8>) => ();
-            init_finalized_chain(hash: Hash) => ();
-            extend_finalized_chain(new_tip: Hash) => ();
-            revert_finalized_chain(to_height: u64) => ();
-            prune_block_data(to_height: u64) => ();
-            best_finalized_block() => Option<ExecBlockRecord>;
-            get_finalized_block_at_height(height: u64) => Option<ExecBlockRecord>;
-            get_finalized_height(hash: Hash) => Option<u64>;
-            get_unfinalized_blocks() => Vec<Hash>;
-            get_exec_block(hash: Hash) => Option<ExecBlockRecord>;
-            get_block_payload(hash: Hash) => Option<Vec<u8>>;
-            delete_exec_block(hash: Hash) => ();
-
-            // Batch operations
-            save_genesis_batch(batch: Batch) => ();
-            save_next_batch(batch: Batch) => ();
-            update_batch_status(batch_id: BatchId, status: BatchStatus) => ();
-            revert_batches(to_idx: u64) => ();
-            get_batch_by_id(batch_id: BatchId) => Option<(Batch, BatchStatus)>;
-            get_batch_by_idx(idx: u64) => Option<(Batch, BatchStatus)>;
-            get_latest_batch() => Option<(Batch, BatchStatus)>;
-
-            // Chunk operations
-            save_next_chunk(chunk: Chunk) => ();
-            update_chunk_status(chunk_id: ChunkId, status: ChunkStatus) => ();
-            revert_chunks_from(from_idx: u64) => ();
-            get_chunk_by_id(chunk_id: ChunkId) => Option<(Chunk, ChunkStatus)>;
-            get_chunk_by_idx(idx: u64) => Option<(Chunk, ChunkStatus)>;
-            get_latest_chunk() => Option<(Chunk, ChunkStatus)>;
-            get_sealed_chunks(start_idx: u64, limit: usize) => Vec<(Chunk, ChunkStatus)>;
-            get_proof_pending_chunks(start_idx: u64, limit: usize) => Vec<(Chunk, ChunkStatus)>;
-            set_batch_chunks(batch_id: BatchId, chunks: Vec<ChunkId>) => ();
-            get_batch_chunks(batch_id: BatchId) => Option<Vec<ChunkId>>;
-
-            // Per-block proof-witness operations
-            put_block_witness(block_id: Hash, witness: Vec<u8>) => ();
-            get_block_witness(block_id: Hash) => Option<Vec<u8>>;
-            del_block_witness(block_id: Hash) => ();
-
-            // Per-block accessed-state + bytecode operations
-            put_block_accessed_state(block_id: Hash, record: AccessedStateRecord) => ();
-            get_block_accessed_state(block_id: Hash) => Option<AccessedStateRecord>;
-            del_block_accessed_state(block_id: Hash) => ();
-            put_bytecode(code_hash: Hash, code: Vec<u8>) => ();
-            get_bytecode(code_hash: Hash) => Option<Vec<u8>>;
-        }
-    }
+    pub(crate) use super::EeNodeDbProxy as EeNodeOps;
 }

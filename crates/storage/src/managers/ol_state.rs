@@ -1,39 +1,20 @@
 //! High-level OL state interface.
 
-use std::{num::NonZeroUsize, sync::Arc};
+use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 use futures::TryFutureExt;
-use strata_db_types::{errors::DbError, traits::OLStateDatabase, DbResult};
+use strata_db_types::ol_state::OLStateDatabase;
+use strata_db_types::DbResult;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
-use strata_storage_common::exec::{GenericRecv, OpsError};
-use threadpool::ThreadPool;
-use tokio::sync::oneshot;
+use tokio::runtime::Handle;
 
-use crate::{
-    cache::CacheTable,
-    ops::ol_state::{Context, OLStateOps},
-};
+use crate::cache::CacheTable;
+use crate::ops::ol_state::OLStateOps;
 
 /// Default cache capacity for OL state and write batch caches.
 const DEFAULT_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(64).expect("64 is non-zero");
-
-/// Helper that spawns a task that waits on a oneshot to convert a `Option<T>`
-/// to a `Option<Arc<T>>` on another oneshot.
-fn wrap_oneshot_val_in_arc<T: Sync + Send + 'static>(
-    rx: GenericRecv<Option<T>, DbError>,
-) -> GenericRecv<Option<Arc<T>>, DbError> {
-    let (tx, new_rx) = oneshot::channel();
-    tokio::spawn(async move {
-        let result = match rx.await {
-            Ok(Ok(opt)) => Ok(opt.map(Arc::new)),
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(OpsError::WorkerFailedStrangely.into()),
-        };
-        let _ = tx.send(result);
-    });
-    new_rx
-}
 
 #[expect(
     missing_debug_implementations,
@@ -46,8 +27,8 @@ pub struct OLStateManager {
 }
 
 impl OLStateManager {
-    pub fn new<D: OLStateDatabase + Sync + Send + 'static>(pool: ThreadPool, db: Arc<D>) -> Self {
-        let ops = Context::new(db.clone()).into_ops(pool);
+    pub fn new<D: OLStateDatabase + Sync + Send + 'static>(handle: Handle, db: Arc<D>) -> Self {
+        let ops = OLStateOps::new(handle, db);
         let state_cache = CacheTable::new(DEFAULT_CACHE_CAPACITY);
         let wb_cache = CacheTable::new(DEFAULT_CACHE_CAPACITY);
         Self {
@@ -91,8 +72,12 @@ impl OLStateManager {
         commitment: OLBlockCommitment,
     ) -> DbResult<Option<Arc<OLState>>> {
         self.state_cache
-            .get_or_fetch(&commitment, || {
-                wrap_oneshot_val_in_arc(self.ops.get_toplevel_ol_state_chan(commitment))
+            .get_or_fetch(&commitment, || async move {
+                self.ops
+                    .get_toplevel_ol_state_fut(commitment)
+                    .recv()
+                    .await
+                    .map(|opt| opt.map(Arc::new))
             })
             .await
     }
@@ -173,7 +158,9 @@ impl OLStateManager {
         commitment: OLBlockCommitment,
     ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
         self.wb_cache
-            .get_or_fetch(&commitment, || self.ops.get_ol_write_batch_chan(commitment))
+            .get_or_fetch(&commitment, || {
+                self.ops.get_ol_write_batch_fut(commitment).recv()
+            })
             .await
     }
 
@@ -208,21 +195,20 @@ mod tests {
 
     use proptest::prelude::*;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::traits::DatabaseBackend;
-    use strata_identifiers::{test_utils::ol_block_commitment_strategy, OLBlockCommitment};
-    use strata_ol_state_types::{
-        test_utils::ol_state_strategy, OLAccountState, OLState, WriteBatch,
-    };
-    use threadpool::ThreadPool;
+    use strata_db_types::backend::DatabaseBackend;
+    use strata_identifiers::test_utils::ol_block_commitment_strategy;
+    use strata_identifiers::OLBlockCommitment;
+    use strata_ol_state_types::test_utils::ol_state_strategy;
+    use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
     use tokio::runtime::Runtime;
 
     use super::*;
 
     fn setup_manager() -> OLStateManager {
-        let pool = ThreadPool::new(1);
+        let handle = crate::test_runtime_handle();
         let db = Arc::new(get_test_sled_backend());
         let ol_state_db = db.ol_state_db();
-        OLStateManager::new(pool, ol_state_db)
+        OLStateManager::new(handle, ol_state_db)
     }
 
     // =============================================================================

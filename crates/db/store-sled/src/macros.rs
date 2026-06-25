@@ -404,11 +404,9 @@ macro_rules! define_sled_database {
 #[cfg(test)]
 mod tests {
     use rkyv::{Archive, Deserialize, Serialize};
-    use typed_sled::{
-        SledDb,
-        codec::{CodecError, KeyCodec},
-        error::Error,
-    };
+    use typed_sled::SledDb;
+    use typed_sled::codec::{CodecError, KeyCodec};
+    use typed_sled::error::Error;
 
     #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
     pub(crate) struct RkyvValue {

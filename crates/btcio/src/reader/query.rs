@@ -12,7 +12,8 @@ use strata_config::btcio::ReaderConfig;
 use strata_primitives::l1::{L1BlockCommitment, L1Height};
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
-use strata_storage::{L1BlockManager, NodeStorage};
+use strata_storage::NodeStorage;
+use thiserror::Error;
 use tokio::time::sleep;
 use tracing::*;
 
@@ -65,6 +66,20 @@ impl ReaderValidation {
     }
 }
 
+#[derive(Debug, Error, PartialEq, Eq)]
+enum ReaderError {
+    #[error(
+        "btcio: unable to find common L1 block with Bitcoin client chain \
+         (client height {client_height}, reader best height {reader_best_height}, \
+         known depth {known_depth})"
+    )]
+    PivotNotFound {
+        client_height: L1Height,
+        reader_best_height: L1Height,
+        known_depth: usize,
+    },
+}
+
 /// The main task that initializes the reader state and starts reading from bitcoin.
 pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     client: Arc<impl Reader>,
@@ -76,7 +91,7 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
     let target_next_block =
-        calculate_target_next_block(storage.l1().as_ref(), btcio_params.genesis_l1_height())?;
+        calculate_target_next_block(storage.as_ref(), btcio_params.genesis_l1_height()).await?;
 
     let ctx = ReaderContext {
         client,
@@ -91,17 +106,55 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
 }
 
 /// Calculates target next block to start polling l1 from.
-fn calculate_target_next_block(
-    l1_manager: &L1BlockManager,
-    horz_height: L1Height,
+async fn calculate_target_next_block(
+    storage: &NodeStorage,
+    genesis_l1_height: L1Height,
 ) -> anyhow::Result<L1Height> {
-    // TODO(STR-3691): switch to checking the L1 tip in the consensus/client state
-    let target_next_block = l1_manager
-        .get_canonical_chain_tip()?
-        .map(|(height, _)| height + 1)
-        .unwrap_or(horz_height);
-    assert!(target_next_block >= horz_height);
+    let client_state_target = calculate_client_state_target(storage).await?;
+    let stored_l1_target = storage
+        .l1()
+        .get_canonical_chain_tip_async()
+        .await?
+        .map(|(height, _)| height.saturating_add(1))
+        .unwrap_or(genesis_l1_height);
+    let target_next_block = client_state_target
+        .unwrap_or(genesis_l1_height)
+        .max(stored_l1_target)
+        .max(genesis_l1_height);
     Ok(target_next_block)
+}
+
+async fn calculate_client_state_target(storage: &NodeStorage) -> anyhow::Result<Option<L1Height>> {
+    let Some((block, _)) = storage
+        .client_state()
+        .fetch_most_recent_state_async()
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    match storage
+        .l1()
+        .get_canonical_blockid_at_height_async(block.height())
+        .await?
+    {
+        Some(blockid) if blockid == *block.blkid() => Ok(Some(block.height().saturating_add(1))),
+        Some(blockid) => {
+            warn!(
+                client_state_block = %block,
+                canonical_l1_blkid = %blockid,
+                "ignoring latest client-state height because it is not on the stored L1 canonical chain"
+            );
+            Ok(None)
+        }
+        None => {
+            warn!(
+                client_state_block = %block,
+                "ignoring latest client-state height because its L1 block is not stored as canonical"
+            );
+            Ok(None)
+        }
+    }
 }
 
 /// Inner function that actually does the reading task.
@@ -269,9 +322,18 @@ async fn poll_for_new_blocks<R: Reader>(
             return Ok(vec![revert_ev]);
         }
     } else {
-        // TODO(STR-3691): make this case a bit more structured
-        error!("unable to find common block with client chain, something is seriously wrong here!");
-        bail!("things are broken with l1 reader");
+        let reader_best_height = state.best_block_idx();
+        let known_depth = state.iter_blocks_back().count();
+        let err = ReaderError::PivotNotFound {
+            client_height,
+            reader_best_height,
+            known_depth,
+        };
+        error!(
+            client_height,
+            reader_best_height, known_depth, "unable to find common block with client chain"
+        );
+        return Err(err.into());
     }
 
     debug!(%client_height, "have new blocks");
@@ -358,4 +420,154 @@ async fn process_block<R: Reader>(
     let block_ev = L1Event::BlockData(block_data, state.epoch());
 
     Ok((block_ev, l1blkid))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::VecDeque, sync::Arc};
+
+    use bitcoin::{hashes::Hash, BlockHash, Network};
+    use strata_config::btcio::ReaderConfig;
+    use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_l1_txfmt::MagicBytes;
+    use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
+    use strata_status::StatusChannel;
+    use strata_storage::{create_node_storage, test_runtime_handle, NodeStorage};
+
+    use super::*;
+    use crate::test_utils::TestBitcoinClient;
+
+    fn test_storage() -> NodeStorage {
+        create_node_storage(get_test_sled_backend(), test_runtime_handle())
+            .expect("test: create node storage")
+    }
+
+    fn l1_block(height: L1Height) -> L1BlockCommitment {
+        L1BlockCommitment::new(height, L1BlockId::default())
+    }
+
+    async fn store_client_state(storage: &NodeStorage, height: L1Height) {
+        let block = l1_block(height);
+        storage
+            .client_state()
+            .put_update_async(
+                &block,
+                ClientUpdateOutput::new_state(ClientState::default()),
+            )
+            .await
+            .expect("test: put client state");
+    }
+
+    async fn store_l1_canonical(storage: &NodeStorage, height: L1Height) {
+        storage
+            .l1()
+            .extend_canonical_chain_async(&L1BlockId::default(), height)
+            .await
+            .expect("test: extend canonical chain");
+    }
+
+    fn block_hash(byte: u8) -> BlockHash {
+        BlockHash::from_byte_array([byte; 32])
+    }
+
+    fn reader_context(storage: NodeStorage) -> ReaderContext<TestBitcoinClient> {
+        ReaderContext {
+            client: Arc::new(TestBitcoinClient::new(0)),
+            storage: Arc::new(storage),
+            config: Arc::new(ReaderConfig::default()),
+            btcio_params: BtcioParams::new(2, MagicBytes::new(*b"ALPN"), 0),
+            expected_network: Network::Regtest,
+            expected_l1_anchor: l1_block(0),
+            status_channel: StatusChannel::new(
+                ClientState::default(),
+                l1_block(0),
+                L1Status::default(),
+                None,
+                None,
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_falls_back_to_genesis_without_client_state() {
+        let storage = test_storage();
+
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
+
+        assert_eq!(target, 42);
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_uses_latest_client_state_height() {
+        let storage = test_storage();
+        store_client_state(&storage, 100).await;
+        store_l1_canonical(&storage, 100).await;
+
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
+
+        assert_eq!(target, 101);
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_ignores_client_state_without_l1_canonical_anchor() {
+        let storage = test_storage();
+        store_client_state(&storage, 100).await;
+
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
+
+        assert_eq!(target, 42);
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_clamps_pregenesis_client_state_to_genesis() {
+        let storage = test_storage();
+        store_client_state(&storage, 10).await;
+        store_l1_canonical(&storage, 10).await;
+
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
+
+        assert_eq!(target, 42);
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_does_not_replay_stored_l1_tip() {
+        let storage = test_storage();
+        store_client_state(&storage, 100).await;
+        store_l1_canonical(&storage, 111).await;
+
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
+
+        assert_eq!(target, 112);
+    }
+
+    #[tokio::test]
+    async fn poll_for_new_blocks_reports_structured_pivot_failure() {
+        let ctx = reader_context(test_storage());
+        let mut state = ReaderState::new(3, 2, VecDeque::from([block_hash(1), block_hash(2)]), 0);
+        let mut status_updates = Vec::new();
+
+        let err = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+            .await
+            .expect_err("test: pivot failure");
+
+        assert_eq!(
+            err.downcast_ref::<ReaderError>(),
+            Some(&ReaderError::PivotNotFound {
+                client_height: 100,
+                reader_best_height: 2,
+                known_depth: 2,
+            })
+        );
+    }
 }

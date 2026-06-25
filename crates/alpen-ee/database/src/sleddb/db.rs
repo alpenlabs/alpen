@@ -61,10 +61,10 @@ where
                     %err,
                     "finalized tip shifted while extending chain; retrying whole operation"
                 );
-                // NOTE: blocking sleep is safe here because EE DB ops are dispatched on a
-                // dedicated threadpool via `inst_ops_generic!`, so this blocks a worker
-                // thread rather than the async runtime. If this helper is ever invoked
-                // directly from async context, switch to a non-blocking sleep.
+                // NOTE: blocking sleep is safe here because EE DB ops are dispatched through
+                // the generated proxy via `spawn_blocking`, so this blocks a worker thread rather
+                // than the async runtime. If this helper is ever invoked directly from async
+                // context, switch to a non-blocking sleep.
                 thread::sleep(Duration::from_millis(delay_ms));
                 delay_ms = config.backoff.next_delay_ms(delay_ms);
             }

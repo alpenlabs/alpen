@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, to_vec};
 use sled::IVec;
 use ssz::{Decode, Encode};
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::OLBlock;
 use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};

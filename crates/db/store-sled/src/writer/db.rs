@@ -1,16 +1,13 @@
-use strata_db_types::{
-    DbResult,
-    errors::DbError,
-    traits::L1WriterDatabase,
-    types::{BundledPayloadEntry, IntentEntry},
+use strata_db_types::DbResult;
+use strata_db_types::errors::DbError;
+use strata_db_types::l1_writer::{
+    BundledPayloadEntry, IntentEntry, IntentStatus, L1WriterDatabase,
 };
 use strata_primitives::buf::Buf32;
 
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
-use crate::{
-    define_sled_database,
-    utils::{find_next_available_id, first},
-};
+use crate::define_sled_database;
+use crate::utils::{find_next_available_id, first};
 
 define_sled_database!(
     pub struct L1WriterDBSled {
@@ -55,6 +52,30 @@ impl L1WriterDatabase for L1WriterDBSled {
                     Ok(nxt)
                 })?;
         Ok(idx)
+    }
+
+    fn bundle_intent_payload(
+        &self,
+        intent_id: Buf32,
+        intent_entry: IntentEntry,
+        payload_entry: BundledPayloadEntry,
+    ) -> DbResult<u64> {
+        let next_payload_idx = self
+            .payload_tree
+            .last()?
+            .map(first)
+            .map(|idx| idx + 1)
+            .unwrap_or(0);
+
+        self.config
+            .with_retry((&self.payload_tree, &self.intent_tree), |(pt, it)| {
+                let payload_idx = find_next_available_id(&pt, next_payload_idx)?;
+                pt.insert(&payload_idx, &payload_entry)?;
+                let mut bundled_intent_entry = intent_entry.clone();
+                bundled_intent_entry.status = IntentStatus::Bundled(payload_idx);
+                it.insert(&intent_id, &bundled_intent_entry)?;
+                Ok(payload_idx)
+            })
     }
 
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>> {

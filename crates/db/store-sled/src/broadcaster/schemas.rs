@@ -1,4 +1,4 @@
-use strata_db_types::types::L1TxEntry;
+use strata_db_types::l1_broadcast::L1TxEntry;
 use strata_primitives::buf::Buf32;
 
 use crate::{define_table_with_default_codec, define_table_with_integer_key};

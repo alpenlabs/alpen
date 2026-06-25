@@ -36,4 +36,4 @@ strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-asm-proto-checkpoint-types = { workspace = true, features = [
   "test-utils",
 ] }
-threadpool.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }

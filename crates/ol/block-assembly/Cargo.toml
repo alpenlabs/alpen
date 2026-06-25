@@ -45,7 +45,6 @@ proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
-threadpool = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 
@@ -63,9 +62,9 @@ test-utils = [
   "dep:strata-msg-fmt",
   "dep:strata-ol-msg-types",
   "dep:strata-state",
-  "dep:threadpool",
   "strata-db-store-sled/test_utils",
   "strata-ol-chain-types-new/test-utils",
+  "strata-storage/test-utils",
 ]
 
 [dev-dependencies]
@@ -83,4 +82,3 @@ strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-msg-types.workspace = true
 strata-predicate.workspace = true
 strata-state.workspace = true
-threadpool.workspace = true

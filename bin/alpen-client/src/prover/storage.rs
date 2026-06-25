@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use alpen_ee_common::{BatchId, Proof, ProofId};
 use alpen_ee_database::EeProverDbSled;
-use strata_db_types::{errors::DbError, traits::ProverTaskDatabase};
+use strata_db_types::{errors::DbError, prover_task::ProverTaskDatabase};
 use strata_paas::{
     ProverError, ProverResult, ReceiptStore, TaskRecord, TaskRecordData, TaskStatus, TaskStore,
 };

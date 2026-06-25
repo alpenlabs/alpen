@@ -1,8 +1,11 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::traits::{
-    BlockStatus, DatabaseBackend, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
-    OLStateIndexingDatabase,
+use strata_db_types::{
+    backend::DatabaseBackend,
+    ol_block::{BlockStatus, OLBlockDatabase},
+    ol_checkpoint::OLCheckpointDatabase,
+    ol_state::OLStateDatabase,
+    ol_state_index::OLStateIndexingDatabase,
 };
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 

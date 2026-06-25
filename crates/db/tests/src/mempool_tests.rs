@@ -1,4 +1,4 @@
-use strata_db_types::{traits::MempoolDatabase, types::MempoolTxData};
+use strata_db_types::mempool::{MempoolDatabase, MempoolTxData};
 use strata_identifiers::{Buf32, OLTxId};
 
 pub fn test_put_and_get_tx(db: &impl MempoolDatabase) {

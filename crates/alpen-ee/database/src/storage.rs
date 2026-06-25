@@ -10,7 +10,7 @@ use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_storage_common::cache::CacheTable;
-use threadpool::ThreadPool;
+use tokio::runtime::Handle;
 
 use crate::{
     database::{ops, EeNodeDb},
@@ -29,8 +29,8 @@ pub struct EeNodeStorage {
 }
 
 impl EeNodeStorage {
-    pub(crate) fn new(pool: ThreadPool, db: Arc<impl EeNodeDb + 'static>) -> Self {
-        let ops = ops::Context::new(db).into_ops(pool);
+    pub(crate) fn new(handle: Handle, db: Arc<impl EeNodeDb + 'static>) -> Self {
+        let ops = ops::EeNodeOps::new(handle, db);
         let blockid_cache = CacheTable::new(NonZeroUsize::new(64).expect("64 is always NonZero"));
         let account_state_cache =
             CacheTable::new(NonZeroUsize::new(64).expect("64 is always NonZero"));
@@ -54,13 +54,13 @@ impl Storage for EeNodeStorage {
             OLBlockOrEpoch::TerminalBlock(block_id) => block_id,
             OLBlockOrEpoch::Epoch(epoch) => self
                 .blockid_cache
-                .get_or_fetch(&epoch, || self.ops.get_ol_blockid_chan(epoch))
+                .get_or_fetch(&epoch, || self.ops.get_ol_blockid_fut(epoch).recv())
                 .await?
                 .ok_or(StorageError::StateNotFound(epoch.into()))?,
         };
 
         self.account_state_cache
-            .get_or_fetch(&block_id, || self.ops.ee_account_state_chan(block_id))
+            .get_or_fetch(&block_id, || self.ops.ee_account_state_fut(block_id).recv())
             .await
             .map_err(Into::into)
     }
@@ -466,9 +466,8 @@ mod tests {
         let config = SledDbConfig::test();
 
         let ee_node_db = EeNodeDBSled::new(Arc::new(sled_db), config).unwrap();
-        let pool = threadpool::ThreadPool::new(4);
 
-        EeNodeStorage::new(pool, Arc::new(ee_node_db))
+        EeNodeStorage::new(strata_storage::test_runtime_handle(), Arc::new(ee_node_db))
     }
 
     storage_tests!(setup_storage());

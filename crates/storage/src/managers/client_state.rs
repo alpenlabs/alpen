@@ -4,15 +4,15 @@
 use std::sync::Arc;
 
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_db_types::{traits::ClientStateDatabase, DbResult};
-use strata_primitives::{l1::L1BlockCommitment, L1Height};
-use threadpool::ThreadPool;
+use strata_db_types::client_state::ClientStateDatabase;
+use strata_db_types::DbResult;
+use strata_primitives::l1::L1BlockCommitment;
+use strata_primitives::L1Height;
+use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
-use crate::{
-    cache,
-    ops::client_state::{ClientStateOps, Context},
-};
+use crate::cache;
+use crate::ops::client_state::ClientStateOps;
 
 #[expect(
     missing_debug_implementations,
@@ -29,8 +29,8 @@ pub struct ClientStateManager {
 }
 
 impl ClientStateManager {
-    pub fn new(pool: ThreadPool, db: Arc<impl ClientStateDatabase + 'static>) -> DbResult<Self> {
-        let ops = Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl ClientStateDatabase + 'static>) -> DbResult<Self> {
+        let ops = ClientStateOps::new(handle, db);
         let update_cache = cache::CacheTable::new(64.try_into().unwrap());
         let state_cache = cache::CacheTable::new(64.try_into().unwrap());
 
@@ -90,6 +90,24 @@ impl ClientStateManager {
         Ok(state)
     }
 
+    pub async fn put_update_async(
+        &self,
+        block: &L1BlockCommitment,
+        update: ClientUpdateOutput,
+    ) -> DbResult<Arc<ClientState>> {
+        // FIXME(STR-3679): this is a lot of cloning, good thing the type isn't gigantic,
+        // still feels bad though
+        let state = Arc::new(update.state().clone());
+        let height = block.height();
+        self.ops
+            .put_client_update_async(*block, update.clone())
+            .await?;
+        self.maybe_update_cur_state_async(height, &state).await;
+        self.update_cache.insert_async(height, Some(update)).await;
+        self.state_cache.insert_async(height, state.clone()).await;
+        Ok(state)
+    }
+
     /// Deletes the client update at `block`, keeping caches and the current
     /// state tracker coherent.
     pub fn del_update_blocking(&self, block: &L1BlockCommitment) -> DbResult<()> {
@@ -106,6 +124,15 @@ impl ClientStateManager {
         cur.maybe_update(height, state)
     }
 
+    async fn maybe_update_cur_state_async(
+        &self,
+        height: L1Height,
+        state: &Arc<ClientState>,
+    ) -> bool {
+        let mut cur = self.cur_state.lock().await;
+        cur.maybe_update(height, state)
+    }
+
     /// Recomputes the current-state tracker from storage after a deletion.
     fn reset_cur_state_blocking(&self) -> DbResult<()> {
         let mut cur = self.cur_state.blocking_lock();
@@ -119,6 +146,13 @@ impl ClientStateManager {
     /// Returns either pre-genesis init [`ClientState`] or the one with the greatest key.
     pub fn fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
         self.ops.get_latest_client_state_blocking()
+    }
+
+    /// Returns either pre-genesis init [`ClientState`] or the one with the greatest key.
+    pub async fn fetch_most_recent_state_async(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
+        self.ops.get_latest_client_state_async().await
     }
 
     /// Returns [`ClientUpdateOutput`] entries starting from a given block up to a maximum count.
@@ -171,15 +205,15 @@ impl CurStateTracker {
 #[cfg(test)]
 mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::traits::DatabaseBackend;
+    use strata_db_types::backend::DatabaseBackend;
     use strata_identifiers::L1BlockId;
 
     use super::*;
 
     fn setup_manager() -> ClientStateManager {
-        let pool = ThreadPool::new(1);
+        let handle = crate::test_runtime_handle();
         let db = Arc::new(get_test_sled_backend());
-        ClientStateManager::new(pool, db.client_state_db()).expect("open client state manager")
+        ClientStateManager::new(handle, db.client_state_db()).expect("open client state manager")
     }
 
     fn block_at(height: L1Height) -> L1BlockCommitment {
