@@ -547,9 +547,24 @@ strata-dbtool ee-backfill-prover-task-raw <key_hex> --force
 ```
 
 ### `ee-get-chunk-receipt` / `ee-delete-chunk-receipt`
-Inspect or remove a stored chunk-proof receipt by its task key. Use
-case: drop a stale receipt after a guest-program upgrade so the chunk
-prover re-proves it.
+Inspect, or delete-and-re-prove, a stored chunk-proof receipt by its task
+key. Use case: drop a stale receipt after a guest-program upgrade so the
+chunk prover re-proves it.
+
+`ee-delete-chunk-receipt` removes **both** the chunk receipt and its
+companion PaaS task record (they share the same key). Deleting the receipt
+alone would not re-prove — re-proving is driven by the task store, and a
+finished task is `Completed` (nothing re-runs it); it would instead wedge the
+chunk in a `ProofReady`/`ProofPending` oscillation. Deleting the task record
+lets the running node's acct gate flip the chunk back to `ProofPending` and
+the chunk lifecycle resubmit it.
+
+Run with the node down (like the other EE delete commands). The two-tree
+delete is not transactional; re-running is safe (both deletes are
+idempotent). If the batch's acct proof has already been produced, the acct
+gate no longer re-fires for it — also run `ee-delete-acct-proof
+<prev>:<last>` to force the chunk to re-prove. The output reports both
+`existed` (receipt) and `task_existed`.
 
 ```bash
 strata-dbtool ee-get-chunk-receipt <key_hex> [OPTIONS]

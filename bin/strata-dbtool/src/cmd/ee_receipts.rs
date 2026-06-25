@@ -12,6 +12,7 @@ use alpen_ee_database::EeProverDbSled;
 use argh::FromArgs;
 use strata_acct_types::Hash;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_primitives::buf::Buf32;
 
 use crate::{
@@ -36,10 +37,24 @@ pub(crate) struct EeGetChunkReceiptArgs {
     pub(crate) output_format: OutputFormat,
 }
 
-/// Delete a stored chunk-proof receipt.
+/// Delete a stored chunk-proof receipt and its companion prover task.
 ///
 /// Use case: drop a stale receipt after a guest-program upgrade so the
-/// next chunk-prover run re-proves it. Dry-run unless `--force` is passed.
+/// chunk prover re-proves it.
+///
+/// Re-proving is driven by the PaaS *task* store, not by receipt presence:
+/// a finished chunk task is `Completed`, and nothing re-runs a `Completed`
+/// task. Deleting only the receipt would therefore never re-prove, and would
+/// instead wedge the chunk in a `ProofReady`<->`ProofPending` oscillation
+/// (the acct gate flips a receipt-less `ProofReady` chunk to `ProofPending`,
+/// while the still-`Completed` task keeps reporting `Ready`). So this command
+/// deletes both rows under the same key: the receipt and the task record.
+///
+/// Run with the node down. The two-tree
+/// delete is not transactional; re-running is safe (both deletes are
+/// idempotent). If the batch's acct proof already exists, the acct gate no
+/// longer re-fires, so also run `ee-delete-acct-proof <prev>:<last>` to force
+/// the chunk to re-prove. Dry-run unless `--force` is passed.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "ee-delete-chunk-receipt")]
 pub(crate) struct EeDeleteChunkReceiptArgs {
@@ -150,11 +165,17 @@ pub(crate) fn ee_delete_chunk_receipt(
 ) -> Result<(), DisplayedError> {
     let key = parse_task_key(&args.key_hex)?;
 
-    // Resolve existence up front so the dry run still emits the same
-    // structured `existed` field operators check against.
+    // Resolve existence of both rows up front so the dry run reports exactly
+    // what `--force` would delete. The receipt and the prover task share the
+    // same key (the prover stores the receipt under the task key), so a single
+    // `key_hex` drives both deletes.
     let existed = db
         .get_chunk_receipt(&key)
         .internal_error("Failed to read chunk receipt")?
+        .is_some();
+    let task_existed = db
+        .get_task(key.clone())
+        .internal_error("Failed to read chunk prover task")?
         .is_some();
 
     if !args.force {
@@ -162,20 +183,28 @@ pub(crate) fn ee_delete_chunk_receipt(
             address: args.key_hex,
             kind: "chunk",
             existed,
+            task_existed: Some(task_existed),
         };
         output(&ack, args.output_format)?;
         print_force_hint();
         return Ok(());
     }
 
+    // Delete the receipt first, then the task record. Both are idempotent, so
+    // re-running after a partial failure is safe. Deleting the task moves it
+    // out of `Completed`, so the chunk lifecycle re-submits and re-proves.
     let actually_existed = db
         .delete_chunk_receipt(&key)
         .internal_error("Failed to delete chunk receipt")?;
+    let task_actually_existed = db
+        .delete_task(key)
+        .internal_error("Failed to delete chunk prover task")?;
 
     let ack = DeletedEeReceiptInfo {
         address: args.key_hex,
         kind: "chunk",
         existed: actually_existed,
+        task_existed: Some(task_actually_existed),
     };
     output(&ack, args.output_format)
 }
@@ -216,6 +245,7 @@ pub(crate) fn ee_delete_acct_proof(
             address: args.batch_id,
             kind: "acct",
             existed,
+            task_existed: None,
         };
         output(&ack, args.output_format)?;
         print_force_hint();
@@ -230,6 +260,7 @@ pub(crate) fn ee_delete_acct_proof(
         address: args.batch_id,
         kind: "acct",
         existed: actually_existed,
+        task_existed: None,
     };
     output(&ack, args.output_format)
 }
@@ -278,5 +309,72 @@ mod tests {
     fn parse_batch_id_rejects_non_hex() {
         let last = "22".repeat(32);
         assert!(parse_batch_id(&format!("not-hex:{last}")).is_err());
+    }
+
+    /// `ee-delete-chunk-receipt --force` must delete BOTH the chunk receipt and
+    /// its companion prover task record (so the chunk actually re-proves);
+    /// a dry run must leave both intact.
+    #[test]
+    fn ee_delete_chunk_receipt_force_clears_receipt_and_task() {
+        use std::sync::Arc;
+
+        use alpen_ee_database::EeProverDbSled;
+        use strata_db_store_sled::SledDbConfig;
+        use strata_paas::{TaskRecordData, TaskStatus};
+        use typed_sled::SledDb;
+        use zkaleido::{
+            ProgramId, Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, ProofType,
+            PublicValues, ZkVm,
+        };
+
+        let sled_db = sled::Config::new().temporary(true).open().unwrap();
+        let typed = Arc::new(SledDb::new(sled_db).unwrap());
+        let config = SledDbConfig::new_with_constant_backoff(2, 0);
+        let db = EeProverDbSled::new(typed, config).unwrap();
+
+        // Chunk task key (kind tag `b'c'` + payload); the receipt and the task
+        // record are stored under the same key.
+        let key = vec![b'c', 1, 2, 3, 4];
+        let receipt = {
+            let metadata = ProofMetadata::new(
+                ZkVm::Native,
+                ProgramId([1u8; 32]),
+                "0.1".to_string(),
+                ProofType::Groth16,
+            );
+            let r = ProofReceipt::new(Proof::new(vec![1, 2]), PublicValues::new(vec![3]));
+            ProofReceiptWithMetadata::new(r, metadata)
+        };
+        db.put_chunk_receipt(key.clone(), receipt).unwrap();
+        db.insert_task(key.clone(), TaskRecordData::new(TaskStatus::Completed))
+            .unwrap();
+
+        let key_hex = hex::encode(&key);
+
+        // Dry run: both rows survive.
+        ee_delete_chunk_receipt(
+            &db,
+            EeDeleteChunkReceiptArgs {
+                key_hex: key_hex.clone(),
+                force: false,
+                output_format: OutputFormat::Porcelain,
+            },
+        )
+        .unwrap();
+        assert!(db.get_chunk_receipt(&key).unwrap().is_some());
+        assert!(db.get_task(key.clone()).unwrap().is_some());
+
+        // Force: both the receipt and the companion task record are gone.
+        ee_delete_chunk_receipt(
+            &db,
+            EeDeleteChunkReceiptArgs {
+                key_hex,
+                force: true,
+                output_format: OutputFormat::Porcelain,
+            },
+        )
+        .unwrap();
+        assert!(db.get_chunk_receipt(&key).unwrap().is_none());
+        assert!(db.get_task(key).unwrap().is_none());
     }
 }
