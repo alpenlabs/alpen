@@ -66,21 +66,31 @@ impl Formattable for EeReceiptInfo {
 
 /// Acknowledgement payload for the `ee-delete-*-receipt` / `ee-delete-acct-proof`
 /// commands.
+///
+/// `existed` always reflects the primary row (the chunk receipt or the acct
+/// proof). `task_existed` is `Some` only for the chunk command, which also
+/// deletes the companion PaaS task record under the same key so the chunk
+/// re-proves; it is `None` for acct proofs, which have no companion task here.
 #[derive(Serialize)]
 pub(crate) struct DeletedEeReceiptInfo {
     pub(crate) address: String,
     pub(crate) kind: &'static str,
     pub(crate) existed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) task_existed: Option<bool>,
 }
 
 impl Formattable for DeletedEeReceiptInfo {
     fn format_porcelain(&self) -> String {
-        [
+        let mut fields = vec![
             porcelain_field("address", &self.address),
             porcelain_field("kind", self.kind),
             porcelain_field("existed", self.existed),
-        ]
-        .join("\n")
+        ];
+        if let Some(task_existed) = self.task_existed {
+            fields.push(porcelain_field("task_existed", task_existed));
+        }
+        fields.join("\n")
     }
 }
 
@@ -124,10 +134,26 @@ mod tests {
             address: "abcd".into(),
             kind: "acct",
             existed: false,
+            task_existed: None,
         };
         let out = ack.format_porcelain();
         assert!(out.contains("address: abcd"));
         assert!(out.contains("kind: acct"));
         assert!(out.contains("existed: false"));
+        // No companion task for acct proofs, so the line is omitted.
+        assert!(!out.contains("task_existed"));
+    }
+
+    #[test]
+    fn deleted_chunk_info_reports_task_existence() {
+        let ack = DeletedEeReceiptInfo {
+            address: "abcd".into(),
+            kind: "chunk",
+            existed: true,
+            task_existed: Some(true),
+        };
+        let out = ack.format_porcelain();
+        assert!(out.contains("existed: true"));
+        assert!(out.contains("task_existed: true"));
     }
 }
