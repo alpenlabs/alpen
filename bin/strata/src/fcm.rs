@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use strata_chain_worker_new::ChainWorkerHandle;
+use strata_chain_worker::ChainWorkerHandle;
 use strata_consensus_logic::{
     ChainController, CsmStatusReader, FcmContext, FcmServiceHandle, FcmStorage, start_fcm_service,
     unfinalized_tracker::UnfinalizedOLBlockSource,
@@ -13,7 +13,7 @@ use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::{DbResult, ol_block::BlockStatus};
 use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;

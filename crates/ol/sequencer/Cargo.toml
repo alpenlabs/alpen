@@ -15,7 +15,7 @@ strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-block-assembly.workspace = true
-strata-ol-chain-types-new.workspace = true
+strata-ol-chain-types.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-primitives.workspace = true
@@ -39,7 +39,7 @@ strata-asm-proto-checkpoint-types = { workspace = true, features = [
   "test-utils",
 ] }
 strata-identifiers = { workspace = true, features = ["test-utils"] }
-strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
+strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
 
 [features]
 debug-utils = ["strata-common/debug-utils"]

@@ -42,7 +42,7 @@ use strata_identifiers::{
 use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     ClaimList, LogDecodeError, OLBlock, OLBlockBody, OLLog, OLLogType, OLTransaction,
     OLTransactionData, OLTxSegment, ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData,
     SauTxPayload, SauTxProofState, SauTxUpdateData, SignedOLBlockHeader,
@@ -633,7 +633,7 @@ pub(crate) fn insert_inbox_messages_into_state(
 }
 
 /// Create test parent header by executing genesis block.
-pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_new::OLBlockHeader {
+pub(crate) fn create_test_parent_header() -> strata_ol_chain_types::OLBlockHeader {
     let mut runner = TestRunner::default();
     let timestamp = (1000000u64..2000000u64)
         .new_tree(&mut runner)

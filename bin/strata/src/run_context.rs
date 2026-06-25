@@ -6,7 +6,7 @@ use strata_asm_params::AsmParams;
 use strata_asm_worker::AsmWorkerHandle;
 #[cfg(feature = "sequencer")]
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
-use strata_chain_worker_new::ChainWorkerHandle;
+use strata_chain_worker::ChainWorkerHandle;
 use strata_config::Config;
 use strata_consensus_logic::{FcmServiceHandle, SyncServiceHandle};
 use strata_csm_worker::CsmWorkerStatus;

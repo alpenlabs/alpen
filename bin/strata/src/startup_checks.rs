@@ -8,7 +8,7 @@ use strata_btc_types::BlockHashExt;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};

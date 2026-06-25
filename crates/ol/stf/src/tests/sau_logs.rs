@@ -2,7 +2,7 @@
 
 use strata_acct_types::{BitcoinAmount, MessageEntry, MsgPayload};
 use strata_ledger_types::ISnarkAccountState;
-use strata_ol_chain_types_new::SnarkAccountUpdateLogData;
+use strata_ol_chain_types::SnarkAccountUpdateLogData;
 
 use crate::{SEQUENCER_ACCT_ID, test_utils::*};
 

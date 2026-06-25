@@ -2,7 +2,7 @@
 
 use strata_acct_types::*;
 use strata_ledger_types::*;
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 use tracing::trace;
 
 use crate::{

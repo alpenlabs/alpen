@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use strata_chain_worker_new::ChainWorkerHandle;
+use strata_chain_worker::ChainWorkerHandle;
 use strata_checkpoint_types::EpochSummary;
 use strata_consensus_logic::checkpoint_sync::{
     CheckpointSyncCtx, CheckpointSyncError, CheckpointSyncResult, CssServiceHandle, start_css,

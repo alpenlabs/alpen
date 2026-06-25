@@ -28,7 +28,7 @@ strata-ee-chunk-runtime.workspace = true
 strata-evm-ee.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
-strata-ol-chain-types-new.workspace = true
+strata-ol-chain-types.workspace = true
 strata-ol-da.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
 strata-snark-acct-runtime.workspace = true

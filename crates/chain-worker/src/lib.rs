@@ -1,14 +1,14 @@
-//! # strata-chain-worker-new
+//! # strata-chain-worker
 //!
-//! New chain worker implementation using the OL STF and new OL types.
+//! Chain worker implementation using the OL STF.
 //!
 //! This crate provides a dedicated asynchronous worker for managing Strata's
 //! OL chainstate database. It encapsulates the logic for fetching, executing,
 //! and finalizing OL blocks and epochs using:
 //!
-//! - New OL STF ([`strata_ol_stf::verify_block`])
-//! - New OL types ([`OLBlock`](strata_ol_chain_types_new::OLBlock),
-//!   [`OLBlockHeader`](strata_ol_chain_types_new::OLBlockHeader),
+//! - OL STF ([`strata_ol_stf::verify_block`])
+//! - OL types ([`OLBlock`](strata_ol_chain_types::OLBlock),
+//!   [`OLBlockHeader`](strata_ol_chain_types::OLBlockHeader),
 //!   [`OLState`](strata_ol_state_types::OLState),
 //!   [`WriteBatch`](strata_ol_state_types::WriteBatch))
 //! - [`IndexerState<WriteTrackingState<OLState>>`](strata_ol_state_support_types::IndexerState) for

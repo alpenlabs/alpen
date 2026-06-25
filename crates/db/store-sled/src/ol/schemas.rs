@@ -3,7 +3,7 @@ use sled::IVec;
 use ssz::{Decode, Encode};
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
 
 use crate::{

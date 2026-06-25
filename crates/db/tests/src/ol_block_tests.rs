@@ -1,7 +1,7 @@
 use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
 use strata_db_types::DbError;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 
 pub fn test_get_nonexistent_block(db: &impl OLBlockDatabase) {
     let nonexistent_id = OLBlockId::from(Buf32::from([0xffu8; 32]));

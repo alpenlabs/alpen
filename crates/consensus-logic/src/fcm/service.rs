@@ -6,7 +6,7 @@ use serde::Serialize;
 use strata_csm_types::CheckpointState;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::Slot;
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     sequencer_predicate_requires_signature, verify_sequencer_predicate_signature, OLBlock,
 };
 use strata_predicate::PredicateKey;
@@ -812,7 +812,7 @@ mod tests {
     use strata_asm_common::AsmManifest;
     use strata_db_types::{ol_block::BlockStatus, DbResult};
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
-    use strata_ol_chain_types_new::{
+    use strata_ol_chain_types::{
         test_utils::{schnorr_predicate, test_schnorr_keypair},
         BlockFlags, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment,
         SignedOLBlockHeader,

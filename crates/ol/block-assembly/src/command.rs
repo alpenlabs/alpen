@@ -1,7 +1,7 @@
 //! Command types for OL block assembly service.
 
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use strata_service::CommandCompletionSender;
 use tokio::sync::oneshot;
 

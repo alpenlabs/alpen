@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use strata_service::{CommandHandle, ServiceMonitor};
 use tokio::sync::oneshot;
 

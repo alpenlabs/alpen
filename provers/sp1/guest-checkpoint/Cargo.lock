@@ -1974,7 +1974,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-ol-chain-types-new"
+name = "strata-ol-chain-types"
 version = "0.1.0"
 dependencies = [
  "int-enum",
@@ -2104,7 +2104,7 @@ dependencies = [
  "strata-merkle",
  "strata-msg-fmt",
  "strata-ol-bridge-types",
- "strata-ol-chain-types-new",
+ "strata-ol-chain-types",
  "strata-ol-da",
  "strata-ol-msg-types",
  "strata-ol-state-types",
@@ -2161,7 +2161,7 @@ dependencies = [
  "strata-bridge-params",
  "strata-crypto",
  "strata-ledger-types",
- "strata-ol-chain-types-new",
+ "strata-ol-chain-types",
  "strata-ol-da",
  "strata-ol-state-support-types",
  "strata-ol-state-types",

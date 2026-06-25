@@ -7,7 +7,7 @@
 use std::{cmp::Ordering, fmt::Debug};
 
 use strata_identifiers::Slot;
-use strata_ol_chain_types_new::MAX_SEALING_MANIFEST_COUNT;
+use strata_ol_chain_types::MAX_SEALING_MANIFEST_COUNT;
 
 use crate::checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict};
 

@@ -4,7 +4,7 @@ use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, Bitc
 use strata_identifiers::SubjectId;
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, OwnedMsg};
-use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_chain_types::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::DEPOSIT_MSG_TYPE_ID;
 
 use crate::test_utils::*;

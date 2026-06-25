@@ -5,7 +5,7 @@ use strata_db_types::{
     ol_block::{BlockStatus, OLBlockDatabase},
 };
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use strata_primitives::l1::L1BlockId;
 
 use crate::{
