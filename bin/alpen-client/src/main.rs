@@ -800,6 +800,7 @@ fn main() {
                         account: acct_builder,
                     },
                     EeProverStores {
+                        batch_storage: batch_storage_dyn,
                         chunk_storage: chunk_storage_dyn,
                         batch_proofs,
                     },
@@ -1255,6 +1256,7 @@ async fn launch_validated_ee_prover(
     Ok(Arc::new(PaasEeProver::new(
         chunk_handle,
         acct_handle,
+        stores.batch_storage,
         stores.chunk_storage,
         stores.batch_proofs,
     )))
@@ -1268,6 +1270,7 @@ struct EeProverBuilders {
 
 #[cfg(feature = "sequencer")]
 struct EeProverStores {
+    batch_storage: Arc<dyn BatchStorage>,
     chunk_storage: Arc<dyn ChunkStorage>,
     batch_proofs: Arc<EeBatchProofDbManager>,
 }

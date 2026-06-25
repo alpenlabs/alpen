@@ -16,6 +16,19 @@ pub enum ProofGenerationStatus {
     Failed { reason: String },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProofRequestStatus {
+    /// A new proof task was submitted.
+    Submitted,
+    /// A proof task or persisted proof already exists.
+    ///
+    /// The task may be pending, running, completed, or permanently failed; callers should use
+    /// [`BatchProver::check_proof_status`] when they need the concrete task outcome.
+    AlreadyExists,
+    /// The prover did not submit because required inputs are not available yet.
+    WaitingForInputs,
+}
+
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
 pub trait ChunkProver {
@@ -30,7 +43,8 @@ pub trait ChunkProver {
 #[async_trait]
 pub trait BatchProver {
     /// Request acct proof generation for batch_id.
-    async fn request_proof_generation(&self, batch_id: BatchId) -> eyre::Result<()>;
+    async fn request_proof_generation(&self, batch_id: BatchId)
+        -> eyre::Result<ProofRequestStatus>;
 
     /// Check if acct proof is generated for batch_id.
     ///

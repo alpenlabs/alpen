@@ -27,7 +27,7 @@ pub use traits::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
         OLClient, OLClientError, SequencerOLClient,
     },
-    prover::{BatchProver, ChunkProver, ProofGenerationStatus},
+    prover::{BatchProver, ChunkProver, ProofGenerationStatus, ProofRequestStatus},
     storage::{
         require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
         require_latest_batch, AccessedStateStore, BatchStorage, BlockWitnessStore, ChunkStorage,

@@ -1,6 +1,4 @@
-use alpen_ee_common::{
-    Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, ChunkStorage, DaStatus,
-};
+use alpen_ee_common::{Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, DaStatus};
 use eyre::Result;
 use tracing::{debug, error, warn};
 
@@ -20,7 +18,7 @@ pub(crate) async fn try_advance_da_complete<D, P, S>(
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage + ChunkStorage,
+    S: BatchStorage,
 {
     loop {
         let target_idx = state.da_complete().idx() + 1;

@@ -1,8 +1,8 @@
 //! EE prover facade backed by separate chunk and acct paas provers.
 //!
 //! Chunk proof submission is driven by the chunk lifecycle as soon as chunks are sealed.
-//! Acct proof submission is driven by the batch lifecycle only after DA is complete and all
-//! chunk proofs for the batch are ready.
+//! Acct proof submission is requested by the batch lifecycle after DA is complete. This facade
+//! accepts the request only once the acct proof inputs are ready.
 //!
 //! `check_proof_status(batch_id)` peeks the typed
 //! [`EeBatchProofDbManager`] first (proof present → `Ready`); on miss
@@ -12,12 +12,12 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{
-    BatchId, BatchProver, ChunkId, ChunkProver, ChunkStatus, ChunkStorage, Proof,
-    ProofGenerationStatus, ProofId,
+    BatchId, BatchProver, BatchStorage, ChunkId, ChunkProver, ChunkStatus, ChunkStorage, Proof,
+    ProofGenerationStatus, ProofId, ProofRequestStatus,
 };
 use async_trait::async_trait;
 use strata_paas::{ProverError as PaasError, ProverHandle, TaskStatus};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use super::{
     spec_acct::AcctSpec, spec_chunk::ChunkSpec, BatchTask, ChunkTask, EeBatchProofDbManager,
@@ -27,6 +27,7 @@ use super::{
 pub(crate) struct PaasEeProver {
     chunk_handle: ProverHandle<ChunkSpec>,
     acct_handle: ProverHandle<AcctSpec>,
+    batch_storage: Arc<dyn BatchStorage>,
     chunk_storage: Arc<dyn ChunkStorage>,
     batch_proofs: Arc<EeBatchProofDbManager>,
 }
@@ -35,12 +36,14 @@ impl PaasEeProver {
     pub(crate) fn new(
         chunk_handle: ProverHandle<ChunkSpec>,
         acct_handle: ProverHandle<AcctSpec>,
+        batch_storage: Arc<dyn BatchStorage>,
         chunk_storage: Arc<dyn ChunkStorage>,
         batch_proofs: Arc<EeBatchProofDbManager>,
     ) -> Self {
         Self {
             chunk_handle,
             acct_handle,
+            batch_storage,
             chunk_storage,
             batch_proofs,
         }
@@ -56,13 +59,14 @@ impl PaasEeProver {
                 Ok(true)
             }
             Ok(TaskStatus::PermanentFailure { error }) => {
-                error!(
+                warn!(
                     ?chunk_id,
                     reason = %error,
-                    "CRITICAL: chunk proof generation failed permanently; manual intervention required"
+                    "chunk proof task failed permanently; leaving chunk ProofPending until the task
+                     is reset"
                 );
                 self.chunk_storage
-                    .update_chunk_status(chunk_id, ChunkStatus::ProofFailed(error))
+                    .update_chunk_status(chunk_id, ChunkStatus::ProofPending(task.to_string()))
                     .await?;
                 Ok(true)
             }
@@ -90,6 +94,76 @@ impl PaasEeProver {
             Err(e) => Err(eyre::eyre!("get_status({batch_id}): {e}")),
         }
     }
+
+    async fn acct_proof_inputs_ready(&self, batch_id: BatchId) -> eyre::Result<bool> {
+        let Some((batch, _status)) = self.batch_storage.get_batch_by_id(batch_id).await? else {
+            return Err(eyre::eyre!(
+                "cannot request acct proof for missing batch {batch_id}"
+            ));
+        };
+
+        let Some(chunk_ids) = self.chunk_storage.get_batch_chunks(batch_id).await? else {
+            debug!(%batch_id, "acct proof inputs not ready: batch chunk links missing");
+            return Ok(false);
+        };
+
+        if chunk_ids.is_empty() {
+            if batch.idx() == 0 {
+                return Ok(true);
+            }
+
+            return Err(eyre::eyre!(
+                "cannot request acct proof for non-genesis batch {batch_id}: empty chunk list"
+            ));
+        }
+
+        for chunk_id in chunk_ids {
+            let Some((_chunk, status)) = self.chunk_storage.get_chunk_by_id(chunk_id).await? else {
+                warn!(
+                    %batch_id,
+                    ?chunk_id,
+                    "acct proof inputs not ready: batch references missing chunk"
+                );
+                return Ok(false);
+            };
+
+            match status {
+                ChunkStatus::ProofReady(_) => {
+                    let task = ChunkTask(chunk_id);
+                    if self
+                        .chunk_handle
+                        .get_receipt(&task)
+                        .map_err(|e| eyre::eyre!("get chunk receipt {chunk_id:?}: {e}"))?
+                        .is_none()
+                    {
+                        debug!(
+                            %batch_id,
+                            ?chunk_id,
+                            "acct proof inputs not ready: chunk receipt missing"
+                        );
+                        self.chunk_storage
+                            .update_chunk_status(
+                                chunk_id,
+                                ChunkStatus::ProofPending(task.to_string()),
+                            )
+                            .await?;
+                        return Ok(false);
+                    }
+                }
+                status => {
+                    debug!(
+                        %batch_id,
+                        ?chunk_id,
+                        ?status,
+                        "acct proof inputs not ready: chunk proof not ready"
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
+    }
 }
 
 #[async_trait]
@@ -103,11 +177,6 @@ impl ChunkProver for PaasEeProver {
         };
         match status {
             ChunkStatus::ProofReady(_) => return Ok(()),
-            ChunkStatus::ProofFailed(reason) => {
-                return Err(eyre::eyre!(
-                    "cannot submit chunk proof task for failed chunk {chunk_id:?}: {reason}"
-                ));
-            }
             ChunkStatus::Sealed | ChunkStatus::ProofPending(_) => {}
         }
 
@@ -135,9 +204,6 @@ impl ChunkProver for PaasEeProver {
                 ChunkStatus::ProofReady(proof_id) => {
                     return Ok(ProofGenerationStatus::Ready { proof_id });
                 }
-                ChunkStatus::ProofFailed(reason) => {
-                    return Ok(ProofGenerationStatus::Failed { reason });
-                }
                 ChunkStatus::Sealed | ChunkStatus::ProofPending(_) => {}
             }
         }
@@ -164,9 +230,16 @@ impl ChunkProver for PaasEeProver {
 
 #[async_trait]
 impl BatchProver for PaasEeProver {
-    async fn request_proof_generation(&self, batch_id: BatchId) -> eyre::Result<()> {
+    async fn request_proof_generation(
+        &self,
+        batch_id: BatchId,
+    ) -> eyre::Result<ProofRequestStatus> {
+        if !self.acct_proof_inputs_ready(batch_id).await? {
+            return Ok(ProofRequestStatus::WaitingForInputs);
+        }
+
         if self.observe_existing_batch_task(batch_id)? {
-            return Ok(());
+            return Ok(ProofRequestStatus::AlreadyExists);
         }
 
         info!(%batch_id, "submitting acct proof task");
@@ -176,7 +249,7 @@ impl BatchProver for PaasEeProver {
             .await
             .map_err(|e| eyre::eyre!("submit acct task {batch_id}: {e}"))?;
 
-        Ok(())
+        Ok(ProofRequestStatus::Submitted)
     }
 
     async fn check_proof_status(&self, batch_id: BatchId) -> eyre::Result<ProofGenerationStatus> {

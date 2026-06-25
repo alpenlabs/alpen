@@ -2,9 +2,7 @@
 
 use std::time::Duration;
 
-use alpen_ee_common::{
-    require_latest_batch, BatchDaProvider, BatchProver, BatchStorage, ChunkStorage,
-};
+use alpen_ee_common::{require_latest_batch, BatchDaProvider, BatchProver, BatchStorage};
 use eyre::Result;
 use tokio::time;
 use tracing::{error, warn};
@@ -27,8 +25,8 @@ const POLL_INTERVAL: Duration = Duration::from_secs(10);
 /// This task monitors sealed batches and manages their progression through
 /// the batch/acct lifecycle states: Sealed → DaPending → DaComplete → ProofPending → ProofReady.
 ///
-/// Chunk proofs are dispatched independently and tracked on [`alpen_ee_common::ChunkStatus`].
-/// `ProofPending` and `ProofReady` in this task refer to the acct proof for the batch.
+/// Proof input readiness is owned by the prover. `ProofPending` and `ProofReady` in this task
+/// refer to the acct proof for the batch.
 ///
 /// Both event triggers (new batch notification, poll tick) trigger frontier
 /// advancement checks.
@@ -38,7 +36,7 @@ pub(crate) async fn batch_lifecycle_task<D, P, S>(
 ) where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage + ChunkStorage,
+    S: BatchStorage,
 {
     let mut poll_interval = time::interval(POLL_INTERVAL);
 
@@ -73,7 +71,7 @@ pub(crate) async fn process_cycle<D, P, S>(
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage + ChunkStorage,
+    S: BatchStorage,
 {
     // Get latest batch
     let (latest_batch, _) = require_latest_batch(ctx.batch_storage.as_ref()).await?;
@@ -107,8 +105,8 @@ mod tests {
     use std::sync::Arc;
 
     use alpen_ee_common::{
-        ChunkStatus, DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver,
-        ProofGenerationStatus,
+        DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, ProofGenerationStatus,
+        ProofRequestStatus,
     };
     use eyre::eyre;
     use tokio::sync::watch;
@@ -122,7 +120,7 @@ mod tests {
     }
 
     impl MockedCtxBuilder {
-        fn build<S: BatchStorage + ChunkStorage>(
+        fn build<S: BatchStorage>(
             self,
             batch_storage: Arc<S>,
         ) -> BatchLifecycleCtx<MockBatchDaProvider, MockBatchProver, S> {
@@ -161,7 +159,7 @@ mod tests {
 
             self.prover
                 .expect_request_proof_generation()
-                .returning(|_| Ok(()));
+                .returning(|_| Ok(ProofRequestStatus::Submitted));
 
             self.prover.expect_check_proof_status().returning(|_| {
                 Ok(ProofGenerationStatus::Ready {
@@ -382,44 +380,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_da_complete_waits_for_chunk_proofs_before_acct_proof() {
+    async fn test_da_complete_waits_for_prover_inputs_before_acct_proof() {
         let storage = Arc::new(InMemoryStorage::new_empty());
 
         use TestBatchStatus::*;
-        let batches = fill_storage(storage.as_ref(), &[DaComplete]).await;
-        let batch_id = batches[1].id();
-        let chunk_id = storage
-            .get_batch_chunks(batch_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap();
-
-        storage
-            .update_chunk_status(chunk_id, ChunkStatus::Sealed)
-            .await
-            .unwrap();
+        fill_storage(storage.as_ref(), &[DaComplete]).await;
 
         let mut state = init_lifecycle_state(storage.as_ref()).await.unwrap();
-        let ctx = MockedCtxBuilder::new().build(storage.clone());
+        let ctx = MockedCtxBuilder::new()
+            .with(|b| {
+                b.prover
+                    .expect_request_proof_generation()
+                    .returning(|_| Ok(ProofRequestStatus::WaitingForInputs));
+            })
+            .build(storage.clone());
 
         process_cycle(&mut state, &ctx).await.unwrap();
 
         assert_eq!(read_batch_statuses(&storage), [DaComplete]);
         assert_eq!(state.proof_pending().idx(), 0);
 
-        storage
-            .update_chunk_status(chunk_id, ChunkStatus::ProofReady(test_proof_id(1)))
-            .await
-            .unwrap();
-
         let ctx = MockedCtxBuilder::new()
             .with(|b| {
                 b.prover
                     .expect_request_proof_generation()
-                    .returning(|_| Ok(()));
+                    .returning(|_| Ok(ProofRequestStatus::Submitted));
                 b.prover
                     .expect_check_proof_status()
                     .returning(|_| Ok(ProofGenerationStatus::Pending));

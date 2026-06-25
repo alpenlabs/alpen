@@ -70,6 +70,28 @@ define_table_with_default_codec!(
     (ChunkIdToIdxSchema) DBChunkId => u64
 );
 
+define_table_without_codec!(
+    /// Persistent EE DB maintenance markers.
+    ///
+    /// NOTE: This is temporary migration bookkeeping, not domain data. Replace this
+    /// ad hoc marker tree with shared DB migration/version infrastructure once
+    /// that exists.
+    (EeDbMaintenanceSchema) u8 => bool
+);
+impl_borsh_value_codec!(EeDbMaintenanceSchema, bool);
+
+define_table_without_codec!(
+    /// Sealed chunk proof work by chunk idx.
+    (SealedChunkByIdxSchema) u64 => DBChunkId
+);
+impl_borsh_value_codec!(SealedChunkByIdxSchema, DBChunkId);
+
+define_table_without_codec!(
+    /// Proof-pending chunk proof work by chunk idx.
+    (ProofPendingChunkByIdxSchema) u64 => DBChunkId
+);
+impl_borsh_value_codec!(ProofPendingChunkByIdxSchema, DBChunkId);
+
 define_table_with_default_codec!(
     /// Batch-Chunk association
     (BatchChunksSchema) DBBatchId => Vec<DBChunkId>

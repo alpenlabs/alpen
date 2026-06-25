@@ -13,8 +13,6 @@ pub enum ChunkStatus {
     ProofPending(String),
     /// Valid proof ready.
     ProofReady(ProofId),
-    /// Proof generation failed permanently and requires operator intervention.
-    ProofFailed(String),
 }
 
 /// Unique, deterministic identifier for a chunk.

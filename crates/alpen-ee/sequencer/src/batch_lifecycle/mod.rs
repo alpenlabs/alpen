@@ -8,9 +8,9 @@
 //! Sealed → DaPending → DaComplete → ProofPending → ProofReady
 //! ```
 //!
-//! `ProofPending` and `ProofReady` refer to the acct proof for the batch. Chunk proofs are tracked
-//! separately by `ChunkStatus`; a batch only advances from `DaComplete` to `ProofPending` after all
-//! chunks assigned to the batch are `ProofReady`.
+//! `ProofPending` and `ProofReady` refer to the acct proof for the batch. Proof-input readiness is
+//! owned by the prover; the lifecycle only observes whether a proof request was accepted, already
+//! running, or waiting on inputs.
 //!
 //! # Architecture
 //!
@@ -20,7 +20,6 @@
 //! - [`BatchDaProvider`] trait for posting DA and checking DA readiness
 //! - [`BatchProver`] trait for requesting and checking acct proof generation
 //! - [`BatchStorage`] for persisting batch status updates
-//! - [`ChunkStorage`] for reading batch-to-chunk links and chunk proof readiness
 //!
 //! # Usage
 //!
@@ -57,9 +56,7 @@
 //! [`BatchDaProvider`]: alpen_ee_common::BatchDaProvider
 //! [`BatchProver`]: alpen_ee_common::BatchProver
 //! [`BatchStorage`]: alpen_ee_common::BatchStorage
-//! [`ChunkStorage`]: alpen_ee_common::ChunkStorage
 
-mod acct_proof_gate;
 mod ctx;
 mod handle;
 mod lifecycle;

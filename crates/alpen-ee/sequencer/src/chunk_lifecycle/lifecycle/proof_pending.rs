@@ -2,7 +2,7 @@ use alpen_ee_common::{
     BatchStorage, Chunk, ChunkProver, ChunkStatus, ChunkStorage, ProofGenerationStatus,
 };
 use eyre::Result;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 use super::sealed::try_advance_sealed;
 use crate::chunk_lifecycle::ctx::ChunkLifecycleCtx;
@@ -29,15 +29,13 @@ where
                 .await?;
         }
         ProofGenerationStatus::Failed { reason } => {
-            error!(
+            debug!(
                 ?chunk_id,
                 chunk_idx = chunk.idx(),
                 %reason,
-                "CRITICAL: chunk proof generation failed permanently; manual intervention required"
+                "chunk proof task failed permanently; keeping chunk ProofPending until the task is \
+                 reset"
             );
-            ctx.storage
-                .update_chunk_status(chunk_id, ChunkStatus::ProofFailed(reason))
-                .await?;
         }
         ProofGenerationStatus::NotStarted => {
             warn!(
