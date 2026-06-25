@@ -121,7 +121,7 @@ where
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use alpen_ee_common::{Chunk, ChunkId, InMemoryStorage, ProofGenerationStatus};
+    use alpen_ee_common::{Batch, Chunk, ChunkId, InMemoryStorage, ProofGenerationStatus};
     use async_trait::async_trait;
 
     use super::*;
@@ -190,10 +190,16 @@ mod tests {
         )
     }
 
-    /// With no batches recorded the floor is 0, so every sealed chunk is submitted, in index order.
+    async fn save_genesis_batch(storage: &InMemoryStorage) {
+        let batch = Batch::new_genesis_batch(test_hash(250), 0).unwrap();
+        storage.save_genesis_batch(batch).await.unwrap();
+    }
+
+    /// With a matching batch row present, every sealed chunk is submitted in index order.
     #[tokio::test]
     async fn submits_sealed_chunks_in_index_order() {
         let storage = Arc::new(InMemoryStorage::new_empty());
+        save_genesis_batch(&storage).await;
         let chunk0 = make_chunk(0);
         let chunk1 = make_chunk(1);
         let chunk2 = make_chunk(2);
@@ -211,8 +217,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn skips_sealed_chunk_whose_batch_was_reverted() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+        let chunk = make_chunk(0);
+        storage.save_next_chunk(chunk).await.unwrap();
+
+        let prover = Arc::new(RecordingChunkProver::default());
+        let ctx = ctx(prover.clone(), storage);
+        process_cycle(&mut ChunkLifecycleState::default(), &ctx)
+            .await
+            .unwrap();
+
+        assert!(prover.calls().is_empty());
+    }
+
+    #[tokio::test]
     async fn pending_page_does_not_block_later_sealed_chunks() {
         let storage = Arc::new(InMemoryStorage::new_empty());
+        save_genesis_batch(&storage).await;
         for idx in 0..WORK_QUERY_LIMIT as u64 {
             let chunk = make_chunk(idx);
             storage.save_next_chunk(chunk.clone()).await.unwrap();
@@ -236,6 +258,7 @@ mod tests {
     #[tokio::test]
     async fn sealed_cursor_wraps_to_reorged_lower_chunks() {
         let storage = Arc::new(InMemoryStorage::new_empty());
+        save_genesis_batch(&storage).await;
         let chunk0 = make_chunk(0);
         storage.save_next_chunk(chunk0.clone()).await.unwrap();
         storage
@@ -263,6 +286,7 @@ mod tests {
     #[tokio::test]
     async fn resubmits_pending_chunk_with_missing_task() {
         let storage = Arc::new(InMemoryStorage::new_empty());
+        save_genesis_batch(&storage).await;
         let chunk = make_chunk(0);
         storage.save_next_chunk(chunk.clone()).await.unwrap();
         storage
