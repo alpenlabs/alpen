@@ -61,7 +61,6 @@ use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;
 use strata_state::asm_state::AsmState;
 use strata_storage::{NodeStorage, create_node_storage};
-use threadpool::ThreadPool;
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
@@ -690,9 +689,8 @@ pub(crate) fn create_test_template_with_parent(parent: OLBlockId) -> FullBlockTe
 
 /// Create test storage instance.
 pub(crate) fn create_test_storage() -> Arc<NodeStorage> {
-    let pool = ThreadPool::new(1);
     let test_db = get_test_sled_backend();
-    Arc::new(create_node_storage(test_db, pool).unwrap())
+    Arc::new(create_node_storage(test_db, strata_storage::test_runtime_handle()).unwrap())
 }
 
 /// Generate random MessageEntry objects using proptest.

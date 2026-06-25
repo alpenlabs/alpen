@@ -12,7 +12,7 @@ strata-asm-proto-checkpoint-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-csm-types.workspace = true
 strata-db-store-sled.workspace = true
-strata-db-types.workspace = true
+strata-db-types = { workspace = true, features = ["proxies"] }
 strata-identifiers.workspace = true
 strata-merkle = { workspace = true, features = ["ssz"] }
 strata-merkle-node-store.workspace = true
@@ -24,12 +24,15 @@ strata-state.workspace = true
 strata-storage-common.workspace = true
 
 anyhow.workspace = true
-async-trait.workspace = true
 futures.workspace = true
-threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 zkaleido.workspace = true
+
+[features]
+# Exposes `test_runtime_handle()` for downstream crates that construct storage
+# managers in their own tests.
+test-utils = []
 
 [dev-dependencies]
 proptest.workspace = true

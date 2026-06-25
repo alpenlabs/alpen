@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_csm_types::{PayloadDest, PayloadIntent};
-use strata_db_types::types::{IntentEntry, L1BundleStatus};
+use strata_db_types::l1_writer::{IntentEntry, L1BundleStatus};
 use strata_primitives::buf::Buf32;
 use strata_storage::ops::writer::EnvelopeDataOps;
 use tokio::sync::mpsc::Sender;
@@ -132,7 +132,7 @@ pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow
 
 #[cfg(test)]
 mod test {
-    use strata_db_types::types::{BundledPayloadEntry, L1TxStatus};
+    use strata_db_types::{l1_broadcast::L1TxStatus, l1_writer::BundledPayloadEntry};
     use strata_primitives::buf::Buf32;
     use strata_test_utils::ArbitraryGenerator;
 

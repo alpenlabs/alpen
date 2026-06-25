@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context};
 use metrics::{counter, histogram};
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::Slot;
 use strata_ol_chain_types_new::{
     sequencer_predicate_requires_signature, verify_sequencer_predicate_signature, OLBlock,
@@ -810,7 +810,7 @@ mod tests {
 
     use async_trait::async_trait;
     use strata_asm_common::AsmManifest;
-    use strata_db_types::{traits::BlockStatus, DbResult};
+    use strata_db_types::{ol_block::BlockStatus, DbResult};
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
     use strata_ol_chain_types_new::{
         test_utils::{schnorr_predicate, test_schnorr_keypair},

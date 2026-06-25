@@ -1,6 +1,9 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::traits::{BlockStatus, DatabaseBackend, OLBlockDatabase};
+use strata_db_types::{
+    backend::DatabaseBackend,
+    ol_block::{BlockStatus, OLBlockDatabase},
+};
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
 use strata_primitives::l1::L1BlockId;

@@ -1,7 +1,7 @@
 use bitcoin::Network;
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
 use strata_btc_verification::L1Anchor;
-use strata_db_types::traits::AsmDatabase;
+use strata_db_types::asm::AsmDatabase;
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
 use strata_state::asm_state::AsmState;

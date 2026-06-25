@@ -11,7 +11,7 @@ use std::{path::Path, process::exit};
 
 use alpen_ee_database::EeProverDbSled;
 use strata_db_store_sled::SledBackend;
-use strata_db_types::traits::DatabaseBackend;
+use strata_db_types::backend::DatabaseBackend;
 use tracing_subscriber::fmt::init;
 
 use crate::{

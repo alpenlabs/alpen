@@ -1,11 +1,11 @@
-use strata_db_types::{DbResult, errors::DbError, traits::L1BroadcastDatabase, types::L1TxEntry};
+use strata_db_types::DbResult;
+use strata_db_types::errors::DbError;
+use strata_db_types::l1_broadcast::{L1BroadcastDatabase, L1TxEntry};
 use strata_primitives::buf::Buf32;
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
-use crate::{
-    define_sled_database,
-    utils::{find_next_available_id, first, second},
-};
+use crate::define_sled_database;
+use crate::utils::{find_next_available_id, first, second};
 
 define_sled_database!(
     pub struct L1BroadcastDBSled {

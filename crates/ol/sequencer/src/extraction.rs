@@ -1,5 +1,5 @@
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
-use strata_db_types::types::L1BundleStatus;
+use strata_db_types::l1_writer::L1BundleStatus;
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_primitives::OLBlockId;
 use strata_storage::NodeStorage;

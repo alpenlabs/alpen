@@ -1,8 +1,7 @@
-use strata_db_types::{
-    DbResult,
-    errors::DbError,
-    traits::{CheckpointProofDatabase, ProverTaskDatabase},
-};
+use strata_db_types::DbResult;
+use strata_db_types::checkpoint_proof::CheckpointProofDatabase;
+use strata_db_types::errors::DbError;
+use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_identifiers::EpochCommitment;
 use strata_paas::TaskRecordData;
 use zkaleido::ProofReceiptWithMetadata;

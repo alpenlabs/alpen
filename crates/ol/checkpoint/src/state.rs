@@ -392,7 +392,7 @@ mod tests {
 
             let backend = get_test_sled_backend();
             let storage = Arc::new(
-                create_node_storage(backend, threadpool::ThreadPool::new(1))
+                create_node_storage(backend, strata_storage::test_runtime_handle())
                     .expect("test storage"),
             );
             let checkpoint_mgr = storage.ol_checkpoint();
@@ -450,7 +450,7 @@ mod tests {
         ) {
             let backend = get_test_sled_backend();
             let storage = Arc::new(
-                create_node_storage(backend, threadpool::ThreadPool::new(1)).expect("test storage"),
+                create_node_storage(backend, strata_storage::test_runtime_handle()).expect("test storage"),
             );
             let checkpoint_mgr = storage.ol_checkpoint();
             let ol_block_mgr = storage.ol_block();

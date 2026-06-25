@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use strata_asm_common::AuxData;
-use strata_db_types::{traits::AsmDatabase, DbResult};
+use strata_db_types::asm::AsmDatabase;
+use strata_db_types::DbResult;
 use strata_primitives::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
-use threadpool::ThreadPool;
+use tokio::runtime::Handle;
 
 use crate::ops;
 
@@ -19,8 +20,8 @@ pub struct AsmStateManager {
 
 impl AsmStateManager {
     /// Create new instance of [`AsmStateManager`].
-    pub fn new(pool: ThreadPool, db: Arc<impl AsmDatabase + 'static>) -> Self {
-        let ops = ops::asm::Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl AsmDatabase + 'static>) -> Self {
+        let ops = ops::asm::AsmDataOps::new(handle, db);
         Self { ops }
     }
 

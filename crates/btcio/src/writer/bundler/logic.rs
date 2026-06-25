@@ -1,5 +1,5 @@
 use strata_db_types::{
-    types::{BundledPayloadEntry, IntentEntry, IntentStatus},
+    l1_writer::{BundledPayloadEntry, IntentEntry, IntentStatus},
     DbResult,
 };
 use strata_storage::ops::writer::EnvelopeDataOps;

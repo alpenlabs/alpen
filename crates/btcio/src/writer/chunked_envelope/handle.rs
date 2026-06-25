@@ -16,8 +16,10 @@ use bitcoind_async_client::{
     Client,
 };
 use strata_config::btcio::WriterConfig;
-use strata_db_types::types::{
-    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, L1TxId, L1TxStatus, RevealTxMeta,
+use strata_db_types::{
+    chunked_envelope::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, RevealTxMeta},
+    common::L1TxId,
+    l1_broadcast::{L1TxEntry, L1TxStatus},
 };
 use strata_primitives::buf::Buf32;
 use strata_storage::ops::chunked_envelope::ChunkedEnvelopeOps;
@@ -958,7 +960,10 @@ mod tests {
         transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
         Witness,
     };
-    use strata_db_types::types::{L1TxId, L1WtxId, RevealTxMeta};
+    use strata_db_types::{
+        chunked_envelope::RevealTxMeta,
+        common::{L1TxId, L1WtxId},
+    };
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::buf::Buf32;
 
