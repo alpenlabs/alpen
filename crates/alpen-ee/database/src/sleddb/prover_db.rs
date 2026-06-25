@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use alpen_ee_common::{BatchId, ProofId};
 use strata_db_store_sled::SledDbConfig;
-use strata_db_types::{errors::DbError, traits::ProverTaskDatabase, DbResult};
+use strata_db_types::{errors::DbError, prover_task::ProverTaskDatabase, DbResult};
 use strata_paas::TaskRecordData;
 use typed_sled::{SledDb, SledTree};
 use zkaleido::ProofReceiptWithMetadata;

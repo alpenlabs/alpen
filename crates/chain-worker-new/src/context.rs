@@ -625,7 +625,7 @@ mod tests {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = Arc::new(typed_sled::SledDb::new(db).unwrap());
         let mmr_db = Arc::new(MmrIndexDb::new(sled_db, SledDbConfig::test()).unwrap());
-        MmrIndexManager::new(threadpool::ThreadPool::new(1), mmr_db)
+        MmrIndexManager::new(strata_storage::test_runtime_handle(), mmr_db)
     }
 
     fn message_entry(source_seed: u8, value_sats: u64) -> MessageEntry {

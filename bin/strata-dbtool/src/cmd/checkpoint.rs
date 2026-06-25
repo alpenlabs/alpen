@@ -6,8 +6,8 @@ use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
-    traits::{DatabaseBackend, L1Database, OLCheckpointDatabase},
-    types::L1PayloadIntentIndex,
+    backend::DatabaseBackend, common::L1PayloadIntentIndex, l1::L1Database,
+    ol_checkpoint::OLCheckpointDatabase,
 };
 use strata_identifiers::{Epoch, EpochCommitment, L1Height, Slot};
 

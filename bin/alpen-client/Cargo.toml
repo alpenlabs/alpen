@@ -109,7 +109,6 @@ reth-provider.workspace = true
 reth-tasks.workspace = true
 rsp-primitives.workspace = true
 thiserror.workspace = true
-threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

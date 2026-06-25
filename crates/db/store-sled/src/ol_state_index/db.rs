@@ -3,15 +3,15 @@
 use std::collections::BTreeSet;
 
 use sled::transaction::ConflictableTransactionError;
-use strata_db_types::{
-    AccountCreatedRecord, DbError, DbResult,
-    ol_state_index::{
-        AccountEpochKey, AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites,
-    },
-    traits::OLStateIndexingDatabase,
+use strata_db_types::ol_state_index::{
+    AccountCreatedRecord, AccountEpochKey, AccountUpdateRecord, EpochIndexingData,
+    InboxMessageRecord, IndexingWrites, OLStateIndexingDatabase,
 };
+use strata_db_types::{DbError, DbResult};
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment};
-use typed_sled::{SledTree, error::Error as TSledError, tree::SledTransactionalTree};
+use typed_sled::SledTree;
+use typed_sled::error::Error as TSledError;
+use typed_sled::tree::SledTransactionalTree;
 
 use super::schemas::{
     OLAccountCreationEpochSchema, OLAccountInboxEntrySchema, OLAccountUpdateEntrySchema,

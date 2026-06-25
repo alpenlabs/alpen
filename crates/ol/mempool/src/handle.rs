@@ -108,7 +108,6 @@ mod tests {
     use strata_status::StatusChannel;
     use strata_storage::{NodeStorage, create_node_storage};
     use strata_tasks::TaskManager;
-    use threadpool::ThreadPool;
     use tokio::runtime::Handle;
 
     use super::*;
@@ -125,10 +124,10 @@ mod tests {
     /// Helper to set up mempool handle with storage for tests.
     /// Returns (handle, storage, status_channel) for triggering chain updates.
     async fn setup_mempool() -> (MempoolHandle, Arc<NodeStorage>, StatusChannel) {
-        let pool = ThreadPool::new(1);
         let test_db = get_test_sled_backend();
         let storage = Arc::new(
-            create_node_storage(test_db, pool).expect("Failed to create test NodeStorage"),
+            create_node_storage(test_db, strata_storage::test_runtime_handle())
+                .expect("Failed to create test NodeStorage"),
         );
 
         let config = OLMempoolConfig::default();

@@ -1,32 +1,76 @@
 //! Storage for the Alpen codebase.
 
 mod cache;
-mod exec;
 mod instrumentation;
 mod managers;
-pub mod ops;
+
+/// Database ops wrappers, re-exported from the `gen_proxy`-generated proxies in
+/// [`strata_db_types`] under their legacy `*Ops` names.
+pub mod ops {
+    pub mod asm {
+        pub use strata_db_types::asm::AsmDatabaseProxy as AsmDataOps;
+    }
+    pub mod checkpoint_proof {
+        pub use strata_db_types::checkpoint_proof::CheckpointProofDatabaseProxy as CheckpointProofDbOps;
+    }
+    pub mod chunked_envelope {
+        pub use strata_db_types::chunked_envelope::L1ChunkedEnvelopeDatabaseProxy as ChunkedEnvelopeOps;
+    }
+    pub mod client_state {
+        pub use strata_db_types::client_state::ClientStateDatabaseProxy as ClientStateOps;
+    }
+    pub mod l1 {
+        pub use strata_db_types::l1::L1DatabaseProxy as L1DataOps;
+    }
+    pub mod l1tx_broadcast {
+        pub use strata_db_types::l1_broadcast::L1BroadcastDatabaseProxy as BroadcastDbOps;
+    }
+    pub mod mempool {
+        pub use strata_db_types::mempool::MempoolDatabaseProxy as MempoolDataOps;
+    }
+    pub mod mmr_index {
+        pub use strata_db_types::mmr_index::MmrIndexDatabaseProxy as MmrIndexOps;
+    }
+    pub mod ol {
+        pub use strata_db_types::ol_block::OLBlockDatabaseProxy as OLBlockOps;
+    }
+    pub mod ol_checkpoint {
+        pub use strata_db_types::ol_checkpoint::OLCheckpointDatabaseProxy as OLCheckpointOps;
+    }
+    pub mod ol_state {
+        pub use strata_db_types::ol_state::OLStateDatabaseProxy as OLStateOps;
+    }
+    pub mod ol_state_indexing {
+        pub use strata_db_types::ol_state_index::OLStateIndexingDatabaseProxy as OLStateIndexingOps;
+    }
+    pub mod prover_task {
+        pub use strata_db_types::prover_task::ProverTaskDatabaseProxy as ProverTaskDbOps;
+    }
+    pub mod writer {
+        pub use strata_db_types::l1_writer::L1WriterDatabaseProxy as EnvelopeDataOps;
+    }
+}
 
 use std::sync::Arc;
 
 use anyhow::Context;
-pub use managers::{
-    asm::AsmStateManager,
-    checkpoint_proof::CheckpointProofDbManager,
-    client_state::ClientStateManager,
-    l1::L1BlockManager,
-    mempool::MempoolDbManager,
-    mmr_index::{MmrAppendRequest, MmrIndexHandle, MmrIndexManager, MmrStateView},
-    ol::OLBlockManager,
-    ol_checkpoint::OLCheckpointManager,
-    ol_state::OLStateManager,
-    ol_state_indexing::OLStateIndexingManager,
-    prover_task::ProverTaskDbManager,
-    writer::L1WriterManager,
-};
+pub use managers::asm::AsmStateManager;
+pub use managers::checkpoint_proof::CheckpointProofDbManager;
+pub use managers::client_state::ClientStateManager;
+pub use managers::l1::L1BlockManager;
+pub use managers::mempool::MempoolDbManager;
+pub use managers::mmr_index::{MmrAppendRequest, MmrIndexHandle, MmrIndexManager, MmrStateView};
+pub use managers::ol::OLBlockManager;
+pub use managers::ol_checkpoint::OLCheckpointManager;
+pub use managers::ol_state::OLStateManager;
+pub use managers::ol_state_indexing::OLStateIndexingManager;
+pub use managers::prover_task::ProverTaskDbManager;
+pub use managers::writer::L1WriterManager;
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_store_sled::SledBackend;
-use strata_db_types::traits::DatabaseBackend;
+use strata_db_types::backend::DatabaseBackend;
 pub use strata_db_types::MmrId;
+use tokio::runtime::Handle;
 
 /// A consolidation of database managers.
 // TODO(STR-3679): move this to its own module
@@ -37,8 +81,8 @@ pub use strata_db_types::MmrId;
 pub struct NodeStorage {
     /// Database backend for raw database access (needed for sequencer tasks)
     db: Arc<SledBackend>,
-    /// Thread pool for blocking database operations
-    pool: threadpool::ThreadPool,
+    /// Tokio runtime handle used to offload blocking database operations.
+    handle: Handle,
 
     asm_state_manager: Arc<AsmStateManager>,
     l1_block_manager: Arc<L1BlockManager>,
@@ -60,7 +104,7 @@ impl Clone for NodeStorage {
     fn clone(&self) -> Self {
         Self {
             db: self.db.clone(),
-            pool: self.pool.clone(),
+            handle: self.handle.clone(),
             asm_state_manager: self.asm_state_manager.clone(),
             l1_block_manager: self.l1_block_manager.clone(),
             client_state_manager: self.client_state_manager.clone(),
@@ -83,9 +127,9 @@ impl NodeStorage {
         &self.db
     }
 
-    /// Returns the thread pool for blocking database operations.
-    pub fn pool(&self) -> &threadpool::ThreadPool {
-        &self.pool
+    /// Returns the tokio runtime handle used for blocking database operations.
+    pub fn handle(&self) -> &Handle {
+        &self.handle
     }
 
     pub fn asm(&self) -> &Arc<AsmStateManager> {
@@ -139,10 +183,7 @@ impl NodeStorage {
 
 /// Given a raw database, creates storage managers and returns a [`NodeStorage`]
 /// instance around the underlying raw database.
-pub fn create_node_storage(
-    db: Arc<SledBackend>,
-    pool: threadpool::ThreadPool,
-) -> anyhow::Result<NodeStorage> {
+pub fn create_node_storage(db: Arc<SledBackend>, handle: Handle) -> anyhow::Result<NodeStorage> {
     // Extract database references
     let asm_db = db.asm_db();
     let l1_db = db.l1_db();
@@ -156,29 +197,30 @@ pub fn create_node_storage(
     let proof_db = db.checkpoint_proof_db();
     let prover_task_db = db.prover_task_db();
 
-    let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
-    let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
+    let asm_manager = Arc::new(AsmStateManager::new(handle.clone(), asm_db));
+    let l1_block_manager = Arc::new(L1BlockManager::new(handle.clone(), l1_db));
 
     let client_state_manager = Arc::new(
-        ClientStateManager::new(pool.clone(), client_state_db).context("open client state")?,
+        ClientStateManager::new(handle.clone(), client_state_db).context("open client state")?,
     );
 
-    let ol_block_manager = Arc::new(OLBlockManager::new(pool.clone(), ol_block_db));
-    let mmr_index_manager = Arc::new(MmrIndexManager::new(pool.clone(), mmr_index_db));
-    let mempool_db_manager = Arc::new(MempoolDbManager::new(pool.clone(), mempool_db));
-    let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db.clone()));
+    let ol_block_manager = Arc::new(OLBlockManager::new(handle.clone(), ol_block_db));
+    let mmr_index_manager = Arc::new(MmrIndexManager::new(handle.clone(), mmr_index_db));
+    let mempool_db_manager = Arc::new(MempoolDbManager::new(handle.clone(), mempool_db));
+    let ol_state_manager = Arc::new(OLStateManager::new(handle.clone(), ol_state_db.clone()));
     let ol_state_indexing_manager = Arc::new(OLStateIndexingManager::new(
-        pool.clone(),
+        handle.clone(),
         ol_state_indexing_db,
     ));
-    let ol_checkpoint_manager = Arc::new(OLCheckpointManager::new(pool.clone(), ol_checkpoint_db));
-    let proof_manager = Arc::new(CheckpointProofDbManager::new(pool.clone(), proof_db));
-    let prover_task_manager = Arc::new(ProverTaskDbManager::new(pool.clone(), prover_task_db));
-    let l1_writer_manager = Arc::new(L1WriterManager::new(pool.clone(), db.writer_db()));
+    let ol_checkpoint_manager =
+        Arc::new(OLCheckpointManager::new(handle.clone(), ol_checkpoint_db));
+    let proof_manager = Arc::new(CheckpointProofDbManager::new(handle.clone(), proof_db));
+    let prover_task_manager = Arc::new(ProverTaskDbManager::new(handle.clone(), prover_task_db));
+    let l1_writer_manager = Arc::new(L1WriterManager::new(handle.clone(), db.writer_db()));
 
     Ok(NodeStorage {
         db,
-        pool,
+        handle,
         asm_state_manager: asm_manager,
         l1_block_manager,
         client_state_manager,
@@ -192,4 +234,23 @@ pub fn create_node_storage(
         prover_task_manager,
         l1_writer_manager,
     })
+}
+
+/// Returns a tokio runtime [`Handle`] backed by a process-lifetime runtime, for
+/// constructing storage managers in tests.
+///
+/// Database proxies dispatch blocking work via this handle, so tests that build
+/// a [`NodeStorage`] (or individual managers) need one. The backing runtime is
+/// created once and lives for the process, so the handle stays valid for both
+/// the `*_blocking` and `*_async` paths regardless of the calling test's own
+/// runtime.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn test_runtime_handle() -> Handle {
+    use std::sync::OnceLock;
+
+    use tokio::runtime::Runtime;
+    static RT: OnceLock<Runtime> = OnceLock::new();
+    RT.get_or_init(|| Runtime::new().expect("test: build runtime"))
+        .handle()
+        .clone()
 }

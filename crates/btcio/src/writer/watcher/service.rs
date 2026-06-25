@@ -15,7 +15,11 @@ use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use serde::Serialize;
 use strata_btc_types::{Buf32BitcoinExt, TxidExt};
-use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry, L1TxId, L1TxStatus};
+use strata_db_types::{
+    common::L1TxId,
+    l1_broadcast::{L1TxEntry, L1TxStatus},
+    l1_writer::{BundledPayloadEntry, L1BundleStatus},
+};
 use strata_primitives::buf::Buf32;
 use strata_service::{AsyncService, Response, Service, ServiceState};
 use strata_status::StatusChannel;
@@ -598,7 +602,11 @@ mod tests {
     };
     use bitcoind_async_client::error::ClientError;
     use strata_csm_types::L1Payload;
-    use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry, L1TxId};
+    use strata_db_types::{
+        common::L1TxId,
+        l1_broadcast::L1TxEntry,
+        l1_writer::{BundledPayloadEntry, L1BundleStatus},
+    };
     use strata_l1_txfmt::TagData;
     use strata_primitives::buf::{Buf32, Buf64};
 

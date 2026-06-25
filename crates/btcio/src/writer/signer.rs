@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_btc_types::TxidExt;
-use strata_db_types::types::{BundledPayloadEntry, L1TxEntry, L1TxId};
+use strata_db_types::{common::L1TxId, l1_broadcast::L1TxEntry, l1_writer::BundledPayloadEntry};
 use strata_primitives::buf::Buf32;
 use tracing::*;
 
@@ -156,7 +156,7 @@ pub(crate) async fn complete_reveal_and_broadcast(
 mod test {
     use strata_btc_types::TxidExt;
     use strata_csm_types::L1Payload;
-    use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus};
+    use strata_db_types::l1_writer::{BundledPayloadEntry, L1BundleStatus};
     use strata_l1_txfmt::TagData;
     use strata_primitives::buf::Buf32;
 

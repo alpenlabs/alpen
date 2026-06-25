@@ -8,8 +8,6 @@ workspace = true
 
 [dependencies]
 lru.workspace = true
-paste.workspace = true
 thiserror.workspace = true
-threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true

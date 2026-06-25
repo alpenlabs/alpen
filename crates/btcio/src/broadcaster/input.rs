@@ -1,4 +1,4 @@
-use strata_db_types::types::L1TxEntry;
+use strata_db_types::l1_broadcast::L1TxEntry;
 
 /// Input messages consumed by the broadcaster service.
 #[derive(Debug)]
@@ -12,10 +12,10 @@ mod tests {
     use std::sync::Arc;
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{traits::DatabaseBackend, types::L1TxStatus};
+    use strata_db_types::{backend::DatabaseBackend, l1_broadcast::L1TxStatus};
     use strata_l1_txfmt::MagicBytes;
     use strata_service::{AsyncServiceInput, TickMsg, TickingInput, TokioMpscInput};
-    use strata_storage::ops::l1tx_broadcast::Context;
+    use strata_storage::BroadcastDbOps;
     use strata_tasks::TaskManager;
     use tokio::{
         runtime::Handle,
@@ -70,9 +70,8 @@ mod tests {
         let task_manager = TaskManager::new(Handle::current());
         let executor = task_manager.create_executor();
 
-        let pool = threadpool::Builder::new().num_threads(2).build();
         let broadcast_db = get_test_sled_backend().broadcast_db();
-        let ops = Arc::new(Context::new(broadcast_db).into_ops(pool));
+        let ops = Arc::new(BroadcastDbOps::new(Handle::current(), broadcast_db));
 
         let btcio_params = BtcioParams::new(6, MagicBytes::new(*b"ALPN"), 0);
         let handle =

@@ -43,6 +43,6 @@ strata-db-store-sled.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
 strata-snark-acct-types.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }
 sled.workspace = true
-threadpool.workspace = true
 typed-sled.workspace = true

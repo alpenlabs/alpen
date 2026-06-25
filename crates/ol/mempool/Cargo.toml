@@ -36,6 +36,6 @@ strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-predicate.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }
 
 proptest.workspace = true
-threadpool.workspace = true

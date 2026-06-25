@@ -2,7 +2,7 @@
 //!
 //! Lives in a shared crate so the running node (`bin/strata`) and offline
 //! admin tooling (`bin/strata-dbtool`) agree on the on-disk byte format
-//! for entries in the [`strata_db_types::traits::ProverTaskDatabase`].
+//! for entries in the [`strata_db_types::prover_task::ProverTaskDatabase`].
 //!
 //! Wire format is `borsh::to_vec(&CheckpointProofTask(commitment))`.
 //! Because borsh serializes a tuple newtype as its inner field, the

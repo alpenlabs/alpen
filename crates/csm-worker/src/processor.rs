@@ -487,8 +487,10 @@ mod tests {
     /// Sets up storage seeded with an empty client state and a fresh status channel.
     fn create_test_storage() -> (Arc<strata_storage::NodeStorage>, Arc<StatusChannel>) {
         let db = get_test_sled_backend();
-        let pool = threadpool::ThreadPool::new(4);
-        let storage = Arc::new(create_node_storage(db, pool).expect("Failed to create storage"));
+        let storage = Arc::new(
+            create_node_storage(db, strata_storage::test_runtime_handle())
+                .expect("Failed to create storage"),
+        );
 
         let initial_state = ClientState::new(None, None);
         let initial_block = L1BlockCommitment::new(0, L1BlockId::default());

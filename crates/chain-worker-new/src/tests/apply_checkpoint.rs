@@ -578,7 +578,6 @@ mod db_idempotency {
     use strata_storage::{
         MmrId, MmrIndexManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager,
     };
-    use threadpool::ThreadPool;
     use typed_sled::SledDb;
 
     use super::{EpochCommitment, build_epoch, mock_for};
@@ -624,19 +623,19 @@ mod db_idempotency {
 
     impl WriteHarness {
         fn new(genesis_l1_height: u64) -> Self {
-            let pool = ThreadPool::new(1);
-            let mmr_index = Arc::new(MmrIndexManager::new(pool.clone(), make_mmr_index_db()));
+            let handle = strata_storage::test_runtime_handle();
+            let mmr_index = Arc::new(MmrIndexManager::new(handle.clone(), make_mmr_index_db()));
             prefill_l1_block_refs_mmr_blocking(&mmr_index, genesis_l1_height)
                 .expect("prefill L1 block refs MMR");
 
             Self {
-                ol_state: Arc::new(OLStateManager::new(pool.clone(), make_ol_state_db())),
+                ol_state: Arc::new(OLStateManager::new(handle.clone(), make_ol_state_db())),
                 ol_indexing: Arc::new(OLStateIndexingManager::new(
-                    pool.clone(),
+                    handle.clone(),
                     make_ol_state_indexing_db(),
                 )),
                 ol_checkpoint: Arc::new(OLCheckpointManager::new(
-                    pool.clone(),
+                    handle.clone(),
                     make_ol_checkpoint_db(),
                 )),
                 mmr_index,

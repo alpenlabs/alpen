@@ -10,7 +10,7 @@ use strata_consensus_logic::{
     unfinalized_tracker::UnfinalizedOLBlockSource,
 };
 use strata_csm_worker::CsmWorkerStatus;
-use strata_db_types::{DbResult, traits::BlockStatus};
+use strata_db_types::{DbResult, ol_block::BlockStatus};
 use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::OLBlock;

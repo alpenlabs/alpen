@@ -1,6 +1,5 @@
-use strata_db_types::{
-    traits::L1WriterDatabase,
-    types::{BundledPayloadEntry, IntentEntry},
+use strata_db_types::l1_writer::{
+    BundledPayloadEntry, IntentEntry, IntentStatus, L1WriterDatabase,
 };
 use strata_primitives::buf::Buf32;
 use strata_test_utils::ArbitraryGenerator;
@@ -186,6 +185,54 @@ pub fn test_put_intent_entry(db: &impl L1WriterDatabase) {
 
     let retrieved = db.get_intent_by_id(intent_id).unwrap().unwrap();
     assert_eq!(retrieved, intent);
+}
+
+pub fn test_bundle_intent_payload(db: &impl L1WriterDatabase) {
+    let first_payload: BundledPayloadEntry = ArbitraryGenerator::new().generate();
+    let second_payload: BundledPayloadEntry = ArbitraryGenerator::new().generate();
+    db.put_payload_entry(0, first_payload)
+        .expect("test: seed first payload");
+    db.put_payload_entry(1, second_payload)
+        .expect("test: seed second payload");
+
+    let mut intent: IntentEntry = ArbitraryGenerator::new().generate();
+    intent.status = IntentStatus::Unbundled;
+    let intent_id = *intent.intent.commitment();
+    let intent_idx = db
+        .put_intent_entry(intent_id, intent.clone())
+        .expect("test: seed intent");
+    let expected_payload_idx = db
+        .get_next_payload_idx()
+        .expect("test: get next payload idx");
+
+    let payload_entry = BundledPayloadEntry::new_unsigned(intent.payload().clone());
+    let payload_idx = db
+        .bundle_intent_payload(intent_id, intent.clone(), payload_entry.clone())
+        .expect("test: bundle intent payload");
+
+    assert_eq!(payload_idx, expected_payload_idx);
+    assert_eq!(
+        db.get_payload_entry_by_idx(payload_idx)
+            .expect("test: get payload"),
+        Some(payload_entry)
+    );
+
+    let stored_intent = db
+        .get_intent_by_id(intent_id)
+        .expect("test: get intent")
+        .expect("test: stored intent");
+    assert_eq!(stored_intent.status, IntentStatus::Bundled(payload_idx));
+    assert_eq!(stored_intent.intent, intent.intent);
+    assert_eq!(
+        db.get_intent_by_idx(intent_idx)
+            .expect("test: get intent by idx"),
+        Some(stored_intent)
+    );
+    assert_eq!(
+        db.get_next_intent_idx().expect("test: get next intent idx"),
+        intent_idx + 1,
+        "bundling should not insert a duplicate intent index entry"
+    );
 }
 
 pub fn test_del_intent_entry_single(db: &impl L1WriterDatabase) {
@@ -441,6 +488,12 @@ macro_rules! l1_writer_db_tests {
         fn test_put_intent_entry() {
             let db = $setup_expr;
             $crate::l1_writer_tests::test_put_intent_entry(&db);
+        }
+
+        #[test]
+        fn test_bundle_intent_payload() {
+            let db = $setup_expr;
+            $crate::l1_writer_tests::test_bundle_intent_payload(&db);
         }
 
         #[test]

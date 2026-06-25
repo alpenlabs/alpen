@@ -13,8 +13,10 @@ use bitcoind_async_client::{traits::Reader, Client as BtcClient};
 use eyre::{bail, ensure};
 use strata_btc_types::{BlockHashExt, Buf32BitcoinExt};
 use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
-use strata_db_types::types::{
-    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxId, L1TxStatus, L1WtxId,
+use strata_db_types::{
+    chunked_envelope::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus},
+    common::{L1TxId, L1WtxId},
+    l1_broadcast::L1TxStatus,
 };
 use strata_identifiers::{Buf32, L1BlockCommitment, L1Height, WtxidsRoot};
 use strata_l1_txfmt::MagicBytes;
@@ -329,14 +331,10 @@ mod tests {
     use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{
-        traits::DatabaseBackend,
-        types::{L1TxEntry, RevealTxMeta},
+        backend::DatabaseBackend, chunked_envelope::RevealTxMeta, l1_broadcast::L1TxEntry,
     };
     use strata_l1_txfmt::MagicBytes;
-    use strata_storage::ops::{
-        chunked_envelope::{ChunkedEnvelopeOps, Context as ChunkedEnvelopeContext},
-        l1tx_broadcast::{BroadcastDbOps, Context as BroadcastContext},
-    };
+    use strata_storage::{ops::chunked_envelope::ChunkedEnvelopeOps, BroadcastDbOps};
 
     use super::*;
 
@@ -432,14 +430,14 @@ mod tests {
         Arc<BroadcastDbOps>,
     )> {
         let backend = get_test_sled_backend();
-        let chunked_ops = Arc::new(
-            ChunkedEnvelopeContext::new(backend.chunked_envelope_db())
-                .into_ops(threadpool::Builder::new().num_threads(2).build()),
-        );
-        let broadcast_ops = Arc::new(
-            BroadcastContext::new(backend.broadcast_db())
-                .into_ops(threadpool::Builder::new().num_threads(2).build()),
-        );
+        let chunked_ops = Arc::new(ChunkedEnvelopeOps::new(
+            strata_storage::test_runtime_handle(),
+            backend.chunked_envelope_db(),
+        ));
+        let broadcast_ops = Arc::new(BroadcastDbOps::new(
+            strata_storage::test_runtime_handle(),
+            backend.broadcast_db(),
+        ));
         let provider = ChunkedEnvelopeDaProvider::new(
             Arc::new(NeverCalledBlobSource),
             Arc::new(ChunkedEnvelopeHandle::new(chunked_ops.clone())),

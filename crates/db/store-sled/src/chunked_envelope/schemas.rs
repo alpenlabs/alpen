@@ -1,4 +1,4 @@
-use strata_db_types::types::ChunkedEnvelopeEntry;
+use strata_db_types::chunked_envelope::ChunkedEnvelopeEntry;
 
 use crate::define_table_with_integer_key;
 

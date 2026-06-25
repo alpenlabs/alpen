@@ -1,5 +1,5 @@
 use bitcoin::Txid;
-use strata_db_types::types::{L1TxEntry, L1TxStatus};
+use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
 use tracing::*;
 
 use super::{
@@ -294,7 +294,7 @@ mod test {
 
     use bitcoin::{Transaction, Txid};
     use proptest::prelude::*;
-    use strata_db_types::types::{L1TxEntry, L1TxStatus};
+    use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
     use strata_identifiers::test_utils::buf32_strategy;
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::{buf::Buf32, L1Height};

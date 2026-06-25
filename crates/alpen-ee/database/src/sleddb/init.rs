@@ -9,11 +9,7 @@ use strata_db_store_sled::{
 pub use strata_storage::ops::{
     chunked_envelope::ChunkedEnvelopeOps, l1tx_broadcast::BroadcastDbOps,
 };
-use strata_storage::ops::{
-    chunked_envelope::Context as ChunkedEnvelopeContext,
-    l1tx_broadcast::Context as BroadcastContext,
-};
-use threadpool::ThreadPool;
+use tokio::runtime::Handle;
 use typed_sled::SledDb;
 
 use crate::{
@@ -42,10 +38,10 @@ pub struct EeDatabases {
 }
 
 impl EeDatabases {
-    /// Creates [`EeNodeStorage`] from the EE node database with the given
-    /// threadpool.
-    pub fn node_storage(&self, pool: ThreadPool) -> EeNodeStorage {
-        EeNodeStorage::new(pool, self.ee_node_db.clone())
+    /// Creates [`EeNodeStorage`] from the EE node database, dispatching blocking
+    /// work via the given runtime handle.
+    pub fn node_storage(&self, handle: Handle) -> EeNodeStorage {
+        EeNodeStorage::new(handle, self.ee_node_db.clone())
     }
 
     /// Returns a clone of the witness database.
@@ -53,16 +49,16 @@ impl EeDatabases {
         self.witness_db.clone()
     }
 
-    /// Creates [`BroadcastDbOps`] from the broadcast database with the given
-    /// threadpool.
-    pub fn broadcast_ops(&self, pool: ThreadPool) -> BroadcastDbOps {
-        BroadcastContext::new(self.broadcast_db.clone()).into_ops(pool)
+    /// Creates [`BroadcastDbOps`] from the broadcast database, dispatching
+    /// blocking work via the given runtime handle.
+    pub fn broadcast_ops(&self, handle: Handle) -> BroadcastDbOps {
+        BroadcastDbOps::new(handle, self.broadcast_db.clone())
     }
 
-    /// Creates [`ChunkedEnvelopeOps`] from the chunked envelope database with
-    /// the given threadpool.
-    pub fn chunked_envelope_ops(&self, pool: ThreadPool) -> ChunkedEnvelopeOps {
-        ChunkedEnvelopeContext::new(self.chunked_envelope_db.clone()).into_ops(pool)
+    /// Creates [`ChunkedEnvelopeOps`] from the chunked envelope database,
+    /// dispatching blocking work via the given runtime handle.
+    pub fn chunked_envelope_ops(&self, handle: Handle) -> ChunkedEnvelopeOps {
+        ChunkedEnvelopeOps::new(handle, self.chunked_envelope_db.clone())
     }
 
     /// Returns a clone of the DA context database.

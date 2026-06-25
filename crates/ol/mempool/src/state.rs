@@ -10,7 +10,7 @@ use std::{
 use metrics::{counter, gauge};
 use ssz::{Decode, Encode};
 use strata_acct_types::AccountId;
-use strata_db_types::types::MempoolTxData;
+use strata_db_types::mempool::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};

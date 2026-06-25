@@ -6,7 +6,7 @@
 use std::{mem, sync::Arc};
 
 use serde::Serialize;
-use strata_db_types::types::IntentEntry;
+use strata_db_types::l1_writer::IntentEntry;
 use strata_service::{AsyncService, Response, Service, ServiceState, TickMsg};
 use strata_storage::ops::writer::EnvelopeDataOps;
 

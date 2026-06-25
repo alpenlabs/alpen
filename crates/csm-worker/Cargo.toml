@@ -44,11 +44,10 @@ strata-codec.workspace = true
 strata-codec-utils.workspace = true
 strata-l1-envelope-fmt.workspace = true
 strata-status.workspace = true
-strata-storage.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }
 strata-test-utils-checkpoint.workspace = true
 strata-test-utils-l2.workspace = true
 rand.workspace = true
-threadpool.workspace = true
 
 [features]
 debug-utils = ["strata-common/debug-utils"]
