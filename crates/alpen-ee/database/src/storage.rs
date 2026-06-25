@@ -329,6 +329,28 @@ impl ChunkStorage for EeNodeStorage {
         self.ops.get_latest_chunk_async().await.map_err(Into::into)
     }
 
+    async fn get_sealed_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> Result<Vec<(Chunk, ChunkStatus)>, StorageError> {
+        self.ops
+            .get_sealed_chunks_async(start_idx, limit)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_proof_pending_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> Result<Vec<(Chunk, ChunkStatus)>, StorageError> {
+        self.ops
+            .get_proof_pending_chunks_async(start_idx, limit)
+            .await
+            .map_err(Into::into)
+    }
+
     async fn set_batch_chunks(
         &self,
         batch_id: BatchId,

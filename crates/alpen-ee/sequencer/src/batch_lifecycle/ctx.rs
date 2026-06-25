@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage, ChunkStorage};
+use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage};
 use tokio::sync::watch;
 
 /// Context holding all dependencies for the batch lifecycle task.
@@ -13,7 +13,7 @@ pub(crate) struct BatchLifecycleCtx<D, P, S>
 where
     D: BatchDaProvider,
     P: BatchProver,
-    S: BatchStorage + ChunkStorage,
+    S: BatchStorage,
 {
     /// Receiver for new sealed batch notifications from batch_builder.
     pub sealed_batch_rx: watch::Receiver<BatchId>,
@@ -24,7 +24,7 @@ where
     /// Provider for requesting and checking acct proof generation.
     pub prover: Arc<P>,
 
-    /// Storage for batches and their chunk associations.
+    /// Storage for batches.
     pub batch_storage: Arc<S>,
 
     /// Sender to notify about batches reaching ProofReady state.

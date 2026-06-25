@@ -110,6 +110,20 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Get the chunk with the highest idx, if it exists.
     fn get_latest_chunk(&self) -> DbResult<Option<(Chunk, ChunkStatus)>>;
 
+    /// Get sealed chunks at or above `start_idx`, in ascending idx order.
+    fn get_sealed_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> DbResult<Vec<(Chunk, ChunkStatus)>>;
+
+    /// Get proof-pending chunks at or above `start_idx`, in ascending idx order.
+    fn get_proof_pending_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> DbResult<Vec<(Chunk, ChunkStatus)>>;
+
     /// Set or update batch-chunk association.
     fn set_batch_chunks(&self, batch_id: BatchId, chunks: Vec<ChunkId>) -> DbResult<()>;
 
@@ -192,6 +206,8 @@ pub(crate) mod ops {
             get_chunk_by_id(chunk_id: ChunkId) => Option<(Chunk, ChunkStatus)>;
             get_chunk_by_idx(idx: u64) => Option<(Chunk, ChunkStatus)>;
             get_latest_chunk() => Option<(Chunk, ChunkStatus)>;
+            get_sealed_chunks(start_idx: u64, limit: usize) => Vec<(Chunk, ChunkStatus)>;
+            get_proof_pending_chunks(start_idx: u64, limit: usize) => Vec<(Chunk, ChunkStatus)>;
             set_batch_chunks(batch_id: BatchId, chunks: Vec<ChunkId>) => ();
             get_batch_chunks(batch_id: BatchId) => Option<Vec<ChunkId>>;
 

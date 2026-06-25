@@ -290,7 +290,6 @@ pub(crate) enum DBChunkStatus {
     Sealed,
     ProofPending(String),
     ProofReady([u8; 32]),
-    ProofFailed(String),
 }
 
 impl From<ChunkStatus> for DBChunkStatus {
@@ -299,7 +298,6 @@ impl From<ChunkStatus> for DBChunkStatus {
             ChunkStatus::Sealed => Self::Sealed,
             ChunkStatus::ProofPending(s) => Self::ProofPending(s),
             ChunkStatus::ProofReady(proof) => Self::ProofReady(proof.into()),
-            ChunkStatus::ProofFailed(s) => Self::ProofFailed(s),
         }
     }
 }
@@ -310,7 +308,6 @@ impl From<DBChunkStatus> for ChunkStatus {
             DBChunkStatus::Sealed => Self::Sealed,
             DBChunkStatus::ProofPending(s) => Self::ProofPending(s),
             DBChunkStatus::ProofReady(proof) => Self::ProofReady(ProofId::from(proof)),
-            DBChunkStatus::ProofFailed(s) => Self::ProofFailed(s),
         }
     }
 }

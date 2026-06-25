@@ -8,20 +8,18 @@ use tracing::{error, warn};
 use super::{
     ctx::ChunkLifecycleCtx,
     lifecycle::{try_advance_proof_pending, try_advance_sealed},
-    state::ChunkProofCursor,
+    state::ChunkLifecycleState,
 };
 
 /// Polling interval for chunk proof lifecycle reconciliation.
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
-/// Maximum chunks inspected per tick.
+/// Maximum chunks loaded from each storage-backed work queue per tick.
 ///
-/// Bounds the per-tick query cost and acts as the de-facto in-flight cap on concurrent chunk
-/// proofs: chunks past `floor + SCAN_WINDOW` are not submitted until the floor advances.
-///
-/// TODO(STR-3785): the dedicated proof scheduler should own the in-flight cap explicitly before
-/// this window is widened or removed.
-const SCAN_WINDOW: u64 = 64;
+/// This bounds DB and prover-status work per tick. It is not a proof concurrency policy: sealed and
+/// pending chunks are paged independently, so an early pending task cannot block later sealed
+/// chunks from being submitted.
+const WORK_QUERY_LIMIT: usize = 256;
 
 /// Runs the chunk proof lifecycle forever.
 pub async fn chunk_lifecycle_task<P, S>(prover: Arc<P>, storage: Arc<S>)
@@ -31,15 +29,7 @@ where
 {
     let ctx = ChunkLifecycleCtx { prover, storage };
 
-    // Recover the floor from batch status; fall back to a fresh cursor (advances forward on the
-    // first tick) if recovery fails.
-    let mut state = match ChunkProofCursor::recover(ctx.storage.as_ref()).await {
-        Ok(state) => state,
-        Err(e) => {
-            error!(error = %e, "failed to recover chunk lifecycle state; starting from scratch");
-            ChunkProofCursor::default()
-        }
-    };
+    let mut state = ChunkLifecycleState::default();
 
     let mut poll_interval = time::interval(POLL_INTERVAL);
 
@@ -54,12 +44,12 @@ where
 
 /// Reconcile chunk proofs for one tick.
 ///
-/// Advances the [`ChunkProofCursor`] floor (skipping chunks of already-proven batches), then
-/// within `[floor, floor + SCAN_WINDOW)` drives each chunk by its [`ChunkStatus`]: `Sealed` chunks
-/// are submitted, `ProofPending` chunks are polled for completion/failure, and terminal chunks are
-/// skipped. Per-chunk errors are isolated so one bad chunk does not starve the rest.
+/// Queries storage for sealed and proof-pending chunk work, then drives each chunk by status.
+/// Sealed and pending chunks are paged independently so a slow or failed pending task does not
+/// prevent later sealed chunks from being submitted. Per-chunk errors are isolated so one bad chunk
+/// does not starve the rest.
 async fn process_cycle<P, S>(
-    state: &mut ChunkProofCursor,
+    state: &mut ChunkLifecycleState,
     ctx: &ChunkLifecycleCtx<P, S>,
 ) -> Result<()>
 where
@@ -67,57 +57,64 @@ where
     S: ChunkStorage + BatchStorage,
 {
     let storage = ctx.storage.as_ref();
-    let Some((latest_chunk, _)) = storage
-        .get_latest_chunk()
-        .await
-        .map_err(|e| eyre!("get_latest_chunk: {e}"))?
-    else {
-        return Ok(());
-    };
-    let latest_idx = latest_chunk.idx();
 
-    state.advance(storage, latest_idx).await?;
-    let floor = state.floor();
-    if floor > latest_idx {
-        return Ok(());
-    }
-    let end = latest_idx.min(floor + SCAN_WINDOW - 1);
-
-    for idx in floor..=end {
-        let Some((chunk, status)) = storage
-            .get_chunk_by_idx(idx)
-            .await
-            .map_err(|e| eyre!("get_chunk_by_idx({idx}): {e}"))?
-        else {
-            continue;
-        };
-
-        let result = match status {
-            ChunkStatus::Sealed => try_advance_sealed(ctx, &chunk).await,
-            ChunkStatus::ProofPending(_) => try_advance_proof_pending(ctx, &chunk).await,
-            ChunkStatus::ProofReady(_) => Ok(()),
-            ChunkStatus::ProofFailed(reason) => {
-                warn!(
-                    chunk_id = ?chunk.id(),
-                    chunk_idx = chunk.idx(),
-                    batch_idx = chunk.batch_idx(),
-                    %reason,
-                    "chunk proof permanently failed; lifecycle is blocked here until it is reset \
-                     (e.g. via dbtool: clear the prover task and set the chunk back to Sealed)"
-                );
-                Ok(())
-            }
-        };
-        if let Err(e) = result {
+    let sealed_chunks = get_sealed_work_page(storage).await?;
+    for (chunk, _status) in sealed_chunks {
+        if let Err(e) = try_advance_sealed(ctx, &chunk).await {
             warn!(
                 chunk_idx = chunk.idx(),
                 error = %e,
-                "failed to advance chunk in proof lifecycle; continuing with next chunk"
+                "failed to submit chunk proof; continuing with next sealed chunk"
+            );
+        }
+    }
+
+    let pending_chunks = get_pending_work_page(state, storage).await?;
+    for (chunk, _status) in pending_chunks {
+        if let Err(e) = try_advance_proof_pending(ctx, &chunk).await {
+            warn!(
+                chunk_idx = chunk.idx(),
+                error = %e,
+                "failed to poll chunk proof; continuing with next pending chunk"
             );
         }
     }
 
     Ok(())
+}
+
+async fn get_sealed_work_page<S>(storage: &S) -> Result<Vec<(alpen_ee_common::Chunk, ChunkStatus)>>
+where
+    S: ChunkStorage,
+{
+    storage
+        .get_sealed_chunks(0, WORK_QUERY_LIMIT)
+        .await
+        .map_err(|e| eyre!("get_sealed_chunks(0): {e}"))
+}
+
+async fn get_pending_work_page<S>(
+    state: &mut ChunkLifecycleState,
+    storage: &S,
+) -> Result<Vec<(alpen_ee_common::Chunk, ChunkStatus)>>
+where
+    S: ChunkStorage,
+{
+    let start_idx = state.pending_poll_idx();
+    let mut chunks = storage
+        .get_proof_pending_chunks(start_idx, WORK_QUERY_LIMIT)
+        .await
+        .map_err(|e| eyre!("get_proof_pending_chunks({start_idx}): {e}"))?;
+    if chunks.is_empty() && start_idx != 0 {
+        state.wrap_pending_poll_idx();
+        chunks = storage
+            .get_proof_pending_chunks(0, WORK_QUERY_LIMIT)
+            .await
+            .map_err(|e| eyre!("get_proof_pending_chunks(0): {e}"))?;
+    }
+
+    state.advance_pending_poll_idx(chunks.last().map(|(chunk, _)| chunk.idx()));
+    Ok(chunks)
 }
 
 #[cfg(test)]
@@ -179,10 +176,14 @@ mod tests {
     }
 
     fn make_chunk(idx: u64) -> Chunk {
+        make_chunk_with_seed(idx, 0)
+    }
+
+    fn make_chunk_with_seed(idx: u64, seed: u8) -> Chunk {
         Chunk::new(
             idx,
-            test_hash(idx as u8),
-            test_hash(idx as u8 + 1),
+            test_hash((idx as u8).wrapping_add(seed)),
+            test_hash((idx as u8).wrapping_add(seed).wrapping_add(1)),
             idx + 1,
             0,
             vec![],
@@ -202,11 +203,61 @@ mod tests {
 
         let prover = Arc::new(RecordingChunkProver::default());
         let ctx = ctx(prover.clone(), storage);
-        process_cycle(&mut ChunkProofCursor::default(), &ctx)
+        process_cycle(&mut ChunkLifecycleState::default(), &ctx)
             .await
             .unwrap();
 
         assert_eq!(prover.calls(), vec![chunk0.id(), chunk1.id(), chunk2.id()]);
+    }
+
+    #[tokio::test]
+    async fn pending_page_does_not_block_later_sealed_chunks() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+        for idx in 0..WORK_QUERY_LIMIT as u64 {
+            let chunk = make_chunk(idx);
+            storage.save_next_chunk(chunk.clone()).await.unwrap();
+            storage
+                .update_chunk_status(chunk.id(), ChunkStatus::ProofPending("task".into()))
+                .await
+                .unwrap();
+        }
+        let sealed = make_chunk(WORK_QUERY_LIMIT as u64);
+        storage.save_next_chunk(sealed.clone()).await.unwrap();
+
+        let prover = Arc::new(RecordingChunkProver::default());
+        let ctx = ctx(prover.clone(), storage);
+        process_cycle(&mut ChunkLifecycleState::default(), &ctx)
+            .await
+            .unwrap();
+
+        assert_eq!(prover.calls(), vec![sealed.id()]);
+    }
+
+    #[tokio::test]
+    async fn sealed_cursor_wraps_to_reorged_lower_chunks() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+        let chunk0 = make_chunk(0);
+        storage.save_next_chunk(chunk0.clone()).await.unwrap();
+        storage
+            .update_chunk_status(chunk0.id(), ChunkStatus::ProofPending("task".into()))
+            .await
+            .unwrap();
+        for idx in 1..=2 {
+            storage.save_next_chunk(make_chunk(idx)).await.unwrap();
+        }
+        storage.revert_chunks_from(1).await.unwrap();
+        let chunk1 = make_chunk_with_seed(1, 10);
+        let chunk2 = make_chunk_with_seed(2, 10);
+        storage.save_next_chunk(chunk1.clone()).await.unwrap();
+        storage.save_next_chunk(chunk2.clone()).await.unwrap();
+
+        let prover = Arc::new(RecordingChunkProver::default());
+        let ctx = ctx(prover.clone(), storage);
+        process_cycle(&mut ChunkLifecycleState::default(), &ctx)
+            .await
+            .unwrap();
+
+        assert_eq!(prover.calls(), vec![chunk1.id(), chunk2.id()]);
     }
 
     #[tokio::test]
@@ -222,7 +273,7 @@ mod tests {
         let prover = Arc::new(RecordingChunkProver::default());
         prover.set_status(ProofGenerationStatus::NotStarted);
         let ctx = ctx(prover.clone(), storage);
-        process_cycle(&mut ChunkProofCursor::default(), &ctx)
+        process_cycle(&mut ChunkLifecycleState::default(), &ctx)
             .await
             .unwrap();
 
@@ -230,7 +281,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn marks_permanent_failure_without_resubmit() {
+    async fn leaves_permanent_failure_pending_without_resubmit() {
         let storage = Arc::new(InMemoryStorage::new_empty());
         let chunk = make_chunk(0);
         storage.save_next_chunk(chunk.clone()).await.unwrap();
@@ -244,7 +295,7 @@ mod tests {
             reason: "bad witness".into(),
         });
         let ctx = ctx(prover.clone(), storage.clone());
-        process_cycle(&mut ChunkProofCursor::default(), &ctx)
+        process_cycle(&mut ChunkLifecycleState::default(), &ctx)
             .await
             .unwrap();
 
@@ -254,7 +305,7 @@ mod tests {
             .await
             .unwrap()
             .expect("chunk exists");
-        assert!(matches!(status, ChunkStatus::ProofFailed(reason) if reason == "bad witness"));
+        assert!(matches!(status, ChunkStatus::ProofPending(task) if task == "task"));
     }
 
     #[tokio::test]
@@ -271,7 +322,7 @@ mod tests {
         let prover = Arc::new(RecordingChunkProver::default());
         prover.set_status(ProofGenerationStatus::Ready { proof_id });
         let ctx = ctx(prover, storage.clone());
-        process_cycle(&mut ChunkProofCursor::default(), &ctx)
+        process_cycle(&mut ChunkLifecycleState::default(), &ctx)
             .await
             .unwrap();
 

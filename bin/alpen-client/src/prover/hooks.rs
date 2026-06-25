@@ -1,7 +1,7 @@
 //! Receipt hooks for the chunk + acct provers.
 //!
 //! The chunk hook flips `ChunkStatus::ProofReady` in EE storage so the
-//! batch lifecycle and the acct prover can observe completion. The acct
+//! acct prover can observe completion. The acct
 //! hook persists the outer proof into [`EeBatchProofDbManager`] and
 //! flips `BatchStatus::ProofReady` so the lifecycle task can post the
 //! `EEUpdate` to OL.

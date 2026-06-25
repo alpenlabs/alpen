@@ -240,6 +240,42 @@ impl ChunkStorage for InMemoryStorage {
         Ok(chunks.last_key_value().map(|(_, v)| v.clone()))
     }
 
+    async fn get_sealed_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> Result<Vec<(Chunk, ChunkStatus)>, StorageError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let chunks = self.chunks.read().unwrap();
+        Ok(chunks
+            .range(start_idx..)
+            .filter(|&(_, (_chunk, status))| matches!(status, ChunkStatus::Sealed))
+            .map(|(_, (chunk, status))| (chunk.clone(), status.clone()))
+            .take(limit)
+            .collect())
+    }
+
+    async fn get_proof_pending_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> Result<Vec<(Chunk, ChunkStatus)>, StorageError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let chunks = self.chunks.read().unwrap();
+        Ok(chunks
+            .range(start_idx..)
+            .filter(|&(_, (_chunk, status))| matches!(status, ChunkStatus::ProofPending(_)))
+            .map(|(_, (chunk, status))| (chunk.clone(), status.clone()))
+            .take(limit)
+            .collect())
+    }
+
     async fn set_batch_chunks(
         &self,
         batch_id: BatchId,

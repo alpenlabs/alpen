@@ -17,7 +17,10 @@
 //!               │ chunk receipts in shared paas ReceiptStore
 //!               │ hook: flip ChunkStatus::ProofReady
 //!               │
-//!          batch lifecycle waits for all batch chunks ProofReady
+//!          batch lifecycle asks PaasEeProver for acct proof
+//!               │
+//!               ▼
+//!         PaasEeProver checks acct input readiness
 //!               │
 //!               ▼
 //!         ┌────────────────────────────┐

@@ -807,6 +807,7 @@ fn main() {
                 let ee_prover = Arc::new(PaasEeProver::new(
                     chunk_handle,
                     acct_handle,
+                    batch_storage_dyn,
                     chunk_storage_dyn,
                     batch_proofs,
                 ));
