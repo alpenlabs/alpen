@@ -16023,6 +16023,7 @@ name = "strata-ol-da"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "proptest",
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-proto-checkpoint-txs",
