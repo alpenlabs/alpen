@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use alpen_ee_common::{BatchStatus, BatchStorage, ChunkStatus, ChunkStorage};
+use alpen_ee_common::{BatchStatus, BatchStorage, ChunkStatus, ChunkStorage, StorageError};
 use async_trait::async_trait;
 use strata_paas::{ProverError, ProverResult, ReceiptHook};
 use tracing::{info, warn};
@@ -44,10 +44,27 @@ impl ReceiptHook<ChunkSpec> for ChunkReceiptHook {
         let chunk_id = task.0;
         let proof_id = task.proof_id();
         info!(?chunk_id, %proof_id, "marking chunk as proof-ready");
-        self.chunk_storage
+        match self
+            .chunk_storage
             .update_chunk_status(chunk_id, ChunkStatus::ProofReady(proof_id))
             .await
-            .map_err(|e| ProverError::Storage(format!("update_chunk_status: {e}")))
+        {
+            Ok(()) => Ok(()),
+            // The chunk no longer exists (reverted, or replaced by a reorg) before its proof
+            // landed. This is expected churn: the chunk lifecycle proves sealed chunks as soon as
+            // they appear, but a reorg can revert a chunk between submission and completion (the
+            // batch builder reverts batches before the chunk builder's `cleanup_orphaned_chunks`
+            // runs). There is no canonical chunk left to mark, so drop the result quietly rather
+            // than letting paas record a permanent failure and emit a spurious CRITICAL.
+            Err(StorageError::ChunkNotFound(_)) => {
+                info!(
+                    ?chunk_id,
+                    "chunk reverted before its proof landed; dropping orphaned chunk proof result"
+                );
+                Ok(())
+            }
+            Err(e) => Err(ProverError::Storage(format!("update_chunk_status: {e}"))),
+        }
     }
 }
 
