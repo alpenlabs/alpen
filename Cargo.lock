@@ -16630,6 +16630,7 @@ dependencies = [
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
+ "strata-msg-fmt",
 ]
 
 [[package]]

@@ -15,7 +15,8 @@ use tracing::{info, warn};
 
 /// Builds [`ExecInputs`] from parsed input messages.
 ///
-/// Only `Deposit` messages are processed; other message types are logged and ignored.
+/// `Deposit` and `SubjTransfer` messages both mint value into an EE subject;
+/// other message types are logged and ignored.
 // TODO(STR-2583) convert this to do it based on extracting pending inputs from the
 // current EE account inner state
 pub(crate) fn build_block_inputs(
@@ -34,8 +35,14 @@ pub(crate) fn build_block_inputs(
                 );
                 inputs.add_subject_deposit(SubjectDepositData::new(dest_subject, value));
             }
-            Some(DecodedEeMessageData::SubjTransfer(_)) => {
-                // no need to warn on this
+            Some(DecodedEeMessageData::SubjTransfer(transfer_msg_data)) => {
+                let dest_subject = *transfer_msg_data.dest_subject();
+                info!(
+                    ?dest_subject,
+                    amount_sat = value.to_sat(),
+                    "accepted subject transfer message as EE input",
+                );
+                inputs.add_subject_deposit(SubjectDepositData::new(dest_subject, value));
             }
             Some(DecodedEeMessageData::Commit(_)) => {
                 // no need to warn on this
@@ -156,11 +163,11 @@ mod tests {
     }
 
     #[test]
-    fn build_block_inputs_filters_non_deposit_messages() {
-        // Mix of deposit, transfer, and commit messages
+    fn build_block_inputs_accepts_minting_messages() {
+        // Mix of deposit, transfer, and commit messages.
         let inputs = vec![
             make_deposit_msg([0x01; 32], 1000),
-            make_subj_transfer_msg(500), // Should be ignored
+            make_subj_transfer_msg(500),
             make_deposit_msg([0x02; 32], 2000),
             make_commit_msg(), // Should be ignored
             make_deposit_msg([0x03; 32], 3000),
@@ -168,13 +175,15 @@ mod tests {
 
         let block_inputs = build_block_inputs(inputs);
 
-        // Only deposits should be included
-        assert_eq!(block_inputs.total_inputs(), 3);
+        // Deposits and subject transfers mint into EE subjects.
+        assert_eq!(block_inputs.total_inputs(), 4);
         let deposits = block_inputs.subject_deposits();
         assert_eq!(deposits[0].dest(), SubjectId::new([0x01; 32]));
         assert_eq!(deposits[0].value(), BitcoinAmount::from_sat(1000));
-        assert_eq!(deposits[1].dest(), SubjectId::new([0x02; 32]));
-        assert_eq!(deposits[2].dest(), SubjectId::new([0x03; 32]));
+        assert_eq!(deposits[1].dest(), SubjectId::new([0xbb; 32]));
+        assert_eq!(deposits[1].value(), BitcoinAmount::from_sat(500));
+        assert_eq!(deposits[2].dest(), SubjectId::new([0x02; 32]));
+        assert_eq!(deposits[3].dest(), SubjectId::new([0x03; 32]));
     }
 
     #[test]

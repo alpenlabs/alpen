@@ -93,11 +93,22 @@ mod tests {
     use std::collections::BTreeMap;
 
     use strata_acct_types::{AccountId, BitcoinAmount, Hash, SubjectId};
-    use strata_ee_acct_types::{EnvError, EnvResult, ExecHeader, ExecPartialState, ExecPayload};
+    use strata_codec::decode_buf_exact;
+    use strata_ee_acct_types::{
+        EnvError, EnvResult, ExecHeader, ExecPartialState, ExecPayload, SUBJ_TRANSFER_MSG_TYPE,
+        SubjTransferMsgData,
+    };
     use strata_ee_chain_types::ExecInputs;
+    use strata_msg_fmt::{Msg, MsgRef};
 
     use super::*;
     use crate::types::{SimpleBlockBody, SimpleHeader, SimpleHeaderIntrinsics, SimpleTransaction};
+
+    fn decode_transfer_payload(data: &[u8]) -> SubjTransferMsgData {
+        let msg = MsgRef::try_from(data).expect("framed message");
+        assert_eq!(msg.ty(), SUBJ_TRANSFER_MSG_TYPE);
+        decode_buf_exact(msg.body()).expect("subject transfer body")
+    }
 
     fn alice() -> SubjectId {
         SubjectId::from([1u8; 32])
@@ -861,11 +872,10 @@ mod tests {
         assert_eq!(message.dest(), account_123());
         assert_eq!(message.payload().value(), BitcoinAmount::from(300u64));
 
-        // Message data should contain: dest_subject (32 bytes) + user data
-        let msg_payload_data = message.payload().data();
-        assert_eq!(msg_payload_data.len(), 32 + msg_data.len());
-        assert_eq!(&msg_payload_data[0..32], bob().inner());
-        assert_eq!(&msg_payload_data[32..], &msg_data[..]);
+        let transfer = decode_transfer_payload(message.payload().data());
+        assert_eq!(*transfer.source_subject(), alice());
+        assert_eq!(*transfer.dest_subject(), bob());
+        assert_eq!(transfer.data_buf(), msg_data.as_slice());
     }
 
     #[test]
@@ -933,20 +943,26 @@ mod tests {
         let msg1 = &output.outputs().output_messages()[0];
         assert_eq!(msg1.dest(), account_123());
         assert_eq!(msg1.payload().value(), BitcoinAmount::from(400u64));
-        assert_eq!(&msg1.payload().data()[0..32], bob().inner());
-        assert_eq!(&msg1.payload().data()[32..], &[10, 20, 30]);
+        let transfer1 = decode_transfer_payload(msg1.payload().data());
+        assert_eq!(*transfer1.source_subject(), alice());
+        assert_eq!(*transfer1.dest_subject(), bob());
+        assert_eq!(transfer1.data_buf(), &[10, 20, 30]);
 
         let msg2 = &output.outputs().output_messages()[1];
         assert_eq!(msg2.dest(), account_456);
         assert_eq!(msg2.payload().value(), BitcoinAmount::from(250u64));
-        assert_eq!(&msg2.payload().data()[0..32], charlie_remote.inner());
-        assert_eq!(msg2.payload().data().len(), 32); // no user data
+        let transfer2 = decode_transfer_payload(msg2.payload().data());
+        assert_eq!(*transfer2.source_subject(), bob());
+        assert_eq!(*transfer2.dest_subject(), charlie_remote);
+        assert_eq!(transfer2.data_buf(), &[] as &[u8]);
 
         let msg3 = &output.outputs().output_messages()[2];
         assert_eq!(msg3.dest(), account_456);
         assert_eq!(msg3.payload().value(), BitcoinAmount::from(600u64));
-        assert_eq!(&msg3.payload().data()[0..32], charlie().inner());
-        assert_eq!(&msg3.payload().data()[32..], &[99, 88, 77, 66]);
+        let transfer3 = decode_transfer_payload(msg3.payload().data());
+        assert_eq!(*transfer3.source_subject(), alice());
+        assert_eq!(*transfer3.dest_subject(), charlie());
+        assert_eq!(transfer3.data_buf(), &[99, 88, 77, 66]);
     }
 
     #[test]

@@ -6,16 +6,19 @@
 use rkyv::rancor::Error as RkyvError;
 use ssz::Encode;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload, SubjectId};
-use strata_codec::encode_to_vec;
+use strata_codec::{VarVec, encode_to_vec};
 use strata_ee_acct_runtime::{
     ArchivedEePrivateInput, ChunkInput, EePrivateInput, EeSnarkAccountProgram, EeVerificationInput,
     EeVerificationState, UpdateBuilder,
 };
-use strata_ee_acct_types::{DecodedEeMessageData, EeAccountState, EnvError, UpdateExtraData};
+use strata_ee_acct_types::{
+    DEPOSIT_MSG_TYPE, DecodedEeMessageData, DepositMsgData, EeAccountState, EnvError,
+    SUBJ_TRANSFER_MSG_TYPE, SubjTransferMsgData, UpdateExtraData,
+};
 use strata_ee_chain_types::{
     ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs, SubjectDepositData,
 };
-use strata_msg_fmt::Msg as MsgTrait;
+use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 use strata_predicate::PredicateKey;
 use strata_simple_ee::SimpleExecutionEnvironment;
 use strata_snark_acct_runtime::{
@@ -182,13 +185,30 @@ pub(crate) fn create_deposit_message(
     source: AccountId,
     incl_epoch: u32,
 ) -> MessageEntry {
-    use strata_ee_acct_types::{DEPOSIT_MSG_TYPE, DepositMsgData};
-    use strata_msg_fmt::OwnedMsg;
-
     let deposit_data = DepositMsgData::new(dest);
     let body = encode_to_vec(&deposit_data).expect("encode deposit data");
 
     let msg = OwnedMsg::new(DEPOSIT_MSG_TYPE, body).expect("create message");
+    let payload_data = msg.to_vec();
+
+    let payload = MsgPayload::from_bytes(value, payload_data)
+        .expect("message payload bytes must fit within SSZ max length");
+    MessageEntry::new(source, incl_epoch, payload)
+}
+
+/// Helper to create a subject-transfer message entry.
+pub(crate) fn create_subject_transfer_message(
+    source_subject: SubjectId,
+    dest_subject: SubjectId,
+    value: BitcoinAmount,
+    source: AccountId,
+    incl_epoch: u32,
+) -> MessageEntry {
+    let transfer_data = VarVec::new();
+    let transfer_msg = SubjTransferMsgData::new(source_subject, dest_subject, transfer_data);
+    let body = encode_to_vec(&transfer_msg).expect("encode subject transfer data");
+
+    let msg = OwnedMsg::new(SUBJ_TRANSFER_MSG_TYPE, body).expect("create message");
     let payload_data = msg.to_vec();
 
     let payload = MsgPayload::from_bytes(value, payload_data)

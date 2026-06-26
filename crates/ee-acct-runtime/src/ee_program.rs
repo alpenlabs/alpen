@@ -187,8 +187,9 @@ pub(crate) fn apply_decoded_message(
             state.add_pending_input(PendingInputEntry::Deposit(deposit_data));
         }
 
-        DecodedEeMessageData::SubjTransfer(_data) => {
-            // TODO(STR-3685): handle subject transfers
+        DecodedEeMessageData::SubjTransfer(data) => {
+            let deposit_data = SubjectDepositData::new(*data.dest_subject(), value);
+            state.add_pending_input(PendingInputEntry::Deposit(deposit_data));
         }
 
         DecodedEeMessageData::Commit(_data) => {
