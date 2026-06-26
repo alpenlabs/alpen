@@ -33,15 +33,13 @@ const MOCK_ASM_LOG_TX_TYPE: u8 = 1;
 /// - Aux data: encoded `DepositLog` as an `AsmLogEntry`
 pub(crate) fn create_mock_deposit_tx(
     account_serial: u32,
+    subject: SubjectIdBytes,
     amount: u64,
     bitcoind_config: BitcoinDConfig,
 ) -> anyhow::Result<Vec<u8>> {
     // Build the deposit descriptor and encode it as bridge-v1 would
-    let descriptor = DepositDescriptor::new(
-        AccountSerial::from(account_serial),
-        SubjectIdBytes::try_new(vec![0u8; 32]).context("failed to create subject bytes")?,
-    )
-    .context("failed to create deposit descriptor")?;
+    let descriptor = DepositDescriptor::new(AccountSerial::from(account_serial), subject)
+        .context("failed to create deposit descriptor")?;
 
     let deposit_log = DepositLog::new(descriptor.encode_to_varvec(), amount);
 

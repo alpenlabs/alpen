@@ -30,6 +30,7 @@ def create_mock_deposit(
     btc_url: str,
     btc_user: str,
     btc_password: str,
+    subject: str | None = None,
 ) -> str:
     """Inject a deposit via the debug subprotocol.
 
@@ -44,6 +45,8 @@ def create_mock_deposit(
         "--btc-user", btc_user,
         "--btc-password", btc_password,
     ]
+    if subject is not None:
+        args.extend(["--subject", subject])
     # fmt: on
 
     return _run_command(args)
@@ -72,6 +75,37 @@ def build_snark_withdrawal(
         "--dest", dest_hex,
         "--amount", str(amount),
         "--fees", str(fees),
+    ]
+    # fmt: on
+
+    result = _run_command(args)
+    return json.loads(result)
+
+
+def build_snark_subject_transfer(
+    target_hex: str,
+    seq_no: int,
+    inner_state_hex: str,
+    next_inbox_idx: int,
+    dest_account_hex: str,
+    source_subject_hex: str,
+    dest_subject_hex: str,
+    amount: int,
+    transfer_data_hex: str = "",
+) -> dict:
+    """Build a subject-transfer message transaction JSON."""
+    # fmt: off
+    args = [
+        "build-snark-subject-transfer",
+        "--target", target_hex,
+        "--seq-no", str(seq_no),
+        "--inner-state", inner_state_hex,
+        "--next-inbox-idx", str(next_inbox_idx),
+        "--dest-account", dest_account_hex,
+        "--source-subject", source_subject_hex,
+        "--dest-subject", dest_subject_hex,
+        "--amount", str(amount),
+        "--transfer-data", transfer_data_hex,
     ]
     # fmt: on
 

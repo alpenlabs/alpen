@@ -1,4 +1,5 @@
 pub mod args;
+pub mod build_snark_subject_transfer;
 pub mod build_snark_withdrawal;
 pub mod compute_drt_output;
 pub mod convert_to_xonly_pk;

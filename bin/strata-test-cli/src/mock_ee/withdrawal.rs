@@ -100,7 +100,7 @@ pub(crate) fn build_snark_withdrawal_json(
 
 /// Reconstructs the `UpdateProofPubParams` claim the OL builds in
 /// `snark_acct_sys::compute_update_claim` and returns its SSZ encoding.
-fn sign_claim_ssz(
+pub(crate) fn sign_claim_ssz(
     seq_no: Seqno,
     cur_state: &ProofState,
     new_state: &ProofState,
@@ -122,7 +122,7 @@ fn sign_claim_ssz(
 ///
 /// The 64-byte signature satisfies the `Bip340Schnorr` predicate whose
 /// 32-byte x-only public key is derived from `ALPEN_ACCT_TEST_SK_BYTES`.
-fn bip340_test_sign(msg: &[u8]) -> [u8; 64] {
+pub(crate) fn bip340_test_sign(msg: &[u8]) -> [u8; 64] {
     let sk = SigningKey::from_bytes(&ALPEN_ACCT_TEST_SK_BYTES)
         .expect("hard-coded alpen-acct test signing key bytes must be valid");
     let sig: Signature = sk.sign(msg);
