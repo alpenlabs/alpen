@@ -49,6 +49,7 @@ DEFAULT_BLOCK_WAIT_SLACK_SECONDS = 5
 
 # Account Id of Alpen EE in Strata
 ALPEN_ACCOUNT_ID = "01" * 32
+NEPAL_ACCOUNT_ID = "02" * 32
 
 
 class ServiceType(str, Enum):

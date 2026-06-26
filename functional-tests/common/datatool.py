@@ -174,6 +174,7 @@ def generate_ol_params(
 
 def generate_ee_params(
     datadir: Path,
+    account_id: str | None = None,
     alpen_chain_config: str | None = None,
     bridge_denomination: int = 100_000_000,
     max_withdrawal_amount: int | None = 1_000_000_000,
@@ -191,6 +192,8 @@ def generate_ee_params(
         "--max-withdrawal-descriptor-len",
         str(max_withdrawal_descriptor_len),
     ]
+    if account_id is not None:
+        args.extend(["--account-id", account_id])
     if max_withdrawal_amount is not None:
         args.extend(["--max-withdrawal-amount-sats", str(max_withdrawal_amount)])
     if alpen_chain_config is not None:
