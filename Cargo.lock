@@ -1405,6 +1405,7 @@ dependencies = [
  "jsonrpsee",
  "reth-node-builder",
  "reth-provider",
+ "strata-identifiers",
  "tokio",
 ]
 
@@ -1414,6 +1415,8 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "schemars 1.2.1",
  "serde",
+ "serde_json",
+ "strata-identifiers",
 ]
 
 [[package]]
