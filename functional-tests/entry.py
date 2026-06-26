@@ -27,7 +27,7 @@ from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
 from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
 from envconfigs.alpen_client import AlpenClientEnv
-from envconfigs.el_ol import EeOLEnv
+from envconfigs.el_ol import EeOLEnv, TwoEeOLEnv
 from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
 from envconfigs.strata import StrataEnvConfig
 
@@ -363,6 +363,7 @@ def main(argv: list[str]) -> int:
             dev_track_latest_epoch=True,
             batch_sealing_block_count=5,
         ),
+        "el_ol_two_ees": TwoEeOLEnv(),
         "el_ol_checkpoint_sync": EeOLCheckpointSyncEnv(pre_generate_blocks=110),
     }
 

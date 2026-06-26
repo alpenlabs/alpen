@@ -5,11 +5,13 @@ Alpen-client test environment configurations.
 import flexitest
 
 from common.config.config import EpochSealingConfig
-from common.config.constants import ServiceType
+from common.config.constants import ALPEN_ACCOUNT_ID, NEPAL_ACCOUNT_ID, ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from envconfigs.alpen_client import AlpenClientEnv, AlpenClientEnvParams
 from envconfigs.strata import StrataEnvConfig
+
+NEPAL_SEQUENCER_SERVICE = "nepal_sequencer"
 
 
 class EeOLEnv(flexitest.EnvConfig):
@@ -87,4 +89,74 @@ class EeOLEnv(flexitest.EnvConfig):
         )
 
         services = {**alpen_services, **strata_services}
+        return flexitest.LiveEnv(services)
+
+
+class TwoEeOLEnv(flexitest.EnvConfig):
+    """One Strata OL sequencer with two independent Alpen EE sequencers."""
+
+    def __init__(
+        self,
+        pre_generate_blocks: int = 110,
+        seal_epoch_slots: int = 5,
+        ol_block_time_ms: int = 1000,
+        dev_track_latest_epoch: bool = True,
+        batch_sealing_block_count: int = 5,
+    ):
+        self.alpen_env_params = AlpenClientEnvParams(
+            fullnode_count=0,
+            enable_discovery=False,
+            pure_discovery=False,
+            mesh_bootnodes=False,
+            enable_l1_da=True,
+            batch_sealing_block_count=batch_sealing_block_count,
+            dev_track_latest_epoch=dev_track_latest_epoch,
+            ee_account_id=ALPEN_ACCOUNT_ID,
+            sequencer_service_key=ServiceType.AlpenSequencer,
+            sequencer_instance_name="alpen_sequencer",
+        )
+        self.nepal_env_params = AlpenClientEnvParams(
+            fullnode_count=0,
+            enable_discovery=False,
+            pure_discovery=False,
+            mesh_bootnodes=False,
+            enable_l1_da=True,
+            batch_sealing_block_count=batch_sealing_block_count,
+            dev_track_latest_epoch=dev_track_latest_epoch,
+            ee_account_id=NEPAL_ACCOUNT_ID,
+            sequencer_service_key=NEPAL_SEQUENCER_SERVICE,
+            sequencer_instance_name=NEPAL_SEQUENCER_SERVICE,
+        )
+        self.strata_config = StrataEnvConfig(
+            pre_generate_blocks=pre_generate_blocks,
+            epoch_sealing=EpochSealingConfig.new_fixed_slot(seal_epoch_slots),
+            fund_test_cli_wallet=True,
+            ol_block_time_ms=ol_block_time_ms,
+            genesis_account_copies={NEPAL_ACCOUNT_ID: ALPEN_ACCOUNT_ID},
+        )
+
+    def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
+        strata_services = self.strata_config._get_services(ectx)
+
+        seq: StrataService = strata_services[ServiceType.Strata]
+        bitcoin: BitcoinService = strata_services[ServiceType.Bitcoin]
+
+        alpen_services = AlpenClientEnv.get_services(
+            ectx,
+            self.alpen_env_params,
+            bitcoin_service=bitcoin,
+            ol_endpoint=seq.props["rpc_url"],
+            ol_submit_endpoint=seq.props["submit_rpc_url"],
+            ol_submit_token=seq.props["submit_rpc_token"],
+        )
+        nepal_services = AlpenClientEnv.get_services(
+            ectx,
+            self.nepal_env_params,
+            bitcoin_service=bitcoin,
+            ol_endpoint=seq.props["rpc_url"],
+            ol_submit_endpoint=seq.props["submit_rpc_url"],
+            ol_submit_token=seq.props["submit_rpc_token"],
+        )
+
+        services = {**alpen_services, **nepal_services, **strata_services}
         return flexitest.LiveEnv(services)

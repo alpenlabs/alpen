@@ -4,6 +4,7 @@ Creates Strata sequencer and fullnode instances.
 """
 
 import contextlib
+import json
 import os
 import shutil
 from pathlib import Path
@@ -77,6 +78,7 @@ class StrataFactory(flexitest.Factory):
         ol_block_time_ms: int | None = None,
         shared_params: "StrataNodeParams | None" = None,
         l1_reorg_safe_depth: int | None = None,
+        genesis_account_copies: dict[str, str] | None = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -180,6 +182,9 @@ class StrataFactory(flexitest.Factory):
                 ol_params_path.write_text(ol_params.as_json_string())
             else:
                 ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
+
+            if genesis_account_copies:
+                copy_genesis_accounts(ol_params_path, genesis_account_copies)
 
             # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
             asm_params_path = generate_asm_params(
@@ -290,3 +295,20 @@ class StrataFactory(flexitest.Factory):
             seq_artifacts.sequencer_key_path if is_sequencer and shared_params is None else None
         )
         return CreateNodeResult(svc, seq_key_path, node_params, genesis_l1_height)
+
+
+def copy_genesis_accounts(ol_params_path: Path, account_copies: dict[str, str]) -> None:
+    """Copy generated OL genesis accounts to additional account IDs."""
+    with open(ol_params_path) as f:
+        params = json.load(f)
+
+    accounts = params["accounts"]
+    for dest_account_id, source_account_id in account_copies.items():
+        if source_account_id not in accounts:
+            raise RuntimeError(
+                f"source genesis account {source_account_id} not found in {ol_params_path}"
+            )
+        accounts[dest_account_id] = dict(accounts[source_account_id])
+
+    with open(ol_params_path, "w") as f:
+        json.dump(params, f, indent=2)

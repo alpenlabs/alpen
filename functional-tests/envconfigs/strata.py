@@ -30,6 +30,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
         strata_env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
         l1_reorg_safe_depth: int | None = None,
+        genesis_account_copies: dict[str, str] | None = None,
     ):
         self.pre_generate_blocks = pre_generate_blocks
         self.genesis_accounts = genesis_accounts
@@ -39,6 +40,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
         self.strata_env = strata_env
         self.ol_block_time_ms = ol_block_time_ms
         self.l1_reorg_safe_depth = l1_reorg_safe_depth
+        self.genesis_account_copies = genesis_account_copies
         self.sequencer_node: CreateNodeResult | None = None
 
     def _fund_bdk_wallet(self, btc_rpc) -> None:
@@ -113,6 +115,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
             env=self.strata_env,
             ol_block_time_ms=self.ol_block_time_ms,
             l1_reorg_safe_depth=self.l1_reorg_safe_depth,
+            genesis_account_copies=self.genesis_account_copies,
         )
         self.sequencer_node = sequencer_node
         strata = sequencer_node.service

@@ -11,7 +11,7 @@ from pathlib import Path
 import flexitest
 
 from common.config import EeDaConfig
-from common.config.constants import DEFAULT_EE_BLOCK_TIME_MS
+from common.config.constants import ALPEN_ACCOUNT_ID, DEFAULT_EE_BLOCK_TIME_MS
 from common.services import AlpenClientProps, AlpenClientService
 
 
@@ -72,6 +72,8 @@ class AlpenClientFactory(flexitest.Factory):
         bridge_denomination: int = 100_000_000,
         max_withdrawal_amount: int | None = 1_000_000_000,
         beneficiary_address: str | None = None,
+        ee_account_id: str = ALPEN_ACCOUNT_ID,
+        instance_name: str = "ee_sequencer",
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -87,7 +89,7 @@ class AlpenClientFactory(flexitest.Factory):
         """
         ctx: flexitest.EnvContext = kwargs["ctx"]
 
-        datadir = Path(ctx.make_service_dir("ee_sequencer"))
+        datadir = Path(ctx.make_service_dir(instance_name))
         http_port = self.next_port()
         p2p_port = self.next_port()
         authrpc_port = self.next_port()
@@ -116,6 +118,7 @@ class AlpenClientFactory(flexitest.Factory):
             "--datadir", str(datadir),
             "--sequencer",
             "--sequencer-pubkey", sequencer_pubkey,
+            "--ee-account-id", ee_account_id,
             *ol_client_args,
             "--addr", "127.0.0.1",  # Force IPv4 for testing
             "--nat", "extip:127.0.0.1",  # Force enode to show 127.0.0.1
@@ -204,7 +207,7 @@ class AlpenClientFactory(flexitest.Factory):
             props,
             cmd,
             stdout=str(logfile),
-            name="ee_sequencer",
+            name=instance_name,
             env=env,
         )
         svc.stop_timeout = 30
