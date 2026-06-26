@@ -1,15 +1,10 @@
 """A checkpoint-sync OL node restarts cleanly after syncing a post-genesis epoch.
 
-A checkpoint-sync node stores no OL blocks except genesis: it persists OL state
-and epoch summaries when applying checkpoints, and the finalized epoch lives in
-client state. Once it has synced a post-genesis checkpoint, its persisted client
-state declares a finalized epoch whose OL block is not in the store.
-
-This test lets the sequencer post checkpoints to L1, waits for the
-checkpoint-sync node to itself finalize a post-genesis epoch (so it has persisted
-non-genesis client state), then restarts that node reusing its datadir. The
-second startup must not require the finalized OL block to be present in the
-store.
+A checkpoint-sync node stores no OL blocks except genesis. This test lets the
+sequencer post checkpoints to L1, waits for the checkpoint-sync node to itself
+finalize a post-genesis epoch (so it has persisted non-genesis client state),
+then restarts that node reusing its datadir. The second startup must not require
+the finalized OL block to be present in the store.
 """
 
 import logging
@@ -46,7 +41,7 @@ class TestCheckpointSyncNodeRestart(BaseTest):
 
         checkpoint_node.wait_for_rpc_ready(timeout=20)
 
-        # First get checkpoint node to sync upto first chekpoint.
+        # First get checkpoint node to sync up to first checkpoint.
         pre_restart_status = wait_until_with_value(
             lambda: mine_and_get_status(checkpoint_node, btc_rpc),
             lambda st: st["finalized"]["epoch"] >= 1,
@@ -64,9 +59,11 @@ class TestCheckpointSyncNodeRestart(BaseTest):
         post_restart_status = checkpoint_node.get_sync_status()
         tip_slot = post_restart_status["tip"]["slot"]
         logger.info(f"checkpoint-sync node restarted; canonical tip at slot {tip_slot}")
+
+        # Require a strictly new finalization after restart.
         wait_until_with_value(
             lambda: mine_and_get_status(checkpoint_node, btc_rpc),
-            lambda st: st["finalized"]["epoch"] >= 2,
-            error_with="checkpoint-sync node did not finalize a post-genesis epoch",
+            lambda st: st["finalized"]["epoch"] > finalized_epoch,
+            error_with="checkpoint-sync node did not finalize a new epoch after restart",
             timeout=120,
         )

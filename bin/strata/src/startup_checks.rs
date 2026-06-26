@@ -127,6 +127,35 @@ fn get_ol_genesis_block(storage: &NodeStorage) -> Result<Option<OLBlockCommitmen
     Ok(genesis_commitment)
 }
 
+/// Ensures the genesis canonical entry exists and matches `genesis_commitment`.
+///
+/// Runs on every node before the canonical tip checks. Genesis init seeds this
+/// entry, but that happens later in service startup, so a legacy or
+/// checkpoint-sync DB holding OL genesis block data may still lack the canonical
+/// index here; this repairs it so the canonical tip resolves to genesis.
+fn ensure_genesis_canonical_entry(
+    storage: &NodeStorage,
+    genesis_commitment: OLBlockCommitment,
+) -> Result<()> {
+    let canonical_genesis = storage
+        .ol_block()
+        .get_canonical_block_at_blocking(0)
+        .context("startup: failed to query canonical OL genesis block")?;
+    if let Some(canonical_genesis) = canonical_genesis {
+        if canonical_genesis != genesis_commitment {
+            bail!(
+                "startup: canonical OL genesis block mismatch: expected {genesis_commitment}, got {canonical_genesis}"
+            );
+        }
+        return Ok(());
+    }
+
+    storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(0, vec![*genesis_commitment.blkid()])
+        .context("startup: failed to seed genesis canonical OL block entry")
+}
+
 /// Ensures the canonical block index is initialized for legacy DBs.
 ///
 /// This backfills DBs created before the canonical OL block index existed. FCM
@@ -137,18 +166,6 @@ fn ensure_canonical_block_index(
     genesis_commitment: OLBlockCommitment,
     finalized_epoch: Option<EpochCommitment>,
 ) -> Result<()> {
-    let canonical_genesis = storage
-        .ol_block()
-        .get_canonical_block_at_blocking(0)
-        .context("startup: failed to query canonical OL genesis block")?;
-    if let Some(canonical_genesis) = canonical_genesis
-        && canonical_genesis != genesis_commitment
-    {
-        bail!(
-            "startup: canonical OL genesis block mismatch: expected {genesis_commitment}, got {canonical_genesis}"
-        );
-    }
-
     let finalized_commitment = finalized_epoch
         .filter(|epoch| !epoch.is_null())
         .map_or(genesis_commitment, |epoch| epoch.to_block_commitment());
@@ -412,16 +429,26 @@ pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
         }
     }
 
-    if let Some(genesis_commitment) = genesis_commitment {
-        ensure_canonical_block_index(ctx.storage().as_ref(), genesis_commitment, finalized_epoch)?;
-        verify_genesis_ol_state(ctx.storage().as_ref(), genesis_commitment)?;
-        verify_genesis_epoch_summary(ctx.storage().as_ref(), genesis_commitment)?;
+    let is_sequencer = ctx.config().client.is_sequencer;
 
-        let tip_commitment = resolve_tip_ol_block(ctx.storage().as_ref())?;
-        let tip_block = verify_tip_ol_block(ctx.storage().as_ref(), tip_commitment)?;
-        verify_tip_parent(ctx.storage().as_ref(), &tip_block, tip_commitment)?;
-        verify_tip_ol_state(ctx.storage().as_ref(), tip_commitment)?;
-        verify_previous_epoch_summary_for_tip(ctx.storage().as_ref(), &tip_block)?;
+    if let Some(genesis_commitment) = genesis_commitment {
+        let storage = ctx.storage().as_ref();
+        verify_genesis_ol_state(storage, genesis_commitment)?;
+        verify_genesis_epoch_summary(storage, genesis_commitment)?;
+        ensure_genesis_canonical_entry(storage, genesis_commitment)?;
+
+        // Only the sequencer backfills the full canonical OL block index. FCM is
+        // the sole writer that advances it past genesis and does not run on
+        // checkpoint-sync nodes, which store no OL blocks past genesis.
+        if is_sequencer {
+            ensure_canonical_block_index(storage, genesis_commitment, finalized_epoch)?;
+        }
+
+        let tip_commitment = resolve_tip_ol_block(storage)?;
+        let tip_block = verify_tip_ol_block(storage, tip_commitment)?;
+        verify_tip_parent(storage, &tip_block, tip_commitment)?;
+        verify_tip_ol_state(storage, tip_commitment)?;
+        verify_previous_epoch_summary_for_tip(storage, &tip_block)?;
     }
 
     info!("startup: startup checks passed");
@@ -713,6 +740,87 @@ mod tests {
                 .get_canonical_tip_blocking()
                 .expect("test: get canonical tip after backfill"),
             Some(genesis_commitment)
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_sync_seeds_genesis_canonical_entry() {
+        let (storage, genesis_commitment) = setup_storage_with_genesis();
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, Vec::new())
+            .expect("test: clear canonical index");
+        storage
+            .ol_block()
+            .get_canonical_tip_blocking()
+            .expect_err("test: missing canonical index has no tip");
+
+        ensure_genesis_canonical_entry(&storage, genesis_commitment)
+            .expect("test: seed genesis canonical entry");
+
+        let tip_commitment = resolve_tip_ol_block(&storage).expect("test: resolve tip");
+        assert_eq!(tip_commitment, genesis_commitment);
+
+        let tip_block = verify_tip_ol_block(&storage, tip_commitment).expect("test: tip block");
+        verify_tip_parent(&storage, &tip_block, tip_commitment).expect("test: tip parent");
+        verify_tip_ol_state(&storage, tip_commitment).expect("test: tip state");
+        verify_previous_epoch_summary_for_tip(&storage, &tip_block)
+            .expect("test: previous epoch summary");
+    }
+
+    #[test]
+    fn test_ensure_genesis_canonical_entry_is_idempotent() {
+        let (storage, genesis_commitment) = setup_storage_with_genesis();
+        // Genesis init already seeded the entry; a second call must be a no-op.
+        ensure_genesis_canonical_entry(&storage, genesis_commitment).expect("test: idempotent");
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_canonical_tip_blocking()
+                .expect("test: canonical tip"),
+            Some(genesis_commitment)
+        );
+    }
+
+    #[test]
+    fn test_ensure_genesis_canonical_entry_mismatch_errors() {
+        let (storage, genesis_commitment) = setup_storage_with_genesis();
+        let wrong_genesis = OLBlockCommitment::new(0, OLBlockId::from(Buf32::from([9u8; 32])));
+
+        let result = ensure_genesis_canonical_entry(&storage, wrong_genesis);
+
+        let err = result.expect_err("test: mismatch must error");
+        assert!(
+            err.to_string()
+                .contains("canonical OL genesis block mismatch"),
+            "unexpected error: {err:#}"
+        );
+        // The stored genesis entry must be left untouched.
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_canonical_block_at_blocking(0)
+                .expect("test: query canonical genesis"),
+            Some(genesis_commitment)
+        );
+    }
+
+    #[test]
+    fn test_sequencer_missing_finalized_block_errors() {
+        let (storage, genesis_commitment) = setup_storage_with_genesis();
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, Vec::new())
+            .expect("test: clear canonical index");
+
+        let finalized_epoch = EpochCommitment::new(1, 1, OLBlockId::from(Buf32::from([7u8; 32])));
+        let result =
+            ensure_canonical_block_index(&storage, genesis_commitment, Some(finalized_epoch));
+
+        let err = result.expect_err("test: sequencer must error on missing finalized block");
+        assert!(
+            format!("{err:#}").contains("missing finalized OL block"),
+            "unexpected error: {err:#}"
         );
     }
 
