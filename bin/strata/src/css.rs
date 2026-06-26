@@ -112,6 +112,13 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
         Ok(canonical)
     }
 
+    async fn get_genesis_epoch_commitment(&self) -> DbResult<Option<EpochCommitment>> {
+        self.storage
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_async(0)
+            .await
+    }
+
     async fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>> {
         self.storage
             .ol_checkpoint()

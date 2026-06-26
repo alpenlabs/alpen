@@ -48,6 +48,16 @@ pub trait CheckpointSyncCtx: Send + Sync + 'static {
         ep: Epoch,
     ) -> impl Future<Output = CheckpointSyncResult<Option<EpochCommitment>>> + Send;
 
+    /// Resolves the genesis (epoch 0) commitment from the applied/summary source.
+    ///
+    /// Genesis is the always-applied base of the chain and has no L1 checkpoint
+    /// observation, so the backward scan terminates here rather than looking
+    /// genesis up via [`Self::get_observed_checkpoint_for_epoch`]. This is for
+    /// genesis resolution only, not for walking unapplied predecessors.
+    fn get_genesis_epoch_commitment(
+        &self,
+    ) -> impl Future<Output = DbResult<Option<EpochCommitment>>> + Send;
+
     /// Gets the epoch summary for the given epoch, if present.
     fn get_epoch_summary(
         &self,

@@ -259,11 +259,20 @@ pub(crate) async fn scan_unapplied_epochs(
             info!(scanned = unapplied.len(), %cur_finalized, "scan in progress");
         }
 
-        // Resolve the predecessor from L1 observations, not the summary-derived
-        // canonical index: during cold catch-up the predecessor is observed but
-        // not yet applied, so its summary (and thus its canonical-index entry)
-        // does not exist yet.
+        // Genesis (epoch 0) is the always-applied base and has no L1 observation,
+        // so resolve it from the applied/summary source and stop.
         let prev_epoch_num = cur_finalized.epoch().saturating_sub(1);
+        if prev_epoch_num == 0 {
+            let genesis = ctx
+                .get_genesis_epoch_commitment()
+                .await?
+                .ok_or(CheckpointSyncError::MissingPredecessor(0))?;
+            break Some(genesis);
+        }
+
+        // Resolve unapplied predecessors from L1 observations, not the
+        // summary-derived canonical index: during cold catch-up the predecessor
+        // is observed but not yet applied, so its summary does not exist yet.
         cur_finalized = ctx
             .get_observed_checkpoint_for_epoch(prev_epoch_num)
             .await?

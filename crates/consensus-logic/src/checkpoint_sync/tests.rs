@@ -142,6 +142,16 @@ impl MockCtx {
         self.l1_refs.insert(ec, l1_ref);
         self
     }
+
+    /// Seeds genesis (epoch 0) faithfully: applied (summary + canonical entry) but
+    /// with no L1 observation, since epoch 0 produces no checkpoint tip update.
+    fn add_genesis(mut self, ec: EpochCommitment) -> Self {
+        assert_eq!(ec.epoch(), 0, "genesis must be epoch 0");
+        self.epoch_commitments.insert(0, ec);
+        let summary = make_epoch_summary(0, ec, EpochCommitment::null(), 0);
+        self.epoch_summaries.get_mut().unwrap().insert(ec, summary);
+        self
+    }
 }
 
 impl CheckpointSyncCtx for MockCtx {
@@ -177,6 +187,10 @@ impl CheckpointSyncCtx for MockCtx {
             return Err(CheckpointSyncError::AmbiguousObservation(ep));
         }
         Ok(result)
+    }
+
+    async fn get_genesis_epoch_commitment(&self) -> DbResult<Option<EpochCommitment>> {
+        Ok(self.epoch_commitments.get(&0).copied())
     }
 
     async fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>> {
@@ -225,7 +239,7 @@ async fn scan_walks_to_genesis_when_nothing_applied() {
     let epoch3 = make_epoch(3, 30, 0x03);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), None)
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), None)
         .add_epoch(epoch2, make_l1_ref(120), None)
         .add_epoch(epoch3, make_l1_ref(130), None);
@@ -275,7 +289,7 @@ async fn scan_all_already_applied() {
     let summary2 = make_epoch_summary(2, epoch2, epoch1, 120);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), None)
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
         .add_epoch(epoch2, make_l1_ref(120), Some(summary2));
 
@@ -292,11 +306,10 @@ async fn scan_collects_unapplied_newest_first_stops_at_applied() {
     let epoch2 = make_epoch(2, 20, 0x02);
     let epoch3 = make_epoch(3, 30, 0x03);
 
-    let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
     let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), Some(summary1)) // applied upto here
         .add_epoch(epoch2, make_l1_ref(120), None)
         .add_epoch(epoch3, make_l1_ref(130), None);
@@ -314,7 +327,7 @@ async fn scan_single_unapplied_epoch_above_genesis() {
     let epoch1 = make_epoch(1, 10, 0x01);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), None)
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), None);
 
     let (last_applied, unapplied) = scan_unapplied_epochs(&ctx, epoch1, 200, 3).await.unwrap();
@@ -378,11 +391,10 @@ async fn find_and_apply_multi_epoch_catch_up() {
     let epoch2 = make_epoch(2, 20, 0x02);
     let epoch3 = make_epoch(3, 30, 0x03);
 
-    let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
     let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
         .add_epoch(epoch2, make_l1_ref(120), None)
         .add_epoch(epoch3, make_l1_ref(130), None);
@@ -430,12 +442,11 @@ async fn handle_errors_on_chain_hole_leaves_state_unadvanced() {
     let epoch1 = make_epoch(1, 10, 0x01);
     let epoch3 = make_epoch(3, 30, 0x03);
 
-    let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
     let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
 
     let ctx = Arc::new(
         MockCtx::new(3, 200)
-            .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+            .add_genesis(epoch0)
             .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
             .add_epoch(epoch3, make_l1_ref(130), None)
             .with_csm_finalized(Some(epoch3)),
@@ -463,11 +474,10 @@ async fn rerun_after_partial_drain_applies_nothing() {
     let epoch2 = make_epoch(2, 20, 0x02);
     let epoch3 = make_epoch(3, 30, 0x03);
 
-    let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
     let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
         .add_epoch(epoch2, make_l1_ref(120), None)
         .add_epoch(epoch3, make_l1_ref(130), None);
