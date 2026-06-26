@@ -3,6 +3,7 @@
 use argh::FromArgs;
 use bdk_bitcoind_rpc::bitcoincore_rpc::RpcApi;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_identifiers::SubjectIdBytes;
 
 use crate::{bridge::types::BitcoinDConfig, mock_ee::deposit, taproot::new_bitcoind_client};
 
@@ -20,6 +21,10 @@ pub struct CreateMockDepositArgs {
     /// deposit amount in satoshis
     #[argh(option)]
     pub amount: u64,
+
+    /// destination subject ID (hex, 32 bytes; defaults to all zeroes)
+    #[argh(option)]
+    pub subject: Option<String>,
 
     /// bitcoin RPC URL
     #[argh(option)]
@@ -41,8 +46,15 @@ pub(crate) fn create_mock_deposit(args: CreateMockDepositArgs) -> Result<(), Dis
         bitcoind_password: args.btc_password.clone(),
     };
 
+    let subject = args
+        .subject
+        .as_deref()
+        .map(parse_subject)
+        .transpose()?
+        .unwrap_or_else(|| SubjectIdBytes::try_new(vec![0u8; 32]).expect("valid subject bytes"));
+
     let tx_bytes =
-        deposit::create_mock_deposit_tx(args.account_serial, args.amount, bitcoind_config)
+        deposit::create_mock_deposit_tx(args.account_serial, subject, args.amount, bitcoind_config)
             .internal_error("failed to create mock deposit transaction")?;
 
     // Broadcast the transaction via bitcoind RPC
@@ -62,4 +74,15 @@ pub(crate) fn create_mock_deposit(args: CreateMockDepositArgs) -> Result<(), Dis
 
     println!("{txid}");
     Ok(())
+}
+
+fn parse_subject(subject: &str) -> Result<SubjectIdBytes, DisplayedError> {
+    let stripped = subject.strip_prefix("0x").unwrap_or(subject);
+    let bytes = hex::decode(stripped)
+        .map_err(|e| format!("invalid subject hex: {e}"))
+        .internal_error("subject hex parse")?;
+
+    SubjectIdBytes::try_new(bytes)
+        .ok_or_else(|| "subject must fit within 32 bytes".to_owned())
+        .internal_error("subject length")
 }

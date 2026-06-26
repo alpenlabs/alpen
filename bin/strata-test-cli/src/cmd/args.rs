@@ -1,6 +1,7 @@
 use argh::FromArgs;
 
 use super::{
+    build_snark_subject_transfer::BuildSnarkSubjectTransferArgs,
     build_snark_withdrawal::BuildSnarkWithdrawalArgs,
     compute_drt_output::ComputeDrtOutputArgs,
     convert_to_xonly_pk::ConvertToXonlyPkArgs,
@@ -51,6 +52,9 @@ pub enum Commands {
 
     /// Build a snark account withdrawal transaction JSON
     BuildSnarkWithdrawal(BuildSnarkWithdrawalArgs),
+
+    /// Build a snark account subject-transfer transaction JSON
+    BuildSnarkSubjectTransfer(BuildSnarkSubjectTransferArgs),
 
     /// Get a taproot address at a specific derivation index
     GetAddress(GetAddressArgs),

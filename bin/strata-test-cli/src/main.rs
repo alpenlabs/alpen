@@ -20,6 +20,7 @@ mod taproot;
 mod utils;
 
 use cmd::{
+    build_snark_subject_transfer::build_snark_subject_transfer,
     build_snark_withdrawal::build_snark_withdrawal,
     compute_drt_output::compute_drt_output,
     convert_to_xonly_pk::convert_to_xonly_pk,
@@ -47,6 +48,7 @@ fn main() {
         Commands::CreateCheckpointPredicateUpdate(args) => create_checkpoint_predicate_update(args),
         Commands::ComputeDrtOutput(args) => compute_drt_output(args),
         Commands::BuildSnarkWithdrawal(args) => build_snark_withdrawal(args),
+        Commands::BuildSnarkSubjectTransfer(args) => build_snark_subject_transfer(args),
         Commands::GetAddress(args) => get_address(args),
         Commands::MusigAggregatePks(args) => musig_aggregate_pks(args),
         Commands::ExtractP2trPubkey(args) => extract_p2tr_pubkey(args),
