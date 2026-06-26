@@ -65,13 +65,6 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
         Ok(self.csm_monitor.get_current())
     }
 
-    async fn get_canonical_epoch_commitment(&self, ep: Epoch) -> DbResult<Option<EpochCommitment>> {
-        self.storage
-            .ol_checkpoint()
-            .get_canonical_epoch_commitment_at_async(ep)
-            .await
-    }
-
     async fn get_checkpoint_l1_ref(
         &self,
         epoch: EpochCommitment,
@@ -80,6 +73,43 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
             .ol_checkpoint()
             .get_checkpoint_l1_ref_async(epoch)
             .await
+    }
+
+    async fn get_observed_checkpoint_for_epoch(
+        &self,
+        ep: Epoch,
+    ) -> CheckpointSyncResult<Option<EpochCommitment>> {
+        let ol_checkpoint = self.storage.ol_checkpoint();
+        let l1 = self.storage.l1();
+
+        let mut canonical: Option<EpochCommitment> = None;
+        // refs_from is ascending by epoch; entries at `ep` are contiguous.
+        for (commitment, l1_ref) in ol_checkpoint.get_checkpoint_l1_refs_from_async(ep).await? {
+            if commitment.epoch() < ep {
+                continue;
+            }
+            if commitment.epoch() > ep {
+                break;
+            }
+
+            // Drop observations recorded on an orphaned L1 block, matching CSM's
+            // read-time filtering; a reorg can leave stale observations behind.
+            let l1_block = l1_ref.l1_commitment;
+            if l1
+                .get_canonical_blockid_at_height_async(l1_block.height())
+                .await?
+                != Some(*l1_block.blkid())
+            {
+                continue;
+            }
+
+            if canonical.is_some() {
+                return Err(CheckpointSyncError::AmbiguousObservation(ep));
+            }
+            canonical = Some(commitment);
+        }
+
+        Ok(canonical)
     }
 
     async fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>> {
