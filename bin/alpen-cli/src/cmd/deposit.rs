@@ -20,14 +20,14 @@ use rand_core::OsRng;
 use shrex::encode;
 use strata_asm_proto_bridge_v1_txs::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_identifiers::SubjectIdBytes;
+use strata_identifiers::{AccountSerial, SubjectIdBytes};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_primitives::crypto::even_kp;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::{ALPEN_EE_ACCT_SERIAL, SIGNET_BLOCK_TIME},
+    constants::{ALPN_EE_ACCT_SERIAL, NPAL_EE_ACCT_SERIAL, SIGNET_BLOCK_TIME},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,
@@ -35,19 +35,82 @@ use crate::{
     signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
 
-/// Deposits one bridge denomination of BTC plus the bridge fee from signet into Alpen.
-/// The bridge denomination is configured in the `config.toml` file.
+/// Named Alpen EE account presets selectable on the `deposit` command.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EePreset {
+    /// The default Alpen EE account (serial [`ALPN_EE_ACCT_SERIAL`]).
+    Alpn,
+    /// The secondary Alpen EE account (serial [`NPAL_EE_ACCT_SERIAL`]).
+    Npal,
+}
+
+impl EePreset {
+    /// Returns the [`AccountSerial`] backing this preset.
+    fn serial(self) -> AccountSerial {
+        match self {
+            EePreset::Alpn => ALPN_EE_ACCT_SERIAL,
+            EePreset::Npal => NPAL_EE_ACCT_SERIAL,
+        }
+    }
+}
+
+impl FromStr for EePreset {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "ALPN" => Ok(EePreset::Alpn),
+            "NPAL" => Ok(EePreset::Npal),
+            other => Err(format!(
+                "unknown EE preset '{other}', expected 'ALPN' or 'NPAL'"
+            )),
+        }
+    }
+}
+
+/// Resolves the destination [`AccountSerial`] from the optional `preset`
+/// positional and the `--serial` flag.
+///
+/// The preset argument and `--serial` are mutually exclusive. When neither is
+/// provided, the default [`EePreset::Alpn`] account is used.
+fn resolve_account_serial(
+    preset: Option<EePreset>,
+    serial: Option<u32>,
+) -> Result<AccountSerial, DisplayedError> {
+    match (preset, serial) {
+        (Some(_), Some(_)) => Err(DisplayedError::UserError(
+            "the preset argument and --serial are mutually exclusive; specify only one".to_string(),
+            Box::new(()),
+        )),
+        (Some(preset), None) => Ok(preset.serial()),
+        (None, Some(serial)) => Ok(AccountSerial::new(serial)),
+        (None, None) => Ok(EePreset::Alpn.serial()),
+    }
+}
+
+/// Deposits 10 BTC from signet into Alpen
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "deposit")]
 pub struct DepositArgs {
+    /// destination Alpen EE account preset: "ALPN" (serial 128) or "NPAL"
+    /// (serial 129). defaults to "ALPN" when omitted. mutually exclusive with
+    /// --serial.
+    #[argh(positional)]
+    preset: Option<EePreset>,
+
     /// the Alpen address to deposit the funds into. defaults to the
     /// wallet's internal address.
     #[argh(positional)]
     alpen_address: Option<String>,
 
-    /// override signet fee rate in sat/vbyte; the effective rate is at least 1
+    /// override signet fee rate in sat/vbyte. must be >=1
     #[argh(option)]
     fee_rate: Option<u64>,
+
+    /// explicit destination account serial. mutually exclusive with the preset
+    /// argument. when neither is given, the "ALPN" preset (serial 128) is used.
+    #[argh(option)]
+    serial: Option<u32>,
 }
 
 /// Build and sign the deposit-request transaction with the SPS-50 OP_RETURN in output 0 and the
@@ -93,6 +156,7 @@ fn prepare_deposit_request(
     network: Network,
     recover_delay: u16,
     alpen_address: AlpenAddress,
+    account_serial: AccountSerial,
     bridge_in_amount: Amount,
 ) -> (DescriptorTemplateOut, BitcoinAddress, DrtHeaderAux, TxOut) {
     let (secret_key, recovery_public_key) = even_kp(SECP256K1.generate_keypair(&mut OsRng));
@@ -116,7 +180,7 @@ fn prepare_deposit_request(
 
     let alpen_subject_bytes =
         SubjectIdBytes::try_new(alpen_address.to_vec()).expect("must be valid subject bytes");
-    let deposit_descriptor = DepositDescriptor::new(ALPEN_EE_ACCT_SERIAL, alpen_subject_bytes)
+    let deposit_descriptor = DepositDescriptor::new(account_serial, alpen_subject_bytes)
         .expect("EE serial is within valid range");
     let header_aux = DrtHeaderAux::new(
         recovery_public_key.serialize(),
@@ -139,10 +203,13 @@ pub async fn deposit(
     DepositArgs {
         alpen_address,
         fee_rate,
+        preset,
+        serial,
     }: DepositArgs,
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
+    let account_serial = resolve_account_serial(preset, serial)?;
     let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
         .internal_error("Failed to load signet wallet")?;
     let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
@@ -160,7 +227,7 @@ pub async fn deposit(
         })
         .transpose()?;
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
-    let drt_amount = Amount::from_sat(settings.bridge_params.denomination()) + settings.bridge_fee;
+    let drt_amount = settings.deposit_amount + settings.bridge_fee;
     println!(
         "Bridging {} to Alpen address {}",
         drt_amount.to_string().green(),
@@ -172,6 +239,7 @@ pub async fn deposit(
         settings.network,
         settings.recovery_delay,
         alpen_address,
+        account_serial,
         drt_amount,
     );
 
@@ -293,6 +361,36 @@ mod tests {
     }
 
     #[test]
+    fn ee_preset_from_str() {
+        assert_eq!(EePreset::from_str("ALPN"), Ok(EePreset::Alpn));
+        assert_eq!(EePreset::from_str("alpn"), Ok(EePreset::Alpn));
+        assert_eq!(EePreset::from_str("NPAL"), Ok(EePreset::Npal));
+        assert_eq!(EePreset::from_str("npal"), Ok(EePreset::Npal));
+        assert!(EePreset::from_str("nope").is_err());
+    }
+
+    #[test]
+    fn resolve_account_serial_rules() {
+        // default -> ALPN
+        assert_eq!(
+            resolve_account_serial(None, None).expect("default"),
+            ALPN_EE_ACCT_SERIAL
+        );
+        // preset selection
+        assert_eq!(
+            resolve_account_serial(Some(EePreset::Npal), None).expect("preset"),
+            NPAL_EE_ACCT_SERIAL
+        );
+        // explicit serial
+        assert_eq!(
+            resolve_account_serial(None, Some(200)).expect("serial"),
+            AccountSerial::new(200)
+        );
+        // mutually exclusive
+        assert!(resolve_account_serial(Some(EePreset::Alpn), Some(200)).is_err());
+    }
+
+    #[test]
     fn bridge_in_desc() {
         let bridge_pubkey = XOnlyPublicKey::from_str(
             "89f96f834e39766f97e245d70b27236681f741ae51c117df19761af7cb2f657e",
@@ -373,6 +471,7 @@ mod tests {
                 Network::Regtest,
                 RECOVER_DELAY,
                 alpen_address,
+                ALPN_EE_ACCT_SERIAL,
                 bridge_in_amount,
             );
 

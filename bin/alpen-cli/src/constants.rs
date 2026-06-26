@@ -33,11 +33,18 @@ pub const DEFAULT_NETWORK: Network = Network::Signet;
 pub const DEFAULT_BRIDGE_ALPEN_ADDRESS: &str = "0x5400000000000000000000000000000000000001";
 pub const SIGNET_BLOCK_TIME: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
-/// Serial of the Alpen EE account used in deposit descriptors.
+/// Serial of the `ALPN` Alpen EE account preset used in deposit descriptors.
 ///
-/// System serials occupy `0..SYSTEM_RESERVED_ACCTS`, so the Alpen EE account
-/// currently lands at `SYSTEM_RESERVED_ACCTS` by genesis registration order.
-pub const ALPEN_EE_ACCT_SERIAL: AccountSerial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
+/// This is the default deposit target. System serials occupy
+/// `0..SYSTEM_RESERVED_ACCTS`, so the Alpen EE account currently lands at
+/// `SYSTEM_RESERVED_ACCTS` by genesis registration order.
+pub const ALPN_EE_ACCT_SERIAL: AccountSerial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
+
+/// Serial of the `NPAL` Alpen EE account preset used in deposit descriptors.
+///
+/// This is the second non-reserved serial, immediately after
+/// [`ALPN_EE_ACCT_SERIAL`].
+pub const NPAL_EE_ACCT_SERIAL: AccountSerial = AccountSerial::new(SYSTEM_RESERVED_ACCTS + 1);
 
 /// Alpen CLI [`DerivationPath`](bdk_wallet::bitcoin::bip32::DerivationPath) for Alpen EVM wallet
 ///
