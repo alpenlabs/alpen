@@ -1161,7 +1161,6 @@ dependencies = [
  "strata-msg-fmt",
  "strata-ol-bridge-types",
  "strata-ol-msg-types",
- "strata-snark-acct-runtime",
  "tracing",
 ]
 
