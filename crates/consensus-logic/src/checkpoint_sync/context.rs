@@ -32,17 +32,21 @@ pub trait CheckpointSyncCtx: Send + Sync + 'static {
         &self,
     ) -> impl Future<Output = CheckpointSyncResult<CsmWorkerStatus>> + Send;
 
-    /// Gets the canonical epoch commitment for a given epoch number.
-    fn get_canonical_epoch_commitment(
-        &self,
-        ep: Epoch,
-    ) -> impl Future<Output = DbResult<Option<EpochCommitment>>> + Send;
-
     /// Gets the L1 reference of a checkpoint for the given epoch, if present.
     fn get_checkpoint_l1_ref(
         &self,
         epoch: EpochCommitment,
     ) -> impl Future<Output = DbResult<Option<CheckpointL1Ref>>> + Send;
+
+    /// Resolves the checkpoint observed on the canonical L1 chain for epoch `ep`.
+    ///
+    /// Reads the L1 observations CSM records before an epoch is applied, so it
+    /// resolves predecessors during cold catch-up when no epoch summary exists
+    /// yet. Errs if more than one canonical observation survives for the epoch.
+    fn get_observed_checkpoint_for_epoch(
+        &self,
+        ep: Epoch,
+    ) -> impl Future<Output = CheckpointSyncResult<Option<EpochCommitment>>> + Send;
 
     /// Gets the epoch summary for the given epoch, if present.
     fn get_epoch_summary(
