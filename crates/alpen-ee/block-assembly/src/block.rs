@@ -75,15 +75,10 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
     // 3. update account state based on built payload and consumed inputs
     account_state.set_last_exec_blkid(*update_extra_data.new_tip_blkid());
     account_state.set_last_exec_state_root(*update_extra_data.new_tip_state_root());
-    // Extract pending input entries that got executed in the current block.
-    let processed_inputs: Vec<_> = account_state
-        .pending_inputs()
-        .iter()
-        .take(*update_extra_data.processed_inputs() as usize)
-        .cloned()
-        .collect();
-    account_state.remove_pending_inputs(*update_extra_data.processed_inputs() as usize);
-    account_state.remove_pending_fincls(*update_extra_data.processed_fincls() as usize);
+    // Drain pending input entries that got executed in the current block.
+    let processed_inputs =
+        account_state.remove_pending_inputs(*update_extra_data.processed_inputs() as usize);
+    let _ = account_state.remove_pending_fincls(*update_extra_data.processed_fincls() as usize);
 
     // 4. build exec package
     let package = build_block_package(bridge_gateway_account_id, processed_inputs, &payload);

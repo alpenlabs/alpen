@@ -71,16 +71,16 @@ impl EeAccountState {
     }
 
     /// Removing some number of pending inputs.
-    pub fn remove_pending_inputs(&mut self, n: usize) -> bool {
+    pub fn remove_pending_inputs(&mut self, n: usize) -> Vec<PendingInputEntry> {
         if self.pending_inputs.len() < n {
-            false
+            vec![]
         } else {
             let mut vec: Vec<_> = self.pending_inputs.clone().into();
-            vec.drain(..n);
+            let drained = vec.drain(..n).collect();
             self.pending_inputs = vec
                 .try_into()
                 .expect("pending inputs should not exceed capacity");
-            true
+            drained
         }
     }
 
@@ -93,16 +93,17 @@ impl EeAccountState {
     }
 
     /// Removing some number of pending forced inclusions.
-    pub fn remove_pending_fincls(&mut self, n: usize) -> bool {
+    pub fn remove_pending_fincls(&mut self, n: usize) -> Vec<PendingFinclEntry> {
         if self.pending_fincls.len() < n {
-            false
+            vec![]
         } else {
             let mut vec: Vec<_> = self.pending_fincls.clone().into();
-            vec.drain(..n);
+            let drained = vec.drain(..n).collect();
             self.pending_fincls = vec
                 .try_into()
                 .expect("pending fincls should not exceed capacity");
-            true
+
+            drained
         }
     }
 }
