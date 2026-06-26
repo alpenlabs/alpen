@@ -11,10 +11,11 @@ mod common;
 use common::{
     apply_unconditionally, assert_both_paths_succeed, assert_verified_chunks_succeed,
     assert_verified_path_succeeds, build_update_operation, create_deposit_message,
-    create_initial_state, empty_exec_header_summary, simple_chunk,
+    create_initial_state, create_subject_transfer_message, empty_exec_header_summary, simple_chunk,
 };
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_ee_acct_runtime::{EeVerificationInput, UpdateBuilder};
+use strata_ee_acct_types::PendingInputEntry;
 use strata_ee_chain_types::{ExecOutputs, OutputMessage};
 use strata_predicate::PredicateKey;
 use strata_simple_ee::SimpleExecutionEnvironment;
@@ -72,6 +73,78 @@ fn test_multiple_deposits_no_chunks() {
 
     apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
     assert_verified_path_succeeds(&snark_priv, &[], &ee);
+}
+
+#[test]
+fn test_subject_transfer_creates_pending_deposit() {
+    let (initial_state, snark_state) = create_initial_state();
+    let ee = SimpleExecutionEnvironment;
+
+    let source_subject = SubjectId::from([1u8; 32]);
+    let dest_subject = SubjectId::from([2u8; 32]);
+    let value = BitcoinAmount::from(600u64);
+    let source_account = AccountId::from([3u8; 32]);
+    let message =
+        create_subject_transfer_message(source_subject, dest_subject, value, source_account, 1);
+
+    let predicate_key = PredicateKey::always_accept();
+    let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
+    let mut builder =
+        UpdateBuilder::new(snark_state, initial_state.clone(), vinput).expect("create builder");
+
+    builder.add_messages(vec![message]).expect("add message");
+
+    assert_eq!(builder.remaining_input_count(), 1);
+    let PendingInputEntry::Deposit(deposit) = &builder.remaining_pending_inputs()[0];
+    assert_eq!(deposit.dest(), dest_subject);
+    assert_eq!(deposit.value(), value);
+
+    let (operation, _coinputs) = builder.build().expect("build");
+    apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
+}
+
+#[test]
+fn test_subject_transfer_consumed_by_chunk() {
+    let (initial_state, snark_state) = create_initial_state();
+    let ee = SimpleExecutionEnvironment;
+
+    let source_subject = SubjectId::from([1u8; 32]);
+    let dest_subject = SubjectId::from([2u8; 32]);
+    let value = BitcoinAmount::from(600u64);
+    let source_account = AccountId::from([3u8; 32]);
+    let message =
+        create_subject_transfer_message(source_subject, dest_subject, value, source_account, 1);
+
+    let predicate_key = PredicateKey::always_accept();
+    let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
+    let mut builder =
+        UpdateBuilder::new(snark_state, initial_state.clone(), vinput).expect("create builder");
+
+    builder.add_messages(vec![message]).expect("add message");
+
+    let PendingInputEntry::Deposit(deposit) = &builder.remaining_pending_inputs()[0];
+    let deposit = deposit.clone();
+    let tip = Hash::new([0xAB; 32]);
+    let chunk = simple_chunk(
+        builder.cur_tip_blkid(),
+        tip,
+        Hash::zero(),
+        empty_exec_header_summary(),
+        vec![deposit],
+        ExecOutputs::new_empty(),
+    );
+
+    builder
+        .accept_chunk_transition(&chunk)
+        .expect("accept chunk should succeed");
+
+    assert_eq!(builder.cur_tip_blkid(), tip);
+    assert_eq!(builder.remaining_input_count(), 0);
+
+    let (operation, coinputs) = builder.build().expect("build");
+
+    apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
+    assert_verified_chunks_succeed(&initial_state, &operation, &coinputs, &[chunk], &ee);
 }
 
 #[test]

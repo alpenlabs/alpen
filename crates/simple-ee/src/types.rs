@@ -5,11 +5,13 @@ use std::collections::BTreeMap;
 use digest::Digest;
 use sha2::Sha256;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
-use strata_codec::{Codec, CodecError};
+use strata_codec::{Codec, CodecError, VarVec, encode_to_vec};
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState,
+    SUBJ_TRANSFER_MSG_TYPE, SubjTransferMsgData,
 };
 use strata_ee_chain_types::{ExecHeaderSummary, ExecOutputs, OutputMessage};
+use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 
 /// Write batch containing the updated account state.
 #[derive(Clone, Debug)]
@@ -349,13 +351,16 @@ impl SimpleTransaction {
                     .checked_sub(*value)
                     .ok_or(EnvError::InvalidBlockTx)?;
 
-                // Encode message data: dest_subject + user data
-                let mut msg_data = Vec::new();
-                msg_data.extend_from_slice(dest_subject.inner());
-                msg_data.extend_from_slice(data);
+                // Encode transfer data: transfer message is (from, dest_subject, data)
+                let transfer_data =
+                    VarVec::from_vec(data.clone()).ok_or(EnvError::InvalidBlockTx)?;
+                let transfer_msg = SubjTransferMsgData::new(*from, *dest_subject, transfer_data);
+                let body = encode_to_vec(&transfer_msg).map_err(|_| EnvError::InvalidBlockTx)?;
+                let msg = OwnedMsg::new(SUBJ_TRANSFER_MSG_TYPE, body)
+                    .map_err(|_| EnvError::InvalidBlockTx)?;
 
-                // Emit message output
-                let payload = MsgPayload::from_bytes(BitcoinAmount::from(*value), msg_data)
+                // // Emit message output
+                let payload = MsgPayload::from_bytes(BitcoinAmount::from(*value), msg.to_vec())
                     .map_err(|_| EnvError::InvalidBlockTx)?;
                 let message = OutputMessage::new(*dest_account, payload);
                 outputs.add_message(message);
