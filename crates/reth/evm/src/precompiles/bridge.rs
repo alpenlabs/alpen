@@ -25,6 +25,12 @@ pub(crate) fn bridge_context_call(
     denomination_wei: U256,
     max_withdrawal_wei: Option<U256>,
 ) -> PrecompileResult {
+    if !input.is_direct_call() {
+        return Err(PrecompileError::other(
+            "bridgeout precompile must be invoked via CALL",
+        ));
+    }
+
     let gas_cost = bridgeout_gas_cost(input.data.len())?;
     if gas_cost > input.gas {
         return Err(PrecompileError::OutOfGas);
@@ -121,6 +127,12 @@ fn validate_bosd(data: &[u8]) -> Result<(), PrecompileError> {
 
 #[cfg(test)]
 mod tests {
+    use reth_evm::EvmInternals;
+    use revm::{
+        context::{BlockEnv, Journal, JournalEntry, JournalTr},
+        database::EmptyDB,
+        primitives::address,
+    };
     use strata_ol_bridge_types::OperatorSelection;
 
     use super::*;
@@ -234,6 +246,54 @@ mod tests {
 
     fn max_withdrawal() -> Option<U256> {
         Some(FIXED_WITHDRAWAL_WEI * U256::from(10))
+    }
+
+    fn valid_bridgeout_calldata() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&u32::MAX.to_be_bytes());
+        data.extend_from_slice(VALID_P2WPKH_BOSD);
+        data
+    }
+
+    #[test]
+    fn test_bridgeout_rejects_delegatecall_apparent_value() {
+        let calldata = valid_bridgeout_calldata();
+        let mut journal: Journal<EmptyDB, JournalEntry> = Journal::new(EmptyDB::new());
+        let block_env = BlockEnv::default();
+        let input = PrecompileInput {
+            data: &calldata,
+            gas: u64::MAX,
+            caller: address!("1111111111111111111111111111111111111111"),
+            value: FIXED_WITHDRAWAL_WEI,
+            target_address: address!("2222222222222222222222222222222222222222"),
+            bytecode_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
+            internals: EvmInternals::new(&mut journal, &block_env),
+        };
+
+        let error = bridge_context_call(input, FIXED_WITHDRAWAL_WEI, max_withdrawal()).unwrap_err();
+
+        assert_eq!(
+            error,
+            PrecompileError::Other("bridgeout precompile must be invoked via CALL".into())
+        );
+    }
+
+    #[test]
+    fn test_bridgeout_accepts_direct_call_value() {
+        let calldata = valid_bridgeout_calldata();
+        let mut journal: Journal<EmptyDB, JournalEntry> = Journal::new(EmptyDB::new());
+        let block_env = BlockEnv::default();
+        let input = PrecompileInput {
+            data: &calldata,
+            gas: u64::MAX,
+            caller: address!("1111111111111111111111111111111111111111"),
+            value: FIXED_WITHDRAWAL_WEI,
+            target_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
+            bytecode_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
+            internals: EvmInternals::new(&mut journal, &block_env),
+        };
+
+        assert!(bridge_context_call(input, FIXED_WITHDRAWAL_WEI, max_withdrawal()).is_ok());
     }
 
     #[test]
