@@ -11,10 +11,17 @@ bridge subprotocol path; for the lighter debug-subprotocol path, use
 import json
 import logging
 import os
+import re
+import time
 from dataclasses import dataclass
+from pathlib import Path
 
+from eth_account import Account
 from eth_keys import keys
 
+from common.config.constants import SATS_TO_WEI
+from common.precompile import PRECOMPILE_BRIDGEOUT_ADDRESS, wait_for_receipt
+from common.services.alpen_client import AlpenClientService
 from common.test_cli import _run_command
 
 logger = logging.getLogger(__name__)
@@ -30,6 +37,11 @@ ALPEN_EE_ACCOUNT_SERIAL = 128
 # covers a small Schnorr-witness DT comfortably under any sane regtest mempool
 # min relay rate.
 DT_FEE_BUFFER_SATS = 1_000
+BOSD_P2WPKH_TAG = "03"
+
+# Bridgeout calldata: [4 bytes: selected_operator (big-endian u32)][BOSD bytes].
+# 0xFFFFFFFF = u32::MAX = "no specific operator, bridge picks".
+NO_OPERATOR_SELECTION_HEX = "ffffffff"
 
 
 @dataclass
@@ -90,6 +102,102 @@ def random_xonly_pubkey_hex() -> str:
     priv_bytes = os.urandom(32)
     pub_uncompressed = keys.PrivateKey(priv_bytes).public_key.to_bytes()  # 64 bytes: x|y
     return pub_uncompressed[:32].hex()
+
+
+def derive_p2wpkh_bosd_hex(btc_rpc) -> str:
+    """Derive a fresh P2WPKH bridge output script descriptor payload."""
+    addr = btc_rpc.proxy.getnewaddress("", "bech32")
+    info = btc_rpc.proxy.getaddressinfo(addr)
+    spk = info["scriptPubKey"]
+    if not spk.startswith("0014") or len(spk) != 4 + 40:
+        raise RuntimeError(f"unexpected scriptPubKey for P2WPKH {addr}: {spk}")
+    return BOSD_P2WPKH_TAG + spk[4:]
+
+
+def rpc_quantity_to_int(value) -> int:
+    """Convert an Ethereum JSON-RPC quantity to int."""
+    return int(value, 16) if isinstance(value, str) else int(value)
+
+
+def ee_log_path(alpen_service: AlpenClientService) -> Path:
+    """Path to the alpen-client service log produced by the test harness."""
+    return Path(alpen_service.props["datadir"]) / "service.log"
+
+
+# Service logs can contain ANSI colour codes even when written to files.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
+
+def wait_for_output_snark_update(
+    log_path: Path,
+    btc_rpc,
+    miner_addr: str,
+    after_offset: int,
+    timeout: int = 600,
+    blocks_per_step: int = 4,
+    poll: float = 1.0,
+) -> int:
+    """Wait for alpen-client to submit the SAU carrying a withdrawal output."""
+    pattern = re.compile(
+        r"submitted snark update to OL\b.*seq_no=(\d+).*output_message_count=([1-9]\d*)"
+    )
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if log_path.exists():
+            with open(log_path, "rb") as f:
+                f.seek(after_offset)
+                tail = _strip_ansi(f.read().decode(errors="replace"))
+            match = pattern.search(tail)
+            if match:
+                return int(match.group(1))
+        btc_rpc.proxy.generatetoaddress(blocks_per_step, miner_addr)
+        time.sleep(poll)
+    raise AssertionError(
+        f"no alpen-client output SnarkAccountUpdate in {log_path} within {timeout}s"
+    )
+
+
+def submit_bridgeout_transaction(
+    alpen_rpc,
+    from_address: str,
+    from_private_key_hex: str,
+    recipient_bosd_hex: str,
+    withdraw_sats: int,
+) -> str:
+    """Submit a bridgeout precompile transaction from an EE account."""
+    chain_id = int(alpen_rpc.eth_chainId(), 16)
+    gas_price = int(alpen_rpc.eth_gasPrice(), 16)
+    nonce = int(alpen_rpc.eth_getTransactionCount(from_address, "latest"), 16)
+
+    withdraw_tx = {
+        "nonce": nonce,
+        "gasPrice": gas_price,
+        "gas": 200_000,
+        "to": PRECOMPILE_BRIDGEOUT_ADDRESS,
+        "value": withdraw_sats * SATS_TO_WEI,
+        "data": bytes.fromhex(NO_OPERATOR_SELECTION_HEX + recipient_bosd_hex),
+        "chainId": chain_id,
+    }
+    signed = Account.sign_transaction(withdraw_tx, from_private_key_hex)
+    return alpen_rpc.eth_sendRawTransaction("0x" + signed.raw_transaction.hex())
+
+
+def assert_bridgeout_receipt(alpen_rpc, tx_hash: str, timeout: int = 30) -> int:
+    """Wait for a bridgeout receipt and return the gas spent in wei."""
+    receipt = wait_for_receipt(alpen_rpc, tx_hash, timeout=timeout)
+    if receipt["status"] not in (1, "0x1"):
+        raise AssertionError(f"bridgeout call reverted: {receipt}")
+    if not receipt["logs"]:
+        raise AssertionError("bridgeout did not emit WithdrawalIntentEvent")
+
+    gas_used = rpc_quantity_to_int(receipt["gasUsed"])
+    gas_price = int(alpen_rpc.eth_gasPrice(), 16)
+    effective_gas_price = rpc_quantity_to_int(receipt.get("effectiveGasPrice", gas_price))
+    return gas_used * effective_gas_price
 
 
 def compute_drt_output(

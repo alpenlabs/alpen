@@ -1,6 +1,7 @@
 """EVM utilities for functional tests."""
 
 import logging
+import time
 
 from eth_account import Account
 from eth_hash.auto import keccak
@@ -18,6 +19,38 @@ def get_balance(rpc, address: str, block_tag: str = "latest") -> int:
     """Get the balance of an address in wei."""
     result = rpc.eth_getBalance(address, block_tag)
     return int(result, 16)
+
+
+def subject_hex_from_address(address: str) -> str:
+    """Convert an EVM address into the corresponding 32-byte subject hex."""
+    return "00" * 12 + address.removeprefix("0x").lower()
+
+
+def wait_for_ee_balance(
+    alpen_rpc,
+    btc_rpc,
+    miner_addr: str,
+    address: str,
+    expected_wei: int,
+    timeout: int = 600,
+) -> None:
+    deadline = time.time() + timeout
+    last_balance = 0
+    while time.time() < deadline:
+        btc_rpc.proxy.generatetoaddress(4, miner_addr)
+        time.sleep(1)
+        last_balance = get_balance(alpen_rpc, address)
+        if last_balance >= expected_wei:
+            break
+    else:
+        raise AssertionError(
+            f"EE balance for {address} did not reach {expected_wei} wei; got {last_balance}"
+        )
+
+    if last_balance != expected_wei:
+        raise AssertionError(
+            f"EE balance for {address} overshot: got {last_balance}, expected {expected_wei}"
+        )
 
 
 def wait_for_receipt(
