@@ -57,6 +57,11 @@ NO_OPERATOR_SELECTION_HEX = "ffffffff"
 OPERATOR_KEYS_FILENAME = "bridge-operator_keys"
 
 
+def rpc_quantity_to_int(value) -> int:
+    """Convert an Ethereum JSON-RPC quantity to int."""
+    return int(value, 16) if isinstance(value, str) else int(value)
+
+
 def derive_p2wpkh_bosd_hex(btc_rpc) -> tuple[str, str]:
     """Returns `(bitcoin_address, bosd_hex)` for a fresh P2WPKH address.
 
@@ -415,8 +420,11 @@ def submit_bridgeout_and_wait_for_sau(
     withdraw_sats: int,
     miner_addr: str,
     ee_output_log_offset: int,
-) -> int:
-    """Call the bridgeout precompile and wait for the alpen-client SAU. Returns seq_no."""
+) -> tuple[int, int]:
+    """Call bridgeout and wait for the alpen-client SAU.
+
+    Returns `(seq_no, gas_spent_wei)`.
+    """
     chain_id = int(alpen_rpc.eth_chainId(), 16)
     gas_price = int(alpen_rpc.eth_gasPrice(), 16)
     nonce = int(alpen_rpc.eth_getTransactionCount(deposit_recipient_addr, "latest"), 16)
@@ -437,6 +445,9 @@ def submit_bridgeout_and_wait_for_sau(
         raise AssertionError(f"bridgeout call reverted: {w_receipt}")
     if not w_receipt["logs"]:
         raise AssertionError("bridgeout did not emit WithdrawalIntentEvent")
+    gas_used = rpc_quantity_to_int(w_receipt["gasUsed"])
+    effective_gas_price = rpc_quantity_to_int(w_receipt.get("effectiveGasPrice", gas_price))
+    gas_spent_wei = gas_used * effective_gas_price
 
     submitted_seq_no = wait_for_output_snark_update(
         ee_log,
@@ -446,7 +457,7 @@ def submit_bridgeout_and_wait_for_sau(
         timeout=600,
     )
     logger.info("alpen-client submitted SAU seq_no=%d", submitted_seq_no)
-    return submitted_seq_no
+    return submitted_seq_no, gas_spent_wei
 
 
 def wait_for_wf_settlement(
@@ -571,7 +582,10 @@ class TestRealBridgeDepositWithdraw(BaseTest):
         ee_output_log_offset = ee_log.stat().st_size if ee_log.exists() else 0
         start_terminal_epoch = int(strata_rpc.strata_getChainStatus()["latest"]["epoch"])
 
-        submitted_seq_no = submit_bridgeout_and_wait_for_sau(
+        ee_balance_before_bridgeout = int(
+            alpen_rpc.eth_getBalance(deposit_recipient_addr, "latest"), 16
+        )
+        submitted_seq_no, bridgeout_gas_spent_wei = submit_bridgeout_and_wait_for_sau(
             alpen_rpc,
             btc_rpc,
             ee_log,
@@ -596,6 +610,20 @@ class TestRealBridgeDepositWithdraw(BaseTest):
             "withdrawal-output SnarkAccountUpdate landed at OL epoch %d",
             saw_update_at_epoch,
         )
+        ee_balance_after_bridgeout = int(
+            alpen_rpc.eth_getBalance(deposit_recipient_addr, "latest"), 16
+        )
+        expected_ee_balance_after_bridgeout = (
+            ee_balance_before_bridgeout - bridge_denom_sats * SATS_TO_WEI - bridgeout_gas_spent_wei
+        )
+        if ee_balance_after_bridgeout != expected_ee_balance_after_bridgeout:
+            raise AssertionError(
+                f"EE balance after bridgeout mismatch: got {ee_balance_after_bridgeout}, "
+                f"expected {expected_ee_balance_after_bridgeout} "
+                f"(before={ee_balance_before_bridgeout}, "
+                f"withdraw={bridge_denom_sats * SATS_TO_WEI}, gas={bridgeout_gas_spent_wei})"
+            )
+        logger.info("EE balance after bridgeout = %d wei", ee_balance_after_bridgeout)
 
         wait_for_wf_settlement(
             btc_rpc,
