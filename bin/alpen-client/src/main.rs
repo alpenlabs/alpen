@@ -155,6 +155,8 @@ const ALPEN_EE_BLOCK_TIME_MS_ENV_VAR: &str = "ALPEN_EE_BLOCK_TIME_MS";
 
 const DEFAULT_HEALTH_CHECK_HOST: &str = "0.0.0.0";
 const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
+const DEFAULT_EE_ACCOUNT_ID_HEX: &str =
+    "0101010101010101010101010101010101010101010101010101010101010101";
 
 /// Default end-to-end deadline applied to the SP1 prover network for the EE
 /// chunk + acct provers when `--sp1-proof-deadline-secs` is not set. Chosen
@@ -1044,6 +1046,14 @@ pub struct AdditionalConfig {
     #[arg(long, required = true, value_parser = parse_buf32)]
     pub sequencer_pubkey: Buf32,
 
+    /// OL account ID for this EE.
+    #[arg(
+        long,
+        default_value = DEFAULT_EE_ACCOUNT_ID_HEX,
+        value_parser = parse_account_id,
+    )]
+    pub ee_account_id: AccountId,
+
     // --- DA Configuration ---
     /// Magic bytes (hex-encoded, 4 bytes) for tagging EE DA envelope transactions.
     /// Example: `ALPN`.
@@ -1476,6 +1486,12 @@ where
 fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
     s.parse::<Buf32>()
         .map_err(|e| eyre::eyre!("Failed to parse hex string as Buf32: {e}"))
+}
+
+/// Parse a hex-encoded string into an [`AccountId`].
+fn parse_account_id(s: &str) -> eyre::Result<AccountId> {
+    let buf = parse_buf32(s)?;
+    Ok(AccountId::new(buf.0))
 }
 
 /// Parse a magic bytes string using the [`MagicBytes`] parser from `strata-l1-txfmt`.
