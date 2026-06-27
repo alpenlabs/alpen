@@ -14,6 +14,44 @@ const BRIDGEOUT_BASE_GAS: u64 = 10_000;
 /// Raw EVM gas charged per calldata byte handled by the bridge-out precompile.
 const BRIDGEOUT_CALLDATA_BYTE_GAS: u64 = 16;
 
+/// Solidity `Error(string)` selector: `bytes4(keccak256("Error(string)"))`.
+const ERROR_STRING_SELECTOR: [u8; 4] = [0x08, 0xc3, 0x79, 0xa0];
+
+/// Appends `value` as a 32-byte big-endian ABI word.
+fn push_abi_word(out: &mut Vec<u8>, value: u64) {
+    let mut word = [0u8; 32];
+    word[24..].copy_from_slice(&value.to_be_bytes());
+    out.extend_from_slice(&word);
+}
+
+/// ABI-encodes a human-readable reason as Solidity `Error(string)` revert data so
+/// standard tooling (ethers/web3/foundry) decodes it as `revert("...")`.
+fn abi_encode_error_string(reason: &str) -> Bytes {
+    let reason_bytes = reason.as_bytes();
+    let len = reason_bytes.len();
+    let padded_len = len.div_ceil(32) * 32;
+
+    let mut out = Vec::with_capacity(4 + 64 + padded_len);
+    out.extend_from_slice(&ERROR_STRING_SELECTOR);
+    push_abi_word(&mut out, 32); // offset to the string data (always 0x20)
+    push_abi_word(&mut out, len as u64); // string length
+    out.extend_from_slice(reason_bytes); // string bytes
+    out.resize(4 + 64 + padded_len, 0); // right-pad to a 32-byte boundary
+    Bytes::from(out)
+}
+
+/// Builds a gas-refunding revert carrying an ABI-encoded `Error(string)` reason.
+///
+/// Unlike returning `Err(PrecompileError::other(..))` — which is an exceptional halt
+/// that burns all gas forwarded to the call — a revert refunds the unspent gas
+/// (only `gas_used` is charged) and surfaces `reason` as the call's return data.
+fn revert_with_reason(gas_used: u64, reason: &str) -> PrecompileResult {
+    Ok(PrecompileOutput::new_reverted(
+        gas_used,
+        abi_encode_error_string(reason),
+    ))
+}
+
 /// Custom precompile to burn rollup native token and add bridge out intent of equal amount.
 /// Bridge out intent is created during block payload generation.
 /// This precompile validates transaction and burns the bridge out amount.
@@ -25,29 +63,37 @@ pub(crate) fn bridge_context_call(
     mut input: PrecompileInput<'_>,
     bridge_params: BridgeParams,
 ) -> PrecompileResult {
-    if !input.is_direct_call() {
-        return Err(PrecompileError::other(
-            "bridgeout precompile must be invoked via CALL",
-        ));
-    }
-
+    // Compute the gas this call should be charged. A genuine "not enough gas to even
+    // run" condition is the one case that stays a hard out-of-gas halt.
     let gas_cost = bridgeout_gas_cost(input.data.len())?;
     if gas_cost > input.gas {
         return Err(PrecompileError::OutOfGas);
     }
 
-    let calldata = WithdrawalCalldata::decode(input.data).ok_or_else(|| {
-        PrecompileError::other(
+    // From here on, user-facing validation failures revert (refunding unspent gas and
+    // returning a reason) rather than halting and burning all forwarded gas.
+    if !input.is_direct_call() {
+        return revert_with_reason(gas_cost, "bridgeout precompile must be invoked via CALL");
+    }
+
+    let Some(calldata) = WithdrawalCalldata::decode(input.data) else {
+        return revert_with_reason(
+            gas_cost,
             "Calldata too short: expected at least 5 bytes (4 operator + 1 BOSD)",
-        )
-    })?;
+        );
+    };
 
     // Validate that this is a valid BOSD.
-    validate_bosd(&calldata.bosd, &bridge_params)?;
+    if let Err(reason) = validate_bosd(&calldata.bosd, &bridge_params) {
+        return revert_with_reason(gas_cost, &reason);
+    }
 
     // Verify that the transaction value is a positive exact multiple of the withdrawal
     // denomination.
-    let amount = validate_withdrawal_amount(input.value, &bridge_params)?;
+    let amount = match validate_withdrawal_amount(input.value, &bridge_params) {
+        Ok(amount) => amount,
+        Err(reason) => return revert_with_reason(gas_cost, &reason),
+    };
 
     // Log the bridge withdrawal intent
     let evt = WithdrawalIntentEvent {
@@ -74,9 +120,9 @@ pub(crate) fn bridge_context_call(
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
 }
 
-fn sats_to_withdrawal_amount(sats: U256) -> Result<u64, PrecompileError> {
+fn sats_to_withdrawal_amount(sats: U256) -> Result<u64, String> {
     sats.try_into()
-        .map_err(|_| PrecompileError::other("Withdrawal amount exceeds maximum allowed value"))
+        .map_err(|_| "Withdrawal amount exceeds maximum allowed value".to_string())
 }
 
 fn bridgeout_gas_cost(calldata_len: usize) -> Result<u64, PrecompileError> {
@@ -93,39 +139,39 @@ fn bridgeout_gas_cost(calldata_len: usize) -> Result<u64, PrecompileError> {
 fn validate_withdrawal_amount(
     amount_wei: U256,
     bridge_params: &BridgeParams,
-) -> Result<u64, PrecompileError> {
+) -> Result<u64, String> {
     let (amount_sats, remainder_wei) = wei_to_sats(amount_wei);
     if !remainder_wei.is_zero() {
-        return Err(PrecompileError::other(format!(
+        return Err(format!(
             "Invalid withdrawal value {amount_wei}: must be an exact number of satoshis",
-        )));
+        ));
     }
 
     let amount_sats = sats_to_withdrawal_amount(amount_sats)?;
 
     if !bridge_params.validate_withdrawal_amount(amount_sats) {
-        return Err(PrecompileError::other(format!(
+        return Err(format!(
             "Invalid withdrawal value: {amount_sats} sats must be a positive exact multiple of {} sats and within {:?} sats",
             bridge_params.denomination(),
             bridge_params.max_withdrawal_amount()
-        )));
+        ));
     }
 
     Ok(amount_sats)
 }
 
 /// Validates that input is a valid BOSD [`Descriptor`] within the configured limit.
-fn validate_bosd(data: &[u8], bridge_params: &BridgeParams) -> Result<(), PrecompileError> {
+fn validate_bosd(data: &[u8], bridge_params: &BridgeParams) -> Result<(), String> {
     if !bridge_params.validate_withdrawal_descriptor_len(data.len()) {
-        return Err(PrecompileError::other(format!(
+        return Err(format!(
             "Invalid BOSD: descriptor length {} exceeds maximum {}",
             data.len(),
             bridge_params.max_withdrawal_descriptor_len()
-        )));
+        ));
     }
 
     Descriptor::from_bytes(data)
-        .map_err(|_| PrecompileError::other("Invalid BOSD: expected a valid BOSD descriptor"))?;
+        .map_err(|_| "Invalid BOSD: expected a valid BOSD descriptor".to_string())?;
     Ok(())
 }
 
@@ -152,6 +198,14 @@ mod tests {
         buf
     };
     const MAX_DESCRIPTOR_LEN: u32 = 81;
+
+    /// Decodes Solidity `Error(string)` revert data back into its message.
+    fn decode_error_string(data: &[u8]) -> String {
+        assert_eq!(&data[0..4], &ERROR_STRING_SELECTOR, "wrong revert selector");
+        // Layout: selector[4] | offset word[32] | length word[32] | data[..]
+        let len = u64::from_be_bytes(data[60..68].try_into().unwrap()) as usize;
+        String::from_utf8(data[68..68 + len].to_vec()).unwrap()
+    }
 
     #[test]
     fn test_decode_calldata_empty() {
@@ -244,7 +298,18 @@ mod tests {
     fn test_sats_to_withdrawal_amount_rejects_overflow_as_recoverable_error() {
         let err = sats_to_withdrawal_amount(U256::from(u64::MAX) + U256::from(1)).unwrap_err();
 
-        assert!(matches!(err, PrecompileError::Other(_)));
+        assert!(err.contains("exceeds maximum allowed value"));
+    }
+
+    #[test]
+    fn test_abi_encode_error_string_roundtrips() {
+        let msg = "Withdrawal value 11 exceeds maximum allowed 10 wei";
+        let encoded = abi_encode_error_string(msg);
+
+        // Selector + two head words + content padded to a 32-byte boundary.
+        assert_eq!(&encoded[0..4], &ERROR_STRING_SELECTOR);
+        assert_eq!(encoded.len(), 4 + 64 + msg.len().div_ceil(32) * 32);
+        assert_eq!(decode_error_string(&encoded), msg);
     }
 
     // --- withdrawal amount validation tests ---
@@ -279,12 +344,11 @@ mod tests {
             internals: EvmInternals::new(&mut journal, &block_env),
         };
 
-        let error = bridge_context_call(input, bridge_params()).unwrap_err();
+        let output = bridge_context_call(input, bridge_params()).unwrap();
 
-        assert_eq!(
-            error,
-            PrecompileError::Other("bridgeout precompile must be invoked via CALL".into())
-        );
+        // Misuse reverts (refunding gas) rather than halting and burning all gas.
+        assert!(output.reverted);
+        assert!(decode_error_string(&output.bytes).contains("must be invoked via CALL"));
     }
 
     #[test]
@@ -303,6 +367,32 @@ mod tests {
         };
 
         assert!(bridge_context_call(input, bridge_params()).is_ok());
+    }
+
+    #[test]
+    fn test_bridgeout_over_cap_reverts_with_reason() {
+        let calldata = valid_bridgeout_calldata();
+        let mut journal: Journal<EmptyDB, JournalEntry> = Journal::new(EmptyDB::new());
+        let block_env = BlockEnv::default();
+        let input = PrecompileInput {
+            data: &calldata,
+            gas: u64::MAX,
+            caller: address!("1111111111111111111111111111111111111111"),
+            value: FIXED_WITHDRAWAL_WEI * U256::from(11),
+            target_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
+            bytecode_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
+            internals: EvmInternals::new(&mut journal, &block_env),
+        };
+
+        let output = bridge_context_call(input, bridge_params()).unwrap();
+
+        assert!(output.reverted);
+        // Only the computed gas cost is charged; the caller keeps the remainder.
+        assert_eq!(
+            output.gas_used,
+            bridgeout_gas_cost(valid_bridgeout_calldata().len()).unwrap()
+        );
+        assert!(decode_error_string(&output.bytes).contains("exact multiple"));
     }
 
     #[test]
