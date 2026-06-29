@@ -1,8 +1,11 @@
 """Verify the bridgeout precompile enforces the withdrawal cap.
 
-Sends two transactions to the bridgeout precompile:
-  1. Over-cap amount (11 BTC) -> expects revert
-  2. At-cap amount (10 BTC) -> expects success
+Sends transactions to the bridgeout precompile and checks that rejected withdrawals
+REVERT (refunding gas) with the expected ABI custom-error selector, while a valid
+at-cap withdrawal succeeds.
+Test 1: Over-cap amount (11 BTC) -> expects revert
+Test 2: Non-integer multiple of the denomination -> expects revert
+Test 3: At-cap amount (10 BTC) -> expects success
 
 Uses the dev account which has a large pre-funded balance.
 """
@@ -38,8 +41,10 @@ GAS_LIMIT = 200_000
 NO_OP_HEX = "ffffffff"
 VALID_P2WPKH_BOSD_HEX = "03" + "14" * 20
 
-# Solidity Error(string) selector, bytes4(keccak256("Error(string)")).
-ERROR_STRING_SELECTOR = "08c379a0"
+# Bridge-out custom-error selectors, bytes4(keccak256(signature)). Kept in sync with
+# bridge.rs (which has a keccak256 drift test) and IBridgeOut.sol.
+SELECTOR_INCORRECT_AMOUNT = "88967d2f"  # IncorrectAmount(uint256)
+SELECTOR_OVERSIZE_WITHDRAWAL = "b0701377"  # OversizeWithdrawal(uint256)
 
 
 def build_bridgeout_tx(rpc, amount_sats: int, nonce: int) -> dict:
@@ -62,11 +67,13 @@ def gas_used(receipt: dict) -> int:
     return int(used, 16) if isinstance(used, str) else used
 
 
-def get_revert_reason(rpc, amount_sats: int) -> str | None:
-    """Simulate a bridgeout via eth_call and return the revert error text, if any.
+def get_revert_data(rpc, amount_sats: int) -> str | None:
+    """Simulate a bridgeout via eth_call and return the revert payload hex, if any.
 
-    Returns the RPC error string on revert (which carries the decoded Error(string)
-    reason and/or the 0x08c379a0 revert payload), or None if the call did not revert.
+    On revert the node returns the raw revert bytes in the JSON-RPC error `data`
+    field, i.e. `bytes4(selector) ++ abi.encode(args)`. The custom-error selector
+    lives there, NOT in the human message. Returns that hex string, or None if the
+    call did not revert (or carried no data).
     """
     try:
         rpc.eth_call(
@@ -80,28 +87,35 @@ def get_revert_reason(rpc, amount_sats: int) -> str | None:
         )
         return None
     except RpcError as e:
-        return str(e)
+        data = e.data
+        # Some nodes nest the payload, e.g. {"data": "0x..."}.
+        if isinstance(data, dict):
+            data = data.get("data") or data.get("message")
+        return data if isinstance(data, str) else None
 
 
-def assert_reverted(rpc, receipt: dict, amount_sats: int, expect_reason: str):
-    """Assert a failing bridgeout reverted with gas refunded and the expected reason."""
+def assert_reverted(rpc, receipt: dict, amount_sats: int, expect_selector: str):
+    """Assert a failing bridgeout reverted with gas refunded and the expected custom error."""
     status = receipt["status"]
     status = int(status, 16) if isinstance(status, str) else status
     assert status == 0, f"expected failure status, got {status}"
 
     # A revert refunds unspent gas; a gas-burning halt would consume ~GAS_LIMIT.
+    # Note: for all practical purposes this is a binary check: either we consume the fixed amount of
+    # gas, roughly 30k gas units, or we consume the entire gas. So the following assert suffices. If
+    # it fails, something is wrong.
     used = gas_used(receipt)
     assert used < GAS_LIMIT // 2, (
         f"expected gas to be refunded on revert, but gasUsed={used} (limit {GAS_LIMIT}) "
         f"— this looks like an all-gas-consuming halt, not a revert"
     )
 
-    # The reason should be recoverable from an eth_call simulation.
-    reason = get_revert_reason(rpc, amount_sats)
-    assert reason is not None, "eth_call did not revert"
-    reason_l = reason.lower()
-    assert expect_reason.lower() in reason_l or ERROR_STRING_SELECTOR in reason_l, (
-        f"revert reason {reason!r} missing expected text {expect_reason!r} / selector"
+    # The custom-error selector should be recoverable from an eth_call simulation, whose
+    # revert payload is `bytes4(selector) ++ abi.encode(args)`.
+    revert_data = get_revert_data(rpc, amount_sats)
+    assert revert_data is not None, "eth_call did not revert with data"
+    assert expect_selector.lower() in revert_data.lower(), (
+        f"revert payload {revert_data!r} missing expected selector 0x{expect_selector}"
     )
 
 
@@ -127,7 +141,7 @@ class TestBridgeoutWithdrawalCap(BaseTest):
         tx_hash = rpc.eth_sendRawTransaction("0x" + signed.raw_transaction.hex())
         receipt = wait_for_receipt(rpc, tx_hash, timeout=30)
 
-        assert_reverted(rpc, receipt, over_cap_sats, expect_reason="exact multiple")
+        assert_reverted(rpc, receipt, over_cap_sats, expect_selector=SELECTOR_OVERSIZE_WITHDRAWAL)
         logger.info(
             f"  Over-cap bridgeout reverted as expected, gasUsed={gas_used(receipt)} (refunded)"
         )
@@ -142,7 +156,7 @@ class TestBridgeoutWithdrawalCap(BaseTest):
         tx_hash = rpc.eth_sendRawTransaction("0x" + signed.raw_transaction.hex())
         receipt = wait_for_receipt(rpc, tx_hash, timeout=30)
 
-        assert_reverted(rpc, receipt, non_multiple_sats, expect_reason="positive exact multiple")
+        assert_reverted(rpc, receipt, non_multiple_sats, expect_selector=SELECTOR_INCORRECT_AMOUNT)
         logger.info(
             f"  Non-multiple bridgeout reverted as expected, gasUsed={gas_used(receipt)} (refunded)"
         )
