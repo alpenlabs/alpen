@@ -2786,7 +2786,7 @@ mod tests {
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
         // Create a tx with 5 withdrawal messages (= 5 logs).
-        let withdrawal_dest = b"bc1qlogcapoverflow".to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x14);
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawals(5, 100_000_000, withdrawal_dest)
@@ -2839,7 +2839,7 @@ mod tests {
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
         // First tx: 10 withdrawal messages = 10 logs.
-        let withdrawal_dest = b"bc1qlogcapfull".to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x15);
         let tx_fill = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawals(10, 100_000_000, withdrawal_dest.clone())
@@ -2894,7 +2894,7 @@ mod tests {
 
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
-            .with_withdrawal(100_000_000, b"bc1qlogcapreached".to_vec())
+            .with_withdrawal(100_000_000, make_p2wpkh_bosd_descriptor(0x16))
             .build();
         let txid = tx.compute_txid();
 
@@ -2964,9 +2964,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_checkpoint_soft_commits_then_stops() {
-        const CHECKPOINT_WITHDRAWAL_DEST: &[u8] = b"bc1qcheckpointlimit";
         let account_id = test_account_id(9);
-        let withdrawal_dest = CHECKPOINT_WITHDRAWAL_DEST.to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x17);
         let tx1 = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest.clone())
@@ -3013,9 +3012,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_checkpoint_hard_rolls_back_then_stops() {
-        const CHECKPOINT_WITHDRAWAL_DEST: &[u8] = b"bc1qcheckpointlimit";
         let account_id = test_account_id(10);
-        let withdrawal_dest = CHECKPOINT_WITHDRAWAL_DEST.to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x18);
         let tx1 = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest.clone())

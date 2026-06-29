@@ -1486,6 +1486,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-bridge-types",
  "strata-primitives",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -16276,6 +16277,7 @@ dependencies = [
 name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
+ "bitcoin-bosd 0.11.0",
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",
@@ -16468,6 +16470,7 @@ dependencies = [
  "rsp-client-executor",
  "serde",
  "serde_json",
+ "strata-bridge-params",
  "strata-ol-bridge-types",
  "strata-primitives",
  "strata-state",

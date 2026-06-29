@@ -9,7 +9,10 @@ use alloy_consensus::Block as AlloyBlock;
 use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
 use reth_consensus_common::validation::validate_body_against_header;
-use reth_evm::execute::{BasicBlockExecutor, BlockExecutionOutput, Executor};
+use reth_evm::{
+    ConfigureEvm,
+    execute::{BasicBlockExecutor, BlockExecutionOutput, Executor},
+};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::{
     EthPrimitives, Receipt as EthereumReceipt, RecoveredBlock, TransactionSigned,
@@ -137,8 +140,12 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 5: Collect withdrawal intents.
         let transactions = block.into_transactions();
-        let withdrawal_intents =
-            extract_withdrawal_intents(&transactions, &execution_output.receipts).collect();
+        let withdrawal_intents = extract_withdrawal_intents(
+            &transactions,
+            &execution_output.receipts,
+            self.evm_config.evm_factory().bridge_params(),
+        )
+        .map_err(|_| EnvError::InvalidBlock)?;
 
         // Step 6: Convert execution outcome to HashedPostState.
         let block_number = header_intrinsics.number();

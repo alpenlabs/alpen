@@ -814,6 +814,13 @@ async fn setup_asm_state_with_l1_manifests_list(
 /// Default balance for test accounts (100 billion sats).
 pub(crate) const DEFAULT_ACCOUNT_BALANCE: u64 = 100_000_000_000;
 
+/// Builds a valid P2WPKH BOSD descriptor for withdrawal tests.
+pub(crate) fn make_p2wpkh_bosd_descriptor(byte: u8) -> Vec<u8> {
+    let mut dest_desc = vec![byte; 21];
+    dest_desc[0] = 0x03;
+    dest_desc
+}
+
 /// Typed account setup used by test environment builders.
 #[derive(Clone)]
 pub(crate) struct TestAccount {
