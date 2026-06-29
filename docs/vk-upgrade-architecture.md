@@ -58,6 +58,48 @@ must be published at announcement: a VK is opaque, so users need the source
 (ideally via reproducible builds) to decide whether to object. Full nodes need
 only the VK to verify; only provers need the ELF.
 
+## Forced inclusion
+
+The exit guarantee has a prerequisite that is easy to miss: **forced inclusion**.
+A withdrawal originates on **L2** — the user submits it to the EE, and normally
+the sequencer includes it. But the sequencer can simply **censor** it: refuse to
+include the withdrawal, so the user can never leave. If that is possible the exit
+guarantee is hollow — someone who dislikes an upgrade has no way to act on it.
+
+**Forced inclusion** is the escape hatch: the user posts the transaction on **L1**,
+and the protocol guarantees it is processed in its place in the **L1 ordering**,
+regardless of the sequencer. An L1-posted transaction cannot be censored, so the
+user always has an uncensorable way to exit. **The rest of this document assumes
+forced inclusion is supported**; without it the exit-guarantee reasoning does not
+hold.
+
+**The switch is a position in the L1 ordering, not a wall-clock moment.** All
+L1-originated transactions — deposits and forced inclusions — are processed in
+**L1 order**. The VK switch is a *point in that order*: the activation boundary `B`
+(an L1 height, defined in *Anchoring activation on L1*). Everything that entered
+before `B` runs under the **old** logic, everything after under the **new**;
+forced inclusion lets a user place their exit into the ordering before `B`, so it
+is guaranteed old-rules processing. For example (`d` = deposit, `fi` =
+forced-inclusion withdrawal):
+
+```
+(d1,h1) (d2,h2) (fi1,h3) (fi2,h4)  ─── B ───  (d3,h5)
+            h1 < h2 < h3 < h4 < B < h5
+```
+
+`d1, d2, fi1, fi2` entered before `B` and must run under the old logic; `d3` runs
+under the new. A user who forced an exit (`fi1` / `fi2`) before `B` is covered.
+
+**Why the switch follows the ordering, not the EE's progress.** The sequencer
+processes this stream in order, often with a **lag**. If the switch were keyed to
+the chain merely *reaching* `B`, and the EE had not yet processed `fi1, fi2` when
+it fired, those pre-`B` exits would be run under the **new** logic (or verification
+would fail) — the guarantee broken for exactly the user who relied on it. So the
+boundary is a point *in the ordering* that must be processed in sequence: every
+pre-`B` transaction runs under the old logic no matter how far the EE lags. (How
+that boundary is represented — a message in the EE's inbox MMR — is the EE plan's
+concern; the property here is about L1 ordering, not the MMR.)
+
 ## Safety and liveness
 
 The exit guarantee sorts every concern below into two classes, and the whole
@@ -499,8 +541,9 @@ Each step is independently testable.
   (`bin/strata-test-cli`) builds only `EeStfVk` — the rest need CLI support.
 * **Critical-bug handling:** confirm the bridge 1/N + out-of-band-correction
   backstop is acceptable for the threat model (no emergency-halt primitive).
-* **Forced inclusion:** not yet implemented; the interim liveness backstop is
-  immediate sequencer rotation.
+* **Forced inclusion:** assumed throughout (see *Forced inclusion*) — it is the
+  prerequisite for the exit guarantee and must be implemented. Sequencer rotation
+  is only the *upgrade*-liveness backstop, not a user exit path.
 
 ## De-enshrining Alpen: where the VK-change payload originates
 
