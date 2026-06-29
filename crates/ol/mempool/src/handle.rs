@@ -1,7 +1,7 @@
 //! Mempool service handle for external interaction.
 
 use strata_identifiers::OLTxId;
-use strata_ol_chain_types_new::OLTransaction;
+use strata_ol_chain_types::OLTransaction;
 use strata_service::ServiceMonitor;
 use tokio::sync::{mpsc, oneshot};
 

@@ -10,7 +10,7 @@
 
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_new::{Epoch, OLBlockHeader, OLLog, Slot};
+use strata_ol_chain_types::{Epoch, OLBlockHeader, OLLog, Slot};
 
 use crate::{
     errors::ExecResult,

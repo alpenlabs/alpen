@@ -2,7 +2,7 @@ use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{backend::DatabaseBackend, l1::L1Database};
 use strata_identifiers::L1Height;
-use strata_ol_chain_types_new::AsmManifest;
+use strata_ol_chain_types::AsmManifest;
 use strata_primitives::l1::L1BlockId;
 
 use crate::{

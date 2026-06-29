@@ -20,7 +20,7 @@ use strata_db_types::errors::DbError;
 use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, MsgRef};
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     BlockFlags, MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLLogType,
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
@@ -860,7 +860,7 @@ pub(crate) struct AppliedEpochArtifacts {
 
 impl ServiceState for ChainWorkerServiceState {
     fn name(&self) -> &str {
-        "chain_worker_new"
+        "chain_worker"
     }
 }
 
@@ -937,7 +937,7 @@ fn build_epoch_summary(
 #[cfg(test)]
 mod tests {
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
-    use strata_ol_chain_types_new::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
     use strata_ol_state_support_types::IndexerWrites;
     use strata_ol_state_types::{
         OLAccountState, WriteBatch, test_utils::create_test_genesis_state,

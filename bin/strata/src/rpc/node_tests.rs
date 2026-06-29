@@ -21,7 +21,7 @@ use strata_db_types::{
 };
 use strata_identifiers::*;
 use strata_ledger_types::*;
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};

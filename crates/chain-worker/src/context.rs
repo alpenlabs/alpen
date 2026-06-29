@@ -21,7 +21,7 @@ use strata_db_types::{
 use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     OLBlock, OLBlockHeader, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
     SnarkAccountUpdateLogData,
 };

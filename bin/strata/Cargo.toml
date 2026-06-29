@@ -49,7 +49,7 @@ strata-asm-proto-checkpoint-txs = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-btcio.workspace = true
-strata-chain-worker-new.workspace = true
+strata-chain-worker.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec = { workspace = true, optional = true }
 strata-codec-utils = { workspace = true, optional = true }
@@ -67,7 +67,7 @@ strata-logging.workspace = true
 strata-metrics.workspace = true
 strata-node-context.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }
-strata-ol-chain-types-new.workspace = true
+strata-ol-chain-types.workspace = true
 strata-ol-checkpoint.workspace = true
 strata-ol-genesis.workspace = true
 strata-ol-mempool.workspace = true
@@ -113,7 +113,7 @@ zkaleido-sp1-host = { workspace = true, optional = true }
 proptest.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
-strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
+strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
 strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }

@@ -13,7 +13,7 @@
 use strata_asm_proto_checkpoint_types::{
     MAX_OL_LOGS_PER_CHECKPOINT, MAX_TOTAL_LOG_PAYLOAD_BYTES, OL_DA_DIFF_MAX_SIZE,
 };
-use strata_ol_chain_types_new::OLLog;
+use strata_ol_chain_types::OLLog;
 
 /// L1 envelope limit for the full `CheckpointPayload` (single envelope, not chunked).
 pub(crate) const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;

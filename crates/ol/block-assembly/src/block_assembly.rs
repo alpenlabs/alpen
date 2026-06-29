@@ -13,7 +13,7 @@ use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
 use strata_ledger_types::{
     AccProofCheck, IAccountState, ISnarkAccountState, IStateAccessor, TxProofIndexer, *,
 };
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
 use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
@@ -1010,7 +1010,7 @@ mod tests {
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
     use strata_identifiers::{Buf32, L1BlockId, L1Height, OLBlockId};
-    use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
+    use strata_ol_chain_types::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
 
     use super::*;
@@ -1550,7 +1550,7 @@ mod tests {
     /// list even when proof bytes are empty (e.g. from a NoopProver).
     #[test]
     fn test_proof_satisfier_list_accepts_empty_bytes() {
-        use strata_ol_chain_types_new::ProofSatisfierList;
+        use strata_ol_chain_types::ProofSatisfierList;
 
         // Empty bytes should still produce a valid single-element list
         let result = ProofSatisfierList::single(vec![]);

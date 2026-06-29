@@ -5,7 +5,7 @@ use strata_bridge_params::DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN;
 use strata_identifiers::SubjectId;
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, OwnedMsg};
-use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_chain_types::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::DEPOSIT_MSG_TYPE_ID;
 
 use crate::test_utils::*;

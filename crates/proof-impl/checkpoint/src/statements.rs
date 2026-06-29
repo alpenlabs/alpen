@@ -10,7 +10,7 @@ use strata_asm_proto_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalH
 use strata_bridge_params::BridgeParams;
 use strata_crypto::hash;
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{AsmManifest, OLBlock, OLBlockHeader, OLLog, OLTxSegment};
+use strata_ol_chain_types::{AsmManifest, OLBlock, OLBlockHeader, OLLog, OLTxSegment};
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::OLState;
@@ -236,7 +236,7 @@ struct EpochExecTrace {
     /// hashing.
     ///
     /// Held as an unbounded sequence rather than an
-    /// [`OLAsmManifestContainer`](strata_ol_chain_types_new::OLAsmManifestContainer)
+    /// [`OLAsmManifestContainer`](strata_ol_chain_types::OLAsmManifestContainer)
     /// because an epoch may span several blocks that each independently satisfy
     /// the per-block `MAX_SEALING_MANIFEST_COUNT` limit, so the epoch total can
     /// legitimately exceed that per-block cap.

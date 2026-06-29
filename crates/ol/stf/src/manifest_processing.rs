@@ -29,7 +29,7 @@ use crate::{
 /// ASM-log *effects* are deferred to [`process_epoch_terminal`].
 ///
 /// Accepts a plain slice rather than the per-block
-/// [`OLAsmManifestContainer`](strata_ol_chain_types_new::OLAsmManifestContainer)
+/// [`OLAsmManifestContainer`](strata_ol_chain_types::OLAsmManifestContainer)
 /// so callers replaying a whole epoch (e.g. checkpoint proving) are not bound
 /// by the per-block `MAX_SEALING_MANIFEST_COUNT` limit.
 ///

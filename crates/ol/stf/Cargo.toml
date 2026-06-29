@@ -17,7 +17,7 @@ strata-ledger-types.workspace = true
 strata-merkle.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-bridge-types.workspace = true
-strata-ol-chain-types-new.workspace = true
+strata-ol-chain-types.workspace = true
 strata-ol-da.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-params = { workspace = true, optional = true }

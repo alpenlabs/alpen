@@ -16,7 +16,7 @@ use strata_identifiers::{
     OLBlockCommitment, OLBlockId, OLTxId, RBuf32,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
-use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
+use strata_ol_chain_types::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
     OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,

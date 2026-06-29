@@ -6,7 +6,7 @@ use strata_acct_types::{
 };
 use strata_ledger_types::*;
 use strata_msg_fmt::MsgRef;
-use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_chain_types::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::OLMessageExt;
 use strata_snark_acct_sys as snark_sys;
 use tracing::*;

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
-use strata_chain_worker_new::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
+use strata_chain_worker::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
 use strata_consensus_logic::{
     AsmBlockSubmitter, SyncServiceHandle,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},

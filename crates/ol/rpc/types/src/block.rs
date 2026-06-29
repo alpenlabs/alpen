@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ssz::Encode;
 use strata_identifiers::{Epoch, Slot};
-use strata_ol_chain_types_new::{OLAsmManifestContainer, OLBlock};
+use strata_ol_chain_types::{OLAsmManifestContainer, OLBlock};
 use strata_primitives::{HexBytes, HexBytes32, HexBytes64, OLBlockId};
 
 /// Rpc version of OL block entry in a slot range.

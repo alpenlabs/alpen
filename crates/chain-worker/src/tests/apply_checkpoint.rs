@@ -27,7 +27,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
+use strata_ol_chain_types::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
 

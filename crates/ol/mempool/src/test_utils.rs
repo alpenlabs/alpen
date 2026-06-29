@@ -18,7 +18,7 @@ use strata_identifiers::{Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBl
 use strata_ledger_types::{
     IAccountStateMut, ISnarkAccountStateMut, IStateAccessorMut, NewAccountData, NewAccountTypeState,
 };
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     ClaimList, OLTransaction, OLTransactionData, ProofSatisfierList, SauTxLedgerRefs,
     SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
     TxConstraints, TxProofs, test_utils as ol_test_utils,

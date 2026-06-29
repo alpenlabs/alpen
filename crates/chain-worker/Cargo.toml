@@ -1,8 +1,8 @@
 [package]
-name = "strata-chain-worker-new"
+name = "strata-chain-worker"
 version = "0.1.0"
 edition = "2024"
-description = "New chain worker implementation using OL STF and new OL types"
+description = "Chain worker implementation using the OL STF"
 
 [lints]
 workspace = true
@@ -19,7 +19,7 @@ strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-msg-fmt.workspace = true
 strata-node-context.workspace = true
-strata-ol-chain-types-new.workspace = true
+strata-ol-chain-types.workspace = true
 strata-ol-da.workspace = true
 strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
