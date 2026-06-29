@@ -126,6 +126,44 @@ is left to sequencer rotation.
 > correction is the last-resort backstop. No emergency-halt primitive is specified
 > here.
 
+## Liveness and the sequencer threat model
+
+**Liveness is not enforced — by design.** The mechanisms in this document
+guarantee the *ordering* (the safety side): no early switch, no wrong-VK
+acceptance, every pre-`B` transaction processed under the old logic. They do
+**not** guarantee that the upgrade ever *completes*. A lagging sequencer can delay
+activation indefinitely — it can simply never advance to the boundary.
+
+There are known ways to bound that lag. For the OL checkpoint, you can observe
+when a checkpoint lands on L1 and which L1 height it covers, compute the lag, and
+reject (or penalize) the chain once it exceeds an allowed bound — the checkpoint
+subprotocol already anticipates this with a planned, not-yet-implemented
+[`ALLOWED_L1_LAG`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/checkpoint/verification/src/verification.rs).
+But enforcing liveness carries real risk: if the sequencer is down for unrelated
+reasons, or proving fails, it genuinely *cannot* progress — and a liveness rule
+would then halt the chain for a non-malicious cause, turning an ordinary outage
+into a consensus failure.
+
+So **this document opts out of liveness enforcement for now.** It specifies the
+safe ordering and leaves liveness unenforced. Such guarantees can be layered in
+later, as we gain confidence in the system's robustness; until then we
+**prioritize safety over liveness**.
+
+**Is a malicious sequencer the right thing to worry about?** Much of the analysis
+here is framed against a *malicious* sequencer — could it shrink the window, skip
+the boundary, censor an exit? That framing is correct **for safety**: the safety
+properties must hold even against a hostile operator, because if they don't, users
+can lose funds. We design so they hold with zero trust in the sequencer.
+
+It is the wrong framing **for liveness**. The sequencer is operated by Alpen, it is
+monitored (closely during upgrades — see the EE timing notes), and a misbehaving
+one has an out-of-band remedy: the admin can **rotate** it
+([`UpdateAction::Sequencer`](https://github.com/alpenlabs/asm/blob/v0.1-alpha.10/crates/subprotocols/admin/txs/src/actions/updates/mod.rs)).
+Trying to guarantee liveness *against* an adversarial operator at the protocol
+level is exactly what produces the brittle deadline mechanisms above. The practical
+stance: **treat the sequencer as malicious for safety, and as a trusted-but-fallible
+operator for liveness** — rotate and monitor rather than enforce.
+
 ## Anchoring activation on L1
 
 This is the first place `B` appears, so to be plain: **`B` is the activation
