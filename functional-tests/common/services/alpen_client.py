@@ -39,6 +39,12 @@ class AlpenClientProps(TypedDict):
     datadir: str
     mode: str  # "sequencer" or "fullnode"
     enode: str | None
+    chain_spec: str
+    magic_bytes: bytes
+    genesis_l1_height: int | None
+    sequencer_pubkey: str
+    sequencer_privkey: str | None
+    ol_rpc_url: str | None
 
 
 class AlpenClientService(RpcService):

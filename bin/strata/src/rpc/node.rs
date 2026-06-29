@@ -29,7 +29,7 @@ use strata_ol_rpc_types::{
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::rpc::errors::{
     db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc, not_found_error,
@@ -40,6 +40,17 @@ struct ChainBlock {
     slot: u64,
     blkid: OLBlockId,
     epoch: Epoch,
+}
+
+enum ToplevelOlStateLookup {
+    Found {
+        epoch_commitment: EpochCommitment,
+        ol_state: Arc<OLState>,
+    },
+    MissingEpochCommitment,
+    MissingTerminalState {
+        terminal_commitment: OLBlockCommitment,
+    },
 }
 
 /// OL RPC server implementation, generic over a provider.
@@ -520,13 +531,11 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         )))
     }
 
-    /// Resolves an epoch to its terminal-block OL state. Errors if either the
-    /// canonical commitment or the terminal-block state is missing.
-    async fn get_toplevel_ol_state_for_epoch(
+    async fn lookup_toplevel_ol_state_for_epoch(
         &self,
         epoch: Epoch,
-    ) -> RpcResult<(EpochCommitment, Arc<OLState>)> {
-        let epoch_commitment = self
+    ) -> RpcResult<ToplevelOlStateLookup> {
+        let Some(epoch_commitment) = self
             .provider
             .get_canonical_epoch_commitment_at(epoch)
             .await
@@ -534,12 +543,12 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 error!(?e, ?epoch, "Failed to get canonical epoch commitment");
                 db_error(e)
             })?
-            .ok_or_else(|| {
-                not_found_error(format!("No canonical commitment found for epoch {epoch}"))
-            })?;
+        else {
+            return Ok(ToplevelOlStateLookup::MissingEpochCommitment);
+        };
 
         let terminal_commitment = epoch_commitment.to_block_commitment();
-        let ol_state = self
+        let Some(ol_state) = self
             .provider
             .get_toplevel_ol_state(terminal_commitment)
             .await
@@ -547,22 +556,78 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 error!(?e, %terminal_commitment, "Failed to get OL state");
                 db_error(e)
             })?
-            .ok_or_else(|| {
-                not_found_error(format!(
-                    "No OL state found for terminal block {terminal_commitment}"
-                ))
-            })?;
+        else {
+            return Ok(ToplevelOlStateLookup::MissingTerminalState {
+                terminal_commitment,
+            });
+        };
 
-        Ok((epoch_commitment, ol_state))
+        Ok(ToplevelOlStateLookup::Found {
+            epoch_commitment,
+            ol_state,
+        })
     }
 
-    /// Returns the account's current Snark update seqno at the tip epoch.
+    /// Resolves an epoch to its terminal-block OL state. Errors if either the
+    /// canonical commitment or the terminal-block state is missing.
+    async fn get_toplevel_ol_state_for_epoch(
+        &self,
+        epoch: Epoch,
+    ) -> RpcResult<(EpochCommitment, Arc<OLState>)> {
+        match self.lookup_toplevel_ol_state_for_epoch(epoch).await? {
+            ToplevelOlStateLookup::Found {
+                epoch_commitment,
+                ol_state,
+            } => Ok((epoch_commitment, ol_state)),
+            ToplevelOlStateLookup::MissingEpochCommitment => Err(not_found_error(format!(
+                "No canonical commitment found for epoch {epoch}"
+            ))),
+            ToplevelOlStateLookup::MissingTerminalState {
+                terminal_commitment,
+            } => Err(not_found_error(format!(
+                "No OL state found for terminal block {terminal_commitment}"
+            ))),
+        }
+    }
+
+    async fn try_get_toplevel_ol_state_for_epoch(
+        &self,
+        epoch: Epoch,
+    ) -> RpcResult<Option<(EpochCommitment, Arc<OLState>)>> {
+        match self.lookup_toplevel_ol_state_for_epoch(epoch).await? {
+            ToplevelOlStateLookup::Found {
+                epoch_commitment,
+                ol_state,
+            } => Ok(Some((epoch_commitment, ol_state))),
+            ToplevelOlStateLookup::MissingEpochCommitment => Ok(None),
+            ToplevelOlStateLookup::MissingTerminalState {
+                terminal_commitment,
+            } => {
+                warn!(
+                    ?epoch,
+                    %terminal_commitment,
+                    "Canonical commitment present but toplevel state missing"
+                );
+                Ok(None)
+            }
+        }
+    }
+
+    /// Returns the account's current Snark update seqno when canonical tip state is available.
+    ///
+    /// This is an optimization for out-of-range manifest queries. Missing canonical
+    /// tip state means the current epoch is still in flight, so callers must fall
+    /// back to indexed records instead of treating that as a request error.
     async fn current_snark_account_seq_no(
         &self,
         account_id: AccountId,
         tip_epoch: Epoch,
     ) -> RpcResult<Option<u64>> {
-        let (_, tip_ol_state) = self.get_toplevel_ol_state_for_epoch(tip_epoch).await?;
+        let Some((_, tip_ol_state)) = self.try_get_toplevel_ol_state_for_epoch(tip_epoch).await?
+        else {
+            return Ok(None);
+        };
+
         Ok(tip_ol_state
             .get_account_state(&account_id)
             .and_then(|state| state.as_snark_account().ok())
