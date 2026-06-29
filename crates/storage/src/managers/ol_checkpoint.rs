@@ -355,14 +355,16 @@ impl OLCheckpointManager {
         self.ops.get_checkpoint_l1_refs_from_blocking(start_epoch)
     }
 
-    /// Gets all observed `(epoch commitment, L1 ref)` pairs at or above
-    /// `start_epoch`, ordered by ascending epoch.
-    pub async fn get_checkpoint_l1_refs_from_async(
+    /// Gets the observed checkpoint commitments for `epoch`.
+    ///
+    /// Candidates are observed, not canonical; callers resolve canonicity at
+    /// read time since an L1 reorg can leave more than one.
+    pub async fn get_observed_checkpoint_commitments_for_epoch_async(
         &self,
-        start_epoch: Epoch,
-    ) -> DbResult<Vec<(EpochCommitment, CheckpointL1Ref)>> {
+        epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
         self.ops
-            .get_checkpoint_l1_refs_from_async(start_epoch)
+            .get_observed_checkpoint_commitments_for_epoch_async(epoch)
             .await
     }
 
