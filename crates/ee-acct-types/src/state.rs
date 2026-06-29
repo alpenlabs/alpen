@@ -75,12 +75,12 @@ impl EeAccountState {
         if self.pending_inputs.len() < n {
             vec![]
         } else {
-            let mut vec: Vec<_> = self.pending_inputs.clone().into();
-            let drained = vec.drain(..n).collect();
-            self.pending_inputs = vec
+            let mut all: Vec<_> = std::mem::take(&mut self.pending_inputs).into();
+            let removed = all.drain(..n).collect();
+            self.pending_inputs = all
                 .try_into()
                 .expect("pending inputs should not exceed capacity");
-            drained
+            removed
         }
     }
 
@@ -97,13 +97,12 @@ impl EeAccountState {
         if self.pending_fincls.len() < n {
             vec![]
         } else {
-            let mut vec: Vec<_> = self.pending_fincls.clone().into();
-            let drained = vec.drain(..n).collect();
-            self.pending_fincls = vec
+            let mut all: Vec<_> = std::mem::take(&mut self.pending_fincls).into();
+            let removed = all.drain(..n).collect();
+            self.pending_fincls = all
                 .try_into()
                 .expect("pending fincls should not exceed capacity");
-
-            drained
+            removed
         }
     }
 }
