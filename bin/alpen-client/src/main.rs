@@ -50,7 +50,7 @@ use alpen_ee_exec_chain::{init_exec_chain_state_from_storage, ExecChainState};
 use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
 use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
 use alpen_ee_ol_tracker::init_ol_tracker_state;
-use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcServer, StaticFeeModelConfig};
+use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcContext, EeRpcServer, StaticFeeModelConfig};
 #[cfg(feature = "sequencer")]
 use alpen_ee_sequencer::{
     block_builder_task, build_ol_chain_tracker, init_batch_builder_state, init_lifecycle_state,
@@ -480,15 +480,9 @@ fn main() {
                 let storage = storage.clone();
                 move |ctx| {
                     let provider = ctx.provider().clone();
-                    let fee_config_rx = fee_config_rx.clone();
-                    let fee_model_config = Arc::new(move || *fee_config_rx.borrow());
-                    let ee_rpc_server = EeRpcServer::new(
-                        provider,
-                        consensus_watcher,
-                        storage.clone(),
-                        storage.clone(),
-                        fee_model_config,
-                    );
+                    let rpc_context =
+                        EeRpcContext::new(storage.clone(), storage.clone(), fee_config_rx.clone());
+                    let ee_rpc_server = EeRpcServer::new(provider, consensus_watcher, rpc_context);
                     ctx.modules.merge_configured(ee_rpc_server.into_rpc())?;
                     Ok(())
                 }
