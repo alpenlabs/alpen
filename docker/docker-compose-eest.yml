@@ -1,9 +1,20 @@
 # Setup for Ethereum Execution Spec Tests (EEST).
 # Runs alpen-client in sequencer mode with dummy OL + regtest bitcoind for DA.
+# The EE JSON-RPC is published on host port 8545 for `execute remote`.
 #
-# Usage:
-#   ./init-alpen-client-keys.sh
-#   docker compose --env-file .env.alpen-client -f docker-compose-eest.yml up
+# Usage (local image):
+#   docker compose --env-file eest/.env.eest -f docker-compose-eest.yml up --build
+#
+# Usage (registry/ECR image):
+#   ALPEN_CLIENT_IMAGE=<registry>/strata/alpen-client:<tag> \
+#     docker compose --env-file eest/.env.eest -f docker-compose-eest.yml up --build
+#
+# eest/.env.eest ships a deterministic dev/test sequencer keypair (NOT a secret),
+# and eest/seq-p2p.hex is the matching p2p key. Both are tracked, unlike the
+# generated docker/configs/alpen-client/ dir.
+# alpen-client is driven by the explicit `command:` arg list below; the image
+# entrypoint wrapper is bypassed (see `entrypoint:` override) so its env-var
+# arg-building does not duplicate these flags.
 
 services:
 
@@ -32,7 +43,7 @@ services:
       - eest
 
   alpen-client:
-    image: alpen-client:latest
+    image: ${ALPEN_CLIENT_IMAGE:-alpen-client:latest}
     container_name: alpen_eest
     depends_on:
       bitcoind:
@@ -84,8 +95,12 @@ services:
     ports:
       - "8545:8545"
     volumes:
-      - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
-    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+      - ./eest/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
+    # Bypass the image entrypoint wrapper (docker/alpen-client/entrypoint.sh):
+    # STR-3562 reworked it to build args from env vars (SEQUENCER_MODE etc.) and
+    # it prepends its own hardcoded flags, which collide with the explicit
+    # `command:` list above. Run the binary directly so the command is verbatim.
+    entrypoint: ["/usr/local/bin/alpen-client"]
     networks:
       - eest
 
