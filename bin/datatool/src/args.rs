@@ -57,6 +57,7 @@ pub(crate) enum Subcommand {
     CheckpointPredicate(SubcCheckpointPredicate),
     AsmParams(SubcAsmParams),
     OlParams(SubcOlParams),
+    EeParams(SubcEeParams),
     #[cfg(feature = "btc-client")]
     GenL1Anchor(SubcGenL1Anchor),
 }
@@ -281,13 +282,47 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "alpen EE account inner state root as 64-char hex; overrides --alpen-chain-config if both are provided"
+        description = "alpen EE account inner state root as 64-char hex; overrides --alpen-chain-config and cannot be combined with --ee-params"
     )]
     pub(crate) alpen_inner_state: Option<String>,
 
     #[argh(
         option,
         description = "path to EVM chain config JSON; used to compute inner state root from genesis block hash when --alpen-inner-state is not provided"
+    )]
+    pub(crate) alpen_chain_config: Option<PathBuf>,
+
+    #[argh(
+        option,
+        description = "path to JSON-serialized EE params; used to keep the Alpen EE account id and genesis state aligned"
+    )]
+    pub(crate) ee_params: Option<PathBuf>,
+}
+
+/// Generate an EE params file from inputs.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(
+    subcommand,
+    name = "gen-ee-params",
+    description = "generates EE params from inputs"
+)]
+pub(crate) struct SubcEeParams {
+    #[argh(
+        option,
+        description = "output file path .json (default stdout)",
+        short = 'o'
+    )]
+    pub(crate) output: Option<PathBuf>,
+
+    #[argh(
+        option,
+        description = "alpen EE account id as 64-char hex (default all 01 bytes)"
+    )]
+    pub(crate) account_id: Option<String>,
+
+    #[argh(
+        option,
+        description = "path to EVM chain config JSON; used to compute execution genesis params"
     )]
     pub(crate) alpen_chain_config: Option<PathBuf>,
 }

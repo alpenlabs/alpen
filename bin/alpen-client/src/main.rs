@@ -3,7 +3,6 @@
 mod dummy_ol_client;
 #[cfg(feature = "sequencer")]
 mod gas_data_provider;
-mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
 mod header_summary;
@@ -17,9 +16,17 @@ mod service_executor;
 mod services;
 
 #[cfg(feature = "sequencer")]
-use std::{env, process, sync::Arc, time::Duration};
+use std::time::Duration;
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process,
+    sync::Arc,
+};
 
-use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
+use alpen_chainspec::{
+    chain_value_parser, ee_genesis_block_info, AlpenChainSpecParser, AlpenEeGenesisBlockInfo,
+};
 use alpen_ee_common::{
     chain_status_checked, BatchStorage, BlockNumHash, ChunkStorage, ExecBlockStorage, OLClient,
     Storage,
@@ -63,7 +70,6 @@ use reth_cli_util::sigsegv_handler;
 use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_provider::CanonStateSubscriptions;
-use strata_acct_types::AccountId;
 use strata_bridge_params::{BridgeParams, DEFAULT_DENOMINATION_SATS, DEFAULT_MAX_WITHDRAWAL_SATS};
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
@@ -120,7 +126,6 @@ use sequencer_imports::*;
 
 use crate::{
     dummy_ol_client::DummyOLClient,
-    genesis::ee_genesis_block_info,
     gossip::{create_gossip_task, GossipConfig},
     ol_client::OLClientKind,
     rpc_client::RpcOLClient,
@@ -192,17 +197,9 @@ fn main() {
             // TODO(STR-2982): read config, params from file
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
-            // TODO(STR-3675): this must also be read from the params file
-            // TODO(STR-3675): define how we want to deterministically generate the AccountId
-            const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
-
             info!(blockhash=%genesis_info.blockhash(), "EE genesis info");
-            let params = AlpenEeParams::new(
-                ALPEN_EE_ACCOUNT_ID,
-                genesis_info.blockhash(),
-                genesis_info.stateroot(),
-                genesis_info.blocknum(),
-            );
+            let params = load_ee_params(&ext.ee_params)?;
+            validate_ee_params_genesis(&params, &genesis_info)?;
 
             info!(?params, sequencer = ext.sequencer, "Starting EE Node");
 
@@ -978,6 +975,10 @@ pub struct AdditionalConfig {
     )]
     pub custom_chain: Arc<ChainSpec>,
 
+    /// JSON-serialized Alpen EE chain params.
+    #[arg(long, value_name = "PATH", required = true)]
+    pub ee_params: PathBuf,
+
     /// Rpc of sequencer's reth node to forward transactions to.
     #[arg(long, required = false)]
     pub sequencer_http: Option<String>,
@@ -1173,6 +1174,46 @@ impl AdditionalConfig {
             _ => Some("trace"),
         }
     }
+}
+
+/// Loads Alpen EE chain params from a JSON file.
+fn load_ee_params(path: &Path) -> eyre::Result<AlpenEeParams> {
+    let json = fs::read_to_string(path)
+        .with_context(|| format!("failed to read EE params file {path:?}"))?;
+    AlpenEeParams::from_json_str(&json)
+        .with_context(|| format!("failed to parse EE params file {path:?}"))
+}
+
+/// Validates that EE params describe the selected execution genesis block.
+fn validate_ee_params_genesis(
+    params: &AlpenEeParams,
+    genesis_info: &AlpenEeGenesisBlockInfo,
+) -> eyre::Result<()> {
+    if params.genesis_blockhash() != genesis_info.blockhash() {
+        eyre::bail!(
+            "EE params genesis blockhash {} does not match chain genesis blockhash {}",
+            params.genesis_blockhash(),
+            genesis_info.blockhash()
+        );
+    }
+
+    if params.genesis_stateroot() != genesis_info.stateroot() {
+        eyre::bail!(
+            "EE params genesis stateroot {} does not match chain genesis stateroot {}",
+            params.genesis_stateroot(),
+            genesis_info.stateroot()
+        );
+    }
+
+    if params.genesis_blocknum() != genesis_info.blocknum() {
+        eyre::bail!(
+            "EE params genesis block number {} does not match chain genesis block number {}",
+            params.genesis_blocknum(),
+            genesis_info.blocknum()
+        );
+    }
+
+    Ok(())
 }
 
 /// Run node with logging
@@ -1401,7 +1442,13 @@ mod resolve_writer_config_tests {
         fee_rate: Option<f64>,
         mempool_url: Option<&str>,
     ) -> AdditionalConfig {
-        let argv = ["alpen-client", "--sequencer-pubkey", &"0".repeat(64)];
+        let argv = [
+            "alpen-client",
+            "--ee-params",
+            "/tmp/ee-params.json",
+            "--sequencer-pubkey",
+            &"0".repeat(64),
+        ];
         let mut cfg = <AdditionalConfig as clap::Parser>::parse_from(argv);
         cfg.btcio_fee_policy = policy;
         cfg.btcio_fee_rate = fee_rate;
