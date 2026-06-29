@@ -70,7 +70,7 @@
           "024fba11d351c5e3b988a938b82bf210c1e7736594f6924f8e8ebe0c462e03569b"
         ],
         "denomination": 200000000,
-        "assignment_duration": 1080,
+        "assignment_duration": 536,
         "operator_fee": 300000,
         "recovery_delay": 36,
         "safe_harbour_address": "04ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450"
