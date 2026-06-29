@@ -11,7 +11,7 @@ use crate::{
     test_utils::{
         DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
         TestStorageFixtureBuilder, account_balance, extract_withdrawal_intents, included_txids,
-        test_account_id,
+        make_p2wpkh_bosd_descriptor, test_account_id,
     },
 };
 
@@ -69,7 +69,7 @@ async fn test_transfer_balances_update() {
 async fn test_withdrawal_log_content() {
     let sender = test_account_id(3);
     let withdrawal_sats = 100_000_000u64;
-    let withdrawal_dest = b"bc1qeffectswithdrawal".to_vec();
+    let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x14);
 
     let env = build_effects_env([TestAccount::new(sender, DEFAULT_ACCOUNT_BALANCE)]).await;
 
@@ -182,7 +182,7 @@ async fn test_hard_limit_rollback_discards_tx2_log() {
     // This tx would emit a bridge-gateway withdrawal log if committed.
     let tx2 = MempoolSnarkTxBuilder::new(account)
         .with_seq_no(1)
-        .with_withdrawal(withdrawal_sats, b"bc1qhardlimitrollback".to_vec())
+        .with_withdrawal(withdrawal_sats, make_p2wpkh_bosd_descriptor(0x15))
         .build();
     let tx2_id = tx2.compute_txid();
 

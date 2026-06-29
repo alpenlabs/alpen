@@ -1,5 +1,6 @@
 //! Account-specific interaction handling, such as messages.
 
+use bitcoin_bosd::Descriptor;
 use strata_acct_types::{
     AccountId, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount, MsgPayload,
 };
@@ -131,11 +132,30 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
 
     // 2. Validate the withdrawal amount against params.
     let amt_raw: u64 = payload.value().into();
-    let valid = context
-        .bridge_params()
-        .is_some_and(|wp| wp.validate_withdrawal_amount(amt_raw));
-    if !valid {
+    let Some(bridge_params) = context.bridge_params() else {
+        warn!(%sender, %amt_raw, "limboing withdrawal without bridge params sent to bridge gateway acct");
+        handle_misplaced_funds(state, coin)?;
+        return Ok(());
+    };
+
+    if !bridge_params.validate_withdrawal_amount(amt_raw) {
         warn!(%sender, %amt_raw, "limboing bad amount sent to bridge gateway acct");
+        handle_misplaced_funds(state, coin)?;
+        return Ok(());
+    }
+
+    // 3. Validate the withdrawal descriptor against the configured BOSD policy.
+    let dest_desc = withdrawal_data.dest_desc();
+    let dest_desc_len = dest_desc.len();
+    if !bridge_params.validate_withdrawal_descriptor_len(dest_desc_len)
+        || Descriptor::from_bytes(dest_desc).is_err()
+    {
+        warn!(
+            %sender,
+            %amt_raw,
+            dest_desc_len,
+            "limboing bad destination descriptor sent to bridge gateway acct",
+        );
         handle_misplaced_funds(state, coin)?;
         return Ok(());
     }
@@ -143,7 +163,6 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     // 4. If it is, then we can emit a OL log with the amount and destination.
     let selected_operator = withdrawal_data.selected_operator();
     let dest = withdrawal_data.into_dest_desc();
-    let dest_desc_len = dest.len();
     let log_data = SimpleWithdrawalIntentLogData {
         amt: amt_raw,
         selected_operator,

@@ -70,6 +70,8 @@ pub struct SettingsFromFile {
     pub withdrawal_denomination_sats: Option<u64>,
     /// Maximum withdrawal amount in satoshis. Defaults to 1_000_000_000 (10 BTC).
     pub max_withdrawal_amount_sats: Option<u64>,
+    /// Maximum withdrawal BOSD descriptor length in bytes, including the type tag.
+    pub max_withdrawal_descriptor_len: Option<u32>,
     /// Path to the ASM params JSON file.
     pub asm_params_path: Option<PathBuf>,
     /// Seed that can be passed directly for functional test.
@@ -216,13 +218,16 @@ impl Settings {
                 .map(Amount::from_sat)
                 .unwrap_or(DEFAULT_BRIDGE_FEE),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
-            bridge_params: BridgeParams::new(
+            bridge_params: BridgeParams::new_with_descriptor_limit(
                 from_file
                     .withdrawal_denomination_sats
                     .unwrap_or(DEFAULT_DENOMINATION_SATS),
                 from_file
                     .max_withdrawal_amount_sats
                     .or(Some(DEFAULT_MAX_WITHDRAWAL_SATS)),
+                from_file
+                    .max_withdrawal_descriptor_len
+                    .unwrap_or(DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN),
             )
             .expect("invalid withdrawal params in config"),
             network,
@@ -253,6 +258,7 @@ mod tests {
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
+            max_withdrawal_descriptor_len = 81
             seed = "000102030405060708090a0b0c0d0e0f"
         "#;
 
@@ -273,5 +279,9 @@ mod tests {
         assert_eq!(parsed.alpen_endpoint, reparsed.alpen_endpoint);
         assert_eq!(parsed.faucet_endpoint, reparsed.faucet_endpoint);
         assert_eq!(parsed.bridge_pubkey.0, reparsed.bridge_pubkey.0);
+        assert_eq!(
+            parsed.max_withdrawal_descriptor_len,
+            reparsed.max_withdrawal_descriptor_len
+        );
     }
 }
