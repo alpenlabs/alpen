@@ -19,6 +19,7 @@ use crate::cmd::{
     ee_receipts::{
         EeDeleteAcctProofArgs, EeDeleteChunkReceiptArgs, EeGetAcctProofArgs, EeGetChunkReceiptArgs,
     },
+    ee_revert::EeRevertBatchesArgs,
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
     ol::{DeleteOLBlockArgs, GetOLBlockArgs, GetOLBlocksAtSlotArgs, GetOLSummaryArgs},
     ol_state::{GetOLStateArgs, RevertOLStateArgs},
@@ -88,6 +89,7 @@ pub(crate) enum Command {
     EeDeleteChunkReceipt(EeDeleteChunkReceiptArgs),
     EeGetAcctProof(EeGetAcctProofArgs),
     EeDeleteAcctProof(EeDeleteAcctProofArgs),
+    EeRevertBatches(EeRevertBatchesArgs),
 }
 
 /// Output format

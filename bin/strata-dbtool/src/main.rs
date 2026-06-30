@@ -1,5 +1,5 @@
 //! Binary entry‑point for the offline Alpen database tool.
-//! Parses CLI arguments with **Clap** and delegates to the `alpen_dbtool` lib.
+//! Parses CLI arguments with **argh** and delegates to command modules.
 
 mod cli;
 mod cmd;
@@ -7,11 +7,13 @@ mod db;
 mod output;
 mod utils;
 
-use std::{path::Path, process::exit};
+use std::{future::Future, path::Path, process::exit, sync::Arc};
 
-use alpen_ee_database::EeProverDbSled;
+use alpen_ee_database::{EeNodeStorage, EeProverDbSled};
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_store_sled::SledBackend;
 use strata_db_types::backend::DatabaseBackend;
+use tokio::runtime::Builder;
 use tracing_subscriber::fmt::init;
 
 use crate::{
@@ -29,6 +31,7 @@ use crate::{
         ee_receipts::{
             ee_delete_acct_proof, ee_delete_chunk_receipt, ee_get_acct_proof, ee_get_chunk_receipt,
         },
+        ee_revert::ee_revert_batches,
         l1::{get_l1_block, get_l1_summary},
         ol::{delete_ol_block, get_ol_block, get_ol_blocks_at_slot, get_ol_summary},
         ol_state::{get_ol_state, revert_ol_state},
@@ -40,7 +43,7 @@ use crate::{
         syncinfo::get_syncinfo,
         writer::{get_writer_payload, get_writer_summary},
     },
-    db::{open_database, open_ee_database},
+    db::{open_database, open_ee_database, open_full_ee_database},
 };
 
 fn main() {
@@ -134,6 +137,11 @@ fn main() {
         Command::EeDeleteAcctProof(args) => {
             with_ee_db(&datadir, |db| ee_delete_acct_proof(db, args))
         }
+        Command::EeRevertBatches(args) => {
+            with_full_ee_db(&datadir, |storage, prover_db| async move {
+                ee_revert_batches(&storage, prover_db.as_ref(), args).await
+            })
+        }
     };
 
     if let Err(e) = result {
@@ -164,4 +172,27 @@ where
         exit(1);
     });
     f(db.as_ref())
+}
+
+/// Opens the full EE sled at `datadir` and runs `f` against it.
+fn with_full_ee_db<F, Fut>(datadir: &Path, f: F) -> Result<(), DisplayedError>
+where
+    F: FnOnce(EeNodeStorage, Arc<EeProverDbSled>) -> Fut,
+    Fut: Future<Output = Result<(), DisplayedError>>,
+{
+    let rt = Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .internal_error("Could not initialize dbtool Tokio runtime")
+        .unwrap_or_else(|e: DisplayedError| {
+            eprintln!("{e}");
+            exit(1);
+        });
+    let db = open_full_ee_database(datadir).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        exit(1);
+    });
+    let storage = db.node_storage(rt.handle().clone());
+    let prover_db = db.prover_db();
+    rt.block_on(f(storage, prover_db))
 }
