@@ -14,8 +14,9 @@ use std::{fmt, sync::Arc};
 
 use alloy_primitives::B256;
 use alpen_ee_common::{
-    build_ledger_refs_from_da, BatchId, BatchStatus, BatchStorage, ChunkStorage, ExecBlockStorage,
-    L1DaBlockRef, Storage,
+    build_ledger_refs_from_da, encode_batch_task_key, BatchId, BatchStatus, BatchStorage,
+    ChunkStorage, ExecBlockStorage, L1DaBlockRef, Storage, BATCH_TASK_KEY_TAG,
+    RANGE_TASK_KEY_BYTES,
 };
 use alpen_ee_da_runtime::builders::{build_da_witness, DaDedupResolver, DaWitnessBuildError};
 use alpen_ee_database::EeNodeStorage;
@@ -55,31 +56,17 @@ impl fmt::Display for BatchTask {
     }
 }
 
-/// Single-byte kind tag for [`BatchTask`] encoding; see the matching
-/// `CHUNK_TASK_TAG` on `ChunkTask` for why the shared prover-task tree
-/// needs a discriminator.
-pub(crate) const BATCH_TASK_TAG: u8 = b'a';
-
-/// Tag byte + the underlying `BatchId`'s bytes.
-const BATCH_TASK_BYTES: usize = 1 + size_of::<BatchId>();
-
 impl From<BatchTask> for Vec<u8> {
     fn from(task: BatchTask) -> Self {
-        let mut buf = Vec::with_capacity(BATCH_TASK_BYTES);
-        buf.push(BATCH_TASK_TAG);
-        let prev: [u8; 32] = task.0.prev_block().into();
-        let last: [u8; 32] = task.0.last_block().into();
-        buf.extend_from_slice(&prev);
-        buf.extend_from_slice(&last);
-        buf
+        encode_batch_task_key(task.0)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BatchTaskDecodeError {
-    #[error("invalid BatchTask byte length: expected {BATCH_TASK_BYTES}, got {0}")]
+    #[error("invalid BatchTask byte length: expected {RANGE_TASK_KEY_BYTES}, got {0}")]
     InvalidLength(usize),
-    #[error("invalid BatchTask tag byte: expected 0x{BATCH_TASK_TAG:02x}, got 0x{0:02x}")]
+    #[error("invalid BatchTask tag byte: expected 0x{BATCH_TASK_KEY_TAG:02x}, got 0x{0:02x}")]
     InvalidTag(u8),
 }
 
@@ -87,10 +74,10 @@ impl TryFrom<Vec<u8>> for BatchTask {
     type Error = BatchTaskDecodeError;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        if bytes.len() != BATCH_TASK_BYTES {
+        if bytes.len() != RANGE_TASK_KEY_BYTES {
             return Err(BatchTaskDecodeError::InvalidLength(bytes.len()));
         }
-        if bytes[0] != BATCH_TASK_TAG {
+        if bytes[0] != BATCH_TASK_KEY_TAG {
             return Err(BatchTaskDecodeError::InvalidTag(bytes[0]));
         }
         let mut prev = [0u8; 32];

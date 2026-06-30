@@ -50,6 +50,10 @@ pub use types::{
     ol_chain_status::{OLChainStatus, OLFinalizedStatus},
     payload_builder::{DepositInfo, PayloadBuildAttributes},
     prover::{Proof, ProofId},
+    prover_task_key::{
+        encode_batch_task_key, encode_chunk_task_key, BATCH_TASK_KEY_TAG, CHUNK_TASK_KEY_TAG,
+        RANGE_TASK_KEY_BYTES,
+    },
 };
 pub use utils::{
     clock::{Clock, SystemClock},
