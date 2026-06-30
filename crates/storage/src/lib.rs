@@ -330,6 +330,35 @@ mod tests {
         }
     }
 
+    #[test]
+    fn canonical_resolution_none_without_asm_state() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        assert!(storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn canonical_resolution_returns_recent_canonical_state() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        let canonical = L1BlockCommitment::new(10, blkid(10));
+        storage
+            .asm()
+            .put_state_blocking(canonical, make_test_asm_state())
+            .unwrap();
+
+        let (resolved, _) = storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved, canonical);
+    }
+
     // Orphan above the canonical tip: resolving to it would under-delete.
     #[test]
     fn canonical_resolution_prefers_canonical_over_higher_orphan() {
