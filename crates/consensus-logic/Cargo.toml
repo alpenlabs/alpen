@@ -45,6 +45,8 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-btc-verification.workspace = true
+strata-db-store-sled.workspace = true
 strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
 strata-ol-state-support-types.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
