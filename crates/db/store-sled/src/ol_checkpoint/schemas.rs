@@ -36,3 +36,11 @@ define_table_with_integer_key!(
     /// Table mapping epoch indexes to the list of summaries in that index.
     (OLEpochSummarySchema) u64 => Vec<EpochSummary>
 );
+
+define_table_with_integer_key!(
+    /// Observed checkpoint commitments per epoch number.
+    ///
+    /// Observed candidate set: reorged observations remain until explicit
+    /// pruning, so canonicity is resolved at read time.
+    (OLCheckpointEpochIndexSchema) Epoch => Vec<EpochCommitment>
+);
