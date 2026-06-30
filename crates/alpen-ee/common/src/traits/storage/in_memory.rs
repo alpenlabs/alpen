@@ -166,7 +166,7 @@ impl ChunkStorage for InMemoryStorage {
         }
 
         id_to_idx.insert(chunk.id(), chunk.idx());
-        chunks.insert(chunk.idx(), (chunk, ChunkStatus::ProvingNotStarted));
+        chunks.insert(chunk.idx(), (chunk, ChunkStatus::Sealed));
         Ok(())
     }
 
@@ -179,12 +179,16 @@ impl ChunkStorage for InMemoryStorage {
         let idx = id_to_idx.get(&chunk_id).copied();
         drop(id_to_idx);
 
-        if let Some(idx) = idx {
-            let mut chunks = self.chunks.write().unwrap();
-            if let Some((chunk, _)) = chunks.remove(&idx) {
-                chunks.insert(idx, (chunk, status));
-            }
-        }
+        let Some(idx) = idx else {
+            return Err(StorageError::ChunkNotFound(chunk_id));
+        };
+
+        let mut chunks = self.chunks.write().unwrap();
+        let Some((chunk, _)) = chunks.remove(&idx) else {
+            return Err(StorageError::ChunkNotFound(chunk_id));
+        };
+
+        chunks.insert(idx, (chunk, status));
         Ok(())
     }
 
@@ -234,6 +238,42 @@ impl ChunkStorage for InMemoryStorage {
     async fn get_latest_chunk(&self) -> Result<Option<(Chunk, ChunkStatus)>, StorageError> {
         let chunks = self.chunks.read().unwrap();
         Ok(chunks.last_key_value().map(|(_, v)| v.clone()))
+    }
+
+    async fn get_sealed_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> Result<Vec<(Chunk, ChunkStatus)>, StorageError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let chunks = self.chunks.read().unwrap();
+        Ok(chunks
+            .range(start_idx..)
+            .filter(|&(_, (_chunk, status))| matches!(status, ChunkStatus::Sealed))
+            .map(|(_, (chunk, status))| (chunk.clone(), status.clone()))
+            .take(limit)
+            .collect())
+    }
+
+    async fn get_proof_pending_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> Result<Vec<(Chunk, ChunkStatus)>, StorageError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let chunks = self.chunks.read().unwrap();
+        Ok(chunks
+            .range(start_idx..)
+            .filter(|&(_, (_chunk, status))| matches!(status, ChunkStatus::ProofPending(_)))
+            .map(|(_, (chunk, status))| (chunk.clone(), status.clone()))
+            .take(limit)
+            .collect())
     }
 
     async fn set_batch_chunks(

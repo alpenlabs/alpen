@@ -11,7 +11,7 @@ mod utils;
 pub use traits::{
     da::MockBatchDaProvider,
     ol_client::{MockOLClient, MockSequencerOLClient},
-    prover::MockBatchProver,
+    prover::{MockBatchProver, MockChunkProver},
     storage::{
         batch_storage_test_fns, chunk_storage_test_fns, exec_block_storage_test_fns,
         tests as storage_test_fns, InMemoryStorage, MockAccessedStateStore, MockBatchStorage,
@@ -27,7 +27,7 @@ pub use traits::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
         OLClient, OLClientError, SequencerOLClient,
     },
-    prover::{BatchProver, ProofGenerationStatus},
+    prover::{BatchProver, ChunkProver, ProofGenerationStatus, ProofRequestStatus},
     storage::{
         require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
         require_latest_batch, AccessedStateStore, BatchStorage, BlockWitnessStore, ChunkStorage,

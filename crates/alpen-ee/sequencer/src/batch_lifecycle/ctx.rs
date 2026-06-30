@@ -21,7 +21,7 @@ where
     /// Provider for posting and checking DA status.
     pub da_provider: Arc<D>,
 
-    /// Provider for requesting and checking proof generation.
+    /// Provider for requesting and checking acct proof generation.
     pub prover: Arc<P>,
 
     /// Storage for batches.

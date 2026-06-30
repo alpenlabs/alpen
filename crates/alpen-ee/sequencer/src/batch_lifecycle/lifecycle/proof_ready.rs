@@ -1,12 +1,13 @@
 use alpen_ee_common::{
     Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, ProofGenerationStatus,
+    ProofRequestStatus,
 };
 use eyre::Result;
-use tracing::{debug, debug_span, error, warn, Instrument};
+use tracing::{debug, debug_span, warn, Instrument};
 
 use crate::batch_lifecycle::{ctx::BatchLifecycleCtx, state::BatchLifecycleState};
 
-/// Try to complete proof for the next batch (ProofPending → ProofReady).
+/// Try to complete acct proof for the next batch (ProofPending → ProofReady).
 pub(crate) async fn try_advance_proof_ready<D, P, S>(
     state: &mut BatchLifecycleState,
     latest_batch: &Batch,
@@ -66,11 +67,9 @@ where
                     }
 
                     ProofGenerationStatus::Failed { reason } => {
-                        // CRITICAL: Manual intervention required
-                        error!(
+                        debug!(
                             %reason,
-                            "CRITICAL: Proof generation failed - manual intervention required. \
-                             Batch is stuck in ProofPending state."
+                            "acct proof task is permanently failed; batch remains ProofPending"
                         );
                         // Stay at frontier - manual intervention required
                     }
@@ -80,13 +79,23 @@ where
                     }
 
                     ProofGenerationStatus::NotStarted => {
-                        // We've marked the batch as proof pending, but prover says proof generation has
-                        // not started. Try to re-request proof generation and hope for the best.
+                        // We've marked the batch as proof pending, but prover says acct proof
+                        // generation has not started. Re-request acct proof generation only; chunk
+                        // proof generation is driven by the chunk lifecycle.
                         warn!(
-                            "Expected proof generation to have been started. Retrying proof generation"
+                            "Expected acct proof generation to have been started. Retrying acct \
+                             proof generation"
                         );
 
-                        ctx.prover.request_proof_generation(batch_id).await?;
+                        if matches!(
+                            ctx.prover.request_proof_generation(batch_id).await?,
+                            ProofRequestStatus::WaitingForInputs
+                        ) {
+                            debug!(
+                                "acct proof inputs not ready while batch is ProofPending; retrying \
+                                 next lifecycle tick"
+                            );
+                        }
                     }
                 }
 

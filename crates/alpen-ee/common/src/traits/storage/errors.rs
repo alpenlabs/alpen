@@ -1,11 +1,17 @@
 use thiserror::Error;
 
+use crate::ChunkId;
+
 /// Errors that can occur during storage operations.
 #[derive(Debug, Error)]
 pub enum StorageError {
     /// No state found for the requested slot.
     #[error("state not found for slot {0}")]
     StateNotFound(u64),
+
+    /// Attempted to update a chunk that does not exist in storage.
+    #[error("chunk {0:?} not found")]
+    ChunkNotFound(ChunkId),
 
     /// Attempted to store a slot that would create a gap in the stored sequence.
     #[error(

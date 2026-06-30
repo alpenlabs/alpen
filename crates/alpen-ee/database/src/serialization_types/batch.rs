@@ -287,7 +287,7 @@ impl From<DBChunk> for Chunk {
 /// Database representation of ChunkStatus.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) enum DBChunkStatus {
-    ProvingNotStarted,
+    Sealed,
     ProofPending(String),
     ProofReady([u8; 32]),
 }
@@ -295,7 +295,7 @@ pub(crate) enum DBChunkStatus {
 impl From<ChunkStatus> for DBChunkStatus {
     fn from(value: ChunkStatus) -> Self {
         match value {
-            ChunkStatus::ProvingNotStarted => Self::ProvingNotStarted,
+            ChunkStatus::Sealed => Self::Sealed,
             ChunkStatus::ProofPending(s) => Self::ProofPending(s),
             ChunkStatus::ProofReady(proof) => Self::ProofReady(proof.into()),
         }
@@ -305,7 +305,7 @@ impl From<ChunkStatus> for DBChunkStatus {
 impl From<DBChunkStatus> for ChunkStatus {
     fn from(value: DBChunkStatus) -> Self {
         match value {
-            DBChunkStatus::ProvingNotStarted => Self::ProvingNotStarted,
+            DBChunkStatus::Sealed => Self::Sealed,
             DBChunkStatus::ProofPending(s) => Self::ProofPending(s),
             DBChunkStatus::ProofReady(proof) => Self::ProofReady(ProofId::from(proof)),
         }

@@ -1,10 +1,15 @@
-use alpen_ee_common::{Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage};
+use alpen_ee_common::{
+    Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, ProofRequestStatus,
+};
 use eyre::Result;
 use tracing::debug;
 
 use crate::batch_lifecycle::{ctx::BatchLifecycleCtx, state::BatchLifecycleState};
 
-/// Try to request proof for the next batch (DaComplete → ProofPending).
+/// Try to request acct proof for the next batch (DaComplete → ProofPending).
+///
+/// The batch prover owns proof-input readiness. If inputs are not ready yet, the batch remains
+/// `DaComplete` and this task retries next cycle.
 pub(crate) async fn try_advance_proof_pending<D, P, S>(
     state: &mut BatchLifecycleState,
     latest_batch: &Batch,
@@ -32,10 +37,20 @@ where
             // Not ready, no action
         }
         BatchStatus::DaComplete { da } => {
-            // Request proof generation. If this fails, we retry in the next cycle.
-            debug!(batch_idx = target_idx, batch_id = ?batch.id(), "Requesting proof");
+            // Request acct proof generation. If this fails, we retry in the next cycle.
+            debug!(batch_idx = target_idx, batch_id = ?batch.id(), "requesting acct proof");
 
-            ctx.prover.request_proof_generation(batch.id()).await?;
+            match ctx.prover.request_proof_generation(batch.id()).await? {
+                ProofRequestStatus::Submitted | ProofRequestStatus::AlreadyExists => {}
+                ProofRequestStatus::WaitingForInputs => {
+                    debug!(
+                        batch_idx = target_idx,
+                        batch_id = ?batch.id(),
+                        "acct proof inputs not ready; staying in DaComplete"
+                    );
+                    return Ok(());
+                }
+            }
 
             ctx.batch_storage
                 .update_batch_status(batch.id(), BatchStatus::ProofPending { da })

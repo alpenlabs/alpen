@@ -111,6 +111,20 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Get the chunk with the highest idx, if it exists.
     fn get_latest_chunk(&self) -> DbResult<Option<(Chunk, ChunkStatus)>>;
 
+    /// Get sealed chunks at or above `start_idx`, in ascending idx order.
+    fn get_sealed_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> DbResult<Vec<(Chunk, ChunkStatus)>>;
+
+    /// Get proof-pending chunks at or above `start_idx`, in ascending idx order.
+    fn get_proof_pending_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> DbResult<Vec<(Chunk, ChunkStatus)>>;
+
     /// Set or update batch-chunk association.
     fn set_batch_chunks(&self, batch_id: BatchId, chunks: Vec<ChunkId>) -> DbResult<()>;
 

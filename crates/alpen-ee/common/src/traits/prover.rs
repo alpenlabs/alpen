@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 
-use crate::{BatchId, Proof, ProofId};
+use crate::{BatchId, ChunkId, Proof, ProofId};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ProofGenerationStatus {
     /// Proof generation requested and proof is getting generated.
     /// Temporary failure are retried internally while status remains pending.
@@ -16,15 +16,37 @@ pub enum ProofGenerationStatus {
     Failed { reason: String },
 }
 
-/// Interface between Prover and Batch assembly
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProofRequestStatus {
+    /// A new proof task was submitted.
+    Submitted,
+    /// A proof task or persisted proof already exists.
+    ///
+    /// The task may be pending, running, completed, or permanently failed; callers should use
+    /// [`BatchProver::check_proof_status`] when they need the concrete task outcome.
+    AlreadyExists,
+    /// The prover did not submit because required inputs are not available yet.
+    WaitingForInputs,
+}
+
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
-pub trait BatchProver: Sized {
-    /// Request proof generation for batch_id.
-    /// Ok(()) -> proof generation has been queued
-    async fn request_proof_generation(&self, batch_id: BatchId) -> eyre::Result<()>;
+pub trait ChunkProver {
+    /// Request proof generation for a sealed chunk.
+    async fn request_proof_generation(&self, chunk_id: ChunkId) -> eyre::Result<()>;
 
-    /// Check if proof is generated for batch_id.
+    /// Check the prover task status for a chunk proof.
+    async fn check_proof_status(&self, chunk_id: ChunkId) -> eyre::Result<ProofGenerationStatus>;
+}
+
+#[cfg_attr(feature = "test-utils", mockall::automock)]
+#[async_trait]
+pub trait BatchProver {
+    /// Request acct proof generation for batch_id.
+    async fn request_proof_generation(&self, batch_id: BatchId)
+        -> eyre::Result<ProofRequestStatus>;
+
+    /// Check if acct proof is generated for batch_id.
     ///
     /// The generated proof is expected to be persisted, available to be fetched at any time
     /// afterwards with the returned proof_id.
