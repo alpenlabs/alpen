@@ -4,22 +4,25 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
 use strata_asm_spec::StrataAsmSpec;
 #[cfg(feature = "debug-asm")]
 use strata_asm_spec_debug::DebugAsmSpec;
 use strata_asm_worker::{AsmState as WorkerAsmState, AsmWorkerHandle, AsmWorkerStatus};
+use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_node_context::NodeContext;
 use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
-use strata_primitives::prelude::L1BlockCommitment;
+use strata_primitives::prelude::{L1BlockCommitment, L1Height};
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_state::asm_state::AsmState as StorageAsmState;
 use strata_status::StatusChannel;
 use strata_storage::{MmrId, MmrIndexHandle, NodeStorage};
 use strata_tasks::TaskExecutor;
 use tokio::runtime::Handle;
+use tracing::{debug, warn};
 
 use crate::{asm_worker_context::AsmWorkerCtx, csm_worker_context::CsmWorkerContextImpl};
 
@@ -152,11 +155,62 @@ pub fn spawn_asm_worker(
         .with_asm_spec(asm_spec)
         .launch(executor)?;
 
+    resubmit_canonical_tip_if_asm_behind(storage.as_ref(), &handle, genesis_l1_height as L1Height)?;
+
     Ok(handle)
 }
 
 fn storage_to_worker_state(state: StorageAsmState) -> WorkerAsmState {
     WorkerAsmState::new(state.state().clone(), state.logs().clone())
+}
+
+/// Submits the stored canonical L1 tip to ASM when persisted ASM state lags it.
+///
+/// btcio writes canonical L1 chain entries before it submits blocks to ASM. If
+/// the process crashes after the canonical write but before ASM stores the
+/// corresponding anchor state, the reader resumes after that canonical tip and
+/// no new L1 event is emitted until another Bitcoin block arrives. Submitting
+/// the stored tip during ASM startup lets the ASM worker backfill from its
+/// latest anchor state through the canonical chain without making btcio inspect
+/// ASM-specific storage.
+fn resubmit_canonical_tip_if_asm_behind(
+    storage: &NodeStorage,
+    asm_handle: &AsmWorkerHandle,
+    genesis_l1_height: L1Height,
+) -> anyhow::Result<()> {
+    let Some((tip_height, tip_blockid)) = storage.l1().get_canonical_chain_tip()? else {
+        return Ok(());
+    };
+
+    if tip_height < genesis_l1_height {
+        return Ok(());
+    }
+
+    let latest_asm_block = storage
+        .asm()
+        .fetch_most_recent_state_blocking()?
+        .map(|(block, _)| block);
+    let tip = L1BlockCommitment::new(tip_height, tip_blockid);
+
+    if latest_asm_block.as_ref().is_some_and(|block| block == &tip) {
+        debug!(%tip, "canonical L1 tip already has ASM state");
+        return Ok(());
+    }
+
+    warn!(
+        %tip,
+        latest_asm_block = latest_asm_block
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref()
+            .unwrap_or("none"),
+        "canonical L1 tip is ahead of ASM state; re-submitting tip to ASM for startup backfill"
+    );
+    asm_handle
+        .submit_block(tip.blkid().to_block_hash())
+        .with_context(|| format!("failed to re-submit canonical L1 tip {tip} to ASM"))?;
+
+    Ok(())
 }
 
 /// Prefills the ASM manifest MMR with sentinel leaves until it has at least
