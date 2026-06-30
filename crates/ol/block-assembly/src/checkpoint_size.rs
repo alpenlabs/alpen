@@ -18,9 +18,11 @@ pub(crate) const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
 
 /// Maximum total OL log payload size per checkpoint (16 KiB per SPS-ol-chain-structures).
 ///
-/// ASM dropped this as a parse-side cap in v0.4.0-rc.1 because it is incoherent with
-/// the SSZ schema caps a payload must already satisfy on-chain. It survives here as
-/// the sequencer-side construction budget, which is where it always belonged.
+/// Set well below [`MAX_CHECKPOINT_PAYLOAD_SIZE`] to reserve room for the
+/// checkpoint's other components (e.g. state diff), by bounding logs in
+/// aggregate rather than lowering `MAX_LOG_PAYLOAD_LEN` (per-log) or
+/// `MAX_OL_LOGS_PER_CHECKPOINT`. It is intentionally separate from,
+/// and inconsistent with, those two limits.
 pub(crate) const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
 
 /// Fixed overhead in the `CheckpointPayload` SSZ encoding.
