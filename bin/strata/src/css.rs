@@ -75,6 +75,13 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
             .await
     }
 
+    /// Resolves the canonical checkpoint observed for `ep`.
+    ///
+    /// The index may hold several candidates, but only after a reorg: ASM accepts
+    /// one checkpoint per epoch per chain. Keeping the one whose L1 block is still
+    /// canonical leaves exactly the survivor on the current chain. Two survivors
+    /// would be two checkpoints for one epoch on-chain, which can't happen, so it
+    /// errors with [`CheckpointSyncError::AmbiguousObservation`].
     async fn get_observed_checkpoint_for_epoch(
         &self,
         ep: Epoch,
