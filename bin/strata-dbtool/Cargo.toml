@@ -11,10 +11,10 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-argh.workspace = true
 alloy-eips.workspace = true
-hex.workspace = true
 alpen-reth-node.workspace = true
+argh.workspace = true
+hex.workspace = true
 reth-node-api.workspace = true
 reth-primitives-traits.workspace = true
 serde.workspace = true

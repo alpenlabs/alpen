@@ -14,9 +14,8 @@ use std::{fmt, sync::Arc};
 
 use alloy_primitives::B256;
 use alpen_ee_common::{
-    build_ledger_refs_from_da, encode_batch_task_key, BatchId, BatchStatus, BatchStorage,
-    ChunkStorage, ExecBlockStorage, L1DaBlockRef, Storage, BATCH_TASK_KEY_TAG,
-    RANGE_TASK_KEY_BYTES,
+    build_ledger_refs_from_da, decode_batch_task_key, encode_batch_task_key, BatchId, BatchStatus,
+    BatchStorage, ChunkStorage, ExecBlockStorage, L1DaBlockRef, ProverTaskKeyDecodeError, Storage,
 };
 use alpen_ee_da_runtime::builders::{build_da_witness, DaDedupResolver, DaWitnessBuildError};
 use alpen_ee_database::EeNodeStorage;
@@ -62,32 +61,11 @@ impl From<BatchTask> for Vec<u8> {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum BatchTaskDecodeError {
-    #[error("invalid BatchTask byte length: expected {RANGE_TASK_KEY_BYTES}, got {0}")]
-    InvalidLength(usize),
-    #[error("invalid BatchTask tag byte: expected 0x{BATCH_TASK_KEY_TAG:02x}, got 0x{0:02x}")]
-    InvalidTag(u8),
-}
-
 impl TryFrom<Vec<u8>> for BatchTask {
-    type Error = BatchTaskDecodeError;
+    type Error = ProverTaskKeyDecodeError;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        if bytes.len() != RANGE_TASK_KEY_BYTES {
-            return Err(BatchTaskDecodeError::InvalidLength(bytes.len()));
-        }
-        if bytes[0] != BATCH_TASK_KEY_TAG {
-            return Err(BatchTaskDecodeError::InvalidTag(bytes[0]));
-        }
-        let mut prev = [0u8; 32];
-        let mut last = [0u8; 32];
-        prev.copy_from_slice(&bytes[1..33]);
-        last.copy_from_slice(&bytes[33..]);
-        Ok(BatchTask(BatchId::from_parts(
-            Hash::from(prev),
-            Hash::from(last),
-        )))
+        decode_batch_task_key(&bytes).map(BatchTask)
     }
 }
 

@@ -9,7 +9,7 @@ use std::{
 
 use alloy_eips::eip2718::Encodable2718 as _;
 use alpen_ee_common::{
-    encode_batch_task_key, encode_chunk_task_key, BatchId, BatchStatus, BatchStorage, Chunk,
+    encode_batch_task_key, encode_chunk_task_key, Batch, BatchId, BatchStatus, BatchStorage, Chunk,
     ChunkId, ChunkStatus, ChunkStorage, EnginePayload, ExecBlockPayload, ExecBlockStorage,
     OLBlockOrEpoch, Storage, StorageError,
 };
@@ -254,17 +254,7 @@ async fn build_plan(
             Box::new(first_batch.idx()),
         )
     })?;
-    let first_reverted_record = storage
-        .get_exec_block(first_reverted_hash)
-        .await
-        .internal_error("Failed to read first reverted EE exec block")?
-        .ok_or_else(|| {
-            DisplayedError::UserError(
-                "First reverted batch block is missing from EE exec-block storage".to_string(),
-                Box::new(hash_hex(first_reverted_hash)),
-            )
-        })?;
-    let first_reverted_block_height = first_reverted_record.blocknum();
+    let first_reverted_block_height = first_batch_blocknum(&first_batch)?;
 
     let (kept_batch, _) = storage
         .get_batch_by_idx(args.from_batch_idx - 1)
@@ -471,6 +461,8 @@ async fn build_plan(
     let mut reverted_batch_blocks_sorted =
         reverted_batch_blocks.iter().copied().collect::<Vec<_>>();
     reverted_batch_blocks_sorted.sort_by_key(|hash| hash_hex(*hash));
+    let mut missing_affected_block_count = 0usize;
+    let mut first_missing_affected_block = None;
     for block_hash in reverted_batch_blocks_sorted {
         if !seen_delete_hashes.contains(&block_hash) {
             if storage
@@ -487,12 +479,17 @@ async fn build_plan(
                     )
                 });
             } else {
-                warnings.push(format!(
-                    "affected batch block {} was not found in the unfinalized suffix to delete",
-                    hash_hex(block_hash)
-                ));
+                missing_affected_block_count += 1;
+                first_missing_affected_block.get_or_insert(block_hash);
             }
         }
+    }
+    if missing_affected_block_count > 0 {
+        warnings.push(format!(
+            "{} affected batch block(s) were not found in the unfinalized suffix to delete; this is expected when retrying after a partial rollback that already deleted exec blocks. first_missing={}",
+            missing_affected_block_count,
+            hash_hex(first_missing_affected_block.expect("missing count is non-zero")),
+        ));
     }
 
     affected_blocks.sort_by(|a, b| {
@@ -550,6 +547,33 @@ async fn build_plan(
         chunk_artifacts,
         batch_artifacts,
     })
+}
+
+fn first_batch_blocknum(batch: &Batch) -> Result<u64, DisplayedError> {
+    let block_count = batch.blocks_iter().count();
+    if block_count == 0 {
+        return Err(DisplayedError::InternalError(
+            "Non-genesis batch unexpectedly has no blocks".to_string(),
+            Box::new(batch.idx()),
+        ));
+    }
+
+    let block_count = u64::try_from(block_count).map_err(|err| {
+        DisplayedError::InternalError(
+            "Batch block count does not fit into u64".to_string(),
+            Box::new(err),
+        )
+    })?;
+    batch
+        .last_blocknum()
+        .checked_add(1)
+        .and_then(|exclusive_end| exclusive_end.checked_sub(block_count))
+        .ok_or_else(|| {
+            DisplayedError::InternalError(
+                "Batch block count is inconsistent with last block height".to_string(),
+                Box::new(batch.idx()),
+            )
+        })
 }
 
 fn build_account_state_rollback_plan(
@@ -861,6 +885,27 @@ mod tests {
             target_exec_block_hash: required.then(|| hash_hex(test_hash(9))),
             performed: false,
         }
+    }
+
+    #[test]
+    fn first_batch_blocknum_uses_batch_metadata() {
+        let batch = Batch::new(
+            7,
+            test_hash(1),
+            test_hash(4),
+            16,
+            vec![test_hash(2), test_hash(3)],
+        )
+        .unwrap();
+
+        assert_eq!(first_batch_blocknum(&batch).unwrap(), 14);
+    }
+
+    #[test]
+    fn first_batch_blocknum_handles_single_block_batch() {
+        let batch = Batch::new(7, test_hash(1), test_hash(2), 16, Vec::new()).unwrap();
+
+        assert_eq!(first_batch_blocknum(&batch).unwrap(), 16);
     }
 
     #[test]

@@ -9,8 +9,8 @@
 use std::{fmt, sync::Arc};
 
 use alpen_ee_common::{
-    encode_chunk_task_key, BlockWitnessStore, ChunkId, ChunkStorage, ExecBlockStorage,
-    CHUNK_TASK_KEY_TAG, RANGE_TASK_KEY_BYTES,
+    decode_chunk_task_key, encode_chunk_task_key, BlockWitnessStore, ChunkId, ChunkStorage,
+    ExecBlockStorage, ProverTaskKeyDecodeError,
 };
 use alpen_ee_database::EeNodeStorage;
 use alpen_reth_node::BlockWitnessRecord;
@@ -55,32 +55,11 @@ impl From<ChunkTask> for Vec<u8> {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ChunkTaskDecodeError {
-    #[error("invalid ChunkTask byte length: expected {RANGE_TASK_KEY_BYTES}, got {0}")]
-    InvalidLength(usize),
-    #[error("invalid ChunkTask tag byte: expected 0x{CHUNK_TASK_KEY_TAG:02x}, got 0x{0:02x}")]
-    InvalidTag(u8),
-}
-
 impl TryFrom<Vec<u8>> for ChunkTask {
-    type Error = ChunkTaskDecodeError;
+    type Error = ProverTaskKeyDecodeError;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        if bytes.len() != RANGE_TASK_KEY_BYTES {
-            return Err(ChunkTaskDecodeError::InvalidLength(bytes.len()));
-        }
-        if bytes[0] != CHUNK_TASK_KEY_TAG {
-            return Err(ChunkTaskDecodeError::InvalidTag(bytes[0]));
-        }
-        let mut prev = [0u8; 32];
-        let mut last = [0u8; 32];
-        prev.copy_from_slice(&bytes[1..33]);
-        last.copy_from_slice(&bytes[33..]);
-        Ok(ChunkTask(ChunkId::from_parts(
-            Hash::from(prev),
-            Hash::from(last),
-        )))
+        decode_chunk_task_key(&bytes).map(ChunkTask)
     }
 }
 
