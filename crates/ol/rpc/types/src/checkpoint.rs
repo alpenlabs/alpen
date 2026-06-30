@@ -51,8 +51,11 @@ pub struct RpcCheckpointInfo {
     pub idx: u64,
     /// L1 block range (inclusive) covered by the checkpoint.
     pub l1_range: (L1BlockCommitment, L1BlockCommitment),
-    /// L2 block range (inclusive) covered by the checkpoint.
-    pub l2_range: (L2BlockCommitment, L2BlockCommitment),
+    /// First L2 block of the checkpoint. `None` on checkpoint-sync nodes for
+    /// non-genesis epochs, where deriving it needs block bodies the node lacks.
+    pub l2_start: Option<L2BlockCommitment>,
+    /// Last L2 block (terminal) of the checkpoint.
+    pub l2_end: L2BlockCommitment,
     /// Confirmation/finality status.
     pub confirmation_status: RpcCheckpointConfStatus,
 }
