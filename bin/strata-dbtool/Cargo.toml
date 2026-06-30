@@ -11,22 +11,10 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-alloy-eips.workspace = true
 alpen-reth-node.workspace = true
-argh.workspace = true
-hex.workspace = true
-reth-node-api.workspace = true
-reth-primitives-traits.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-sled.workspace = true
-tokio.workspace = true
-tracing-subscriber.workspace = true
-typed-sled.workspace = true
-zkaleido.workspace = true
-
 alpen-ee-common.workspace = true
 alpen-ee-database.workspace = true
+ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
@@ -37,6 +25,26 @@ strata-csm-types.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-ledger-types.workspace = true
 strata-ol-chain-types.workspace = true
+strata-ol-state-types.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
+strata-storage.workspace = true
+typed-sled.workspace = true
+zkaleido.workspace = true
+
+alloy-eips.workspace = true
+argh.workspace = true
+hex.workspace = true
+reth-node-api.workspace = true
+reth-primitives-traits.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sled.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+strata-ol-params.workspace = true
+strata-predicate.workspace = true

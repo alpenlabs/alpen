@@ -306,6 +306,31 @@ pub(crate) fn get_last_ol_checkpoint_epoch(
         .map(|commitment| commitment.map(|commitment| commitment.epoch()))
 }
 
+/// Deletes OL checkpoint payload, signing, and epoch-summary rows from a start epoch onward.
+///
+/// This deletes checkpoint payload entries, checkpoint signing entries, and
+/// epoch summaries. It intentionally does not delete L1-observed checkpoint
+/// payloads or checkpoint L1 refs.
+pub(crate) fn delete_ol_checkpoint_data_from_epoch(
+    db: &impl DatabaseBackend,
+    start_epoch: Epoch,
+) -> Result<(), DisplayedError> {
+    let _ = db
+        .ol_checkpoint_db()
+        .del_checkpoint_payload_entries_from_epoch(start_epoch)
+        .internal_error("Failed to delete OL checkpoint payloads")?;
+    let _ = db
+        .ol_checkpoint_db()
+        .del_checkpoint_signing_entries_from_epoch(start_epoch)
+        .internal_error("Failed to delete OL checkpoint signing entries")?;
+    let _ = db
+        .ol_checkpoint_db()
+        .del_epoch_summaries_from_epoch(start_epoch)
+        .internal_error("Failed to delete OL epoch summaries")?;
+
+    Ok(())
+}
+
 /// Gets the last checkpointed OL slot from checkpoint payload tip data.
 pub(crate) fn get_latest_checkpoint_last_slot(
     db: &impl DatabaseBackend,

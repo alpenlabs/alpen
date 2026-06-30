@@ -3,6 +3,7 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{
     backend::DatabaseBackend,
     ol_block::{BlockStatus, OLBlockDatabase},
+    ol_state::OLStateDatabase,
 };
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types::OLBlock;
@@ -285,10 +286,11 @@ pub(crate) fn delete_ol_block(
         }
     }
 
+    let commitment = OLBlockCommitment::new(slot, block_id);
+    ensure_ol_block_not_applied(db, commitment)?;
+
     if args.force {
-        db.ol_block_db()
-            .del_block_data(block_id)
-            .internal_error("Failed to delete OL block")?;
+        delete_ol_block_data(db, block_id)?;
     }
 
     let info = OLBlockDeleteInfo {
@@ -298,6 +300,60 @@ pub(crate) fn delete_ol_block(
         dry_run: !args.force,
     };
     output(&info, args.output_format)
+}
+
+/// Marks one OL block as unchecked while keeping its block data.
+pub(crate) fn mark_ol_block_unchecked(
+    db: &impl DatabaseBackend,
+    block_id: OLBlockId,
+) -> Result<(), DisplayedError> {
+    db.ol_block_db()
+        .set_block_status(block_id, BlockStatus::Unchecked)
+        .internal_error("Failed to set OL block status")?;
+
+    Ok(())
+}
+
+/// Deletes one OL block's data, status, and slot-index entry.
+pub(crate) fn delete_ol_block_data(
+    db: &impl DatabaseBackend,
+    block_id: OLBlockId,
+) -> Result<(), DisplayedError> {
+    db.ol_block_db()
+        .del_block_data(block_id)
+        .internal_error("Failed to delete OL block")?;
+
+    Ok(())
+}
+
+/// Refuses orphan-only deletion when block execution artifacts are present.
+///
+/// Raw block storage does not append MMR leaves. If write batch or state
+/// artifacts exist for this commitment, the block was applied far enough that
+/// `revert-ol-state` is the correct recovery path.
+fn ensure_ol_block_not_applied(
+    db: &impl DatabaseBackend,
+    commitment: OLBlockCommitment,
+) -> Result<(), DisplayedError> {
+    let has_write_batch = db
+        .ol_state_db()
+        .get_ol_write_batch(commitment)
+        .internal_error("Failed to check OL write batch existence")?
+        .is_some();
+    let has_state = db
+        .ol_state_db()
+        .get_toplevel_ol_state(commitment)
+        .internal_error("Failed to check OL state existence")?
+        .is_some();
+
+    if has_write_batch || has_state {
+        return Err(DisplayedError::UserError(
+            "Refusing to delete applied OL block with OL state".to_string(),
+            Box::new(commitment),
+        ));
+    }
+
+    Ok(())
 }
 
 fn get_chain_tip_ol_block_id(db: &impl DatabaseBackend) -> Result<OLBlockId, DisplayedError> {
@@ -352,4 +408,168 @@ fn get_ol_block_data(
     db.ol_block_db()
         .get_block_data(block_id)
         .internal_error("Failed to read OL block data")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use strata_db_store_sled::{test_utils::get_test_sled_backend, SledBackend};
+    use strata_db_types::{ol_block::OLBlockDatabase, ol_state::OLStateDatabase};
+    use strata_identifiers::{Buf32, Buf64, L1BlockCommitment};
+    use strata_ol_chain_types::{
+        BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    };
+    use strata_ol_params::OLParams;
+    use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+
+    use super::*;
+
+    fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlock {
+        make_block_with_timestamp(slot, epoch, parent_blkid, 0)
+    }
+
+    fn make_block_with_timestamp(
+        slot: u64,
+        epoch: u32,
+        parent_blkid: OLBlockId,
+        timestamp: u64,
+    ) -> OLBlock {
+        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeader::new(
+            timestamp,
+            BlockFlags::zero(),
+            slot,
+            epoch,
+            parent_blkid,
+            body.compute_hash_commitment(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+
+        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+    }
+
+    fn genesis_state() -> OLState {
+        OLState::from_genesis_params(&OLParams::new_empty(L1BlockCommitment::default()))
+            .expect("valid genesis params")
+    }
+
+    fn seed_sibling_blocks() -> (Arc<SledBackend>, OLBlock, OLBlock) {
+        let db = get_test_sled_backend();
+        let parent_id = OLBlockId::from(Buf32::from([0x01; 32]));
+        let block_to_delete = make_block_with_timestamp(1, 0, parent_id, 1);
+        let sibling_to_keep = make_block_with_timestamp(1, 0, parent_id, 2);
+
+        db.ol_block_db()
+            .put_block_data(block_to_delete.clone())
+            .expect("seed block to delete");
+        db.ol_block_db()
+            .put_block_data(sibling_to_keep.clone())
+            .expect("seed sibling block");
+
+        (db, block_to_delete, sibling_to_keep)
+    }
+
+    fn delete_args(block_id: OLBlockId) -> DeleteOLBlockArgs {
+        DeleteOLBlockArgs {
+            block_id: hex::encode(block_id.as_ref()),
+            force: true,
+            output_format: OutputFormat::Porcelain,
+        }
+    }
+
+    #[test]
+    fn delete_ol_block_force_deletes_unapplied_sibling() {
+        let (db, block_to_delete, sibling_to_keep) = seed_sibling_blocks();
+        let block_to_delete_id = block_to_delete.header().compute_blkid();
+        let sibling_to_keep_id = sibling_to_keep.header().compute_blkid();
+
+        delete_ol_block(db.as_ref(), delete_args(block_to_delete_id)).expect("delete OL block");
+
+        assert!(db
+            .ol_block_db()
+            .get_block_data(block_to_delete_id)
+            .expect("read deleted block")
+            .is_none());
+        assert!(db
+            .ol_block_db()
+            .get_block_data(sibling_to_keep_id)
+            .expect("read sibling block")
+            .is_some());
+        assert!(!db
+            .ol_block_db()
+            .get_blocks_at_height(1)
+            .expect("read slot blocks")
+            .contains(&block_to_delete_id));
+    }
+
+    #[test]
+    fn delete_ol_block_rejects_block_with_write_batch() {
+        let (db, block_to_delete, _) = seed_sibling_blocks();
+        let block_to_delete_id = block_to_delete.header().compute_blkid();
+        let commitment = OLBlockCommitment::new(1, block_to_delete_id);
+        db.ol_state_db()
+            .put_ol_write_batch(commitment, WriteBatch::<OLAccountState>::default())
+            .expect("seed write batch");
+
+        let err = delete_ol_block(db.as_ref(), delete_args(block_to_delete_id))
+            .expect_err("applied block should be rejected");
+
+        assert!(err
+            .to_string()
+            .contains("Refusing to delete applied OL block"));
+        assert!(db
+            .ol_block_db()
+            .get_block_data(block_to_delete_id)
+            .expect("read rejected block")
+            .is_some());
+    }
+
+    #[test]
+    fn delete_ol_block_rejects_block_with_toplevel_state() {
+        let (db, block_to_delete, _) = seed_sibling_blocks();
+        let block_to_delete_id = block_to_delete.header().compute_blkid();
+        let commitment = OLBlockCommitment::new(1, block_to_delete_id);
+        db.ol_state_db()
+            .put_toplevel_ol_state(commitment, genesis_state())
+            .expect("seed OL state");
+
+        let err = delete_ol_block(db.as_ref(), delete_args(block_to_delete_id))
+            .expect_err("applied block should be rejected");
+
+        assert!(err
+            .to_string()
+            .contains("Refusing to delete applied OL block"));
+        assert!(db
+            .ol_block_db()
+            .get_block_data(block_to_delete_id)
+            .expect("read rejected block")
+            .is_some());
+    }
+
+    #[test]
+    fn mark_ol_block_unchecked_keeps_block_data() {
+        let db = get_test_sled_backend();
+        let block = make_block(1, 0, OLBlockId::from(Buf32::from([0x01; 32])));
+        let block_id = block.header().compute_blkid();
+        db.ol_block_db().put_block_data(block).expect("seed block");
+        db.ol_block_db()
+            .set_block_status(block_id, BlockStatus::Valid)
+            .expect("mark valid");
+
+        mark_ol_block_unchecked(db.as_ref(), block_id).expect("mark block unchecked");
+
+        assert!(db
+            .ol_block_db()
+            .get_block_data(block_id)
+            .expect("read block")
+            .is_some());
+        assert_eq!(
+            db.ol_block_db()
+                .get_block_status(block_id)
+                .expect("read block status"),
+            Some(BlockStatus::Unchecked)
+        );
+    }
 }
