@@ -210,11 +210,11 @@ fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
 }
 
 /// Maps a node role to the OL block-data access the RPC server should serve.
-fn ol_block_data_access(node_role: NodeRole) -> OlBlockDataAccess {
+fn ol_block_data_access(node_role: NodeRole) -> OLBlockDataAccess {
     if node_role.serves_fullnode_rpc() {
-        OlBlockDataAccess::Available
+        OLBlockDataAccess::Available
     } else {
-        OlBlockDataAccess::Unavailable
+        OLBlockDataAccess::Unavailable
     }
 }
 

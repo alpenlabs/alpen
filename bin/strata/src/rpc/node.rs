@@ -42,14 +42,14 @@ use crate::rpc::errors::{
 /// block-scoped lookups must report a capability error rather than empty or
 /// "block not found" results.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) enum OlBlockDataAccess {
+pub(crate) enum OLBlockDataAccess {
     /// Full block data is available.
     Available,
     /// Block data is not stored (checkpoint-sync node).
     Unavailable,
 }
 
-impl OlBlockDataAccess {
+impl OLBlockDataAccess {
     fn is_available(self) -> bool {
         matches!(self, Self::Available)
     }
@@ -68,7 +68,8 @@ pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     genesis_l1_height: L1Height,
     // Maximum number of headers/block-data that can be queried
     max_headers_range: usize,
-    block_data_access: OlBlockDataAccess,
+    // Indicates whether or not the server has access to block data.
+    block_data_access: OLBlockDataAccess,
 }
 
 /// Convenient wrapper for account records.
@@ -130,7 +131,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         provider: P,
         genesis_l1_height: L1Height,
         max_headers_range: usize,
-        block_data_access: OlBlockDataAccess,
+        block_data_access: OLBlockDataAccess,
     ) -> Self {
         Self {
             provider,
@@ -731,18 +732,16 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             return Ok(None);
         };
         // Deriving the first L2 block of a non-genesis epoch needs block bodies,
-        // which checkpoint-sync nodes do not store. Report a capability error
-        // instead of failing later with a misleading "block not found".
+        // which checkpoint-sync nodes lack; `l2_start` is `None` there. The
+        // terminal (`l2_end`) is always available from the summary.
+        let l2_end = *epoch_summary.terminal();
         let l2_start = if epoch == 0 {
-            *epoch_summary.terminal()
+            Some(l2_end)
         } else if self.block_data_access.is_available() {
-            self.get_first_l2_block_in_epoch(&epoch_summary).await?
+            Some(self.get_first_l2_block_in_epoch(&epoch_summary).await?)
         } else {
-            return Err(not_available_on_node_error(
-                "OL block bodies are not available on this node",
-            ));
+            None
         };
-        let l2_range = (l2_start, *epoch_summary.terminal());
 
         let cur_l1 = *epoch_summary.new_l1();
         let l1_start = if epoch == 0 {
@@ -837,7 +836,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         Ok(Some(RpcCheckpointInfo {
             idx: epoch as u64,
             l1_range,
-            l2_range,
+            l2_start,
+            l2_end,
             confirmation_status,
         }))
     }

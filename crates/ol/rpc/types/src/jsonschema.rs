@@ -85,7 +85,8 @@ impl schemars::JsonSchema for RpcCheckpointInfo {
             "required": [
                 "idx",
                 "l1_range",
-                "l2_range",
+                "l2_start",
+                "l2_end",
                 "confirmation_status"
             ],
             "properties": {
@@ -96,11 +97,11 @@ impl schemars::JsonSchema for RpcCheckpointInfo {
                     "maxItems": 2,
                     "items": { "type": "object" }
                 },
-                "l2_range": {
-                    "type": "array",
-                    "minItems": 2,
-                    "maxItems": 2,
-                    "items": { "type": "object" }
+                "l2_start": {
+                    "type": ["object", "null"]
+                },
+                "l2_end": {
+                    "type": "object"
                 },
                 "confirmation_status": {
                     "type": "object"
