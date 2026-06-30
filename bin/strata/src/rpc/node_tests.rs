@@ -36,7 +36,7 @@ use strata_snark_acct_types::{ProofState, Seqno, UpdateInputData, UpdateStateDat
 use strata_status::OLSyncStatus;
 use tokio::runtime::Builder;
 
-use super::{OLRpcServer, OlBlockDataAccess};
+use super::{OLBlockDataAccess, OLRpcServer};
 use crate::rpc::errors::{
     INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE, MEMPOOL_CAPACITY_ERROR_CODE,
     NOT_AVAILABLE_ON_NODE_CODE, map_mempool_error_to_rpc,
@@ -652,7 +652,7 @@ fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
         provider,
         TEST_GENESIS_L1_HEIGHT,
         TEST_MAX_HEADERS_RANGE,
-        OlBlockDataAccess::Available,
+        OLBlockDataAccess::Available,
     )
 }
 
@@ -662,7 +662,7 @@ fn make_rpc_checkpoint_sync(provider: MockProvider) -> OLRpcServer<MockProvider>
         provider,
         TEST_GENESIS_L1_HEIGHT,
         TEST_MAX_HEADERS_RANGE,
-        OlBlockDataAccess::Unavailable,
+        OLBlockDataAccess::Unavailable,
     )
 }
 
@@ -988,8 +988,8 @@ async fn checkpoint_info_with_l1_advance() {
         .expect("checkpoint should exist");
 
     assert_eq!(info.idx, 2);
-    assert_eq!(info.l2_range.0.slot(), 11);
-    assert_eq!(info.l2_range.1, terminal);
+    assert_eq!(info.l2_start.expect("full node has l2 start").slot(), 11);
+    assert_eq!(info.l2_end, terminal);
     assert_eq!(info.l1_range.0.height(), 501);
     assert_eq!(info.l1_range.1.height(), 510);
 }
@@ -1298,8 +1298,8 @@ async fn checkpoint_info_epoch_0_with_l1_advance() {
     assert_eq!(info.l1_range.0.height(), TEST_GENESIS_L1_HEIGHT + 1);
     assert_eq!(*info.l1_range.0.blkid(), l1_start_blkid);
     assert_eq!(info.l1_range.1, advanced_l1);
-    assert_eq!(info.l2_range.0, terminal);
-    assert_eq!(info.l2_range.1, terminal);
+    assert_eq!(info.l2_start.expect("full node has l2 start"), terminal);
+    assert_eq!(info.l2_end, terminal);
     match info.confirmation_status {
         RpcCheckpointConfStatus::Finalized { l1_reference } => {
             assert_eq!(l1_reference.l1_block, advanced_l1);
@@ -1341,8 +1341,8 @@ async fn checkpoint_info_epoch_0_l1_did_not_advance() {
     assert_eq!(info.idx, 0);
     assert_eq!(info.l1_range.0, genesis_l1);
     assert_eq!(info.l1_range.1, genesis_l1);
-    assert_eq!(info.l2_range.0, terminal);
-    assert_eq!(info.l2_range.1, terminal);
+    assert_eq!(info.l2_start.expect("full node has l2 start"), terminal);
+    assert_eq!(info.l2_end, terminal);
     assert!(info.l1_range.0.height() <= info.l1_range.1.height());
     match info.confirmation_status {
         RpcCheckpointConfStatus::Finalized { l1_reference } => {
@@ -1355,10 +1355,10 @@ async fn checkpoint_info_epoch_0_l1_did_not_advance() {
 }
 
 #[tokio::test]
-async fn checkpoint_info_non_genesis_errors_on_checkpoint_sync() {
-    // Checkpoint-sync nodes lack block bodies, so the first-L2-block walk for a
-    // non-genesis epoch must report a capability error rather than the
-    // misleading "block not found".
+async fn checkpoint_info_non_genesis_omits_l2_start_on_checkpoint_sync() {
+    // Checkpoint-sync nodes lack block bodies, so the first L2 block of a
+    // non-genesis epoch is unavailable: `l2_start` is `None`. The rest of the
+    // checkpoint info (terminal, L1 range, status) is still served.
     let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
     let terminal = L2BlockCommitment::new(20, fixed_ol_block_id(0x20));
     let prev_summary = EpochSummary::new(
@@ -1378,21 +1378,50 @@ async fn checkpoint_info_non_genesis_errors_on_checkpoint_sync() {
     let prev_commitment = prev_summary.get_epoch_commitment();
     let cur_commitment = cur_summary.get_epoch_commitment();
 
+    let l1_ref = CheckpointL1Ref::new(
+        L1BlockCommitment::new(505, fixed_l1_block_id(0x50)),
+        RBuf32::from(fixed_buf32(0xAA).0),
+        RBuf32::from(fixed_buf32(0xBB).0),
+    );
+
     // No block bodies registered: this is what a checkpoint-sync node has.
     let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            OLBlockCommitment::new(120, fixed_ol_block_id(0x77)),
+            3,
+            false,
+            prev_commitment,
+            cur_commitment,
+            prev_commitment,
+        ))
+        .with_l1_tip_height(510)
         .with_epoch_commitment(1, prev_commitment)
         .with_epoch_commitment(2, cur_commitment)
         .with_epoch_summary(prev_summary)
-        .with_epoch_summary(cur_summary);
+        .with_epoch_summary(cur_summary)
+        .with_manifest(
+            AsmManifest::new(
+                501,
+                L1BlockId::from(Buf32::from([0x61; 32])),
+                WtxidsRoot::default(),
+                vec![],
+            )
+            .expect("test manifest should be valid"),
+        )
+        .with_checkpoint_l1_ref(cur_commitment, l1_ref);
 
     let rpc = make_rpc_checkpoint_sync(provider);
 
-    let err = rpc
+    let info = rpc
         .get_checkpoint_info(2)
         .await
-        .expect_err("checkpoint-sync must not serve non-genesis checkpoint info");
-    assert_eq!(err.code(), NOT_AVAILABLE_ON_NODE_CODE);
-    assert!(err.message().contains("block bodies"));
+        .expect("checkpoint info")
+        .expect("checkpoint should exist");
+    assert_eq!(info.idx, 2);
+    assert_eq!(info.l2_start, None, "checkpoint-sync omits the L2 start");
+    assert_eq!(info.l2_end, terminal);
+    assert_eq!(info.l1_range.0.height(), 501);
+    assert_eq!(info.l1_range.1.height(), 510);
 }
 
 #[tokio::test]
@@ -1423,8 +1452,12 @@ async fn checkpoint_info_epoch_0_ok_on_checkpoint_sync() {
         .expect("checkpoint info should not error")
         .expect("epoch 0 checkpoint should exist");
     assert_eq!(info.idx, 0);
-    assert_eq!(info.l2_range.0, terminal);
-    assert_eq!(info.l2_range.1, terminal);
+    assert_eq!(
+        info.l2_start
+            .expect("epoch 0 start is the genesis terminal"),
+        terminal
+    );
+    assert_eq!(info.l2_end, terminal);
 }
 
 #[tokio::test]
