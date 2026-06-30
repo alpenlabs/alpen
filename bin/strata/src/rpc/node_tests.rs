@@ -2825,6 +2825,60 @@ async fn epoch_summary_multi_record_slices_messages_per_update() {
 }
 
 #[tokio::test]
+async fn epoch_summary_checkpoint_sync_populates_terminal_root_only() {
+    // Checkpoint-sync records carry no block attribution. The terminal update's
+    // meta carries the post-epoch root; earlier updates have no meta at all.
+    // The RPC must surface the terminal root and null for the earlier one.
+    let epoch: Epoch = 2;
+    let account_id = test_account_id(7);
+    let epoch_commitment = test_epoch_commitment(epoch, 40, 0x62);
+    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 30, 0x61);
+
+    // The mock snark state's inner root is Hash::zero(); the terminal update's
+    // recovered root equals that post-epoch root.
+    let final_root = Hash::zero();
+    let records = vec![
+        update_record_with_prev(None, 10, 2, 2, Some(vec![0xA0])),
+        update_record_with_prev(
+            Some(AccountUpdateMeta::new(None, final_root)),
+            11,
+            2,
+            2,
+            Some(vec![0xA1]),
+        ),
+    ];
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_snark_state_at_terminal(epoch_commitment, account_id, 11, 2)
+        .with_snark_state_at_terminal(prev_epoch_commitment, account_id, 9, 2)
+        .with_account_update_records(account_id, epoch, records)
+        .with_inbox_fetch_fn(inbox_fetch_expect_success(account_id, 2, 2, vec![]));
+    let rpc = make_rpc(provider);
+
+    let summary = rpc
+        .get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect("epoch summary");
+    let updates = summary.update_inputs();
+    assert_eq!(updates.len(), 2);
+    assert!(
+        updates[0].new_state_root.is_none(),
+        "earlier update root null"
+    );
+    assert_eq!(
+        updates[1]
+            .new_state_root
+            .as_ref()
+            .expect("terminal root present")
+            .0,
+        summary.final_state_root().0,
+        "terminal update surfaces post-epoch root"
+    );
+}
+
+#[tokio::test]
 async fn epoch_summary_epoch_zero_has_no_messages() {
     let epoch = 0;
     let account_id = test_account_id(12);

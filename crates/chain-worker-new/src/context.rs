@@ -485,8 +485,14 @@ pub(crate) fn build_checkpoint_indexing_writes(
                 found: log.new_msg_idx(),
             });
         }
+        // Checkpoint-sync has no per-block attribution, but the terminal update
+        // of an epoch carries a recoverable post-epoch root; earlier updates
+        // have `None`.
+        let update_meta = update
+            .state()
+            .map(|root| AccountUpdateMeta::new(None, root));
         let record = AccountUpdateRecord::new(
-            None,
+            update_meta,
             *update.seqno().inner(),
             update.prev_next_read_idx(),
             update.next_read_idx(),
@@ -714,6 +720,66 @@ mod tests {
                 found: 0
             }
         ));
+    }
+
+    /// Builds an output with snark updates and one matching log per update.
+    fn checkpoint_output_with_snark_updates(
+        updates: impl IntoIterator<Item = (AccountId, AccountSerial, SnarkAcctStateUpdate)>,
+    ) -> OLBlockExecutionOutput {
+        let mut indexer_writes = IndexerWrites::new();
+        let mut logs = Vec::new();
+        for (_account_id, serial, update) in updates {
+            let log_data =
+                SnarkAccountUpdateLogData::new(update.next_read_idx(), vec![0xaa]).unwrap();
+            logs.push(OLLog::new(serial, log_data.encode_log().unwrap()));
+            indexer_writes.push_snark_acct_update(update);
+        }
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes, logs)
+    }
+
+    /// Regression: a checkpoint-sync update that carries a terminal post-epoch
+    /// root must surface that root in the index record. Today
+    /// `build_checkpoint_indexing_writes` drops it (`update_meta: None`),
+    /// which is what makes RPC `new_state_root` come back null.
+    #[test]
+    fn build_checkpoint_indexing_writes_keeps_terminal_root() {
+        let account_id = AccountId::from([7u8; 32]);
+        let serial = AccountSerial::from(7u32);
+        let root = Hash::from([9u8; 32]);
+
+        let update = SnarkAcctStateUpdate::new(account_id, Some(root), 0, 3, Seqno::from(5));
+        let output = checkpoint_output_with_snark_updates([(account_id, serial, update)]);
+
+        let writes = build_checkpoint_indexing_writes(&output).unwrap();
+        let records = writes
+            .account_updates()
+            .get(&account_id)
+            .expect("account update should be present");
+        assert_eq!(records.len(), 1);
+
+        let meta = records[0]
+            .update_meta()
+            .expect("terminal update must carry root metadata");
+        assert_eq!(meta.new_state_root(), root);
+        assert!(
+            meta.block_commitment().is_none(),
+            "checkpoint-sync rows have no block attribution"
+        );
+    }
+
+    /// Updates with no root (earlier updates in a multi-update epoch) stay
+    /// `update_meta: None` — the intermediate roots are genuinely unavailable.
+    #[test]
+    fn build_checkpoint_indexing_writes_leaves_non_terminal_root_absent() {
+        let account_id = AccountId::from([8u8; 32]);
+        let serial = AccountSerial::from(8u32);
+
+        let earlier = SnarkAcctStateUpdate::new(account_id, None, 0, 2, Seqno::from(1));
+        let output = checkpoint_output_with_snark_updates([(account_id, serial, earlier)]);
+
+        let writes = build_checkpoint_indexing_writes(&output).unwrap();
+        let records = writes.account_updates().get(&account_id).unwrap();
+        assert!(records[0].update_meta().is_none());
     }
 
     fn output_with_l1_block_records(

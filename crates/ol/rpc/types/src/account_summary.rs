@@ -156,9 +156,10 @@ pub struct RpcUpdateInputData {
     pub seq_no: u64,
     /// Inbox cursor after this update.
     pub next_inbox_msg_idx: u64,
-    /// Inner state root after this update. `None` on checkpoint-sync nodes,
-    /// which do not store per-update roots (only the post-epoch root on the
-    /// epoch summary). The epoch's `final_state_root` is still populated.
+    /// Inner state root after this update. On checkpoint-sync nodes only the
+    /// terminal update of an epoch carries a root (the recoverable post-epoch
+    /// root); earlier updates are `None`, since intermediate roots are not in
+    /// the checkpoint DA. The epoch's `final_state_root` is always populated.
     pub new_state_root: Option<HexBytes32>,
     /// Extra data posted with this update.
     pub extra_data: HexBytes,

@@ -17,7 +17,7 @@ use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
+use strata_identifiers::{AccountId, Buf32, Epoch, Hash, OLBlockCommitment};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_new::{
@@ -796,6 +796,9 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
 ) -> WorkerResult<(Vec<SnarkAcctStateUpdate>, SnarkAccountCursors)> {
     let mut next_cursor: SnarkAccountCursors = HashMap::new();
     let mut records = Vec::with_capacity(ol_logs.len());
+    // Index of each account's last update, so we can stamp the recoverable
+    // post-epoch root onto it after the walk.
+    let mut terminal_idx: HashMap<AccountId, usize> = HashMap::new();
 
     for log in ol_logs {
         let serial = log.account_serial();
@@ -831,7 +834,9 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
         cur.next_inbox_msg_idx = log_data.new_msg_idx;
         let seqno = cur.seqno;
 
-        // No per-update inner state root is available from checkpoint logs.
+        // Intermediate per-update roots are not in checkpoint logs; the terminal
+        // update is patched below with the recoverable post-epoch root.
+        terminal_idx.insert(account_id, records.len());
         records.push(SnarkAcctStateUpdate::new(
             account_id,
             None,
@@ -841,7 +846,43 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
         ));
     }
 
+    // The post-DA state holds each account's final inner state root, which is
+    // the terminal update's post-state root. Earlier updates stay `None`.
+    for (account_id, idx) in terminal_idx {
+        let root = post_epoch_inner_state_root(state, account_id)?;
+        let prev = &records[idx];
+        records[idx] = SnarkAcctStateUpdate::new(
+            account_id,
+            Some(root),
+            prev.prev_next_read_idx(),
+            prev.next_read_idx(),
+            prev.seqno(),
+        );
+    }
+
     Ok((records, next_cursor))
+}
+
+/// Reads an account's final inner state root from the post-DA state.
+fn post_epoch_inner_state_root<S: IStateAccessor>(
+    state: &S,
+    account_id: AccountId,
+) -> WorkerResult<Hash> {
+    let acct = state
+        .get_account_state(account_id)
+        .map_err(|source| WorkerError::AccountStateRead {
+            stage: "post-state account read",
+            source,
+        })?
+        .ok_or_else(|| {
+            WorkerError::Unexpected(format!("post-state account {account_id} missing"))
+        })?;
+    acct.as_snark_account()
+        .map(|s| s.inner_state_root())
+        .map_err(|source| WorkerError::AccountStateRead {
+            stage: "post-state as_snark_account",
+            source,
+        })
 }
 
 /// The values produced by reconstructing one epoch from its checkpoint,
@@ -1000,5 +1041,51 @@ mod tests {
         assert_eq!(summary.epoch(), 5);
         assert_eq!(summary.final_state(), &state_root);
         assert_eq!(summary.prev_terminal(), &OLBlockCommitment::null());
+    }
+
+    /// Checkpoint reconstruction can only recover the terminal per-account root
+    /// (= post-epoch state root). Earlier updates in a multi-update epoch stay
+    /// `None`; the terminal update is stamped with the account's final root.
+    #[test]
+    fn rebuild_snark_records_stamps_terminal_root_only() {
+        use strata_acct_types::BitcoinAmount;
+        use strata_ledger_types::{IStateAccessorMut, NewAccountData, NewAccountTypeState};
+        use strata_ol_state_support_types::MemoryStateBaseLayer;
+        use strata_predicate::PredicateKey;
+
+        let account_id = AccountId::from([7u8; 32]);
+        let final_root = Hash::from([9u8; 32]);
+
+        let mut state = MemoryStateBaseLayer::new(create_test_genesis_state());
+        let serial = state
+            .create_new_account(
+                account_id,
+                NewAccountData::new(
+                    BitcoinAmount::zero(),
+                    NewAccountTypeState::Snark {
+                        update_vk: PredicateKey::always_accept(),
+                        initial_state_root: final_root,
+                    },
+                ),
+            )
+            .expect("create snark account");
+
+        // Two updates to the same account in one epoch (cursors advance 0->1->2).
+        let log = |new_idx: u64| {
+            let data = SnarkAccountUpdateLogData::new(new_idx, vec![0xaa]).unwrap();
+            OLLog::new(serial, data.encode_log().unwrap())
+        };
+        let logs = vec![log(1), log(2)];
+
+        let (records, _) =
+            rebuild_snark_records_from_logs(&state, &logs, &HashMap::new()).expect("rebuild");
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].state(), None, "earlier update root unavailable");
+        assert_eq!(
+            records[1].state(),
+            Some(final_root),
+            "terminal update carries post-epoch root"
+        );
     }
 }
