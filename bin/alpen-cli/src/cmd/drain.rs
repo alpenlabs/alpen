@@ -153,52 +153,51 @@ pub async fn drain(
             .internal_error("Failed to fetch Alpen balance")?;
         if balance == U256::ZERO {
             println!("No Alpen bitcoin to send");
+        } else {
+            let estimate_tx = l2w
+                .transaction_request()
+                .from(l2w.default_signer_address())
+                .to(address)
+                .value(U256::from(1));
+
+            let gas_price = l2w
+                .get_gas_price()
+                .await
+                .internal_error("Failed to fetch Alpen gas price.")?;
+            let gas_estimate = l2w
+                .estimate_gas(estimate_tx)
+                .await
+                .internal_error("Failed to estimate Alpen gas")?;
+
+            if let Some(max_send_amount) = max_alpen_drain_value(balance, gas_estimate, gas_price) {
+                let tx = l2w
+                    .transaction_request()
+                    .to(address)
+                    .value(max_send_amount)
+                    .gas_limit(gas_estimate)
+                    .gas_price(gas_price);
+
+                let res = l2w
+                    .send_transaction(tx)
+                    .await
+                    .internal_error("Failed to broadcast strata transaction")?;
+
+                println!(
+                    "{}",
+                    OnchainObject::from(res.tx_hash())
+                        .with_maybe_explorer(settings.blockscout_endpoint.as_deref())
+                        .pretty()
+                );
+
+                println!(
+                    "Drained {} from Alpen wallet to {}",
+                    Amount::from_sat((max_send_amount / U256::from(SATS_TO_WEI)).wrapping_to()),
+                    address,
+                );
+            } else {
+                println!("No Alpen bitcoin to send after reserving gas");
+            }
         }
-
-        let estimate_tx = l2w
-            .transaction_request()
-            .from(l2w.default_signer_address())
-            .to(address)
-            .value(U256::from(1));
-
-        let gas_price = l2w
-            .get_gas_price()
-            .await
-            .internal_error("Failed to fetch Alpen gas price.")?;
-        let gas_estimate = l2w
-            .estimate_gas(estimate_tx)
-            .await
-            .internal_error("Failed to estimate Alpen gas")?;
-
-        let Some(max_send_amount) = max_alpen_drain_value(balance, gas_estimate, gas_price) else {
-            println!("No Alpen bitcoin to send after reserving gas");
-            return Ok(());
-        };
-
-        let tx = l2w
-            .transaction_request()
-            .to(address)
-            .value(max_send_amount)
-            .gas_limit(gas_estimate)
-            .gas_price(gas_price);
-
-        let res = l2w
-            .send_transaction(tx)
-            .await
-            .internal_error("Failed to broadcast strata transaction")?;
-
-        println!(
-            "{}",
-            OnchainObject::from(res.tx_hash())
-                .with_maybe_explorer(settings.blockscout_endpoint.as_deref())
-                .pretty()
-        );
-
-        println!(
-            "Drained {} from Alpen wallet to {}",
-            Amount::from_sat((max_send_amount / U256::from(SATS_TO_WEI)).wrapping_to()),
-            address,
-        );
     }
 
     Ok(())
