@@ -64,8 +64,10 @@ pub struct SnarkAcctStateUpdate {
 
     /// The new inner state root, if known.
     ///
-    /// Present on block-sync updates; `None` for checkpoint-sync updates
-    /// rebuilt from logs, which carry no per-update intermediate root.
+    /// Present on block-sync updates. On checkpoint-sync only the terminal
+    /// per-account update of an epoch carries a root (the recoverable
+    /// post-epoch root); earlier updates are `None`, since intermediate roots
+    /// are not in the checkpoint logs.
     state: Option<Hash>,
 
     /// The inbox cursor before this update.
@@ -100,7 +102,8 @@ impl SnarkAcctStateUpdate {
         self.account_id
     }
 
-    /// Returns the new inner state root, or `None` for checkpoint-sync updates.
+    /// Returns the new inner state root. `None` for non-terminal checkpoint-sync
+    /// updates (intermediate roots are unavailable).
     pub fn state(&self) -> Option<Hash> {
         self.state
     }
