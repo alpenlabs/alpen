@@ -50,9 +50,12 @@ const FRONTIER_CAVEAT: &str =
 /// accepted EE frontier, the command also rolls back EE account-state rows to
 /// the kept batch tip or blocks if that target state is unavailable.
 ///
-/// Forced execution is intentionally not one cross-tree transaction. Batch
-/// metadata is reverted last so a failed pre-final mutation can be retried
-/// while the command can still reconstruct the affected batch/chunk plan.
+/// Forced execution is intentionally not one cross-tree transaction. If needed,
+/// EE account-state rollback runs first and is not reversible by this command;
+/// retry-safety comes from recomputing the accepted frontier from the rolled
+/// back best EE account state on the next run. Batch metadata is still reverted
+/// last so a later failure can be retried with the affected batch/chunk plan
+/// intact.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "ee-revert-batches")]
 pub(crate) struct EeRevertBatchesArgs {
@@ -135,8 +138,10 @@ pub(crate) async fn ee_revert_batches(
     }
 
     // This command mutates multiple sled trees and the prover DB without one
-    // outer transaction. Keep batch metadata as the final mutation so a
-    // pre-final failure can be retried with the same `--from-batch-idx`.
+    // outer transaction. Account-state rollback runs first; if a later step
+    // fails, the next run recomputes the accepted frontier from the rolled-back
+    // best EE account state. Keep batch metadata as the final mutation so the
+    // affected batch/chunk plan remains reconstructable on retry.
     if let Some(account_state_rollback) = &plan.account_state_rollback {
         storage
             .rollback_ee_account_state(account_state_rollback.target_epoch)
@@ -254,7 +259,6 @@ async fn build_plan(
             Box::new(first_batch.idx()),
         )
     })?;
-    let first_reverted_block_height = first_batch_blocknum(&first_batch)?;
 
     let (kept_batch, _) = storage
         .get_batch_by_idx(args.from_batch_idx - 1)
@@ -266,6 +270,7 @@ async fn build_plan(
                 Box::new(args.from_batch_idx - 1),
             )
         })?;
+    let first_reverted_block_height = first_batch_blocknum(&kept_batch, &first_batch)?;
 
     let mut affected_batches = Vec::new();
     let mut affected_chunks = Vec::new();
@@ -549,12 +554,23 @@ async fn build_plan(
     })
 }
 
-fn first_batch_blocknum(batch: &Batch) -> Result<u64, DisplayedError> {
-    let block_count = batch.blocks_iter().count();
+fn first_batch_blocknum(kept_batch: &Batch, first_batch: &Batch) -> Result<u64, DisplayedError> {
+    if first_batch.prev_block() != kept_batch.last_block() {
+        return Err(DisplayedError::InternalError(
+            "First reverted batch does not extend kept batch".to_string(),
+            Box::new((
+                first_batch.idx(),
+                hash_hex(first_batch.prev_block()),
+                hash_hex(kept_batch.last_block()),
+            )),
+        ));
+    }
+
+    let block_count = first_batch.blocks_iter().count();
     if block_count == 0 {
         return Err(DisplayedError::InternalError(
             "Non-genesis batch unexpectedly has no blocks".to_string(),
-            Box::new(batch.idx()),
+            Box::new(first_batch.idx()),
         ));
     }
 
@@ -564,16 +580,33 @@ fn first_batch_blocknum(batch: &Batch) -> Result<u64, DisplayedError> {
             Box::new(err),
         )
     })?;
-    batch
+    let height_span = first_batch
         .last_blocknum()
-        .checked_add(1)
-        .and_then(|exclusive_end| exclusive_end.checked_sub(block_count))
+        .checked_sub(kept_batch.last_blocknum())
         .ok_or_else(|| {
             DisplayedError::InternalError(
-                "Batch block count is inconsistent with last block height".to_string(),
-                Box::new(batch.idx()),
+                "First reverted batch last block height is before kept batch tip".to_string(),
+                Box::new((kept_batch.idx(), first_batch.idx())),
             )
-        })
+        })?;
+    if height_span != block_count {
+        return Err(DisplayedError::InternalError(
+            "First reverted batch block count is inconsistent with kept batch height".to_string(),
+            Box::new((
+                first_batch.idx(),
+                kept_batch.last_blocknum(),
+                first_batch.last_blocknum(),
+                block_count,
+            )),
+        ));
+    }
+
+    kept_batch.last_blocknum().checked_add(1).ok_or_else(|| {
+        DisplayedError::InternalError(
+            "Kept batch height overflow while deriving first reverted block height".to_string(),
+            Box::new(kept_batch.idx()),
+        )
+    })
 }
 
 fn build_account_state_rollback_plan(
@@ -889,7 +922,8 @@ mod tests {
 
     #[test]
     fn first_batch_blocknum_uses_batch_metadata() {
-        let batch = Batch::new(
+        let kept_batch = Batch::new(6, test_hash(9), test_hash(1), 13, Vec::new()).unwrap();
+        let first_batch = Batch::new(
             7,
             test_hash(1),
             test_hash(4),
@@ -898,14 +932,33 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(first_batch_blocknum(&batch).unwrap(), 14);
+        assert_eq!(first_batch_blocknum(&kept_batch, &first_batch).unwrap(), 14);
     }
 
     #[test]
     fn first_batch_blocknum_handles_single_block_batch() {
-        let batch = Batch::new(7, test_hash(1), test_hash(2), 16, Vec::new()).unwrap();
+        let kept_batch = Batch::new(6, test_hash(9), test_hash(1), 15, Vec::new()).unwrap();
+        let first_batch = Batch::new(7, test_hash(1), test_hash(2), 16, Vec::new()).unwrap();
 
-        assert_eq!(first_batch_blocknum(&batch).unwrap(), 16);
+        assert_eq!(first_batch_blocknum(&kept_batch, &first_batch).unwrap(), 16);
+    }
+
+    #[test]
+    fn first_batch_blocknum_blocks_inconsistent_height_span() {
+        let kept_batch = Batch::new(6, test_hash(9), test_hash(1), 13, Vec::new()).unwrap();
+        let first_batch = Batch::new(
+            7,
+            test_hash(1),
+            test_hash(4),
+            17,
+            vec![test_hash(2), test_hash(3)],
+        )
+        .unwrap();
+
+        let err = first_batch_blocknum(&kept_batch, &first_batch)
+            .expect_err("non-contiguous batch metadata should be rejected");
+
+        assert!(format!("{err:?}").contains("block count is inconsistent"));
     }
 
     #[test]
@@ -930,6 +983,29 @@ mod tests {
         let plan = build_account_state_rollback_plan(&rollback_info(false, None), test_hash(3))
             .expect("not crossing accepted frontier should not block");
 
+        assert!(plan.is_none());
+    }
+
+    #[test]
+    fn account_state_rollback_plan_is_not_required_on_retry_after_tracker_rollback() {
+        let from_batch_idx = 354;
+        let kept_batch_idx = from_batch_idx - 1;
+        let accepted_frontier = build_accepted_frontier_info(
+            Some(134),
+            Some(test_hash(1)),
+            Some(kept_batch_idx),
+            from_batch_idx,
+        );
+        let rollback_info = AccountStateRollbackInfo {
+            required: accepted_frontier.crosses_accepted_frontier,
+            target_epoch: None,
+            target_exec_block_hash: None,
+            performed: false,
+        };
+        let plan = build_account_state_rollback_plan(&rollback_info, test_hash(1))
+            .expect("retry after account-state rollback should not require another rollback");
+
+        assert!(!accepted_frontier.crosses_accepted_frontier);
         assert!(plan.is_none());
     }
 
