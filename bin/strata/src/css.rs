@@ -87,7 +87,10 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
             .get_observed_checkpoint_commitments_for_epoch_async(ep)
             .await?
         {
-            let Some(l1_ref) = ol_checkpoint.get_checkpoint_l1_ref_async(commitment).await? else {
+            let Some(l1_ref) = ol_checkpoint
+                .get_checkpoint_l1_ref_async(commitment)
+                .await?
+            else {
                 continue;
             };
 

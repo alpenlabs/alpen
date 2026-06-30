@@ -442,16 +442,17 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
             .map(|(commitment, _)| commitment)
             .collect();
 
-        self.config.with_retry((&self.l1_ref_epoch_index_tree,), |(idx,)| {
-            let mut merged = idx.get(&epoch)?.unwrap_or_default();
-            for commitment in &scanned {
-                if !merged.contains(commitment) {
-                    merged.push(*commitment);
+        self.config
+            .with_retry((&self.l1_ref_epoch_index_tree,), |(idx,)| {
+                let mut merged = idx.get(&epoch)?.unwrap_or_default();
+                for commitment in &scanned {
+                    if !merged.contains(commitment) {
+                        merged.push(*commitment);
+                    }
                 }
-            }
-            idx.insert(&epoch, &merged)?;
-            Ok(merged)
-        })
+                idx.insert(&epoch, &merged)?;
+                Ok(merged)
+            })
     }
 
     fn del_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<bool> {
