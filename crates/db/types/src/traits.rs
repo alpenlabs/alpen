@@ -283,6 +283,15 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
         start_epoch: Epoch,
     ) -> DbResult<Vec<(EpochCommitment, CheckpointL1Ref)>>;
 
+    /// Get the observed checkpoint commitments for `epoch`.
+    ///
+    /// The returned candidates are observed, not canonical: an L1 reorg can
+    /// leave more than one, so callers resolve canonicity at read time.
+    fn get_observed_checkpoint_commitments_for_epoch(
+        &self,
+        epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>>;
+
     /// Delete an OL checkpoint L1 ref by epoch commitment.
     ///
     /// Returns true if it existed and was deleted.

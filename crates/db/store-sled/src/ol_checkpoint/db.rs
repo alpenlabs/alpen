@@ -18,6 +18,7 @@ define_sled_database!(
         l1_observed_payload_tree: OLCheckpointL1ObservedPayloadSchema,
         unsigned_tree: UnsignedCheckpointIndexSchema,
         epoch_summary_tree: OLEpochSummarySchema,
+        l1_ref_epoch_index_tree: OLCheckpointEpochIndexSchema,
     }
 );
 
@@ -373,10 +374,18 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         epoch: EpochCommitment,
         l1_ref: CheckpointL1Ref,
     ) -> DbResult<()> {
-        self.config.with_retry((&self.l1_ref_tree,), |(lot,)| {
-            lot.insert(&epoch, &l1_ref)?;
-            Ok(())
-        })?;
+        self.config.with_retry(
+            (&self.l1_ref_tree, &self.l1_ref_epoch_index_tree),
+            |(lot, idx)| {
+                lot.insert(&epoch, &l1_ref)?;
+                let mut candidates = idx.get(&epoch.epoch())?.unwrap_or_default();
+                if !candidates.contains(&epoch) {
+                    candidates.push(epoch);
+                    idx.insert(&epoch.epoch(), &candidates)?;
+                }
+                Ok(())
+            },
+        )?;
         Ok(())
     }
 
@@ -414,14 +423,57 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         Ok(refs)
     }
 
+    fn get_observed_checkpoint_commitments_for_epoch(
+        &self,
+        epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        if let Some(candidates) = self.l1_ref_epoch_index_tree.get(&epoch)? {
+            return Ok(candidates);
+        }
+
+        // Read-repair: a legacy entry written before the index existed. Rebuild
+        // it from the L1-ref table and persist so later reads hit the index. The
+        // scan is non-transactional; the persist unions the scanned candidates
+        // with any entry created concurrently so neither set is lost.
+        let scanned: Vec<EpochCommitment> = self
+            .get_checkpoint_l1_refs_from(epoch)?
+            .into_iter()
+            .filter(|(commitment, _)| commitment.epoch() == epoch)
+            .map(|(commitment, _)| commitment)
+            .collect();
+
+        self.config
+            .with_retry((&self.l1_ref_epoch_index_tree,), |(idx,)| {
+                let mut merged = idx.get(&epoch)?.unwrap_or_default();
+                for commitment in &scanned {
+                    if !merged.contains(commitment) {
+                        merged.push(*commitment);
+                    }
+                }
+                idx.insert(&epoch, &merged)?;
+                Ok(merged)
+            })
+    }
+
     fn del_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<bool> {
-        self.config.with_retry((&self.l1_ref_tree,), |(lot,)| {
-            if !lot.contains_key(&epoch)? {
-                return Ok(false);
-            }
-            lot.remove(&epoch)?;
-            Ok(true)
-        })
+        self.config.with_retry(
+            (&self.l1_ref_tree, &self.l1_ref_epoch_index_tree),
+            |(lot, idx)| {
+                if !lot.contains_key(&epoch)? {
+                    return Ok(false);
+                }
+                lot.remove(&epoch)?;
+                if let Some(mut candidates) = idx.get(&epoch.epoch())? {
+                    candidates.retain(|c| c != &epoch);
+                    if candidates.is_empty() {
+                        idx.remove(&epoch.epoch())?;
+                    } else {
+                        idx.insert(&epoch.epoch(), &candidates)?;
+                    }
+                }
+                Ok(true)
+            },
+        )
     }
 
     fn del_checkpoint_l1_refs_from_epoch(
@@ -440,16 +492,20 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
             return Ok(Vec::new());
         }
 
-        let deleted_epochs = self.config.with_retry((&self.l1_ref_tree,), |(lot,)| {
-            let mut deleted_epochs = Vec::new();
-            for epoch_comm in &keys {
-                if lot.contains_key(epoch_comm)? {
-                    lot.remove(epoch_comm)?;
-                    deleted_epochs.push(*epoch_comm);
+        let deleted_epochs = self.config.with_retry(
+            (&self.l1_ref_tree, &self.l1_ref_epoch_index_tree),
+            |(lot, idx)| {
+                let mut deleted_epochs = Vec::new();
+                for epoch_comm in &keys {
+                    if lot.contains_key(epoch_comm)? {
+                        lot.remove(epoch_comm)?;
+                        idx.remove(&epoch_comm.epoch())?;
+                        deleted_epochs.push(*epoch_comm);
+                    }
                 }
-            }
-            Ok(deleted_epochs)
-        })?;
+                Ok(deleted_epochs)
+            },
+        )?;
         Ok(deleted_epochs)
     }
 
@@ -473,10 +529,19 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         }
 
         self.config.with_retry(
-            (&self.l1_observed_payload_tree, &self.l1_ref_tree),
-            |(opt, lot)| {
+            (
+                &self.l1_observed_payload_tree,
+                &self.l1_ref_tree,
+                &self.l1_ref_epoch_index_tree,
+            ),
+            |(opt, lot, idx)| {
                 opt.insert(&commitment, &payload)?;
                 lot.insert(&commitment, &l1_ref)?;
+                let mut candidates = idx.get(&commitment.epoch())?.unwrap_or_default();
+                if !candidates.contains(&commitment) {
+                    candidates.push(commitment);
+                    idx.insert(&commitment.epoch(), &candidates)?;
+                }
                 Ok(())
             },
         )?;
@@ -536,10 +601,100 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
+    use strata_csm_types::CheckpointL1Ref;
     use strata_db_tests::ol_checkpoint_db_tests;
+    use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, OLBlockId, RBuf32};
 
     use super::*;
     use crate::sled_db_test_setup;
 
     sled_db_test_setup!(OLCheckpointDBSled, ol_checkpoint_db_tests);
+
+    fn temp_db() -> OLCheckpointDBSled {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = typed_sled::SledDb::new(db).unwrap();
+        OLCheckpointDBSled::new(sled_db.into(), crate::SledDbConfig::test()).unwrap()
+    }
+
+    fn l1_ref(height: u32) -> CheckpointL1Ref {
+        let blkid = L1BlockId::from(Buf32::from([height as u8; 32]));
+        CheckpointL1Ref::new(
+            L1BlockCommitment::new(height, blkid),
+            RBuf32::from([height as u8; 32]),
+            RBuf32::from([(height + 1) as u8; 32]),
+        )
+    }
+
+    fn commitment(epoch: u32, tag: u8) -> EpochCommitment {
+        EpochCommitment::new(
+            Epoch::from(epoch),
+            u64::from(epoch),
+            OLBlockId::from(Buf32::from([tag; 32])),
+        )
+    }
+
+    /// Legacy rows written directly to the L1-ref tree (before the index
+    /// existed) are read-repaired on first lookup and then served from the
+    /// index. Seeds via a direct tree insert because the public writers now
+    /// maintain the index, so only a raw insert reproduces a legacy row.
+    #[test]
+    fn observed_commitments_read_repair_from_legacy_rows() {
+        let db = temp_db();
+        let a = commitment(9, 1);
+        let b = commitment(9, 2);
+        db.l1_ref_tree.insert(&a, &l1_ref(900)).unwrap();
+        db.l1_ref_tree.insert(&b, &l1_ref(901)).unwrap();
+        assert!(
+            db.l1_ref_epoch_index_tree
+                .get(&Epoch::from(9u32))
+                .unwrap()
+                .is_none(),
+            "index must be absent before repair"
+        );
+
+        // First lookup repairs from the scan and persists the candidate set.
+        let mut repaired = db
+            .get_observed_checkpoint_commitments_for_epoch(Epoch::from(9u32))
+            .unwrap();
+        repaired.sort_by_key(|c| *c.last_blkid());
+        let mut expected = vec![a, b];
+        expected.sort_by_key(|c| *c.last_blkid());
+        assert_eq!(repaired, expected);
+
+        let mut persisted = db
+            .l1_ref_epoch_index_tree
+            .get(&Epoch::from(9u32))
+            .unwrap()
+            .expect("index persisted after repair");
+        persisted.sort_by_key(|c| *c.last_blkid());
+        assert_eq!(persisted, expected);
+    }
+
+    /// Confirms the per-epoch lookup serves from the index without rescanning the
+    /// L1-ref table on every call: once the index is populated, the result no
+    /// longer depends on the underlying l1_refs, so a cold-start catch-up that
+    /// resolves many predecessors does not repeat the full scan per epoch.
+    #[test]
+    fn observed_commitments_served_from_index_without_rescan() {
+        let db = temp_db();
+        let c = commitment(7, 1);
+        db.put_checkpoint_l1_ref(c, l1_ref(700)).unwrap();
+
+        // The public writer populated the index, so this lookup is index-served.
+        assert_eq!(
+            db.get_observed_checkpoint_commitments_for_epoch(Epoch::from(7u32))
+                .unwrap(),
+            vec![c]
+        );
+
+        // Drop the l1_ref tree entry but leave the index intact. A rescan would
+        // now return empty; serving from the index still returns the candidate.
+        db.l1_ref_tree.remove(&c).unwrap();
+        assert_eq!(
+            db.get_observed_checkpoint_commitments_for_epoch(Epoch::from(7u32))
+                .unwrap(),
+            vec![c],
+            "second lookup must hit the index, not rescan the l1_ref table"
+        );
+    }
 }

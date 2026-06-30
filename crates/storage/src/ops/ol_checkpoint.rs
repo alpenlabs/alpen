@@ -29,6 +29,7 @@ inst_ops_simple! {
         get_checkpoint_l1_ref(epoch: EpochCommitment) => Option<CheckpointL1Ref>;
         get_last_checkpoint_l1_ref_epoch() => Option<EpochCommitment>;
         get_checkpoint_l1_refs_from(start_epoch: Epoch) => Vec<(EpochCommitment, CheckpointL1Ref)>;
+        get_observed_checkpoint_commitments_for_epoch(epoch: Epoch) => Vec<EpochCommitment>;
         del_checkpoint_l1_ref(epoch: EpochCommitment) => bool;
         del_checkpoint_l1_refs_from_epoch(start_epoch: Epoch) => Vec<EpochCommitment>;
         put_checkpoint_l1_observation(commitment: EpochCommitment, payload: CheckpointPayload, l1_ref: CheckpointL1Ref) => ();

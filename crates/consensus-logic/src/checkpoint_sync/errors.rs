@@ -30,6 +30,11 @@ pub enum CheckpointSyncError {
     #[error("predecessor epoch {0} not found in db while scanning finalized chain")]
     MissingPredecessor(Epoch),
 
+    /// More than one checkpoint observation for an epoch survives the canonical-L1
+    /// filter, so the canonical one is ambiguous.
+    #[error("multiple canonical checkpoint observations for epoch {0}")]
+    AmbiguousObservation(Epoch),
+
     /// A finalized epoch has no epoch summary when one was expected.
     #[error("epoch summary missing for {0}")]
     MissingEpochSummary(EpochCommitment),
