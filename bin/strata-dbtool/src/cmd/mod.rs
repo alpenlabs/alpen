@@ -4,6 +4,7 @@ pub(crate) mod checkpoint_proof;
 pub(crate) mod client_state;
 pub(crate) mod ee_prover_task;
 pub(crate) mod ee_receipts;
+pub(crate) mod ee_revert;
 pub(crate) mod l1;
 pub(crate) mod ol;
 pub(crate) mod ol_state;

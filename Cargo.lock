@@ -15612,10 +15612,14 @@ dependencies = [
 name = "strata-dbtool"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-eips",
  "alpen-ee-common",
  "alpen-ee-database",
+ "alpen-reth-node",
  "argh",
  "hex",
+ "reth-node-api",
+ "reth-primitives-traits",
  "serde",
  "serde_json",
  "sled",
@@ -15632,6 +15636,7 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-paas",
  "strata-primitives",
+ "tokio",
  "tracing-subscriber 0.3.23",
  "typed-sled",
  "zkaleido",
