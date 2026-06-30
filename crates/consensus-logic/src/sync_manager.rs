@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
 use strata_asm_spec::StrataAsmSpec;
@@ -164,26 +164,48 @@ fn storage_to_worker_state(state: StorageAsmState) -> WorkerAsmState {
     WorkerAsmState::new(state.state().clone(), state.logs().clone())
 }
 
-/// Submits the stored canonical L1 tip to ASM when persisted ASM state lags it.
+/// Submits stored canonical L1 blocks to ASM when persisted ASM state lags.
 ///
 /// btcio writes canonical L1 chain entries before it submits blocks to ASM. If
 /// the process crashes after the canonical write but before ASM stores the
 /// corresponding anchor state, the reader resumes after that canonical tip and
-/// no new L1 event is emitted until another Bitcoin block arrives. Submitting
-/// the stored tip during ASM startup lets the ASM worker backfill from its
-/// latest anchor state through the canonical chain without making btcio inspect
-/// ASM-specific storage.
+/// no new L1 event is emitted until another Bitcoin block arrives.
 fn resubmit_canonical_tip_if_asm_behind(
     storage: &NodeStorage,
     asm_handle: &AsmWorkerHandle,
     genesis_l1_height: L1Height,
 ) -> anyhow::Result<()> {
-    let Some((tip_height, tip_blockid)) = storage.l1().get_canonical_chain_tip()? else {
+    let missing_blocks = canonical_blocks_missing_asm_state(storage, genesis_l1_height)?;
+    let Some(tip) = missing_blocks.last().copied() else {
         return Ok(());
     };
 
+    warn!(
+        %tip,
+        missing_blocks = missing_blocks.len(),
+        first_missing = %missing_blocks[0],
+        "canonical L1 chain is ahead of ASM state; re-submitting missing blocks to ASM"
+    );
+
+    for block in missing_blocks {
+        asm_handle
+            .submit_block(block.blkid().to_block_hash())
+            .with_context(|| format!("failed to re-submit canonical L1 block {block} to ASM"))?;
+    }
+
+    Ok(())
+}
+
+fn canonical_blocks_missing_asm_state(
+    storage: &NodeStorage,
+    genesis_l1_height: L1Height,
+) -> anyhow::Result<Vec<L1BlockCommitment>> {
+    let Some((tip_height, tip_blockid)) = storage.l1().get_canonical_chain_tip()? else {
+        return Ok(Vec::new());
+    };
+
     if tip_height < genesis_l1_height {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let latest_asm_block = storage
@@ -194,23 +216,31 @@ fn resubmit_canonical_tip_if_asm_behind(
 
     if latest_asm_block.as_ref().is_some_and(|block| block == &tip) {
         debug!(%tip, "canonical L1 tip already has ASM state");
-        return Ok(());
+        return Ok(Vec::new());
     }
 
-    warn!(
-        %tip,
-        latest_asm_block = latest_asm_block
-            .as_ref()
-            .map(ToString::to_string)
-            .as_deref()
-            .unwrap_or("none"),
-        "canonical L1 tip is ahead of ASM state; re-submitting tip to ASM for startup backfill"
-    );
-    asm_handle
-        .submit_block(tip.blkid().to_block_hash())
-        .with_context(|| format!("failed to re-submit canonical L1 tip {tip} to ASM"))?;
+    let start_height = match latest_asm_block {
+        Some(block)
+            if block.height() >= genesis_l1_height
+                && storage
+                    .l1()
+                    .get_canonical_blockid_at_height(block.height())?
+                    == Some(*block.blkid()) =>
+        {
+            block.height().saturating_add(1)
+        }
+        _ => genesis_l1_height,
+    };
 
-    Ok(())
+    let mut blocks = Vec::new();
+    for height in start_height..=tip_height {
+        let Some(blockid) = storage.l1().get_canonical_blockid_at_height(height)? else {
+            bail!("missing canonical L1 block at height {height} while ASM tip lags {tip}");
+        };
+        blocks.push(L1BlockCommitment::new(height, blockid));
+    }
+
+    Ok(blocks)
 }
 
 /// Prefills the ASM manifest MMR with sentinel leaves until it has at least
@@ -229,4 +259,125 @@ fn prefill_asm_mmr(handle: &MmrIndexHandle, target_count: u64) -> anyhow::Result
         handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::Network;
+    use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
+    use strata_btc_verification::L1Anchor;
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_identifiers::{Buf32, L1BlockId};
+    use strata_l1_txfmt::MagicBytes;
+    use strata_state::asm_state::AsmState;
+    use tokio::runtime::Builder;
+
+    use super::*;
+
+    const GENESIS_L1_HEIGHT: L1Height = 100;
+
+    fn setup() -> NodeStorage {
+        let db = get_test_sled_backend();
+        let runtime = Box::leak(Box::new(
+            Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test: build tokio runtime"),
+        ));
+        let handle = runtime.handle().clone();
+        strata_storage::create_node_storage(db, handle).expect("test: create node storage")
+    }
+
+    fn blkid(n: u8) -> L1BlockId {
+        L1BlockId::from(Buf32::from([n; 32]))
+    }
+
+    fn extend_canonical(storage: &NodeStorage, start: L1Height, end: L1Height) {
+        for height in start..=end {
+            storage
+                .l1()
+                .extend_canonical_chain(&blkid(height as u8), height)
+                .expect("test: extend canonical chain");
+        }
+    }
+
+    fn store_asm_state(storage: &NodeStorage, height: L1Height, blockid: L1BlockId) {
+        storage
+            .asm()
+            .put_state_blocking(
+                L1BlockCommitment::new(height, blockid),
+                make_test_asm_state(),
+            )
+            .expect("test: store ASM state");
+    }
+
+    fn make_test_asm_state() -> AsmState {
+        let anchor = L1Anchor {
+            block: L1BlockCommitment::default(),
+            next_target: 0,
+            epoch_start_timestamp: 0,
+            network: Network::Bitcoin,
+        };
+
+        let anchor_state = AnchorState {
+            magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
+            chain_view: ChainViewState {
+                pow_state: strata_asm_common::HeaderVerificationState::init(anchor),
+                history_accumulator: AsmHistoryAccumulatorState::new(0),
+            },
+            sections: Default::default(),
+        };
+
+        AsmState::new(anchor_state, vec![])
+    }
+
+    #[test]
+    fn no_missing_blocks_when_canonical_tip_has_asm_state() {
+        let storage = setup();
+        extend_canonical(&storage, GENESIS_L1_HEIGHT, GENESIS_L1_HEIGHT + 2);
+        store_asm_state(&storage, GENESIS_L1_HEIGHT + 2, blkid(102));
+
+        let missing = canonical_blocks_missing_asm_state(&storage, GENESIS_L1_HEIGHT)
+            .expect("test: find missing blocks");
+
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn returns_every_canonical_block_after_latest_asm_state() {
+        let storage = setup();
+        extend_canonical(&storage, GENESIS_L1_HEIGHT, GENESIS_L1_HEIGHT + 3);
+        store_asm_state(&storage, GENESIS_L1_HEIGHT, blkid(100));
+
+        let missing = canonical_blocks_missing_asm_state(&storage, GENESIS_L1_HEIGHT)
+            .expect("test: find missing blocks");
+
+        assert_eq!(
+            missing,
+            vec![
+                L1BlockCommitment::new(GENESIS_L1_HEIGHT + 1, blkid(101)),
+                L1BlockCommitment::new(GENESIS_L1_HEIGHT + 2, blkid(102)),
+                L1BlockCommitment::new(GENESIS_L1_HEIGHT + 3, blkid(103)),
+            ]
+        );
+    }
+
+    #[test]
+    fn ignores_noncanonical_latest_asm_state_when_resubmitting() {
+        let storage = setup();
+        extend_canonical(&storage, GENESIS_L1_HEIGHT, GENESIS_L1_HEIGHT + 2);
+        store_asm_state(&storage, GENESIS_L1_HEIGHT + 3, blkid(250));
+
+        let missing = canonical_blocks_missing_asm_state(&storage, GENESIS_L1_HEIGHT)
+            .expect("test: find missing blocks");
+
+        assert_eq!(
+            missing,
+            vec![
+                L1BlockCommitment::new(GENESIS_L1_HEIGHT, blkid(100)),
+                L1BlockCommitment::new(GENESIS_L1_HEIGHT + 1, blkid(101)),
+                L1BlockCommitment::new(GENESIS_L1_HEIGHT + 2, blkid(102)),
+            ]
+        );
+    }
 }
