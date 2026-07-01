@@ -9,7 +9,6 @@ workspace = true
 
 [dependencies]
 alloy-genesis.workspace = true
-alloy-primitives.workspace = true
 eyre.workspace = true
 reth-chainspec.workspace = true
 reth-cli.workspace = true

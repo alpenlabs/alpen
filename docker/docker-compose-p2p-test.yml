@@ -41,7 +41,6 @@ services:
       - "8545:8545"
       - "30303:30303"
     volumes:
-      - ./configs/generated/ee-params.json:/app/configs/generated/ee-params.json:ro
       - ./configs/generated/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:
@@ -88,7 +87,6 @@ services:
       - "9545:8545"
       - "31303:30303"
     volumes:
-      - ./configs/generated/ee-params.json:/app/configs/generated/ee-params.json:ro
       - ./configs/generated/fn-p2p.hex:/app/keys/fn-p2p.hex:ro
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:

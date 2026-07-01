@@ -1008,7 +1008,6 @@ name = "alpen-chainspec"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-genesis",
- "alloy-primitives",
  "eyre",
  "reth-chainspec",
  "reth-cli",
@@ -1204,8 +1203,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
- "serde",
- "serde_json",
  "strata-acct-types",
  "strata-config",
  "strata-predicate",
@@ -15483,15 +15480,15 @@ dependencies = [
 name = "strata-datatool"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-genesis",
  "alloy-primitives",
  "alpen-chainspec",
- "alpen-ee-config",
  "anyhow",
  "argh",
  "bitcoin",
  "bitcoind-async-client",
- "hex",
  "rand_core 0.6.4",
+ "reth-chainspec",
  "serde_json",
  "strata-asm-params",
  "strata-asm-proto-bridge-v1-types",
