@@ -42,7 +42,7 @@ jobs:
           cache-on-failure: true
 
       - name: Install `cargo-mutants`
-        uses: taiki-e/install-action@b550161ef8a7bc4f2a671c0b03a18ac9ccedea1e # v2
+        uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
         with:
           tool: cargo-mutants
 
