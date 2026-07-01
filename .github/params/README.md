@@ -1,6 +1,6 @@
 # CI Params Generation
 
-Generates deployment params (`ee-params.json`, `ol-params.json`, `asm-params.json`) using the prebuilt datatool image from a given commit.
+Generates deployment params (`ee-params.json`, `ol-params.json`, `asm-params.json`) using the prebuilt datatool image tag from a given commit. Manual runs do not validate that the tag came from a successful `ci-build.yml` run; the workflow checks out the workflow ref by default, then proceeds directly to pulling the requested datatool image and generating params.
 
 ## Templates
 

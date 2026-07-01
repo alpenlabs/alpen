@@ -1,5 +1,5 @@
 # Generates deployment params (ee-params, ol-params, asm-params) using the prebuilt
-# datatool image from the specified commit. Static values (operator keys,
+# datatool image tag from the specified commit. Static values (operator keys,
 # denomination, etc.) come from pre-committed templates per environment;
 # dynamic values (VKs, genesis L1 anchor, genesis_ol_blkid) are filled in by
 # datatool.
@@ -19,11 +19,11 @@ on:
           - staging-v2
           - prod
       commit:
-        description: "Alpen commit short SHA (must have a successful CI — Build and Push Images run)"
+        description: "Alpen commit SHA (first 7 chars are used as the datatool image tag)"
         required: true
         type: string
       checkout_ref:
-        description: "Repo ref to checkout (default: image commit SHA)"
+        description: "Repo ref to checkout (default: workflow ref)"
         required: false
         type: string
       genesis_l1_height:
@@ -50,46 +50,34 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.env }}
     permissions:
-      actions: read
       contents: read
       id-token: write
     steps:
-      - name: Resolve image commit
+      - name: Resolve params inputs
         id: resolve
         env:
-          GH_TOKEN: ${{ github.token }}
           INPUT_COMMIT: ${{ inputs.commit }}
           INPUT_CHECKOUT_REF: ${{ inputs.checkout_ref }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set_output() {
             echo "$1=$2" >> "$GITHUB_OUTPUT"
           }
 
           SHORT_TAG="${INPUT_COMMIT:0:7}"
-          BUILD_SHA=$(gh run list -R "${{ github.repository }}" \
-            --workflow ci-build.yml \
-            --status success \
-            --limit 100 \
-            --json headSha \
-            --jq ".[] | select(.headSha | startswith(\"${SHORT_TAG}\")) | .headSha" | head -n1)
-
-          if [ -z "${BUILD_SHA}" ]; then
-            echo "::error::No successful ci-build found for ${SHORT_TAG}"
-            exit 1
-          fi
 
           if [ -n "${INPUT_CHECKOUT_REF}" ]; then
             # Manual override: use caller-provided scripts/templates.
             CHECKOUT_REF="${INPUT_CHECKOUT_REF}"
           else
-            # Default path: checkout the same commit that produced the image.
-            CHECKOUT_REF="${BUILD_SHA}"
+            # By default, use the workflow ref so pushed template changes are used.
+            CHECKOUT_REF="${WORKFLOW_SHA}"
           fi
 
           set_output short_tag "${SHORT_TAG}"
-          set_output commit_sha "${BUILD_SHA}"
+          set_output commit_sha "${INPUT_COMMIT}"
           set_output checkout_ref "${CHECKOUT_REF}"
-          echo "Selected image build: ${SHORT_TAG} (${BUILD_SHA})"
+          echo "Selected datatool image tag: ${SHORT_TAG}"
           echo "Checkout ref: ${CHECKOUT_REF}"
 
       - name: Checkout
