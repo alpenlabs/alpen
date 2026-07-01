@@ -1476,7 +1476,7 @@ dependencies = [
  "reth-primitives",
  "revm",
  "revm-primitives",
- "secp256k1 0.29.1",
+ "secp256k1 0.31.1",
  "strata-bridge-params",
  "strata-crypto",
  "strata-identifiers",
@@ -4376,7 +4376,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -15787,7 +15787,7 @@ name = "strata-key-derivation"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
- "secp256k1 0.29.1",
+ "secp256k1 0.31.1",
  "strata-crypto",
  "thiserror 2.0.18",
  "zeroize",
@@ -15995,7 +15995,7 @@ dependencies = [
  "int-enum",
  "proptest",
  "rand 0.8.5",
- "secp256k1 0.29.1",
+ "secp256k1 0.31.1",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -16798,7 +16798,7 @@ dependencies = [
  "hex",
  "k256",
  "musig2",
- "secp256k1 0.29.1",
+ "secp256k1 0.31.1",
  "serde_json",
  "shrex",
  "shrex_macros",
