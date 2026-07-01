@@ -1035,7 +1035,7 @@ dependencies = [
  "config",
  "dialoguer",
  "directories",
- "indicatif",
+ "indicatif 0.18.4",
  "keyring",
  "make_buf",
  "rand_core 0.6.4",
@@ -6313,9 +6313,22 @@ dependencies = [
  "console 0.15.11",
  "number_prefix",
  "portable-atomic",
+ "unicode-width 0.2.0",
+ "web-time",
+]
+
+[[package]]
+name = "indicatif"
+version = "0.18.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25470f23803092da7d239834776d653104d551bc4d7eacaf31e6837854b8e9eb"
+dependencies = [
+ "console 0.16.3",
+ "portable-atomic",
  "tokio",
  "unicode-segmentation",
  "unicode-width 0.2.0",
+ "unit-prefix",
  "web-time",
 ]
 
@@ -13968,7 +13981,7 @@ dependencies = [
  "gecko_profile",
  "hashbrown 0.14.5",
  "hex",
- "indicatif",
+ "indicatif 0.17.11",
  "itertools 0.14.0",
  "memmap2",
  "num",
@@ -14259,7 +14272,7 @@ dependencies = [
  "futures",
  "hashbrown 0.14.5",
  "hex",
- "indicatif",
+ "indicatif 0.17.11",
  "itertools 0.14.0",
  "lru 0.12.5",
  "mti",
@@ -14483,7 +14496,7 @@ dependencies = [
  "eventsource-stream",
  "futures",
  "hex",
- "indicatif",
+ "indicatif 0.17.11",
  "itertools 0.14.0",
  "k256",
  "num-bigint 0.4.6",
@@ -18174,6 +18187,12 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "unit-prefix"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81e544489bf3d8ef66c953931f56617f423cd4b5494be343d9b9d3dda037b9a3"
 
 [[package]]
 name = "universal-hash"
