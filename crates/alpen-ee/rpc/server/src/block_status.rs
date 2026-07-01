@@ -6,6 +6,7 @@ use alloy_primitives::B256;
 use alpen_ee_common::{ChunkStatus, ChunkStorage, ConsensusHeads, OLBlockOrEpoch, Storage};
 use alpen_ee_rpc_api::{
     AlpenEeRpcServer, BlockStatus, BlockStatusResponse, ChunkProofCoverageResponse,
+    StaticFeeModelConfig,
 };
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
@@ -17,7 +18,9 @@ use reth_provider::{
 use strata_identifiers::Epoch;
 use tokio::sync::watch;
 
-use crate::errors::{block_not_found_error, internal_error, invalid_params_error};
+use crate::errors::{
+    block_not_found_error, fee_model_config_unavailable_error, internal_error, invalid_params_error,
+};
 
 /// Resolve `block_hash` to its canonical block number on `provider`.
 ///
@@ -50,7 +53,7 @@ fn hash_to_b256(hash: &[u8]) -> B256 {
 /// Returns an error when the epoch's account state is missing (e.g. pruned) or
 /// when its last included block is not canonical on this node.
 async fn fetch_epoch_last_alpen_block_number<N: NodeTypesWithDB + ProviderNodeTypes>(
-    storage: &Arc<dyn Storage>,
+    storage: &dyn Storage,
     provider: &BlockchainProvider<N>,
     epoch: Epoch,
 ) -> RpcResult<u64> {
@@ -109,12 +112,50 @@ where
     Ok(lo)
 }
 
+/// Shared dependencies used by Alpen EE RPC methods.
+pub struct EeRpcContext {
+    chunk_storage: Arc<dyn ChunkStorage>,
+    account_storage: Arc<dyn Storage>,
+    fee_model_config: watch::Receiver<Option<StaticFeeModelConfig>>,
+}
+
+impl fmt::Debug for EeRpcContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EeRpcContext").finish_non_exhaustive()
+    }
+}
+
+impl EeRpcContext {
+    pub fn new(
+        chunk_storage: Arc<dyn ChunkStorage>,
+        account_storage: Arc<dyn Storage>,
+        fee_model_config: watch::Receiver<Option<StaticFeeModelConfig>>,
+    ) -> Self {
+        Self {
+            chunk_storage,
+            account_storage,
+            fee_model_config,
+        }
+    }
+
+    pub fn chunk_storage(&self) -> &dyn ChunkStorage {
+        self.chunk_storage.as_ref()
+    }
+
+    pub fn account_storage(&self) -> &dyn Storage {
+        self.account_storage.as_ref()
+    }
+
+    pub fn get_fee_model_config(&self) -> Option<StaticFeeModelConfig> {
+        *self.fee_model_config.borrow()
+    }
+}
+
 /// RPC handler for [`AlpenEeRpcServer`].
 pub struct EeRpcServer<N: NodeTypesWithDB + ProviderNodeTypes> {
     provider: BlockchainProvider<N>,
     consensus_rx: watch::Receiver<ConsensusHeads>,
-    chunk_storage: Arc<dyn ChunkStorage>,
-    account_storage: Arc<dyn Storage>,
+    context: EeRpcContext,
 }
 
 impl<N: NodeTypesWithDB + ProviderNodeTypes> fmt::Debug for EeRpcServer<N> {
@@ -127,14 +168,12 @@ impl<N: NodeTypesWithDB + ProviderNodeTypes> EeRpcServer<N> {
     pub fn new(
         provider: BlockchainProvider<N>,
         consensus_rx: watch::Receiver<ConsensusHeads>,
-        chunk_storage: Arc<dyn ChunkStorage>,
-        account_storage: Arc<dyn Storage>,
+        context: EeRpcContext,
     ) -> Self {
         Self {
             provider,
             consensus_rx,
-            chunk_storage,
-            account_storage,
+            context,
         }
     }
 
@@ -149,12 +188,10 @@ impl<N: NodeTypesWithDB + ProviderNodeTypes> EeRpcServer<N> {
     /// verified to cover `target_num`, so its last included block is at or beyond
     /// `target_num` and the search is well defined.
     async fn containing_epoch(&self, target_num: u64, frontier_epoch: Epoch) -> RpcResult<Epoch> {
-        let storage = self.account_storage.clone();
-        let provider = self.provider.clone();
-        search_containing_epoch(frontier_epoch, target_num, move |epoch| {
-            let storage = storage.clone();
-            let provider = provider.clone();
-            async move { fetch_epoch_last_alpen_block_number(&storage, &provider, epoch).await }
+        let storage = self.context.account_storage();
+        let provider = &self.provider;
+        search_containing_epoch(frontier_epoch, target_num, |epoch| {
+            fetch_epoch_last_alpen_block_number(storage, provider, epoch)
         })
         .await
     }
@@ -242,7 +279,8 @@ where
         }
 
         let latest_chunk = self
-            .chunk_storage
+            .context
+            .chunk_storage()
             .get_latest_chunk()
             .await
             .map_err(|e| internal_error(e.to_string()))?;
@@ -260,7 +298,8 @@ where
 
         for chunk_idx in 0..=latest_chunk.idx() {
             let Some((chunk, status)) = self
-                .chunk_storage
+                .context
+                .chunk_storage()
                 .get_chunk_by_idx(chunk_idx)
                 .await
                 .map_err(|e| internal_error(e.to_string()))?
@@ -314,6 +353,12 @@ where
             covered: false,
             first_uncovered_block: Some(first_uncovered_block),
         })
+    }
+
+    async fn get_fee_model_config(&self) -> RpcResult<StaticFeeModelConfig> {
+        self.context
+            .get_fee_model_config()
+            .ok_or_else(fee_model_config_unavailable_error)
     }
 }
 

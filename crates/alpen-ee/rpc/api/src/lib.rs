@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use alloy_primitives::B256;
 pub use alpen_ee_rpc_types::{BlockStatus, BlockStatusResponse, ChunkProofCoverageResponse};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
+pub use strata_config::StaticFeeModelConfig;
 
 /// RPC methods exposed by Alpen EE nodes.
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "alpen"))]
@@ -21,6 +22,10 @@ pub trait AlpenEeRpc {
         start_block: u64,
         end_block: u64,
     ) -> RpcResult<ChunkProofCoverageResponse>;
+
+    /// Returns the current static v1 fee-model constants known by this node.
+    #[method(name = "getFeeModelConfig")]
+    async fn get_fee_model_config(&self) -> RpcResult<StaticFeeModelConfig>;
 }
 
 struct RpcB256;
@@ -83,6 +88,22 @@ impl AlpenEeRpcOpenRpc {
             inputs,
             result,
             "Reports whether proof-ready chunks cover the requested EE block interval.",
+            Some("Alpen EE".to_string()),
+            false,
+        );
+
+        let result = Some(builder.create_content_descriptor::<StaticFeeModelConfig>(
+            "StaticFeeModelConfig",
+            None,
+            None,
+            true,
+        ));
+        builder.add_method(
+            "alpen",
+            "getFeeModelConfig",
+            Vec::new(),
+            result,
+            "Returns the current static v1 fee-model constants known by this node.",
             Some("Alpen EE".to_string()),
             false,
         );
