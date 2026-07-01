@@ -122,6 +122,11 @@ impl SnarkAcctStateUpdate {
     pub fn seqno(&self) -> Seqno {
         self.seqno
     }
+
+    /// Sets the inner state root.
+    pub fn set_state(&mut self, state: Option<Hash>) {
+        self.state = state;
+    }
 }
 
 // ============================================================================
