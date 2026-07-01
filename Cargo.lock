@@ -1176,7 +1176,7 @@ dependencies = [
  "alpen-ee-da-types",
  "alpen-reth-node",
  "async-trait",
- "bincode",
+ "bincode 3.0.0",
  "bitcoin",
  "borsh",
  "eyre",
@@ -1452,7 +1452,7 @@ name = "alpen-reth-db"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-reth-statediff",
- "bincode",
+ "bincode 3.0.0",
  "revm-primitives",
  "serde",
  "serde_json",
@@ -1603,7 +1603,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-chainspec",
- "bincode",
+ "bincode 3.0.0",
  "eyre",
  "proptest",
  "revm",
@@ -2839,6 +2839,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bincode"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd6a120d2e16b3e1b4a24bd70f23b12d3e16b81f113364a26935f8db7245452d"
+
+[[package]]
 name = "bindgen"
 version = "0.69.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3619,7 +3625,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3628,7 +3634,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6082,7 +6088,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tokio",
  "tower-service",
  "tracing",
@@ -6100,7 +6106,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.57.0",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -7748,7 +7754,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 1.3.1",
+ "proc-macro-crate 3.4.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9113,7 +9119,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.31",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -9150,7 +9156,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -10850,7 +10856,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 1.3.3",
  "derive_more 2.1.1",
  "lz4_flex",
  "memmap2",
@@ -11650,7 +11656,7 @@ dependencies = [
  "alloy-consensus",
  "alloy-eips",
  "alloy-primitives",
- "bincode",
+ "bincode 1.3.3",
  "eyre",
  "futures-util",
  "itertools 0.14.0",
@@ -13957,7 +13963,7 @@ version = "6.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ead1f498f7763a3b27740d77db7ef07a737cf568a3c3c85efa72bb1a4858ea6a"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "bytemuck",
  "cfg-if",
  "clap",
@@ -14002,7 +14008,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14d0e9425daa3f50fcfa9b434e6030b64b3dfacaed3d97fd47314e5ddd851603"
 dependencies = [
  "base64 0.22.1",
- "bincode",
+ "bincode 1.3.3",
  "cargo_metadata 0.18.1",
  "hashbrown 0.14.5",
  "hex",
@@ -14023,7 +14029,7 @@ version = "6.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6671dac7abe0391d28669cbf6b08806c07feb757c0a5fc29bac8ef6882a642df"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "crash-handler",
  "libc",
  "serde",
@@ -14038,7 +14044,7 @@ version = "6.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e479b3999aa550b5ef9cadaa950a3ccbfb16ff226c5598fe632a6ee6ea1749d"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "cfg-if",
  "enum-map",
  "futures",
@@ -14194,7 +14200,7 @@ version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b73b8ff343f2405d5935440e56b7aba5cee6d87303f0051974cbd6f5de502f57"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "serde",
  "sp1-primitives 5.2.4",
 ]
@@ -14205,7 +14211,7 @@ version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e69a03098f827102c54c31a5e57280eb45b2c085de433b3f702e4f9e3ec1641"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "blake3",
  "cfg-if",
  "hex",
@@ -14225,7 +14231,7 @@ version = "6.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13ad00052921b993af682403b378c8fe23c40382f9790f093c8fac0f30433c5e"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "blake3",
  "elf",
  "hex",
@@ -14250,7 +14256,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ba6d960746f9a6038834893dc5c774812c004fd846fcbf5dc00f1ea294c02ef"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 1.3.3",
  "clap",
  "dirs 5.0.1",
  "either",
@@ -14315,7 +14321,7 @@ checksum = "ff77aba505e762effc5de8258195f11279471fa9e8a3b0815aa251be22770fd3"
 dependencies = [
  "anyhow",
  "async-scoped",
- "bincode",
+ "bincode 1.3.3",
  "chrono",
  "futures-util",
  "hashbrown 0.14.5",
@@ -14337,7 +14343,7 @@ version = "6.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfe43147fe2a5604b1c14d10f44cb7d4304127275470f676b03593a2a00da4f2"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "itertools 0.14.0",
  "rand 0.8.5",
  "rayon",
@@ -14423,7 +14429,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6961ae41bdca71e213d01aad4a7f664d0c95a760975a12816b2ac2d54e1e570"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 1.3.3",
  "cfg-if",
  "hex",
  "num-bigint 0.4.6",
@@ -14477,7 +14483,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-kms",
  "backoff",
- "bincode",
+ "bincode 1.3.3",
  "cfg-if",
  "dirs 5.0.1",
  "eventsource-stream",
@@ -14519,7 +14525,7 @@ version = "6.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04eea9c69efabee3fff3c24f2946963d04b62af7fdd7fc6da06b1d4853f8aca6"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "blake3",
  "cfg-if",
  "dirs 5.0.1",
@@ -15523,7 +15529,7 @@ name = "strata-db-store-sled"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 3.0.0",
  "borsh",
  "ciborium",
  "proptest",
@@ -15733,7 +15739,7 @@ dependencies = [
  "alpen-ee-da-types",
  "alpen-reth-evm",
  "alpen-reth-primitives",
- "bincode",
+ "bincode 3.0.0",
  "itertools 0.14.0",
  "reth-chainspec",
  "reth-consensus-common",
@@ -16471,7 +16477,7 @@ dependencies = [
  "alloy-eips",
  "alpen-reth-evm",
  "alpen-reth-primitives",
- "bincode",
+ "bincode 3.0.0",
  "borsh",
  "reth-chainspec",
  "reth-evm",
@@ -16695,7 +16701,7 @@ dependencies = [
 name = "strata-sp1-guest-builder"
 version = "0.3.0-alpha.1"
 dependencies = [
- "bincode",
+ "bincode 3.0.0",
  "cargo_metadata 0.19.2",
  "cfg-if",
  "once_cell",
@@ -18605,7 +18611,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -19404,7 +19410,7 @@ source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.3.0-rc.1#b1c3a5a34ea7
 dependencies = [
  "arbitrary",
  "async-trait",
- "bincode",
+ "bincode 1.3.3",
  "borsh",
  "serde",
  "ssz",
@@ -19424,7 +19430,7 @@ name = "zkaleido-native-adapter"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.3.0-rc.1#b1c3a5a34ea713d6e35e792c497d4f8327feaf61"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "k256",
  "rand_core 0.6.4",
  "serde",
@@ -19452,7 +19458,7 @@ version = "0.1.0"
 source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.3.0-rc.1#b1c3a5a34ea713d6e35e792c497d4f8327feaf61"
 dependencies = [
  "async-trait",
- "bincode",
+ "bincode 1.3.3",
  "hex",
  "num-bigint 0.4.6",
  "serde",

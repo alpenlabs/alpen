@@ -398,7 +398,7 @@ bdk_esplora = { version = "0.20.1", features = [
   "tokio",
 ], default-features = false }
 bdk_wallet = "1.0.0"
-bincode = "1.3"
+bincode = "3.0"
 bitcoin = { version = "0.32.6", features = ["serde"] }
 bitcoin-bosd = { git = "https://github.com/alpenlabs/bitcoin-bosd", version = "0.11.0", tag = "v0.11.0", features = [
   "ssz",
