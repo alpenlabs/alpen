@@ -454,9 +454,7 @@ fn debug_assert_contiguous_update_ranges(
 
 /// Builds an [`IndexingWrites`] payload for a DA-reconstructed epoch.
 ///
-/// Like [`build_indexing_writes`] but with no per-block attribution and no
-/// per-update state root: update records carry `update_meta: None`. The
-/// post-epoch root lives on the epoch summary.
+/// Like [`build_indexing_writes`] but with no per-block attribution.
 pub(crate) fn build_checkpoint_indexing_writes(
     output: &OLBlockExecutionOutput,
 ) -> WorkerResult<IndexingWrites> {
