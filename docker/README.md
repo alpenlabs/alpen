@@ -29,13 +29,64 @@ The retained secondary compose files have narrower test/debug purposes:
 
 | Compose | Purpose |
 |---|---|
+| `compose-fullnode.yml` | Local Alpen fullnode stack with signet `bitcoind`, checkpoint-sync, and Alpen EE fullnode |
 | `compose-checkpoint-sync.yml` | Checkpoint-sync OL node; use with a signet fullnode and mount pre-generated params under `configs/generated/` |
 | `docker-compose-eest.yml` | Ethereum execution spec test environment |
 | `docker-compose-p2p-test.yml` | Minimal EE P2P/gossip test |
 
-For checkpoint-sync, run `compose-signet.yml` in fullnode mode (`MINERENABLED=0`)
-with the target network's `SIGNETCHALLENGE` and an `ADDNODE` peer, then start
-`compose-checkpoint-sync.yml`.
+For operator-style fullnode validation, use `compose-fullnode.yml` so the local
+Signet fullnode, checkpoint-sync node, and Alpen EE fullnode share one compose
+project and network.
+
+Create the fullnode environment file before starting that stack:
+
+```bash
+cp .env.alpen-fullnode.example .env
+# Edit .env for the target network, image tag, Signet peer, and Alpen EE peer.
+```
+
+Prepare the required files that are mounted by the checkpoint-sync and Alpen
+fullnode services:
+
+```bash
+mkdir -p configs/generated
+
+openssl rand -hex 32 > configs/generated/jwt.hex
+sudo chown 10001:10001 configs/generated/jwt.hex
+sudo chmod 600 configs/generated/jwt.hex
+```
+
+Copy the target network params into `configs/generated/ol-params.json` and
+`configs/generated/asm-params.json` before starting the stack.
+
+If the fullnode images are not already available locally or in a registry,
+set local image names in `.env`:
+
+```bash
+ALPEN_IMAGE=alpen-client:local
+CHECKPOINT_SYNC_IMAGE=strata-checkpoint-sync:local
+```
+
+Then build them from this checkout:
+
+```bash
+docker compose -f compose-fullnode.yml build strata-checkpoint-sync alpen-fullnode
+```
+
+Then start the fullnode stack:
+
+```bash
+docker compose -f compose-fullnode.yml up -d
+```
+
+Before running host-shell checks that reference values from `.env`, export the
+file into the current shell. Docker Compose reads `.env` automatically, but
+commands such as `bitcoin-cli -rpcuser="$BITCOIND_RPC_USER"` do not.
+
+```bash
+set -a; source .env; set +a
+docker compose -f compose-fullnode.yml exec bitcoind bitcoin-cli -signet -rpcuser="$BITCOIND_RPC_USER" -rpcpassword="$BITCOIND_RPC_PASSWORD" getblockchaininfo
+```
 
 ## Just Recipes
 
