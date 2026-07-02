@@ -2,6 +2,8 @@ pub(crate) mod broadcaster;
 pub(crate) mod checkpoint;
 pub(crate) mod checkpoint_proof;
 pub(crate) mod client_state;
+/// EE DA inspection output types.
+pub(crate) mod ee_da;
 pub(crate) mod ee_receipts;
 pub(crate) mod ee_revert;
 pub(crate) mod helpers;

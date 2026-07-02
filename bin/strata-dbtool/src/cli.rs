@@ -11,6 +11,7 @@ use crate::cmd::{
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
     checkpoint_proof::{DeleteCheckpointProofArgs, GetCheckpointProofArgs},
     client_state::GetClientStateUpdateArgs,
+    ee_da::EeDaInspectArgs,
     ee_prover_task::{
         EeAbandonProverTaskArgs, EeAbandonProverTasksArgs, EeBackfillProverTaskRawArgs,
         EeDeleteProverTaskArgs, EeGetProverTaskArgs, EeGetProverTasksSummaryArgs,
@@ -88,6 +89,8 @@ pub(crate) enum Command {
     EeResetProverTask(EeResetProverTaskArgs),
     EeDeleteProverTask(EeDeleteProverTaskArgs),
     EeBackfillProverTaskRaw(EeBackfillProverTaskRawArgs),
+    /// Inspect EE DA blobs and replay their state diffs from local sled data.
+    EeDaInspect(EeDaInspectArgs),
     EeGetChunkReceipt(EeGetChunkReceiptArgs),
     EeDeleteChunkReceipt(EeDeleteChunkReceiptArgs),
     EeGetAcctProof(EeGetAcctProofArgs),
