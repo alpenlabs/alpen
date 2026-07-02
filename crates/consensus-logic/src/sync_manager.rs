@@ -113,6 +113,10 @@ pub async fn reconcile_l1_storage_and_submit_to_asm(
     genesis_l1_height: L1Height,
     l1_reorg_safe_depth: u32,
 ) -> anyhow::Result<Option<L1BlockCommitment>> {
+    if !should_reconcile_l1_storage_at_startup(storage.as_ref(), genesis_l1_height).await? {
+        return Ok(None);
+    }
+
     let bitcoind_tip_height = retry_bitcoin_startup_rpc("fetching Bitcoin block count", || {
         let bitcoin_client = bitcoin_client.clone();
         async move {
@@ -163,6 +167,32 @@ pub async fn reconcile_l1_storage_and_submit_to_asm(
         "submitted stored L1 canonical tip to ASM during startup"
     );
     Ok(Some(target))
+}
+
+/// Returns `true` when startup reconciliation needs Bitcoin RPC data.
+///
+/// Empty L1 storage and pre-genesis stored tips do not require reconciliation,
+/// so startup avoids Bitcoin RPCs and lets the BTCIO reader perform its normal
+/// retry loop.
+async fn should_reconcile_l1_storage_at_startup(
+    storage: &NodeStorage,
+    genesis_l1_height: L1Height,
+) -> anyhow::Result<bool> {
+    let Some((stored_tip_height, _)) = storage.l1().get_canonical_chain_tip_async().await? else {
+        debug!("no stored L1 canonical tip found during startup reconciliation");
+        return Ok(false);
+    };
+
+    if stored_tip_height < genesis_l1_height {
+        debug!(
+            stored_tip_height,
+            genesis_l1_height,
+            "stored L1 canonical tip is before ASM genesis; skipping startup ASM submission"
+        );
+        return Ok(false);
+    }
+
+    Ok(true)
 }
 
 /// Reconciles stored L1 canonical state against bitcoind.
@@ -457,6 +487,44 @@ mod tests {
                 .await
                 .expect("extend L1 canonical chain");
         }
+    }
+
+    /// Verifies fresh storage does not require Bitcoin RPCs during startup reconciliation.
+    #[tokio::test]
+    async fn startup_reconciliation_does_not_need_rpc_without_stored_l1_tip() {
+        let storage = test_storage();
+
+        let should_reconcile = should_reconcile_l1_storage_at_startup(&storage, 10)
+            .await
+            .expect("check reconciliation need");
+
+        assert!(!should_reconcile);
+    }
+
+    /// Verifies pre-genesis stored L1 tips do not require startup Bitcoin RPCs.
+    #[tokio::test]
+    async fn startup_reconciliation_does_not_need_rpc_before_asm_genesis() {
+        let storage = test_storage();
+        seed_l1_chain(&storage, 3, 5).await;
+
+        let should_reconcile = should_reconcile_l1_storage_at_startup(&storage, 10)
+            .await
+            .expect("check reconciliation need");
+
+        assert!(!should_reconcile);
+    }
+
+    /// Verifies post-genesis stored L1 tips require startup Bitcoin RPCs.
+    #[tokio::test]
+    async fn startup_reconciliation_needs_rpc_for_stored_l1_tip_at_asm_genesis() {
+        let storage = test_storage();
+        seed_l1_chain(&storage, 10, 10).await;
+
+        let should_reconcile = should_reconcile_l1_storage_at_startup(&storage, 10)
+            .await
+            .expect("check reconciliation need");
+
+        assert!(should_reconcile);
     }
 
     /// Verifies reconciliation is a no-op when no stored L1 canonical tip exists.
