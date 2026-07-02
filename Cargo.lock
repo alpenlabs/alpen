@@ -16158,6 +16158,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-mmr-index"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-merkle",
+ "strata-ol-params",
+ "strata-ol-state-support-types",
+ "strata-ol-state-types",
+ "strata-predicate",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-ol-msg-types"
 version = "0.1.0"
 dependencies = [
