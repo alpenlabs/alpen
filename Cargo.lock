@@ -15356,6 +15356,7 @@ dependencies = [
  "strata-common",
  "strata-csm-types",
  "strata-csm-worker",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-l1-txfmt",

@@ -7,7 +7,10 @@ use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
 use strata_chain_worker::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
 use strata_consensus_logic::{
     AsmBlockSubmitter, SyncServiceHandle,
-    sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
+    sync_manager::{
+        reconcile_l1_storage_and_submit_to_asm, spawn_asm_worker_with_ctx,
+        spawn_csm_listener_with_ctx,
+    },
 };
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::NodeContext;
@@ -255,8 +258,24 @@ pub(crate) fn start_strata_services(
     // Start Asm worker
     let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
 
+    let startup_asm_block =
+        nodectx
+            .task_manager()
+            .handle()
+            .block_on(reconcile_l1_storage_and_submit_to_asm(
+                nodectx.storage().clone(),
+                nodectx.bitcoin_client().clone(),
+                asm_handle.as_ref(),
+                nodectx.asm_params().anchor.block.height(),
+                nodectx.config().btcio.l1_reorg_safe_depth,
+            ))?;
+
     // Start Csm worker
-    let csm_monitor = Arc::new(spawn_csm_listener_with_ctx(&nodectx, asm_handle.monitor())?);
+    let csm_monitor = Arc::new(spawn_csm_listener_with_ctx(
+        &nodectx,
+        asm_handle.monitor(),
+        startup_asm_block,
+    )?);
 
     // btcio reader task must start before genesis init because genesis requires ASM to
     // have the genesis manifest which will be available only after btcio reader provides

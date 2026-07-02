@@ -835,6 +835,40 @@ mod tests {
         }
     }
 
+    /// Startup can seed CSM with only the latest ASM status. Even when that
+    /// latest status is more than the old 1000-state prepend behind CSM's
+    /// cursor, canonical gap-fill replays every missing block.
+    #[test]
+    fn gapped_block_over_1000_blocks_replays_skipped_blocks() {
+        let last = L1BlockCommitment::new(100, block_id_at(100));
+        let target = L1BlockCommitment::new(1_104, block_id_at(1_104));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            let mut c = c.with_canonical_block(100, block_id_at(100));
+            for height in 101..1_104 {
+                c = c.with_canonical_asm_state(
+                    height,
+                    block_id_at(height),
+                    make_asm_state(Vec::new()),
+                );
+            }
+            c
+        });
+        state.recent_asm_blocks = vec![last];
+
+        state
+            .process_asm_block(target, &[])
+            .expect("gap-fill should replay the full canonical gap");
+
+        assert_eq!(state.recent_asm_blocks.last(), Some(&target));
+        let (persisted, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row");
+        assert_eq!(persisted, target);
+    }
+
     /// If a gap block can't be resolved, gap-fill fails and the persisted
     /// cursor stays pinned at the last contiguous block — a restart then
     /// re-processes from there instead of skipping the gap.
