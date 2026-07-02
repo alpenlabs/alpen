@@ -12,6 +12,7 @@ mod config;
 mod error;
 mod in_memory;
 mod prover;
+mod stderr_capture;
 mod strategy;
 mod task;
 mod traits;
