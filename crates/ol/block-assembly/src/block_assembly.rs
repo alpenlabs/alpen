@@ -1009,7 +1009,7 @@ mod tests {
     use strata_acct_types::*;
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
-    use strata_identifiers::{Buf32, L1BlockId, L1Height, OLBlockId};
+    use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
 
@@ -1873,8 +1873,10 @@ mod tests {
             .extend_canonical_chain_async(&missing_manifest_blkid, first_height_past_cap)
             .await
             .expect("insert missing-manifest canonical entry past cap");
-        // ASM tip still points at the original height's blkid; the fetch path only reads its
-        // height.
+        put_test_asm_state(
+            env.storage().as_ref(),
+            L1BlockCommitment::new(first_height_past_cap, missing_manifest_blkid),
+        );
 
         let output = env
             .construct_empty_block()
@@ -2022,6 +2024,10 @@ mod tests {
             .extend_canonical_chain_async(&missing_manifest_blkid, 2)
             .await
             .expect("insert missing-manifest canonical entry at height 2");
+        put_test_asm_state(
+            env.storage().as_ref(),
+            L1BlockCommitment::new(2, missing_manifest_blkid),
+        );
 
         let err = env
             .generate_block_template()

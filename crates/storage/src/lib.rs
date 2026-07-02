@@ -69,8 +69,8 @@ pub use managers::writer::L1WriterManager;
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_store_sled::SledBackend;
 use strata_db_types::backend::DatabaseBackend;
-pub use strata_db_types::MmrId;
 use strata_db_types::DbResult;
+pub use strata_db_types::MmrId;
 use strata_primitives::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
 use tokio::runtime::Handle;
@@ -201,7 +201,7 @@ impl NodeStorage {
 
         if self
             .l1_block_manager
-            .get_canonical_blockid_at_height(recent_block.height())?
+            .get_canonical_blockid_at_height_uncached(recent_block.height())?
             == Some(*recent_block.blkid())
         {
             return Ok(Some((recent_block, recent_state)));
@@ -212,15 +212,64 @@ impl NodeStorage {
         let Some((tip_height, _)) = self.l1_block_manager.get_canonical_chain_tip()? else {
             return Ok(None);
         };
-        for height in (0..=tip_height).rev() {
+        let search_tip = tip_height.min(recent_block.height());
+        for height in (0..=search_tip).rev() {
             let Some(blockid) = self
                 .l1_block_manager
-                .get_canonical_blockid_at_height(height)?
+                .get_canonical_blockid_at_height_uncached(height)?
             else {
                 continue;
             };
             let block = L1BlockCommitment::new(height, blockid);
             if let Some(state) = self.asm_state_manager.get_state_blocking(block)? {
+                return Ok(Some((block, state)));
+            }
+        }
+
+        warn!(%recent_block, tip_height, "ASM has states but none on the canonical chain");
+        Ok(None)
+    }
+
+    /// Returns the latest persisted ASM state on the canonical L1 chain, or
+    /// [`None`] if there is none. May lag the L1 canonical tip when ASM is behind.
+    pub async fn fetch_canonical_asm_state_async(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+        let Some((recent_block, recent_state)) = self
+            .asm_state_manager
+            .fetch_most_recent_state_async()
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        if self
+            .l1_block_manager
+            .get_canonical_blockid_at_height_async(recent_block.height())
+            .await?
+            == Some(*recent_block.blkid())
+        {
+            return Ok(Some((recent_block, recent_state)));
+        }
+
+        let Some((tip_height, _)) = self
+            .l1_block_manager
+            .get_canonical_chain_tip_async()
+            .await?
+        else {
+            return Ok(None);
+        };
+        let search_tip = tip_height.min(recent_block.height());
+        for height in (0..=search_tip).rev() {
+            let Some(blockid) = self
+                .l1_block_manager
+                .get_canonical_blockid_at_height_async(height)
+                .await?
+            else {
+                continue;
+            };
+            let block = L1BlockCommitment::new(height, blockid);
+            if let Some(state) = self.asm_state_manager.get_state_async(block).await? {
                 return Ok(Some((block, state)));
             }
         }
@@ -425,6 +474,31 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(resolved, canonical);
+    }
+
+    // ASM has persisted states, but none belong to the canonical chain.
+    #[test]
+    fn canonical_resolution_none_when_all_asm_states_are_orphans() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        let orphan = L1BlockCommitment::new(12, blkid(99));
+        storage
+            .asm()
+            .put_state_blocking(orphan, make_test_asm_state())
+            .unwrap();
+
+        let (recent, _) = storage
+            .asm()
+            .fetch_most_recent_state_blocking()
+            .unwrap()
+            .unwrap();
+        assert_eq!(recent, orphan, "setup: most-recent should be the orphan");
+
+        assert!(storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .is_none());
     }
 
     // No canonical chain tracked: resolve to nothing so the caller skips.
