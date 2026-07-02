@@ -22,6 +22,8 @@ mod exec;
 pub mod handler;
 pub mod validation;
 
+const ALPEN_BLOCK_GAS_LIMIT: u64 = 36_000_000;
+
 #[expect(
     missing_debug_implementations,
     reason = "EVM struct contains complex internal state that doesn't need debug implementation"
@@ -142,7 +144,9 @@ where
             kind: TxKind::Call(contract),
             // Explicitly set nonce to 0 so revm does not do any nonce checks
             nonce: 0,
-            gas_limit: 30_000_000,
+            // Match the bundled Alpen chain specs so system calls keep the same execution budget
+            // as a block.
+            gas_limit: ALPEN_BLOCK_GAS_LIMIT,
             value: U256::ZERO,
             data,
             // Setting the gas price to zero enforces that no value is transferred as part of the
