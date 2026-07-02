@@ -32,8 +32,28 @@ use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 use tracing::{error, info};
 
 use crate::rpc::errors::{
-    db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc, not_found_error,
+    db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc,
+    not_available_on_node_error, not_found_error,
 };
+
+/// Whether this node serves OL block body/data over RPC.
+///
+/// Checkpoint-sync nodes are DA-reconstructed and store no block bodies, so
+/// block-scoped lookups must report a capability error rather than empty or
+/// "block not found" results.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(crate) enum OLBlockDataAccess {
+    /// Full block data is available.
+    Available,
+    /// Block data is not stored (checkpoint-sync node).
+    Unavailable,
+}
+
+impl OLBlockDataAccess {
+    fn is_available(self) -> bool {
+        matches!(self, Self::Available)
+    }
+}
 
 /// One canonical-chain block in the range walked by `get_blocks_summaries`.
 struct ChainBlock {
@@ -48,6 +68,8 @@ pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     genesis_l1_height: L1Height,
     // Maximum number of headers/block-data that can be queried
     max_headers_range: usize,
+    // Indicates whether or not the server has access to block data.
+    block_data_access: OLBlockDataAccess,
 }
 
 /// Convenient wrapper for account records.
@@ -105,11 +127,17 @@ fn local_inbox_message_range(
 
 impl<P: OLRpcProvider> OLRpcServer<P> {
     /// Creates a new [`OLRpcServer`].
-    pub(crate) fn new(provider: P, genesis_l1_height: L1Height, max_headers_range: usize) -> Self {
+    pub(crate) fn new(
+        provider: P,
+        genesis_l1_height: L1Height,
+        max_headers_range: usize,
+        block_data_access: OLBlockDataAccess,
+    ) -> Self {
         Self {
             provider,
             genesis_l1_height,
             max_headers_range,
+            block_data_access,
         }
     }
 
@@ -703,8 +731,17 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         else {
             return Ok(None);
         };
-        let l2_start = self.get_first_l2_block_in_epoch(&epoch_summary).await?;
-        let l2_range = (l2_start, *epoch_summary.terminal());
+        // Deriving the first L2 block of a non-genesis epoch needs block bodies,
+        // which checkpoint-sync nodes lack; `l2_start` is `None` there. The
+        // terminal (`l2_end`) is always available from the summary.
+        let l2_end = *epoch_summary.terminal();
+        let l2_start = if epoch == 0 {
+            Some(l2_end)
+        } else if self.block_data_access.is_available() {
+            Some(self.get_first_l2_block_in_epoch(&epoch_summary).await?)
+        } else {
+            None
+        };
 
         let cur_l1 = *epoch_summary.new_l1();
         let l1_start = if epoch == 0 {
@@ -799,7 +836,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         Ok(Some(RpcCheckpointInfo {
             idx: epoch as u64,
             l1_range,
-            l2_range,
+            l2_start,
+            l2_end,
             confirmation_status,
         }))
     }
@@ -852,6 +890,16 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 "Block range too big. Allowed range is {}",
                 self.max_headers_range
             )));
+        }
+
+        // Without block bodies the canonical walk silently yields no blocks past
+        // genesis, which would return an empty list that reads as "present but
+        // empty". Report the missing capability instead. Genesis (slot 0) is
+        // still served because its block is always available.
+        if !self.block_data_access.is_available() && end_slot > 0 {
+            return Err(not_available_on_node_error(
+                "OL block bodies are not available on this node",
+            ));
         }
 
         let chain_blocks = self.collect_canonical_chain(start_slot, end_slot).await?;

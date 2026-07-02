@@ -11,9 +11,9 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-alpen-reth-node.workspace = true
 alpen-ee-common.workspace = true
 alpen-ee-database.workspace = true
+alpen-reth-node.workspace = true
 ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-logs.workspace = true

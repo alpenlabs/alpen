@@ -17,8 +17,10 @@ use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
-use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment};
+use strata_ledger_types::{
+    IAccountState, ISnarkAccountState, IStateAccessor, StateError, StateResult,
+};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types::{
     BlockFlags, MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLLogType,
@@ -42,13 +44,21 @@ use crate::{
     traits::ChainWorkerContext,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct SnarkAccountCursor {
     seqno: Seqno,
     next_inbox_msg_idx: u64,
 }
 
 type SnarkAccountCursors = HashMap<AccountSerial, SnarkAccountCursor>;
+
+#[derive(Clone)]
+struct ReconstructedSnarkData {
+    /// Snark acct updates as they appear in OL logs.
+    updates: Vec<SnarkAcctStateUpdate>,
+    /// New cursors(next inbox id and seq no) for each account in logs.
+    acct_cursors: SnarkAccountCursors,
+}
 
 /// Mutable state for the chain worker.
 ///
@@ -512,9 +522,10 @@ pub(crate) fn apply_checkpoint_epoch(
 
     // Replace the DA-collapsed snark records (one per account) with per-update
     // records derived from the epoch's `ol_logs`.
-    let (rebuilt_snark_updates, derived_cursors) =
-        rebuild_snark_records_from_logs(&indexer_state, &ol_logs, &pre_cursors)?;
-    let derived_seqnos: HashMap<AccountSerial, Seqno> = derived_cursors
+    let recons_data =
+        reconstruct_snark_acct_update_records(&indexer_state, &ol_logs, &pre_cursors)?;
+    let derived_seqnos: HashMap<AccountSerial, Seqno> = recons_data
+        .acct_cursors
         .iter()
         .map(|(&serial, cursor)| (serial, cursor.seqno))
         .collect();
@@ -533,7 +544,7 @@ pub(crate) fn apply_checkpoint_epoch(
 
     verify_snark_seqno_invariant(&new_state, &derived_seqnos)?;
 
-    indexer_writes.set_snark_acct_state_updates(rebuilt_snark_updates);
+    indexer_writes.set_snark_acct_state_updates(recons_data.updates);
     let final_state_root =
         new_state
             .compute_state_root()
@@ -695,29 +706,11 @@ fn verify_snark_seqno_invariant<S: IStateAccessor>(
     for (&serial, &derived) in derived_seqnos {
         let account_id = state
             .find_account_id_by_serial(serial)
-            .map_err(|source| WorkerError::AccountStateRead {
-                stage: "post-state serial lookup",
-                source,
-            })?
+            .map_err(acct_read_err("post-state serial lookup"))?
             .ok_or(WorkerError::UnknownAccountSerial(serial))?;
-        let acct = state
-            .get_account_state(account_id)
-            .map_err(|source| WorkerError::AccountStateRead {
-                stage: "post-state account read",
-                source,
-            })?
-            .ok_or_else(|| {
-                WorkerError::Unexpected(format!(
-                    "post-state account {account_id} missing after batch apply"
-                ))
-            })?;
-        let post = acct
-            .as_snark_account()
+        let post = get_snark_acct(state, account_id)
             .map(|s| s.seqno())
-            .map_err(|source| WorkerError::AccountStateRead {
-                stage: "post-state as_snark_account",
-                source,
-            })?;
+            .map_err(acct_read_err("post-state as_snark_account"))?;
         if post != derived {
             error!(
                 ?serial, %account_id, ?derived, ?post,
@@ -751,51 +744,48 @@ fn collect_pre_snark_account_cursors<S: IStateAccessor>(
         if pre_cursors.contains_key(&serial) {
             continue;
         }
-        let cursor = match base_state
-            .find_account_id_by_serial(serial)
-            .map_err(|source| WorkerError::AccountStateRead {
-                stage: "pre-state serial lookup",
-                source,
-            })? {
-            Some(id) => match base_state.get_account_state(id).map_err(|source| {
-                WorkerError::AccountStateRead {
-                    stage: "pre-state account read",
-                    source,
-                }
-            })? {
-                Some(state) => state
-                    .as_snark_account()
-                    .map(|s| SnarkAccountCursor {
-                        seqno: s.seqno(),
-                        next_inbox_msg_idx: s.next_inbox_msg_idx(),
-                    })
-                    .map_err(|source| WorkerError::AccountStateRead {
-                        stage: "pre-state as_snark_account",
-                        source,
-                    })?,
-                None => SnarkAccountCursor {
-                    seqno: Seqno::zero(),
-                    next_inbox_msg_idx: 0,
-                },
-            },
-            None => SnarkAccountCursor {
-                seqno: Seqno::zero(),
-                next_inbox_msg_idx: 0,
-            },
-        };
+        let cursor = get_snark_acct_cursor(base_state, serial)?;
         pre_cursors.insert(serial, cursor);
     }
     Ok(pre_cursors)
 }
 
-/// Rebuilds per-update snark index records from the epoch's OL logs.
-fn rebuild_snark_records_from_logs<S: IStateAccessor>(
+/// Gets account state and constructs `SnarkAccountCursor` from the state defaulting to zero valued
+/// cursors.
+fn get_snark_acct_cursor<S: IStateAccessor>(
+    base_state: &S,
+    serial: AccountSerial,
+) -> WorkerResult<SnarkAccountCursor> {
+    let cursor = match base_state
+        .find_account_id_by_serial(serial)
+        .map_err(acct_read_err("pre-state serial lookup"))?
+    {
+        None => SnarkAccountCursor::default(),
+        Some(account_id) => match get_snark_acct(base_state, account_id) {
+            Ok(snacct) => SnarkAccountCursor {
+                seqno: snacct.seqno(),
+                next_inbox_msg_idx: snacct.next_inbox_msg_idx(),
+            },
+            Err(StateError::MissingAccount(_)) => SnarkAccountCursor::default(),
+            Err(source) => {
+                return Err(acct_read_err("pre-state account read")(source));
+            }
+        },
+    };
+    Ok(cursor)
+}
+
+/// Reconstructs per-update snark index records from the epoch's OL logs.
+fn reconstruct_snark_acct_update_records<S: IStateAccessor>(
     state: &S,
     ol_logs: &[OLLog],
     pre_cursors: &SnarkAccountCursors,
-) -> WorkerResult<(Vec<SnarkAcctStateUpdate>, SnarkAccountCursors)> {
-    let mut next_cursor: SnarkAccountCursors = HashMap::new();
-    let mut records = Vec::with_capacity(ol_logs.len());
+) -> WorkerResult<ReconstructedSnarkData> {
+    let mut acct_cursors: SnarkAccountCursors = HashMap::new();
+    let mut updates = Vec::with_capacity(ol_logs.len());
+    // Index of each account's last update, so we can stamp the recoverable
+    // post-epoch root onto it after the walk.
+    let mut acct_last_record_idx: HashMap<AccountId, usize> = HashMap::new();
 
     for log in ol_logs {
         let serial = log.account_serial();
@@ -811,28 +801,24 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
 
         let account_id = state
             .find_account_id_by_serial(serial)
-            .map_err(|source| WorkerError::AccountStateRead {
-                stage: "post-state serial lookup",
-                source,
-            })?
+            .map_err(acct_read_err("post-state serial lookup"))?
             .ok_or(WorkerError::UnknownAccountSerial(serial))?;
 
-        let cur = next_cursor.entry(serial).or_insert_with(|| {
+        let cur = acct_cursors.entry(serial).or_insert_with(|| {
             pre_cursors
                 .get(&serial)
                 .copied()
-                .unwrap_or(SnarkAccountCursor {
-                    seqno: Seqno::zero(),
-                    next_inbox_msg_idx: 0,
-                })
+                .unwrap_or(SnarkAccountCursor::default())
         });
         let prev_next_read_idx = cur.next_inbox_msg_idx;
         cur.seqno = cur.seqno.incr();
         cur.next_inbox_msg_idx = log_data.new_msg_idx;
         let seqno = cur.seqno;
 
-        // No per-update inner state root is available from checkpoint logs.
-        records.push(SnarkAcctStateUpdate::new(
+        // Intermediate per-update roots are not in checkpoint logs; the terminal
+        // update is patched below with the recoverable post-epoch root.
+        acct_last_record_idx.insert(account_id, updates.len());
+        updates.push(SnarkAcctStateUpdate::new(
             account_id,
             None,
             prev_next_read_idx,
@@ -841,7 +827,36 @@ fn rebuild_snark_records_from_logs<S: IStateAccessor>(
         ));
     }
 
-    Ok((records, next_cursor))
+    // The post-DA state holds each account's final inner state root, which is
+    // the terminal update's post-state root. Earlier updates stay `None`.
+    for (account_id, idx) in acct_last_record_idx {
+        let root = get_snark_acct(state, account_id)
+            .map(|s| s.inner_state_root())
+            .map_err(acct_read_err("post epoch snark state root"))?;
+        updates[idx].set_state(Some(root));
+    }
+
+    Ok(ReconstructedSnarkData {
+        updates,
+        acct_cursors,
+    })
+}
+
+/// Gets corresponding snark account for given account id.
+fn get_snark_acct<S: IStateAccessor>(
+    state: &S,
+    account_id: AccountId,
+) -> StateResult<&<S::AccountState as IAccountState>::SnarkAccountState> {
+    let Some(acct) = state.get_account_state(account_id)? else {
+        return Err(StateError::MissingAccount(account_id));
+    };
+
+    acct.as_snark_account()
+}
+
+/// Builds a [`WorkerError::AccountStateRead`] closure tagged with `stage`.
+fn acct_read_err(stage: &'static str) -> impl FnOnce(StateError) -> WorkerError {
+    move |source| WorkerError::AccountStateRead { stage, source }
 }
 
 /// The values produced by reconstructing one epoch from its checkpoint,
@@ -936,6 +951,7 @@ fn build_epoch_summary(
 
 #[cfg(test)]
 mod tests {
+    use strata_acct_types::Hash;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
     use strata_ol_state_support_types::IndexerWrites;
@@ -1000,5 +1016,52 @@ mod tests {
         assert_eq!(summary.epoch(), 5);
         assert_eq!(summary.final_state(), &state_root);
         assert_eq!(summary.prev_terminal(), &OLBlockCommitment::null());
+    }
+
+    /// Checkpoint reconstruction can only recover the terminal per-account root
+    /// (= post-epoch state root). Earlier updates in a multi-update epoch stay
+    /// `None`; the terminal update is stamped with the account's final root.
+    #[test]
+    fn rebuild_snark_records_stamps_terminal_root_only() {
+        use strata_acct_types::BitcoinAmount;
+        use strata_ledger_types::{IStateAccessorMut, NewAccountData, NewAccountTypeState};
+        use strata_ol_state_support_types::MemoryStateBaseLayer;
+        use strata_predicate::PredicateKey;
+
+        let account_id = AccountId::from([7u8; 32]);
+        let final_root = Hash::from([9u8; 32]);
+
+        let mut state = MemoryStateBaseLayer::new(create_test_genesis_state());
+        let serial = state
+            .create_new_account(
+                account_id,
+                NewAccountData::new(
+                    BitcoinAmount::zero(),
+                    NewAccountTypeState::Snark {
+                        update_vk: PredicateKey::always_accept(),
+                        initial_state_root: final_root,
+                    },
+                ),
+            )
+            .expect("create snark account");
+
+        // Two updates to the same account in one epoch (cursors advance 0->1->2).
+        let log = |new_idx: u64| {
+            let data = SnarkAccountUpdateLogData::new(new_idx, vec![0xaa]).unwrap();
+            OLLog::new(serial, data.encode_log().unwrap())
+        };
+        let logs = vec![log(1), log(2)];
+
+        let ReconstructedSnarkData {
+            updates: records, ..
+        } = reconstruct_snark_acct_update_records(&state, &logs, &HashMap::new()).expect("rebuild");
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].state(), None, "earlier update root unavailable");
+        assert_eq!(
+            records[1].state(),
+            Some(final_root),
+            "terminal update carries post-epoch root"
+        );
     }
 }

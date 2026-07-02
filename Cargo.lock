@@ -15215,6 +15215,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
+ "strata-predicate",
  "strata-primitives",
  "strata-service",
  "strata-snark-acct-types",
