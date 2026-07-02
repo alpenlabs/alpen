@@ -353,7 +353,6 @@ fn ensure_pending_asm_log_slot_available(current_len: usize) -> StateResult<()> 
 mod tests {
     use strata_acct_types::{BitcoinAmount, L1BlockRecord};
     use strata_identifiers::L1Height;
-    use strata_ledger_types::*;
     use strata_ol_state_types::{IStateBatchApplicable, OLAccountState};
 
     use super::*;
