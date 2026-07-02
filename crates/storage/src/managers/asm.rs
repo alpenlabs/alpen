@@ -44,6 +44,11 @@ impl AsmStateManager {
         self.ops.get_asm_state_blocking(block)
     }
 
+    /// Returns [`AsmState`] that corresponds to passed block.
+    pub async fn get_state_async(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>> {
+        self.ops.get_asm_state_async(block).await
+    }
+
     /// Puts [`AsmState`] for the given block.
     pub fn put_state_blocking(
         &self,

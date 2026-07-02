@@ -193,8 +193,8 @@ where
 
         let asm_tip_height = match self
             .storage
-            .asm()
-            .fetch_most_recent_state_blocking()
+            .fetch_canonical_asm_state_async()
+            .await
             .map_err(BlockAssemblyError::Db)?
         {
             Some((commitment, _)) => commitment.height(),

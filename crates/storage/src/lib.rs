@@ -69,8 +69,12 @@ pub use managers::writer::L1WriterManager;
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_store_sled::SledBackend;
 use strata_db_types::backend::DatabaseBackend;
+use strata_db_types::DbResult;
 pub use strata_db_types::MmrId;
+use strata_primitives::L1BlockCommitment;
+use strata_state::asm_state::AsmState;
 use tokio::runtime::Handle;
+use tracing::warn;
 
 /// A consolidation of database managers.
 // TODO(STR-3679): move this to its own module
@@ -179,6 +183,100 @@ impl NodeStorage {
     pub fn l1_writer(&self) -> &Arc<L1WriterManager> {
         &self.l1_writer_manager
     }
+
+    /// Returns the latest persisted ASM state on the canonical L1 chain, or
+    /// [`None`] if there is none. May lag the L1 canonical tip when ASM is behind.
+    ///
+    /// [`AsmStateManager::fetch_most_recent_state_blocking`] can return an orphan
+    /// from an abandoned reorg branch (those rows are never pruned); this resolves
+    /// down the canonical chain instead. See STR-3832.
+    pub fn fetch_canonical_asm_state_blocking(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+        let Some((recent_block, recent_state)) =
+            self.asm_state_manager.fetch_most_recent_state_blocking()?
+        else {
+            return Ok(None);
+        };
+
+        if self
+            .l1_block_manager
+            .get_canonical_blockid_at_height_uncached(recent_block.height())?
+            == Some(*recent_block.blkid())
+        {
+            return Ok(Some((recent_block, recent_state)));
+        }
+
+        // Most-recent is an orphan. Resolve down from the canonical tip to the
+        // highest block with a persisted ASM state.
+        let Some((tip_height, _)) = self.l1_block_manager.get_canonical_chain_tip()? else {
+            return Ok(None);
+        };
+        let search_tip = tip_height.min(recent_block.height());
+        for height in (0..=search_tip).rev() {
+            let Some(blockid) = self
+                .l1_block_manager
+                .get_canonical_blockid_at_height_uncached(height)?
+            else {
+                continue;
+            };
+            let block = L1BlockCommitment::new(height, blockid);
+            if let Some(state) = self.asm_state_manager.get_state_blocking(block)? {
+                return Ok(Some((block, state)));
+            }
+        }
+
+        warn!(%recent_block, tip_height, "ASM has states but none on the canonical chain");
+        Ok(None)
+    }
+
+    /// Returns the latest persisted ASM state on the canonical L1 chain, or
+    /// [`None`] if there is none. May lag the L1 canonical tip when ASM is behind.
+    pub async fn fetch_canonical_asm_state_async(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+        let Some((recent_block, recent_state)) = self
+            .asm_state_manager
+            .fetch_most_recent_state_async()
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        if self
+            .l1_block_manager
+            .get_canonical_blockid_at_height_async(recent_block.height())
+            .await?
+            == Some(*recent_block.blkid())
+        {
+            return Ok(Some((recent_block, recent_state)));
+        }
+
+        let Some((tip_height, _)) = self
+            .l1_block_manager
+            .get_canonical_chain_tip_async()
+            .await?
+        else {
+            return Ok(None);
+        };
+        let search_tip = tip_height.min(recent_block.height());
+        for height in (0..=search_tip).rev() {
+            let Some(blockid) = self
+                .l1_block_manager
+                .get_canonical_blockid_at_height_async(height)
+                .await?
+            else {
+                continue;
+            };
+            let block = L1BlockCommitment::new(height, blockid);
+            if let Some(state) = self.asm_state_manager.get_state_async(block).await? {
+                return Ok(Some((block, state)));
+            }
+        }
+
+        warn!(%recent_block, tip_height, "ASM has states but none on the canonical chain");
+        Ok(None)
+    }
 }
 
 /// Given a raw database, creates storage managers and returns a [`NodeStorage`]
@@ -253,4 +351,169 @@ pub fn test_runtime_handle() -> Handle {
     RT.get_or_init(|| Runtime::new().expect("test: build runtime"))
         .handle()
         .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_tests::asm_tests::make_test_asm_state;
+    use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
+
+    use super::*;
+
+    fn setup() -> NodeStorage {
+        let db = get_test_sled_backend();
+        create_node_storage(db, test_runtime_handle()).expect("test: create node storage")
+    }
+
+    fn blkid(n: u8) -> L1BlockId {
+        L1BlockId::from(Buf32::from([n; 32]))
+    }
+
+    fn extend_canonical(storage: &NodeStorage, up_to: u32) {
+        for height in 1..=up_to {
+            storage
+                .l1()
+                .extend_canonical_chain(&blkid(height as u8), height)
+                .expect("test: extend canonical chain");
+        }
+    }
+
+    #[test]
+    fn canonical_resolution_none_without_asm_state() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        assert!(storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn canonical_resolution_returns_recent_canonical_state() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        let canonical = L1BlockCommitment::new(10, blkid(10));
+        storage
+            .asm()
+            .put_state_blocking(canonical, make_test_asm_state())
+            .unwrap();
+
+        let (resolved, _) = storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved, canonical);
+    }
+
+    // Orphan above the canonical tip: resolving to it would under-delete.
+    #[test]
+    fn canonical_resolution_prefers_canonical_over_higher_orphan() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        let canonical = L1BlockCommitment::new(10, blkid(10));
+        // Height 12 is not on the canonical chain (canonical only reaches 10).
+        let orphan = L1BlockCommitment::new(12, blkid(99));
+        storage
+            .asm()
+            .put_state_blocking(canonical, make_test_asm_state())
+            .unwrap();
+        storage
+            .asm()
+            .put_state_blocking(orphan, make_test_asm_state())
+            .unwrap();
+
+        // Precondition: most-recent (highest-keyed) is the orphan.
+        let (recent, _) = storage
+            .asm()
+            .fetch_most_recent_state_blocking()
+            .unwrap()
+            .unwrap();
+        assert_eq!(recent, orphan, "setup: most-recent should be the orphan");
+
+        let (resolved, _) = storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved, canonical);
+        assert_ne!(resolved, orphan);
+    }
+
+    // Same-height orphan sibling sorting above canonical: would over-delete.
+    #[test]
+    fn canonical_resolution_prefers_canonical_sibling_at_same_height() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        let canonical = L1BlockCommitment::new(10, blkid(10));
+        let orphan = L1BlockCommitment::new(10, blkid(200));
+        storage
+            .asm()
+            .put_state_blocking(canonical, make_test_asm_state())
+            .unwrap();
+        storage
+            .asm()
+            .put_state_blocking(orphan, make_test_asm_state())
+            .unwrap();
+
+        let (recent, _) = storage
+            .asm()
+            .fetch_most_recent_state_blocking()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            recent, orphan,
+            "setup: most-recent should be the higher-id orphan sibling"
+        );
+
+        let (resolved, _) = storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved, canonical);
+    }
+
+    // ASM has persisted states, but none belong to the canonical chain.
+    #[test]
+    fn canonical_resolution_none_when_all_asm_states_are_orphans() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        let orphan = L1BlockCommitment::new(12, blkid(99));
+        storage
+            .asm()
+            .put_state_blocking(orphan, make_test_asm_state())
+            .unwrap();
+
+        let (recent, _) = storage
+            .asm()
+            .fetch_most_recent_state_blocking()
+            .unwrap()
+            .unwrap();
+        assert_eq!(recent, orphan, "setup: most-recent should be the orphan");
+
+        assert!(storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .is_none());
+    }
+
+    // No canonical chain tracked: resolve to nothing so the caller skips.
+    #[test]
+    fn canonical_resolution_none_without_canonical_state() {
+        let storage = setup();
+        let orphan = L1BlockCommitment::new(5, blkid(99));
+        storage
+            .asm()
+            .put_state_blocking(orphan, make_test_asm_state())
+            .unwrap();
+
+        assert!(storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .is_none());
+    }
 }
