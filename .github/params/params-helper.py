@@ -16,6 +16,8 @@ import json
 import sys
 from pathlib import Path
 
+ALPEN_ACCOUNT_ID = "0101010101010101010101010101010101010101010101010101010101010101"
+
 
 def load_json(path: Path) -> dict:
     with open(path) as f:
@@ -28,17 +30,10 @@ def write_json(path: Path, data: dict) -> None:
         f.write("\n")
 
 
-def merge_ee_params(template: dict, raw: dict) -> dict:
-    template["genesis_blockhash"] = raw["genesis_blockhash"]
-    template["genesis_stateroot"] = raw["genesis_stateroot"]
-    template["genesis_blocknum"] = raw["genesis_blocknum"]
-    return template
-
-
-def merge_ol_params(template: dict, raw: dict, account_id: str) -> dict:
-    raw_acct = raw["accounts"][account_id]
-    template["accounts"][account_id]["predicate"] = raw_acct["predicate"]
-    template["accounts"][account_id]["inner_state"] = raw_acct["inner_state"]
+def merge_ol_params(template: dict, raw: dict) -> dict:
+    raw_acct = raw["accounts"][ALPEN_ACCOUNT_ID]
+    template["accounts"][ALPEN_ACCOUNT_ID]["predicate"] = raw_acct["predicate"]
+    template["accounts"][ALPEN_ACCOUNT_ID]["inner_state"] = raw_acct["inner_state"]
     template["last_l1_block"] = raw["last_l1_block"]
     return template
 
@@ -67,7 +62,7 @@ def merge_asm_params(template: dict, raw: dict) -> dict:
 
 def check_no_placeholders(output_dir: Path) -> bool:
     ok = True
-    for name in ["ee-params", "ol-params", "asm-params"]:
+    for name in ["ol-params", "asm-params"]:
         content = (output_dir / f"{name}.json").read_text()
         if "__" in content:
             print(f"ERROR: {name}.json still has placeholders", file=sys.stderr)
@@ -75,8 +70,8 @@ def check_no_placeholders(output_dir: Path) -> bool:
     return ok
 
 
-def cross_validate(ap: dict, olp: dict, eep: dict) -> bool:
-    """Verify that shared values across generated params are consistent."""
+def cross_validate(ap: dict, olp: dict) -> bool:
+    """Verify that shared values between asm-params and ol-params are consistent."""
     ok = True
 
     ap_bridge = None
@@ -100,14 +95,6 @@ def cross_validate(ap: dict, olp: dict, eep: dict) -> bool:
         )
         ok = False
 
-    ee_account_id = eep.get("account_id")
-    if ee_account_id not in olp.get("accounts", {}):
-        print(
-            f"ERROR: EE account id {ee_account_id} missing from ol-params accounts",
-            file=sys.stderr,
-        )
-        ok = False
-
     return ok
 
 
@@ -125,16 +112,6 @@ def extract_safe_harbour(template_dir: Path) -> str:
         if "Bridge" in sp:
             return sp["Bridge"]["safe_harbour_address"]
     raise ValueError("safe_harbour_address not found in asm-params template")
-
-
-def extract_ee_account_id(template_dir: Path) -> str:
-    path = template_dir / "ee-params.json"
-    if not path.exists():
-        raise FileNotFoundError(f"missing required EE params template: {path}")
-    ee_params = load_json(path)
-    if "account_id" not in ee_params:
-        raise KeyError(f"missing account_id in EE params template: {path}")
-    return ee_params["account_id"]
 
 
 def main():
@@ -164,10 +141,6 @@ def main():
         safe_harbour = extract_safe_harbour(template_dir)
         (output_dir / "safe-harbour.txt").write_text(safe_harbour + "\n")
         print(f"  safe_harbour_address: {safe_harbour}")
-
-        ee_account_id = extract_ee_account_id(template_dir)
-        (output_dir / "ee-account-id.txt").write_text(ee_account_id + "\n")
-        print(f"  ee_account_id: {ee_account_id}")
         return
 
     raw_dir = Path(args.raw_dir)
@@ -175,17 +148,9 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    eep = merge_ee_params(
-        load_json(template_dir / "ee-params.json"),
-        load_json(raw_dir / "ee-params-raw.json"),
-    )
-    write_json(output_dir / "ee-params.json", eep)
-    print("  ee-params.json: merged")
-
     olp = merge_ol_params(
         load_json(template_dir / "ol-params.json"),
         load_json(raw_dir / "ol-params-raw.json"),
-        eep["account_id"],
     )
     write_json(output_dir / "ol-params.json", olp)
     print("  ol-params.json: merged")
@@ -200,7 +165,7 @@ def main():
     if not check_no_placeholders(output_dir):
         sys.exit(1)
 
-    if not cross_validate(ap, olp, eep):
+    if not cross_validate(ap, olp):
         sys.exit(1)
 
     print("\n  All checks passed.")

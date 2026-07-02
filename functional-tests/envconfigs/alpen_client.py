@@ -3,7 +3,6 @@ Alpen-client test environment configurations.
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import cast
 
 import flexitest
@@ -103,7 +102,6 @@ class AlpenClientEnv(flexitest.EnvConfig):
         ol_endpoint: str | None = None,
         ol_submit_endpoint: str | None = None,
         ol_submit_token: str | None = None,
-        ee_params_path: Path | None = None,
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
         privkey, pubkey = generate_sequencer_keypair()
@@ -161,7 +159,6 @@ class AlpenClientEnv(flexitest.EnvConfig):
             ol_endpoint=ol_endpoint,
             ol_submit_endpoint=ol_submit_endpoint,
             ol_submit_token=ol_submit_token,
-            ee_params_path=ee_params_path,
             da_config=da_config,
             batch_sealing_block_count=envparams.batch_sealing_block_count,
             dev_track_latest_epoch=envparams.dev_track_latest_epoch,
@@ -192,7 +189,6 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 instance_id=i,
                 sequencer_http=seq_http_url,  # Forward transactions to sequencer
                 ol_endpoint=ol_endpoint,
-                ee_params_path=ee_params_path,
             )
             fullnode.wait_for_ready(timeout=60)
             fullnodes.append(fullnode)

@@ -1,5 +1,5 @@
-# Generates deployment params (ee-params, ol-params, asm-params) using the prebuilt
-# datatool image tag from the specified commit. Static values (operator keys,
+# Generates deployment params (ol-params, asm-params) using the prebuilt
+# datatool image from the specified commit. Static values (operator keys,
 # denomination, etc.) come from pre-committed templates per environment;
 # dynamic values (VKs, genesis L1 anchor, genesis_ol_blkid) are filled in by
 # datatool.
@@ -126,12 +126,6 @@ jobs:
         env:
           DEPLOY_ENV: ${{ inputs.env }}
         run: python3 -m json.tool ".github/params/out/${DEPLOY_ENV}/ol-params.json" 2>/dev/null || echo "Not generated"
-
-      - name: ee-params.json
-        if: always()
-        env:
-          DEPLOY_ENV: ${{ inputs.env }}
-        run: python3 -m json.tool ".github/params/out/${DEPLOY_ENV}/ee-params.json" 2>/dev/null || echo "Not generated"
 
       - name: asm-params.json
         if: always()

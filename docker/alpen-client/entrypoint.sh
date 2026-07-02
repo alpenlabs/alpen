@@ -16,7 +16,6 @@ fi
 SEQUENCER_MODE="${SEQUENCER_MODE:-false}"
 SEQUENCER_PUBKEY="${SEQUENCER_PUBKEY:?SEQUENCER_PUBKEY must be set}"
 CHAIN_SPEC="${CHAIN_SPEC:-dev}"
-EE_PARAMS_PATH="${EE_PARAMS_PATH:-/app/configs/generated/ee-params.json}"
 
 if [ "${DUMMY_OL_CLIENT:-0}" = "1" ]; then
     set -- --dummy-ol-client "$@"
@@ -65,7 +64,6 @@ fi
 exec alpen-client \
     --sequencer-pubkey "${SEQUENCER_PUBKEY}" \
     --custom-chain "${CHAIN_SPEC}" \
-    --ee-params "${EE_PARAMS_PATH}" \
     --datadir "${DATADIR:-/app/data}" \
     --addr 0.0.0.0 \
     --http \

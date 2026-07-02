@@ -2,6 +2,9 @@
 
 use std::fs;
 
+use alloy_genesis::Genesis;
+use alloy_primitives::B256;
+use reth_chainspec::ChainSpec;
 use strata_btc_verification::L1Anchor;
 use strata_primitives::L1Height;
 
@@ -9,6 +12,26 @@ use crate::args::CmdContext;
 
 /// The default L1 genesis height to use.
 const DEFAULT_L1_GENESIS_HEIGHT: L1Height = 100;
+
+pub(super) struct BlockInfo {
+    pub(super) blockhash: B256,
+    pub(super) stateroot: B256,
+}
+
+pub(super) fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
+    let genesis: Genesis = serde_json::from_str(genesis_json)?;
+
+    let chain_spec = ChainSpec::from_genesis(genesis);
+
+    let genesis_header = chain_spec.genesis_header();
+    let genesis_stateroot = genesis_header.state_root;
+    let genesis_hash = chain_spec.genesis_hash();
+
+    Ok(BlockInfo {
+        blockhash: genesis_hash,
+        stateroot: genesis_stateroot,
+    })
+}
 
 /// Retrieves the genesis L1 anchor from a file or Bitcoin RPC client.
 ///

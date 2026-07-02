@@ -84,7 +84,6 @@ services:
     ports:
       - "8545:8545"
     volumes:
-      - ./configs/generated/ee-params.json:/app/configs/generated/ee-params.json:ro
       - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:
