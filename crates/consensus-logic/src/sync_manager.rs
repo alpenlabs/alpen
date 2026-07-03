@@ -226,23 +226,20 @@ where
         return Ok(None);
     }
 
-    let search_tip = stored_tip_height.min(bitcoind_tip_height);
-    if search_tip < genesis_l1_height {
-        debug!(
-            stored_tip_height,
-            bitcoind_tip_height,
-            genesis_l1_height,
-            "bitcoind tip is before ASM genesis; skipping startup ASM submission"
-        );
-        return Ok(None);
-    }
-
     let max_rewind_depth = l1_reorg_safe_depth.max(1).saturating_sub(1);
     let safe_rewind_floor = stored_tip_height
         .saturating_sub(max_rewind_depth)
         .max(genesis_l1_height);
-    let floor = search_tip.min(safe_rewind_floor);
     let bitcoind_is_behind = bitcoind_tip_height < stored_tip_height;
+    if bitcoind_is_behind && bitcoind_tip_height < safe_rewind_floor {
+        bail!(
+            "bitcoind tip {bitcoind_tip_height} is too far behind stored L1 canonical tip \
+             {stored_tip_height}; waiting for bitcoind to reach at least {safe_rewind_floor}"
+        );
+    }
+
+    let search_tip = stored_tip_height.min(bitcoind_tip_height);
+    let floor = search_tip.min(safe_rewind_floor);
     let mut observed_divergence = false;
 
     for height in (floor..=search_tip).rev() {
@@ -268,16 +265,16 @@ where
                     stored_tip_height,
                     bitcoind_tip_height,
                     matched_height = height,
-                    "bitcoind is behind stored L1 canonical tip; preserving stored suffix"
+                    "bitcoind is behind stored L1 canonical tip; rewinding stored suffix for replay"
                 );
-                return Ok(Some(L1BlockCommitment::new(height, stored_blkid)));
+            } else {
+                warn!(
+                    stored_tip_height,
+                    pivot_height = height,
+                    "stored L1 canonical suffix diverged from bitcoind; rewinding before startup"
+                );
             }
 
-            warn!(
-                stored_tip_height,
-                pivot_height = height,
-                "stored L1 canonical suffix diverged from bitcoind; rewinding before startup"
-            );
             storage
                 .l1()
                 .revert_canonical_chain_async(height)
@@ -625,19 +622,79 @@ mod tests {
             .is_none());
     }
 
-    /// Verifies lagging bitcoind on the same chain does not cause a storage rewind.
+    /// Verifies shallow lagging bitcoind rewinds the unseen suffix for replay.
     #[tokio::test]
-    async fn startup_reconciliation_preserves_suffix_when_bitcoind_is_behind_same_chain() {
+    async fn startup_reconciliation_rewinds_shallow_suffix_when_bitcoind_is_behind_same_chain() {
         let storage = test_storage();
         seed_l1_chain(&storage, 10, 15).await;
 
-        let target = reconcile_l1_canonical_storage(&storage, 10, 3, 12, |height| async move {
+        let target = reconcile_l1_canonical_storage(&storage, 10, 3, 13, |height| async move {
             Ok(blockid(height as u8))
         })
         .await
         .expect("reconcile");
 
-        assert_eq!(target, Some(L1BlockCommitment::new(12, blockid(12))));
+        assert_eq!(target, Some(L1BlockCommitment::new(13, blockid(13))));
+        assert_eq!(
+            storage
+                .l1()
+                .get_canonical_chain_tip_async()
+                .await
+                .expect("tip")
+                .expect("stored tip"),
+            (13, blockid(13))
+        );
+        assert!(storage
+            .l1()
+            .get_canonical_blockid_at_height_async(14)
+            .await
+            .expect("height 14")
+            .is_none());
+    }
+
+    /// Verifies deep lagging bitcoind fails without mutating storage.
+    #[tokio::test]
+    async fn startup_reconciliation_errors_when_bitcoind_is_too_far_behind() {
+        let storage = test_storage();
+        seed_l1_chain(&storage, 10, 15).await;
+
+        let err = reconcile_l1_canonical_storage(&storage, 10, 3, 12, |height| async move {
+            Ok(blockid(height as u8))
+        })
+        .await
+        .expect_err("deep lag should fail startup without mutation");
+
+        assert!(
+            err.to_string().contains("too far behind stored L1"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(
+            storage
+                .l1()
+                .get_canonical_chain_tip_async()
+                .await
+                .expect("tip")
+                .expect("stored tip"),
+            (15, blockid(15))
+        );
+    }
+
+    /// Verifies post-genesis storage waits for bitcoind to reach ASM genesis.
+    #[tokio::test]
+    async fn startup_reconciliation_errors_when_bitcoind_is_before_asm_genesis() {
+        let storage = test_storage();
+        seed_l1_chain(&storage, 10, 15).await;
+
+        let err = reconcile_l1_canonical_storage(&storage, 10, 3, 9, |height| async move {
+            Ok(blockid(height as u8))
+        })
+        .await
+        .expect_err("bitcoind below genesis should fail startup without mutation");
+
+        assert!(
+            err.to_string().contains("too far behind stored L1"),
+            "unexpected error: {err:#}"
+        );
         assert_eq!(
             storage
                 .l1()
