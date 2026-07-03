@@ -15351,6 +15351,7 @@ dependencies = [
  "strata-asm-spec-debug",
  "strata-asm-worker",
  "strata-btc-types",
+ "strata-btc-verification",
  "strata-chain-worker",
  "strata-checkpoint-types",
  "strata-common",

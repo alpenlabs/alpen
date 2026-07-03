@@ -25,6 +25,9 @@ pub trait AsmDatabase: Send + Sync + 'static {
     /// Gets latest ASM state (the entry that corresponds to the highest l1 block).
     fn get_latest_asm_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>>;
 
+    /// Deletes ASM state, log, and auxiliary data rows strictly after `block`.
+    fn del_asm_entries_after(&self, block: L1BlockCommitment) -> DbResult<Vec<L1BlockCommitment>>;
+
     /// Gets ASM states starting from a given L1BlockCommitment up to a maximum count.
     ///
     /// Returns entries in ascending order (oldest first). If `from_block` doesn't exist,

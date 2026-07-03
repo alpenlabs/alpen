@@ -261,6 +261,8 @@ where
             continue;
         }
 
+        let target = L1BlockCommitment::new(height, stored_blkid);
+
         if height < stored_tip_height {
             if bitcoind_is_behind && !observed_divergence {
                 info!(
@@ -277,6 +279,11 @@ where
                 );
             }
 
+            let deleted_asm_entries = storage
+                .asm()
+                .del_entries_after_async(target)
+                .await
+                .with_context(|| format!("deleting ASM entries after rewound L1 block {target}"))?;
             storage
                 .l1()
                 .revert_canonical_chain_async(height)
@@ -284,9 +291,16 @@ where
                 .with_context(|| {
                     format!("rewinding stored L1 canonical chain to height {height}")
                 })?;
+            if !deleted_asm_entries.is_empty() {
+                info!(
+                    deleted_asm_entries = deleted_asm_entries.len(),
+                    %target,
+                    "deleted orphaned ASM entries after startup L1 rewind"
+                );
+            }
         }
 
-        return Ok(Some(L1BlockCommitment::new(height, stored_blkid)));
+        return Ok(Some(target));
     }
 
     bail!(
@@ -464,8 +478,14 @@ mod tests {
         sync::atomic::{AtomicUsize, Ordering},
     };
 
+    use bitcoin::Network;
+    use strata_asm_common::{
+        AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState, HeaderVerificationState,
+    };
+    use strata_btc_verification::L1Anchor;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::Buf32;
+    use strata_l1_txfmt::MagicBytes;
     use strata_storage::create_node_storage;
     use tokio::runtime::Handle;
 
@@ -491,6 +511,68 @@ mod tests {
                 .await
                 .expect("extend L1 canonical chain");
         }
+    }
+
+    /// Builds a minimal ASM state for storage reconciliation tests.
+    fn test_asm_state() -> StorageAsmState {
+        let anchor = L1Anchor {
+            block: L1BlockCommitment::default(),
+            next_target: 0,
+            epoch_start_timestamp: 0,
+            network: Network::Bitcoin,
+        };
+        let anchor_state = AnchorState {
+            magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
+            chain_view: ChainViewState {
+                pow_state: HeaderVerificationState::init(anchor),
+                history_accumulator: AsmHistoryAccumulatorState::new(0),
+            },
+            sections: Default::default(),
+        };
+        StorageAsmState::new(anchor_state, vec![])
+    }
+
+    /// Seeds ASM state and aux rows at each height.
+    fn seed_asm_states(storage: &NodeStorage, start: L1Height, end: L1Height) {
+        let state = test_asm_state();
+        for height in start..=end {
+            let block = L1BlockCommitment::new(height, blockid(height as u8));
+            storage
+                .asm()
+                .put_state_blocking(block, state.clone())
+                .expect("put ASM state");
+            storage
+                .asm()
+                .put_aux_data_blocking(block, AuxData::default())
+                .expect("put ASM aux data");
+        }
+    }
+
+    /// Asserts ASM state and aux data after `kept_height` were deleted.
+    fn assert_asm_suffix_deleted(
+        storage: &NodeStorage,
+        kept_height: L1Height,
+        deleted_height: L1Height,
+    ) {
+        let kept_block = L1BlockCommitment::new(kept_height, blockid(kept_height as u8));
+        let (latest, _) = storage
+            .asm()
+            .fetch_most_recent_state_blocking()
+            .expect("latest ASM state")
+            .expect("kept ASM state");
+        assert_eq!(latest, kept_block);
+
+        let deleted_block = L1BlockCommitment::new(deleted_height, blockid(deleted_height as u8));
+        assert!(storage
+            .asm()
+            .get_state_blocking(deleted_block)
+            .expect("deleted ASM state")
+            .is_none());
+        assert!(storage
+            .asm()
+            .get_aux_data_blocking(deleted_block)
+            .expect("deleted ASM aux data")
+            .is_none());
     }
 
     /// Verifies startup Bitcoin RPCs keep retrying transient failures until success.
@@ -688,6 +770,7 @@ mod tests {
     async fn startup_reconciliation_rewinds_orphaned_l1_suffix() {
         let storage = test_storage();
         seed_l1_chain(&storage, 10, 15).await;
+        seed_asm_states(&storage, 10, 15);
         let bitcoind_blocks: BTreeMap<_, _> = (10..=13)
             .map(|height| (height, blockid(height as u8)))
             .chain((14..=15).map(|height| (height, blockid((height + 100) as u8))))
@@ -716,6 +799,7 @@ mod tests {
             .await
             .expect("height 14")
             .is_none());
+        assert_asm_suffix_deleted(&storage, 13, 14);
     }
 
     /// Verifies shallow lagging bitcoind rewinds the unseen suffix for replay.
@@ -723,6 +807,7 @@ mod tests {
     async fn startup_reconciliation_rewinds_shallow_suffix_when_bitcoind_is_behind_same_chain() {
         let storage = test_storage();
         seed_l1_chain(&storage, 10, 15).await;
+        seed_asm_states(&storage, 10, 15);
 
         let target = reconcile_l1_canonical_storage(&storage, 10, 3, 13, |height| async move {
             Ok(blockid(height as u8))
@@ -746,6 +831,7 @@ mod tests {
             .await
             .expect("height 14")
             .is_none());
+        assert_asm_suffix_deleted(&storage, 13, 14);
     }
 
     /// Verifies deep lagging bitcoind fails without mutating storage.
@@ -807,6 +893,7 @@ mod tests {
     async fn startup_reconciliation_rewinds_when_lagging_bitcoind_observes_divergence() {
         let storage = test_storage();
         seed_l1_chain(&storage, 10, 15).await;
+        seed_asm_states(&storage, 10, 15);
         let bitcoind_blocks: BTreeMap<_, _> = [(14, blockid(114)), (13, blockid(13))]
             .into_iter()
             .collect();
@@ -828,6 +915,7 @@ mod tests {
                 .expect("stored tip"),
             (13, blockid(13))
         );
+        assert_asm_suffix_deleted(&storage, 13, 14);
     }
 
     /// Verifies startup fails without mutating storage when no safe pivot exists.

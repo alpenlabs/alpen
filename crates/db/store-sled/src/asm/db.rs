@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use strata_asm_common::AuxData;
 use strata_db_types::DbResult;
 use strata_db_types::asm::AsmDatabase;
@@ -63,6 +65,48 @@ impl AsmDatabase for AsmDBSled {
             }
             _ => Ok(None),
         }
+    }
+
+    fn del_asm_entries_after(&self, block: L1BlockCommitment) -> DbResult<Vec<L1BlockCommitment>> {
+        let mut blocks_to_drop = BTreeSet::new();
+        for item in self.asm_state_tree.range(block..)? {
+            let (candidate, _) = item?;
+            if candidate > block {
+                blocks_to_drop.insert(candidate);
+            }
+        }
+        for item in self.asm_log_tree.range(block..)? {
+            let (candidate, _) = item?;
+            if candidate > block {
+                blocks_to_drop.insert(candidate);
+            }
+        }
+        for item in self.asm_aux_data_tree.range(block..)? {
+            let (candidate, _) = item?;
+            if candidate > block {
+                blocks_to_drop.insert(candidate);
+            }
+        }
+
+        let blocks_to_drop: Vec<_> = blocks_to_drop.into_iter().collect();
+        self.config.with_retry(
+            (
+                &self.asm_state_tree,
+                &self.asm_log_tree,
+                &self.asm_aux_data_tree,
+            ),
+            |(state_tree, log_tree, aux_tree)| {
+                for block in &blocks_to_drop {
+                    state_tree.remove(block)?;
+                    log_tree.remove(block)?;
+                    aux_tree.remove(block)?;
+                }
+
+                Ok(())
+            },
+        )?;
+
+        Ok(blocks_to_drop)
     }
 
     fn get_asm_states_from(

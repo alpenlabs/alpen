@@ -39,6 +39,22 @@ impl AsmStateManager {
         self.ops.get_latest_asm_state_async().await
     }
 
+    /// Deletes [`AsmState`], logs, and aux data strictly after `block`.
+    pub async fn del_entries_after_async(
+        &self,
+        block: L1BlockCommitment,
+    ) -> DbResult<Vec<L1BlockCommitment>> {
+        self.ops.del_asm_entries_after_async(block).await
+    }
+
+    /// Deletes [`AsmState`], logs, and aux data strictly after `block`.
+    pub fn del_entries_after_blocking(
+        &self,
+        block: L1BlockCommitment,
+    ) -> DbResult<Vec<L1BlockCommitment>> {
+        self.ops.del_asm_entries_after_blocking(block)
+    }
+
     /// Returns [`AsmState`] that corresponds to passed block.
     pub fn get_state_blocking(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>> {
         self.ops.get_asm_state_blocking(block)
