@@ -42,8 +42,12 @@ fn is_retryable_startup_error(err: &anyhow::Error) -> bool {
     err.chain().any(|cause| {
         cause
             .downcast_ref::<ClientError>()
-            .is_some_and(ClientError::is_retriable)
+            .is_some_and(|err| err.is_retriable() || is_bitcoind_warmup_error(err))
     })
+}
+
+fn is_bitcoind_warmup_error(err: &ClientError) -> bool {
+    matches!(err, ClientError::Server(-28, _))
 }
 
 pub(crate) async fn run_bitcoin_connectivity_and_network_checks(
@@ -543,6 +547,16 @@ mod tests {
         }
     }
 
+    fn mock_client_warming_up() -> MockBitcoinClient {
+        MockBitcoinClient {
+            blockchain_info_result: Some(MockResult::ClientError(ClientError::Server(
+                -28,
+                "Loading block index...".into(),
+            ))),
+            block_hash_result: None,
+        }
+    }
+
     fn mock_client_with_block_hash(hash: BlockHash) -> MockBitcoinClient {
         MockBitcoinClient {
             blockchain_info_result: None,
@@ -559,6 +573,16 @@ mod tests {
         }
     }
 
+    fn mock_client_block_hash_warming_up() -> MockBitcoinClient {
+        MockBitcoinClient {
+            blockchain_info_result: None,
+            block_hash_result: Some(MockResult::ClientError(ClientError::Server(
+                -28,
+                "Loading block index...".into(),
+            ))),
+        }
+    }
+
     #[tokio::test]
     async fn test_bitcoind_unreachable() {
         let client = mock_client_unreachable();
@@ -567,6 +591,24 @@ mod tests {
 
         let check = result.expect("retryable connection failure should defer");
         assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_bitcoind_warmup_deferred() {
+        let client = mock_client_warming_up();
+
+        let result = run_bitcoin_connectivity_and_network_checks(&client, Network::Regtest).await;
+
+        let check = result.expect("bitcoind warmup should defer");
+        assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
+    }
+
+    #[test]
+    fn test_context_wrapped_bitcoind_warmup_is_retryable() {
+        let err = anyhow::Error::from(ClientError::Server(-28, "Loading block index...".into()))
+            .context("startup: could not connect to bitcoind via getblockchaininfo");
+
+        assert!(is_retryable_startup_error(&err));
     }
 
     #[tokio::test]
@@ -631,6 +673,18 @@ mod tests {
         let result = verify_l1_anchor_block(&client, commitment).await;
 
         let check = result.expect("retryable connection failure should defer");
+        assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_l1_anchor_block_warmup_deferred() {
+        let hash = BlockHash::all_zeros();
+        let commitment = make_l1_block_commitment(42, hash);
+        let client = mock_client_block_hash_warming_up();
+
+        let result = verify_l1_anchor_block(&client, commitment).await;
+
+        let check = result.expect("bitcoind warmup should defer");
         assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
     }
 

@@ -342,8 +342,13 @@ fn is_retryable_bitcoin_error(err: &anyhow::Error) -> bool {
     err.chain().any(|cause| {
         cause
             .downcast_ref::<ClientError>()
-            .is_some_and(ClientError::is_retriable)
+            .is_some_and(|err| err.is_retriable() || is_bitcoind_warmup_error(err))
     })
+}
+
+/// Returns `true` when bitcoind is reachable but still in RPC warmup.
+fn is_bitcoind_warmup_error(err: &ClientError) -> bool {
+    matches!(err, ClientError::Server(-28, _))
 }
 
 /// Runs a Bitcoin RPC operation with retries for transient failures.
@@ -510,6 +515,47 @@ mod tests {
 
         assert_eq!(value, 42);
         assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    /// Verifies startup Bitcoin RPCs retry bitcoind warmup responses.
+    #[tokio::test]
+    async fn startup_rpc_retry_waits_for_bitcoind_warmup() {
+        let attempts = AtomicUsize::new(0);
+
+        let value = retry_bitcoin_startup_rpc("test startup rpc", || {
+            let attempt = attempts.fetch_add(1, Ordering::SeqCst) + 1;
+            async move {
+                if attempt < 3 {
+                    Err(anyhow::Error::from(ClientError::Server(
+                        -28,
+                        "Loading block index...".to_string(),
+                    )))
+                } else {
+                    Ok(42)
+                }
+            }
+        })
+        .await
+        .expect("bitcoind warmup should eventually succeed");
+
+        assert_eq!(value, 42);
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    /// Verifies wrapped retryable startup errors are still classified.
+    #[test]
+    fn startup_rpc_retry_classifies_context_wrapped_errors() {
+        let connection_err =
+            anyhow::Error::from(ClientError::Connection("connection refused".to_string()))
+                .context("fetching Bitcoin block count during startup reconciliation");
+        let warmup_err = anyhow::Error::from(ClientError::Server(
+            -28,
+            "Loading block index...".to_string(),
+        ))
+        .context("fetching Bitcoin block hash during startup reconciliation");
+
+        assert!(is_retryable_bitcoin_error(&connection_err));
+        assert!(is_retryable_bitcoin_error(&warmup_err));
     }
 
     /// Verifies startup Bitcoin RPCs fail immediately for non-retryable errors.
