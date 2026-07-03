@@ -26,8 +26,10 @@ use tracing::{debug, info, warn};
 
 use crate::{asm_worker_context::AsmWorkerCtx, csm_worker_context::CsmWorkerContextImpl};
 
-const STARTUP_RECONCILE_RPC_ATTEMPTS: usize = 12;
+#[cfg(not(test))]
 const STARTUP_RECONCILE_RPC_RETRY_DELAY: Duration = Duration::from_secs(5);
+#[cfg(test)]
+const STARTUP_RECONCILE_RPC_RETRY_DELAY: Duration = Duration::from_millis(1);
 
 /// Holds startup inputs that seed CSM before it subscribes to live ASM updates.
 struct CsmListenerStartup<'a> {
@@ -344,11 +346,11 @@ fn is_retryable_bitcoin_error(err: &anyhow::Error) -> bool {
     })
 }
 
-/// Runs a Bitcoin RPC operation with bounded retries for transient failures.
+/// Runs a Bitcoin RPC operation with retries for transient failures.
 ///
-/// Non-retryable errors fail immediately. Retryable errors are retried up to
-/// [`STARTUP_RECONCILE_RPC_ATTEMPTS`] with
-/// [`STARTUP_RECONCILE_RPC_RETRY_DELAY`] between attempts.
+/// Non-retryable errors fail immediately. Retryable errors are retried with
+/// [`STARTUP_RECONCILE_RPC_RETRY_DELAY`] between attempts so startup waits for
+/// bitcoind instead of aborting before the BTCIO reader is launched.
 async fn retry_bitcoin_startup_rpc<T, F, Fut>(
     operation: &'static str,
     mut f: F,
@@ -357,26 +359,23 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = anyhow::Result<T>>,
 {
-    for attempt in 1..=STARTUP_RECONCILE_RPC_ATTEMPTS {
+    let mut attempt = 1;
+    loop {
         match f().await {
             Ok(value) => return Ok(value),
-            Err(err)
-                if attempt < STARTUP_RECONCILE_RPC_ATTEMPTS && is_retryable_bitcoin_error(&err) =>
-            {
+            Err(err) if is_retryable_bitcoin_error(&err) => {
                 warn!(
                     operation,
                     attempt,
-                    max_attempts = STARTUP_RECONCILE_RPC_ATTEMPTS,
                     %err,
                     "retryable Bitcoin RPC error during startup reconciliation"
                 );
                 sleep(STARTUP_RECONCILE_RPC_RETRY_DELAY).await;
+                attempt += 1;
             }
             Err(err) => return Err(err),
         }
     }
-
-    unreachable!("retry loop always returns from inside the bounded range")
 }
 
 pub fn spawn_asm_worker_with_ctx(nodectx: &NodeContext) -> anyhow::Result<AsmWorkerHandle> {
@@ -455,7 +454,10 @@ fn prefill_asm_mmr(handle: &MmrIndexHandle, target_count: u64) -> anyhow::Result
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{
+        collections::BTreeMap,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::Buf32;
@@ -484,6 +486,54 @@ mod tests {
                 .await
                 .expect("extend L1 canonical chain");
         }
+    }
+
+    /// Verifies startup Bitcoin RPCs keep retrying transient failures until success.
+    #[tokio::test]
+    async fn startup_rpc_retry_waits_for_retryable_errors() {
+        let attempts = AtomicUsize::new(0);
+
+        let value = retry_bitcoin_startup_rpc("test startup rpc", || {
+            let attempt = attempts.fetch_add(1, Ordering::SeqCst) + 1;
+            async move {
+                if attempt < 3 {
+                    Err(anyhow::Error::from(ClientError::Connection(
+                        "connection refused".to_string(),
+                    )))
+                } else {
+                    Ok(42)
+                }
+            }
+        })
+        .await
+        .expect("retryable errors should eventually succeed");
+
+        assert_eq!(value, 42);
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    /// Verifies startup Bitcoin RPCs fail immediately for non-retryable errors.
+    #[tokio::test]
+    async fn startup_rpc_retry_fails_fast_on_non_retryable_errors() {
+        let attempts = AtomicUsize::new(0);
+
+        let err = retry_bitcoin_startup_rpc("test startup rpc", || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            async {
+                Err::<(), _>(anyhow::Error::from(ClientError::Server(
+                    -8,
+                    "block height out of range".to_string(),
+                )))
+            }
+        })
+        .await
+        .expect_err("non-retryable errors should fail immediately");
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert!(
+            err.to_string().contains("block height out of range"),
+            "unexpected error: {err:#}"
+        );
     }
 
     /// Verifies fresh storage does not require Bitcoin RPCs during startup reconciliation.
