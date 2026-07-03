@@ -17,6 +17,7 @@ members = [
   "crates/db/types",
   "crates/db/store-sled",
   "crates/db/tests",
+  "crates/gchain/types",
   "crates/key-derivation",
   "crates/node-context",
   "crates/ol/block-assembly",
@@ -70,7 +71,7 @@ members = [
   "bin/strata-test-cli",
 
   # benchmarks
-  "benches",
+  "benches"
 ]
 
 default-members = [
@@ -110,6 +111,7 @@ strata-da-framework = { path = "crates/da-framework" }
 strata-db-store-sled = { path = "crates/db/store-sled" }
 strata-db-tests = { path = "crates/db/tests" }
 strata-db-types = { path = "crates/db/types" }
+strata-gchain-types = { path = "crates/gchain/types" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-node-context = { path = "crates/node-context" }
 strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
