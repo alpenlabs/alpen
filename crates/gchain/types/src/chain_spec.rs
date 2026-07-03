@@ -3,7 +3,8 @@
 //! The gchain system is based around the idea of a "chain graph".  This system
 //! represents chain history as a directed acyclic graph, not a traditional
 //! chain tree.  This is with the goal of unifying checkpoint sync and full sync.
-//! There's multiple possible paths through the chain tree.
+//! There's multiple possible valid paths that can be taken through the chain
+//! graph, as dictated by whatever sync logic is driving the executor.
 //!
 //! The chain provider exposes the topology of the chain, but is told how to
 //! traverse it instead of figuring that out itself.  The sync mode in control
