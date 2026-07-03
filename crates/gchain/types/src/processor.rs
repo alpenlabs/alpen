@@ -15,7 +15,9 @@
 //!
 //! The key idea is that the aggregated state is managed by the processor and is
 //! updated infrequently.  The by-node state is managed by the executor and is
-//! updated on the fly as needed.
+//! updated on the fly as needed.  The executor tracks which processors have
+//! been called on which nodes and orchestrates execution to bring them all
+//! forwards up to the tip.
 
 use std::any::{Any, TypeId};
 use std::collections::*;
@@ -23,7 +25,7 @@ use std::fmt::{self, Debug, Display};
 use std::str::{self, FromStr};
 use std::sync::Arc;
 
-use crate::chain_spec::{GChainSpec, Node, NodeLink, NodePath, NodeRef, NodeTable};
+use crate::chain_spec::{GChainSpec, Node, NodeLink, NodePath, NodeRef};
 
 const PROC_ID_LEN: usize = 8;
 
@@ -89,8 +91,9 @@ pub trait GChainProc: Sized {
 
     /// Called when the processor is first initialized.
     ///
-    /// This only ever happpens once.  Different processor stages may be inited
-    /// on different first node links.
+    /// This only ever happens once.  Different processor stages may be inited
+    /// on different first node links, such as when opening an older database
+    /// with a newer client version (which added a new processor).
     fn on_init(&self, cur_node: &NodeRef<Self::Spec>, node: &Node<Self::Spec>);
 
     /// Processes a node and produces some output from the step.
