@@ -40,7 +40,9 @@ async fn is_predecessor_bundled(ops: &EnvelopeDataOps, idx: u64) -> anyhow::Resu
 
     let prev_idx = idx - 1;
     let Some(prev_entry) = ops.get_intent_by_idx_async(prev_idx).await? else {
-        bail!("missing predecessor intent entry at idx {prev_idx} before bundling idx {idx}");
+        bail!(
+            "inconsistent L1 writer DB: missing predecessor intent idx {prev_idx} before bundling idx {idx}"
+        );
     };
 
     match prev_entry.status {
@@ -51,7 +53,7 @@ async fn is_predecessor_bundled(ops: &EnvelopeDataOps, idx: u64) -> anyhow::Resu
 
 async fn bundle_unbundled_intent(ops: &EnvelopeDataOps, intent_idx: u64) -> anyhow::Result<()> {
     let Some(entry) = ops.get_intent_by_idx_async(intent_idx).await? else {
-        bail!("missing pending intent entry at idx {intent_idx}");
+        bail!("inconsistent L1 writer DB: pending intent idx {intent_idx} is missing");
     };
 
     // Check it is actually unbundled, omit if bundled.
@@ -162,6 +164,27 @@ mod tests {
                 .expect("test: scan unbundled")
                 .is_empty(),
             "restart recovery should not strand an earlier unbundled intent"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_predecessor_is_fatal_writer_db_inconsistency() {
+        let ops = get_envelope_ops();
+        let (first_idx, first_entry) = put_unbundled_intent(&ops, 1);
+        let (second_idx, _) = put_unbundled_intent(&ops, 2);
+
+        ops.del_intent_entry_blocking(*first_entry.intent.commitment())
+            .expect("test: delete predecessor intent");
+
+        let err = process_unbundled_entries(ops.as_ref(), vec![second_idx])
+            .await
+            .expect_err("missing predecessor should be fatal");
+
+        assert_eq!(first_idx, 0);
+        assert!(
+            err.to_string()
+                .contains("inconsistent L1 writer DB: missing predecessor intent idx 0"),
+            "unexpected error: {err}"
         );
     }
 
