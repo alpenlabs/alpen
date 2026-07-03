@@ -15764,6 +15764,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-gchain-types"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "strata-identifiers"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.3.0-rc.2#c3698c0f26d8d3d16e56a478eb375e077d813775"
