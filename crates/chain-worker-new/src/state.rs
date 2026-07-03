@@ -785,7 +785,7 @@ fn reconstruct_snark_acct_update_records<S: IStateAccessor>(
     let mut updates = Vec::with_capacity(ol_logs.len());
     // Index of each account's last update, so we can stamp the recoverable
     // post-epoch root onto it after the walk.
-    let mut acct_last_record_idx: HashMap<AccountId, usize> = HashMap::new();
+    let mut last_record_idxs: HashMap<AccountId, usize> = HashMap::new();
 
     for log in ol_logs {
         let serial = log.account_serial();
@@ -817,7 +817,7 @@ fn reconstruct_snark_acct_update_records<S: IStateAccessor>(
 
         // Intermediate per-update roots are not in checkpoint logs; the terminal
         // update is patched below with the recoverable post-epoch root.
-        acct_last_record_idx.insert(account_id, updates.len());
+        last_record_idxs.insert(account_id, updates.len());
         updates.push(SnarkAcctStateUpdate::new(
             account_id,
             None,
@@ -829,7 +829,7 @@ fn reconstruct_snark_acct_update_records<S: IStateAccessor>(
 
     // The post-DA state holds each account's final inner state root, which is
     // the terminal update's post-state root. Earlier updates stay `None`.
-    for (account_id, idx) in acct_last_record_idx {
+    for (account_id, idx) in last_record_idxs {
         let root = get_snark_acct(state, account_id)
             .map(|s| s.inner_state_root())
             .map_err(acct_read_err("post epoch snark state root"))?;
