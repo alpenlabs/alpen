@@ -129,9 +129,7 @@ impl ChunkSpec {
             .get_chunk_by_id(chunk_id)
             .await
             .map_err(|e| PaasError::Storage(format!("get_chunk_by_id({chunk_id:?}): {e}")))?
-            .ok_or_else(|| {
-                PaasError::transient(format!("chunk {chunk_id:?} not in storage"))
-            })?;
+            .ok_or_else(|| PaasError::transient(format!("chunk {chunk_id:?} not in storage")))?;
 
         let block_hashes: Vec<Hash> = chunk.blocks_iter().collect();
         if block_hashes.is_empty() {
@@ -238,9 +236,7 @@ impl ChunkSpec {
                     block_inputs,
                     block_outputs,
                 )
-                .map_err(|e| {
-                    PaasError::permanent(format!("encode block {block_hash:?}: {e}"))
-                })?,
+                .map_err(|e| PaasError::permanent(format!("encode block {block_hash:?}: {e}")))?,
             );
 
             // Accumulate this block's raw witness parts into the chunk union.
@@ -262,9 +258,7 @@ impl ChunkSpec {
             .iter()
             .map(|raw| alloy_rlp::decode_exact(&raw[..]))
             .collect::<Result<_, _>>()
-            .map_err(|e| {
-                PaasError::permanent(format!("decode chunk ancestor header: {e}"))
-            })?;
+            .map_err(|e| PaasError::permanent(format!("decode chunk ancestor header: {e}")))?;
         let chunk_pre_state = EvmPartialState::from_witness_parts(
             union_witness_state,
             chunk_start_state_root,
