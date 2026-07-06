@@ -1,6 +1,6 @@
 //! ASM manifest processing.
 
-use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, L1BlockRecord, MsgPayload};
+use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, L1BlockRecord, MsgPayloadData};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
     CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate, constants::AsmLogTypeId,
@@ -17,6 +17,7 @@ use crate::{
     account_processing::{self, handle_misplaced_funds},
     context::BasicExecContext,
     errors::{ExecError, ExecResult},
+    msg_payload_coin::MsgPayloadCoin,
 };
 
 /// Buffers the ASM logs carried by a sequence of manifests into the intraepoch
@@ -236,10 +237,13 @@ fn process_deposit_log<S: IStateAccessorMut>(
 ) -> ExecResult<()> {
     let amt_btc = BitcoinAmount::from_sat(deposit.amount);
 
+    // Mint the coin once at the deposit ingress boundary; from here on the value
+    // is carried linearly and must be credited or swept to limbo exactly once.
+    let coin = Coin::new_unchecked(amt_btc);
+
     // Parse the raw destination bytes into account serial + subject.
     let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
         // Malformed destination descriptor, sweep to limbo.
-        let coin = Coin::new_unchecked(amt_btc);
         warn!(
             l1_height = real_height,
             amount_sat = deposit.amount,
@@ -255,7 +259,6 @@ fn process_deposit_log<S: IStateAccessorMut>(
     // Convert the account serial to account ID.
     let Some(dest_id) = state.find_account_id_by_serial(acct_serial)? else {
         // Account serial not found, sweep to limbo.
-        let coin = Coin::new_unchecked(amt_btc);
         warn!(
             l1_height = real_height,
             ?acct_serial,
@@ -272,8 +275,10 @@ fn process_deposit_log<S: IStateAccessorMut>(
     let deposit_data = OwnedMsg::new(DEPOSIT_MSG_TYPE_ID, deposit_body)
         .expect("deposit message body must fit into msg-fmt envelope")
         .to_vec();
-    let msg_payload = MsgPayload::from_bytes(deposit.amount.into(), deposit_data)
+    let deposit_data: MsgPayloadData = deposit_data
+        .try_into()
         .expect("deposit message payload bytes must fit within SSZ max length");
+    let msg_payload = MsgPayloadCoin::new(coin, deposit_data);
 
     info!(
         l1_height = real_height,
