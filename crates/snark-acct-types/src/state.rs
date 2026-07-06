@@ -10,7 +10,7 @@ use crate::ssz_generated::ssz::state::*;
 type RawSeqno = u64;
 
 /// Account sequence number type.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[ssz(struct_behaviour = "transparent")]
 pub struct Seqno(RawSeqno);
 
