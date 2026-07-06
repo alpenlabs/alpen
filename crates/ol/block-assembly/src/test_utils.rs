@@ -782,7 +782,13 @@ async fn setup_asm_state_with_l1_manifests_list(
             .expect("Failed to extend L1 canonical chain");
     }
 
-    // Create minimal ASM state for testing
+    put_test_asm_state(storage, l1_commitment);
+
+    l1_commitment
+}
+
+/// Stores a minimal ASM state for tests that only need an accepted L1 commitment.
+pub(crate) fn put_test_asm_state(storage: &NodeStorage, l1_commitment: L1BlockCommitment) {
     let pow_state = HeaderVerificationState::init(L1Anchor {
         block: l1_commitment,
         next_target: 0,
@@ -805,8 +811,6 @@ async fn setup_asm_state_with_l1_manifests_list(
         .asm()
         .put_state_blocking(l1_commitment, asm_state)
         .expect("Failed to store ASM state");
-
-    l1_commitment
 }
 
 /// Default balance for test accounts (100 billion sats).

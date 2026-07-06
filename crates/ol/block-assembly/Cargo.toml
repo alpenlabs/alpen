@@ -82,3 +82,4 @@ strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
 strata-ol-msg-types.workspace = true
 strata-predicate.workspace = true
 strata-state.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }
