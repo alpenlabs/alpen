@@ -1,9 +1,10 @@
 //! Test utilities for state-support-types tests.
 
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
-use strata_identifiers::{AccountSerial, L1BlockCommitment};
+use strata_asm_manifest_types::AsmLogEntry;
+use strata_identifiers::{AccountSerial, Epoch, L1BlockCommitment, L1Height, Slot};
 use strata_ledger_types::{
-    ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState,
+    ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState, PendingAsmLog,
 };
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
@@ -15,6 +16,24 @@ use crate::memory_state_layer::MemoryStateBaseLayer;
 pub(crate) fn create_test_genesis_state() -> OLState {
     let params = OLParams::new_empty(L1BlockCommitment::default());
     OLState::from_genesis_params(&params).expect("valid params")
+}
+
+/// Creates a [`MemoryStateBaseLayer`] whose genesis header is at the given
+/// epoch and slot.
+pub(crate) fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
+    let mut params = OLParams::new_empty(L1BlockCommitment::default());
+    params.header.slot = slot;
+    params.header.epoch = epoch;
+    let state = OLState::from_genesis_params(&params)
+        .expect("failed to create OLState from genesis params");
+    MemoryStateBaseLayer::new(state)
+}
+
+/// Creates a [`PendingAsmLog`] whose height and payload byte are derived from
+/// `tag`.
+pub(crate) fn test_pending_asm_log(tag: u8) -> PendingAsmLog {
+    let entry = AsmLogEntry::from_raw(vec![tag]).expect("bytes within capacity");
+    PendingAsmLog::new(L1Height::from(tag as u32), entry)
 }
 
 /// Create a test AccountId from a seed byte.

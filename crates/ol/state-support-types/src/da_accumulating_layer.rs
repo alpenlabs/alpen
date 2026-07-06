@@ -868,3 +868,41 @@ fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
         }
     }
 }
+
+// DA-specific behaviors (blob encoding, accumulator resets, serial-gap
+// detection) are covered by the integration tests in `crate::tests`. This
+// module only instantiates the shared trait-surface behavior suites.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        WriteTrackingState,
+        common_tests::{
+            MutLayerFactory, ReadLayerFactory, impl_mut_layer_tests, impl_read_layer_tests,
+        },
+        memory_state_layer::MemoryStateBaseLayer,
+    };
+
+    /// Builds a [`DaAccumulatingState`] over a [`WriteTrackingState`] base for
+    /// the shared behavior suites.
+    struct DaAccumulatingFactory;
+
+    impl ReadLayerFactory for DaAccumulatingFactory {
+        type Layer<'a> = DaAccumulatingState<WriteTrackingState<'a, MemoryStateBaseLayer>>;
+
+        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
+            DaAccumulatingState::new(WriteTrackingState::new_empty(base))
+        }
+    }
+
+    impl MutLayerFactory for DaAccumulatingFactory {
+        type Layer<'a> = DaAccumulatingState<WriteTrackingState<'a, MemoryStateBaseLayer>>;
+
+        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
+            DaAccumulatingState::new(WriteTrackingState::new_empty(base))
+        }
+    }
+
+    impl_read_layer_tests!(DaAccumulatingFactory);
+    impl_mut_layer_tests!(DaAccumulatingFactory);
+}

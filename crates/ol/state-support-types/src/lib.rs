@@ -17,6 +17,9 @@ mod memory_state_layer;
 mod write_tracking_layer;
 
 #[cfg(test)]
+mod common_tests;
+
+#[cfg(test)]
 mod test_utils;
 
 #[cfg(test)]

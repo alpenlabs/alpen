@@ -256,65 +256,30 @@ impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrite
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
-    use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot};
+    use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
     use strata_ledger_types::{IAccountState, IStateAccessor, IStateAccessorMut};
-    use strata_ol_params::OLParams;
-    use strata_ol_state_types::{OLAccountState, OLState};
+    use strata_ol_state_types::OLAccountState;
 
     use super::*;
-    use crate::{memory_state_layer::MemoryStateBaseLayer, test_utils::*};
+    use crate::{
+        common_tests::{ReadLayerFactory, impl_read_layer_tests},
+        memory_state_layer::MemoryStateBaseLayer,
+        test_utils::*,
+    };
 
-    fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
-        let mut params = OLParams::new_empty(L1BlockCommitment::default());
-        params.header.slot = slot;
-        params.header.epoch = epoch;
-        let state = OLState::from_genesis_params(&params)
-            .expect("failed to create OLState from genesis params");
-        MemoryStateBaseLayer::new(state)
+    /// Builds a [`BatchDiffState`] with no pending batches (pure passthrough) for
+    /// the shared read-behavior suite.
+    struct EmptyBatchDiffFactory;
+
+    impl ReadLayerFactory for EmptyBatchDiffFactory {
+        type Layer<'a> = BatchDiffState<'a, 'a, MemoryStateBaseLayer>;
+
+        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
+            BatchDiffState::new(base, &[])
+        }
     }
 
-    // =========================================================================
-    // Empty batch tests (pure passthrough)
-    // =========================================================================
-
-    #[test]
-    fn test_read_from_base_when_empty_batches() {
-        let account_id = test_account_id(1);
-        let (base_layer, serial) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        // Should read from base
-        let account = diff_state.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
-    }
-
-    #[test]
-    fn test_global_state_from_base_when_empty() {
-        let base_layer = new_layer_at(5, 100);
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        assert_eq!(diff_state.cur_slot(), 100);
-        assert_eq!(diff_state.cur_epoch(), 5);
-    }
-
-    #[test]
-    fn test_check_account_exists_in_base_only() {
-        let account_id = test_account_id(1);
-        let nonexistent_id = test_account_id(99);
-        let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        assert!(diff_state.check_account_exists(account_id).unwrap());
-        assert!(!diff_state.check_account_exists(nonexistent_id).unwrap());
-    }
+    impl_read_layer_tests!(EmptyBatchDiffFactory);
 
     // =========================================================================
     // Single batch tests
