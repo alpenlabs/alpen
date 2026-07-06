@@ -88,10 +88,12 @@ class TestCheckpointSyncNode(BaseTest):
 
         # Each active epoch's reconstructed account summary must be identical to
         # the sequencer's, including the non-empty update inputs.
+        seq_rpc = sequencer.create_rpc()
         for epoch in active_epochs:
             seq_summary = sequencer.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
             node_summary = checkpoint_node.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
             check_summaries_equivalent(seq_summary, node_summary)
+            check_commitment_matches_checkpoint(seq_rpc, epoch, node_summary["epoch_commitment"])
             logger.info(f"account epoch summary matches at epoch {epoch}")
 
 
@@ -113,6 +115,25 @@ def check_summaries_equivalent(seq_summary: AccountEpochSummary, node_summary: A
         n_root = nu.pop("new_state_root")
         assert n_root is None or n_root == s_root, "new_state_root if present must match"
         assert su == nu
+
+
+def check_commitment_matches_checkpoint(seq_rpc, epoch: int, commitment: dict):
+    """Anchors the reconstructed epoch commitment to the published checkpoint.
+
+    The terminal blkid hashes the reconstructed header (which commits to
+    state_root), so equality proves replay yielded the expected post-state.
+    """
+    info = seq_rpc.call("strata_getCheckpointInfo", epoch)
+    assert info is not None, f"missing checkpoint info at epoch {epoch}"
+    terminal = info["l2_range"][1]
+    assert commitment["last_slot"] == terminal["slot"], (
+        f"epoch {epoch} commitment slot {commitment['last_slot']} != "
+        f"checkpoint terminal slot {terminal['slot']}"
+    )
+    assert commitment["last_blkid"] == terminal["blkid"], (
+        f"epoch {epoch} commitment blkid {commitment['last_blkid']} != "
+        f"checkpoint terminal blkid {terminal['blkid']}"
+    )
 
 
 def mine_and_get_status(strata: StrataService, btc_rpc) -> ChainSyncStatus:
