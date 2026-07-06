@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::bail;
 use bitcoin::{Block, BlockHash, Network};
-use bitcoind_async_client::traits::Reader;
+use bitcoind_async_client::{error::ClientError as BitcoinClientError, traits::Reader};
 use strata_btc_types::{BlockHashExt, L1BlockIdBitcoinExt};
 use strata_config::btcio::ReaderConfig;
 use strata_primitives::l1::{L1BlockCommitment, L1Height};
@@ -306,7 +306,18 @@ async fn poll_for_new_blocks<R: Reader>(
 
     // First, check for a reorg if there is one.
     if let Some((pivot_height, pivot_blkid)) = find_pivot_block(ctx.client.as_ref(), state).await? {
-        if pivot_height < state.best_block_idx() {
+        let reader_best_height = state.best_block_idx();
+        if client_height < reader_best_height && pivot_height == client_height {
+            debug!(
+                %client_height,
+                %reader_best_height,
+                %pivot_blkid,
+                "Bitcoin client tip is a prefix of reader state; waiting for client to catch up"
+            );
+            return Ok(vec![]);
+        }
+
+        if pivot_height < reader_best_height {
             info!(%pivot_height, %pivot_blkid, "found apparent reorg");
             let block = L1BlockCommitment::new(pivot_height, pivot_blkid.to_l1_block_id());
             state.rollback_to_height(pivot_height);
@@ -364,7 +375,19 @@ async fn find_pivot_block(
             return Ok(Some((height, *l1blkid)));
         }
 
-        let queried_l1blkid = client.get_block_hash(height as u64).await?;
+        let queried_l1blkid = match client.get_block_hash(height as u64).await {
+            Ok(block_hash) => block_hash,
+            Err(err) if is_missing_block_height_error(&err) => {
+                trace!(
+                    %height,
+                    %l1blkid,
+                    err = %err,
+                    "Bitcoin client does not have tracked block height while finding pivot"
+                );
+                continue;
+            }
+            Err(err) => return Err(err.into()),
+        };
         trace!(%height, %l1blkid, %queried_l1blkid, "comparing blocks to find pivot");
         if queried_l1blkid == *l1blkid {
             return Ok(Some((height, *l1blkid)));
@@ -372,6 +395,16 @@ async fn find_pivot_block(
     }
 
     Ok(None)
+}
+
+fn is_missing_block_height_error(err: &BitcoinClientError) -> bool {
+    match err {
+        BitcoinClientError::Server(-8, msg) => {
+            let msg = msg.to_ascii_lowercase();
+            msg.contains("height") && msg.contains("out of range")
+        }
+        _ => false,
+    }
 }
 
 /// Fetches a block at given height, extracts relevant transactions and emits an [`L1Event`].
@@ -818,6 +851,66 @@ mod tests {
         assert_eq!(new_block_heights, vec![3, 4, 5]);
         assert_eq!(state.next_height(), 6);
         assert_eq!(*state.best_block(), bitcoind_chain.block_hash(5));
+    }
+
+    #[tokio::test]
+    async fn poll_for_new_blocks_waits_when_bitcoind_tip_is_matching_prefix() {
+        let storage = test_storage();
+        let stored_chain = chain_client(&[0, 1, 2, 3, 4, 5]).await;
+        let bitcoind_chain = chain_client(&[0, 1, 2, 3]).await;
+
+        for height in 0..=5 {
+            store_l1_canonical_hash(&storage, height, stored_chain.block_hash(height)).await;
+        }
+
+        let ctx = chain_reader_context(storage, bitcoind_chain);
+        let mut state = init_reader_state(&ctx, 6)
+            .await
+            .expect("test: initialize reader state");
+        let mut status_updates = Vec::new();
+
+        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+            .await
+            .expect("test: poll matching prefix");
+
+        assert!(events.is_empty());
+        assert_eq!(state.next_height(), 6);
+        assert_eq!(*state.best_block(), stored_chain.block_hash(5));
+    }
+
+    #[tokio::test]
+    async fn poll_for_new_blocks_reverts_when_shorter_bitcoind_chain_diverges() {
+        let storage = test_storage();
+        let stored_chain = chain_client(&[0, 1, 2, 103, 104, 105]).await;
+        let bitcoind_chain = chain_client(&[0, 1, 202, 203]).await;
+
+        for height in 0..=5 {
+            store_l1_canonical_hash(&storage, height, stored_chain.block_hash(height)).await;
+        }
+
+        let ctx = chain_reader_context(storage, bitcoind_chain.clone());
+        let mut state = init_reader_state(&ctx, 6)
+            .await
+            .expect("test: initialize reader state");
+        let mut status_updates = Vec::new();
+
+        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+            .await
+            .expect("test: poll shorter divergent chain");
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            L1Event::RevertTo(block) => {
+                assert_eq!(block.height(), 1);
+                assert_eq!(
+                    *block.blkid(),
+                    bitcoind_chain.block_hash(1).to_l1_block_id()
+                );
+            }
+            event => panic!("test: expected RevertTo event, got {event:?}"),
+        }
+        assert_eq!(state.next_height(), 2);
+        assert_eq!(*state.best_block(), bitcoind_chain.block_hash(1));
     }
 
     #[tokio::test]
