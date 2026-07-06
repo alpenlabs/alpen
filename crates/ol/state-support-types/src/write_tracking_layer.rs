@@ -361,35 +361,14 @@ mod tests {
     use super::*;
     use crate::{
         batch_diff_layer::BatchDiffState,
-        common_tests::{
-            MutLayerFactory, ReadLayerFactory, impl_mut_layer_tests, impl_read_layer_tests,
-        },
+        common_tests::{WriteTrackingLeaf, impl_mut_layer_tests, impl_read_layer_tests},
         memory_state_layer::MemoryStateBaseLayer,
         test_utils::*,
     };
 
-    /// Builds a [`WriteTrackingState`] over the base for the shared behavior
-    /// suites.
-    struct WriteTrackingFactory;
-
-    impl ReadLayerFactory for WriteTrackingFactory {
-        type Layer<'a> = WriteTrackingState<'a, MemoryStateBaseLayer>;
-
-        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
-            WriteTrackingState::new_empty(base)
-        }
-    }
-
-    impl MutLayerFactory for WriteTrackingFactory {
-        type Layer<'a> = WriteTrackingState<'a, MemoryStateBaseLayer>;
-
-        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
-            WriteTrackingState::new_empty(base)
-        }
-    }
-
-    impl_read_layer_tests!(WriteTrackingFactory);
-    impl_mut_layer_tests!(WriteTrackingFactory);
+    // Shared behavior suites for a `WriteTrackingState` directly over the base.
+    impl_read_layer_tests!(WriteTrackingLeaf);
+    impl_mut_layer_tests!(WriteTrackingLeaf);
 
     // =========================================================================
     // Copy-on-write tests

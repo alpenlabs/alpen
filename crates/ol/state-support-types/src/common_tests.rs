@@ -24,12 +24,18 @@ use strata_ledger_types::{
     IStateAccessor, IStateAccessorMut, StateError,
 };
 
-use crate::{memory_state_layer::MemoryStateBaseLayer, test_utils::*};
+use crate::{
+    BatchDiffState, DaAccumulatingState, IndexerState, WriteTrackingState,
+    memory_state_layer::MemoryStateBaseLayer, test_utils::*,
+};
 
-/// Constructs a read-only view layer wrapping a borrowed base for testing.
+/// Builds the layer-under-test over a borrowed base [`MemoryStateBaseLayer`].
 ///
 /// The associated [`Layer`](ReadLayerFactory::Layer) is a GAT so the produced
-/// layer can borrow from `base`.
+/// layer can borrow from `base`. Factories compose: leaf factories build a
+/// layer directly over the base, while wrapper factories (e.g. [`IndexerWrap`],
+/// [`DaAccumulatingWrap`]) are generic over the inner factory whose layer they
+/// wrap. This lets a single test suite run against arbitrary layer stacks.
 pub(crate) trait ReadLayerFactory {
     /// The layer under test, borrowing from the base for `'a`.
     type Layer<'a>: IStateAccessor
@@ -40,15 +46,94 @@ pub(crate) trait ReadLayerFactory {
     fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a>;
 }
 
-/// Like [`ReadLayerFactory`], but the produced layer is mutable.
+/// A [`ReadLayerFactory`] whose produced layer is also mutable.
+///
+/// Any read factory whose [`Layer`](ReadLayerFactory::Layer) implements
+/// [`IStateAccessorMut`] automatically implements this via the blanket impl
+/// below, so factory types only ever implement [`ReadLayerFactory`] and the
+/// mutability of a given stack is decided structurally. The separate
+/// [`build_mut`](MutLayerFactory::build_mut) exists because a trait `where`
+/// clause on `Self::Layer` is not an implied bound at use sites, whereas the
+/// [`MutLayer`](MutLayerFactory::MutLayer) GAT bound is.
 pub(crate) trait MutLayerFactory {
-    /// The layer under test, borrowing from the base for `'a`.
-    type Layer<'a>: IStateAccessorMut
+    /// The mutable layer under test, borrowing from the base for `'a`.
+    type MutLayer<'a>: IStateAccessorMut
     where
         Self: 'a;
 
-    /// Builds the layer over the given base.
-    fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a>;
+    /// Builds the mutable layer over the given base.
+    fn build_mut<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::MutLayer<'a>;
+}
+
+impl<F> MutLayerFactory for F
+where
+    F: ReadLayerFactory,
+    for<'a> F::Layer<'a>: IStateAccessorMut,
+{
+    type MutLayer<'a>
+        = F::Layer<'a>
+    where
+        Self: 'a;
+
+    fn build_mut<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::MutLayer<'a> {
+        self.build(base)
+    }
+}
+
+// =============================================================================
+// Composable factories
+// =============================================================================
+
+/// Leaf factory: a [`WriteTrackingState`] with an empty batch directly over the
+/// base. This is the canonical mutable leaf.
+pub(crate) struct WriteTrackingLeaf;
+
+impl ReadLayerFactory for WriteTrackingLeaf {
+    type Layer<'a> = WriteTrackingState<'a, MemoryStateBaseLayer>;
+
+    fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
+        WriteTrackingState::new_empty(base)
+    }
+}
+
+/// Leaf factory: a [`BatchDiffState`] with no pending batches (pure passthrough)
+/// directly over the base. Read-only.
+pub(crate) struct BatchDiffLeaf;
+
+impl ReadLayerFactory for BatchDiffLeaf {
+    type Layer<'a> = BatchDiffState<'a, 'a, MemoryStateBaseLayer>;
+
+    fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
+        BatchDiffState::new(base, &[])
+    }
+}
+
+/// Wrapper factory: wraps the inner factory's layer in an [`IndexerState`].
+pub(crate) struct IndexerWrap<Inner>(pub(crate) Inner);
+
+impl<Inner: ReadLayerFactory> ReadLayerFactory for IndexerWrap<Inner> {
+    type Layer<'a>
+        = IndexerState<Inner::Layer<'a>>
+    where
+        Self: 'a;
+
+    fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
+        IndexerState::new(self.0.build(base))
+    }
+}
+
+/// Wrapper factory: wraps the inner factory's layer in a [`DaAccumulatingState`].
+pub(crate) struct DaAccumulatingWrap<Inner>(pub(crate) Inner);
+
+impl<Inner: ReadLayerFactory> ReadLayerFactory for DaAccumulatingWrap<Inner> {
+    type Layer<'a>
+        = DaAccumulatingState<Inner::Layer<'a>>
+    where
+        Self: 'a;
+
+    fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
+        DaAccumulatingState::new(self.0.build(base))
+    }
 }
 
 // =============================================================================
@@ -117,7 +202,7 @@ pub(crate) fn state_root_matches_base_with_no_writes<F: ReadLayerFactory>(factor
 pub(crate) fn update_account_isolated_from_base<F: MutLayerFactory>(factory: F) {
     let account_id = test_account_id(1);
     let (base, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     layer
         .update_account(account_id, |acct| {
@@ -137,7 +222,7 @@ pub(crate) fn update_account_isolated_from_base<F: MutLayerFactory>(factory: F) 
 pub(crate) fn repeated_update_accumulates<F: MutLayerFactory>(factory: F) {
     let account_id = test_account_id(1);
     let (base, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     layer
         .update_account(account_id, |acct| {
@@ -158,7 +243,7 @@ pub(crate) fn repeated_update_accumulates<F: MutLayerFactory>(factory: F) {
 /// serial.
 pub(crate) fn create_account_visible<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     let account_id = test_account_id(1);
     let new_acct =
@@ -186,7 +271,7 @@ pub(crate) fn create_account_visible<F: MutLayerFactory>(factory: F) {
 /// [`cur_slot`](IStateAccessor::cur_slot).
 pub(crate) fn roundtrip_cur_slot<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     assert_eq!(layer.cur_slot(), 0);
     layer.set_cur_slot(42);
@@ -197,7 +282,7 @@ pub(crate) fn roundtrip_cur_slot<F: MutLayerFactory>(factory: F) {
 /// [`cur_epoch`](IStateAccessor::cur_epoch).
 pub(crate) fn roundtrip_cur_epoch<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     assert_eq!(layer.cur_epoch(), 0);
     layer.set_cur_epoch(5);
@@ -209,7 +294,7 @@ pub(crate) fn roundtrip_cur_epoch<F: MutLayerFactory>(factory: F) {
 /// via [`limbo_funds`](IStateAccessor::limbo_funds).
 pub(crate) fn roundtrip_limbo_funds<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     assert_eq!(layer.limbo_funds(), BitcoinAmount::ZERO);
 
@@ -229,7 +314,7 @@ pub(crate) fn roundtrip_limbo_funds<F: MutLayerFactory>(factory: F) {
 /// reads back via [`total_ledger_balance`](IStateAccessor::total_ledger_balance).
 pub(crate) fn roundtrip_total_ledger_balance<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     layer.set_total_ledger_balance(BitcoinAmount::from_sat(1_000_000));
     assert_eq!(
@@ -242,7 +327,7 @@ pub(crate) fn roundtrip_total_ledger_balance<F: MutLayerFactory>(factory: F) {
 /// back via [`asm_recorded_epoch`](IStateAccessor::asm_recorded_epoch).
 pub(crate) fn roundtrip_asm_recorded_epoch<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     let epoch = EpochCommitment::new(3, 7, OLBlockId::from(Buf32::from([9u8; 32])));
     layer.set_asm_recorded_epoch(epoch);
@@ -254,7 +339,7 @@ pub(crate) fn roundtrip_asm_recorded_epoch<F: MutLayerFactory>(factory: F) {
 /// [`last_l1_blkid`](IStateAccessor::last_l1_blkid).
 pub(crate) fn roundtrip_last_l1_block_rec<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     let height = L1Height::from(100u32);
     let block_hash = [7u8; 32];
@@ -272,7 +357,7 @@ pub(crate) fn roundtrip_last_l1_block_rec<F: MutLayerFactory>(factory: F) {
 pub(crate) fn insert_inbox_message_isolated_from_base<F: MutLayerFactory>(factory: F) {
     let account_id = test_account_id(1);
     let (base, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     let msg = test_message_entry(50, 0, 2_000);
     layer
@@ -309,7 +394,7 @@ pub(crate) fn insert_inbox_message_isolated_from_base<F: MutLayerFactory>(factor
 /// Computing the state root after a write succeeds.
 pub(crate) fn compute_state_root_with_writes_succeeds<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     layer.set_cur_slot(42);
 
@@ -321,7 +406,7 @@ pub(crate) fn compute_state_root_with_writes_succeeds<F: MutLayerFactory>(factor
 /// Updating a nonexistent account returns [`StateError::MissingAccount`].
 pub(crate) fn update_nonexistent_account_errors<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     let result = layer.update_account(test_account_id(99), |_acct| {});
     assert!(matches!(result, Err(StateError::MissingAccount(_))));
@@ -335,7 +420,7 @@ pub(crate) fn pending_asm_log_append_visible<F: MutLayerFactory>(factory: F) {
         .expect("base append");
     base.try_append_pending_asm_log(test_pending_asm_log(1))
         .expect("base append");
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     assert_eq!(layer.pending_asm_logs_len(), 2);
     layer
@@ -367,7 +452,7 @@ pub(crate) fn reset_hides_base_pending_logs<F: MutLayerFactory>(factory: F) {
         .expect("base append");
     base.try_append_pending_asm_log(test_pending_asm_log(2))
         .expect("base append");
-    let mut layer = factory.build(&base);
+    let mut layer = factory.build_mut(&base);
 
     assert_eq!(layer.pending_asm_logs_len(), 3);
     layer.reset_intraepoch_state();

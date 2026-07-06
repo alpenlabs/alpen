@@ -874,35 +874,25 @@ fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
 // module only instantiates the shared trait-surface behavior suites.
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        WriteTrackingState,
-        common_tests::{
-            MutLayerFactory, ReadLayerFactory, impl_mut_layer_tests, impl_read_layer_tests,
-        },
-        memory_state_layer::MemoryStateBaseLayer,
+    use crate::common_tests::{
+        DaAccumulatingWrap, IndexerWrap, WriteTrackingLeaf, impl_mut_layer_tests,
+        impl_read_layer_tests,
     };
 
-    /// Builds a [`DaAccumulatingState`] over a [`WriteTrackingState`] base for
-    /// the shared behavior suites.
-    struct DaAccumulatingFactory;
+    // Shared behavior suites for a `DaAccumulatingState` wrapping various inner
+    // stacks. Each composition gets its own module so the generated test names
+    // don't collide.
+    mod over_write_tracking {
+        use super::*;
 
-    impl ReadLayerFactory for DaAccumulatingFactory {
-        type Layer<'a> = DaAccumulatingState<WriteTrackingState<'a, MemoryStateBaseLayer>>;
-
-        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
-            DaAccumulatingState::new(WriteTrackingState::new_empty(base))
-        }
+        impl_read_layer_tests!(DaAccumulatingWrap(WriteTrackingLeaf));
+        impl_mut_layer_tests!(DaAccumulatingWrap(WriteTrackingLeaf));
     }
 
-    impl MutLayerFactory for DaAccumulatingFactory {
-        type Layer<'a> = DaAccumulatingState<WriteTrackingState<'a, MemoryStateBaseLayer>>;
+    mod over_indexer_over_write_tracking {
+        use super::*;
 
-        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
-            DaAccumulatingState::new(WriteTrackingState::new_empty(base))
-        }
+        impl_read_layer_tests!(DaAccumulatingWrap(IndexerWrap(WriteTrackingLeaf)));
+        impl_mut_layer_tests!(DaAccumulatingWrap(IndexerWrap(WriteTrackingLeaf)));
     }
-
-    impl_read_layer_tests!(DaAccumulatingFactory);
-    impl_mut_layer_tests!(DaAccumulatingFactory);
 }

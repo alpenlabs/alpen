@@ -537,36 +537,36 @@ mod tests {
 
     use super::*;
     use crate::{
-        WriteTrackingState,
         common_tests::{
-            MutLayerFactory, ReadLayerFactory, impl_mut_layer_tests, impl_read_layer_tests,
+            BatchDiffLeaf, DaAccumulatingWrap, IndexerWrap, WriteTrackingLeaf,
+            impl_mut_layer_tests, impl_read_layer_tests,
         },
-        memory_state_layer::MemoryStateBaseLayer,
         test_utils::*,
     };
 
-    /// Builds an [`IndexerState`] over a [`WriteTrackingState`] base for the
-    /// shared behavior suites.
-    struct IndexerFactory;
+    // Shared behavior suites for an `IndexerState` wrapping various inner stacks.
+    // Each composition gets its own module so the generated test names don't
+    // collide.
+    mod over_write_tracking {
+        use super::*;
 
-    impl ReadLayerFactory for IndexerFactory {
-        type Layer<'a> = IndexerState<WriteTrackingState<'a, MemoryStateBaseLayer>>;
-
-        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
-            IndexerState::new(WriteTrackingState::new_empty(base))
-        }
+        impl_read_layer_tests!(IndexerWrap(WriteTrackingLeaf));
+        impl_mut_layer_tests!(IndexerWrap(WriteTrackingLeaf));
     }
 
-    impl MutLayerFactory for IndexerFactory {
-        type Layer<'a> = IndexerState<WriteTrackingState<'a, MemoryStateBaseLayer>>;
+    mod over_da_over_write_tracking {
+        use super::*;
 
-        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
-            IndexerState::new(WriteTrackingState::new_empty(base))
-        }
+        impl_read_layer_tests!(IndexerWrap(DaAccumulatingWrap(WriteTrackingLeaf)));
+        impl_mut_layer_tests!(IndexerWrap(DaAccumulatingWrap(WriteTrackingLeaf)));
     }
 
-    impl_read_layer_tests!(IndexerFactory);
-    impl_mut_layer_tests!(IndexerFactory);
+    // `BatchDiffState` is read-only, so wrapping it yields a read-only stack.
+    mod over_batch_diff {
+        use super::*;
+
+        impl_read_layer_tests!(IndexerWrap(BatchDiffLeaf));
+    }
 
     // =========================================================================
     // Pass-through tests
