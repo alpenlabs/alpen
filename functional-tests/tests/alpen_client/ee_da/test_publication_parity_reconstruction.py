@@ -1,7 +1,6 @@
 """Verify EE DA bytes on L1 match local encoding and replay to the same state root."""
 
 import logging
-import time
 
 import flexitest
 
@@ -9,7 +8,7 @@ from common.base_test import BaseTest
 from common.config.constants import ServiceType
 from common.evm import DEV_ACCOUNT_ADDRESS, send_eth_transfer
 from common.services import AlpenClientService, BitcoinService
-from common.wait import timeout_for_expected_blocks, wait_until
+from common.wait import timeout_for_expected_blocks, wait_until, wait_until_with_value
 from envconfigs.alpen_client import AlpenClientEnv
 from tests.alpen_client.ee_da.codec import (
     DaEnvelope,
@@ -73,19 +72,15 @@ class TestDaPublicationParityReconstruction(BaseTest):
 
         target_block_num = max(tx_blocks.values())
 
-        all_envs: list[DaEnvelope] = []
-        target_l1_blob = None
         mine_address = btc_rpc.proxy.getnewaddress()
 
-        for attempt in range(20):
-            time.sleep(5)
+        def poll_for_target_blob():
             btc_rpc.proxy.generatetoaddress(5, mine_address)
-            time.sleep(3)
 
             end_l1 = btc_rpc.proxy.getblockcount()
-            all_envs = scan_for_da_envelopes(btc_rpc, baseline_l1_height, end_l1)
+            all_envs: list[DaEnvelope] = scan_for_da_envelopes(btc_rpc, baseline_l1_height, end_l1)
             if all_envs:
-                logger.info("Attempt %s: saw %s DA envelope chunk(s)", attempt + 1, len(all_envs))
+                logger.info("Saw %s DA envelope chunk(s)", len(all_envs))
 
             raw_blobs = reassemble_raw_blobs_from_envelopes(all_envs)
             # dbtool selects the earliest blob whose last_block_num covers the target.
@@ -99,18 +94,21 @@ class TestDaPublicationParityReconstruction(BaseTest):
             if candidates:
                 target_l1_blob = min(candidates, key=lambda item: item[2].last_block_num)
                 logger.info(
-                    "Found target DA blob on attempt %s: last_block_num=%s raw_bytes=%s",
-                    attempt + 1,
+                    "Found target DA blob: last_block_num=%s raw_bytes=%s",
                     target_l1_blob[2].last_block_num,
                     len(target_l1_blob[1]),
                 )
-                break
+                return target_l1_blob
 
-            logger.debug("Attempt %s: no target DA blob yet", attempt + 1)
+            logger.debug("No target DA blob yet")
+            return None
 
-        assert target_l1_blob is not None, (
-            f"No non-empty DA blob covering EVM block {target_block_num} "
-            f"found after {len(all_envs)} envelope chunk(s)"
+        target_l1_blob = wait_until_with_value(
+            poll_for_target_blob,
+            predicate=lambda v: v is not None,
+            error_with=f"No non-empty DA blob covering EVM block {target_block_num} found",
+            timeout=160,
+            step=5,
         )
 
         commit_txid, l1_blob_bytes, l1_blob = target_l1_blob
