@@ -7,7 +7,7 @@ use std::{
 use anyhow::bail;
 use bitcoin::{Block, BlockHash, Network};
 use bitcoind_async_client::traits::Reader;
-use strata_btc_types::BlockHashExt;
+use strata_btc_types::{BlockHashExt, L1BlockIdBitcoinExt};
 use strata_config::btcio::ReaderConfig;
 use strata_primitives::l1::{L1BlockCommitment, L1Height};
 use strata_state::BlockSubmitter;
@@ -227,22 +227,53 @@ async fn init_reader_state<R: Reader>(
         );
     }
 
-    let chain_tip = chain_info.blocks as L1Height;
-    let start_height = target_next_block
-        .saturating_sub(lookback)
-        .max(pre_genesis)
-        .min(chain_tip);
-    let end_height = chain_tip.min(pre_genesis.max(target_next_block.saturating_sub(1)));
-    debug!(%start_height, %end_height, "queried L1 client, have init range");
+    let mut real_cur_height;
+    if let Some((stored_tip_height, _stored_tip_blkid)) =
+        ctx.storage.l1().get_canonical_chain_tip_async().await?
+    {
+        let start_height = stored_tip_height.saturating_sub(lookback);
+        let stored_blockids = ctx
+            .storage
+            .l1()
+            .get_canonical_blockid_range_async(start_height, stored_tip_height + 1)
+            .await?;
+        debug!(
+            %start_height,
+            end_height = %stored_tip_height,
+            entries = stored_blockids.len(),
+            "loaded reader init range from stored L1 canonical chain"
+        );
 
-    // Loop through the range we've determined to be okay and pull the blocks we want to look back
-    // through in.
-    let mut real_cur_height = start_height;
-    for height in start_height..=end_height {
-        let blkid = client.get_block_hash(height as u64).await?;
-        debug!(%height, %blkid, "loaded recent L1 block");
-        init_queue.push_back(blkid);
-        real_cur_height = height;
+        for blockid in stored_blockids {
+            init_queue.push_back(blockid.to_block_hash());
+        }
+
+        if init_queue.is_empty() {
+            bail!(
+                "btcio: stored L1 canonical chain tip at height {stored_tip_height} \
+                 was missing from the reader startup range"
+            );
+        }
+
+        real_cur_height = stored_tip_height;
+    } else {
+        let chain_tip = chain_info.blocks as L1Height;
+        let start_height = target_next_block
+            .saturating_sub(lookback)
+            .max(pre_genesis)
+            .min(chain_tip);
+        let end_height = chain_tip.min(pre_genesis.max(target_next_block.saturating_sub(1)));
+        debug!(%start_height, %end_height, "queried L1 client, have init range");
+
+        // Loop through the range we've determined to be okay and pull the blocks we want to look
+        // back through in.
+        real_cur_height = start_height;
+        for height in start_height..=end_height {
+            let blkid = client.get_block_hash(height as u64).await?;
+            debug!(%height, %blkid, "loaded recent L1 block");
+            init_queue.push_back(blkid);
+            real_cur_height = height;
+        }
     }
 
     let epoch = ctx.status_channel.get_cur_chain_epoch().unwrap_or(0);
@@ -389,7 +420,15 @@ async fn process_block<R: Reader>(
 mod tests {
     use std::{collections::VecDeque, sync::Arc};
 
-    use bitcoin::{hashes::Hash, BlockHash, Network};
+    use bitcoin::{block::Header, hashes::Hash, Block, BlockHash, Network, Txid};
+    use bitcoind_async_client::{
+        corepc_types::model::{
+            EstimateSmartFee, GetBlockchainInfo, GetMempoolInfo, GetRawMempool,
+            GetRawMempoolVerbose, GetRawTransaction, GetRawTransactionVerbose, GetTxOut,
+        },
+        error::ClientError,
+        ClientResult,
+    };
     use strata_config::btcio::ReaderConfig;
     use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
@@ -400,6 +439,134 @@ mod tests {
 
     use super::*;
     use crate::test_utils::TestBitcoinClient;
+
+    #[derive(Debug, Clone)]
+    struct ChainBitcoinClient {
+        blocks: Vec<Block>,
+        inner: TestBitcoinClient,
+    }
+
+    impl ChainBitcoinClient {
+        fn new(blocks: Vec<Block>) -> Self {
+            assert!(!blocks.is_empty());
+            Self {
+                blocks,
+                inner: TestBitcoinClient::new(0),
+            }
+        }
+
+        fn block_hash(&self, height: L1Height) -> BlockHash {
+            self.blocks[height as usize].block_hash()
+        }
+
+        fn block_by_hash(&self, hash: &BlockHash) -> ClientResult<Block> {
+            self.blocks
+                .iter()
+                .find(|block| block.block_hash() == *hash)
+                .cloned()
+                .ok_or_else(|| ClientError::Server(-8, format!("block not found: {hash}")))
+        }
+
+        fn block_at(&self, height: u64) -> ClientResult<Block> {
+            self.blocks.get(height as usize).cloned().ok_or_else(|| {
+                ClientError::Server(-8, format!("block height out of range: {height}"))
+            })
+        }
+    }
+
+    impl Reader for ChainBitcoinClient {
+        async fn estimate_smart_fee(&self, conf_target: u16) -> ClientResult<EstimateSmartFee> {
+            self.inner.estimate_smart_fee(conf_target).await
+        }
+
+        async fn get_block_header(&self, hash: &BlockHash) -> ClientResult<Header> {
+            Ok(self.block_by_hash(hash)?.header)
+        }
+
+        async fn get_block(&self, hash: &BlockHash) -> ClientResult<Block> {
+            self.block_by_hash(hash)
+        }
+
+        async fn get_block_height(&self, hash: &BlockHash) -> ClientResult<u64> {
+            self.blocks
+                .iter()
+                .position(|block| block.block_hash() == *hash)
+                .map(|height| height as u64)
+                .ok_or_else(|| ClientError::Server(-8, format!("block not found: {hash}")))
+        }
+
+        async fn get_block_header_at(&self, height: u64) -> ClientResult<Header> {
+            Ok(self.block_at(height)?.header)
+        }
+
+        async fn get_block_at(&self, height: u64) -> ClientResult<Block> {
+            self.block_at(height)
+        }
+
+        async fn get_block_count(&self) -> ClientResult<u64> {
+            Ok(self.blocks.len() as u64 - 1)
+        }
+
+        async fn get_block_hash(&self, height: u64) -> ClientResult<BlockHash> {
+            Ok(self.block_at(height)?.block_hash())
+        }
+
+        async fn get_blockchain_info(&self) -> ClientResult<GetBlockchainInfo> {
+            let mut info = self.inner.get_blockchain_info().await?;
+            let block_count = self.blocks.len() as u32 - 1;
+            info.blocks = block_count;
+            info.headers = block_count;
+            info.best_block_hash = self
+                .blocks
+                .last()
+                .expect("test: nonempty chain")
+                .block_hash();
+            Ok(info)
+        }
+
+        async fn get_current_timestamp(&self) -> ClientResult<u32> {
+            self.inner.get_current_timestamp().await
+        }
+
+        async fn get_raw_mempool(&self) -> ClientResult<GetRawMempool> {
+            self.inner.get_raw_mempool().await
+        }
+
+        async fn get_raw_mempool_verbose(&self) -> ClientResult<GetRawMempoolVerbose> {
+            self.inner.get_raw_mempool_verbose().await
+        }
+
+        async fn get_mempool_info(&self) -> ClientResult<GetMempoolInfo> {
+            self.inner.get_mempool_info().await
+        }
+
+        async fn get_raw_transaction_verbosity_zero(
+            &self,
+            txid: &Txid,
+        ) -> ClientResult<GetRawTransaction> {
+            self.inner.get_raw_transaction_verbosity_zero(txid).await
+        }
+
+        async fn get_raw_transaction_verbosity_one(
+            &self,
+            txid: &Txid,
+        ) -> ClientResult<GetRawTransactionVerbose> {
+            self.inner.get_raw_transaction_verbosity_one(txid).await
+        }
+
+        async fn get_tx_out(
+            &self,
+            txid: &Txid,
+            vout: u32,
+            include_mempool: bool,
+        ) -> ClientResult<GetTxOut> {
+            self.inner.get_tx_out(txid, vout, include_mempool).await
+        }
+
+        async fn network(&self) -> ClientResult<Network> {
+            self.inner.network().await
+        }
+    }
 
     fn test_storage() -> NodeStorage {
         create_node_storage(get_test_sled_backend(), test_runtime_handle())
@@ -430,8 +597,37 @@ mod tests {
             .expect("test: extend canonical chain");
     }
 
+    async fn store_l1_canonical_hash(
+        storage: &NodeStorage,
+        height: L1Height,
+        block_hash: BlockHash,
+    ) {
+        storage
+            .l1()
+            .extend_canonical_chain_async(&block_hash.to_l1_block_id(), height)
+            .await
+            .expect("test: extend canonical chain");
+    }
+
     fn block_hash(byte: u8) -> BlockHash {
         BlockHash::from_byte_array([byte; 32])
+    }
+
+    async fn test_block(nonce: u32) -> Block {
+        let mut block = TestBitcoinClient::new(0)
+            .get_block_at(0)
+            .await
+            .expect("test: get base block");
+        block.header.nonce = nonce;
+        block
+    }
+
+    async fn chain_client(nonces: &[u32]) -> ChainBitcoinClient {
+        let mut blocks = Vec::with_capacity(nonces.len());
+        for nonce in nonces {
+            blocks.push(test_block(*nonce).await);
+        }
+        ChainBitcoinClient::new(blocks)
     }
 
     fn reader_context(storage: NodeStorage) -> ReaderContext<TestBitcoinClient> {
@@ -445,6 +641,28 @@ mod tests {
             status_channel: StatusChannel::new(
                 ClientState::default(),
                 l1_block(0),
+                L1Status::default(),
+                None,
+                None,
+            ),
+        }
+    }
+
+    fn chain_reader_context(
+        storage: NodeStorage,
+        client: ChainBitcoinClient,
+    ) -> ReaderContext<ChainBitcoinClient> {
+        let expected_l1_anchor = L1BlockCommitment::new(0, client.block_hash(0).to_l1_block_id());
+        ReaderContext {
+            client: Arc::new(client),
+            storage: Arc::new(storage),
+            config: Arc::new(ReaderConfig::default()),
+            btcio_params: BtcioParams::new(2, MagicBytes::new(*b"ALPN"), 0),
+            expected_network: Network::Regtest,
+            expected_l1_anchor,
+            status_channel: StatusChannel::new(
+                ClientState::default(),
+                expected_l1_anchor,
                 L1Status::default(),
                 None,
                 None,
@@ -510,6 +728,118 @@ mod tests {
             .expect("test: target block");
 
         assert_eq!(target, 112);
+    }
+
+    #[tokio::test]
+    async fn init_reader_state_seeds_from_stored_canonical_entries() {
+        let storage = test_storage();
+        let stored_chain = chain_client(&[0, 101, 102, 103, 104, 105, 106]).await;
+        let bitcoind_chain = chain_client(&[0, 201, 202, 203, 204, 205, 206]).await;
+
+        for height in 0..=6 {
+            store_l1_canonical_hash(&storage, height, stored_chain.block_hash(height)).await;
+        }
+
+        let ctx = chain_reader_context(storage, bitcoind_chain);
+        let state = init_reader_state(&ctx, 7)
+            .await
+            .expect("test: initialize reader state");
+
+        assert_eq!(state.next_height(), 7);
+        assert_eq!(*state.best_block(), stored_chain.block_hash(6));
+
+        let recent_blocks = state
+            .iter_blocks_back()
+            .map(|(height, block_hash)| (height, *block_hash))
+            .collect::<Vec<_>>();
+        let expected_blocks = (2..=6)
+            .rev()
+            .map(|height| (height, stored_chain.block_hash(height)))
+            .collect::<Vec<_>>();
+        assert_eq!(recent_blocks, expected_blocks);
+    }
+
+    #[tokio::test]
+    async fn poll_for_new_blocks_reverts_offline_reorg_then_continues() {
+        let storage = test_storage();
+        let stored_chain = chain_client(&[0, 1, 2, 103, 104]).await;
+        let bitcoind_chain = chain_client(&[0, 1, 2, 203, 204, 205]).await;
+
+        for height in 0..=4 {
+            store_l1_canonical_hash(&storage, height, stored_chain.block_hash(height)).await;
+        }
+
+        let ctx = chain_reader_context(storage, bitcoind_chain.clone());
+        let mut state = init_reader_state(&ctx, 5)
+            .await
+            .expect("test: initialize reader state");
+        let mut status_updates = Vec::new();
+
+        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+            .await
+            .expect("test: poll reorg");
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            L1Event::RevertTo(block) => {
+                assert_eq!(block.height(), 2);
+                assert_eq!(
+                    *block.blkid(),
+                    bitcoind_chain.block_hash(2).to_l1_block_id()
+                );
+            }
+            event => panic!("test: expected RevertTo event, got {event:?}"),
+        }
+        assert_eq!(state.next_height(), 3);
+        assert_eq!(*state.best_block(), bitcoind_chain.block_hash(2));
+
+        ctx.storage
+            .l1()
+            .revert_canonical_chain_async(2)
+            .await
+            .expect("test: apply revert");
+
+        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+            .await
+            .expect("test: poll new fork");
+
+        let new_block_heights = events
+            .iter()
+            .map(|event| match event {
+                L1Event::BlockData(block_data, _) => block_data.block_num(),
+                L1Event::RevertTo(block) => {
+                    panic!(
+                        "test: unexpected RevertTo event at height {}",
+                        block.height()
+                    )
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(new_block_heights, vec![3, 4, 5]);
+        assert_eq!(state.next_height(), 6);
+        assert_eq!(*state.best_block(), bitcoind_chain.block_hash(5));
+    }
+
+    #[tokio::test]
+    async fn init_reader_state_without_stored_l1_seeds_from_bitcoind() {
+        let storage = test_storage();
+        let bitcoind_chain = chain_client(&[0, 1, 2, 3, 4, 5]).await;
+        let ctx = chain_reader_context(storage, bitcoind_chain.clone());
+
+        let state = init_reader_state(&ctx, 3)
+            .await
+            .expect("test: initialize reader state");
+
+        assert_eq!(state.next_height(), 3);
+        let recent_blocks = state
+            .iter_blocks_back()
+            .map(|(height, block_hash)| (height, *block_hash))
+            .collect::<Vec<_>>();
+        let expected_blocks = (0..=2)
+            .rev()
+            .map(|height| (height, bitcoind_chain.block_hash(height)))
+            .collect::<Vec<_>>();
+        assert_eq!(recent_blocks, expected_blocks);
     }
 
     #[tokio::test]
