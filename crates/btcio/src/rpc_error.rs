@@ -7,7 +7,12 @@ use crate::writer::builder::EnvelopeError;
 
 /// Returns `true` when a Bitcoin RPC error may be resolved by retrying later.
 pub(crate) fn is_retryable_client_error(err: &ClientError) -> bool {
-    err.is_retriable()
+    err.is_retriable() || is_bitcoind_warmup_error(err)
+}
+
+/// Returns `true` when bitcoind is reachable but still in RPC warmup.
+pub fn is_bitcoind_warmup_error(err: &ClientError) -> bool {
+    matches!(err, ClientError::Server(-28, _))
 }
 
 /// Returns `true` when an [`anyhow::Error`] wraps a retryable Bitcoin RPC error.
@@ -62,9 +67,13 @@ mod tests {
     use crate::writer::builder::EnvelopeError;
 
     #[test]
-    fn client_errors_delegate_to_bitcoind_async_client() {
+    fn client_errors_include_bitcoind_warmup() {
         assert!(is_retryable_client_error(&ClientError::Connection(
             "connection refused".into()
+        )));
+        assert!(is_retryable_client_error(&ClientError::Server(
+            -28,
+            "Loading block index...".into()
         )));
         assert!(!is_retryable_client_error(&ClientError::Server(
             -25,
@@ -81,6 +90,14 @@ mod tests {
     }
 
     #[test]
+    fn anyhow_context_preserves_bitcoind_warmup_classification() {
+        let err = anyhow::Error::from(ClientError::Server(-28, "Loading block index...".into()))
+            .context("failed to poll Bitcoin client");
+
+        assert!(is_retryable_anyhow_error(&err));
+    }
+
+    #[test]
     fn envelope_prereq_fetch_uses_wrapped_retry_classification() {
         let source = anyhow::Error::from(ClientError::Timeout).context("network unavailable");
         let err = EnvelopeError::PrereqFetch(source);
@@ -92,6 +109,16 @@ mod tests {
     fn envelope_signing_rpc_outages_are_retryable() {
         let err =
             EnvelopeError::SignRawTransaction(ClientError::Connection("connection refused".into()));
+
+        assert!(is_retryable_envelope_error(&err));
+    }
+
+    #[test]
+    fn envelope_signing_bitcoind_warmup_is_retryable() {
+        let err = EnvelopeError::SignRawTransaction(ClientError::Server(
+            -28,
+            "Loading block index...".into(),
+        ));
 
         assert!(is_retryable_envelope_error(&err));
     }
