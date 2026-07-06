@@ -55,7 +55,7 @@ jobs:
     name: Run functional tests
     runs-on: ubuntu-latest-m
     needs: extract-rust-version
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       # generating build artifacts and coverage data in default dir for cargo-llvm-cov
       CARGO_TARGET_DIR: "${{ github.workspace }}/target/llvm-cov-target"
