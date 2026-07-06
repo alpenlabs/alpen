@@ -328,6 +328,24 @@ async fn poll_for_new_blocks<R: Reader>(
         }
     } else {
         let reader_best_height = state.best_block_idx();
+        let lowest_tracked_height = state
+            .iter_blocks_back()
+            .last()
+            .map(|(height, _)| height)
+            .expect("reader: recent blocks is nonempty");
+        if client_height < lowest_tracked_height
+            && client_tip_matches_stored_canonical(ctx, client_height, fresh_best_block).await?
+        {
+            debug!(
+                %client_height,
+                %reader_best_height,
+                %fresh_best_block,
+                %lowest_tracked_height,
+                "Bitcoin client tip is a deeply lagging prefix of stored reader state; waiting for client to catch up"
+            );
+            return Ok(vec![]);
+        }
+
         let known_depth = state.iter_blocks_back().count();
         let err = ReaderError::PivotNotFound {
             client_height,
@@ -361,6 +379,39 @@ async fn poll_for_new_blocks<R: Reader>(
     }
 
     Ok(events)
+}
+
+async fn client_tip_matches_stored_canonical<R: Reader>(
+    ctx: &ReaderContext<R>,
+    client_height: L1Height,
+    client_tip_hash: BlockHash,
+) -> anyhow::Result<bool> {
+    let Some(stored_blockid) = ctx
+        .storage
+        .l1()
+        .get_canonical_blockid_at_height_async(client_height)
+        .await?
+    else {
+        debug!(
+            %client_height,
+            %client_tip_hash,
+            "stored L1 canonical chain is missing deeply lagging Bitcoin client tip height"
+        );
+        return Ok(false);
+    };
+
+    let client_tip_blockid = client_tip_hash.to_l1_block_id();
+    if stored_blockid != client_tip_blockid {
+        debug!(
+            %client_height,
+            %client_tip_hash,
+            %stored_blockid,
+            "deeply lagging Bitcoin client tip does not match stored L1 canonical chain"
+        );
+        return Ok(false);
+    }
+
+    Ok(true)
 }
 
 /// Finds the highest block index where we do agree with the node.  If we never
@@ -876,6 +927,63 @@ mod tests {
         assert!(events.is_empty());
         assert_eq!(state.next_height(), 6);
         assert_eq!(*state.best_block(), stored_chain.block_hash(5));
+    }
+
+    #[tokio::test]
+    async fn poll_for_new_blocks_waits_when_deeply_lagging_bitcoind_tip_is_matching_prefix() {
+        let storage = test_storage();
+        let stored_chain = chain_client(&[0, 1, 2, 3, 104, 105, 106, 107, 108]).await;
+        let bitcoind_chain = chain_client(&[0, 1, 2, 3]).await;
+
+        for height in 0..=8 {
+            store_l1_canonical_hash(&storage, height, stored_chain.block_hash(height)).await;
+        }
+
+        let ctx = chain_reader_context(storage, bitcoind_chain);
+        let mut state = init_reader_state(&ctx, 9)
+            .await
+            .expect("test: initialize reader state");
+        let mut status_updates = Vec::new();
+
+        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+            .await
+            .expect("test: poll deeply lagging matching prefix");
+
+        assert!(events.is_empty());
+        assert_eq!(state.next_height(), 9);
+        assert_eq!(*state.best_block(), stored_chain.block_hash(8));
+    }
+
+    #[tokio::test]
+    async fn poll_for_new_blocks_errors_when_deeply_lagging_bitcoind_chain_diverges() {
+        let storage = test_storage();
+        let stored_chain = chain_client(&[0, 1, 2, 3, 104, 105, 106, 107, 108]).await;
+        let bitcoind_chain = chain_client(&[0, 1, 202, 203]).await;
+
+        for height in 0..=8 {
+            store_l1_canonical_hash(&storage, height, stored_chain.block_hash(height)).await;
+        }
+
+        let ctx = chain_reader_context(storage, bitcoind_chain);
+        let mut state = init_reader_state(&ctx, 9)
+            .await
+            .expect("test: initialize reader state");
+        let mut status_updates = Vec::new();
+
+        let err = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+            .await
+            .expect_err("test: poll deeply lagging divergent chain");
+
+        assert_eq!(
+            err.downcast_ref::<ReaderError>(),
+            Some(&ReaderError::PivotNotFound {
+                client_height: 3,
+                reader_best_height: 8,
+                known_depth: 5,
+            })
+        );
+        assert_eq!(state.next_height(), 9);
+        assert_eq!(*state.best_block(), stored_chain.block_hash(8));
     }
 
     #[tokio::test]
