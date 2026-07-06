@@ -17,11 +17,11 @@
 //! [`IndexerState`]: crate::IndexerState
 //! [`DaAccumulatingState`]: crate::DaAccumulatingState
 
-use strata_acct_types::{BitcoinAmount, L1BlockRecord};
-use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height, OLBlockId};
+use strata_acct_types::{AccountTypeId, BitcoinAmount, L1BlockRecord};
+use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height, OLBlockId};
 use strata_ledger_types::{
     Coin, IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut,
-    IStateAccessor, IStateAccessorMut, StateError,
+    IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState, StateError,
 };
 
 use crate::{
@@ -194,6 +194,33 @@ pub(crate) fn state_root_matches_base_with_no_writes<F: ReadLayerFactory>(factor
     assert_eq!(layer.compute_state_root().unwrap(), base_root);
 }
 
+/// Reading an account that exists in neither the layer nor the base returns
+/// `None` (as opposed to erroring).
+pub(crate) fn get_missing_account_returns_none<F: ReadLayerFactory>(factory: F) {
+    let base = create_test_base_layer();
+    let layer = factory.build(&base);
+
+    assert!(
+        layer
+            .get_account_state(test_account_id(99))
+            .unwrap()
+            .is_none()
+    );
+}
+
+/// Resolving a serial that was never assigned returns `None`.
+pub(crate) fn find_serial_returns_none_for_unknown<F: ReadLayerFactory>(factory: F) {
+    let base = create_test_base_layer();
+    let layer = factory.build(&base);
+
+    assert!(
+        layer
+            .find_account_id_by_serial(AccountSerial::from(9999))
+            .unwrap()
+            .is_none()
+    );
+}
+
 // =============================================================================
 // Write behaviors (IStateAccessorMut)
 // =============================================================================
@@ -239,6 +266,46 @@ pub(crate) fn repeated_update_accumulates<F: MutLayerFactory>(factory: F) {
     assert_eq!(account.balance(), BitcoinAmount::from_sat(1600));
 }
 
+/// Taking balance from an account debits it and yields a [`Coin`] of the taken
+/// amount.
+pub(crate) fn take_balance_reads_back<F: MutLayerFactory>(factory: F) {
+    let account_id = test_account_id(1);
+    let (base, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let mut layer = factory.build_mut(&base);
+
+    let coin = layer
+        .update_account(account_id, |acct| {
+            acct.take_balance(BitcoinAmount::from_sat(300))
+        })
+        .unwrap()
+        .unwrap();
+    coin.safely_consume_unchecked();
+
+    let account = layer.get_account_state(account_id).unwrap().unwrap();
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(700));
+}
+
+/// Taking more balance than an account holds errors with
+/// [`StateError::InsufficientBalance`] and leaves the balance unchanged.
+pub(crate) fn take_balance_insufficient_errors<F: MutLayerFactory>(factory: F) {
+    let account_id = test_account_id(1);
+    let (base, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(100));
+    let mut layer = factory.build_mut(&base);
+
+    let result = layer
+        .update_account(account_id, |acct| {
+            acct.take_balance(BitcoinAmount::from_sat(500))
+        })
+        .unwrap();
+    assert!(matches!(
+        result,
+        Err(StateError::InsufficientBalance { .. })
+    ));
+
+    let account = layer.get_account_state(account_id).unwrap().unwrap();
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(100));
+}
+
 /// A freshly created account is visible through the layer and resolvable by
 /// serial.
 pub(crate) fn create_account_visible<F: MutLayerFactory>(factory: F) {
@@ -257,6 +324,71 @@ pub(crate) fn create_account_visible<F: MutLayerFactory>(factory: F) {
     assert_eq!(
         layer.find_account_id_by_serial(serial).unwrap(),
         Some(account_id)
+    );
+}
+
+/// A freshly created empty (non-snark) account reports the empty type, and
+/// asking for its snark state errors with [`StateError::MismatchedAcctType`].
+pub(crate) fn create_empty_account<F: MutLayerFactory>(factory: F) {
+    let base = create_test_base_layer();
+    let mut layer = factory.build_mut(&base);
+
+    let account_id = test_account_id(1);
+    let new_acct = NewAccountData::new(BitcoinAmount::from_sat(42), NewAccountTypeState::Empty);
+    layer.create_new_account(account_id, new_acct).unwrap();
+
+    let account = layer.get_account_state(account_id).unwrap().unwrap();
+    assert_eq!(account.ty(), AccountTypeId::Empty);
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(42));
+    assert!(matches!(
+        account.as_snark_account(),
+        Err(StateError::MismatchedAcctType { .. })
+    ));
+}
+
+/// Creating several accounts assigns sequential serials and advances
+/// [`next_account_serial`](IStateAccessor::next_account_serial) accordingly.
+pub(crate) fn next_serial_advances_across_creates<F: MutLayerFactory>(factory: F) {
+    let base = create_test_base_layer();
+    let mut layer = factory.build_mut(&base);
+
+    let first_serial: u32 = layer.next_account_serial().into();
+
+    let acct_a = test_account_id(1);
+    let acct_b = test_account_id(2);
+    let serial_a: u32 = layer
+        .create_new_account(
+            acct_a,
+            test_new_snark_account_data(&test_snark_account_state(1), BitcoinAmount::from_sat(1)),
+        )
+        .unwrap()
+        .into();
+    let serial_b: u32 = layer
+        .create_new_account(
+            acct_b,
+            test_new_snark_account_data(&test_snark_account_state(2), BitcoinAmount::from_sat(2)),
+        )
+        .unwrap()
+        .into();
+
+    assert_eq!(serial_a, first_serial);
+    assert_eq!(serial_b, first_serial + 1);
+
+    let next_serial: u32 = layer.next_account_serial().into();
+    assert_eq!(next_serial, first_serial + 2);
+
+    // Both are independently resolvable.
+    assert_eq!(
+        layer
+            .find_account_id_by_serial(AccountSerial::from(serial_a))
+            .unwrap(),
+        Some(acct_a)
+    );
+    assert_eq!(
+        layer
+            .find_account_id_by_serial(AccountSerial::from(serial_b))
+            .unwrap(),
+        Some(acct_b)
     );
 }
 
@@ -308,6 +440,19 @@ pub(crate) fn roundtrip_limbo_funds<F: MutLayerFactory>(factory: F) {
         .unwrap();
     taken.safely_consume_unchecked();
     assert_eq!(layer.limbo_funds(), BitcoinAmount::from_sat(600));
+}
+
+/// Taking more limbo funds than are available errors with
+/// [`StateError::InsufficientLimboFunds`].
+pub(crate) fn take_limbo_funds_insufficient_errors<F: MutLayerFactory>(factory: F) {
+    let base = create_test_base_layer();
+    let mut layer = factory.build_mut(&base);
+
+    let result = layer.take_limbo_funds_coin(BitcoinAmount::from_sat(500));
+    assert!(matches!(
+        result,
+        Err(StateError::InsufficientLimboFunds { .. })
+    ));
 }
 
 /// [`set_total_ledger_balance`](IStateAccessorMut::set_total_ledger_balance)
@@ -391,16 +536,17 @@ pub(crate) fn insert_inbox_message_isolated_from_base<F: MutLayerFactory>(factor
     );
 }
 
-/// Computing the state root after a write succeeds.
-pub(crate) fn compute_state_root_with_writes_succeeds<F: MutLayerFactory>(factory: F) {
+/// A write changes the computed state root relative to the pre-write root.
+pub(crate) fn state_root_changes_after_write<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
     let mut layer = factory.build_mut(&base);
 
+    let before = layer.compute_state_root().expect("state root before write");
+
     layer.set_cur_slot(42);
 
-    layer
-        .compute_state_root()
-        .expect("state root should succeed after writes");
+    let after = layer.compute_state_root().expect("state root after write");
+    assert_ne!(before, after);
 }
 
 /// Updating a nonexistent account returns [`StateError::MissingAccount`].
@@ -495,6 +641,16 @@ macro_rules! impl_read_layer_tests {
         }
 
         #[test]
+        fn common_find_serial_returns_none_for_unknown() {
+            $crate::common_tests::find_serial_returns_none_for_unknown($factory);
+        }
+
+        #[test]
+        fn common_get_missing_account_returns_none() {
+            $crate::common_tests::get_missing_account_returns_none($factory);
+        }
+
+        #[test]
         fn common_state_root_matches_base_with_no_writes() {
             $crate::common_tests::state_root_matches_base_with_no_writes($factory);
         }
@@ -517,6 +673,31 @@ macro_rules! impl_mut_layer_tests {
         #[test]
         fn common_create_account_visible() {
             $crate::common_tests::create_account_visible($factory);
+        }
+
+        #[test]
+        fn common_create_empty_account() {
+            $crate::common_tests::create_empty_account($factory);
+        }
+
+        #[test]
+        fn common_next_serial_advances_across_creates() {
+            $crate::common_tests::next_serial_advances_across_creates($factory);
+        }
+
+        #[test]
+        fn common_take_balance_reads_back() {
+            $crate::common_tests::take_balance_reads_back($factory);
+        }
+
+        #[test]
+        fn common_take_balance_insufficient_errors() {
+            $crate::common_tests::take_balance_insufficient_errors($factory);
+        }
+
+        #[test]
+        fn common_take_limbo_funds_insufficient_errors() {
+            $crate::common_tests::take_limbo_funds_insufficient_errors($factory);
         }
 
         #[test]
@@ -555,8 +736,8 @@ macro_rules! impl_mut_layer_tests {
         }
 
         #[test]
-        fn common_compute_state_root_with_writes_succeeds() {
-            $crate::common_tests::compute_state_root_with_writes_succeeds($factory);
+        fn common_state_root_changes_after_write() {
+            $crate::common_tests::state_root_changes_after_write($factory);
         }
 
         #[test]
