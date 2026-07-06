@@ -262,24 +262,13 @@ mod tests {
 
     use super::*;
     use crate::{
-        common_tests::{ReadLayerFactory, impl_read_layer_tests},
-        memory_state_layer::MemoryStateBaseLayer,
+        common_tests::{BatchDiffLeaf, impl_read_layer_tests},
         test_utils::*,
     };
 
-    /// Builds a [`BatchDiffState`] with no pending batches (pure passthrough) for
-    /// the shared read-behavior suite.
-    struct EmptyBatchDiffFactory;
-
-    impl ReadLayerFactory for EmptyBatchDiffFactory {
-        type Layer<'a> = BatchDiffState<'a, 'a, MemoryStateBaseLayer>;
-
-        fn build<'a>(&self, base: &'a MemoryStateBaseLayer) -> Self::Layer<'a> {
-            BatchDiffState::new(base, &[])
-        }
-    }
-
-    impl_read_layer_tests!(EmptyBatchDiffFactory);
+    // Shared read-behavior suite for a `BatchDiffState` with no pending batches
+    // (pure passthrough) over the base.
+    impl_read_layer_tests!(BatchDiffLeaf);
 
     // =========================================================================
     // Single batch tests
