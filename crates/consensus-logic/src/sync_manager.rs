@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
 use strata_asm_spec::StrataAsmSpec;
@@ -155,7 +155,11 @@ pub fn spawn_asm_worker(
         .with_asm_spec(asm_spec)
         .launch(executor)?;
 
-    resubmit_canonical_tip_if_asm_behind(storage.as_ref(), &handle, genesis_l1_height as L1Height)?;
+    resubmit_canonical_blocks_if_asm_behind(
+        storage.as_ref(),
+        &handle,
+        genesis_l1_height as L1Height,
+    )?;
 
     Ok(handle)
 }
@@ -170,7 +174,7 @@ fn storage_to_worker_state(state: StorageAsmState) -> WorkerAsmState {
 /// the process crashes after the canonical write but before ASM stores the
 /// corresponding anchor state, the reader resumes after that canonical tip and
 /// no new L1 event is emitted until another Bitcoin block arrives.
-fn resubmit_canonical_tip_if_asm_behind(
+fn resubmit_canonical_blocks_if_asm_behind(
     storage: &NodeStorage,
     asm_handle: &AsmWorkerHandle,
     genesis_l1_height: L1Height,
@@ -358,6 +362,24 @@ mod tests {
                 L1BlockCommitment::new(GENESIS_L1_HEIGHT + 1, blkid(101)),
                 L1BlockCommitment::new(GENESIS_L1_HEIGHT + 2, blkid(102)),
                 L1BlockCommitment::new(GENESIS_L1_HEIGHT + 3, blkid(103)),
+            ]
+        );
+    }
+
+    #[test]
+    fn returns_every_canonical_block_when_asm_has_no_state() {
+        let storage = setup();
+        extend_canonical(&storage, GENESIS_L1_HEIGHT, GENESIS_L1_HEIGHT + 2);
+
+        let missing = canonical_blocks_missing_asm_state(&storage, GENESIS_L1_HEIGHT)
+            .expect("test: find missing blocks");
+
+        assert_eq!(
+            missing,
+            vec![
+                L1BlockCommitment::new(GENESIS_L1_HEIGHT, blkid(100)),
+                L1BlockCommitment::new(GENESIS_L1_HEIGHT + 1, blkid(101)),
+                L1BlockCommitment::new(GENESIS_L1_HEIGHT + 2, blkid(102)),
             ]
         );
     }
