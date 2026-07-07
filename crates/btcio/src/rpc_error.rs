@@ -15,6 +15,26 @@ pub fn is_bitcoind_warmup_error(err: &ClientError) -> bool {
     matches!(err, ClientError::Server(-28, _))
 }
 
+/// Returns `true` when bitcoind reports a missing block height.
+pub fn is_block_height_out_of_range_error(err: &ClientError) -> bool {
+    match err {
+        ClientError::Server(-8, msg) => {
+            let msg = msg.to_ascii_lowercase();
+            msg.contains("height") && msg.contains("out of range")
+        }
+        _ => false,
+    }
+}
+
+/// Returns `true` when an [`anyhow::Error`] wraps a missing block height error.
+pub(crate) fn is_missing_block_height_anyhow_error(err: &AnyhowError) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<ClientError>()
+            .is_some_and(is_block_height_out_of_range_error)
+    })
+}
+
 /// Returns `true` when an [`anyhow::Error`] wraps a retryable Bitcoin RPC error.
 pub(crate) fn is_retryable_anyhow_error(err: &AnyhowError) -> bool {
     if err.chain().any(|cause| {
@@ -61,6 +81,7 @@ mod tests {
     use bitcoind_async_client::error::ClientError;
 
     use super::{
+        is_block_height_out_of_range_error, is_missing_block_height_anyhow_error,
         is_retryable_anyhow_error, is_retryable_client_error, is_retryable_envelope_error,
         retryable_reason,
     };
@@ -79,6 +100,10 @@ mod tests {
             -25,
             "bad-txns-inputs-missingorspent".into()
         )));
+        assert!(!is_retryable_client_error(&ClientError::Server(
+            -8,
+            "Block height out of range".into()
+        )));
     }
 
     #[test]
@@ -95,6 +120,17 @@ mod tests {
             .context("failed to poll Bitcoin client");
 
         assert!(is_retryable_anyhow_error(&err));
+    }
+
+    #[test]
+    fn block_height_out_of_range_classification_is_scoped() {
+        let err = ClientError::Server(-8, "Block height out of range".into());
+        let wrapped = anyhow::Error::from(err.clone()).context("failed to fetch anchor block");
+
+        assert!(is_block_height_out_of_range_error(&err));
+        assert!(is_missing_block_height_anyhow_error(&wrapped));
+        assert!(!is_retryable_client_error(&err));
+        assert!(!is_retryable_anyhow_error(&wrapped));
     }
 
     #[test]

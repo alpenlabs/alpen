@@ -20,7 +20,10 @@ use tracing::*;
 use super::event::L1Event;
 use crate::{
     reader::{event::BlockData, handler::handle_bitcoin_event, state::ReaderState},
-    rpc_error::is_retryable_anyhow_error,
+    rpc_error::{
+        is_block_height_out_of_range_error, is_missing_block_height_anyhow_error,
+        is_retryable_anyhow_error,
+    },
     status::{apply_status_updates, L1StatusUpdate},
     BtcioParams,
 };
@@ -154,7 +157,10 @@ async fn do_reader_task<R: Reader>(
                     status_updates.push(L1StatusUpdate::RpcConnected(true));
                     state = Some(reader_state);
                 }
-                Err(err) if is_retryable_anyhow_error(&err) => {
+                Err(err)
+                    if is_retryable_anyhow_error(&err)
+                        || is_missing_block_height_anyhow_error(&err) =>
+                {
                     handle_poll_error(&err, &mut status_updates);
                 }
                 Err(err) => return Err(err),
@@ -441,7 +447,7 @@ async fn find_pivot_block(
 
         let queried_l1blkid = match client.get_block_hash(height as u64).await {
             Ok(block_hash) => block_hash,
-            Err(err) if is_missing_block_height_error(&err) => {
+            Err(err) if is_block_height_out_of_range_error(&err) => {
                 trace!(
                     %height,
                     %l1blkid,
@@ -459,16 +465,6 @@ async fn find_pivot_block(
     }
 
     Ok(None)
-}
-
-fn is_missing_block_height_error(err: &BitcoinClientError) -> bool {
-    match err {
-        BitcoinClientError::Server(-8, msg) => {
-            let msg = msg.to_ascii_lowercase();
-            msg.contains("height") && msg.contains("out of range")
-        }
-        _ => false,
-    }
 }
 
 /// Fetches a block at given height, extracts relevant transactions and emits an [`L1Event`].

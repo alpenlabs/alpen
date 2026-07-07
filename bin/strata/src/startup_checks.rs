@@ -5,7 +5,7 @@ use bitcoind_async_client::{
     Client, corepc_types::model::GetBlockchainInfo, error::ClientError, traits::Reader,
 };
 use strata_btc_types::BlockHashExt;
-use strata_btcio::is_bitcoind_warmup_error;
+use strata_btcio::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
@@ -41,9 +41,11 @@ pub(crate) enum StartupBitcoinCheck {
 
 fn is_retryable_startup_error(err: &anyhow::Error) -> bool {
     err.chain().any(|cause| {
-        cause
-            .downcast_ref::<ClientError>()
-            .is_some_and(|err| err.is_retriable() || is_bitcoind_warmup_error(err))
+        cause.downcast_ref::<ClientError>().is_some_and(|err| {
+            err.is_retriable()
+                || is_bitcoind_warmup_error(err)
+                || is_block_height_out_of_range_error(err)
+        })
     })
 }
 
@@ -580,6 +582,16 @@ mod tests {
         }
     }
 
+    fn mock_client_block_hash_height_out_of_range() -> MockBitcoinClient {
+        MockBitcoinClient {
+            blockchain_info_result: None,
+            block_hash_result: Some(MockResult::ClientError(ClientError::Server(
+                -8,
+                "Block height out of range".into(),
+            ))),
+        }
+    }
+
     #[tokio::test]
     async fn test_bitcoind_unreachable() {
         let client = mock_client_unreachable();
@@ -604,6 +616,14 @@ mod tests {
     fn test_context_wrapped_bitcoind_warmup_is_retryable() {
         let err = anyhow::Error::from(ClientError::Server(-28, "Loading block index...".into()))
             .context("startup: could not connect to bitcoind via getblockchaininfo");
+
+        assert!(is_retryable_startup_error(&err));
+    }
+
+    #[test]
+    fn test_context_wrapped_block_height_out_of_range_is_retryable() {
+        let err = anyhow::Error::from(ClientError::Server(-8, "Block height out of range".into()))
+            .context("startup: failed to fetch L1 block hash from bitcoind");
 
         assert!(is_retryable_startup_error(&err));
     }
@@ -682,6 +702,18 @@ mod tests {
         let result = verify_l1_anchor_block(&client, commitment).await;
 
         let check = result.expect("bitcoind warmup should defer");
+        assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_l1_anchor_block_height_out_of_range_deferred() {
+        let hash = BlockHash::all_zeros();
+        let commitment = make_l1_block_commitment(42, hash);
+        let client = mock_client_block_hash_height_out_of_range();
+
+        let result = verify_l1_anchor_block(&client, commitment).await;
+
+        let check = result.expect("bitcoind missing anchor height should defer");
         assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
     }
 
