@@ -15,6 +15,7 @@ on:
       - "bin/**"
       - "crates/**"
       - "docker/strata/**"
+      - "docker/strata-checkpoint-sync/**"
       - "docker/alpen-client/**"
       - "docker/strata-signer/**"
       - "docker/strata-datatool/**"
@@ -94,7 +95,7 @@ jobs:
           INPUT: ${{ inputs.programs }}
         run: |
           # New architecture images only — pushed to shared ECR account
-          ALL='["strata","alpen-client","strata-signer"]'
+          ALL='["strata","strata-checkpoint-sync","alpen-client","strata-signer"]'
 
           if [ -z "$INPUT" ]; then
             echo "matrix={\"program\":${ALL}}" >> "$GITHUB_OUTPUT"
