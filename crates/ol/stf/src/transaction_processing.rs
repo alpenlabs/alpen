@@ -165,7 +165,7 @@ fn process_update_tx<S: IStateAccessorMut>(
 }
 
 /// Applies the effects of a transaction (transfers and messages) to account state.
-fn apply_tx_effects<S: IStateAccessorMut>(
+pub(crate) fn apply_tx_effects<S: IStateAccessorMut>(
     state: &mut S,
     source: AccountId,
     effects: &TxEffects,
@@ -179,21 +179,45 @@ fn apply_tx_effects<S: IStateAccessorMut>(
     // effects.
     let mut remaining = debit_source(state, source, total_sent)?;
 
-    // 2. Send funds out, splitting the debited coin per effect so Rust enforces
-    // that the pieces sum to exactly what we took.
-    for t in effects.transfers_iter() {
-        let coin = split_effect_value(&mut remaining, t.value());
-        account_processing::process_transfer(state, source, t.dest(), coin, context)?;
-    }
-
-    for m in effects.messages_iter() {
-        let coin = split_effect_value(&mut remaining, m.payload().value());
-        let msg = MsgPayloadCoin::new(coin, m.payload().payload_data().clone());
-        account_processing::process_message(state, source, m.dest(), msg, context)?;
+    // 2. Send funds out, splitting the debited coin per effect.  Each per-effect
+    // coin is owned by the callee, which consumes it on every path; if a call
+    // errors we still hold `remaining`, so we defuse it before propagating rather
+    // than dropping a live coin (the whole STF is discarded on that error, so no
+    // value is lost).
+    if let Err(e) = distribute_effects(state, source, effects, context, &mut remaining) {
+        remaining.safely_consume_unchecked();
+        return Err(e);
     }
 
     // Everything debited has been distributed; the remainder must be zero.
     remaining.consume_zero();
+
+    Ok(())
+}
+
+/// Distributes `remaining` across the transaction's effects, splitting a coin
+/// off for each transfer and message so Rust enforces that the pieces sum to
+/// exactly what was debited.
+///
+/// On error, `remaining` is left holding the undistributed value for the caller
+/// to dispose of.
+fn distribute_effects<S: IStateAccessorMut>(
+    state: &mut S,
+    source: AccountId,
+    effects: &TxEffects,
+    context: &BasicExecContext<'_>,
+    remaining: &mut Coin,
+) -> ExecResult<()> {
+    for t in effects.transfers_iter() {
+        let coin = split_effect_value(remaining, t.value());
+        account_processing::process_transfer(state, source, t.dest(), coin, context)?;
+    }
+
+    for m in effects.messages_iter() {
+        let coin = split_effect_value(remaining, m.payload().value());
+        let msg = MsgPayloadCoin::new(coin, m.payload().payload_data().clone());
+        account_processing::process_message(state, source, m.dest(), msg, context)?;
+    }
 
     Ok(())
 }
