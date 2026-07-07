@@ -1,18 +1,21 @@
 services:
   bitcoind:
-    image: ${SIGNET_IMAGE:-public.ecr.aws/r1l9t0r6/tn1/signet:4485b8f}
-    environment:
-      MINERENABLED: 0
-      MINE_GENESIS: 0
-      MAXTXFEE: 10
-      SIGNETCHALLENGE: ${SIGNETCHALLENGE:-}
-      ADDNODE: ${ADDNODE:-}
-      RPCUSER: ${BITCOIND_RPC_USER:-bitcoin}
-      RPCPASSWORD: ${BITCOIND_RPC_PASSWORD:-bitcoin}
-      RPCBIND: 0.0.0.0:38332
-      RPCALLOWIP: 0.0.0.0/0
+    image: ${BITCOIN_IMAGE:-bitcoin/bitcoin:31.0}
+    command:
+      - -signet
+      - -server=1
+      - -listen=1
+      - -discover=1
+      - -txindex=1
+      - -blockfilterindex=1
+      - -peerblockfilters=1
+      - -coinstatsindex=1
+      - -rpcbind=0.0.0.0:38332
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=${BITCOIND_RPC_USER:-bitcoin}
+      - -rpcpassword=${BITCOIND_RPC_PASSWORD:-bitcoin}
     volumes:
-      - bitcoind-data:/root/.bitcoin
+      - bitcoind-data:/home/bitcoin/.bitcoin
     ports:
       - "38332:38332"
     networks:

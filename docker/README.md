@@ -42,7 +42,7 @@ Create the fullnode environment file before starting that stack:
 
 ```bash
 cp .env.alpen-fullnode.example .env
-# Edit .env for the target network, image tag, Signet peer, and Alpen EE peer.
+# Edit .env for the target network images and Alpen EE peers.
 ```
 
 Prepare the required files that are mounted by the checkpoint-sync and Alpen
@@ -65,6 +65,7 @@ set local image names in `.env`:
 ```bash
 ALPEN_IMAGE=alpen-client:local
 CHECKPOINT_SYNC_IMAGE=strata-checkpoint-sync:local
+BITCOIN_IMAGE=bitcoin/bitcoin:31.0
 ```
 
 Then build them from this checkout:
