@@ -182,10 +182,15 @@ async fn do_reader_task<R: Reader>(
 
 /// Handles errors encountered during polling.
 fn handle_poll_error(err: &anyhow::Error, status_updates: &mut Vec<L1StatusUpdate>) {
-    warn!(%err, "failed to poll Bitcoin client");
+    let is_deferrable = is_retryable_anyhow_error(err) || is_missing_block_height_anyhow_error(err);
+    if is_deferrable {
+        warn!(%err, "failed to poll Bitcoin client");
+    } else {
+        error!(%err, "failed to poll Bitcoin client");
+    }
     status_updates.push(L1StatusUpdate::RpcError(err.to_string()));
 
-    if is_retryable_anyhow_error(err) {
+    if is_deferrable {
         status_updates.push(L1StatusUpdate::RpcConnected(false));
         return;
     }
@@ -431,10 +436,6 @@ async fn poll_for_new_blocks<R: Reader>(
             reader_best_height,
             known_depth,
         };
-        error!(
-            client_height,
-            reader_best_height, known_depth, "unable to find common block with client chain"
-        );
         return Err(err.into());
     }
 
