@@ -209,6 +209,15 @@ fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     Ok(module)
 }
 
+/// Maps a node role to the OL block-data access the RPC server should serve.
+fn ol_block_data_access(node_role: NodeRole) -> OLBlockDataAccess {
+    if node_role.serves_fullnode_rpc() {
+        OLBlockDataAccess::Available
+    } else {
+        OLBlockDataAccess::Unavailable
+    }
+}
+
 fn register_client_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()> {
     let client_provider = NodeRpcProvider::new(
         deps.storage.clone(),
@@ -219,6 +228,7 @@ fn register_client_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()>
         client_provider,
         deps.genesis_l1_height,
         deps.max_headers_range,
+        ol_block_data_access(deps.node_role),
     );
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
@@ -236,6 +246,7 @@ fn register_fullnode_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<(
         fullnode_provider,
         deps.genesis_l1_height,
         deps.max_headers_range,
+        ol_block_data_access(deps.node_role),
     );
     let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_listener);
     module
@@ -303,6 +314,7 @@ fn build_submit_rpc_module(deps: &RpcDeps) -> Result<RpcModule<OLRpcServer<NodeR
         submit_provider,
         deps.genesis_l1_height,
         deps.max_headers_range,
+        ol_block_data_access(deps.node_role),
     );
 
     Ok(<OLRpcServer<NodeRpcProvider> as OLSubmitRpcServer>::into_rpc(submit_listener))

@@ -36,9 +36,10 @@ use strata_snark_acct_types::{ProofState, Seqno, UpdateInputData, UpdateStateDat
 use strata_status::OLSyncStatus;
 use tokio::runtime::Builder;
 
-use super::OLRpcServer;
+use super::{OLBlockDataAccess, OLRpcServer};
 use crate::rpc::errors::{
-    INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE, MEMPOOL_CAPACITY_ERROR_CODE, map_mempool_error_to_rpc,
+    INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE, MEMPOOL_CAPACITY_ERROR_CODE,
+    NOT_AVAILABLE_ON_NODE_CODE, map_mempool_error_to_rpc,
 };
 
 // -- Mock provider --
@@ -647,7 +648,22 @@ const TEST_MAX_HEADERS_RANGE: usize = 5000;
 const DEFAULT_NEXT_INBOX_MSG_IDX: u64 = 0;
 
 fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
-    OLRpcServer::new(provider, TEST_GENESIS_L1_HEIGHT, TEST_MAX_HEADERS_RANGE)
+    OLRpcServer::new(
+        provider,
+        TEST_GENESIS_L1_HEIGHT,
+        TEST_MAX_HEADERS_RANGE,
+        OLBlockDataAccess::Available,
+    )
+}
+
+/// Server for a checkpoint-sync node: no OL block bodies stored.
+fn make_rpc_checkpoint_sync(provider: MockProvider) -> OLRpcServer<MockProvider> {
+    OLRpcServer::new(
+        provider,
+        TEST_GENESIS_L1_HEIGHT,
+        TEST_MAX_HEADERS_RANGE,
+        OLBlockDataAccess::Unavailable,
+    )
 }
 
 fn make_gam_rpc_tx(target: AccountId, payload: Vec<u8>) -> RpcOLTransaction {
@@ -972,8 +988,8 @@ async fn checkpoint_info_with_l1_advance() {
         .expect("checkpoint should exist");
 
     assert_eq!(info.idx, 2);
-    assert_eq!(info.l2_range.0.slot(), 11);
-    assert_eq!(info.l2_range.1, terminal);
+    assert_eq!(info.l2_start.expect("full node has l2 start").slot(), 11);
+    assert_eq!(info.l2_end, terminal);
     assert_eq!(info.l1_range.0.height(), 501);
     assert_eq!(info.l1_range.1.height(), 510);
 }
@@ -1282,8 +1298,8 @@ async fn checkpoint_info_epoch_0_with_l1_advance() {
     assert_eq!(info.l1_range.0.height(), TEST_GENESIS_L1_HEIGHT + 1);
     assert_eq!(*info.l1_range.0.blkid(), l1_start_blkid);
     assert_eq!(info.l1_range.1, advanced_l1);
-    assert_eq!(info.l2_range.0, terminal);
-    assert_eq!(info.l2_range.1, terminal);
+    assert_eq!(info.l2_start.expect("full node has l2 start"), terminal);
+    assert_eq!(info.l2_end, terminal);
     match info.confirmation_status {
         RpcCheckpointConfStatus::Finalized { l1_reference } => {
             assert_eq!(l1_reference.l1_block, advanced_l1);
@@ -1325,8 +1341,8 @@ async fn checkpoint_info_epoch_0_l1_did_not_advance() {
     assert_eq!(info.idx, 0);
     assert_eq!(info.l1_range.0, genesis_l1);
     assert_eq!(info.l1_range.1, genesis_l1);
-    assert_eq!(info.l2_range.0, terminal);
-    assert_eq!(info.l2_range.1, terminal);
+    assert_eq!(info.l2_start.expect("full node has l2 start"), terminal);
+    assert_eq!(info.l2_end, terminal);
     assert!(info.l1_range.0.height() <= info.l1_range.1.height());
     match info.confirmation_status {
         RpcCheckpointConfStatus::Finalized { l1_reference } => {
@@ -1336,6 +1352,112 @@ async fn checkpoint_info_epoch_0_l1_did_not_advance() {
         }
         _ => panic!("expected finalized genesis checkpoint status"),
     }
+}
+
+#[tokio::test]
+async fn checkpoint_info_non_genesis_omits_l2_start_on_checkpoint_sync() {
+    // Checkpoint-sync nodes lack block bodies, so the first L2 block of a
+    // non-genesis epoch is unavailable: `l2_start` is `None`. The rest of the
+    // checkpoint info (terminal, L1 range, status) is still served.
+    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let terminal = L2BlockCommitment::new(20, fixed_ol_block_id(0x20));
+    let prev_summary = EpochSummary::new(
+        1,
+        prev_terminal,
+        L2BlockCommitment::new(0, fixed_ol_block_id(0x11)),
+        L1BlockCommitment::new(500, fixed_l1_block_id(0x30)),
+        fixed_buf32(0x40),
+    );
+    let cur_summary = EpochSummary::new(
+        2,
+        terminal,
+        prev_terminal,
+        L1BlockCommitment::new(510, fixed_l1_block_id(0x31)),
+        fixed_buf32(0x41),
+    );
+    let prev_commitment = prev_summary.get_epoch_commitment();
+    let cur_commitment = cur_summary.get_epoch_commitment();
+
+    let l1_ref = CheckpointL1Ref::new(
+        L1BlockCommitment::new(505, fixed_l1_block_id(0x50)),
+        RBuf32::from(fixed_buf32(0xAA).0),
+        RBuf32::from(fixed_buf32(0xBB).0),
+    );
+
+    // No block bodies registered: this is what a checkpoint-sync node has.
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            OLBlockCommitment::new(120, fixed_ol_block_id(0x77)),
+            3,
+            false,
+            prev_commitment,
+            cur_commitment,
+            prev_commitment,
+        ))
+        .with_l1_tip_height(510)
+        .with_epoch_commitment(1, prev_commitment)
+        .with_epoch_commitment(2, cur_commitment)
+        .with_epoch_summary(prev_summary)
+        .with_epoch_summary(cur_summary)
+        .with_manifest(
+            AsmManifest::new(
+                501,
+                L1BlockId::from(Buf32::from([0x61; 32])),
+                WtxidsRoot::default(),
+                vec![],
+            )
+            .expect("test manifest should be valid"),
+        )
+        .with_checkpoint_l1_ref(cur_commitment, l1_ref);
+
+    let rpc = make_rpc_checkpoint_sync(provider);
+
+    let info = rpc
+        .get_checkpoint_info(2)
+        .await
+        .expect("checkpoint info")
+        .expect("checkpoint should exist");
+    assert_eq!(info.idx, 2);
+    assert_eq!(info.l2_start, None, "checkpoint-sync omits the L2 start");
+    assert_eq!(info.l2_end, terminal);
+    assert_eq!(info.l1_range.0.height(), 501);
+    assert_eq!(info.l1_range.1.height(), 510);
+}
+
+#[tokio::test]
+async fn checkpoint_info_epoch_0_ok_on_checkpoint_sync() {
+    // Epoch 0's L2 start is the genesis terminal itself, derivable from the
+    // summary without a block body, so checkpoint-sync still serves it.
+    let genesis_blkid = fixed_ol_block_id(0x01);
+    let terminal = L2BlockCommitment::new(0, genesis_blkid);
+    let genesis_l1 = L1BlockCommitment::new(TEST_GENESIS_L1_HEIGHT, fixed_l1_block_id(0x55));
+    let summary = EpochSummary::new(
+        0,
+        terminal,
+        OLBlockCommitment::null(),
+        genesis_l1,
+        fixed_buf32(0x99),
+    );
+    let commitment = summary.get_epoch_commitment();
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(0, commitment)
+        .with_epoch_summary(summary);
+
+    let rpc = make_rpc_checkpoint_sync(provider);
+
+    let info = rpc
+        .get_checkpoint_info(0)
+        .await
+        .expect("checkpoint info should not error")
+        .expect("epoch 0 checkpoint should exist");
+    assert_eq!(info.idx, 0);
+    assert_eq!(
+        info.l2_start
+            .expect("epoch 0 start is the genesis terminal"),
+        terminal
+    );
+    assert_eq!(info.l2_end, terminal);
 }
 
 #[tokio::test]
@@ -1528,6 +1650,42 @@ async fn blocks_summaries_start_gt_end_returns_invalid_params() {
     let result = rpc.get_blocks_summaries(test_account_id(1), 10, 5).await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
+}
+
+#[tokio::test]
+async fn blocks_summaries_non_genesis_errors_on_checkpoint_sync() {
+    // Beyond genesis a checkpoint-sync node has no canonical blocks, so an empty
+    // result would falsely read as "present but empty". Expect a capability
+    // error instead.
+    let provider = MockProvider::new();
+    let rpc = make_rpc_checkpoint_sync(provider);
+
+    let err = rpc
+        .get_blocks_summaries(test_account_id(1), 1, 3)
+        .await
+        .expect_err("checkpoint-sync must not serve non-genesis block summaries");
+    assert_eq!(err.code(), NOT_AVAILABLE_ON_NODE_CODE);
+    assert!(err.message().contains("block bodies"));
+}
+
+#[tokio::test]
+async fn blocks_summaries_genesis_ok_on_checkpoint_sync() {
+    // Genesis (slot 0) is always available, so the [0, 0] range still works on a
+    // checkpoint-sync node.
+    let account_id = test_account_id(1);
+    let genesis_block = make_block(0, 0, null_blkid());
+    let provider = MockProvider::new().with_block_and_state(
+        &genesis_block,
+        ol_state_with_snark_account(account_id, 0, 0, DEFAULT_NEXT_INBOX_MSG_IDX),
+    );
+    let rpc = make_rpc_checkpoint_sync(provider);
+
+    let summaries = rpc
+        .get_blocks_summaries(account_id, 0, 0)
+        .await
+        .expect("genesis summary should be served");
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].block_commitment().slot(), 0);
 }
 
 #[tokio::test]
@@ -2697,6 +2855,60 @@ async fn epoch_summary_multi_record_slices_messages_per_update() {
     assert_eq!(updates[2].seq_no, 12);
     assert_eq!(updates[2].messages.len(), 3);
     assert_eq!(rpc_messages_to_entries(&updates[2].messages), msgs_3);
+}
+
+#[tokio::test]
+async fn epoch_summary_checkpoint_sync_populates_terminal_root_only() {
+    // Checkpoint-sync records carry no block attribution. The terminal update's
+    // meta carries the post-epoch root; earlier updates have no meta at all.
+    // The RPC must surface the terminal root and null for the earlier one.
+    let epoch: Epoch = 2;
+    let account_id = test_account_id(7);
+    let epoch_commitment = test_epoch_commitment(epoch, 40, 0x62);
+    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 30, 0x61);
+
+    // The mock snark state's inner root is Hash::zero(); the terminal update's
+    // recovered root equals that post-epoch root.
+    let final_root = Hash::zero();
+    let records = vec![
+        update_record_with_prev(None, 10, 2, 2, Some(vec![0xA0])),
+        update_record_with_prev(
+            Some(AccountUpdateMeta::new(None, final_root)),
+            11,
+            2,
+            2,
+            Some(vec![0xA1]),
+        ),
+    ];
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_snark_state_at_terminal(epoch_commitment, account_id, 11, 2)
+        .with_snark_state_at_terminal(prev_epoch_commitment, account_id, 9, 2)
+        .with_account_update_records(account_id, epoch, records)
+        .with_inbox_fetch_fn(inbox_fetch_expect_success(account_id, 2, 2, vec![]));
+    let rpc = make_rpc(provider);
+
+    let summary = rpc
+        .get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect("epoch summary");
+    let updates = summary.update_inputs();
+    assert_eq!(updates.len(), 2);
+    assert!(
+        updates[0].new_state_root.is_none(),
+        "earlier update root null"
+    );
+    assert_eq!(
+        updates[1]
+            .new_state_root
+            .as_ref()
+            .expect("terminal root present")
+            .0,
+        summary.final_state_root().0,
+        "terminal update surfaces post-epoch root"
+    );
 }
 
 #[tokio::test]
