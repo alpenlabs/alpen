@@ -63,7 +63,7 @@ class TestCheckpointDaParity(StrataNodeTest):
 
         # Anchor to the exact posted tx via the node's L1 reference rather than a
         # broad tag scan, which could pick up a rejected checkpoint candidate.
-        info = strata_rpc.call("strata_getCheckpointInfo", epoch)
+        info = strata_rpc.strata_getCheckpointInfo(epoch)
         assert info is not None, f"no checkpoint info for finalized epoch {epoch}"
         status = info["confirmation_status"]
         assert status["status"] == "finalized", f"epoch {epoch} not finalized: {status}"

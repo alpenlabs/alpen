@@ -123,9 +123,9 @@ def check_commitment_matches_checkpoint(seq_rpc, epoch: int, commitment: dict):
     The terminal blkid hashes the reconstructed header (which commits to
     state_root), so equality proves replay yielded the expected post-state.
     """
-    info = seq_rpc.call("strata_getCheckpointInfo", epoch)
+    info = seq_rpc.strata_getCheckpointInfo(epoch)
     assert info is not None, f"missing checkpoint info at epoch {epoch}"
-    terminal = info["l2_range"][1]
+    terminal = info["l2_end"]
     assert commitment["last_slot"] == terminal["slot"], (
         f"epoch {epoch} commitment slot {commitment['last_slot']} != "
         f"checkpoint terminal slot {terminal['slot']}"

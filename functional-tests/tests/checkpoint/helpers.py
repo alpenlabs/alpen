@@ -36,7 +36,7 @@ def wait_for_checkpoint_duty(
     if min_epoch is None:
         if status_rpc is None:
             raise AssertionError("status_rpc is required when min_epoch is not provided")
-        status = status_rpc.call("strata_getChainStatus")
+        status = status_rpc.strata_getChainStatus()
         tip = status.get("tip")
         if not isinstance(tip, dict) or not isinstance(tip.get("epoch"), int):
             raise AssertionError(f"Unable to determine current epoch from chain status: {status}")
@@ -44,7 +44,7 @@ def wait_for_checkpoint_duty(
         min_epoch = tip["epoch"] + 1
 
     def _get_duty():
-        duties = admin_rpc.call("strata_strataadmin_getSequencerDuties")
+        duties = admin_rpc.strata_strataadmin_getSequencerDuties()
         for duty in duties:
             if isinstance(duty, dict) and "SignCheckpoint" in duty:
                 if parse_checkpoint_epoch(duty) < min_epoch:
