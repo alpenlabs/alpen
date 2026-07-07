@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::bail;
 use bitcoin::{Block, BlockHash, Network};
-use bitcoind_async_client::{error::ClientError as BitcoinClientError, traits::Reader};
+use bitcoind_async_client::{corepc_types::model::GetBlockchainInfo, traits::Reader};
 use strata_btc_types::{BlockHashExt, L1BlockIdBitcoinExt};
 use strata_config::btcio::ReaderConfig;
 use strata_primitives::l1::{L1BlockCommitment, L1Height};
@@ -204,15 +204,48 @@ async fn init_reader_state<R: Reader>(
 ) -> anyhow::Result<ReaderState> {
     // Init the reader state using the blockid we were given, fill in a few blocks back.
     debug!(%target_next_block, "initializing reader state");
-    let mut init_queue = VecDeque::new();
 
     let lookback = ctx.btcio_params.l1_reorg_safe_depth() as L1Height * 2;
     let client = ctx.client.as_ref();
-    let genesis_height = ctx.btcio_params.genesis_l1_height();
-    let pre_genesis = genesis_height.saturating_sub(1);
 
     // Do some math to figure out where our start and end are.
     let chain_info = client.get_blockchain_info().await?;
+    validate_bitcoind(ctx, &chain_info).await?;
+
+    let stored_canonical_tip = ctx.storage.l1().get_canonical_chain_tip_async().await?;
+    let (init_queue, real_cur_height) = match stored_canonical_tip {
+        Some((stored_tip_height, _stored_tip_blkid))
+            if stored_tip_height.saturating_add(1) >= target_next_block =>
+        {
+            seed_queue_from_stored_chain(ctx, stored_tip_height, lookback).await?
+        }
+        stored_tip => {
+            let genesis_height = ctx.btcio_params.genesis_l1_height();
+            if let Some((stored_tip_height, _)) = stored_tip {
+                info!(
+                    %stored_tip_height,
+                    %target_next_block,
+                    %genesis_height,
+                    "stored L1 canonical tip is below configured genesis; seeding reader from Bitcoin client"
+                );
+            }
+            seed_queue_from_client(ctx, target_next_block, &chain_info, lookback).await?
+        }
+    };
+
+    let epoch = ctx.status_channel.get_cur_chain_epoch().unwrap_or(0);
+
+    // Note: Transaction filtering is no longer needed since the ASM STF handles
+    // parsing L1 blocks and producing manifests with logs.
+    let state = ReaderState::new(real_cur_height + 1, lookback as usize, init_queue, epoch);
+    Ok(state)
+}
+
+/// Validates Bitcoin client chain properties before reader ingestion starts.
+async fn validate_bitcoind<R: Reader>(
+    ctx: &ReaderContext<R>,
+    chain_info: &GetBlockchainInfo,
+) -> anyhow::Result<()> {
     if chain_info.chain != ctx.expected_network {
         bail!(
             "btcio: bitcoind network mismatch: expected {}, got {}",
@@ -221,7 +254,8 @@ async fn init_reader_state<R: Reader>(
         );
     }
 
-    let actual_hash = client
+    let actual_hash = ctx
+        .client
         .get_block_hash(ctx.expected_l1_anchor.height() as u64)
         .await?;
     let actual_block_id = actual_hash.to_l1_block_id();
@@ -233,74 +267,100 @@ async fn init_reader_state<R: Reader>(
         );
     }
 
-    let stored_canonical_tip = ctx.storage.l1().get_canonical_chain_tip_async().await?;
-    let mut real_cur_height;
-    match stored_canonical_tip {
-        Some((stored_tip_height, _stored_tip_blkid))
-            if stored_tip_height.saturating_add(1) >= target_next_block =>
+    Ok(())
+}
+
+/// Seeds a [`ReaderState`] queue from the stored canonical L1 chain.
+async fn seed_queue_from_stored_chain<R: Reader>(
+    ctx: &ReaderContext<R>,
+    stored_tip_height: L1Height,
+    lookback: L1Height,
+) -> anyhow::Result<(VecDeque<BlockHash>, L1Height)> {
+    let start_height = stored_tip_height.saturating_sub(lookback);
+    let genesis_height = ctx.btcio_params.genesis_l1_height();
+    let mut init_queue = VecDeque::new();
+    let mut height = stored_tip_height;
+
+    loop {
+        match ctx
+            .storage
+            .l1()
+            .get_canonical_blockid_at_height_async(height)
+            .await?
         {
-            let start_height = stored_tip_height.saturating_sub(lookback);
-            let stored_blockids = ctx
-                .storage
-                .l1()
-                .get_canonical_blockid_range_async(start_height, stored_tip_height + 1)
-                .await?;
-            debug!(
-                %start_height,
-                end_height = %stored_tip_height,
-                entries = stored_blockids.len(),
-                "loaded reader init range from stored L1 canonical chain"
-            );
-
-            for blockid in stored_blockids {
-                init_queue.push_back(blockid.to_block_hash());
-            }
-
-            if init_queue.is_empty() {
+            Some(blockid) => init_queue.push_front(blockid.to_block_hash()),
+            None if height < genesis_height => break,
+            None if height == stored_tip_height => {
                 bail!(
                     "btcio: stored L1 canonical chain tip at height {stored_tip_height} \
-                     was missing from the reader startup range"
+                     was missing from the reader startup walk"
                 );
             }
-
-            real_cur_height = stored_tip_height;
-        }
-        stored_tip => {
-            if let Some((stored_tip_height, _)) = stored_tip {
-                info!(
-                    %stored_tip_height,
-                    %target_next_block,
-                    %genesis_height,
-                    "stored L1 canonical tip is below configured genesis; seeding reader from Bitcoin client"
+            None => {
+                bail!(
+                    "btcio: stored L1 canonical chain has a gap at height {height} \
+                     while seeding reader state from tip {stored_tip_height}"
                 );
             }
-
-            let chain_tip = chain_info.blocks as L1Height;
-            let start_height = target_next_block
-                .saturating_sub(lookback)
-                .max(pre_genesis)
-                .min(chain_tip);
-            let end_height = chain_tip.min(pre_genesis.max(target_next_block.saturating_sub(1)));
-            debug!(%start_height, %end_height, "queried L1 client, have init range");
-
-            // Loop through the range we've determined to be okay and pull the blocks we want to
-            // look back through in.
-            real_cur_height = start_height;
-            for height in start_height..=end_height {
-                let blkid = client.get_block_hash(height as u64).await?;
-                debug!(%height, %blkid, "loaded recent L1 block");
-                init_queue.push_back(blkid);
-                real_cur_height = height;
-            }
         }
+
+        if height == start_height {
+            break;
+        }
+
+        height = height.saturating_sub(1);
     }
 
-    let epoch = ctx.status_channel.get_cur_chain_epoch().unwrap_or(0);
+    let loaded_start_height =
+        stored_tip_height.saturating_sub(init_queue.len().saturating_sub(1) as L1Height);
+    debug!(
+        %loaded_start_height,
+        end_height = %stored_tip_height,
+        entries = init_queue.len(),
+        "loaded reader init range from stored L1 canonical chain"
+    );
 
-    // Note: Transaction filtering is no longer needed since the ASM STF handles
-    // parsing L1 blocks and producing manifests with logs.
-    let state = ReaderState::new(real_cur_height + 1, lookback as usize, init_queue, epoch);
-    Ok(state)
+    if init_queue.is_empty() {
+        bail!(
+            "btcio: stored L1 canonical chain tip at height {stored_tip_height} \
+             was missing from the reader startup walk"
+        );
+    }
+
+    Ok((init_queue, stored_tip_height))
+}
+
+/// Seeds a [`ReaderState`] queue from the Bitcoin client.
+async fn seed_queue_from_client<R: Reader>(
+    ctx: &ReaderContext<R>,
+    target_next_block: L1Height,
+    chain_info: &GetBlockchainInfo,
+    lookback: L1Height,
+) -> anyhow::Result<(VecDeque<BlockHash>, L1Height)> {
+    let client = ctx.client.as_ref();
+    let genesis_height = ctx.btcio_params.genesis_l1_height();
+    let pre_genesis = genesis_height.saturating_sub(1);
+    let chain_tip = chain_info.blocks as L1Height;
+    let start_height = target_next_block
+        .saturating_sub(lookback)
+        .max(pre_genesis)
+        .min(chain_tip);
+    let end_height = chain_tip.min(pre_genesis.max(target_next_block.saturating_sub(1)));
+    let mut init_queue = VecDeque::new();
+    let mut real_cur_height = start_height;
+
+    debug!(%start_height, %end_height, "queried L1 client, have init range");
+
+    // Loop through the range we've determined to be okay and pull the blocks we want to
+    // look back through in.
+    for height in start_height..=end_height {
+        let blkid = client.get_block_hash(height as u64).await?;
+        debug!(%height, %blkid, "loaded recent L1 block");
+        init_queue.push_back(blkid);
+        real_cur_height = height;
+    }
+
+    Ok((init_queue, real_cur_height))
 }
 
 /// Polls the chain to see if there's new blocks to look at, possibly reorging
@@ -524,7 +584,8 @@ mod tests {
     };
     use strata_config::btcio::ReaderConfig;
     use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
-    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_store_sled::{test_utils::get_test_sled_backend, SledBackend};
+    use strata_db_types::{backend::DatabaseBackend, l1::L1Database};
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
     use strata_status::StatusChannel;
@@ -662,8 +723,15 @@ mod tests {
     }
 
     fn test_storage() -> NodeStorage {
-        create_node_storage(get_test_sled_backend(), test_runtime_handle())
-            .expect("test: create node storage")
+        let (_, storage) = test_storage_with_backend();
+        storage
+    }
+
+    fn test_storage_with_backend() -> (Arc<SledBackend>, NodeStorage) {
+        let backend = get_test_sled_backend();
+        let storage = create_node_storage(backend.clone(), test_runtime_handle())
+            .expect("test: create node storage");
+        (backend, storage)
     }
 
     fn l1_block(height: L1Height) -> L1BlockCommitment {
@@ -854,6 +922,61 @@ mod tests {
             .map(|(height, block_hash)| (height, *block_hash))
             .collect::<Vec<_>>();
         let expected_blocks = (2..=6)
+            .rev()
+            .map(|height| (height, stored_chain.block_hash(height)))
+            .collect::<Vec<_>>();
+        assert_eq!(recent_blocks, expected_blocks);
+    }
+
+    #[tokio::test]
+    async fn init_reader_state_errors_on_stored_canonical_gap() {
+        let (backend, storage) = test_storage_with_backend();
+        let stored_chain = chain_client(&[0, 101, 102, 103, 104, 105, 106]).await;
+        let bitcoind_chain = chain_client(&[0, 201, 202, 203, 204, 205, 206]).await;
+
+        for height in 0..=6 {
+            store_l1_canonical_hash(&storage, height, stored_chain.block_hash(height)).await;
+        }
+        backend
+            .l1_db()
+            .remove_canonical_chain_entries(4, 4)
+            .expect("test: remove canonical chain entry");
+
+        let ctx = chain_reader_context(storage, bitcoind_chain);
+        let err = init_reader_state(&ctx, 7)
+            .await
+            .expect_err("test: stored canonical gap should fail initialization");
+
+        assert!(
+            err.to_string().contains("gap at height 4"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn init_reader_state_accepts_stored_chain_starting_at_genesis() {
+        let storage = test_storage();
+        let stored_chain = chain_client(&[0, 101, 102, 103, 104]).await;
+        let bitcoind_chain = chain_client(&[0, 201, 202, 203, 204, 205, 206]).await;
+        let genesis_height = 2;
+
+        for height in genesis_height..=4 {
+            store_l1_canonical_hash(&storage, height, stored_chain.block_hash(height)).await;
+        }
+
+        let ctx = chain_reader_context_with_genesis(storage, bitcoind_chain, genesis_height);
+        let state = init_reader_state(&ctx, 5)
+            .await
+            .expect("test: initialize reader state");
+
+        assert_eq!(state.next_height(), 5);
+        assert_eq!(*state.best_block(), stored_chain.block_hash(4));
+
+        let recent_blocks = state
+            .iter_blocks_back()
+            .map(|(height, block_hash)| (height, *block_hash))
+            .collect::<Vec<_>>();
+        let expected_blocks = (genesis_height..=4)
             .rev()
             .map(|height| (height, stored_chain.block_hash(height)))
             .collect::<Vec<_>>();
