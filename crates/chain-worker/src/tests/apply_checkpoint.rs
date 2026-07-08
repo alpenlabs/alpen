@@ -4,11 +4,15 @@
 //! checkpoint sync ([`apply_checkpoint_epoch`]) — and asserts the generated
 //! values match. The comparison has three tiers:
 //!
-//! - Tier 1, byte-identical (consensus): toplevel state, state root, summary.
+//! - Tier 1, byte-identical (consensus): toplevel state, state root, summary, and the emitted log
+//!   sequence (order and payloads).
 //! - Tier 2, equal modulo a documented mode difference at the [`IndexerWrites`] layer: snark update
 //!   records are rebuilt from the checkpoint sidecar's `ol_logs` so the per-account sequence
 //!   matches block sync.
 //! - Tier 3, not compared: per-block write batches (checkpoint sync has none).
+//!
+//! Log equality lives in [`assert_consistent`]; [`assert_state_consistent`]
+//! omits it for tests that deliberately inject a checkpoint-only log.
 //!
 //! Note: the `Some` vs `None` block-attribution difference between sync modes
 //! lives one layer down, when [`IndexerWrites`] is converted into the
@@ -17,7 +21,7 @@
 
 use std::collections::HashMap;
 
-use strata_acct_types::AccountId;
+use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_SERIAL};
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog, SimpleWithdrawalIntentLogData,
@@ -27,7 +31,9 @@ use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
+use strata_ol_chain_types::{
+    MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog as ChainOLLog,
+};
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
 
@@ -240,6 +246,67 @@ fn test_apply_checkpoint_snark_multi_update_and_deposit() {
 }
 
 #[test]
+fn test_apply_checkpoint_withdrawal_only() {
+    let built = build_epoch(EpochShape::WithdrawalOnly);
+    assert_withdrawal_log_present(built.block_sync_logs());
+    let (ctx, epoch) = mock_for(&built);
+
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built, &artifacts);
+}
+
+#[test]
+fn test_apply_checkpoint_withdrawal_and_deposit() {
+    let built = build_epoch(EpochShape::WithdrawalAndDeposit);
+    assert_withdrawal_log_present(built.block_sync_logs());
+    let (ctx, epoch) = mock_for(&built);
+
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built, &artifacts);
+}
+
+#[test]
+fn test_apply_checkpoint_all() {
+    let built = build_epoch(EpochShape::All);
+    assert_withdrawal_log_present(built.block_sync_logs());
+    let (ctx, epoch) = mock_for(&built);
+
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built, &artifacts);
+
+    // Three snark updates (two plain + one withdrawal-bearing) must reconstruct
+    // as three records, matching block sync.
+    assert_eq!(
+        artifacts
+            .output
+            .indexer_writes()
+            .snark_state_updates()
+            .len(),
+        3,
+        "checkpoint sync should produce one snark record per ol_logs entry"
+    );
+    assert_eq!(
+        built
+            .block_sync_indexer_writes()
+            .snark_state_updates()
+            .len(),
+        3,
+        "block sync should produce one snark record per update tx"
+    );
+}
+
+/// Guards that the withdrawal fixture genuinely emitted a bridge-gateway
+/// withdrawal-intent log; without this, an empty-log epoch would make the
+/// cross-mode log comparison pass vacuously.
+fn assert_withdrawal_log_present(logs: &[ChainOLLog]) {
+    assert!(
+        logs.iter()
+            .any(|log| log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL),
+        "withdrawal fixture must emit a bridge-gateway log"
+    );
+}
+
+#[test]
 fn test_apply_checkpoint_replays_manifests_spread_across_non_terminal_blocks() {
     let built = build_epoch(EpochShape::ManifestsInNonTerminalBlocks);
     assert!(
@@ -363,7 +430,26 @@ fn test_apply_checkpoint_skips_non_snark_log_in_sidecar() {
     let (ctx, epoch) = mock_for(&built_with_extra);
 
     let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
-    assert_consistent(&built_with_extra, &artifacts);
+    // Logs are deliberately divergent here (the spliced log is checkpoint-only),
+    // so compare everything except the log sequence.
+    assert_state_consistent(&built_with_extra, &artifacts);
+
+    // Checkpoint sync copies sidecar logs verbatim into the output, mapping the
+    // sidecar `OLLog` into the chain-types `OLLog`. Assert the full output
+    // sequence equals that mapping (position included), so a drop, duplicate,
+    // or same-length replace of the spliced log fails.
+    let expected_logs: Vec<ChainOLLog> = built_with_extra
+        .checkpoint_payload
+        .sidecar()
+        .ol_logs()
+        .iter()
+        .map(|log| ChainOLLog::new(log.account_serial(), log.payload().to_vec()))
+        .collect();
+    assert_eq!(
+        artifacts.output.logs(),
+        expected_logs,
+        "output logs must equal the spliced sidecar logs, in order"
+    );
 
     // The extra non-snark log must not produce a snark record.
     assert_eq!(
@@ -416,8 +502,25 @@ fn test_apply_checkpoint_missing_payload() {
     assert!(matches!(err, WorkerError::MissingCheckpointPayload(_)));
 }
 
-/// Asserts the checkpoint-reconstructed artifacts match the block-sync run.
+/// Asserts the checkpoint-reconstructed artifacts match the block-sync run,
+/// including an identical emitted-log sequence.
 fn assert_consistent(built: &BuiltEpoch, artifacts: &AppliedEpochArtifacts) {
+    assert_state_consistent(built, artifacts);
+
+    // Emitted logs: identical sequence (order and payloads). Checkpoint sync
+    // sources logs from the sidecar; a regression filtering or reordering
+    // non-snark logs during reconstruction would diverge here.
+    assert_eq!(
+        artifacts.output.logs(),
+        built.block_sync_logs(),
+        "emitted logs must match across sync modes, in order"
+    );
+}
+
+/// Asserts state root, summary, and indexer writes match across sync modes,
+/// without comparing emitted logs. For tests that deliberately inject a
+/// checkpoint-only log the block-sync path never emitted.
+fn assert_state_consistent(built: &BuiltEpoch, artifacts: &AppliedEpochArtifacts) {
     // Tier 1 — byte-identical: state root, toplevel state, summary.
     assert_eq!(
         artifacts.output.computed_state_root(),
