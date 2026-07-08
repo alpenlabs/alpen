@@ -322,7 +322,7 @@ test: test-unit test-doc
 [group('code-quality')]
 pr: lint rustdocs test-doc test-unit test-functional
     @echo "\n\033[36m======== CHECKS_COMPLETE ========\033[0m\n"
-    @test -z \`git status --porcelain\` || echo "WARNING: You have uncommitted changes"
+    @test -z "$(git status --porcelain)" || echo "WARNING: You have uncommitted changes"
     @echo "All good to create a PR!"
 
 # Runs lints (without fixing), audit, docs, and tests(except functional tests)
@@ -331,7 +331,7 @@ pr: lint rustdocs test-doc test-unit test-functional
 [group('code-quality')]
 pr-lite: lint rustdocs test-doc test-unit
     @echo "\n\033[36m======== CHECKS_COMPLETE ========\033[0m\n"
-    @test -z \`git status --porcelain\` || echo "WARNING: You have uncommitted changes"
+    @test -z "$(git status --porcelain)" || echo "WARNING: You have uncommitted changes"
     @echo "All good to create a PR!"
 
 # Run all benchmarks in the workspace
