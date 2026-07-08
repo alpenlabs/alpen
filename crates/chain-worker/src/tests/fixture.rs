@@ -478,13 +478,10 @@ enum UpdateEffect {
     Withdrawal,
 }
 
-/// Runs a snark-update epoch's non-terminal blocks: one GAM delivers an inbox
-/// message per effect, then one snark update per effect consumes its message
-/// (in order) and applies the effect. Returns the header of the last block.
+/// Runs one GAM + one snark update per effect, returning the last block's header.
 ///
-/// Each update is built against the post-state of the prior one, so seqno and
-/// inbox cursor advance correctly. Proofs come from a single MMR tracking all
-/// messages, so every leaf validates against the final inbox the account sees.
+/// Proofs come from a single MMR tracking every message, so each leaf validates
+/// against the final inbox the account sees after all GAMs land.
 fn run_snark_update_blocks(
     state: &mut MemoryStateBaseLayer,
     blocks: &mut Vec<OLBlock>,
