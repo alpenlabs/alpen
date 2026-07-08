@@ -116,8 +116,7 @@ fn test_apply_da_epoch_withdrawal() {
         make_empty_manifest(TERMINAL_L1_HEIGHT, 0),
     );
 
-    // Guard against the limbo path silently passing: the withdrawal must have
-    // debited the snark account without sweeping funds into limbo.
+    // A valid withdrawal debits the account; it must not land in limbo.
     assert_eq!(
         state.limbo_funds(),
         pre_epoch_state.limbo_funds(),

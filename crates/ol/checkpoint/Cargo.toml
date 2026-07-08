@@ -38,3 +38,6 @@ strata-asm-proto-checkpoint-types = { workspace = true, features = [
   "test-utils",
 ] }
 strata-storage = { workspace = true, features = ["test-utils"] }
+strata-acct-types.workspace = true
+strata-ledger-types.workspace = true
+strata-ol-stf = { workspace = true, features = ["test-utils"] }

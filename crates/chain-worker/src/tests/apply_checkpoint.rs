@@ -295,9 +295,8 @@ fn test_apply_checkpoint_all() {
     );
 }
 
-/// Guards that the withdrawal fixture genuinely emitted a bridge-gateway
-/// withdrawal-intent log; without this, an empty-log epoch would make the
-/// cross-mode log comparison pass vacuously.
+/// Checks the fixture actually emitted a bridge-gateway log, so the log
+/// comparison isn't just comparing two empty lists.
 fn assert_withdrawal_log_present(logs: &[ChainOLLog]) {
     assert!(
         logs.iter()
@@ -434,10 +433,9 @@ fn test_apply_checkpoint_skips_non_snark_log_in_sidecar() {
     // so compare everything except the log sequence.
     assert_state_consistent(&built_with_extra, &artifacts);
 
-    // Checkpoint sync copies sidecar logs verbatim into the output, mapping the
-    // sidecar `OLLog` into the chain-types `OLLog`. Assert the full output
-    // sequence equals that mapping (position included), so a drop, duplicate,
-    // or same-length replace of the spliced log fails.
+    // Compare the whole output sequence against the sidecar, so a drop,
+    // duplicate, or same-length swap of the spliced log fails, not just a
+    // length change.
     let expected_logs: Vec<ChainOLLog> = built_with_extra
         .checkpoint_payload
         .sidecar()
