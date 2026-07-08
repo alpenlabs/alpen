@@ -11,7 +11,10 @@ pub mod checkpoint_sync;
 pub mod csm_worker_context;
 mod fcm;
 pub mod message;
+pub mod ol_mmr_reconcile;
 pub mod sync_manager;
+#[cfg(test)]
+mod test_utils;
 pub mod tip_update;
 pub mod unfinalized_tracker;
 
