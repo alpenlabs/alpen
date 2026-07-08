@@ -145,6 +145,9 @@ jobs:
 
       - run: cargo hack check --locked
 
+      - name: Check strata no-default-features build
+        run: cargo check --locked --bin strata --no-default-features
+
   fmt:
     name: Check code formatting
     runs-on: ubuntu-latest
