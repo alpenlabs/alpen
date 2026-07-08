@@ -7,6 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
@@ -23,9 +24,11 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-merkle.workspace = true
+strata-ol-mmr-index.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-state-types.workspace = true
+strata-ol-state-support-types.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
@@ -38,6 +41,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
+hex.workspace = true
 metrics.workspace = true
 serde.workspace = true
 thiserror.workspace = true
@@ -45,9 +49,11 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-db-store-sled.workspace = true
 strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
-strata-ol-state-support-types.workspace = true
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
+strata-storage = { workspace = true, features = ["test-utils"] }
 
 rand = { version = "0.8.5", features = ["getrandom", "std_rng"] }
 
