@@ -1,13 +1,17 @@
 use std::borrow::Cow;
 
 use revm::precompile::{
-    utilities::right_pad, Precompile, PrecompileId, PrecompileOutput, PrecompileResult,
+    utilities::right_pad, Precompile, PrecompileError, PrecompileId, PrecompileOutput,
+    PrecompileResult,
 };
 use revm_primitives::Bytes;
 use strata_crypto::schnorr::verify_schnorr_sig;
 use strata_primitives::buf::{Buf32, Buf64};
 
 use crate::constants::{SCHNORR_PRECOMPILE_ADDRESS, SCHNORR_PRECOMPILE_PRECOMPILE_ID};
+
+/// Fixed raw EVM gas charged for Schnorr signature verification.
+const SCHNORR_VERIFY_GAS: u64 = 3_000;
 
 pub(crate) const SCHNORR_SIGNATURE_VALIDATION: Precompile = Precompile::new(
     PrecompileId::Custom(Cow::Borrowed(SCHNORR_PRECOMPILE_PRECOMPILE_ID)),
@@ -35,7 +39,11 @@ fn parse_schnorr_input(input: &[u8]) -> SchnorrInput {
     }
 }
 
-fn verify_schnorr_precompile(input: &[u8], _gas_limit: u64) -> PrecompileResult {
+fn verify_schnorr_precompile(input: &[u8], gas_limit: u64) -> PrecompileResult {
+    if SCHNORR_VERIFY_GAS > gas_limit {
+        return Err(PrecompileError::OutOfGas);
+    }
+
     let schnorr_input = parse_schnorr_input(input);
 
     let result = verify_schnorr_sig(
@@ -45,12 +53,7 @@ fn verify_schnorr_precompile(input: &[u8], _gas_limit: u64) -> PrecompileResult 
     );
     let verification_byte = Bytes::from([result as u8]);
 
-    // currently we can use [ecrecover hack](https://hackmd.io/@nZ-twauPRISEa6G9zg3XRw/SyjJzSLt9)
-    // which costs around ~3000 gas.
-    // setting it as 0, as this requires further discussion
-    let gas_cost = 0;
-
-    Ok(PrecompileOutput::new(gas_cost, verification_byte))
+    Ok(PrecompileOutput::new(SCHNORR_VERIFY_GAS, verification_byte))
 }
 
 #[cfg(test)]
@@ -95,8 +98,9 @@ mod tests {
     #[test]
     fn test_signature_ends_with_zero() {
         let input = generate_valid_input();
-        let result = verify_schnorr_precompile(&input, 0).unwrap();
+        let result = verify_schnorr_precompile(&input, SCHNORR_VERIFY_GAS).unwrap();
 
+        assert_eq!(result.gas_used, SCHNORR_VERIFY_GAS);
         assert_eq!(
             result.bytes,
             Bytes::from([1]),
@@ -107,8 +111,9 @@ mod tests {
     #[test]
     fn test_signature_does_not_end_with_zero() {
         let input = generate_invalid_input();
-        let result = verify_schnorr_precompile(&input, 0).unwrap();
+        let result = verify_schnorr_precompile(&input, SCHNORR_VERIFY_GAS).unwrap();
 
+        assert_eq!(result.gas_used, SCHNORR_VERIFY_GAS);
         assert_eq!(
             result.bytes,
             Bytes::from([0]),
@@ -119,8 +124,28 @@ mod tests {
     #[test]
     fn test_input_with_wrong_length() {
         let input = Bytes::from(vec![1u8; 100]); // Not 128 bytes
-        let result = verify_schnorr_precompile(&input, 0).unwrap();
+        let result = verify_schnorr_precompile(&input, SCHNORR_VERIFY_GAS).unwrap();
 
+        assert_eq!(result.gas_used, SCHNORR_VERIFY_GAS);
         assert_eq!(result.bytes, Bytes::from([0]));
+    }
+
+    #[test]
+    fn test_exact_gas_limit_succeeds() {
+        let input = generate_valid_input();
+
+        let result = verify_schnorr_precompile(&input, SCHNORR_VERIFY_GAS).unwrap();
+
+        assert_eq!(result.gas_used, SCHNORR_VERIFY_GAS);
+        assert_eq!(result.bytes, Bytes::from([1]));
+    }
+
+    #[test]
+    fn test_low_gas_limit_fails() {
+        let input = generate_valid_input();
+
+        let error = verify_schnorr_precompile(&input, SCHNORR_VERIFY_GAS - 1).unwrap_err();
+
+        assert_eq!(error, PrecompileError::OutOfGas);
     }
 }
