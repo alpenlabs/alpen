@@ -63,8 +63,8 @@ pub use block::{AccountSnapshot, BlockAccountChange, BlockStateChanges, BlockSto
 #[cfg(feature = "chainspec")]
 pub use reconstruct::ethereum_state_from_chain_spec;
 pub use reconstruct::{
-    apply_batch_state_diff_to_ethereum_state, ethereum_state_from_genesis_accounts, GenesisAccount,
-    ReconstructError,
+    apply_batch_state_diff_to_ethereum_state, ethereum_state_from_genesis_accounts,
+    EthereumStateExt, GenesisAccount, ReconstructError,
 };
 #[cfg(feature = "serde")]
 pub use serde_impl::{AccountChangeSerde, AccountDiffSerde, BatchStateDiffSerde};

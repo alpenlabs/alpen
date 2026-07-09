@@ -1613,6 +1613,7 @@ dependencies = [
  "serde_json",
  "strata-codec",
  "strata-da-framework",
+ "strata-identifiers",
  "strata-mpt",
  "thiserror 2.0.18",
 ]

@@ -17,6 +17,7 @@ rsp-mpt.workspace = true
 serde.workspace = true
 strata-codec.workspace = true
 strata-da-framework.workspace = true
+strata-identifiers.workspace = true
 strata-mpt.workspace = true
 thiserror.workspace = true
 

@@ -3,9 +3,10 @@
 pub use alloy_genesis::GenesisAccount;
 #[cfg(feature = "chainspec")]
 use alpen_chainspec::chain_value_parser;
-use revm_primitives::{alloy_primitives::Address, B256};
+use revm_primitives::{alloy_primitives::Address, B256, U256};
 use rsp_mpt::EthereumState;
 use strata_da_framework::ContextlessDaWrite;
+use strata_identifiers::Buf32;
 use strata_mpt::{keccak, StateAccount, EMPTY_ROOT, KECCAK_EMPTY};
 use thiserror::Error as ThisError;
 
@@ -110,6 +111,60 @@ pub fn ethereum_state_from_genesis_accounts(
     }
 
     Ok(state)
+}
+
+/// Adds reconstruction-specific helper methods to [`rsp_mpt::EthereumState`].
+pub trait EthereumStateExt {
+    /// Returns the current Ethereum state root as [`Buf32`].
+    ///
+    /// This wraps the raw bytes from `self.state_root()` in [`Buf32`].
+    fn state_root_buf32(&self) -> Buf32;
+
+    /// Returns the reconstructed account snapshot for `address`.
+    ///
+    /// This reads the reconstructed trie state. It is not a presence or absence
+    /// proof against an externally supplied state root.
+    fn get_account_snapshot(
+        &self,
+        address: Address,
+    ) -> Result<Option<AccountSnapshot>, ReconstructError>;
+
+    /// Returns the reconstructed storage slot for `address` and `slot`.
+    ///
+    /// This reads the reconstructed trie state. It is not a presence or absence
+    /// proof against an externally supplied state root.
+    fn get_storage_slot(&self, address: Address, slot: U256) -> Result<U256, ReconstructError>;
+}
+
+impl EthereumStateExt for EthereumState {
+    fn state_root_buf32(&self) -> Buf32 {
+        Buf32::from(self.state_root().0)
+    }
+
+    fn get_account_snapshot(
+        &self,
+        address: Address,
+    ) -> Result<Option<AccountSnapshot>, ReconstructError> {
+        let hashed_addr: B256 = keccak(address).into();
+        let account = self
+            .state_trie
+            .get_rlp::<StateAccount>(hashed_addr.as_slice())?
+            .as_ref()
+            .map(AccountSnapshot::from);
+
+        Ok(account)
+    }
+
+    fn get_storage_slot(&self, address: Address, slot: U256) -> Result<U256, ReconstructError> {
+        let hashed_addr: B256 = keccak(address).into();
+        let Some(storage_trie) = self.storage_tries.get(&hashed_addr) else {
+            return Ok(U256::ZERO);
+        };
+
+        Ok(storage_trie
+            .get_rlp::<U256>(&keccak(slot.to_be_bytes::<32>()))?
+            .unwrap_or_default())
+    }
 }
 
 /// Applies a [`BatchStateDiff`] to a populated [`EthereumState`] sparse-MPT witness.
@@ -697,10 +752,20 @@ mod tests {
             ),
         )])
         .unwrap();
+        let expected_root = canonical_state_root(&expected_state).unwrap();
 
+        assert_eq!(state.state_root_buf32(), Buf32::from(expected_root.0));
         assert_eq!(
-            state.state_root(),
-            canonical_state_root(&expected_state).unwrap()
+            state.get_account_snapshot(address).unwrap(),
+            Some(snapshot(100, 2, code_hash))
+        );
+        assert_eq!(
+            state.get_storage_slot(address, slot_one).unwrap(),
+            value(10)
+        );
+        assert_eq!(
+            state.get_storage_slot(address, slot_two).unwrap(),
+            U256::ZERO
         );
     }
 
@@ -719,6 +784,10 @@ mod tests {
 
         let hashed_addr: B256 = keccak(address).into();
         assert!(!state.storage_tries.contains_key(&hashed_addr));
+        assert_eq!(
+            state.get_storage_slot(address, slot_key).unwrap(),
+            U256::ZERO
+        );
         assert_eq!(
             state.state_root(),
             canonical_state_root(&expected_state).unwrap()
