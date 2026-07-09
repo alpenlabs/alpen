@@ -1,22 +1,23 @@
 //! Describes gchain processors.
 //!
-//! The general concept is that processors are applied to a node in stages by
-//! the gchain processor executor.  The general principle is that there's
-//! moderately-sized outputs a processor produces from each node.  The processor
-//! maintains some abstract aggregated base state that it may access in order to
-//! produce gchain output.
+//! The general concept is that several different processors get applied to a
+//! link in stages by a gchain processor executor.  These processors produce
+//! some "artifact" from being applied to the link (such as a write batch),
+//! which are only "moderately sized" and feasible to juggle many of in memory
+//! (or recompute on the fly).  The processor itself maintains some abstract
+//! aggregated base state that it may access in order to produce artifacts,
+//! potentially through the lens of intermediate aritfacts.
 //!
 //! The happy path looks like this:
 //! 1. The executor picks a new node to process.
-//! 2. The executor calls th `process_node` fn to produce an output.  The output is persisted.
-//! 4. Some time later, the executor decides a node is committed.
-//! 5. The executor calls `commit_node_output`.
-//! 6.
+//! 2. The executor calls th `process_link` fn to produce an artifact.
+//! 4. Some time later, the executor decides a (series of) link(s) is ready to be committed.
+//! 5. The executor calls `commit_outputs`.
 //!
-//! The key idea is that the aggregated state is managed by the processor and is
-//! updated infrequently.  The by-node state is managed by the executor and is
+//! A key idea is that the aggregated state is managed by the processor and is
+//! updated infrequently.  The by-link state is managed by the executor and is
 //! updated on the fly as needed.  The executor tracks which processors have
-//! been called on which nodes and orchestrates execution to bring them all
+//! been called on which links and orchestrates execution to bring them all
 //! forwards up to the tip.
 
 use std::any::{Any, TypeId};
@@ -25,7 +26,7 @@ use std::fmt::{self, Debug, Display};
 use std::str::{self, FromStr};
 use std::sync::Arc;
 
-use crate::chain_spec::{GChainSpec, Node, NodeLink, NodePath, NodeRef};
+use crate::chain_spec::*;
 
 const PROC_ID_LEN: usize = 8;
 
@@ -86,8 +87,8 @@ pub trait GChainProc: Sized {
     /// The chain spec this gchain proc is defined for.
     type Spec: GChainSpec;
 
-    /// An incremental container for the output of running a processor on a node.
-    type NodeProcOutput: ProcOutput;
+    /// The incremental artifacts produced for the output of running on a link.
+    type Artifact: ProcArtifact;
 
     /// Called when the processor is first initialized.
     ///
@@ -96,49 +97,51 @@ pub trait GChainProc: Sized {
     /// with a newer client version (which added a new processor).
     fn on_init(&self, cur_node: &NodeRef<Self::Spec>, node: &Node<Self::Spec>);
 
-    /// Processes a node and produces some output from the step.
+    /// Processes a link and produces some output from the step.
     ///
     /// May fetch outputs declared in the deps (configured in the executor) from
     /// the provided context and use them in its processing.  The link indicates
     /// how we arrived at this node and so which data we can fetch from the
     /// context.
-    fn process_node(
+    fn process_link(
         &self,
-        link: &NodeLink<Self::Spec>,
-        node: &Node<Self::Spec>,
+        lref: &LinkRef<Self::Spec>,
+        link: &Link<Self::Spec>,
         ctx: &ProcContext<Self>,
-    ) -> anyhow::Result<Self::NodeProcOutput>;
+    ) -> anyhow::Result<Self::Artifact>;
 
-    /// Applies a path of processed outputs for multiple nodes into the
-    /// aggregated state, as a single operation.
+    /// Applies a path of artifacts for processed links for multiple nodes into
+    /// the aggregated state, as a single operation.
     ///
     /// The order of the outputs slice matches the order of nodes in the
     /// provided path.
-    fn commit_node_outputs(
+    fn commit_outputs(
         &self,
-        path: &NodePath<Self::Spec>,
-        outputs: &[Arc<Self::NodeProcOutput>],
+        path: &LinkPath<Self::Spec>,
+        outputs: &[Arc<Self::Artifact>],
     ) -> anyhow::Result<()>;
 
-    /// Rolls back the processed output of a node from the aggregated state (as
-    /// a direct "undo" operation to `commit_node_outputs`), if possible, as a
-    /// single operation.  The path provided is meant to be traversed "in
-    /// reverse" compared to how it's traversed in `commit_node_outputs`.
+    /// Rolls back the artifacts of a set of links from the aggregated state (as
+    /// a direct "undo" operation to `commit_outputs`), as a single operation.
+    /// The path provided is meant to be traversed "in reverse" compared to how
+    /// it's traversed in `commit_node_outputs`.
     ///
-    /// Will never be called with any node passed to `compact_state` or any node
+    /// Will never be called with any link passed to `compact_state` or any node
     /// before it.
-    fn uncommit_node_outputs(
+    fn uncommit_outputs(
         &self,
-        path: &NodePath<Self::Spec>,
-        outputs: &[Arc<Self::NodeProcOutput>],
+        path: &LinkPath<Self::Spec>,
+        outputs: &[Arc<Self::Artifact>],
     ) -> anyhow::Result<()>;
 
-    /// Called by the executor before we discard an output (like one that's
+    /// Called by the executor before we discard an artifact (like one that's
     /// pruned) order to discard any auxiliary data that might exist.
-    fn preprune_node_output(
+    ///
+    /// May be called multiple times for the same link/artifact.
+    fn preprune_artifact(
         &self,
-        link: &NodeLink<Self::Spec>,
-        output: &Self::NodeProcOutput,
+        lref: &LinkRef<Self::Spec>,
+        output: &Self::Artifact,
     ) -> anyhow::Result<()>;
 
     /// Called when we are sure we will never try to roll back to before a
@@ -149,15 +152,16 @@ pub trait GChainProc: Sized {
     fn prune_state_upto(self, nref: &NodeRef<Self::Spec>) -> anyhow::Result<()>;
 }
 
-/// Output from a processing stage on a node.
-pub trait ProcOutput: Sync + Send + Any + 'static {
-    /// Checks if the output indicates the node was valid, as far as the
-    /// processor stage cares.  A layer processor stage may think that this is
-    /// not true.
+/// Output from a processing stage on a link transition.
+pub trait ProcArtifact: Sync + Send + Any + 'static {
+    /// Checks if the output indicates the link transition was valid, as far as
+    /// the processor stage cares.  A layer processor stage may be used to
+    /// decide that a link is invalid and we should avoid doing more work on it
+    /// (and preferentially take a different path through the graph).
     ///
     /// Default impl assumes true, since a lot of processor stages may not
     /// actually be involved in node validation.
-    fn is_node_valid(&self) -> bool {
+    fn is_link_valid(&self) -> bool {
         true
     }
 }
@@ -165,21 +169,21 @@ pub trait ProcOutput: Sync + Send + Any + 'static {
 /// Cached output from nodes that we've extracted and determined might be useful
 /// for later proc stages.
 pub struct OutputCache<S: GChainSpec> {
-    nodes: HashMap<NodeRef<S>, BTreeMap<TypeId, Arc<dyn ProcOutput>>>,
+    nodes: HashMap<NodeRef<S>, BTreeMap<TypeId, Arc<dyn ProcArtifact>>>,
 }
 
 impl<S: GChainSpec> OutputCache<S> {
     /// Gets the stored output from some processor for some node.
-    pub fn get_proc_output_arc<O: ProcOutput>(
+    pub fn get_proc_output_arc<O: ProcArtifact>(
         &self,
         nref: &NodeRef<S>,
-    ) -> Option<&Arc<dyn ProcOutput>> {
+    ) -> Option<&Arc<dyn ProcArtifact>> {
         self.nodes
             .get(nref)
             .and_then(|notbl| notbl.get(&TypeId::of::<O>()))
     }
 
-    pub fn get_proc_output<O: ProcOutput>(&self, _nref: &NodeRef<S>) -> Option<&O> {
+    pub fn get_proc_output<O: ProcArtifact>(&self, _nref: &NodeRef<S>) -> Option<&O> {
         // TODO(trey): need more complicated type hacks to make this work
         unimplemented!()
     }
@@ -220,38 +224,11 @@ impl<P: GChainProc> ProcHistory<P> {
     pub fn steps(&self) -> &[Arc<ProcStepOutput<P>>] {
         &self.steps
     }
-
-    /// Gets the last (most recent) processed node ref.
-    pub fn last_node_ref(&self) -> &NodeRef<P::Spec> {
-        self.steps.last().map(|o| &o.nref).unwrap_or(&self.base)
-    }
-
-    /// Gets the last (most recent) processed node link, if there is any.
-    pub fn last_node_link(&self) -> Option<NodeLink<P::Spec>> {
-        self.iter_links().next()
-    }
-
-    /// Produces the links for each of the steps in the processing history,
-    /// starting from the most recent.
-    pub fn iter_links(&self) -> impl Iterator<Item = NodeLink<P::Spec>> {
-        // Walk the outputs newest-first, linking each to its predecessor and
-        // stepping the oldest output back onto the base node.
-        let n = self.steps.len();
-        (0..n).rev().map(move |k| {
-            let cur = self.steps[k].nref;
-            let prev = if k > 0 {
-                self.steps[k - 1].nref
-            } else {
-                self.base
-            };
-            NodeLink::new_step(cur, prev)
-        })
-    }
 }
 
 pub struct ProcStepOutput<P: GChainProc> {
     nref: NodeRef<P::Spec>,
-    output: P::NodeProcOutput,
+    output: P::Artifact,
 }
 
 /// Describes the dependencies a processing stage has, so that we know which
