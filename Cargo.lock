@@ -15764,6 +15764,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-gchain-executor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "strata-gchain-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-gchain-types"
 version = "0.1.0"
 dependencies = [
