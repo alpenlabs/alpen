@@ -15211,6 +15211,7 @@ dependencies = [
  "strata-bridge-params",
  "strata-checkpoint-types",
  "strata-codec",
+ "strata-common",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",

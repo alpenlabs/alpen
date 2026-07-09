@@ -26,6 +26,9 @@ pub const BAIL_CSM_EVENT: &str = "csm_event";
 /// Bail point in the CSM worker when finalizing an epoch.
 pub const BAIL_CSM_EVENT_FINALIZE_EPOCH: &str = "csm_event_finalize_epoch";
 
+/// Bail point after the chain worker persists MMR index writes for an OL block.
+pub const BAIL_CHAIN_WORKER_AFTER_MMR_INDEX: &str = "chain_worker_after_mmr_index";
+
 /// All registered bail tags.
 ///
 /// Returned to functional tests via the `debug_listBailTags` RPC so they can
@@ -36,4 +39,5 @@ pub const KNOWN_BAIL_TAGS: &[&str] = &[
     BAIL_FCM_NEW_BLOCK,
     BAIL_CSM_EVENT,
     BAIL_CSM_EVENT_FINALIZE_EPOCH,
+    BAIL_CHAIN_WORKER_AFTER_MMR_INDEX,
 ];
