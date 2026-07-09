@@ -23,6 +23,7 @@ use strata_ledger_types::{
     Coin, IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut,
     IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState, StateError,
 };
+use strata_snark_acct_types::Seqno;
 
 use crate::{
     BatchDiffState, DaAccumulatingState, IndexerState, WriteTrackingState,
@@ -392,6 +393,52 @@ pub(crate) fn next_serial_advances_across_creates<F: MutLayerFactory>(factory: F
     );
 }
 
+/// Recreating an account with an id that already exists is a hard error
+/// ([`StateError::AccountExists`]), not a silent overwrite.
+pub(crate) fn create_duplicate_account_errors<F: MutLayerFactory>(factory: F) {
+    let base = create_test_base_layer();
+    let mut layer = factory.build_mut(&base);
+
+    let account_id = test_account_id(1);
+    layer
+        .create_new_account(
+            account_id,
+            test_new_snark_account_data(&test_snark_account_state(1), BitcoinAmount::from_sat(100)),
+        )
+        .unwrap();
+
+    let result = layer.create_new_account(
+        account_id,
+        test_new_snark_account_data(&test_snark_account_state(2), BitcoinAmount::from_sat(200)),
+    );
+    assert!(matches!(result, Err(StateError::AccountExists(_))));
+}
+
+/// [`set_proof_state`](ISnarkAccountStateMut::set_proof_state) reads back via
+/// [`inner_state_root`](ISnarkAccountState::inner_state_root) and
+/// [`seqno`](ISnarkAccountState::seqno).
+pub(crate) fn set_proof_state_roundtrip<F: MutLayerFactory>(factory: F) {
+    let account_id = test_account_id(1);
+    let (base, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let mut layer = factory.build_mut(&base);
+
+    let inner_state = Buf32::from([42u8; 32]);
+    let next_read_idx = 3u64;
+    let seqno = Seqno::from(7u64);
+    layer
+        .update_account(account_id, |acct| {
+            acct.as_snark_account_mut()
+                .unwrap()
+                .set_proof_state(inner_state, next_read_idx, seqno)
+        })
+        .unwrap();
+
+    let account = layer.get_account_state(account_id).unwrap().unwrap();
+    let snark = account.as_snark_account().unwrap();
+    assert_eq!(snark.inner_state_root(), inner_state);
+    assert_eq!(snark.seqno(), seqno);
+}
+
 // -----------------------------------------------------------------------------
 // Simple state write -> read-back roundtrips
 //
@@ -486,6 +533,11 @@ pub(crate) fn roundtrip_last_l1_block_rec<F: MutLayerFactory>(factory: F) {
     let base = create_test_base_layer();
     let mut layer = factory.build_mut(&base);
 
+    // The MMR is prefilled at genesis with sentinel leaves for heights
+    // `0..=genesis_l1_height`, so assert a relative change rather than an
+    // absolute count.
+    let entries_before = layer.l1_block_refs_mmr().num_entries();
+
     let height = L1Height::from(100u32);
     let block_hash = [7u8; 32];
     layer.append_l1_block_rec(height, L1BlockRecord::new(block_hash, [8u8; 32]));
@@ -495,6 +547,9 @@ pub(crate) fn roundtrip_last_l1_block_rec<F: MutLayerFactory>(factory: F) {
         *layer.last_l1_blkid(),
         L1BlockId::from(Buf32::from(block_hash))
     );
+
+    // The append grows the underlying MMR.
+    assert_eq!(layer.l1_block_refs_mmr().num_entries(), entries_before + 1);
 }
 
 /// Inserting an inbox message is visible through the layer but leaves the base
@@ -683,6 +738,16 @@ macro_rules! impl_mut_layer_tests {
         #[test]
         fn common_next_serial_advances_across_creates() {
             $crate::common_tests::next_serial_advances_across_creates($factory);
+        }
+
+        #[test]
+        fn common_create_duplicate_account_errors() {
+            $crate::common_tests::create_duplicate_account_errors($factory);
+        }
+
+        #[test]
+        fn common_set_proof_state_roundtrip() {
+            $crate::common_tests::set_proof_state_roundtrip($factory);
         }
 
         #[test]
