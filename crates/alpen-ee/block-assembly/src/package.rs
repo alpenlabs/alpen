@@ -35,7 +35,14 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
     payload: &TPayload,
 ) -> ExecOutputs {
     let mut outputs = ExecOutputs::new_empty();
-    for withdrawal_intent in payload.withdrawal_intents() {
+    let withdrawal_intents = payload.withdrawal_intents();
+    if !withdrawal_intents.is_empty() {
+        info!(
+            withdrawal_intent_count = withdrawal_intents.len(),
+            "building withdrawal output messages from payload intents",
+        );
+    }
+    for withdrawal_intent in withdrawal_intents {
         let dest_desc_len = withdrawal_intent.destination.to_bytes().len();
         let Some(msg_payload) = create_withdrawal_init_message_payload(
             withdrawal_intent.destination.clone(),

@@ -1,7 +1,9 @@
 use std::{io, sync::Arc};
 
 use alloy_consensus::{Header, Transaction};
-use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
+use alpen_reth_evm::{
+    constants::BRIDGEOUT_PRECOMPILE_ADDRESS, evm::AlpenEvmFactory, extract_withdrawal_intents,
+};
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_basic_payload_builder::*;
 use reth_chainspec::{ChainSpec, ChainSpecProvider, EthChainSpec, EthereumHardforks};
@@ -25,7 +27,7 @@ use reth_transaction_pool::{
 };
 use revm::{context::Block, database::State};
 use revm_primitives::U256;
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     block_witness::build_block_witness_from_executed_state,
@@ -340,9 +342,25 @@ where
     // collect receipts from the executed transactions
     let receipts: Vec<Receipt> = execution_result.receipts;
     let txns: Vec<TransactionSigned> = block.body().transactions().cloned().collect();
+    let bridgeout_log_count = receipts
+        .iter()
+        .flat_map(|receipt| receipt.logs.iter())
+        .filter(|log| log.address == BRIDGEOUT_PRECOMPILE_ADDRESS)
+        .count();
     let withdrawal_intents: Vec<WithdrawalIntent> =
         extract_withdrawal_intents(&txns, &receipts, evm_config.evm_factory().bridge_params())
             .map_err(PayloadBuilderError::other)?;
+    if bridgeout_log_count > 0 || !withdrawal_intents.is_empty() {
+        info!(
+            target: "payload_builder",
+            id = %attributes.id,
+            tx_count = txns.len(),
+            receipt_count = receipts.len(),
+            bridgeout_log_count,
+            withdrawal_intent_count = withdrawal_intents.len(),
+            "extracted withdrawal intents from built payload receipts",
+        );
+    }
 
     let strata_payload =
         AlpenBuiltPayload::new(eth_payload, withdrawal_intents).with_block_witness(block_witness);
