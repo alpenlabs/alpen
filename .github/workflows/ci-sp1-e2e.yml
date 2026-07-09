@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      contents: read
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
       short_tag: ${{ steps.check.outputs.short_tag }}
@@ -56,6 +57,31 @@ jobs:
           }
 
           REPO="${{ github.repository }}"
+          REPO_OWNER="${REPO%%/*}"
+          REPO_NAME="${REPO#*/}"
+
+          resolve_commit_sha() {
+            local ref="$1"
+            local resolved_ref
+
+            # shellcheck disable=SC2016
+            if ! resolved_ref=$(gh api graphql \
+              -f owner="${REPO_OWNER}" \
+              -f name="${REPO_NAME}" \
+              -f expression="${ref}^{commit}" \
+              -f query='query($owner: String!, $name: String!, $expression: String!) { repository(owner: $owner, name: $name) { object(expression: $expression) { oid } } }' \
+              --jq '.data.repository.object.oid // ""'); then
+              echo "::error::Failed to resolve checkout_ref '${ref}' through GitHub." >&2
+              return 1
+            fi
+
+            if [ -z "${resolved_ref}" ]; then
+              echo "::error::checkout_ref '${ref}' does not resolve to a commit in ${REPO}." >&2
+              return 1
+            fi
+
+            printf '%s\n' "${resolved_ref}"
+          }
 
           if [ -n "${INPUT_IMAGE_TAG}" ]; then
             # Manual tag: resolve the full commit SHA that produced the image.
@@ -85,10 +111,19 @@ jobs:
             exit 0
           fi
 
+          if [ -n "${INPUT_CHECKOUT_REF}" ]; then
+            if ! CHECKOUT_REF=$(resolve_commit_sha "${INPUT_CHECKOUT_REF}"); then
+              exit 1
+            fi
+          else
+            CHECKOUT_REF="${BUILD_SHA}"
+          fi
+
           set_output short_tag "${SHORT_TAG}"
           set_output commit_sha "${BUILD_SHA}"
-          set_output checkout_ref "${INPUT_CHECKOUT_REF:-${BUILD_SHA}}"
+          set_output checkout_ref "${CHECKOUT_REF}"
           echo "Selected image build: ${SHORT_TAG} (${BUILD_SHA})"
+          echo "Checkout ref: ${CHECKOUT_REF}"
 
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             echo "Manual trigger — running"
