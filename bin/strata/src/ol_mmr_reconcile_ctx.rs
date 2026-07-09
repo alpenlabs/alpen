@@ -2,10 +2,10 @@
 
 use async_trait::async_trait;
 use strata_acct_types::Mmr64;
+use strata_chain_worker::prefill_l1_block_refs_mmr;
 use strata_consensus_logic::ol_mmr_reconcile::{OLMmrReconcileCtx, OLMmrReconcileTarget};
-use strata_db_types::{DbError, DbResult, MmrId, RawMmrId};
+use strata_db_types::{DbResult, MmrId, RawMmrId};
 use strata_ol_params::OLParams;
-use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
 use strata_storage::NodeStorage;
 
 /// Supplies Strata binary storage dependencies to the OL MMR reconciler.
@@ -24,20 +24,11 @@ impl<'a> StrataMmrReconcileCtx<'a> {
 #[async_trait]
 impl OLMmrReconcileCtx for StrataMmrReconcileCtx<'_> {
     async fn prefill_l1_block_refs_mmr(&self) -> DbResult<()> {
-        let target_count = self.ol_params.last_l1_block.height() as u64 + 1;
-        let handle = self.storage.mmr_index().get_handle(MmrId::L1BlockRefs);
-        let current_count = handle.get_leaf_count().await?;
-
-        for expected_idx in current_count..target_count {
-            let appended_idx = handle.append_leaf(MMR_SENTINEL_DUMMY_LEAF_HASH).await?;
-            if appended_idx != expected_idx {
-                return Err(DbError::Other(format!(
-                    "L1 block refs MMR prefill index mismatch: expected {expected_idx}, got {appended_idx}"
-                )));
-            }
-        }
-
-        Ok(())
+        prefill_l1_block_refs_mmr(
+            self.storage.mmr_index(),
+            self.ol_params.last_l1_block.height() as u64,
+        )
+        .await
     }
 
     async fn list_mmr_ids(&self) -> DbResult<Vec<RawMmrId>> {

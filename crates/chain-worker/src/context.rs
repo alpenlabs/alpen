@@ -26,7 +26,7 @@ use strata_ol_chain_types::{
     SnarkAccountUpdateLogData,
 };
 use strata_ol_params::OLParams;
-use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
@@ -39,6 +39,7 @@ use tracing::{debug, error};
 use crate::{
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
+    prefill_l1_block_refs_mmr_blocking,
     traits::ChainWorkerContext,
 };
 
@@ -312,7 +313,8 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         // Same source as the in-state MMR's genesis prefill so the two MMRs
         // stay byte-identical from leaf 0.
         let genesis_l1_height = self.ol_params.last_l1_block.height() as u64;
-        prefill_l1_block_refs_mmr_blocking(&self.mmr_index_mgr, genesis_l1_height)
+        prefill_l1_block_refs_mmr_blocking(&self.mmr_index_mgr, genesis_l1_height)?;
+        Ok(())
     }
 
     fn fetch_checkpoint_payload(
@@ -616,28 +618,6 @@ pub(crate) fn index_inbox_mmr_writes(
     Ok(())
 }
 
-/// Seeds the L1 block refs MMR mirror with sentinel leaves for indices
-/// `0..=genesis_l1_height`, matching the in-state MMR's genesis prefill.
-///
-/// Run once at chain worker initialization. Idempotent: no-op if the mirror
-/// already contains the expected leaves (crash-restart safe).
-pub(crate) fn prefill_l1_block_refs_mmr_blocking(
-    mmr_index_mgr: &MmrIndexManager,
-    genesis_l1_height: u64,
-) -> WorkerResult<()> {
-    let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-    let leaf_count = handle.get_leaf_count_blocking()?;
-    for expected_idx in leaf_count..=genesis_l1_height {
-        let appended_idx = handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
-        if appended_idx != expected_idx {
-            return Err(WorkerError::Unexpected(format!(
-                "L1 block refs MMR prefill index mismatch: expected {expected_idx}, got {appended_idx}"
-            )));
-        }
-    }
-    Ok(())
-}
-
 /// Applies terminal-block L1 block ref writes to the MMR proof index.
 ///
 /// The in-state accumulator stores only MMR peaks. Block assembly needs the
@@ -646,7 +626,7 @@ pub(crate) fn prefill_l1_block_refs_mmr_blocking(
 /// append into the DB-side proof index. The operation is idempotent for
 /// crash-restart retries.
 ///
-/// Assumes the mirror has already been seeded via
+/// Assumes the MMR index has already been seeded via
 /// [`prefill_l1_block_refs_mmr_blocking`] at chain worker initialization.
 fn index_l1_block_ref_mmr_writes(
     mmr_index_mgr: &MmrIndexManager,
@@ -679,6 +659,7 @@ mod tests {
     use strata_ol_state_support_types::{
         InboxMessageWrite, IndexerWrites, L1BlockRecordWrite, SnarkAcctStateUpdate,
     };
+    use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use strata_snark_acct_types::Seqno;
 
     use super::*;
