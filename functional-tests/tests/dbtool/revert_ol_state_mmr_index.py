@@ -1,4 +1,4 @@
-"""Sequencer revert-ol-state should pop OL-owned MMR index namespaces.
+"""Sequencer revert-ol-state should truncate OL-owned MMR index namespaces.
 
 The test submits a direct GenericAccountMessage to a genesis snark account.
 OL processing appends that message to the account's inbox MMR, and the chain
