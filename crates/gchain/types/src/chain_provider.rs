@@ -13,10 +13,7 @@ pub trait ChainProvider {
     ) -> anyhow::Result<Option<LinkHeader<Self::Spec>>>;
 
     /// Fetches the full link, including header.
-    fn fetch_link(
-        &self,
-        lref: &LinkRef<Self::Spec>,
-    ) -> anyhow::Result<Option<LinkHeader<Self::Spec>>>;
+    fn fetch_link(&self, lref: &LinkRef<Self::Spec>) -> anyhow::Result<Option<Link<Self::Spec>>>;
 
     /// Fetches all the known link refs that are "forwards" in the graph from
     /// the specified node.

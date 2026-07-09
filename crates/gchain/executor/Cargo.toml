@@ -1,0 +1,13 @@
+[package]
+name = "strata-gchain-executor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-gchain-types.workspace = true
+
+anyhow.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

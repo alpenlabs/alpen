@@ -83,7 +83,7 @@ impl Display for ProcId {
 /// Error variants on result types should *ONLY* be used to indicate that the
 /// processing *failed*, never that the node is invalid.  Nodes being invalid
 /// should be indicated through [`ProcOutput::is_node_valid`].
-pub trait GChainProc: Sized {
+pub trait GChainProc: Sized + 'static {
     /// The chain spec this gchain proc is defined for.
     type Spec: GChainSpec;
 
@@ -92,9 +92,10 @@ pub trait GChainProc: Sized {
 
     /// Called when the processor is first initialized.
     ///
-    /// This only ever happens once.  Different processor stages may be inited
-    /// on different first node links, such as when opening an older database
-    /// with a newer client version (which added a new processor).
+    /// This only ever happens once, but this fn may be called multiple times
+    /// (like if there's crashes on startup).  Different processor stages may be
+    /// inited on different first node links, such as when opening an older
+    /// database with a newer client version (which added a new processor).
     fn on_init(&self, cur_node: &NodeRef<Self::Spec>, node: &Node<Self::Spec>);
 
     /// Processes a link and produces some output from the step.
@@ -107,7 +108,7 @@ pub trait GChainProc: Sized {
         &self,
         lref: &LinkRef<Self::Spec>,
         link: &Link<Self::Spec>,
-        ctx: &ProcContext<Self>,
+        ctx: &impl ProcContext<Self>,
     ) -> anyhow::Result<Self::Artifact>;
 
     /// Applies a path of artifacts for processed links for multiple nodes into
@@ -166,68 +167,8 @@ pub trait ProcArtifact: Sync + Send + Any + 'static {
     }
 }
 
-/// Cached output from nodes that we've extracted and determined might be useful
-/// for later proc stages.
-pub struct OutputCache<S: GChainSpec> {
-    nodes: HashMap<NodeRef<S>, BTreeMap<TypeId, Arc<dyn ProcArtifact>>>,
-}
-
-impl<S: GChainSpec> OutputCache<S> {
-    /// Gets the stored output from some processor for some node.
-    pub fn get_proc_output_arc<O: ProcArtifact>(
-        &self,
-        nref: &NodeRef<S>,
-    ) -> Option<&Arc<dyn ProcArtifact>> {
-        self.nodes
-            .get(nref)
-            .and_then(|notbl| notbl.get(&TypeId::of::<O>()))
-    }
-
-    pub fn get_proc_output<O: ProcArtifact>(&self, _nref: &NodeRef<S>) -> Option<&O> {
-        // TODO(trey): need more complicated type hacks to make this work
-        unimplemented!()
-    }
-}
-
-/// Context from the executor passed into a processor.
-pub struct ProcContext<P: GChainProc> {
-    cached_outputs: OutputCache<P::Spec>,
-}
-
-impl<P: GChainProc> ProcContext<P> {
-    // TODO
-}
-
-pub struct ProcHistory<P: GChainProc> {
-    base: NodeRef<P::Spec>,
-    steps: Vec<Arc<ProcStepOutput<P>>>,
-}
-
-impl<P: GChainProc> ProcHistory<P> {
-    pub fn new(base: NodeRef<P::Spec>, steps: Vec<Arc<ProcStepOutput<P>>>) -> Self {
-        Self { base, steps }
-    }
-
-    pub fn new_base(base: NodeRef<P::Spec>) -> Self {
-        Self::new(base, Vec::new())
-    }
-
-    /// Pushes a step onto the end of this processing history.
-    pub fn push_step(&mut self, outp: Arc<ProcStepOutput<P>>) {
-        self.steps.push(outp);
-    }
-
-    pub fn base(&self) -> &NodeRef<P::Spec> {
-        &self.base
-    }
-
-    pub fn steps(&self) -> &[Arc<ProcStepOutput<P>>] {
-        &self.steps
-    }
-}
-
 pub struct ProcStepOutput<P: GChainProc> {
-    nref: NodeRef<P::Spec>,
+    lref: LinkRef<P::Spec>,
     output: P::Artifact,
 }
 
@@ -267,4 +208,11 @@ impl ProcDeps {
     pub fn prev_node(&self) -> &[ProcId] {
         &self.prev_node
     }
+}
+
+/// Provider for context about a processing operation.
+// TODO(trey): this is kinda stubby, will fill out more in the future, see `ProcContextImpl`
+pub trait ProcContext<P: GChainProc> {
+    /// Creates a new empty context instance.
+    fn new() -> Self;
 }
