@@ -18,6 +18,8 @@ use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::{
     EpochSummary, TerminalHeaderReconstructionError, reconstruct_terminal_header,
 };
+#[cfg(feature = "debug-utils")]
+use strata_common::{BAIL_CHAIN_WORKER_AFTER_MMR_INDEX, check_bail_trigger};
 use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment};
 use strata_ledger_types::{
@@ -399,6 +401,9 @@ fn persist_execution_output(
         }
         Err(e) => return Err(e),
     }
+
+    #[cfg(feature = "debug-utils")]
+    check_bail_trigger(BAIL_CHAIN_WORKER_AFTER_MMR_INDEX);
 
     ctx.store_toplevel_state(block_commitment, new_state)?;
 
