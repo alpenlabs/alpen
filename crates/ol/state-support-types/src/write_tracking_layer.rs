@@ -337,6 +337,12 @@ where
         id: AccountId,
         new_acct_data: NewAccountData,
     ) -> StateResult<AccountSerial> {
+        // Guard against duplicates so recreating over an existing account is a
+        // hard error, matching the base layer. `check_account_exists` covers
+        // both the pending batch and the base via its read fall-through.
+        if self.check_account_exists(id)? {
+            return Err(StateError::AccountExists(id));
+        }
         let serial = self.next_account_serial();
         self.batch
             .ledger_mut()

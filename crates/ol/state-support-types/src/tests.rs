@@ -979,6 +979,38 @@ fn test_take_resets_accumulator() {
 }
 
 #[test]
+fn test_limbo_funds_encoded_in_blob() {
+    let mut da_state = DaAccumulatingState::new(create_test_base_layer());
+
+    // Drive the limbo funds up then partially back down; the net change is what
+    // the accumulator's limbo `DaCounter` should encode.
+    da_state
+        .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from_sat(1_000)))
+        .unwrap();
+    let taken = da_state
+        .take_limbo_funds_coin(BitcoinAmount::from_sat(400))
+        .unwrap();
+    taken.safely_consume_unchecked();
+    assert_eq!(da_state.limbo_funds(), BitcoinAmount::from_sat(600));
+
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    // The limbo counter records a net +600 change (not `new_unchanged`).
+    let limbo_diff = blob
+        .state_diff
+        .global
+        .limbo_funds_sats
+        .diff()
+        .expect("limbo funds changed");
+    assert!(limbo_diff.is_positive());
+    assert_eq!(limbo_diff.magnitude(), 600);
+}
+
+#[test]
 fn test_da_blob_size_limit() {
     // Test that the DA blob size limit is enforced by creating many accounts
     // with large VK data to exceed the limit.

@@ -591,6 +591,39 @@ mod tests {
     }
 
     #[test]
+    fn test_new_accounts_count_across_stack() {
+        let base_layer = create_test_base_layer();
+
+        // Build a stack of three batches, each creating one new account.
+        let account_ids = [test_account_id(1), test_account_id(2), test_account_id(3)];
+        let base_serial: u32 = base_layer.next_account_serial().into();
+        let batches: Vec<_> = account_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let mut batch = WriteBatch::default();
+                let snark_state = test_snark_account_state(i as u8 + 1);
+                let new_acct =
+                    test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1000));
+                let serial = AccountSerial::from(base_serial + i as u32);
+                batch
+                    .ledger_mut()
+                    .create_account_from_data(*id, new_acct, serial);
+                batch
+            })
+            .collect();
+
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
+
+        // new_accounts() reports the total across every batch in the layer, and
+        // next_account_serial() advances by the same amount.
+        assert_eq!(diff_state.new_accounts(), account_ids.len());
+        let base_next: u32 = base_layer.next_account_serial().into();
+        let diff_next: u32 = diff_state.next_account_serial().into();
+        assert_eq!(diff_next, base_next + account_ids.len() as u32);
+    }
+
+    #[test]
     fn test_last_l1_blkid_from_batch() {
         let base_layer = create_test_base_layer();
         let batch: WriteBatch<_> = WriteBatch::default();
