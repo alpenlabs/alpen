@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use strata_acct_types::MessageEntry;
 use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLTxId};
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{ProofState, Seqno, SnarkAccountUpdate};
 use thiserror::Error;
 
@@ -85,6 +86,9 @@ pub trait SequencerOLClient {
 
     /// Retrieves latest account state in the OL Chain for this account.
     async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError>;
+
+    /// Retrieves the latest account-update predicate key committed in OL.
+    async fn get_latest_account_update_vk(&self) -> Result<PredicateKey, OLClientError>;
 
     /// Retrieves the canonical ASM manifest commitment for an L1 block height.
     ///
