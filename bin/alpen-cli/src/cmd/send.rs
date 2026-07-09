@@ -111,6 +111,7 @@ pub async fn send(args: SendArgs, seed: Seed, settings: Settings) -> Result<(), 
             ))?;
             let tx = TransactionRequest::default()
                 .with_to(address)
+                .with_gas_price(1_100_000_000u128)
                 .with_value(U256::from(args.amount as u128 * SATS_TO_WEI));
             let res = l2w
                 .send_transaction(tx)
