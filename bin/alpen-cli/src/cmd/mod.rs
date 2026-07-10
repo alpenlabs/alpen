@@ -6,7 +6,7 @@ use change_pwd::ChangePwdArgs;
 use config::ConfigArgs;
 use deposit::DepositArgs;
 use drain::DrainArgs;
-use faucet::FaucetArgs;
+//use faucet::FaucetArgs;
 use receive::ReceiveArgs;
 use recover::RecoverArgs;
 #[cfg(not(feature = "test-mode"))]
@@ -24,7 +24,7 @@ pub mod config;
 pub mod debug;
 pub mod deposit;
 pub mod drain;
-pub mod faucet;
+//pub mod faucet;
 pub mod receive;
 pub mod recover;
 pub mod reset;
@@ -48,7 +48,7 @@ pub enum Commands {
     Backup(BackupArgs),
     Deposit(DepositArgs),
     Withdraw(WithdrawArgs),
-    Faucet(FaucetArgs),
+    //Faucet(FaucetArgs),
     Send(SendArgs),
     Receive(ReceiveArgs),
     #[cfg(not(feature = "test-mode"))]
