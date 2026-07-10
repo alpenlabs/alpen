@@ -1211,6 +1211,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-da-l1-extraction"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-da-types",
+ "bitcoin",
+ "bitcoind-async-client",
+ "futures",
+ "proptest",
+ "strata-btcio",
+ "strata-codec",
+ "strata-common",
+ "strata-identifiers",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "alpen-ee-da-provider"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -1264,6 +1283,56 @@ dependencies = [
  "strata-primitives",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "alpen-ee-da-state-replay"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alpen-ee-da-types",
+ "alpen-reth-statediff",
+ "proptest",
+ "serde",
+ "serde_json",
+ "strata-identifiers",
+ "strata-mpt",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "alpen-ee-da-tool"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-chainspec",
+ "alpen-ee-config",
+ "alpen-ee-da-l1-extraction",
+ "alpen-ee-da-state-replay",
+ "alpen-ee-da-types",
+ "alpen-ee-genesis",
+ "alpen-reth-statediff",
+ "argh",
+ "bitcoin",
+ "bitcoind-async-client",
+ "futures",
+ "jsonrpsee",
+ "serde",
+ "serde_json",
+ "ssz",
+ "strata-acct-types",
+ "strata-cli-common",
+ "strata-codec",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "strata-ol-rpc-api",
+ "strata-ol-rpc-types",
+ "terrors",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.5.11",
+ "tree_hash 0.16.0",
 ]
 
 [[package]]
@@ -1613,6 +1682,7 @@ dependencies = [
  "serde_json",
  "strata-codec",
  "strata-da-framework",
+ "strata-identifiers",
  "strata-mpt",
  "thiserror 2.0.18",
 ]
