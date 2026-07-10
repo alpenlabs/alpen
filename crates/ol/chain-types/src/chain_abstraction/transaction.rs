@@ -18,18 +18,18 @@ pub trait ITransaction: IChainObj {
     fn compute_txid(&self) -> OLTxId;
 
     /// Gets the transaction subtype.
-    fn tydata(&self) -> TxTyData<'_, Self>;
+    fn tydata(&self) -> TxTyData<Self>;
 }
 
-pub enum TxTyData<'tx, T: ITransaction> {
+pub enum TxTyData<T: ITransaction> {
     /// Generic account message transactions.
-    GenericAcctMessage(&'tx T::Gam),
+    GenericAcctMessage(T::Gam),
 
     /// Snark account update transactions.
-    SnarkAcctUpdate(&'tx T::Sau),
+    SnarkAcctUpdate(T::Sau),
 }
 
-impl<'tx, T: ITransaction> TxTyData<'tx, T> {
+impl<T: ITransaction> TxTyData<T> {
     pub fn target(&self) -> Option<AccountId> {
         match self {
             TxTyData::GenericAcctMessage(gam) => Some(gam.target()),
@@ -45,14 +45,14 @@ impl<'tx, T: ITransaction> TxTyData<'tx, T> {
         }
     }
 
-    pub fn as_generic_acct_msg(&self) -> Option<&'tx T::Gam> {
+    pub fn as_generic_acct_msg(&self) -> Option<&T::Gam> {
         match self {
             Self::GenericAcctMessage(gam) => Some(gam),
             _ => None,
         }
     }
 
-    pub fn as_snark_acct_update(&self) -> Option<&'tx T::Sau> {
+    pub fn as_snark_acct_update(&self) -> Option<&T::Sau> {
         match self {
             Self::SnarkAcctUpdate(sau) => Some(sau),
             _ => None,

@@ -7,3 +7,8 @@ mod block;
 mod object;
 mod snark_account_update;
 mod transaction;
+
+pub use block::*;
+pub use object::*;
+pub use snark_account_update::*;
+pub use transaction::*;

@@ -1,7 +1,4 @@
-use ssz_types::VariableList;
-use strata_acct_types::{
-    AccountId, AccumulatorClaim, BitcoinAmount, MAX_MSG_PAYLOAD_DATA_BYTES, MsgPayload,
-};
+use strata_acct_types::{AccountId, AccumulatorClaim, BitcoinAmount, MessageEntry};
 use strata_identifiers::Buf32;
 
 use super::{object::IChainObj, transaction::ITargetTx};
@@ -63,6 +60,36 @@ pub trait ISauMessageEntry {
     ///
     /// The returned slice MUST be within bounds.
     fn payload_data(&self) -> &[u8];
+}
+
+/// Temporary helper impl.
+impl ISauMessageEntry for MessageEntry {
+    fn source(&self) -> AccountId {
+        MessageEntry::source(self)
+    }
+
+    fn amount(&self) -> BitcoinAmount {
+        self.payload_value()
+    }
+
+    fn payload_data(&self) -> &[u8] {
+        self.payload_buf()
+    }
+}
+
+/// Temporary helper impl.
+impl<'m> ISauMessageEntry for &'m MessageEntry {
+    fn source(&self) -> AccountId {
+        MessageEntry::source(self)
+    }
+
+    fn amount(&self) -> BitcoinAmount {
+        self.payload_value()
+    }
+
+    fn payload_data(&self) -> &[u8] {
+        self.payload_buf()
+    }
 }
 
 pub trait ISauLedgerRefs {
