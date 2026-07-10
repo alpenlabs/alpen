@@ -2079,7 +2079,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",
- "strata-codec-utils 0.1.0",
+ "strata-codec-utils 0.3.0",
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
