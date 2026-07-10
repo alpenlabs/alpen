@@ -1,6 +1,6 @@
 [package]
 name = "strata-chain-worker-new"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
 description = "New chain worker implementation using OL STF and new OL types"
 

@@ -989,7 +989,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-benchmarks"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-chainspec"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-genesis",
  "eyre",
@@ -1017,7 +1017,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-cli"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "aes-gcm-siv",
  "alloy",
@@ -1052,7 +1052,7 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-ol-bridge-types",
  "strata-primitives",
- "strata-test-utils-btcio 0.1.0",
+ "strata-test-utils-btcio 0.3.0",
  "terrors",
  "tokio",
  "toml 0.5.11",
@@ -1062,7 +1062,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-client"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1147,7 +1147,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-block-assembly"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
@@ -1167,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-common"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
@@ -1199,7 +1199,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-config"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
@@ -1210,7 +1210,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-da-provider"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
@@ -1238,7 +1238,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-da-runtime"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
@@ -1267,7 +1267,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-da-types"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alpen-reth-statediff",
  "bitcoin",
@@ -1281,7 +1281,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-database"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alpen-ee-common",
  "alpen-reth-db",
@@ -1310,7 +1310,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-engine"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-engine",
@@ -1332,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-exec-chain"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alpen-ee-common",
  "anyhow",
@@ -1350,7 +1350,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-genesis"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alpen-ee-common",
  "alpen-ee-config",
@@ -1364,7 +1364,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-ol-tracker"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alpen-ee-common",
  "anyhow",
@@ -1385,7 +1385,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-rpc-api"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-rpc-types",
@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-rpc-server"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
@@ -1411,7 +1411,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-rpc-types"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "schemars 1.2.1",
  "serde",
@@ -1421,7 +1421,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-sequencer"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-block-assembly",
@@ -1450,7 +1450,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-db"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alpen-reth-statediff",
  "bincode",
@@ -1467,7 +1467,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-evm"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-consensus",
  "alloy-sol-types",
@@ -1487,7 +1487,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-exex"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-eips",
  "alloy-genesis",
@@ -1514,7 +1514,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-node"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1561,7 +1561,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-primitives"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-sol-types",
  "serde",
@@ -1571,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-rpc"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-eips",
  "alloy-network",
@@ -1599,7 +1599,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-statediff"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "alpen-chainspec",
@@ -1619,7 +1619,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-witness"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
@@ -14652,7 +14652,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strata"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "argh",
@@ -14676,7 +14676,7 @@ dependencies = [
  "strata-chain-worker-new",
  "strata-checkpoint-types",
  "strata-codec",
- "strata-codec-utils 0.1.0",
+ "strata-codec-utils 0.3.0",
  "strata-common",
  "strata-config",
  "strata-consensus-logic",
@@ -14727,7 +14727,7 @@ dependencies = [
 
 [[package]]
 name = "strata-acct-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "digest 0.10.7",
  "proptest",
@@ -14782,7 +14782,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-proto-checkpoint-types",
  "strata-codec",
- "strata-codec-utils 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.3.0-rc.2)",
+ "strata-codec-utils 0.1.0",
  "strata-identifiers",
  "strata-msg-fmt",
  "strata-predicate",
@@ -14926,7 +14926,7 @@ dependencies = [
  "strata-codec",
  "strata-crypto",
  "strata-l1-txfmt",
- "strata-test-utils-btcio 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.3.0-rc.2)",
+ "strata-test-utils-btcio 0.1.0",
  "thiserror 2.0.18",
 ]
 
@@ -14986,7 +14986,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-proto-checkpoint-types",
  "strata-codec",
- "strata-codec-utils 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.3.0-rc.2)",
+ "strata-codec-utils 0.1.0",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "thiserror 2.0.18",
@@ -15104,7 +15104,7 @@ dependencies = [
 
 [[package]]
 name = "strata-bridge-params"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "arbitrary",
  "serde",
@@ -15155,7 +15155,7 @@ dependencies = [
 
 [[package]]
 name = "strata-btcio"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -15190,7 +15190,7 @@ dependencies = [
 
 [[package]]
 name = "strata-chain-worker-new"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -15229,7 +15229,7 @@ dependencies = [
 
 [[package]]
 name = "strata-checkpoint-types"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -15268,7 +15268,7 @@ dependencies = [
 
 [[package]]
 name = "strata-cli-common"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 
 [[package]]
 name = "strata-codec"
@@ -15291,16 +15291,6 @@ dependencies = [
 [[package]]
 name = "strata-codec-utils"
 version = "0.1.0"
-dependencies = [
- "borsh",
- "ssz",
- "ssz_derive",
- "strata-codec",
-]
-
-[[package]]
-name = "strata-codec-utils"
-version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.3.0-rc.2#c3698c0f26d8d3d16e56a478eb375e077d813775"
 dependencies = [
  "borsh",
@@ -15310,8 +15300,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-codec-utils"
+version = "0.3.0"
+dependencies = [
+ "borsh",
+ "ssz",
+ "ssz_derive",
+ "strata-codec",
+]
+
+[[package]]
 name = "strata-common"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "deadpool",
  "futures",
@@ -15325,7 +15325,7 @@ dependencies = [
 
 [[package]]
 name = "strata-config"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "proptest",
@@ -15336,7 +15336,7 @@ dependencies = [
 
 [[package]]
 name = "strata-consensus-logic"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -15406,7 +15406,7 @@ dependencies = [
 
 [[package]]
 name = "strata-csm-types"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -15426,7 +15426,7 @@ dependencies = [
 
 [[package]]
 name = "strata-csm-worker"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -15445,7 +15445,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-checkpoint-verification",
  "strata-codec",
- "strata-codec-utils 0.1.0",
+ "strata-codec-utils 0.3.0",
  "strata-common",
  "strata-csm-types",
  "strata-db-store-sled",
@@ -15468,7 +15468,7 @@ dependencies = [
 
 [[package]]
 name = "strata-da-framework"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "sha2",
@@ -15479,7 +15479,7 @@ dependencies = [
 
 [[package]]
 name = "strata-datatool"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-genesis",
  "alloy-primitives",
@@ -15515,7 +15515,7 @@ dependencies = [
 
 [[package]]
 name = "strata-db-store-sled"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -15547,7 +15547,7 @@ dependencies = [
 
 [[package]]
 name = "strata-db-tests"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "hex",
@@ -15571,7 +15571,7 @@ dependencies = [
 
 [[package]]
 name = "strata-db-types"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -15602,7 +15602,7 @@ dependencies = [
 
 [[package]]
 name = "strata-dbtool"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alpen-ee-common",
  "alpen-ee-database",
@@ -15631,7 +15631,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ee-acct-runtime"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "rkyv",
  "rkyv_impl",
@@ -15651,7 +15651,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ee-acct-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "ssz",
@@ -15673,7 +15673,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ee-chain-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "ssz",
@@ -15691,7 +15691,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ee-chunk-runtime"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "rkyv",
  "rkyv_impl",
@@ -15705,7 +15705,7 @@ dependencies = [
 
 [[package]]
 name = "strata-evm-ee"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -15765,7 +15765,7 @@ dependencies = [
 
 [[package]]
 name = "strata-key-derivation"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "secp256k1 0.29.1",
@@ -15797,7 +15797,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ledger-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
@@ -15871,7 +15871,7 @@ dependencies = [
 
 [[package]]
 name = "strata-mpt"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "alloy-rlp",
  "alloy-rlp-derive",
@@ -15894,7 +15894,7 @@ dependencies = [
 
 [[package]]
 name = "strata-node-context"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "bitcoind-async-client",
  "strata-asm-params",
@@ -15908,7 +15908,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-block-assembly"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -15955,7 +15955,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-bridge-types"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -15972,7 +15972,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-chain-types-new"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "int-enum",
  "proptest",
@@ -15997,7 +15997,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-checkpoint"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "metrics",
@@ -16025,7 +16025,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-da"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "strata-acct-types",
@@ -16048,7 +16048,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-genesis"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-acct-types",
  "strata-checkpoint-types",
@@ -16083,7 +16083,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-mempool"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "metrics",
@@ -16117,7 +16117,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-msg-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "strata-codec",
@@ -16127,7 +16127,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-params"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "arbitrary",
  "serde",
@@ -16140,7 +16140,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-rpc-api"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "jsonrpsee",
  "strata-identifiers",
@@ -16153,7 +16153,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-rpc-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "schemars 1.2.1",
@@ -16182,7 +16182,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-sequencer"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -16194,7 +16194,7 @@ dependencies = [
  "strata-asm-proto-checkpoint-txs",
  "strata-asm-proto-checkpoint-types",
  "strata-codec",
- "strata-codec-utils 0.1.0",
+ "strata-codec-utils 0.3.0",
  "strata-common",
  "strata-crypto",
  "strata-csm-types",
@@ -16216,7 +16216,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-provider"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "futures",
  "strata-db-types",
@@ -16228,7 +16228,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-support-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
@@ -16247,7 +16247,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "ssz",
@@ -16258,7 +16258,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",
- "strata-codec-utils 0.1.0",
+ "strata-codec-utils 0.3.0",
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
@@ -16272,7 +16272,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-stf"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ssz_primitives",
  "ssz_types",
@@ -16301,7 +16301,7 @@ dependencies = [
 
 [[package]]
 name = "strata-open-rpc"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "schemars 1.2.1",
  "serde",
@@ -16310,7 +16310,7 @@ dependencies = [
 
 [[package]]
 name = "strata-open-rpc-macros"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "derive-syn-parse",
  "itertools 0.14.0",
@@ -16322,7 +16322,7 @@ dependencies = [
 
 [[package]]
 name = "strata-paas"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -16355,7 +16355,7 @@ dependencies = [
 
 [[package]]
 name = "strata-primitives"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "bitcoin-bosd 0.11.0",
@@ -16371,7 +16371,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-alpen-acct"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "alpen-ee-da-runtime",
  "alpen-ee-da-types",
@@ -16396,7 +16396,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-alpen-chunk"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "alpen-reth-evm",
  "k256",
@@ -16422,7 +16422,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-checkpoint"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "k256",
  "ssz",
@@ -16447,7 +16447,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-evm-ee-stf"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -16475,7 +16475,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-predicate-keys"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "hex",
  "sp1-verifier",
@@ -16489,7 +16489,7 @@ dependencies = [
 
 [[package]]
 name = "strata-prover-core"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "borsh",
@@ -16503,7 +16503,7 @@ dependencies = [
 
 [[package]]
 name = "strata-provers-perf"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alpen-ee-da-types",
  "alpen-reth-evm",
@@ -16549,7 +16549,7 @@ dependencies = [
 
 [[package]]
 name = "strata-rpc-openrpc-spec"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "alpen-ee-rpc-api",
  "serde_json",
@@ -16575,7 +16575,7 @@ dependencies = [
 
 [[package]]
 name = "strata-signer"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "jsonrpsee",
@@ -16596,7 +16596,7 @@ dependencies = [
 
 [[package]]
 name = "strata-signer-bin"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "argh",
@@ -16619,7 +16619,7 @@ dependencies = [
 
 [[package]]
 name = "strata-simple-ee"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "digest 0.10.7",
  "sha2",
@@ -16631,7 +16631,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-runtime"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "rkyv",
  "rkyv_impl",
@@ -16645,7 +16645,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-sys"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ssz",
  "strata-acct-types",
@@ -16656,7 +16656,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "ssz",
@@ -16674,7 +16674,7 @@ dependencies = [
 
 [[package]]
 name = "strata-sp1-guest-builder"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "bincode",
  "cargo_metadata 0.19.2",
@@ -16689,7 +16689,7 @@ dependencies = [
 
 [[package]]
 name = "strata-state"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -16706,7 +16706,7 @@ dependencies = [
 
 [[package]]
 name = "strata-status"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "strata-csm-types",
  "strata-identifiers",
@@ -16718,7 +16718,7 @@ dependencies = [
 
 [[package]]
 name = "strata-storage"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -16748,7 +16748,7 @@ dependencies = [
 
 [[package]]
 name = "strata-storage-common"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "lru 0.18.0",
  "paste",
@@ -16772,7 +16772,7 @@ dependencies = [
 
 [[package]]
 name = "strata-test-cli"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "argh",
@@ -16812,7 +16812,7 @@ dependencies = [
 
 [[package]]
 name = "strata-test-utils"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "arbitrary",
  "rand_core 0.6.4",
@@ -16839,20 +16839,6 @@ dependencies = [
 [[package]]
 name = "strata-test-utils-btcio"
 version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitcoin",
- "bitcoind-async-client",
- "corepc-node",
- "musig2",
- "rand 0.8.5",
- "strata-crypto",
- "tokio",
-]
-
-[[package]]
-name = "strata-test-utils-btcio"
-version = "0.1.0"
 source = "git+https://github.com/alpenlabs/asm?tag=v0.3.0-rc.2#45a1fa2f52289b483dd9767b4ec9c80545d5789b"
 dependencies = [
  "anyhow",
@@ -16860,6 +16846,20 @@ dependencies = [
  "bitcoind-async-client",
  "corepc-node",
  "musig2",
+ "strata-crypto",
+ "tokio",
+]
+
+[[package]]
+name = "strata-test-utils-btcio"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "bitcoin",
+ "bitcoind-async-client",
+ "corepc-node",
+ "musig2",
+ "rand 0.8.5",
  "strata-crypto",
  "tokio",
 ]
@@ -16887,7 +16887,7 @@ dependencies = [
 
 [[package]]
 name = "strata-test-utils-l2"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "k256",
@@ -16909,7 +16909,7 @@ dependencies = [
 
 [[package]]
 name = "strata-test-utils-ssz"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "ssz",
@@ -16918,7 +16918,7 @@ dependencies = [
 
 [[package]]
 name = "strata-zkvm-hosts"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "strata-sp1-guest-builder",
  "tokio",
