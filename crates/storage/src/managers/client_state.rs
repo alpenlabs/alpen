@@ -197,14 +197,17 @@ impl CurStateTracker {
         })
     }
 
-    fn is_height_better(&self, block: L1BlockCommitment) -> bool {
-        self.state
-            .as_ref()
-            .is_none_or(|s| block.height() >= s.last_block.height())
+    /// Whether `block` should become the tracked latest.
+    ///
+    /// Compares the full [`L1BlockCommitment`] (height and block id),
+    /// so the tracker mirrors the DB's greatest-key row and stays consistent
+    /// to what `get_latest_client_state` would return.
+    fn is_block_better(&self, block: L1BlockCommitment) -> bool {
+        self.state.as_ref().is_none_or(|s| block >= s.last_block)
     }
 
     fn maybe_update(&mut self, block: L1BlockCommitment, state: &Arc<ClientState>) -> bool {
-        let should = self.is_height_better(block);
+        let should = self.is_block_better(block);
         if should {
             self.set(block, state.clone());
         }
@@ -234,9 +237,13 @@ mod tests {
     }
 
     fn block_at(height: L1Height) -> L1BlockCommitment {
+        block_at_id(height, height as u8)
+    }
+
+    fn block_at_id(height: L1Height, id_byte: u8) -> L1BlockCommitment {
         L1BlockCommitment::new(
             height,
-            L1BlockId::from(strata_identifiers::Buf32::from([height as u8; 32])),
+            L1BlockId::from(strata_identifiers::Buf32::from([id_byte; 32])),
         )
     }
 
@@ -273,6 +280,35 @@ mod tests {
         assert_eq!(
             latest_block, low,
             "latest must fall back to the remaining row"
+        );
+    }
+
+    // The latest tracker must key on the full block commitment, not just height.
+    // A lower-keyed sibling written after a higher-keyed one at the same height
+    // must not overwrite the tracker, or the fast path would diverge from the
+    // DB's greatest-key row (`get_latest_client_state`).
+    #[test]
+    fn latest_tracks_greatest_full_key_at_same_height() {
+        let manager = setup_manager();
+        let high = block_at_id(10, 0xff);
+        let low = block_at_id(10, 0x01);
+        assert!(high > low, "sanity: same height, high blkid sorts greater");
+
+        // Write the higher-keyed sibling first, then the lower-keyed one.
+        manager
+            .put_update_blocking(&high, empty_update())
+            .expect("put high");
+        manager
+            .put_update_blocking(&low, empty_update())
+            .expect("put low");
+
+        let (latest_block, _) = manager
+            .fetch_most_recent_state()
+            .expect("query latest")
+            .expect("latest row");
+        assert_eq!(
+            latest_block, high,
+            "latest must be the greatest full key, not the last-written sibling"
         );
     }
 }
