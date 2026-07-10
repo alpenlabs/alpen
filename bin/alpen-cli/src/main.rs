@@ -13,8 +13,9 @@ pub mod signet;
 use std::process::exit;
 
 use cmd::{
-    backup::backup, balance::balance, config::config, deposit::deposit, drain::drain, receive::receive, recover::recover, scan::scan, send::send, withdraw::withdraw,
-    Commands, TopLevel,
+    backup::backup, balance::balance, config::config, deposit::deposit, drain::drain,
+    receive::receive, recover::recover, scan::scan, send::send, withdraw::withdraw, Commands,
+    TopLevel,
 };
 #[cfg(not(feature = "test-mode"))]
 use cmd::{change_pwd::change_pwd, reset::reset};
