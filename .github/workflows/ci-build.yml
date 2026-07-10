@@ -249,7 +249,7 @@ jobs:
       # see alpen-infra github-actions-image-push (STR-3894). Only the programs
       # published publicly need this login.
       - name: Login to Amazon ECR Public
-        if: matrix.program == 'strata' || matrix.program == 'alpen-client'
+        if: matrix.program == 'strata' || matrix.program == 'strata-checkpoint-sync' || matrix.program == 'alpen-client'
         run: |
           aws ecr-public get-login-password --region us-east-1 \
             | docker login --username AWS --password-stdin public.ecr.aws
@@ -298,12 +298,15 @@ jobs:
 
           # Always push the private image. Additionally push a public mirror for
           # programs with an external-facing repo, mapping the internal program
-          # name to its public gallery repo name (alpen-client -> alpen).
+          # name to its public gallery repo name (alpen-client -> alpen,
+          # strata-checkpoint-sync -> checkpoint-sync). Keep the set of mapped
+          # programs in sync with the `Login to Amazon ECR Public` condition.
           TAGS=( -t "${FULL_IMAGE}" )
           case "$PROGRAM" in
-            strata)       PUBLIC_REPO="strata" ;;
-            alpen-client) PUBLIC_REPO="alpen" ;;
-            *)            PUBLIC_REPO="" ;;
+            strata)                 PUBLIC_REPO="strata" ;;
+            strata-checkpoint-sync) PUBLIC_REPO="checkpoint-sync" ;;
+            alpen-client)           PUBLIC_REPO="alpen" ;;
+            *)                      PUBLIC_REPO="" ;;
           esac
           if [ -n "$PUBLIC_REPO" ]; then
             TAGS+=( -t "${PUBLIC_ECR_BASE}/${PUBLIC_REPO}:${SHORT_TAG}" )
