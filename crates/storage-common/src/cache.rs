@@ -71,13 +71,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
 
     /// Gets the number of elements in the cache.
     #[allow(dead_code, clippy::allow_attributes, reason = "used for debugging")]
-    pub async fn get_len_async(&self) -> usize {
-        self.len.load(Ordering::Relaxed)
-    }
-
-    /// Gets the number of elements in the cache.
-    #[allow(dead_code, clippy::allow_attributes, reason = "used for debugging")]
-    pub fn get_len_blocking(&self) -> usize {
+    pub fn get_len(&self) -> usize {
         self.len.load(Ordering::Relaxed)
     }
 
@@ -415,10 +409,10 @@ mod tests {
             .expect("test: load gof");
         assert_eq!(res, 12);
 
-        let len = cache.get_len_async().await;
+        let len = cache.get_len();
         assert_eq!(len, 1);
         cache.purge_async(&42).await;
-        let len = cache.get_len_async().await;
+        let len = cache.get_len();
         assert_eq!(len, 0);
     }
 
@@ -442,10 +436,10 @@ mod tests {
             .expect("test: load gof");
         assert_eq!(res, 12);
 
-        let len = cache.get_len_blocking();
+        let len = cache.get_len();
         assert_eq!(len, 1);
         cache.purge_blocking(&42);
-        let len = cache.get_len_blocking();
+        let len = cache.get_len();
         assert_eq!(len, 0);
     }
 
@@ -457,17 +451,17 @@ mod tests {
         for k in 0..3 {
             cache.insert_blocking(k, k * 10);
         }
-        assert_eq!(cache.get_len_blocking(), 3);
+        assert_eq!(cache.get_len(), 3);
 
         // This evicts key 0.
         cache.insert_blocking(3, 30);
-        assert_eq!(cache.get_len_blocking(), 3);
+        assert_eq!(cache.get_len(), 3);
 
         // Evicted key should miss, new key should hit.
         let res = cache.get_or_fetch_blocking(&0, || Ok(999));
         assert_eq!(res.unwrap(), 999); // fetched, not cached
                                        // Now we have 4 inserts into a cap-3 cache, so still 3.
-        assert_eq!(cache.get_len_blocking(), 3);
+        assert_eq!(cache.get_len(), 3);
     }
 
     #[tokio::test]
@@ -717,7 +711,7 @@ mod tests {
         assert!(res.is_err());
 
         // The evicting insert is the sole survivor; cleanup left it untouched.
-        assert_eq!(cache.get_len_blocking(), 1);
+        assert_eq!(cache.get_len(), 1);
         let res = cache.get_or_fetch_blocking(&2, || Err(DbError::Busy));
         assert_eq!(res.unwrap(), 20);
     }
@@ -729,20 +723,16 @@ mod tests {
         // Fetch that fails — slot is inserted then removed on error.
         let res = cache.get_or_fetch_blocking(&1, || Err(DbError::NonExistentEntry));
         assert!(res.is_err());
-        assert_eq!(cache.get_len_blocking(), 0, "failed slot should be removed");
+        assert_eq!(cache.get_len(), 0, "failed slot should be removed");
 
         // Successful fetch to confirm len goes to 1.
         let res = cache.get_or_fetch_blocking(&2, || Ok(42));
         assert_eq!(res.unwrap(), 42);
-        assert_eq!(cache.get_len_blocking(), 1);
+        assert_eq!(cache.get_len(), 1);
 
         // Another failure doesn't corrupt the count.
         let res = cache.get_or_fetch_blocking(&3, || Err(DbError::Busy));
         assert!(res.is_err());
-        assert_eq!(
-            cache.get_len_blocking(),
-            1,
-            "only the successful entry remains"
-        );
+        assert_eq!(cache.get_len(), 1, "only the successful entry remains");
     }
 }
