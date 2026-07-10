@@ -1,6 +1,6 @@
 use std::{
     env::var,
-    fs::{create_dir_all, read_to_string, File},
+    fs::{create_dir_all, File},
     io,
     path::PathBuf,
     str::FromStr,
@@ -14,7 +14,6 @@ use config::Config;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use shrex::Hex;
-use strata_asm_params::AsmParams;
 use strata_bridge_params::BridgeParams;
 use strata_l1_txfmt::MagicBytes;
 use terrors::OneOf;
@@ -30,12 +29,8 @@ use crate::{
 const PROJ_DIRS_ENV: &str = "PROJ_DIRS";
 /// Environment variable overriding the CLI config file path.
 const CONFIG_FILE_ENV: &str = "CLI_CONFIG";
-/// Environment variable overriding the ASM params file path.
-const ASM_PARAMS_ENV: &str = "STRATA_NETWORK_PARAMS";
 /// Default file name for the CLI config within the config directory.
 const DEFAULT_CONFIG_FILENAME: &str = "config.toml";
-/// Default file name for the ASM params within the config directory.
-const DEFAULT_ASM_PARAMS_FILENAME: &str = "asm-params.json";
 
 /// Settings deserialized from the config file.
 #[derive(Debug, Serialize, Deserialize)]
@@ -66,14 +61,28 @@ pub struct SettingsFromFile {
     pub bridge_fee_sats: Option<u64>,
     /// The number of confirmations to consider a Bitcoin transaction final.
     pub finality_depth: Option<u32>,
-    /// Denomination in satoshis. Defaults to 100_000_000 (1 BTC).
-    pub withdrawal_denomination_sats: Option<u64>,
+    /// L1 network the wallet operates on (e.g. "signet").
+    ///
+    /// Must match the network the ASM is anchored to.
+    pub network: Network,
+    /// SPS-50 magic bytes tagging protocol transactions on L1 (e.g. "ALPN").
+    ///
+    /// Must match the magic bytes in the ASM params.
+    pub magic_bytes: MagicBytes,
+    /// At-rest deposit denomination in satoshis, used for both deposits and
+    /// withdrawals.
+    ///
+    /// Must match the Bridge subprotocol denomination in the ASM params.
+    pub deposit_amount_sats: u64,
+    /// Number of Bitcoin blocks after which the depositor can reclaim an
+    /// unprocessed deposit request.
+    ///
+    /// Must match the Bridge subprotocol recovery delay in the ASM params.
+    pub recovery_delay: u16,
     /// Maximum withdrawal amount in satoshis. Defaults to 1_000_000_000 (10 BTC).
     pub max_withdrawal_amount_sats: Option<u64>,
     /// Maximum withdrawal BOSD descriptor length in bytes, including the type tag.
     pub max_withdrawal_descriptor_len: Option<u32>,
-    /// Path to the ASM params JSON file.
-    pub asm_params_path: Option<PathBuf>,
     /// Seed that can be passed directly for functional test.
     #[cfg(feature = "test-mode")]
     pub seed: Hex<[u8; SEED_LEN]>,
@@ -98,13 +107,13 @@ pub struct Settings {
     pub bridge_fee: Amount,
     pub finality_depth: u32,
     pub bridge_params: BridgeParams,
-    /// L1 network, sourced from the ASM anchor.
+    /// L1 network the wallet operates on.
     pub network: Network,
-    /// SPS-50 magic bytes, sourced from the ASM params.
+    /// SPS-50 magic bytes tagging protocol transactions on L1.
     pub magic_bytes: MagicBytes,
-    /// At-rest deposit denomination, sourced from the ASM Bridge subprotocol config.
+    /// At-rest deposit denomination.
     pub deposit_amount: Amount,
-    /// Deposit-request reclaim delay, sourced from the ASM Bridge subprotocol config.
+    /// Deposit-request reclaim delay in Bitcoin blocks.
     pub recovery_delay: u16,
     #[cfg(feature = "test-mode")]
     pub seed: Seed,
@@ -121,14 +130,6 @@ pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var(CONFIG_FI
         .config_dir()
         .to_owned()
         .join(DEFAULT_CONFIG_FILENAME),
-});
-
-pub static ASM_PARAMS_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var(ASM_PARAMS_ENV).ok() {
-    Some(path) => PathBuf::from_str(&path).expect("valid asm params path"),
-    None => PROJ_DIRS
-        .config_dir()
-        .to_owned()
-        .join(DEFAULT_ASM_PARAMS_FILENAME),
 });
 
 impl Settings {
@@ -170,29 +171,6 @@ impl Settings {
             _ => panic!("invalid config for signet - configure for esplora or bitcoind"),
         };
 
-        // Load ASM params from config, environment variable, or default location
-        let params_path = from_file
-            .asm_params_path
-            .unwrap_or_else(|| ASM_PARAMS_FILE.clone());
-
-        let params_json = read_to_string(&params_path).map_err(OneOf::new)?;
-        let asm_params: AsmParams = serde_json::from_str(&params_json).map_err(|e| {
-            OneOf::new(config::ConfigError::Message(format!(
-                "Failed to parse ASM params {}: {}",
-                params_path.display(),
-                e
-            )))
-        })?;
-        let bridge_config = asm_params.bridge_config().ok_or_else(|| {
-            OneOf::new(config::ConfigError::Message(
-                "ASM params missing Bridge subprotocol config".to_string(),
-            ))
-        })?;
-        let network = asm_params.anchor.network;
-        let magic_bytes = asm_params.magic;
-        let deposit_amount = Amount::from_sat(bridge_config.denomination.to_sat());
-        let recovery_delay = bridge_config.recovery_delay;
-
         Ok(Settings {
             esplora: from_file.esplora,
             alpen_endpoint: from_file.alpen_endpoint,
@@ -219,9 +197,7 @@ impl Settings {
                 .unwrap_or(DEFAULT_BRIDGE_FEE),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
             bridge_params: BridgeParams::new_with_descriptor_limit(
-                from_file
-                    .withdrawal_denomination_sats
-                    .unwrap_or(DEFAULT_DENOMINATION_SATS),
+                from_file.deposit_amount_sats,
                 from_file
                     .max_withdrawal_amount_sats
                     .or(Some(DEFAULT_MAX_WITHDRAWAL_SATS)),
@@ -230,10 +206,10 @@ impl Settings {
                     .unwrap_or(DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN),
             )
             .expect("invalid withdrawal params in config"),
-            network,
-            magic_bytes,
-            deposit_amount,
-            recovery_delay,
+            network: from_file.network,
+            magic_bytes: from_file.magic_bytes,
+            deposit_amount: Amount::from_sat(from_file.deposit_amount_sats),
+            recovery_delay: from_file.recovery_delay,
             #[cfg(feature = "test-mode")]
             seed: Seed::from_file(from_file.seed),
         })
@@ -258,6 +234,10 @@ mod tests {
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
+            network = "signet"
+            magic_bytes = "ALPN"
+            deposit_amount_sats = 100_000_000
+            recovery_delay = 1008
             max_withdrawal_descriptor_len = 81
             seed = "000102030405060708090a0b0c0d0e0f"
         "#;
@@ -279,6 +259,10 @@ mod tests {
         assert_eq!(parsed.alpen_endpoint, reparsed.alpen_endpoint);
         assert_eq!(parsed.faucet_endpoint, reparsed.faucet_endpoint);
         assert_eq!(parsed.bridge_pubkey.0, reparsed.bridge_pubkey.0);
+        assert_eq!(parsed.network, reparsed.network);
+        assert_eq!(parsed.magic_bytes, reparsed.magic_bytes);
+        assert_eq!(parsed.deposit_amount_sats, reparsed.deposit_amount_sats);
+        assert_eq!(parsed.recovery_delay, reparsed.recovery_delay);
         assert_eq!(
             parsed.max_withdrawal_descriptor_len,
             reparsed.max_withdrawal_descriptor_len
