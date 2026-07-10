@@ -343,12 +343,18 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
 
 /// Convenience function to safely remove a cache slot key from the cache, iff
 /// it matches an expected value. Returns if it did the removal.
+///
+/// The key may be absent when this runs: the fetch paths release the cache lock
+/// while the database read is in flight, so LRU eviction, `purge_*`, or `clear`
+/// can drop our pending slot. A missing key means "not removed by us".
 fn safely_remove_cache_slot<K: Eq + Hash, V, E>(
     cache: &mut lru::LruCache<K, CacheSlot<V, E>>,
     key: &K,
     slot: &CacheSlot<V, E>,
 ) -> bool {
-    let is_eq = Arc::ptr_eq(cache.peek(key).unwrap(), slot);
+    let is_eq = cache
+        .peek(key)
+        .is_some_and(|existing| Arc::ptr_eq(existing, slot));
     if is_eq {
         cache.pop(key);
     }
@@ -695,6 +701,25 @@ mod tests {
             matches!(error2, DbError::NonExistentEntry),
             "Task 2 should also get DbError::NonExistentEntry, got: {error1:?}"
         );
+    }
+
+    #[test]
+    fn test_error_cleanup_after_slot_evicted() {
+        // The failing fetch's cleanup must not panic when its pending slot was
+        // already removed (here via LRU eviction) during the fetch window.
+        let cache = CacheTable::<u64, u64>::new(1.try_into().unwrap());
+
+        let res = cache.get_or_fetch_blocking(&1, || {
+            // Evict key 1's pending slot before the fetch returns an error.
+            cache.insert_blocking(2, 20);
+            Err(DbError::NonExistentEntry)
+        });
+        assert!(res.is_err());
+
+        // The evicting insert is the sole survivor; cleanup left it untouched.
+        assert_eq!(cache.get_len_blocking(), 1);
+        let res = cache.get_or_fetch_blocking(&2, || Err(DbError::Busy));
+        assert_eq!(res.unwrap(), 20);
     }
 
     #[test]
