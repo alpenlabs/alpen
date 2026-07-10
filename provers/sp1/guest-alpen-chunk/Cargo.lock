@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-ee-da-types"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alpen-reth-statediff",
  "bitcoin",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-evm"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-consensus",
  "alloy-sol-types",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-primitives"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-sol-types",
  "serde",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-statediff"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "revm",
@@ -2124,7 +2124,7 @@ dependencies = [
 
 [[package]]
 name = "guest-sp1-alpen-chunk"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-proofimpl-alpen-chunk",
  "zkaleido-sp1-guest-env",
@@ -4921,7 +4921,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strata-acct-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "digest 0.10.7",
  "sha2",
@@ -4958,7 +4958,7 @@ dependencies = [
 
 [[package]]
 name = "strata-bridge-params"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "ssz",
@@ -5033,7 +5033,7 @@ dependencies = [
 
 [[package]]
 name = "strata-da-framework"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-codec",
  "thiserror 2.0.18",
@@ -5041,7 +5041,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ee-acct-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ssz",
  "ssz_codegen",
@@ -5061,7 +5061,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ee-chain-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ssz",
  "ssz_codegen",
@@ -5076,7 +5076,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ee-chunk-runtime"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "rkyv",
  "rkyv_impl",
@@ -5089,7 +5089,7 @@ dependencies = [
 
 [[package]]
 name = "strata-evm-ee"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "alloy-consensus",
  "alloy-rlp",
@@ -5171,7 +5171,7 @@ dependencies = [
 
 [[package]]
 name = "strata-mpt"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "alloy-rlp",
  "alloy-rlp-derive",
@@ -5193,7 +5193,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-bridge-types"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -5209,7 +5209,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-msg-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-codec",
  "strata-identifiers",
@@ -5238,7 +5238,7 @@ dependencies = [
 
 [[package]]
 name = "strata-primitives"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "bitcoin-bosd 0.11.0",
@@ -5253,7 +5253,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-alpen-chunk"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "alpen-reth-evm",
  "k256",
@@ -5272,7 +5272,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-runtime"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "rkyv",
  "rkyv_impl",
@@ -5285,7 +5285,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ssz",
  "ssz_codegen",

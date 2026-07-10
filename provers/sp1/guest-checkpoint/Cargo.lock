@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "guest-sp1-checkpoint"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-proofimpl-checkpoint",
  "zkaleido-sp1-guest-env",
@@ -1621,7 +1621,7 @@ dependencies = [
 
 [[package]]
 name = "strata-acct-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "digest",
  "sha2",
@@ -1755,7 +1755,7 @@ dependencies = [
 
 [[package]]
 name = "strata-bridge-params"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "ssz",
@@ -1822,7 +1822,7 @@ dependencies = [
 
 [[package]]
 name = "strata-codec-utils"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "borsh",
  "ssz",
@@ -1868,7 +1868,7 @@ dependencies = [
 
 [[package]]
 name = "strata-da-framework"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-codec",
  "thiserror",
@@ -1918,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ledger-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
@@ -1959,7 +1959,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-bridge-types"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -1975,7 +1975,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-chain-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "int-enum",
  "ssz",
@@ -1996,7 +1996,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-da"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "strata-acct-types",
@@ -2033,7 +2033,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-msg-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-codec",
  "strata-identifiers",
@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-params"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "strata-bridge-params",
@@ -2053,7 +2053,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-support-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "strata-acct-types",
  "strata-asm-proto-checkpoint-types",
@@ -2069,7 +2069,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ssz",
  "ssz_codegen",
@@ -2092,7 +2092,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-stf"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "bitcoin-bosd 0.11.0",
  "strata-acct-types",
@@ -2137,7 +2137,7 @@ dependencies = [
 
 [[package]]
 name = "strata-primitives"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "bitcoin-bosd 0.11.0",
@@ -2152,7 +2152,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-checkpoint"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "k256",
  "ssz",
@@ -2174,7 +2174,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-sys"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ssz",
  "strata-acct-types",
@@ -2185,7 +2185,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ssz",
  "ssz_codegen",
