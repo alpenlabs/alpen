@@ -158,6 +158,12 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
+        description = "output file path for an alpen-cli network profile toml derived from these params"
+    )]
+    pub(crate) cli_config: Option<PathBuf>,
+
+    #[argh(
+        option,
         description = "network name / magic bytes (default ALPN)",
         short = 'n'
     )]

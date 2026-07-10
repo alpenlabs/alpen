@@ -40,8 +40,10 @@ bitcoin = { workspace = true, features = ["std"] }
 bitcoind-async-client = { workspace = true, optional = true }
 hex.workspace = true
 rand_core.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, optional = true }
+toml.workspace = true
 zeroize.workspace = true
 
 [features]
