@@ -54,6 +54,12 @@ pub enum SlotState<T, E> {
 )]
 pub struct CacheTable<K, V, E> {
     cache: Mutex<lru::LruCache<K, CacheSlot<V, E>>>,
+    /// Denormalized copy of `cache.len()` so reads don't need the lock.
+    ///
+    /// Invariant: every path that mutates `cache` must restore this to
+    /// `cache.len()` before releasing the lock (this includes implicit LRU
+    /// eviction on insert). Store `cache.len()` rather than incrementing to
+    /// stay self-correcting.
     len: AtomicUsize,
 }
 
