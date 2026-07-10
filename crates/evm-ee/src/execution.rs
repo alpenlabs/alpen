@@ -3,7 +3,7 @@
 //! This module provides the core ExecutionEnvironment implementation for EVM blocks,
 //! using RSP's sparse state and Reth's EVM execution engine.
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use alloy_consensus::Block as AlloyBlock;
 use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
@@ -147,14 +147,24 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 6: Convert execution outcome to HashedPostState.
+        // Step 6: Preserve code deployed by this block before consuming the
+        // execution output. Later blocks in the same proof chunk execute
+        // against the accumulated partial state and may call this code.
+        let deployed_bytecodes: BTreeMap<_, _> = execution_output
+            .state
+            .contracts
+            .iter()
+            .map(|(hash, bytecode)| (*hash, bytecode.clone()))
+            .collect();
+
+        // Step 7: Convert execution outcome to HashedPostState.
         let block_number = header_intrinsics.number();
         let hashed_post_state = compute_hashed_post_state(execution_output, block_number);
 
-        // Step 7: Split state writes from execution-derived header commitments.
-        let write_batch = EvmWriteBatch::new(hashed_post_state);
+        // Step 8: Split state writes from execution-derived header commitments.
+        let write_batch = EvmWriteBatch::new(hashed_post_state, deployed_bytecodes);
 
-        // Step 8: Create ExecOutputs with withdrawal intent messages.
+        // Step 9: Create ExecOutputs with withdrawal intent messages.
         let mut outputs = ExecOutputs::new_empty();
         convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
 

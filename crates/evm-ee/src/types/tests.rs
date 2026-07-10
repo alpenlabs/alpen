@@ -1,16 +1,22 @@
 //! Tests for EVM types Codec implementations.
 
-use std::{collections::BTreeMap, fs::read_to_string, path::PathBuf};
+use std::{collections::BTreeMap, fs::read_to_string, path::PathBuf, sync::Arc};
 
 use alloy_consensus::{Header, Sealable};
+use alpen_reth_evm::evm::AlpenEvmFactory;
+use reth_chainspec::ChainSpec;
+use reth_primitives_traits::Block as _;
+use reth_trie::HashedPostState;
 use revm::{DatabaseRef, state::Bytecode};
-use revm_primitives::alloy_primitives::{Address, B256, Bloom, Bytes, U256};
+use revm_primitives::alloy_primitives::{Address, B64, B256, Bloom, Bytes, U256};
 use rsp_client_executor::io::EthClientExecutorInput;
 use serde::Deserialize;
 use strata_codec::{decode_buf_exact, encode_to_vec};
-use strata_ee_acct_types::ExecHeader;
+use strata_ee_acct_types::{ExecBlock, ExecHeader, ExecPayload, ExecutionEnvironment};
+use strata_ee_chain_types::ExecInputs;
 
-use super::{EvmBlock, EvmBlockBody, EvmHeader, EvmPartialState};
+use super::{EvmBlock, EvmBlockBody, EvmHeader, EvmPartialState, EvmWriteBatch};
+use crate::EvmExecutionEnvironment;
 
 #[derive(Deserialize)]
 struct TestData {
@@ -46,8 +52,6 @@ fn rehashed_fixture_bytecodes(bytecodes: Vec<Bytecode>) -> BTreeMap<B256, Byteco
 
 /// Helper function to create a test header with realistic values
 fn create_test_header() -> Header {
-    use revm_primitives::alloy_primitives::B64;
-
     Header {
         parent_hash: B256::from([1u8; 32]),
         ommers_hash: B256::from([2u8; 32]),
@@ -179,7 +183,6 @@ fn test_evm_block_body_codec_roundtrip() {
     // Load witness data and extract block body
     let witness = load_witness_test_data();
 
-    use reth_primitives_traits::Block;
     let block_body = witness.current_block.body().clone();
     let body = EvmBlockBody::from_alloy_body(block_body.clone());
 
@@ -202,7 +205,6 @@ fn test_evm_block_codec_roundtrip() {
     // Load witness data and construct block
     let witness = load_witness_test_data();
 
-    use reth_primitives_traits::Block;
     let header = witness.current_block.header().clone();
     let evm_header = EvmHeader::new(header.clone());
 
@@ -341,16 +343,6 @@ fn test_evm_partial_state_rejects_invalid_ancestor_parent_hash() {
 /// into hash digests, losing the resolved trie data needed for execution.
 #[test]
 fn test_evm_partial_state_codec_roundtrip_execution() {
-    use std::sync::Arc;
-
-    use alpen_reth_evm::evm::AlpenEvmFactory;
-    use reth_chainspec::ChainSpec;
-    use reth_primitives_traits::Block as _;
-    use strata_ee_acct_types::{ExecBlock, ExecPayload, ExecutionEnvironment};
-    use strata_ee_chain_types::ExecInputs;
-
-    use crate::EvmExecutionEnvironment;
-
     let witness = load_witness_test_data();
 
     // Build partial state and verify execution works on the original.
@@ -385,12 +377,11 @@ fn test_evm_partial_state_codec_roundtrip_execution() {
 
 #[test]
 fn test_evm_write_batch_codec_roundtrip() {
-    use reth_trie::HashedPostState;
-
-    use super::EvmWriteBatch;
-
     let hashed_post_state = HashedPostState::default();
-    let write_batch = EvmWriteBatch::new(hashed_post_state);
+    let bytecode = Bytecode::new_raw(Bytes::from_static(&[0x60, 0x01, 0x5f, 0x55]));
+    let code_hash = bytecode.hash_slow();
+    let bytecodes = BTreeMap::from([(code_hash, bytecode.clone())]);
+    let write_batch = EvmWriteBatch::new(hashed_post_state, bytecodes);
 
     // Encode
     let encoded = encode_to_vec(&write_batch).expect("encode failed");
@@ -398,6 +389,45 @@ fn test_evm_write_batch_codec_roundtrip() {
     // Decode
     let decoded: EvmWriteBatch = decode_buf_exact(&encoded).expect("decode failed");
 
+    assert_eq!(
+        decoded
+            .bytecodes()
+            .get(&code_hash)
+            .expect("deployed bytecode must survive codec roundtrip")
+            .original_bytes(),
+        bytecode.original_bytes(),
+    );
+
     let reencoded = encode_to_vec(&decoded).expect("re-encode failed");
     assert_eq!(reencoded, encoded);
+}
+
+#[test]
+fn test_evm_partial_state_merges_deployed_bytecodes() {
+    let witness = load_witness_test_data();
+    let chain_spec: Arc<ChainSpec> = Arc::new((&witness.genesis).try_into().unwrap());
+    let ee = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
+    let mut partial_state = EvmPartialState::new(
+        witness.parent_state,
+        rehashed_fixture_bytecodes(witness.bytecodes),
+        witness.ancestor_headers,
+    );
+    let bytecode = Bytecode::new_raw(Bytes::from_static(&[0x60, 0x2a, 0x5f, 0x52]));
+    let code_hash = bytecode.hash_slow();
+    let write_batch = EvmWriteBatch::new(
+        HashedPostState::default(),
+        BTreeMap::from([(code_hash, bytecode.clone())]),
+    );
+
+    ee.merge_write_into_state(&mut partial_state, &write_batch)
+        .expect("write batch should merge into the partial state");
+
+    assert_eq!(
+        partial_state
+            .create_witness_db()
+            .code_by_hash_ref(code_hash)
+            .expect("code deployed by an earlier chunk block must be executable")
+            .original_bytes(),
+        bytecode.original_bytes(),
+    );
 }

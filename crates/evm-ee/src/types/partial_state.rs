@@ -174,9 +174,11 @@ impl EvmPartialState {
 
     /// Merges a write batch into this state by applying the hashed post state changes.
     ///
-    /// This updates the internal EthereumState with the changes from the write batch.
+    /// This updates the internal EthereumState and makes code deployed by the
+    /// block available to subsequent blocks executed against this partial state.
     pub fn merge_write_batch(&mut self, wb: &EvmWriteBatch) {
         self.ethereum_state.update(wb.hashed_post_state());
+        self.add_bytecodes(wb.bytecodes().clone());
     }
 }
 
