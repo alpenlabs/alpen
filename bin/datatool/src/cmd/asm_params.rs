@@ -1,8 +1,9 @@
 //! `gen-asm-params` subcommand: generates ASM params from inputs.
 
-use std::{fs, num::NonZero, str::FromStr};
+use std::{fs, num::NonZero, path::Path, str::FromStr};
 
-use bitcoin::{secp256k1::PublicKey, XOnlyPublicKey};
+use bitcoin::{secp256k1::PublicKey, Network, XOnlyPublicKey};
+use serde::Serialize;
 use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
     ConfirmationDepths, SubprotocolInstance,
@@ -184,6 +185,46 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         println!("{params_buf}");
     }
 
+    if let Some(cli_config_path) = &cmd.cli_config {
+        write_cli_network_profile(cli_config_path, &asm_params)?;
+        eprintln!("wrote alpen-cli network profile to {cli_config_path:?}");
+    }
+
+    Ok(())
+}
+
+/// Network profile fields the alpen wallet CLI reads from its config.toml.
+///
+/// Must stay in sync with `SettingsFromFile` in `bin/alpen-cli`.
+#[derive(Serialize)]
+struct CliNetworkProfile {
+    network: Network,
+    magic_bytes: MagicBytes,
+    deposit_amount_sats: u64,
+    recovery_delay: u16,
+}
+
+/// Writes the alpen-cli config fields derived from the ASM params as a TOML snippet.
+// TODO: also derive the CLI's `bridge_pubkey` from the operator set once the
+// bridge's MuSig2 aggregation (key ordering and tweaks) is exposed from a
+// shared crate; until then it has to be provisioned separately.
+fn write_cli_network_profile(path: &Path, asm_params: &AsmParams) -> anyhow::Result<()> {
+    let bridge = asm_params
+        .bridge_config()
+        .ok_or_else(|| anyhow::anyhow!("ASM params missing Bridge subprotocol config"))?;
+
+    let profile = CliNetworkProfile {
+        network: asm_params.anchor.network,
+        magic_bytes: asm_params.magic,
+        deposit_amount_sats: bridge.denomination.to_sat(),
+        recovery_delay: bridge.recovery_delay,
+    };
+
+    let header = "# Alpen CLI network profile derived from the ASM params.\n\
+                  # Merge these fields into the CLI's config.toml.\n";
+    let body = toml::to_string(&profile)?;
+    fs::write(path, format!("{header}{body}"))?;
+
     Ok(())
 }
 
@@ -227,6 +268,26 @@ mod tests {
     /// `tprv8ZgxMBicQKsPd4arFr7sKjSnKFDVMR2JHw9Y8L9nXN4kiok4u28LpHijEudH3mMYoL4pM5UL9Bgdz2M4Cy8EzfErmU9m86ZTw6hCzvFeTg7`
     /// via `genseqpubkey`.
     const TEST_SEQ_PK: &str = "14ebfa9a90fee3020686b5334b297b675a9f29282f44b6c3a4ab1f0582021839";
+
+    #[test]
+    fn cli_network_profile_matches_cli_config_schema() {
+        let profile = CliNetworkProfile {
+            network: Network::Signet,
+            magic_bytes: "ALPN".parse().expect("valid magic bytes"),
+            deposit_amount_sats: 100_000_000,
+            recovery_delay: 1_008,
+        };
+
+        let rendered = toml::to_string(&profile).expect("profile should serialize");
+
+        assert_eq!(
+            rendered,
+            "network = \"signet\"\n\
+             magic_bytes = \"ALPN\"\n\
+             deposit_amount_sats = 100000000\n\
+             recovery_delay = 1008\n"
+        );
+    }
 
     #[test]
     fn sequencer_predicate_defaults_to_always_accept() {
