@@ -9,7 +9,7 @@ use strata_open_rpc::Project;
 /// Builds the combined OpenRPC document for Alpen binary RPC methods.
 pub fn alpen_rpc_project() -> Project {
     let mut project = Project::new(
-        "0.1.0",
+        "0.4.0",
         "Alpen RPC",
         "Alpen JSON-RPC API",
         "Alpen Labs",
