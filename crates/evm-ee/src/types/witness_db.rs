@@ -111,11 +111,12 @@ impl<'a> DatabaseRef for WitnessDB<'a> {
         // Look up bytecode by hash and clone it (required by DatabaseRef trait)
         // This clone is unavoidable as the trait requires returning owned Bytecode,
         // but it happens only once per unique bytecode during execution (EVM caches it)
-        Ok(self
-            .bytecodes
-            .get(&code_hash)
-            .cloned()
-            .expect("Bytecode must be present in witness"))
+        Ok(self.bytecodes.get(&code_hash).cloned().unwrap_or_else(|| {
+            panic!(
+                "bytecode {code_hash} must be present in witness ({} bytecodes available)",
+                self.bytecodes.len()
+            )
+        }))
     }
 
     fn storage_ref(&self, address: Address, index: U256) -> Result<U256, Self::Error> {
