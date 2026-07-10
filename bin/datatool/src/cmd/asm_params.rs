@@ -11,8 +11,10 @@ use strata_asm_params::{
 use strata_asm_proto_bridge_v1_types::SafeHarbourAddress;
 use strata_btc_types::BitcoinAmount;
 use strata_crypto::{
-    keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig, EvenPublicKey,
+    aggregate_schnorr_keys, keys::compressed::CompressedPublicKey,
+    threshold_signature::ThresholdConfig, EvenPublicKey,
 };
+use strata_identifiers::Buf32;
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_genesis::build_genesis_artifacts;
 use strata_ol_params::OLParams;
@@ -200,14 +202,32 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 struct CliNetworkProfile {
     network: Network,
     magic_bytes: MagicBytes,
+    bridge_pubkey: String,
     deposit_amount_sats: u64,
     recovery_delay: u16,
 }
 
+/// Derives the aggregated MuSig2 bridge key the CLI locks deposits to.
+///
+/// Mirrors the ASM bridge subprotocol's operator table: keys are aggregated in
+/// registration order with duplicates skipped.
+fn derive_bridge_pubkey(operators: &[EvenPublicKey]) -> anyhow::Result<String> {
+    let mut keys: Vec<Buf32> = Vec::with_capacity(operators.len());
+    for operator in operators {
+        let key = Buf32::from(operator.x_only_public_key().0.serialize());
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    anyhow::ensure!(!keys.is_empty(), "bridge requires at least one operator");
+
+    let agg_key = aggregate_schnorr_keys(keys.iter())
+        .map_err(|e| anyhow::anyhow!("failed to aggregate operator keys: {e}"))?;
+
+    Ok(hex::encode(agg_key.serialize()))
+}
+
 /// Writes the alpen-cli config fields derived from the ASM params as a TOML snippet.
-// TODO: also derive the CLI's `bridge_pubkey` from the operator set once the
-// bridge's MuSig2 aggregation (key ordering and tweaks) is exposed from a
-// shared crate; until then it has to be provisioned separately.
 fn write_cli_network_profile(path: &Path, asm_params: &AsmParams) -> anyhow::Result<()> {
     let bridge = asm_params
         .bridge_config()
@@ -216,6 +236,7 @@ fn write_cli_network_profile(path: &Path, asm_params: &AsmParams) -> anyhow::Res
     let profile = CliNetworkProfile {
         network: asm_params.anchor.network,
         magic_bytes: asm_params.magic,
+        bridge_pubkey: derive_bridge_pubkey(&bridge.operators)?,
         deposit_amount_sats: bridge.denomination.to_sat(),
         recovery_delay: bridge.recovery_delay,
     };
@@ -262,6 +283,8 @@ fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarbourA
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::secp256k1::{Secp256k1, SecretKey};
+
     use super::*;
 
     /// X-only pubkey hex derived from the test xpriv
@@ -274,6 +297,7 @@ mod tests {
         let profile = CliNetworkProfile {
             network: Network::Signet,
             magic_bytes: "ALPN".parse().expect("valid magic bytes"),
+            bridge_pubkey: TEST_SEQ_PK.to_owned(),
             deposit_amount_sats: 100_000_000,
             recovery_delay: 1_008,
         };
@@ -282,11 +306,47 @@ mod tests {
 
         assert_eq!(
             rendered,
-            "network = \"signet\"\n\
-             magic_bytes = \"ALPN\"\n\
-             deposit_amount_sats = 100000000\n\
-             recovery_delay = 1008\n"
+            format!(
+                "network = \"signet\"\n\
+                 magic_bytes = \"ALPN\"\n\
+                 bridge_pubkey = \"{TEST_SEQ_PK}\"\n\
+                 deposit_amount_sats = 100000000\n\
+                 recovery_delay = 1008\n"
+            )
         );
+    }
+
+    #[test]
+    fn bridge_pubkey_derivation_skips_duplicates_like_the_operator_table() {
+        let secp = Secp256k1::new();
+        let operator_1 = EvenPublicKey::from(PublicKey::from_secret_key(
+            &secp,
+            &SecretKey::from_slice(&[1u8; 32]).expect("valid secret key"),
+        ));
+        let operator_2 = EvenPublicKey::from(PublicKey::from_secret_key(
+            &secp,
+            &SecretKey::from_slice(&[2u8; 32]).expect("valid secret key"),
+        ));
+
+        let derived =
+            derive_bridge_pubkey(&[operator_1, operator_2, operator_1]).expect("keys aggregate");
+
+        let deduped_keys: Vec<Buf32> = [operator_1, operator_2]
+            .iter()
+            .map(|op| Buf32::from(op.x_only_public_key().0.serialize()))
+            .collect();
+        let expected = hex::encode(
+            aggregate_schnorr_keys(deduped_keys.iter())
+                .expect("keys aggregate")
+                .serialize(),
+        );
+
+        assert_eq!(derived, expected);
+    }
+
+    #[test]
+    fn bridge_pubkey_derivation_rejects_empty_operator_set() {
+        assert!(derive_bridge_pubkey(&[]).is_err());
     }
 
     #[test]
