@@ -11,6 +11,7 @@ use std::error;
 use std::future::Future;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, Mutex, RwLock};
@@ -53,6 +54,13 @@ pub enum SlotState<T, E> {
 )]
 pub struct CacheTable<K, V, E> {
     cache: Mutex<lru::LruCache<K, CacheSlot<V, E>>>,
+    /// Denormalized copy of `cache.len()` so reads don't need the lock.
+    ///
+    /// Invariant: every path that mutates `cache` must restore this to
+    /// `cache.len()` before releasing the lock (this includes implicit LRU
+    /// eviction on insert). Store `cache.len()` rather than incrementing to
+    /// stay self-correcting.
+    len: AtomicUsize,
 }
 
 impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> CacheTable<K, V, E> {
@@ -63,35 +71,28 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
     pub fn new(size: NonZeroUsize) -> Self {
         Self {
             cache: Mutex::new(lru::LruCache::new(size)),
+            len: AtomicUsize::new(0),
         }
     }
 
     /// Gets the number of elements in the cache.
-    // TODO(STR-3679): replace this with an atomic we update after every op
     #[allow(dead_code, clippy::allow_attributes, reason = "used for debugging")]
-    pub async fn get_len_async(&self) -> usize {
-        let cache = self.cache.lock().await;
-        cache.len()
-    }
-
-    /// Gets the number of elements in the cache.
-    // TODO(STR-3679): replace this with an atomic we update after every op
-    #[allow(dead_code, clippy::allow_attributes, reason = "used for debugging")]
-    pub fn get_len_blocking(&self) -> usize {
-        let cache = self.cache.blocking_lock();
-        cache.len()
+    pub fn get_len(&self) -> usize {
+        self.len.load(Ordering::Relaxed)
     }
 
     /// Removes the entry for a particular cache entry.
     pub async fn purge_async(&self, k: &K) {
         let mut cache = self.cache.lock().await;
         cache.pop(k);
+        self.len.store(cache.len(), Ordering::Relaxed);
     }
 
     /// Removes the entry for a particular cache entry.
     pub fn purge_blocking(&self, k: &K) {
         let mut cache = self.cache.blocking_lock();
         cache.pop(k);
+        self.len.store(cache.len(), Ordering::Relaxed);
     }
 
     /// Removes all entries for which the predicate returns `true`.
@@ -114,6 +115,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
         keys_to_remove.iter().for_each(|k| {
             cache.pop(k);
         });
+        self.len.store(cache.len(), Ordering::Relaxed);
         keys_to_remove.len()
     }
     /// Removes all entries for which the predicate returns `true`.
@@ -136,6 +138,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
         keys_to_remove.iter().for_each(|k| {
             cache.pop(k);
         });
+        self.len.store(cache.len(), Ordering::Relaxed);
         keys_to_remove.len()
     }
 
@@ -148,6 +151,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
         let mut cache = self.cache.blocking_lock();
         let len = cache.len();
         cache.clear();
+        self.len.store(0, Ordering::Relaxed);
         len
     }
 
@@ -160,19 +164,24 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
         let mut cache = self.cache.lock().await;
         let len = cache.len();
         cache.clear();
+        self.len.store(0, Ordering::Relaxed);
         len
     }
 
     /// Inserts an entry into the table, dropping the previous value.
     pub async fn insert_async(&self, k: K, v: V) {
         let slot = Arc::new(RwLock::new(SlotState::Ready(v)));
-        self.cache.lock().await.put(k, slot);
+        let mut cache = self.cache.lock().await;
+        cache.put(k, slot);
+        self.len.store(cache.len(), Ordering::Relaxed);
     }
 
     /// Inserts an entry into the table, dropping the previous value.
     pub fn insert_blocking(&self, k: K, v: V) {
         let slot = Arc::new(RwLock::new(SlotState::Ready(v)));
-        self.cache.blocking_lock().put(k, slot);
+        let mut cache = self.cache.blocking_lock();
+        cache.put(k, slot);
+        self.len.store(cache.len(), Ordering::Relaxed);
     }
 
     /// Returns a clone of an entry from the cache, or invokes some function whose future loads the
@@ -214,6 +223,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
             let (complete_tx, complete_rx) = broadcast::channel(1);
             let slot = Arc::new(RwLock::new(SlotState::Pending(complete_rx)));
             cache_guard.push(k.clone(), slot.clone());
+            self.len.store(cache_guard.len(), Ordering::Relaxed);
 
             (slot, complete_tx)
         };
@@ -245,6 +255,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
                 let mut cache_guard = self.cache.lock().await;
                 trace!("re-acquired cache lock");
                 safely_remove_cache_slot(&mut cache_guard, k, &slot);
+                self.len.store(cache_guard.len(), Ordering::Relaxed);
 
                 Err(err)
             }
@@ -290,6 +301,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
             let (complete_tx, complete_rx) = broadcast::channel(1);
             let slot = Arc::new(RwLock::new(SlotState::Pending(complete_rx)));
             cache_guard.push(k.clone(), slot.clone());
+            self.len.store(cache_guard.len(), Ordering::Relaxed);
 
             (slot, complete_tx)
         };
@@ -321,6 +333,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
                 let mut cache_guard = self.cache.blocking_lock();
                 trace!("re-acquired cache lock");
                 safely_remove_cache_slot(&mut cache_guard, k, &slot);
+                self.len.store(cache_guard.len(), Ordering::Relaxed);
 
                 Err(e)
             }
@@ -330,12 +343,18 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + error::Error + Clone> C
 
 /// Convenience function to safely remove a cache slot key from the cache, iff
 /// it matches an expected value. Returns if it did the removal.
+///
+/// The key may be absent when this runs: the fetch paths release the cache lock
+/// while the database read is in flight, so LRU eviction, `purge_*`, or `clear`
+/// can drop our pending slot. A missing key means "not removed by us".
 fn safely_remove_cache_slot<K: Eq + Hash, V, E>(
     cache: &mut lru::LruCache<K, CacheSlot<V, E>>,
     key: &K,
     slot: &CacheSlot<V, E>,
 ) -> bool {
-    let is_eq = Arc::ptr_eq(cache.peek(key).unwrap(), slot);
+    let is_eq = cache
+        .peek(key)
+        .is_some_and(|existing| Arc::ptr_eq(existing, slot));
     if is_eq {
         cache.pop(key);
     }
@@ -396,10 +415,10 @@ mod tests {
             .expect("test: load gof");
         assert_eq!(res, 12);
 
-        let len = cache.get_len_async().await;
+        let len = cache.get_len();
         assert_eq!(len, 1);
         cache.purge_async(&42).await;
-        let len = cache.get_len_async().await;
+        let len = cache.get_len();
         assert_eq!(len, 0);
     }
 
@@ -423,11 +442,32 @@ mod tests {
             .expect("test: load gof");
         assert_eq!(res, 12);
 
-        let len = cache.get_len_blocking();
+        let len = cache.get_len();
         assert_eq!(len, 1);
         cache.purge_blocking(&42);
-        let len = cache.get_len_blocking();
+        let len = cache.get_len();
         assert_eq!(len, 0);
+    }
+
+    #[test]
+    fn test_len_tracks_lru_eviction() {
+        // Capacity 3: inserting a 4th key should evict the oldest, len stays 3.
+        let cache = CacheTable::<u64, u64>::new(3.try_into().unwrap());
+
+        for k in 0..3 {
+            cache.insert_blocking(k, k * 10);
+        }
+        assert_eq!(cache.get_len(), 3);
+
+        // This evicts key 0.
+        cache.insert_blocking(3, 30);
+        assert_eq!(cache.get_len(), 3);
+
+        // Evicted key should miss, new key should hit.
+        let res = cache.get_or_fetch_blocking(&0, || Ok(999));
+        assert_eq!(res.unwrap(), 999); // fetched, not cached
+                                       // Now we have 4 inserts into a cap-3 cache, so still 3.
+        assert_eq!(cache.get_len(), 3);
     }
 
     #[tokio::test]
@@ -661,5 +701,44 @@ mod tests {
             matches!(error2, DbError::NonExistentEntry),
             "Task 2 should also get DbError::NonExistentEntry, got: {error1:?}"
         );
+    }
+
+    #[test]
+    fn test_error_cleanup_after_slot_evicted() {
+        // The failing fetch's cleanup must not panic when its pending slot was
+        // already removed (here via LRU eviction) during the fetch window.
+        let cache = CacheTable::<u64, u64>::new(1.try_into().unwrap());
+
+        let res = cache.get_or_fetch_blocking(&1, || {
+            // Evict key 1's pending slot before the fetch returns an error.
+            cache.insert_blocking(2, 20);
+            Err(DbError::NonExistentEntry)
+        });
+        assert!(res.is_err());
+
+        // The evicting insert is the sole survivor; cleanup left it untouched.
+        assert_eq!(cache.get_len(), 1);
+        let res = cache.get_or_fetch_blocking(&2, || Err(DbError::Busy));
+        assert_eq!(res.unwrap(), 20);
+    }
+
+    #[test]
+    fn test_len_after_error_removal() {
+        let cache = CacheTable::<u64, u64>::new(3.try_into().unwrap());
+
+        // Fetch that fails — slot is inserted then removed on error.
+        let res = cache.get_or_fetch_blocking(&1, || Err(DbError::NonExistentEntry));
+        assert!(res.is_err());
+        assert_eq!(cache.get_len(), 0, "failed slot should be removed");
+
+        // Successful fetch to confirm len goes to 1.
+        let res = cache.get_or_fetch_blocking(&2, || Ok(42));
+        assert_eq!(res.unwrap(), 42);
+        assert_eq!(cache.get_len(), 1);
+
+        // Another failure doesn't corrupt the count.
+        let res = cache.get_or_fetch_blocking(&3, || Err(DbError::Busy));
+        assert!(res.is_err());
+        assert_eq!(cache.get_len(), 1, "only the successful entry remains");
     }
 }
