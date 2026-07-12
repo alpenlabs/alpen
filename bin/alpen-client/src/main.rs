@@ -1,4 +1,14 @@
 //! Reth node for the Alpen codebase.
+//!
+//! # Logging
+//!
+//! Alpen (non-reth) logs carry a `component = "alpen"` field so they can be
+//! filtered apart from the embedded reth logs in monitoring. The field is
+//! attached via `info_span!(..., component = "alpen")` spans, so it is only
+//! present while those spans are enabled. Run this crate with the `alpen_client`
+//! target at INFO or a more verbose level to get the tags: lowering it (e.g.
+//! `RUST_LOG=alpen_client=warn`) or capping the compile-time level below info
+//! (`tracing/release_max_level_*`) disables the spans and silently drops the tag.
 
 mod dummy_ol_client;
 #[cfg(feature = "sequencer")]
