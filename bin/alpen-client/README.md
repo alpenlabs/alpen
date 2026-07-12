@@ -62,7 +62,7 @@ The `sequencer` and `sp1` cargo features are enabled by default. `sequencer` com
 
 ## System Context
 
-The EE exists within a layered architecture anchored to Bitcoin:
+EEs exists within a layered architecture anchored to Bitcoin:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -87,7 +87,7 @@ The EE exists within a layered architecture anchored to Bitcoin:
               ▼                 ▼                 ▼
         ┌──────────┐      ┌──────────┐      ┌──────────┐
         │   EE 1   │      │   EE 2   │      │   EE N   │
-        │  (This)  │      │          │      │          │
+        │ (Alpen)  │      │          │      │          │
         └──────────┘      └──────────┘      └──────────┘
 ```
 
@@ -99,8 +99,8 @@ The EE and OL each have their own chains and client binaries:
 
 | Layer | Chain | Client Binary |
 |-------|-------|---------------|
-| **OL** | OL blocks grouped into epochs | OL client (not covered here) |
-| **EE** | EVM blocks | `alpen-client` (this binary) |
+| **OL** | OL blocks grouped into epochs | [`bin/strata`](../strata) |
+| **EE** | EVM blocks | `bin/alpen-client` |
 
 An entity running an EE node must also run a paired OL node.
 
@@ -230,7 +230,7 @@ graph TB
     RethP2P <-->|blocks| Peers
 ```
 
-### Service Framework
+### Services
 
 Long-running components run as tasks on Reth's task executor. Some are structured with the [`strata_service`](../../crates) `AsyncService` framework via a thin [`ServiceExecutor`](src/service_executor.rs) adapter (currently the OL tracker, exec chain, and chunk builder); the rest are plain critical tasks. All of them are wired together in [main.rs](src/main.rs).
 
@@ -238,7 +238,7 @@ Every component runs as a Reth *critical* task. This is deliberate: these compon
 
 ### Communication Pattern
 
-Components broadcast state to one another primarily via `tokio::sync::watch` channels, with `mpsc` channels for event streams:
+Components broadcast state to one another primarily via `tokio` channels:
 
 ```
 OL Tracker ──┬── consensus (heads) ──► Engine Control, Exec Chain, RPC
@@ -270,7 +270,7 @@ Components marked **(Sequencer)** run only when the node is started with `--sequ
 - Detect and handle chain reorganizations
 - Broadcast consensus updates to downstream components
 
-**Outputs** (via watch channels):
+**Outputs**:
 - `ConsensusHeads` — confirmed and finalized EE block hashes
 - `OLFinalizedStatus` — finalized OL block and its corresponding EE block
 
@@ -323,7 +323,7 @@ Only messages from **finalized** OL blocks are exposed, avoiding reorg hazards.
 
 **Location**: [crates/alpen-ee/engine/src/control.rs](../../crates/alpen-ee/engine/src/control.rs)
 
-**Inputs** (via watch channels):
+**Inputs**:
 - consensus heads — from OL Tracker (confirmed/finalized)
 - preconf head — from Exec Chain or Gossip (latest)
 
@@ -345,7 +345,7 @@ finalized block       →    finalized_block_hash
 **Location**: [crates/alpen-ee/sequencer/src/block_builder/](../../crates/alpen-ee/sequencer/src/block_builder/)
 
 **Responsibilities**:
-- Produce a block every block time (default 5000ms; override with `ALPEN_EE_BLOCK_TIME_MS`)
+- Produce a block every block time (default 5,000ms; override with `ALPEN_EE_BLOCK_TIME_MS`)
 - Fetch finalized inbox messages (deposits) from the OL Chain Tracker
 - Build execution payloads via Reth's payload builder
 - Extract withdrawal intents from execution results
@@ -354,7 +354,7 @@ finalized block       →    finalized_block_hash
 Fork choice / canonicalization is owned by Engine Control, not the block builder.
 
 **Configuration** (`BlockBuilderConfig`):
-- `blocktime_ms` — target block interval (default 5000)
+- `blocktime_ms` — target block interval (default 5,000)
 - `max_deposits_per_block` — deposit throughput limit (default 16)
 
 ---
@@ -502,10 +502,14 @@ sequenceDiagram
 
 ### Block Sync (Fullnode)
 
-Fullnodes learn about new blocks through two mechanisms:
+Fullnodes do not learn about every block individually. They only receive **specific block hashes for the latest tip** at each finality tier, and delegate the actual block-data download to Reth's P2P network.
 
-1. **Consensus (confirmed/finalized)** — from OL via the OL Tracker
-2. **Preconf (latest)** — from the sequencer via the Gossip Protocol
+Two sources provide these tip hashes:
+
+1. **Preconf (latest)** — the sequencer gossips the hash of each newly produced block, i.e. the current chain tip.
+2. **Confirmed / Finalized** — the OL Tracker supplies the EE block hash at each OL epoch boundary; these are the block hash of the last Alpen EE block included in each OL epoch.
+
+The fullnode feeds these tip hashes to Reth as the fork-choice head/safe/finalized (see [Engine Control](#engine-control)), and Reth downloads all the intervening block data from its P2P peers. The client never requests individual blocks itself.
 
 ```mermaid
 sequenceDiagram
@@ -526,7 +530,7 @@ sequenceDiagram
     FN->>FN: Mark block N as safe
 ```
 
-**Important**: EE fullnodes do not have independent block sync. They rely on Reth's P2P for block data (triggered by gossip) and on OL for consensus.
+**Important**: The EE client does not discover or download blocks on its own. Reth's P2P fetches all block data (triggered by the tip hashes above), while OL provides consensus and finality.
 
 ---
 
@@ -605,7 +609,8 @@ sequenceDiagram
 - Only messages from finalized OL blocks are processed (to avoid reorg issues)
 - Deposits are rate-limited per block (`max_deposits_per_block`)
 - Deposits are applied by reusing the EVM's withdrawal (EIP-4895) mechanism to mint into EVM state
-- Bitcoin amounts (sats) are converted to wei
+- The deposit's destination subject ID (32 bytes) maps to a 20-byte EVM address by taking its last 20 bytes ([`subject_to_address_unchecked`](../../crates/reth/evm/src/utils.rs))
+- Bitcoin amounts (sats) are converted to gwei for the EVM ([`sats_to_gwei`](../../crates/alpen-ee/common/src/utils/conversions.rs))
 
 ---
 
@@ -626,7 +631,10 @@ sequenceDiagram
     OL->>L1: bridge settlement
 ```
 
-Withdrawal intents are extracted during block execution, aggregated into the batch's `SnarkAccountUpdate` outputs, and submitted to OL by the Update Submitter, which routes them to the bridge for L1 settlement.
+- A user initiates a withdrawal by calling the special [bridge-out precompile](../../crates/reth/evm/src/precompiles/bridge.rs) address with the amount to withdraw
+- The precompile converts the amount from wei to satoshis ([`wei_to_sats`](../../crates/reth/evm/src/utils.rs)) and validates it — the amount must be a positive exact multiple of the bridge denomination and within the withdrawal cap — then emits a **withdrawal intent**
+- Withdrawal intents are extracted during block execution and aggregated into the batch's `SnarkAccountUpdate` outputs
+- The Update Submitter submits the update to OL, which routes the withdrawal to the bridge for L1 settlement
 
 ---
 
@@ -787,11 +795,3 @@ The client extends the standard Reth CLI. Selected Alpen-specific flags (see [ma
 | **paas** | Prover-as-a-Service framework used to generate chunk and account proofs |
 | **VK** | Verification Key — stored on OL per EE account for proof validation |
 | **SPS-50 / SPS-51** | Strata specs for L1 transaction tagging and the envelope inscription format |
-
----
-
-## What's Not Yet Implemented
-
-- **Cross-EE Messaging** — messages between different EEs via OL
-- **Independent Block Sync** — EE fullnodes currently rely on sequencer gossip + Reth P2P for block data
-- **From-DA Sequencer Recovery** — resuming block production from OL + L1/DA alone is partially enabled (the DA blob carries the header fields needed to reconstruct the anchor block), but the Reth state-load path is not yet built
