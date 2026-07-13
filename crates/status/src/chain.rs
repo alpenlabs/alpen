@@ -11,28 +11,32 @@ pub type OLSyncStatus = ChainSyncStatus;
 #[derive(Copy, Clone, Debug)]
 pub struct ChainSyncStatus {
     /// The current chain tip.
-    pub tip: L2BlockCommitment,
+    tip: L2BlockCommitment,
 
     /// The current chain tip epoch.
-    pub tip_epoch: Epoch,
+    tip_epoch: Epoch,
 
     /// Whether the current chain tip is epoch terminal.
-    pub tip_is_terminal: bool,
+    tip_is_terminal: bool,
 
     /// The previous epoch (ie. epoch most recently completed).
-    pub recently_complete_epoch: EpochCommitment,
+    recently_complete_epoch: EpochCommitment,
 
     /// The finalized epoch commitment, ie what's buried enough on L1.
-    pub finalized_epoch: EpochCommitment,
+    finalized_epoch: EpochCommitment,
 
     /// The confirmed epoch commitment (ie. epoch most recently seen on L1).
-    pub confirmed_epoch: EpochCommitment,
+    confirmed_epoch: EpochCommitment,
 
     /// The last L1 block commitment we've observed.
-    pub safe_l1: L1BlockCommitment,
+    safe_l1: L1BlockCommitment,
 }
 
 impl ChainSyncStatus {
+    pub fn tip(&self) -> OLBlockCommitment {
+        self.tip
+    }
+
     pub fn tip_slot(&self) -> u64 {
         self.tip.slot()
     }
@@ -45,6 +49,14 @@ impl ChainSyncStatus {
         self.tip_epoch
     }
 
+    pub fn confirmed_epoch(&self) -> EpochCommitment {
+        self.confirmed_epoch
+    }
+
+    pub fn finalized_epoch(&self) -> EpochCommitment {
+        self.finalized_epoch
+    }
+
     pub fn tip_is_terminal(&self) -> bool {
         self.tip_is_terminal
     }
@@ -54,7 +66,15 @@ impl ChainSyncStatus {
     }
 
     pub fn cur_epoch(&self) -> Epoch {
-        self.recently_complete_epoch.epoch() + 1
+        self.tip_epoch()
+    }
+
+    pub fn recently_complete_epoch(&self) -> EpochCommitment {
+        self.recently_complete_epoch
+    }
+
+    pub fn safe_l1(&self) -> L1BlockCommitment {
+        self.safe_l1
     }
 }
 

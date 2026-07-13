@@ -396,7 +396,7 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
         .status_channel()
         .get_ol_sync_status()
         .expect("OL sync status must be set before starting mempool")
-        .tip;
+        .tip();
 
     let storage = nodectx.storage().clone();
     let status_channel = nodectx.status_channel().as_ref().clone();
