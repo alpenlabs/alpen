@@ -98,7 +98,7 @@ pub(crate) async fn check_and_handle_reorg<P: AccumulationPolicy>(
         return Ok(ReorgReport::ShallowReorg);
     }
 
-    // 3. Batch reorg - find last canonical unfinalize batchd and revert everything after it
+    // 3. Batch reorg - find last canonical unfinalized batch and revert everything after it
     let Some(batch) =
         find_last_canonical_unfinalized_batch(canonical_reader, batch_storage).await?
     else {
