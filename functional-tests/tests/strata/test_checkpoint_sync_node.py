@@ -139,4 +139,16 @@ def check_commitment_matches_checkpoint(seq_rpc, epoch: int, commitment: dict):
 def mine_and_get_status(strata: StrataService, btc_rpc) -> ChainSyncStatus:
     """Mines L1 blocks so OL checkpoints confirm, then returns the node's status."""
     btc_rpc.proxy.generatetoaddress(2, btc_rpc.proxy.getnewaddress())
-    return strata.get_sync_status()
+    status = strata.get_sync_status()
+    check_epoch_ordering_invariant(status)
+    return status
+
+
+def check_epoch_ordering_invariant(status: ChainSyncStatus):
+    """The latest (recently complete) epoch can never lag confirmed or finalized."""
+    latest = status["latest"]["epoch"]
+    confirmed = status["confirmed"]["epoch"]
+    finalized = status["finalized"]["epoch"]
+    assert latest >= confirmed >= finalized, (
+        f"epoch ordering violated: latest={latest}, confirmed={confirmed}, finalized={finalized}"
+    )
