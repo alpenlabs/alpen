@@ -583,6 +583,51 @@ strata-dbtool ee-get-acct-proof <prev_block>:<last_block> [OPTIONS]
 strata-dbtool ee-delete-acct-proof <prev_block>:<last_block> --force
 ```
 
+### `ee-revert-batches`
+Revert EE batch metadata from `--from-batch-idx` onward, delete the
+corresponding unfinalized exec-block suffix, and clean exact affected
+chunk/acct prover rows. Without `--force`, prints the full change set as
+a dry run.
+
+```bash
+strata-dbtool -d <alpen-client-datadir> ee-revert-batches --from-batch-idx <n> [--tx-export <path>] [--force]
+```
+
+**Notes:**
+- `--tx-export <path>` writes affected block transaction indexes, hashes,
+  and raw 2718 bytes for manual rebroadcast. The file is written during
+  dry-run too.
+- The locally accepted frontier is derived from the EE sled, not from a live
+  OL query. The command reads `best_ee_account_state()`, takes its
+  `last_exec_blkid`, then scans stored EE batches until it finds the batch
+  whose `last_block()` matches that execution block. The matching batch index
+  is reported as `local_accepted_frontier.accepted_batch_idx`; the account
+  state's `ol_epoch()` is reported as `local_accepted_frontier.best_epoch`.
+  This is the last OL-accepted EE state observed by this EE node and may lag
+  canonical OL if the snapshot is stale.
+- If the rollback crosses the locally observed OL-accepted EE frontier,
+  the command also rolls back EE account-state rows to the kept batch tip.
+  If it cannot find a stored account-state epoch for that kept tip, the
+  command blocks instead of leaving `best_ee_account_state` dangling.
+- The report includes `affected_block_summary.reverted_batch` for blocks that
+  belong to reverted sealed batches and `affected_block_summary.unbatched_suffix`
+  for extra unbatched blocks built on top of the last reverted batch tip.
+- Forced rollback is not one cross-tree transaction. The command rolls back
+  EE account state when needed, deletes affected exec blocks and prover rows,
+  then reverts batch metadata last. If a pre-final mutation fails, keep the node
+  stopped and rerun the same command; earlier deletes are idempotent and the
+  batch metadata is still available to reconstruct the plan. Export txs before
+  forcing if manual rebroadcast data is needed after a partial retry.
+- Old block-witness rows, chunk rows, and DA/broadcast rows are left in
+  place; the report calls out these orphaned artifacts explicitly.
+
+To inspect the rollback frontier during dry-run:
+
+```bash
+strata-dbtool -d <alpen-client-datadir> ee-revert-batches --from-batch-idx <n> -o json \
+  | jq '.local_accepted_frontier'
+```
+
 ## Output Formats
 
 ### Porcelain Format (Default)

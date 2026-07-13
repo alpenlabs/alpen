@@ -15,6 +15,7 @@ on:
       - "bin/**"
       - "crates/**"
       - "docker/strata/**"
+      - "docker/strata-checkpoint-sync/**"
       - "docker/alpen-client/**"
       - "docker/strata-signer/**"
       - "docker/strata-datatool/**"
@@ -94,7 +95,7 @@ jobs:
           INPUT: ${{ inputs.programs }}
         run: |
           # New architecture images only — pushed to shared ECR account
-          ALL='["strata","alpen-client","strata-signer"]'
+          ALL='["strata","strata-checkpoint-sync","alpen-client","strata-signer"]'
 
           if [ -z "$INPUT" ]; then
             echo "matrix={\"program\":${ALL}}" >> "$GITHUB_OUTPUT"
@@ -124,7 +125,7 @@ jobs:
             /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
 
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
@@ -207,7 +208,7 @@ jobs:
       commit_sha: ${{ steps.resolve.outputs.commit_sha }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
@@ -225,11 +226,11 @@ jobs:
         uses: ./.github/actions/cleanup
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v3
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       # Authenticate to the shared ECR account
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v4
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
         env:
           ROLE_ARN: ${{ secrets.SHARED_ECR_ROLE_ARN }}
         with:
@@ -238,9 +239,20 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419 # v2
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
         with:
           mask-password: "true"
+
+      # Public ECR is a distinct registry (public.ecr.aws) with its own auth
+      # token, which must be requested from us-east-1. The same assumed role
+      # (SHARED_ECR_ROLE_ARN) is authorized to push the public node images —
+      # see alpen-infra github-actions-image-push (STR-3894). Only the programs
+      # published publicly need this login.
+      - name: Login to Amazon ECR Public
+        if: matrix.program == 'strata' || matrix.program == 'alpen-client'
+        run: |
+          aws ecr-public get-login-password --region us-east-1 \
+            | docker login --username AWS --password-stdin public.ecr.aws
 
       # --- Download pre-built SP1 artifacts from shared job --------------------
       - name: Download SP1 artifacts
@@ -273,6 +285,9 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
+          # Public ECR gallery base (fixed alias). External testnet operators
+          # pull node images from here without AWS credentials (STR-3894).
+          PUBLIC_ECR_BASE: public.ecr.aws/alpenlabs
           PROGRAM: ${{ matrix.program }}
           SHORT_TAG: ${{ steps.resolve.outputs.short_tag }}
           COMMIT_SHA: ${{ steps.resolve.outputs.commit_sha }}
@@ -280,6 +295,19 @@ jobs:
           DOCKERFILE_PATH="docker/${PROGRAM}/Dockerfile"
           ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${PROGRAM}"
           FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHORT_TAG}"
+
+          # Always push the private image. Additionally push a public mirror for
+          # programs with an external-facing repo, mapping the internal program
+          # name to its public gallery repo name (alpen-client -> alpen).
+          TAGS=( -t "${FULL_IMAGE}" )
+          case "$PROGRAM" in
+            strata)       PUBLIC_REPO="strata" ;;
+            alpen-client) PUBLIC_REPO="alpen" ;;
+            *)            PUBLIC_REPO="" ;;
+          esac
+          if [ -n "$PUBLIC_REPO" ]; then
+            TAGS+=( -t "${PUBLIC_ECR_BASE}/${PUBLIC_REPO}:${SHORT_TAG}" )
+          fi
 
           # Bake prover features into the strata image. Other programs build
           # with default features. Relies on docker/strata/Dockerfile accepting
@@ -289,13 +317,15 @@ jobs:
             BUILD_ARGS+=( --build-arg "CARGO_FEATURES=sp1,prover" )
           fi
 
+          # Single build, multiple tags: buildx pushes to both the private and
+          # public registries from one image (same digest in both).
           docker buildx build \
             "${BUILD_ARGS[@]}" \
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             --label "org.opencontainers.image.revision=${COMMIT_SHA}" \
             --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --push \
-            -t "${FULL_IMAGE}" \
+            "${TAGS[@]}" \
             -f "${DOCKERFILE_PATH}" .
 
           echo "Successfully pushed: ${FULL_IMAGE}"

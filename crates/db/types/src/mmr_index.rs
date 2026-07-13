@@ -3,6 +3,7 @@
 //! [`MmrIndexDatabase`], [`NodePos`], batch-write structs, preconditions, etc.
 
 use std::collections::BTreeMap;
+use std::io;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "proxies")]
@@ -37,6 +38,11 @@ impl MmrId {
     /// Uses borsh encoding to ensure stable, deterministic serialization.
     pub fn to_bytes(&self) -> Vec<u8> {
         borsh::to_vec(&self).expect("MmrId serialization should not fail")
+    }
+
+    /// Deserializes an [`MmrId`] from its database key bytes.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, io::Error> {
+        Self::try_from_slice(bytes)
     }
 }
 
@@ -348,6 +354,9 @@ pub trait MmrIndexDatabase: Send + Sync + 'static {
     /// Implementations should return `0` when the namespace has no leaves.
     fn get_leaf_count(&self, mmr_id: RawMmrId) -> DbResult<u64>;
 
+    /// Lists MMR namespace identifiers in the index.
+    fn list_mmr_ids(&self) -> DbResult<Vec<RawMmrId>>;
+
     /// Fetches requested nodes and available parent path nodes in one read.
     ///
     /// If `preimages` is true, implementations should also include available
@@ -374,6 +383,26 @@ mod tests {
 
     fn hash_strat() -> impl Strategy<Value = Hash> {
         prop::array::uniform32(0u8..).prop_map(Hash::from)
+    }
+
+    #[test]
+    fn mmr_id_roundtrips_database_key_bytes() {
+        let account_id = AccountId::new([0x42; 32]);
+        let ids = [
+            MmrId::Asm,
+            MmrId::L1BlockRefs,
+            MmrId::SnarkMsgInbox(account_id),
+        ];
+
+        for id in ids {
+            let bytes = id.to_bytes();
+            assert_eq!(MmrId::from_bytes(&bytes).expect("decode MMR id"), id);
+        }
+    }
+
+    #[test]
+    fn mmr_id_from_bytes_rejects_invalid_input() {
+        assert!(MmrId::from_bytes(&[0xff]).is_err());
     }
 
     // NOTE: `NodePos`/`LeafPos` position math (parent/sibling/children/etc.) is

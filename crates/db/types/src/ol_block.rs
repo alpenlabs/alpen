@@ -5,7 +5,7 @@ use serde::Serialize;
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 
 #[cfg(feature = "proxies")]
 use crate::DbError;

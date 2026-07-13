@@ -490,6 +490,101 @@ pub fn test_del_checkpoint_l1_refs_from_epoch(db: &impl OLCheckpointDatabase) {
     }
 }
 
+fn commitment_at(epoch: u32, tag: u8) -> EpochCommitment {
+    let blkid = OLBlockId::from(Buf32::from([tag; 32]));
+    EpochCommitment::new(Epoch::from(epoch), u64::from(epoch), blkid)
+}
+
+pub fn test_observed_checkpoint_commitments_index_populated_on_write(
+    db: &impl OLCheckpointDatabase,
+) {
+    let payload = payload_for_epoch(21);
+    let key = checkpoint_epoch_commitment(&payload);
+    db.put_checkpoint_l1_observation(key, payload, l1_ref_entry(300))
+        .expect("put observation");
+
+    let candidates = db
+        .get_observed_checkpoint_commitments_for_epoch(Epoch::from(21u32))
+        .expect("get observed commitments");
+    assert_eq!(candidates, vec![key]);
+}
+
+pub fn test_observed_checkpoint_commitments_index_maintained_on_put_l1_ref(
+    db: &impl OLCheckpointDatabase,
+) {
+    // The low-level l1_ref setter must keep the epoch index coherent so a later
+    // read sees rows it added. Two commitments share an epoch number.
+    let ep = 22;
+    let a = commitment_at(ep, 1);
+    let b = commitment_at(ep, 2);
+    db.put_checkpoint_l1_ref(a, l1_ref_entry(310))
+        .expect("put l1 ref a");
+    db.put_checkpoint_l1_ref(b, l1_ref_entry(311))
+        .expect("put l1 ref b");
+
+    let mut candidates = db
+        .get_observed_checkpoint_commitments_for_epoch(Epoch::from(ep))
+        .expect("observed commitments");
+    candidates.sort_by_key(|c| *c.last_blkid());
+    let mut expected = vec![a, b];
+    expected.sort_by_key(|c| *c.last_blkid());
+    assert_eq!(candidates, expected);
+
+    // Repair persisted the set: deleting the underlying l1 ref now also prunes
+    // the index, so a subsequent read reflects the deletion.
+    db.del_checkpoint_l1_ref(a).expect("delete l1 ref a");
+    let candidates = db
+        .get_observed_checkpoint_commitments_for_epoch(Epoch::from(22u32))
+        .expect("observed commitments after delete");
+    assert_eq!(candidates, vec![b]);
+
+    // A put after the index was read-repaired to empty must still surface: read
+    // an unseen epoch (persists []), then put, then the new row is visible.
+    let later = 23;
+    assert!(db
+        .get_observed_checkpoint_commitments_for_epoch(Epoch::from(later))
+        .expect("empty epoch read")
+        .is_empty());
+    let c = commitment_at(later, 1);
+    db.put_checkpoint_l1_ref(c, l1_ref_entry(312))
+        .expect("put l1 ref after empty read");
+    assert_eq!(
+        db.get_observed_checkpoint_commitments_for_epoch(Epoch::from(later))
+            .expect("observed after late put"),
+        vec![c]
+    );
+}
+
+pub fn test_observed_checkpoint_commitments_index_pruned_on_del_from_epoch(
+    db: &impl OLCheckpointDatabase,
+) {
+    for epoch in 0u32..3 {
+        let payload = payload_for_epoch(epoch);
+        let key = checkpoint_epoch_commitment(&payload);
+        db.put_checkpoint_l1_observation(key, payload, l1_ref_entry(320 + epoch))
+            .expect("put observation");
+    }
+    // A second candidate at epoch 1 so the delete must clear a k>1 index entry.
+    db.put_checkpoint_l1_ref(commitment_at(1, 9), l1_ref_entry(329))
+        .expect("put second epoch-1 candidate");
+
+    db.del_checkpoint_l1_refs_from_epoch(Epoch::from(1u32))
+        .expect("delete from epoch");
+
+    assert!(
+        db.get_observed_checkpoint_commitments_for_epoch(Epoch::from(0u32))
+            .expect("epoch 0 retained")
+            .len()
+            == 1
+    );
+    for epoch in 1u32..3 {
+        assert!(db
+            .get_observed_checkpoint_commitments_for_epoch(Epoch::from(epoch))
+            .expect("deleted epoch empty")
+            .is_empty());
+    }
+}
+
 pub fn test_get_next_unsigned_checkpoint_epoch_all_signed_returns_none(
     db: &impl OLCheckpointDatabase,
 ) {
@@ -1007,6 +1102,24 @@ macro_rules! ol_checkpoint_db_tests {
         fn test_del_checkpoint_l1_refs_from_epoch() {
             let db = $setup_expr;
             $crate::ol_checkpoint_tests::test_del_checkpoint_l1_refs_from_epoch(&db);
+        }
+
+        #[test]
+        fn test_observed_checkpoint_commitments_index_populated_on_write() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_observed_checkpoint_commitments_index_populated_on_write(&db);
+        }
+
+        #[test]
+        fn test_observed_checkpoint_commitments_index_maintained_on_put_l1_ref() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_observed_checkpoint_commitments_index_maintained_on_put_l1_ref(&db);
+        }
+
+        #[test]
+        fn test_observed_checkpoint_commitments_index_pruned_on_del_from_epoch() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_observed_checkpoint_commitments_index_pruned_on_del_from_epoch(&db);
         }
 
         #[test]

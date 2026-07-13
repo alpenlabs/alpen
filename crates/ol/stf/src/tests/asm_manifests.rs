@@ -11,7 +11,7 @@ use strata_identifiers::{
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::MAX_TYPE;
-use strata_ol_chain_types_new::MAX_SEALING_MANIFEST_COUNT;
+use strata_ol_chain_types::MAX_SEALING_MANIFEST_COUNT;
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::DaAccumulatingState;
 

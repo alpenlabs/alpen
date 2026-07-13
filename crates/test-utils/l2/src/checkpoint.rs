@@ -331,3 +331,76 @@ impl CheckpointTestHarness {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::PathBuf};
+
+    use strata_identifiers::{AccountSerial, Buf32};
+
+    use super::*;
+
+    const FIXTURE_PATH: &str =
+        "../../../functional-tests/tests/checkpoint/checkpoint_payload_fixture.json";
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// Renders the checkpoint payload fixture JSON.
+    fn render_checkpoint_payload_fixture() -> String {
+        let l2_blkid = OLBlockId::from(Buf32::from([0xaa; 32]));
+        let new_tip = CheckpointTip::new(7, 1234, OLBlockCommitment::new(99, l2_blkid));
+
+        let ol_state_diff = vec![0xd1, 0xd2, 0xd3, 0xd4, 0xd5];
+        let ol_logs = vec![OLLog::new(AccountSerial::one(), vec![0x11, 0x22])];
+        let terminal_header_complement = TerminalHeaderComplement::new(
+            424242,
+            OLBlockId::from(Buf32::from([0xbb; 32])),
+            Buf32::from([0xcc; 32]),
+            Buf32::from([0xdd; 32]),
+        );
+
+        let sidecar =
+            CheckpointSidecar::new(ol_state_diff.clone(), ol_logs, terminal_header_complement)
+                .expect("valid sidecar");
+        let payload = CheckpointPayload::new(new_tip, sidecar, vec![0xf0, 0xf1, 0xf2])
+            .expect("valid payload");
+
+        format!(
+            r#"{{
+  "_note": "golden fixture asserted by checkpoint_payload_fixture_is_current in strata-test-utils-l2; pins Python SSZ offset parsing",
+  "payload_ssz_hex": "{}",
+  "epoch": 7,
+  "l1_height": 1234,
+  "l2_slot": 99,
+  "l2_blkid_hex": "{}",
+  "ol_state_diff_hex": "{}"
+}}"#,
+            hex(&payload.as_ssz_bytes()),
+            hex(&[0xaa; 32]),
+            hex(&ol_state_diff),
+        )
+    }
+
+    /// The committed fixture must match the current `CheckpointPayload` SSZ encoding.
+    ///
+    /// A failure means the wire format changed: update the fixture with the JSON
+    /// from the panic message and review the offset parsing in
+    /// `functional-tests/tests/checkpoint/helpers.py`.
+    #[test]
+    fn checkpoint_payload_fixture_is_current() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(FIXTURE_PATH);
+        let committed = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read fixture {}: {e}", path.display()));
+        let generated = render_checkpoint_payload_fixture();
+
+        assert_eq!(
+            committed.trim_end(),
+            generated,
+            "\ncommitted fixture {} does not match current CheckpointPayload SSZ \
+             encoding; replace its content with:\n{generated}\n",
+            path.display(),
+        );
+    }
+}

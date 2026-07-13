@@ -19,7 +19,9 @@ use crate::cmd::{
     ee_receipts::{
         EeDeleteAcctProofArgs, EeDeleteChunkReceiptArgs, EeGetAcctProofArgs, EeGetChunkReceiptArgs,
     },
+    ee_revert::EeRevertBatchesArgs,
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
+    mmr::{GetMmrLeafArgs, GetMmrSummaryArgs},
     ol::{DeleteOLBlockArgs, GetOLBlockArgs, GetOLBlocksAtSlotArgs, GetOLSummaryArgs},
     ol_state::{GetOLStateArgs, RevertOLStateArgs},
     prover_task::{
@@ -60,6 +62,8 @@ pub(crate) enum Command {
     GetOlBlocksAtSlot(GetOLBlocksAtSlotArgs),
     GetOlSummary(GetOLSummaryArgs),
     DeleteOlBlock(DeleteOLBlockArgs),
+    GetMmrSummary(GetMmrSummaryArgs),
+    GetMmrLeaf(GetMmrLeafArgs),
     GetClientStateUpdate(GetClientStateUpdateArgs),
     GetCheckpoint(GetCheckpointArgs),
     GetCheckpointsSummary(GetCheckpointsSummaryArgs),
@@ -88,6 +92,7 @@ pub(crate) enum Command {
     EeDeleteChunkReceipt(EeDeleteChunkReceiptArgs),
     EeGetAcctProof(EeGetAcctProofArgs),
     EeDeleteAcctProof(EeDeleteAcctProofArgs),
+    EeRevertBatches(EeRevertBatchesArgs),
 }
 
 /// Output format

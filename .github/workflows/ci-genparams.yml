@@ -1,4 +1,4 @@
-# Generates deployment params (ol-params, asm-params) using the prebuilt
+# Generates deployment params (ee-params, ol-params, asm-params) using the prebuilt
 # datatool image from the specified commit. Static values (operator keys,
 # denomination, etc.) come from pre-committed templates per environment;
 # dynamic values (VKs, genesis L1 anchor, genesis_ol_blkid) are filled in by
@@ -93,20 +93,20 @@ jobs:
           echo "Checkout ref: ${CHECKOUT_REF}"
 
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ steps.resolve.outputs.checkout_ref }}
           persist-credentials: false
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
         with:
           role-to-assume: ${{ secrets.SHARED_ECR_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@19d944daaa35f0fa1d3f7f8af1d3f2e5de25c5b7 # v2
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
         with:
           mask-password: "true"
 
@@ -139,6 +139,12 @@ jobs:
           DEPLOY_ENV: ${{ inputs.env }}
         run: python3 -m json.tool ".github/params/out/${DEPLOY_ENV}/ol-params.json" 2>/dev/null || echo "Not generated"
 
+      - name: ee-params.json
+        if: always()
+        env:
+          DEPLOY_ENV: ${{ inputs.env }}
+        run: python3 -m json.tool ".github/params/out/${DEPLOY_ENV}/ee-params.json" 2>/dev/null || echo "Not generated"
+
       - name: asm-params.json
         if: always()
         env:
@@ -146,7 +152,7 @@ jobs:
         run: python3 -m json.tool ".github/params/out/${DEPLOY_ENV}/asm-params.json" 2>/dev/null || echo "Not generated"
 
       - name: Upload params artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: params-${{ inputs.env }}-${{ steps.resolve.outputs.short_tag }}
           path: .github/params/out/${{ inputs.env }}/

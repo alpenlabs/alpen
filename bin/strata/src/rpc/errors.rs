@@ -36,6 +36,12 @@ pub(crate) fn invalid_params_error(msg: impl Into<String>) -> ErrorObjectOwned {
     ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
 }
 
+/// Creates an RPC error for data this node role does not serve (e.g. OL block
+/// bodies on a checkpoint-sync node).
+pub(crate) fn not_available_on_node_error(msg: impl Into<String>) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(NOT_AVAILABLE_ON_NODE_CODE, msg.into(), None::<()>)
+}
+
 /// Maps mempool errors to RPC errors with appropriate error codes.
 pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
     match &err {

@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use alpen_ee_database::EeProverDbSled;
+use alpen_ee_database::{init_db_storage, EeDatabases, EeProverDbSled};
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_store_sled::{open_sled_database, SledBackend, SledDbConfig, SLED_NAME};
 use typed_sled::SledDb;
@@ -44,4 +44,14 @@ pub(crate) fn open_ee_database(datadir: &Path) -> Result<Arc<EeProverDbSled>, Di
         .map(Arc::new)?;
 
     Ok(prover_db)
+}
+
+/// Opens the full EE sled store at `<datadir>/sled`.
+///
+/// Use this for commands that need node-chain state in addition to the prover
+/// trees. The narrower [`open_ee_database`] helper stays in place for
+/// receipt/task-only commands so those commands do not construct unrelated DB
+/// wrappers.
+pub(crate) fn open_full_ee_database(datadir: &Path) -> Result<EeDatabases, DisplayedError> {
+    init_db_storage(datadir, 5).internal_error("Could not open full EE database")
 }

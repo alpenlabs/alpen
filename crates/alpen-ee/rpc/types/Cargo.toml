@@ -9,6 +9,10 @@ workspace = true
 [dependencies]
 schemars = { workspace = true, optional = true }
 serde.workspace = true
+strata-identifiers.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [features]
 jsonschema = ["dep:schemars"]

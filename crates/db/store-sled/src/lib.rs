@@ -48,6 +48,7 @@ use strata_db_types::l1::L1Database;
 use strata_db_types::l1_broadcast::L1BroadcastDatabase;
 use strata_db_types::l1_writer::L1WriterDatabase;
 use strata_db_types::mempool::MempoolDatabase;
+use strata_db_types::mmr_index::MmrIndexDatabase;
 use strata_db_types::ol_block::OLBlockDatabase;
 use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
 use strata_db_types::ol_state::OLStateDatabase;
@@ -185,6 +186,10 @@ impl DatabaseBackend for SledBackend {
 
     fn ol_state_indexing_db(&self) -> Arc<impl OLStateIndexingDatabase> {
         self.ol_state_indexing_db.clone()
+    }
+
+    fn mmr_index_db(&self) -> Arc<impl MmrIndexDatabase> {
+        self.mmr_index_db.clone()
     }
 }
 

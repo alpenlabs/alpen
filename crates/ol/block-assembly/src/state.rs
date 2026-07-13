@@ -423,7 +423,7 @@ mod tests {
 
     use strata_config::BlockAssemblyConfig;
     use strata_identifiers::{AccountSerial, Buf32, Buf64};
-    use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, SignedOLBlockHeader};
+    use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLLog, SignedOLBlockHeader};
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_ol_state_support_types::EpochDaAccumulator;
     use strata_predicate::PredicateKey;

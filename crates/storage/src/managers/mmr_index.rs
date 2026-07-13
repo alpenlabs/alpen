@@ -140,6 +140,16 @@ impl MmrIndexManager {
         self.ops.apply_update_async(batch).await
     }
 
+    /// Lists MMR namespace identifiers in the index.
+    pub fn list_mmr_ids_blocking(&self) -> DbResult<Vec<RawMmrId>> {
+        self.ops.list_mmr_ids_blocking()
+    }
+
+    /// Lists MMR namespace identifiers in the index.
+    pub async fn list_mmr_ids(&self) -> DbResult<Vec<RawMmrId>> {
+        self.ops.list_mmr_ids_async().await
+    }
+
     fn get_leaf_count_for_mmr_blocking(&self, mmr_id: &RawMmrId) -> DbResult<u64> {
         self.ops.get_leaf_count_blocking(mmr_id.clone())
     }
@@ -706,10 +716,34 @@ mod tests {
     use super::*;
 
     fn setup_handle() -> MmrIndexHandle {
+        setup_manager().get_handle(MmrId::Asm)
+    }
+
+    fn setup_manager() -> MmrIndexManager {
         let handle = crate::test_runtime_handle();
         let backend = get_test_sled_backend();
-        let manager = MmrIndexManager::new(handle, backend.mmr_index_db());
-        manager.get_handle(MmrId::Asm)
+        MmrIndexManager::new(handle, backend.mmr_index_db())
+    }
+
+    #[test]
+    fn list_mmr_ids_blocking_returns_indexed_namespaces() {
+        let manager = setup_manager();
+        let asm_handle = manager.get_handle(MmrId::Asm);
+        let l1_handle = manager.get_handle(MmrId::L1BlockRefs);
+
+        asm_handle
+            .append_leaf_blocking(Hash::from([0x11; 32]))
+            .expect("append asm leaf");
+        l1_handle
+            .append_leaf_blocking(Hash::from([0x22; 32]))
+            .expect("append l1 leaf");
+
+        let mut ids = manager.list_mmr_ids_blocking().expect("list mmr ids");
+        ids.sort();
+
+        let mut expected = vec![MmrId::Asm.to_bytes(), MmrId::L1BlockRefs.to_bytes()];
+        expected.sort();
+        assert_eq!(ids, expected);
     }
 
     #[test]

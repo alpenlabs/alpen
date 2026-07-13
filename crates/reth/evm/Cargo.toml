@@ -20,6 +20,7 @@ reth-evm.workspace = true
 reth-primitives.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 secp256k1.workspace = true

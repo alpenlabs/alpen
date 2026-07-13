@@ -16,7 +16,7 @@ use strata_identifiers::{
     OLBlockCommitment, OLBlockId, OLTxId, RBuf32,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
-use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
+use strata_ol_chain_types::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
     OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
@@ -32,8 +32,28 @@ use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 use tracing::{error, info};
 
 use crate::rpc::errors::{
-    db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc, not_found_error,
+    db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc,
+    not_available_on_node_error, not_found_error,
 };
+
+/// Whether this node serves OL block body/data over RPC.
+///
+/// Checkpoint-sync nodes are DA-reconstructed and store no block bodies, so
+/// block-scoped lookups must report a capability error rather than empty or
+/// "block not found" results.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(crate) enum OLBlockDataAccess {
+    /// Full block data is available.
+    Available,
+    /// Block data is not stored (checkpoint-sync node).
+    Unavailable,
+}
+
+impl OLBlockDataAccess {
+    fn is_available(self) -> bool {
+        matches!(self, Self::Available)
+    }
+}
 
 /// One canonical-chain block in the range walked by `get_blocks_summaries`.
 struct ChainBlock {
@@ -48,6 +68,8 @@ pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     genesis_l1_height: L1Height,
     // Maximum number of headers/block-data that can be queried
     max_headers_range: usize,
+    // Indicates whether or not the server has access to block data.
+    block_data_access: OLBlockDataAccess,
 }
 
 /// Convenient wrapper for account records.
@@ -105,11 +127,17 @@ fn local_inbox_message_range(
 
 impl<P: OLRpcProvider> OLRpcServer<P> {
     /// Creates a new [`OLRpcServer`].
-    pub(crate) fn new(provider: P, genesis_l1_height: L1Height, max_headers_range: usize) -> Self {
+    pub(crate) fn new(
+        provider: P,
+        genesis_l1_height: L1Height,
+        max_headers_range: usize,
+        block_data_access: OLBlockDataAccess,
+    ) -> Self {
         Self {
             provider,
             genesis_l1_height,
             max_headers_range,
+            block_data_access,
         }
     }
 
@@ -520,13 +548,15 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         )))
     }
 
-    /// Resolves an epoch to its terminal-block OL state. Errors if either the
-    /// canonical commitment or the terminal-block state is missing.
+    /// Resolves an epoch to its terminal-block OL state.
+    ///
+    /// Errors if either the canonical epoch commitment or the terminal-block
+    /// state is missing.
     async fn get_toplevel_ol_state_for_epoch(
         &self,
         epoch: Epoch,
     ) -> RpcResult<(EpochCommitment, Arc<OLState>)> {
-        let epoch_commitment = self
+        let Some(epoch_commitment) = self
             .provider
             .get_canonical_epoch_commitment_at(epoch)
             .await
@@ -534,12 +564,14 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 error!(?e, ?epoch, "Failed to get canonical epoch commitment");
                 db_error(e)
             })?
-            .ok_or_else(|| {
-                not_found_error(format!("No canonical commitment found for epoch {epoch}"))
-            })?;
+        else {
+            return Err(not_found_error(format!(
+                "No canonical commitment found for epoch {epoch}"
+            )));
+        };
 
         let terminal_commitment = epoch_commitment.to_block_commitment();
-        let ol_state = self
+        let Some(ol_state) = self
             .provider
             .get_toplevel_ol_state(terminal_commitment)
             .await
@@ -547,22 +579,39 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 error!(?e, %terminal_commitment, "Failed to get OL state");
                 db_error(e)
             })?
-            .ok_or_else(|| {
-                not_found_error(format!(
-                    "No OL state found for terminal block {terminal_commitment}"
-                ))
-            })?;
+        else {
+            return Err(internal_error(format!(
+                "No OL state found for terminal block {terminal_commitment}"
+            )));
+        };
 
         Ok((epoch_commitment, ol_state))
     }
 
-    /// Returns the account's current Snark update seqno at the tip epoch.
+    /// Returns the account's current Snark update seqno at the current OL tip.
+    ///
+    /// This is an optimization for out-of-range manifest queries. The sync
+    /// status tip is used directly so in-progress, non-terminal epochs still
+    /// retain the cheap upper-bound check.
     async fn current_snark_account_seq_no(
         &self,
         account_id: AccountId,
-        tip_epoch: Epoch,
+        tip_commitment: OLBlockCommitment,
     ) -> RpcResult<Option<u64>> {
-        let (_, tip_ol_state) = self.get_toplevel_ol_state_for_epoch(tip_epoch).await?;
+        let tip_ol_state = self
+            .provider
+            .get_toplevel_ol_state(tip_commitment)
+            .await
+            .map_err(|e| {
+                error!(?e, %tip_commitment, "Failed to get OL state");
+                db_error(e)
+            })?
+            .ok_or_else(|| {
+                internal_error(format!(
+                    "No OL state found for sync status tip {tip_commitment}"
+                ))
+            })?;
+
         Ok(tip_ol_state
             .get_account_state(&account_id)
             .and_then(|state| state.as_snark_account().ok())
@@ -703,8 +752,17 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         else {
             return Ok(None);
         };
-        let l2_start = self.get_first_l2_block_in_epoch(&epoch_summary).await?;
-        let l2_range = (l2_start, *epoch_summary.terminal());
+        // Deriving the first L2 block of a non-genesis epoch needs block bodies,
+        // which checkpoint-sync nodes lack; `l2_start` is `None` there. The
+        // terminal (`l2_end`) is always available from the summary.
+        let l2_end = *epoch_summary.terminal();
+        let l2_start = if epoch == 0 {
+            Some(l2_end)
+        } else if self.block_data_access.is_available() {
+            Some(self.get_first_l2_block_in_epoch(&epoch_summary).await?)
+        } else {
+            None
+        };
 
         let cur_l1 = *epoch_summary.new_l1();
         let l1_start = if epoch == 0 {
@@ -799,7 +857,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         Ok(Some(RpcCheckpointInfo {
             idx: epoch as u64,
             l1_range,
-            l2_range,
+            l2_start,
+            l2_end,
             confirmation_status,
         }))
     }
@@ -852,6 +911,16 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 "Block range too big. Allowed range is {}",
                 self.max_headers_range
             )));
+        }
+
+        // Without block bodies the canonical walk silently yields no blocks past
+        // genesis, which would return an empty list that reads as "present but
+        // empty". Report the missing capability instead. Genesis (slot 0) is
+        // still served because its block is always available.
+        if !self.block_data_access.is_available() && end_slot > 0 {
+            return Err(not_available_on_node_error(
+                "OL block bodies are not available on this node",
+            ));
         }
 
         let chain_blocks = self.collect_canonical_chain(start_slot, end_slot).await?;
@@ -961,13 +1030,12 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .ok_or_else(|| {
                 not_found_error(format!("No creation epoch found for account {account_id}"))
             })?;
-        let tip_epoch = self
+        let sync_status = self
             .provider
             .get_ol_sync_status()
-            .ok_or_else(|| internal_error("OL sync status not available"))?
-            .tip_epoch;
+            .ok_or_else(|| internal_error("OL sync status not available"))?;
         if let Some(current_seq_no) = self
-            .current_snark_account_seq_no(account_id, tip_epoch)
+            .current_snark_account_seq_no(account_id, sync_status.tip)
             .await?
         {
             // Account state stores the next operation seqno. Published manifests
@@ -978,7 +1046,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 )));
             }
         }
-        for epoch in creation_epoch..=tip_epoch {
+        for epoch in creation_epoch..=sync_status.tip_epoch {
             let Some(records) = self
                 .provider
                 .get_account_update_records(epoch, account_id)

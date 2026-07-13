@@ -532,7 +532,6 @@ where
 mod tests {
     use strata_acct_types::{BitcoinAmount, L1BlockRecord};
     use strata_identifiers::L1Height;
-    use strata_ledger_types::*;
     use strata_predicate::PredicateKey;
     use strata_snark_acct_types::Seqno;
 

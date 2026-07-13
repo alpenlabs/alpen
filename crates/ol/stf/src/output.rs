@@ -3,7 +3,7 @@
 use std::{cell::RefCell, iter};
 
 use strata_acct_types::AccountSerial;
-use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog, OLLogType};
+use strata_ol_chain_types::{MAX_LOGS_PER_BLOCK, OLLog, OLLogType};
 
 use crate::errors::{ExecError, ExecResult};
 
@@ -80,7 +80,7 @@ pub trait OutputCtx {
 #[cfg(test)]
 mod tests {
     use strata_acct_types::AccountSerial;
-    use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog};
+    use strata_ol_chain_types::{MAX_LOGS_PER_BLOCK, OLLog};
 
     use super::ExecOutputBuffer;
     use crate::ExecError;

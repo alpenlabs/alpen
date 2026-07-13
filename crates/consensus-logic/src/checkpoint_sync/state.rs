@@ -39,6 +39,7 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
 
     /// Handles a new CSM client state: applies any newly finalized epochs and
     /// advances the internal progress marker.
+    #[expect(clippy::result_large_err, reason = "No need to box the error")]
     pub(crate) async fn handle_new_client_state(&mut self) -> CheckpointSyncResult<()> {
         let csm_status = self.ctx.fetch_csm_status().await?;
         debug!(?csm_status, "obtained csm status");
@@ -92,6 +93,7 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
 ///
 /// All DA decoding, manifest fetching and state reconstruction happen inside the
 /// chain worker.
+#[expect(clippy::result_large_err, reason = "No need to box the error")]
 pub(crate) async fn apply_and_finalize_epoch(
     ctx: &impl CheckpointSyncCtx,
     epoch: EpochCommitment,
@@ -110,6 +112,7 @@ pub(crate) async fn apply_and_finalize_epoch(
 ///
 /// Used at startup to recover from a crash that left the summary written but
 /// finalization unfinished: idempotent calls, no re-application.
+#[expect(clippy::result_large_err, reason = "No need to box the error")]
 pub(crate) async fn refinalize_applied_epoch(
     ctx: &impl CheckpointSyncCtx,
     epoch: EpochCommitment,
@@ -119,6 +122,7 @@ pub(crate) async fn refinalize_applied_epoch(
 }
 
 /// Update safe tip, finalize epoch, build & publish sync status.
+#[expect(clippy::result_large_err, reason = "No need to box the error")]
 async fn finalize_and_publish(
     ctx: &impl CheckpointSyncCtx,
     epoch: EpochCommitment,
@@ -135,6 +139,7 @@ async fn finalize_and_publish(
 }
 
 /// Builds an [`OLSyncStatus`] from a finalized epoch's summary.
+#[expect(clippy::result_large_err, reason = "No need to box the error")]
 pub(crate) async fn build_ol_sync_status(
     ctx: &impl CheckpointSyncCtx,
     epoch: EpochCommitment,
@@ -161,6 +166,7 @@ pub(crate) async fn build_ol_sync_status(
 /// Scans for unapplied finalized epochs and applies them in chronological order.
 ///
 /// Returns the last applied epoch, or `None` if there is nothing to apply.
+#[expect(clippy::result_large_err, reason = "No need to box the error")]
 pub(crate) async fn find_and_apply_unapplied_epochs(
     ctx: &impl CheckpointSyncCtx,
     cur_finalized: EpochCommitment,
@@ -209,6 +215,7 @@ pub(crate) async fn find_and_apply_unapplied_epochs(
 /// not yet been applied. Stops at genesis or the first already-applied epoch.
 ///
 /// Returns the last applied epoch (if any) and the unapplied epochs newest-first.
+#[expect(clippy::result_large_err, reason = "No need to box the error")]
 pub(crate) async fn scan_unapplied_epochs(
     ctx: &impl CheckpointSyncCtx,
     start_finalized: EpochCommitment,
@@ -259,9 +266,22 @@ pub(crate) async fn scan_unapplied_epochs(
             info!(scanned = unapplied.len(), %cur_finalized, "scan in progress");
         }
 
+        // Genesis (epoch 0) is the always-applied base and has no L1 observation,
+        // so resolve it from the applied/summary source and stop.
         let prev_epoch_num = cur_finalized.epoch().saturating_sub(1);
+        if prev_epoch_num == 0 {
+            let genesis = ctx
+                .get_genesis_epoch_commitment()
+                .await?
+                .ok_or(CheckpointSyncError::MissingPredecessor(0))?;
+            break Some(genesis);
+        }
+
+        // Resolve unapplied predecessors from L1 observations, not the
+        // summary-derived canonical index: during cold catch-up the predecessor
+        // is observed but not yet applied, so its summary does not exist yet.
         cur_finalized = ctx
-            .get_canonical_epoch_commitment(prev_epoch_num)
+            .get_observed_checkpoint_for_epoch(prev_epoch_num)
             .await?
             .ok_or(CheckpointSyncError::MissingPredecessor(prev_epoch_num))?;
     };

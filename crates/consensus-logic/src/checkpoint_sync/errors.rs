@@ -1,6 +1,6 @@
 //! Error types for the checkpoint sync service.
 
-use strata_chain_worker_new::WorkerError;
+use strata_chain_worker::WorkerError;
 use strata_db_types::DbError;
 use strata_identifiers::Epoch;
 use strata_primitives::EpochCommitment;
@@ -29,6 +29,11 @@ pub enum CheckpointSyncError {
     /// An epoch's canonical predecessor is absent from the db (finalized chain hole).
     #[error("predecessor epoch {0} not found in db while scanning finalized chain")]
     MissingPredecessor(Epoch),
+
+    /// More than one checkpoint observation for an epoch survives the canonical-L1
+    /// filter, so the canonical one is ambiguous.
+    #[error("multiple canonical checkpoint observations for epoch {0}")]
+    AmbiguousObservation(Epoch),
 
     /// A finalized epoch has no epoch summary when one was expected.
     #[error("epoch summary missing for {0}")]

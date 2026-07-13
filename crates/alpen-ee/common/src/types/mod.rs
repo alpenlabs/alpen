@@ -10,3 +10,4 @@ pub(crate) mod ol_account_epoch_summary;
 pub(crate) mod ol_chain_status;
 pub(crate) mod payload_builder;
 pub(crate) mod prover;
+pub(crate) mod prover_task_key;

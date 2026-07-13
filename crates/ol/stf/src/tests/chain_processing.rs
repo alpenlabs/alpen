@@ -2,7 +2,7 @@
 
 use strata_identifiers::OLBlockCommitment;
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::OLBlockHeader;
+use strata_ol_chain_types::OLBlockHeader;
 
 use crate::{
     context::{BlockContext, BlockInfo, EpochInitialContext},

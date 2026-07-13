@@ -6,7 +6,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use strata_ol_sequencer::{SequencerBuilder, SequencerServiceStatus};
 use strata_service::ServiceMonitor;
 use strata_storage::NodeStorage;
@@ -221,7 +221,7 @@ fn decide_startup_high_watermark_block_action(
 #[cfg(test)]
 mod tests {
     use strata_identifiers::{Buf32, Buf64};
-    use strata_ol_chain_types_new::{
+    use strata_ol_chain_types::{
         BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
 

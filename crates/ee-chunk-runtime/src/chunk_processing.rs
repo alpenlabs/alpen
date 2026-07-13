@@ -35,6 +35,10 @@ pub fn process_block<E: ExecutionEnvironment>(
 
     // Merge the changes and return the outputs.
     ee.merge_write_into_state(state, exec_outp.write_batch())?;
+    let computed_state_root = state.compute_state_root()?;
+    if computed_state_root != eb.get_header().get_state_root() {
+        return Err(EnvError::InvalidBlock);
+    }
     ee.update_partial_state_after_block(state, eb.get_header())?;
 
     Ok(())
@@ -171,9 +175,8 @@ pub fn verify_chunk_transition<E: ExecutionEnvironment>(
         return Err(EnvError::MismatchedCurStateData);
     }
 
-    // 3. Execute the blocks in the chunk.  This dooesn't verify the
-    // intermediate state roots because that's expensive and we only really care
-    // about the final state.
+    // 3. Execute the blocks in the chunk. Each block's post-state root is
+    // verified before its header can be used as the parent of a later block.
     process_chunk_blocks(
         ee,
         state,
@@ -332,6 +335,64 @@ mod tests {
         // Verify final balances: alice=1000-200-300-100=400, bob=200+300+100=600
         assert_eq!(state.accounts().get(&alice()), Some(&400));
         assert_eq!(state.accounts().get(&bob()), Some(&600));
+    }
+
+    #[test]
+    fn process_chunk_blocks_rejects_forged_intermediate_state_root() {
+        let ee = SimpleExecutionEnvironment;
+
+        let mut accounts = BTreeMap::new();
+        accounts.insert(alice(), 1000);
+        let initial_state = SimplePartialState::new(accounts);
+
+        let genesis_header = SimpleHeader::genesis();
+        let genesis_blkid = genesis_header.compute_block_id();
+
+        let (block1, inp1, out1, state1) = build_block(
+            &ee,
+            &initial_state,
+            genesis_blkid,
+            1,
+            SimpleBlockBody::new(vec![SimpleTransaction::Transfer {
+                from: alice(),
+                to: bob(),
+                value: 200,
+            }]),
+            ExecInputs::new_empty(),
+        );
+        let forged_header1 = SimpleHeader::new(genesis_blkid, Hash::from([0x42; 32]), 1);
+        let block1 = SimpleBlock::new(forged_header1, block1.get_body().clone());
+        let forged_block1_id = block1.get_header().compute_block_id();
+
+        let (block2, inp2, out2, _state2) = build_block(
+            &ee,
+            &state1,
+            forged_block1_id,
+            2,
+            SimpleBlockBody::new(vec![SimpleTransaction::Transfer {
+                from: alice(),
+                to: bob(),
+                value: 300,
+            }]),
+            ExecInputs::new_empty(),
+        );
+
+        let chunk = Chunk::new(vec![
+            ChunkBlock::new(&inp1, &out1, block1),
+            ChunkBlock::new(&inp2, &out2, block2),
+        ]);
+        let mut state = initial_state;
+
+        let err = process_chunk_blocks(
+            &ee,
+            &mut state,
+            &chunk,
+            genesis_blkid,
+            &ExecInputs::new_empty(),
+            &ExecOutputs::new_empty(),
+        )
+        .expect_err("forged intermediate state root must be rejected");
+        assert!(matches!(err, EnvError::InvalidBlock));
     }
 
     #[test]

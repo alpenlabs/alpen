@@ -3,6 +3,10 @@
 #
 # Reuses prebuilt images from ci-build (same SHA). If images are not yet
 # available, retries for up to 3 minutes before failing.
+#
+# Proving is configured by the optional `prod` environment variables SP1_PROVER,
+# SP1_PROOF_STRATEGY and NETWORK_RPC_URL; each falls back to the default in
+# .github/sp1-e2e/run-test.sh when unset.
 
 name: CI — SP1 E2E Proving Test
 
@@ -121,13 +125,13 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.check-new-commits.outputs.checkout_ref }}
           persist-credentials: false
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v4
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
         env:
           ROLE_ARN: ${{ secrets.SHARED_ECR_ROLE_ARN }}
         with:
@@ -136,7 +140,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419 # v2
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
         with:
           mask-password: "true"
 
@@ -172,6 +176,9 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}/${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
           IMAGE_TAG: ${{ needs.check-new-commits.outputs.short_tag }}
           NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
+          SP1_PROVER: ${{ vars.SP1_PROVER }}
+          SP1_PROOF_STRATEGY: ${{ vars.SP1_PROOF_STRATEGY }}
+          NETWORK_RPC_URL: ${{ vars.NETWORK_RPC_URL }}
         run: |
           chmod +x .github/sp1-e2e/run-test.sh
           .github/sp1-e2e/run-test.sh

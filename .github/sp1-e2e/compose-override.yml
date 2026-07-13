@@ -7,6 +7,15 @@
 #     -f .github/sp1-e2e/compose-override.yml \
 #     up -d
 
+# Both services prove (strata: checkpoint, alpen-client: chunk), so they need
+# identical proving config. Values come from the CI shell, not .env.ci — see
+# run-test.sh for the defaults.
+x-sp1-proving: &sp1-proving
+  NETWORK_PRIVATE_KEY: ${NETWORK_PRIVATE_KEY}
+  SP1_PROVER: ${SP1_PROVER}
+  SP1_PROOF_STRATEGY: ${SP1_PROOF_STRATEGY}
+  NETWORK_RPC_URL: ${NETWORK_RPC_URL}
+
 services:
   strata:
     image: ${ECR_REGISTRY}/strata:${IMAGE_TAG}
@@ -15,7 +24,7 @@ services:
     env_file:
       - ../.github/sp1-e2e/.env.ci
     environment:
-      - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
+      <<: *sp1-proving
     volumes:
       - ../.github/sp1-e2e/config.seq.toml:/app/configs/config.seq.toml:ro
       - ../.github/sp1-e2e/sequencer.toml:/app/configs/sequencer.toml:ro
@@ -30,12 +39,12 @@ services:
     shm_size: '8gb'
     command: []
     environment:
-      - SEQUENCER_MODE=true
-      - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
-      - OL_SUBMIT_URL=ws://strata:8435
-      - STRATA_SUBMIT_RPC_TOKEN=dev-only-submit-token
-      - BTCIO_FEE_POLICY=fixed
-      - BTCIO_FEE_RATE=5
+      <<: *sp1-proving
+      SEQUENCER_MODE: "true"
+      OL_SUBMIT_URL: ws://strata:8435
+      STRATA_SUBMIT_RPC_TOKEN: dev-only-submit-token
+      BTCIO_FEE_POLICY: fixed
+      BTCIO_FEE_RATE: 5
     env_file:
       - ../.github/sp1-e2e/.env.ci
       - ./configs/generated/.env.alpen

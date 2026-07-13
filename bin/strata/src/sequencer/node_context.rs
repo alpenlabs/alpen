@@ -235,7 +235,7 @@ mod tests {
         BlockCompletionData, BlockasmBuilder, FixedSlotSealing, LimitAwareSealing,
         test_utils::{MockMempoolProvider, TestStorageFixtureBuilder},
     };
-    use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
+    use strata_ol_chain_types::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
     use strata_ol_params::OLParams;
     use strata_ol_sequencer::SequencerBuilder;
     use strata_ol_state_provider::OLStateManagerProviderImpl;

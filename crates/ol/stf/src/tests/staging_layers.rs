@@ -11,7 +11,7 @@ use strata_ledger_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, IStateAccessorMut, NewAccountData,
     NewAccountTypeState,
 };
-use strata_ol_chain_types_new::OLTxSegment;
+use strata_ol_chain_types::OLTxSegment;
 use strata_ol_state_support_types::{IndexerState, MemoryStateBaseLayer, WriteTrackingState};
 use strata_ol_state_types::IStateBatchApplicable;
 
@@ -654,14 +654,14 @@ fn test_verify_block_tracks_snark_inbox_writes() {
 
 #[test]
 fn test_verify_block_through_write_tracking_stack() {
-    // This test mimics chain-worker-new's verification path:
+    // This test mimics chain-worker's verification path:
     // IndexerState<WriteTrackingState<&OLState>> with verify_block
     let mut fixture = OLStfFixture::builder().execute_genesis();
     let genesis = fixture.last_completed_block().clone();
     let block1 = fixture.child_block().execute().completed_block().clone();
 
     // Now verify using the WriteTrackingState + IndexerState stack,
-    // same composition as chain-worker-new.
+    // same composition as chain-worker.
     let verify_base = make_genesis_state();
 
     // Verify genesis through the stack

@@ -2,7 +2,7 @@
 
 use strata_acct_types::{AccountId, TxEffects};
 use strata_ledger_types::{IAccountState, TxProofVerifier};
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 use strata_snark_acct_sys::SnarkAccountUpdateData;
 use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno};
 

@@ -215,7 +215,7 @@ mod tests {
             ol_block_id_strategy,
         },
     };
-    use strata_ol_chain_types_new::{
+    use strata_ol_chain_types::{
         BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLBlockId, OLLog, OLTxSegment,
         SignedOLBlockHeader,
     };

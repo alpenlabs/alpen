@@ -42,7 +42,7 @@ use strata_identifiers::{
 use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     ClaimList, LogDecodeError, OLBlock, OLBlockBody, OLLog, OLLogType, OLTransaction,
     OLTransactionData, OLTxSegment, ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData,
     SauTxPayload, SauTxProofState, SauTxUpdateData, SignedOLBlockHeader,
@@ -633,7 +633,7 @@ pub(crate) fn insert_inbox_messages_into_state(
 }
 
 /// Create test parent header by executing genesis block.
-pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_new::OLBlockHeader {
+pub(crate) fn create_test_parent_header() -> strata_ol_chain_types::OLBlockHeader {
     let mut runner = TestRunner::default();
     let timestamp = (1000000u64..2000000u64)
         .new_tree(&mut runner)
@@ -782,7 +782,13 @@ async fn setup_asm_state_with_l1_manifests_list(
             .expect("Failed to extend L1 canonical chain");
     }
 
-    // Create minimal ASM state for testing
+    put_test_asm_state(storage, l1_commitment);
+
+    l1_commitment
+}
+
+/// Stores a minimal ASM state for tests that only need an accepted L1 commitment.
+pub(crate) fn put_test_asm_state(storage: &NodeStorage, l1_commitment: L1BlockCommitment) {
     let pow_state = HeaderVerificationState::init(L1Anchor {
         block: l1_commitment,
         next_target: 0,
@@ -805,12 +811,17 @@ async fn setup_asm_state_with_l1_manifests_list(
         .asm()
         .put_state_blocking(l1_commitment, asm_state)
         .expect("Failed to store ASM state");
-
-    l1_commitment
 }
 
 /// Default balance for test accounts (100 billion sats).
 pub(crate) const DEFAULT_ACCOUNT_BALANCE: u64 = 100_000_000_000;
+
+/// Builds a valid P2WPKH BOSD descriptor for withdrawal tests.
+pub(crate) fn make_p2wpkh_bosd_descriptor(byte: u8) -> Vec<u8> {
+    let mut dest_desc = vec![byte; 21];
+    dest_desc[0] = 0x03;
+    dest_desc
+}
 
 /// Typed account setup used by test environment builders.
 #[derive(Clone)]

@@ -239,9 +239,13 @@ where
     fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
         let cur = self.limbo_funds();
         let amt = coin.amt();
-        let new = cur
-            .checked_add(amt)
-            .ok_or(StateError::LimboFundsOverflow { cur, add: amt })?;
+        let Some(new) = cur.checked_add(amt) else {
+            // Defuse the coin before returning: the whole STF is discarded on
+            // this error, so no value is actually lost, and dropping a live coin
+            // would panic in `Coin::drop`.
+            coin.safely_consume_unchecked();
+            return Err(StateError::LimboFundsOverflow { cur, add: amt });
+        };
         self.batch.global_writes_mut().limbo_funds_sats = Some(new.to_sat());
         coin.safely_consume_unchecked();
         Ok(())
@@ -353,7 +357,6 @@ fn ensure_pending_asm_log_slot_available(current_len: usize) -> StateResult<()> 
 mod tests {
     use strata_acct_types::{BitcoinAmount, L1BlockRecord};
     use strata_identifiers::L1Height;
-    use strata_ledger_types::*;
     use strata_ol_state_types::{IStateBatchApplicable, OLAccountState};
 
     use super::*;

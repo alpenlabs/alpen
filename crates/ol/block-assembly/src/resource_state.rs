@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
+use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
 use strata_ol_stf::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
@@ -230,7 +230,7 @@ async fn fetch_state<C: BlockAssemblyAnchorContext>(
 #[cfg(test)]
 mod tests {
     use strata_identifiers::{Buf32, Buf64, OLBlockId};
-    use strata_ol_chain_types_new::{
+    use strata_ol_chain_types::{
         BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
 

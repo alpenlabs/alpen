@@ -2,7 +2,7 @@
 
 use strata_acct_types::{BitcoinAmount, MAX_MESSAGES, MAX_TRANSFERS};
 use strata_ledger_types::ISnarkAccountState;
-use strata_ol_chain_types_new::SAU_MAX_EXTRA_DATA_BYTES;
+use strata_ol_chain_types::SAU_MAX_EXTRA_DATA_BYTES;
 
 use crate::{errors::ExecError, test_utils::*};
 

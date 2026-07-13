@@ -6,7 +6,7 @@ use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_ledger_types::IStateAccessorMut;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 
 use crate::{
     chain_processing,

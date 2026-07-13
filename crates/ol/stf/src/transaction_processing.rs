@@ -2,7 +2,7 @@
 
 use strata_acct_types::*;
 use strata_ledger_types::*;
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 use tracing::trace;
 
 use crate::{
@@ -10,6 +10,7 @@ use crate::{
     constants::SEQUENCER_ACCT_ID,
     context::{BasicExecContext, TxExecContext},
     errors::{ExecError, ExecResult},
+    msg_payload_coin::MsgPayloadCoin,
     proof_verification::{TxProofVerificationContext, TxProofVerifierImpl, TxProofsTracker},
     sau_processing,
 };
@@ -164,7 +165,7 @@ fn process_update_tx<S: IStateAccessorMut>(
 }
 
 /// Applies the effects of a transaction (transfers and messages) to account state.
-fn apply_tx_effects<S: IStateAccessorMut>(
+pub(crate) fn apply_tx_effects<S: IStateAccessorMut>(
     state: &mut S,
     source: AccountId,
     effects: &TxEffects,
@@ -174,29 +175,83 @@ fn apply_tx_effects<S: IStateAccessorMut>(
         .get_total_value_sent()
         .ok_or(ExecError::AmountOverflow)?;
 
-    // 1. Subtract funds from account if not the magic sequencer account.
-    //
-    // In practice, right now, this shouldn't matter because we never use this
-    // account ID unless it's a GAM tx, which we separately check only sends 0
-    // value.
-    if source != SEQUENCER_ACCT_ID && !total_sent.is_zero() {
-        state.update_account(source, |astate| {
-            let coin = astate.take_balance(total_sent)?;
-            coin.safely_consume_unchecked(); // take from this later
-            ExecResult::Ok(())
-        })??;
+    // 1. Debit the source once, obtaining a single coin to split across the
+    // effects.
+    let mut remaining = debit_source(state, source, total_sent)?;
+
+    // 2. Send funds out, splitting the debited coin per effect.  Each per-effect
+    // coin is owned by the callee, which consumes it on every path; if a call
+    // errors we still hold `remaining`, so we defuse it before propagating rather
+    // than dropping a live coin (the whole STF is discarded on that error, so no
+    // value is lost).
+    if let Err(e) = distribute_effects(state, source, effects, context, &mut remaining) {
+        remaining.safely_consume_unchecked();
+        return Err(e);
     }
 
-    // 2. Send funds out.
+    // Everything debited has been distributed; the remainder must be zero.
+    remaining.consume_zero();
+
+    Ok(())
+}
+
+/// Distributes `remaining` across the transaction's effects, splitting a coin
+/// off for each transfer and message so Rust enforces that the pieces sum to
+/// exactly what was debited.
+///
+/// On error, `remaining` is left holding the undistributed value for the caller
+/// to dispose of.
+fn distribute_effects<S: IStateAccessorMut>(
+    state: &mut S,
+    source: AccountId,
+    effects: &TxEffects,
+    context: &BasicExecContext<'_>,
+    remaining: &mut Coin,
+) -> ExecResult<()> {
     for t in effects.transfers_iter() {
-        account_processing::process_transfer(state, source, t.dest(), t.value(), context)?;
+        let coin = split_effect_value(remaining, t.value());
+        account_processing::process_transfer(state, source, t.dest(), coin, context)?;
     }
 
     for m in effects.messages_iter() {
-        account_processing::process_message(state, source, m.dest(), m.payload().clone(), context)?;
+        let coin = split_effect_value(remaining, m.payload().value());
+        let msg = MsgPayloadCoin::new(coin, m.payload().payload_data().clone());
+        account_processing::process_message(state, source, m.dest(), msg, context)?;
     }
 
     Ok(())
+}
+
+/// Debits `total_sent` from the source account, returning it as a single
+/// [`Coin`] to be distributed across the transaction's effects.
+///
+/// A zero total needs no debit and yields an empty coin.  This also covers the
+/// magic sequencer account, which is never a real ledger account: it only
+/// appears for GAM txs, which we separately require to send zero value, so we
+/// never attempt to debit it.
+fn debit_source<S: IStateAccessorMut>(
+    state: &mut S,
+    source: AccountId,
+    total_sent: BitcoinAmount,
+) -> ExecResult<Coin> {
+    if total_sent.is_zero() {
+        return Ok(Coin::zero());
+    }
+
+    state.update_account(source, |astate| -> ExecResult<Coin> {
+        Ok(astate.take_balance(total_sent)?)
+    })?
+}
+
+/// Splits an effect's value off of the debited coin.
+///
+/// The value is guaranteed to fit because [`verify_effects_safe`] checks the
+/// per-effect values sum to `total_sent` before the debit, so this failing
+/// signals an accounting bug rather than bad input.
+fn split_effect_value(remaining: &mut Coin, value: BitcoinAmount) -> Coin {
+    remaining
+        .split_out(value)
+        .expect("ol/stf: effect value exceeds debited total")
 }
 
 /// Checks that a tx's constraints are valid for the current slot in state.

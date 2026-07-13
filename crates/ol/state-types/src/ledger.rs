@@ -40,6 +40,13 @@ impl TsnlLedgerAccountsTable {
         self.get_acct_entry_mut(id).map(|e| &mut e.state)
     }
 
+    /// Iterates over all ledger account states in account-id order.
+    pub fn iter_account_states(&self) -> impl Iterator<Item = (AccountId, &OLAccountState)> + '_ {
+        self.accounts
+            .iter()
+            .map(|entry| (entry.id(), entry.state()))
+    }
+
     /// Creates a new account.
     ///
     /// This does not check serial uniqueness/ordering.

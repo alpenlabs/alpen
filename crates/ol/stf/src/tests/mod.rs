@@ -3,6 +3,7 @@
 mod asm_manifests;
 mod chain;
 mod chain_processing;
+mod coin_error_paths;
 mod da_epoch_reconstruction;
 mod da_epoch_root_correctness;
 mod deposit_withdrawal;

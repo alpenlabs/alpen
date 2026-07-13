@@ -21,7 +21,7 @@ use strata_db_types::{
 use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     OLBlock, OLBlockHeader, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
     SnarkAccountUpdateLogData,
 };
@@ -180,16 +180,14 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .apply_block_indexing_blocking(epoch, commitment, writes)
         {
             Ok(()) => {
-                index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
-                index_l1_block_ref_mmr_writes(&self.mmr_index_mgr, output)?;
+                index_mmr_writes(&self.mmr_index_mgr, output)?;
             }
             Err(DbError::BlockIndexingConflict {
                 attempted,
                 last_applied,
                 ..
             }) if attempted == commitment && last_applied == commitment => {
-                index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
-                index_l1_block_ref_mmr_writes(&self.mmr_index_mgr, output)?;
+                index_mmr_writes(&self.mmr_index_mgr, output)?;
                 debug!(%commitment, "block indexing already applied; treating as retry");
             }
             Err(e) => return Err(e.into()),
@@ -343,7 +341,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         let writes = build_checkpoint_indexing_writes(output)?;
         self.ol_state_indexing_mgr
             .apply_epoch_indexing_blocking(*epoch, writes)?;
-        index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+        index_mmr_writes(&self.mmr_index_mgr, output)?;
         Ok(())
     }
 }
@@ -456,9 +454,7 @@ fn debug_assert_contiguous_update_ranges(
 
 /// Builds an [`IndexingWrites`] payload for a DA-reconstructed epoch.
 ///
-/// Like [`build_indexing_writes`] but with no per-block attribution and no
-/// per-update state root: update records carry `update_meta: None`. The
-/// post-epoch root lives on the epoch summary.
+/// Like [`build_indexing_writes`] but with no per-block attribution.
 pub(crate) fn build_checkpoint_indexing_writes(
     output: &OLBlockExecutionOutput,
 ) -> WorkerResult<IndexingWrites> {
@@ -487,8 +483,14 @@ pub(crate) fn build_checkpoint_indexing_writes(
                 found: log.new_msg_idx(),
             });
         }
+        // Checkpoint-sync has no per-block attribution, but the terminal update
+        // of an epoch carries a recoverable post-epoch root; earlier updates
+        // have `None`.
+        let update_meta = update
+            .state()
+            .map(|root| AccountUpdateMeta::new(None, root));
         let record = AccountUpdateRecord::new(
-            None,
+            update_meta,
             *update.seqno().inner(),
             update.prev_next_read_idx(),
             update.next_read_idx(),
@@ -517,6 +519,16 @@ pub(crate) fn build_checkpoint_indexing_writes(
         account_updates,
         account_inbox_writes,
     ))
+}
+
+/// Mirrors all MMR writes from an accepted OL execution output into the proof index.
+pub(crate) fn index_mmr_writes(
+    mmr_index_mgr: &MmrIndexManager,
+    output: &OLBlockExecutionOutput,
+) -> WorkerResult<()> {
+    index_inbox_mmr_writes(mmr_index_mgr, output)?;
+    index_l1_block_ref_mmr_writes(mmr_index_mgr, output)?;
+    Ok(())
 }
 
 /// Applies snark inbox writes to the MMR proof index.
@@ -708,11 +720,86 @@ mod tests {
         ));
     }
 
+    /// Builds an output with snark updates and one matching log per update.
+    fn checkpoint_output_with_snark_updates(
+        updates: impl IntoIterator<Item = (AccountId, AccountSerial, SnarkAcctStateUpdate)>,
+    ) -> OLBlockExecutionOutput {
+        let mut indexer_writes = IndexerWrites::new();
+        let mut logs = Vec::new();
+        for (_account_id, serial, update) in updates {
+            let log_data =
+                SnarkAccountUpdateLogData::new(update.next_read_idx(), vec![0xaa]).unwrap();
+            logs.push(OLLog::new(serial, log_data.encode_log().unwrap()));
+            indexer_writes.push_snark_acct_update(update);
+        }
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes, logs)
+    }
+
+    /// Regression: a checkpoint-sync update that carries a terminal post-epoch
+    /// root must surface that root in the index record. Today
+    /// `build_checkpoint_indexing_writes` drops it (`update_meta: None`),
+    /// which is what makes RPC `new_state_root` come back null.
+    #[test]
+    fn build_checkpoint_indexing_writes_keeps_terminal_root() {
+        let account_id = AccountId::from([7u8; 32]);
+        let serial = AccountSerial::from(7u32);
+        let root = Hash::from([9u8; 32]);
+
+        let update = SnarkAcctStateUpdate::new(account_id, Some(root), 0, 3, Seqno::from(5));
+        let output = checkpoint_output_with_snark_updates([(account_id, serial, update)]);
+
+        let writes = build_checkpoint_indexing_writes(&output).unwrap();
+        let records = writes
+            .account_updates()
+            .get(&account_id)
+            .expect("account update should be present");
+        assert_eq!(records.len(), 1);
+
+        let meta = records[0]
+            .update_meta()
+            .expect("terminal update must carry root metadata");
+        assert_eq!(meta.new_state_root(), root);
+        assert!(
+            meta.block_commitment().is_none(),
+            "checkpoint-sync rows have no block attribution"
+        );
+    }
+
+    /// Updates with no root (earlier updates in a multi-update epoch) stay
+    /// `update_meta: None` — the intermediate roots are genuinely unavailable.
+    #[test]
+    fn build_checkpoint_indexing_writes_leaves_non_terminal_root_absent() {
+        let account_id = AccountId::from([8u8; 32]);
+        let serial = AccountSerial::from(8u32);
+
+        let earlier = SnarkAcctStateUpdate::new(account_id, None, 0, 2, Seqno::from(1));
+        let output = checkpoint_output_with_snark_updates([(account_id, serial, earlier)]);
+
+        let writes = build_checkpoint_indexing_writes(&output).unwrap();
+        let records = writes.account_updates().get(&account_id).unwrap();
+        assert!(records[0].update_meta().is_none());
+    }
+
     fn output_with_l1_block_records(
         writes: impl IntoIterator<Item = L1BlockRecordWrite>,
     ) -> OLBlockExecutionOutput {
         let mut indexer_writes = IndexerWrites::new();
         for write in writes {
+            indexer_writes.push_l1_block_record(write);
+        }
+
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes, vec![])
+    }
+
+    fn output_with_mmr_writes(
+        inbox_writes: impl IntoIterator<Item = (AccountId, MessageEntry, u64)>,
+        l1_writes: impl IntoIterator<Item = L1BlockRecordWrite>,
+    ) -> OLBlockExecutionOutput {
+        let mut indexer_writes = IndexerWrites::new();
+        for (account_id, entry, index) in inbox_writes {
+            indexer_writes.push_inbox_message(InboxMessageWrite::new(account_id, entry, index));
+        }
+        for write in l1_writes {
             indexer_writes.push_l1_block_record(write);
         }
 
@@ -756,6 +843,70 @@ mod tests {
             Some(expected_hash)
         );
         assert_eq!(handle.get_blocking(index).unwrap(), expected_preimage);
+    }
+
+    #[test]
+    fn index_mmr_writes_stores_inbox_and_l1_block_refs() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let account_id = AccountId::from([1u8; 32]);
+        let entry = message_entry(10, 100);
+        let l1_write = l1_block_record_write(1, 20);
+        let output = output_with_mmr_writes([(account_id, entry.clone(), 0)], [l1_write.clone()]);
+
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        assert_eq!(
+            mmr_index_mgr
+                .get_handle(MmrId::SnarkMsgInbox(account_id))
+                .get_num_leaves_blocking()
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            mmr_index_mgr
+                .get_handle(MmrId::L1BlockRefs)
+                .get_num_leaves_blocking()
+                .unwrap(),
+            2
+        );
+        assert_mmr_entry(&mmr_index_mgr, account_id, 0, &entry);
+        assert_l1_block_ref_entry(&mmr_index_mgr, 1, &l1_write);
+    }
+
+    #[test]
+    fn index_mmr_writes_is_idempotent() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let account_id = AccountId::from([2u8; 32]);
+        let entry = message_entry(11, 200);
+        let first_l1 = l1_block_record_write(1, 30);
+        let second_l1 = l1_block_record_write(2, 40);
+        let output = output_with_mmr_writes(
+            [(account_id, entry.clone(), 0)],
+            [first_l1.clone(), second_l1.clone()],
+        );
+
+        prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 0).unwrap();
+        index_mmr_writes(&mmr_index_mgr, &output).unwrap();
+        index_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        assert_eq!(
+            mmr_index_mgr
+                .get_handle(MmrId::SnarkMsgInbox(account_id))
+                .get_num_leaves_blocking()
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            mmr_index_mgr
+                .get_handle(MmrId::L1BlockRefs)
+                .get_num_leaves_blocking()
+                .unwrap(),
+            3
+        );
+        assert_mmr_entry(&mmr_index_mgr, account_id, 0, &entry);
+        assert_l1_block_ref_entry(&mmr_index_mgr, 1, &first_l1);
+        assert_l1_block_ref_entry(&mmr_index_mgr, 2, &second_l1);
     }
 
     #[test]

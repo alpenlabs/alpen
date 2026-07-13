@@ -15,7 +15,6 @@ use strata_logging::{
 use strata_metrics::{MetricsConfig, MetricsInitConfig, MetricsLayer};
 #[cfg(test)]
 use strata_ol_state_types as _;
-#[cfg(test)]
 use strata_predicate as _;
 use tokio::runtime::{self, Handle};
 use tracing::info;

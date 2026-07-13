@@ -7,7 +7,7 @@ use strata_acct_types::{
 };
 use strata_asm_common::AsmManifest;
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     OLTransaction, ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
 };
 

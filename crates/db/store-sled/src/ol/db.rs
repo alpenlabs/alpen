@@ -2,7 +2,7 @@ use sled::transaction::ConflictableTransactionError;
 use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
 use strata_db_types::{DbError, DbResult};
 use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use typed_sled::error::Error as TSledError;
 
 use super::schemas::{
@@ -273,7 +273,7 @@ impl OLBlockDatabase for OLBlockDBSled {
 #[cfg(test)]
 mod tests {
     use strata_db_tests::ol_block_db_tests;
-    use strata_ol_chain_types_new::test_utils as ol_test_utils;
+    use strata_ol_chain_types::test_utils as ol_test_utils;
 
     use super::*;
     use crate::sled_db_test_setup;
