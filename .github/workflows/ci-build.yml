@@ -104,6 +104,10 @@ jobs:
     permissions: {}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      # true only when a selected program consumes SP1 artifacts (strata,
+      # alpen-client). Lets build-sp1-artifacts skip itself entirely when the
+      # run builds only non-SP1 images (strata-checkpoint-sync, strata-signer).
+      needs_sp1: ${{ steps.set-matrix.outputs.needs_sp1 }}
     steps:
       - name: Set build matrix
         id: set-matrix
@@ -153,13 +157,23 @@ jobs:
           echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
           echo "Building: $PROGRAMS"
 
+          # Only strata and alpen-client consume the SP1 artifacts (datatool +
+          # guest ELFs). If neither is selected, the SP1 build job is skipped.
+          NEEDS_SP1=$(jq -rn --argjson progs "$PROGRAMS" \
+            '($progs | any(. == "strata" or . == "alpen-client")) | tostring')
+          echo "needs_sp1=${NEEDS_SP1}" >> "$GITHUB_OUTPUT"
+          echo "needs_sp1: ${NEEDS_SP1}"
+
   # ---------------------------------------------------------------------------
   # Build SP1 artifacts (datatool + guest ELFs) — shared by all images
   # ---------------------------------------------------------------------------
   build-sp1-artifacts:
     name: Build SP1 artifacts
-    needs: [check-new-commits]
-    if: always() && (needs.check-new-commits.result == 'skipped' || needs.check-new-commits.outputs.should_run == 'true')
+    # Depends on prepare so it can read needs_sp1; skips entirely when no
+    # selected program consumes SP1 artifacts (prepare already carries the
+    # check-new-commits gating).
+    needs: [prepare]
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.needs_sp1 == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -242,7 +256,8 @@ jobs:
   build-and-push:
     name: "Build ${{ matrix.program }}"
     needs: [prepare, build-sp1-artifacts]
-    if: always() && needs.prepare.result == 'success' && needs.build-sp1-artifacts.result == 'success'
+    # SP1 job may legitimately be skipped (non-SP1 programs only) — accept both.
+    if: always() && needs.prepare.result == 'success' && (needs.build-sp1-artifacts.result == 'success' || needs.build-sp1-artifacts.result == 'skipped')
     runs-on: ubuntu-latest
     environment: prod
     permissions:
@@ -303,7 +318,10 @@ jobs:
             | docker login --username AWS --password-stdin public.ecr.aws
 
       # --- Download pre-built SP1 artifacts from shared job --------------------
+      # Only the SP1-consuming programs need these; for others the SP1 job is
+      # skipped and no artifact exists to download.
       - name: Download SP1 artifacts
+        if: matrix.program == 'strata' || matrix.program == 'alpen-client'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: sp1-artifacts
