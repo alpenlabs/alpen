@@ -199,6 +199,10 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     Ok(())
 }
 
+/// Header prepended to the emitted alpen-cli network profile.
+const CLI_PROFILE_HEADER: &str = "# Alpen CLI network profile derived from the ASM params.\n\
+                                  # Merge these fields into the CLI's config.toml.\n";
+
 /// Network profile fields the alpen wallet CLI reads from its config.toml.
 ///
 /// Must stay in sync with `SettingsFromFile` in `bin/alpen-cli`.
@@ -255,10 +259,8 @@ fn write_cli_network_profile(path: &Path, asm_params: &AsmParams) -> anyhow::Res
         recovery_delay: bridge.recovery_delay,
     };
 
-    let header = "# Alpen CLI network profile derived from the ASM params.\n\
-                  # Merge these fields into the CLI's config.toml.\n";
     let body = toml::to_string(&profile)?;
-    fs::write(path, format!("{header}{body}"))?;
+    fs::write(path, format!("{CLI_PROFILE_HEADER}{body}"))?;
 
     Ok(())
 }
@@ -316,17 +318,23 @@ mod tests {
             recovery_delay: 1_008,
         };
 
-        let rendered = toml::to_string(&profile).expect("profile should serialize");
+        let rendered = format!(
+            "{CLI_PROFILE_HEADER}{}",
+            toml::to_string(&profile).expect("profile should serialize")
+        );
 
+        // Must stay byte-identical to the literal parsed by
+        // `test_parses_datatool_network_profile_snippet` in bin/alpen-cli, so
+        // a field rename on either side fails one of the two tests.
         assert_eq!(
             rendered,
-            format!(
-                "network = \"signet\"\n\
-                 magic_bytes = \"ALPN\"\n\
-                 bridge_pubkey = \"{TEST_SEQ_PK}\"\n\
-                 bridge_denomination_sats = 100000000\n\
-                 recovery_delay = 1008\n"
-            )
+            "# Alpen CLI network profile derived from the ASM params.\n\
+             # Merge these fields into the CLI's config.toml.\n\
+             network = \"signet\"\n\
+             magic_bytes = \"ALPN\"\n\
+             bridge_pubkey = \"14ebfa9a90fee3020686b5334b297b675a9f29282f44b6c3a4ab1f0582021839\"\n\
+             bridge_denomination_sats = 100000000\n\
+             recovery_delay = 1008\n"
         );
     }
 

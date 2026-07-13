@@ -223,6 +223,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parses_datatool_network_profile_snippet() {
+        // Verbatim output of `strata-datatool gen-asm-params --cli-config`.
+        // Must stay byte-identical to the literal pinned by
+        // `cli_network_profile_matches_cli_config_schema` in bin/datatool, so
+        // a field rename on either side fails one of the two tests.
+        let snippet = "# Alpen CLI network profile derived from the ASM params.\n\
+             # Merge these fields into the CLI's config.toml.\n\
+             network = \"signet\"\n\
+             magic_bytes = \"ALPN\"\n\
+             bridge_pubkey = \"14ebfa9a90fee3020686b5334b297b675a9f29282f44b6c3a4ab1f0582021839\"\n\
+             bridge_denomination_sats = 100000000\n\
+             recovery_delay = 1008\n";
+
+        let config = format!(
+            "{snippet}\n\
+             alpen_endpoint = \"https://rpc.testnet.alpenlabs.io\"\n\
+             faucet_endpoint = \"https://faucet-api.testnet.alpenlabs.io\"\n\
+             seed = \"000102030405060708090a0b0c0d0e0f\"\n"
+        );
+
+        let parsed: SettingsFromFile =
+            toml::from_str(&config).expect("generated snippet should parse as CLI config");
+
+        assert_eq!(parsed.network, Network::Signet);
+        assert_eq!(parsed.magic_bytes, MagicBytes::new(*b"ALPN"));
+        assert_eq!(parsed.bridge_denomination_sats, 100_000_000);
+        assert_eq!(parsed.recovery_delay, 1_008);
+    }
+
+    #[test]
     fn test_settings_from_file_serde_roundtrip() {
         let config = r#"
             esplora = "https://esplora.testnet.alpenlabs.io"
