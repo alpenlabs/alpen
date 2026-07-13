@@ -126,9 +126,13 @@ jobs:
           # names differ from the internal program name where the gallery repo
           # was named differently (alpen-client -> alpen). To publish a new
           # program publicly, set its public_repo here — nothing else changes.
+          #
+          # "private":false makes a program public-only — skip the private ECR
+          # push entirely (e.g. strata-checkpoint-sync -> public ECR is the sole
+          # canonical image registry; STR-3962). Defaults to true when omitted.
           PROGRAM_CONFIG='{
             "strata":                 {"public_repo":"strata"},
-            "strata-checkpoint-sync": {"public_repo":"strata-checkpoint-sync"},
+            "strata-checkpoint-sync": {"public_repo":"strata-checkpoint-sync","private":false},
             "alpen-client":           {"public_repo":"alpen"},
             "strata-signer":          {"public_repo":""}
           }'
@@ -153,7 +157,7 @@ jobs:
           MATRIX=$(jq -cn \
             --argjson progs "$PROGRAMS" \
             --argjson cfg "$PROGRAM_CONFIG" \
-            '{include: ($progs | map({program: .} + ($cfg[.] // {public_repo: ""})))}')
+            '{include: ($progs | map({program: ., private: true} + ($cfg[.] // {public_repo: ""})))}')
           echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
           echo "Building: $PROGRAMS"
 
@@ -358,6 +362,10 @@ jobs:
           # Public gallery repo for this program, from the prepare-job map.
           # Empty for private-only programs.
           PUBLIC_REPO: ${{ matrix.public_repo }}
+          # Whether to push the private ECR image. false for public-only
+          # programs (strata-checkpoint-sync -> public ECR only; STR-3962).
+          # Defaults to true via the prepare job's matrix.
+          PUSH_PRIVATE: ${{ matrix.private }}
           SHORT_TAG: ${{ steps.resolve.outputs.short_tag }}
           COMMIT_SHA: ${{ steps.resolve.outputs.commit_sha }}
         run: |
@@ -365,14 +373,22 @@ jobs:
           ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${PROGRAM}"
           FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHORT_TAG}"
 
-          # Always push the private image. Additionally push a public mirror when
-          # this program maps to a public gallery repo (see the prepare job's
+          # Push the private image unless this program is public-only
+          # (PUSH_PRIVATE=false, e.g. strata-checkpoint-sync -> public ECR is the
+          # sole canonical registry; STR-3962). Additionally push a public mirror
+          # when the program maps to a public gallery repo (see the prepare job's
           # PROGRAM_CONFIG — e.g. alpen-client -> alpen). The public repo name
-          # matches the private image and the deployments/IAM naming
-          # (strata-checkpoint-sync, not checkpoint-sync).
-          TAGS=( -t "${FULL_IMAGE}" )
+          # matches the deployments/IAM naming (strata-checkpoint-sync).
+          TAGS=()
+          if [ "$PUSH_PRIVATE" != "false" ]; then
+            TAGS+=( -t "${FULL_IMAGE}" )
+          fi
           if [ -n "$PUBLIC_REPO" ]; then
             TAGS+=( -t "${PUBLIC_ECR_BASE}/${PUBLIC_REPO}:${SHORT_TAG}" )
+          fi
+          if [ "${#TAGS[@]}" -eq 0 ]; then
+            echo "::error::No push target for ${PROGRAM}: private disabled and no public_repo set" >&2
+            exit 1
           fi
 
           # Bake prover features into the strata image. Other programs build
@@ -394,7 +410,7 @@ jobs:
             "${TAGS[@]}" \
             -f "${DOCKERFILE_PATH}" .
 
-          echo "Successfully pushed: ${FULL_IMAGE}"
+          echo "Successfully pushed ${PROGRAM}:${SHORT_TAG} -> ${TAGS[*]}"
 
       # --- Publish strata-datatool as its own image ---------------------------
       # Reuses the binary already staged at docker/strata/artifacts/ for the
