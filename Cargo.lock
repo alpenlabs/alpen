@@ -1039,7 +1039,6 @@ dependencies = [
  "keyring",
  "make_buf",
  "rand_core 0.6.4",
- "reqwest 0.12.28",
  "serde",
  "sha2",
  "shrex",
