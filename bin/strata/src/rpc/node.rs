@@ -742,7 +742,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         );
         let confirmed = chain_sync_status.confirmed_epoch;
         let finalized = chain_sync_status.finalized_epoch;
-        let latest = chain_sync_status.prev_epoch;
+        let latest = chain_sync_status.recently_complete_epoch;
 
         Ok(RpcOLChainStatus::new(tip, confirmed, finalized, latest))
     }

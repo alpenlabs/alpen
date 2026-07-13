@@ -77,14 +77,8 @@ pub async fn start_fcm_service<C: FcmContext>(
     })
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct FcmService<C: FcmContext>(PhantomData<C>);
-
-impl<C: FcmContext> Default for FcmService<C> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct FcmStatus;
@@ -214,7 +208,7 @@ async fn process_fc_message<C: FcmContext>(
                     tip: canonical_tip,
                     tip_epoch: tip_block_data.header().epoch(),
                     tip_is_terminal: tip_block_data.header().is_terminal(),
-                    prev_epoch,
+                    recently_complete_epoch: prev_epoch,
                     confirmed_epoch,
                     finalized_epoch,
                     // FIXME(STR-3673): this is a bit convoluted, could this be simpler?
@@ -2138,7 +2132,7 @@ mod tests {
         let statuses = ctx.published_statuses();
         assert_eq!(statuses.len(), 1);
         assert_eq!(statuses[0].tip, block_commitment);
-        assert_eq!(statuses[0].prev_epoch, genesis_epoch);
+        assert_eq!(statuses[0].recently_complete_epoch, genesis_epoch);
         assert_eq!(statuses[0].confirmed_epoch, genesis_epoch);
         assert_eq!(statuses[0].finalized_epoch, genesis_epoch);
     }

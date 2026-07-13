@@ -20,7 +20,7 @@ pub struct ChainSyncStatus {
     pub tip_is_terminal: bool,
 
     /// The previous epoch (ie. epoch most recently completed).
-    pub prev_epoch: EpochCommitment,
+    pub recently_complete_epoch: EpochCommitment,
 
     /// The finalized epoch commitment, ie what's buried enough on L1.
     pub finalized_epoch: EpochCommitment,
@@ -54,7 +54,7 @@ impl ChainSyncStatus {
     }
 
     pub fn cur_epoch(&self) -> Epoch {
-        self.prev_epoch.epoch() + 1
+        self.recently_complete_epoch.epoch() + 1
     }
 }
 
@@ -63,7 +63,7 @@ impl ChainSyncStatus {
         tip: L2BlockCommitment,
         tip_epoch: Epoch,
         tip_is_terminal: bool,
-        prev_epoch: EpochCommitment,
+        recently_complete_epoch: EpochCommitment,
         confirmed_epoch: EpochCommitment,
         finalized_epoch: EpochCommitment,
         safe_l1: L1BlockCommitment,
@@ -72,7 +72,7 @@ impl ChainSyncStatus {
             tip,
             tip_epoch,
             tip_is_terminal,
-            prev_epoch,
+            recently_complete_epoch,
             confirmed_epoch,
             finalized_epoch,
             safe_l1,
