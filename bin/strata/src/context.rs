@@ -442,14 +442,26 @@ pub(crate) fn ensure_genesis(
     let olgen_out = ensure_ol_genesis(storage, ol_params)?;
     let (l1blk, client_state) = ensure_client_state_genesis(storage, ol_params)?;
 
+    // Genesis (epoch 0) commitment carries the real genesis block id. Use it as the
+    // fallback before any checkpoint is seen so the status never reports the null
+    // (zeroed-blkid) epoch, which consumers would read as a chain mismatch. It is
+    // always present because `ensure_ol_genesis` above wrote the genesis summary;
+    // its absence is a constraint violation.
+    let genesis_epoch = storage
+        .ol_checkpoint()
+        .get_canonical_epoch_commitment_at_blocking(0)?
+        .ok_or(InitError::MissingGenesisEpochCommitment)?;
+
     // Create sync status and update status channel
     let sync_status = OLSyncStatus::new(
         olgen_out.tip_blk,
         olgen_out.epoch,
         olgen_out.is_terminal,
-        client_state.get_last_epoch().unwrap_or_default(),
-        client_state.get_last_epoch().unwrap_or_default(),
-        client_state.get_declared_final_epoch().unwrap_or_default(),
+        client_state.get_last_epoch().unwrap_or(genesis_epoch),
+        client_state.get_last_epoch().unwrap_or(genesis_epoch),
+        client_state
+            .get_declared_final_epoch()
+            .unwrap_or(genesis_epoch),
         l1blk,
     );
     status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(sync_status));
