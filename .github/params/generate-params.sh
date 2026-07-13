@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Required env vars:
 #   DEPLOY_ENV            - environment (staging-v2, testnet-prod)
-#   COMMIT                - alpen commit short SHA (datatool image tag)
+#   DATATOOL_IMAGE_TAG    - datatool image tag
 #   BTC_RPC_URL           - bitcoin RPC endpoint
 #   BTC_RPC_USER          - bitcoin RPC username
 #   BTC_RPC_PASSWORD      - bitcoin RPC password
@@ -18,7 +18,7 @@ ECR_REGISTRY="496607027995.dkr.ecr.us-east-1.amazonaws.com"
 DT_PLATFORM="linux/amd64"
 NETWORK="${NETWORK:-signet}"
 
-for var in DEPLOY_ENV COMMIT BTC_RPC_URL BTC_RPC_USER BTC_RPC_PASSWORD GENESIS_L1_HEIGHT CHAIN_CONFIG; do
+for var in DEPLOY_ENV DATATOOL_IMAGE_TAG BTC_RPC_URL BTC_RPC_USER BTC_RPC_PASSWORD GENESIS_L1_HEIGHT CHAIN_CONFIG; do
     if [ -z "${!var:-}" ]; then
         echo "Missing required env var: ${var}" >&2
         exit 1
@@ -33,7 +33,7 @@ if [ ! -d "${TEMPLATE_DIR}" ]; then
     exit 1
 fi
 
-DT_IMG="${ECR_REGISTRY}/strata/strata-datatool:${COMMIT}"
+DT_IMG="${ECR_REGISTRY}/strata/strata-datatool:${DATATOOL_IMAGE_TAG}"
 CHAIN_CONFIG_ABS="$(cd "$(dirname "${CHAIN_CONFIG}")" && pwd)/$(basename "${CHAIN_CONFIG}")"
 
 mkdir -p "${OUTPUT_DIR}"
