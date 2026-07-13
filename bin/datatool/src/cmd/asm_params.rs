@@ -188,6 +188,10 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     }
 
     if let Some(cli_config_path) = &cmd.cli_config {
+        anyhow::ensure!(
+            cmd.output.as_deref() != Some(cli_config_path.as_path()),
+            "--cli-config must not point at the same file as --output"
+        );
         write_cli_network_profile(cli_config_path, &asm_params)?;
         eprintln!("wrote alpen-cli network profile to {cli_config_path:?}");
     }
@@ -228,7 +232,17 @@ fn derive_bridge_pubkey(operators: &[EvenPublicKey]) -> anyhow::Result<String> {
 }
 
 /// Writes the alpen-cli config fields derived from the ASM params as a TOML snippet.
+///
+/// Refuses to overwrite an existing file: the snippet is meant to be merged
+/// into the CLI's config.toml, and pointing this at a live config would wipe
+/// every other setting in it.
 fn write_cli_network_profile(path: &Path, asm_params: &AsmParams) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !path.exists(),
+        "refusing to overwrite existing file {path:?}; merge the generated snippet into the CLI \
+         config manually"
+    );
+
     let bridge = asm_params
         .bridge_config()
         .ok_or_else(|| anyhow::anyhow!("ASM params missing Bridge subprotocol config"))?;
