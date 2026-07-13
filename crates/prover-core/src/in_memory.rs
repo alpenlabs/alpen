@@ -71,13 +71,23 @@ impl TaskStore for InMemoryTaskStore {
         Ok(())
     }
 
+    fn clear_metadata(&self, key: &[u8]) -> ProverResult<()> {
+        self.records
+            .write()
+            .get_mut(key)
+            .ok_or_else(|| ProverError::TaskNotFound(format!("{:?}", key)))?
+            .data_mut()
+            .set_metadata(None);
+        Ok(())
+    }
+
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
         Ok(self
             .records
             .read()
             .values()
             .filter(|r| {
-                r.status().is_retriable() && r.retry_after_secs().is_some_and(|t| t <= now_secs)
+                r.status().wants_rescan() && r.retry_after_secs().is_some_and(|t| t <= now_secs)
             })
             .cloned()
             .collect())

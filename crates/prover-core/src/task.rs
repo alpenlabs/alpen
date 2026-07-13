@@ -15,16 +15,32 @@ use serde::{Deserialize, Serialize};
 pub enum TaskStatus {
     /// Task registered but not yet picked up for proving.
     Pending,
-    /// Actively being proved. Carries the retry counter so the count survives
-    /// the `TransientFailure → Proving → (crash)` transition: if the process
-    /// dies mid-attempt (OOM, SIGKILL, panic) the persisted record still
-    /// reflects how many retries the task has already burned, and `recover`
-    /// can bump it correctly instead of resetting to zero.
-    Proving { retry_count: u32 },
+    /// Actively being proved. Carries the retry/resubmit counters so they
+    /// survive the `TransientFailure → Proving → (crash)` transition: if the
+    /// process dies mid-attempt (OOM, SIGKILL, panic) the persisted record
+    /// still reflects how many attempts the task has already burned, and
+    /// `recover` can bump correctly instead of resetting to zero.
+    ///
+    /// `retry_count` counts resume-class retries (network blips, crash
+    /// recovery); `resubmit_count` counts resubmit-class retries (the remote
+    /// request was dead so a fresh one was submitted). They have separate
+    /// budgets because a resubmit re-runs the whole proof.
+    Proving {
+        retry_count: u32,
+        resubmit_count: u32,
+    },
     /// Proof completed successfully, receipt available.
     Completed,
+    /// Parked waiting for an input dependency (e.g. an upstream chunk proof
+    /// not yet produced). Not a failure: rechecked on a steady cadence via
+    /// `retry_after`, and does NOT consume the retry/resubmit budget.
+    Blocked { reason: String },
     /// Temporary failure; will be retried after backoff.
-    TransientFailure { retry_count: u32, error: String },
+    TransientFailure {
+        retry_count: u32,
+        resubmit_count: u32,
+        error: String,
+    },
     /// Unrecoverable failure; task will not be retried.
     PermanentFailure { error: String },
 }
@@ -36,6 +52,16 @@ impl TaskStatus {
 
     pub fn is_retriable(&self) -> bool {
         matches!(self, Self::TransientFailure { .. })
+    }
+
+    pub fn is_blocked(&self) -> bool {
+        matches!(self, Self::Blocked { .. })
+    }
+
+    /// Statuses the scanner re-spawns once their `retry_after` elapses:
+    /// transient failures (retry) and blocked tasks (dependency recheck).
+    pub fn wants_rescan(&self) -> bool {
+        self.is_retriable() || self.is_blocked()
     }
 
     pub fn is_in_progress(&self) -> bool {

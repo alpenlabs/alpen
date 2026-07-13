@@ -46,8 +46,10 @@ impl From<ProverError> for PaasError {
         match e {
             ProverError::StaleTaskCommitment { .. }
             | ProverError::EpochCommitmentNotFound(_)
-            | ProverError::EpochSummaryNotFound(_) => PaasError::TransientFailure(e.to_string()),
-            _ => PaasError::PermanentFailure(e.to_string()),
+            | ProverError::EpochSummaryNotFound(_) => PaasError::transient(e.to_string()),
+            // Infra: surface as a retryable error, not a domain verdict.
+            ProverError::Database(_) => PaasError::Storage(e.to_string()),
+            _ => PaasError::permanent(e.to_string()),
         }
     }
 }

@@ -6,12 +6,17 @@
 
 use std::sync::Arc;
 #[cfg(feature = "remote")]
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
 #[cfg(feature = "remote")]
-use tokio::runtime::{Builder, Runtime};
+use tokio::{
+    runtime::{Builder, Runtime},
+    time::sleep,
+};
 use zkaleido::{ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram};
 
+#[cfg(feature = "remote")]
+use crate::config::LocalRetryConfig;
 use crate::{
     error::{ProverError, ProverResult},
     traits::{ProofSpec, ProveContext, ProveStrategy},
@@ -40,16 +45,17 @@ where
         input: &<H::Program as ZkVmProgram>::Input,
         _ctx: ProveContext,
     ) -> ProverResult<ProofReceiptWithMetadata> {
-        H::Program::prove(input, self.host.as_ref())
-            .map_err(|e| ProverError::PermanentFailure(e.to_string()))
+        H::Program::prove(input, self.host.as_ref()).map_err(ProverError::from_zkvm)
     }
 }
 
 /// Remote execution: `start_proving` + poll + `get_proof`.
 ///
-/// `ZkVmRemoteProver` exposes `!Send` futures, so each `prove()` drives them on
-/// a `LocalSet`. Crucially those futures run on a **single long-lived runtime**
-/// owned by the strategy, not a fresh runtime per call.
+/// Each `prove()` drives the remote futures on a **single long-lived runtime**
+/// owned by the strategy, not a fresh runtime per call. The futures are `Send`
+/// (zkaleido v0.3.0-rc.1+ defines `ZkVmRemoteProgram::start_proving` as
+/// `-> impl Future + Send`), so they run directly on the multi-thread runtime —
+/// no `LocalSet` thread-pinning needed.
 ///
 /// SP1 SDK >=6.2 caches its gRPC channel for the whole process, and a tonic
 /// channel is just an mpsc handle to a background worker `tokio::spawn`'d on the
@@ -72,6 +78,8 @@ pub(crate) struct RemoteStrategy<Host> {
     /// `Option` only so [`Drop`] can take it and shut it down without blocking;
     /// it is `Some` for the entire normal lifetime.
     rt: Option<Runtime>,
+    /// In-attempt retry budget for the idempotent remote polls.
+    local_retry: LocalRetryConfig,
 }
 
 #[cfg(feature = "remote")]
@@ -90,13 +98,13 @@ impl<Host> Drop for RemoteStrategy<Host> {
 
 #[cfg(feature = "remote")]
 impl<Host> RemoteStrategy<Host> {
-    pub(crate) fn new(host: Host, poll_interval: Duration) -> Self {
+    pub(crate) fn new(host: Host, poll_interval: Duration, local_retry: LocalRetryConfig) -> Self {
         // Multi-thread (not current-thread): concurrent fanned-out `prove()`
         // calls each run on their own `spawn_blocking` thread and `block_on`
         // this runtime simultaneously; a current-thread runtime would serialize
         // them. The remote prove future itself runs on the calling thread via
-        // the per-call `LocalSet`; these worker threads only drive the shared
-        // gRPC channel and its IO, so a small pool is plenty.
+        // `Runtime::block_on`; these worker threads only drive the shared gRPC
+        // channel and its IO, so a small pool is plenty.
         let rt = Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("paas-remote-prover")
@@ -107,6 +115,42 @@ impl<Host> RemoteStrategy<Host> {
             host: Arc::new(host),
             poll_interval,
             rt: Some(rt),
+            local_retry,
+        }
+    }
+}
+
+/// Retry an idempotent backend op in-process on transient (`RetryResume`)
+/// errors, with short backoff, before surfacing to the task-level tier.
+///
+/// Complements the backend's own transport retry: SP1 marks some transient
+/// transport failures (e.g. "Service was not ready") as permanent and gives up
+/// quickly, so a brief local re-poll recovers them without a full task restart.
+/// Permanent errors are returned immediately.
+#[cfg(feature = "remote")]
+async fn with_local_retry<T, F, Fut>(
+    cfg: &LocalRetryConfig,
+    op_name: &str,
+    mut op: F,
+) -> ProverResult<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = ProverResult<T>>,
+{
+    use crate::error::FailureAction;
+
+    let mut attempt: u32 = 0;
+    loop {
+        match op().await {
+            Ok(value) => return Ok(value),
+            Err(e) => {
+                attempt += 1;
+                if attempt > cfg.max_attempts || e.action() != FailureAction::RetryResume {
+                    return Err(e);
+                }
+                tracing::warn!(op = op_name, attempt, error = %e, "in-attempt retry");
+                sleep(cfg.delay(attempt)).await;
+            }
         }
     }
 }
@@ -122,9 +166,6 @@ where
         input: &<H::Program as ZkVmProgram>::Input,
         mut ctx: ProveContext,
     ) -> ProverResult<ProofReceiptWithMetadata> {
-        use tokio::task::LocalSet;
-
-        let local = LocalSet::new();
         let host = self.host.clone();
         let poll_interval = self.poll_interval;
 
@@ -136,7 +177,7 @@ where
             .rt
             .as_ref()
             .expect("remote-prover runtime present outside Drop");
-        local.block_on(rt, async move {
+        rt.block_on(async move {
             // Try to resume from saved metadata (prior crash).
             let proof_id = if let Some(saved) = ctx.saved.take() {
                 match Host::ProofId::try_from(saved) {
@@ -174,12 +215,12 @@ where
         host: &Host,
     ) -> ProverResult<Host::ProofId> {
         let prepared = <H::Program as ZkVmProgram>::prepare_input::<Host::Input<'_>>(input)
-            .map_err(|e| ProverError::PermanentFailure(e.to_string()))?;
+            .map_err(|e| ProverError::from_zkvm(e.into()))?;
 
         let proof_id = host
             .start_proving(prepared, H::Program::proof_type())
             .await
-            .map_err(|e| ProverError::TransientFailure(e.to_string()))?;
+            .map_err(ProverError::from_zkvm)?;
 
         tracing::info!(%proof_id, "remote proof submitted");
         Ok(proof_id)
@@ -203,14 +244,17 @@ where
         proof_id: &Host::ProofId,
         poll_interval: Duration,
     ) -> ProverResult<ProofReceiptWithMetadata> {
-        use tokio::time::sleep;
         use zkaleido::RemoteProofStatus;
 
+        use crate::classify::classify_remote_failure;
+
         loop {
-            let status = host
-                .get_status(proof_id)
-                .await
-                .map_err(|e| ProverError::TransientFailure(e.to_string()))?;
+            let status = with_local_retry(&self.local_retry, "get_status", || async {
+                host.get_status(proof_id)
+                    .await
+                    .map_err(ProverError::from_zkvm)
+            })
+            .await?;
 
             match status {
                 RemoteProofStatus::Completed => {
@@ -218,9 +262,10 @@ where
                     break;
                 }
                 RemoteProofStatus::Failed(reason) => {
-                    return Err(ProverError::PermanentFailure(format!(
-                        "remote proof failed: {reason}"
-                    )));
+                    return Err(ProverError::Failed {
+                        action: classify_remote_failure(&reason),
+                        msg: format!("remote proof failed: {reason}"),
+                    });
                 }
                 RemoteProofStatus::Requested | RemoteProofStatus::InProgress => {
                     sleep(poll_interval).await;
@@ -229,15 +274,17 @@ where
         }
 
         // Retrieve the receipt.
-        let receipt = host
-            .get_proof(proof_id)
-            .await
-            .map_err(|e| ProverError::PermanentFailure(e.to_string()))?;
+        let receipt = with_local_retry(&self.local_retry, "get_proof", || async {
+            host.get_proof(proof_id)
+                .await
+                .map_err(ProverError::from_zkvm)
+        })
+        .await?;
 
         // Verify output is well-formed.
         let _ =
             <H::Program as ZkVmProgram>::process_output::<Host>(receipt.receipt().public_values())
-                .map_err(|e| ProverError::PermanentFailure(e.to_string()))?;
+                .map_err(ProverError::from_zkvm)?;
 
         Ok(receipt)
     }

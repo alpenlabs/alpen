@@ -8,6 +8,7 @@
 //! everything else (concrete impls, supporting types) lives next to its
 //! domain.
 
+mod classify;
 mod config;
 mod error;
 mod in_memory;
@@ -16,10 +17,10 @@ mod strategy;
 mod task;
 mod traits;
 
-pub use config::{ProverConfig, RetryConfig};
-pub use error::{ProverError, ProverResult};
+pub use config::{LocalRetryConfig, ProverConfig, RetryConfig};
+pub use error::{FailureAction, ProverError, ProverResult};
 pub use in_memory::{InMemoryReceiptStore, InMemoryTaskStore};
 pub use prover::{Prover, ProverBuilder};
 pub use task::{TaskRecord, TaskRecordData, TaskResult, TaskStatus};
-pub use traits::{ProofSpec, ReceiptHook, ReceiptStore, TaskKey, TaskStore};
+pub use traits::{InputResolution, ProofSpec, ReceiptHook, ReceiptStore, TaskKey, TaskStore};
 pub use zkaleido::{ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram};

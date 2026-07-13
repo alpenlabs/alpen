@@ -21,13 +21,14 @@ use std::{
     fmt::{self, Debug, Display},
     hash::Hash,
     sync::Arc,
+    time::Duration,
 };
 
 use async_trait::async_trait;
 use zkaleido::{ProofReceiptWithMetadata, ZkVmProgram};
 
 use crate::{
-    error::ProverResult,
+    error::{FailureAction, ProverError, ProverResult},
     task::{TaskRecord, TaskStatus},
 };
 
@@ -80,11 +81,77 @@ impl<T> TaskKey for T where
 ///     type Task = Epoch;
 ///     type Program = CheckpointProgram;
 ///
-///     async fn fetch_input(&self, epoch: &Epoch) -> ProverResult<CheckpointProverInput> {
-///         // storage queries ...
+///     async fn resolve_input(
+///         &self,
+///         epoch: &Epoch,
+///     ) -> ProverResult<InputResolution<CheckpointProverInput>> {
+///         // storage queries → Ready / Blocked / Rejected ...
 ///     }
 /// }
 /// ```
+/// Outcome of assembling a task's proof input.
+///
+/// Consumers speak domain facts here, not retry vocabulary: the input is
+/// ready, a dependency isn't available yet, or the task can never produce
+/// valid input. Infra errors (a failed DB read) are reported as `Err` on the
+/// [`ProverResult`] and retried by the library.
+pub enum InputResolution<I> {
+    /// Input assembled — proceed to prove.
+    Ready(I),
+    /// A dependency isn't available yet. NOT a failure: the task parks in
+    /// [`TaskStatus::Blocked`](crate::TaskStatus) and is rechecked on a steady
+    /// cadence without burning the retry budget. `recheck_after` overrides the
+    /// default cadence for this task (e.g. a known ETA).
+    Blocked {
+        reason: String,
+        recheck_after: Option<Duration>,
+    },
+    /// This task can never produce valid input — terminal.
+    Rejected { reason: String },
+}
+
+impl<I> fmt::Debug for InputResolution<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ready(_) => f.write_str("Ready"),
+            Self::Blocked {
+                reason,
+                recheck_after,
+            } => f
+                .debug_struct("Blocked")
+                .field("reason", reason)
+                .field("recheck_after", recheck_after)
+                .finish(),
+            Self::Rejected { reason } => {
+                f.debug_struct("Rejected").field("reason", reason).finish()
+            }
+        }
+    }
+}
+
+impl<I> InputResolution<I> {
+    /// Bridge a legacy `fetch_input`-style result into an [`InputResolution`].
+    ///
+    /// `Ok` → [`Ready`](Self::Ready). A permanent failure → [`Rejected`](Self::Rejected).
+    /// A transient/resubmit failure (a "not ready yet" signal) → [`Blocked`](Self::Blocked).
+    /// Infra errors (storage/codec/command) stay `Err`, so the library retries
+    /// them rather than treating them as a domain verdict.
+    pub fn from_result(result: ProverResult<I>) -> ProverResult<Self> {
+        match result {
+            Ok(input) => Ok(Self::Ready(input)),
+            Err(ProverError::Failed {
+                action: FailureAction::Permanent,
+                msg,
+            }) => Ok(Self::Rejected { reason: msg }),
+            Err(ProverError::Failed { msg, .. }) => Ok(Self::Blocked {
+                reason: msg,
+                recheck_after: None,
+            }),
+            Err(other) => Err(other),
+        }
+    }
+}
+
 #[async_trait]
 pub trait ProofSpec: Send + Sync + 'static {
     /// Identifies a unit of work (e.g. `Epoch`, `ChunkTask`). See
@@ -94,14 +161,16 @@ pub trait ProofSpec: Send + Sync + 'static {
     /// The zkaleido program to execute. Input must be `Send` for `spawn_blocking`.
     type Program: ZkVmProgram<Input: Send + Sync> + Send + Sync + 'static;
 
-    /// Fetch the proof input for a task.
+    /// Assemble the proof input for a task, or report it blocked/rejected.
     ///
-    /// Return [`crate::ProverError::TransientFailure`] for retriable errors,
-    /// [`crate::ProverError::PermanentFailure`] for fatal ones.
-    async fn fetch_input(
+    /// Return [`InputResolution::Blocked`] when a dependency isn't ready yet
+    /// (the task parks and is rechecked without counting as a failure),
+    /// [`InputResolution::Rejected`] when the task can never produce valid
+    /// input, and `Err` for transient infra errors the library should retry.
+    async fn resolve_input(
         &self,
         task: &Self::Task,
-    ) -> ProverResult<<Self::Program as ZkVmProgram>::Input>;
+    ) -> ProverResult<InputResolution<<Self::Program as ZkVmProgram>::Input>>;
 }
 
 // ============================================================================
@@ -120,6 +189,10 @@ pub trait TaskStore: Send + Sync + 'static {
     fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()>;
     fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()>;
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()>;
+    /// Drop any persisted strategy metadata (e.g. a remote `ProofId`) for the
+    /// task, so the next attempt starts fresh instead of resuming a dead
+    /// request. Used by the resubmit (`RetryFresh`) retry path.
+    fn clear_metadata(&self, key: &[u8]) -> ProverResult<()>;
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>>;
     /// Every record that was submitted but hasn't reached a terminal state —
     /// Pending or Proving. Used by startup recovery to re-spawn
@@ -146,6 +219,9 @@ impl<T: TaskStore + ?Sized> TaskStore for Arc<T> {
     }
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
         (**self).set_metadata(key, data)
+    }
+    fn clear_metadata(&self, key: &[u8]) -> ProverResult<()> {
+        (**self).clear_metadata(key)
     }
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
         (**self).list_retriable(now_secs)
