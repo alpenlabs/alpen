@@ -69,11 +69,11 @@ pub struct SettingsFromFile {
     ///
     /// Must match the magic bytes in the ASM params.
     pub magic_bytes: MagicBytes,
-    /// At-rest deposit denomination in satoshis, used for both deposits and
+    /// Bridge denomination in satoshis, used for both deposits and
     /// withdrawals.
     ///
     /// Must match the Bridge subprotocol denomination in the ASM params.
-    pub deposit_amount_sats: u64,
+    pub bridge_denomination_sats: u64,
     /// Number of Bitcoin blocks after which the depositor can reclaim an
     /// unprocessed deposit request.
     ///
@@ -111,8 +111,8 @@ pub struct Settings {
     pub network: Network,
     /// SPS-50 magic bytes tagging protocol transactions on L1.
     pub magic_bytes: MagicBytes,
-    /// At-rest deposit denomination.
-    pub deposit_amount: Amount,
+    /// Bridge denomination, used for both deposits and withdrawals.
+    pub bridge_denomination: Amount,
     /// Deposit-request reclaim delay in Bitcoin blocks.
     pub recovery_delay: u16,
     #[cfg(feature = "test-mode")]
@@ -197,7 +197,7 @@ impl Settings {
                 .unwrap_or(DEFAULT_BRIDGE_FEE),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
             bridge_params: BridgeParams::new_with_descriptor_limit(
-                from_file.deposit_amount_sats,
+                from_file.bridge_denomination_sats,
                 from_file
                     .max_withdrawal_amount_sats
                     .or(Some(DEFAULT_MAX_WITHDRAWAL_SATS)),
@@ -208,7 +208,7 @@ impl Settings {
             .expect("invalid withdrawal params in config"),
             network: from_file.network,
             magic_bytes: from_file.magic_bytes,
-            deposit_amount: Amount::from_sat(from_file.deposit_amount_sats),
+            bridge_denomination: Amount::from_sat(from_file.bridge_denomination_sats),
             recovery_delay: from_file.recovery_delay,
             #[cfg(feature = "test-mode")]
             seed: Seed::from_file(from_file.seed),
@@ -236,7 +236,7 @@ mod tests {
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
             network = "signet"
             magic_bytes = "ALPN"
-            deposit_amount_sats = 100_000_000
+            bridge_denomination_sats = 100_000_000
             recovery_delay = 1008
             max_withdrawal_descriptor_len = 81
             seed = "000102030405060708090a0b0c0d0e0f"
@@ -261,7 +261,10 @@ mod tests {
         assert_eq!(parsed.bridge_pubkey.0, reparsed.bridge_pubkey.0);
         assert_eq!(parsed.network, reparsed.network);
         assert_eq!(parsed.magic_bytes, reparsed.magic_bytes);
-        assert_eq!(parsed.deposit_amount_sats, reparsed.deposit_amount_sats);
+        assert_eq!(
+            parsed.bridge_denomination_sats,
+            reparsed.bridge_denomination_sats
+        );
         assert_eq!(parsed.recovery_delay, reparsed.recovery_delay);
         assert_eq!(
             parsed.max_withdrawal_descriptor_len,

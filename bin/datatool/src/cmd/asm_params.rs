@@ -203,7 +203,7 @@ struct CliNetworkProfile {
     network: Network,
     magic_bytes: MagicBytes,
     bridge_pubkey: String,
-    deposit_amount_sats: u64,
+    bridge_denomination_sats: u64,
     recovery_delay: u16,
 }
 
@@ -237,7 +237,7 @@ fn write_cli_network_profile(path: &Path, asm_params: &AsmParams) -> anyhow::Res
         network: asm_params.anchor.network,
         magic_bytes: asm_params.magic,
         bridge_pubkey: derive_bridge_pubkey(&bridge.operators)?,
-        deposit_amount_sats: bridge.denomination.to_sat(),
+        bridge_denomination_sats: bridge.denomination.to_sat(),
         recovery_delay: bridge.recovery_delay,
     };
 
@@ -298,7 +298,7 @@ mod tests {
             network: Network::Signet,
             magic_bytes: "ALPN".parse().expect("valid magic bytes"),
             bridge_pubkey: TEST_SEQ_PK.to_owned(),
-            deposit_amount_sats: 100_000_000,
+            bridge_denomination_sats: 100_000_000,
             recovery_delay: 1_008,
         };
 
@@ -310,7 +310,7 @@ mod tests {
                 "network = \"signet\"\n\
                  magic_bytes = \"ALPN\"\n\
                  bridge_pubkey = \"{TEST_SEQ_PK}\"\n\
-                 deposit_amount_sats = 100000000\n\
+                 bridge_denomination_sats = 100000000\n\
                  recovery_delay = 1008\n"
             )
         );
