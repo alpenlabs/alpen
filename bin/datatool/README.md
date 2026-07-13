@@ -41,8 +41,37 @@ strata-datatool gen-asm-params \
     --ol-params ol-params.json \
     --safe-harbour-address <p2tr-bosd-descriptor> \
     --l1-anchor-file l1-anchor.json \
-    -o asm-params.json
+    -o asm-params.json \
+    --cli-config alpen-cli-profile.toml
 ```
+
+## Alpen CLI network profile
+
+`gen-asm-params --cli-config <path>` additionally emits the network fields the
+`alpen` wallet CLI reads from its `config.toml`, derived from the same inputs
+as the ASM params so they cannot drift apart:
+
+- `network` — the L1 network from the genesis anchor
+- `magic_bytes` — the SPS-50 magic bytes
+- `bridge_pubkey` — the aggregated MuSig2 key of the bridge operator set
+- `bridge_denomination_sats` — the bridge denomination, used for both deposits
+  and withdrawals
+- `recovery_delay` — the deposit-request reclaim delay in Bitcoin blocks
+
+Merge the generated snippet into the CLI's `config.toml`. The command refuses
+to overwrite an existing file, so don't point it at a live config.
+
+These values are consensus-critical: hand-editing them can produce deposit
+transactions the bridge won't recognize.
+
+### Migrating CLI configs from the ASM params file
+
+The wallet CLI previously read these values from an `asm-params.json` file
+resolved via the `STRATA_NETWORK_PARAMS` environment variable or the
+`asm_params_path` config key; both are removed. Existing deployments must add
+the five fields above to `config.toml`. The former
+`withdrawal_denomination_sats` key is replaced by `bridge_denomination_sats`,
+which now drives both deposits and withdrawals.
 
 ## Envvars
 
