@@ -74,6 +74,11 @@ jobs:
 
           # Optional caller-selected repo ref for params scripts/templates.
           if [ -n "${INPUT_CHECKOUT_REF}" ]; then
+            if [[ "${INPUT_CHECKOUT_REF}" == *$'\n'* || "${INPUT_CHECKOUT_REF}" == *$'\r'* ]]; then
+              echo "::error::checkout_ref must be a single-line repo ref"
+              exit 1
+            fi
+
             # Manual override: use caller-provided scripts/templates.
             PARAMS_SOURCE_REF="${INPUT_CHECKOUT_REF}"
           else
@@ -83,7 +88,6 @@ jobs:
           fi
 
           set_output datatool_image_tag "${DATATOOL_IMAGE_TAG}"
-          set_output datatool_image_commit "${DATATOOL_IMAGE_COMMIT}"
           set_output params_source_ref "${PARAMS_SOURCE_REF}"
           echo "Datatool image commit: ${DATATOOL_IMAGE_COMMIT}"
           echo "Datatool image tag: ${DATATOOL_IMAGE_TAG}"
