@@ -193,7 +193,10 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let cli_profile = cmd
         .cli_config
         .as_deref()
-        .map(|path| build_cli_network_profile(path, &asm_params, ol_params.bridge_params()))
+        .map(|path| {
+            build_cli_network_profile(path, &asm_params, ol_params.bridge_params())
+                .map(|profile| (path, profile))
+        })
         .transpose()?;
 
     if let Some(out_path) = &cmd.output {
@@ -203,7 +206,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         println!("{params_buf}");
     }
 
-    if let (Some(cli_config_path), Some(profile)) = (&cmd.cli_config, &cli_profile) {
+    if let Some((cli_config_path, profile)) = &cli_profile {
         write_cli_network_profile(cli_config_path, profile)?;
         eprintln!("wrote alpen-cli network profile to {cli_config_path:?}");
     }
@@ -216,8 +219,8 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 /// A lexical comparison is not enough: `./config.toml` and `config.toml` name the
 /// same file, as do two symlinks to one target, and the first write would clobber
 /// the second path before its own overwrite guard ever ran.
-fn targets_same_file(a: &Path, b: &Path) -> bool {
-    resolve_write_target(a) == resolve_write_target(b)
+fn targets_same_file(first: &Path, second: &Path) -> bool {
+    resolve_write_target(first) == resolve_write_target(second)
 }
 
 /// Resolves a path to the file it would be written to.
@@ -310,6 +313,11 @@ fn cli_withdrawal_cap(ol_bridge_params: &BridgeParams) -> anyhow::Result<u64> {
 ///
 /// Mirrors the ASM bridge subprotocol's operator table: keys are aggregated in
 /// registration order with duplicates skipped.
+///
+/// TODO: replace this hand-copy of `OperatorTable::calculate_aggregated_key` with
+/// the real thing once the ASM crate re-exports `OperatorTable` (its `state::operator`
+/// module is currently `pub(crate)`); a semantic change upstream (ordering, dedup)
+/// would silently diverge from this mirror and lock deposits to the wrong key.
 fn derive_bridge_pubkey(operators: &[EvenPublicKey]) -> anyhow::Result<String> {
     let mut keys: Vec<Buf32> = Vec::with_capacity(operators.len());
     for operator in operators {
@@ -348,12 +356,6 @@ fn build_cli_network_profile(
     let bridge = asm_params
         .bridge_config()
         .ok_or_else(|| anyhow::anyhow!("ASM params missing Bridge subprotocol config"))?;
-
-    // `resolve_deposit_sats` already rejected params where these diverge.
-    debug_assert_eq!(
-        bridge.denomination.to_sat(),
-        ol_bridge_params.denomination()
-    );
 
     Ok(CliNetworkProfile {
         network: asm_params.anchor.network,
