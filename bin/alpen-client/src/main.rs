@@ -45,7 +45,7 @@ use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
 #[cfg(feature = "sequencer")]
-use alpen_ee_exec_chain::init_exec_chain_state_from_storage;
+use alpen_ee_exec_chain::{init_exec_chain_state_from_storage, ExecChainState};
 #[cfg(feature = "sequencer")]
 use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
 use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
@@ -53,9 +53,10 @@ use alpen_ee_ol_tracker::init_ol_tracker_state;
 use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcServer};
 #[cfg(feature = "sequencer")]
 use alpen_ee_sequencer::{
-    block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
+    block_builder_task, build_ol_chain_tracker, init_batch_builder_state, init_lifecycle_state,
+    init_ol_chain_tracker_state, sealing_policy::block_count_policy::BlockCountPolicy,
+    BatchBuilderState, BatchLifecycleState, BlockBuilderConfig, OLChainTrackerState,
 };
-use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
 use alpen_reth_evm::evm::AlpenEvmFactory;
 #[cfg(feature = "sequencer")]
 use alpen_reth_exex::{AccessedStateGenerator, StateDiffGenerator};
@@ -167,6 +168,18 @@ const DEFAULT_SP1_DEADLINE_SECS: u64 = 4 * 60 * 60;
 /// Default capacity for the batch builder → chunk builder event channel.
 #[cfg(feature = "sequencer")]
 const DEFAULT_BATCH_EVENT_CHANNEL_CAPACITY: usize = 64;
+
+/// Startup state that only the EE sequencer needs.
+///
+/// Bundled into one value so it can be gated behind a single runtime
+/// `--sequencer` check and carried as a single `Option`.
+#[cfg(feature = "sequencer")]
+struct SequencerBootState {
+    ol_chain_tracker: OLChainTrackerState,
+    exec_chain: ExecChainState,
+    batch_builder: BatchBuilderState<BlockCountPolicy>,
+    batch_lifecycle: BatchLifecycleState,
+}
 
 fn main() {
     sigsegv_handler::install();
@@ -342,24 +355,41 @@ fn main() {
                 .await
                 .context("ol tracker state initialization should not fail")?;
 
+            // Sequencer-only startup state. Gated on the runtime `--sequencer` flag.
             #[cfg(feature = "sequencer")]
-            let ol_chain_tracker_state =
-                init_ol_chain_tracker_state(storage.as_ref(), ol_client.as_ref())
-                    .instrument(info_span!("init_ol_chain_tracker", component = "alpen"))
+            let sequencer_boot_state = if ext.sequencer {
+                let ol_chain_tracker =
+                    init_ol_chain_tracker_state(storage.as_ref(), ol_client.as_ref())
+                        .instrument(info_span!("init_ol_chain_tracker", component = "alpen"))
+                        .await
+                        .context("ol chain tracker state initialization should not fail")?;
+                let exec_chain = init_exec_chain_state_from_storage(storage.as_ref())
+                    .instrument(info_span!("init_exec_chain", component = "alpen"))
                     .await
-                    .context("ol chain tracker state initialization should not fail")?;
-
-            #[cfg(feature = "sequencer")]
-            let exec_chain_state = init_exec_chain_state_from_storage(storage.as_ref())
-                .instrument(info_span!("init_exec_chain", component = "alpen"))
-                .await
-                .context("exec chain state initialization should not fail")?;
+                    .context("exec chain state initialization should not fail")?;
+                let batch_builder = init_batch_builder_state(storage.as_ref())
+                    .instrument(info_span!("init_batch_builder", component = "alpen"))
+                    .await
+                    .context("batch builder state initialization should not fail")?;
+                let batch_lifecycle = init_lifecycle_state(storage.as_ref())
+                    .instrument(info_span!("init_lifecycle", component = "alpen"))
+                    .await
+                    .context("batch lifecycle state initialization should not fail")?;
+                Some(SequencerBootState {
+                    ol_chain_tracker,
+                    exec_chain,
+                    batch_builder,
+                    batch_lifecycle,
+                })
+            } else {
+                None
+            };
 
             let initial_preconf_head = {
                 #[cfg(feature = "sequencer")]
                 {
-                    if ext.sequencer {
-                        exec_chain_state.tip_blocknumhash()
+                    if let Some(boot) = sequencer_boot_state.as_ref() {
+                        boot.exec_chain.tip_blocknumhash()
                     } else {
                         // In non-sequencer mode, we only have the hash from OL tracker.
                         // Use block number 0 as initial value; it will be updated by gossip.
@@ -375,16 +405,6 @@ fn main() {
                     BlockNumHash::new(hash, 0)
                 }
             };
-
-            let batch_builder_state = init_batch_builder_state(storage.as_ref())
-                .instrument(info_span!("init_batch_builder", component = "alpen"))
-                .await
-                .context("batch builder state initialization should not fail")?;
-
-            let batch_lifecycle_state = init_lifecycle_state(storage.as_ref())
-                .instrument(info_span!("init_lifecycle", component = "alpen"))
-                .await
-                .context("batch lifecycle state initialization should not fail")?;
             // --- INITIALIZE SERVICES ---
 
             // Create gossip channel before building the node so we can register it early
@@ -541,6 +561,13 @@ fn main() {
                 };
 
                 use crate::gas_data_provider::RethGasDataProvider;
+
+                let SequencerBootState {
+                    ol_chain_tracker: ol_chain_tracker_state,
+                    exec_chain: exec_chain_state,
+                    batch_builder: batch_builder_state,
+                    batch_lifecycle: batch_lifecycle_state,
+                } = sequencer_boot_state.expect("sequencer boot state built in sequencer mode");
 
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
