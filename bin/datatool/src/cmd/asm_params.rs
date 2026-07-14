@@ -188,6 +188,14 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     let params_buf = serde_json::to_string_pretty(&asm_params)?;
 
+    // Built before any write so that a profile we cannot emit fails the run without
+    // leaving a half-generated set of params behind.
+    let cli_profile = cmd
+        .cli_config
+        .as_deref()
+        .map(|path| build_cli_network_profile(path, &asm_params, ol_params.bridge_params()))
+        .transpose()?;
+
     if let Some(out_path) = &cmd.output {
         fs::write(out_path, &params_buf)?;
         eprintln!("wrote to file {out_path:?}");
@@ -195,8 +203,8 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         println!("{params_buf}");
     }
 
-    if let Some(cli_config_path) = &cmd.cli_config {
-        write_cli_network_profile(cli_config_path, &asm_params, ol_params.bridge_params())?;
+    if let (Some(cli_config_path), Some(profile)) = (&cmd.cli_config, &cli_profile) {
+        write_cli_network_profile(cli_config_path, profile)?;
         eprintln!("wrote alpen-cli network profile to {cli_config_path:?}");
     }
 
@@ -277,9 +285,25 @@ struct CliNetworkProfile {
     recovery_delay: u16,
     /// Withdrawals are batched in multiples of the denomination, so the CLI needs
     /// the OL's cap to reject amounts the OL STF would reject.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_withdrawal_amount_sats: Option<u64>,
+    max_withdrawal_amount_sats: u64,
     max_withdrawal_descriptor_len: u32,
+}
+
+/// Resolves the withdrawal cap the CLI profile must carry.
+///
+/// The CLI reads an absent `max_withdrawal_amount_sats` as the default 10 BTC cap,
+/// and TOML has no null, so an uncapped OL cannot be expressed in the profile:
+/// emitting one would silently cap a wallet that the OL would let withdraw more.
+/// Refuse instead of guessing.
+// TODO: teach the CLI config an explicit uncapped spelling and emit that here.
+fn cli_withdrawal_cap(ol_bridge_params: &BridgeParams) -> anyhow::Result<u64> {
+    ol_bridge_params.max_withdrawal_amount().ok_or_else(|| {
+        anyhow::anyhow!(
+            "OL params leave the withdrawal amount uncapped, which the alpen-cli config cannot \
+             express; set `bridge_params.max_withdrawal_amount` in the OL params or drop \
+             --cli-config"
+        )
+    })
 }
 
 /// Derives the aggregated MuSig2 bridge key the CLI locks deposits to.
@@ -302,7 +326,7 @@ fn derive_bridge_pubkey(operators: &[EvenPublicKey]) -> anyhow::Result<String> {
     Ok(hex::encode(agg_key.serialize()))
 }
 
-/// Writes the alpen-cli config fields derived from the ASM and OL params as a TOML snippet.
+/// Builds the alpen-cli config fields derived from the ASM and OL params.
 ///
 /// Deposit fields come from the ASM bridge subprotocol; the withdrawal fields come
 /// from the OL bridge params, which are what the OL STF validates withdrawals against.
@@ -310,11 +334,11 @@ fn derive_bridge_pubkey(operators: &[EvenPublicKey]) -> anyhow::Result<String> {
 /// Refuses to overwrite an existing file: the snippet is meant to be merged
 /// into the CLI's config.toml, and pointing this at a live config would wipe
 /// every other setting in it.
-fn write_cli_network_profile(
+fn build_cli_network_profile(
     path: &Path,
     asm_params: &AsmParams,
     ol_bridge_params: &BridgeParams,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<CliNetworkProfile> {
     anyhow::ensure!(
         !path.exists(),
         "refusing to overwrite existing file {path:?}; merge the generated snippet into the CLI \
@@ -331,17 +355,20 @@ fn write_cli_network_profile(
         ol_bridge_params.denomination()
     );
 
-    let profile = CliNetworkProfile {
+    Ok(CliNetworkProfile {
         network: asm_params.anchor.network,
         magic_bytes: asm_params.magic,
         bridge_pubkey: derive_bridge_pubkey(&bridge.operators)?,
         bridge_denomination_sats: ol_bridge_params.denomination(),
         recovery_delay: bridge.recovery_delay,
-        max_withdrawal_amount_sats: ol_bridge_params.max_withdrawal_amount(),
+        max_withdrawal_amount_sats: cli_withdrawal_cap(ol_bridge_params)?,
         max_withdrawal_descriptor_len: ol_bridge_params.max_withdrawal_descriptor_len(),
-    };
+    })
+}
 
-    let body = toml::to_string(&profile)?;
+/// Writes a network profile as a TOML snippet for the alpen wallet CLI.
+fn write_cli_network_profile(path: &Path, profile: &CliNetworkProfile) -> anyhow::Result<()> {
+    let body = toml::to_string(profile)?;
     fs::write(path, format!("{CLI_PROFILE_HEADER}{body}"))?;
 
     Ok(())
@@ -398,7 +425,7 @@ mod tests {
             bridge_pubkey: TEST_SEQ_PK.to_owned(),
             bridge_denomination_sats: 100_000_000,
             recovery_delay: 1_008,
-            max_withdrawal_amount_sats: Some(1_000_000_000),
+            max_withdrawal_amount_sats: 1_000_000_000,
             max_withdrawal_descriptor_len: 81,
         };
 
@@ -425,20 +452,24 @@ mod tests {
     }
 
     #[test]
-    fn cli_network_profile_omits_absent_withdrawal_cap() {
-        let profile = CliNetworkProfile {
-            network: Network::Signet,
-            magic_bytes: "ALPN".parse().expect("valid magic bytes"),
-            bridge_pubkey: TEST_SEQ_PK.to_owned(),
-            bridge_denomination_sats: 100_000_000,
-            recovery_delay: 1_008,
-            max_withdrawal_amount_sats: None,
-            max_withdrawal_descriptor_len: 81,
-        };
+    fn cli_withdrawal_cap_uses_the_ol_cap() {
+        let ol_bridge_params =
+            BridgeParams::new(100_000_000, Some(500_000_000)).expect("valid bridge params");
 
-        let rendered = toml::to_string(&profile).expect("profile should serialize");
+        let cap = cli_withdrawal_cap(&ol_bridge_params).expect("capped params resolve");
 
-        assert!(!rendered.contains("max_withdrawal_amount_sats"));
+        assert_eq!(cap, 500_000_000);
+    }
+
+    #[test]
+    fn cli_withdrawal_cap_rejects_uncapped_ol_params() {
+        // The CLI reads an absent cap as the default 10 BTC, so an uncapped OL cannot
+        // be expressed: emitting a profile would silently cap the wallet below the OL.
+        let ol_bridge_params = BridgeParams::new(100_000_000, None).expect("valid bridge params");
+
+        let err = cli_withdrawal_cap(&ol_bridge_params).unwrap_err();
+
+        assert!(err.to_string().contains("uncapped"));
     }
 
     #[test]
