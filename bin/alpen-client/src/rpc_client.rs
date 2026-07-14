@@ -26,6 +26,32 @@ use tracing::info;
 /// Max retries for startup RPC calls where the OL node may still be booting.
 const STARTUP_RPC_MAX_RETRIES: u16 = 10;
 
+/// Number of OL slots to advance per `get_blocks_summaries` request.
+const INBOX_FETCH_SLOT_WINDOW: u64 = 100;
+
+/// Splits an inclusive `[min_slot, max_slot]` slot range into contiguous
+/// inclusive windows spanning at most [`INBOX_FETCH_SLOT_WINDOW`] slots beyond
+/// their start.
+///
+/// Returns an empty list when `min_slot > max_slot`.
+fn inbox_slot_windows(min_slot: u64, max_slot: u64) -> Vec<(u64, u64)> {
+    let mut windows = Vec::new();
+    let mut window_start = min_slot;
+    while window_start <= max_slot {
+        let window_end = window_start
+            .saturating_add(INBOX_FETCH_SLOT_WINDOW)
+            .min(max_slot);
+        windows.push((window_start, window_end));
+        // Reached the end on this window; break before the increment so it
+        // can't overflow when `max_slot` is near `u64::MAX`.
+        if window_end == max_slot {
+            break;
+        }
+        window_start = window_end + 1;
+    }
+    windows
+}
+
 /// RPC-based OL client that communicates with an OL node via JSON-RPC.
 #[derive(Debug)]
 pub(crate) struct RpcOLClient {
@@ -222,13 +248,10 @@ impl OLClient for RpcOLClient {
     }
 }
 
-#[async_trait]
-impl SequencerOLClient for RpcOLClient {
-    async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
-        <Self as OLClient>::chain_status(self).await
-    }
-
-    async fn get_inbox_messages(
+impl RpcOLClient {
+    /// Fetches inbox messages for a single slot window that fits within the
+    /// server's `max_headers_range` limit, retrying transient failures.
+    async fn fetch_inbox_messages_window(
         &self,
         min_slot: u64,
         max_slot: u64,
@@ -265,6 +288,30 @@ impl SequencerOLClient for RpcOLClient {
             },
         )
         .await
+    }
+}
+
+#[async_trait]
+impl SequencerOLClient for RpcOLClient {
+    async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
+        <Self as OLClient>::chain_status(self).await
+    }
+
+    async fn get_inbox_messages(
+        &self,
+        min_slot: u64,
+        max_slot: u64,
+    ) -> Result<Vec<OLBlockData>, OLClientError> {
+        // The server caps a single request at `max_headers_range` slots, so
+        // fetch the range in windows and concatenate.
+        let mut blocks = Vec::new();
+        for (window_start, window_end) in inbox_slot_windows(min_slot, max_slot) {
+            blocks.extend(
+                self.fetch_inbox_messages_window(window_start, window_end)
+                    .await?,
+            );
+        }
+        Ok(blocks)
     }
 
     /// Retrieves latest account state in the OL Chain for this account.
@@ -369,7 +416,56 @@ mod tests {
     use http::header::HeaderName;
     use strata_identifiers::AccountId;
 
-    use super::{bearer_auth_headers, OLClientError, RpcOLClient, RpcTransportClient};
+    use super::{
+        bearer_auth_headers, inbox_slot_windows, OLClientError, RpcOLClient, RpcTransportClient,
+        INBOX_FETCH_SLOT_WINDOW,
+    };
+
+    #[test]
+    fn windows_single_when_within_limit() {
+        assert_eq!(inbox_slot_windows(10, 20), vec![(10, 20)]);
+    }
+
+    #[test]
+    fn windows_single_slot() {
+        assert_eq!(inbox_slot_windows(5, 5), vec![(5, 5)]);
+    }
+
+    #[test]
+    fn windows_full_window_is_single() {
+        assert_eq!(
+            inbox_slot_windows(0, INBOX_FETCH_SLOT_WINDOW),
+            vec![(0, INBOX_FETCH_SLOT_WINDOW)]
+        );
+    }
+
+    #[test]
+    fn windows_split_large_range_contiguously() {
+        let max_slot = INBOX_FETCH_SLOT_WINDOW * 2 + 5;
+        let windows = inbox_slot_windows(0, max_slot);
+        assert_eq!(
+            windows,
+            vec![
+                (0, INBOX_FETCH_SLOT_WINDOW),
+                (INBOX_FETCH_SLOT_WINDOW + 1, 2 * INBOX_FETCH_SLOT_WINDOW + 1),
+                (2 * INBOX_FETCH_SLOT_WINDOW + 2, max_slot),
+            ]
+        );
+        // Windows are contiguous, cover the full range, and stay within the limit.
+        assert_eq!(windows.first().unwrap().0, 0);
+        assert_eq!(windows.last().unwrap().1, max_slot);
+        for pair in windows.windows(2) {
+            assert_eq!(pair[0].1 + 1, pair[1].0);
+        }
+        for (start, end) in windows {
+            assert!(end - start <= INBOX_FETCH_SLOT_WINDOW);
+        }
+    }
+
+    #[test]
+    fn windows_empty_when_inverted() {
+        assert!(inbox_slot_windows(21, 20).is_empty());
+    }
 
     #[test]
     fn http_url_uses_http_client() {
