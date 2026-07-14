@@ -50,6 +50,15 @@ const DEFAULT_MAX_SEQNO_GAP: NonZero<u8> = NonZero::new(10).expect("10 is non-ze
 /// Generates the ASM params for a Strata network.
 /// Either writes to a file or prints to stdout depending on the provided options.
 pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
+    // Checked before anything is written: otherwise the `--output` write below would
+    // already have clobbered the CLI config by the time we bail.
+    if let Some(cli_config_path) = &cmd.cli_config {
+        anyhow::ensure!(
+            cmd.output.as_deref() != Some(cli_config_path.as_path()),
+            "--cli-config must not point at the same file as --output"
+        );
+    }
+
     let magic: MagicBytes = if let Some(name_str) = &cmd.name {
         name_str
             .parse()
@@ -188,10 +197,6 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     }
 
     if let Some(cli_config_path) = &cmd.cli_config {
-        anyhow::ensure!(
-            cmd.output.as_deref() != Some(cli_config_path.as_path()),
-            "--cli-config must not point at the same file as --output"
-        );
         write_cli_network_profile(cli_config_path, &asm_params)?;
         eprintln!("wrote alpen-cli network profile to {cli_config_path:?}");
     }
