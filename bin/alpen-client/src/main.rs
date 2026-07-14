@@ -550,7 +550,13 @@ fn main() {
             );
 
             #[cfg(feature = "sequencer")]
-            if ext.sequencer {
+            if let Some(SequencerBootState {
+                ol_chain_tracker: ol_chain_tracker_state,
+                exec_chain: exec_chain_state,
+                batch_builder: batch_builder_state,
+                batch_lifecycle: batch_lifecycle_state,
+            }) = sequencer_boot_state
+            {
                 // sequencer specific tasks
 
                 use alpen_ee_common::{require_latest_batch, BlockNumHash};
@@ -566,13 +572,6 @@ fn main() {
                 };
 
                 use crate::gas_data_provider::RethGasDataProvider;
-
-                let SequencerBootState {
-                    ol_chain_tracker: ol_chain_tracker_state,
-                    exec_chain: exec_chain_state,
-                    batch_builder: batch_builder_state,
-                    batch_lifecycle: batch_lifecycle_state,
-                } = sequencer_boot_state.expect("sequencer boot state built in sequencer mode");
 
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
