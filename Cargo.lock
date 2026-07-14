@@ -1041,11 +1041,9 @@ dependencies = [
  "rand_core 0.6.4",
  "reqwest 0.12.28",
  "serde",
- "serde_json",
  "sha2",
  "shrex",
  "sled",
- "strata-asm-params",
  "strata-asm-proto-bridge-v1-txs",
  "strata-bridge-params",
  "strata-cli-common",
@@ -15489,6 +15487,7 @@ dependencies = [
  "bitcoind-async-client",
  "hex",
  "rand_core 0.6.4",
+ "serde",
  "serde_json",
  "strata-asm-params",
  "strata-asm-proto-bridge-v1-types",
@@ -15509,6 +15508,7 @@ dependencies = [
  "strata-snark-acct-runtime",
  "strata-sp1-guest-builder",
  "tokio",
+ "toml 0.5.11",
  "zeroize",
 ]
 
