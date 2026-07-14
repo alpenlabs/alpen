@@ -340,10 +340,15 @@ fn main() {
                 .await
                 .context("failed to fetch account genesis epoch from OL")?;
 
-            ensure_genesis(config.as_ref(), &genesis_epoch, storage.as_ref())
-                .instrument(info_span!("ensure_genesis", component = "alpen"))
-                .await
-                .context("genesis should not fail")?;
+            ensure_genesis(
+                config.as_ref(),
+                &genesis_epoch,
+                storage.as_ref(),
+                ext.sequencer,
+            )
+            .instrument(info_span!("ensure_genesis", component = "alpen"))
+            .await
+            .context("genesis should not fail")?;
 
             let ol_chain_status = chain_status_checked(ol_client.as_ref())
                 .instrument(info_span!("chain_status_check", component = "alpen"))
@@ -1678,12 +1683,18 @@ async fn ensure_genesis<TStorage: Storage + ExecBlockStorage + BatchStorage>(
     config: &AlpenEeConfig,
     genesis_epoch: &EpochCommitment,
     storage: &TStorage,
+    is_sequencer: bool,
 ) -> eyre::Result<()> {
     ensure_genesis_ee_account_state(config, genesis_epoch, storage).await?;
+
     #[cfg(feature = "sequencer")]
-    ensure_finalized_exec_chain_genesis(config, genesis_epoch.to_block_commitment(), storage)
-        .await?;
-    #[cfg(feature = "sequencer")]
-    ensure_batch_genesis(config, storage).await?;
+    if is_sequencer {
+        ensure_finalized_exec_chain_genesis(config, genesis_epoch.to_block_commitment(), storage)
+            .await?;
+        ensure_batch_genesis(config, storage).await?;
+    }
+    #[cfg(not(feature = "sequencer"))]
+    let _ = is_sequencer;
+
     Ok(())
 }
