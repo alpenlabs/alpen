@@ -2,7 +2,7 @@
 # TODO(STR-3677): replace the older ol-chain-types crate with this and remove "-new" suffix
 # "-new" is added to maintain compatibility with existing code without disruptive changes
 name = "strata-ol-chain-types-new"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
