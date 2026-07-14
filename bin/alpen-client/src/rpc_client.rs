@@ -307,6 +307,12 @@ impl SequencerOLClient for RpcOLClient {
         min_slot: u64,
         max_slot: u64,
     ) -> Result<Vec<OLBlockData>, OLClientError> {
+        // Reject inverted ranges explicitly; the windowing below would otherwise
+        // return an empty result, masking a caller bug.
+        if min_slot > max_slot {
+            return Err(OLClientError::InvalidSlotRange { min_slot, max_slot });
+        }
+
         // The server caps a single request at `max_headers_range` slots, so
         // fetch the range in windows and concatenate.
         let mut blocks = Vec::new();
@@ -423,7 +429,7 @@ mod tests {
 
     use super::{
         bearer_auth_headers, inbox_slot_windows, OLClientError, RpcOLClient, RpcTransportClient,
-        INBOX_FETCH_SLOT_WINDOW,
+        SequencerOLClient, INBOX_FETCH_SLOT_WINDOW,
     };
 
     #[test]
@@ -470,6 +476,29 @@ mod tests {
     #[test]
     fn windows_empty_when_inverted() {
         assert!(inbox_slot_windows(21, 20).is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_inbox_messages_rejects_inverted_range() {
+        // Guarded before any network I/O, so a dummy URL is fine.
+        let client = RpcOLClient::try_new(
+            AccountId::new([0u8; 32]),
+            "http://localhost:1234",
+            None,
+            None,
+        )
+        .unwrap();
+        let err = client
+            .get_inbox_messages(21, 20)
+            .await
+            .expect_err("inverted range should be rejected");
+        assert!(matches!(
+            err,
+            OLClientError::InvalidSlotRange {
+                min_slot: 21,
+                max_slot: 20
+            }
+        ));
     }
 
     #[test]
