@@ -72,8 +72,11 @@ The CLI config cannot express an uncapped withdrawal amount — an absent
 null, rather than emitting a profile that would silently cap the wallet below
 what the OL allows.
 
-Merge the generated snippet into the CLI's `config.toml`. The command refuses
-to overwrite an existing file, so don't point it at a live config.
+Merge the generated snippet into the CLI's `config.toml`, replacing any of
+these keys the file already defines — TOML rejects duplicate keys, so
+appending the snippet to a config that already has `bridge_pubkey` fails to
+parse. The command refuses to overwrite an existing file, so don't point it
+at a live config.
 
 These values are consensus-critical: hand-editing them can produce deposit
 transactions the bridge won't recognize, or withdrawals the OL rejects.
