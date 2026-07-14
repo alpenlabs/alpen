@@ -29,14 +29,13 @@ The retained secondary compose files have narrower test/debug purposes:
 
 | Compose | Purpose |
 |---|---|
-| `compose-fullnode.yml` | Local Alpen fullnode stack with signet `bitcoind`, checkpoint-sync, and Alpen EE fullnode |
+| `compose-fullnode.yml` | Alpen EE fullnode |
 | `compose-checkpoint-sync.yml` | Checkpoint-sync OL node; use with a signet fullnode and mount pre-generated params under `configs/generated/` |
 | `docker-compose-eest.yml` | Ethereum execution spec test environment |
 | `docker-compose-p2p-test.yml` | Minimal EE P2P/gossip test |
 
-For operator-style fullnode validation, use `compose-fullnode.yml` so the local
-Signet fullnode, checkpoint-sync node, and Alpen EE fullnode share one compose
-project and network.
+For operator-style fullnode validation, use `compose-fullnode.yml`. By default
+it runs the Alpen EE fullnode against the `OL_CLIENT_URL` configured in `.env`.
 
 Create the fullnode environment file before starting that stack:
 
@@ -45,48 +44,32 @@ cp .env.alpen-fullnode.example .env
 # Edit .env for the target network images and Alpen EE peers.
 ```
 
-Prepare the required files that are mounted by the checkpoint-sync and Alpen
-fullnode services:
+Prepare the required key file mounted by the Alpen fullnode service:
 
 ```bash
 mkdir -p configs/generated
 
 openssl rand -hex 32 > configs/generated/jwt.hex
-sudo chown 10001:10001 configs/generated/jwt.hex
-sudo chmod 600 configs/generated/jwt.hex
+chmod 644 configs/generated/jwt.hex
 ```
 
-Copy the target network params into `configs/generated/ol-params.json` and
-`configs/generated/asm-params.json` before starting the stack.
-
-If the fullnode images are not already available locally or in a registry,
+If the fullnode image is not already available locally or in a registry,
 set local image names in `.env`:
 
 ```bash
 ALPEN_IMAGE=alpen-client:local
-CHECKPOINT_SYNC_IMAGE=strata-checkpoint-sync:local
-BITCOIN_IMAGE=bitcoin/bitcoin:31.0
 ```
 
-Then build them from this checkout:
+Then build it from this checkout:
 
 ```bash
-docker compose -f compose-fullnode.yml build strata-checkpoint-sync alpen-fullnode
+docker compose -f compose-fullnode.yml build alpen-fullnode
 ```
 
-Then start the fullnode stack:
+Then start the Alpen fullnode:
 
 ```bash
 docker compose -f compose-fullnode.yml up -d
-```
-
-Before running host-shell checks that reference values from `.env`, export the
-file into the current shell. Docker Compose reads `.env` automatically, but
-commands such as `bitcoin-cli -rpcuser="$BITCOIND_RPC_USER"` do not.
-
-```bash
-set -a; source .env; set +a
-docker compose -f compose-fullnode.yml exec bitcoind bitcoin-cli -signet -rpcuser="$BITCOIND_RPC_USER" -rpcpassword="$BITCOIND_RPC_PASSWORD" getblockchaininfo
 ```
 
 ## Just Recipes
