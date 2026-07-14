@@ -27,11 +27,16 @@ use tracing::info;
 const STARTUP_RPC_MAX_RETRIES: u16 = 10;
 
 /// Number of OL slots to advance per `get_blocks_summaries` request.
+///
+/// Windows are inclusive on both ends, so each request spans up to
+/// `INBOX_FETCH_SLOT_WINDOW + 1` slots. Keep this well below the OL server's
+/// `max_headers_range` (default 5000); setting it equal would overshoot the
+/// limit by one slot and get rejected.
 const INBOX_FETCH_SLOT_WINDOW: u64 = 100;
 
 /// Splits an inclusive `[min_slot, max_slot]` slot range into contiguous
-/// inclusive windows spanning at most [`INBOX_FETCH_SLOT_WINDOW`] slots beyond
-/// their start.
+/// windows. Each window is inclusive on both ends and therefore spans up to
+/// [`INBOX_FETCH_SLOT_WINDOW`]` + 1` slots.
 ///
 /// Returns an empty list when `min_slot > max_slot`.
 fn inbox_slot_windows(min_slot: u64, max_slot: u64) -> Vec<(u64, u64)> {
