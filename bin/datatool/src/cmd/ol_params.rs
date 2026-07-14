@@ -36,6 +36,10 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
 
     let anchor = retrieve_l1_anchor(cmd.l1_anchor_file.as_deref(), cmd.genesis_l1_height, ctx)?;
 
+    // TODO: expose the bridge params (denomination, withdrawal cap) as flags. They are
+    // stuck at `BridgeParams::default()` here, and `gen-asm-params` now requires its
+    // deposit denomination to equal this one, so a network that wants a non-default
+    // denomination has to hand-edit the generated OL params JSON.
     let mut ol_params = OLParams::new_empty(anchor.block);
     let ee_params = read_ee_params(cmd.ee_params.as_deref())?;
 

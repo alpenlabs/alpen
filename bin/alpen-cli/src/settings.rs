@@ -72,7 +72,8 @@ pub struct SettingsFromFile {
     /// Bridge denomination in satoshis, used for both deposits and
     /// withdrawals.
     ///
-    /// Must match the Bridge subprotocol denomination in the ASM params.
+    /// Must match the Bridge subprotocol denomination in the ASM params and the
+    /// bridge denomination in the OL params, which are the same network value.
     pub bridge_denomination_sats: u64,
     /// Number of Bitcoin blocks after which the depositor can reclaim an
     /// unprocessed deposit request.
@@ -80,8 +81,13 @@ pub struct SettingsFromFile {
     /// Must match the Bridge subprotocol recovery delay in the ASM params.
     pub recovery_delay: u16,
     /// Maximum withdrawal amount in satoshis. Defaults to 1_000_000_000 (10 BTC).
+    ///
+    /// Withdrawals are batched in multiples of the denomination up to this cap, so
+    /// it must match the OL params to avoid submitting amounts the OL STF rejects.
     pub max_withdrawal_amount_sats: Option<u64>,
     /// Maximum withdrawal BOSD descriptor length in bytes, including the type tag.
+    ///
+    /// Must match the OL params.
     pub max_withdrawal_descriptor_len: Option<u32>,
     /// Seed that can be passed directly for functional test.
     #[cfg(feature = "test-mode")]
@@ -234,7 +240,9 @@ mod tests {
              magic_bytes = \"ALPN\"\n\
              bridge_pubkey = \"14ebfa9a90fee3020686b5334b297b675a9f29282f44b6c3a4ab1f0582021839\"\n\
              bridge_denomination_sats = 100000000\n\
-             recovery_delay = 1008\n";
+             recovery_delay = 1008\n\
+             max_withdrawal_amount_sats = 1000000000\n\
+             max_withdrawal_descriptor_len = 81\n";
 
         let config = format!(
             "{snippet}\n\
@@ -250,6 +258,8 @@ mod tests {
         assert_eq!(parsed.magic_bytes, MagicBytes::new(*b"ALPN"));
         assert_eq!(parsed.bridge_denomination_sats, 100_000_000);
         assert_eq!(parsed.recovery_delay, 1_008);
+        assert_eq!(parsed.max_withdrawal_amount_sats, Some(1_000_000_000));
+        assert_eq!(parsed.max_withdrawal_descriptor_len, Some(81));
     }
 
     #[test]

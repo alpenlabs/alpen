@@ -17,7 +17,7 @@ use strata_crypto::{
 use strata_identifiers::Buf32;
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_genesis::build_genesis_artifacts;
-use strata_ol_params::OLParams;
+use strata_ol_params::{BridgeParams, OLParams};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::bitcoin_bosd::{Descriptor, DescriptorType};
 
@@ -26,9 +26,6 @@ use crate::{
     checkpoint_predicate::resolve_checkpoint_predicate,
     util::parse_abbr_amt,
 };
-
-/// The default deposit amount in sats (1 BTC).
-const DEFAULT_DEPOSIT_SATS: u64 = 100_000_000;
 
 /// The default assignment duration in blocks.
 const DEFAULT_ASSIGNMENT_DURATION: u16 = 64;
@@ -156,11 +153,8 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     };
 
     // Build bridge config.
-    let deposit_sats = cmd
-        .deposit_sats
-        .map(|s| parse_abbr_amt(&s))
-        .transpose()?
-        .unwrap_or(DEFAULT_DEPOSIT_SATS);
+    let deposit_sats =
+        resolve_deposit_sats(cmd.deposit_sats.as_deref(), ol_params.bridge_params())?;
 
     let safe_harbour_address = resolve_safe_harbour_address(&cmd.safe_harbour_address)?;
     let operators: Vec<EvenPublicKey> = pubkeys.into_iter().map(EvenPublicKey::from).collect();
@@ -197,11 +191,38 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     }
 
     if let Some(cli_config_path) = &cmd.cli_config {
-        write_cli_network_profile(cli_config_path, &asm_params)?;
+        write_cli_network_profile(cli_config_path, &asm_params, ol_params.bridge_params())?;
         eprintln!("wrote alpen-cli network profile to {cli_config_path:?}");
     }
 
     Ok(())
+}
+
+/// Resolves the ASM bridge deposit denomination against the OL bridge params.
+///
+/// The ASM locks deposits at its own denomination while the OL STF validates
+/// withdrawals against `bridge_params.denomination`, so the two must agree or
+/// funds deposited on L1 cannot be withdrawn. The OL value is the source of
+/// truth; `--deposit-sats` may only restate it.
+fn resolve_deposit_sats(
+    deposit_sats: Option<&str>,
+    ol_bridge_params: &BridgeParams,
+) -> anyhow::Result<u64> {
+    let ol_denomination = ol_bridge_params.denomination();
+
+    let Some(deposit_sats) = deposit_sats else {
+        return Ok(ol_denomination);
+    };
+
+    let deposit_sats = parse_abbr_amt(deposit_sats)?;
+    anyhow::ensure!(
+        deposit_sats == ol_denomination,
+        "--deposit-sats ({deposit_sats}) must equal the OL params bridge denomination \
+         ({ol_denomination}); the ASM deposit denomination and the OL withdrawal denomination are \
+         the same network value"
+    );
+
+    Ok(deposit_sats)
 }
 
 /// Header prepended to the emitted alpen-cli network profile.
@@ -218,6 +239,11 @@ struct CliNetworkProfile {
     bridge_pubkey: String,
     bridge_denomination_sats: u64,
     recovery_delay: u16,
+    /// Withdrawals are batched in multiples of the denomination, so the CLI needs
+    /// the OL's cap to reject amounts the OL STF would reject.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_withdrawal_amount_sats: Option<u64>,
+    max_withdrawal_descriptor_len: u32,
 }
 
 /// Derives the aggregated MuSig2 bridge key the CLI locks deposits to.
@@ -240,12 +266,19 @@ fn derive_bridge_pubkey(operators: &[EvenPublicKey]) -> anyhow::Result<String> {
     Ok(hex::encode(agg_key.serialize()))
 }
 
-/// Writes the alpen-cli config fields derived from the ASM params as a TOML snippet.
+/// Writes the alpen-cli config fields derived from the ASM and OL params as a TOML snippet.
+///
+/// Deposit fields come from the ASM bridge subprotocol; the withdrawal fields come
+/// from the OL bridge params, which are what the OL STF validates withdrawals against.
 ///
 /// Refuses to overwrite an existing file: the snippet is meant to be merged
 /// into the CLI's config.toml, and pointing this at a live config would wipe
 /// every other setting in it.
-fn write_cli_network_profile(path: &Path, asm_params: &AsmParams) -> anyhow::Result<()> {
+fn write_cli_network_profile(
+    path: &Path,
+    asm_params: &AsmParams,
+    ol_bridge_params: &BridgeParams,
+) -> anyhow::Result<()> {
     anyhow::ensure!(
         !path.exists(),
         "refusing to overwrite existing file {path:?}; merge the generated snippet into the CLI \
@@ -256,12 +289,20 @@ fn write_cli_network_profile(path: &Path, asm_params: &AsmParams) -> anyhow::Res
         .bridge_config()
         .ok_or_else(|| anyhow::anyhow!("ASM params missing Bridge subprotocol config"))?;
 
+    // `resolve_deposit_sats` already rejected params where these diverge.
+    debug_assert_eq!(
+        bridge.denomination.to_sat(),
+        ol_bridge_params.denomination()
+    );
+
     let profile = CliNetworkProfile {
         network: asm_params.anchor.network,
         magic_bytes: asm_params.magic,
         bridge_pubkey: derive_bridge_pubkey(&bridge.operators)?,
-        bridge_denomination_sats: bridge.denomination.to_sat(),
+        bridge_denomination_sats: ol_bridge_params.denomination(),
         recovery_delay: bridge.recovery_delay,
+        max_withdrawal_amount_sats: ol_bridge_params.max_withdrawal_amount(),
+        max_withdrawal_descriptor_len: ol_bridge_params.max_withdrawal_descriptor_len(),
     };
 
     let body = toml::to_string(&profile)?;
@@ -321,6 +362,8 @@ mod tests {
             bridge_pubkey: TEST_SEQ_PK.to_owned(),
             bridge_denomination_sats: 100_000_000,
             recovery_delay: 1_008,
+            max_withdrawal_amount_sats: Some(1_000_000_000),
+            max_withdrawal_descriptor_len: 81,
         };
 
         let rendered = format!(
@@ -339,8 +382,56 @@ mod tests {
              magic_bytes = \"ALPN\"\n\
              bridge_pubkey = \"14ebfa9a90fee3020686b5334b297b675a9f29282f44b6c3a4ab1f0582021839\"\n\
              bridge_denomination_sats = 100000000\n\
-             recovery_delay = 1008\n"
+             recovery_delay = 1008\n\
+             max_withdrawal_amount_sats = 1000000000\n\
+             max_withdrawal_descriptor_len = 81\n"
         );
+    }
+
+    #[test]
+    fn cli_network_profile_omits_absent_withdrawal_cap() {
+        let profile = CliNetworkProfile {
+            network: Network::Signet,
+            magic_bytes: "ALPN".parse().expect("valid magic bytes"),
+            bridge_pubkey: TEST_SEQ_PK.to_owned(),
+            bridge_denomination_sats: 100_000_000,
+            recovery_delay: 1_008,
+            max_withdrawal_amount_sats: None,
+            max_withdrawal_descriptor_len: 81,
+        };
+
+        let rendered = toml::to_string(&profile).expect("profile should serialize");
+
+        assert!(!rendered.contains("max_withdrawal_amount_sats"));
+    }
+
+    #[test]
+    fn deposit_sats_defaults_to_the_ol_denomination() {
+        let ol_bridge_params = BridgeParams::new(50_000_000, None).expect("valid bridge params");
+
+        let deposit_sats =
+            resolve_deposit_sats(None, &ol_bridge_params).expect("default should resolve");
+
+        assert_eq!(deposit_sats, 50_000_000);
+    }
+
+    #[test]
+    fn deposit_sats_may_restate_the_ol_denomination() {
+        let ol_bridge_params = BridgeParams::new(100_000_000, None).expect("valid bridge params");
+
+        let deposit_sats =
+            resolve_deposit_sats(Some("100M"), &ol_bridge_params).expect("matching value is fine");
+
+        assert_eq!(deposit_sats, 100_000_000);
+    }
+
+    #[test]
+    fn deposit_sats_rejects_denomination_mismatch() {
+        let ol_bridge_params = BridgeParams::new(100_000_000, None).expect("valid bridge params");
+
+        let err = resolve_deposit_sats(Some("200M"), &ol_bridge_params).unwrap_err();
+
+        assert!(err.to_string().contains("must equal the OL params bridge"));
     }
 
     #[test]

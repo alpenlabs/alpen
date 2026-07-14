@@ -190,7 +190,11 @@ pub(crate) struct SubcAsmParams {
     )]
     pub(crate) op_pks: Option<PathBuf>,
 
-    #[argh(option, description = "deposit amount in sats (default \"10 BTC\")")]
+    #[argh(
+        option,
+        description = "deposit amount in sats; must equal the OL params bridge denomination \
+                       (defaults to it)"
+    )]
     pub(crate) deposit_sats: Option<String>,
 
     #[argh(
