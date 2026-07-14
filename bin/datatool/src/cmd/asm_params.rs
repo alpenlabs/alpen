@@ -298,7 +298,7 @@ struct CliNetworkProfile {
 /// and TOML has no null, so an uncapped OL cannot be expressed in the profile:
 /// emitting one would silently cap a wallet that the OL would let withdraw more.
 /// Refuse instead of guessing.
-// TODO: teach the CLI config an explicit uncapped spelling and emit that here.
+// TODO(STR-3973): teach the CLI config an explicit uncapped spelling and emit that here.
 fn cli_withdrawal_cap(ol_bridge_params: &BridgeParams) -> anyhow::Result<u64> {
     ol_bridge_params.max_withdrawal_amount().ok_or_else(|| {
         anyhow::anyhow!(
