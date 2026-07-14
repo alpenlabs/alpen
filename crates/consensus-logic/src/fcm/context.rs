@@ -34,13 +34,7 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
     /// if any.
     async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>>;
 
-    /// Rolls back per-block OL state-indexing writes in `epoch` attributed to
-    /// blocks with slots strictly greater than `cutoff.slot()`.
-    ///
-    /// Called when a block is marked invalid to drop its indexing writes, so
-    /// a replacement block at the same slot can apply its own without
-    /// conflicting against the indexing high-watermark. Idempotent; a no-op
-    /// when the rejected block never reached the persist step.
+    /// Rolls back block-attributed OL state-indexing writes in `epoch` to `cutoff`.
     async fn rollback_block_state_indexing(
         &self,
         epoch: Epoch,

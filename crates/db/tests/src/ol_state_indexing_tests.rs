@@ -1,6 +1,6 @@
 //! OL state indexing database tests.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use strata_db_types::ol_state_index::{
     AccountCreatedRecord, AccountUpdateMeta, AccountUpdateRecord, EpochIndexingData,
@@ -484,7 +484,7 @@ pub fn test_rollback_to_block_drops_later_blocks(db: &impl OLStateIndexingDataba
         .expect("get inbox")
         .is_none());
 
-    // acct_a creation kept (created in blk1, slot <= cutoff); acct_b dropped.
+    // acct_a creation is retained by rollback; acct_b is dropped.
     assert_eq!(
         db.get_account_creation_epoch(acct_a)
             .expect("get creation a"),
@@ -528,7 +528,7 @@ pub fn test_rollback_to_block_keeps_when_at_or_past_tip(db: &impl OLStateIndexin
     )
     .expect("apply");
 
-    // Cutoff at blk's own slot keeps blk (cutoff is inclusive).
+    // The target block itself is retained by rollback.
     db.rollback_to_block(epoch, blk).expect("rollback");
 
     let got = db
@@ -540,6 +540,111 @@ pub fn test_rollback_to_block_keeps_when_at_or_past_tip(db: &impl OLStateIndexin
         db.get_account_creation_epoch(acct_a).expect("get creation"),
         Some(epoch)
     );
+}
+
+pub fn test_same_slot_sibling_rows_are_removed(db: &impl OLStateIndexingDatabase) {
+    let epoch = 16;
+    let checkpoint_acct = acct(1);
+    let fork_acct = acct(2);
+    let target_acct = acct(3);
+    let retained_created_acct = acct(4);
+    let fork_block = block(10, 1);
+    let target_block = block(10, 2);
+
+    let mut checkpoint_updates = BTreeMap::new();
+    checkpoint_updates.insert(checkpoint_acct, vec![record(None, 1, 5, Some(vec![0xCC]))]);
+    let mut checkpoint_inbox = BTreeMap::new();
+    checkpoint_inbox.insert(
+        checkpoint_acct,
+        vec![InboxMessageRecord::new(vec![0xC1], None)],
+    );
+    db.apply_epoch_indexing(
+        epoch_commit(epoch, 9),
+        IndexingWrites::new(
+            vec![checkpoint_acct, retained_created_acct],
+            checkpoint_updates,
+            checkpoint_inbox,
+        ),
+    )
+    .expect("apply checkpoint rows");
+
+    let mut fork_updates = BTreeMap::new();
+    fork_updates.insert(
+        fork_acct,
+        vec![record(
+            Some(AccountUpdateMeta::new(Some(fork_block), hash(0xF1))),
+            1,
+            6,
+            Some(vec![0xF1]),
+        )],
+    );
+    let mut fork_inbox = BTreeMap::new();
+    fork_inbox.insert(
+        fork_acct,
+        vec![InboxMessageRecord::new(vec![0xF2], Some(fork_block))],
+    );
+    db.apply_block_indexing(
+        epoch,
+        fork_block,
+        IndexingWrites::new(
+            vec![fork_acct, retained_created_acct],
+            fork_updates,
+            fork_inbox,
+        ),
+    )
+    .expect("apply same-slot fork rows");
+
+    db.rollback_to_block(epoch, target_block)
+        .expect("rollback to replacement block");
+
+    assert!(db
+        .get_account_update_records(epoch, fork_acct)
+        .expect("get fork updates")
+        .is_none());
+    assert!(db
+        .get_account_inbox_records(epoch, fork_acct)
+        .expect("get fork inbox")
+        .is_none());
+    assert!(db
+        .get_account_creation_epoch(fork_acct)
+        .expect("get fork creation")
+        .is_none());
+
+    assert!(db
+        .get_account_update_records(epoch, checkpoint_acct)
+        .expect("get checkpoint updates")
+        .is_some());
+    assert!(db
+        .get_account_inbox_records(epoch, checkpoint_acct)
+        .expect("get checkpoint inbox")
+        .is_some());
+    assert_eq!(
+        db.get_account_creation_epoch(checkpoint_acct)
+            .expect("get checkpoint creation"),
+        Some(epoch)
+    );
+    assert_eq!(
+        db.get_account_creation_epoch(retained_created_acct)
+            .expect("get retained duplicate creation"),
+        Some(epoch)
+    );
+
+    let mut target_updates = BTreeMap::new();
+    target_updates.insert(
+        target_acct,
+        vec![record(
+            Some(AccountUpdateMeta::new(Some(target_block), hash(0xA1))),
+            1,
+            7,
+            Some(vec![0xA1]),
+        )],
+    );
+    db.apply_block_indexing(
+        epoch,
+        target_block,
+        IndexingWrites::new(vec![target_acct], target_updates, BTreeMap::new()),
+    )
+    .expect("replacement block should be accepted after rollback");
 }
 
 pub fn test_rollback_to_block_idempotent(db: &impl OLStateIndexingDatabase) {
@@ -632,6 +737,133 @@ pub fn test_rollback_to_block_immune_to_checkpoint_sync(db: &impl OLStateIndexin
         db.get_account_creation_epoch(acct_a).expect("get creation"),
         Some(epoch)
     );
+}
+
+pub fn test_selected_block_attributed_rows_are_removed(db: &impl OLStateIndexingDatabase) {
+    let epoch = 17;
+    let checkpoint_acct = acct(1);
+    let kept_acct = acct(2);
+    let deleted_acct = acct(3);
+    let retained_created_acct = acct(4);
+    let reapplied_acct = acct(5);
+    let kept_block = block(10, 1);
+    let deleted_block = block(11, 2);
+
+    let mut checkpoint_updates = BTreeMap::new();
+    checkpoint_updates.insert(checkpoint_acct, vec![record(None, 1, 5, Some(vec![0xCC]))]);
+    let mut checkpoint_inbox = BTreeMap::new();
+    checkpoint_inbox.insert(
+        checkpoint_acct,
+        vec![InboxMessageRecord::new(vec![0xC1], None)],
+    );
+    db.apply_epoch_indexing(
+        epoch_commit(epoch, 9),
+        IndexingWrites::new(
+            vec![checkpoint_acct, retained_created_acct],
+            checkpoint_updates,
+            checkpoint_inbox,
+        ),
+    )
+    .expect("apply checkpoint rows");
+
+    let mut kept_updates = BTreeMap::new();
+    kept_updates.insert(
+        kept_acct,
+        vec![record(
+            Some(AccountUpdateMeta::new(Some(kept_block), hash(0xA1))),
+            1,
+            6,
+            Some(vec![0xA1]),
+        )],
+    );
+    let mut kept_inbox = BTreeMap::new();
+    kept_inbox.insert(
+        kept_acct,
+        vec![InboxMessageRecord::new(vec![0xA2], Some(kept_block))],
+    );
+    db.apply_block_indexing(
+        epoch,
+        kept_block,
+        IndexingWrites::new(vec![kept_acct], kept_updates, kept_inbox),
+    )
+    .expect("apply kept block rows");
+
+    let mut deleted_updates = BTreeMap::new();
+    deleted_updates.insert(
+        deleted_acct,
+        vec![record(
+            Some(AccountUpdateMeta::new(Some(deleted_block), hash(0xD1))),
+            1,
+            7,
+            Some(vec![0xD1]),
+        )],
+    );
+    let mut deleted_inbox = BTreeMap::new();
+    deleted_inbox.insert(
+        deleted_acct,
+        vec![InboxMessageRecord::new(vec![0xD2], Some(deleted_block))],
+    );
+    db.apply_block_indexing(
+        epoch,
+        deleted_block,
+        IndexingWrites::new(
+            vec![deleted_acct, retained_created_acct],
+            deleted_updates,
+            deleted_inbox,
+        ),
+    )
+    .expect("apply deleted block rows");
+
+    db.del_block_attributed_indexing(epoch, BTreeSet::from([deleted_block]))
+        .expect("delete block-attributed rows");
+
+    assert!(db
+        .get_account_update_records(epoch, deleted_acct)
+        .expect("get deleted updates")
+        .is_none());
+    assert!(db
+        .get_account_inbox_records(epoch, deleted_acct)
+        .expect("get deleted inbox")
+        .is_none());
+    assert!(db
+        .get_account_creation_epoch(deleted_acct)
+        .expect("get deleted creation")
+        .is_none());
+
+    assert!(db
+        .get_account_update_records(epoch, kept_acct)
+        .expect("get kept updates")
+        .is_some());
+    assert!(db
+        .get_account_inbox_records(epoch, kept_acct)
+        .expect("get kept inbox")
+        .is_some());
+    assert_eq!(
+        db.get_account_creation_epoch(kept_acct)
+            .expect("get kept creation"),
+        Some(epoch)
+    );
+
+    assert!(db
+        .get_account_update_records(epoch, checkpoint_acct)
+        .expect("get checkpoint updates")
+        .is_some());
+    assert!(db
+        .get_account_inbox_records(epoch, checkpoint_acct)
+        .expect("get checkpoint inbox")
+        .is_some());
+    assert_eq!(
+        db.get_account_creation_epoch(retained_created_acct)
+            .expect("get retained duplicate creation"),
+        Some(epoch)
+    );
+
+    db.apply_block_indexing(
+        epoch,
+        deleted_block,
+        IndexingWrites::new(vec![reapplied_acct], BTreeMap::new(), BTreeMap::new()),
+    )
+    .expect("deleted high-water block should be re-applicable");
 }
 
 /// Apply data in epochs 5, 6, 7. Roll back to epoch 5: keeps 5, drops 6 and 7.
@@ -782,6 +1014,12 @@ macro_rules! ol_state_indexing_db_tests {
         }
 
         #[test]
+        fn test_same_slot_sibling_rows_are_removed() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_same_slot_sibling_rows_are_removed(&db);
+        }
+
+        #[test]
         fn test_rollback_to_block_idempotent() {
             let db = $setup_expr;
             $crate::ol_state_indexing_tests::test_rollback_to_block_idempotent(&db);
@@ -797,6 +1035,12 @@ macro_rules! ol_state_indexing_db_tests {
         fn test_rollback_to_block_immune_to_checkpoint_sync() {
             let db = $setup_expr;
             $crate::ol_state_indexing_tests::test_rollback_to_block_immune_to_checkpoint_sync(&db);
+        }
+
+        #[test]
+        fn test_selected_block_attributed_rows_are_removed() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_selected_block_attributed_rows_are_removed(&db);
         }
 
         #[test]

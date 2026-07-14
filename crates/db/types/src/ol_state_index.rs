@@ -7,7 +7,7 @@
 //! as CBOR. Fields whose native types lack serde derives (e.g. `MessageEntry`)
 //! are stored in their raw SSZ byte form; callers convert at the boundaries.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use strata_codec::Codec;
@@ -73,11 +73,16 @@ impl EpochIndexingData {
         self.last_applied_block = Some(block);
     }
 
-    /// Resets the high-water mark to `None` if its current slot is strictly
-    /// greater than `slot`. Used by `rollback_to_block` to ensure subsequent
-    /// applies past the cutoff are accepted again.
-    pub fn clear_last_applied_block_after_slot(&mut self, slot: u64) {
-        if self.last_applied_block.is_some_and(|b| b.slot() > slot) {
+    /// Clears the high-water mark unless its block matches the predicate.
+    pub fn clear_last_applied_block_unless_matching<F>(&mut self, should_retain: F)
+    where
+        F: FnOnce(&OLBlockCommitment) -> bool,
+    {
+        if self
+            .last_applied_block
+            .as_ref()
+            .is_some_and(|block| !should_retain(block))
+        {
             self.last_applied_block = None;
         }
     }
@@ -91,19 +96,30 @@ impl EpochIndexingData {
             .push(AccountCreatedRecord::new(acct, block));
     }
 
-    /// Removes entries whose attributed block has slot strictly greater than
-    /// `slot`. Entries with `None` attribution (checkpoint-sync) are never
-    /// matched. Returns the dropped account ids in insertion order.
-    pub fn drop_created_after_slot(&mut self, slot: u64) -> Vec<AccountId> {
+    /// Retains created-account entries whose block attribution should remain.
+    ///
+    /// Returns account ids with no retained creation record, in first-dropped
+    /// record order.
+    pub fn retain_created_accounts_by_block<F>(&mut self, mut should_retain: F) -> Vec<AccountId>
+    where
+        F: FnMut(Option<&OLBlockCommitment>) -> bool,
+    {
         let mut dropped = Vec::new();
         self.created_accounts.retain(|r| {
-            let drop = r.block.is_some_and(|c| c.slot() > slot);
+            let drop = !should_retain(r.block.as_ref());
             if drop {
                 dropped.push(r.account);
             }
             !drop
         });
+
+        let retained_accounts: BTreeSet<AccountId> =
+            self.created_accounts.iter().map(|r| r.account).collect();
+        let mut emitted = BTreeSet::new();
         dropped
+            .into_iter()
+            .filter(|account| !retained_accounts.contains(account) && emitted.insert(*account))
+            .collect()
     }
 }
 
@@ -356,14 +372,28 @@ pub trait OLStateIndexingDatabase: Send + Sync + 'static {
         writes: IndexingWrites,
     ) -> DbResult<()>;
 
-    /// Atomically rolls back all block-attributed writes in `epoch` whose
-    /// block slot is strictly greater than `block.slot()`. Records and
-    /// creators tagged with `block.slot()` itself are kept. Entries with
-    /// `None` attribution (checkpoint-sync) are preserved; they only drop
-    /// when the entire epoch is dropped via [`Self::rollback_to_epoch`].
+    /// Atomically rolls back block-attributed writes in `epoch` after `block`.
+    ///
+    /// Lower-slot rows are kept, the exact target `block` is kept, later rows
+    /// are dropped, and same-slot siblings of `block` are dropped. Entries with
+    /// `None` attribution (checkpoint-sync) are preserved; they only drop when
+    /// the entire epoch is dropped via [`Self::rollback_to_epoch`].
     ///
     /// Idempotent. Does not clear `EpochIndexingData.epoch_commitment`.
     fn rollback_to_block(&self, epoch: Epoch, block: OLBlockCommitment) -> DbResult<()>;
+
+    /// Atomically deletes indexing rows attributed to exact blocks in `epoch`.
+    ///
+    /// Entries with `None` attribution are preserved. Block-attributed rows are
+    /// preserved unless their block is in `blocks`.
+    ///
+    /// Passing an empty set is a no-op. Idempotent. Does not clear
+    /// `EpochIndexingData.epoch_commitment`.
+    fn del_block_attributed_indexing(
+        &self,
+        epoch: Epoch,
+        blocks: BTreeSet<OLBlockCommitment>,
+    ) -> DbResult<()>;
 
     /// Atomically drops all indexing data for epochs strictly greater than
     /// `epoch`. The given `epoch` is preserved. Idempotent.
@@ -398,4 +428,46 @@ pub trait OLStateIndexingDatabase: Send + Sync + 'static {
 
     /// Returns the epoch in which an account was created.
     fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_identifiers::{Buf32, OLBlockId};
+
+    use super::*;
+
+    fn acct(seed: u8) -> AccountId {
+        AccountId::new([seed; 32])
+    }
+
+    fn block(slot: u64, seed: u8) -> OLBlockCommitment {
+        OLBlockCommitment::new(slot, OLBlockId::from(Buf32::from([seed; 32])))
+    }
+
+    #[test]
+    fn test_created_accounts_are_removed_only_when_no_records_remain() {
+        let target_block = block(10, 1);
+        let fork_block = block(10, 2);
+        let shared_acct = acct(1);
+        let abandoned_acct = acct(2);
+        let mut data = EpochIndexingData::new(
+            None,
+            vec![
+                AccountCreatedRecord::new(shared_acct, Some(fork_block)),
+                AccountCreatedRecord::new(shared_acct, Some(target_block)),
+                AccountCreatedRecord::new(abandoned_acct, Some(fork_block)),
+            ],
+            Some(fork_block),
+        );
+
+        let removed = data.retain_created_accounts_by_block(|block| {
+            block.is_none_or(|block| *block == target_block)
+        });
+
+        assert_eq!(removed, vec![abandoned_acct]);
+        assert_eq!(
+            data.created_accounts(),
+            &[AccountCreatedRecord::new(shared_acct, Some(target_block))]
+        );
+    }
 }
