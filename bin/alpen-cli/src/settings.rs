@@ -10,7 +10,7 @@ use std::{
 use alloy::primitives::Address as AlpenAddress;
 use bdk_bitcoind_rpc::bitcoincore_rpc::{Auth, Client};
 use bdk_wallet::bitcoin::{Amount, Network, XOnlyPublicKey};
-use config::Config;
+use config::{Config, ConfigError};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use shrex::Hex;
@@ -177,13 +177,35 @@ impl Settings {
             _ => panic!("invalid config for signet - configure for esplora or bitcoind"),
         };
 
+        // These fields are hand-merged into config.toml by operators, so a bad
+        // value must surface as a config error, not a panic.
+        let bridge_musig2_pubkey =
+            XOnlyPublicKey::from_slice(&from_file.bridge_pubkey.0).map_err(|e| {
+                OneOf::new(ConfigError::Message(format!(
+                    "bridge_pubkey is not a valid x-only public key: {e}"
+                )))
+            })?;
+        let bridge_params = BridgeParams::new_with_descriptor_limit(
+            from_file.bridge_denomination_sats,
+            from_file
+                .max_withdrawal_amount_sats
+                .or(Some(DEFAULT_MAX_WITHDRAWAL_SATS)),
+            from_file
+                .max_withdrawal_descriptor_len
+                .unwrap_or(DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN),
+        )
+        .map_err(|e| {
+            OneOf::new(ConfigError::Message(format!(
+                "invalid withdrawal params in config: {e}"
+            )))
+        })?;
+
         Ok(Settings {
             esplora: from_file.esplora,
             alpen_endpoint: from_file.alpen_endpoint,
             data_dir: proj_dirs.data_dir().to_owned(),
             faucet_endpoint: from_file.faucet_endpoint,
-            bridge_musig2_pubkey: XOnlyPublicKey::from_slice(&from_file.bridge_pubkey.0)
-                .expect("valid length"),
+            bridge_musig2_pubkey,
             descriptor_db: descriptor_file,
             mempool_space_endpoint: from_file.mempool_endpoint,
             blockscout_endpoint: from_file.blockscout_endpoint,
@@ -202,16 +224,7 @@ impl Settings {
                 .map(Amount::from_sat)
                 .unwrap_or(DEFAULT_BRIDGE_FEE),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
-            bridge_params: BridgeParams::new_with_descriptor_limit(
-                from_file.bridge_denomination_sats,
-                from_file
-                    .max_withdrawal_amount_sats
-                    .or(Some(DEFAULT_MAX_WITHDRAWAL_SATS)),
-                from_file
-                    .max_withdrawal_descriptor_len
-                    .unwrap_or(DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN),
-            )
-            .expect("invalid withdrawal params in config"),
+            bridge_params,
             network: from_file.network,
             magic_bytes: from_file.magic_bytes,
             bridge_denomination: Amount::from_sat(from_file.bridge_denomination_sats),
