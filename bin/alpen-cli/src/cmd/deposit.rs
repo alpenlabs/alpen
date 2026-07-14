@@ -159,7 +159,7 @@ pub async fn deposit(
         })
         .transpose()?;
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
-    let drt_amount = settings.bridge_denomination + settings.bridge_fee;
+    let drt_amount = Amount::from_sat(settings.bridge_params.denomination()) + settings.bridge_fee;
     println!(
         "Bridging {} to Alpen address {}",
         drt_amount.to_string().green(),

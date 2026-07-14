@@ -117,8 +117,6 @@ pub struct Settings {
     pub network: Network,
     /// SPS-50 magic bytes tagging protocol transactions on L1.
     pub magic_bytes: MagicBytes,
-    /// Bridge denomination, used for both deposits and withdrawals.
-    pub bridge_denomination: Amount,
     /// Deposit-request reclaim delay in Bitcoin blocks.
     pub recovery_delay: u16,
     #[cfg(feature = "test-mode")]
@@ -227,7 +225,6 @@ impl Settings {
             bridge_params,
             network: from_file.network,
             magic_bytes: from_file.magic_bytes,
-            bridge_denomination: Amount::from_sat(from_file.bridge_denomination_sats),
             recovery_delay: from_file.recovery_delay,
             #[cfg(feature = "test-mode")]
             seed: Seed::from_file(from_file.seed),
