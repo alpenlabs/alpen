@@ -208,6 +208,10 @@ impl CheckpointSyncCtx for MockCtx {
     fn publish_ol_sync_status(&self, status: OLSyncStatus) {
         self.published_statuses.lock().unwrap().push(status);
     }
+
+    async fn reconcile_ol_mmr_index(&self) -> CheckpointSyncResult<()> {
+        Ok(())
+    }
 }
 
 // ---- scan_unapplied_epochs ----

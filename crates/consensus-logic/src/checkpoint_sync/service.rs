@@ -100,6 +100,8 @@ pub async fn start_css<C: CheckpointSyncCtx>(
     texec: Arc<TaskExecutor>,
 ) -> anyhow::Result<ServiceMonitor<CheckpointSyncStatus>> {
     info!("initializing checkpoint sync service");
+    ctx.reconcile_ol_mmr_index().await?;
+
     let last_finalized_and_applied = initialize_css_inner_state(ctx.as_ref()).await?;
 
     // Publish initial OL sync status so the RPC is populated from startup.

@@ -42,6 +42,7 @@ mod fcm;
 mod genesis;
 mod helpers;
 mod init_db;
+mod ol_mmr_reconcile_ctx;
 #[cfg(feature = "prover")]
 mod prover;
 mod rpc;

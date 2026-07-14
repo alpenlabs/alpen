@@ -6,7 +6,9 @@ use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use strata_chain_worker::ChainWorkerHandle;
 use strata_consensus_logic::{
-    ChainController, CsmStatusReader, FcmContext, FcmServiceHandle, FcmStorage, start_fcm_service,
+    ChainController, CsmStatusReader, FcmContext, FcmServiceHandle, FcmStorage,
+    ol_mmr_reconcile::{OLMmrReconcileTarget, reconcile_ol_mmr_index_to_target},
+    start_fcm_service,
     unfinalized_tracker::UnfinalizedOLBlockSource,
 };
 use strata_csm_worker::CsmWorkerStatus;
@@ -14,14 +16,18 @@ use strata_db_types::{DbResult, ol_block::BlockStatus};
 use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_params::OLParams;
 use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 
+use crate::ol_mmr_reconcile_ctx::StrataMmrReconcileCtx;
+
 struct StrataFcmContext {
     storage: Arc<NodeStorage>,
+    ol_params: Arc<OLParams>,
     chain_worker: Arc<ChainWorkerHandle>,
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     status_channel: Arc<StatusChannel>,
@@ -30,12 +36,14 @@ struct StrataFcmContext {
 impl StrataFcmContext {
     fn new(
         storage: Arc<NodeStorage>,
+        ol_params: Arc<OLParams>,
         chain_worker: Arc<ChainWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
         status_channel: Arc<StatusChannel>,
     ) -> Self {
         Self {
             storage,
+            ol_params,
             chain_worker,
             csm_monitor,
             status_channel,
@@ -171,6 +179,14 @@ impl FcmStorage for StrataFcmContext {
             .get_canonical_epoch_commitment_at_async(epoch)
             .await
     }
+
+    async fn reconcile_ol_mmr_index(&self, target: OLMmrReconcileTarget) -> anyhow::Result<()> {
+        let mmr_reconcile_ctx =
+            StrataMmrReconcileCtx::new(self.storage.as_ref(), self.ol_params.as_ref());
+
+        reconcile_ol_mmr_index_to_target(&mmr_reconcile_ctx, target).await?;
+        Ok(())
+    }
 }
 
 impl FcmContext for StrataFcmContext {
@@ -195,6 +211,7 @@ pub(crate) fn start(
         .clone();
     let fcm_ctx = Arc::new(StrataFcmContext::new(
         nodectx.storage().clone(),
+        nodectx.ol_params().clone(),
         chain_worker_handle,
         csm_monitor,
         nodectx.status_channel().clone(),
