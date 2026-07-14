@@ -314,10 +314,11 @@ fn cli_withdrawal_cap(ol_bridge_params: &BridgeParams) -> anyhow::Result<u64> {
 /// Mirrors the ASM bridge subprotocol's operator table: keys are aggregated in
 /// registration order with duplicates skipped.
 ///
-/// TODO: replace this hand-copy of `OperatorTable::calculate_aggregated_key` with
-/// the real thing once the ASM crate re-exports `OperatorTable` (its `state::operator`
-/// module is currently `pub(crate)`); a semantic change upstream (ordering, dedup)
-/// would silently diverge from this mirror and lock deposits to the wrong key.
+/// TODO(STR-3972): replace this hand-copy of `OperatorTable::calculate_aggregated_key`
+/// with the real thing once the ASM crate re-exports `OperatorTable` (its
+/// `state::operator` module is currently `pub(crate)`); a semantic change upstream
+/// (ordering, dedup) would silently diverge from this mirror and lock deposits to the
+/// wrong key.
 fn derive_bridge_pubkey(operators: &[EvenPublicKey]) -> anyhow::Result<String> {
     let mut keys: Vec<Buf32> = Vec::with_capacity(operators.len());
     for operator in operators {

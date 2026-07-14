@@ -83,6 +83,12 @@ pub(crate) fn init_node_context(
     let ol_params_path = args.ol_params.as_ref().ok_or(InitError::MissingOLParams)?;
     let ol_params = load_ol_params(ol_params_path)?;
 
+    // TODO(STR-3971): cross-validate the ASM and OL params before booting. The ASM
+    // bridge deposit denomination and the OL withdrawal denomination are one network
+    // value, but the two files are loaded independently here, so a mismatched pair
+    // (hand-edited or from separate datatool runs) starts a node whose deposits
+    // cannot be withdrawn. Only datatool enforces this today, at generation time.
+
     // Init storage
     let storage = init_storage(&config, handle.clone())?;
 
