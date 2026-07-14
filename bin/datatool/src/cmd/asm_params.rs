@@ -1,6 +1,11 @@
 //! `gen-asm-params` subcommand: generates ASM params from inputs.
 
-use std::{fs, num::NonZero, path::Path, str::FromStr};
+use std::{
+    fs,
+    num::NonZero,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use bitcoin::{secp256k1::PublicKey, Network, XOnlyPublicKey};
 use serde::Serialize;
@@ -49,9 +54,9 @@ const DEFAULT_MAX_SEQNO_GAP: NonZero<u8> = NonZero::new(10).expect("10 is non-ze
 pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     // Checked before anything is written: otherwise the `--output` write below would
     // already have clobbered the CLI config by the time we bail.
-    if let Some(cli_config_path) = &cmd.cli_config {
+    if let (Some(out_path), Some(cli_config_path)) = (&cmd.output, &cmd.cli_config) {
         anyhow::ensure!(
-            cmd.output.as_deref() != Some(cli_config_path.as_path()),
+            !targets_same_file(out_path, cli_config_path),
             "--cli-config must not point at the same file as --output"
         );
     }
@@ -196,6 +201,37 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     }
 
     Ok(())
+}
+
+/// Reports whether two paths would be written to the same file.
+///
+/// A lexical comparison is not enough: `./config.toml` and `config.toml` name the
+/// same file, as do two symlinks to one target, and the first write would clobber
+/// the second path before its own overwrite guard ever ran.
+fn targets_same_file(a: &Path, b: &Path) -> bool {
+    resolve_write_target(a) == resolve_write_target(b)
+}
+
+/// Resolves a path to the file it would be written to.
+///
+/// Canonicalizes the path when it already exists, which also resolves symlinks.
+/// Output paths usually don't exist yet, so fall back to canonicalizing the parent
+/// directory and rejoining the file name.
+fn resolve_write_target(path: &Path) -> PathBuf {
+    if let Ok(canonical) = fs::canonicalize(path) {
+        return canonical;
+    }
+
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        // A bare file name is relative to the working directory.
+        _ => Path::new("."),
+    };
+
+    match (fs::canonicalize(parent), path.file_name()) {
+        (Ok(dir), Some(name)) => dir.join(name),
+        _ => path.to_owned(),
+    }
 }
 
 /// Resolves the ASM bridge deposit denomination against the OL bridge params.
@@ -403,6 +439,26 @@ mod tests {
         let rendered = toml::to_string(&profile).expect("profile should serialize");
 
         assert!(!rendered.contains("max_withdrawal_amount_sats"));
+    }
+
+    #[test]
+    fn same_file_targets_are_detected_through_equivalent_spellings() {
+        assert!(targets_same_file(
+            Path::new("./Cargo.toml"),
+            Path::new("Cargo.toml")
+        ));
+        assert!(targets_same_file(
+            Path::new("src/../Cargo.toml"),
+            Path::new("Cargo.toml")
+        ));
+    }
+
+    #[test]
+    fn distinct_file_targets_are_not_conflated() {
+        assert!(!targets_same_file(
+            Path::new("asm-params.json"),
+            Path::new("cli-config.toml")
+        ));
     }
 
     #[test]
