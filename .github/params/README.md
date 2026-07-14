@@ -32,6 +32,8 @@ Workflow inputs:
 | Input | Description |
 |-------|-------------|
 | `datatool_image_commit` | Commit whose first 7 chars identify the prebuilt datatool image tag. Must be a 7-40 char lowercase hex SHA. |
+| `genesis_l1_height` | Genesis L1 block height. Must be a non-negative integer. |
+| `chain_config` | Path to a chainspec file. Must be single-line and exist in the checkout. |
 | `checkout_ref` | Optional override for the repo ref checked out inside the job for params scripts/templates. Use only when the workflow file should come from `--ref`, but params scripts/templates should come from a different ref. |
 
 When `checkout_ref` is omitted, the job checks out the workflow run commit (`github.sha`) for params scripts/templates. In the common case, this is the commit selected by `--ref`.

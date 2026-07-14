@@ -64,28 +64,47 @@ jobs:
             echo "$1=$2" >> "$GITHUB_OUTPUT"
           }
 
-          # Commit used only to derive the prebuilt datatool Docker image tag.
-          if ! [[ "${DATATOOL_IMAGE_COMMIT}" =~ ^[0-9a-f]{7,40}$ ]]; then
-            echo "::error::datatool_image_commit must be a 7-40 char lowercase hex commit SHA"
+          fail() {
+            echo "::error::$1"
             exit 1
-          fi
+          }
 
-          DATATOOL_IMAGE_TAG="${DATATOOL_IMAGE_COMMIT:0:7}"
+          require_single_line() {
+            local name="$1"
+            local value="$2"
 
-          # Optional caller-selected repo ref for params scripts/templates.
-          if [ -n "${INPUT_CHECKOUT_REF}" ]; then
-            if [[ "${INPUT_CHECKOUT_REF}" == *$'\n'* || "${INPUT_CHECKOUT_REF}" == *$'\r'* ]]; then
-              echo "::error::checkout_ref must be a single-line repo ref"
-              exit 1
+            if [[ "${value}" == *$'\n'* || "${value}" == *$'\r'* ]]; then
+              fail "${name} must be single-line"
+            fi
+          }
+
+          datatool_image_tag_from_commit() {
+            local commit="$1"
+
+            # Commit used only to derive the prebuilt datatool Docker image tag.
+            if ! [[ "${commit}" =~ ^[0-9a-f]{7,40}$ ]]; then
+              fail "datatool_image_commit must be a 7-40 char lowercase hex commit SHA"
             fi
 
-            # Manual override: use caller-provided scripts/templates.
-            PARAMS_SOURCE_REF="${INPUT_CHECKOUT_REF}"
-          else
-            # Commit that GitHub Actions is running this workflow from.
-            # By default, use the workflow ref so pushed template changes are used.
-            PARAMS_SOURCE_REF="${WORKFLOW_REF_SHA}"
-          fi
+            printf '%s\n' "${commit:0:7}"
+          }
+
+          params_source_ref() {
+            local checkout_ref="$1"
+
+            # Optional caller-selected repo ref for params scripts/templates.
+            if [ -n "${checkout_ref}" ]; then
+              require_single_line checkout_ref "${checkout_ref}"
+              printf '%s\n' "${checkout_ref}"
+              return
+            fi
+
+            # By default, use the commit that GitHub Actions is running this workflow from.
+            printf '%s\n' "${WORKFLOW_REF_SHA}"
+          }
+
+          DATATOOL_IMAGE_TAG=$(datatool_image_tag_from_commit "${DATATOOL_IMAGE_COMMIT}")
+          PARAMS_SOURCE_REF=$(params_source_ref "${INPUT_CHECKOUT_REF}")
 
           set_output datatool_image_tag "${DATATOOL_IMAGE_TAG}"
           set_output params_source_ref "${PARAMS_SOURCE_REF}"
@@ -127,6 +146,8 @@ jobs:
         env:
           DEPLOY_ENV: ${{ inputs.env }}
           DATATOOL_IMAGE_TAG: ${{ steps.resolve.outputs.datatool_image_tag }}
+          # Backward-compatibility alias for older params scripts.
+          COMMIT: ${{ steps.resolve.outputs.datatool_image_tag }}
           GENESIS_L1_HEIGHT: ${{ inputs.genesis_l1_height }}
           CHAIN_CONFIG: ${{ inputs.chain_config }}
           BTC_RPC_URL: ${{ secrets.PARAMS_BTC_RPC_URL }}

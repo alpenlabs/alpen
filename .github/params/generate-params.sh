@@ -18,19 +18,53 @@ ECR_REGISTRY="496607027995.dkr.ecr.us-east-1.amazonaws.com"
 DT_PLATFORM="linux/amd64"
 NETWORK="${NETWORK:-signet}"
 
-for var in DEPLOY_ENV DATATOOL_IMAGE_TAG BTC_RPC_URL BTC_RPC_USER BTC_RPC_PASSWORD GENESIS_L1_HEIGHT CHAIN_CONFIG; do
-    if [ -z "${!var:-}" ]; then
-        echo "Missing required env var: ${var}" >&2
-        exit 1
+fail() {
+    echo "$1" >&2
+    exit 1
+}
+
+require_env() {
+    local name="$1"
+
+    if [ -z "${!name:-}" ]; then
+        fail "Missing required env var: ${name}"
     fi
+}
+
+require_uint() {
+    local name="$1"
+    local value="$2"
+
+    if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
+        fail "${name} must be a non-negative integer"
+    fi
+}
+
+require_existing_file() {
+    local name="$1"
+    local value="$2"
+
+    if [[ "${value}" == *$'\n'* || "${value}" == *$'\r'* ]]; then
+        fail "${name} must be single-line"
+    fi
+
+    if [ ! -f "${value}" ]; then
+        fail "${name} does not exist: ${value}"
+    fi
+}
+
+for var in DEPLOY_ENV DATATOOL_IMAGE_TAG BTC_RPC_URL BTC_RPC_USER BTC_RPC_PASSWORD GENESIS_L1_HEIGHT CHAIN_CONFIG; do
+    require_env "${var}"
 done
+
+require_uint GENESIS_L1_HEIGHT "${GENESIS_L1_HEIGHT}"
+require_existing_file CHAIN_CONFIG "${CHAIN_CONFIG}"
 
 TEMPLATE_DIR="${SCRIPT_DIR}/templates/${DEPLOY_ENV}"
 OUTPUT_DIR="${SCRIPT_DIR}/out/${DEPLOY_ENV}"
 
 if [ ! -d "${TEMPLATE_DIR}" ]; then
-    echo "No templates for '${DEPLOY_ENV}'. Available: $(ls "${SCRIPT_DIR}/templates/")" >&2
-    exit 1
+    fail "No templates for '${DEPLOY_ENV}'. Available: $(ls "${SCRIPT_DIR}/templates/")"
 fi
 
 DT_IMG="${ECR_REGISTRY}/strata/strata-datatool:${DATATOOL_IMAGE_TAG}"
