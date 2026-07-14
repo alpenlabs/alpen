@@ -261,8 +261,16 @@ mod tests {
              seed = \"000102030405060708090a0b0c0d0e0f\"\n"
         );
 
-        let parsed: SettingsFromFile =
-            toml::from_str(&config).expect("generated snippet should parse as CLI config");
+        // Deserialized through the `config` crate, not `toml`, because that is
+        // the path `Settings::load` actually takes: the crate round-trips values
+        // through its own `Value` layer, which can diverge from direct TOML
+        // deserialization for custom visitors.
+        let parsed: SettingsFromFile = Config::builder()
+            .add_source(config::File::from_str(&config, config::FileFormat::Toml))
+            .build()
+            .expect("generated snippet should build as CLI config")
+            .try_deserialize()
+            .expect("generated snippet should parse as CLI config");
 
         assert_eq!(parsed.network, Network::Signet);
         assert_eq!(parsed.magic_bytes, MagicBytes::new(*b"ALPN"));
