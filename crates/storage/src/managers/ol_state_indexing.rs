@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use strata_db_types::ol_state_index::{
@@ -80,6 +81,25 @@ impl OLStateIndexingManager {
         block: OLBlockCommitment,
     ) -> DbResult<()> {
         self.ops.rollback_to_block_async(epoch, block).await
+    }
+
+    pub fn del_block_attributed_indexing_blocking(
+        &self,
+        epoch: Epoch,
+        blocks: BTreeSet<OLBlockCommitment>,
+    ) -> DbResult<()> {
+        self.ops
+            .del_block_attributed_indexing_blocking(epoch, blocks)
+    }
+
+    pub async fn del_block_attributed_indexing_async(
+        &self,
+        epoch: Epoch,
+        blocks: BTreeSet<OLBlockCommitment>,
+    ) -> DbResult<()> {
+        self.ops
+            .del_block_attributed_indexing_async(epoch, blocks)
+            .await
     }
 
     pub fn rollback_to_epoch_blocking(&self, epoch: Epoch) -> DbResult<()> {
