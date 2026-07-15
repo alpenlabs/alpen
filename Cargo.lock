@@ -15536,29 +15536,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-proofimpl-checkpoint"
-version = "0.1.0"
-source = "git+https://github.com/alpenlabs/alpen.git?rev=3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257#3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257"
-dependencies = [
- "k256",
- "ssz",
- "ssz_primitives",
- "strata-asm-manifest-types",
- "strata-asm-proto-checkpoint-types",
- "strata-bridge-params",
- "strata-crypto",
- "strata-ledger-types",
- "strata-ol-chain-types",
- "strata-ol-da",
- "strata-ol-state-support-types",
- "strata-ol-state-types",
- "strata-ol-stf",
- "strata-predicate",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
 name = "strata-proofimpl-evm-ee-stf"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -15596,7 +15573,6 @@ dependencies = [
  "strata-predicate",
  "strata-proofimpl-alpen-acct",
  "strata-proofimpl-alpen-chunk",
- "strata-proofimpl-checkpoint",
  "thiserror 2.0.18",
  "zkaleido-sp1-groth16-verifier",
 ]

@@ -41,12 +41,6 @@ macro_rules! define_host {
 }
 
 define_host!(
-    checkpoint_host,
-    CHECKPOINT_HOST,
-    GUEST_CHECKPOINT_ELF,
-    "guest-checkpoint.elf"
-);
-define_host!(
     alpen_chunk_host,
     ALPEN_CHUNK_HOST,
     GUEST_ALPEN_CHUNK_ELF,
