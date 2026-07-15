@@ -280,7 +280,7 @@ def main(argv: list[str]) -> int:
     # Create factories
     factories: dict[ServiceType, flexitest.Factory] = {
         ServiceType.AlpenClient: AlpenClientFactory(range(30303, 30503)),
-        ServiceType.Bitcoin: BitcoinFactory(range(18443, 18543)),
+        ServiceType.Bitcoin: BitcoinFactory(range(18443, 18643)),
         ServiceType.Strata: StrataFactory(range(19443, 19543)),
         ServiceType.StrataSigner: SignerFactory(range(19543, 19553)),
     }
