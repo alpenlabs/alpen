@@ -3,7 +3,6 @@
 use strata_predicate::PredicateKey;
 use strata_proofimpl_alpen_acct::EeAcctProgram;
 use strata_proofimpl_alpen_chunk::EeChunkProgram;
-use strata_proofimpl_checkpoint::program::CheckpointProgram;
 
 /// Errors returned while deriving or validating predicate keys.
 #[derive(Debug, thiserror::Error)]
@@ -72,16 +71,6 @@ pub fn validate_expected_predicate_key(
         expected_condition_len: expected.condition().len(),
         expected_condition: hex::encode(expected.condition()),
     })
-}
-
-/// Native checkpoint predicate provider used by functional-test setups.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct NativeCheckpointPredicateKey;
-
-impl PredicateKeyProvider for NativeCheckpointPredicateKey {
-    fn predicate_key(&self) -> Result<PredicateKey, PredicateKeyError> {
-        Ok(CheckpointProgram::test_predicate_key())
-    }
 }
 
 /// Native Alpen EE chunk predicate provider used by functional-test setups.

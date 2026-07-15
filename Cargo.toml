@@ -184,7 +184,6 @@ strata-ol-rpc-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3
 strata-open-rpc = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-paas = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-primitives = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
-strata-proofimpl-checkpoint = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-snark-acct-runtime = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-snark-acct-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-state = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
