@@ -554,7 +554,7 @@ fn verify_previous_epoch_summary_for_tip_header(
     Ok(())
 }
 
-fn verify_anchor_header_summary(
+pub(crate) fn verify_anchor_header_summary(
     history_base: EpochCommitment,
     header: &OLBlockHeader,
     summary: &EpochSummary,
@@ -601,17 +601,12 @@ fn verify_anchor_header_summary(
     Ok(())
 }
 
-fn verify_history_anchor(
+pub(crate) fn verify_anchor_summary_and_state(
     storage: &NodeStorage,
     history_base: EpochCommitment,
-) -> Result<OLBlockHeader> {
-    let anchor_commitment = history_base.to_block_commitment();
-    let header = storage
-        .ol_block()
-        .get_terminal_header_blocking(*anchor_commitment.blkid())
-        .context("startup: failed to query OL history anchor terminal header")?
-        .ok_or_else(|| anyhow!("startup: missing OL history anchor terminal header"))?;
-
+    header: &OLBlockHeader,
+    summary: &EpochSummary,
+) -> Result<()> {
     if !header.is_terminal() {
         bail!("startup: OL history anchor header is not terminal");
     }
@@ -627,13 +622,9 @@ fn verify_history_anchor(
         );
     }
 
-    let summary = storage
-        .ol_checkpoint()
-        .get_epoch_summary_blocking(canonical_epoch)
-        .context("startup: failed to query OL history anchor epoch summary")?
-        .ok_or_else(|| anyhow!("startup: missing OL history anchor epoch summary"))?;
-    verify_anchor_header_summary(history_base, &header, &summary)?;
+    verify_anchor_header_summary(history_base, header, summary)?;
 
+    let anchor_commitment = history_base.to_block_commitment();
     let state = storage
         .ol_state()
         .get_toplevel_ol_state_blocking(anchor_commitment)
@@ -660,6 +651,27 @@ fn verify_history_anchor(
             "startup: OL history anchor state epoch mismatch: expected {expected_state_epoch}, got {state_epoch}"
         );
     }
+
+    Ok(())
+}
+
+pub(crate) fn verify_history_anchor(
+    storage: &NodeStorage,
+    history_base: EpochCommitment,
+) -> Result<OLBlockHeader> {
+    let anchor_commitment = history_base.to_block_commitment();
+    let header = storage
+        .ol_block()
+        .get_terminal_header_blocking(*anchor_commitment.blkid())
+        .context("startup: failed to query OL history anchor terminal header")?
+        .ok_or_else(|| anyhow!("startup: missing OL history anchor terminal header"))?;
+
+    let summary = storage
+        .ol_checkpoint()
+        .get_epoch_summary_blocking(history_base)
+        .context("startup: failed to query OL history anchor epoch summary")?
+        .ok_or_else(|| anyhow!("startup: missing OL history anchor epoch summary"))?;
+    verify_anchor_summary_and_state(storage, history_base, &header, &summary)?;
 
     Ok(header)
 }

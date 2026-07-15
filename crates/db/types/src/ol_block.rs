@@ -122,6 +122,9 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// than one on competing forks.
     fn get_blocks_at_height(&self, slot: u64) -> DbResult<Vec<OLBlockId>>;
 
+    /// Returns the highest slot with at least one full OL block record.
+    fn get_highest_block_slot(&self) -> DbResult<Option<Slot>>;
+
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;
 

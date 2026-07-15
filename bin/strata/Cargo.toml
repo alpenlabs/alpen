@@ -106,12 +106,17 @@ toml.workspace = true
 tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
+tree_hash.workspace = true
 zkaleido = { workspace = true, optional = true }
 zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true
+strata-asm-proto-checkpoint-types.workspace = true
+strata-btc-verification.workspace = true
+strata-l1-txfmt.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
+strata-state.workspace = true
 strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
 strata-ol-params = { workspace = true, features = ["test-defaults"] }

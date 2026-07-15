@@ -365,6 +365,28 @@ pub fn proptest_put_and_get_random_block(db: &impl OLBlockDatabase, block: OLBlo
     );
 }
 
+pub fn proptest_del_last_block_at_slot_clears_highest_block_slot(
+    db: &impl OLBlockDatabase,
+    block: OLBlock,
+) {
+    let blkid = block.header().compute_blkid();
+    let slot = block.header().slot();
+    db.put_block_data(block).expect("test: put block");
+    assert_eq!(
+        db.get_highest_block_slot()
+            .expect("test: highest slot after put"),
+        Some(slot)
+    );
+
+    assert!(db.del_block_data(blkid).expect("test: delete block"));
+    assert_eq!(
+        db.get_highest_block_slot()
+            .expect("test: highest slot after delete"),
+        None,
+        "deleting the last block at a slot must not leave a ghost height row"
+    );
+}
+
 pub fn proptest_put_twice_idempotent(db: &impl OLBlockDatabase, block: OLBlock) {
     let block_id = block.header().compute_blkid();
     let slot = block.header().slot();
@@ -1002,6 +1024,12 @@ macro_rules! ol_block_db_tests {
             fn proptest_put_twice_idempotent(block in ol_test_utils::ol_block_strategy()) {
                 let db = $setup_expr;
                 $crate::ol_block_tests::proptest_put_twice_idempotent(&db, block);
+            }
+
+            #[test]
+            fn proptest_del_last_block_at_slot_clears_highest_block_slot(block in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_del_last_block_at_slot_clears_highest_block_slot(&db, block);
             }
 
             #[test]

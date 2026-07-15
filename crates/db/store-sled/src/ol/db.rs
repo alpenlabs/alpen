@@ -270,7 +270,11 @@ impl OLBlockDatabase for OLBlockDBSled {
 
                     bt.remove(&id)?;
                     bst.remove(&id)?;
-                    bht.insert(&slot, &blocks_at_slot)?;
+                    if blocks_at_slot.is_empty() {
+                        bht.remove(&slot)?;
+                    } else {
+                        bht.insert(&slot, &blocks_at_slot)?;
+                    }
                     if ct.get(&slot)? == Some(id) {
                         for canonical_slot in &canonical_slots_to_drop {
                             ct.remove(canonical_slot)?;
@@ -293,6 +297,18 @@ impl OLBlockDatabase for OLBlockDBSled {
 
     fn get_blocks_at_height(&self, slot: u64) -> DbResult<Vec<OLBlockId>> {
         Ok(self.blk_height_tree.get(&slot)?.unwrap_or(Vec::new()))
+    }
+
+    fn get_highest_block_slot(&self) -> DbResult<Option<Slot>> {
+        // Skip empty height rows: older datadirs may retain rows whose last
+        // block was deleted before empty rows were removed on delete.
+        for item in self.blk_height_tree.iter().rev() {
+            let (slot, ids) = item?;
+            if !ids.is_empty() {
+                return Ok(Some(slot));
+            }
+        }
+        Ok(None)
     }
 
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>> {
@@ -367,6 +383,26 @@ mod tests {
     sled_db_test_setup!(OLBlockDBSled, ol_block_db_tests);
 
     proptest::proptest! {
+        #[test]
+        fn get_highest_block_slot_skips_empty_height_rows(
+            mut block in ol_test_utils::ol_block_strategy(),
+        ) {
+            let db = setup_db();
+            block.signed_header.header.slot = 3;
+            db.put_block_data(block).expect("test: put block at slot 3");
+            // Ghost row left behind by deletes that predate empty-row removal.
+            db.blk_height_tree
+                .insert(&7, &Vec::new())
+                .expect("test: seed empty height row");
+
+            assert_eq!(
+                db.get_highest_block_slot()
+                    .expect("test: highest block slot"),
+                Some(3),
+                "empty height rows must not count as block records"
+            );
+        }
+
         #[test]
         fn get_ol_header_prefers_full_block_before_terminal_record(
             full_block in ol_test_utils::ol_block_strategy(),

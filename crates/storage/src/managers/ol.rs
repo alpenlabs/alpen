@@ -263,6 +263,16 @@ impl OLBlockManager {
         self.ops.get_blocks_at_height_blocking(slot)
     }
 
+    /// Returns the highest slot with at least one full OL block record. Async.
+    pub async fn get_highest_block_slot_async(&self) -> DbResult<Option<Slot>> {
+        self.ops.get_highest_block_slot_async().await
+    }
+
+    /// Returns the highest slot with at least one full OL block record. Blocking.
+    pub fn get_highest_block_slot_blocking(&self) -> DbResult<Option<Slot>> {
+        self.ops.get_highest_block_slot_blocking()
+    }
+
     /// Gets the canonical tip slot. Async.
     pub async fn get_tip_slot_async(&self) -> DbResult<Slot> {
         self.ops.get_tip_slot_async().await
