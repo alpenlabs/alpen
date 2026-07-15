@@ -45,8 +45,9 @@ cp .env.alpen-fullnode.example .env
 ```
 
 `BRIDGE_DENOMINATION` and `MAX_WITHDRAWAL_AMOUNT` must match the target
-network's bridge params; Testnet III uses a 2-sat denomination and an
-effectively unbounded withdrawal cap.
+network's bridge params. Testnet III uses a 2 BTC denomination. The example
+cap is the largest valid `u64` cap divisible by that denomination:
+`floor((2^64 - 1) / 200000000) * 200000000 = 18446744073600000000`.
 
 Prepare the required key file mounted by the Alpen fullnode service:
 
