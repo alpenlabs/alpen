@@ -868,3 +868,31 @@ fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
         }
     }
 }
+
+// DA-specific behaviors (blob encoding, accumulator resets, serial-gap
+// detection) are covered by the integration tests in `crate::tests`. This
+// module only instantiates the shared trait-surface behavior suites.
+#[cfg(test)]
+mod tests {
+    use crate::common_tests::{
+        DaAccumulatingWrap, IndexerWrap, WriteTrackingLeaf, impl_mut_layer_tests,
+        impl_read_layer_tests,
+    };
+
+    // Shared behavior suites for a `DaAccumulatingState` wrapping various inner
+    // stacks. Each composition gets its own module so the generated test names
+    // don't collide.
+    mod over_write_tracking {
+        use super::*;
+
+        impl_read_layer_tests!(DaAccumulatingWrap(WriteTrackingLeaf));
+        impl_mut_layer_tests!(DaAccumulatingWrap(WriteTrackingLeaf));
+    }
+
+    mod over_indexer_over_write_tracking {
+        use super::*;
+
+        impl_read_layer_tests!(DaAccumulatingWrap(IndexerWrap(WriteTrackingLeaf)));
+        impl_mut_layer_tests!(DaAccumulatingWrap(IndexerWrap(WriteTrackingLeaf)));
+    }
+}

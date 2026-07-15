@@ -256,65 +256,19 @@ impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrite
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
-    use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot};
+    use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
     use strata_ledger_types::{IAccountState, IStateAccessor, IStateAccessorMut};
-    use strata_ol_params::OLParams;
-    use strata_ol_state_types::{OLAccountState, OLState};
+    use strata_ol_state_types::OLAccountState;
 
     use super::*;
-    use crate::{memory_state_layer::MemoryStateBaseLayer, test_utils::*};
+    use crate::{
+        common_tests::{BatchDiffLeaf, impl_read_layer_tests},
+        test_utils::*,
+    };
 
-    fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
-        let mut params = OLParams::new_empty(L1BlockCommitment::default());
-        params.header.slot = slot;
-        params.header.epoch = epoch;
-        let state = OLState::from_genesis_params(&params)
-            .expect("failed to create OLState from genesis params");
-        MemoryStateBaseLayer::new(state)
-    }
-
-    // =========================================================================
-    // Empty batch tests (pure passthrough)
-    // =========================================================================
-
-    #[test]
-    fn test_read_from_base_when_empty_batches() {
-        let account_id = test_account_id(1);
-        let (base_layer, serial) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        // Should read from base
-        let account = diff_state.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
-    }
-
-    #[test]
-    fn test_global_state_from_base_when_empty() {
-        let base_layer = new_layer_at(5, 100);
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        assert_eq!(diff_state.cur_slot(), 100);
-        assert_eq!(diff_state.cur_epoch(), 5);
-    }
-
-    #[test]
-    fn test_check_account_exists_in_base_only() {
-        let account_id = test_account_id(1);
-        let nonexistent_id = test_account_id(99);
-        let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        assert!(diff_state.check_account_exists(account_id).unwrap());
-        assert!(!diff_state.check_account_exists(nonexistent_id).unwrap());
-    }
+    // Shared read-behavior suite for a `BatchDiffState` with no pending batches
+    // (pure passthrough) over the base.
+    impl_read_layer_tests!(BatchDiffLeaf);
 
     // =========================================================================
     // Single batch tests
@@ -634,6 +588,39 @@ mod tests {
             inner.compute_state_root().unwrap(),
             outer.compute_state_root().unwrap()
         );
+    }
+
+    #[test]
+    fn test_new_accounts_count_across_stack() {
+        let base_layer = create_test_base_layer();
+
+        // Build a stack of three batches, each creating one new account.
+        let account_ids = [test_account_id(1), test_account_id(2), test_account_id(3)];
+        let base_serial: u32 = base_layer.next_account_serial().into();
+        let batches: Vec<_> = account_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let mut batch = WriteBatch::default();
+                let snark_state = test_snark_account_state(i as u8 + 1);
+                let new_acct =
+                    test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1000));
+                let serial = AccountSerial::from(base_serial + i as u32);
+                batch
+                    .ledger_mut()
+                    .create_account_from_data(*id, new_acct, serial);
+                batch
+            })
+            .collect();
+
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
+
+        // new_accounts() reports the total across every batch in the layer, and
+        // next_account_serial() advances by the same amount.
+        assert_eq!(diff_state.new_accounts(), account_ids.len());
+        let base_next: u32 = base_layer.next_account_serial().into();
+        let diff_next: u32 = diff_state.next_account_serial().into();
+        assert_eq!(diff_next, base_next + account_ids.len() as u32);
     }
 
     #[test]

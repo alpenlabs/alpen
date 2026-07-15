@@ -337,6 +337,12 @@ where
         id: AccountId,
         new_acct_data: NewAccountData,
     ) -> StateResult<AccountSerial> {
+        // Guard against duplicates so recreating over an existing account is a
+        // hard error, matching the base layer. `check_account_exists` covers
+        // both the pending batch and the base via its read fall-through.
+        if self.check_account_exists(id)? {
+            return Err(StateError::AccountExists(id));
+        }
         let serial = self.next_account_serial();
         self.batch
             .ledger_mut()
@@ -355,45 +361,24 @@ fn ensure_pending_asm_log_slot_available(current_len: usize) -> StateResult<()> 
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{BitcoinAmount, L1BlockRecord};
     use strata_identifiers::L1Height;
     use strata_ol_state_types::{IStateBatchApplicable, OLAccountState};
 
     use super::*;
     use crate::{
-        batch_diff_layer::BatchDiffState, memory_state_layer::MemoryStateBaseLayer, test_utils::*,
+        batch_diff_layer::BatchDiffState,
+        common_tests::{WriteTrackingLeaf, impl_mut_layer_tests, impl_read_layer_tests},
+        memory_state_layer::MemoryStateBaseLayer,
+        test_utils::*,
     };
+
+    // Shared behavior suites for a `WriteTrackingState` directly over the base.
+    impl_read_layer_tests!(WriteTrackingLeaf);
+    impl_mut_layer_tests!(WriteTrackingLeaf);
 
     // =========================================================================
     // Copy-on-write tests
     // =========================================================================
-
-    #[test]
-    fn test_read_falls_back_to_base() {
-        let account_id = test_account_id(1);
-        let (base_layer, serial) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-        let diff = BatchDiffState::new(&base_layer, &[]);
-        let tracking = WriteTrackingState::new_empty(&diff);
-
-        // Read should fall back to base since batch is empty
-        let account = tracking.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
-    }
-
-    #[test]
-    fn test_check_account_exists_falls_back_to_base() {
-        let account_id = test_account_id(1);
-        let nonexistent_id = test_account_id(99);
-        let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-        let diff = BatchDiffState::new(&base_layer, &[]);
-        let tracking = WriteTrackingState::new_empty(&diff);
-
-        assert!(tracking.check_account_exists(account_id).unwrap());
-        assert!(!tracking.check_account_exists(nonexistent_id).unwrap());
-    }
 
     #[test]
     fn test_write_copies_to_batch() {
@@ -428,35 +413,6 @@ mod tests {
         assert_eq!(base_account.balance(), original_balance);
     }
 
-    #[test]
-    fn test_read_prefers_batch_over_base() {
-        let account_id = test_account_id(1);
-        let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-        let diff = BatchDiffState::new(&base_layer, &[]);
-        let mut tracking = WriteTrackingState::new_empty(&diff);
-
-        // Modify the account to put it in the batch
-        tracking
-            .update_account(account_id, |acct: &mut OLAccountState| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
-                acct.add_balance(coin);
-            })
-            .unwrap();
-
-        // Modify again - should use batch version
-        tracking
-            .update_account(account_id, |acct: &mut OLAccountState| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(100));
-                acct.add_balance(coin);
-            })
-            .unwrap();
-
-        // Final balance should be 1000 + 500 + 100 = 1600
-        let account = tracking.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1600));
-    }
-
     // =========================================================================
     // Account creation tests
     // =========================================================================
@@ -483,23 +439,6 @@ mod tests {
 
         // Verify base is unchanged
         assert!(!base_layer.check_account_exists(account_id).unwrap());
-    }
-
-    #[test]
-    fn test_find_account_id_by_serial_for_new_account() {
-        let base_layer = create_test_base_layer();
-        let diff = BatchDiffState::new(&base_layer, &[]);
-        let mut tracking = WriteTrackingState::new_empty(&diff);
-
-        let account_id = test_account_id(1);
-        let snark_state = test_snark_account_state(1);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
-
-        let serial = tracking.create_new_account(account_id, new_acct).unwrap();
-
-        // Should be able to find the account by serial
-        let found_id = tracking.find_account_id_by_serial(serial).unwrap();
-        assert_eq!(found_id, Some(account_id));
     }
 
     // =========================================================================
@@ -538,50 +477,9 @@ mod tests {
         assert_eq!(tracking.batch().epochal_writes().cur_epoch, Some(5));
     }
 
-    #[test]
-    fn test_total_ledger_balance_in_batch() {
-        let base_layer = create_test_base_layer();
-        let diff = BatchDiffState::new(&base_layer, &[]);
-        let mut tracking = WriteTrackingState::new_empty(&diff);
-
-        tracking.set_total_ledger_balance(BitcoinAmount::from_sat(1_000_000));
-
-        assert_eq!(
-            tracking.total_ledger_balance(),
-            BitcoinAmount::from_sat(1_000_000)
-        );
-    }
-
-    #[test]
-    fn test_manifest_append_in_batch() {
-        let base_layer = create_test_base_layer();
-        let diff = BatchDiffState::new(&base_layer, &[]);
-        let mut tracking = WriteTrackingState::new_empty(&diff);
-
-        let height = L1Height::from(100u32);
-        let record = L1BlockRecord::new([1u8; 32], [2u8; 32]);
-
-        tracking.append_l1_block_rec(height, record);
-
-        // The record should be recorded in the epochal state
-        // (The actual validation of this would depend on the epochal state implementation)
-    }
-
     // =========================================================================
     // State root tests
     // =========================================================================
-
-    #[test]
-    fn test_compute_state_root_no_writes() {
-        let base_layer = create_test_base_layer();
-        let base_root = base_layer.compute_state_root().unwrap();
-        let diff = BatchDiffState::new(&base_layer, &[]);
-        let tracking = WriteTrackingState::new_empty(&diff);
-
-        let result = tracking.compute_state_root();
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_root);
-    }
 
     #[test]
     fn test_compute_state_root_with_writes() {
@@ -650,22 +548,6 @@ mod tests {
     }
 
     // =========================================================================
-    // Error handling tests
-    // =========================================================================
-
-    #[test]
-    fn test_update_nonexistent_account_returns_error() {
-        let base_layer = create_test_base_layer();
-        let diff = BatchDiffState::new(&base_layer, &[]);
-        let mut tracking = WriteTrackingState::new_empty(&diff);
-
-        let nonexistent_id = test_account_id(99);
-        let result = tracking.update_account(nonexistent_id, |_acct: &mut OLAccountState| {});
-
-        assert!(matches!(result, Err(StateError::MissingAccount(_))));
-    }
-
-    // =========================================================================
     // Intraepoch pending ASM log bookkeeping
     // =========================================================================
 
@@ -682,56 +564,6 @@ mod tests {
                 .expect("base append");
         }
         base
-    }
-
-    #[test]
-    fn test_append_visible_through_tracking_layer() {
-        let base = seed_base_with_pending(2);
-        let diff = BatchDiffState::new(&base, &[]);
-        let mut tracking = WriteTrackingState::new_empty(&diff);
-
-        assert_eq!(tracking.pending_asm_logs_len(), 2);
-        tracking
-            .try_append_pending_asm_log(pending_log(42))
-            .expect("append");
-
-        assert_eq!(tracking.pending_asm_logs_len(), 3);
-        assert_eq!(
-            tracking.get_pending_asm_log(0).unwrap().height(),
-            L1Height::from(0u32)
-        );
-        assert_eq!(
-            tracking.get_pending_asm_log(1).unwrap().height(),
-            L1Height::from(1u32)
-        );
-        assert_eq!(
-            tracking.get_pending_asm_log(2).unwrap().height(),
-            L1Height::from(42u32)
-        );
-        assert!(tracking.get_pending_asm_log(3).is_none());
-    }
-
-    #[test]
-    fn test_reset_hides_base_entries() {
-        let base = seed_base_with_pending(3);
-        let diff = BatchDiffState::new(&base, &[]);
-        let mut tracking = WriteTrackingState::new_empty(&diff);
-
-        assert_eq!(tracking.pending_asm_logs_len(), 3);
-        tracking.reset_intraepoch_state();
-        assert_eq!(tracking.pending_asm_logs_len(), 0);
-        assert!(tracking.get_pending_asm_log(0).is_none());
-
-        tracking
-            .try_append_pending_asm_log(pending_log(7))
-            .expect("append after reset");
-        assert_eq!(tracking.pending_asm_logs_len(), 1);
-        assert_eq!(
-            tracking.get_pending_asm_log(0).unwrap().height(),
-            L1Height::from(7u32)
-        );
-        // Base entries must remain untouched.
-        assert_eq!(base.pending_asm_logs_len(), 3);
     }
 
     #[test]
