@@ -2,7 +2,6 @@
 resolver = "2"
 
 members = [
-  "crates/acct-types",
   "crates/alpen-ee/block-assembly",
   "crates/alpen-ee/exec-chain",
   "crates/alpen-ee/common",
@@ -18,6 +17,52 @@ members = [
   "crates/alpen-ee/rpc/server",
   "crates/alpen-ee/rpc/types",
   "crates/alpen-ee/sequencer",
+  "crates/ee-acct-runtime",
+  "crates/ee-acct-types",
+  "crates/ee-chain-types",
+  "crates/ee-chunk-runtime",
+  "crates/evm-ee",
+  "crates/proof-impl/evm-ee-stf",
+  "crates/proof-impl/alpen-chunk",
+  "crates/proof-impl/alpen-acct",
+  "crates/proof-impl/predicate-keys",
+  "crates/zkvm/hosts",
+  "crates/reth/chainspec",
+  "crates/reth/db",
+  "crates/reth/evm",
+  "crates/reth/exex",
+  "crates/reth/node",
+  "crates/reth/primitives",
+  "crates/reth/rpc",
+  "crates/reth/statediff",
+  "crates/reth/witness",
+  "crates/rpc/open-rpc-spec",
+  "crates/simple-ee",
+  "provers/sp1",
+
+  # binaries listed separately
+  "bin/alpen-cli",
+  "bin/alpen-client",
+]
+
+default-members = [
+  "bin/alpen-client",
+  # "bin/alpen-cli",
+]
+
+# Strata crates are consumed from git (see `strata dependencies` below). Their
+# in-tree sources are excluded from the workspace until they get removed.
+exclude = [
+  "benches",
+  "bin/datatool",
+  "bin/prover-perf",
+  "bin/strata",
+  "bin/strata-dbtool",
+  "bin/strata-signer",
+  "bin/strata-test-cli",
+  "crates/acct-types",
+  "crates/bridge-params",
+  "crates/bridge-types",
   "crates/btcio",
   "crates/chain-worker",
   "crates/checkpoint-types",
@@ -26,17 +71,12 @@ members = [
   "crates/common",
   "crates/config",
   "crates/consensus-logic",
-  "crates/csm-worker",
   "crates/csm-types",
+  "crates/csm-worker",
   "crates/da-framework",
-  "crates/db/types",
   "crates/db/store-sled",
   "crates/db/tests",
-  "crates/ee-acct-runtime",
-  "crates/ee-acct-types",
-  "crates/ee-chain-types",
-  "crates/ee-chunk-runtime",
-  "crates/evm-ee",
+  "crates/db/types",
   "crates/key-derivation",
   "crates/ledger-types",
   "crates/mpt",
@@ -45,6 +85,7 @@ members = [
   "crates/ol/chain-types",
   "crates/ol/checkpoint",
   "crates/ol/da",
+  "crates/ol/genesis",
   "crates/ol/mempool",
   "crates/ol/msg-types",
   "crates/ol/params",
@@ -56,26 +97,11 @@ members = [
   "crates/ol/state-types",
   "crates/ol/stf",
   "crates/paas",
-  "crates/prover-core",
-  "crates/bridge-params",
   "crates/primitives",
-  "crates/proof-impl/evm-ee-stf",
-  "crates/proof-impl/alpen-chunk",
-  "crates/proof-impl/alpen-acct",
   "crates/proof-impl/checkpoint",
-  "crates/proof-impl/predicate-keys",
-  "crates/zkvm/hosts",
-  "crates/reth/chainspec",
-  "crates/reth/db",
-  "crates/reth/evm",
-  "crates/reth/exex",
-  "crates/reth/node",
-  "crates/reth/rpc",
-  "crates/reth/witness",
+  "crates/prover-core",
   "crates/rpc/open-rpc",
   "crates/rpc/open-rpc-macros",
-  "crates/rpc/open-rpc-spec",
-  "crates/simple-ee",
   "crates/snark-acct-runtime",
   "crates/snark-acct-sys",
   "crates/snark-acct-types",
@@ -83,36 +109,11 @@ members = [
   "crates/status",
   "crates/storage",
   "crates/storage-common",
+  "crates/strata-signer",
   "crates/test-utils/btcio",
   "crates/test-utils/l2",
   "crates/test-utils/ssz",
   "crates/test-utils/test-utils",
-  "provers/sp1",
-
-  # binaries listed separately
-  "bin/datatool",
-  "bin/alpen-cli",
-  "bin/strata-dbtool",
-  "bin/alpen-client",
-  "bin/strata",
-  "bin/strata-signer",
-  "bin/prover-perf",
-
-  # integration tests
-  "bin/strata-test-cli",
-
-  # benchmarks
-  "benches",
-]
-
-default-members = [
-  "bin/datatool",
-  "bin/alpen-client",
-  "bin/strata",
-  "bin/strata-dbtool",
-  "bin/strata-signer",
-  "bin/alpen-cli",
-  "bin/strata-test-cli",
 ]
 
 [workspace.lints]
@@ -152,70 +153,45 @@ alpen-reth-primitives = { path = "crates/reth/primitives" }
 alpen-reth-rpc = { path = "crates/reth/rpc" }
 alpen-reth-statediff = { path = "crates/reth/statediff", default-features = false }
 alpen-reth-witness = { path = "crates/reth/witness" }
-strata-acct-types = { path = "crates/acct-types" }
-strata-bridge-params = { path = "crates/bridge-params" }
-strata-btcio = { path = "crates/btcio" }
-strata-chain-worker = { path = "crates/chain-worker" }
-strata-checkpoint-types = { path = "crates/checkpoint-types" }
-strata-cli-common = { path = "crates/cli-common" }
-strata-codec-utils = { path = "crates/codec-utils" }
-strata-common = { path = "crates/common" }
-strata-config = { path = "crates/config" }
-strata-consensus-logic = { path = "crates/consensus-logic" }
-strata-csm-types = { path = "crates/csm-types" }
-strata-csm-worker = { path = "crates/csm-worker" }
-strata-da-framework = { path = "crates/da-framework" }
-strata-db-store-sled = { path = "crates/db/store-sled" }
-strata-db-tests = { path = "crates/db/tests" }
-strata-db-types = { path = "crates/db/types" }
 strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
 strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-ee-chunk-runtime = { path = "crates/ee-chunk-runtime" }
 strata-evm-ee = { path = "crates/evm-ee" }
-strata-key-derivation = { path = "crates/key-derivation" }
-strata-ledger-types = { path = "crates/ledger-types" }
-strata-mpt = { path = "crates/mpt" }
-strata-node-context = { path = "crates/node-context" }
-strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
-strata-ol-bridge-types = { path = "crates/bridge-types" }
-strata-ol-chain-types = { path = "crates/ol/chain-types" }
-strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
-strata-ol-da = { path = "crates/ol/da" }
-strata-ol-genesis = { path = "crates/ol/genesis" }
-strata-ol-mempool = { path = "crates/ol/mempool" }
-strata-ol-msg-types = { path = "crates/ol/msg-types" }
-strata-ol-params = { path = "crates/ol/params" }
-strata-ol-rpc-api = { path = "crates/ol/rpc/api" }
-strata-ol-rpc-types = { path = "crates/ol/rpc/types" }
-strata-ol-sequencer = { path = "crates/ol/sequencer" }
-strata-ol-state-provider = { path = "crates/ol/state-provider" }
-strata-ol-state-support-types = { path = "crates/ol/state-support-types" }
-strata-ol-state-types = { path = "crates/ol/state-types" }
-strata-ol-stf = { path = "crates/ol/stf" }
-strata-open-rpc = { path = "crates/rpc/open-rpc" }
-strata-open-rpc-macros = { path = "crates/rpc/open-rpc-macros" }
-strata-paas = { path = "crates/paas" }
-strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-alpen-acct = { path = "crates/proof-impl/alpen-acct" }
 strata-proofimpl-alpen-chunk = { path = "crates/proof-impl/alpen-chunk" }
-strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-proofimpl-predicate-keys = { path = "crates/proof-impl/predicate-keys" }
-strata-prover-core = { path = "crates/prover-core" }
 strata-simple-ee = { path = "crates/simple-ee" }
-strata-snark-acct-runtime = { path = "crates/snark-acct-runtime" }
-strata-snark-acct-sys = { path = "crates/snark-acct-sys" }
-strata-snark-acct-types = { path = "crates/snark-acct-types" }
-strata-state = { path = "crates/state" }
-strata-status = { path = "crates/status" }
-strata-storage = { path = "crates/storage" }
-strata-storage-common = { path = "crates/storage-common" }
-strata-test-utils = { path = "crates/test-utils/test-utils" }
-strata-test-utils-btcio = { path = "crates/test-utils/btcio" }
-strata-test-utils-l2 = { path = "crates/test-utils/l2" }
-strata-test-utils-ssz = { path = "crates/test-utils/ssz" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
+
+# strata dependencies, pinned to the pre-split repo at the current main rev.
+# The strata sources still in-tree are excluded from the workspace and unused.
+strata-acct-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-bridge-params = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-btcio = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-cli-common = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-common = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-config = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-da-framework = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-db-store-sled = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-db-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-mpt = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-ol-bridge-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-ol-msg-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-ol-rpc-api = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-ol-rpc-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-open-rpc = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-paas = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-primitives = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-proofimpl-checkpoint = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-snark-acct-runtime = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-snark-acct-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-state = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-storage = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-storage-common = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-test-utils-btcio = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
+strata-test-utils-ssz = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 
 # strata-common
 strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
