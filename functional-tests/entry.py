@@ -37,6 +37,11 @@ from factories.bitcoin import BitcoinFactory
 from factories.signer import SignerFactory
 from factories.strata import StrataFactory
 
+# Test groups run by default: only the alpen/EE-relevant ones. The strata-node
+# groups (btcio, checkpoint, dbtool, ol_isolated, params, strata) remain
+# in-tree until the repo split is finalized and stay runnable via `-g`.
+DEFAULT_TEST_GROUPS = ["alpen_client", "evm"]
+
 
 def disabled_tests() -> frozenset[str]:
     """
@@ -381,6 +386,10 @@ def main(argv: list[str]) -> int:
         runtime.prepare_test(KEEP_ALIVE_TEST_NAME, test_class)
         tests = [KEEP_ALIVE_TEST_NAME]
     else:
+        # Without explicit selectors, run only the alpen-relevant groups.
+        if not (args.tests or args.tests_pos or args.groups):
+            args.groups = DEFAULT_TEST_GROUPS
+
         # Discover and filter tests
         modules = scan_dir_for_modules(test_dir)
         filtered_modules = filter_tests(args, modules, test_dir)

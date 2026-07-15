@@ -15,11 +15,18 @@ setup_path() {
     fi
 }
 
-# Builds the binary.
+# Builds the alpen binaries from this workspace.
 build() {
-    # TODO(STR-3692): add conditional builds as we go
     # TODO(STR-3692): different binaries for sequencer and full nodes
-    cargo build  -F sequencer -F debug-utils -F test-mode -F debug-asm -F prover --bin strata --bin strata-signer --bin alpen-client --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
+    cargo build --bin alpen-client
+}
+
+# Builds the strata binaries from the git rev pinned in the root Cargo.toml
+# and puts them on PATH ahead of any stale workspace-built ones.
+build_strata() {
+    local strata_bin_dir
+    strata_bin_dir="$(./build_strata_bins.sh)"
+    export PATH="$strata_bin_dir:$PATH"
 }
 
 # Runs tests.
@@ -30,4 +37,5 @@ run_tests() {
 
 setup_path
 build
+build_strata
 run_tests "$@"

@@ -11,6 +11,18 @@ Clean, simple functional test suite for Strata.
 - Clear error messages
 - Easy to debug
 
+## Binaries
+
+`alpen-client` is built from this workspace. The strata binaries (`strata`,
+`strata-signer`, `strata-datatool`, `strata-test-cli`, `strata-dbtool`) are
+built from the strata git revision pinned in the root `Cargo.toml` via
+`./build_strata_bins.sh` (checked out and built under `target/strata-git`).
+`run_tests.sh` handles both automatically.
+
+By default only the alpen-relevant test groups (`alpen_client`, `evm`) run;
+the strata-node groups remain runnable explicitly via `-g` until the repo
+split is finalized.
+
 ## Quick Start
 
 ```bash
