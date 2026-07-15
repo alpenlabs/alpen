@@ -15653,6 +15653,7 @@ dependencies = [
  "strata-ledger-types",
  "strata-ol-chain-types",
  "strata-ol-params",
+ "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-paas",
  "strata-predicate",

@@ -14,4 +14,5 @@ pub(crate) mod ol_state;
 pub(crate) mod prover_task;
 pub(crate) mod prover_task_common;
 pub(crate) mod syncinfo;
+pub(crate) mod terminal_header;
 pub(crate) mod writer;
