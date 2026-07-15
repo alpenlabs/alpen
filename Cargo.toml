@@ -50,72 +50,6 @@ default-members = [
   # "bin/alpen-cli",
 ]
 
-# Strata crates are consumed from git (see `strata dependencies` below). Their
-# in-tree sources are excluded from the workspace until they get removed.
-exclude = [
-  "benches",
-  "bin/datatool",
-  "bin/prover-perf",
-  "bin/strata",
-  "bin/strata-dbtool",
-  "bin/strata-signer",
-  "bin/strata-test-cli",
-  "crates/acct-types",
-  "crates/bridge-params",
-  "crates/bridge-types",
-  "crates/btcio",
-  "crates/chain-worker",
-  "crates/checkpoint-types",
-  "crates/cli-common",
-  "crates/codec-utils",
-  "crates/common",
-  "crates/config",
-  "crates/consensus-logic",
-  "crates/csm-types",
-  "crates/csm-worker",
-  "crates/da-framework",
-  "crates/db/store-sled",
-  "crates/db/tests",
-  "crates/db/types",
-  "crates/key-derivation",
-  "crates/ledger-types",
-  "crates/mpt",
-  "crates/node-context",
-  "crates/ol/block-assembly",
-  "crates/ol/chain-types",
-  "crates/ol/checkpoint",
-  "crates/ol/da",
-  "crates/ol/genesis",
-  "crates/ol/mempool",
-  "crates/ol/msg-types",
-  "crates/ol/params",
-  "crates/ol/rpc/api",
-  "crates/ol/rpc/types",
-  "crates/ol/sequencer",
-  "crates/ol/state-provider",
-  "crates/ol/state-support-types",
-  "crates/ol/state-types",
-  "crates/ol/stf",
-  "crates/paas",
-  "crates/primitives",
-  "crates/proof-impl/checkpoint",
-  "crates/prover-core",
-  "crates/rpc/open-rpc",
-  "crates/rpc/open-rpc-macros",
-  "crates/snark-acct-runtime",
-  "crates/snark-acct-sys",
-  "crates/snark-acct-types",
-  "crates/state",
-  "crates/status",
-  "crates/storage",
-  "crates/storage-common",
-  "crates/strata-signer",
-  "crates/test-utils/btcio",
-  "crates/test-utils/l2",
-  "crates/test-utils/ssz",
-  "crates/test-utils/test-utils",
-]
-
 [workspace.lints]
 rust.missing_debug_implementations = "warn"
 rust.rust_2018_idioms = { level = "deny", priority = -1 }
@@ -165,8 +99,8 @@ strata-proofimpl-predicate-keys = { path = "crates/proof-impl/predicate-keys" }
 strata-simple-ee = { path = "crates/simple-ee" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
-# strata dependencies, pinned to the pre-split repo at the current main rev.
-# The strata sources still in-tree are excluded from the workspace and unused.
+# strata dependencies, pinned to the pre-split repo at its last main rev
+# before the alpen/strata repo split.
 strata-acct-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-bridge-params = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-btcio = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
