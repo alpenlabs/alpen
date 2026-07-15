@@ -68,6 +68,10 @@ impl OLParams {
 }
 
 #[cfg(any(test, feature = "test-defaults"))]
+#[expect(
+    clippy::derivable_impls,
+    reason = "OLParams defaults are only available in test builds and depend on gated bridge params defaults"
+)]
 impl Default for OLParams {
     fn default() -> Self {
         Self {
