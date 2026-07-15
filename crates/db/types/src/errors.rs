@@ -1,4 +1,4 @@
-use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, Slot};
+use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId, Slot};
 use strata_primitives::epoch::EpochCommitment;
 use strata_primitives::l1::L1BlockId;
 use strata_primitives::l2::L2BlockId;
@@ -113,6 +113,17 @@ pub enum DbError {
     OLCanonicalSuffixOverflow {
         start_slot: Slot,
         block_count: usize,
+    },
+
+    /// A terminal header was stored under a key other than its computed block ID.
+    #[error("terminal OL header block ID mismatch: key {key}, computed {computed}")]
+    OLTerminalHeaderIdMismatch { key: OLBlockId, computed: OLBlockId },
+
+    /// Promotion attempted to replace an already-established history base.
+    #[error("OL history base conflict: attempted {attempted}, current {current}")]
+    OLHistoryBaseConflict {
+        attempted: EpochCommitment,
+        current: EpochCommitment,
     },
 
     #[error("resource busy")]

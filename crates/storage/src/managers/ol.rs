@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
+use strata_db_types::ol_block::{BlockAvailability, BlockStatus, OLBlockDatabase};
 use strata_db_types::DbResult;
-use strata_identifiers::{OLBlockId, Slot};
-use strata_ol_chain_types::OLBlock;
+use strata_identifiers::{EpochCommitment, OLBlockId, Slot};
+use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 use strata_primitives::OLBlockCommitment;
 use tokio::runtime::Handle;
 
@@ -144,6 +144,95 @@ impl OLBlockManager {
             .get_or_fetch_blocking(&id, || self.ops.get_block_data_blocking(id))
     }
 
+    /// Stores an unsigned checkpoint terminal [`OLBlockHeader`].
+    pub async fn put_terminal_header_async(
+        &self,
+        id: OLBlockId,
+        header: OLBlockHeader,
+    ) -> DbResult<()> {
+        self.ops.put_terminal_header_async(id, header).await
+    }
+
+    /// Stores an unsigned checkpoint terminal [`OLBlockHeader`].
+    pub fn put_terminal_header_blocking(
+        &self,
+        id: OLBlockId,
+        header: OLBlockHeader,
+    ) -> DbResult<()> {
+        self.ops.put_terminal_header_blocking(id, header)
+    }
+
+    /// Retrieves an unsigned checkpoint terminal [`OLBlockHeader`].
+    pub async fn get_terminal_header_async(
+        &self,
+        id: OLBlockId,
+    ) -> DbResult<Option<OLBlockHeader>> {
+        self.ops.get_terminal_header_async(id).await
+    }
+
+    /// Retrieves an unsigned checkpoint terminal [`OLBlockHeader`].
+    pub fn get_terminal_header_blocking(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+        self.ops.get_terminal_header_blocking(id)
+    }
+
+    /// Retrieves an [`OLBlockHeader`] from a full block before consulting terminal headers.
+    pub async fn get_ol_header_async(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+        if let Some(block) = self.get_block_data_async(id).await? {
+            return Ok(Some(block.header().clone()));
+        }
+
+        self.get_terminal_header_async(id).await
+    }
+
+    /// Retrieves an [`OLBlockHeader`] from a full block before consulting terminal headers.
+    pub fn get_ol_header_blocking(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+        if let Some(block) = self.get_block_data_blocking(id)? {
+            return Ok(Some(block.header().clone()));
+        }
+
+        self.get_terminal_header_blocking(id)
+    }
+
+    /// Returns the immutable base of locally available full OL block history.
+    pub async fn get_history_base_async(&self) -> DbResult<Option<EpochCommitment>> {
+        self.ops.get_history_base_async().await
+    }
+
+    /// Returns the immutable base of locally available full OL block history.
+    pub fn get_history_base_blocking(&self) -> DbResult<Option<EpochCommitment>> {
+        self.ops.get_history_base_blocking()
+    }
+
+    /// Classifies full-block availability using the commitment's slot and the history base.
+    pub async fn get_block_at_async(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> DbResult<BlockAvailability> {
+        if let Some(block) = self.get_block_data_async(*commitment.blkid()).await? {
+            return Ok(BlockAvailability::Available(Box::new(block)));
+        }
+
+        match self.get_history_base_async().await? {
+            Some(base) if commitment.slot() <= base.last_slot() => Ok(BlockAvailability::Pruned),
+            _ => Ok(BlockAvailability::Missing),
+        }
+    }
+
+    /// Classifies full-block availability using the commitment's slot and the history base.
+    pub fn get_block_at_blocking(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> DbResult<BlockAvailability> {
+        if let Some(block) = self.get_block_data_blocking(*commitment.blkid())? {
+            return Ok(BlockAvailability::Available(Box::new(block)));
+        }
+
+        match self.get_history_base_blocking()? {
+            Some(base) if commitment.slot() <= base.last_slot() => Ok(BlockAvailability::Pruned),
+            _ => Ok(BlockAvailability::Missing),
+        }
+    }
+
     /// Deletes a block from the database, purging cache entry.
     /// Returns true if the block existed and was deleted.
     pub async fn del_block_data_async(&self, id: OLBlockId) -> DbResult<bool> {
@@ -274,6 +363,16 @@ impl OLBlockManager {
     ) -> DbResult<()> {
         self.ops
             .replace_canonical_suffix_from_blocking(start_slot, block_ids)
+    }
+
+    /// Atomically promotes a checkpoint terminal as the immutable OL history anchor.
+    pub async fn promote_to_history_anchor_async(&self, anchor: EpochCommitment) -> DbResult<()> {
+        self.ops.promote_to_history_anchor_async(anchor).await
+    }
+
+    /// Atomically promotes a checkpoint terminal as the immutable OL history anchor.
+    pub fn promote_to_history_anchor_blocking(&self, anchor: EpochCommitment) -> DbResult<()> {
+        self.ops.promote_to_history_anchor_blocking(anchor)
     }
 }
 
