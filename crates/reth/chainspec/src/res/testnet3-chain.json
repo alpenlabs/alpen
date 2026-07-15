@@ -6,6 +6,13 @@
     "difficulty": "0x0",
     "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "coinbase": "0x5400000000000000000000000000000000000011",
+    "alloc": {
+        "0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7": {
+            "balance": "0x0",
+            "nonce": "0x1",
+            "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3"
+        }
+    },
     "number": "0x0",
     "gasUsed": "0x0",
     "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",

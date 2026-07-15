@@ -6,33 +6,33 @@
       "Admin": {
         "strata_administrator": {
           "keys": [
-            "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
-            "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
-            "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
+            "02d9c8c9168be6b4dc8dc03921cdcc7981ea90568b1fcdb1532a0672cd593f4248",
+            "03622f36157a8ffbe33d3f49ef8d8a9523cb89ec94bbe368494259aec63b438d7b",
+            "031543a6f722334527ec475b134397f59fde8ea8f1a91aa7b83d81816ddf3b8d9d"
           ],
           "threshold": 2
         },
         "strata_sequencer_manager": {
           "keys": [
-            "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
-            "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
-            "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
+            "0326498642b5d9f66b010f6234f65fc51f632cf9966cb74eb5a4c44f2cc3ae93f8",
+            "0318e11a80c807f852a36b0541c12b04dfe5930432cdd82558def5ae7a88ab6f75",
+            "03daba81009a72589de939b45a5d56024d1d92ab858b089d3c3fae9469c4792ee0"
           ],
           "threshold": 2
         },
         "alpen_administrator": {
           "keys": [
-            "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
-            "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
-            "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
+            "033c42c1e46ab24a1c67b91760aaf9c7d07ccb6d29c465fb59b3c73a25220afbea",
+            "037d775eae5bc072ebca840a4712e30d1335a29a8f2491ad9fd28290a6444e6d1d",
+            "033a83eac85055e646cc777513c4ffbb43d408b9fe546ca90de8c80582e63d794e"
           ],
           "threshold": 2
         },
         "strata_security_council": {
           "keys": [
-            "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
-            "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
-            "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
+            "02c134e1959983452f5fb0c2d3564b0d688162286cca50c9437af83ef84f258052",
+            "03f7b373dd851493b85b587f067f9c8564fdb7ceeeb260884fdea5c269519a8f6a",
+            "02cb9f97fcc6d62482577268726acdcdef3e6d4eb31aae6944268b09e29b236340"
           ],
           "threshold": 2
         },
@@ -63,12 +63,14 @@
     {
       "Bridge": {
         "operators": [
-          "02ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450",
-          "0219ef09eaecff5c4cc875f9ac56c1849712ed4019d0280ad08c743a8635c796e3",
-          "027e2b01bdbc6925f103d2157f7494bc4feebc744066042d3618351b29991cfdce"
+          "02157d08fa2eb6071cef0750bcf1c0c9e94c2f05f629cdbdb3982851dce9472cd0",
+          "02444d7dca618168c1c4963a1556c2cab7d9172f0702cc3498dff72015717c0968",
+          "02bff82939acd1deaeed90d6620b64ec475c6ff80a30fd07fca05315ddb1df873d",
+          "02a96ec5406c02be9b6a7b254af44acf15b23b908b21619f9be583d82f943b6fb2",
+          "024fba11d351c5e3b988a938b82bf210c1e7736594f6924f8e8ebe0c462e03569b"
         ],
         "denomination": 200000000,
-        "assignment_duration": 1080,
+        "assignment_duration": 536,
         "operator_fee": 300000,
         "recovery_delay": 36,
         "safe_harbour_address": "04ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450"
