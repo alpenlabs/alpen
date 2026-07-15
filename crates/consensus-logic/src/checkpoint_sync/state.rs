@@ -151,15 +151,19 @@ pub(crate) async fn build_ol_sync_status(
     let terminal = *summary.terminal();
     let epoch_num = summary.epoch();
     let new_l1 = *summary.new_l1();
-    // Epoch 0 has no predecessor; `null` is the canonical genesis-prev value.
-    let prev_epoch = summary
-        .get_prev_epoch_commitment()
-        .unwrap_or(EpochCommitment::null());
+    // The recently complete epoch for checkpoint sync service is the finalized epoch.
+    let recent_epoch = epoch;
 
     // Checkpoint sync always lands on terminal blocks, and for it
     // confirmed == finalized (5th and 6th args).
     Ok(OLSyncStatus::new(
-        terminal, epoch_num, true, prev_epoch, epoch, epoch, new_l1,
+        terminal,
+        epoch_num,
+        true,
+        recent_epoch,
+        epoch,
+        epoch,
+        new_l1,
     ))
 }
 

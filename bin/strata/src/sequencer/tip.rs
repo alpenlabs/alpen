@@ -15,7 +15,7 @@ pub(crate) async fn resolve_canonical_tip(
     status_channel: &StatusChannel,
     storage: &NodeStorage,
 ) -> DbResult<Option<OLBlockCommitment>> {
-    if let Some(tip) = status_channel.get_ol_sync_status().map(|s| s.tip) {
+    if let Some(tip) = status_channel.get_ol_sync_status().map(|s| s.tip()) {
         return Ok(Some(tip));
     }
     storage.ol_block().get_canonical_tip_async().await
