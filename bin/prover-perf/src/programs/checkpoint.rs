@@ -69,8 +69,7 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
         blocks,
         parent,
         da_state_diff_bytes,
-        bridge_params: BridgeParams::new(200_000_000, Some(1_000_000_000))
-            .expect("valid bridge params"),
+        bridge_params: BridgeParams::default(),
     }
 }
 
