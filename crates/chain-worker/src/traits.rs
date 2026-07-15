@@ -67,6 +67,9 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
         state: OLState,
     ) -> WorkerResult<()>;
 
+    /// Stores an unsigned checkpoint terminal [`OLBlockHeader`].
+    fn store_terminal_header(&self, id: OLBlockId, header: OLBlockHeader) -> WorkerResult<()>;
+
     // =========================================================================
     // Epoch management
     // =========================================================================

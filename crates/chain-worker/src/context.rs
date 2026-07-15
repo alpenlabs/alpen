@@ -206,6 +206,11 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(())
     }
 
+    fn store_terminal_header(&self, id: OLBlockId, header: OLBlockHeader) -> WorkerResult<()> {
+        self.ol_block_mgr.put_terminal_header_blocking(id, header)?;
+        Ok(())
+    }
+
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()> {
         let commitment = summary.get_epoch_commitment();
 

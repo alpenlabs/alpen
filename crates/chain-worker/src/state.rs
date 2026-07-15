@@ -15,7 +15,9 @@ use strata_acct_types::AccountSerial;
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_bridge_params::BridgeParams;
-use strata_checkpoint_types::EpochSummary;
+use strata_checkpoint_types::{
+    EpochSummary, TerminalHeaderReconstructionError, reconstruct_terminal_header,
+};
 use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment};
 use strata_ledger_types::{
@@ -23,7 +25,7 @@ use strata_ledger_types::{
 };
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types::{
-    BlockFlags, MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLLogType,
+    MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLLogType,
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
@@ -222,10 +224,13 @@ impl ChainWorkerServiceState {
     )]
     pub(crate) fn apply_checkpoint(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
         let artifacts = apply_checkpoint_epoch(&self.ctx, epoch)?;
+        let terminal = artifacts.terminal();
 
         self.ctx
-            .store_toplevel_state(artifacts.terminal, artifacts.new_state)?;
+            .store_toplevel_state(terminal, artifacts.new_state)?;
         self.ctx.apply_epoch_indexing(&epoch, &artifacts.output)?;
+        self.ctx
+            .store_terminal_header(*terminal.blkid(), artifacts.terminal_header)?;
         // Store the summary last to indicate the epoch has been processed and applied. If this
         // fails, this will be applied again, which is idempotent in db operations.
         self.ctx.store_summary(artifacts.summary)?;
@@ -555,14 +560,8 @@ pub(crate) fn apply_checkpoint_epoch(
             })?;
 
     // Now verify.
-    verify_reconstruction(
-        epoch,
-        tip,
-        sidecar,
-        terminal,
-        indexer_state_root,
-        final_state_root,
-    )?;
+    let terminal_header =
+        verify_reconstruction(epoch, tip, sidecar, indexer_state_root, final_state_root)?;
 
     let new_state = new_state.into_inner();
 
@@ -582,8 +581,8 @@ pub(crate) fn apply_checkpoint_epoch(
         OLBlockExecutionOutput::new(final_state_root, write_batch, indexer_writes, ol_logs);
 
     Ok(AppliedEpochArtifacts {
-        terminal,
         new_state,
+        terminal_header,
         summary,
         output,
     })
@@ -647,10 +646,9 @@ fn verify_reconstruction(
     epoch: EpochCommitment,
     tip: &CheckpointTip,
     sidecar: &CheckpointSidecar,
-    terminal: OLBlockCommitment,
     indexer_state_root: Buf32,
     final_state_root: Buf32,
-) -> WorkerResult<()> {
+) -> WorkerResult<OLBlockHeader> {
     if final_state_root != indexer_state_root {
         error!(
             %epoch, %indexer_state_root, %final_state_root,
@@ -666,35 +664,26 @@ fn verify_reconstruction(
         });
     }
 
-    let mut terminal_flags = BlockFlags::zero();
-    terminal_flags.set_is_terminal(true);
-    let complement = sidecar.terminal_header_complement();
-    let reconstructed_header = OLBlockHeader::new(
-        complement.timestamp(),
-        terminal_flags,
-        terminal.slot(),
-        epoch.epoch(),
-        *complement.parent_blkid(),
-        *complement.body_root(),
-        final_state_root,
-        *complement.logs_root(),
-    );
-    let reconstructed_blkid = reconstructed_header.compute_blkid();
-    if reconstructed_blkid != *terminal.blkid() {
-        error!(
-            %epoch,
-            expected_blkid = %terminal.blkid(),
-            %reconstructed_blkid,
-            "terminal header reconstruction blkid mismatch",
-        );
-        return Err(WorkerError::TerminalBlkidMismatch {
-            epoch: epoch.epoch(),
-            expected: *terminal.blkid(),
-            reconstructed: reconstructed_blkid,
-        });
-    }
-
-    Ok(())
+    reconstruct_terminal_header(tip, sidecar.terminal_header_complement(), final_state_root)
+        .map_err(|error| match error {
+            TerminalHeaderReconstructionError::BlockIdMismatch {
+                epoch: error_epoch,
+                expected,
+                reconstructed,
+            } => {
+                error!(
+                    %epoch,
+                    expected_blkid = %expected,
+                    reconstructed_blkid = %reconstructed,
+                    "terminal header reconstruction blkid mismatch",
+                );
+                WorkerError::TerminalBlkidMismatch {
+                    epoch: error_epoch,
+                    expected,
+                    reconstructed,
+                }
+            }
+        })
 }
 
 /// Asserts that the seqno derived per-log matches the post-state seqno reached via
@@ -863,14 +852,21 @@ fn acct_read_err(stage: &'static str) -> impl FnOnce(StateError) -> WorkerError 
 /// before persistence.
 #[derive(Debug)]
 pub(crate) struct AppliedEpochArtifacts {
-    /// Terminal block commitment of the epoch.
-    pub(crate) terminal: OLBlockCommitment,
     /// Reconstructed post-epoch toplevel state.
     pub(crate) new_state: OLState,
+    /// Unsigned terminal block header reconstructed from checkpoint data.
+    pub(crate) terminal_header: OLBlockHeader,
     /// Epoch summary built from the reconstructed state.
     pub(crate) summary: EpochSummary,
     /// Execution output (state root, write batch, indexer writes).
     pub(crate) output: OLBlockExecutionOutput,
+}
+
+impl AppliedEpochArtifacts {
+    /// Derives the epoch terminal commitment from the reconstructed header.
+    pub(crate) fn terminal(&self) -> OLBlockCommitment {
+        self.terminal_header.compute_block_commitment()
+    }
 }
 
 impl ServiceState for ChainWorkerServiceState {

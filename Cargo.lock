@@ -15237,8 +15237,11 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_derive",
+ "strata-asm-proto-checkpoint-types",
  "strata-crypto",
  "strata-identifiers",
+ "strata-ol-chain-types",
+ "thiserror 2.0.18",
  "zkaleido",
 ]
 
