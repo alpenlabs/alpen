@@ -46,6 +46,9 @@ tokio = { workspace = true, optional = true }
 toml.workspace = true
 zeroize.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [features]
 default = ["btc-client"]
 btc-client = ["dep:bitcoind-async-client", "dep:tokio"]

@@ -20,7 +20,7 @@ use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 ///
 /// Combines header parameters and genesis account definitions into a single
 /// configuration structure.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLParams {
     /// Header parameters for the parent of the genesis block.
@@ -36,18 +36,17 @@ pub struct OLParams {
     pub last_l1_block: L1BlockCommitment,
 
     /// Withdrawal denomination and optional cap.
-    #[serde(default)]
     pub bridge_params: BridgeParams,
 }
 
 impl OLParams {
     /// Creates an [`OLParams`] with empty accounts and default header params.
-    pub fn new_empty(last_l1_block: L1BlockCommitment) -> Self {
+    pub fn new_empty(last_l1_block: L1BlockCommitment, bridge_params: BridgeParams) -> Self {
         Self {
             header: GenesisHeaderParams::default(),
             accounts: BTreeMap::new(),
             last_l1_block,
-            ..Default::default()
+            bridge_params,
         }
     }
 
@@ -104,7 +103,7 @@ mod tests {
             header: serde_json::from_str("{}").unwrap(),
             accounts,
             last_l1_block: L1BlockCommitment::default(),
-            ..Default::default()
+            bridge_params: BridgeParams::default(),
         }
     }
 
@@ -140,6 +139,11 @@ mod tests {
             "last_l1_block": {
                 "height": 0,
                 "blkid": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "bridge_params": {
+                "denomination": 100000000,
+                "max_withdrawal_amount": 1000000000,
+                "max_withdrawal_descriptor_len": 81
             }
         }"#;
 
@@ -161,6 +165,11 @@ mod tests {
             "last_l1_block": {
                 "height": 0,
                 "blkid": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "bridge_params": {
+                "denomination": 100000000,
+                "max_withdrawal_amount": 1000000000,
+                "max_withdrawal_descriptor_len": 81
             }
         }"#;
         let params = serde_json::from_str::<OLParams>(json).expect("parse failed");
@@ -177,6 +186,21 @@ mod tests {
                     "predicate": "AlwaysAccept"
                 }
             },
+            "last_l1_block": {
+                "height": 0,
+                "blkid": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+        }"#;
+
+        let result = serde_json::from_str::<OLParams>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_missing_bridge_params_errors() {
+        let json = r#"{
+            "header": {},
+            "accounts": {},
             "last_l1_block": {
                 "height": 0,
                 "blkid": "0000000000000000000000000000000000000000000000000000000000000000"

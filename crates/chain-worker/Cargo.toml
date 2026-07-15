@@ -39,6 +39,7 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-db-store-sled.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-ol-stf = { workspace = true, features = ["test-utils"] }

@@ -5,6 +5,7 @@ use std::{fs, path::Path};
 use alpen_chainspec::{ee_genesis_block_info_from_json, DEV_CHAIN_SPEC};
 use alpen_ee_config::{AlpenEeParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
 use strata_identifiers::AccountId;
+use strata_ol_params::BridgeParams;
 
 use crate::args::{CmdContext, SubcEeParams};
 
@@ -20,11 +21,17 @@ pub(super) fn exec(cmd: SubcEeParams, _ctx: &mut CmdContext) -> anyhow::Result<(
 
     let genesis_json = read_chain_config(cmd.alpen_chain_config.as_deref())?;
     let genesis_info = ee_genesis_block_info_from_json(&genesis_json)?;
+    let bridge_params = BridgeParams::new_with_descriptor_limit(
+        cmd.bridge_denomination_sats,
+        cmd.max_withdrawal_amount_sats,
+        cmd.max_withdrawal_descriptor_len,
+    )?;
     let params = AlpenEeParams::new(
         account_id,
         genesis_info.blockhash(),
         genesis_info.stateroot(),
         genesis_info.blocknum(),
+        bridge_params,
     );
     let params_buf = params.to_json_string_pretty()?;
 

@@ -265,7 +265,15 @@ mod tests {
     use crate::{memory_state_layer::MemoryStateBaseLayer, test_utils::*};
 
     fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
-        let mut params = OLParams::new_empty(L1BlockCommitment::default());
+        let mut params = OLParams::new_empty(
+            L1BlockCommitment::default(),
+            strata_ol_params::BridgeParams::new_with_descriptor_limit(
+                100_000_000,
+                Some(1_000_000_000),
+                81,
+            )
+            .expect("valid bridge params"),
+        );
         params.header.slot = slot;
         params.header.epoch = epoch;
         let state = OLState::from_genesis_params(&params)

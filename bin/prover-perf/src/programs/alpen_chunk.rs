@@ -77,7 +77,13 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
 
     let chain_spec: Arc<reth_chainspec::ChainSpec> =
         Arc::new((&witness.genesis).try_into().unwrap());
-    let ee = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
+    let ee = EvmExecutionEnvironment::new(
+        chain_spec,
+        AlpenEvmFactory::from_bridge_params(
+            &strata_bridge_params::BridgeParams::new(200_000_000, Some(1_000_000_000))
+                .expect("valid bridge params"),
+        ),
+    );
     let header_intrinsics = block.get_header().get_intrinsics();
     let exec_payload = ExecPayload::new(&header_intrinsics, block.get_body());
     let inputs = ExecInputs::new_empty();
@@ -114,7 +120,8 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
     EeChunkProofInput {
         genesis: witness.genesis,
         private_input,
-        bridge_params: BridgeParams::default(),
+        bridge_params: BridgeParams::new(200_000_000, Some(1_000_000_000))
+            .expect("valid bridge params"),
     }
 }
 

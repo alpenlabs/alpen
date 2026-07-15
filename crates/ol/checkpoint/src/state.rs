@@ -301,7 +301,11 @@ mod tests {
             stub_ol_logs: Vec<OLLog>,
         ) -> Self {
             Self {
-                inner: CheckpointWorkerContextImpl::new(storage, BridgeParams::default()),
+                inner: CheckpointWorkerContextImpl::new(
+                    storage,
+                    BridgeParams::new_with_descriptor_limit(100_000_000, Some(1_000_000_000), 81)
+                        .expect("valid bridge params"),
+                ),
                 stub_state_diff,
                 stub_ol_logs,
             }
@@ -427,7 +431,7 @@ mod tests {
                     .expect("put checkpoint");
             }
 
-            let ctx = CheckpointWorkerContextImpl::new(storage, BridgeParams::default());
+            let ctx = CheckpointWorkerContextImpl::new(storage, BridgeParams::new_with_descriptor_limit(100_000_000, Some(1_000_000_000), 81).expect("valid bridge params"));
             let mut state = OLCheckpointServiceState::new(ctx);
             state.initialize();
 

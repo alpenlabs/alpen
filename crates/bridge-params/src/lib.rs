@@ -26,7 +26,6 @@ pub struct BridgeParams {
 struct BridgeParamsRaw {
     denomination: u64,
     max_withdrawal_amount: Option<u64>,
-    #[serde(default = "default_max_withdrawal_descriptor_len")]
     max_withdrawal_descriptor_len: u32,
 }
 
@@ -135,31 +134,18 @@ impl BridgeParams {
     }
 }
 
-/// Default bridge denomination: 1 BTC in satoshis.
-pub const DEFAULT_DENOMINATION_SATS: u64 = 100_000_000;
-
-/// Default maximum withdrawal amount: 10 BTC in satoshis.
-pub const DEFAULT_MAX_WITHDRAWAL_SATS: u64 = 1_000_000_000;
+#[cfg(any(test, feature = "test-defaults"))]
+impl Default for BridgeParams {
+    fn default() -> Self {
+        Self::new(100_000_000, Some(1_000_000_000)).expect("default bridge params are valid")
+    }
+}
 
 /// Default maximum BOSD descriptor length for withdrawals, including the type tag.
 pub const DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN: u32 = 81;
 
 /// Maximum BOSD descriptor length accepted by withdrawal message data.
 pub const MAX_WITHDRAWAL_DESCRIPTOR_LEN: u32 = 255;
-
-const fn default_max_withdrawal_descriptor_len() -> u32 {
-    DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN
-}
-
-impl Default for BridgeParams {
-    fn default() -> Self {
-        Self {
-            denomination: DEFAULT_DENOMINATION_SATS,
-            max_withdrawal_amount: Some(DEFAULT_MAX_WITHDRAWAL_SATS),
-            max_withdrawal_descriptor_len: DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN,
-        }
-    }
-}
 
 #[derive(Debug, Error)]
 pub enum BridgeParamsError {
@@ -204,10 +190,6 @@ mod tests {
 
     #[test]
     fn default_descriptor_len_is_81() {
-        assert_eq!(
-            BridgeParams::default().max_withdrawal_descriptor_len(),
-            DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN
-        );
         assert_eq!(
             BridgeParams::new(100_000_000, Some(1_000_000_000))
                 .unwrap()
@@ -283,13 +265,9 @@ mod tests {
     }
 
     #[test]
-    fn serde_missing_descriptor_len_uses_default() {
+    fn serde_rejects_missing_descriptor_len() {
         let json = r#"{"denomination":100000000,"max_withdrawal_amount":null}"#;
-        let bp: BridgeParams = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            bp.max_withdrawal_descriptor_len(),
-            DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN
-        );
+        assert!(serde_json::from_str::<BridgeParams>(json).is_err());
     }
 
     #[test]

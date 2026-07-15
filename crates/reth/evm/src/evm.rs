@@ -18,7 +18,7 @@ use crate::{apis::AlpenAlloyEvm, precompiles::factory, utils::wei_to_sats};
 /// Custom EVM configuration.
 ///
 /// Carries bridge withdrawal policy for precompile validation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AlpenEvmFactory {
     bridge_params: BridgeParams,
 }

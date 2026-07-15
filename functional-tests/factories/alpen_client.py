@@ -114,7 +114,11 @@ class AlpenClientFactory(flexitest.Factory):
             ol_client_args = ["--dummy-ol-client"]
 
         if ee_params_path is None:
-            ee_params_path = generate_ee_params(datadir)
+            ee_params_path = generate_ee_params(
+                datadir,
+                bridge_denomination=bridge_denomination,
+                max_withdrawal_amount=max_withdrawal_amount,
+            )
 
         # fmt: off
         cmd = [
@@ -165,11 +169,6 @@ class AlpenClientFactory(flexitest.Factory):
         else:
             # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
             cmd.append("-d")
-
-        # Withdrawal denomination and cap (bridge params)
-        cmd.extend(["--bridge-denomination", str(bridge_denomination)])
-        if max_withdrawal_amount is not None:
-            cmd.extend(["--max-withdrawal-amount", str(max_withdrawal_amount)])
 
         if beneficiary_address is not None:
             cmd.extend(["--beneficiary-address", beneficiary_address])
@@ -281,7 +280,11 @@ class AlpenClientFactory(flexitest.Factory):
 
         ol_client_args = ["--ol-client-url", ol_endpoint] if ol_endpoint else ["--dummy-ol-client"]
         if ee_params_path is None:
-            ee_params_path = generate_ee_params(datadir)
+            ee_params_path = generate_ee_params(
+                datadir,
+                bridge_denomination=bridge_denomination,
+                max_withdrawal_amount=max_withdrawal_amount,
+            )
 
         # fmt: off
         cmd = [
@@ -333,11 +336,6 @@ class AlpenClientFactory(flexitest.Factory):
         else:
             # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
             cmd.append("-d")
-
-        # Withdrawal denomination and cap (bridge params)
-        cmd.extend(["--bridge-denomination", str(bridge_denomination)])
-        if max_withdrawal_amount is not None:
-            cmd.extend(["--max-withdrawal-amount", str(max_withdrawal_amount)])
 
         http_url = f"http://127.0.0.1:{http_port}"
 

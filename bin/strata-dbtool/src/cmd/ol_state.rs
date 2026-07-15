@@ -384,8 +384,11 @@ mod tests {
     use super::*;
 
     fn genesis_target_state() -> OLState {
-        OLState::from_genesis_params(&OLParams::new_empty(L1BlockCommitment::default()))
-            .expect("valid genesis params")
+        OLState::from_genesis_params(&OLParams::new_empty(
+            L1BlockCommitment::default(),
+            strata_bridge_params::BridgeParams::default(),
+        ))
+        .expect("valid genesis params")
     }
 
     fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlock {

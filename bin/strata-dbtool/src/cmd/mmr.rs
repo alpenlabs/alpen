@@ -916,8 +916,11 @@ mod tests {
     use super::*;
 
     fn genesis_target_state() -> OLState {
-        OLState::from_genesis_params(&OLParams::new_empty(L1BlockCommitment::default()))
-            .expect("valid genesis params")
+        OLState::from_genesis_params(&OLParams::new_empty(
+            L1BlockCommitment::default(),
+            strata_bridge_params::BridgeParams::default(),
+        ))
+        .expect("valid genesis params")
     }
 
     fn l1_block_record(seed: u8) -> L1BlockRecord {
@@ -949,7 +952,10 @@ mod tests {
         account_id: AccountId,
         messages: Vec<MessageEntry>,
     ) -> OLState {
-        let mut params = OLParams::new_empty(L1BlockCommitment::default());
+        let mut params = OLParams::new_empty(
+            L1BlockCommitment::default(),
+            strata_bridge_params::BridgeParams::default(),
+        );
         params.accounts.insert(
             account_id,
             GenesisSnarkAccountData {

@@ -3,8 +3,8 @@
 use std::{fs, path::Path};
 
 use alpen_chainspec::ee_genesis_block_info_from_json;
-use alpen_ee_config::{AlpenEeParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
-use anyhow::{anyhow, bail};
+use alpen_ee_config::AlpenEeParams;
+use anyhow::anyhow;
 use strata_btc_types::BitcoinAmount;
 use strata_ee_acct_types::EeAccountState;
 use strata_ol_params::{GenesisSnarkAccountData, OLParams};
@@ -24,47 +24,37 @@ use crate::{
 /// account. Outputs the result as pretty-printed JSON, either to the specified
 /// file or to stdout.
 ///
-/// The snark account's inner state root can be specified in three ways:
-/// - `--ee-params`: path to EE params, from which the genesis block hash and state root are used to
-///   compute the inner state root.
-/// - `--alpen-chain-config`: path to the EVM chain config JSON, from which the genesis block hash
-///   is extracted and used to compute the inner state root.
-/// - `--alpen-inner-state`: explicit 64-char hex value, overrides chain config. If neither is
-///   provided, computes from the default dev chain spec.
+/// The snark account's inner state root comes from `--ee-params` unless explicitly overridden,
+/// while bridge params always come from `--ee-params`:
+/// - `--ee-params`: path to EE params, from which the account id and bridge params are copied. The
+///   genesis block hash and state root are used to compute the inner state root unless
+///   `--alpen-chain-config` or `--alpen-inner-state` is provided.
+/// - `--alpen-chain-config`: optional path to EVM chain config JSON used to derive the inner state
+///   root.
+/// - `--alpen-inner-state`: explicit 64-char hex value, overrides the inner state derived from
+///   `--alpen-chain-config` or EE params.
 pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
-    ensure_consistent_inner_state_args(cmd.ee_params.as_deref(), cmd.alpen_inner_state.as_deref())?;
-
     let anchor = retrieve_l1_anchor(cmd.l1_anchor_file.as_deref(), cmd.genesis_l1_height, ctx)?;
-
-    // TODO(STR-3974): expose the bridge params (denomination, withdrawal cap) as flags.
-    // They are stuck at `BridgeParams::default()` here, and `gen-asm-params` now
-    // requires its deposit denomination to equal this one, so a network that wants a
-    // non-default denomination has to hand-edit the generated OL params JSON.
-    let mut ol_params = OLParams::new_empty(anchor.block);
-    let ee_params = read_ee_params(cmd.ee_params.as_deref())?;
+    let ee_params_path = cmd
+        .ee_params
+        .as_deref()
+        .ok_or_else(|| anyhow!("--ee-params is required so OL params can include bridge params"))?;
+    let ee_params = read_ee_params(ee_params_path)?;
+    let mut ol_params = OLParams::new_empty(anchor.block, *ee_params.bridge_params());
 
     let acct_predicate = resolve_acct_predicate(cmd.alpen_predicate)?;
     let balance = BitcoinAmount::from_sat(cmd.alpen_balance.unwrap_or(0));
-    let inner_state = match cmd.alpen_inner_state {
-        Some(hex) => hex
-            .parse::<Buf32>()
-            .map_err(|e| anyhow!("invalid alpen-inner-state hex: {e}"))?,
-        None => match &ee_params {
-            Some(params) => {
-                compute_inner_state(params.genesis_blockhash(), params.genesis_stateroot())
-            }
-            None => compute_inner_state_from_chain_config(cmd.alpen_chain_config.as_deref())?,
-        },
-    };
+    let inner_state = resolve_inner_state(
+        cmd.alpen_inner_state.as_deref(),
+        cmd.alpen_chain_config.as_deref(),
+        &ee_params,
+    )?;
     let alpen_ee_account = GenesisSnarkAccountData {
         predicate: acct_predicate,
         inner_state,
         balance,
     };
-    let account_id = ee_params
-        .as_ref()
-        .map(AlpenEeParams::account_id)
-        .unwrap_or(DEFAULT_ALPEN_EE_ACCOUNT_ID);
+    let account_id = ee_params.account_id();
     ol_params.accounts.insert(account_id, alpen_ee_account);
 
     let params_buf = serde_json::to_string_pretty(&ol_params)?;
@@ -79,31 +69,37 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
     Ok(())
 }
 
-fn ensure_consistent_inner_state_args(
-    ee_params: Option<&Path>,
-    alpen_inner_state: Option<&str>,
-) -> anyhow::Result<()> {
-    if ee_params.is_some() && alpen_inner_state.is_some() {
-        bail!("--alpen-inner-state cannot be used with --ee-params");
-    }
-
-    Ok(())
-}
-
-fn read_ee_params(path: Option<&Path>) -> anyhow::Result<Option<AlpenEeParams>> {
-    let Some(path) = path else {
-        return Ok(None);
-    };
-
+fn read_ee_params(path: &Path) -> anyhow::Result<AlpenEeParams> {
     let json = fs::read_to_string(path)
         .map_err(|e| anyhow!("failed to read EE params file {path:?}: {e}"))?;
     let params = AlpenEeParams::from_json_str(&json)
         .map_err(|e| anyhow!("failed to parse EE params file {path:?}: {e}"))?;
-    Ok(Some(params))
+    Ok(params)
 }
 
-fn compute_inner_state_from_chain_config(chain_config: Option<&Path>) -> anyhow::Result<Buf32> {
-    let genesis_json = read_chain_config(chain_config)?;
+fn resolve_inner_state(
+    alpen_inner_state: Option<&str>,
+    alpen_chain_config: Option<&Path>,
+    ee_params: &AlpenEeParams,
+) -> anyhow::Result<Buf32> {
+    if let Some(hex) = alpen_inner_state {
+        return hex
+            .parse::<Buf32>()
+            .map_err(|e| anyhow!("invalid alpen-inner-state hex: {e}"));
+    }
+
+    if let Some(alpen_chain_config) = alpen_chain_config {
+        return compute_inner_state_from_chain_config(alpen_chain_config);
+    }
+
+    Ok(compute_inner_state(
+        ee_params.genesis_blockhash(),
+        ee_params.genesis_stateroot(),
+    ))
+}
+
+fn compute_inner_state_from_chain_config(chain_config: &Path) -> anyhow::Result<Buf32> {
+    let genesis_json = read_chain_config(Some(chain_config))?;
     let genesis_info = ee_genesis_block_info_from_json(&genesis_json)?;
     Ok(compute_inner_state(
         genesis_info.blockhash(),
@@ -123,29 +119,67 @@ fn compute_inner_state(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{fs, path::Path};
 
-    use super::ensure_consistent_inner_state_args;
+    use alpen_chainspec::DEV_CHAIN_SPEC;
+    use alpen_ee_config::{AlpenEeParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
+    use strata_ol_params::BridgeParams;
 
-    #[test]
-    fn rejects_explicit_inner_state_with_ee_params() {
-        let err = ensure_consistent_inner_state_args(
-            Some(Path::new("ee-params.json")),
-            Some("0101010101010101010101010101010101010101010101010101010101010101"),
+    use super::{compute_inner_state, resolve_inner_state};
+
+    fn test_bridge_params() -> BridgeParams {
+        BridgeParams::new_with_descriptor_limit(100_000_000, Some(1_000_000_000), 81)
+            .expect("valid bridge params")
+    }
+
+    fn test_ee_params(blockhash_byte: u8, stateroot_byte: u8) -> AlpenEeParams {
+        AlpenEeParams::new(
+            DEFAULT_ALPEN_EE_ACCOUNT_ID,
+            [blockhash_byte; 32].into(),
+            [stateroot_byte; 32].into(),
+            0,
+            test_bridge_params(),
         )
-        .unwrap_err();
-
-        assert!(err.to_string().contains("cannot be used with --ee-params"));
     }
 
     #[test]
-    fn accepts_single_inner_state_source() {
-        ensure_consistent_inner_state_args(Some(Path::new("ee-params.json")), None)
-            .expect("ee params alone should be valid");
-        ensure_consistent_inner_state_args(
-            None,
-            Some("0101010101010101010101010101010101010101010101010101010101010101"),
+    fn explicit_inner_state_overrides_chain_config_and_ee_params() {
+        let params = test_ee_params(1, 2);
+        let expected = "abababababababababababababababababababababababababababababababab"
+            .parse()
+            .unwrap();
+
+        let resolved = resolve_inner_state(
+            Some("abababababababababababababababababababababababababababababababab"),
+            Some(Path::new("does-not-need-to-exist.json")),
+            &params,
         )
-        .expect("explicit inner state alone should be valid");
+        .unwrap();
+
+        assert_eq!(resolved, expected);
+    }
+
+    #[test]
+    fn chain_config_overrides_ee_params_when_inner_state_is_absent() {
+        let params = test_ee_params(1, 2);
+        let tempdir = tempfile::tempdir().unwrap();
+        let chain_config_path = tempdir.path().join("chain.json");
+        fs::write(&chain_config_path, DEV_CHAIN_SPEC).unwrap();
+
+        let resolved = resolve_inner_state(None, Some(&chain_config_path), &params).unwrap();
+        let genesis_info = alpen_chainspec::ee_genesis_block_info_from_json(DEV_CHAIN_SPEC)
+            .expect("valid dev chain spec");
+        let expected = compute_inner_state(genesis_info.blockhash(), genesis_info.stateroot());
+
+        assert_eq!(resolved, expected);
+    }
+
+    #[test]
+    fn ee_params_supply_inner_state_when_no_override_is_present() {
+        let params = test_ee_params(1, 2);
+        let resolved = resolve_inner_state(None, None, &params).unwrap();
+        let expected = compute_inner_state(params.genesis_blockhash(), params.genesis_stateroot());
+
+        assert_eq!(resolved, expected);
     }
 }

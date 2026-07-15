@@ -50,6 +50,7 @@ itertools.workspace = true
 alloy-eips.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-bridge-types.workspace = true
 strata-primitives.workspace = true
 

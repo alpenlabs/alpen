@@ -172,7 +172,13 @@ def generate_ol_params(
     return params_path
 
 
-def generate_ee_params(datadir: Path, alpen_chain_config: str | None = None) -> Path:
+def generate_ee_params(
+    datadir: Path,
+    alpen_chain_config: str | None = None,
+    bridge_denomination: int = 100_000_000,
+    max_withdrawal_amount: int | None = 1_000_000_000,
+    max_withdrawal_descriptor_len: int = 81,
+) -> Path:
     """Generates EE params via ``strata-datatool gen-ee-params``."""
     params_path = datadir / "ee-params.json"
 
@@ -180,7 +186,13 @@ def generate_ee_params(datadir: Path, alpen_chain_config: str | None = None) -> 
         "gen-ee-params",
         "-o",
         str(params_path),
+        "--bridge-denomination-sats",
+        str(bridge_denomination),
+        "--max-withdrawal-descriptor-len",
+        str(max_withdrawal_descriptor_len),
     ]
+    if max_withdrawal_amount is not None:
+        args.extend(["--max-withdrawal-amount-sats", str(max_withdrawal_amount)])
     if alpen_chain_config is not None:
         args.extend(["--alpen-chain-config", alpen_chain_config])
 

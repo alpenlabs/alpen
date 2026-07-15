@@ -184,7 +184,15 @@ pub(crate) fn with_max_slot(tx: OLTransaction, max_slot: Option<Slot>) -> OLTran
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> OLState {
-    let params = OLParams::new_empty(L1BlockCommitment::default());
+    let params = OLParams::new_empty(
+        L1BlockCommitment::default(),
+        strata_ol_params::BridgeParams::new_with_descriptor_limit(
+            100_000_000,
+            Some(1_000_000_000),
+            81,
+        )
+        .expect("valid bridge params"),
+    );
     OLState::from_genesis_params(&params).expect("valid params")
 }
 

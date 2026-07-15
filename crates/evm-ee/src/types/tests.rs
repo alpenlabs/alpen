@@ -365,7 +365,10 @@ fn test_evm_partial_state_codec_roundtrip_execution() {
     let block = EvmBlock::new(EvmHeader::new(header.clone()), body);
 
     let chain_spec: Arc<ChainSpec> = Arc::new((&witness.genesis).try_into().unwrap());
-    let ee = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
+    let ee = EvmExecutionEnvironment::new(
+        chain_spec,
+        AlpenEvmFactory::from_bridge_params(&strata_bridge_params::BridgeParams::default()),
+    );
     let intrinsics = block.get_header().get_intrinsics();
     let payload = ExecPayload::new(&intrinsics, block.get_body());
     let inputs = ExecInputs::new_empty();

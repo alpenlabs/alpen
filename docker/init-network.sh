@@ -59,6 +59,10 @@ while [ $# -gt 0 ]; do
             echo "  BITCOIND_RPC_URL       Bitcoin RPC URL (enables fetching real L1 anchor)"
             echo "  BITCOIND_RPC_USER      Bitcoin RPC username"
             echo "  BITCOIND_RPC_PASSWORD  Bitcoin RPC password"
+            echo "  ALPEN_CHAIN_CONFIG     optional path to EVM chain config JSON"
+            echo "  BRIDGE_DENOMINATION_SATS           bridge denomination in satoshis"
+            echo "  MAX_WITHDRAWAL_AMOUNT_SATS         optional maximum withdrawal amount in satoshis"
+            echo "  MAX_WITHDRAWAL_DESCRIPTOR_LEN      maximum withdrawal BOSD descriptor length"
             echo "  OUTPUT_DIR            output directory (default: ./configs/generated)"
             exit 0
             ;;
@@ -242,9 +246,14 @@ GEOF
 
     EE_PARAMS="${OUTPUT_DIR}/ee-params.json"
     if [ ! -f "${EE_PARAMS}" ]; then
+        : "${BRIDGE_DENOMINATION_SATS:?BRIDGE_DENOMINATION_SATS is required when generating ee-params.json}"
+        : "${MAX_WITHDRAWAL_DESCRIPTOR_LEN:?MAX_WITHDRAWAL_DESCRIPTOR_LEN is required}"
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
             gen-ee-params \
             -o "${EE_PARAMS}" \
+            --bridge-denomination-sats "${BRIDGE_DENOMINATION_SATS}" \
+            ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount-sats "$MAX_WITHDRAWAL_AMOUNT_SATS"} \
+            --max-withdrawal-descriptor-len "${MAX_WITHDRAWAL_DESCRIPTOR_LEN}" \
             ${ALPEN_CHAIN_CONFIG:+--alpen-chain-config "$ALPEN_CHAIN_CONFIG"}
         echo "generated ${EE_PARAMS}"
     fi

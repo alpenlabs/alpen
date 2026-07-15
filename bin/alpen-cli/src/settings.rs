@@ -80,7 +80,7 @@ pub struct SettingsFromFile {
     ///
     /// Must match the Bridge subprotocol recovery delay in the ASM params.
     pub recovery_delay: u16,
-    /// Maximum withdrawal amount in satoshis. Defaults to 1_000_000_000 (10 BTC).
+    /// Maximum withdrawal amount in satoshis. Set to `null` to leave withdrawals uncapped.
     ///
     /// Withdrawals are batched in multiples of the denomination up to this cap, so
     /// it must match the OL params to avoid submitting amounts the OL STF rejects.
@@ -88,7 +88,7 @@ pub struct SettingsFromFile {
     /// Maximum withdrawal BOSD descriptor length in bytes, including the type tag.
     ///
     /// Must match the OL params.
-    pub max_withdrawal_descriptor_len: Option<u32>,
+    pub max_withdrawal_descriptor_len: u32,
     /// Seed that can be passed directly for functional test.
     #[cfg(feature = "test-mode")]
     pub seed: Hex<[u8; SEED_LEN]>,
@@ -185,12 +185,8 @@ impl Settings {
             })?;
         let bridge_params = BridgeParams::new_with_descriptor_limit(
             from_file.bridge_denomination_sats,
-            from_file
-                .max_withdrawal_amount_sats
-                .or(Some(DEFAULT_MAX_WITHDRAWAL_SATS)),
-            from_file
-                .max_withdrawal_descriptor_len
-                .unwrap_or(DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN),
+            from_file.max_withdrawal_amount_sats,
+            from_file.max_withdrawal_descriptor_len,
         )
         .map_err(|e| {
             OneOf::new(ConfigError::Message(format!(
@@ -277,7 +273,7 @@ mod tests {
         assert_eq!(parsed.bridge_denomination_sats, 100_000_000);
         assert_eq!(parsed.recovery_delay, 1_008);
         assert_eq!(parsed.max_withdrawal_amount_sats, Some(1_000_000_000));
-        assert_eq!(parsed.max_withdrawal_descriptor_len, Some(81));
+        assert_eq!(parsed.max_withdrawal_descriptor_len, 81);
     }
 
     #[test]

@@ -50,7 +50,8 @@ fn prepare_input() -> EeAcctProofInput {
         ee_private_input,
         snark_acct_private_input,
         da_witness: DaWitness::empty(),
-        bridge_params: BridgeParams::default(),
+        bridge_params: BridgeParams::new(200_000_000, Some(1_000_000_000))
+            .expect("valid bridge params"),
     }
 }
 

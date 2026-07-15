@@ -1,6 +1,7 @@
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use strata_acct_types::AccountId;
+use strata_bridge_params::BridgeParams;
 
 /// Default Alpen EE account id registered in generated OL params.
 pub const DEFAULT_ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
@@ -21,6 +22,9 @@ pub struct AlpenEeParams {
     /// Block number of execution chain genesis block
     /// This can potentially be non-zero, but is very unlikely.
     genesis_blocknum: u64,
+
+    /// Bridge denomination and withdrawal policy.
+    bridge_params: BridgeParams,
 }
 
 impl AlpenEeParams {
@@ -30,12 +34,14 @@ impl AlpenEeParams {
         genesis_blockhash: B256,
         genesis_stateroot: B256,
         genesis_blocknum: u64,
+        bridge_params: BridgeParams,
     ) -> Self {
         Self {
             account_id,
             genesis_blockhash,
             genesis_stateroot,
             genesis_blocknum,
+            bridge_params,
         }
     }
 
@@ -68,10 +74,17 @@ impl AlpenEeParams {
     pub fn genesis_blocknum(&self) -> u64 {
         self.genesis_blocknum
     }
+
+    /// Returns the bridge denomination and withdrawal policy.
+    pub fn bridge_params(&self) -> &BridgeParams {
+        &self.bridge_params
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use strata_bridge_params::BridgeParams;
+
     use super::{AlpenEeParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
 
     #[test]
@@ -81,6 +94,7 @@ mod tests {
             [2u8; 32].into(),
             [3u8; 32].into(),
             42,
+            BridgeParams::new(100_000_000, Some(1_000_000_000)).expect("valid bridge params"),
         );
 
         let json = params
@@ -95,6 +109,23 @@ mod tests {
     fn json_rejects_malformed_account_id() {
         let json = r#"{
             "account_id": "01",
+            "genesis_blockhash": "0x0202020202020202020202020202020202020202020202020202020202020202",
+            "genesis_stateroot": "0x0303030303030303030303030303030303030303030303030303030303030303",
+            "genesis_blocknum": 0,
+            "bridge_params": {
+                "denomination": 100000000,
+                "max_withdrawal_amount": 1000000000,
+                "max_withdrawal_descriptor_len": 81
+            }
+        }"#;
+
+        assert!(AlpenEeParams::from_json_str(json).is_err());
+    }
+
+    #[test]
+    fn json_rejects_missing_bridge_params() {
+        let json = r#"{
+            "account_id": "0101010101010101010101010101010101010101010101010101010101010101",
             "genesis_blockhash": "0x0202020202020202020202020202020202020202020202020202020202020202",
             "genesis_stateroot": "0x0303030303030303030303030303030303030303030303030303030303030303",
             "genesis_blocknum": 0

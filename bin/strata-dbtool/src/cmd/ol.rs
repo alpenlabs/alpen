@@ -451,8 +451,11 @@ mod tests {
     }
 
     fn genesis_state() -> OLState {
-        OLState::from_genesis_params(&OLParams::new_empty(L1BlockCommitment::default()))
-            .expect("valid genesis params")
+        OLState::from_genesis_params(&OLParams::new_empty(
+            L1BlockCommitment::default(),
+            strata_bridge_params::BridgeParams::default(),
+        ))
+        .expect("valid genesis params")
     }
 
     fn seed_sibling_blocks() -> (Arc<SledBackend>, OLBlock, OLBlock) {

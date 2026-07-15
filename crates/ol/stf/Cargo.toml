@@ -33,6 +33,7 @@ tracing.workspace = true
 ssz_primitives.workspace = true
 ssz_types.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-predicate.workspace = true

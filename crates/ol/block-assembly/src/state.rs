@@ -485,7 +485,15 @@ mod tests {
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         let state = BlockasmServiceState::new(
-            Arc::new(OLParams::default()),
+            Arc::new(OLParams::new_empty(
+                strata_identifiers::L1BlockCommitment::default(),
+                strata_ol_params::BridgeParams::new_with_descriptor_limit(
+                    100_000_000,
+                    Some(1_000_000_000),
+                    81,
+                )
+                .expect("valid bridge params"),
+            )),
             Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
             env.sequencer_config().clone(),
             PredicateKey::always_accept(),

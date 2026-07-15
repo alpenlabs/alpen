@@ -72,6 +72,7 @@ bitcoin.workspace = true
 proptest.workspace = true
 strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-btc-verification.workspace = true
 strata-codec.workspace = true
 strata-crypto.workspace = true

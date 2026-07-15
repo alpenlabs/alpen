@@ -18,6 +18,7 @@ from common.datatool import run_datatool
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATES_DIR = REPO_ROOT / ".github" / "params" / "templates"
 L1_ANCHOR = REPO_ROOT / ".github" / "fixtures" / "l1-anchor.json"
+CHAIN_CONFIG = REPO_ROOT / "crates" / "reth" / "chainspec" / "src" / "res" / "alpen-dev-chain.json"
 
 
 PLACEHOLDER_PREFIX = "__"
@@ -92,6 +93,14 @@ def generate_raw_params(tmpdir):
             "gen-ee-params",
             "-o",
             str(ee_path),
+            "--alpen-chain-config",
+            str(CHAIN_CONFIG),
+            "--bridge-denomination-sats",
+            "200000000",
+            "--max-withdrawal-amount-sats",
+            "1000000000",
+            "--max-withdrawal-descriptor-len",
+            "81",
         ]
     )
 

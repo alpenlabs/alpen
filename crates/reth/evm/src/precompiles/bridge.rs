@@ -225,7 +225,7 @@ mod tests {
     use crate::utils::{u256_from, WEI_PER_BTC};
 
     /// Test-only denomination constant (1 BTC in wei).
-    const FIXED_WITHDRAWAL_WEI: U256 = u256_from(WEI_PER_BTC);
+    const TEST_DENOMINATION_WEI: U256 = u256_from(WEI_PER_BTC);
 
     /// Valid P2WPKH descriptor: type tag (0x03) + 20-byte hash160.
     const VALID_P2WPKH_BOSD: &[u8; 21] = &{
@@ -422,7 +422,7 @@ mod tests {
             data: &calldata,
             gas: u64::MAX,
             caller: address!("1111111111111111111111111111111111111111"),
-            value: FIXED_WITHDRAWAL_WEI,
+            value: TEST_DENOMINATION_WEI,
             target_address: address!("2222222222222222222222222222222222222222"),
             bytecode_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
             internals: EvmInternals::new(&mut journal, &block_env),
@@ -447,7 +447,7 @@ mod tests {
             data: &calldata,
             gas: u64::MAX,
             caller: address!("1111111111111111111111111111111111111111"),
-            value: FIXED_WITHDRAWAL_WEI,
+            value: TEST_DENOMINATION_WEI,
             target_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
             bytecode_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
             internals: EvmInternals::new(&mut journal, &block_env),
@@ -465,7 +465,7 @@ mod tests {
             data: &calldata,
             gas: u64::MAX,
             caller: address!("1111111111111111111111111111111111111111"),
-            value: FIXED_WITHDRAWAL_WEI * U256::from(11),
+            value: TEST_DENOMINATION_WEI * U256::from(11),
             target_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
             bytecode_address: BRIDGEOUT_PRECOMPILE_ADDRESS,
             internals: EvmInternals::new(&mut journal, &block_env),
@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn test_validate_withdrawal_exact_denomination() {
         assert_eq!(
-            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI, &bridge_params()).unwrap(),
+            validate_withdrawal_amount(TEST_DENOMINATION_WEI, &bridge_params()).unwrap(),
             100_000_000
         );
     }
@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn test_validate_withdrawal_exact_multiple() {
         assert_eq!(
-            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI * U256::from(3), &bridge_params())
+            validate_withdrawal_amount(TEST_DENOMINATION_WEI * U256::from(3), &bridge_params())
                 .unwrap(),
             300_000_000
         );
@@ -517,7 +517,7 @@ mod tests {
     #[test]
     fn test_validate_withdrawal_non_multiple_rejected() {
         assert_eq!(
-            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI + U256::from(1), &bridge_params())
+            validate_withdrawal_amount(TEST_DENOMINATION_WEI + U256::from(1), &bridge_params())
                 .unwrap_err(),
             BridgeOutError::NonIntegerAmount
         );
@@ -525,13 +525,10 @@ mod tests {
 
     #[test]
     fn test_validate_withdrawal_sub_denomination_multiple_rejected() {
-        // 1.5 BTC: a whole number of sats, but not a multiple of the 1 BTC denomination.
+        // 0.5 BTC: a whole number of sats, but not a multiple of the 1 BTC denomination.
         assert_eq!(
-            validate_withdrawal_amount(
-                FIXED_WITHDRAWAL_WEI + FIXED_WITHDRAWAL_WEI / U256::from(2),
-                &bridge_params()
-            )
-            .unwrap_err(),
+            validate_withdrawal_amount(TEST_DENOMINATION_WEI / U256::from(2), &bridge_params())
+                .unwrap_err(),
             BridgeOutError::IncorrectAmount {
                 denomination: U256::from(100_000_000u64)
             }
@@ -541,7 +538,7 @@ mod tests {
     #[test]
     fn test_validate_withdrawal_exceeds_cap() {
         assert_eq!(
-            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI * U256::from(11), &bridge_params())
+            validate_withdrawal_amount(TEST_DENOMINATION_WEI * U256::from(11), &bridge_params())
                 .unwrap_err(),
             BridgeOutError::OversizeWithdrawal {
                 max: U256::from(1_000_000_000u64)
@@ -552,7 +549,7 @@ mod tests {
     #[test]
     fn test_validate_withdrawal_at_cap() {
         assert_eq!(
-            validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI * U256::from(10), &bridge_params())
+            validate_withdrawal_amount(TEST_DENOMINATION_WEI * U256::from(10), &bridge_params())
                 .unwrap(),
             1_000_000_000
         );
@@ -562,7 +559,7 @@ mod tests {
     fn test_validate_withdrawal_no_cap() {
         assert_eq!(
             validate_withdrawal_amount(
-                FIXED_WITHDRAWAL_WEI * U256::from(100),
+                TEST_DENOMINATION_WEI * U256::from(100),
                 &bridge_params_without_cap()
             )
             .unwrap(),
