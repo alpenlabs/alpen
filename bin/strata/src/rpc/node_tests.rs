@@ -17,6 +17,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult,
+    ol_block::BlockAvailability,
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::*;
@@ -38,8 +39,8 @@ use tokio::runtime::Builder;
 
 use super::{OLBlockDataAccess, OLRpcServer};
 use crate::rpc::errors::{
-    INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE, MEMPOOL_CAPACITY_ERROR_CODE,
-    NOT_AVAILABLE_ON_NODE_CODE, map_mempool_error_to_rpc,
+    BLOCK_HISTORY_UNAVAILABLE_CODE, INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE,
+    MEMPOOL_CAPACITY_ERROR_CODE, NOT_AVAILABLE_ON_NODE_CODE, map_mempool_error_to_rpc,
 };
 
 // -- Mock provider --
@@ -77,6 +78,7 @@ fn update_record_with_prev(
 struct MockProvider {
     blocks: HashMap<OLBlockId, OLBlock>,
     canonical_slots: HashMap<Slot, OLBlockCommitment>,
+    history_base: Option<EpochCommitment>,
     states: HashMap<OLBlockCommitment, Arc<OLState>>,
     write_batches: HashMap<OLBlockCommitment, WriteBatch<OLAccountState>>,
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
@@ -98,6 +100,7 @@ impl MockProvider {
         Self {
             blocks: HashMap::new(),
             canonical_slots: HashMap::new(),
+            history_base: None,
             states: HashMap::new(),
             write_batches: HashMap::new(),
             epoch_commitments: HashMap::new(),
@@ -127,6 +130,16 @@ impl MockProvider {
         self.blocks.insert(blkid, block.clone());
         self.canonical_slots.insert(slot, commitment);
         self.states.insert(commitment, Arc::new(state));
+        self
+    }
+
+    fn with_canonical_commitment(mut self, commitment: OLBlockCommitment) -> Self {
+        self.canonical_slots.insert(commitment.slot(), commitment);
+        self
+    }
+
+    fn with_history_base(mut self, history_base: EpochCommitment) -> Self {
+        self.history_base = Some(history_base);
         self
     }
 
@@ -351,6 +364,21 @@ impl OLRpcProvider for MockProvider {
 
     async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
         Ok(self.blocks.get(&id).cloned())
+    }
+
+    async fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability> {
+        if let Some(block) = self.blocks.get(commitment.blkid()) {
+            return Ok(BlockAvailability::Available(Box::new(block.clone())));
+        }
+
+        match self.history_base {
+            Some(base) if commitment.slot() <= base.last_slot() => Ok(BlockAvailability::Pruned),
+            _ => Ok(BlockAvailability::Missing),
+        }
+    }
+
+    async fn get_history_base(&self) -> DbResult<Option<EpochCommitment>> {
+        Ok(self.history_base)
     }
 
     async fn get_toplevel_ol_state(
@@ -1428,6 +1456,72 @@ async fn checkpoint_info_non_genesis_omits_l2_start_on_checkpoint_sync() {
 }
 
 #[tokio::test]
+async fn checkpoint_info_reports_pruned_history_for_epoch_at_history_base() {
+    let history_base = test_epoch_commitment(2, 10, 0x10);
+    let prev_terminal = OLBlockCommitment::new(5, fixed_ol_block_id(0x05));
+    let prev_summary = EpochSummary::new(
+        1,
+        prev_terminal,
+        OLBlockCommitment::new(0, fixed_ol_block_id(0x01)),
+        L1BlockCommitment::new(500, fixed_l1_block_id(0x30)),
+        fixed_buf32(0x3f),
+    );
+    let summary = EpochSummary::new(
+        history_base.epoch(),
+        history_base.to_block_commitment(),
+        prev_terminal,
+        test_l1_commitment(),
+        fixed_buf32(0x40),
+    );
+    let provider = MockProvider::new()
+        .with_history_base(history_base)
+        .with_epoch_commitment(1, prev_summary.get_epoch_commitment())
+        .with_epoch_summary(prev_summary)
+        .with_epoch_commitment(history_base.epoch(), history_base)
+        .with_epoch_summary(summary);
+    let rpc = make_rpc(provider);
+
+    let info = rpc
+        .get_checkpoint_info(history_base.epoch())
+        .await
+        .expect("checkpoint info stays served for pruned epochs")
+        .expect("summary exists for the history-base epoch");
+
+    assert_eq!(
+        info.l2_start, None,
+        "pruned epochs cannot derive l2_start; degrade like checkpoint-sync nodes"
+    );
+    assert_eq!(info.l2_end, history_base.to_block_commitment());
+}
+
+#[tokio::test]
+async fn checkpoint_info_without_history_base_preserves_missing_terminal_error() {
+    let epoch_commitment = test_epoch_commitment(2, 10, 0x10);
+    let summary = EpochSummary::new(
+        epoch_commitment.epoch(),
+        epoch_commitment.to_block_commitment(),
+        OLBlockCommitment::new(5, fixed_ol_block_id(0x05)),
+        test_l1_commitment(),
+        fixed_buf32(0x40),
+    );
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch_commitment.epoch(), epoch_commitment)
+        .with_epoch_summary(summary);
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_checkpoint_info(epoch_commitment.epoch())
+        .await
+        .expect_err("without a marker the missing terminal body should retain not-found");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        err.message(),
+        format!("block not found: {}", epoch_commitment.last_blkid())
+    );
+}
+
+#[tokio::test]
 async fn checkpoint_info_epoch_0_ok_on_checkpoint_sync() {
     // Epoch 0's L2 start is the genesis terminal itself, derivable from the
     // summary without a block body, so checkpoint-sync still serves it.
@@ -1709,6 +1803,73 @@ async fn blocks_summaries_no_block_at_end_returns_empty() {
         .await
         .expect("should succeed");
     assert!(result.is_empty());
+}
+
+#[tokio::test]
+async fn blocks_summaries_reports_pruned_history_when_start_is_below_base() {
+    let account_id = test_account_id(1);
+    let history_base = test_epoch_commitment(2, 10, 0x10);
+    let block = make_block(11, 3, *history_base.last_blkid());
+    let tip = OLBlockCommitment::new(11, block.header().compute_blkid());
+    let provider = MockProvider::new()
+        .with_history_base(history_base)
+        .with_sync_status(make_sync_status(
+            tip,
+            3,
+            false,
+            history_base,
+            history_base,
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(
+            &block,
+            ol_state_with_snark_account(account_id, 11, 0, DEFAULT_NEXT_INBOX_MSG_IDX),
+        );
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_blocks_summaries(account_id, 9, 11)
+        .await
+        .expect_err("a complete chain walk cannot start below the history base");
+
+    assert_eq!(err.code(), BLOCK_HISTORY_UNAVAILABLE_CODE);
+    assert_eq!(
+        err.message(),
+        "OL block history unavailable at or below history base slot 10"
+    );
+}
+
+#[tokio::test]
+async fn blocks_summaries_without_history_base_preserves_missing_parent_error() {
+    let account_id = test_account_id(1);
+    let former_anchor = test_epoch_commitment(2, 10, 0x10);
+    let block = make_block(11, 3, *former_anchor.last_blkid());
+    let tip = OLBlockCommitment::new(11, block.header().compute_blkid());
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            3,
+            false,
+            former_anchor,
+            former_anchor,
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(
+            &block,
+            ol_state_with_snark_account(account_id, 11, 0, DEFAULT_NEXT_INBOX_MSG_IDX),
+        );
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_blocks_summaries(account_id, 9, 11)
+        .await
+        .expect_err("without a marker the missing parent should retain not-found");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        err.message(),
+        format!("block not found: {}", former_anchor.last_blkid())
+    );
 }
 
 #[tokio::test]
@@ -3843,6 +4004,70 @@ async fn raw_blocks_range_exceeds_max_returns_invalid_params() {
     assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
 }
 
+#[tokio::test]
+async fn raw_blocks_range_reports_pruned_history_below_and_at_base() {
+    let anchor = test_epoch_commitment(2, 10, 0x10);
+    let provider = MockProvider::new()
+        .with_history_base(anchor)
+        .with_canonical_commitment(anchor.to_block_commitment());
+    let rpc = make_rpc(provider);
+
+    for slot in [9, 10] {
+        let err = rpc
+            .get_raw_blocks_range(slot, slot)
+            .await
+            .expect_err("history at or below the base should be unavailable");
+        assert_eq!(err.code(), BLOCK_HISTORY_UNAVAILABLE_CODE);
+        assert_eq!(
+            err.message(),
+            "OL block history unavailable at or below history base slot 10"
+        );
+    }
+}
+
+// ── get_headers_in_range ──
+
+#[tokio::test]
+async fn headers_in_range_reports_pruned_history_when_start_is_at_or_below_base() {
+    let history_base = test_epoch_commitment(2, 10, 0x10);
+    let block = make_block(11, 3, *history_base.last_blkid());
+    let provider = MockProvider::new()
+        .with_history_base(history_base)
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    for start_slot in [9, 10] {
+        let err = rpc
+            .get_headers_in_range(start_slot, 11)
+            .await
+            .expect_err("headers at or below the base should be unavailable");
+        assert_eq!(err.code(), BLOCK_HISTORY_UNAVAILABLE_CODE);
+        assert_eq!(
+            err.message(),
+            "OL block history unavailable at or below history base slot 10"
+        );
+    }
+}
+
+#[tokio::test]
+async fn headers_in_range_without_history_base_preserves_missing_parent_error() {
+    let former_anchor = test_epoch_commitment(2, 10, 0x10);
+    let block = make_block(11, 3, *former_anchor.last_blkid());
+    let provider = MockProvider::new().with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_headers_in_range(10, 11)
+        .await
+        .expect_err("without a marker the missing parent should retain not-found");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        err.message(),
+        format!("block not found: {}", former_anchor.last_blkid())
+    );
+}
+
 // ── get_block_by_slot ──
 
 #[tokio::test]
@@ -3889,6 +4114,108 @@ async fn get_block_by_slot_unknown_returns_none() {
 
     let detail = rpc.get_block_by_slot(42).await.expect("rpc call");
     assert!(detail.is_none());
+}
+
+#[tokio::test]
+async fn get_block_by_slot_classifies_promoted_history_misses() {
+    let anchor = test_epoch_commitment(2, 10, 0x10);
+    let above_anchor = OLBlockCommitment::new(11, fixed_ol_block_id(0x11));
+    let provider = MockProvider::new()
+        .with_history_base(anchor)
+        .with_canonical_commitment(anchor.to_block_commitment())
+        .with_canonical_commitment(above_anchor);
+    let rpc = make_rpc(provider);
+
+    for slot in [9, 10] {
+        let err = rpc
+            .get_block_by_slot(slot)
+            .await
+            .expect_err("history at or below the base should be unavailable");
+        assert_eq!(err.code(), BLOCK_HISTORY_UNAVAILABLE_CODE);
+        assert_eq!(
+            err.message(),
+            "OL block history unavailable at or below history base slot 10"
+        );
+        assert!(err.data().is_none());
+    }
+
+    let err = rpc
+        .get_block_by_slot(11)
+        .await
+        .expect_err("a missing body above the base should keep its old error");
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        err.message(),
+        format!("block not found: {}", above_anchor.blkid())
+    );
+    assert!(err.data().is_none());
+}
+
+#[tokio::test]
+async fn get_block_by_slot_without_history_base_preserves_miss_responses() {
+    let anchor = test_epoch_commitment(2, 10, 0x10);
+    let above_anchor = OLBlockCommitment::new(11, fixed_ol_block_id(0x11));
+    let provider = MockProvider::new()
+        .with_canonical_commitment(anchor.to_block_commitment())
+        .with_canonical_commitment(above_anchor);
+    let rpc = make_rpc(provider);
+
+    let below_anchor = rpc
+        .get_block_by_slot(9)
+        .await
+        .expect("an unindexed slot should retain its successful response");
+    assert!(below_anchor.is_none());
+
+    for commitment in [anchor.to_block_commitment(), above_anchor] {
+        let err = rpc
+            .get_block_by_slot(commitment.slot())
+            .await
+            .expect_err("an indexed block without a body should retain not-found");
+        assert_eq!(err.code(), INVALID_PARAMS_CODE);
+        assert_eq!(
+            err.message(),
+            format!("block not found: {}", commitment.blkid())
+        );
+        assert!(err.data().is_none());
+    }
+}
+
+#[tokio::test]
+async fn get_raw_block_by_id_only_classifies_the_history_base_anchor() {
+    let anchor = test_epoch_commitment(2, 10, 0x10);
+    let unknown_blkid = fixed_ol_block_id(0x99);
+    let rpc = make_rpc(MockProvider::new().with_history_base(anchor));
+
+    let anchor_err = rpc
+        .get_raw_block_by_id(*anchor.last_blkid())
+        .await
+        .expect_err("the header-only anchor cannot satisfy a raw-block request");
+    assert_eq!(anchor_err.code(), BLOCK_HISTORY_UNAVAILABLE_CODE);
+    assert_eq!(
+        anchor_err.message(),
+        "OL block history unavailable at or below history base slot 10"
+    );
+
+    let unknown_err = rpc
+        .get_raw_block_by_id(unknown_blkid)
+        .await
+        .expect_err("an unrelated unknown block ID should retain not-found");
+    assert_eq!(unknown_err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        unknown_err.message(),
+        format!("block not found: {unknown_blkid}")
+    );
+
+    let no_marker_rpc = make_rpc(MockProvider::new());
+    let no_marker_err = no_marker_rpc
+        .get_raw_block_by_id(*anchor.last_blkid())
+        .await
+        .expect_err("without a marker the same ID should retain not-found");
+    assert_eq!(no_marker_err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        no_marker_err.message(),
+        format!("block not found: {}", anchor.last_blkid())
+    );
 }
 
 // ── get_recent_blocks ──
@@ -3969,6 +4296,102 @@ async fn get_recent_blocks_caps_at_genesis_when_count_exceeds_tip() {
     assert_eq!(summaries[1].slot(), 1);
 }
 
+#[tokio::test]
+async fn get_recent_blocks_stops_before_history_base_anchor() {
+    let history_base = test_epoch_commitment(2, 10, 0x10);
+    let block11 = make_block(11, 3, *history_base.last_blkid());
+    let blkid11 = block11.header().compute_blkid();
+    let block12 = make_block(12, 3, blkid11);
+    let blkid12 = block12.header().compute_blkid();
+    let block13 = make_block(13, 3, blkid12);
+    let blkid13 = block13.header().compute_blkid();
+    let tip = OLBlockCommitment::new(13, blkid13);
+    let provider = MockProvider::new()
+        .with_history_base(history_base)
+        .with_sync_status(make_sync_status(
+            tip,
+            3,
+            false,
+            history_base,
+            history_base,
+            history_base,
+        ))
+        .with_block_and_state(&block11, genesis_ol_state())
+        .with_block_and_state(&block12, genesis_ol_state())
+        .with_block_and_state(&block13, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc
+        .get_recent_blocks(10)
+        .await
+        .expect("the recent-block walk should stop before the bodyless anchor");
+
+    assert_eq!(summaries.len(), 3);
+    assert_eq!(summaries[0].slot(), 11);
+    assert_eq!(summaries[1].slot(), 12);
+    assert_eq!(summaries[2].slot(), 13);
+}
+
+#[tokio::test]
+async fn get_recent_blocks_returns_empty_when_tip_is_the_anchor() {
+    let history_base = test_epoch_commitment(2, 10, 0x10);
+    let tip = history_base.to_block_commitment();
+    let provider = MockProvider::new()
+        .with_history_base(history_base)
+        .with_sync_status(make_sync_status(
+            tip,
+            2,
+            false,
+            history_base,
+            history_base,
+            history_base,
+        ));
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc
+        .get_recent_blocks(10)
+        .await
+        .expect("a freshly promoted tip-at-anchor node has no recent bodies");
+
+    assert!(
+        summaries.is_empty(),
+        "tip at the bodyless anchor must yield an empty list, not an error"
+    );
+}
+
+#[tokio::test]
+async fn get_recent_blocks_without_history_base_preserves_missing_parent_error() {
+    let former_anchor = test_epoch_commitment(2, 10, 0x10);
+    let block11 = make_block(11, 3, *former_anchor.last_blkid());
+    let blkid11 = block11.header().compute_blkid();
+    let block12 = make_block(12, 3, blkid11);
+    let blkid12 = block12.header().compute_blkid();
+    let tip = OLBlockCommitment::new(12, blkid12);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            3,
+            false,
+            former_anchor,
+            former_anchor,
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block11, genesis_ol_state())
+        .with_block_and_state(&block12, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_recent_blocks(3)
+        .await
+        .expect_err("without a marker the missing parent should retain not-found");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        err.message(),
+        format!("block not found: {}", former_anchor.last_blkid())
+    );
+}
+
 // ── get_block_transactions ──
 
 #[tokio::test]
@@ -4007,6 +4430,25 @@ async fn get_block_transactions_unknown_slot_errors() {
 
     let result = rpc.get_block_transactions(99).await;
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn get_block_transactions_reports_pruned_history_at_base() {
+    let anchor = test_epoch_commitment(2, 10, 0x10);
+    let provider = MockProvider::new()
+        .with_history_base(anchor)
+        .with_canonical_commitment(anchor.to_block_commitment());
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_block_transactions(anchor.last_slot())
+        .await
+        .expect_err("anchor transactions require an unavailable block body");
+    assert_eq!(err.code(), BLOCK_HISTORY_UNAVAILABLE_CODE);
+    assert_eq!(
+        err.message(),
+        "OL block history unavailable at or below history base slot 10"
+    );
 }
 
 #[tokio::test]

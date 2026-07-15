@@ -10,7 +10,7 @@ use jsonrpsee::core::RpcResult;
 use ssz::{Decode, Encode};
 use strata_acct_types::MessageEntry;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::ol_state_index::InboxMessageRecord;
+use strata_db_types::{ol_block::BlockAvailability, ol_state_index::InboxMessageRecord};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId, RBuf32,
@@ -32,8 +32,8 @@ use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 use tracing::{error, info};
 
 use crate::rpc::errors::{
-    db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc,
-    not_available_on_node_error, not_found_error,
+    block_history_unavailable_error, db_error, internal_error, invalid_params_error,
+    map_mempool_error_to_rpc, not_available_on_node_error, not_found_error,
 };
 
 /// Whether this node serves OL block body/data over RPC.
@@ -151,6 +151,16 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         Ok(blkid)
     }
 
+    async fn get_canonical_block_commitment_at_height(
+        &self,
+        height: u64,
+    ) -> RpcResult<Option<OLBlockCommitment>> {
+        self.provider
+            .get_canonical_block_at(height)
+            .await
+            .map_err(db_error)
+    }
+
     async fn get_block(&self, blkid: OLBlockId) -> RpcResult<OLBlock> {
         let blk = self
             .provider
@@ -159,6 +169,48 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .map_err(db_error)?
             .ok_or(not_found_error(format!("block not found: {blkid}")))?;
         Ok(blk)
+    }
+
+    async fn get_block_at(&self, commitment: OLBlockCommitment) -> RpcResult<OLBlock> {
+        match self
+            .provider
+            .get_block_at(commitment)
+            .await
+            .map_err(db_error)?
+        {
+            BlockAvailability::Available(block) => Ok(*block),
+            BlockAvailability::Pruned => {
+                let history_base = self
+                    .provider
+                    .get_history_base()
+                    .await
+                    .map_err(db_error)?
+                    .ok_or_else(|| {
+                        internal_error(
+                            "block availability reported unavailable without a history base",
+                        )
+                    })?;
+                Err(block_history_unavailable_error(history_base.last_slot()))
+            }
+            BlockAvailability::Missing => Err(not_found_error(format!(
+                "block not found: {}",
+                commitment.blkid()
+            ))),
+        }
+    }
+
+    async fn ensure_history_available_at_slot(&self, slot: u64) -> RpcResult<()> {
+        if let Some(history_base) = self
+            .provider
+            .get_history_base()
+            .await
+            .map_err(db_error)?
+            .filter(|base| slot <= base.last_slot())
+        {
+            return Err(block_history_unavailable_error(history_base.last_slot()));
+        }
+
+        Ok(())
     }
 
     async fn get_canonical_epoch_summary(
@@ -190,6 +242,9 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         &self,
         summary: &EpochSummary,
     ) -> RpcResult<L2BlockCommitment> {
+        self.ensure_history_available_at_slot(summary.terminal().slot())
+            .await?;
+
         let prev_terminal_blkid = *summary.prev_terminal().blkid();
         let mut cur_blkid = *summary.terminal().blkid();
         // Parent links should move from terminal toward prev_terminal within this slot span.
@@ -304,6 +359,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .unwrap_or(0);
 
         let mut chain = Vec::new();
+
+        self.ensure_history_available_at_slot(start_slot).await?;
 
         let Some(end_block_id) = self.get_canonical_block_at_height(end_slot).await? else {
             return Ok(chain);
@@ -759,7 +816,20 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         let l2_start = if epoch == 0 {
             Some(l2_end)
         } else if self.block_data_access.is_available() {
-            Some(self.get_first_l2_block_in_epoch(&epoch_summary).await?)
+            let pruned = self
+                .provider
+                .get_history_base()
+                .await
+                .map_err(db_error)?
+                .is_some_and(|base| epoch_summary.terminal().slot() <= base.last_slot());
+            if pruned {
+                // Bodies at/below the history base are pruned on a promoted
+                // node; degrade like checkpoint-sync nodes do instead of
+                // failing the whole checkpoint query.
+                None
+            } else {
+                Some(self.get_first_l2_block_in_epoch(&epoch_summary).await?)
+            }
         } else {
             None
         };
@@ -1156,20 +1226,24 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             return Err(invalid_params_error("Invalid block range"));
         }
 
-        let last = self
-            .get_canonical_block_at_height(end_height)
+        let Some(last) = self
+            .get_canonical_block_commitment_at_height(end_height)
             .await?
-            .ok_or(not_found_error(format!(
+        else {
+            self.ensure_history_available_at_slot(end_height).await?;
+            return Err(not_found_error(format!(
                 "No blocks found at slot {end_height}"
-            )))?;
+            )));
+        };
 
-        let mut cur_blk = last;
+        let mut cur_blkid = *last.blkid();
         let mut blocks = Vec::with_capacity(block_count);
 
         // Fetch blocks in backward order to ensure a valid chain.
-        for _ in (start_height..=end_height).rev() {
-            let blk = self.get_block(cur_blk).await?;
-            cur_blk = blk.header().parent_blkid;
+        for slot in (start_height..=end_height).rev() {
+            let commitment = OLBlockCommitment::new(slot, cur_blkid);
+            let blk = self.get_block_at(commitment).await?;
+            cur_blkid = blk.header().parent_blkid;
             blocks.push(blk);
         }
         // Reverse back to get chronological sequence.
@@ -1181,11 +1255,30 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
     }
 
     async fn get_raw_block_by_id(&self, block_id: OLBlockId) -> RpcResult<HexBytes> {
-        let raw_blk = self
-            .get_block(block_id)
+        if let Some(block) = self
+            .provider
+            .get_block_data(block_id)
             .await
-            .map(|b| HexBytes(b.as_ssz_bytes()))?;
-        Ok(raw_blk)
+            .map_err(db_error)?
+        {
+            return Ok(HexBytes(block.as_ssz_bytes()));
+        }
+
+        if let Some(history_base) = self
+            .provider
+            .get_history_base()
+            .await
+            .map_err(db_error)?
+            .filter(|base| *base.last_blkid() == block_id)
+        {
+            let commitment = history_base.to_block_commitment();
+            return self
+                .get_block_at(commitment)
+                .await
+                .map(|block| HexBytes(block.as_ssz_bytes()));
+        }
+
+        Err(not_found_error(format!("block not found: {block_id}")))
     }
 
     async fn get_headers_in_range(
@@ -1198,6 +1291,8 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         if start_height > end_height || block_count > self.max_headers_range {
             return Err(invalid_params_error("Invalid block range"));
         }
+
+        self.ensure_history_available_at_slot(start_height).await?;
 
         let last_blkid = self
             .get_canonical_block_at_height(end_height)
@@ -1220,10 +1315,11 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
     }
 
     async fn get_block_by_slot(&self, slot: u64) -> RpcResult<Option<RpcOLBlockDetail>> {
-        let Some(blkid) = self.get_canonical_block_at_height(slot).await? else {
+        let Some(commitment) = self.get_canonical_block_commitment_at_height(slot).await? else {
+            self.ensure_history_available_at_slot(slot).await?;
             return Ok(None);
         };
-        let block = self.get_block(blkid).await?;
+        let block = self.get_block_at(commitment).await?;
         Ok(Some(RpcOLBlockDetail::from(&block)))
     }
 
@@ -1248,13 +1344,22 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             .ok_or_else(|| internal_error("OL sync status not available"))?
             .tip()
             .blkid();
+        let history_base = self.provider.get_history_base().await.map_err(db_error)?;
+
+        // A freshly promoted node's tip is the bodyless anchor itself; there
+        // are no recent bodies to return yet.
+        if history_base.is_some_and(|base| *base.last_blkid() == cur_blkid) {
+            return Ok(Vec::new());
+        }
 
         let mut summaries = Vec::with_capacity(count as usize);
         for _ in 0..count {
             let block = self.get_block(cur_blkid).await?;
             let header = block.header();
             summaries.push(RpcOLBlockSummary::from(&block));
-            if header.slot() == 0 {
+            if header.slot() == 0
+                || history_base.is_some_and(|base| header.slot() == base.last_slot() + 1)
+            {
                 break;
             }
             cur_blkid = *header.parent_blkid();
@@ -1272,11 +1377,11 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
     }
 
     async fn get_block_transactions(&self, slot: u64) -> RpcResult<Vec<RpcOLTxDetail>> {
-        let blkid = self
-            .get_canonical_block_at_height(slot)
-            .await?
-            .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?;
-        let block = self.get_block(blkid).await?;
+        let Some(commitment) = self.get_canonical_block_commitment_at_height(slot).await? else {
+            self.ensure_history_available_at_slot(slot).await?;
+            return Err(not_found_error(format!("No block found at slot {slot}")));
+        };
+        let block = self.get_block_at(commitment).await?;
         let txs = block
             .body()
             .tx_segment()

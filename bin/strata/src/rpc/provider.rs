@@ -10,6 +10,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult, MmrId,
+    ol_block::BlockAvailability,
     ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
@@ -76,6 +77,14 @@ impl OLRpcProvider for NodeRpcProvider {
 
     async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
         self.storage.ol_block().get_block_data_async(id).await
+    }
+
+    async fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability> {
+        self.storage.ol_block().get_block_at_async(commitment).await
+    }
+
+    async fn get_history_base(&self) -> DbResult<Option<EpochCommitment>> {
+        self.storage.ol_block().get_history_base_async().await
     }
 
     async fn get_toplevel_ol_state(

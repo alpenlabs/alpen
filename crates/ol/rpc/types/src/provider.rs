@@ -11,6 +11,7 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
+    ol_block::BlockAvailability,
     ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
     DbResult,
 };
@@ -29,6 +30,12 @@ pub trait OLRpcProvider: Send + Sync + 'static {
 
     /// Get block data by block ID.
     async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>>;
+
+    /// Classify full-block availability at a slot-aware block commitment.
+    async fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability>;
+
+    /// Get the immutable base of locally available full OL block history.
+    async fn get_history_base(&self) -> DbResult<Option<EpochCommitment>>;
 
     /// Get the top-level OL state at a given block commitment.
     async fn get_toplevel_ol_state(
