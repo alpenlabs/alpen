@@ -6,10 +6,11 @@ use bitcoind_async_client::{
 };
 use strata_btc_types::BlockHashExt;
 use strata_btcio::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
+use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types::OLBlock;
+use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -258,6 +259,128 @@ fn collect_finalized_canonical_chain(
     Ok(reversed_chain)
 }
 
+fn collect_finalized_canonical_chain_from_history_base(
+    storage: &NodeStorage,
+    history_base: EpochCommitment,
+    finalized_commitment: OLBlockCommitment,
+) -> Result<Vec<OLBlockId>> {
+    let base_commitment = history_base.to_block_commitment();
+    let mut reversed_chain = Vec::new();
+    let mut current = finalized_commitment;
+
+    loop {
+        if current.slot() < base_commitment.slot() {
+            bail!(
+                "startup: finalized OL chain terminated below history base: expected to reach {base_commitment}, got {current}"
+            );
+        }
+
+        if current.slot() == base_commitment.slot() {
+            if current != base_commitment {
+                bail!(
+                    "startup: finalized OL history-base linkage mismatch: expected {base_commitment}, got {current}"
+                );
+            }
+
+            let header = storage
+                .ol_block()
+                .get_terminal_header_blocking(*current.blkid())
+                .with_context(|| {
+                    format!(
+                        "startup: failed to query finalized OL history-base terminal header {current}"
+                    )
+                })?
+                .ok_or_else(|| {
+                    anyhow!("startup: missing finalized OL history-base terminal header {current}")
+                })?;
+
+            if header.slot() != current.slot() {
+                bail!(
+                    "startup: finalized OL history-base header slot mismatch: expected {}, got {}",
+                    current.slot(),
+                    header.slot()
+                );
+            }
+
+            let header_blkid = header.compute_blkid();
+            if header_blkid != *current.blkid() {
+                bail!(
+                    "startup: finalized OL history-base header block ID mismatch: expected {}, got {header_blkid}",
+                    current.blkid()
+                );
+            }
+
+            reversed_chain.push(*current.blkid());
+            break;
+        }
+
+        let blkid = *current.blkid();
+        let block = storage
+            .ol_block()
+            .get_block_data_blocking(blkid)
+            .with_context(|| format!("startup: failed to query finalized OL block {current}"))?
+            .ok_or_else(|| anyhow!("startup: missing finalized OL block {current}"))?;
+
+        if block.header().slot() != current.slot() {
+            bail!(
+                "startup: finalized OL block slot mismatch: commitment {current}, block slot {}",
+                block.header().slot()
+            );
+        }
+
+        let status = storage
+            .ol_block()
+            .get_block_status_blocking(blkid)
+            .with_context(|| {
+                format!("startup: failed to query finalized OL block status {current}")
+            })?;
+        if status != Some(BlockStatus::Valid) {
+            bail!("startup: finalized OL block {current} is not valid");
+        }
+
+        reversed_chain.push(blkid);
+        current = OLBlockCommitment::new(current.slot() - 1, *block.header().parent_blkid());
+    }
+
+    reversed_chain.reverse();
+    Ok(reversed_chain)
+}
+
+fn ensure_canonical_block_index_from_history_base(
+    storage: &NodeStorage,
+    history_base: EpochCommitment,
+    finalized_epoch: Option<EpochCommitment>,
+) -> Result<()> {
+    let base_commitment = history_base.to_block_commitment();
+    let finalized_commitment = finalized_epoch
+        .filter(|epoch| !epoch.is_null())
+        .map_or(base_commitment, |epoch| epoch.to_block_commitment());
+    let canonical_finalized = storage
+        .ol_block()
+        .get_canonical_block_at_blocking(finalized_commitment.slot())
+        .with_context(|| {
+            format!("startup: failed to query canonical finalized OL block {finalized_commitment}")
+        })?;
+    if canonical_finalized == Some(finalized_commitment)
+        && let Ok(Some(canonical_tip)) = storage.ol_block().get_canonical_tip_blocking()
+        && canonical_tip.slot() >= finalized_commitment.slot()
+    {
+        return Ok(());
+    }
+
+    let finalized_chain = collect_finalized_canonical_chain_from_history_base(
+        storage,
+        history_base,
+        finalized_commitment,
+    )
+    .context("startup: failed to collect finalized OL canonical blocks")?;
+
+    storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(base_commitment.slot(), finalized_chain)
+        .context("startup: failed to backfill canonical OL block index")
+}
+
 /// Verifies that OL state exists for the resolved genesis block commitment.
 fn verify_genesis_ol_state(
     storage: &NodeStorage,
@@ -355,6 +478,33 @@ fn verify_tip_parent(
     Ok(())
 }
 
+/// Verifies that the tip's parent header exists unless the tip is genesis.
+fn verify_tip_parent_header(
+    storage: &NodeStorage,
+    tip_block: &OLBlock,
+    tip_commitment: OLBlockCommitment,
+) -> Result<()> {
+    if tip_commitment.slot() == 0 {
+        if !tip_block.header().parent_blkid().is_null() {
+            bail!("startup: genesis tip block must have null parent commitment");
+        }
+        return Ok(());
+    }
+
+    let parent_blkid = *tip_block.header().parent_blkid();
+    let has_parent = storage
+        .ol_block()
+        .get_ol_header_blocking(parent_blkid)
+        .context("startup: failed to query OL tip parent block data")?
+        .is_some();
+
+    if !has_parent {
+        bail!("startup: missing OL parent block for non-genesis tip");
+    }
+
+    Ok(())
+}
+
 /// Verifies that OL state exists for the resolved tip block commitment.
 fn verify_tip_ol_state(storage: &NodeStorage, tip_commitment: OLBlockCommitment) -> Result<()> {
     let has_tip_state = storage
@@ -372,7 +522,14 @@ fn verify_tip_ol_state(storage: &NodeStorage, tip_commitment: OLBlockCommitment)
 
 /// Verifies that epoch summary exists for tip epoch - 1 when tip is post-genesis.
 fn verify_previous_epoch_summary_for_tip(storage: &NodeStorage, tip_block: &OLBlock) -> Result<()> {
-    let tip_epoch = tip_block.header().epoch();
+    verify_previous_epoch_summary_for_tip_header(storage, tip_block.header())
+}
+
+fn verify_previous_epoch_summary_for_tip_header(
+    storage: &NodeStorage,
+    tip_header: &OLBlockHeader,
+) -> Result<()> {
+    let tip_epoch = tip_header.epoch();
     if tip_epoch == 0 {
         return Ok(());
     }
@@ -395,6 +552,145 @@ fn verify_previous_epoch_summary_for_tip(storage: &NodeStorage, tip_block: &OLBl
     }
 
     Ok(())
+}
+
+fn verify_anchor_header_summary(
+    history_base: EpochCommitment,
+    header: &OLBlockHeader,
+    summary: &EpochSummary,
+) -> Result<()> {
+    if header.slot() != summary.terminal().slot() {
+        bail!(
+            "startup: OL history anchor header slot mismatch: expected {}, got {}",
+            summary.terminal().slot(),
+            header.slot()
+        );
+    }
+
+    if header.epoch() != summary.epoch() {
+        bail!(
+            "startup: OL history anchor header epoch mismatch: expected {}, got {}",
+            summary.epoch(),
+            header.epoch()
+        );
+    }
+
+    let header_blkid = header.compute_blkid();
+    if header_blkid != *summary.terminal().blkid() {
+        bail!(
+            "startup: OL history anchor header/summary block ID mismatch: expected {}, got {header_blkid}",
+            summary.terminal().blkid()
+        );
+    }
+
+    if header.state_root() != summary.final_state() {
+        bail!(
+            "startup: OL history anchor state root mismatch: expected {}, got {}",
+            summary.final_state(),
+            header.state_root()
+        );
+    }
+
+    if summary.get_epoch_commitment() != history_base {
+        bail!(
+            "startup: OL history anchor summary commitment mismatch: expected {history_base}, got {}",
+            summary.get_epoch_commitment()
+        );
+    }
+
+    Ok(())
+}
+
+fn verify_history_anchor(
+    storage: &NodeStorage,
+    history_base: EpochCommitment,
+) -> Result<OLBlockHeader> {
+    let anchor_commitment = history_base.to_block_commitment();
+    let header = storage
+        .ol_block()
+        .get_terminal_header_blocking(*anchor_commitment.blkid())
+        .context("startup: failed to query OL history anchor terminal header")?
+        .ok_or_else(|| anyhow!("startup: missing OL history anchor terminal header"))?;
+
+    if !header.is_terminal() {
+        bail!("startup: OL history anchor header is not terminal");
+    }
+
+    let canonical_epoch = storage
+        .ol_checkpoint()
+        .get_canonical_epoch_commitment_at_blocking(history_base.epoch())
+        .context("startup: failed to query canonical OL history anchor epoch commitment")?
+        .ok_or_else(|| anyhow!("startup: missing canonical OL history anchor epoch commitment"))?;
+    if canonical_epoch != history_base {
+        bail!(
+            "startup: canonical OL history anchor epoch commitment mismatch: expected {history_base}, got {canonical_epoch}"
+        );
+    }
+
+    let summary = storage
+        .ol_checkpoint()
+        .get_epoch_summary_blocking(canonical_epoch)
+        .context("startup: failed to query OL history anchor epoch summary")?
+        .ok_or_else(|| anyhow!("startup: missing OL history anchor epoch summary"))?;
+    verify_anchor_header_summary(history_base, &header, &summary)?;
+
+    let state = storage
+        .ol_state()
+        .get_toplevel_ol_state_blocking(anchor_commitment)
+        .context("startup: failed to query OL history anchor state")?
+        .ok_or_else(|| anyhow!("startup: missing OL history anchor state"))?;
+
+    let state_slot = state.global_state().get_cur_slot();
+    if state_slot != header.slot() {
+        bail!(
+            "startup: OL history anchor state slot mismatch: expected {}, got {state_slot}",
+            header.slot()
+        );
+    }
+
+    let expected_state_epoch = header.epoch().checked_add(1).ok_or_else(|| {
+        anyhow!(
+            "startup: OL history anchor header epoch {} cannot advance to the next epoch",
+            header.epoch()
+        )
+    })?;
+    let state_epoch = state.epoch_state().cur_epoch();
+    if state_epoch != expected_state_epoch {
+        bail!(
+            "startup: OL history anchor state epoch mismatch: expected {expected_state_epoch}, got {state_epoch}"
+        );
+    }
+
+    Ok(header)
+}
+
+fn verify_tip_from_history_base(
+    storage: &NodeStorage,
+    tip_commitment: OLBlockCommitment,
+    history_base: EpochCommitment,
+) -> Result<()> {
+    let anchor_commitment = history_base.to_block_commitment();
+    if tip_commitment.slot() < anchor_commitment.slot() {
+        bail!(
+            "startup: canonical OL tip is below history base: expected slot at least {}, got {tip_commitment}",
+            anchor_commitment.slot()
+        );
+    }
+    if tip_commitment.slot() == anchor_commitment.slot() && tip_commitment != anchor_commitment {
+        bail!(
+            "startup: canonical OL tip at history-base slot does not match anchor: expected {anchor_commitment}, got {tip_commitment}"
+        );
+    }
+
+    if tip_commitment == anchor_commitment {
+        let anchor_header = verify_history_anchor(storage, history_base)?;
+        return verify_previous_epoch_summary_for_tip_header(storage, &anchor_header);
+    }
+
+    let tip_block = verify_tip_ol_block(storage, tip_commitment)?;
+    verify_tip_parent_header(storage, &tip_block, tip_commitment)?;
+    verify_tip_ol_state(storage, tip_commitment)?;
+    verify_previous_epoch_summary_for_tip(storage, &tip_block)
 }
 
 pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
@@ -439,19 +735,35 @@ pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
         verify_genesis_ol_state(storage, genesis_commitment)?;
         verify_genesis_epoch_summary(storage, genesis_commitment)?;
         ensure_genesis_canonical_entry(storage, genesis_commitment)?;
+        let history_base = storage
+            .ol_block()
+            .get_history_base_blocking()
+            .context("startup: failed to query OL history base")?;
 
         // Only the sequencer backfills the full canonical OL block index. FCM is
         // the sole writer that advances it past genesis and does not run on
         // checkpoint-sync nodes, which store no OL blocks past genesis.
         if is_sequencer {
-            ensure_canonical_block_index(storage, genesis_commitment, finalized_epoch)?;
+            if let Some(history_base) = history_base {
+                ensure_canonical_block_index_from_history_base(
+                    storage,
+                    history_base,
+                    finalized_epoch,
+                )?;
+            } else {
+                ensure_canonical_block_index(storage, genesis_commitment, finalized_epoch)?;
+            }
         }
 
         let tip_commitment = resolve_tip_ol_block(storage)?;
-        let tip_block = verify_tip_ol_block(storage, tip_commitment)?;
-        verify_tip_parent(storage, &tip_block, tip_commitment)?;
-        verify_tip_ol_state(storage, tip_commitment)?;
-        verify_previous_epoch_summary_for_tip(storage, &tip_block)?;
+        if let Some(history_base) = history_base {
+            verify_tip_from_history_base(storage, tip_commitment, history_base)?;
+        } else {
+            let tip_block = verify_tip_ol_block(storage, tip_commitment)?;
+            verify_tip_parent(storage, &tip_block, tip_commitment)?;
+            verify_tip_ol_state(storage, tip_commitment)?;
+            verify_previous_epoch_summary_for_tip(storage, &tip_block)?;
+        }
     }
 
     info!("startup: startup checks passed");
@@ -467,7 +779,9 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{MmrId, ol_block::BlockStatus};
     use strata_identifiers::{Buf32, L1BlockId};
+    use strata_ledger_types::IStateAccessorMut;
     use strata_ol_params::OLParams;
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use strata_storage::{NodeStorage, create_node_storage};
 
@@ -774,6 +1088,222 @@ mod tests {
         (storage, genesis_commitment, tip_commitment)
     }
 
+    struct HistoryAnchorFixture {
+        storage: NodeStorage,
+        genesis_commitment: OLBlockCommitment,
+        history_base: EpochCommitment,
+        header: OLBlockHeader,
+        summary: EpochSummary,
+    }
+
+    fn setup_history_anchor_with(
+        store_terminal_header: bool,
+        is_terminal: bool,
+        summary_state_root: Option<Buf32>,
+        state_position: Option<(u64, u32)>,
+    ) -> HistoryAnchorFixture {
+        let (storage, genesis_commitment) = setup_storage_with_genesis();
+        let genesis_block = storage
+            .ol_block()
+            .get_block_data_blocking(*genesis_commitment.blkid())
+            .expect("test: query genesis block")
+            .expect("test: genesis block exists");
+
+        let mut header = genesis_block.header().clone();
+        header.slot = 1;
+        header.epoch = 1;
+        header.parent_blkid = OLBlockId::from(Buf32::from([7; 32]));
+        header.flags.set_is_terminal(is_terminal);
+        let anchor_commitment = header.compute_block_commitment();
+        let history_base = EpochCommitment::new(
+            header.epoch(),
+            anchor_commitment.slot(),
+            *anchor_commitment.blkid(),
+        );
+
+        let genesis_epoch_commitment = EpochCommitment::new(0, 0, *genesis_commitment.blkid());
+        let genesis_summary = storage
+            .ol_checkpoint()
+            .get_epoch_summary_blocking(genesis_epoch_commitment)
+            .expect("test: query genesis summary")
+            .expect("test: genesis summary exists");
+        let summary = genesis_summary.create_next_epoch_summary(
+            anchor_commitment,
+            *genesis_summary.new_l1(),
+            summary_state_root.unwrap_or(*header.state_root()),
+        );
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(summary)
+            .expect("test: insert anchor summary");
+
+        if store_terminal_header {
+            storage
+                .ol_block()
+                .put_terminal_header_blocking(*anchor_commitment.blkid(), header.clone())
+                .expect("test: insert anchor terminal header");
+        }
+
+        if let Some((state_slot, state_epoch)) = state_position {
+            let genesis_state = storage
+                .ol_state()
+                .get_toplevel_ol_state_blocking(genesis_commitment)
+                .expect("test: query genesis state")
+                .expect("test: genesis state exists");
+            let mut state = MemoryStateBaseLayer::new((*genesis_state).clone());
+            state.set_cur_slot(state_slot);
+            state.set_cur_epoch(state_epoch);
+            storage
+                .ol_state()
+                .put_toplevel_ol_state_blocking(anchor_commitment, state.into_inner())
+                .expect("test: insert anchor state");
+        }
+
+        storage
+            .ol_block()
+            .promote_to_history_anchor_blocking(history_base)
+            .expect("test: promote history anchor");
+
+        HistoryAnchorFixture {
+            storage,
+            genesis_commitment,
+            history_base,
+            header,
+            summary,
+        }
+    }
+
+    fn setup_valid_history_anchor() -> HistoryAnchorFixture {
+        setup_history_anchor_with(true, true, None, Some((1, 2)))
+    }
+
+    fn setup_epoch_two_history_anchor(store_previous_epoch_summary: bool) -> HistoryAnchorFixture {
+        let (storage, genesis_commitment) = setup_storage_with_genesis();
+        let genesis_block = storage
+            .ol_block()
+            .get_block_data_blocking(*genesis_commitment.blkid())
+            .expect("test: query genesis block")
+            .expect("test: genesis block exists");
+        let genesis_epoch_commitment = EpochCommitment::new(0, 0, *genesis_commitment.blkid());
+        let genesis_summary = storage
+            .ol_checkpoint()
+            .get_epoch_summary_blocking(genesis_epoch_commitment)
+            .expect("test: query genesis summary")
+            .expect("test: genesis summary exists");
+
+        let mut previous_header = genesis_block.header().clone();
+        previous_header.slot = 1;
+        previous_header.epoch = 1;
+        previous_header.parent_blkid = *genesis_commitment.blkid();
+        previous_header.flags.set_is_terminal(true);
+        let previous_commitment = previous_header.compute_block_commitment();
+        let previous_summary = genesis_summary.create_next_epoch_summary(
+            previous_commitment,
+            *genesis_summary.new_l1(),
+            *previous_header.state_root(),
+        );
+        if store_previous_epoch_summary {
+            storage
+                .ol_checkpoint()
+                .insert_epoch_summary_blocking(previous_summary)
+                .expect("test: insert previous epoch summary and canonical index entry");
+        }
+
+        let mut header = genesis_block.header().clone();
+        header.slot = 2;
+        header.epoch = 2;
+        header.parent_blkid = *previous_commitment.blkid();
+        header.flags.set_is_terminal(true);
+        let anchor_commitment = header.compute_block_commitment();
+        let history_base = EpochCommitment::from_terminal(header.epoch(), anchor_commitment);
+        let summary = previous_summary.create_next_epoch_summary(
+            anchor_commitment,
+            *previous_summary.new_l1(),
+            *header.state_root(),
+        );
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(summary)
+            .expect("test: insert anchor summary");
+        storage
+            .ol_block()
+            .put_terminal_header_blocking(*anchor_commitment.blkid(), header.clone())
+            .expect("test: insert anchor terminal header");
+
+        let genesis_state = storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(genesis_commitment)
+            .expect("test: query genesis state")
+            .expect("test: genesis state exists");
+        let mut state = MemoryStateBaseLayer::new((*genesis_state).clone());
+        state.set_cur_slot(anchor_commitment.slot());
+        state.set_cur_epoch(header.epoch() + 1);
+        storage
+            .ol_state()
+            .put_toplevel_ol_state_blocking(anchor_commitment, state.into_inner())
+            .expect("test: insert anchor state");
+        storage
+            .ol_block()
+            .promote_to_history_anchor_blocking(history_base)
+            .expect("test: promote history anchor");
+
+        HistoryAnchorFixture {
+            storage,
+            genesis_commitment,
+            history_base,
+            header,
+            summary,
+        }
+    }
+
+    fn add_tip_above_history_anchor(fixture: &HistoryAnchorFixture) -> OLBlockCommitment {
+        let genesis_block = fixture
+            .storage
+            .ol_block()
+            .get_block_data_blocking(*fixture.genesis_commitment.blkid())
+            .expect("test: query genesis block")
+            .expect("test: genesis block exists");
+        let mut tip_block = genesis_block;
+        tip_block.signed_header.header.slot = fixture.history_base.last_slot() + 1;
+        tip_block.signed_header.header.epoch = fixture.history_base.epoch() + 1;
+        tip_block.signed_header.header.parent_blkid = *fixture.history_base.last_blkid();
+        tip_block.signed_header.header.flags.set_is_terminal(false);
+
+        let tip_commitment = tip_block.header().compute_block_commitment();
+        fixture
+            .storage
+            .ol_block()
+            .put_block_data_blocking(tip_block)
+            .expect("test: insert tip above anchor");
+        fixture
+            .storage
+            .ol_block()
+            .set_block_status_blocking(*tip_commitment.blkid(), BlockStatus::Valid)
+            .expect("test: set tip status");
+
+        let anchor_state = fixture
+            .storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(fixture.history_base.to_block_commitment())
+            .expect("test: query anchor state")
+            .expect("test: anchor state exists");
+        fixture
+            .storage
+            .ol_state()
+            .put_toplevel_ol_state_blocking(tip_commitment, (*anchor_state).clone())
+            .expect("test: insert tip state");
+        fixture
+            .storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(
+                tip_commitment.slot(),
+                vec![*tip_commitment.blkid()],
+            )
+            .expect("test: advance canonical tip");
+
+        tip_commitment
+    }
+
     #[test]
     fn test_genesis_entries_exist() {
         let (storage, genesis_commitment) = setup_storage_with_genesis();
@@ -911,6 +1441,286 @@ mod tests {
         let err = result.expect_err("test: sequencer must error on missing finalized block");
         assert!(
             format!("{err:#}").contains("missing finalized OL block"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_tip_validation_happy_path_without_parent_record() {
+        let fixture = setup_valid_history_anchor();
+        let anchor_commitment = fixture.history_base.to_block_commitment();
+
+        assert!(
+            fixture
+                .storage
+                .ol_block()
+                .get_block_data_blocking(*anchor_commitment.blkid())
+                .expect("test: query anchor block")
+                .is_none(),
+            "anchor must remain header-only"
+        );
+        assert!(
+            fixture
+                .storage
+                .ol_block()
+                .get_ol_header_blocking(*fixture.header.parent_blkid())
+                .expect("test: query absent anchor parent")
+                .is_none(),
+            "anchor parent must have no record of any kind"
+        );
+        assert_eq!(
+            fixture
+                .storage
+                .ol_block()
+                .get_block_status_blocking(*anchor_commitment.blkid())
+                .expect("test: query anchor status"),
+            None,
+            "startup must not require or fabricate anchor block status"
+        );
+
+        verify_tip_from_history_base(&fixture.storage, anchor_commitment, fixture.history_base)
+            .expect("test: valid header-only anchor tip");
+    }
+
+    #[test]
+    fn test_history_anchor_tip_checks_previous_epoch_summary() {
+        let fixture = setup_valid_history_anchor();
+
+        verify_previous_epoch_summary_for_tip_header(&fixture.storage, &fixture.header)
+            .expect("test: anchor previous epoch summary");
+    }
+
+    #[test]
+    fn test_epoch_two_history_anchor_with_previous_epoch_summary_passes() {
+        let fixture = setup_epoch_two_history_anchor(true);
+
+        verify_history_anchor(&fixture.storage, fixture.history_base)
+            .expect("test: valid epoch-two history anchor");
+        verify_previous_epoch_summary_for_tip_header(&fixture.storage, &fixture.header)
+            .expect("test: epoch-one summary and canonical entry must be present");
+        assert!(
+            fixture
+                .storage
+                .ol_checkpoint()
+                .get_canonical_epoch_commitment_at_blocking(1)
+                .expect("test: query previous canonical epoch")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn test_epoch_two_history_anchor_missing_previous_epoch_summary_fails_distinctly() {
+        let fixture = setup_epoch_two_history_anchor(false);
+
+        verify_history_anchor(&fixture.storage, fixture.history_base)
+            .expect("test: anchor validation should pass independently");
+        let err = verify_previous_epoch_summary_for_tip_header(&fixture.storage, &fixture.header)
+            .expect_err("test: missing epoch-one summary must fail");
+
+        assert_eq!(
+            err.to_string(),
+            "startup: missing epoch summary for previous epoch"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_missing_terminal_header_fails_distinctly() {
+        let fixture = setup_history_anchor_with(false, true, None, Some((1, 2)));
+
+        let err = verify_history_anchor(&fixture.storage, fixture.history_base)
+            .expect_err("test: missing terminal header must fail");
+        assert!(
+            err.to_string()
+                .contains("missing OL history anchor terminal header"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_non_terminal_header_fails_distinctly() {
+        let fixture = setup_history_anchor_with(true, false, None, Some((1, 2)));
+
+        let err = verify_history_anchor(&fixture.storage, fixture.history_base)
+            .expect_err("test: non-terminal anchor must fail");
+        assert!(
+            err.to_string()
+                .contains("OL history anchor header is not terminal"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_header_summary_blkid_mismatch_fails_distinctly() {
+        let fixture = setup_valid_history_anchor();
+        let mut mismatched_header = fixture.header.clone();
+        mismatched_header.timestamp += 1;
+
+        let err = verify_anchor_header_summary(
+            fixture.history_base,
+            &mismatched_header,
+            &fixture.summary,
+        )
+        .expect_err("test: header/summary block ID mismatch must fail");
+        assert!(
+            err.to_string()
+                .contains("OL history anchor header/summary block ID mismatch"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_header_slot_mismatch_fails_distinctly() {
+        let fixture = setup_valid_history_anchor();
+        let mut mismatched_header = fixture.header.clone();
+        mismatched_header.slot += 1;
+
+        let err = verify_anchor_header_summary(
+            fixture.history_base,
+            &mismatched_header,
+            &fixture.summary,
+        )
+        .expect_err("test: header slot mismatch must fail");
+        assert!(
+            err.to_string()
+                .contains("OL history anchor header slot mismatch"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_header_epoch_mismatch_fails_distinctly() {
+        let fixture = setup_valid_history_anchor();
+        let mut mismatched_header = fixture.header.clone();
+        mismatched_header.epoch += 1;
+
+        let err = verify_anchor_header_summary(
+            fixture.history_base,
+            &mismatched_header,
+            &fixture.summary,
+        )
+        .expect_err("test: header epoch mismatch must fail");
+        assert!(
+            err.to_string()
+                .contains("OL history anchor header epoch mismatch"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_state_root_mismatch_fails_distinctly() {
+        let fixture =
+            setup_history_anchor_with(true, true, Some(Buf32::from([9; 32])), Some((1, 2)));
+
+        let err = verify_history_anchor(&fixture.storage, fixture.history_base)
+            .expect_err("test: anchor state root mismatch must fail");
+        assert!(
+            err.to_string()
+                .contains("OL history anchor state root mismatch"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_missing_state_fails_distinctly() {
+        let fixture = setup_history_anchor_with(true, true, None, None);
+
+        let err = verify_history_anchor(&fixture.storage, fixture.history_base)
+            .expect_err("test: missing anchor state must fail");
+        assert!(
+            err.to_string().contains("missing OL history anchor state"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_state_epoch_mismatch_fails_distinctly() {
+        let fixture = setup_history_anchor_with(true, true, None, Some((1, 1)));
+
+        let err = verify_history_anchor(&fixture.storage, fixture.history_base)
+            .expect_err("test: anchor state epoch mismatch must fail");
+        assert!(
+            err.to_string()
+                .contains("OL history anchor state epoch mismatch: expected 2, got 1"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_state_slot_mismatch_fails_distinctly() {
+        let fixture = setup_history_anchor_with(true, true, None, Some((2, 2)));
+
+        let err = verify_history_anchor(&fixture.storage, fixture.history_base)
+            .expect_err("test: anchor state slot mismatch must fail");
+        assert!(
+            err.to_string()
+                .contains("OL history anchor state slot mismatch: expected 1, got 2"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_tip_above_history_anchor_accepts_header_only_parent() {
+        let fixture = setup_valid_history_anchor();
+        let tip_commitment = add_tip_above_history_anchor(&fixture);
+
+        verify_tip_from_history_base(&fixture.storage, tip_commitment, fixture.history_base)
+            .expect("test: tip above header-only anchor");
+    }
+
+    #[test]
+    fn test_tip_above_history_anchor_missing_parent_fails_as_before() {
+        let fixture = setup_history_anchor_with(false, true, None, Some((1, 2)));
+        let tip_commitment = add_tip_above_history_anchor(&fixture);
+
+        let err =
+            verify_tip_from_history_base(&fixture.storage, tip_commitment, fixture.history_base)
+                .expect_err("test: missing tip parent must fail");
+        assert_eq!(
+            err.to_string(),
+            "startup: missing OL parent block for non-genesis tip"
+        );
+    }
+
+    #[test]
+    fn test_finalized_chain_walk_stops_at_history_base_without_older_blocks() {
+        let fixture = setup_valid_history_anchor();
+        let tip_commitment = add_tip_above_history_anchor(&fixture);
+        fixture
+            .storage
+            .ol_block()
+            .del_block_data_blocking(*fixture.genesis_commitment.blkid())
+            .expect("test: delete block below history base");
+
+        let chain = collect_finalized_canonical_chain_from_history_base(
+            &fixture.storage,
+            fixture.history_base,
+            tip_commitment,
+        )
+        .expect("test: collect finalized chain from history base");
+
+        assert_eq!(
+            chain,
+            vec![*fixture.history_base.last_blkid(), *tip_commitment.blkid()]
+        );
+    }
+
+    #[test]
+    fn test_finalized_chain_walk_missing_block_above_history_base_fails_as_before() {
+        let fixture = setup_valid_history_anchor();
+        let missing_commitment = OLBlockCommitment::new(
+            fixture.history_base.last_slot() + 1,
+            OLBlockId::from(Buf32::from([8; 32])),
+        );
+
+        let err = collect_finalized_canonical_chain_from_history_base(
+            &fixture.storage,
+            fixture.history_base,
+            missing_commitment,
+        )
+        .expect_err("test: missing finalized block above base must fail");
+        assert!(
+            err.to_string()
+                .contains("startup: missing finalized OL block"),
             "unexpected error: {err:#}"
         );
     }
