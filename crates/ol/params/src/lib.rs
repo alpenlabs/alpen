@@ -67,6 +67,18 @@ impl OLParams {
     }
 }
 
+#[cfg(any(test, feature = "test-defaults"))]
+impl Default for OLParams {
+    fn default() -> Self {
+        Self {
+            header: GenesisHeaderParams::default(),
+            accounts: BTreeMap::new(),
+            last_l1_block: L1BlockCommitment::default(),
+            bridge_params: BridgeParams::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use strata_btc_types::BitcoinAmount;
@@ -103,7 +115,7 @@ mod tests {
             header: serde_json::from_str("{}").unwrap(),
             accounts,
             last_l1_block: L1BlockCommitment::default(),
-            bridge_params: BridgeParams::default(),
+            ..Default::default()
         }
     }
 

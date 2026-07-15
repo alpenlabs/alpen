@@ -15636,7 +15636,6 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-logs",
  "strata-asm-proto-checkpoint-types",
- "strata-bridge-params",
  "strata-checkpoint-types",
  "strata-cli-common",
  "strata-codec",

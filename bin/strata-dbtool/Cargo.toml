@@ -48,8 +48,7 @@ typed-sled.workspace = true
 zkaleido.workspace = true
 
 [dev-dependencies]
-strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-codec.workspace = true
 strata-l1-txfmt.workspace = true
-strata-ol-params.workspace = true
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-predicate.workspace = true

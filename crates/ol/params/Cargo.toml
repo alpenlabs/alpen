@@ -25,3 +25,4 @@ arbitrary = [
   "strata-predicate/arbitrary",
   "strata-bridge-params/arbitrary",
 ]
+test-defaults = ["strata-bridge-params/test-defaults"]
