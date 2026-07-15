@@ -49,6 +49,13 @@ impl AlpenEvmFactory {
     }
 }
 
+#[cfg(any(test, feature = "test-defaults"))]
+impl Default for AlpenEvmFactory {
+    fn default() -> Self {
+        Self::from_bridge_params(&BridgeParams::default())
+    }
+}
+
 fn wei_to_sats_exact(wei: U256, field: &str) -> u64 {
     let (sats, remainder) = wei_to_sats(wei);
     assert!(
