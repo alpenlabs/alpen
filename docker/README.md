@@ -44,6 +44,10 @@ cp .env.alpen-fullnode.example .env
 # Edit .env for the target network images and Alpen EE peers.
 ```
 
+`BRIDGE_DENOMINATION` and `MAX_WITHDRAWAL_AMOUNT` must match the target
+network's bridge params; Testnet III uses a 2-sat denomination and an
+effectively unbounded withdrawal cap.
+
 Prepare the required key file mounted by the Alpen fullnode service:
 
 ```bash
