@@ -48,6 +48,9 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
     /// Get the last checkpointed payload commitment, if any.
     fn get_last_checkpoint_payload_epoch(&self) -> anyhow::Result<Option<EpochCommitment>>;
 
+    /// Get the epoch at the base of locally available OL block history, if any.
+    fn get_history_base_epoch(&self) -> anyhow::Result<Option<Epoch>>;
+
     /// Store a checkpoint payload entry for the given epoch commitment.
     fn put_checkpoint_payload(
         &self,
@@ -234,6 +237,14 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         self.storage
             .ol_checkpoint()
             .get_last_checkpoint_payload_epoch_blocking()
+            .map_err(Into::into)
+    }
+
+    fn get_history_base_epoch(&self) -> anyhow::Result<Option<Epoch>> {
+        self.storage
+            .ol_block()
+            .get_history_base_blocking()
+            .map(|commitment| commitment.map(|commitment| commitment.epoch()))
             .map_err(Into::into)
     }
 
