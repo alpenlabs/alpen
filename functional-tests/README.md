@@ -19,9 +19,8 @@ built from the strata git revision pinned in the root `Cargo.toml` via
 `./build_strata_bins.sh` (checked out and built under `target/strata-git`).
 `run_tests.sh` handles both automatically.
 
-By default only the alpen-relevant test groups (`alpen_client`, `evm`) run;
-the strata-node groups remain runnable explicitly via `-g` until the repo
-split is finalized.
+The suite contains only the alpen-relevant tests (`alpen_client`, `evm`,
+`dbtool`); the strata-node tests live in the strata repo.
 
 ## Quick Start
 
@@ -36,14 +35,14 @@ split is finalized.
 ./run_tests.sh -t test_foo test_bar
 
 # Run test group (directory-based)
-./run_tests.sh -g bridge
-./run_tests.sh -g prover bridge
+./run_tests.sh -g evm
+./run_tests.sh -g alpen_client evm
 
 # List available tests
 ./run_tests.sh --list
 
 # Keep-alive mode for debugging (starts env and waits, no tests run)
-./run_tests.sh --keep-alive basic
+./run_tests.sh --keep-alive el_ol
 
 # Get help
 ./run_tests.sh --help
@@ -68,7 +67,7 @@ from common.config import ServiceType
 @flexitest.register
 class TestExample(StrataNodeTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("basic")  # Use basic environment
+        ctx.set_env("el_ol")  # Bitcoin + strata + alpen-client
 
     def run(self) -> bool:
         # Access to runcontext is available via self.runctx
@@ -167,7 +166,7 @@ Use in tests:
 
 ```python
 def __init__(self, ctx: flexitest.InitContext):
-    ctx.set_env("basic")
+    ctx.set_env("el_ol")
 ```
 
 ## Factories
@@ -224,12 +223,12 @@ Tests can be filtered by name or group (directory structure):
 ./run_tests.sh -t test_foo test_bar test_baz
 
 # Run tests by group (subdirectory under tests/)
-# Example: tests/bridge/test_deposit.py is in group "bridge"
-./run_tests.sh -g bridge
-./run_tests.sh -g prover bridge sync
+# Example: tests/evm/test_genesis.py is in group "evm"
+./run_tests.sh -g evm
+./run_tests.sh -g alpen_client evm
 
 # Combine filters (tests OR groups)
-./run_tests.sh -t test_node_version -g bridge
+./run_tests.sh -t test_genesis -g alpen_client
 
 # List all available tests and groups
 ./run_tests.sh --list
@@ -240,10 +239,10 @@ Tests can be filtered by name or group (directory structure):
 For debugging, start an environment and keep it running:
 
 ```bash
-./run_tests.sh --keep-alive basic
+./run_tests.sh --keep-alive el_ol
 ```
 
-This starts all services in the "basic" environment and keeps them alive until you press Ctrl+C. **No tests are run** - this is purely for debugging. Useful for:
+This starts all services in the "el_ol" environment and keeps them alive until you press Ctrl+C. **No tests are run** - this is purely for debugging. Useful for:
 - Manual testing via RPC
 - Inspecting service state
 - Debugging service startup issues
@@ -276,12 +275,12 @@ Logs are in test data directory:
 ```
 _dd/
   <test_run_id>/        # Unique ID for each test run
-    <env_name>/         # Environment name (e.g., "basic")
+    <env_name>/         # Environment name (e.g., "el_ol")
       bitcoin/service.log
-      <strata_service>/service.log  # e.g., strata_sequencer
+      <service>/service.log  # e.g., strata_sequencer, alpen_sequencer
 ```
 
-Example: `_dd/9-13-wpbec/basic/bitcoin/service.log`
+Example: `_dd/9-13-wpbec/el_ol/bitcoin/service.log`
 
 ### Test Logs
 

@@ -21,26 +21,18 @@ import flexitest
 from flexitest.runtime import load_module_at, scan_dir_for_modules
 
 # Import environments
-from common.config import EpochSealingConfig, ServiceType
-from common.config.params import GenesisAccountData
+from common.config import ServiceType
 from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
 from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
 from envconfigs.alpen_client import AlpenClientEnv
 from envconfigs.el_ol import EeOLEnv
-from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
-from envconfigs.strata import StrataEnvConfig
 
 # Import factories
 from factories.alpen_client import AlpenClientFactory
 from factories.bitcoin import BitcoinFactory
 from factories.signer import SignerFactory
 from factories.strata import StrataFactory
-
-# Test groups run by default: only the alpen/EE-relevant ones. The strata-node
-# groups (btcio, checkpoint, dbtool, ol_isolated, params, strata) remain
-# in-tree until the repo split is finalized and stay runnable via `-g`.
-DEFAULT_TEST_GROUPS = ["alpen_client", "evm"]
 
 
 def disabled_tests() -> frozenset[str]:
@@ -53,8 +45,6 @@ def disabled_tests() -> frozenset[str]:
     base_disabled = frozenset(
         [
             "keepalive_stub_test",
-            "revert_ol_state_fn",
-            "revert_checkpointed_block_fn",
         ]
     )
 
@@ -292,37 +282,12 @@ def main(argv: list[str]) -> int:
 
     # Define global environments
     #
-    # NOTE: "basic" is shared across every test that names it. flexitest
+    # NOTE: named envs are shared across every test that names them. flexitest
     # reuses the same running services between those tests, so any test that
-    # restarts strata, mutates the bitcoin chain (invalidateblock,
-    # generatetoaddress), or depends on the L1 reader being caught up to a
-    # specific height MUST use a standalone env via
-    # `StrataEnvConfig(pre_generate_blocks=...)` instead. See
-    # tests/btcio/test_l1_connected.py and crash tests in tests/strata/ for
-    # examples and rationale.
+    # restarts services or mutates the bitcoin chain (invalidateblock,
+    # generatetoaddress) MUST use a standalone env (constructed EnvConfig)
+    # instead.
     global_envs: dict[str, flexitest.EnvConfig] = {
-        "basic": StrataEnvConfig(pre_generate_blocks=110),
-        "checkpoint": StrataEnvConfig(
-            pre_generate_blocks=110,
-            epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
-        ),
-        # OL isolated: strata + bitcoin, no EE, with a genesis snark account.
-        # Predicate is the alpen-acct program's deterministic test Schnorr pubkey
-        # (derived from SK = [0x02; 32] inside strata_proofimpl_alpen_acct). No
-        # proofs are submitted against this account in this env, so the specific
-        # pubkey value doesn't matter — only that it's a well-formed predicate.
-        "ol_isolated": StrataEnvConfig(
-            pre_generate_blocks=110,
-            genesis_accounts={
-                "00" * 31 + "42": GenesisAccountData(
-                    predicate="Bip340Schnorr:4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
-                    inner_state="00" * 32,
-                    balance=0,
-                )
-            },
-            epoch_sealing=EpochSealingConfig(slots_per_epoch=5),
-            fund_test_cli_wallet=True,
-        ),
         # Alpen-client (EE) environments
         "alpen_ee": AlpenClientEnv(enable_l1_da=True),
         # EEST needs the externally observable OL/EE path, not a
@@ -368,7 +333,6 @@ def main(argv: list[str]) -> int:
             dev_track_latest_epoch=True,
             batch_sealing_block_count=5,
         ),
-        "el_ol_checkpoint_sync": EeOLCheckpointSyncEnv(pre_generate_blocks=110),
     }
 
     # Set up test runtime
@@ -386,10 +350,6 @@ def main(argv: list[str]) -> int:
         runtime.prepare_test(KEEP_ALIVE_TEST_NAME, test_class)
         tests = [KEEP_ALIVE_TEST_NAME]
     else:
-        # Without explicit selectors, run only the alpen-relevant groups.
-        if not (args.tests or args.tests_pos or args.groups):
-            args.groups = DEFAULT_TEST_GROUPS
-
         # Discover and filter tests
         modules = scan_dir_for_modules(test_dir)
         filtered_modules = filter_tests(args, modules, test_dir)
