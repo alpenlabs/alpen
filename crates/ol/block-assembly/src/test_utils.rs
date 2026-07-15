@@ -62,13 +62,9 @@ use strata_snark_acct_types::*;
 use strata_state::asm_state::AsmState;
 use strata_storage::{NodeStorage, create_node_storage};
 
-fn test_bridge_params() -> BridgeParams {
-    BridgeParams::new(100_000_000, Some(1_000_000_000)).expect("valid bridge params")
-}
-
 /// Creates a genesis OLState using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
-    let params = OLParams::new_empty(L1BlockCommitment::default(), test_bridge_params());
+    let params = OLParams::default();
     let state = OLState::from_genesis_params(&params).expect("valid params");
     MemoryStateBaseLayer::new(state)
 }
@@ -652,7 +648,7 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types::OLBlockHeade
         &mut temp_state,
         genesis_context,
         genesis_components,
-        test_bridge_params(),
+        BridgeParams::default(),
     )
     .unwrap();
     genesis_output.completed_block().header().clone()
@@ -1058,7 +1054,7 @@ impl TestEnv {
             self.sequencer_config(),
             config,
             resource_state_before_block,
-            test_bridge_params(),
+            BridgeParams::default(),
         )
         .await
     }
@@ -1369,7 +1365,7 @@ impl TestStorageFixtureBuilder {
                     &mut state,
                     block_context,
                     components,
-                    test_bridge_params(),
+                    BridgeParams::default(),
                 )
                 .expect("Genesis block execution should succeed");
 
@@ -1627,7 +1623,7 @@ pub(crate) async fn assemble_block_with_txs(
         block_epoch,
         txs,
         resource_state_before_block,
-        test_bridge_params(),
+        BridgeParams::default(),
     )
     .await
 }

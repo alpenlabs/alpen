@@ -114,7 +114,7 @@ proptest.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
-strata-ol-params.workspace = true
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 

@@ -262,11 +262,7 @@ mod tests {
         let executor = task_manager.create_executor();
         let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
         let blockasm = BlockasmBuilder::new(
-            Arc::new(OLParams::new_empty(
-                L1BlockCommitment::default(),
-                strata_ol_params::BridgeParams::new(100_000_000, Some(1_000_000_000))
-                    .expect("valid bridge params"),
-            )),
+            Arc::new(OLParams::default()),
             Arc::new(BlockAssemblyConfig::new(Duration::from_millis(1_000))),
             storage,
             Arc::new(MockMempoolProvider::new()),

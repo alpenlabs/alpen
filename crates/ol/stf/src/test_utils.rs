@@ -71,8 +71,8 @@ use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
 use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
-    AccountSerial, Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
-    SubjectIdBytes, WtxidsRoot,
+    AccountSerial, Buf32, Buf64, Epoch, L1BlockId, L1Height, Slot, SubjectId, SubjectIdBytes,
+    WtxidsRoot,
 };
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
@@ -136,14 +136,9 @@ pub fn make_proof(variant: u8) -> Vec<u8> {
     vec![variant; 100]
 }
 
-/// Builds the standard bridge params used by OL STF tests.
-pub fn test_bridge_params() -> BridgeParams {
-    BridgeParams::new(100_000_000, Some(1_000_000_000)).expect("test bridge params are valid")
-}
-
 /// Builds a genesis state layer using minimal empty parameters.
 pub fn make_genesis_state() -> MemoryStateBaseLayer {
-    let params = OLParams::new_empty(L1BlockCommitment::default(), test_bridge_params());
+    let params = OLParams::default();
     let state = OLState::from_genesis_params(&params).expect("valid params");
     MemoryStateBaseLayer::new(state)
 }
@@ -484,7 +479,7 @@ pub fn execute_block(
     components: BlockComponents,
 ) -> ExecResult<CompletedBlock> {
     let block_context = BlockContext::new(block_info, parent_header);
-    execute_and_complete_block(state, block_context, components, test_bridge_params())
+    execute_and_complete_block(state, block_context, components, BridgeParams::default())
 }
 
 /// Executes a block and returns the construct output, which includes both the completed block and
@@ -496,7 +491,7 @@ pub fn execute_block_with_outputs(
     components: BlockComponents,
 ) -> ExecResult<ConstructBlockOutput> {
     let block_context = BlockContext::new(block_info, parent_header);
-    construct_block(state, block_context, components, test_bridge_params())
+    construct_block(state, block_context, components, BridgeParams::default())
 }
 
 /// Executes a transaction in a non-genesis block.
@@ -585,7 +580,7 @@ pub fn assert_verification_succeeds<S: IStateAccessorMut>(
         header,
         parent_header.as_ref(),
         body,
-        test_bridge_params(),
+        BridgeParams::default(),
     );
     assert!(
         result.is_ok(),
@@ -607,7 +602,7 @@ pub fn assert_verification_fails_with(
         header,
         parent_header.as_ref(),
         body,
-        test_bridge_params(),
+        BridgeParams::default(),
     );
     assert!(
         result.is_err(),
