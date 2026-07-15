@@ -22,7 +22,6 @@ members = [
   "crates/ee-chain-types",
   "crates/ee-chunk-runtime",
   "crates/evm-ee",
-  "crates/proof-impl/evm-ee-stf",
   "crates/proof-impl/alpen-chunk",
   "crates/proof-impl/alpen-acct",
   "crates/proof-impl/predicate-keys",
@@ -94,7 +93,6 @@ strata-ee-chunk-runtime = { path = "crates/ee-chunk-runtime" }
 strata-evm-ee = { path = "crates/evm-ee" }
 strata-proofimpl-alpen-acct = { path = "crates/proof-impl/alpen-acct" }
 strata-proofimpl-alpen-chunk = { path = "crates/proof-impl/alpen-chunk" }
-strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-proofimpl-predicate-keys = { path = "crates/proof-impl/predicate-keys" }
 strata-simple-ee = { path = "crates/simple-ee" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
@@ -120,7 +118,6 @@ strata-paas = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b
 strata-primitives = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-snark-acct-runtime = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-snark-acct-types = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
-strata-state = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-storage = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-storage-common = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }
 strata-test-utils-btcio = { git = "https://github.com/alpenlabs/alpen.git", rev = "3a44a2e4b1f9ec8a2e8fd1a52912d6d8c4398257" }

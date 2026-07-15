@@ -3,21 +3,14 @@ use std::sync::Arc;
 use alpen_reth_statediff::BlockStateChanges;
 use revm_primitives::alloy_primitives::B256;
 use sled::transaction::{ConflictableTransactionError, ConflictableTransactionResult};
-use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 use tracing::warn;
 use typed_sled::{error::Error, transaction::SledTransactional, SledDb, SledTree};
 
-use super::schema::{
-    BlockHashByNumber, BlockStateChangesSchema, BlockWitnessSchema, PublishedCodeHashSchema,
-};
-use crate::{
-    errors::DbError, DbResult, EeDaContext, StateDiffProvider, StateDiffStore, WitnessProvider,
-    WitnessStore,
-};
+use super::schema::{BlockHashByNumber, BlockStateChangesSchema, PublishedCodeHashSchema};
+use crate::{errors::DbError, DbResult, EeDaContext, StateDiffProvider, StateDiffStore};
 
 #[derive(Debug)]
 pub struct WitnessDB {
-    witness_tree: SledTree<BlockWitnessSchema>,
     state_diff_tree: SledTree<BlockStateChangesSchema>,
     block_hash_by_number_tree: SledTree<BlockHashByNumber>,
 }
@@ -25,7 +18,6 @@ pub struct WitnessDB {
 impl Clone for WitnessDB {
     fn clone(&self) -> Self {
         Self {
-            witness_tree: self.witness_tree.clone(),
             state_diff_tree: self.state_diff_tree.clone(),
             block_hash_by_number_tree: self.block_hash_by_number_tree.clone(),
         }
@@ -34,45 +26,13 @@ impl Clone for WitnessDB {
 
 impl WitnessDB {
     pub fn new(db: Arc<SledDb>) -> Result<Self, Error> {
-        let witness_tree = db.get_tree::<BlockWitnessSchema>()?;
         let state_diff_tree = db.get_tree::<BlockStateChangesSchema>()?;
         let block_hash_by_number_tree = db.get_tree::<BlockHashByNumber>()?;
 
         Ok(Self {
-            witness_tree,
             state_diff_tree,
             block_hash_by_number_tree,
         })
-    }
-}
-
-impl WitnessProvider for WitnessDB {
-    fn get_block_witness(&self, block_hash: B256) -> DbResult<Option<EvmBlockStfInput>> {
-        let raw = self.witness_tree.get(&block_hash)?;
-
-        let parsed: Option<EvmBlockStfInput> = raw
-            .map(|bytes| bincode::deserialize(&bytes))
-            .transpose()
-            .map_err(|err| DbError::CodecError(err.to_string()))?;
-
-        Ok(parsed)
-    }
-
-    fn get_block_witness_raw(&self, block_hash: B256) -> DbResult<Option<Vec<u8>>> {
-        Ok(self.witness_tree.get(&block_hash)?)
-    }
-}
-
-impl WitnessStore for WitnessDB {
-    fn put_block_witness(&self, block_hash: B256, witness: &EvmBlockStfInput) -> DbResult<()> {
-        let serialized =
-            bincode::serialize(witness).map_err(|err| DbError::Other(err.to_string()))?;
-
-        Ok(self.witness_tree.insert(&block_hash, &serialized)?)
-    }
-
-    fn del_block_witness(&self, block_hash: B256) -> DbResult<()> {
-        Ok(self.witness_tree.remove(&block_hash)?)
     }
 }
 
@@ -208,14 +168,12 @@ impl<S: StateDiffProvider + 'static> EeDaContext for EeDaContextDb<S> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, fs::read_to_string, path::PathBuf};
+    use std::collections::BTreeMap;
 
     use alpen_reth_statediff::{
         AccountSnapshot, BlockAccountChange, BlockStateChanges, BlockStorageDiff,
     };
     use revm_primitives::{address, fixed_bytes, FixedBytes, KECCAK_EMPTY, U256};
-    use serde::Deserialize;
-    use strata_proofimpl_evm_ee_stf::primitives::{EvmBlockStfInput, EvmBlockStfOutput};
     use typed_sled::SledDb;
 
     use super::*;
@@ -228,22 +186,6 @@ mod tests {
     fn get_sled_tmp_instance() -> SledDb {
         let db = sled::Config::new().temporary(true).open().unwrap();
         SledDb::new(db).unwrap()
-    }
-
-    #[derive(Deserialize)]
-    struct TestData {
-        witness: EvmBlockStfInput,
-        params: EvmBlockStfOutput,
-    }
-
-    fn get_mock_data() -> TestData {
-        let json_content = read_to_string(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../test-utils/data/evm_ee/witness_params.json"),
-        )
-        .expect("Failed to read the blob data file");
-
-        serde_json::from_str(&json_content).expect("Valid json")
     }
 
     fn setup_db() -> WitnessDB {
@@ -280,57 +222,6 @@ mod tests {
             storage,
             deployed_bytecodes: BTreeMap::new(),
         }
-    }
-
-    #[test]
-    fn set_and_get_witness_data() {
-        let db = setup_db();
-
-        let test_data = get_mock_data();
-        let block_hash = test_data.params.new_blockhash;
-
-        db.put_block_witness(block_hash, &test_data.witness)
-            .expect("failed to put witness data");
-
-        // assert block was stored
-        let received_witness = db
-            .get_block_witness(block_hash)
-            .expect("failed to retrieve witness data")
-            .unwrap();
-
-        assert_eq!(received_witness, test_data.witness);
-    }
-
-    #[test]
-    fn del_and_get_block_data() {
-        let db = setup_db();
-        let test_data = get_mock_data();
-        let block_hash = test_data.params.new_blockhash;
-
-        // assert block is not present in the db
-        let received_witness = db.get_block_witness(block_hash);
-        assert!(matches!(received_witness, Ok(None)));
-
-        // deleting non existing block is ok
-        let res = db.del_block_witness(block_hash);
-        assert!(matches!(res, Ok(())));
-
-        db.put_block_witness(block_hash, &test_data.witness)
-            .expect("failed to put witness data");
-        // assert block is present in the db
-        let received_witness = db.get_block_witness(block_hash);
-        assert!(matches!(
-            received_witness,
-            Ok(Some(EvmBlockStfInput { .. }))
-        ));
-
-        // deleting existing block is ok
-        let res = db.del_block_witness(block_hash);
-        assert!(matches!(res, Ok(())));
-
-        // assert block is deleted from the db
-        let received_witness = db.get_block_witness(block_hash);
-        assert!(matches!(received_witness, Ok(None)));
     }
 
     #[test]
@@ -415,7 +306,7 @@ mod tests {
         assert!(matches!(received_state_diff, Ok(None)));
 
         // deleting non existing block is ok
-        let res = db.del_block_witness(block_hash);
+        let res = db.del_state_diff(block_hash);
         assert!(matches!(res, Ok(())));
 
         db.put_state_diff(block_hash, 7, &test_state_diff)

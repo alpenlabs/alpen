@@ -1429,12 +1429,9 @@ dependencies = [
  "alpen-reth-statediff",
  "bincode",
  "revm-primitives",
- "serde",
- "serde_json",
  "sled",
  "strata-db-store-sled",
  "strata-db-types",
- "strata-proofimpl-evm-ee-stf",
  "tracing",
  "typed-sled",
 ]
@@ -15531,35 +15528,6 @@ dependencies = [
  "strata-ee-chunk-runtime",
  "strata-evm-ee",
  "strata-predicate",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
-name = "strata-proofimpl-evm-ee-stf"
-version = "0.3.0-alpha.1"
-dependencies = [
- "alloy-consensus",
- "alloy-eips",
- "alpen-reth-evm",
- "alpen-reth-primitives",
- "bincode",
- "borsh",
- "reth-chainspec",
- "reth-evm",
- "reth-evm-ethereum",
- "reth-primitives",
- "reth-primitives-traits",
- "reth-trie",
- "revm",
- "revm-primitives",
- "rsp-client-executor",
- "serde",
- "serde_json",
- "strata-bridge-params",
- "strata-ol-bridge-types",
- "strata-primitives",
- "strata-state",
  "zkaleido",
  "zkaleido-native-adapter",
 ]

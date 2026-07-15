@@ -5,11 +5,6 @@ use typed_sled::codec::{CodecError, ValueCodec};
 
 // First define the table structures without codecs
 define_table_without_codec!(
-    /// store of block witness data. Data stored as serialized bytes for directly serving in rpc
-    (BlockWitnessSchema) B256 => Vec<u8>
-);
-
-define_table_without_codec!(
     /// store of block state diff data. Data stored as serialized bytes for directly serving in rpc
     (BlockStateChangesSchema) B256 => Vec<u8>
 );
@@ -26,23 +21,10 @@ define_table_without_codec!(
 );
 
 // B256 key codec — big-endian serialization for lexicographic ordering
-impl_bincode_key_codec!(BlockWitnessSchema, B256);
 impl_bincode_key_codec!(BlockStateChangesSchema, B256);
 impl_bincode_key_codec!(PublishedCodeHashSchema, B256);
 
 // Vec<u8> value codec - stored as raw bytes
-impl ValueCodec<BlockWitnessSchema> for Vec<u8> {
-    type Decoded = Self;
-
-    fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
-        Ok(self.clone())
-    }
-
-    fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
-        Ok(data.to_vec())
-    }
-}
-
 impl ValueCodec<BlockStateChangesSchema> for Vec<u8> {
     type Decoded = Self;
 
