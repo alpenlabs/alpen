@@ -254,13 +254,14 @@ mod tests {
 
     #[test]
     fn serde_rejects_zero_denomination() {
-        let json = r#"{"denomination":0,"max_withdrawal_amount":null}"#;
+        let json =
+            r#"{"denomination":0,"max_withdrawal_amount":null,"max_withdrawal_descriptor_len":81}"#;
         assert!(serde_json::from_str::<BridgeParams>(json).is_err());
     }
 
     #[test]
     fn serde_rejects_invalid_cap() {
-        let json = r#"{"denomination":100000000,"max_withdrawal_amount":150000000}"#;
+        let json = r#"{"denomination":100000000,"max_withdrawal_amount":150000000,"max_withdrawal_descriptor_len":81}"#;
         assert!(serde_json::from_str::<BridgeParams>(json).is_err());
     }
 
