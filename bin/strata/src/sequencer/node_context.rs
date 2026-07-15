@@ -77,17 +77,16 @@ impl SequencerContext for NodeSequencerContext {
 
         debug!(tip_blkid = ?tip_blkid, "template generation attempt");
 
-        let parent_block = self
+        let parent_header = self
             .storage
             .ol_block()
-            .get_block_data_async(tip_blkid)
+            .get_ol_header_async(tip_blkid)
             .await
             .map_err(SequencerContextError::Db)?
             .ok_or_else(|| SequencerContextError::TemplateGeneration {
                 tip_blkid,
                 source: BlockAssemblyError::Other(format!("parent block {tip_blkid} not found")),
             })?;
-        let parent_header = parent_block.header();
 
         let parent_ts = parent_header.timestamp();
         let target_ts = SystemTime::now()
@@ -546,6 +545,63 @@ mod tests {
             parent_commitment.slot() + 1
         );
         assert_ne!(replacement_template.get_blockid(), stale_template_id);
+    }
+
+    #[tokio::test]
+    async fn generation_uses_header_only_terminal_tip() {
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_genesis_parent_and_l1_manifest_count(0)
+            .build_fixture()
+            .await;
+        let storage = fixture.storage().clone();
+        let parent_header = storage
+            .ol_block()
+            .get_ol_header_async(*parent_commitment.blkid())
+            .await
+            .expect("test: fetch parent header")
+            .expect("test: parent header exists");
+        let parent_epoch = parent_header.epoch();
+        let parent_is_terminal = parent_header.is_terminal();
+        storage
+            .ol_block()
+            .put_terminal_header_async(*parent_commitment.blkid(), parent_header)
+            .await
+            .expect("test: store terminal parent header");
+        assert!(
+            storage
+                .ol_block()
+                .del_block_data_async(*parent_commitment.blkid())
+                .await
+                .expect("test: delete parent block")
+        );
+        let (_task_manager, blockasm_handle) = start_test_blockasm(storage.clone()).await;
+        let status_channel =
+            test_status_channel(test_l1_commitment(1, L1BlockId::from(Buf32::from([1; 32]))));
+        let safe_l1 = status_channel.get_cur_checkpoint_state().block;
+        status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(OLSyncStatus::new(
+            parent_commitment,
+            parent_epoch,
+            parent_is_terminal,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            safe_l1,
+        )));
+        let sequencer_context =
+            NodeSequencerContext::new(blockasm_handle.clone(), storage, status_channel, 1);
+
+        assert_eq!(
+            sequencer_context
+                .generate_template_for_tip()
+                .await
+                .expect("test: generate from header-only tip"),
+            Some(*parent_commitment.blkid())
+        );
+        let template = blockasm_handle
+            .get_block_template(*parent_commitment.blkid())
+            .await
+            .expect("test: pending template");
+        assert_eq!(template.header().parent_blkid(), parent_commitment.blkid());
     }
 
     #[tokio::test]

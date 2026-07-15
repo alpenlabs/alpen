@@ -376,13 +376,11 @@ where
         &self,
         parent_blkid: OLBlockCommitment,
     ) -> Result<EpochResourceState, BlockAssemblyError> {
-        let parent_blk = self
+        let parent_header = self
             .context()
-            .fetch_ol_block(parent_blkid.blkid)
+            .fetch_ol_header(parent_blkid.blkid)
             .await?
-            .ok_or(BlockAssemblyError::BlockNotFound(parent_blkid.blkid))?;
-
-        let parent_header = parent_blk.header();
+            .ok_or(BlockAssemblyError::HeaderNotFound(parent_blkid.blkid))?;
 
         // If parent block is terminal then we are in the new epoch and thus start afresh.
         if parent_header.is_terminal() {
@@ -835,15 +833,28 @@ mod tests {
             .epoch_resource_tracker_mut()
             .set_resource_state(*env.parent_commitment().blkid(), sample_resource_state());
 
-        let parent_block = state
+        let parent_header = state
             .context()
-            .fetch_ol_block(*env.parent_commitment().blkid())
+            .fetch_ol_header(*env.parent_commitment().blkid())
             .await
             .expect("fetch should succeed")
-            .expect("parent block should exist");
+            .expect("parent header should exist");
         assert!(
-            parent_block.header().is_terminal(),
+            parent_header.is_terminal(),
             "test setup requires terminal parent"
+        );
+        env.storage()
+            .ol_block()
+            .put_terminal_header_async(*env.parent_commitment().blkid(), parent_header)
+            .await
+            .expect("store terminal header");
+        assert!(
+            env.storage()
+                .ol_block()
+                .del_block_data_async(*env.parent_commitment().blkid())
+                .await
+                .expect("delete parent block"),
+            "test setup requires the parent body to exist before deletion"
         );
 
         let resource_state = state
@@ -951,8 +962,8 @@ mod tests {
             .await
             .expect_err("missing parent should fail");
         assert!(
-            matches!(err, BlockAssemblyError::BlockNotFound(_)),
-            "expected BlockNotFound(_), got: {err:?}"
+            matches!(err, BlockAssemblyError::HeaderNotFound(_)),
+            "expected HeaderNotFound(_), got: {err:?}"
         );
     }
 }

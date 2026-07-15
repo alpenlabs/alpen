@@ -52,6 +52,10 @@ pub enum BlockAssemblyError {
     #[error("block not found in db: {0}")]
     BlockNotFound(OLBlockId),
 
+    /// OL block header not found.
+    #[error("OL header not found: {0}")]
+    HeaderNotFound(OLBlockId),
+
     /// Parent state not found in db.
     #[error("parent state not found in db: {0}")]
     ParentStateNotFound(OLBlockCommitment),

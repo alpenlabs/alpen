@@ -134,9 +134,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     }
 
     fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeader>> {
-        // Fetch the full block and extract just the header
-        let block_opt = self.ol_block_mgr.get_block_data_blocking(*blkid)?;
-        Ok(block_opt.map(|block| block.header().clone()))
+        fetch_header_from_manager(&self.ol_block_mgr, blkid)
     }
 
     fn fetch_chain_tip(&self) -> WorkerResult<Option<OLBlockCommitment>> {
@@ -348,6 +346,61 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .apply_epoch_indexing_blocking(*epoch, writes)?;
         index_mmr_writes(&self.mmr_index_mgr, output)?;
         Ok(())
+    }
+}
+
+fn fetch_header_from_manager(
+    ol_block_mgr: &OLBlockManager,
+    blkid: &OLBlockId,
+) -> WorkerResult<Option<OLBlockHeader>> {
+    Ok(ol_block_mgr.get_ol_header_blocking(*blkid)?)
+}
+
+#[cfg(test)]
+mod header_tests {
+    use std::sync::Arc;
+
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::backend::DatabaseBackend;
+    use strata_identifiers::{Buf32, OLBlockId};
+    use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
+    use strata_storage::OLBlockManager;
+
+    use super::fetch_header_from_manager;
+
+    #[test]
+    fn fetch_header_falls_back_to_terminal_header_record() {
+        let backend = Arc::new(get_test_sled_backend());
+        let manager =
+            OLBlockManager::new(strata_storage::test_runtime_handle(), backend.ol_block_db());
+        let mut flags = BlockFlags::zero();
+        flags.set_is_terminal(true);
+        let header = OLBlockHeader::new(
+            1_000,
+            flags,
+            7,
+            2,
+            OLBlockId::from(Buf32::zero()),
+            Buf32::from([1; 32]),
+            Buf32::from([2; 32]),
+            Buf32::from([3; 32]),
+        );
+        let blkid = header.compute_blkid();
+
+        manager
+            .put_terminal_header_blocking(blkid, header.clone())
+            .expect("store terminal header");
+        assert_eq!(
+            manager
+                .get_block_data_blocking(blkid)
+                .expect("query full block"),
+            None
+        );
+
+        assert_eq!(
+            fetch_header_from_manager(&manager, &blkid).expect("fetch header"),
+            Some(header)
+        );
     }
 }
 

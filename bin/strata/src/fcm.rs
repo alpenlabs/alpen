@@ -13,7 +13,7 @@ use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::{DbResult, ol_block::BlockStatus};
 use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types::OLBlock;
+use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
@@ -86,6 +86,10 @@ impl UnfinalizedOLBlockSource for StrataFcmContext {
 
     async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
         self.storage.ol_block().get_block_data_async(blkid).await
+    }
+
+    async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+        self.storage.ol_block().get_ol_header_async(blkid).await
     }
 }
 

@@ -162,7 +162,22 @@ where
     ))
 }
 
-/// Walks backward from `from_blkid` collecting blocks until a terminal block or genesis. Errors
+/// Validates that `header` is the terminal boundary immediately before `epoch`.
+fn ensure_epoch_boundary(header: &OLBlockHeader, epoch: Epoch) -> Result<(), BlockAssemblyError> {
+    let expected_prev_epoch = epoch - 1;
+    if !header.is_terminal() || header.epoch() != expected_prev_epoch {
+        return Err(BlockAssemblyError::InvalidEpochBoundary {
+            blkid: header.compute_blkid(),
+            expected_prev_epoch,
+            got_epoch: header.epoch(),
+            is_terminal: header.is_terminal(),
+        });
+    }
+
+    Ok(())
+}
+
+/// Walks backward from `target_id` collecting blocks until a terminal block or genesis. Errors
 /// out when epoch number is different from the input epoch number.
 ///
 /// Returns blocks in forward chronological order.
@@ -186,19 +201,22 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
 
         // Block doesn't belong to our epoch — must be the boundary.
         if block.header().epoch() != epoch {
-            if !block.header().is_terminal() || block.header().epoch() != epoch - 1 {
-                return Err(BlockAssemblyError::InvalidEpochBoundary {
-                    blkid: block.header().compute_blkid(),
-                    expected_prev_epoch: epoch - 1,
-                    got_epoch: block.header().epoch(),
-                    is_terminal: block.header().is_terminal(),
-                });
-            }
+            ensure_epoch_boundary(block.header(), epoch)?;
             break block.header().clone();
         }
 
         let parent_id = *block.header().parent_blkid();
         blocks.push(block);
+
+        let parent_header = ctx
+            .fetch_ol_header(parent_id)
+            .await?
+            .ok_or(BlockAssemblyError::HeaderNotFound(parent_id))?;
+        if parent_header.epoch() != epoch {
+            ensure_epoch_boundary(&parent_header, epoch)?;
+            break parent_header;
+        }
+
         cur_id = parent_id;
     };
 
@@ -308,6 +326,46 @@ mod tests {
                 }
             ),
             "expected InvalidEpochBoundary, got: {err:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_collect_epoch_blocks_accepts_header_only_terminal_boundary() {
+        let env = build_test_env().await;
+        let boundary = make_block(10, 1, true, OLBlockId::null(), 1_000_010);
+        let boundary_header = boundary.header().clone();
+        let boundary_id = boundary_header.compute_blkid();
+        let target = make_block(11, 2, false, boundary_id, 1_000_011);
+        let target_id = target.header().compute_blkid();
+
+        env.storage()
+            .ol_block()
+            .put_terminal_header_async(boundary_id, boundary_header.clone())
+            .await
+            .expect("store terminal boundary header");
+        env.put_block(target).await;
+
+        let epoch_blocks = collect_epoch_blocks_until(target_id, 2, env.ctx())
+            .await
+            .expect("header-only terminal boundary should be accepted");
+        assert_eq!(epoch_blocks.epoch_parent, boundary_header);
+        assert_eq!(epoch_blocks.blocks.len(), 1);
+        assert_eq!(
+            epoch_blocks
+                .blocks
+                .first()
+                .expect("epoch blocks are non-empty")
+                .header()
+                .compute_blkid(),
+            target_id
+        );
+        assert_eq!(
+            env.storage()
+                .ol_block()
+                .get_block_data_async(boundary_id)
+                .await
+                .expect("query boundary block"),
+            None
         );
     }
 

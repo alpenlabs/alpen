@@ -573,8 +573,8 @@ where
     S: FcmStorage + ?Sized,
 {
     let mut best_tip = *cur_tip;
-    let mut best_block = storage
-        .get_ol_block(best_tip)
+    let mut best_header = storage
+        .get_ol_header(best_tip)
         .await?
         .ok_or(Error::MissingOLBlock(best_tip))?;
 
@@ -586,17 +586,14 @@ where
             continue;
         }
 
-        let other_block = storage
-            .get_ol_block(*other_tip)
+        let other_header = storage
+            .get_ol_header(*other_tip)
             .await?
             .ok_or(Error::MissingOLBlock(*other_tip))?;
 
-        let best_header = best_block.header();
-        let other_header = other_block.header();
-
         if other_header.slot() > best_header.slot() {
             best_tip = *other_tip;
-            best_block = other_block;
+            best_header = other_header;
         }
     }
 
@@ -838,6 +835,7 @@ mod tests {
     #[derive(Default)]
     struct StubFcmStorageInner {
         blocks: HashMap<OLBlockId, OLBlock>,
+        headers: HashMap<OLBlockId, OLBlockHeader>,
         statuses: HashMap<OLBlockId, BlockStatus>,
         blocks_by_slot: BTreeMap<Slot, Vec<OLBlockId>>,
         canonical_blocks: HashMap<Slot, OLBlockCommitment>,
@@ -855,6 +853,13 @@ mod tests {
 
         fn put_ol_block(&self, block: OLBlock) -> OLBlockCommitment {
             self.put_block_parts(block, None, None)
+        }
+
+        fn put_ol_header(&self, header: OLBlockHeader) -> OLBlockCommitment {
+            let blkid = header.compute_blkid();
+            let commitment = OLBlockCommitment::new(header.slot(), blkid);
+            self.inner.lock().unwrap().headers.insert(blkid, header);
+            commitment
         }
 
         fn put_executed_block(
@@ -1004,6 +1009,15 @@ mod tests {
         async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
             Ok(self.inner.lock().unwrap().blocks.get(&blkid).cloned())
         }
+
+        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+            let inner = self.inner.lock().unwrap();
+            Ok(inner
+                .blocks
+                .get(&blkid)
+                .map(|block| block.header().clone())
+                .or_else(|| inner.headers.get(&blkid).cloned()))
+        }
     }
 
     #[async_trait]
@@ -1148,6 +1162,10 @@ mod tests {
 
         async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
             self.storage.get_ol_block(blkid).await
+        }
+
+        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+            self.storage.get_ol_header(blkid).await
         }
     }
 
@@ -1458,6 +1476,35 @@ mod tests {
         fn tracker_through_x4(&self) -> UnfinalizedBlockTracker {
             tracker_with_blocks(&self.genesis, &[&self.x1, &self.x2, &self.x3, &self.x4])
         }
+    }
+
+    #[tokio::test]
+    async fn get_block_slot_resolves_header_only_reorg_pivot() {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        let finalized_epoch =
+            EpochCommitment::new(1, chain.x1.commitment().slot(), chain.x1.blkid());
+        let tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
+        let fcm_state = fixture.fcm_state_at(tracker, &chain.x1);
+
+        // A history-base anchor exists only as a terminal-header record; a
+        // reorg pivoting to it must still resolve its slot.
+        let anchor = make_storage_block(7, OLBlockId::from(Buf32::zero()));
+        let anchor_id = anchor.header().compute_blkid();
+        fixture.ctx.storage().put_ol_header(anchor.header().clone());
+        assert_eq!(
+            fixture.ctx.storage().get_ol_block(anchor_id).await.unwrap(),
+            None,
+            "anchor must be header-only for this test"
+        );
+
+        assert_eq!(
+            fcm_state
+                .get_block_slot(anchor_id)
+                .await
+                .expect("header-only slot lookup"),
+            7
+        );
     }
 
     #[test]
@@ -2062,6 +2109,26 @@ mod tests {
         assert_eq!(
             storage.get_canonical_epoch_commitment_at(0).await.unwrap(),
             Some(epoch)
+        );
+    }
+
+    #[tokio::test]
+    async fn picker_compares_header_only_current_tip() {
+        let storage = StubFcmStorage::new();
+        let current = make_storage_block(2, OLBlockId::from(Buf32::zero()));
+        let current_id = current.header().compute_blkid();
+        storage.put_ol_header(current.header().clone());
+
+        let candidate = make_storage_block(3, current_id);
+        let candidate_id = candidate.header().compute_blkid();
+        storage.put_ol_block(candidate);
+
+        assert_eq!(storage.get_ol_block(current_id).await.unwrap(), None);
+        assert_eq!(
+            pick_best_block_async(&current_id, &[current_id, candidate_id], &storage)
+                .await
+                .expect("pick best block"),
+            candidate_id
         );
     }
 
