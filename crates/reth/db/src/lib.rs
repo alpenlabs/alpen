@@ -9,25 +9,9 @@ pub mod sled;
 )]
 extern crate sled as _;
 
-// Consume dev dependencies to avoid unused warnings in tests
 use alpen_reth_statediff::BlockStateChanges;
 use revm_primitives::alloy_primitives::B256;
-#[cfg(test)]
-use serde as _;
-#[cfg(test)]
-use serde_json as _;
 pub use strata_db_types::{errors, DbResult};
-use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
-
-pub trait WitnessStore {
-    fn put_block_witness(&self, block_hash: B256, witness: &EvmBlockStfInput) -> DbResult<()>;
-    fn del_block_witness(&self, block_hash: B256) -> DbResult<()>;
-}
-
-pub trait WitnessProvider {
-    fn get_block_witness(&self, block_hash: B256) -> DbResult<Option<EvmBlockStfInput>>;
-    fn get_block_witness_raw(&self, block_hash: B256) -> DbResult<Option<Vec<u8>>>;
-}
 
 pub trait StateDiffStore {
     fn put_state_diff(
