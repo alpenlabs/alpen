@@ -31,6 +31,8 @@ class SignerFactory(flexitest.Factory):
         admin_rpc_host: str,
         admin_rpc_port: int,
         admin_rpc_token: str,
+        auto_start: bool = True,
+        service_type: ServiceType = ServiceType.StrataSigner,
         **kwargs,
     ) -> SignerService:
         """
@@ -41,10 +43,12 @@ class SignerFactory(flexitest.Factory):
             admin_rpc_host: Host of the strata node admin RPC server.
             admin_rpc_port: Port of the strata node admin RPC server.
             admin_rpc_token: Bearer token for the admin RPC server.
+            auto_start: Start the signer before returning it.
+            service_type: Distinct service label used for its directory and logs.
         """
         ctx: flexitest.EnvContext = kwargs["ctx"]
 
-        datadir = Path(ctx.make_service_dir(str(ServiceType.StrataSigner)))
+        datadir = Path(ctx.make_service_dir(str(service_type)))
         logfile = datadir / "service.log"
         ws_url = f"ws://{admin_rpc_host}:{admin_rpc_port}"
 
@@ -67,15 +71,17 @@ class SignerFactory(flexitest.Factory):
 
         props: SignerProps = {
             "datadir": str(datadir),
+            "sequencer_key_path": str(sequencer_key_path),
         }
 
-        svc = SignerService(props, cmd, stdout=str(logfile), name=str(ServiceType.StrataSigner))
+        svc = SignerService(props, cmd, stdout=str(logfile), name=str(service_type))
         svc.stop_timeout = 10
-        try:
-            svc.start()
-        except Exception as e:
-            with contextlib.suppress(Exception):
-                svc.stop()
-            raise RuntimeError(f"Failed to start strata-signer: {e}") from e
+        if auto_start:
+            try:
+                svc.start()
+            except Exception as e:
+                with contextlib.suppress(Exception):
+                    svc.stop()
+                raise RuntimeError(f"Failed to start strata-signer: {e}") from e
 
         return svc

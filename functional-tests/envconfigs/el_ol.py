@@ -39,6 +39,7 @@ class EeOLEnv(flexitest.EnvConfig):
         admin_confirmation_depth: int | None = None,
         fund_test_cli_wallet: bool = False,
         ol_block_time_ms: int | None = None,
+        l1_reorg_safe_depth: int | None = None,
         dev_track_latest_epoch: bool = False,
         batch_sealing_block_count: int = 10,
     ):
@@ -63,6 +64,7 @@ class EeOLEnv(flexitest.EnvConfig):
             fund_test_cli_wallet=fund_test_cli_wallet,
             admin_confirmation_depth=admin_confirmation_depth,
             ol_block_time_ms=ol_block_time_ms,
+            l1_reorg_safe_depth=l1_reorg_safe_depth,
         )
 
         if pure_discovery and not enable_discovery:
@@ -76,6 +78,8 @@ class EeOLEnv(flexitest.EnvConfig):
         # Get and pass ol endpoint
         seq: StrataService = strata_services[ServiceType.Strata]
         bitcoin: BitcoinService = strata_services[ServiceType.Bitcoin]
+        sequencer_node = self.strata_config.sequencer_node
+        assert sequencer_node is not None
 
         alpen_services = AlpenClientEnv.get_services(
             ectx,
@@ -84,7 +88,7 @@ class EeOLEnv(flexitest.EnvConfig):
             ol_endpoint=seq.props["rpc_url"],
             ol_submit_endpoint=seq.props["submit_rpc_url"],
             ol_submit_token=seq.props["submit_rpc_token"],
-            ee_params_path=self.strata_config.sequencer_node.params.ee_params,
+            ee_params_path=sequencer_node.params.ee_params,
         )
 
         services = {**alpen_services, **strata_services}
