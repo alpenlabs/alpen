@@ -57,14 +57,14 @@ openssl rand -hex 32 > configs/generated/jwt.hex
 chmod 644 configs/generated/jwt.hex
 ```
 
-If the fullnode image is not already available locally or in a registry,
-set local image names in `.env`:
+To build the fullnode image from this checkout, set a local image name in
+`.env`:
 
 ```bash
 ALPEN_IMAGE=alpen-client:local
 ```
 
-Then build it from this checkout:
+Then build the image:
 
 ```bash
 docker compose -f compose-fullnode.yml build alpen-fullnode

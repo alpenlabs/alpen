@@ -66,10 +66,9 @@ RUN mkdir -p /app/data /app/.cache /app/.local/share && \
 
 COPY --from=builder /usr/local/bin/alpen-client /usr/local/bin/alpen-client
 COPY docker/alpen-client/entrypoint.sh /usr/local/bin/entrypoint.sh
-# SP1 guest ELFs — staged by CI from the build-sp1-artifacts job.
-# Directory may be empty for local builds (uses --dev-native-prover instead).
-COPY docker/alpen-client/artifacts/elfs/ /app/elfs/
-RUN chmod 0555 /usr/local/bin/alpen-client /usr/local/bin/entrypoint.sh
+# Local builds run without staged SP1 guest ELFs.
+RUN mkdir -p /app/elfs && \
+    chmod 0555 /usr/local/bin/alpen-client /usr/local/bin/entrypoint.sh
 
 USER alpen
 
