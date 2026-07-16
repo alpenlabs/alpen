@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 mod alpen_acct;
 mod alpen_chunk;
-mod checkpoint;
 
 #[cfg(feature = "sp1")]
 use zkaleido::ExecutionSummary;
@@ -12,7 +11,6 @@ use zkaleido::ExecutionSummary;
 pub enum GuestProgram {
     AlpenAcct,
     AlpenChunk,
-    Checkpoint,
 }
 
 impl FromStr for GuestProgram {
@@ -22,7 +20,6 @@ impl FromStr for GuestProgram {
         match s.to_lowercase().as_str() {
             "alpen-acct" => Ok(GuestProgram::AlpenAcct),
             "alpen-chunk" => Ok(GuestProgram::AlpenChunk),
-            "checkpoint" => Ok(GuestProgram::Checkpoint),
             _ => Err(format!("unknown program: {s}")),
         }
     }
@@ -32,7 +29,7 @@ impl FromStr for GuestProgram {
 /// [`ExecutionSummary`] (cycles, gas, public values).
 #[cfg(feature = "sp1")]
 pub async fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<(String, ExecutionSummary)> {
-    use strata_zkvm_hosts::sp1::{alpen_acct_host, alpen_chunk_host, checkpoint_host};
+    use strata_zkvm_hosts::sp1::{alpen_acct_host, alpen_chunk_host};
     use zkaleido_sp1_host::SP1HostConfig;
     let mut reports = Vec::with_capacity(programs.len());
     for program in programs {
@@ -42,7 +39,6 @@ pub async fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<(String, Executi
             GuestProgram::AlpenChunk => {
                 alpen_chunk::gen_perf_report(&**alpen_chunk_host(cfg).await)
             }
-            GuestProgram::Checkpoint => checkpoint::gen_perf_report(&**checkpoint_host(cfg).await),
         };
         reports.push(report);
     }

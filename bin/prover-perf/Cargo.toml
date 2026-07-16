@@ -15,22 +15,16 @@ zkaleido.workspace = true
 # proof programs
 strata-proofimpl-alpen-acct.workspace = true
 strata-proofimpl-alpen-chunk.workspace = true
-strata-proofimpl-checkpoint.workspace = true
 
 strata-acct-types.workspace = true
 strata-bridge-params.workspace = true
 strata-codec.workspace = true
-strata-da-framework.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
 strata-ee-chunk-runtime.workspace = true
 strata-evm-ee.workspace = true
 strata-identifiers.workspace = true
-strata-ledger-types.workspace = true
-strata-ol-chain-types.workspace = true
-strata-ol-da.workspace = true
-strata-ol-stf = { workspace = true, features = ["test-utils"] }
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
 strata-zkvm-hosts.workspace = true

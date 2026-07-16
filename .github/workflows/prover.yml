@@ -92,7 +92,7 @@ jobs:
           --github-token "${{ secrets.GITHUB_TOKEN }}" \
           --pr-number "${{ github.event.pull_request.number }}" \
           --commit-hash "${{ github.sha }}" \
-          --programs alpen-chunk,alpen-acct,checkpoint
+          --programs alpen-chunk,alpen-acct
         working-directory: bin/prover-perf
         env:
           RUSTFLAGS: "-C target-cpu=native -C link-arg=-fuse-ld=lld"

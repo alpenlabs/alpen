@@ -42,6 +42,7 @@ members = [
   # binaries listed separately
   "bin/alpen-cli",
   "bin/alpen-client",
+  "bin/prover-perf",
 ]
 
 default-members = [
