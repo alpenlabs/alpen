@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache-blue.svg)](https://opensource.org/licenses/apache-2-0)
-[![codecov](https://codecov.io/gh/alpenlabs/alpen/branch/main/graph/badge.svg?token=Q3ZYY44GN7)](https://codecov.io/gh/alpenlabs/strata)
+[![codecov](https://codecov.io/gh/alpenlabs/alpen/branch/main/graph/badge.svg?token=Q3ZYY44GN7)](https://codecov.io/gh/alpenlabs/alpen)
 [![ci](https://github.com/alpenlabs/alpen/actions/workflows/lint.yml/badge.svg?event=push)](https://github.com/alpenlabs/alpen/actions)
 [![docs](https://img.shields.io/badge/docs-strata-orange)](https://docs.stratabtc.org)
 
@@ -71,14 +71,16 @@ To learn more, check our [documentation](https://docs.alpenlabs.io).
 
 ## Repository structure
 
-This repository is composed of:
+This repository contains the Alpen execution environment (EE) side of the
+stack: the `alpen-client` EE node, its crates, and the EE proof programs.
+The strata (OL) node lives in its own repository and is consumed here as
+pinned git dependencies.
 
 - `bin/`: binary crates for various clients and CLIs
 - `crates/`: library crates, provides types and functionalities
 - `docker/`: supporting files for our dockerized applications
 - `functional-tests/`: end-to-end functional tests
 - `provers/`: libraries and binaries related to zero-knowledge proofs
-- `tests/`: integration tests
 
 ## Contributing
 

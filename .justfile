@@ -10,7 +10,7 @@ docker_dir := "docker"
 docker_datadir := ".data"
 prover_perf_eval_dir := "bin/prover-perf"
 prover_proofs_cache_dir := "provers/tests/proofs"
-prover_programs := "alpen-chunk,alpen-acct,checkpoint,"
+prover_programs := "alpen-chunk,alpen-acct"
 profile := env("PROFILE", "release")
 cargo_install_extra_flags := env("CARGO_INSTALL_EXTRA_FLAGS", "")
 features := env("FEATURES", "")
@@ -334,36 +334,6 @@ pr-lite: lint rustdocs test-doc test-unit
     @test -z \`git status --porcelain\` || echo "WARNING: You have uncommitted changes"
     @echo "All good to create a PR!"
 
-# Run all benchmarks in the workspace
-[group('benches')]
-bench: bench-db
-
-# Open benchmark results in Criterion default output folder
-[group('benches')]
-bench-results:
-    #!/usr/bin/env bash
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        open target/criterion/
-    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        xdg-open target/criterion/
-    else
-        echo "Unsupported OS. Benchmark results are in target/criterion/"
-    fi
-
-# Run all database benchmarks
-[group('benches')]
-bench-db: bench-db-sled
-
-# Run database benchmarks with `sled` backend only
-[group('benches')]
-bench-db-sled:
-    cargo bench --package alpen-benchmarks --no-default-features --features=db,sled
-
-# Rebuild sequencer stack images (uses docker cache, fast if no changes)
-[group('docker')]
-docker-seq-build:
-    cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml build
-
 # Start local signet bitcoin node
 [group('docker')]
 docker-signet-up:
@@ -372,16 +342,4 @@ docker-signet-up:
 # Stop local signet bitcoin node
 [group('docker')]
 docker-signet-down:
-    cd {{docker_dir}} && docker compose -f compose-signet.yml down
-
-# Start sequencer stack (signet + sequencer)
-[group('docker')]
-docker-seq-up: docker-signet-up
-    cd {{docker_dir}} && ./gen-params-and-elfs.sh
-    cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml up -d
-
-# Stop sequencer stack (signet + sequencer)
-[group('docker')]
-docker-seq-down:
-    cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml down
     cd {{docker_dir}} && docker compose -f compose-signet.yml down
