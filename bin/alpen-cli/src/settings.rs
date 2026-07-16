@@ -80,7 +80,7 @@ pub struct SettingsFromFile {
     ///
     /// Must match the Bridge subprotocol recovery delay in the ASM params.
     pub recovery_delay: u16,
-    /// Maximum withdrawal amount in satoshis. Omit to leave withdrawals uncapped.
+    /// Maximum withdrawal amount in satoshis. Defaults to leave withdrawals uncapped.
     ///
     /// Withdrawals are batched in multiples of the denomination up to this cap, so
     /// it must match the OL params to avoid submitting amounts the OL STF rejects.
