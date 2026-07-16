@@ -8,7 +8,9 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 
 use alpen_ee_da_types::{reassemble_da_blob, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
-use alpen_reth_statediff::{BatchStateDiff, StateReconstructor};
+use alpen_reth_statediff::{
+    apply_batch_state_diff_to_ethereum_state, ethereum_state_from_chain_spec, BatchStateDiff,
+};
 use argh::FromArgs;
 use sha2::{Digest, Sha256};
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
@@ -232,17 +234,13 @@ fn ordered_prefix(
 
 /// Replays ordered DA state diffs and returns the reconstructed state root.
 fn replay_state_root(chain: &str, ordered: &[&DecodedEnvelope]) -> Result<String, DisplayedError> {
-    let mut reconstructor = StateReconstructor::from_chain_spec(chain)
-        .internal_error("Failed to initialize state reconstructor from chain spec")?;
+    let mut state = ethereum_state_from_chain_spec(chain)
+        .internal_error("Failed to initialize Ethereum state from chain spec")?;
     for envelope in ordered {
-        reconstructor
-            .apply_diff(&envelope.state_diff)
+        apply_batch_state_diff_to_ethereum_state(&mut state, &envelope.state_diff)
             .internal_error("Failed to apply EE DA state diff")?;
     }
-    Ok(format!(
-        "0x{}",
-        hex::encode(reconstructor.state_root().as_slice())
-    ))
+    Ok(format!("0x{}", hex::encode(state.state_root().as_slice())))
 }
 
 #[cfg(test)]

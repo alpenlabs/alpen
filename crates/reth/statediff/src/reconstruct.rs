@@ -1,17 +1,12 @@
 //! State reconstruction from batch diffs.
 
-#[cfg(test)]
-use std::collections::BTreeMap;
-use std::collections::HashMap;
-
+pub use alloy_genesis::GenesisAccount;
 #[cfg(feature = "chainspec")]
 use alpen_chainspec::chain_value_parser;
-use revm_primitives::{alloy_primitives::Address, B256, U256};
+use revm_primitives::{alloy_primitives::Address, B256};
 use rsp_mpt::EthereumState;
 use strata_da_framework::ContextlessDaWrite;
-#[cfg(feature = "chainspec")]
-use strata_mpt::KECCAK_EMPTY;
-use strata_mpt::{keccak, MptNode, StateAccount, EMPTY_ROOT};
+use strata_mpt::{keccak, StateAccount, EMPTY_ROOT, KECCAK_EMPTY};
 use thiserror::Error as ThisError;
 
 use crate::{
@@ -30,239 +25,87 @@ pub enum ReconstructError {
     Da(#[from] strata_da_framework::DaError),
 }
 
-/// Reconstructs EVM state by applying [`BatchStateDiff`]s sequentially.
-///
-/// Used primarily for testing to verify that state roots reconstructed
-/// from diffs match the actual state roots from EE blocks.
-#[derive(Clone, Default, Debug)]
-pub struct StateReconstructor {
-    state_trie: MptNode,
-    storage_trie: HashMap<Address, MptNode>,
+#[cfg(feature = "chainspec")]
+fn genesis_accounts_from_chain_spec(
+    spec: &str,
+) -> Result<Vec<(Address, GenesisAccount)>, eyre::Error> {
+    let chain_spec = chain_value_parser(spec)?;
+    let accounts = chain_spec
+        .genesis
+        .alloc
+        .iter()
+        .map(|(address, account)| (*address, account.clone()))
+        .collect();
+
+    Ok(accounts)
 }
 
-impl StateReconstructor {
-    /// Creates a new empty reconstructor.
-    pub fn new() -> Self {
-        Self::default()
+fn state_account_from_genesis(account: &GenesisAccount) -> StateAccount {
+    StateAccount {
+        nonce: account.nonce.unwrap_or(0),
+        balance: account.balance,
+        storage_root: EMPTY_ROOT,
+        code_hash: account
+            .code
+            .as_ref()
+            .map(|bytes| keccak(bytes).into())
+            .unwrap_or(KECCAK_EMPTY),
     }
+}
 
-    /// Creates a reconstructor initialized with genesis state from a chain spec.
-    #[cfg(feature = "chainspec")]
-    pub fn from_chain_spec(spec: &str) -> Result<Self, eyre::Error> {
-        let chain_spec = chain_value_parser(spec)?;
+/// Creates an [`EthereumState`] initialized with genesis state from a chain spec.
+#[cfg(feature = "chainspec")]
+pub fn ethereum_state_from_chain_spec(spec: &str) -> Result<EthereumState, eyre::Error> {
+    Ok(ethereum_state_from_genesis_accounts(
+        genesis_accounts_from_chain_spec(spec)?,
+    )?)
+}
 
-        let mut reconstructor = Self::new();
-        for (address, account) in chain_spec.genesis.alloc.iter() {
-            let mut state_account = StateAccount {
-                nonce: account.nonce.unwrap_or(0),
-                balance: account.balance,
-                storage_root: EMPTY_ROOT,
-                code_hash: account
-                    .code
-                    .as_ref()
-                    .map(|bytes| keccak(bytes).into())
-                    .unwrap_or(KECCAK_EMPTY),
-            };
+/// Creates an [`EthereumState`] initialized with explicit genesis accounts.
+///
+/// The implementation is a records-to-MPT construction pass: hash each account
+/// address, build that account's storage trie from non-zero slots, derive the
+/// storage root, and insert every explicit genesis alloc account into the state
+/// trie.
+pub fn ethereum_state_from_genesis_accounts(
+    accounts: impl IntoIterator<Item = (Address, GenesisAccount)>,
+) -> Result<EthereumState, ReconstructError> {
+    let mut state = EthereumState {
+        state_trie: Default::default(),
+        storage_tries: Default::default(),
+    };
 
-            if let Some(slots) = &account.storage {
-                if !slots.is_empty() {
-                    let acc_storage_trie = reconstructor.storage_trie.entry(*address).or_default();
-                    for (slot_key, slot_value) in slots.iter() {
-                        if slot_value != &B256::ZERO {
-                            acc_storage_trie.insert_rlp(&keccak(slot_key), *slot_value)?;
-                        }
-                    }
-                    state_account.storage_root = acc_storage_trie.hash();
-                }
+    for (address, account) in accounts {
+        let hashed_addr: B256 = keccak(address).into();
+        let mut state_account = state_account_from_genesis(&account);
+
+        let mut non_zero_storage_slots = account
+            .storage_slots()
+            .filter(|(_, slot_value)| !slot_value.is_zero())
+            .peekable();
+
+        if non_zero_storage_slots.peek().is_some() {
+            let acc_storage_trie = state.storage_tries.entry(hashed_addr).or_default();
+            for (slot_key, slot_value) in non_zero_storage_slots {
+                acc_storage_trie.insert_rlp(&keccak(slot_key.as_slice()), slot_value)?;
             }
 
-            reconstructor
-                .state_trie
-                .insert_rlp(&keccak(address), state_account)?;
+            state_account.storage_root = acc_storage_trie.hash();
         }
 
-        Ok(reconstructor)
+        state
+            .state_trie
+            .insert_rlp(hashed_addr.as_slice(), state_account)?;
     }
 
-    /// Applies a [`BatchStateDiff`] to the current state.
-    pub fn apply_diff(&mut self, diff: &BatchStateDiff) -> Result<(), ReconstructError> {
-        for (address, change) in &diff.accounts {
-            let acc_info_trie_path = keccak(address);
-
-            match change {
-                AccountChange::Created(account_diff) | AccountChange::Updated(account_diff) => {
-                    // Get current account state (if exists)
-                    let current: Option<StateAccount> = self
-                        .state_trie
-                        .get_rlp(&acc_info_trie_path)
-                        .unwrap_or_default();
-
-                    // Build snapshot from current state and apply diff
-                    let mut snapshot = current
-                        .as_ref()
-                        .map(AccountSnapshot::from)
-                        .unwrap_or_default();
-
-                    account_diff.apply(&mut snapshot)?;
-
-                    let mut state_account = StateAccount {
-                        nonce: snapshot.nonce,
-                        balance: snapshot.balance,
-                        storage_root: Default::default(),
-                        code_hash: snapshot.code_hash,
-                    };
-
-                    // Skip empty accounts
-                    if state_account.is_account_empty() {
-                        continue;
-                    }
-
-                    // Calculate storage root
-                    state_account.storage_root = {
-                        let acc_storage_trie = self.storage_trie.entry(*address).or_default();
-                        if let Some(storage_diff) = diff.storage.get(address) {
-                            for (slot_key, slot_value) in storage_diff.iter() {
-                                let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
-                                match slot_value {
-                                    Some(v) if !v.is_zero() => {
-                                        acc_storage_trie.insert_rlp(&slot_trie_path, *v)?;
-                                    }
-                                    _ => {
-                                        acc_storage_trie.delete(&slot_trie_path)?;
-                                    }
-                                }
-                            }
-                        }
-                        acc_storage_trie.hash()
-                    };
-
-                    self.state_trie
-                        .insert_rlp(&acc_info_trie_path, state_account)?;
-                }
-                AccountChange::Deleted => {
-                    self.state_trie.delete(&acc_info_trie_path)?;
-                    self.storage_trie.remove(address);
-                }
-            }
-        }
-
-        // Handle storage changes for accounts not in accounts map
-        // (e.g., storage-only changes)
-        for (address, storage_diff) in &diff.storage {
-            if diff.accounts.contains_key(address) {
-                continue; // Already handled above
-            }
-
-            let acc_info_trie_path = keccak(address);
-            let current: Option<StateAccount> = self
-                .state_trie
-                .get_rlp(&acc_info_trie_path)
-                .unwrap_or_default();
-
-            if let Some(mut state_account) = current {
-                let acc_storage_trie = self.storage_trie.entry(*address).or_default();
-                for (slot_key, slot_value) in storage_diff.iter() {
-                    let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
-                    match slot_value {
-                        Some(v) if !v.is_zero() => {
-                            acc_storage_trie.insert_rlp(&slot_trie_path, *v)?;
-                        }
-                        _ => {
-                            acc_storage_trie.delete(&slot_trie_path)?;
-                        }
-                    }
-                }
-                state_account.storage_root = acc_storage_trie.hash();
-                self.state_trie
-                    .insert_rlp(&acc_info_trie_path, state_account)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Returns the current state root.
-    pub fn state_root(&self) -> B256 {
-        self.state_trie.hash()
-    }
-
-    /// Returns the current storage root for an account.
-    pub fn storage_root(&self, address: Address) -> B256 {
-        self.storage_trie
-            .get(&address)
-            .map(|t| t.hash())
-            .unwrap_or(EMPTY_ROOT)
-    }
-
-    /// Returns the value at a storage slot.
-    pub fn storage_slot(&self, address: Address, slot_key: U256) -> U256 {
-        self.storage_trie
-            .get(&address)
-            .unwrap_or(&MptNode::default())
-            .get_rlp::<U256>(&keccak(slot_key.to_be_bytes::<32>()))
-            .unwrap_or_default()
-            .unwrap_or_default()
-    }
-
-    /// Returns the account state.
-    pub fn account(&self, address: Address) -> Option<StateAccount> {
-        self.state_trie
-            .get_rlp(&keccak(address))
-            .unwrap_or_default()
-    }
-
-    /// Creates a reconstructor from explicit canonical account and storage state.
-    ///
-    /// This helper exists for oracle tests that need to seed pre-state directly
-    /// from test fixtures instead of going through a chain spec or DB-backed
-    /// state source.
-    ///
-    /// Empty accounts are skipped during seeding, matching the canonical-state
-    /// oracle behavior used by the reconstruction tests.
-    #[cfg(test)]
-    pub(crate) fn from_state_parts(
-        accounts: &BTreeMap<Address, StateAccount>,
-        storage: &BTreeMap<Address, BTreeMap<U256, U256>>,
-    ) -> Result<Self, ReconstructError> {
-        let mut reconstructor = Self::new();
-
-        for (address, account) in accounts {
-            let mut state_account = account.clone();
-            if state_account.is_account_empty() {
-                continue;
-            }
-
-            let mut storage_trie = MptNode::default();
-
-            if let Some(account_storage) = storage.get(address) {
-                for (slot_key, slot_value) in account_storage {
-                    if slot_value.is_zero() {
-                        continue;
-                    }
-
-                    storage_trie.insert_rlp(&keccak(slot_key.to_be_bytes::<32>()), *slot_value)?;
-                }
-            }
-
-            state_account.storage_root = storage_trie.hash();
-            if !storage_trie.is_empty() {
-                reconstructor.storage_trie.insert(*address, storage_trie);
-            }
-
-            reconstructor
-                .state_trie
-                .insert_rlp(&keccak(address), state_account)?;
-        }
-
-        Ok(reconstructor)
-    }
+    Ok(state)
 }
 
 /// Applies a [`BatchStateDiff`] to a populated [`EthereumState`] sparse-MPT witness.
 ///
-/// This mirrors [`StateReconstructor::apply_diff`] but operates on the sparse MPT
-/// shape consumed by the EVM chunk witness pipeline, allowing the acct proof to
-/// apply a DA-published state diff to the same pre-state witness used for execution.
+/// This operates on the sparse MPT shape consumed by the EVM chunk witness
+/// pipeline, allowing the acct proof and verifier tooling to apply a
+/// DA-published state diff to the same pre-state witness used for execution.
 pub fn apply_batch_state_diff_to_ethereum_state(
     state: &mut EthereumState,
     diff: &BatchStateDiff,
@@ -356,11 +199,12 @@ pub fn apply_batch_state_diff_to_ethereum_state(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
 
     use proptest::prelude::*;
+    use revm_primitives::{alloy_primitives::Bytes, U256};
     use strata_codec::{decode_buf_exact, encode_to_vec};
-    use strata_mpt::EMPTY_ROOT;
+    use strata_mpt::{MptNode, EMPTY_ROOT};
 
     use super::*;
     use crate::{
@@ -372,12 +216,236 @@ mod tests {
         BlockStateChanges,
     };
 
+    /// Test-only reconstruction oracle retained from the pre-refactor MPT path.
+    ///
+    /// This is not public API. Tests use it to cross-check
+    /// [`apply_batch_state_diff_to_ethereum_state`] against the old
+    /// strata_mpt-backed reconstruction flow while the production API uses
+    /// [`EthereumState`].
+    #[derive(Clone, Default, Debug)]
+    struct TestStateReconstructor {
+        state_trie: MptNode,
+        storage_trie: HashMap<Address, MptNode>,
+    }
+
+    impl TestStateReconstructor {
+        /// Creates a new empty reconstructor.
+        fn new() -> Self {
+            Self::default()
+        }
+
+        /// Creates a reconstructor initialized with explicit genesis accounts.
+        fn from_genesis_accounts(
+            accounts: impl IntoIterator<Item = (Address, GenesisAccount)>,
+        ) -> Result<Self, ReconstructError> {
+            let mut reconstructor = Self::new();
+            for (address, account) in accounts {
+                let mut state_account = state_account_from_genesis(&account);
+
+                let mut storage_trie = MptNode::default();
+                let mut has_non_zero_storage = false;
+                for (slot_key, slot_value) in account.storage_slots() {
+                    if slot_value.is_zero() {
+                        continue;
+                    }
+
+                    storage_trie.insert_rlp(&keccak(slot_key.as_slice()), slot_value)?;
+                    has_non_zero_storage = true;
+                }
+
+                if has_non_zero_storage {
+                    state_account.storage_root = storage_trie.hash();
+                    reconstructor.storage_trie.insert(address, storage_trie);
+                }
+
+                reconstructor
+                    .state_trie
+                    .insert_rlp(&keccak(address), state_account)?;
+            }
+
+            Ok(reconstructor)
+        }
+
+        /// Applies a [`BatchStateDiff`] to the current state.
+        fn apply_diff(&mut self, diff: &BatchStateDiff) -> Result<(), ReconstructError> {
+            for (address, change) in &diff.accounts {
+                let acc_info_trie_path = keccak(address);
+
+                match change {
+                    AccountChange::Created(account_diff) | AccountChange::Updated(account_diff) => {
+                        // Get current account state (if exists)
+                        let current: Option<StateAccount> = self
+                            .state_trie
+                            .get_rlp(&acc_info_trie_path)
+                            .unwrap_or_default();
+
+                        // Build snapshot from current state and apply diff
+                        let mut snapshot = current
+                            .as_ref()
+                            .map(AccountSnapshot::from)
+                            .unwrap_or_default();
+
+                        account_diff.apply(&mut snapshot)?;
+
+                        let mut state_account = StateAccount {
+                            nonce: snapshot.nonce,
+                            balance: snapshot.balance,
+                            storage_root: Default::default(),
+                            code_hash: snapshot.code_hash,
+                        };
+
+                        // Skip empty accounts
+                        if state_account.is_account_empty() {
+                            continue;
+                        }
+
+                        // Calculate storage root
+                        state_account.storage_root = {
+                            let acc_storage_trie = self.storage_trie.entry(*address).or_default();
+                            if let Some(storage_diff) = diff.storage.get(address) {
+                                for (slot_key, slot_value) in storage_diff.iter() {
+                                    let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
+                                    match slot_value {
+                                        Some(v) if !v.is_zero() => {
+                                            acc_storage_trie.insert_rlp(&slot_trie_path, *v)?;
+                                        }
+                                        _ => {
+                                            acc_storage_trie.delete(&slot_trie_path)?;
+                                        }
+                                    }
+                                }
+                            }
+                            acc_storage_trie.hash()
+                        };
+
+                        self.state_trie
+                            .insert_rlp(&acc_info_trie_path, state_account)?;
+                    }
+                    AccountChange::Deleted => {
+                        self.state_trie.delete(&acc_info_trie_path)?;
+                        self.storage_trie.remove(address);
+                    }
+                }
+            }
+
+            // Handle storage changes for accounts not in accounts map
+            // (e.g., storage-only changes)
+            for (address, storage_diff) in &diff.storage {
+                if diff.accounts.contains_key(address) {
+                    continue; // Already handled above
+                }
+
+                let acc_info_trie_path = keccak(address);
+                let current: Option<StateAccount> = self
+                    .state_trie
+                    .get_rlp(&acc_info_trie_path)
+                    .unwrap_or_default();
+
+                if let Some(mut state_account) = current {
+                    let acc_storage_trie = self.storage_trie.entry(*address).or_default();
+                    for (slot_key, slot_value) in storage_diff.iter() {
+                        let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
+                        match slot_value {
+                            Some(v) if !v.is_zero() => {
+                                acc_storage_trie.insert_rlp(&slot_trie_path, *v)?;
+                            }
+                            _ => {
+                                acc_storage_trie.delete(&slot_trie_path)?;
+                            }
+                        }
+                    }
+                    state_account.storage_root = acc_storage_trie.hash();
+                    self.state_trie
+                        .insert_rlp(&acc_info_trie_path, state_account)?;
+                }
+            }
+
+            Ok(())
+        }
+
+        /// Returns the current state root.
+        fn state_root(&self) -> B256 {
+            self.state_trie.hash()
+        }
+
+        /// Returns the current storage root for an account.
+        fn storage_root(&self, address: Address) -> B256 {
+            self.storage_trie
+                .get(&address)
+                .map(|t| t.hash())
+                .unwrap_or(EMPTY_ROOT)
+        }
+
+        /// Returns the value at a storage slot.
+        fn storage_slot(&self, address: Address, slot_key: U256) -> U256 {
+            self.storage_trie
+                .get(&address)
+                .unwrap_or(&MptNode::default())
+                .get_rlp::<U256>(&keccak(slot_key.to_be_bytes::<32>()))
+                .unwrap_or_default()
+                .unwrap_or_default()
+        }
+
+        /// Returns the account state.
+        fn account(&self, address: Address) -> Option<StateAccount> {
+            self.state_trie
+                .get_rlp(&keccak(address))
+                .unwrap_or_default()
+        }
+
+        /// Creates a reconstructor from explicit canonical account and storage state.
+        ///
+        /// This helper exists for oracle tests that need to seed pre-state directly
+        /// from test fixtures instead of going through a chain spec or DB-backed
+        /// state source.
+        ///
+        /// Empty accounts are skipped during seeding, matching the canonical-state
+        /// oracle behavior used by the reconstruction tests.
+        fn from_state_parts(
+            accounts: &BTreeMap<Address, StateAccount>,
+            storage: &BTreeMap<Address, BTreeMap<U256, U256>>,
+        ) -> Result<Self, ReconstructError> {
+            let mut reconstructor = Self::new();
+
+            for (address, account) in accounts {
+                let mut state_account = account.clone();
+                if state_account.is_account_empty() {
+                    continue;
+                }
+
+                let mut storage_trie = MptNode::default();
+
+                if let Some(account_storage) = storage.get(address) {
+                    for (slot_key, slot_value) in account_storage {
+                        if slot_value.is_zero() {
+                            continue;
+                        }
+
+                        storage_trie
+                            .insert_rlp(&keccak(slot_key.to_be_bytes::<32>()), *slot_value)?;
+                    }
+                }
+
+                state_account.storage_root = storage_trie.hash();
+                if !storage_trie.is_empty() {
+                    reconstructor.storage_trie.insert(*address, storage_trie);
+                }
+
+                reconstructor
+                    .state_trie
+                    .insert_rlp(&keccak(address), state_account)?;
+            }
+
+            Ok(reconstructor)
+        }
+    }
+
     // The oracle below intentionally shares the same MPT primitives as the
     // reconstructor. These tests verify diff application produces the expected
     // post-state inputs and roots, not that the root algorithm is independently
     // reimplemented.
     fn assert_reconstruction_matches(
-        reconstructor: &StateReconstructor,
+        reconstructor: &TestStateReconstructor,
         expected_state: &CanonicalState,
         expected_slots: &[(Address, U256)],
         expected_bytecodes: &[(B256, &[u8])],
@@ -447,6 +515,192 @@ mod tests {
         decode_buf_exact(&encoded).unwrap()
     }
 
+    fn b256_from_u256(value: U256) -> B256 {
+        B256::from(value.to_be_bytes::<32>())
+    }
+
+    fn genesis_account(
+        balance: u64,
+        nonce: u64,
+        code: Option<&[u8]>,
+        storage: BTreeMap<U256, U256>,
+    ) -> GenesisAccount {
+        GenesisAccount {
+            nonce: Some(nonce),
+            balance: U256::from(balance),
+            code: code.map(Bytes::copy_from_slice),
+            storage: Some(
+                storage
+                    .into_iter()
+                    .map(|(slot_key, slot_value)| {
+                        (b256_from_u256(slot_key), b256_from_u256(slot_value))
+                    })
+                    .collect(),
+            ),
+            private_key: None,
+        }
+    }
+
+    #[test]
+    fn oracle_genesis_alloc_builds_canonical_state() {
+        let address = addr(0x10);
+        let slot_one = slot(1);
+        let slot_two = slot(2);
+        let code = [0x60, 0x80, 0x60, 0x40, 0x52];
+        let code_hash = keccak(code).into();
+        let expected_state = CanonicalState::new()
+            .with_account(address, state_account(100, 2, code_hash))
+            .set_storage_slot(address, slot_one, value(10));
+
+        let storage = BTreeMap::from([(slot_one, value(10)), (slot_two, U256::ZERO)]);
+        let reconstructor = TestStateReconstructor::from_genesis_accounts([(
+            address,
+            genesis_account(100, 2, Some(&code), storage),
+        )])
+        .unwrap();
+
+        assert_reconstruction_matches(
+            &reconstructor,
+            &expected_state,
+            &[(address, slot_one), (address, slot_two)],
+            &[],
+            &BatchStateDiff::default(),
+        );
+    }
+
+    #[test]
+    fn oracle_genesis_alloc_skips_zero_storage_entries() {
+        let address = addr(0x10);
+        let slot_key = slot(1);
+        let expected_state =
+            CanonicalState::new().with_account(address, state_account(100, 2, KECCAK_EMPTY));
+
+        let reconstructor = TestStateReconstructor::from_genesis_accounts([(
+            address,
+            genesis_account(100, 2, None, BTreeMap::from([(slot_key, U256::ZERO)])),
+        )])
+        .unwrap();
+
+        assert_reconstruction_matches(
+            &reconstructor,
+            &expected_state,
+            &[(address, slot_key)],
+            &[],
+            &BatchStateDiff::default(),
+        );
+        assert_eq!(reconstructor.storage_root(address), EMPTY_ROOT);
+    }
+
+    #[test]
+    fn genesis_alloc_builds_canonical_state() {
+        let address = addr(0x10);
+        let slot_one = slot(1);
+        let slot_two = slot(2);
+        let code = [0x60, 0x80, 0x60, 0x40, 0x52];
+        let code_hash = keccak(code).into();
+        let expected_state = CanonicalState::new()
+            .with_account(address, state_account(100, 2, code_hash))
+            .set_storage_slot(address, slot_one, value(10));
+
+        let state = ethereum_state_from_genesis_accounts([(
+            address,
+            genesis_account(
+                100,
+                2,
+                Some(&code),
+                BTreeMap::from([(slot_one, value(10)), (slot_two, U256::ZERO)]),
+            ),
+        )])
+        .unwrap();
+
+        assert_eq!(
+            state.state_root(),
+            canonical_state_root(&expected_state).unwrap()
+        );
+    }
+
+    #[test]
+    fn genesis_alloc_avoids_zero_storage_trie_entries() {
+        let address = addr(0x10);
+        let slot_key = slot(1);
+        let expected_state =
+            CanonicalState::new().with_account(address, state_account(100, 2, KECCAK_EMPTY));
+
+        let state = ethereum_state_from_genesis_accounts([(
+            address,
+            genesis_account(100, 2, None, BTreeMap::from([(slot_key, U256::ZERO)])),
+        )])
+        .unwrap();
+
+        let hashed_addr: B256 = keccak(address).into();
+        assert!(!state.storage_tries.contains_key(&hashed_addr));
+        assert_eq!(
+            state.state_root(),
+            canonical_state_root(&expected_state).unwrap()
+        );
+    }
+
+    #[test]
+    fn genesis_alloc_keeps_empty_account() {
+        let address = addr(0x10);
+
+        let state = ethereum_state_from_genesis_accounts([(
+            address,
+            genesis_account(0, 0, None, BTreeMap::new()),
+        )])
+        .unwrap();
+
+        let hashed_addr: B256 = keccak(address).into();
+        let account = state
+            .state_trie
+            .get_rlp::<StateAccount>(hashed_addr.as_slice())
+            .unwrap()
+            .expect("explicit empty genesis alloc account is present in the state trie");
+        assert_eq!(account, state_account(0, 0, KECCAK_EMPTY));
+        assert!(!state.storage_tries.contains_key(&hashed_addr));
+
+        let mut expected_trie = MptNode::default();
+        expected_trie
+            .insert_rlp(hashed_addr.as_slice(), state_account(0, 0, KECCAK_EMPTY))
+            .unwrap();
+        assert_eq!(state.state_root(), expected_trie.hash());
+    }
+
+    #[test]
+    fn genesis_alloc_keeps_storage_only_account() {
+        let address = addr(0x10);
+        let slot_key = slot(1);
+        let slot_value = value(10);
+
+        let state = ethereum_state_from_genesis_accounts([(
+            address,
+            genesis_account(0, 0, None, BTreeMap::from([(slot_key, slot_value)])),
+        )])
+        .unwrap();
+
+        let hashed_addr: B256 = keccak(address).into();
+        let account = state
+            .state_trie
+            .get_rlp::<StateAccount>(hashed_addr.as_slice())
+            .unwrap()
+            .expect("storage-only genesis alloc account is present in the state trie");
+        assert_eq!(account.nonce, 0);
+        assert_eq!(account.balance, U256::ZERO);
+        assert_eq!(account.code_hash, KECCAK_EMPTY);
+        assert_ne!(account.storage_root, EMPTY_ROOT);
+
+        let storage_trie = state
+            .storage_tries
+            .get(&hashed_addr)
+            .expect("storage-only genesis alloc account has a storage trie");
+        assert_eq!(
+            storage_trie
+                .get_rlp::<U256>(&keccak(slot_key.to_be_bytes::<32>()))
+                .unwrap(),
+            Some(slot_value)
+        );
+    }
+
     #[test]
     fn test_reconstruct_storage_only_change_matches_canonical_oracle() {
         let address = addr(0x11);
@@ -466,7 +720,8 @@ mod tests {
 
         let diff = roundtrip_batch_diff(&[block]);
         let mut reconstructor =
-            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+            TestStateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage)
+                .unwrap();
         reconstructor.apply_diff(&diff).unwrap();
 
         assert_reconstruction_matches(
@@ -494,7 +749,8 @@ mod tests {
 
         let diff = roundtrip_batch_diff(&[block]);
         let mut reconstructor =
-            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+            TestStateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage)
+                .unwrap();
         reconstructor.apply_diff(&diff).unwrap();
 
         assert_reconstruction_matches(
@@ -535,7 +791,8 @@ mod tests {
         assert!(diff.is_empty());
 
         let mut reconstructor =
-            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+            TestStateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage)
+                .unwrap();
         reconstructor.apply_diff(&diff).unwrap();
 
         assert_reconstruction_matches(
@@ -578,7 +835,8 @@ mod tests {
         assert!(diff.is_empty());
 
         let mut reconstructor =
-            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+            TestStateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage)
+                .unwrap();
         reconstructor.apply_diff(&diff).unwrap();
 
         assert_reconstruction_matches(
@@ -616,7 +874,8 @@ mod tests {
 
         let diff = roundtrip_batch_diff(&[block]);
         let mut reconstructor =
-            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+            TestStateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage)
+                .unwrap();
         reconstructor.apply_diff(&diff).unwrap();
 
         assert_reconstruction_matches(
@@ -662,7 +921,8 @@ mod tests {
 
         let diff = roundtrip_batch_diff(&[block_one, block_two]);
         let mut reconstructor =
-            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+            TestStateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage)
+                .unwrap();
         reconstructor.apply_diff(&diff).unwrap();
 
         assert_reconstruction_matches(
@@ -802,7 +1062,7 @@ mod tests {
 
             let diff = roundtrip_batch_diff(&[block]);
             let mut reconstructor =
-                StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+                TestStateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
             reconstructor.apply_diff(&diff).unwrap();
 
             assert_reconstruction_matches(
@@ -816,7 +1076,7 @@ mod tests {
     }
 
     /// Cross-verifies that [`apply_batch_state_diff_to_ethereum_state`]
-    /// produces the same post-state root as [`StateReconstructor::apply_diff`]
+    /// produces the same post-state root as [`TestStateReconstructor::apply_diff`]
     /// when both start from the same empty state and consume the same diff.
     #[test]
     fn apply_to_ethereum_state_matches_state_reconstructor_oracle() {
@@ -851,7 +1111,8 @@ mod tests {
         let diff = roundtrip_batch_diff(&[block]);
 
         let mut reconstructor =
-            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+            TestStateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage)
+                .unwrap();
         reconstructor.apply_diff(&diff).unwrap();
 
         let mut state = EthereumState {
