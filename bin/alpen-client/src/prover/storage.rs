@@ -38,17 +38,11 @@ fn db_err(e: DbError) -> ProverError {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct EeProverTaskDbManager<D = EeProverDbSled>
-where
-    D: ProverTaskDatabase + Send + Sync + 'static,
-{
+pub(crate) struct EeProverTaskDbManager<D: ProverTaskDatabase> {
     db: Arc<D>,
 }
 
-impl<D> EeProverTaskDbManager<D>
-where
-    D: ProverTaskDatabase + Send + Sync + 'static,
-{
+impl<D: ProverTaskDatabase> EeProverTaskDbManager<D> {
     pub(crate) fn new(db: Arc<D>) -> Self {
         Self { db }
     }
@@ -67,10 +61,7 @@ where
     }
 }
 
-impl<D> TaskStore for EeProverTaskDbManager<D>
-where
-    D: ProverTaskDatabase + Send + Sync + 'static,
-{
+impl<D: ProverTaskDatabase> TaskStore for EeProverTaskDbManager<D> {
     fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
         let stored = self.db.get_task(key.to_vec()).map_err(db_err)?;
         Ok(stored.map(|data| TaskRecord::from_parts(key.to_vec(), data)))
@@ -114,6 +105,10 @@ where
 
     fn count(&self) -> ProverResult<usize> {
         self.db.count_tasks().map_err(db_err)
+    }
+
+    fn remove(&self, key: &[u8]) -> ProverResult<bool> {
+        self.db.delete_task(key.to_vec()).map_err(db_err)
     }
 }
 

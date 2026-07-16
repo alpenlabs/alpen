@@ -64,13 +64,66 @@ impl Formattable for EeReceiptInfo {
     }
 }
 
-/// Acknowledgement payload for the `ee-delete-*-receipt` / `ee-delete-acct-proof`
-/// commands.
+/// Coupled invalidation report for `ee-delete-chunk-receipt`.
 ///
-/// `existed` always reflects the primary row (the chunk receipt or the acct
-/// proof). `task_existed` is `Some` only for the chunk command, which also
-/// deletes the companion PaaS task record under the same key so the chunk
-/// re-proves; it is `None` for acct proofs, which have no companion task here.
+/// Deleting a chunk receipt invalidates the chunk's lifecycle state and any
+/// acct proof derived from it. This report exposes both the discovered state
+/// and the mutations that were actually applied.
+#[derive(Serialize)]
+pub(crate) struct EeChunkReproofInfo {
+    pub(crate) address: String,
+    pub(crate) kind: &'static str,
+    pub(crate) dry_run: bool,
+    pub(crate) existed: bool,
+    pub(crate) task_existed: bool,
+    pub(crate) chunk_id: String,
+    pub(crate) chunk_status: &'static str,
+    pub(crate) batch_id: String,
+    pub(crate) batch_status: &'static str,
+    pub(crate) acct_proof_existed: bool,
+    pub(crate) acct_task_existed: bool,
+    pub(crate) mutation: EeChunkReproofMutation,
+}
+
+#[derive(Default, Serialize)]
+pub(crate) struct EeChunkReproofMutation {
+    pub(crate) receipt_deleted: bool,
+    pub(crate) chunk_task_deleted: bool,
+    pub(crate) chunk_status_reset: bool,
+    pub(crate) acct_proof_deleted: bool,
+    pub(crate) acct_task_deleted: bool,
+    pub(crate) batch_status_reset: bool,
+}
+
+impl Formattable for EeChunkReproofInfo {
+    fn format_porcelain(&self) -> String {
+        [
+            porcelain_field("address", &self.address),
+            porcelain_field("kind", self.kind),
+            porcelain_field("dry_run", self.dry_run),
+            porcelain_field("existed", self.existed),
+            porcelain_field("task_existed", self.task_existed),
+            porcelain_field("chunk_id", &self.chunk_id),
+            porcelain_field("chunk_status", self.chunk_status),
+            porcelain_field("batch_id", &self.batch_id),
+            porcelain_field("batch_status", self.batch_status),
+            porcelain_field("acct_proof_existed", self.acct_proof_existed),
+            porcelain_field("acct_task_existed", self.acct_task_existed),
+            porcelain_field("receipt_deleted", self.mutation.receipt_deleted),
+            porcelain_field("chunk_task_deleted", self.mutation.chunk_task_deleted),
+            porcelain_field("chunk_status_reset", self.mutation.chunk_status_reset),
+            porcelain_field("acct_proof_deleted", self.mutation.acct_proof_deleted),
+            porcelain_field("acct_task_deleted", self.mutation.acct_task_deleted),
+            porcelain_field("batch_status_reset", self.mutation.batch_status_reset),
+        ]
+        .join("\n")
+    }
+}
+
+/// Acknowledgement payload for the standalone `ee-delete-acct-proof` command.
+///
+/// `existed` reflects the acct proof row. `task_existed` remains optional for
+/// output compatibility and is unset by this command.
 #[derive(Serialize)]
 pub(crate) struct DeletedEeReceiptInfo {
     pub(crate) address: String,
@@ -145,15 +198,33 @@ mod tests {
     }
 
     #[test]
-    fn deleted_chunk_info_reports_task_existence() {
-        let ack = DeletedEeReceiptInfo {
+    fn chunk_reproof_info_reports_coupled_mutations() {
+        let ack = EeChunkReproofInfo {
             address: "abcd".into(),
             kind: "chunk",
+            dry_run: false,
             existed: true,
-            task_existed: Some(true),
+            task_existed: true,
+            chunk_id: "chunk".into(),
+            chunk_status: "proof_ready",
+            batch_id: "batch".into(),
+            batch_status: "proof_ready",
+            acct_proof_existed: true,
+            acct_task_existed: true,
+            mutation: EeChunkReproofMutation {
+                receipt_deleted: true,
+                chunk_task_deleted: true,
+                chunk_status_reset: true,
+                acct_proof_deleted: true,
+                acct_task_deleted: true,
+                batch_status_reset: true,
+            },
         };
         let out = ack.format_porcelain();
         assert!(out.contains("existed: true"));
         assert!(out.contains("task_existed: true"));
+        assert!(out.contains("chunk_status_reset: true"));
+        assert!(out.contains("acct_proof_deleted: true"));
+        assert!(out.contains("batch_status_reset: true"));
     }
 }

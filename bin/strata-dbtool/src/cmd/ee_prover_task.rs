@@ -17,6 +17,7 @@
 
 use std::{fmt, str::FromStr};
 
+use alpen_ee_common::{BATCH_TASK_KEY_TAG, CHUNK_TASK_KEY_TAG};
 use alpen_ee_database::EeProverDbSled;
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
@@ -46,8 +47,8 @@ impl KindFilter {
     fn matches(&self, key: &[u8]) -> bool {
         match self {
             Self::All => true,
-            Self::Chunk => key.first().copied() == Some(b'c'),
-            Self::Acct => key.first().copied() == Some(b'a'),
+            Self::Chunk => key.first().copied() == Some(CHUNK_TASK_KEY_TAG),
+            Self::Acct => key.first().copied() == Some(BATCH_TASK_KEY_TAG),
         }
     }
 }

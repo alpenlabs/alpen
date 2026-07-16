@@ -1231,7 +1231,7 @@ async fn launch_validated_ee_prover(
     stores: EeProverStores,
     use_native_prover: bool,
     sp1_deadline_secs: Option<u64>,
-) -> eyre::Result<Arc<PaasEeProver>> {
+) -> eyre::Result<Arc<PaasEeProver<ChunkSpec, AcctSpec>>> {
     let ol_account_update_vk = ol_client
         .get_latest_account_update_vk()
         .await

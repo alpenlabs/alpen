@@ -16,6 +16,7 @@ pub(crate) struct EeRevertBatchesReport {
     pub(crate) latest_batch_idx_before: u64,
     pub(crate) first_reverted_block_height: u64,
     pub(crate) first_reverted_block_hash: String,
+    pub(crate) first_reverted_chunk_idx: Option<u64>,
     pub(crate) local_accepted_frontier: AcceptedFrontierInfo,
     pub(crate) account_state_rollback: AccountStateRollbackInfo,
     pub(crate) warnings: Vec<String>,
@@ -127,6 +128,7 @@ pub(crate) struct MutationInfo {
     pub(crate) force: bool,
     pub(crate) tx_export_written: bool,
     pub(crate) batch_rows_reverted: usize,
+    pub(crate) chunk_rows_reverted: usize,
     pub(crate) exec_blocks_deleted: usize,
     pub(crate) chunk_tasks_deleted: usize,
     pub(crate) chunk_receipts_deleted: usize,
@@ -148,6 +150,10 @@ impl Formattable for EeRevertBatchesReport {
             porcelain_field("first_reverted_block_hash", &self.first_reverted_block_hash),
             porcelain_field("blocked", porcelain_bool(self.blocked)),
         ];
+
+        if let Some(idx) = self.first_reverted_chunk_idx {
+            out.push(porcelain_field("first_reverted_chunk_idx", idx));
+        }
 
         if let Some(reason) = &self.block_reason {
             out.push(porcelain_field("block_reason", reason));
@@ -408,6 +414,7 @@ impl MutationInfo {
                 porcelain_bool(self.tx_export_written),
             ),
             porcelain_field("mutation.batch_rows_reverted", self.batch_rows_reverted),
+            porcelain_field("mutation.chunk_rows_reverted", self.chunk_rows_reverted),
             porcelain_field("mutation.exec_blocks_deleted", self.exec_blocks_deleted),
             porcelain_field("mutation.chunk_tasks_deleted", self.chunk_tasks_deleted),
             porcelain_field(
