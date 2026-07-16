@@ -14,7 +14,7 @@ use proptest::{
 };
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_identifiers::{Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{Buf32, Hash, OLBlockCommitment, OLBlockId, Slot};
 use strata_ledger_types::{
     IAccountStateMut, ISnarkAccountStateMut, IStateAccessorMut, NewAccountData, NewAccountTypeState,
 };
@@ -184,7 +184,7 @@ pub(crate) fn with_max_slot(tx: OLTransaction, max_slot: Option<Slot>) -> OLTran
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> OLState {
-    let params = OLParams::new_empty(L1BlockCommitment::default());
+    let params = OLParams::default();
     OLState::from_genesis_params(&params).expect("valid params")
 }
 

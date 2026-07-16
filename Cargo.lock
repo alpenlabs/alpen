@@ -1204,6 +1204,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-config",
  "strata-predicate",
 ]
@@ -15507,6 +15508,7 @@ dependencies = [
  "strata-proofimpl-predicate-keys",
  "strata-snark-acct-runtime",
  "strata-sp1-guest-builder",
+ "tempfile",
  "tokio",
  "toml 0.5.11",
  "zeroize",

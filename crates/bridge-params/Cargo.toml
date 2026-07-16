@@ -18,3 +18,4 @@ serde_json.workspace = true
 
 [features]
 arbitrary = ["dep:arbitrary"]
+test-defaults = []

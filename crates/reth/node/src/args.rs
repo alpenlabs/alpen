@@ -1,6 +1,6 @@
 use alpen_reth_evm::evm::AlpenEvmFactory;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AlpenNodeArgs {
     pub sequencer_http: Option<String>,
     pub evm_factory: AlpenEvmFactory,

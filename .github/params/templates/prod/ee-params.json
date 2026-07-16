@@ -2,5 +2,10 @@
   "account_id": "0101010101010101010101010101010101010101010101010101010101010101",
   "genesis_blockhash": "__GENESIS_BLOCKHASH__",
   "genesis_stateroot": "__GENESIS_STATEROOT__",
-  "genesis_blocknum": 0
+  "genesis_blocknum": 0,
+  "bridge_params": {
+    "denomination": 200000000,
+    "max_withdrawal_amount": null,
+    "max_withdrawal_descriptor_len": 81
+  }
 }

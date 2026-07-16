@@ -722,7 +722,15 @@ mod tests {
         let storage = create_node_storage(db, strata_storage::test_runtime_handle())
             .expect("test: create node storage");
         let genesis_l1_block = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
-        let params = OLParams::new_empty(genesis_l1_block);
+        let params = OLParams::new_empty(
+            genesis_l1_block,
+            strata_ol_params::BridgeParams::new_with_descriptor_limit(
+                100_000_000,
+                Some(1_000_000_000),
+                81,
+            )
+            .expect("valid bridge params"),
+        );
         let genesis_commitment = init_ol_genesis(&params, &storage).expect("test: init ol genesis");
         (storage, genesis_commitment)
     }

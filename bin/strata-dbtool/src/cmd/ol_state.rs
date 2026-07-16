@@ -372,7 +372,7 @@ mod tests {
         ol_state::OLStateDatabase,
         MmrId,
     };
-    use strata_identifiers::{Buf32, Buf64, Hash, L1BlockCommitment, OLBlockId};
+    use strata_identifiers::{Buf32, Buf64, Hash, OLBlockId};
     use strata_ol_chain_types::{
         BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
@@ -384,8 +384,7 @@ mod tests {
     use super::*;
 
     fn genesis_target_state() -> OLState {
-        OLState::from_genesis_params(&OLParams::new_empty(L1BlockCommitment::default()))
-            .expect("valid genesis params")
+        OLState::from_genesis_params(&OLParams::default()).expect("valid genesis params")
     }
 
     fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlock {

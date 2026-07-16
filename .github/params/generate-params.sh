@@ -41,12 +41,33 @@ WORK_DIR=$(mktemp -d)
 chmod 777 "${WORK_DIR}"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
+json_value() {
+    local file="$1"
+    local path="$2"
+    python3 - "$file" "$path" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    value = json.load(f)
+
+for key in sys.argv[2].split("."):
+    value = value[key]
+
+print("" if value is None else value)
+PY
+}
+
 echo "=== Reading keys from templates ==="
 python3 "${SCRIPT_DIR}/params-helper.py" extract-keys \
     --template-dir "${TEMPLATE_DIR}" \
     --output-dir "${WORK_DIR}"
 SAFE_HARBOUR=$(tr -d '[:space:]' < "${WORK_DIR}/safe-harbour.txt")
 EE_ACCOUNT_ID=$(tr -d '[:space:]' < "${WORK_DIR}/ee-account-id.txt")
+EE_PARAMS_TEMPLATE="${TEMPLATE_DIR}/ee-params.json"
+BRIDGE_DENOMINATION_SATS=$(json_value "${EE_PARAMS_TEMPLATE}" "bridge_params.denomination")
+MAX_WITHDRAWAL_AMOUNT_SATS=$(json_value "${EE_PARAMS_TEMPLATE}" "bridge_params.max_withdrawal_amount")
+MAX_WITHDRAWAL_DESCRIPTOR_LEN=$(json_value "${EE_PARAMS_TEMPLATE}" "bridge_params.max_withdrawal_descriptor_len")
 
 echo ""
 echo "=== Step 1: Generate raw params via datatool ==="
@@ -70,6 +91,9 @@ run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
     gen-ee-params \
     --alpen-chain-config /app/chain.json \
     --account-id "${EE_ACCOUNT_ID}" \
+    --bridge-denomination-sats "${BRIDGE_DENOMINATION_SATS}" \
+    ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount-sats "${MAX_WITHDRAWAL_AMOUNT_SATS}"} \
+    --max-withdrawal-descriptor-len "${MAX_WITHDRAWAL_DESCRIPTOR_LEN}" \
     -o /out/ee-params-raw.json
 echo "  ee-params-raw.json generated"
 

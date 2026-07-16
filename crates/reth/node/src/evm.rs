@@ -8,7 +8,7 @@ use reth_node_builder::{components::ExecutorBuilder, BuilderContext};
 use reth_primitives::EthPrimitives;
 
 /// Builds a regular ethereum block executor that uses the custom EVM.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AlpenExecutorBuilder {
     evm_factory: AlpenEvmFactory,
 }

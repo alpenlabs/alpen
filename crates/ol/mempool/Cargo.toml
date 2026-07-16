@@ -32,7 +32,7 @@ tracing.workspace = true
 [dev-dependencies]
 strata-csm-types.workspace = true
 strata-db-store-sled.workspace = true
-strata-ol-params.workspace = true
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-predicate.workspace = true

@@ -18,20 +18,28 @@ use crate::{apis::AlpenAlloyEvm, precompiles::factory, utils::wei_to_sats};
 /// Custom EVM configuration.
 ///
 /// Carries bridge withdrawal policy for precompile validation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AlpenEvmFactory {
     bridge_params: BridgeParams,
 }
 
 impl AlpenEvmFactory {
-    pub fn new(denomination_wei: U256, max_withdrawal_wei: Option<U256>) -> Self {
+    pub fn new_with_descriptor_limit(
+        denomination_wei: U256,
+        max_withdrawal_wei: Option<U256>,
+        max_withdrawal_descriptor_len: u32,
+    ) -> Self {
         let denomination = wei_to_sats_exact(denomination_wei, "denomination_wei");
         let max_withdrawal_amount =
             max_withdrawal_wei.map(|max| wei_to_sats_exact(max, "max_withdrawal_wei"));
 
         Self {
-            bridge_params: BridgeParams::new(denomination, max_withdrawal_amount)
-                .expect("withdrawal policy constructed from wei must be valid"),
+            bridge_params: BridgeParams::new_with_descriptor_limit(
+                denomination,
+                max_withdrawal_amount,
+                max_withdrawal_descriptor_len,
+            )
+            .expect("withdrawal policy constructed from wei must be valid"),
         }
     }
 
@@ -46,6 +54,13 @@ impl AlpenEvmFactory {
     /// Creates an [`AlpenEvmFactory`] from [`BridgeParams`].
     pub fn from_bridge_params(bp: &BridgeParams) -> Self {
         Self { bridge_params: *bp }
+    }
+}
+
+#[cfg(any(test, feature = "test-defaults"))]
+impl Default for AlpenEvmFactory {
+    fn default() -> Self {
+        Self::from_bridge_params(&BridgeParams::default())
     }
 }
 

@@ -155,7 +155,11 @@ mod tests {
         // Execute the block to get outputs.
         let chain_spec: Arc<reth_chainspec::ChainSpec> =
             Arc::new((&witness.genesis).try_into().unwrap());
-        let ee = EvmExecutionEnvironment::new(chain_spec, AlpenEvmFactory::default());
+        let bridge_params = BridgeParams::default();
+        let ee = EvmExecutionEnvironment::new(
+            chain_spec,
+            AlpenEvmFactory::from_bridge_params(&bridge_params),
+        );
         let header_intrinsics = block.get_header().get_intrinsics();
         let exec_payload = ExecPayload::new(&header_intrinsics, block.get_body());
         let inputs = ExecInputs::new_empty();

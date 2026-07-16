@@ -27,9 +27,17 @@ strata-datatool \
     --genesis-l1-height 100 \
     --output l1-anchor.json
 
+# Generate the EE params consumed by Alpen and referenced by OL params generation.
+strata-datatool gen-ee-params \
+    --alpen-chain-config alpen-chain.json \
+    --bridge-denomination-sats 200000000 \
+    --max-withdrawal-descriptor-len 81 \
+    -o ee-params.json
+
 # Generate the OL params (provides the genesis OL block id consumed by ASM params).
 strata-datatool gen-ol-params \
     --l1-anchor-file l1-anchor.json \
+    --ee-params ee-params.json \
     -o ol-params.json
 
 # Generate the ASM params from the operator/sequencer pubkeys and the OL params.
@@ -64,13 +72,9 @@ Deposits are locked at the ASM bridge denomination while withdrawals are
 validated by the OL STF against the OL bridge denomination, so the two are one
 network value: `--deposit-sats` defaults to the `--ol-params` denomination and
 `gen-asm-params` rejects a value that differs from it. Withdrawals are batched
-in multiples of that denomination, capped at `max_withdrawal_amount_sats`.
-
-The CLI config cannot express an uncapped withdrawal amount — an absent
-`max_withdrawal_amount_sats` reads as the default 10 BTC cap — so
-`--cli-config` is rejected when the OL params set `max_withdrawal_amount` to
-null, rather than emitting a profile that would silently cap the wallet below
-what the OL allows.
+in multiples of that denomination, capped at `max_withdrawal_amount_sats` when
+the OL params set a cap. For uncapped networks, the generated snippet omits
+`max_withdrawal_amount_sats`.
 
 Merge the generated snippet into the CLI's `config.toml`, replacing any of
 these keys the file already defines — TOML rejects duplicate keys, so

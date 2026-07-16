@@ -42,6 +42,9 @@ export CHECKPOINT_PREDICATE=sp1-groth16
 export ALPEN_PREDICATE=sp1-groth16
 export ALPEN_CHAIN_CONFIG="${REPO_ROOT}/crates/reth/chainspec/src/res/testnet-chain.json"
 export CHAIN_SPEC=testnet
+export BRIDGE_DENOMINATION_SATS=200000000
+export MAX_WITHDRAWAL_AMOUNT_SATS=1000000000
+export MAX_WITHDRAWAL_DESCRIPTOR_LEN=81
 # P2TR BOSD for the bridge safe harbour address (required by init-network.sh).
 # CI-only throwaway value — 04 (P2TR type tag) + 32-byte x-only pubkey derived
 # from the "abandon" mnemonic. Not used for real funds.

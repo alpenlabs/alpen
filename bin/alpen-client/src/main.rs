@@ -81,10 +81,6 @@ use reth_cli_util::sigsegv_handler;
 use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_provider::CanonStateSubscriptions;
-use strata_bridge_params::{
-    BridgeParams, DEFAULT_DENOMINATION_SATS, DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN,
-    DEFAULT_MAX_WITHDRAWAL_SATS,
-};
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
     broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
@@ -216,20 +212,6 @@ fn main() {
             info!(target: "alpen-client", component = "alpen", %health_check_addr, "health check server started");
 
             // --- CONFIGS ---
-
-            // Resolve withdrawal cap: 0 → no cap, omitted → default 10 BTC.
-            let resolved_max_withdrawal = match ext.max_withdrawal_amount {
-                Some(0) => None,
-                Some(v) => Some(v),
-                None => Some(DEFAULT_MAX_WITHDRAWAL_SATS),
-            };
-            let bridge_params = BridgeParams::new_with_descriptor_limit(
-                ext.bridge_denomination,
-                resolved_max_withdrawal,
-                ext.max_withdrawal_descriptor_len,
-            )
-            .expect("invalid withdrawal params");
-
             let datadir = builder.config().datadir().data_dir().to_path_buf();
 
             // TODO(STR-2982): read config, params from file
@@ -238,6 +220,7 @@ fn main() {
             info!(target: "alpen-client", component = "alpen", blockhash=%genesis_info.blockhash(), "EE genesis info");
             let params = load_ee_params(&ext.ee_params)?;
             validate_ee_params_genesis(&params, &genesis_info)?;
+            let bridge_params = *params.bridge_params();
             info!(target: "alpen-client", component = "alpen", ?params, sequencer = ext.sequencer, "Starting EE Node");
 
             // Resolve btcio writer config up front so flag misuse surfaces before I/O.
@@ -1148,23 +1131,6 @@ pub struct AdditionalConfig {
     #[arg(long, required = false)]
     pub batch_event_channel_capacity: Option<usize>,
 
-    /// Bridge denomination in satoshis (1 BTC default).
-    #[arg(long, default_value_t = DEFAULT_DENOMINATION_SATS)]
-    pub bridge_denomination: u64,
-
-    /// Maximum withdrawal BOSD descriptor length in bytes, including the type tag.
-    #[arg(long, default_value_t = DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN)]
-    pub max_withdrawal_descriptor_len: u32,
-
-    /// Maximum withdrawal amount in satoshis.
-    ///
-    /// When omitted, defaults to 1_000_000_000 (10 BTC) at runtime.
-    /// Pass 0 to disable the cap entirely. Kept as `Option` (no
-    /// `default_value`) so we can distinguish "not set" (→ safe default)
-    /// from an explicit value.
-    #[arg(long)]
-    pub max_withdrawal_amount: Option<u64>,
-
     /// Use the zkaleido `NativeHost` for the EE chunk + acct provers
     /// instead of the SP1 remote host.
     ///
@@ -1285,43 +1251,6 @@ fn validate_ee_params_genesis(
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod additional_config_tests {
-    use super::*;
-
-    const SEQUENCER_PUBKEY: &str =
-        "0000000000000000000000000000000000000000000000000000000000000000";
-
-    fn parse_additional_config(args: &[&str]) -> AdditionalConfig {
-        let mut argv = vec![
-            "alpen-client",
-            "--ee-params",
-            "/tmp/ee-params.json",
-            "--sequencer-pubkey",
-            SEQUENCER_PUBKEY,
-        ];
-        argv.extend_from_slice(args);
-        <AdditionalConfig as clap::Parser>::parse_from(argv)
-    }
-
-    #[test]
-    fn max_withdrawal_descriptor_len_defaults_to_policy_limit() {
-        let config = parse_additional_config(&[]);
-
-        assert_eq!(
-            config.max_withdrawal_descriptor_len,
-            DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN
-        );
-    }
-
-    #[test]
-    fn max_withdrawal_descriptor_len_can_be_configured() {
-        let config = parse_additional_config(&["--max-withdrawal-descriptor-len", "100"]);
-
-        assert_eq!(config.max_withdrawal_descriptor_len, 100);
-    }
 }
 
 /// Run node with logging

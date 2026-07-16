@@ -71,8 +71,8 @@ use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
 use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
-    AccountSerial, Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
-    SubjectIdBytes, WtxidsRoot,
+    AccountSerial, Buf32, Buf64, Epoch, L1BlockId, L1Height, Slot, SubjectId, SubjectIdBytes,
+    WtxidsRoot,
 };
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
@@ -138,7 +138,7 @@ pub fn make_proof(variant: u8) -> Vec<u8> {
 
 /// Builds a genesis state layer using minimal empty parameters.
 pub fn make_genesis_state() -> MemoryStateBaseLayer {
-    let params = OLParams::new_empty(L1BlockCommitment::default());
+    let params = OLParams::default();
     let state = OLState::from_genesis_params(&params).expect("valid params");
     MemoryStateBaseLayer::new(state)
 }

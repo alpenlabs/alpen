@@ -292,19 +292,19 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "alpen EE account inner state root as 64-char hex; overrides --alpen-chain-config and cannot be combined with --ee-params"
+        description = "alpen EE account inner state root as 64-char hex; overrides --alpen-chain-config and EE params genesis state"
     )]
     pub(crate) alpen_inner_state: Option<String>,
 
     #[argh(
         option,
-        description = "path to EVM chain config JSON; used to compute inner state root from genesis block hash when --alpen-inner-state is not provided"
+        description = "path to EVM chain config JSON; used for the Alpen EE account inner state when --alpen-inner-state is omitted"
     )]
     pub(crate) alpen_chain_config: Option<PathBuf>,
 
     #[argh(
         option,
-        description = "path to JSON-serialized EE params; used to keep the Alpen EE account id and genesis state aligned"
+        description = "path to JSON-serialized EE params; supplies the Alpen EE account id, genesis state, and bridge params"
     )]
     pub(crate) ee_params: Option<PathBuf>,
 }
@@ -335,6 +335,21 @@ pub(crate) struct SubcEeParams {
         description = "path to EVM chain config JSON; used to compute execution genesis params"
     )]
     pub(crate) alpen_chain_config: Option<PathBuf>,
+
+    #[argh(option, description = "bridge denomination in satoshis")]
+    pub(crate) bridge_denomination_sats: u64,
+
+    #[argh(
+        option,
+        description = "maximum withdrawal amount in satoshis; omit to leave withdrawals uncapped"
+    )]
+    pub(crate) max_withdrawal_amount_sats: Option<u64>,
+
+    #[argh(
+        option,
+        description = "maximum withdrawal BOSD descriptor length in bytes, including the type tag"
+    )]
+    pub(crate) max_withdrawal_descriptor_len: u32,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]

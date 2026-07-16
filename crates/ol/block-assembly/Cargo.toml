@@ -63,7 +63,9 @@ test-utils = [
   "dep:strata-ol-msg-types",
   "dep:strata-state",
   "strata-db-store-sled/test_utils",
+  "strata-bridge-params/test-defaults",
   "strata-ol-chain-types/test-utils",
+  "strata-ol-params/test-defaults",
   "strata-storage/test-utils",
 ]
 
@@ -72,6 +74,7 @@ bitcoin.workspace = true
 proptest.workspace = true
 strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-btc-verification.workspace = true
 strata-codec.workspace = true
 strata-crypto.workspace = true
@@ -79,6 +82,7 @@ strata-db-store-sled.workspace = true
 strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-msg-types.workspace = true
 strata-predicate.workspace = true
 strata-state.workspace = true

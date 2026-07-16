@@ -24,6 +24,7 @@ zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
 [dev-dependencies]
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-codec.workspace = true
 strata-identifiers.workspace = true
 

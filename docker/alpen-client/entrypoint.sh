@@ -81,8 +81,6 @@ exec alpen-client \
     --authrpc.jwtsecret "${JWT_SECRET:-/app/keys/jwt.hex}" \
     --l1-reorg-safe-depth "${L1_REORG_SAFE_DEPTH:-4}" \
     --batch-sealing-block-count "${BATCH_SEALING_BLOCK_COUNT:-120}" \
-    --bridge-denomination "${BRIDGE_DENOMINATION:-100000000}" \
-    ${MAX_WITHDRAWAL_AMOUNT:+--max-withdrawal-amount "$MAX_WITHDRAWAL_AMOUNT"} \
     --txpool.minimal-protocol-fee "${TXPOOL_MIN_PROTOCOL_FEE:-0}" \
     --genesis-l1-height "${GENESIS_L1_HEIGHT:?GENESIS_L1_HEIGHT must be set}" \
     "$@"

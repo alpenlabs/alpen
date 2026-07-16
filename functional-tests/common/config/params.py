@@ -60,11 +60,21 @@ class GenesisAccountData:
 
 
 @dataclass
+class BridgeParams:
+    """Bridge parameters. Maps to Rust BridgeParams."""
+
+    denomination: int = 100_000_000
+    max_withdrawal_amount: int | None = 1_000_000_000
+    max_withdrawal_descriptor_len: int = 81
+
+
+@dataclass
 class OLParams:
     """OL genesis parameters. Maps to Rust OLParams."""
 
     accounts: dict[str, GenesisAccountData] = field(default_factory=dict)
     last_l1_block: L1BlockCommitment = field(default_factory=L1BlockCommitment)
+    bridge_params: BridgeParams = field(default_factory=BridgeParams)
 
     def with_genesis_l1(self, genesis_l1_block: L1BlockCommitment) -> "OLParams":
         self.last_l1_block = genesis_l1_block
@@ -74,6 +84,7 @@ class OLParams:
         d = {
             "accounts": {k: asdict(v) for k, v in self.accounts.items()},
             "last_l1_block": asdict(self.last_l1_block),
+            "bridge_params": asdict(self.bridge_params),
         }
         return json.dumps(d, indent=2)
 

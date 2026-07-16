@@ -47,6 +47,7 @@ bincode.workspace = true
 itertools.workspace = true
 
 [dev-dependencies]
+alpen-reth-evm = { workspace = true, features = ["test-defaults"] }
 alloy-eips.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -905,7 +905,7 @@ mod tests {
     use strata_acct_types::{append_l1_block_rec_to_mmr, BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::MmrBatchWrite;
-    use strata_identifiers::{AccountId, L1BlockCommitment};
+    use strata_identifiers::AccountId;
     use strata_ledger_types::{IAccountStateMut, ISnarkAccountStateMut};
     use strata_ol_params::{GenesisSnarkAccountData, OLParams};
     use strata_ol_state_types::{OLAccountState, WriteBatch};
@@ -916,8 +916,7 @@ mod tests {
     use super::*;
 
     fn genesis_target_state() -> OLState {
-        OLState::from_genesis_params(&OLParams::new_empty(L1BlockCommitment::default()))
-            .expect("valid genesis params")
+        OLState::from_genesis_params(&OLParams::default()).expect("valid genesis params")
     }
 
     fn l1_block_record(seed: u8) -> L1BlockRecord {
@@ -949,7 +948,7 @@ mod tests {
         account_id: AccountId,
         messages: Vec<MessageEntry>,
     ) -> OLState {
-        let mut params = OLParams::new_empty(L1BlockCommitment::default());
+        let mut params = OLParams::default();
         params.accounts.insert(
             account_id,
             GenesisSnarkAccountData {

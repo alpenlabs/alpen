@@ -31,6 +31,7 @@ workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-db-store-sled.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-asm-proto-checkpoint-types = { workspace = true, features = [

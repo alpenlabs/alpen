@@ -64,7 +64,7 @@ use strata_storage::{NodeStorage, create_node_storage};
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
-    let params = OLParams::new_empty(L1BlockCommitment::default());
+    let params = OLParams::default();
     let state = OLState::from_genesis_params(&params).expect("valid params");
     MemoryStateBaseLayer::new(state)
 }
