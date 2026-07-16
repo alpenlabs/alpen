@@ -91,9 +91,15 @@ jobs:
       - name: Install SP1 core runner override
         uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
 
-      - name: Build Cargo project
+      - name: Build alpen-client
         run: |
-          cargo build --locked --release -F sequencer -F debug-utils -F test-mode -F debug-asm -F prover --bin strata --bin strata-signer --bin alpen-client --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
+          cargo build --locked --release --bin alpen-client
+
+      - name: Build strata binaries from pinned rev
+        run: |
+          STRATA_BIN_DIR="$(CARGO_RELEASE=1 ./functional-tests/build_strata_bins.sh)"
+          echo "Strata binaries at: ${STRATA_BIN_DIR}"
+          echo "${STRATA_BIN_DIR}" >> "$GITHUB_PATH"
 
       - name: Run alpen EEST env in fntests
         env:
