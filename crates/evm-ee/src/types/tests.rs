@@ -58,7 +58,7 @@ fn create_test_header() -> Header {
         logs_bloom: Bloom::ZERO,
         difficulty: U256::from(12345u64),
         number: 1000u64,
-        gas_limit: 30_000_000u64,
+        gas_limit: 36_000_000u64,
         gas_used: 21_000u64,
         timestamp: 1234567890u64,
         extra_data: Bytes::from(vec![7u8, 8u8, 9u8]),
