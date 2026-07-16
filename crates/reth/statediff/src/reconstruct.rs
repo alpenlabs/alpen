@@ -19,10 +19,21 @@ use crate::{
 pub enum ReconstructError {
     #[error("MPT: {0}")]
     Mpt(#[from] strata_mpt::Error),
+
     #[error("sparse MPT: {0}")]
     SparseMpt(#[from] rsp_mpt::Error),
+
     #[error("DA apply: {0}")]
     Da(#[from] strata_da_framework::DaError),
+
+    #[error(
+        "missing storage trie for account {address} (hashed {hashed_address}) with storage root {storage_root}"
+    )]
+    MissingStorageTrie {
+        address: Address,
+        hashed_address: B256,
+        storage_root: B256,
+    },
 }
 
 #[cfg(feature = "chainspec")]
@@ -140,6 +151,12 @@ pub fn apply_batch_state_diff_to_ethereum_state(
                 }
 
                 if let Some(storage_diff) = diff.storage.get(address) {
+                    require_storage_trie_for_diff(
+                        state,
+                        *address,
+                        hashed_addr,
+                        state_account.storage_root,
+                    )?;
                     let acc_storage_trie = state.storage_tries.entry(hashed_addr).or_default();
                     for (slot_key, slot_value) in storage_diff.iter() {
                         let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
@@ -175,6 +192,12 @@ pub fn apply_batch_state_diff_to_ethereum_state(
         let current: Option<StateAccount> = state.state_trie.get_rlp(hashed_addr.as_slice())?;
 
         if let Some(mut state_account) = current {
+            require_storage_trie_for_diff(
+                state,
+                *address,
+                hashed_addr,
+                state_account.storage_root,
+            )?;
             let acc_storage_trie = state.storage_tries.entry(hashed_addr).or_default();
             for (slot_key, slot_value) in storage_diff.iter() {
                 let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
@@ -195,6 +218,27 @@ pub fn apply_batch_state_diff_to_ethereum_state(
     }
 
     Ok(())
+}
+
+/// Requires a storage trie when a diff updates an account with non-empty storage.
+///
+/// Missing storage tries are only invalid for non-empty roots because untouched
+/// slots must be preserved. Empty roots can safely start from a new trie.
+fn require_storage_trie_for_diff(
+    state: &EthereumState,
+    address: Address,
+    hashed_address: B256,
+    storage_root: B256,
+) -> Result<(), ReconstructError> {
+    if storage_root == EMPTY_ROOT || state.storage_tries.contains_key(&hashed_address) {
+        return Ok(());
+    }
+
+    Err(ReconstructError::MissingStorageTrie {
+        address,
+        hashed_address,
+        storage_root,
+    })
 }
 
 #[cfg(test)]
@@ -538,6 +582,47 @@ mod tests {
                     .collect(),
             ),
             private_key: None,
+        }
+    }
+
+    fn ethereum_state_with_account(address: Address, account: StateAccount) -> EthereumState {
+        let mut state = EthereumState {
+            state_trie: Default::default(),
+            storage_tries: Default::default(),
+        };
+        let hashed_addr: B256 = keccak(address).into();
+        state
+            .state_trie
+            .insert_rlp(hashed_addr.as_slice(), account)
+            .unwrap();
+        state
+    }
+
+    fn ethereum_storage_slot(state: &EthereumState, address: Address, slot_key: U256) -> U256 {
+        let hashed_addr: B256 = keccak(address).into();
+        state
+            .storage_tries
+            .get(&hashed_addr)
+            .and_then(|trie| {
+                trie.get_rlp::<U256>(&keccak(slot_key.to_be_bytes::<32>()))
+                    .unwrap()
+            })
+            .unwrap_or_default()
+    }
+
+    fn assert_missing_storage_trie(err: ReconstructError, address: Address, storage_root: B256) {
+        let hashed_address: B256 = keccak(address).into();
+        match err {
+            ReconstructError::MissingStorageTrie {
+                address: actual_address,
+                hashed_address: actual_hashed_address,
+                storage_root: actual_storage_root,
+            } => {
+                assert_eq!(actual_address, address);
+                assert_eq!(actual_hashed_address, hashed_address);
+                assert_eq!(actual_storage_root, storage_root);
+            }
+            other => panic!("expected missing storage trie error, got {other:?}"),
         }
     }
 
@@ -1131,6 +1216,140 @@ mod tests {
             canonical_state_root(&expected_state).unwrap(),
             "ethereum-state apply must match canonical post-state root"
         );
+    }
+
+    #[test]
+    fn account_update_rejects_missing_storage_trie_for_non_empty_root() {
+        let address = addr(0xD1);
+        let slot_key = slot(1);
+        let storage_root = hash(0xE1);
+        let mut account = state_account(100, 1, KECCAK_EMPTY);
+        account.storage_root = storage_root;
+        let mut state = ethereum_state_with_account(address, account);
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            Some(snapshot(100, 1, KECCAK_EMPTY)),
+            Some(snapshot(101, 1, KECCAK_EMPTY)),
+        );
+        storage_change(&mut block, address, slot_key, value(5), value(7));
+        let diff = roundtrip_batch_diff(&[block]);
+
+        let err = apply_batch_state_diff_to_ethereum_state(&mut state, &diff)
+            .expect_err("non-empty storage root without trie must fail");
+        assert_missing_storage_trie(err, address, storage_root);
+    }
+
+    #[test]
+    fn account_update_preserves_untouched_storage_slots() {
+        let address = addr(0xD2);
+        let slot_one = slot(1);
+        let slot_two = slot(2);
+        let mut state = ethereum_state_from_genesis_accounts([(
+            address,
+            genesis_account(100, 1, None, BTreeMap::from([(slot_one, value(5))])),
+        )])
+        .unwrap();
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            Some(snapshot(100, 1, KECCAK_EMPTY)),
+            Some(snapshot(101, 1, KECCAK_EMPTY)),
+        );
+        storage_change(&mut block, address, slot_two, U256::ZERO, value(7));
+        let diff = roundtrip_batch_diff(&[block]);
+
+        apply_batch_state_diff_to_ethereum_state(&mut state, &diff).unwrap();
+
+        assert_eq!(ethereum_storage_slot(&state, address, slot_one), value(5));
+        assert_eq!(ethereum_storage_slot(&state, address, slot_two), value(7));
+    }
+
+    #[test]
+    fn account_update_creates_storage_trie_for_empty_root() {
+        let address = addr(0xD3);
+        let slot_key = slot(1);
+        let mut state = ethereum_state_from_genesis_accounts([(
+            address,
+            genesis_account(100, 1, None, BTreeMap::new()),
+        )])
+        .unwrap();
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            Some(snapshot(100, 1, KECCAK_EMPTY)),
+            Some(snapshot(101, 1, KECCAK_EMPTY)),
+        );
+        storage_change(&mut block, address, slot_key, U256::ZERO, value(7));
+        let diff = roundtrip_batch_diff(&[block]);
+
+        apply_batch_state_diff_to_ethereum_state(&mut state, &diff).unwrap();
+
+        assert_eq!(ethereum_storage_slot(&state, address, slot_key), value(7));
+    }
+
+    #[test]
+    fn storage_only_update_rejects_missing_storage_trie_for_non_empty_root() {
+        let address = addr(0xD4);
+        let slot_key = slot(1);
+        let storage_root = hash(0xE4);
+        let mut account = state_account(100, 1, KECCAK_EMPTY);
+        account.storage_root = storage_root;
+        let mut state = ethereum_state_with_account(address, account);
+
+        let mut block = block_diff();
+        storage_change(&mut block, address, slot_key, value(5), value(7));
+        let diff = roundtrip_batch_diff(&[block]);
+
+        let err = apply_batch_state_diff_to_ethereum_state(&mut state, &diff)
+            .expect_err("non-empty storage root without trie must fail");
+        assert_missing_storage_trie(err, address, storage_root);
+    }
+
+    #[test]
+    fn storage_only_update_preserves_untouched_storage_slots() {
+        let address = addr(0xD5);
+        let slot_one = slot(1);
+        let slot_two = slot(2);
+        let mut state = ethereum_state_from_genesis_accounts([(
+            address,
+            genesis_account(100, 1, None, BTreeMap::from([(slot_one, value(5))])),
+        )])
+        .unwrap();
+
+        let mut block = block_diff();
+        storage_change(&mut block, address, slot_two, U256::ZERO, value(7));
+        let diff = roundtrip_batch_diff(&[block]);
+
+        apply_batch_state_diff_to_ethereum_state(&mut state, &diff).unwrap();
+
+        assert_eq!(ethereum_storage_slot(&state, address, slot_one), value(5));
+        assert_eq!(ethereum_storage_slot(&state, address, slot_two), value(7));
+    }
+
+    #[test]
+    fn storage_only_update_creates_storage_trie_for_empty_root() {
+        let address = addr(0xD6);
+        let slot_key = slot(1);
+        let mut state = ethereum_state_from_genesis_accounts([(
+            address,
+            genesis_account(100, 1, None, BTreeMap::new()),
+        )])
+        .unwrap();
+
+        let mut block = block_diff();
+        storage_change(&mut block, address, slot_key, U256::ZERO, value(7));
+        let diff = roundtrip_batch_diff(&[block]);
+
+        apply_batch_state_diff_to_ethereum_state(&mut state, &diff).unwrap();
+
+        assert_eq!(ethereum_storage_slot(&state, address, slot_key), value(7));
     }
 
     #[test]
