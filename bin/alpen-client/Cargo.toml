@@ -23,7 +23,12 @@ sequencer = [
 ]
 # SP1 remote proving for the EE chunk + acct provers. Required for
 # production; native-only test builds can drop this feature.
-sp1 = ["dep:zkaleido-sp1-host", "strata-paas/remote", "strata-zkvm-hosts/sp1"]
+sp1 = [
+  "dep:strata-zkvm-hosts",
+  "dep:zkaleido-sp1-host",
+  "strata-paas/remote",
+  "strata-zkvm-hosts?/sp1",
+]
 
 [[bin]]
 name = "alpen-client"
@@ -80,7 +85,7 @@ strata-proofimpl-predicate-keys.workspace = true
 strata-service.workspace = true
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
-strata-zkvm-hosts.workspace = true
+strata-zkvm-hosts = { workspace = true, optional = true }
 zkaleido.workspace = true
 zkaleido-sp1-host = { workspace = true, optional = true }
 

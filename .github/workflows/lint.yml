@@ -68,16 +68,11 @@ jobs:
       fail-fast: false
       matrix:
         crate:
-          - strata-state
-          # - strata-primitives # unsupported due to `secp256k1` FFI dependency
-          # - strata-dbtool # unsupported due to `rkyv` dependency
           # - alpen-client # unsupported due to `rkyv` dependency
           # - alpen-cli # unsupported due to `secp256k1` FFI dependency
-          # - strata-test-utils-btcio # unsupported due to `tokio::test` macro usage
-          # - strata-btcio # unsupported due to `tokio::test` macro usage
-          # - strata-key-derivation # unsupported due to `secp256k1` FFI dependency
-          - strata-csm-types
-          - strata-acct-types
+          - strata-ee-acct-types
+          - strata-ee-chain-types
+          - strata-simple-ee
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -145,8 +140,10 @@ jobs:
 
       - run: cargo hack check --locked
 
-      - name: Check strata no-default-features build
-        run: cargo check --locked --bin strata --no-default-features
+      # Native-only build used by test setups (drops SP1 remote proving).
+      # The bare no-default-features (fullnode-only) build is not maintained.
+      - name: Check alpen-client native-only build
+        run: cargo check --locked --bin alpen-client --no-default-features --features sequencer
 
   fmt:
     name: Check code formatting
