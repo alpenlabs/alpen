@@ -52,3 +52,4 @@ strata-codec.workspace = true
 strata-l1-txfmt.workspace = true
 strata-ol-params.workspace = true
 strata-predicate.workspace = true
+tempfile.workspace = true

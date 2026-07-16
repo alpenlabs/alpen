@@ -91,6 +91,10 @@ impl TaskStore for ProverTaskDbManager {
     fn count(&self) -> ProverResult<usize> {
         self.ops.count_tasks_blocking().map_err(db_err)
     }
+
+    fn remove(&self, key: &[u8]) -> ProverResult<bool> {
+        self.ops.delete_task_blocking(key.to_vec()).map_err(db_err)
+    }
 }
 
 impl ProverTaskDbManager {

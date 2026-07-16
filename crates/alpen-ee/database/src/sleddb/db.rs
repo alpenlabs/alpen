@@ -1262,6 +1262,72 @@ mod tests {
     }
 
     #[test]
+    fn backfill_chunk_work_indexes_runs_once_per_marker() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = Arc::new(SledDb::new(db).unwrap());
+
+        seed_legacy_chunk(&sled_db, test_chunk(0, 1, 2), ChunkStatus::Sealed);
+        seed_legacy_chunk(
+            &sled_db,
+            test_chunk(1, 2, 3),
+            ChunkStatus::ProofPending("task".to_string()),
+        );
+        seed_legacy_chunk(
+            &sled_db,
+            test_chunk(2, 3, 4),
+            ChunkStatus::ProofReady(hash_from_u8(4)),
+        );
+
+        let sealed_index_keys = |db: &EeNodeDBSled| -> Vec<u64> {
+            db.sealed_chunk_by_idx_tree
+                .iter()
+                .map(|item| item.unwrap().0)
+                .collect()
+        };
+        let pending_index_keys = |db: &EeNodeDBSled| -> Vec<u64> {
+            db.proof_pending_chunk_by_idx_tree
+                .iter()
+                .map(|item| item.unwrap().0)
+                .collect()
+        };
+
+        let config = SledDbConfig::new_with_constant_backoff(2, 0);
+        let ee_db = EeNodeDBSled::new(sled_db.clone(), config).unwrap();
+
+        assert_eq!(sealed_index_keys(&ee_db), vec![0]);
+        assert_eq!(pending_index_keys(&ee_db), vec![1]);
+        assert_eq!(
+            ee_db
+                .ee_db_maintenance_tree
+                .get(&CHUNK_WORK_INDEX_BACKFILL_MARKER)
+                .unwrap(),
+            Some(true)
+        );
+
+        // Flip chunk 2's row back to Sealed behind the indexes' back: with the
+        // marker set, re-opening the DB must not rebuild the indexes.
+        seed_legacy_chunk(&sled_db, test_chunk(2, 3, 4), ChunkStatus::Sealed);
+        let config = SledDbConfig::new_with_constant_backoff(2, 0);
+        let ee_db = EeNodeDBSled::new(sled_db.clone(), config).unwrap();
+        assert_eq!(
+            sealed_index_keys(&ee_db),
+            vec![0],
+            "marker must make the backfill a no-op"
+        );
+
+        // Clearing the marker (an interrupted backfill never set it) makes the
+        // next open rebuild both indexes from the chunk rows.
+        ee_db
+            .ee_db_maintenance_tree
+            .remove(&CHUNK_WORK_INDEX_BACKFILL_MARKER)
+            .unwrap();
+        let config = SledDbConfig::new_with_constant_backoff(2, 0);
+        let ee_db = EeNodeDBSled::new(sled_db, config).unwrap();
+        assert_eq!(sealed_index_keys(&ee_db), vec![0, 2]);
+        assert_eq!(pending_index_keys(&ee_db), vec![1]);
+    }
+
+    #[test]
     fn retry_on_tip_shift_retries_then_succeeds() {
         let config = SledDbConfig::new_with_constant_backoff(2, 0);
         let mut attempts = 0usize;

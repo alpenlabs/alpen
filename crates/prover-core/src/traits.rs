@@ -126,6 +126,12 @@ pub trait TaskStore: Send + Sync + 'static {
     /// work that was interrupted by a crash before it completed.
     fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>>;
     fn count(&self) -> ProverResult<usize>;
+    /// Removes a task record so the task can be resubmitted from scratch.
+    ///
+    /// Returns `true` if a record was removed. Callers gate this on the
+    /// record being terminal (see [`crate::Prover::reset_task`]); removing an
+    /// in-flight record would let the running attempt resurrect it.
+    fn remove(&self, key: &[u8]) -> ProverResult<bool>;
 }
 
 /// Pass an `Arc<impl TaskStore>` straight into the builder: the wrapping Arc
@@ -155,6 +161,9 @@ impl<T: TaskStore + ?Sized> TaskStore for Arc<T> {
     }
     fn count(&self) -> ProverResult<usize> {
         (**self).count()
+    }
+    fn remove(&self, key: &[u8]) -> ProverResult<bool> {
+        (**self).remove(key)
     }
 }
 

@@ -53,20 +53,16 @@ impl<T: TaskKey> RunningTask<T> {
     }
 
     fn from_stored_key(key: Vec<u8>) -> Option<Self> {
-        let task = match T::try_from(key.clone()) {
-            Ok(task) => task,
-            Err(_) => {
-                warn!(?key, "failed to decode task key, skipping");
-                return None;
-            }
-        };
+        let task = T::try_from(key.clone()).ok()?;
         let derived_key: Vec<u8> = task.clone().into();
+        // Round-trip drift means the task type's byte encoding is not
+        // canonical — a programming error in the `TaskKey` impl, not a
+        // runtime condition.
+        debug_assert_eq!(
+            derived_key, key,
+            "decoded task key did not round-trip through its TaskKey encoding"
+        );
         if derived_key != key {
-            warn!(
-                ?key,
-                ?derived_key,
-                "decoded task key did not round-trip, skipping"
-            );
             return None;
         }
 
@@ -208,6 +204,32 @@ impl<H: ProofSpec> Prover<H> {
         Ok(results.into_iter().map(|r| r.unwrap()).collect())
     }
 
+    /// Remove a terminal task record so the task can be resubmitted from
+    /// scratch.
+    ///
+    /// Returns `true` if the record was removed (or was already absent).
+    /// A non-terminal record is left in place and `false` is returned:
+    /// the in-flight attempt still owns it and will drive it to a terminal
+    /// state on its own.
+    ///
+    /// The check-then-remove is not atomic: two concurrent resetters can
+    /// interleave with a resubmit so that a freshly re-inserted record is
+    /// removed. That is self-healing — the next status poll sees the task
+    /// as absent and resubmits — costing at most a wasted proving run.
+    pub fn reset_task(&self, task: &H::Task) -> ProverResult<bool> {
+        let key: Vec<u8> = task.clone().into();
+        match self.task_store.get(&key)? {
+            None => Ok(true),
+            Some(record) => match record.status() {
+                TaskStatus::Completed | TaskStatus::PermanentFailure { .. } => {
+                    self.task_store.remove(&key)?;
+                    Ok(true)
+                }
+                _ => Ok(false),
+            },
+        }
+    }
+
     /// Get a receipt from the receipt store by task.
     ///
     /// Returns `None` if the store has no receipt for this task, or `Err` if
@@ -265,12 +287,14 @@ impl<H: ProofSpec> Prover<H> {
         };
         for record in retriable {
             let key = record.key().to_vec();
-            if let Some(task) = RunningTask::from_stored_key(key) {
-                let prover = Arc::clone(self);
-                tokio::spawn(async move {
-                    prover.run_task(task).await;
-                });
-            }
+            let Some(task) = RunningTask::from_stored_key(key.clone()) else {
+                warn!(?key, "skipping retriable task with undecodable key");
+                continue;
+            };
+            let prover = Arc::clone(self);
+            tokio::spawn(async move {
+                prover.run_task(task).await;
+            });
         }
     }
 
@@ -302,7 +326,8 @@ impl<H: ProofSpec> Prover<H> {
         info!(count = unfinished.len(), "recovering unfinished tasks");
         for record in unfinished {
             let key = record.key().to_vec();
-            let Some(task) = RunningTask::from_stored_key(key) else {
+            let Some(task) = RunningTask::from_stored_key(key.clone()) else {
+                warn!(?key, "skipping unfinished task with undecodable key");
                 continue;
             };
 
@@ -498,6 +523,12 @@ impl<H: ProofSpec> Prover<H> {
         self.mark_permanent_failure(task, format!("retries exhausted: {msg}"));
     }
 
+    #[tracing::instrument(skip_all, fields(
+        proof_spec = type_name::<H>(),
+        task_type = type_name::<H::Task>(),
+        program_type = type_name::<H::Program>(),
+        task = %task.task(),
+    ))]
     fn mark_permanent_failure(&self, task: &RunningTask<H::Task>, error: String) {
         let previous_status = self
             .task_store
@@ -515,22 +546,11 @@ impl<H: ProofSpec> Prover<H> {
 
         if should_log_permanent_failure(previous_status.as_ref(), &error) {
             error!(
-                proof_spec = type_name::<H>(),
-                task_type = type_name::<H::Task>(),
-                program_type = type_name::<H::Program>(),
-                task = %task.task(),
                 reason = %error,
                 "CRITICAL: proof task permanently failed; manual intervention may be required"
             );
         } else {
-            debug!(
-                proof_spec = type_name::<H>(),
-                task_type = type_name::<H::Task>(),
-                program_type = type_name::<H::Program>(),
-                task = %task.task(),
-                reason = %error,
-                "proof task remains permanently failed"
-            );
+            debug!(reason = %error, "proof task remains permanently failed");
         }
     }
 

@@ -1,5 +1,6 @@
 //! Prover task formatting implementations.
 
+use alpen_ee_common::{BATCH_TASK_KEY_TAG as ACCT_TASK_TAG, CHUNK_TASK_KEY_TAG as CHUNK_TASK_TAG};
 use serde::Serialize;
 use strata_paas::{TaskRecordData, TaskStatus};
 
@@ -50,11 +51,6 @@ impl From<&TaskStatus> for StatusInfo {
         }
     }
 }
-
-/// EE task-key prefix carried by the alpen-client's shared chunk+acct
-/// task tree. Documented in `bin/alpen-client/src/prover/storage.rs`.
-const CHUNK_TASK_TAG: u8 = b'c';
-const ACCT_TASK_TAG: u8 = b'a';
 
 /// Classifies an EE task key by its kind tag.
 ///

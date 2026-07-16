@@ -44,7 +44,9 @@ const FRONTIER_CAVEAT: &str =
 ///
 /// The command removes batch metadata for `idx >= --from-batch-idx`, deletes
 /// all unfinalized exec blocks at or above the first reverted block height,
-/// and cleans exact prover rows derivable from the affected batch/chunk ids.
+/// cleans exact prover rows derivable from the affected batch/chunk ids, and
+/// reverts the chunk-metadata suffix belonging to the reverted batches
+/// (including the status-partitioned chunk work indexes).
 /// Dry-run unless `--force` is passed. `--tx-export` writes raw affected
 /// transactions even during dry-run. If the rollback crosses the local
 /// accepted EE frontier, the command also rolls back EE account-state rows to
@@ -82,6 +84,14 @@ struct RevertPlan {
     block_deletions: Vec<BlockDeletionPlan>,
     chunk_artifacts: Vec<ChunkArtifactPlan>,
     batch_artifacts: Vec<BatchArtifactPlan>,
+    chunk_revert: Option<ChunkRevertPlan>,
+}
+
+/// Contiguous chunk-idx suffix to revert, derived from per-chunk `batch_idx`
+/// at plan time so it stays valid even after batch metadata is gone.
+struct ChunkRevertPlan {
+    from_idx: u64,
+    row_count: usize,
 }
 
 #[derive(Debug)]
@@ -201,6 +211,19 @@ pub(crate) async fn ee_revert_batches(
         }
     }
 
+    // Revert chunk metadata (including the status-partitioned work-index
+    // trees maintained by `revert_chunks_from`) so the decoupled chunk
+    // lifecycle cannot rediscover reverted chunks whose tasks and receipts
+    // were just deleted. The boundary was computed at plan time from chunk
+    // rows, independent of batch metadata, so this step is retry-safe.
+    if let Some(chunk_revert) = &plan.chunk_revert {
+        storage
+            .revert_chunks_from(chunk_revert.from_idx)
+            .await
+            .internal_error("Failed to revert EE chunk metadata")?;
+        plan.report.mutation.chunk_rows_reverted = chunk_revert.row_count;
+    }
+
     let revert_to_batch_idx = args.from_batch_idx - 1;
     storage
         .revert_batches(revert_to_batch_idx)
@@ -276,6 +299,7 @@ async fn build_plan(
     let mut affected_chunks = Vec::new();
     let mut chunk_artifacts = Vec::new();
     let mut batch_artifacts = Vec::new();
+    let mut linked_chunks = Vec::new();
     let mut block_to_batch = HashMap::new();
     let mut reverted_batch_blocks = HashSet::new();
 
@@ -338,32 +362,93 @@ async fn build_plan(
         });
 
         for chunk_id in chunk_ids {
-            let chunk_record = storage
-                .get_chunk_by_id(chunk_id)
-                .await
-                .internal_error("Failed to read affected EE chunk")?;
-            let task_key = encode_chunk_task_key(chunk_id);
-            let task_record = prover_db
-                .get_task(task_key.clone())
-                .internal_error("Failed to read EE chunk prover task")?;
-            let receipt_exists = prover_db
-                .get_chunk_receipt(&task_key)
-                .internal_error("Failed to read EE chunk receipt")?
-                .is_some();
-            let report_index = affected_chunks.len();
-            affected_chunks.push(build_affected_chunk_info(
-                batch.idx(),
-                chunk_id,
-                chunk_record,
-                &task_key,
-                task_record.as_ref(),
-                receipt_exists,
-            ));
-            chunk_artifacts.push(ChunkArtifactPlan {
-                report_index,
-                task_key,
+            linked_chunks.push((batch.idx(), chunk_id));
+        }
+    }
+
+    // Discover reverted chunks from chunk rows rather than batch->chunk
+    // linkage alone: every chunk records its `batch_idx`, and chunk indexes
+    // grow monotonically with batch order, so the chunks to revert are
+    // exactly the contiguous idx suffix with `batch_idx >= from_batch_idx`.
+    // Linkage can under-count when a reverted batch never had its chunk
+    // associations persisted.
+    let mut chunk_revert = None;
+    if let Some((latest_chunk, _)) = storage
+        .get_latest_chunk()
+        .await
+        .internal_error("Failed to read latest EE chunk")?
+    {
+        if latest_chunk.batch_idx() >= args.from_batch_idx {
+            let mut from_idx = 0;
+            for idx in (0..latest_chunk.idx()).rev() {
+                let (chunk, _) = storage
+                    .get_chunk_by_idx(idx)
+                    .await
+                    .internal_error("Failed to read EE chunk while locating revert boundary")?
+                    .ok_or_else(|| {
+                        DisplayedError::InternalError(
+                            "Missing EE chunk row inside contiguous chunk index space".to_string(),
+                            Box::new(idx),
+                        )
+                    })?;
+                if chunk.batch_idx() < args.from_batch_idx {
+                    from_idx = idx + 1;
+                    break;
+                }
+            }
+            let row_count = usize::try_from(latest_chunk.idx() - from_idx + 1)
+                .expect("chunk row count fits usize");
+            chunk_revert = Some(ChunkRevertPlan {
+                from_idx,
+                row_count,
             });
         }
+    }
+
+    let mut seen_chunk_ids = HashSet::new();
+    if let Some(plan) = &chunk_revert {
+        for idx in plan.from_idx..plan.from_idx + plan.row_count as u64 {
+            let chunk_record = storage
+                .get_chunk_by_idx(idx)
+                .await
+                .internal_error("Failed to read affected EE chunk")?
+                .ok_or_else(|| {
+                    DisplayedError::InternalError(
+                        "Missing EE chunk row inside contiguous chunk index space".to_string(),
+                        Box::new(idx),
+                    )
+                })?;
+            let chunk_id = chunk_record.0.id();
+            let chunk_batch_idx = chunk_record.0.batch_idx();
+            seen_chunk_ids.insert(chunk_id);
+            plan_chunk_artifacts(
+                prover_db,
+                chunk_batch_idx,
+                chunk_id,
+                Some(chunk_record),
+                &mut affected_chunks,
+                &mut chunk_artifacts,
+            )?;
+        }
+    }
+    // Linkage-only stragglers: chunk ids linked to a reverted batch whose
+    // chunk row is already gone can still have prover task/receipt rows.
+    for (batch_idx, chunk_id) in linked_chunks {
+        if !seen_chunk_ids.insert(chunk_id) {
+            continue;
+        }
+        let chunk_record = storage
+            .get_chunk_by_id(chunk_id)
+            .await
+            .internal_error("Failed to read affected EE chunk")?;
+        plan_chunk_artifacts(
+            prover_db,
+            batch_idx,
+            chunk_id,
+            chunk_record,
+            &mut affected_chunks,
+            &mut chunk_artifacts,
+        )?;
     }
 
     let local_accepted_frontier =
@@ -516,7 +601,7 @@ async fn build_plan(
 
     let orphan_notes = vec![
         "Old block witness rows are keyed by old block hash and are left in place; rebuilt blocks get new hashes and fresh witnesses.".to_string(),
-        "Chunk rows may remain orphaned after batch metadata is removed; alpen-client startup cleanup handles chunks that no longer belong to a batch.".to_string(),
+        "Chunk rows for the reverted suffix are removed together with their status work indexes; alpen-client startup cleanup remains a backstop for chunks that no longer belong to a batch.".to_string(),
         "DA/broadcast rows are not removed by this command.".to_string(),
     ];
 
@@ -528,6 +613,7 @@ async fn build_plan(
             latest_batch_idx_before: latest_batch_idx,
             first_reverted_block_height,
             first_reverted_block_hash: hash_hex(first_reverted_hash),
+            first_reverted_chunk_idx: chunk_revert.as_ref().map(|plan| plan.from_idx),
             local_accepted_frontier,
             account_state_rollback,
             warnings,
@@ -551,6 +637,7 @@ async fn build_plan(
         block_deletions,
         chunk_artifacts,
         batch_artifacts,
+        chunk_revert,
     })
 }
 
@@ -764,6 +851,40 @@ async fn account_state_rollback_info(
     }
 
     Ok(info)
+}
+
+/// Plans task/receipt deletion for one affected chunk and records it in the
+/// report.
+fn plan_chunk_artifacts(
+    prover_db: &EeProverDbSled,
+    batch_idx: u64,
+    chunk_id: ChunkId,
+    chunk_record: Option<(Chunk, ChunkStatus)>,
+    affected_chunks: &mut Vec<AffectedChunkInfo>,
+    chunk_artifacts: &mut Vec<ChunkArtifactPlan>,
+) -> Result<(), DisplayedError> {
+    let task_key = encode_chunk_task_key(chunk_id);
+    let task_record = prover_db
+        .get_task(task_key.clone())
+        .internal_error("Failed to read EE chunk prover task")?;
+    let receipt_exists = prover_db
+        .get_chunk_receipt(&task_key)
+        .internal_error("Failed to read EE chunk receipt")?
+        .is_some();
+    let report_index = affected_chunks.len();
+    affected_chunks.push(build_affected_chunk_info(
+        batch_idx,
+        chunk_id,
+        chunk_record,
+        &task_key,
+        task_record.as_ref(),
+        receipt_exists,
+    ));
+    chunk_artifacts.push(ChunkArtifactPlan {
+        report_index,
+        task_key,
+    });
+    Ok(())
 }
 
 fn build_affected_chunk_info(

@@ -96,6 +96,10 @@ impl TaskStore for InMemoryTaskStore {
     fn count(&self) -> ProverResult<usize> {
         Ok(self.records.read().len())
     }
+
+    fn remove(&self, key: &[u8]) -> ProverResult<bool> {
+        Ok(self.records.write().remove(key).is_some())
+    }
 }
 
 #[derive(Debug, Default)]

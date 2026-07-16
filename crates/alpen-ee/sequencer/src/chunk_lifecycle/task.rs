@@ -58,7 +58,7 @@ where
 {
     let storage = ctx.storage.as_ref();
 
-    let sealed_chunks = get_sealed_work_page(storage).await?;
+    let sealed_chunks = get_sealed_work_page(state, storage).await?;
     for (chunk, _status) in sealed_chunks {
         if let Err(e) = try_advance_sealed(ctx, &chunk).await {
             warn!(
@@ -83,14 +83,28 @@ where
     Ok(())
 }
 
-async fn get_sealed_work_page<S>(storage: &S) -> Result<Vec<(alpen_ee_common::Chunk, ChunkStatus)>>
+async fn get_sealed_work_page<S>(
+    state: &mut ChunkLifecycleState,
+    storage: &S,
+) -> Result<Vec<(alpen_ee_common::Chunk, ChunkStatus)>>
 where
     S: ChunkStorage,
 {
-    storage
-        .get_sealed_chunks(0, WORK_QUERY_LIMIT)
+    let start_idx = state.sealed_poll_idx();
+    let mut chunks = storage
+        .get_sealed_chunks(start_idx, WORK_QUERY_LIMIT)
         .await
-        .map_err(|e| eyre!("get_sealed_chunks(0): {e}"))
+        .map_err(|e| eyre!("get_sealed_chunks({start_idx}): {e}"))?;
+    if chunks.is_empty() && start_idx != 0 {
+        state.wrap_sealed_poll_idx();
+        chunks = storage
+            .get_sealed_chunks(0, WORK_QUERY_LIMIT)
+            .await
+            .map_err(|e| eyre!("get_sealed_chunks(0): {e}"))?;
+    }
+
+    state.advance_sealed_poll_idx(chunks.last().map(|(chunk, _)| chunk.idx()));
+    Ok(chunks)
 }
 
 async fn get_pending_work_page<S>(
@@ -123,6 +137,7 @@ mod tests {
 
     use alpen_ee_common::{Batch, Chunk, ChunkId, InMemoryStorage, ProofGenerationStatus};
     use async_trait::async_trait;
+    use strata_acct_types::Hash;
 
     use super::*;
     use crate::test_utils::test_hash;
@@ -184,6 +199,24 @@ mod tests {
             idx,
             test_hash((idx as u8).wrapping_add(seed)),
             test_hash((idx as u8).wrapping_add(seed).wrapping_add(1)),
+            idx + 1,
+            0,
+            vec![],
+        )
+    }
+
+    fn wide_test_hash(value: u64) -> Hash {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 1;
+        bytes[24..].copy_from_slice(&value.to_be_bytes());
+        Hash::from(bytes)
+    }
+
+    fn make_wide_chunk(idx: u64) -> Chunk {
+        Chunk::new(
+            idx,
+            wide_test_hash(idx.saturating_mul(2).saturating_add(1)),
+            wide_test_hash(idx.saturating_mul(2).saturating_add(2)),
             idx + 1,
             0,
             vec![],
@@ -256,6 +289,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sealed_cursor_advances_past_a_stuck_first_page() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+        save_genesis_batch(&storage).await;
+        for idx in 0..=WORK_QUERY_LIMIT as u64 {
+            storage.save_next_chunk(make_wide_chunk(idx)).await.unwrap();
+        }
+
+        // The recording prover intentionally leaves every chunk Sealed. The
+        // second cycle must nevertheless advance past the first full page.
+        let prover = Arc::new(RecordingChunkProver::default());
+        let ctx = ctx(prover.clone(), storage);
+        let mut state = ChunkLifecycleState::default();
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(prover.calls().len(), WORK_QUERY_LIMIT);
+
+        process_cycle(&mut state, &ctx).await.unwrap();
+        let calls = prover.calls();
+        assert_eq!(calls.len(), WORK_QUERY_LIMIT + 1);
+        assert_eq!(
+            calls.last(),
+            Some(&make_wide_chunk(WORK_QUERY_LIMIT as u64).id())
+        );
+    }
+
+    #[tokio::test]
     async fn sealed_cursor_wraps_to_reorged_lower_chunks() {
         let storage = Arc::new(InMemoryStorage::new_empty());
         save_genesis_batch(&storage).await;
@@ -276,9 +334,9 @@ mod tests {
 
         let prover = Arc::new(RecordingChunkProver::default());
         let ctx = ctx(prover.clone(), storage);
-        process_cycle(&mut ChunkLifecycleState::default(), &ctx)
-            .await
-            .unwrap();
+        let mut state = ChunkLifecycleState::default();
+        state.advance_sealed_poll_idx(Some(2));
+        process_cycle(&mut state, &ctx).await.unwrap();
 
         assert_eq!(prover.calls(), vec![chunk1.id(), chunk2.id()]);
     }

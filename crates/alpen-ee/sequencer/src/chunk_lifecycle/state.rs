@@ -7,10 +7,28 @@
 /// so a bad chunk near index 0 cannot starve later chunks.
 #[derive(Debug, Default)]
 pub(super) struct ChunkLifecycleState {
+    sealed_poll_idx: u64,
     pending_poll_idx: u64,
 }
 
 impl ChunkLifecycleState {
+    /// The first chunk index to consider when submitting sealed chunks.
+    pub(super) fn sealed_poll_idx(&self) -> u64 {
+        self.sealed_poll_idx
+    }
+
+    /// Advance the sealed-work cursor after processing a page of chunks.
+    pub(super) fn advance_sealed_poll_idx(&mut self, last_polled_idx: Option<u64>) {
+        if let Some(idx) = last_polled_idx {
+            self.sealed_poll_idx = idx.saturating_add(1);
+        }
+    }
+
+    /// Wrap the sealed-work cursor to the start of the chunk index space.
+    pub(super) fn wrap_sealed_poll_idx(&mut self) {
+        self.sealed_poll_idx = 0;
+    }
+
     /// The first chunk index to consider when polling pending proof tasks.
     pub(super) fn pending_poll_idx(&self) -> u64 {
         self.pending_poll_idx
@@ -34,14 +52,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pending_cursor_advances_and_wraps() {
+    fn work_cursors_advance_and_wrap_independently() {
         let mut state = ChunkLifecycleState::default();
+        assert_eq!(state.sealed_poll_idx(), 0);
         assert_eq!(state.pending_poll_idx(), 0);
 
+        state.advance_sealed_poll_idx(Some(3));
         state.advance_pending_poll_idx(Some(7));
+        assert_eq!(state.sealed_poll_idx(), 4);
         assert_eq!(state.pending_poll_idx(), 8);
 
+        state.wrap_sealed_poll_idx();
         state.wrap_pending_poll_idx();
+        assert_eq!(state.sealed_poll_idx(), 0);
         assert_eq!(state.pending_poll_idx(), 0);
     }
 }

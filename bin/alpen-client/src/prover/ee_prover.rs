@@ -16,26 +16,36 @@ use alpen_ee_common::{
     ProofGenerationStatus, ProofId, ProofRequestStatus,
 };
 use async_trait::async_trait;
-use strata_paas::{ProverError as PaasError, ProverHandle, TaskStatus};
+use strata_paas::{ProofSpec, ProverError as PaasError, ProverHandle, TaskStatus};
 use tracing::{debug, info, warn};
 
-use super::{
-    spec_acct::AcctSpec, spec_chunk::ChunkSpec, BatchTask, ChunkTask, EeBatchProofDbManager,
-};
+use super::{BatchTask, ChunkTask, EeBatchProofDbManager};
 
 /// New-paas-backed EE prover facade.
-pub(crate) struct PaasEeProver {
-    chunk_handle: ProverHandle<ChunkSpec>,
-    acct_handle: ProverHandle<AcctSpec>,
+///
+/// Generic over the chunk and acct [`ProofSpec`]s (production uses
+/// `ChunkSpec` / `AcctSpec`) so tests can drive the facade with lightweight
+/// mock specs instead of the full storage/witness wiring.
+pub(crate) struct PaasEeProver<CS, AS>
+where
+    CS: ProofSpec<Task = ChunkTask>,
+    AS: ProofSpec<Task = BatchTask>,
+{
+    chunk_handle: ProverHandle<CS>,
+    acct_handle: ProverHandle<AS>,
     batch_storage: Arc<dyn BatchStorage>,
     chunk_storage: Arc<dyn ChunkStorage>,
     batch_proofs: Arc<EeBatchProofDbManager>,
 }
 
-impl PaasEeProver {
+impl<CS, AS> PaasEeProver<CS, AS>
+where
+    CS: ProofSpec<Task = ChunkTask>,
+    AS: ProofSpec<Task = BatchTask>,
+{
     pub(crate) fn new(
-        chunk_handle: ProverHandle<ChunkSpec>,
-        acct_handle: ProverHandle<AcctSpec>,
+        chunk_handle: ProverHandle<CS>,
+        acct_handle: ProverHandle<AS>,
         batch_storage: Arc<dyn BatchStorage>,
         chunk_storage: Arc<dyn ChunkStorage>,
         batch_proofs: Arc<EeBatchProofDbManager>,
@@ -49,10 +59,53 @@ impl PaasEeProver {
         }
     }
 
+    /// Guards against a Completed chunk task whose receipt is missing.
+    ///
+    /// Such a task can never make progress on its own: `submit` short-circuits
+    /// on the existing record and the receipt is only written by a fresh
+    /// proving run, so a receipt-less Completed task would wedge the chunk in
+    /// a `ProofReady`/`ProofPending` oscillation while the acct proof waits
+    /// forever. Resets the stale task so the chunk lifecycle resubmits it.
+    ///
+    /// Returns `true` when the receipt is missing (task reset, chunk must
+    /// re-prove), `false` when the receipt is present.
+    fn reset_receiptless_chunk_task(&self, task: &ChunkTask) -> eyre::Result<bool> {
+        let chunk_id = task.0;
+        if self
+            .chunk_handle
+            .get_receipt(task)
+            .map_err(|e| eyre::eyre!("get chunk receipt {chunk_id:?}: {e}"))?
+            .is_some()
+        {
+            return Ok(false);
+        }
+
+        let removed = self
+            .chunk_handle
+            .reset_task(task)
+            .map_err(|e| eyre::eyre!("reset chunk task {chunk_id:?}: {e}"))?;
+        if removed {
+            warn!(
+                ?chunk_id,
+                "chunk task Completed but receipt missing; reset task for re-proof"
+            );
+        } else {
+            debug!(
+                ?chunk_id,
+                "chunk task no longer terminal; leaving in-flight attempt to regenerate receipt"
+            );
+        }
+        Ok(true)
+    }
+
     async fn observe_existing_chunk_task(&self, task: ChunkTask) -> eyre::Result<bool> {
         let chunk_id = task.0;
         match self.chunk_handle.get_status(&task) {
             Ok(TaskStatus::Completed) => {
+                if self.reset_receiptless_chunk_task(&task)? {
+                    // Report "no usable task" so the caller submits a fresh one.
+                    return Ok(false);
+                }
                 self.chunk_storage
                     .update_chunk_status(chunk_id, ChunkStatus::ProofReady(task.proof_id()))
                     .await?;
@@ -130,16 +183,11 @@ impl PaasEeProver {
             match status {
                 ChunkStatus::ProofReady(_) => {
                     let task = ChunkTask(chunk_id);
-                    if self
-                        .chunk_handle
-                        .get_receipt(&task)
-                        .map_err(|e| eyre::eyre!("get chunk receipt {chunk_id:?}: {e}"))?
-                        .is_none()
-                    {
+                    if self.reset_receiptless_chunk_task(&task)? {
                         debug!(
                             %batch_id,
                             ?chunk_id,
-                            "acct proof inputs not ready: chunk receipt missing"
+                            "acct proof inputs not ready: chunk receipt missing; chunk re-proves"
                         );
                         self.chunk_storage
                             .update_chunk_status(
@@ -167,7 +215,11 @@ impl PaasEeProver {
 }
 
 #[async_trait]
-impl ChunkProver for PaasEeProver {
+impl<CS, AS> ChunkProver for PaasEeProver<CS, AS>
+where
+    CS: ProofSpec<Task = ChunkTask>,
+    AS: ProofSpec<Task = BatchTask>,
+{
     async fn request_proof_generation(&self, chunk_id: ChunkId) -> eyre::Result<()> {
         let task = ChunkTask(chunk_id);
         let Some((_chunk, status)) = self.chunk_storage.get_chunk_by_id(chunk_id).await? else {
@@ -210,9 +262,16 @@ impl ChunkProver for PaasEeProver {
 
         let task = ChunkTask(chunk_id);
         match self.chunk_handle.get_status(&task) {
-            Ok(TaskStatus::Completed) => Ok(ProofGenerationStatus::Ready {
-                proof_id: task.proof_id(),
-            }),
+            Ok(TaskStatus::Completed) => {
+                if self.reset_receiptless_chunk_task(&task)? {
+                    // Route back through the sealed path so the task is
+                    // resubmitted and the receipt regenerated.
+                    return Ok(ProofGenerationStatus::NotStarted);
+                }
+                Ok(ProofGenerationStatus::Ready {
+                    proof_id: task.proof_id(),
+                })
+            }
             Ok(TaskStatus::PermanentFailure { error }) => {
                 Ok(ProofGenerationStatus::Failed { reason: error })
             }
@@ -229,7 +288,11 @@ impl ChunkProver for PaasEeProver {
 }
 
 #[async_trait]
-impl BatchProver for PaasEeProver {
+impl<CS, AS> BatchProver for PaasEeProver<CS, AS>
+where
+    CS: ProofSpec<Task = ChunkTask>,
+    AS: ProofSpec<Task = BatchTask>,
+{
     async fn request_proof_generation(
         &self,
         batch_id: BatchId,
@@ -288,5 +351,242 @@ impl BatchProver for PaasEeProver {
 
     async fn get_proof(&self, proof_id: ProofId) -> eyre::Result<Option<Proof>> {
         Ok(self.batch_proofs.get_proof_by_id(proof_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alpen_ee_common::{Batch, BatchStatus, Chunk, InMemoryStorage, ProofRequestStatus};
+    use alpen_ee_database::init_db_storage;
+    use reth_tasks::TaskManager;
+    use strata_acct_types::Hash;
+    use strata_paas::{
+        InMemoryReceiptStore, InMemoryTaskStore, ProverBuilder, ProverResult, ProverServiceBuilder,
+        TaskRecord, TaskStore,
+    };
+    use strata_proofimpl_alpen_chunk::EeChunkProgram;
+    use zkaleido::{
+        ProofType, PublicValues, ZkVmHost, ZkVmInputBuilder, ZkVmInputResult, ZkVmProgram,
+        ZkVmResult,
+    };
+
+    use super::*;
+    use crate::service_executor::ServiceExecutor;
+
+    /// Program stub — the specs below never let a task reach proving.
+    struct MockProgram;
+
+    impl ZkVmProgram for MockProgram {
+        type Input = ();
+        type Output = ();
+
+        fn name() -> String {
+            "mock".to_string()
+        }
+
+        fn proof_type() -> ProofType {
+            ProofType::Core
+        }
+
+        fn prepare_input<'a, B>(_input: &'a Self::Input) -> ZkVmInputResult<B::Input>
+        where
+            B: ZkVmInputBuilder<'a>,
+        {
+            B::new().build()
+        }
+
+        fn process_output<H>(_public_values: &PublicValues) -> ZkVmResult<Self::Output>
+        where
+            H: ZkVmHost,
+        {
+            Ok(())
+        }
+    }
+
+    struct MockChunkSpec;
+
+    #[async_trait]
+    impl ProofSpec for MockChunkSpec {
+        type Task = ChunkTask;
+        type Program = MockProgram;
+
+        async fn fetch_input(&self, _task: &Self::Task) -> ProverResult<()> {
+            Err(PaasError::TransientFailure(
+                "mock chunk spec never proves".to_string(),
+            ))
+        }
+    }
+
+    struct MockAcctSpec;
+
+    #[async_trait]
+    impl ProofSpec for MockAcctSpec {
+        type Task = BatchTask;
+        type Program = MockProgram;
+
+        async fn fetch_input(&self, _task: &Self::Task) -> ProverResult<()> {
+            Err(PaasError::TransientFailure(
+                "mock acct spec never proves".to_string(),
+            ))
+        }
+    }
+
+    fn hash_from_u8(value: u8) -> Hash {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 1;
+        bytes[31] = value;
+        Hash::from(bytes)
+    }
+
+    struct Fixture {
+        prover: PaasEeProver<MockChunkSpec, MockAcctSpec>,
+        storage: Arc<InMemoryStorage>,
+        chunk_task_store: Arc<InMemoryTaskStore>,
+        batch_id: BatchId,
+        chunk_id: ChunkId,
+        // Dropping the manager kills the service loops; direct handle
+        // accessors keep working, but hold it for the test's lifetime anyway.
+        _task_manager: TaskManager,
+        _db_dir: tempfile::TempDir,
+    }
+
+    /// One batch (idx 1) with one chunk in `ProofReady`, a `Completed` chunk
+    /// task record, and an **empty** chunk receipt store.
+    async fn receiptless_ready_chunk_fixture() -> Fixture {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+
+        let batch = Batch::new(1, hash_from_u8(1), hash_from_u8(2), 10, Vec::new()).unwrap();
+        let batch_id = batch.id();
+        let chunk = Chunk::new(0, hash_from_u8(1), hash_from_u8(2), 10, 1, Vec::new());
+        let chunk_id = chunk.id();
+
+        storage
+            .batch_id_to_idx
+            .write()
+            .unwrap()
+            .insert(batch_id, batch.idx());
+        storage
+            .batches
+            .write()
+            .unwrap()
+            .insert(batch.idx(), (batch, BatchStatus::Sealed));
+        storage
+            .chunk_id_to_idx
+            .write()
+            .unwrap()
+            .insert(chunk_id, chunk.idx());
+        storage.chunks.write().unwrap().insert(
+            chunk.idx(),
+            (chunk, ChunkStatus::ProofReady(hash_from_u8(2))),
+        );
+        storage
+            .batch_chunks
+            .write()
+            .unwrap()
+            .insert(batch_id, vec![chunk_id]);
+
+        let chunk_task_store = Arc::new(InMemoryTaskStore::new());
+        let chunk_task_key: Vec<u8> = ChunkTask(chunk_id).into();
+        chunk_task_store
+            .insert(TaskRecord::new(chunk_task_key, TaskStatus::Completed))
+            .unwrap();
+
+        let task_manager = TaskManager::current();
+        let executor = ServiceExecutor::from_reth(task_manager.executor());
+
+        let chunk_prover = ProverBuilder::new(MockChunkSpec)
+            .task_store(chunk_task_store.clone())
+            .receipt_store(InMemoryReceiptStore::new())
+            .native(EeChunkProgram::native_host());
+        let chunk_handle = ProverServiceBuilder::new(chunk_prover)
+            .launch(&executor)
+            .await
+            .unwrap();
+
+        let acct_prover = ProverBuilder::new(MockAcctSpec)
+            .task_store(InMemoryTaskStore::new())
+            .native(EeChunkProgram::native_host());
+        let acct_handle = ProverServiceBuilder::new(acct_prover)
+            .launch(&executor)
+            .await
+            .unwrap();
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let dbs = init_db_storage(db_dir.path(), 3).unwrap();
+        let batch_proofs = Arc::new(EeBatchProofDbManager::new(dbs.prover_db()));
+
+        let prover = PaasEeProver::new(
+            chunk_handle,
+            acct_handle,
+            storage.clone(),
+            storage.clone(),
+            batch_proofs,
+        );
+
+        Fixture {
+            prover,
+            storage,
+            chunk_task_store,
+            batch_id,
+            chunk_id,
+            _task_manager: task_manager,
+            _db_dir: db_dir,
+        }
+    }
+
+    /// A `ProofReady` chunk whose receipt is missing must not wedge the batch
+    /// in a `ProofReady`/`ProofPending` oscillation: the acct gate reverts the
+    /// chunk to `ProofPending` AND resets the stale `Completed` task so the
+    /// chunk lifecycle resubmits it.
+    #[tokio::test]
+    async fn acct_gate_reverts_receiptless_ready_chunk_and_resets_task() {
+        let fx = receiptless_ready_chunk_fixture().await;
+
+        let status = BatchProver::request_proof_generation(&fx.prover, fx.batch_id)
+            .await
+            .unwrap();
+        assert!(matches!(status, ProofRequestStatus::WaitingForInputs));
+
+        let (_, chunk_status) = fx
+            .storage
+            .get_chunk_by_id(fx.chunk_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(chunk_status, ChunkStatus::ProofPending(_)));
+
+        let chunk_task_key: Vec<u8> = ChunkTask(fx.chunk_id).into();
+        assert!(
+            fx.chunk_task_store.get(&chunk_task_key).unwrap().is_none(),
+            "stale Completed task must be removed so the chunk can resubmit"
+        );
+
+        // The chunk lifecycle's next poll now routes back through the sealed
+        // path (resubmission) instead of flipping the chunk ProofReady again.
+        let proof_status = ChunkProver::check_proof_status(&fx.prover, fx.chunk_id)
+            .await
+            .unwrap();
+        assert!(matches!(proof_status, ProofGenerationStatus::NotStarted));
+    }
+
+    /// `check_proof_status` itself must not report a receipt-less Completed
+    /// task as Ready (that is the other half of the oscillation).
+    #[tokio::test]
+    async fn check_proof_status_resets_completed_task_with_missing_receipt() {
+        let fx = receiptless_ready_chunk_fixture().await;
+
+        // Put the chunk in ProofPending so status falls through to the task.
+        fx.storage
+            .update_chunk_status(fx.chunk_id, ChunkStatus::ProofPending("task".to_string()))
+            .await
+            .unwrap();
+
+        let proof_status = ChunkProver::check_proof_status(&fx.prover, fx.chunk_id)
+            .await
+            .unwrap();
+        assert!(matches!(proof_status, ProofGenerationStatus::NotStarted));
+
+        let chunk_task_key: Vec<u8> = ChunkTask(fx.chunk_id).into();
+        assert!(fx.chunk_task_store.get(&chunk_task_key).unwrap().is_none());
     }
 }
