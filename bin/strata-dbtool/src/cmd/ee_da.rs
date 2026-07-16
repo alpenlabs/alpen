@@ -265,7 +265,7 @@ mod tests {
                 timestamp: 0,
                 base_fee: 0,
                 gas_used: 0,
-                gas_limit: 30_000_000,
+                gas_limit: 36_000_000,
             },
             state_diff: BatchStateDiff::new(),
         }

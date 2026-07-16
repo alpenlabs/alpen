@@ -73,7 +73,7 @@ mod tests {
             timestamp: 1_700_000_000,
             base_fee_per_gas: Some(1_000_000_000),
             gas_used: 15_000_000,
-            gas_limit: 30_000_000,
+            gas_limit: 36_000_000,
             ..Default::default()
         };
         let summary = summarize_header(&header).expect("mapping must succeed");
@@ -82,7 +82,7 @@ mod tests {
         assert_eq!(summary.timestamp, 1_700_000_000);
         assert_eq!(summary.base_fee, 1_000_000_000);
         assert_eq!(summary.gas_used, 15_000_000);
-        assert_eq!(summary.gas_limit, 30_000_000);
+        assert_eq!(summary.gas_limit, 36_000_000);
     }
 
     #[test]
