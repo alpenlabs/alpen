@@ -20,18 +20,39 @@ pub struct BridgeParams {
     max_withdrawal_descriptor_len: u32,
 }
 
-/// Raw mirror for deserialization. Serde and SSZ decode into this first,
-/// then validate via [`BridgeParams::new_with_descriptor_limit`].
-#[derive(Deserialize, Decode)]
+/// Raw mirror for SSZ decoding. SSZ decodes into this first,
+/// then validates via [`BridgeParams::new_with_descriptor_limit`].
+#[derive(Decode)]
 struct BridgeParamsRaw {
     denomination: u64,
     max_withdrawal_amount: Option<u64>,
     max_withdrawal_descriptor_len: u32,
 }
 
+/// Raw mirror for serde deserialization.
+///
+/// `max_withdrawal_amount` must be present so config explicitly spells an
+/// uncapped policy as `null`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BridgeParamsSerdeRaw {
+    denomination: u64,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    max_withdrawal_amount: Option<u64>,
+    max_withdrawal_descriptor_len: u32,
+}
+
+fn deserialize_required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
+}
+
 impl<'de> Deserialize<'de> for BridgeParams {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = BridgeParamsRaw::deserialize(deserializer)?;
+        let raw = BridgeParamsSerdeRaw::deserialize(deserializer)?;
         Self::new_with_descriptor_limit(
             raw.denomination,
             raw.max_withdrawal_amount,
@@ -262,6 +283,25 @@ mod tests {
     #[test]
     fn serde_rejects_invalid_cap() {
         let json = r#"{"denomination":100000000,"max_withdrawal_amount":150000000,"max_withdrawal_descriptor_len":81}"#;
+        assert!(serde_json::from_str::<BridgeParams>(json).is_err());
+    }
+
+    #[test]
+    fn serde_accepts_explicit_null_cap() {
+        let json = r#"{"denomination":100000000,"max_withdrawal_amount":null,"max_withdrawal_descriptor_len":81}"#;
+        let params: BridgeParams = serde_json::from_str(json).expect("explicit null cap is valid");
+        assert_eq!(params.max_withdrawal_amount(), None);
+    }
+
+    #[test]
+    fn serde_rejects_missing_cap() {
+        let json = r#"{"denomination":100000000,"max_withdrawal_descriptor_len":81}"#;
+        assert!(serde_json::from_str::<BridgeParams>(json).is_err());
+    }
+
+    #[test]
+    fn serde_rejects_typo_cap_field() {
+        let json = r#"{"denomination":100000000,"max_withdrawal_amunt":null,"max_withdrawal_descriptor_len":81}"#;
         assert!(serde_json::from_str::<BridgeParams>(json).is_err());
     }
 
