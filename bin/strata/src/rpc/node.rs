@@ -241,9 +241,9 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .ok_or_else(|| internal_error("OL sync status not available"))?;
 
         Ok(match tag {
-            OLBlockTag::Latest => sync_status.tip,
-            OLBlockTag::Confirmed => sync_status.confirmed_epoch.to_block_commitment(),
-            OLBlockTag::Finalized => sync_status.finalized_epoch.to_block_commitment(),
+            OLBlockTag::Latest => sync_status.tip(),
+            OLBlockTag::Confirmed => sync_status.confirmed_epoch().to_block_commitment(),
+            OLBlockTag::Finalized => sync_status.finalized_epoch().to_block_commitment(),
         })
     }
 
@@ -300,7 +300,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         let finalized_slot = self
             .provider
             .get_ol_sync_status()
-            .map(|css| css.finalized_epoch.last_slot())
+            .map(|css| css.finalized_epoch().last_slot())
             .unwrap_or(0);
 
         let mut chain = Vec::new();
@@ -735,14 +735,14 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .ok_or_else(|| internal_error("OL sync status not available"))?;
 
         let tip = RpcOLBlockInfo::new(
-            *chain_sync_status.tip.blkid(),
-            chain_sync_status.tip.slot(),
-            chain_sync_status.tip_epoch,
-            chain_sync_status.tip_is_terminal,
+            *chain_sync_status.tip().blkid(),
+            chain_sync_status.tip().slot(),
+            chain_sync_status.tip_epoch(),
+            chain_sync_status.tip_is_terminal(),
         );
-        let confirmed = chain_sync_status.confirmed_epoch;
-        let finalized = chain_sync_status.finalized_epoch;
-        let latest = chain_sync_status.prev_epoch;
+        let confirmed = chain_sync_status.confirmed_epoch();
+        let finalized = chain_sync_status.finalized_epoch();
+        let latest = chain_sync_status.recently_complete_epoch();
 
         Ok(RpcOLChainStatus::new(tip, confirmed, finalized, latest))
     }
@@ -843,7 +843,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             let is_finalized = self
                 .provider
                 .get_ol_sync_status()
-                .is_some_and(|sync_status| sync_status.finalized_epoch.epoch() >= epoch);
+                .is_some_and(|sync_status| sync_status.finalized_epoch().epoch() >= epoch);
 
             if is_finalized {
                 RpcCheckpointConfStatus::Finalized { l1_reference }
@@ -1035,7 +1035,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .get_ol_sync_status()
             .ok_or_else(|| internal_error("OL sync status not available"))?;
         if let Some(current_seq_no) = self
-            .current_snark_account_seq_no(account_id, sync_status.tip)
+            .current_snark_account_seq_no(account_id, sync_status.tip())
             .await?
         {
             // Account state stores the next operation seqno. Published manifests
@@ -1046,7 +1046,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 )));
             }
         }
-        for epoch in creation_epoch..=sync_status.tip_epoch {
+        for epoch in creation_epoch..=sync_status.tip_epoch() {
             let Some(records) = self
                 .provider
                 .get_account_update_records(epoch, account_id)
@@ -1246,7 +1246,7 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             .provider
             .get_ol_sync_status()
             .ok_or_else(|| internal_error("OL sync status not available"))?
-            .tip
+            .tip()
             .blkid();
 
         let mut summaries = Vec::with_capacity(count as usize);

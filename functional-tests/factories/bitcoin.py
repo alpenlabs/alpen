@@ -17,7 +17,7 @@ class BitcoinFactory(flexitest.Factory):
     Factory for creating Bitcoin regtest nodes.
 
     Usage:
-        factory = BitcoinFactory(range(18443, 18543))
+        factory = BitcoinFactory(range(18443, 18643))
         bitcoin = factory.create_regtest()
         rpc = bitcoin.create_rpc()
     """

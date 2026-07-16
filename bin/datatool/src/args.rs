@@ -158,6 +158,12 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
+        description = "output file path for an alpen-cli network profile toml derived from these params"
+    )]
+    pub(crate) cli_config: Option<PathBuf>,
+
+    #[argh(
+        option,
         description = "network name / magic bytes (default ALPN)",
         short = 'n'
     )]
@@ -184,7 +190,11 @@ pub(crate) struct SubcAsmParams {
     )]
     pub(crate) op_pks: Option<PathBuf>,
 
-    #[argh(option, description = "deposit amount in sats (default \"10 BTC\")")]
+    #[argh(
+        option,
+        description = "deposit amount in sats; must equal the OL params bridge denomination \
+                       (defaults to it)"
+    )]
     pub(crate) deposit_sats: Option<String>,
 
     #[argh(

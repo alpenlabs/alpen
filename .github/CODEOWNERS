@@ -59,7 +59,7 @@
 /crates/test-utils/ @voidash @delbonis
 
 # Binaries
-/bin/alpen-client/ @storopoli @sapinb @bewakes
+/bin/alpen-client/ @irnb @sapinb @evgenyzdanovich @prajwolrg
 /bin/strata/ @storopoli @krsnapaudel @bewakes
 /bin/alpen-cli/ @Zk2u @krsnapaudel @voidash
 /bin/datatool/ @prajwolrg @krsnapaudel @voidash

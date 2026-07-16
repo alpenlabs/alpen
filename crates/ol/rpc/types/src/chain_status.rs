@@ -63,7 +63,7 @@ pub struct RpcOLChainStatus {
     /// Finalized epoch commitment.
     pub finalized: EpochCommitment,
 
-    /// Latest epoch terminal block processed by the OL fork-choice manager.
+    /// Latest epoch terminal block processed.
     pub latest: EpochCommitment,
 }
 

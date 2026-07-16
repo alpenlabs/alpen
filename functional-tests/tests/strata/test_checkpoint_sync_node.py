@@ -13,7 +13,7 @@ import flexitest
 
 from common.base_test import BaseTest
 from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
-from common.rpc_types.strata import AccountEpochSummary, ChainSyncStatus
+from common.rpc_types.strata import AccountEpochSummary, ChainSyncStatus, EpochCommitment
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
@@ -117,7 +117,7 @@ def check_summaries_equivalent(seq_summary: AccountEpochSummary, node_summary: A
         assert su == nu
 
 
-def check_commitment_matches_checkpoint(seq_rpc, epoch: int, commitment: dict):
+def check_commitment_matches_checkpoint(seq_rpc, epoch: int, commitment: EpochCommitment):
     """Anchors the reconstructed epoch commitment to the published checkpoint.
 
     The terminal blkid hashes the reconstructed header (which commits to
@@ -139,4 +139,18 @@ def check_commitment_matches_checkpoint(seq_rpc, epoch: int, commitment: dict):
 def mine_and_get_status(strata: StrataService, btc_rpc) -> ChainSyncStatus:
     """Mines L1 blocks so OL checkpoints confirm, then returns the node's status."""
     btc_rpc.proxy.generatetoaddress(2, btc_rpc.proxy.getnewaddress())
-    return strata.get_sync_status()
+    status = strata.get_sync_status()
+    check_epoch_ordering_invariant(status)
+    return status
+
+
+def check_epoch_ordering_invariant(status: ChainSyncStatus):
+    """The latest (recently complete) epoch can never lag confirmed or finalized."""
+    tip = status["tip"]["epoch"]
+    latest = status["latest"]["epoch"]
+    confirmed = status["confirmed"]["epoch"]
+    finalized = status["finalized"]["epoch"]
+    assert tip >= latest >= confirmed >= finalized, (
+        f"epoch ordering violated: tip={tip}, latest={latest},"
+        "confirmed={confirmed}, finalized={finalized}"
+    )

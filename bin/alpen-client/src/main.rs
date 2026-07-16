@@ -1,4 +1,14 @@
 //! Reth node for the Alpen codebase.
+//!
+//! # Logging
+//!
+//! Alpen (non-reth) logs carry a `component = "alpen"` field so they can be
+//! filtered apart from the embedded reth logs in monitoring. The field is
+//! attached via `info_span!(..., component = "alpen")` spans, so it is only
+//! present while those spans are enabled. Run this crate with the `alpen_client`
+//! target at INFO or a more verbose level to get the tags: lowering it (e.g.
+//! `RUST_LOG=alpen_client=warn`) or capping the compile-time level below info
+//! (`tracing/release_max_level_*`) disables the spans and silently drops the tag.
 
 mod dummy_ol_client;
 #[cfg(feature = "sequencer")]
@@ -35,7 +45,7 @@ use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
 #[cfg(feature = "sequencer")]
-use alpen_ee_exec_chain::init_exec_chain_state_from_storage;
+use alpen_ee_exec_chain::{init_exec_chain_state_from_storage, ExecChainState};
 #[cfg(feature = "sequencer")]
 use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
 use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
@@ -43,9 +53,10 @@ use alpen_ee_ol_tracker::init_ol_tracker_state;
 use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcServer};
 #[cfg(feature = "sequencer")]
 use alpen_ee_sequencer::{
-    block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
+    block_builder_task, build_ol_chain_tracker, init_batch_builder_state, init_lifecycle_state,
+    init_ol_chain_tracker_state, sealing_policy::block_count_policy::BlockCountPolicy,
+    BatchBuilderState, BatchLifecycleState, BlockBuilderConfig, OLChainTrackerState,
 };
-use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
 use alpen_reth_evm::evm::AlpenEvmFactory;
 #[cfg(feature = "sequencer")]
 use alpen_reth_exex::{AccessedStateGenerator, StateDiffGenerator};
@@ -94,7 +105,7 @@ use tokio::{
     runtime::Handle,
     sync::{mpsc, watch},
 };
-use tracing::{error, info};
+use tracing::{error, info, info_span, Instrument};
 
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
@@ -158,6 +169,18 @@ const DEFAULT_SP1_DEADLINE_SECS: u64 = 4 * 60 * 60;
 #[cfg(feature = "sequencer")]
 const DEFAULT_BATCH_EVENT_CHANNEL_CAPACITY: usize = 64;
 
+/// Startup state that only the EE sequencer needs.
+///
+/// Bundled into one value so it can be gated behind a single runtime
+/// `--sequencer` check and carried as a single `Option`.
+#[cfg(feature = "sequencer")]
+struct SequencerBootState {
+    ol_chain_tracker: OLChainTrackerState,
+    exec_chain: ExecChainState,
+    batch_builder: BatchBuilderState<BlockCountPolicy>,
+    batch_lifecycle: BatchLifecycleState,
+}
+
 fn main() {
     sigsegv_handler::install();
 
@@ -187,9 +210,10 @@ fn main() {
             let health_check_addr = format!("{}:{}", ext.health_check_host, ext.health_check_port);
             let _health_check_handle =
                 start_health_check_server(health_check_addr.clone(), health_check_state.clone())
+                    .instrument(info_span!("start_health_check_server", component = "alpen"))
                     .await
                     .context("failed to start health check server")?;
-            info!(%health_check_addr, "health check server started");
+            info!(target: "alpen-client", component = "alpen", %health_check_addr, "health check server started");
 
             // --- CONFIGS ---
 
@@ -211,11 +235,10 @@ fn main() {
             // TODO(STR-2982): read config, params from file
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
-            info!(blockhash=%genesis_info.blockhash(), "EE genesis info");
+            info!(target: "alpen-client", component = "alpen", blockhash=%genesis_info.blockhash(), "EE genesis info");
             let params = load_ee_params(&ext.ee_params)?;
             validate_ee_params_genesis(&params, &genesis_info)?;
-
-            info!(?params, sequencer = ext.sequencer, "Starting EE Node");
+            info!(target: "alpen-client", component = "alpen", ?params, sequencer = ext.sequencer, "Starting EE Node");
 
             // Resolve btcio writer config up front so flag misuse surfaces before I/O.
             #[cfg(feature = "sequencer")]
@@ -286,7 +309,7 @@ fn main() {
                 use strata_identifiers::Buf32;
                 use strata_primitives::EpochCommitment;
                 let genesis_epoch = EpochCommitment::new(0, 0, OLBlockId::from(Buf32([1; 32])));
-                info!(target: "alpen-client", "Using dummy OL client (no real OL connection)");
+                info!(target: "alpen-client", component = "alpen", "Using dummy OL client (no real OL connection)");
                 OLClientKind::Dummy(DummyOLClient { genesis_epoch })
             } else {
                 let ol_url = ext.ol_client_url.as_ref().ok_or_else(|| {
@@ -313,37 +336,65 @@ fn main() {
             // Fetch the genesis epoch commitment from the OL client once at startup.
             let genesis_epoch = ol_client
                 .account_genesis_epoch()
+                .instrument(info_span!("account_genesis_epoch", component = "alpen"))
                 .await
                 .context("failed to fetch account genesis epoch from OL")?;
 
-            ensure_genesis(config.as_ref(), &genesis_epoch, storage.as_ref())
-                .await
-                .context("genesis should not fail")?;
+            ensure_genesis(
+                config.as_ref(),
+                &genesis_epoch,
+                storage.as_ref(),
+                ext.sequencer,
+            )
+            .instrument(info_span!("ensure_genesis", component = "alpen"))
+            .await
+            .context("genesis should not fail")?;
 
             let ol_chain_status = chain_status_checked(ol_client.as_ref())
+                .instrument(info_span!("chain_status_check", component = "alpen"))
                 .await
                 .context("cannot fetch OL chain status")?;
 
             let ol_tracker_state = init_ol_tracker_state(ol_chain_status, storage.as_ref())
+                .instrument(info_span!("init_ol_tracker", component = "alpen"))
                 .await
                 .context("ol tracker state initialization should not fail")?;
 
+            // Sequencer-only startup state. Gated on the runtime `--sequencer` flag.
             #[cfg(feature = "sequencer")]
-            let ol_chain_tracker_state =
-                init_ol_chain_tracker_state(storage.as_ref(), ol_client.as_ref())
+            let sequencer_boot_state = if ext.sequencer {
+                let ol_chain_tracker =
+                    init_ol_chain_tracker_state(storage.as_ref(), ol_client.as_ref())
+                        .instrument(info_span!("init_ol_chain_tracker", component = "alpen"))
+                        .await
+                        .context("ol chain tracker state initialization should not fail")?;
+                let exec_chain = init_exec_chain_state_from_storage(storage.as_ref())
+                    .instrument(info_span!("init_exec_chain", component = "alpen"))
                     .await
-                    .context("ol chain tracker state initialization should not fail")?;
-
-            #[cfg(feature = "sequencer")]
-            let exec_chain_state = init_exec_chain_state_from_storage(storage.as_ref())
-                .await
-                .context("exec chain state initialization should not fail")?;
+                    .context("exec chain state initialization should not fail")?;
+                let batch_builder = init_batch_builder_state(storage.as_ref())
+                    .instrument(info_span!("init_batch_builder", component = "alpen"))
+                    .await
+                    .context("batch builder state initialization should not fail")?;
+                let batch_lifecycle = init_lifecycle_state(storage.as_ref())
+                    .instrument(info_span!("init_lifecycle", component = "alpen"))
+                    .await
+                    .context("batch lifecycle state initialization should not fail")?;
+                Some(SequencerBootState {
+                    ol_chain_tracker,
+                    exec_chain,
+                    batch_builder,
+                    batch_lifecycle,
+                })
+            } else {
+                None
+            };
 
             let initial_preconf_head = {
                 #[cfg(feature = "sequencer")]
                 {
-                    if ext.sequencer {
-                        exec_chain_state.tip_blocknumhash()
+                    if let Some(boot) = sequencer_boot_state.as_ref() {
+                        boot.exec_chain.tip_blocknumhash()
                     } else {
                         // In non-sequencer mode, we only have the hash from OL tracker.
                         // Use block number 0 as initial value; it will be updated by gossip.
@@ -359,14 +410,6 @@ fn main() {
                     BlockNumHash::new(hash, 0)
                 }
             };
-
-            let batch_builder_state = init_batch_builder_state(storage.as_ref())
-                .await
-                .context("batch builder state initialization should not fail")?;
-
-            let batch_lifecycle_state = init_lifecycle_state(storage.as_ref())
-                .await
-                .context("batch lifecycle state initialization should not fail")?;
             // --- INITIALIZE SERVICES ---
 
             // Create gossip channel before building the node so we can register it early
@@ -398,22 +441,22 @@ fn main() {
             let status_watcher = ol_tracker.ol_status_watcher();
 
             let mut node_builder = builder
-                .node(AlpenEthereumNode::new(node_args))
-                // Register Alpen gossip RLPx subprotocol
-                .on_component_initialized({
-                    let gossip_tx = gossip_tx.clone();
-                    move |node| {
-                        // Add the custom RLPx subprotocol before node fully starts
-                        // See: crates/reth/node/src/gossip/
-                        let handler =
-                            AlpenGossipProtocolHandler::new(AlpenGossipState::new(gossip_tx));
-                        node.components
-                            .network
-                            .add_rlpx_sub_protocol(handler.into_rlpx_sub_protocol());
-                        info!(target: "alpen-gossip", "Registered Alpen gossip RLPx subprotocol");
-                        Ok(())
-                    }
-                });
+                    .node(AlpenEthereumNode::new(node_args))
+                    // Register Alpen gossip RLPx subprotocol
+                    .on_component_initialized({
+                        let gossip_tx = gossip_tx.clone();
+                        move |node| {
+                            // Add the custom RLPx subprotocol before node fully starts
+                            // See: crates/reth/node/src/gossip/
+                            let handler =
+                                AlpenGossipProtocolHandler::new(AlpenGossipState::new(gossip_tx));
+                            node.components
+                                .network
+                                .add_rlpx_sub_protocol(handler.into_rlpx_sub_protocol());
+                            info!(target: "alpen-gossip", component = "alpen", "Registered Alpen gossip RLPx subprotocol");
+                            Ok(())
+                        }
+                    });
 
             // Install state diff exex for sequencer DA.
             // The exex persists per-block state diffs that the blob provider reads.
@@ -423,7 +466,7 @@ fn main() {
                     let state_diff_db = dbs.witness_db();
                     |ctx| async { Ok(StateDiffGenerator::new(ctx, state_diff_db).start()) }
                 });
-                info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
+                info!(target: "alpen-client", component = "alpen", "installed StateDiffGenerator exex for DA");
 
                 // Per-block accessed-state capture. The CHUNK proof's witness is
                 // now produced inline during payload build (see the EE node's
@@ -438,7 +481,7 @@ fn main() {
                         Ok(AccessedStateGenerator::new(ctx, accessed_state_store).start())
                     }
                 });
-                info!(target: "alpen-client", "installed AccessedStateGenerator exex (account-proof range witness)");
+                info!(target: "alpen-client", component = "alpen", "installed AccessedStateGenerator exex (account-proof range witness)");
             }
 
             node_builder = node_builder.extend_rpc_modules({
@@ -459,7 +502,7 @@ fn main() {
 
             let handle = node_builder.launch().await?;
 
-            let node = handle.node;
+            let node = &handle.node;
 
             // Sync chainstate to engine for sequencer nodes before starting other tasks
             #[cfg(feature = "sequencer")]
@@ -471,14 +514,15 @@ fn main() {
                 // Block on the async sync operation
                 let sync_result =
                     sync_chainstate_to_engine(storage_clone.as_ref(), &provider_clone, &engine)
+                        .instrument(info_span!("chainstate_sync", component = "alpen"))
                         .await;
 
                 if let Err(e) = sync_result {
-                    error!(target: "alpen-client", error = ?e, "failed to sync chainstate to engine on startup");
+                    error!(target: "alpen-client", component = "alpen", error = ?e, "failed to sync chainstate to engine on startup");
                     return Err(eyre::eyre!("chainstate sync failed: {e}"));
                 }
 
-                info!(target: "alpen-client", "chainstate sync completed successfully");
+                info!(target: "alpen-client", component = "alpen", "chainstate sync completed successfully");
             }
 
             let engine_control_task = create_engine_control_task(
@@ -496,13 +540,23 @@ fn main() {
                 create_gossip_task(gossip_rx, state_events, preconf_tx.clone(), gossip_config);
 
             // Spawn critical tasks
-            node.task_executor
-                .spawn_critical("engine_control", engine_control_task);
-            node.task_executor
-                .spawn_critical("gossip_task", gossip_task);
+            node.task_executor.spawn_critical(
+                "engine_control",
+                engine_control_task.instrument(info_span!("engine_control", component = "alpen")),
+            );
+            node.task_executor.spawn_critical(
+                "gossip_task",
+                gossip_task.instrument(info_span!("gossip_task", component = "alpen")),
+            );
 
             #[cfg(feature = "sequencer")]
-            if ext.sequencer {
+            if let Some(SequencerBootState {
+                ol_chain_tracker: ol_chain_tracker_state,
+                exec_chain: exec_chain_state,
+                batch_builder: batch_builder_state,
+                batch_lifecycle: batch_lifecycle_state,
+            }) = sequencer_boot_state
+            {
                 // sequencer specific tasks
 
                 use alpen_ee_common::{require_latest_batch, BlockNumHash};
@@ -533,6 +587,7 @@ fn main() {
                     consensus_watcher.clone(),
                     &service_executor,
                 )
+                .instrument(info_span!("start_exec_chain", component = "alpen"))
                 .await
                 .map_err(|e| eyre::eyre!("failed to start exec chain service: {e}"))?;
 
@@ -543,7 +598,9 @@ fn main() {
                     storage.clone(),
                 );
 
-                let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
+                let (latest_batch, _) = require_latest_batch(storage.as_ref())
+                    .instrument(info_span!("require_latest_batch", component = "alpen"))
+                    .await?;
 
                 let batch_sealing_policy =
                     FixedBlockCountSealing::new(ext.batch_sealing_block_count);
@@ -598,7 +655,7 @@ fn main() {
                     .map_err(|e| eyre::eyre!("creating Bitcoin RPC client: {e}"))?,
                 );
                 info!(
-                    target: "alpen-client",
+                    target: "alpen-client", component = "alpen",
                     retry_count = ext.btcio_retry_count,
                     retry_interval_ms = ext.btcio_retry_interval,
                     "btcio Bitcoin RPC retry policy configured",
@@ -665,10 +722,13 @@ fn main() {
                 )?);
 
                 // Spawn btcio tasks.
-                node.task_executor
-                    .spawn_critical("chunked_envelope_watcher", envelope_watcher_task);
+                node.task_executor.spawn_critical(
+                    "chunked_envelope_watcher",
+                    envelope_watcher_task
+                        .instrument(info_span!("chunked_envelope_watcher", component = "alpen")),
+                );
 
-                info!(target: "alpen-client", "btcio DA pipeline started");
+                info!(target: "alpen-client", component = "alpen", "btcio DA pipeline started");
 
                 // EE chunk + acct paas provers. Both use SP1 remote
                 // proving (production); native is dev-only via the
@@ -754,10 +814,7 @@ fn main() {
                 // chunk program's deterministic test predicate key so the
                 // native-host Schnorr signature actually verifies.
                 let (chunk_prover, acct_prover) = if ext.dev_native_prover {
-                    info!(
-                        target: "alpen-client",
-                        "EE chunk + acct provers: native host (dev/test only)"
-                    );
+                    info!(target: "alpen-client", component = "alpen", "EE chunk + acct provers: native host (dev/test only)");
                     let chunk = chunk_builder.native(EeChunkProgram::native_host());
                     let chunk_predicate_key = NativeAlpenChunkPredicateKey
                         .predicate_key()
@@ -772,11 +829,7 @@ fn main() {
                             .sp1_proof_deadline_secs
                             .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
                         let deadline = Duration::from_secs(deadline_secs);
-                        info!(
-                            target: "alpen-client",
-                            deadline_secs,
-                            "sp1 EE prover deadline configured"
-                        );
+                        info!(target: "alpen-client", component = "alpen", deadline_secs, "sp1 EE prover deadline configured");
                         let sp1_config = SP1HostConfig::default().with_deadline(deadline);
                         let chunk_host: SP1Host =
                             (**alpen_chunk_host(sp1_config.clone()).await).clone();
@@ -815,7 +868,7 @@ fn main() {
                     batch_proofs,
                 ));
 
-                info!(target: "alpen-client", "EE chunk + acct paas provers started (SP1 remote)");
+                info!(target: "alpen-client", component = "alpen", "EE chunk + acct paas provers started (SP1 remote)");
 
                 let (batch_lifecycle_handle, batch_lifecycle_task) = create_batch_lifecycle_task(
                     None,
@@ -837,8 +890,11 @@ fn main() {
                     status_watcher,
                 );
 
-                node.task_executor
-                    .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
+                node.task_executor.spawn_critical(
+                    "ol_chain_tracker",
+                    ol_chain_tracker_task
+                        .instrument(info_span!("ol_chain_tracker", component = "alpen")),
+                );
                 // Per-block proof witnesses are captured inline during payload
                 // build (in the EE node's `try_build_payload`) and persisted by
                 // the payload engine (`AlpenRethPayloadEngine`) before the
@@ -853,7 +909,8 @@ fn main() {
                         ol_chain_tracker,
                         payload_engine,
                         storage.clone(),
-                    ),
+                    )
+                    .instrument(info_span!("block_assembly", component = "alpen")),
                 );
 
                 // --- Chunk builder service ---
@@ -903,14 +960,26 @@ fn main() {
                 .await
                 .map_err(|e| eyre::eyre!("failed to launch chunk builder service: {e}"))?;
 
-                node.task_executor
-                    .spawn_critical("ee_batch_builder", batch_builder_task);
-                node.task_executor
-                    .spawn_critical("ee_chunk_lifecycle", chunk_lifecycle);
-                node.task_executor
-                    .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
-                node.task_executor
-                    .spawn_critical("ee_update_submitter", update_submitter_task);
+                node.task_executor.spawn_critical(
+                    "ee_batch_builder",
+                    batch_builder_task
+                        .instrument(info_span!("ee_batch_builder", component = "alpen")),
+                );
+                node.task_executor.spawn_critical(
+                    "ee_chunk_lifecycle",
+                    chunk_lifecycle
+                        .instrument(info_span!("ee_chunk_lifecycle", component = "alpen")),
+                );
+                node.task_executor.spawn_critical(
+                    "ee_batch_lifecycle",
+                    batch_lifecycle_task
+                        .instrument(info_span!("ee_batch_lifecycle", component = "alpen")),
+                );
+                node.task_executor.spawn_critical(
+                    "ee_update_submitter",
+                    update_submitter_task
+                        .instrument(info_span!("ee_update_submitter", component = "alpen")),
+                );
             }
 
             health_check_state.mark_ready();
@@ -1278,6 +1347,7 @@ where
     if command.ext.sequencer && !cfg!(feature = "sequencer") {
         error!(
             target: "alpen-client",
+            component = "alpen",
             "Sequencer flag enabled but binary built without `sequencer` feature. Rebuild with default features or enable the `sequencer` feature."
         );
         eyre::bail!("sequencer feature not enabled at compile time");
@@ -1311,7 +1381,7 @@ where
 
     let runner = CliRunner::from_runtime(rt);
 
-    info!(target: "alpen-client", "logging initialized");
+    info!(target: "alpen-client", component = "alpen", "logging initialized");
 
     let result = runner.run_command_until_exit(|ctx| {
         command.execute(
@@ -1446,16 +1516,15 @@ fn resolve_writer_config(ext: &AdditionalConfig) -> eyre::Result<WriterConfig> {
 fn log_writer_config(cfg: &WriterConfig) {
     match cfg.fee_policy() {
         FeePolicy::BitcoinD { conf_target } => {
-            info!(
-                target: "alpen-client",
-                policy = "bitcoind",
-                conf_target,
-                "btcio writer configured",
-            );
+            info!(target: "alpen-client",
+            component = "alpen",
+            policy = "bitcoind",
+            conf_target, "btcio writer configured",);
         }
         FeePolicy::Fixed { fee_rate } => {
             info!(
                 target: "alpen-client",
+                component = "alpen",
                 policy = "fixed",
                 fee_rate_sat_vb = fee_rate_to_sat_per_vb(*fee_rate),
                 "btcio writer configured",
@@ -1468,6 +1537,7 @@ fn log_writer_config(cfg: &WriterConfig) {
         } => {
             info!(
                 target: "alpen-client",
+                component = "alpen",
                 policy = "mempool",
                 tier = ?policy,
                 base_url = %mempool_base_url,
@@ -1588,6 +1658,8 @@ fn block_builder_config_from_env(sequencer_enabled: bool) -> eyre::Result<BlockB
                 eyre::bail!("{ALPEN_EE_BLOCK_TIME_MS_ENV_VAR} must be greater than zero");
             }
             info!(
+                target: "alpen-client",
+                component = "alpen",
                 blocktime_ms,
                 env_var = ALPEN_EE_BLOCK_TIME_MS_ENV_VAR,
                 "Using EE block time override from environment"
@@ -1597,6 +1669,8 @@ fn block_builder_config_from_env(sequencer_enabled: bool) -> eyre::Result<BlockB
         Err(env::VarError::NotPresent) => {
             let default_blocktime_ms = default_config.blocktime_ms();
             info!(
+                target: "alpen-client",
+                component = "alpen",
                 blocktime_ms = default_blocktime_ms,
                 "Using default EE block time"
             );
@@ -1616,12 +1690,18 @@ async fn ensure_genesis<TStorage: Storage + ExecBlockStorage + BatchStorage>(
     config: &AlpenEeConfig,
     genesis_epoch: &EpochCommitment,
     storage: &TStorage,
+    is_sequencer: bool,
 ) -> eyre::Result<()> {
     ensure_genesis_ee_account_state(config, genesis_epoch, storage).await?;
+
     #[cfg(feature = "sequencer")]
-    ensure_finalized_exec_chain_genesis(config, genesis_epoch.to_block_commitment(), storage)
-        .await?;
-    #[cfg(feature = "sequencer")]
-    ensure_batch_genesis(config, storage).await?;
+    if is_sequencer {
+        ensure_finalized_exec_chain_genesis(config, genesis_epoch.to_block_commitment(), storage)
+            .await?;
+        ensure_batch_genesis(config, storage).await?;
+    }
+    #[cfg(not(feature = "sequencer"))]
+    let _ = is_sequencer;
+
     Ok(())
 }

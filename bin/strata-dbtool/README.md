@@ -628,6 +628,47 @@ strata-dbtool -d <alpen-client-datadir> ee-revert-batches --from-batch-idx <n> -
   | jq '.local_accepted_frontier'
 ```
 
+## EE DA Inspection
+
+> [!NOTE]
+>
+> This is a **read-only** command. It still opens the **alpen-client** sled,
+> which takes an exclusive lock, so stop the alpen-client first — point
+> `-d`/`--datadir` at the alpen-client's `--datadir` (not the strata node's).
+
+### `ee-da-inspect`
+
+Inspects locally produced EE DA blobs and reports the reconstructed EVM
+post-state root. The command decodes the chunked-envelope DA records, validates
+the ALPN DA blob format, selects the blob whose state diff covers a target EVM
+block, replays the contiguous DA prefix (`update_seq_no 0..=target`), and prints
+the producer-local blob bytes alongside the reconstructed post-state root. Only
+the chunked-envelope tree is opened, and the scan stops at the first blob that
+covers the target block.
+
+```bash
+strata-dbtool ee-da-inspect --target-last-block <block_num> [OPTIONS]
+```
+
+**Options:**
+- `--target-last-block <block_num>` — EVM block number that must be covered by the selected DA blob (required).
+- `--chain <chain>` — chain name or JSON chain spec used to seed the state reconstructor (default: `dev`).
+- `-o, --output-format <format>` — output format (default: porcelain).
+
+**Example:**
+```bash
+strata-dbtool -d /path/to/alpen-client/datadir ee-da-inspect --target-last-block 1024
+```
+
+**Output fields:**
+- `target.envelope_idx` — index of the selected chunked-envelope record.
+- `target.update_seq_no` — DA update sequence number of the selected blob.
+- `target.last_block_num` — last EVM block covered by the selected blob.
+- `target.local_blob_hex` — hex of the producer-local blob bytes (concatenated chunks).
+- `target.local_blob_sha256` — SHA-256 of the producer-local blob bytes.
+- `target.chunk_count` — number of stored chunks that formed the local blob.
+- `replay.post_state_root` — EVM post-state root after replaying the canonical DA prefix.
+
 ## Output Formats
 
 ### Porcelain Format (Default)
