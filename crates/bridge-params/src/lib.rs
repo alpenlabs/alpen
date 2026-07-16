@@ -8,7 +8,7 @@ use thiserror::Error;
 
 /// Bridge denomination and withdrawal policy parameters.
 ///
-/// Constructed via [`BridgeParams::new`] which validates the invariants:
+/// Constructed via [`BridgeParams::new_with_descriptor_limit`] which validates the invariants:
 /// - `denomination` must be non-zero
 /// - If `max_withdrawal_amount` is set, it must be `>= denomination` and a multiple of it
 /// - `max_withdrawal_descriptor_len` must fit within the withdrawal message descriptor cap
@@ -84,6 +84,7 @@ impl ssz::Decode for BridgeParams {
 
 impl BridgeParams {
     /// Creates a new [`BridgeParams`] using the default descriptor length limit.
+    #[cfg(any(test, feature = "test-defaults"))]
     pub fn new(
         denomination: u64,
         max_withdrawal_amount: Option<u64>,
