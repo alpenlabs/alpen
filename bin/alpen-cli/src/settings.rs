@@ -47,8 +47,6 @@ pub struct SettingsFromFile {
     pub bitcoind_rpc_endpoint: Option<String>,
     /// Alpen network RPC endpoint.
     pub alpen_endpoint: String,
-    /// Faucet service endpoint.
-    pub faucet_endpoint: String,
     /// Mempool explorer endpoint.
     pub mempool_endpoint: Option<String>,
     /// Blockscout explorer endpoint.
@@ -101,7 +99,6 @@ pub struct Settings {
     pub esplora: Option<String>,
     pub alpen_endpoint: String,
     pub data_dir: PathBuf,
-    pub faucet_endpoint: String,
     pub bridge_musig2_pubkey: XOnlyPublicKey,
     pub descriptor_db: PathBuf,
     pub mempool_space_endpoint: Option<String>,
@@ -177,8 +174,8 @@ impl Settings {
 
         // These fields are hand-merged into config.toml by operators, so a bad
         // value must surface as a config error, not a panic.
-        let bridge_musig2_pubkey =
-            XOnlyPublicKey::from_slice(&from_file.bridge_pubkey.0).map_err(|e| {
+        let _bridge_musig2_pubkey = XOnlyPublicKey::from_slice(&from_file.bridge_pubkey.0)
+            .map_err(|e| {
                 OneOf::new(ConfigError::Message(format!(
                     "bridge_pubkey is not a valid x-only public key: {e}"
                 )))
@@ -198,8 +195,8 @@ impl Settings {
             esplora: from_file.esplora,
             alpen_endpoint: from_file.alpen_endpoint,
             data_dir: proj_dirs.data_dir().to_owned(),
-            faucet_endpoint: from_file.faucet_endpoint,
-            bridge_musig2_pubkey,
+            bridge_musig2_pubkey: XOnlyPublicKey::from_slice(&from_file.bridge_pubkey.0)
+                .expect("valid length"),
             descriptor_db: descriptor_file,
             mempool_space_endpoint: from_file.mempool_endpoint,
             blockscout_endpoint: from_file.blockscout_endpoint,
@@ -284,7 +281,6 @@ mod tests {
             bitcoind_rpc_pw = "pass"
             bitcoind_rpc_endpoint = "http://127.0.0.1:38332"
             alpen_endpoint = "https://rpc.testnet.alpenlabs.io"
-            faucet_endpoint = "https://faucet-api.testnet.alpenlabs.io"
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
@@ -311,7 +307,6 @@ mod tests {
         // Assert important fields survived round-trip
         assert_eq!(parsed.esplora, reparsed.esplora);
         assert_eq!(parsed.alpen_endpoint, reparsed.alpen_endpoint);
-        assert_eq!(parsed.faucet_endpoint, reparsed.faucet_endpoint);
         assert_eq!(parsed.bridge_pubkey.0, reparsed.bridge_pubkey.0);
         assert_eq!(parsed.network, reparsed.network);
         assert_eq!(parsed.magic_bytes, reparsed.magic_bytes);

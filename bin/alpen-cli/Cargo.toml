@@ -45,7 +45,6 @@ directories = "5.0.1"
 indicatif = { version = "0.18.4", features = ["improved_unicode", "tokio"] }
 make_buf.workspace = true
 rand_core.workspace = true
-reqwest.workspace = true
 serde.workspace = true
 sha2 = { workspace = true, features = ["loongarch64_asm"] }
 shrex.workspace = true
