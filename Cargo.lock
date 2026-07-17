@@ -1384,6 +1384,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-params"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "strata-l1-txfmt",
+]
+
+[[package]]
 name = "alpen-ee-rpc-api"
 version = "0.3.0-alpha.1"
 dependencies = [

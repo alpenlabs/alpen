@@ -1,0 +1,15 @@
+[package]
+edition = "2021"
+name = "alpen-ee-params"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-l1-txfmt.workspace = true
+
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
