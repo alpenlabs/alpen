@@ -141,7 +141,9 @@ fn main() {
             with_ee_db(&datadir, |db| ee_get_chunk_receipt(db, args))
         }
         Command::EeDeleteChunkReceipt(args) => {
-            with_ee_db(&datadir, |db| ee_delete_chunk_receipt(db, args))
+            with_full_ee_db(&datadir, |storage, prover_db| async move {
+                ee_delete_chunk_receipt(&storage, prover_db.as_ref(), args).await
+            })
         }
         Command::EeGetAcctProof(args) => with_ee_db(&datadir, |db| ee_get_acct_proof(db, args)),
         Command::EeDeleteAcctProof(args) => {

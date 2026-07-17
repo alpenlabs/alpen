@@ -23,7 +23,10 @@ const POLL_INTERVAL: Duration = Duration::from_secs(10);
 /// Main batch lifecycle task.
 ///
 /// This task monitors sealed batches and manages their progression through
-/// the lifecycle states: Sealed → DaPending → DaComplete → ProofPending → ProofReady.
+/// the batch/acct lifecycle states: Sealed → DaPending → DaComplete → ProofPending → ProofReady.
+///
+/// Proof input readiness is owned by the prover. `ProofPending` and `ProofReady` in this task
+/// refer to the acct proof for the batch.
 ///
 /// Both event triggers (new batch notification, poll tick) trigger frontier
 /// advancement checks.
@@ -103,6 +106,7 @@ mod tests {
 
     use alpen_ee_common::{
         DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, ProofGenerationStatus,
+        ProofRequestStatus,
     };
     use eyre::eyre;
     use tokio::sync::watch;
@@ -155,7 +159,7 @@ mod tests {
 
             self.prover
                 .expect_request_proof_generation()
-                .returning(|_| Ok(()));
+                .returning(|_| Ok(ProofRequestStatus::Submitted));
 
             self.prover.expect_check_proof_status().returning(|_| {
                 Ok(ProofGenerationStatus::Ready {
@@ -324,7 +328,7 @@ mod tests {
 
         // cycle 3
         let ctx = MockedCtxBuilder::new()
-            // request proof generation fails
+            // acct proof request fails
             .with(|b| {
                 b.prover
                     .expect_request_proof_generation()
@@ -373,6 +377,44 @@ mod tests {
         // state remains in ProofReady
         process_cycle(&mut state, &ctx).await.unwrap();
         assert_eq!(read_batch_statuses(&storage), [ProofReady]);
+    }
+
+    #[tokio::test]
+    async fn test_da_complete_waits_for_prover_inputs_before_acct_proof() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+
+        use TestBatchStatus::*;
+        fill_storage(storage.as_ref(), &[DaComplete]).await;
+
+        let mut state = init_lifecycle_state(storage.as_ref()).await.unwrap();
+        let ctx = MockedCtxBuilder::new()
+            .with(|b| {
+                b.prover
+                    .expect_request_proof_generation()
+                    .returning(|_| Ok(ProofRequestStatus::WaitingForInputs));
+            })
+            .build(storage.clone());
+
+        process_cycle(&mut state, &ctx).await.unwrap();
+
+        assert_eq!(read_batch_statuses(&storage), [DaComplete]);
+        assert_eq!(state.proof_pending().idx(), 0);
+
+        let ctx = MockedCtxBuilder::new()
+            .with(|b| {
+                b.prover
+                    .expect_request_proof_generation()
+                    .returning(|_| Ok(ProofRequestStatus::Submitted));
+                b.prover
+                    .expect_check_proof_status()
+                    .returning(|_| Ok(ProofGenerationStatus::Pending));
+            })
+            .build(storage.clone());
+
+        process_cycle(&mut state, &ctx).await.unwrap();
+
+        assert_eq!(read_batch_statuses(&storage), [ProofPending]);
+        assert_eq!(state.proof_pending().idx(), 1);
     }
 
     #[tokio::test]

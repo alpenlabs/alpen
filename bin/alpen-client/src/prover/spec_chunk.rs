@@ -10,7 +10,7 @@ use std::{fmt, sync::Arc};
 
 use alpen_ee_common::{
     decode_chunk_task_key, encode_chunk_task_key, BlockWitnessStore, ChunkId, ChunkStorage,
-    ExecBlockStorage, ProverTaskKeyDecodeError,
+    ExecBlockStorage, ProofId, ProverTaskKeyDecodeError,
 };
 use alpen_ee_database::EeNodeStorage;
 use alpen_reth_node::BlockWitnessRecord;
@@ -37,6 +37,12 @@ use strata_proofimpl_alpen_chunk::{EeChunkProgram, EeChunkProofInput};
 /// adding paas-specific traits to the domain type.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ChunkTask(pub ChunkId);
+
+impl ChunkTask {
+    pub(crate) fn proof_id(self) -> ProofId {
+        self.0.last_block()
+    }
+}
 
 impl fmt::Display for ChunkTask {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

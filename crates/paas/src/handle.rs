@@ -83,4 +83,13 @@ impl<H: ProofSpec> ProverHandle<H> {
     pub fn get_status(&self, task: &H::Task) -> ProverResult<TaskStatus> {
         self.prover.get_status(task)
     }
+
+    /// Remove a terminal task record so the task can be resubmitted from
+    /// scratch.
+    ///
+    /// Returns `true` if the record was removed (or was already absent);
+    /// `false` if the record is non-terminal and was left in place.
+    pub fn reset_task(&self, task: &H::Task) -> ProverResult<bool> {
+        self.prover.reset_task(task)
+    }
 }

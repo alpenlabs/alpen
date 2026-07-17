@@ -547,9 +547,31 @@ strata-dbtool ee-backfill-prover-task-raw <key_hex> --force
 ```
 
 ### `ee-get-chunk-receipt` / `ee-delete-chunk-receipt`
-Inspect or remove a stored chunk-proof receipt by its task key. Use
-case: drop a stale receipt after a guest-program upgrade so the chunk
-prover re-proves it.
+Inspect, or delete-and-re-prove, a stored chunk-proof receipt by its task
+key. Use case: drop a stale receipt after a guest-program upgrade so the
+chunk prover re-proves it.
+
+`ee-delete-chunk-receipt` performs a coupled invalidation so the replacement
+proof cannot be bypassed by already-completed lifecycle state. It:
+
+- deletes the chunk receipt and companion PaaS task;
+- resets the chunk to `Sealed`, returning it to the chunk lifecycle work index;
+- deletes the owning batch's dependent acct proof and acct PaaS task; and
+- moves an owning batch in `ProofPending` or `ProofReady` back to `DaComplete`,
+  preserving its DA references.
+
+After restart, chunk lifecycle generates a new chunk receipt and the normal
+acct-input gate prevents a replacement acct proof until that receipt exists.
+No separate `ee-delete-acct-proof` invocation is required.
+
+Run with the node down (like the other EE delete commands). The cross-tree
+mutation is not transactional, but each step is idempotent; keep the node
+stopped and rerun the same command after a partial failure. Without `--force`,
+the report shows the chunk, owning batch, dependent proof/task rows, and
+current lifecycle statuses without changing them. The command refuses to
+mutate when the chunk no longer belongs to the current batch at its recorded
+index, preventing an orphaned pre-reorg chunk from invalidating a replacement
+batch.
 
 ```bash
 strata-dbtool ee-get-chunk-receipt <key_hex> [OPTIONS]
@@ -561,7 +583,11 @@ Inspect or remove a stored acct/batch proof. The batch id is passed as
 `<prev_block_hex>:<last_block_hex>` (each 32 bytes, optional `0x`
 prefix), which is exactly what `BatchId::Display` emits — copy a
 `%batch_id` field straight from the alpen-client's logs. Delete also
-clears the secondary `ProofId → BatchId` index.
+clears the secondary `ProofId → BatchId` index. This is a low-level
+proof-store operation: it does not reset the acct task or batch lifecycle
+status and does not schedule re-proving. Use the coupled
+`ee-delete-chunk-receipt` command when invalidating a chunk and its dependent
+acct proof.
 
 ```bash
 strata-dbtool ee-get-acct-proof <prev_block>:<last_block> [OPTIONS]
@@ -570,9 +596,10 @@ strata-dbtool ee-delete-acct-proof <prev_block>:<last_block> --force
 
 ### `ee-revert-batches`
 Revert EE batch metadata from `--from-batch-idx` onward, delete the
-corresponding unfinalized exec-block suffix, and clean exact affected
-chunk/acct prover rows. Without `--force`, prints the full change set as
-a dry run.
+corresponding unfinalized exec-block suffix, clean exact affected
+chunk/acct prover rows, and revert the chunk-metadata suffix belonging to
+the reverted batches (including the status-partitioned chunk work
+indexes). Without `--force`, prints the full change set as a dry run.
 
 ```bash
 strata-dbtool -d <alpen-client-datadir> ee-revert-batches --from-batch-idx <n> [--tx-export <path>] [--force]
@@ -597,14 +624,19 @@ strata-dbtool -d <alpen-client-datadir> ee-revert-batches --from-batch-idx <n> [
 - The report includes `affected_block_summary.reverted_batch` for blocks that
   belong to reverted sealed batches and `affected_block_summary.unbatched_suffix`
   for extra unbatched blocks built on top of the last reverted batch tip.
+- Affected chunks are discovered from chunk rows (each chunk records its
+  `batch_idx`), so chunks of a reverted batch are reverted even when the
+  batch never had its chunk associations persisted. The reverted chunk-idx
+  suffix is reported as `first_reverted_chunk_idx`.
 - Forced rollback is not one cross-tree transaction. The command rolls back
   EE account state when needed, deletes affected exec blocks and prover rows,
-  then reverts batch metadata last. If a pre-final mutation fails, keep the node
-  stopped and rerun the same command; earlier deletes are idempotent and the
-  batch metadata is still available to reconstruct the plan. Export txs before
-  forcing if manual rebroadcast data is needed after a partial retry.
-- Old block-witness rows, chunk rows, and DA/broadcast rows are left in
-  place; the report calls out these orphaned artifacts explicitly.
+  reverts the chunk-metadata suffix, then reverts batch metadata last. If a
+  pre-final mutation fails, keep the node stopped and rerun the same command;
+  earlier deletes are idempotent and the batch metadata is still available to
+  reconstruct the plan. Export txs before forcing if manual rebroadcast data
+  is needed after a partial retry.
+- Old block-witness rows and DA/broadcast rows are left in place; the report
+  calls out these orphaned artifacts explicitly.
 
 To inspect the rollback frontier during dry-run:
 

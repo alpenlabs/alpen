@@ -2,6 +2,7 @@
 //! optionally stores receipt and calls domain hook.
 
 use std::{
+    any::type_name,
     collections::HashMap,
     fmt, slice,
     sync::{
@@ -13,7 +14,7 @@ use std::{
 
 use parking_lot::Mutex;
 use tokio::{sync::oneshot, task::spawn_blocking};
-use tracing::{error, info, info_span, warn, Instrument};
+use tracing::{debug, error, info, info_span, warn, Instrument};
 use zkaleido::ZkVmHost;
 #[cfg(feature = "remote")]
 use zkaleido::ZkVmRemoteHost;
@@ -24,7 +25,9 @@ use crate::{
     in_memory::InMemoryTaskStore,
     strategy::NativeStrategy,
     task::{now_secs, TaskRecord, TaskResult, TaskStatus},
-    traits::{ProofSpec, ProveContext, ProveStrategy, ReceiptHook, ReceiptStore, TaskStore},
+    traits::{
+        ProofSpec, ProveContext, ProveStrategy, ReceiptHook, ReceiptStore, TaskKey, TaskStore,
+    },
 };
 
 /// One completion-notification sender per pending `wait_for_tasks` caller.
@@ -32,6 +35,51 @@ use crate::{
 /// Each waiter receives a private `oneshot::Receiver`; [`Prover::notify`]
 /// drains and removes the entry when the task reaches a terminal state.
 type WatcherMap<T> = HashMap<Vec<u8>, Vec<oneshot::Sender<TaskResult<T>>>>;
+
+/// A task and its canonical storage key.
+///
+/// The prover needs the typed task for domain logic and the byte key for
+/// storage. Keeping both in one value makes the "these match" invariant
+/// explicit instead of passing loose `(task, key)` pairs through helpers.
+struct RunningTask<T: TaskKey> {
+    task: T,
+    key: Vec<u8>,
+}
+
+impl<T: TaskKey> RunningTask<T> {
+    fn new(task: T) -> Self {
+        let key = task.clone().into();
+        Self { task, key }
+    }
+
+    fn from_stored_key(key: Vec<u8>) -> Option<Self> {
+        let task = T::try_from(key.clone()).ok()?;
+        let derived_key: Vec<u8> = task.clone().into();
+        // Round-trip drift means the task type's byte encoding is not
+        // canonical — a programming error in the `TaskKey` impl, not a
+        // runtime condition.
+        debug_assert_eq!(
+            derived_key, key,
+            "decoded task key did not round-trip through its TaskKey encoding"
+        );
+        if derived_key != key {
+            return None;
+        }
+
+        Some(Self {
+            task,
+            key: derived_key,
+        })
+    }
+
+    fn task(&self) -> &T {
+        &self.task
+    }
+
+    fn key(&self) -> &[u8] {
+        &self.key
+    }
+}
 
 /// Single-proof-type prover.
 ///
@@ -72,19 +120,26 @@ impl<H: ProofSpec> fmt::Debug for Prover<H> {
 impl<H: ProofSpec> Prover<H> {
     /// Register a task and spawn background proving. Idempotent.
     pub async fn submit(self: &Arc<Self>, task: H::Task) -> ProverResult<()> {
-        let key: Vec<u8> = task.clone().into();
+        let task = RunningTask::new(task);
 
         // Idempotent: if already in store, skip.
-        if self.task_store.get(&key)?.is_some() {
+        if self.task_store.get(task.key())?.is_some() {
             return Ok(());
         }
 
-        self.task_store
-            .insert(TaskRecord::new(key.clone(), TaskStatus::Pending))?;
+        if let Err(e) = self
+            .task_store
+            .insert(TaskRecord::new(task.key.clone(), TaskStatus::Pending))
+        {
+            if matches!(e, ProverError::TaskAlreadyExists(_)) {
+                return Ok(());
+            }
+            return Err(e);
+        }
 
         let prover = Arc::clone(self);
         tokio::spawn(async move {
-            prover.run_task(task, key).await;
+            prover.run_task(task).await;
         });
 
         Ok(())
@@ -149,6 +204,32 @@ impl<H: ProofSpec> Prover<H> {
         Ok(results.into_iter().map(|r| r.unwrap()).collect())
     }
 
+    /// Remove a terminal task record so the task can be resubmitted from
+    /// scratch.
+    ///
+    /// Returns `true` if the record was removed (or was already absent).
+    /// A non-terminal record is left in place and `false` is returned:
+    /// the in-flight attempt still owns it and will drive it to a terminal
+    /// state on its own.
+    ///
+    /// The check-then-remove is not atomic: two concurrent resetters can
+    /// interleave with a resubmit so that a freshly re-inserted record is
+    /// removed. That is self-healing — the next status poll sees the task
+    /// as absent and resubmits — costing at most a wasted proving run.
+    pub fn reset_task(&self, task: &H::Task) -> ProverResult<bool> {
+        let key: Vec<u8> = task.clone().into();
+        match self.task_store.get(&key)? {
+            None => Ok(true),
+            Some(record) => match record.status() {
+                TaskStatus::Completed | TaskStatus::PermanentFailure { .. } => {
+                    self.task_store.remove(&key)?;
+                    Ok(true)
+                }
+                _ => Ok(false),
+            },
+        }
+    }
+
     /// Get a receipt from the receipt store by task.
     ///
     /// Returns `None` if the store has no receipt for this task, or `Err` if
@@ -206,12 +287,14 @@ impl<H: ProofSpec> Prover<H> {
         };
         for record in retriable {
             let key = record.key().to_vec();
-            if let Some(task) = decode_task_key::<H>(&key) {
-                let prover = Arc::clone(self);
-                tokio::spawn(async move {
-                    prover.run_task(task, key).await;
-                });
-            }
+            let Some(task) = RunningTask::from_stored_key(key.clone()) else {
+                warn!(?key, "skipping retriable task with undecodable key");
+                continue;
+            };
+            let prover = Arc::clone(self);
+            tokio::spawn(async move {
+                prover.run_task(task).await;
+            });
         }
     }
 
@@ -243,7 +326,8 @@ impl<H: ProofSpec> Prover<H> {
         info!(count = unfinished.len(), "recovering unfinished tasks");
         for record in unfinished {
             let key = record.key().to_vec();
-            let Some(task) = decode_task_key::<H>(&key) else {
+            let Some(task) = RunningTask::from_stored_key(key.clone()) else {
+                warn!(?key, "skipping unfinished task with undecodable key");
                 continue;
             };
 
@@ -256,30 +340,21 @@ impl<H: ProofSpec> Prover<H> {
                     .is_some_and(|cfg| cfg.should_retry(new_count));
 
                 if !should_retry {
-                    warn!(
-                        %task,
-                        retry_count = new_count,
-                        "task died mid-Proving and retries exhausted; marking PermanentFailure"
+                    self.mark_permanent_failure(
+                        &task,
+                        format!("process died mid-Proving; retries exhausted at {new_count}"),
                     );
-                    let _ = self.task_store.update_status(
-                        &key,
-                        TaskStatus::PermanentFailure {
-                            error: format!(
-                                "process died mid-Proving; retries exhausted at {new_count}"
-                            ),
-                        },
-                    );
-                    self.notify(&key, &task);
+                    self.notify(&task);
                     continue;
                 }
 
                 warn!(
-                    %task,
+                    task = %task.task(),
                     retry_count = new_count,
                     "task died mid-Proving; counting as transient failure"
                 );
                 let _ = self.task_store.update_status(
-                    &key,
+                    task.key(),
                     TaskStatus::TransientFailure {
                         retry_count: new_count,
                         error: "process died mid-Proving".to_string(),
@@ -291,7 +366,7 @@ impl<H: ProofSpec> Prover<H> {
 
             let prover = Arc::clone(self);
             tokio::spawn(async move {
-                prover.run_task(task, key).await;
+                prover.run_task(task).await;
             });
         }
     }
@@ -301,9 +376,9 @@ impl<H: ProofSpec> Prover<H> {
     /// Used at the top of [`Self::run_task`] before status is overwritten to
     /// `Proving`, and by [`Self::recover`] to compute the post-crash bump.
     /// Returns 0 for `Pending` or absent records.
-    fn read_retry_count(&self, key: &[u8]) -> u32 {
+    fn read_retry_count(&self, task: &RunningTask<H::Task>) -> u32 {
         self.task_store
-            .get(key)
+            .get(task.key())
             .ok()
             .flatten()
             .map_or(0, |r| match r.status() {
@@ -313,8 +388,8 @@ impl<H: ProofSpec> Prover<H> {
             })
     }
 
-    async fn run_task(&self, task: H::Task, key: Vec<u8>) {
-        let span = info_span!("prove", task = %task);
+    async fn run_task(&self, task: RunningTask<H::Task>) {
+        let span = info_span!("prove", task = %task.task());
 
         async {
             // Snapshot the retry counter from the persisted record BEFORE
@@ -322,22 +397,24 @@ impl<H: ProofSpec> Prover<H> {
             // from the store after the overwrite below, and `recover` needs
             // the count to survive a mid-Proving crash, so persist it inside
             // the `Proving` status itself.
-            let prior_retry_count = self.read_retry_count(&key);
+            let prior_retry_count = self.read_retry_count(&task);
 
             let _ = self.task_store.update_status(
-                &key,
+                task.key(),
                 TaskStatus::Proving {
                     retry_count: prior_retry_count,
                 },
             );
 
             // 1. Fetch input
-            let input = match self.spec.fetch_input(&task).await {
+            let input = match self.spec.fetch_input(task.task()).await {
                 Ok(input) => input,
                 Err(e) => {
-                    error!(%e, "fetch_input failed");
-                    self.handle_error(&key, &e, prior_retry_count);
-                    self.notify(&key, &task);
+                    if e.is_transient() {
+                        warn!(%e, "fetch_input transient failure");
+                    }
+                    self.handle_error(&task, &e, prior_retry_count);
+                    self.notify(&task);
                     return;
                 }
             };
@@ -345,12 +422,12 @@ impl<H: ProofSpec> Prover<H> {
             // 2. Prove (blocking — strategy handles native vs remote)
             let saved_metadata = self
                 .task_store
-                .get(&key)
+                .get(task.key())
                 .ok()
                 .flatten()
                 .and_then(|r| r.metadata().map(|m| m.to_vec()));
             let store = self.task_store.clone();
-            let persist_key = key.clone();
+            let persist_key = task.key.clone();
             let ctx = ProveContext::new(saved_metadata, move |data| {
                 let _ = store.set_metadata(&persist_key, data);
             });
@@ -361,67 +438,64 @@ impl<H: ProofSpec> Prover<H> {
             let receipt = match prove_result {
                 Ok(Ok(receipt)) => receipt,
                 Ok(Err(e)) => {
-                    error!(%e, "prove failed");
-                    self.handle_error(&key, &e, prior_retry_count);
-                    self.notify(&key, &task);
+                    if e.is_transient() {
+                        warn!(%e, "prove transient failure");
+                    }
+                    self.handle_error(&task, &e, prior_retry_count);
+                    self.notify(&task);
                     return;
                 }
                 Err(e) => {
-                    error!(%e, "prove task panicked");
-                    let _ = self.task_store.update_status(
-                        &key,
-                        TaskStatus::PermanentFailure {
-                            error: e.to_string(),
-                        },
-                    );
-                    self.notify(&key, &task);
+                    self.mark_permanent_failure(&task, format!("prove task panicked: {e}"));
+                    self.notify(&task);
                     return;
                 }
             };
 
             // 3. Store receipt (if configured)
             if let Some(store) = &self.receipt_store {
-                if let Err(e) = store.put(&key, &receipt) {
-                    error!(%e, "receipt store put failed");
-                    self.handle_error(&key, &e, prior_retry_count);
-                    self.notify(&key, &task);
+                if let Err(e) = store.put(task.key(), &receipt) {
+                    if e.is_transient() {
+                        warn!(%e, "receipt store put transient failure");
+                    }
+                    self.handle_error(&task, &e, prior_retry_count);
+                    self.notify(&task);
                     return;
                 }
             }
 
             // 4. Domain hook (if configured)
             if let Some(hook) = &self.receipt_hook {
-                if let Err(e) = hook.on_receipt(&task, &receipt).await {
-                    error!(%e, "receipt hook failed");
-                    self.handle_error(&key, &e, prior_retry_count);
-                    self.notify(&key, &task);
+                if let Err(e) = hook.on_receipt(task.task(), &receipt).await {
+                    if e.is_transient() {
+                        warn!(%e, "receipt hook transient failure");
+                    }
+                    self.handle_error(&task, &e, prior_retry_count);
+                    self.notify(&task);
                     return;
                 }
             }
 
             // 5. Done
-            let _ = self.task_store.update_status(&key, TaskStatus::Completed);
+            let _ = self
+                .task_store
+                .update_status(task.key(), TaskStatus::Completed);
             info!("task completed");
-            self.notify(&key, &task);
+            self.notify(&task);
         }
         .instrument(span)
         .await;
     }
 
-    fn handle_error(&self, key: &[u8], err: &ProverError, prior_retry_count: u32) {
+    fn handle_error(&self, task: &RunningTask<H::Task>, err: &ProverError, prior_retry_count: u32) {
         if err.is_transient() {
-            self.schedule_retry(key, &err.to_string(), prior_retry_count);
+            self.schedule_retry(task, &err.to_string(), prior_retry_count);
         } else {
-            let _ = self.task_store.update_status(
-                key,
-                TaskStatus::PermanentFailure {
-                    error: err.to_string(),
-                },
-            );
+            self.mark_permanent_failure(task, err.to_string());
         }
     }
 
-    fn schedule_retry(&self, key: &[u8], msg: &str, prior_retry_count: u32) {
+    fn schedule_retry(&self, task: &RunningTask<H::Task>, msg: &str, prior_retry_count: u32) {
         let new_count = prior_retry_count + 1;
 
         if let Some(ref cfg) = self.config.retry {
@@ -432,7 +506,7 @@ impl<H: ProofSpec> Prover<H> {
                     "transient failure, scheduling retry"
                 );
                 let _ = self.task_store.update_status(
-                    key,
+                    task.key(),
                     TaskStatus::TransientFailure {
                         retry_count: new_count,
                         error: msg.to_string(),
@@ -441,17 +515,43 @@ impl<H: ProofSpec> Prover<H> {
                 let delay = Duration::from_secs(cfg.calculate_delay(new_count));
                 let _ = self
                     .task_store
-                    .set_retry_after(key, now_secs() + delay.as_secs());
+                    .set_retry_after(task.key(), now_secs() + delay.as_secs());
                 return;
             }
         }
 
+        self.mark_permanent_failure(task, format!("retries exhausted: {msg}"));
+    }
+
+    #[tracing::instrument(skip_all, fields(
+        proof_spec = type_name::<H>(),
+        task_type = type_name::<H::Task>(),
+        program_type = type_name::<H::Program>(),
+        task = %task.task(),
+    ))]
+    fn mark_permanent_failure(&self, task: &RunningTask<H::Task>, error: String) {
+        let previous_status = self
+            .task_store
+            .get(task.key())
+            .ok()
+            .flatten()
+            .map(|record| record.status().clone());
+
         let _ = self.task_store.update_status(
-            key,
+            task.key(),
             TaskStatus::PermanentFailure {
-                error: format!("retries exhausted: {msg}"),
+                error: error.clone(),
             },
         );
+
+        if should_log_permanent_failure(previous_status.as_ref(), &error) {
+            error!(
+                reason = %error,
+                "CRITICAL: proof task permanently failed; manual intervention may be required"
+            );
+        } else {
+            debug!(reason = %error, "proof task remains permanently failed");
+        }
     }
 
     /// Fan out the terminal result to every pending waiter and remove the
@@ -460,35 +560,24 @@ impl<H: ProofSpec> Prover<H> {
     /// The watchers lock is held across the store read to linearize with
     /// [`Self::wait_for_tasks`], which performs its
     /// check-terminal-then-subscribe decision under the same lock.
-    fn notify(&self, key: &[u8], task: &H::Task) {
+    fn notify(&self, task: &RunningTask<H::Task>) {
         let mut w = self.watchers.lock();
         let status = self
             .task_store
-            .get(key)
+            .get(task.key())
             .ok()
             .flatten()
             .map(|r| r.status().clone());
-        let Some(result) = status.as_ref().and_then(|s| terminal_result(task, s)) else {
+        let Some(result) = status
+            .as_ref()
+            .and_then(|s| terminal_result(task.task(), s))
+        else {
             return;
         };
-        if let Some(senders) = w.remove(key) {
+        if let Some(senders) = w.remove(task.key()) {
             for tx in senders {
                 let _ = tx.send(result.clone());
             }
-        }
-    }
-}
-
-/// Decode a storage key back into a typed task.
-///
-/// Logs and returns `None` on decode failure rather than panicking — a
-/// corrupt or schema-drifted key should not take down the prover.
-fn decode_task_key<H: ProofSpec>(key: &[u8]) -> Option<H::Task> {
-    match H::Task::try_from(key.to_vec()) {
-        Ok(task) => Some(task),
-        Err(_) => {
-            warn!(key = ?key, "failed to decode task key, skipping");
-            None
         }
     }
 }
@@ -502,6 +591,10 @@ fn terminal_result<T: Clone>(task: &T, status: &TaskStatus) -> Option<TaskResult
         }
         _ => None,
     }
+}
+
+fn should_log_permanent_failure(previous: Option<&TaskStatus>, error: &str) -> bool {
+    !matches!(previous, Some(TaskStatus::PermanentFailure { error: previous }) if previous == error)
 }
 
 // ============================================================================
@@ -594,5 +687,31 @@ impl<H: ProofSpec> ProverBuilder<H> {
 impl<H: ProofSpec> fmt::Debug for ProverBuilder<H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProverBuilder").finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permanent_failure_logging_detects_transitions() {
+        assert!(should_log_permanent_failure(None, "bad witness"));
+        assert!(should_log_permanent_failure(
+            Some(&TaskStatus::Pending),
+            "bad witness"
+        ));
+        assert!(!should_log_permanent_failure(
+            Some(&TaskStatus::PermanentFailure {
+                error: "bad witness".to_string(),
+            }),
+            "bad witness"
+        ));
+        assert!(should_log_permanent_failure(
+            Some(&TaskStatus::PermanentFailure {
+                error: "old reason".to_string(),
+            }),
+            "bad witness"
+        ));
     }
 }

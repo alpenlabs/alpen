@@ -37,19 +37,13 @@ fn db_err(e: DbError) -> ProverError {
     }
 }
 
-/// Sled-backed shared prover task store.
-///
-/// Both chunk and acct provers hold an `Arc<Self>` and pass it to
-/// `ProverBuilder::task_store(...)`. Task keys carry a single-byte
-/// kind tag (`b'c'` / `b'a'`) inside their `Task::into()` encoding,
-/// so entries from the two provers don't collide in the shared tree.
 #[derive(Debug, Clone)]
-pub(crate) struct EeProverTaskDbManager {
-    db: Arc<EeProverDbSled>,
+pub(crate) struct EeProverTaskDbManager<D: ProverTaskDatabase> {
+    db: Arc<D>,
 }
 
-impl EeProverTaskDbManager {
-    pub(crate) fn new(db: Arc<EeProverDbSled>) -> Self {
+impl<D: ProverTaskDatabase> EeProverTaskDbManager<D> {
+    pub(crate) fn new(db: Arc<D>) -> Self {
         Self { db }
     }
 
@@ -67,7 +61,7 @@ impl EeProverTaskDbManager {
     }
 }
 
-impl TaskStore for EeProverTaskDbManager {
+impl<D: ProverTaskDatabase> TaskStore for EeProverTaskDbManager<D> {
     fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
         let stored = self.db.get_task(key.to_vec()).map_err(db_err)?;
         Ok(stored.map(|data| TaskRecord::from_parts(key.to_vec(), data)))
@@ -112,6 +106,10 @@ impl TaskStore for EeProverTaskDbManager {
     fn count(&self) -> ProverResult<usize> {
         self.db.count_tasks().map_err(db_err)
     }
+
+    fn remove(&self, key: &[u8]) -> ProverResult<bool> {
+        self.db.delete_task(key.to_vec()).map_err(db_err)
+    }
 }
 
 /// Sled-backed chunk receipt store.
@@ -145,7 +143,7 @@ impl ReceiptStore for EeChunkReceiptStore {
 /// Typed outer-proof storage keyed by [`BatchId`].
 ///
 /// Sled-backed replacement for the earlier in-memory `HashMap` version.
-/// The `AcctReceiptHook` writes here; `PaasBatchProver::get_proof(proof_id)`
+/// The `AcctReceiptHook` writes here; `PaasEeProver::get_proof(proof_id)`
 /// serves OL submission from the secondary `ProofId → BatchId` index.
 #[derive(Debug, Clone)]
 pub(crate) struct EeBatchProofDbManager {

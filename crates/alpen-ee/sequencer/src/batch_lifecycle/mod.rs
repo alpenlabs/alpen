@@ -2,11 +2,15 @@
 //!
 //! The batch lifecycle manager bridges the gap between the batch builder
 //! (which creates `Sealed` batches) and the update submitter (which consumes
-//! `ProofReady` batches). It manages the intermediate lifecycle states:
+//! `ProofReady` batches). It manages the intermediate batch/acct lifecycle states:
 //!
 //! ```text
 //! Sealed → DaPending → DaComplete → ProofPending → ProofReady
 //! ```
+//!
+//! `ProofPending` and `ProofReady` refer to the acct proof for the batch. Proof-input readiness is
+//! owned by the prover; the lifecycle only observes whether a proof request was accepted, already
+//! running, or waiting on inputs.
 //!
 //! # Architecture
 //!
@@ -14,7 +18,7 @@
 //! sequentially through their lifecycle. It uses:
 //!
 //! - [`BatchDaProvider`] trait for posting DA and checking DA readiness
-//! - [`BatchProver`] trait for requesting and checking proof generation
+//! - [`BatchProver`] trait for requesting and checking acct proof generation
 //! - [`BatchStorage`] for persisting batch status updates
 //!
 //! # Usage

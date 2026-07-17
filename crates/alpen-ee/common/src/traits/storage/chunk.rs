@@ -52,6 +52,28 @@ pub trait ChunkStorage: Send + Sync {
     /// Get the chunk with the highest idx, if it exists.
     async fn get_latest_chunk(&self) -> Result<Option<(Chunk, ChunkStatus)>, StorageError>;
 
+    /// Get sealed chunks at or above `start_idx`, in ascending idx order.
+    ///
+    /// This is the chunk proof lifecycle's work-discovery API for new proof
+    /// submissions. Implementations should avoid scanning already-completed
+    /// history on every call.
+    async fn get_sealed_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> Result<Vec<(Chunk, ChunkStatus)>, StorageError>;
+
+    /// Get proof-pending chunks at or above `start_idx`, in ascending idx order.
+    ///
+    /// This is the chunk proof lifecycle's polling API for in-flight proof
+    /// tasks. Implementations should avoid scanning already-completed history
+    /// on every call.
+    async fn get_proof_pending_chunks(
+        &self,
+        start_idx: u64,
+        limit: usize,
+    ) -> Result<Vec<(Chunk, ChunkStatus)>, StorageError>;
+
     /// Set or update batch-chunk association.
     async fn set_batch_chunks(
         &self,
@@ -62,8 +84,9 @@ pub trait ChunkStorage: Send + Sync {
     /// Get the chunk-id list previously set for a batch.
     ///
     /// Returns `None` if [`set_batch_chunks`](ChunkStorage::set_batch_chunks)
-    /// has never been called for `batch_id`. Used by the prover to fan out
-    /// chunk-proof tasks.
+    /// has never been called for `batch_id`. The prover uses this to decide when
+    /// acct proof inputs are available, and the acct proof input builder uses it
+    /// to collect chunk receipts.
     async fn get_batch_chunks(
         &self,
         batch_id: BatchId,
@@ -85,6 +108,12 @@ macro_rules! chunk_storage_tests {
         async fn test_update_chunk_status() {
             let storage = $setup_expr;
             $crate::chunk_storage_test_fns::test_update_chunk_status(&storage).await;
+        }
+
+        #[tokio::test]
+        async fn test_update_missing_chunk_status_errors() {
+            let storage = $setup_expr;
+            $crate::chunk_storage_test_fns::test_update_missing_chunk_status_errors(&storage).await;
         }
 
         #[tokio::test]
@@ -117,6 +146,12 @@ macro_rules! chunk_storage_tests {
             let storage = $setup_expr;
             $crate::chunk_storage_test_fns::test_batch_chunks_isolation(&storage).await;
         }
+
+        #[tokio::test]
+        async fn test_chunk_proof_work_queries() {
+            let storage = $setup_expr;
+            $crate::chunk_storage_test_fns::test_chunk_proof_work_queries(&storage).await;
+        }
     };
 }
 
@@ -126,7 +161,7 @@ pub mod tests {
     use strata_identifiers::Buf32;
 
     use super::*;
-    use crate::{Batch, BatchStorage, Chunk, ChunkStatus, ProofId};
+    use crate::{Batch, BatchStorage, Chunk, ChunkStatus, ProofId, StorageError};
 
     fn create_test_hash(value: u8) -> Hash {
         let mut bytes = [0u8; 32];
@@ -163,7 +198,7 @@ pub mod tests {
         // Retrieve by idx
         let (retrieved, status) = storage.get_chunk_by_idx(0).await.unwrap().unwrap();
         assert_eq!(retrieved.idx(), 0);
-        assert!(matches!(status, ChunkStatus::ProvingNotStarted));
+        assert!(matches!(status, ChunkStatus::Sealed));
 
         // Retrieve by id
         let (retrieved, _) = storage.get_chunk_by_id(chunk0.id()).await.unwrap().unwrap();
@@ -186,6 +221,24 @@ pub mod tests {
         // Verify status was updated
         let (_, status) = storage.get_chunk_by_idx(0).await.unwrap().unwrap();
         assert!(matches!(status, ChunkStatus::ProofReady(_)));
+    }
+
+    /// Updating the status of a chunk that does not exist must error on every backend, rather than
+    /// silently succeeding.
+    pub async fn test_update_missing_chunk_status_errors(
+        storage: &(impl ChunkStorage + BatchStorage),
+    ) {
+        let missing = create_test_chunk(0, 0, 1);
+        let proof_id = ProofId::from(Buf32::new([9u8; 32]));
+
+        let result = storage
+            .update_chunk_status(missing.id(), ChunkStatus::ProofReady(proof_id))
+            .await;
+
+        assert!(
+            matches!(result, Err(StorageError::ChunkNotFound(_))),
+            "expected ChunkNotFound when updating a missing chunk, got {result:?}"
+        );
     }
 
     /// Test reverting chunks.
@@ -330,5 +383,60 @@ pub mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    /// Test proof-work status queries.
+    pub async fn test_chunk_proof_work_queries(storage: &(impl ChunkStorage + BatchStorage)) {
+        let chunk0 = create_test_chunk(0, 0, 1);
+        let chunk1 = create_test_chunk(1, 1, 2);
+        let chunk2 = create_test_chunk(2, 2, 3);
+
+        storage.save_next_chunk(chunk0.clone()).await.unwrap();
+        storage.save_next_chunk(chunk1.clone()).await.unwrap();
+        storage.save_next_chunk(chunk2.clone()).await.unwrap();
+
+        let sealed = storage.get_sealed_chunks(0, 10).await.unwrap();
+        assert_eq!(
+            sealed
+                .iter()
+                .map(|(chunk, _)| chunk.idx())
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+
+        storage
+            .update_chunk_status(chunk0.id(), ChunkStatus::ProofPending("task0".into()))
+            .await
+            .unwrap();
+        storage
+            .update_chunk_status(chunk1.id(), ChunkStatus::ProofReady(create_test_hash(9)))
+            .await
+            .unwrap();
+
+        let pending = storage.get_proof_pending_chunks(0, 10).await.unwrap();
+        assert_eq!(
+            pending
+                .iter()
+                .map(|(chunk, _)| chunk.idx())
+                .collect::<Vec<_>>(),
+            vec![0]
+        );
+
+        let sealed = storage.get_sealed_chunks(0, 10).await.unwrap();
+        assert_eq!(
+            sealed
+                .iter()
+                .map(|(chunk, _)| chunk.idx())
+                .collect::<Vec<_>>(),
+            vec![2]
+        );
+
+        storage.revert_chunks_from(0).await.unwrap();
+        assert!(storage.get_sealed_chunks(0, 10).await.unwrap().is_empty());
+        assert!(storage
+            .get_proof_pending_chunks(0, 10)
+            .await
+            .unwrap()
+            .is_empty());
     }
 }
