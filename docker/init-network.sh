@@ -244,18 +244,19 @@ GEOF
         fi
     fi
 
-    EE_PARAMS="${OUTPUT_DIR}/ee-params.json"
-    if [ ! -f "${EE_PARAMS}" ]; then
-        : "${BRIDGE_DENOMINATION_SATS:?BRIDGE_DENOMINATION_SATS is required when generating ee-params.json}"
+    ALPEN_PARAMS="${OUTPUT_DIR}/alpen-params.json"
+    if [ ! -f "${ALPEN_PARAMS}" ]; then
+        : "${BRIDGE_DENOMINATION_SATS:?BRIDGE_DENOMINATION_SATS is required when generating alpen-params.json}"
         : "${MAX_WITHDRAWAL_DESCRIPTOR_LEN:?MAX_WITHDRAWAL_DESCRIPTOR_LEN is required}"
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
-            gen-ee-params \
-            -o "${EE_PARAMS}" \
+            gen-alpen-params \
+            -o "${ALPEN_PARAMS}" \
             --bridge-denomination-sats "${BRIDGE_DENOMINATION_SATS}" \
             ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount-sats "$MAX_WITHDRAWAL_AMOUNT_SATS"} \
             --max-withdrawal-descriptor-len "${MAX_WITHDRAWAL_DESCRIPTOR_LEN}" \
+            ${EE_DA_MAGIC_BYTES:+--da-magic-bytes "$EE_DA_MAGIC_BYTES"} \
             ${ALPEN_CHAIN_CONFIG:+--alpen-chain-config "$ALPEN_CHAIN_CONFIG"}
-        echo "generated ${EE_PARAMS}"
+        echo "generated ${ALPEN_PARAMS}"
     fi
 
     OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
@@ -265,9 +266,8 @@ GEOF
             -o "${OL_PARAMS}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --l1-anchor-file "${L1_ANCHOR}" \
-            --ee-params "${EE_PARAMS}" \
-            ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"} \
-            ${ALPEN_CHAIN_CONFIG:+--alpen-chain-config "$ALPEN_CHAIN_CONFIG"}
+            --alpen-params "${ALPEN_PARAMS}" \
+            ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"}
         echo "generated ${OL_PARAMS}"
     fi
 
@@ -300,13 +300,11 @@ SEQUENCER_PUBKEY=${SCHNORR_PUBKEY}
 SEQ_P2P_PUBKEY=${SEQ_P2P_PUBKEY}
 FN_P2P_PUBKEY=${FN_P2P_PUBKEY}
 
-CHAIN_SPEC=${CHAIN_SPEC:-dev}
-EE_PARAMS_PATH=/app/configs/generated/ee-params.json
+ALPEN_PARAMS_PATH=/app/configs/generated/alpen-params.json
 
 OL_BLOCK_TIME_MS=${OL_BLOCK_TIME_MS:-5000}
 ALPEN_EE_BLOCK_TIME_MS=${ALPEN_EE_BLOCK_TIME_MS:-5000}
 
-EE_DA_MAGIC_BYTES=${EE_DA_MAGIC_BYTES:-ALPN}
 L1_REORG_SAFE_DEPTH=${L1_REORG_SAFE_DEPTH:-4}
 GENESIS_L1_HEIGHT=${GENESIS_L1_HEIGHT:-0}
 BATCH_SEALING_BLOCK_COUNT=${BATCH_SEALING_BLOCK_COUNT:-5}
@@ -335,7 +333,7 @@ EOF
 elif [ "${MODE}" = "fullnode" ]; then
     echo "mode: fullnode"
 
-    for f in ee-params.json ol-params.json asm-params.json; do
+    for f in alpen-params.json ol-params.json asm-params.json; do
         if [ ! -f "${PARAMS_DIR}/${f}" ]; then
             echo "error: missing ${f} in ${PARAMS_DIR}" >&2
             exit 1
@@ -343,7 +341,7 @@ elif [ "${MODE}" = "fullnode" ]; then
     done
 
     if [ "$(realpath "${PARAMS_DIR}")" != "$(realpath "${OUTPUT_DIR}")" ]; then
-        for f in ee-params.json ol-params.json asm-params.json; do
+        for f in alpen-params.json ol-params.json asm-params.json; do
             cp "${PARAMS_DIR}/${f}" "${OUTPUT_DIR}/${f}"
         done
         echo "copied params from ${PARAMS_DIR}"
@@ -392,8 +390,7 @@ SEQUENCER_PUBKEY=${SEQUENCER_PUBKEY}
 
 FN_P2P_PUBKEY=${FN_P2P_PUBKEY}
 
-CHAIN_SPEC=${CHAIN_SPEC:-dev}
-EE_PARAMS_PATH=/app/configs/generated/ee-params.json
+ALPEN_PARAMS_PATH=/app/configs/generated/alpen-params.json
 
 FN_HTTP_PORT=${FN_HTTP_PORT:-9545}
 FN_WS_PORT=${FN_WS_PORT:-9546}

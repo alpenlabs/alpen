@@ -27,17 +27,18 @@ strata-datatool \
     --genesis-l1-height 100 \
     --output l1-anchor.json
 
-# Generate the EE params consumed by Alpen and referenced by OL params generation.
-strata-datatool gen-ee-params \
+# Generate the Alpen params artifact consumed by alpen-client and referenced by
+# OL params generation.
+strata-datatool gen-alpen-params \
     --alpen-chain-config alpen-chain.json \
     --bridge-denomination-sats 200000000 \
     --max-withdrawal-descriptor-len 81 \
-    -o ee-params.json
+    -o alpen-params.json
 
 # Generate the OL params (provides the genesis OL block id consumed by ASM params).
 strata-datatool gen-ol-params \
     --l1-anchor-file l1-anchor.json \
-    --ee-params ee-params.json \
+    --alpen-params alpen-params.json \
     -o ol-params.json
 
 # Generate the ASM params from the operator/sequencer pubkeys and the OL params.

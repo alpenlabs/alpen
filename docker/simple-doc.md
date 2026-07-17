@@ -24,7 +24,7 @@ alpen-client \
   --sequencer \
   --sequencer-pubkey <32-byte-hex-x-only-pubkey> \
   --ol-client-url ws://<strata-host>:8432 \
-  --custom-chain testnet \
+  --alpen-params /path/to/alpen-params.json \
   --p2p-secret-key /path/to/p2p-secret.hex \
   --port 30303 \
   --addr 0.0.0.0 \
@@ -34,7 +34,6 @@ alpen-client \
   --http --http.addr 0.0.0.0 --http.port 8545 --http.api eth,net,web3,txpool \
   --ws --ws.addr 0.0.0.0 --ws.port 8546 --ws.api eth,net,web3,txpool \
   --authrpc.addr 0.0.0.0 --authrpc.port 8551 --authrpc.jwtsecret /path/to/jwt.hex \
-  --ee-da-magic-bytes ALPN \
   --btc-rpc-url http://<bitcoind-host>:18443 \
   --btc-rpc-user <user> \
   --btc-rpc-password <pass> \
@@ -57,7 +56,7 @@ alpen-client \
 
 | Flag | Description |
 |------|-------------|
-| `--custom-chain <name>` | Chain spec. Built-in options: `dev`, `devnet`, `testnet`. Or a path to a custom chainspec JSON file. Default: `testnet`. |
+| `--alpen-params <path>` | Path to the Alpen params artifact (JSON). Carries the EE account id, bridge params, DA stream identity, and the embedded EVM chain spec. Generate with `strata-datatool gen-alpen-params`. Required. |
 | `--ol-client-url <url>` | WebSocket or HTTP URL of the OL (strata) node. Example: `ws://strata:8432`. Required unless `--dummy-ol-client` is used. |
 | `--dummy-ol-client` | Use a fake OL client. Only for isolated EE testing — not for production. |
 | `--datadir <path>` | Where chain data, keys, and databases are stored. |
@@ -89,7 +88,6 @@ alpen-client \
 
 | Flag | Description |
 |------|-------------|
-| `--ee-da-magic-bytes <4-chars>` | 4-byte ASCII tag for OP_RETURN DA envelopes on Bitcoin. Example: `ALPN`. |
 | `--btc-rpc-url <url>` | Bitcoin Core RPC endpoint. |
 | `--btc-rpc-user <user>` | Bitcoin RPC username. |
 | `--btc-rpc-password <pass>` | Bitcoin RPC password. |
@@ -108,7 +106,7 @@ alpen-client \
   --datadir /data/fullnode \
   --sequencer-pubkey <same-pubkey-as-sequencer> \
   --ol-client-url ws://<strata-host>:8432 \
-  --custom-chain testnet \
+  --alpen-params /path/to/alpen-params.json \
   --p2p-secret-key /path/to/p2p-fn.hex \
   --port 30303 \
   --addr 0.0.0.0 \
@@ -129,7 +127,7 @@ alpen-client \
 | `SEQUENCER_PRIVATE_KEY` env | Yes (signs gossip) | No |
 | `--sequencer-pubkey` | Yes (validates own sigs) | Yes (validates sequencer's sigs) |
 | `--sequencer-http` | No | Yes — URL of sequencer's HTTP RPC. Fullnode forwards received user transactions here. |
-| DA flags (`--ee-da-*`, `--btc-rpc-*`) | Yes (posts state diffs to L1) | No |
+| DA flags (`--btc-rpc-*`) | Yes (posts state diffs to L1) | No |
 | Block production | Yes | No — follows chain via gossip |
 
 ### Fullnode-specific flag

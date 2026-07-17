@@ -87,7 +87,7 @@ services:
     volumes:
       # Alpen-client reads only the JWT secret for authrpc.
       # Env vars (pubkey, chain spec, etc.) come from env_file above.
-      - ./configs/generated/ee-params.json:/app/configs/generated/ee-params.json:ro
+      - ./configs/generated/alpen-params.json:/app/configs/generated/alpen-params.json:ro
       - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
       # SP1 ELFs (empty dir when SP1 disabled — harmless)
       - ./elfs:/app/elfs/sp1:ro

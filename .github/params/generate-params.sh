@@ -64,10 +64,11 @@ python3 "${SCRIPT_DIR}/params-helper.py" extract-keys \
     --output-dir "${WORK_DIR}"
 SAFE_HARBOUR=$(tr -d '[:space:]' < "${WORK_DIR}/safe-harbour.txt")
 EE_ACCOUNT_ID=$(tr -d '[:space:]' < "${WORK_DIR}/ee-account-id.txt")
-EE_PARAMS_TEMPLATE="${TEMPLATE_DIR}/ee-params.json"
-BRIDGE_DENOMINATION_SATS=$(json_value "${EE_PARAMS_TEMPLATE}" "bridge_params.denomination")
-MAX_WITHDRAWAL_AMOUNT_SATS=$(json_value "${EE_PARAMS_TEMPLATE}" "bridge_params.max_withdrawal_amount")
-MAX_WITHDRAWAL_DESCRIPTOR_LEN=$(json_value "${EE_PARAMS_TEMPLATE}" "bridge_params.max_withdrawal_descriptor_len")
+ALPEN_PARAMS_TEMPLATE="${TEMPLATE_DIR}/alpen-params.json"
+BRIDGE_DENOMINATION_SATS=$(json_value "${ALPEN_PARAMS_TEMPLATE}" "bridge_params.denomination")
+MAX_WITHDRAWAL_AMOUNT_SATS=$(json_value "${ALPEN_PARAMS_TEMPLATE}" "bridge_params.max_withdrawal_amount")
+MAX_WITHDRAWAL_DESCRIPTOR_LEN=$(json_value "${ALPEN_PARAMS_TEMPLATE}" "bridge_params.max_withdrawal_descriptor_len")
+DA_MAGIC_BYTES=$(json_value "${ALPEN_PARAMS_TEMPLATE}" "blob_spec.magic_bytes")
 
 echo ""
 echo "=== Step 1: Generate raw params via datatool ==="
@@ -88,20 +89,20 @@ run_datatool() {
 }
 
 run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
-    gen-ee-params \
+    gen-alpen-params \
     --alpen-chain-config /app/chain.json \
     --account-id "${EE_ACCOUNT_ID}" \
     --bridge-denomination-sats "${BRIDGE_DENOMINATION_SATS}" \
     ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount-sats "${MAX_WITHDRAWAL_AMOUNT_SATS}"} \
     --max-withdrawal-descriptor-len "${MAX_WITHDRAWAL_DESCRIPTOR_LEN}" \
-    -o /out/ee-params-raw.json
-echo "  ee-params-raw.json generated"
+    --da-magic-bytes "${DA_MAGIC_BYTES}" \
+    -o /out/alpen-params-raw.json
+echo "  alpen-params-raw.json generated"
 
-run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
+run_datatool -- \
     gen-ol-params \
     --alpen-predicate sp1-groth16 \
-    --alpen-chain-config /app/chain.json \
-    --ee-params /out/ee-params-raw.json \
+    --alpen-params /out/alpen-params-raw.json \
     --genesis-l1-height "${GENESIS_L1_HEIGHT}" \
     -o /out/ol-params-raw.json
 echo "  ol-params-raw.json generated"
@@ -119,7 +120,7 @@ run_datatool -- \
 echo "  asm-params-raw.json generated"
 
 # Verify raw files were actually produced
-for f in ee-params-raw.json ol-params-raw.json asm-params-raw.json; do
+for f in alpen-params-raw.json ol-params-raw.json asm-params-raw.json; do
     if [ ! -s "${WORK_DIR}/${f}" ]; then
         echo "ERROR: datatool did not produce ${f} (check BTC RPC connectivity)" >&2
         exit 1

@@ -719,8 +719,7 @@ The client extends the standard Reth CLI. Selected Alpen-specific flags (see [ma
 
 | Flag / Env | Purpose |
 |------------|---------|
-| `--custom-chain` | Built-in chain name or path to a chain spec |
-| `--ee-params` | Path to JSON EE chain params (required) |
+| `--alpen-params` | Path to the JSON Alpen params artifact (required); carries the EE account id, bridge params, DA stream identity, and the embedded EVM chain spec |
 | `--sequencer` | Run as a sequencer (requires the DA flags below) |
 | `--sequencer-pubkey` | Sequencer pubkey for gossip signature validation (required) |
 | `ALPEN_EE_BLOCK_TIME_MS` (env) | Override the sequencer block interval |
@@ -738,7 +737,6 @@ The client extends the standard Reth CLI. Selected Alpen-specific flags (see [ma
 
 | Flag | Purpose |
 |------|---------|
-| `--ee-da-magic-bytes` | Magic bytes tagging EE DA envelope transactions |
 | `--btc-rpc-url` / `--btc-rpc-user` / `--btc-rpc-password` | Bitcoin Core RPC for posting DA |
 | `--btcio-fee-policy` | Fee policy: `bitcoind`, `fixed`, or `mempool` |
 

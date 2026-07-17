@@ -15,8 +15,7 @@ fi
 
 SEQUENCER_MODE="${SEQUENCER_MODE:-false}"
 SEQUENCER_PUBKEY="${SEQUENCER_PUBKEY:?SEQUENCER_PUBKEY must be set}"
-CHAIN_SPEC="${CHAIN_SPEC:-dev}"
-EE_PARAMS_PATH="${EE_PARAMS_PATH:-/app/configs/generated/ee-params.json}"
+ALPEN_PARAMS_PATH="${ALPEN_PARAMS_PATH:-/app/configs/generated/alpen-params.json}"
 
 if [ "${DUMMY_OL_CLIENT:-0}" = "1" ]; then
     set -- --dummy-ol-client "$@"
@@ -32,13 +31,11 @@ if [ "${SEQUENCER_MODE}" = "true" ]; then
     BITCOIND_RPC_USER="${BITCOIND_RPC_USER:?BITCOIND_RPC_USER must be set}"
     BITCOIND_RPC_PASSWORD="${BITCOIND_RPC_PASSWORD:?BITCOIND_RPC_PASSWORD must be set}"
     STRATA_SUBMIT_RPC_TOKEN="${STRATA_SUBMIT_RPC_TOKEN:?STRATA_SUBMIT_RPC_TOKEN must be set}"
-    EE_DA_MAGIC_BYTES="${EE_DA_MAGIC_BYTES:-ALPN}"
     BTCIO_FEE_POLICY="${BTCIO_FEE_POLICY:-bitcoind}"
 
     set -- \
         --sequencer \
         --ol-submit-url "${OL_SUBMIT_URL:-ws://strata:8435}" \
-        --ee-da-magic-bytes "${EE_DA_MAGIC_BYTES}" \
         --btc-rpc-url "${BITCOIND_RPC_URL}" \
         --btc-rpc-user "${BITCOIND_RPC_USER}" \
         --btc-rpc-password "${BITCOIND_RPC_PASSWORD}" \
@@ -64,8 +61,7 @@ fi
 
 exec alpen-client \
     --sequencer-pubkey "${SEQUENCER_PUBKEY}" \
-    --custom-chain "${CHAIN_SPEC}" \
-    --ee-params "${EE_PARAMS_PATH}" \
+    --alpen-params "${ALPEN_PARAMS_PATH}" \
     --datadir "${DATADIR:-/app/data}" \
     --addr 0.0.0.0 \
     --http \
