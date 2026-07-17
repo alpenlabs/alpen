@@ -45,6 +45,7 @@ alpen-ee-engine.workspace = true
 alpen-ee-exec-chain = { workspace = true, optional = true }
 alpen-ee-genesis.workspace = true
 alpen-ee-ol-tracker.workspace = true
+alpen-ee-params.workspace = true
 alpen-ee-rpc-server.workspace = true
 alpen-ee-sequencer = { workspace = true, optional = true }
 alpen-reth-db.workspace = true
@@ -67,7 +68,6 @@ strata-ee-chain-types.workspace = true
 strata-ee-chunk-runtime.workspace = true
 strata-evm-ee.workspace = true
 strata-identifiers.workspace = true
-strata-l1-txfmt.workspace = true
 strata-logging.workspace = true
 strata-ol-rpc-api = { workspace = true, features = ["client"] }
 strata-ol-rpc-types.workspace = true
