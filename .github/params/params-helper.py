@@ -28,10 +28,11 @@ def write_json(path: Path, data: dict) -> None:
         f.write("\n")
 
 
-def merge_ee_params(template: dict, raw: dict) -> dict:
-    template["genesis_blockhash"] = raw["genesis_blockhash"]
-    template["genesis_stateroot"] = raw["genesis_stateroot"]
-    template["genesis_blocknum"] = raw["genesis_blocknum"]
+def merge_alpen_params(template: dict, raw: dict) -> dict:
+    # The embedded EVM spec is a normalized re-serialization of the input
+    # chain config, so inject the whole datatool-generated subtree instead of
+    # patching individual fields.
+    template["evm_spec"] = raw["evm_spec"]
     return template
 
 
@@ -67,7 +68,7 @@ def merge_asm_params(template: dict, raw: dict) -> dict:
 
 def check_no_placeholders(output_dir: Path) -> bool:
     ok = True
-    for name in ["ee-params", "ol-params", "asm-params"]:
+    for name in ["alpen-params", "ol-params", "asm-params"]:
         content = (output_dir / f"{name}.json").read_text()
         if "__" in content:
             print(f"ERROR: {name}.json still has placeholders", file=sys.stderr)
@@ -128,13 +129,13 @@ def extract_safe_harbour(template_dir: Path) -> str:
 
 
 def extract_ee_account_id(template_dir: Path) -> str:
-    path = template_dir / "ee-params.json"
+    path = template_dir / "alpen-params.json"
     if not path.exists():
-        raise FileNotFoundError(f"missing required EE params template: {path}")
-    ee_params = load_json(path)
-    if "account_id" not in ee_params:
-        raise KeyError(f"missing account_id in EE params template: {path}")
-    return ee_params["account_id"]
+        raise FileNotFoundError(f"missing required Alpen params template: {path}")
+    alpen_params = load_json(path)
+    if "account_id" not in alpen_params:
+        raise KeyError(f"missing account_id in Alpen params template: {path}")
+    return alpen_params["account_id"]
 
 
 def main():
@@ -175,12 +176,12 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    eep = merge_ee_params(
-        load_json(template_dir / "ee-params.json"),
-        load_json(raw_dir / "ee-params-raw.json"),
+    eep = merge_alpen_params(
+        load_json(template_dir / "alpen-params.json"),
+        load_json(raw_dir / "alpen-params-raw.json"),
     )
-    write_json(output_dir / "ee-params.json", eep)
-    print("  ee-params.json: merged")
+    write_json(output_dir / "alpen-params.json", eep)
+    print("  alpen-params.json: merged")
 
     olp = merge_ol_params(
         load_json(template_dir / "ol-params.json"),

@@ -13,7 +13,7 @@ pub async fn ensure_finalized_exec_chain_genesis<TStorage: ExecBlockStorage>(
     genesis_ol_block: OLBlockCommitment,
     storage: &TStorage,
 ) -> eyre::Result<()> {
-    let genesis_ee_blockhash = config.params().genesis_blockhash().0.into();
+    let genesis_ee_blockhash = config.params().genesis_block_info().blockhash().0.into();
     info!(%genesis_ee_blockhash, "genesis ee blockhash");
     let (genesis_block, genesis_block_payload) =
         build_genesis_exec_block(config.params(), genesis_ol_block);

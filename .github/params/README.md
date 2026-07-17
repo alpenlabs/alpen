@@ -1,6 +1,6 @@
 # CI Params Generation
 
-Generates deployment params (`ee-params.json`, `ol-params.json`, `asm-params.json`) using the prebuilt datatool image from a given commit.
+Generates deployment params (`alpen-params.json`, `ol-params.json`, `asm-params.json`) using the prebuilt datatool image from a given commit.
 
 ## Templates
 

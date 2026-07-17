@@ -1079,6 +1079,7 @@ dependencies = [
  "alpen-ee-exec-chain",
  "alpen-ee-genesis",
  "alpen-ee-ol-tracker",
+ "alpen-ee-params",
  "alpen-ee-rpc-server",
  "alpen-ee-sequencer",
  "alpen-reth-db",
@@ -1122,7 +1123,6 @@ dependencies = [
  "strata-ee-chunk-runtime",
  "strata-evm-ee",
  "strata-identifiers",
- "strata-l1-txfmt",
  "strata-logging",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
@@ -1200,12 +1200,13 @@ name = "alpen-ee-config"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
+ "alpen-chainspec",
  "alpen-ee-common",
- "serde",
+ "alpen-ee-params",
  "serde_json",
- "strata-acct-types",
  "strata-bridge-params",
  "strata-config",
+ "strata-l1-txfmt",
  "strata-predicate",
 ]
 
@@ -1354,6 +1355,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-ee-common",
  "alpen-ee-config",
+ "alpen-ee-params",
  "eyre",
  "strata-acct-types",
  "strata-ee-acct-types",
@@ -15496,7 +15498,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-chainspec",
- "alpen-ee-config",
+ "alpen-ee-params",
  "anyhow",
  "argh",
  "bitcoin",
@@ -15507,6 +15509,7 @@ dependencies = [
  "serde_json",
  "strata-asm-params",
  "strata-asm-proto-bridge-v1-types",
+ "strata-bridge-params",
  "strata-btc-types",
  "strata-btc-verification",
  "strata-crypto",
@@ -15523,7 +15526,6 @@ dependencies = [
  "strata-proofimpl-predicate-keys",
  "strata-snark-acct-runtime",
  "strata-sp1-guest-builder",
- "tempfile",
  "tokio",
  "toml 0.5.11",
  "zeroize",

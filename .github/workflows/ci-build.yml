@@ -243,15 +243,15 @@ jobs:
           CHECKPOINT_VK=$(./target/release/strata-datatool gen-checkpoint-predicate)
           echo "Checkpoint VK (ci-build): ${CHECKPOINT_VK}"
 
-          # Generate EE params for gen-ol-params so the Alpen account predicate is derived
+          # Generate Alpen params for gen-ol-params so the Alpen account predicate is derived
           # through the same params path used by normal generation.
-          ./target/release/strata-datatool gen-ee-params \
+          ./target/release/strata-datatool gen-alpen-params \
             --bridge-denomination-sats 200000000 \
             --max-withdrawal-amount-sats 1000000000 \
             --max-withdrawal-descriptor-len 81 \
-            -o /tmp/ci-ee-params.json
+            -o /tmp/ci-alpen-params.json
           ALPEN_VK=$(./target/release/strata-datatool gen-ol-params \
-            --ee-params /tmp/ci-ee-params.json \
+            --alpen-params /tmp/ci-alpen-params.json \
             --l1-anchor-file .github/fixtures/l1-anchor.json | jq -r '.accounts | to_entries[0].value.predicate')
           echo "Alpen VK (ci-build): ${ALPEN_VK}"
 

@@ -25,8 +25,8 @@ from common.config import (
     StrataConfig,
 )
 from common.datatool import (
+    generate_alpen_params,
     generate_asm_params,
-    generate_ee_params,
     generate_ol_params,
     generate_sequencer_artifacts,
 )
@@ -36,7 +36,7 @@ from common.services import StrataProps, StrataService
 class StrataNodeParams(NamedTuple):
     """Generated parameter files for a Strata node."""
 
-    ee_params: Path
+    alpen_params: Path
     ol_params: Path
     asm_params: Path
 
@@ -168,16 +168,16 @@ class StrataFactory(flexitest.Factory):
                 f.write(sequencer_runtime_config.as_toml_string())
 
         if shared_params is not None:
-            ee_params_path = datadir / "ee-params.json"
+            alpen_params_path = datadir / "alpen-params.json"
             ol_params_path = datadir / "ol-params.json"
             asm_params_path = datadir / "asm-params.json"
-            shutil.copyfile(shared_params.ee_params, ee_params_path)
+            shutil.copyfile(shared_params.alpen_params, alpen_params_path)
             shutil.copyfile(shared_params.ol_params, ol_params_path)
             shutil.copyfile(shared_params.asm_params, asm_params_path)
         else:
             # Generate the sequencer key + operator pubkeys consumed when building ASM params.
             seq_artifacts = generate_sequencer_artifacts(datadir, use_unchecked_cred_rule)
-            ee_params_path = generate_ee_params(datadir)
+            alpen_params_path = generate_alpen_params(datadir)
 
             # Generate or write OL params.
             if ol_params is not None:
@@ -188,7 +188,7 @@ class StrataFactory(flexitest.Factory):
                     datadir,
                     bconfig,
                     genesis_l1_height,
-                    ee_params_path=ee_params_path,
+                    alpen_params_path=alpen_params_path,
                 )
 
             # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
@@ -203,7 +203,7 @@ class StrataFactory(flexitest.Factory):
             )
 
         node_params = StrataNodeParams(
-            ee_params=ee_params_path,
+            alpen_params=alpen_params_path,
             ol_params=ol_params_path,
             asm_params=asm_params_path,
         )

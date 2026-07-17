@@ -57,7 +57,7 @@ pub(crate) enum Subcommand {
     CheckpointPredicate(SubcCheckpointPredicate),
     AsmParams(SubcAsmParams),
     OlParams(SubcOlParams),
-    EeParams(SubcEeParams),
+    AlpenParams(SubcAlpenParams),
     #[cfg(feature = "btc-client")]
     GenL1Anchor(SubcGenL1Anchor),
 }
@@ -292,31 +292,25 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "alpen EE account inner state root as 64-char hex; overrides --alpen-chain-config and EE params genesis state"
+        description = "alpen EE account inner state root as 64-char hex; overrides the Alpen params genesis state"
     )]
     pub(crate) alpen_inner_state: Option<String>,
 
     #[argh(
         option,
-        description = "path to EVM chain config JSON; used for the Alpen EE account inner state when --alpen-inner-state is omitted"
+        description = "path to JSON-serialized Alpen params; supplies the Alpen EE account id, genesis state, and bridge params"
     )]
-    pub(crate) alpen_chain_config: Option<PathBuf>,
-
-    #[argh(
-        option,
-        description = "path to JSON-serialized EE params; supplies the Alpen EE account id, genesis state, and bridge params"
-    )]
-    pub(crate) ee_params: Option<PathBuf>,
+    pub(crate) alpen_params: Option<PathBuf>,
 }
 
-/// Generate an EE params file from inputs.
+/// Generate an Alpen params file from inputs.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(
     subcommand,
-    name = "gen-ee-params",
-    description = "generates EE params from inputs"
+    name = "gen-alpen-params",
+    description = "generates the Alpen params artifact from inputs"
 )]
-pub(crate) struct SubcEeParams {
+pub(crate) struct SubcAlpenParams {
     #[argh(
         option,
         description = "output file path .json (default stdout)",
@@ -350,6 +344,12 @@ pub(crate) struct SubcEeParams {
         description = "maximum withdrawal BOSD descriptor length in bytes, including the type tag"
     )]
     pub(crate) max_withdrawal_descriptor_len: u32,
+
+    #[argh(
+        option,
+        description = "EE DA stream magic bytes as a 4-character string (default ALPN)"
+    )]
+    pub(crate) da_magic_bytes: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]

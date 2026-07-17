@@ -34,7 +34,7 @@ class EeOLCheckpointSyncEnv(EeOLEnv):
             ol_endpoint=checkpoint_node.props["rpc_url"],
             ol_submit_endpoint=sequencer.props["submit_rpc_url"],
             ol_submit_token=sequencer.props["submit_rpc_token"],
-            ee_params_path=self.strata_config.sequencer_node.params.ee_params,
+            alpen_params_path=self.strata_config.sequencer_node.params.alpen_params,
         )
 
         services = {

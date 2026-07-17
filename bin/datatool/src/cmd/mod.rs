@@ -1,7 +1,7 @@
 //! Subcommand handlers for the `datatool` binary.
 
+mod alpen_params;
 mod asm_params;
-mod ee_params;
 mod gen_checkpoint_predicate;
 mod genesis_info;
 #[cfg(feature = "btc-client")]
@@ -24,7 +24,7 @@ pub(crate) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
         Subcommand::CheckpointPredicate(subc) => gen_checkpoint_predicate::exec(subc, ctx),
         Subcommand::AsmParams(subc) => asm_params::exec(subc, ctx),
         Subcommand::OlParams(subc) => ol_params::exec(subc, ctx),
-        Subcommand::EeParams(subc) => ee_params::exec(subc, ctx),
+        Subcommand::AlpenParams(subc) => alpen_params::exec(subc, ctx),
         #[cfg(feature = "btc-client")]
         Subcommand::GenL1Anchor(subc) => l1_anchor::exec(subc, ctx),
     }

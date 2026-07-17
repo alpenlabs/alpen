@@ -83,16 +83,16 @@ def collect_placeholder_keys(obj, prefix=""):
 
 
 def generate_raw_params(tmpdir):
-    """Generate ee-params, ol-params, and asm-params using local datatool with fixture L1 anchor."""
-    ee_path = Path(tmpdir) / "ee-params.json"
+    """Generate alpen/ol/asm params using local datatool with the fixture L1 anchor."""
+    alpen_path = Path(tmpdir) / "alpen-params.json"
     ol_path = Path(tmpdir) / "ol-params.json"
     asm_path = Path(tmpdir) / "asm-params.json"
 
     run_datatool(
         [
-            "gen-ee-params",
+            "gen-alpen-params",
             "-o",
-            str(ee_path),
+            str(alpen_path),
             "--alpen-chain-config",
             str(CHAIN_CONFIG),
             "--bridge-denomination-sats",
@@ -104,7 +104,7 @@ def generate_raw_params(tmpdir):
         ]
     )
 
-    assert ee_path.exists(), f"ee-params not generated at {ee_path}"
+    assert alpen_path.exists(), f"alpen-params not generated at {alpen_path}"
 
     run_datatool(
         [
@@ -113,8 +113,8 @@ def generate_raw_params(tmpdir):
             str(L1_ANCHOR),
             "--alpen-predicate",
             "bip340-schnorr-test",
-            "--ee-params",
-            str(ee_path),
+            "--alpen-params",
+            str(alpen_path),
             "-o",
             str(ol_path),
         ]
@@ -148,7 +148,7 @@ def generate_raw_params(tmpdir):
     assert asm_path.exists(), f"asm-params not generated at {asm_path}"
 
     return {
-        "ee-params": ee_path,
+        "alpen-params": alpen_path,
         "ol-params": ol_path,
         "asm-params": asm_path,
     }

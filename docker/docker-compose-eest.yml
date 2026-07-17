@@ -42,8 +42,6 @@ services:
       - --sequencer-pubkey
       - ${SEQUENCER_PUBKEY}
       - --dummy-ol-client
-      - --custom-chain
-      - ${CHAIN_SPEC:-dev}
       - --datadir
       - /app/data
       - --p2p-secret-key
@@ -62,8 +60,6 @@ services:
       - "8545"
       - --http.api
       - eth,net,web3,txpool,admin,debug
-      - --ee-da-magic-bytes
-      - ${EE_DA_MAGIC_BYTES:-ALPN}
       - --btc-rpc-url
       - http://bitcoind:${BITCOIND_RPC_PORT:-18443}
       - --btc-rpc-user
@@ -84,7 +80,7 @@ services:
     ports:
       - "8545:8545"
     volumes:
-      - ./configs/generated/ee-params.json:/app/configs/generated/ee-params.json:ro
+      - ./configs/generated/alpen-params.json:/app/configs/generated/alpen-params.json:ro
       - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:

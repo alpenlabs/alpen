@@ -84,7 +84,7 @@ class EeOLEnv(flexitest.EnvConfig):
             ol_endpoint=seq.props["rpc_url"],
             ol_submit_endpoint=seq.props["submit_rpc_url"],
             ol_submit_token=seq.props["submit_rpc_token"],
-            ee_params_path=self.strata_config.sequencer_node.params.ee_params,
+            alpen_params_path=self.strata_config.sequencer_node.params.alpen_params,
         )
 
         services = {**alpen_services, **strata_services}

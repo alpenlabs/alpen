@@ -20,7 +20,10 @@ use strata_identifiers::{Buf32, L1BlockCommitment, L1Height, WtxidsRoot};
 use strata_l1_txfmt::MagicBytes;
 use tracing::*;
 
-use crate::{chunking::prepare_da_chunks, DaBlobSource};
+use crate::{
+    chunking::{prepare_da_chunks, DEFAULT_MAX_CHUNK_PAYLOAD},
+    DaBlobSource,
+};
 
 /// Per-block accumulator: commit (when present) plus reveals tagged with
 /// their commit-output vout for stable ordering.
@@ -89,6 +92,7 @@ pub struct ChunkedEnvelopeDaProvider {
     broadcast_ops: Arc<BroadcastDbOps>,
     l1_blocks: Arc<dyn L1BlockReader>,
     magic_bytes: MagicBytes,
+    max_chunk_payload: usize,
 }
 
 impl fmt::Debug for ChunkedEnvelopeDaProvider {
@@ -107,6 +111,10 @@ impl ChunkedEnvelopeDaProvider {
         l1_blocks: Arc<dyn L1BlockReader>,
         magic_bytes: MagicBytes,
     ) -> eyre::Result<Self> {
+        // The DA verification path baked into the acct proof guest
+        // (`alpen-ee-da-runtime`) is pinned to the `EE_DA_MAGIC_BYTES`
+        // constant, so a params file carrying any other magic must keep
+        // failing sequencer startup until the guest reads it as an input.
         let actual_magic = *magic_bytes.as_bytes();
         ensure!(
             actual_magic == EE_DA_MAGIC_BYTES,
@@ -121,7 +129,15 @@ impl ChunkedEnvelopeDaProvider {
             broadcast_ops,
             l1_blocks,
             magic_bytes,
+            max_chunk_payload: DEFAULT_MAX_CHUNK_PAYLOAD,
         })
+    }
+
+    /// Overrides the maximum per-chunk payload size used when splitting
+    /// blobs for envelope inscription. Builder-side knob only.
+    pub fn with_max_chunk_payload(mut self, max_chunk_payload: usize) -> Self {
+        self.max_chunk_payload = max_chunk_payload;
+        self
     }
 }
 
@@ -133,7 +149,7 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
         }
 
         let blob = self.blob_provider.get_blob(batch_id).await?;
-        let chunks = prepare_da_chunks(&blob)?;
+        let chunks = prepare_da_chunks(&blob, self.max_chunk_payload)?;
         ensure!(!chunks.is_empty(), "prepare_da_chunks returned empty");
 
         let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, self.magic_bytes, DA_BLOB_VERSION);

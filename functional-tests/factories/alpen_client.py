@@ -12,7 +12,7 @@ import flexitest
 
 from common.config import EeDaConfig
 from common.config.constants import DEFAULT_EE_BLOCK_TIME_MS
-from common.datatool import generate_ee_params
+from common.datatool import generate_alpen_params
 from common.services import AlpenClientProps, AlpenClientService
 
 
@@ -63,8 +63,7 @@ class AlpenClientFactory(flexitest.Factory):
         sequencer_privkey: str,
         p2p_secret_key: str | None = None,
         enable_discovery: bool = False,
-        custom_chain: str = "dev",
-        ee_params_path: Path | None = None,
+        alpen_params_path: Path | None = None,
         ol_endpoint: str | None = None,
         ol_submit_endpoint: str | None = None,
         ol_submit_token: str | None = None,
@@ -84,8 +83,8 @@ class AlpenClientFactory(flexitest.Factory):
             sequencer_privkey: Sequencer's private key (hex, 32 bytes) - set as env var
             p2p_secret_key: P2P secret key for deterministic enode (hex, 32 bytes)
             enable_discovery: Enable discv5 peer discovery (for bootnode mode)
-            custom_chain: Chain spec to use
-            ee_params_path: EE params file to use; generated when omitted
+            alpen_params_path: Alpen params artifact to use; generated when omitted
+                (embedding the dev chain spec)
             da_config: Optional DA pipeline configuration for posting state diffs to L1
         """
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -113,11 +112,15 @@ class AlpenClientFactory(flexitest.Factory):
         else:
             ol_client_args = ["--dummy-ol-client"]
 
-        if ee_params_path is None:
-            ee_params_path = generate_ee_params(
+        if alpen_params_path is None:
+            da_magic_bytes = (
+                da_config.magic_bytes.decode("ascii") if da_config is not None else None
+            )
+            alpen_params_path = generate_alpen_params(
                 datadir,
                 bridge_denomination=bridge_denomination,
                 max_withdrawal_amount=max_withdrawal_amount,
+                da_magic_bytes=da_magic_bytes,
             )
 
         # fmt: off
@@ -126,7 +129,7 @@ class AlpenClientFactory(flexitest.Factory):
             "--datadir", str(datadir),
             "--sequencer",
             "--sequencer-pubkey", sequencer_pubkey,
-            "--ee-params", str(ee_params_path),
+            "--alpen-params", str(alpen_params_path),
             *ol_client_args,
             "--addr", "127.0.0.1",  # Force IPv4 for testing
             "--nat", "extip:127.0.0.1",  # Force enode to show 127.0.0.1
@@ -138,7 +141,6 @@ class AlpenClientFactory(flexitest.Factory):
             "--health-check-host", "127.0.0.1",
             "--health-check-port", "0",
             "--p2p-secret-key", str(p2p_secret_key_file),
-            "--custom-chain", custom_chain,
             "--batch-sealing-block-count", str(batch_sealing_block_count),
             "-vvvv",
             # Functional tests don't ship the SP1 guest ELFs, so run the
@@ -173,11 +175,10 @@ class AlpenClientFactory(flexitest.Factory):
         if beneficiary_address is not None:
             cmd.extend(["--beneficiary-address", beneficiary_address])
 
-        # DA pipeline configuration
+        # DA pipeline configuration (magic bytes travel in the params artifact)
         if da_config is not None:
             # fmt: off
             cmd.extend([
-                "--ee-da-magic-bytes", da_config.magic_bytes.decode("ascii"),
                 "--btc-rpc-url", da_config.btc_rpc_url,
                 "--btc-rpc-user", da_config.btc_rpc_user,
                 "--btc-rpc-password", da_config.btc_rpc_password,
@@ -232,8 +233,7 @@ class AlpenClientFactory(flexitest.Factory):
         bootnodes: list[str] | None = None,
         enable_discovery: bool = False,
         p2p_secret_key: str | None = None,
-        custom_chain: str = "dev",
-        ee_params_path: Path | None = None,
+        alpen_params_path: Path | None = None,
         instance_id: int = 0,
         datadir_override: str | None = None,
         sequencer_http: str | None = None,
@@ -251,8 +251,8 @@ class AlpenClientFactory(flexitest.Factory):
             bootnodes: List of enode URLs for discovery bootstrap
             enable_discovery: Enable discv5 peer discovery
             p2p_secret_key: P2P secret key for deterministic enode
-            custom_chain: Chain spec to use
-            ee_params_path: EE params file to use; generated when omitted
+            alpen_params_path: Alpen params artifact to use; generated when omitted
+                (embedding the dev chain spec)
             instance_id: Instance ID for multiple fullnodes
             datadir_override: Optional datadir path (bypasses EnvContext requirement)
             sequencer_http: Sequencer HTTP URL for transaction forwarding
@@ -279,8 +279,8 @@ class AlpenClientFactory(flexitest.Factory):
         p2p_secret_key_file.write_text(key_hex)
 
         ol_client_args = ["--ol-client-url", ol_endpoint] if ol_endpoint else ["--dummy-ol-client"]
-        if ee_params_path is None:
-            ee_params_path = generate_ee_params(
+        if alpen_params_path is None:
+            alpen_params_path = generate_alpen_params(
                 datadir,
                 bridge_denomination=bridge_denomination,
                 max_withdrawal_amount=max_withdrawal_amount,
@@ -291,7 +291,7 @@ class AlpenClientFactory(flexitest.Factory):
             "alpen-client",
             "--datadir", str(datadir),
             "--sequencer-pubkey", sequencer_pubkey,
-            "--ee-params", str(ee_params_path),
+            "--alpen-params", str(alpen_params_path),
             *ol_client_args,
             "--addr", "127.0.0.1",  # Force IPv4 for testing
             "--nat", "extip:127.0.0.1",  # Force enode to show 127.0.0.1
@@ -303,7 +303,6 @@ class AlpenClientFactory(flexitest.Factory):
             "--health-check-host", "127.0.0.1",
             "--health-check-port", "0",
             "--p2p-secret-key", str(p2p_secret_key_file),
-            "--custom-chain", custom_chain,
             "-vvvv",
         ]
         # fmt: on
