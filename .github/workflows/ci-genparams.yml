@@ -1,5 +1,5 @@
 # Generates deployment params (ee-params, ol-params, asm-params) using the prebuilt
-# datatool image from the specified commit. Static values (operator keys,
+# datatool image tag from the specified commit. Static values (operator keys,
 # denomination, etc.) come from pre-committed templates per environment;
 # dynamic values (VKs, genesis L1 anchor, genesis_ol_blkid) are filled in by
 # datatool.
@@ -18,12 +18,12 @@ on:
         options:
           - staging-v2
           - prod
-      commit:
-        description: "Alpen commit short SHA (must have a successful CI — Build and Push Images run)"
+      datatool_image_commit:
+        description: "Alpen commit whose first 7 chars identify the datatool image tag"
         required: true
         type: string
       checkout_ref:
-        description: "Repo ref to checkout (default: image commit SHA)"
+        description: "Repo ref for params scripts/templates (default: workflow ref)"
         required: false
         type: string
       genesis_l1_height:
@@ -46,56 +46,76 @@ concurrency:
 
 jobs:
   generate-params:
-    name: Generate params (${{ inputs.env }}, ${{ inputs.commit }})
+    name: Generate params (${{ inputs.env }}, ${{ inputs.datatool_image_commit }})
     runs-on: ubuntu-latest
     environment: ${{ inputs.env }}
     permissions:
-      actions: read
       contents: read
       id-token: write
     steps:
-      - name: Resolve image commit
+      - name: Resolve params inputs
         id: resolve
         env:
-          GH_TOKEN: ${{ github.token }}
-          INPUT_COMMIT: ${{ inputs.commit }}
+          DATATOOL_IMAGE_COMMIT: ${{ inputs.datatool_image_commit }}
           INPUT_CHECKOUT_REF: ${{ inputs.checkout_ref }}
+          WORKFLOW_REF_SHA: ${{ github.sha }}
         run: |
           set_output() {
             echo "$1=$2" >> "$GITHUB_OUTPUT"
           }
 
-          SHORT_TAG="${INPUT_COMMIT:0:7}"
-          BUILD_SHA=$(gh run list -R "${{ github.repository }}" \
-            --workflow ci-build.yml \
-            --status success \
-            --limit 100 \
-            --json headSha \
-            --jq ".[] | select(.headSha | startswith(\"${SHORT_TAG}\")) | .headSha" | head -n1)
-
-          if [ -z "${BUILD_SHA}" ]; then
-            echo "::error::No successful ci-build found for ${SHORT_TAG}"
+          fail() {
+            echo "::error::$1"
             exit 1
-          fi
+          }
 
-          if [ -n "${INPUT_CHECKOUT_REF}" ]; then
-            # Manual override: use caller-provided scripts/templates.
-            CHECKOUT_REF="${INPUT_CHECKOUT_REF}"
-          else
-            # Default path: checkout the same commit that produced the image.
-            CHECKOUT_REF="${BUILD_SHA}"
-          fi
+          require_single_line() {
+            local name="$1"
+            local value="$2"
 
-          set_output short_tag "${SHORT_TAG}"
-          set_output commit_sha "${BUILD_SHA}"
-          set_output checkout_ref "${CHECKOUT_REF}"
-          echo "Selected image build: ${SHORT_TAG} (${BUILD_SHA})"
-          echo "Checkout ref: ${CHECKOUT_REF}"
+            if [[ "${value}" == *$'\n'* || "${value}" == *$'\r'* ]]; then
+              fail "${name} must be single-line"
+            fi
+          }
+
+          datatool_image_tag_from_commit() {
+            local commit="$1"
+
+            # Commit used only to derive the prebuilt datatool Docker image tag.
+            if ! [[ "${commit}" =~ ^[0-9a-f]{7,40}$ ]]; then
+              fail "datatool_image_commit must be a 7-40 char lowercase hex commit SHA"
+            fi
+
+            printf '%s\n' "${commit:0:7}"
+          }
+
+          params_source_ref() {
+            local checkout_ref="$1"
+
+            # Optional caller-selected repo ref for params scripts/templates.
+            if [ -n "${checkout_ref}" ]; then
+              require_single_line checkout_ref "${checkout_ref}"
+              printf '%s\n' "${checkout_ref}"
+              return
+            fi
+
+            # By default, use the commit that GitHub Actions is running this workflow from.
+            printf '%s\n' "${WORKFLOW_REF_SHA}"
+          }
+
+          DATATOOL_IMAGE_TAG=$(datatool_image_tag_from_commit "${DATATOOL_IMAGE_COMMIT}")
+          PARAMS_SOURCE_REF=$(params_source_ref "${INPUT_CHECKOUT_REF}")
+
+          set_output datatool_image_tag "${DATATOOL_IMAGE_TAG}"
+          set_output params_source_ref "${PARAMS_SOURCE_REF}"
+          echo "Datatool image commit: ${DATATOOL_IMAGE_COMMIT}"
+          echo "Datatool image tag: ${DATATOOL_IMAGE_TAG}"
+          echo "Params source ref: ${PARAMS_SOURCE_REF}"
 
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ steps.resolve.outputs.checkout_ref }}
+          ref: ${{ steps.resolve.outputs.params_source_ref }}
           persist-credentials: false
 
       - name: Configure AWS credentials
@@ -112,8 +132,8 @@ jobs:
 
       - name: Pull datatool image
         env:
-          COMMIT: ${{ steps.resolve.outputs.short_tag }}
-        run: docker pull "${DATATOOL_REPO}:${COMMIT}"
+          DATATOOL_IMAGE_TAG: ${{ steps.resolve.outputs.datatool_image_tag }}
+        run: docker pull "${DATATOOL_REPO}:${DATATOOL_IMAGE_TAG}"
 
       - name: Verify chainspec
         env:
@@ -125,7 +145,9 @@ jobs:
       - name: Generate params
         env:
           DEPLOY_ENV: ${{ inputs.env }}
-          COMMIT: ${{ steps.resolve.outputs.short_tag }}
+          DATATOOL_IMAGE_TAG: ${{ steps.resolve.outputs.datatool_image_tag }}
+          # Backward-compatibility alias for older params scripts.
+          COMMIT: ${{ steps.resolve.outputs.datatool_image_tag }}
           GENESIS_L1_HEIGHT: ${{ inputs.genesis_l1_height }}
           CHAIN_CONFIG: ${{ inputs.chain_config }}
           BTC_RPC_URL: ${{ secrets.PARAMS_BTC_RPC_URL }}
@@ -154,6 +176,6 @@ jobs:
       - name: Upload params artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: params-${{ inputs.env }}-${{ steps.resolve.outputs.short_tag }}
+          name: params-${{ inputs.env }}-${{ steps.resolve.outputs.datatool_image_tag }}
           path: .github/params/out/${{ inputs.env }}/
           retention-days: 30
