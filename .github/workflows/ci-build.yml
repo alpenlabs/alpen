@@ -55,9 +55,11 @@ on:
 env:
   AWS_REGION: us-east-1
 
-# Cancel in-progress runs for the same branch (except main — let those finish)
+# Cancel in-progress runs for the same branch (except main — let those finish).
+# Manual dispatches use unique groups so multiple requested builds can run at
+# the same time.
 concurrency:
-  group: ci-build-${{ github.ref }}
+  group: ci-build-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
