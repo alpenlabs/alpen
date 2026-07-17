@@ -84,10 +84,7 @@ pub fn ee_genesis_block_info(chain_spec: &ChainSpec) -> AlpenEeGenesisBlockInfo 
     let genesis_header = chain_spec.genesis_header();
     let genesis_stateroot = genesis_header.state_root;
     let genesis_hash = chain_spec.genesis_hash();
-    let genesis_blocknum = chain_spec
-        .genesis()
-        .number
-        .expect("genesis block number should be present");
+    let genesis_blocknum = genesis_header.number;
 
     AlpenEeGenesisBlockInfo {
         blockhash: genesis_hash,
