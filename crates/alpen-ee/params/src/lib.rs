@@ -7,8 +7,12 @@
 //! genesis JSON, and DA-related CLI flags) with one validate-on-decode JSON
 //! document.
 
+mod alpen_forks;
 mod blob_spec;
 mod evm_spec;
+mod params;
 
+pub use alpen_forks::AlpenForkSchedule;
 pub use blob_spec::BlobSpec;
 pub use evm_spec::{EvmSpec, EvmSpecError};
+pub use params::{AlpenParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
