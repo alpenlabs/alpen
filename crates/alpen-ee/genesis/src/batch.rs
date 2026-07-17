@@ -8,11 +8,10 @@ pub async fn ensure_batch_genesis<TStorage: BatchStorage>(
     config: &AlpenEeConfig,
     storage: &TStorage,
 ) -> eyre::Result<()> {
-    let expected_genesis_batch = Batch::new_genesis_batch(
-        config.params().genesis_blockhash().0.into(),
-        config.params().genesis_blocknum(),
-    )
-    .map_err(|err| eyre!("ensure_batch_genesis: {err}"))?;
+    let genesis_info = config.params().genesis_block_info();
+    let expected_genesis_batch =
+        Batch::new_genesis_batch(genesis_info.blockhash().0.into(), genesis_info.blocknum())
+            .map_err(|err| eyre!("ensure_batch_genesis: {err}"))?;
 
     if let Some((stored_genesis_batch, _)) = storage
         .get_batch_by_idx(0)

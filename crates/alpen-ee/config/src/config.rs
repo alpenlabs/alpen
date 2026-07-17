@@ -2,16 +2,17 @@ use std::sync::Arc;
 
 use alloy_primitives::U256;
 use alpen_ee_common::{FeeModelConfig, L1FeeRateSource};
+use alpen_ee_params::AlpenParams;
 use strata_config::{btcio::L1FeePolicyConfig, L1FeeRateSourceConfig, SequencerFeeModelConfig};
 use strata_predicate::PredicateKey;
 
-use crate::{defaults::DEFAULT_DB_RETRY_COUNT, AlpenEeParams};
+use crate::defaults::DEFAULT_DB_RETRY_COUNT;
 
 /// Local config that may differ between nodes + params.
 #[derive(Debug, Clone)]
 pub struct AlpenEeConfig {
     /// Chain specific config.
-    params: Arc<AlpenEeParams>,
+    params: Arc<AlpenParams>,
 
     /// To verify preconfirmed updates from sequencer.
     sequencer_credrule: PredicateKey,
@@ -35,14 +36,14 @@ pub struct AlpenEeConfig {
 impl AlpenEeConfig {
     /// Creates a new Alpen EE configuration.
     pub fn new(
-        params: AlpenEeParams,
+        params: Arc<AlpenParams>,
         sequencer_credrule: PredicateKey,
         ol_client_http: String,
         ee_sequencer_http: Option<String>,
         db_retry_count: Option<u16>,
     ) -> Self {
         Self {
-            params: Arc::new(params),
+            params,
             sequencer_credrule,
             ol_client_http,
             ee_sequencer_http,
@@ -64,7 +65,7 @@ impl AlpenEeConfig {
     }
 
     /// Returns the chain parameters.
-    pub fn params(&self) -> &Arc<AlpenEeParams> {
+    pub fn params(&self) -> &Arc<AlpenParams> {
         &self.params
     }
 
@@ -114,30 +115,37 @@ fn u256_from_u64(value: u64) -> U256 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use alpen_chainspec::DEV_CHAIN_SPEC;
     use alpen_ee_common::L1FeeRateSource;
-    use strata_acct_types::AccountId;
+    use alpen_ee_params::{
+        AlpenForkSchedule, AlpenParams, BlobSpec, EvmSpec, DEFAULT_ALPEN_EE_ACCOUNT_ID,
+    };
     use strata_bridge_params::BridgeParams;
     use strata_config::{
         btcio::{FeePolicy, L1FeePolicyConfig},
         L1FeeRateSourceConfig, SequencerFeeModelConfig,
     };
+    use strata_l1_txfmt::MagicBytes;
     use strata_predicate::PredicateKey;
 
     use super::{u256_from_u64, AlpenEeConfig};
-    use crate::AlpenEeParams;
 
     #[test]
     fn test_fee_model_config_can_be_attached_and_read_back() {
-        let params = AlpenEeParams::new(
-            AccountId::new([1u8; 32]),
-            [2u8; 32].into(),
-            [3u8; 32].into(),
-            0,
-            BridgeParams::new(100_000_000, Some(1_000_000_000)).expect("valid bridge params"),
+        let evm_spec: EvmSpec = serde_json::from_str(DEV_CHAIN_SPEC).expect("valid dev chain spec");
+        let params = AlpenParams::new(
+            DEFAULT_ALPEN_EE_ACCOUNT_ID,
+            BridgeParams::new_with_descriptor_limit(100_000_000, Some(1_000_000_000), 81)
+                .expect("valid bridge params"),
+            BlobSpec::new(MagicBytes::new(*b"ALPN")),
+            AlpenForkSchedule::default(),
+            evm_spec,
         );
 
         let config = AlpenEeConfig::new(
-            params,
+            Arc::new(params),
             PredicateKey::always_accept(),
             "http://localhost:8542".to_string(),
             Some("http://localhost:8543".to_string()),
