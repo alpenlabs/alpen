@@ -6,7 +6,6 @@ use alloy_genesis::Genesis;
 use alpen_chainspec::{ee_genesis_block_info, AlpenEeGenesisBlockInfo};
 use reth_chainspec::ChainSpec;
 use serde::{Deserialize, Serialize, Serializer};
-use thiserror::Error;
 
 /// The embedded EVM chain spec: genesis document plus derived reth chain spec.
 ///
@@ -15,8 +14,13 @@ use thiserror::Error;
 /// file. Decoding eagerly derives the reth [`ChainSpec`], so every consumer
 /// reads the same value and no boot-time genesis cross-check is needed —
 /// agreement is structural.
+///
+/// Validity of the document is reth's concern, not ours: decoding accepts
+/// exactly what reth's `Genesis -> ChainSpec` conversion accepts and derives
+/// the spec from it, rather than re-policing individual genesis fields (which
+/// would only diverge from — and lag behind — reth's own semantics).
 #[derive(Debug, Clone, Deserialize)]
-#[serde(try_from = "Genesis")]
+#[serde(from = "Genesis")]
 pub struct EvmSpec {
     /// The parsed genesis document, authoritative for serialization.
     genesis: Genesis,
@@ -48,32 +52,13 @@ impl EvmSpec {
     }
 }
 
-impl TryFrom<Genesis> for EvmSpec {
-    type Error = EvmSpecError;
-
-    fn try_from(genesis: Genesis) -> Result<Self, Self::Error> {
-        // `Genesis` is struct-level `#[serde(default)]`, so an empty or
-        // misshapen document would otherwise decode to all-default values;
-        // these checks are the validate-on-decode backstop. A zero gas limit
-        // (the default) marks a document with no real block parameters, and
-        // an omitted chain id defaults to 1 so only an explicit zero can be
-        // caught here.
-        if genesis.number.is_none() {
-            return Err(EvmSpecError::MissingGenesisNumber);
-        }
-        if genesis.gas_limit == 0 {
-            return Err(EvmSpecError::ZeroGasLimit);
-        }
-        if genesis.config.chain_id == 0 {
-            return Err(EvmSpecError::ZeroChainId);
-        }
-
+impl From<Genesis> for EvmSpec {
+    fn from(genesis: Genesis) -> Self {
         let chain_spec: Arc<ChainSpec> = Arc::new(genesis.clone().into());
-
-        Ok(Self {
+        Self {
             genesis,
             chain_spec,
-        })
+        }
     }
 }
 
@@ -97,22 +82,6 @@ impl PartialEq for EvmSpec {
 }
 
 impl Eq for EvmSpec {}
-
-/// Error validating an EVM genesis document.
-#[derive(Debug, Error)]
-pub enum EvmSpecError {
-    /// The genesis document carries no block number.
-    #[error("genesis block number missing from EVM genesis document")]
-    MissingGenesisNumber,
-
-    /// The genesis document carries no (or a zero) gas limit.
-    #[error("gas limit missing or zero in EVM genesis document")]
-    ZeroGasLimit,
-
-    /// The genesis document carries an explicit zero chain id.
-    #[error("chain id is zero in EVM genesis document")]
-    ZeroChainId,
-}
 
 #[cfg(test)]
 mod tests {
@@ -142,17 +111,11 @@ mod tests {
     }
 
     #[test]
-    fn json_rejects_degenerate_genesis() {
-        // `Genesis` is `#[serde(default)]`; these must not silently decode.
-        assert!(serde_json::from_str::<EvmSpec>("{}").is_err());
-        // Missing block number.
-        assert!(serde_json::from_str::<EvmSpec>(r#"{"config":{"chainId":2892}}"#).is_err());
-        // Missing gas limit.
-        assert!(serde_json::from_str::<EvmSpec>(r#"{"number":"0x0"}"#).is_err());
-        // Explicit zero chain id.
-        assert!(serde_json::from_str::<EvmSpec>(
-            r#"{"number":"0x0","gasLimit":"0x1c9c380","config":{"chainId":0}}"#
-        )
-        .is_err());
+    fn json_accepts_what_reth_accepts() {
+        // Validity is deferred to reth's `Genesis -> ChainSpec` conversion, so
+        // even a minimal document decodes and derives genesis info without
+        // policing individual fields (or panicking on an absent block number).
+        let spec: EvmSpec = serde_json::from_str("{}").expect("empty genesis is accepted");
+        let _ = spec.genesis_info();
     }
 }

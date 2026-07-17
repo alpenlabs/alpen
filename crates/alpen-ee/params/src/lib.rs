@@ -13,6 +13,6 @@ mod params;
 mod spec_activations;
 
 pub use blob_spec::BlobSpec;
-pub use evm_spec::{EvmSpec, EvmSpecError};
+pub use evm_spec::EvmSpec;
 pub use params::{AlpenParams, DEFAULT_ALPEN_EE_ACCOUNT_ID};
 pub use spec_activations::{AlpenSpecActivations, AlpenSpecId};
