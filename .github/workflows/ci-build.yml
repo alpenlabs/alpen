@@ -53,9 +53,13 @@ on:
 env:
   AWS_REGION: us-east-1
 
-# Cancel in-progress runs for the same branch (except main — let those finish)
+# Keep independent work independent instead of serializing every run on main:
+#   - workflow_dispatch keys by run_id  -> manual builds never queue behind others
+#   - main push/schedule keys by commit -> different commits build in parallel;
+#                                          re-runs of the same commit still dedupe
+#   - branch pushes key by ref          -> a newer push cancels the superseded run
 concurrency:
-  group: ci-build-${{ github.ref }}
+  group: ci-build-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
