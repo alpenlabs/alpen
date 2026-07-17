@@ -7,9 +7,13 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+alpen-chainspec.workspace = true
 strata-l1-txfmt.workspace = true
 
+alloy-genesis.workspace = true
+reth-chainspec.workspace = true
 serde.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

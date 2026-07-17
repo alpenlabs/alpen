@@ -1387,9 +1387,13 @@ dependencies = [
 name = "alpen-ee-params"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-genesis",
+ "alpen-chainspec",
+ "reth-chainspec",
  "serde",
  "serde_json",
  "strata-l1-txfmt",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

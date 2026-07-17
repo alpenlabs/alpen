@@ -8,5 +8,7 @@
 //! document.
 
 mod blob_spec;
+mod evm_spec;
 
 pub use blob_spec::BlobSpec;
+pub use evm_spec::{EvmSpec, EvmSpecError};
