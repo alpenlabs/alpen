@@ -54,7 +54,7 @@
     },
     {
       "Checkpoint": {
-        "sequencer_predicate": "Bip340Schnorr:9ee1eae0362787220373ed726ed592be9b8d73660f12a76bdd9fee421e4e443e",
+        "sequencer_predicate": "Bip340Schnorr:181a5fb69a2162bc95e15af9cf2688f8a12e52c9a0c04f699e327d5737ca26a6",
         "checkpoint_predicate": "__CHECKPOINT_PREDICATE__",
         "genesis_l1_height": "__GENESIS_L1_HEIGHT__",
         "genesis_ol_blkid": "__GENESIS_OL_BLKID__"
@@ -63,7 +63,7 @@
     {
       "Bridge": {
         "operators": [
-          "02157d08fa2eb6071cef0750bcf1c0c9e94c2f05f629cdbdb3982851dce9472cd0",
+          "025a46d9052f64ad8f3a6ad65342ddead4f4f76f92ac184868ca402b8bed627cb8",
           "02444d7dca618168c1c4963a1556c2cab7d9172f0702cc3498dff72015717c0968",
           "02bff82939acd1deaeed90d6620b64ec475c6ff80a30fd07fca05315ddb1df873d",
           "02a96ec5406c02be9b6a7b254af44acf15b23b908b21619f9be583d82f943b6fb2",
@@ -73,7 +73,7 @@
         "assignment_duration": 536,
         "operator_fee": 300000,
         "recovery_delay": 36,
-        "safe_harbour_address": "04ff79389655916a41e7f8278c1de678ed34c17171122afece179b8a7583a84450"
+        "safe_harbour_address": "04b01d8e0e12eceae5436f6a58ce8228de2f8ddf3c589492cf1052f59f4ddea1d7"
       }
     }
   ]
