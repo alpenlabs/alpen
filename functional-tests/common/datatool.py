@@ -151,7 +151,7 @@ def generate_ol_params(
     datadir: Path,
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
-    ee_params_path: Path | None = None,
+    alpen_params_path: Path | None = None,
 ) -> Path:
     """Generates OL params via ``strata-datatool gen-ol-params``."""
     params_path = datadir / "ol-params.json"
@@ -165,25 +165,26 @@ def generate_ol_params(
         "-o",
         str(params_path),
     ]
-    if ee_params_path is not None:
-        args.extend(["--ee-params", str(ee_params_path)])
+    if alpen_params_path is not None:
+        args.extend(["--alpen-params", str(alpen_params_path)])
 
     run_datatool(args, bconfig)
     return params_path
 
 
-def generate_ee_params(
+def generate_alpen_params(
     datadir: Path,
     alpen_chain_config: str | None = None,
     bridge_denomination: int = 100_000_000,
     max_withdrawal_amount: int | None = 1_000_000_000,
     max_withdrawal_descriptor_len: int = 81,
+    da_magic_bytes: str | None = None,
 ) -> Path:
-    """Generates EE params via ``strata-datatool gen-ee-params``."""
-    params_path = datadir / "ee-params.json"
+    """Generates the Alpen params artifact via ``strata-datatool gen-alpen-params``."""
+    params_path = datadir / "alpen-params.json"
 
     args = [
-        "gen-ee-params",
+        "gen-alpen-params",
         "-o",
         str(params_path),
         "--bridge-denomination-sats",
@@ -195,6 +196,8 @@ def generate_ee_params(
         args.extend(["--max-withdrawal-amount-sats", str(max_withdrawal_amount)])
     if alpen_chain_config is not None:
         args.extend(["--alpen-chain-config", alpen_chain_config])
+    if da_magic_bytes is not None:
+        args.extend(["--da-magic-bytes", da_magic_bytes])
 
     run_datatool(args)
     return params_path
