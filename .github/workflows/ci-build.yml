@@ -10,6 +10,8 @@ on:
     - cron: '30 4,10,16,22 * * *'  # Every 6hr, ~1.5hr before SP1 E2E test
   push:
     branches: [main]
+    tags:
+      - "v*"
     paths:
       # Only trigger when source code or Dockerfiles change
       - "bin/**"
