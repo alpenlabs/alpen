@@ -12,5 +12,5 @@ mod envelope_provider;
 
 pub use blob_provider::StateDiffBlobProvider;
 pub use blob_source::DaBlobSource;
-pub use chunking::prepare_da_chunks;
+pub use chunking::{prepare_da_chunks, DEFAULT_MAX_CHUNK_PAYLOAD};
 pub use envelope_provider::{ChunkedEnvelopeDaProvider, L1BlockReader};

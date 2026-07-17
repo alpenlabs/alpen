@@ -17,27 +17,34 @@ use strata_codec::{encode_to_vec, CodecError};
 // Keep the chunk payload ceiling aligned with the upstream envelope builder
 // limit. The remaining transaction weight covers the input, sequencer output,
 // Schnorr signature, control block, script opcodes, and pushdata framing.
-/// Maximum size of an encoded DA chunk payload accepted by the envelope builder.
-pub(crate) const MAX_CHUNK_PAYLOAD: usize = 395_000;
+/// Default maximum size of an encoded DA chunk payload accepted by the
+/// envelope builder.
+///
+/// Builder-side knob only: a re-executor reassembles chunks by concatenation
+/// regardless of chunk size, so this can change without a consensus impact.
+pub const DEFAULT_MAX_CHUNK_PAYLOAD: usize = 395_000;
 
 /// Splits a blob into chunk payloads.
 ///
-/// Each element is at most [`MAX_CHUNK_PAYLOAD`] bytes. The original blob can
+/// Each element is at most `max_chunk_payload` bytes. The original blob can
 /// be recovered by concatenating all payloads in order.
 ///
 /// # Panics
 ///
 /// Panics if `blob` is empty.
-fn split_blob(blob: &[u8]) -> Vec<Vec<u8>> {
+fn split_blob(blob: &[u8], max_chunk_payload: usize) -> Vec<Vec<u8>> {
     assert!(!blob.is_empty(), "cannot split an empty blob");
-    blob.chunks(MAX_CHUNK_PAYLOAD).map(|c| c.to_vec()).collect()
+    blob.chunks(max_chunk_payload).map(|c| c.to_vec()).collect()
 }
 
 /// Splits a [`DaBlob`] into raw chunk payloads ready for envelope inscription.
 ///
-/// Returns the chunks in order. Chunk index and total are implicit in
-/// commit tx output ordering.
-pub fn prepare_da_chunks(blob: &DaBlob) -> Result<Vec<Vec<u8>>, CodecError> {
+/// Each payload is at most `max_chunk_payload` bytes. Returns the chunks in
+/// order. Chunk index and total are implicit in commit tx output ordering.
+pub fn prepare_da_chunks(
+    blob: &DaBlob,
+    max_chunk_payload: usize,
+) -> Result<Vec<Vec<u8>>, CodecError> {
     let encoded = encode_to_vec(blob)?;
     // Each chunk maps to one reveal tx and one P2TR output in the commit tx.
     // Commit-tx standardness gives the practical chunk-count ceiling: a
@@ -46,7 +53,7 @@ pub fn prepare_da_chunks(blob: &DaBlob) -> Result<Vec<Vec<u8>>, CodecError> {
     // change output. Current EE DA blobs should stay far below that;
     // NOTE: add an explicit BlobTooLarge error if batch sizing approaches
     // thousands of chunks.
-    Ok(split_blob(&encoded))
+    Ok(split_blob(&encoded, max_chunk_payload))
 }
 
 #[cfg(test)]
@@ -90,7 +97,17 @@ mod tests {
     #[test]
     fn full_pipeline_roundtrip() {
         let blob = make_test_da_blob();
-        let chunks = prepare_da_chunks(&blob).unwrap();
+        let chunks = prepare_da_chunks(&blob, DEFAULT_MAX_CHUNK_PAYLOAD).unwrap();
+        let reassembled = reassemble_da_blob(&chunks).unwrap();
+        assert_da_blob_eq(&blob, &reassembled);
+    }
+
+    #[test]
+    fn small_chunk_payload_splits_and_reassembles() {
+        let blob = make_test_da_blob();
+        let chunks = prepare_da_chunks(&blob, 4).unwrap();
+        assert!(chunks.len() > 1, "expected multiple chunks");
+        assert!(chunks.iter().all(|c| c.len() <= 4));
         let reassembled = reassemble_da_blob(&chunks).unwrap();
         assert_da_blob_eq(&blob, &reassembled);
     }
@@ -98,8 +115,8 @@ mod tests {
     #[test]
     fn envelope_payload_limit_matches_builder_constant() {
         assert_eq!(
-            MAX_CHUNK_PAYLOAD, MAX_ENVELOPE_PAYLOAD_SIZE,
-            "MAX_CHUNK_PAYLOAD drifted from upstream builder constant (l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE)"
+            DEFAULT_MAX_CHUNK_PAYLOAD, MAX_ENVELOPE_PAYLOAD_SIZE,
+            "DEFAULT_MAX_CHUNK_PAYLOAD drifted from upstream builder constant (l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE)"
         );
     }
 }
