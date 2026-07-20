@@ -1228,8 +1228,14 @@ async fn launch_validated_ee_batch_prover(
         .get_latest_account_update_vk()
         .await
         .context("failed to fetch OL account update_vk for prover validation")?;
-    let prover_config =
-        build_ee_prover_config(builders, use_native_prover, sp1_deadline_secs).await?;
+    let backend = if use_native_prover {
+        EeProverBackend::Native
+    } else {
+        EeProverBackend::Sp1 {
+            deadline_secs: sp1_deadline_secs,
+        }
+    };
+    let prover_config = build_ee_prover_config(builders, backend).await?;
 
     validate_ee_account_prover_predicate_key(
         &ol_account_update_vk,
@@ -1272,81 +1278,73 @@ struct EeProvers {
 }
 
 #[cfg(feature = "sequencer")]
-async fn build_ee_prover_config(
-    builders: EeProverBuilders,
-    use_native_prover: bool,
-    sp1_deadline_secs: Option<u64>,
-) -> eyre::Result<EeProverConfig> {
-    if use_native_prover {
-        return Ok(build_native_ee_prover_config(builders));
-    }
-
-    build_sp1_ee_prover_config(builders, sp1_deadline_secs).await
+enum EeProverBackend {
+    Native,
+    Sp1 { deadline_secs: Option<u64> },
 }
 
 #[cfg(feature = "sequencer")]
-fn build_native_ee_prover_config(builders: EeProverBuilders) -> EeProverConfig {
-    info!(
-        target: "alpen-client",
-        "EE chunk + acct provers: native host (dev/test only)"
-    );
-
-    let chunk = builders.chunk.native(EeChunkProgram::native_host());
-    let chunk_predicate_key = NativeAlpenChunkPredicateKey
-        .predicate_key()
-        .expect("native chunk predicate key must be available");
-    let acct_program = EeAcctProgram::new(chunk_predicate_key);
-    let account = builders.account.native(acct_program.native_host());
-    let account_predicate_key = NativeAlpenAcctPredicateKey
-        .predicate_key()
-        .expect("native account predicate key must be available");
-
-    EeProverConfig {
-        provers: EeProvers { chunk, account },
-        account_predicate_key,
-    }
-}
-
-#[cfg(all(feature = "sequencer", feature = "sp1"))]
-async fn build_sp1_ee_prover_config(
+async fn build_ee_prover_config(
     builders: EeProverBuilders,
-    deadline_secs: Option<u64>,
+    backend: EeProverBackend,
 ) -> eyre::Result<EeProverConfig> {
-    use zkaleido::ZkVmExecutor;
+    match backend {
+        EeProverBackend::Native => {
+            info!(
+                target: "alpen-client",
+                "EE chunk + acct provers: native host (dev/test only)"
+            );
 
-    let deadline_secs = deadline_secs.unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
-    let deadline = Duration::from_secs(deadline_secs);
-    info!(
-        target: "alpen-client",
-        deadline_secs,
-        "sp1 EE prover deadline configured"
-    );
+            let chunk = builders.chunk.native(EeChunkProgram::native_host());
+            let chunk_predicate_key = NativeAlpenChunkPredicateKey
+                .predicate_key()
+                .expect("native chunk predicate key must be available");
+            let acct_program = EeAcctProgram::new(chunk_predicate_key);
+            let account = builders.account.native(acct_program.native_host());
+            let account_predicate_key = NativeAlpenAcctPredicateKey
+                .predicate_key()
+                .expect("native account predicate key must be available");
 
-    let sp1_config = SP1HostConfig::default().with_deadline(deadline);
-    let chunk_host: SP1Host = (**alpen_chunk_host(sp1_config.clone()).await).clone();
-    let acct_host: SP1Host = (**alpen_acct_host(sp1_config).await).clone();
-    let account_predicate_key = Sp1Groth16PredicateKey::new(acct_host.program_id().0)
-        .predicate_key()
-        .map_err(|e| eyre::eyre!("failed to derive local SP1 account prover predicate key: {e}"))?;
+            Ok(EeProverConfig {
+                provers: EeProvers { chunk, account },
+                account_predicate_key,
+            })
+        }
+        #[cfg(feature = "sp1")]
+        EeProverBackend::Sp1 { deadline_secs } => {
+            use zkaleido::ZkVmExecutor;
 
-    Ok(EeProverConfig {
-        provers: EeProvers {
-            chunk: builders.chunk.remote(chunk_host),
-            account: builders.account.remote(acct_host),
-        },
-        account_predicate_key,
-    })
-}
+            let deadline_secs = deadline_secs.unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
+            let deadline = Duration::from_secs(deadline_secs);
+            info!(
+                target: "alpen-client",
+                deadline_secs,
+                "sp1 EE prover deadline configured"
+            );
 
-#[cfg(all(feature = "sequencer", not(feature = "sp1")))]
-async fn build_sp1_ee_prover_config(
-    _builders: EeProverBuilders,
-    _deadline_secs: Option<u64>,
-) -> eyre::Result<EeProverConfig> {
-    Err(eyre::eyre!(
-        "remote SP1 prover is not compiled in; pass --dev-native-prover \
-         or build with the `sp1` feature"
-    ))
+            let sp1_config = SP1HostConfig::default().with_deadline(deadline);
+            let chunk_host: SP1Host = (**alpen_chunk_host(sp1_config.clone()).await).clone();
+            let acct_host: SP1Host = (**alpen_acct_host(sp1_config).await).clone();
+            let account_predicate_key = Sp1Groth16PredicateKey::new(acct_host.program_id().0)
+                .predicate_key()
+                .map_err(|e| {
+                    eyre::eyre!("failed to derive local SP1 account prover predicate key: {e}")
+                })?;
+
+            Ok(EeProverConfig {
+                provers: EeProvers {
+                    chunk: builders.chunk.remote(chunk_host),
+                    account: builders.account.remote(acct_host),
+                },
+                account_predicate_key,
+            })
+        }
+        #[cfg(not(feature = "sp1"))]
+        EeProverBackend::Sp1 { .. } => Err(eyre::eyre!(
+            "remote SP1 prover is not compiled in; pass --dev-native-prover \
+             or build with the `sp1` feature"
+        )),
+    }
 }
 
 #[cfg(feature = "sequencer")]
