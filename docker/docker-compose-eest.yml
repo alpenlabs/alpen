@@ -42,6 +42,7 @@ services:
       - --sequencer-pubkey
       - ${SEQUENCER_PUBKEY}
       - --dummy-ol-client
+      - --dev-native-prover
       - --custom-chain
       - ${CHAIN_SPEC:-dev}
       - --datadir
