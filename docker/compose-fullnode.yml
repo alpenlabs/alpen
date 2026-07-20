@@ -24,6 +24,13 @@ services:
       - ${TRUSTED_PEERS:-${BOOTNODE_ENODE:-}}
     volumes:
       - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
+      # alpen-client always passes --ee-params, so this file must exist or the
+      # node exits at startup with `failed to read EE params file`. Checked in
+      # rather than generated: every value is public (the genesis hashes are
+      # readable via eth_getBlockByNumber("0x0")) and configs/generated/ is
+      # gitignored, so nothing would be there on a fresh clone.
+      # Re-genesis-sensitive — see the note in .env.alpen-fullnode.example.
+      - ./configs/ee-params.testnet3.json:/app/configs/generated/ee-params.json:ro
       - alpen-fullnode-data:/app/data
     ports:
       - "9545:8545"
