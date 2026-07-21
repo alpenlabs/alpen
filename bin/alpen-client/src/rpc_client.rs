@@ -20,6 +20,7 @@ use strata_ol_rpc_api::{OLClientRpcClient, OLSubmitRpcClient};
 use strata_ol_rpc_types::{
     OLBlockTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
 };
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{ProofState, SnarkAccountUpdate};
 use tracing::info;
 
@@ -340,6 +341,24 @@ impl SequencerOLClient for RpcOLClient {
                 snark_account_state.next_inbox_msg_idx(),
             ),
         })
+    }
+
+    async fn get_latest_account_update_vk(&self) -> Result<PredicateKey, OLClientError> {
+        retry_with_backoff_async(
+            "ol_client_get_latest_account_update_vk",
+            STARTUP_RPC_MAX_RETRIES,
+            &ExponentialBackoff::default(),
+            || async {
+                let snark_account_state = call_read_rpc!(
+                    self,
+                    get_snark_account_state_by_tag(self.account_id, OLBlockTag::Latest)
+                )?
+                .ok_or_else(|| OLClientError::Rpc("missing latest account state".into()))?;
+
+                Ok(snark_account_state.update_vk().clone())
+            },
+        )
+        .await
     }
 
     async fn get_asm_manifest_commitment(

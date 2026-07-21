@@ -6,6 +6,7 @@ use alpen_ee_common::{
 };
 use async_trait::async_trait;
 use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLTxId};
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::SnarkAccountUpdate;
 
 use crate::{dummy_ol_client::DummyOLClient, rpc_client::RpcOLClient};
@@ -70,6 +71,13 @@ impl SequencerOLClient for OLClientKind {
         match self {
             Self::Rpc(client) => client.get_latest_account_state().await,
             Self::Dummy(client) => client.get_latest_account_state().await,
+        }
+    }
+
+    async fn get_latest_account_update_vk(&self) -> Result<PredicateKey, OLClientError> {
+        match self {
+            Self::Rpc(client) => client.get_latest_account_update_vk().await,
+            Self::Dummy(client) => client.get_latest_account_update_vk().await,
         }
     }
 
