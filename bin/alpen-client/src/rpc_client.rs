@@ -4,7 +4,7 @@ use alpen_ee_common::{
 };
 use async_trait::async_trait;
 use http::{header::AUTHORIZATION, HeaderMap, HeaderValue};
-use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use jsonrpsee::http_client::HttpClientBuilder;
 use ssz::Encode;
 use strata_acct_types::MessageEntry;
 use strata_common::{
@@ -19,6 +19,10 @@ use strata_identifiers::{
 use strata_ol_rpc_api::{OLClientRpcClient, OLSubmitRpcClient};
 use strata_ol_rpc_types::{
     OLBlockTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
+};
+use strata_rpc_tracing::{
+    http_trace_context_client_middleware, rpc_trace_context_http_client_middleware,
+    TracedHttpClient,
 };
 use strata_snark_acct_types::{ProofState, SnarkAccountUpdate};
 use tracing::info;
@@ -104,7 +108,7 @@ enum RpcTransportClient {
     /// WebSocket client
     Ws(ManagedWsClient),
     /// HTTP client
-    Http(HttpClient),
+    Http(TracedHttpClient),
 }
 
 /// Dispatches an RPC method call to the underlying transport client (WS or HTTP),
@@ -153,6 +157,8 @@ impl RpcTransportClient {
         if url.starts_with("http://") || url.starts_with("https://") {
             let client = HttpClientBuilder::default()
                 .set_headers(headers)
+                .set_http_middleware(http_trace_context_client_middleware())
+                .set_rpc_middleware(rpc_trace_context_http_client_middleware())
                 .build(&url)
                 .map_err(|e| OLClientError::rpc(e.to_string()))?;
             return Ok(Self::Http(client));

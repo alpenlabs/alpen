@@ -27,6 +27,7 @@ use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
+use strata_rpc_tracing::{HttpServerTraceContextLayer, rpc_trace_context_server_middleware};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tower::ServiceBuilder;
@@ -329,10 +330,13 @@ async fn spawn_public_rpc(deps: RpcDeps) -> Result<()> {
     } else {
         CorsLayer::new()
     };
-    let http_middleware = ServiceBuilder::new().layer(cors);
+    let http_middleware = ServiceBuilder::new()
+        .layer(HttpServerTraceContextLayer)
+        .layer(cors);
     info!(%addr, "starting public RPC server");
     let rpc_server = ServerBuilder::new()
         .set_http_middleware(http_middleware)
+        .set_rpc_middleware(rpc_trace_context_server_middleware())
         .build(&addr)
         .await
         .map_err(|e| anyhow!("Failed to build public RPC server on {addr}: {e}"))?;
@@ -353,9 +357,12 @@ async fn spawn_admin_rpc(deps: RpcDeps) -> Result<()> {
         .admin_rpc_bearer_token
         .clone()
         .ok_or_else(|| anyhow!("client.admin_rpc_bearer_token must be set"))?;
-    let auth_layer = ServiceBuilder::new().layer(auth::BearerAuthLayer::new(token.expose_secret()));
+    let auth_layer = ServiceBuilder::new()
+        .layer(HttpServerTraceContextLayer)
+        .layer(auth::BearerAuthLayer::new(token.expose_secret()));
     let rpc_server = ServerBuilder::new()
         .set_http_middleware(auth_layer)
+        .set_rpc_middleware(rpc_trace_context_server_middleware())
         .build(&addr)
         .await
         .map_err(|e| anyhow!("Failed to build admin RPC server on {addr}: {e}"))?;
@@ -375,9 +382,12 @@ async fn spawn_submit_rpc(deps: RpcDeps) -> Result<()> {
         .submit_rpc_bearer_token
         .clone()
         .ok_or_else(|| anyhow!("client.submit_rpc_bearer_token must be set"))?;
-    let auth_layer = ServiceBuilder::new().layer(auth::BearerAuthLayer::new(token.expose_secret()));
+    let auth_layer = ServiceBuilder::new()
+        .layer(HttpServerTraceContextLayer)
+        .layer(auth::BearerAuthLayer::new(token.expose_secret()));
     let rpc_server = ServerBuilder::new()
         .set_http_middleware(auth_layer)
+        .set_rpc_middleware(rpc_trace_context_server_middleware())
         .build(&addr)
         .await
         .map_err(|e| anyhow!("Failed to build submit RPC server on {addr}: {e}"))?;
