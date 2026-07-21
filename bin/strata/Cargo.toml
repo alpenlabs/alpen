@@ -84,6 +84,7 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-checkpoint = { workspace = true, optional = true }
 strata-proofimpl-predicate-keys = { workspace = true, optional = true }
+strata-rpc-tracing.workspace = true
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
 strata-status.workspace = true
