@@ -12,8 +12,9 @@ use jsonrpsee::{
         traits::ToRpcParams,
         ClientError, DeserializeOwned,
     },
-    ws_client::{WsClient as WebsocketClient, WsClientBuilder},
+    ws_client::WsClientBuilder,
 };
+use strata_rpc_tracing::{rpc_trace_context_ws_client_middleware, TracedWsClient};
 
 /// Configuration for the WebSocket client.
 ///
@@ -43,23 +44,24 @@ pub struct WsClientManager {
 /// The [`WsClientManager`] provides methods to create new clients and recycle
 /// existing ones, ensuring that clients remain in a valid state.
 impl Manager for WsClientManager {
-    type Type = WebsocketClient;
+    type Type = TracedWsClient;
     type Error = Error;
 
     /// Creates a new WebSocket client.
     ///
     /// Attempts to initialize a new WebSocket client using the provided configuration.
-    /// Returns a [`WebsocketClient`]
+    /// Returns a traced WebSocket client.
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         let client = WsClientBuilder::default()
             .set_headers(self.config.headers.clone())
+            .set_rpc_middleware(rpc_trace_context_ws_client_middleware())
             .build(self.config.url.clone())
             .await?;
 
         Ok(client)
     }
 
-    /// Recycles an existing [`WebsocketClient`]
+    /// Recycles an existing traced WebSocket client.
     ///
     /// Checks whether the provided client is still valid. If the client is connected,
     /// it is retained. Otherwise, an error is returned, indicating the need to recreate

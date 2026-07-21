@@ -239,6 +239,7 @@ strata-ol-logs = { git = "https://github.com/alpenlabs/strata-common", tag = "v0
 strata-predicate = { git = "https://github.com/alpenlabs/strata-common", features = [
   "serde",
 ], tag = "v0.3.0-rc.2" }
+strata-rpc-tracing = { git = "https://github.com/alpenlabs/strata-common", rev = "f7c12d3fe57961280ba56874190a88a17484730c" }
 strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
 strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
 
@@ -488,6 +489,17 @@ ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0"
 ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
 tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
 tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.16.0" }
+
+# jsonrpsee request extensions are required for per-message WebSocket trace context.
+# Patch the complete client/server graph to keep every RPC type on one source.
+[patch.crates-io]
+jsonrpsee = { git = "https://github.com/voidash/jsonrpsee", rev = "213636f6998b78a475e8388fe42d2da0f2fefc2e" }
+jsonrpsee-client-transport = { git = "https://github.com/voidash/jsonrpsee", rev = "213636f6998b78a475e8388fe42d2da0f2fefc2e" }
+jsonrpsee-core = { git = "https://github.com/voidash/jsonrpsee", rev = "213636f6998b78a475e8388fe42d2da0f2fefc2e" }
+jsonrpsee-http-client = { git = "https://github.com/voidash/jsonrpsee", rev = "213636f6998b78a475e8388fe42d2da0f2fefc2e" }
+jsonrpsee-server = { git = "https://github.com/voidash/jsonrpsee", rev = "213636f6998b78a475e8388fe42d2da0f2fefc2e" }
+jsonrpsee-types = { git = "https://github.com/voidash/jsonrpsee", rev = "213636f6998b78a475e8388fe42d2da0f2fefc2e" }
+jsonrpsee-ws-client = { git = "https://github.com/voidash/jsonrpsee", rev = "213636f6998b78a475e8388fe42d2da0f2fefc2e" }
 
 # Disable debug_assertions in bitreq to dodge a known concurrency race in its
 # `next_request_id >= readable_request_id` invariant, which fires under
