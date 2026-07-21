@@ -239,6 +239,7 @@ strata-ol-logs = { git = "https://github.com/alpenlabs/strata-common", tag = "v0
 strata-predicate = { git = "https://github.com/alpenlabs/strata-common", features = [
   "serde",
 ], tag = "v0.3.0-rc.2" }
+strata-rpc-tracing = { git = "https://github.com/alpenlabs/strata-common", rev = "70bee9ea0ef106e11bf60c54e0811d7042177674" }
 strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
 strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
 

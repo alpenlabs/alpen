@@ -1132,6 +1132,7 @@ dependencies = [
  "strata-proofimpl-alpen-acct",
  "strata-proofimpl-alpen-chunk",
  "strata-proofimpl-predicate-keys",
+ "strata-rpc-tracing",
  "strata-service",
  "strata-snark-acct-runtime",
  "strata-snark-acct-types",
@@ -7750,7 +7751,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.4.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -14711,6 +14712,7 @@ dependencies = [
  "strata-primitives",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-predicate-keys",
+ "strata-rpc-tracing",
  "strata-service",
  "strata-snark-acct-types",
  "strata-status",
@@ -15318,6 +15320,7 @@ dependencies = [
  "http 1.4.0",
  "jsonrpsee",
  "serde",
+ "strata-rpc-tracing",
  "tokio",
  "tower 0.5.3",
  "tracing",
@@ -16586,6 +16589,19 @@ dependencies = [
  "serde_json",
  "strata-ol-rpc-api",
  "strata-open-rpc",
+]
+
+[[package]]
+name = "strata-rpc-tracing"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?rev=70bee9ea0ef106e11bf60c54e0811d7042177674#70bee9ea0ef106e11bf60c54e0811d7042177674"
+dependencies = [
+ "http 1.4.0",
+ "jsonrpsee",
+ "opentelemetry 0.31.0",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-opentelemetry",
 ]
 
 [[package]]
