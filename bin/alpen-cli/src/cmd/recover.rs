@@ -22,7 +22,7 @@ use crate::{
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "recover")]
 pub struct RecoverArgs {
-    /// override signet fee rate in sat/vbyte. must be >=1
+    /// override signet fee rate in sat/vbyte; the effective rate is at least 1
     #[argh(option)]
     fee_rate: Option<u64>,
 }

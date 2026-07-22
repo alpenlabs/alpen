@@ -34,7 +34,7 @@ pub struct DrainArgs {
     #[argh(option, short = 'r')]
     alpen_address: Option<String>,
 
-    /// override signet fee rate in sat/vbyte. must be >=1
+    /// override signet fee rate in sat/vbyte; the effective rate is at least 1
     #[argh(option)]
     fee_rate: Option<u64>,
 }
