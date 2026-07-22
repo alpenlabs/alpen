@@ -11,8 +11,8 @@ use typed_sled::error::Error;
 
 use crate::mmr_index::{LeafPos, NodePos};
 
-/// Pure MMR algorithm errors - domain-specific, no storage concepts.
-#[derive(Debug, Clone, Error)]
+/// Pure MMR algorithmic errors.
+#[derive(Clone, Debug, Error)]
 pub enum MmrError {
     #[error("MMR leaf {0} not found")]
     LeafNotFound(u64),
@@ -23,7 +23,8 @@ pub enum MmrError {
     #[error("mmr index {pos} out of bounds (max {max_size})")]
     PositionOutOfBounds { pos: u64, max_size: u64 },
 }
-#[derive(Debug, Error, Clone)]
+
+#[derive(Clone, Debug, Error)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
     NonExistentEntry,
@@ -213,6 +214,7 @@ pub enum DbError {
     Other(String),
 }
 
+// TODO(trey): remove anyhow-in-thiserror error
 impl From<anyhow::Error> for DbError {
     fn from(value: anyhow::Error) -> Self {
         Self::Other(value.to_string())
@@ -246,6 +248,7 @@ impl From<JoinError> for DbError {
     }
 }
 
+// TODO(trey): just have an MMR error variant that wraps this
 impl From<MmrError> for DbError {
     fn from(value: MmrError) -> Self {
         match value {

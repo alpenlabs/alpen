@@ -1,5 +1,7 @@
 //! OL checkpoint database interface.
 
+// TODO(trey): replace EpochCommitment and CheckpointPayload with a versionable wrapper
+
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;

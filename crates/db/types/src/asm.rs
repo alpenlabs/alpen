@@ -1,5 +1,7 @@
 //! ASM state database interface.
 
+// TODO(trey): replace AsmState with versionable serde-ish wrappers
+
 use strata_asm_common::AuxData;
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;

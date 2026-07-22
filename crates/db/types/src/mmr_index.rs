@@ -2,6 +2,8 @@
 //!
 //! [`MmrIndexDatabase`], [`NodePos`], batch-write structs, preconditions, etc.
 
+// TODO(trey): reorganize everything here
+
 use std::collections::BTreeMap;
 use std::io;
 
@@ -21,12 +23,15 @@ pub type RawMmrId = Vec<u8>;
 ///
 /// Each variant represents a different MMR type, with optional scoping
 /// within that type (e.g., per-account MMRs).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MmrId {
     /// ASM manifest MMR (singleton, no account scope).
     Asm,
+
     /// Snark message inbox MMR (per-account scope).
     SnarkMsgInbox(AccountId),
+
     /// OL L1 block refs MMR (singleton, no account scope).
     L1BlockRefs,
 }
