@@ -1,5 +1,7 @@
 //! Checkpoint-proof database interface.
 
+// TODO(trey): replace ProofReceiptWithMetadata with our own types
+
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_identifiers::EpochCommitment;

@@ -1,5 +1,7 @@
 //! L1 data database interface.
 
+// TODO(trey): wrap AsmManifest type in versionable container
+
 use strata_asm_common::AsmManifest;
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;

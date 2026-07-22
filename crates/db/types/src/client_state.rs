@@ -1,5 +1,7 @@
 //! Client state database interface.
 
+// TODO(trey): streamline this, replace with versionable serde wrapper
+
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;

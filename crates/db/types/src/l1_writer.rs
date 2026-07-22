@@ -1,9 +1,10 @@
 //! L1 writer database interface and its payload/intent record types.
 
+// TODO(trey): split apart IntentEntry and BundledPayloadEntry into separate data and status so we aren't overwriting the data whenever we change the status
+
 use std::fmt;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_csm_types::{L1Payload, PayloadIntent};
 #[cfg(feature = "proxies")]
@@ -18,8 +19,14 @@ use crate::DbResult;
 /// Taproot script-spend sighash for the reveal transaction.
 pub type Sighash = Buf32;
 
+/// Index of a bundle.
+pub type BundleIdx = u64;
+
+/// Index of a intent.
+pub type IntentIdx = u64;
+
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct IntentEntry {
     pub intent: PayloadIntent,
     pub status: IntentStatus,
@@ -33,7 +40,7 @@ impl IntentEntry {
         }
     }
 
-    pub fn new_bundled(intent: PayloadIntent, bundle_idx: u64) -> Self {
+    pub fn new_bundled(intent: PayloadIntent, bundle_idx: BundleIdx) -> Self {
         Self {
             intent,
             status: IntentStatus::Bundled(bundle_idx),
@@ -47,24 +54,25 @@ impl IntentEntry {
 
 /// Status of Intent indicating various stages of being bundled to L1 transaction.
 /// Unbundled Intents are collected and bundled to create [`BundledPayloadEntry`].
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
 pub enum IntentStatus {
-    // It is not bundled yet, and thus will be collected and processed by bundler.
+    /// It is not bundled yet, and thus will be collected and processed by bundler.
     Unbundled,
-    // It has been bundled to [`BundledPayloadEntry`] with given bundle idx.
+
+    /// It has been bundled to [`BundledPayloadEntry`] with given bundle idx.
     Bundled(u64),
 }
 
 /// Represents data for a payload we're still planning to post to L1.
-#[derive(Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct BundledPayloadEntry {
     pub payload: L1Payload,
     pub commit_txid: L1TxId,
     pub reveal_txid: L1TxId,
     pub status: L1BundleStatus,
+
     /// Schnorr signature provided by the external signer for envelope reveal tx.
-    ///
-    /// Populated when the signer calls `complete_payload_signature` RPC.
     pub payload_signature: Option<Buf64>,
 }
 
@@ -93,6 +101,21 @@ impl BundledPayloadEntry {
         let cid = L1TxId::zero();
         let rid = L1TxId::zero();
         Self::new(payload, cid, rid, L1BundleStatus::Unsigned)
+    }
+
+    /// Sets the signature, overwriting any previous value.
+    ///
+    /// # Panics
+    ///
+    /// If the signature provided is not 64 bytes.
+    pub fn set_signature(&mut self, sig: Vec<u8>) {
+        assert_eq!(sig.len(), 64, "db: payload entry sig not 64 bytes");
+        self.payload_signature = Some(sig.try_into().unwrap());
+    }
+
+    /// Returns the payload signature as a [`Buf64`].
+    pub fn payload_sig_as_buf64(&self) -> Option<Buf64> {
+        self.payload_signature
     }
 }
 
@@ -123,9 +146,8 @@ impl fmt::Display for BundledPayloadEntry {
 }
 
 /// Various status that transactions corresponding to a payload can be in L1
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum L1BundleStatus {
     /// The payload has not been signed yet, i.e commit-reveal transactions have not been created
     /// yet.
@@ -160,27 +182,28 @@ pub enum L1BundleStatus {
 )]
 pub trait L1WriterDatabase: Send + Sync + 'static {
     /// Store the [`BundledPayloadEntry`].
-    fn put_payload_entry(&self, idx: u64, payloadentry: BundledPayloadEntry) -> DbResult<()>;
+    fn put_payload_entry(&self, idx: BundleIdx, payloadentry: BundledPayloadEntry) -> DbResult<()>;
 
     /// Get a [`BundledPayloadEntry`] by its index.
-    fn get_payload_entry_by_idx(&self, idx: u64) -> DbResult<Option<BundledPayloadEntry>>;
+    fn get_payload_entry_by_idx(&self, idx: BundleIdx) -> DbResult<Option<BundledPayloadEntry>>;
 
     /// Get the next payload index
-    fn get_next_payload_idx(&self) -> DbResult<u64>;
+    fn get_next_payload_idx(&self) -> DbResult<BundleIdx>;
 
     /// Delete a specific payload entry by its index.
     ///
     /// Returns true if the payload existed and was deleted, false otherwise.
-    fn del_payload_entry(&self, idx: u64) -> DbResult<bool>;
+    fn del_payload_entry(&self, idx: BundleIdx) -> DbResult<bool>;
 
     /// Delete payload entries from the specified index onwards (inclusive).
     ///
     /// This method deletes all payload entries with index >= start_idx.
+    ///
     /// Returns a vector of deleted payload indices.
-    fn del_payload_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
+    fn del_payload_entries_from_idx(&self, start_idx: BundleIdx) -> DbResult<Vec<BundleIdx>>;
 
     /// Store the [`IntentEntry`].
-    fn put_intent_entry(&self, payloadid: Buf32, payloadentry: IntentEntry) -> DbResult<u64>;
+    fn put_intent_entry(&self, payloadid: Buf32, payloadentry: IntentEntry) -> DbResult<IntentIdx>;
 
     /// Atomically stores a payload entry and marks an existing intent as bundled.
     ///
@@ -190,16 +213,16 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
         intent_id: Buf32,
         intent_entry: IntentEntry,
         payloadentry: BundledPayloadEntry,
-    ) -> DbResult<u64>;
+    ) -> DbResult<IntentIdx>;
 
     /// Get a [`IntentEntry`] by its hash
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>>;
 
     /// Get a [`IntentEntry`] by its idx
-    fn get_intent_by_idx(&self, idx: u64) -> DbResult<Option<IntentEntry>>;
+    fn get_intent_by_idx(&self, idx: IntentIdx) -> DbResult<Option<IntentEntry>>;
 
     /// Get  the next intent index
-    fn get_next_intent_idx(&self) -> DbResult<u64>;
+    fn get_next_intent_idx(&self) -> DbResult<IntentIdx>;
 
     /// Delete a specific intent entry by its ID.
     ///
@@ -210,7 +233,7 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
     ///
     /// This method deletes all intent entries with index >= start_idx.
     /// Returns a vector of deleted intent indices.
-    fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
+    fn del_intent_entries_from_idx(&self, start_idx: IntentIdx) -> DbResult<Vec<u64>>;
 }
 
 #[cfg(test)]

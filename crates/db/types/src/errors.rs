@@ -11,7 +11,7 @@ use typed_sled::error::Error;
 
 use crate::mmr_index::{LeafPos, NodePos};
 
-#[derive(Debug, Error, Clone)]
+#[derive(Clone, Debug, Error)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
     NonExistentEntry,
@@ -212,6 +212,7 @@ pub enum DbError {
     Other(String),
 }
 
+// TODO(trey): remove anyhow-in-thiserror error
 impl From<anyhow::Error> for DbError {
     fn from(value: anyhow::Error) -> Self {
         Self::Other(value.to_string())

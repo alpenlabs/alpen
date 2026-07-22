@@ -1,6 +1,7 @@
 //! OL block database interface and its block-status type.
 
-use borsh::{BorshDeserialize, BorshSerialize};
+// TODO(trey): replace OLBlock to a versionable wrapper
+
 use serde::Serialize;
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
@@ -12,9 +13,8 @@ use crate::DbError;
 use crate::DbResult;
 
 /// Gets the status of a block.
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, BorshSerialize, BorshDeserialize, Serialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum BlockStatus {
     /// Block's validity hasn't been checked yet.
     Unchecked,
