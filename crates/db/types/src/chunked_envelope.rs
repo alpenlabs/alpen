@@ -4,7 +4,6 @@ use std::fmt;
 
 // TODO(trey): split ChunkedEnvelopeEntry into different parts for the different types of enveloped and the different stages of processing
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
