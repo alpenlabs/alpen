@@ -1,9 +1,10 @@
 //! Update message types.
 
-use strata_acct_types::{MessageEntry, RawMerkleProof};
+use strata_acct_types::{AccountId, AccumulatorClaim, MessageEntry, MsgPayload, RawMerkleProof};
+use strata_identifiers::Epoch;
 
 use crate::{
-    AccumulatorClaim,
+    abstract_update::*,
     ssz_generated::ssz::{outputs::UpdateOutputs, state::ProofState, update::*},
 };
 
@@ -112,6 +113,21 @@ impl From<UpdateOperationData> for UpdateInputData {
     }
 }
 
+impl IMessageEntry for &MessageEntry {
+    fn source(&self) -> AccountId {
+        self.source
+    }
+
+    fn incl_epoch(&self) -> Epoch {
+        self.incl_epoch
+    }
+
+    fn get_payload(&self) -> MsgPayload {
+        // TODO(trey) avoid clone
+        self.payload.clone()
+    }
+}
+
 impl LedgerRefs {
     pub fn new(l1_block_refs: Vec<AccumulatorClaim>) -> Self {
         Self {
@@ -132,6 +148,16 @@ impl LedgerRefs {
     /// and each `entry_hash` commits to `{blockhash, wtxids_root}`.
     pub fn l1_block_refs(&self) -> &[AccumulatorClaim] {
         self.l1_block_refs.as_ref()
+    }
+}
+
+impl ILedgerRefs for &LedgerRefs {
+    fn num_l1_block_refs(&self) -> usize {
+        self.l1_block_refs.len()
+    }
+
+    fn get_l1_block_ref(&self, idx: usize) -> Option<AccumulatorClaim> {
+        self.l1_block_refs.get(idx).cloned()
     }
 }
 

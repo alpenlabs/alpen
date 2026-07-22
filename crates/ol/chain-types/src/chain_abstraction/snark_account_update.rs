@@ -1,7 +1,10 @@
 use strata_acct_types::{AccountId, AccumulatorClaim, BitcoinAmount, MessageEntry};
 use strata_identifiers::Buf32;
 
-use super::{object::IChainObj, transaction::ITargetTx};
+use super::{
+    object::IChainObj,
+    transaction::{ILedgerRefs, ITargetTx},
+};
 
 /// Snark account update transaction.
 ///
@@ -21,7 +24,7 @@ pub trait ISauTransaction: IChainObj + ITargetTx {
 pub trait ISauOperationData {
     type Data: ISauUpdateData;
     type Message: ISauMessageEntry;
-    type LedgerRefs: ISauLedgerRefs;
+    type LedgerRefs: ILedgerRefs;
 
     /// Gets the update data.
     fn update_data(&self) -> Self::Data;
@@ -90,9 +93,4 @@ impl<'m> ISauMessageEntry for &'m MessageEntry {
     fn payload_data(&self) -> &[u8] {
         self.payload_buf()
     }
-}
-
-pub trait ISauLedgerRefs {
-    fn num_l1_block_ref_claims(&self) -> usize;
-    fn get_l1_block_ref_claim(&self, idx: usize) -> Option<AccumulatorClaim>;
 }

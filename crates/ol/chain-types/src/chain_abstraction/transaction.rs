@@ -1,4 +1,4 @@
-use strata_acct_types::RawMerkleProof;
+use strata_acct_types::{AccumulatorClaim, RawMerkleProof};
 use strata_identifiers::{AccountId, OLTxId, Slot};
 
 use super::{object::IChainObj, snark_account_update::ISauTransaction};
@@ -85,4 +85,10 @@ pub trait ITxProofs {
 pub trait ITargetTx {
     /// Gets the "target" of the operation.
     fn target(&self) -> AccountId;
+}
+
+/// Describes refs a tx makes to accumulators on the ledger.
+pub trait ILedgerRefs {
+    fn num_l1_block_ref_claims(&self) -> usize;
+    fn get_l1_block_ref_claim(&self, idx: usize) -> Option<AccumulatorClaim>;
 }
