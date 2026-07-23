@@ -54,6 +54,16 @@ impl L1WriterDatabase for L1WriterDBSled {
         Ok(idx)
     }
 
+    fn update_intent_entry(&self, intent_id: Buf32, intent_entry: IntentEntry) -> DbResult<()> {
+        if !self.intent_tree.contains_key(&intent_id)? {
+            return Err(DbError::Other(format!(
+                "cannot update missing intent {intent_id}"
+            )));
+        }
+        self.intent_tree.insert(&intent_id, &intent_entry)?;
+        Ok(())
+    }
+
     fn bundle_intent_payload(
         &self,
         intent_id: Buf32,

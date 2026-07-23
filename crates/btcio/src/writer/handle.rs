@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_csm_types::{PayloadDest, PayloadIntent};
-use strata_db_types::l1_writer::{IntentEntry, L1BundleStatus};
+use strata_db_types::l1_writer::{IntentEntry, IntentStatus, L1BundleStatus};
 use strata_primitives::buf::Buf32;
 use strata_storage::ops::writer::EnvelopeDataOps;
 use tokio::sync::mpsc::Sender;
@@ -38,9 +38,14 @@ impl EnvelopeHandle {
         debug!(commitment = %id, "Received intent for processing");
 
         // Check if it is duplicate
-        if self.ops.get_intent_by_id_blocking(id)?.is_some() {
-            warn!(commitment = %id, "Received duplicate intent");
-            return Ok(());
+        if let Some(existing) = self.ops.get_intent_by_id_blocking(id)? {
+            if existing.status != IntentStatus::Abandoned {
+                warn!(commitment = %id, "Received duplicate intent");
+                return Ok(());
+            }
+            // Intent indices reference an id-keyed shared entry. Allocating a fresh index below
+            // refreshes that entry to Unbundled, so an older index may bundle the retry. Once the
+            // shared entry becomes Bundled, every remaining alias is skipped.
         }
 
         // Create and store IntentEntry
@@ -77,10 +82,17 @@ impl EnvelopeHandle {
         debug!(commitment = %id, "Received intent for processing");
 
         // Check if it is duplicate
-        if self.ops.get_intent_by_id_async(id).await?.is_some() {
-            warn!(commitment = %id, "Received duplicate intent");
-            let next_idx = self.ops.get_next_intent_idx_async().await?;
-            return self.find_intent_idx_in_range(id, 0, next_idx).await;
+        if let Some(existing) = self.ops.get_intent_by_id_async(id).await? {
+            if existing.status != IntentStatus::Abandoned {
+                warn!(commitment = %id, "Received duplicate intent");
+                let next_idx = self.ops.get_next_intent_idx_async().await?;
+                return self.find_intent_idx_in_range(id, 0, next_idx).await;
+            }
+            // Intent indices reference an id-keyed shared entry. Allocating a fresh index below
+            // refreshes that entry to Unbundled, so older indices for this commitment resolve to
+            // the refreshed state too. The bundler may therefore bundle the retry at the older
+            // index position, but it creates only one payload: after the shared entry becomes
+            // Bundled, every remaining alias is skipped.
         }
 
         // Create and store IntentEntry
@@ -134,12 +146,27 @@ pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow
 
 #[cfg(test)]
 mod test {
+    use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
     use strata_db_types::{l1_broadcast::L1TxStatus, l1_writer::BundledPayloadEntry};
+    use strata_l1_txfmt::TagData;
     use strata_primitives::buf::Buf32;
     use strata_test_utils::ArbitraryGenerator;
+    use tokio::sync::mpsc;
 
     use super::*;
-    use crate::writer::{test_utils::get_envelope_ops, watcher::determine_payload_next_status};
+    use crate::writer::{
+        bundler::process_unbundled_entries, test_utils::get_envelope_ops,
+        watcher::determine_payload_next_status,
+    };
+
+    fn test_intent(seed: u8) -> PayloadIntent {
+        let payload = L1Payload::new(
+            vec![vec![seed; 8]],
+            TagData::new(1, seed, vec![]).expect("test tag is valid"),
+        )
+        .expect("test payload is valid");
+        PayloadIntent::new(PayloadDest::L1, Buf32::from([seed; 32]), payload)
+    }
 
     #[test]
     fn test_initialize_writer_state_no_last_payload_idx() {
@@ -177,6 +204,157 @@ mod test {
         let idx = get_next_payloadidx_to_watch(&iops).unwrap();
 
         assert_eq!(idx, expected_idx);
+    }
+
+    #[test]
+    fn abandoned_payload_does_not_hide_earlier_unfinalized_entry() {
+        let iops = get_envelope_ops();
+
+        let mut finalized: BundledPayloadEntry = ArbitraryGenerator::new().generate();
+        finalized.status = L1BundleStatus::Finalized;
+        iops.put_payload_entry_blocking(0, finalized).unwrap();
+
+        let mut published: BundledPayloadEntry = ArbitraryGenerator::new().generate();
+        published.status = L1BundleStatus::Published;
+        iops.put_payload_entry_blocking(1, published).unwrap();
+
+        let mut abandoned: BundledPayloadEntry = ArbitraryGenerator::new().generate();
+        abandoned.status = L1BundleStatus::Abandoned;
+        iops.put_payload_entry_blocking(2, abandoned).unwrap();
+
+        let mut unsigned: BundledPayloadEntry = ArbitraryGenerator::new().generate();
+        unsigned.status = L1BundleStatus::Unsigned;
+        iops.put_payload_entry_blocking(3, unsigned).unwrap();
+
+        assert_eq!(get_next_payloadidx_to_watch(&iops).unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn abandoned_intent_allows_identical_payload_resubmission() {
+        let ops = get_envelope_ops();
+        let (intent_tx, _intent_rx) = mpsc::channel(4);
+        let handle = EnvelopeHandle::new(ops.clone(), intent_tx);
+        let intent = test_intent(9);
+        let intent_id = *intent.commitment();
+
+        let first_idx = handle
+            .submit_intent_async_with_idx(intent.clone())
+            .await
+            .expect("submit first intent")
+            .expect("first intent index");
+        let mut stored = ops
+            .get_intent_by_id_blocking(intent_id)
+            .expect("read first intent")
+            .expect("first intent exists");
+        stored.status = IntentStatus::Abandoned;
+        ops.update_intent_entry_blocking(intent_id, stored)
+            .expect("abandon first intent");
+
+        let second_idx = handle
+            .submit_intent_async_with_idx(intent)
+            .await
+            .expect("resubmit identical intent")
+            .expect("second intent index");
+        assert!(second_idx > first_idx);
+
+        process_unbundled_entries(ops.as_ref(), vec![second_idx])
+            .await
+            .expect("bundle resubmitted intent");
+        assert!(matches!(
+            ops.get_intent_by_id_blocking(intent_id)
+                .expect("read resubmitted intent")
+                .expect("resubmitted intent exists")
+                .status,
+            IntentStatus::Bundled(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn abandoned_alias_resubmission_bundles_each_commitment_once() {
+        let ops = get_envelope_ops();
+        let (intent_tx, _intent_rx) = mpsc::channel(4);
+        let handle = EnvelopeHandle::new(ops.clone(), intent_tx);
+        let intent_x = test_intent(10);
+        let payload_x = intent_x.payload().clone();
+        let intent_x_id = *intent_x.commitment();
+        let intent_y = test_intent(11);
+        let payload_y = intent_y.payload().clone();
+        let intent_y_id = *intent_y.commitment();
+
+        let first_x_idx = handle
+            .submit_intent_async_with_idx(intent_x.clone())
+            .await
+            .expect("submit first X intent")
+            .expect("first X intent index");
+        let mut stored_x = ops
+            .get_intent_by_id_blocking(intent_x_id)
+            .expect("read first X intent")
+            .expect("first X intent exists");
+        stored_x.status = IntentStatus::Abandoned;
+        ops.update_intent_entry_blocking(intent_x_id, stored_x)
+            .expect("abandon first X intent");
+
+        let intent_y_idx = handle
+            .submit_intent_async_with_idx(intent_y)
+            .await
+            .expect("submit Y intent")
+            .expect("Y intent index");
+        let retried_x_idx = handle
+            .submit_intent_async_with_idx(intent_x)
+            .await
+            .expect("resubmit X intent")
+            .expect("retried X intent index");
+
+        assert_eq!((first_x_idx, intent_y_idx, retried_x_idx), (0, 1, 2));
+
+        process_unbundled_entries(ops.as_ref(), vec![intent_y_idx, retried_x_idx])
+            .await
+            .expect("bundle pending intents");
+
+        let stored_x = ops
+            .get_intent_by_id_blocking(intent_x_id)
+            .expect("read bundled X intent")
+            .expect("bundled X intent exists");
+        let stored_y = ops
+            .get_intent_by_id_blocking(intent_y_id)
+            .expect("read bundled Y intent")
+            .expect("bundled Y intent exists");
+        assert_eq!(stored_x.status, IntentStatus::Bundled(0));
+        assert_eq!(stored_y.status, IntentStatus::Bundled(1));
+        assert_eq!(
+            ops.get_intent_by_idx_blocking(retried_x_idx)
+                .expect("read retried X alias")
+                .expect("retried X alias exists")
+                .status,
+            IntentStatus::Bundled(0)
+        );
+
+        let next_payload_idx = ops
+            .get_next_payload_idx_blocking()
+            .expect("read payload count");
+        assert_eq!(next_payload_idx, 2);
+        let payloads = (0..next_payload_idx)
+            .map(|idx| {
+                ops.get_payload_entry_by_idx_blocking(idx)
+                    .expect("read payload entry")
+                    .expect("payload entry exists")
+                    .payload
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            payloads
+                .iter()
+                .filter(|payload| **payload == payload_x)
+                .count(),
+            1
+        );
+        assert_eq!(
+            payloads
+                .iter()
+                .filter(|payload| **payload == payload_y)
+                .count(),
+            1
+        );
     }
 
     #[test]

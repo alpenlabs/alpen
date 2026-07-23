@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use anyhow::bail;
-use strata_db_types::l1_writer::{BundledPayloadEntry, IntentStatus};
+use strata_db_types::l1_writer::{BundledPayloadEntry, IntentStatus, L1BundleStatus};
 use strata_storage::ops::writer::EnvelopeDataOps;
 use tracing::*;
 
@@ -46,7 +46,7 @@ async fn is_predecessor_bundled(ops: &EnvelopeDataOps, idx: u64) -> anyhow::Resu
     };
 
     match prev_entry.status {
-        IntentStatus::Bundled(_) => Ok(true),
+        IntentStatus::Bundled(_) | IntentStatus::Abandoned => Ok(true),
         IntentStatus::Unbundled => Ok(false),
     }
 }
@@ -79,36 +79,52 @@ async fn bundle_unbundled_intent(ops: &EnvelopeDataOps, intent_idx: u64) -> anyh
     Ok(())
 }
 
-/// Retrieves unbundled intents since the beginning in ascending order with their intent indexes.
-/// This traverses backwards from latest index and breaks once it finds a bundled entry. The
-/// processing of unbundled entries [`process_unbundled_entries`] ensures that the entries are
-/// bundled *in order*.
+/// Retrieves the unbundled intents left over from a previous run, in ascending index order.
+///
+/// The scan walks backwards and stops at the first intent bundled into a [`L1BundleStatus::
+/// Finalized`] payload. Payloads finalize in index order, so nothing below that point can still
+/// be waiting for a bundle.
+///
+/// Stopping at the first *bundled* intent, as this once did, is no longer sound. Intent indices
+/// reference id-keyed shared entries, so resubmitting an abandoned intent refreshes the shared
+/// entry and leaves an older alias tracking the retry rather than the original; the startup
+/// reconciler's abandonments have the same effect. Either can leave an unbundled intent sitting
+/// below a bundled one. Anchoring on finalization keeps the early exit without relying on the
+/// tail being contiguous.
 pub(crate) fn get_initial_unbundled_entries(
     ops: &EnvelopeDataOps,
 ) -> anyhow::Result<Vec<PendingIntent>> {
-    let mut curr_idx = ops.get_next_intent_idx_blocking()?;
+    let next_intent_idx = ops.get_next_intent_idx_blocking()?;
     let mut unbundled = Vec::new();
 
-    while curr_idx > 0 {
-        curr_idx -= 1;
-        if let Some(intent) = ops.get_intent_by_idx_blocking(curr_idx)? {
-            match intent.status {
-                IntentStatus::Unbundled => unbundled.push(curr_idx),
-                IntentStatus::Bundled(_) => {
-                    // Bundled intent found, no more to scan
+    for intent_idx in (0..next_intent_idx).rev() {
+        let Some(intent) = ops.get_intent_by_idx_blocking(intent_idx)? else {
+            warn!(%intent_idx, "Could not find expected intent in db");
+            continue;
+        };
+
+        match intent.status {
+            IntentStatus::Unbundled => unbundled.push(intent_idx),
+            IntentStatus::Bundled(payload_idx) => {
+                if is_payload_finalized(ops, payload_idx)? {
                     break;
                 }
             }
-        } else {
-            warn!(%curr_idx, "Could not find expected intent in db");
-            break;
+            IntentStatus::Abandoned => {}
         }
     }
 
-    // Reverse the items so that they are in ascending order of index
+    // The scan runs newest-first; the bundler needs oldest-first.
     unbundled.reverse();
 
     Ok(unbundled)
+}
+
+/// Returns whether the payload at `payload_idx` has finalized on L1.
+fn is_payload_finalized(ops: &EnvelopeDataOps, payload_idx: u64) -> anyhow::Result<bool> {
+    Ok(ops
+        .get_payload_entry_by_idx_blocking(payload_idx)?
+        .is_some_and(|payload| payload.status == L1BundleStatus::Finalized))
 }
 
 #[cfg(test)]
@@ -188,6 +204,30 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn abandoned_predecessor_allows_later_intent_to_bundle() {
+        let ops = get_envelope_ops();
+        let (first_idx, mut first_entry) = put_unbundled_intent(&ops, 1);
+        let first_id = *first_entry.intent.commitment();
+        first_entry.status = IntentStatus::Abandoned;
+        ops.update_intent_entry_blocking(first_id, first_entry)
+            .expect("test: abandon first intent");
+        let (second_idx, _) = put_unbundled_intent(&ops, 2);
+
+        process_unbundled_entries(ops.as_ref(), vec![second_idx])
+            .await
+            .expect("test: process pending intent");
+
+        assert_eq!(first_idx, 0);
+        assert_eq!(
+            ops.get_intent_by_idx_blocking(second_idx)
+                .expect("test: read second intent")
+                .expect("test: second intent exists")
+                .status,
+            IntentStatus::Bundled(0)
+        );
+    }
+
     #[test]
     fn startup_scan_returns_indexed_unbundled_tail_in_order() {
         let ops = get_envelope_ops();
@@ -206,5 +246,118 @@ mod tests {
 
         assert_eq!(first_idx, 0);
         assert_eq!(unbundled, vec![second_idx, third_idx]);
+    }
+
+    #[test]
+    fn startup_scan_skips_oldest_abandoned_intent() {
+        let ops = get_envelope_ops();
+        let (_, mut first_entry) = put_unbundled_intent(&ops, 1);
+        let first_id = *first_entry.intent.commitment();
+        first_entry.status = IntentStatus::Abandoned;
+        ops.update_intent_entry_blocking(first_id, first_entry)
+            .expect("test: abandon first intent");
+        let (second_idx, _) = put_unbundled_intent(&ops, 2);
+
+        assert_eq!(
+            get_initial_unbundled_entries(ops.as_ref()).expect("test: scan unbundled"),
+            vec![second_idx]
+        );
+    }
+
+    #[test]
+    fn startup_scan_recovers_unbundled_intent_before_bundled_alias() {
+        let ops = get_envelope_ops();
+        let (first_a_idx, mut first_a_entry) = put_unbundled_intent(&ops, 20);
+        let intent_a_id = *first_a_entry.intent.commitment();
+        first_a_entry.status = IntentStatus::Abandoned;
+        ops.update_intent_entry_blocking(intent_a_id, first_a_entry)
+            .expect("test: abandon first A intent");
+
+        let (intent_b_idx, _) = put_unbundled_intent(&ops, 21);
+        let (retried_a_idx, retried_a_entry) = put_unbundled_intent(&ops, 20);
+        assert_eq!((first_a_idx, intent_b_idx, retried_a_idx), (0, 1, 2));
+
+        let retried_a_payload =
+            BundledPayloadEntry::new_unsigned(retried_a_entry.payload().clone());
+        ops.bundle_intent_payload_blocking(intent_a_id, retried_a_entry, retried_a_payload)
+            .expect("test: bundle only retried A before simulated crash");
+
+        assert!(matches!(
+            ops.get_intent_by_idx_blocking(retried_a_idx)
+                .expect("test: read retried A alias")
+                .expect("test: retried A alias exists")
+                .status,
+            IntentStatus::Bundled(_)
+        ));
+        assert_eq!(
+            get_initial_unbundled_entries(ops.as_ref())
+                .expect("test: scan through bundled alias after restart"),
+            vec![intent_b_idx]
+        );
+    }
+
+    #[test]
+    fn startup_scan_stops_below_finalized_payload() {
+        let ops = get_envelope_ops();
+        let (settled_idx, _) = put_unbundled_intent(&ops, 30);
+        let (finalized_idx, finalized_entry) = put_unbundled_intent(&ops, 31);
+        let mut finalized_payload =
+            BundledPayloadEntry::new_unsigned(finalized_entry.payload().clone());
+        finalized_payload.status = L1BundleStatus::Finalized;
+        ops.bundle_intent_payload_blocking(
+            *finalized_entry.intent.commitment(),
+            finalized_entry,
+            finalized_payload,
+        )
+        .expect("test: bundle finalized intent");
+        let (pending_idx, _) = put_unbundled_intent(&ops, 32);
+
+        assert_eq!((settled_idx, finalized_idx, pending_idx), (0, 1, 2));
+        assert_eq!(
+            get_initial_unbundled_entries(ops.as_ref()).expect("test: scan unbundled"),
+            vec![pending_idx]
+        );
+    }
+
+    #[tokio::test]
+    async fn startup_scan_skips_abandoned_and_recovers_earliest_unbundled_intent() {
+        let ops = get_envelope_ops();
+        let (first_non_checkpoint_idx, _) = put_unbundled_intent(&ops, 10);
+        let (abandoned_idx, mut abandoned_entry) = put_unbundled_intent(&ops, 11);
+        let abandoned_id = *abandoned_entry.intent.commitment();
+        abandoned_entry.status = IntentStatus::Abandoned;
+        ops.update_intent_entry_blocking(abandoned_id, abandoned_entry)
+            .expect("test: abandon middle intent");
+        let (last_idx, _) = put_unbundled_intent(&ops, 12);
+
+        let unbundled = get_initial_unbundled_entries(ops.as_ref())
+            .expect("test: scan across abandoned intent");
+        assert_eq!(unbundled, vec![first_non_checkpoint_idx, last_idx]);
+
+        process_unbundled_entries(ops.as_ref(), unbundled)
+            .await
+            .expect("test: bundle recovered intents");
+
+        assert_eq!(
+            ops.get_intent_by_idx_blocking(first_non_checkpoint_idx)
+                .expect("test: read first intent")
+                .expect("test: first intent exists")
+                .status,
+            IntentStatus::Bundled(0)
+        );
+        assert_eq!(
+            ops.get_intent_by_idx_blocking(abandoned_idx)
+                .expect("test: read abandoned intent")
+                .expect("test: abandoned intent exists")
+                .status,
+            IntentStatus::Abandoned
+        );
+        assert_eq!(
+            ops.get_intent_by_idx_blocking(last_idx)
+                .expect("test: read last intent")
+                .expect("test: last intent exists")
+                .status,
+            IntentStatus::Bundled(1)
+        );
     }
 }

@@ -263,7 +263,7 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 }
 
                 // If finalized, nothing to do, move on to process next entry
-                L1BundleStatus::Finalized => {
+                L1BundleStatus::Finalized | L1BundleStatus::Abandoned => {
                     state.curr_payloadidx += 1;
                 }
 
