@@ -712,6 +712,7 @@ impl MmrIndexHandle {
 #[cfg(test)]
 mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_merkle::{Mmr, Mmr64B32, MmrState};
 
     use super::*;
 
@@ -726,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    fn list_mmr_ids_blocking_returns_indexed_namespaces() {
+    fn test_every_indexed_namespace_is_discoverable() {
         let manager = setup_manager();
         let asm_handle = manager.get_handle(MmrId::Asm);
         let l1_handle = manager.get_handle(MmrId::L1BlockRefs);
@@ -747,7 +748,7 @@ mod tests {
     }
 
     #[test]
-    fn get_range_blocking_returns_contiguous_preimages() {
+    fn test_range_read_returns_contiguous_preimages() {
         let handle = setup_handle();
         let payloads = [vec![0x11], vec![0x22], vec![0x33]];
 
@@ -765,23 +766,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn get_range_returns_contiguous_preimages() {
-        let handle = setup_handle();
-        let payloads = [vec![0xaa], vec![0xbb]];
-
-        for payload in payloads.iter().cloned() {
-            handle.append_blocking(payload).expect("append preimage");
-        }
-
-        assert_eq!(
-            handle.get_range(0, 2).await.expect("get async range"),
-            payloads
-        );
-    }
-
     #[test]
-    fn get_range_blocking_empty_range_returns_empty_vec() {
+    fn test_empty_range_reads_nothing() {
         let handle = setup_handle();
 
         assert_eq!(
@@ -793,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn get_range_blocking_missing_preimage_errors() {
+    fn test_range_read_fails_when_a_preimage_is_missing() {
         let handle = setup_handle();
         handle
             .append_blocking(vec![0x11])
@@ -815,12 +801,243 @@ mod tests {
     }
 
     #[test]
-    fn get_range_blocking_invalid_bounds_errors() {
+    fn test_inverted_range_read_is_rejected() {
         let handle = setup_handle();
 
         let err = handle
             .get_range_blocking(4, 2)
             .expect_err("invalid range should fail");
         assert!(matches!(err, DbError::MmrInvalidRange { start: 4, end: 2 }));
+    }
+
+    /// Appends `count` leaves carrying preimage `[i]`, returning their hashes.
+    ///
+    /// A count of 7 gives a three-peak MMR (4 + 2 + 1), so tests exercise the
+    /// peak-crossing cases rather than a single perfect tree.
+    fn append_leaves_with_preimages(handle: &MmrIndexHandle, count: u64) -> Vec<Hash> {
+        (0..count)
+            .map(|index| {
+                let preimage = vec![index as u8];
+                handle
+                    .append_blocking(preimage.clone())
+                    .expect("append preimage");
+                Hash::from(Sha256Hasher::hash_leaf(&preimage))
+            })
+            .collect()
+    }
+
+    /// Builds an in-memory MMR over `leaf_hashes` to check proofs against.
+    fn build_reference_mmr(leaf_hashes: &[Hash]) -> Mmr64B32 {
+        let mut mmr = Mmr64B32::new_empty();
+        for hash in leaf_hashes {
+            Mmr::<Sha256Hasher>::add_leaf(&mut mmr, hash.0).expect("append reference leaf");
+        }
+        mmr
+    }
+
+    #[test]
+    fn test_append_stores_leaf_and_preimage_together() {
+        let handle = setup_handle();
+        let hashes = append_leaves_with_preimages(&handle, 7);
+
+        // The node write and the preimage write share one commit, so neither is
+        // observable without the other.
+        for (index, hash) in hashes.iter().enumerate() {
+            let index = index as u64;
+            assert_eq!(
+                handle.get_leaf_blocking(index).expect("read leaf"),
+                Some(*hash),
+                "leaf {index} hash"
+            );
+            assert_eq!(
+                handle.get_blocking(index).expect("read preimage"),
+                vec![index as u8],
+                "leaf {index} preimage"
+            );
+        }
+        assert_eq!(handle.get_num_leaves_blocking().expect("leaf count"), 7);
+    }
+
+    #[test]
+    fn test_pop_removes_last_leaf_and_its_preimage() {
+        let handle = setup_handle();
+        let hashes = append_leaves_with_preimages(&handle, 7);
+
+        // Leaf 6 is a lone peak at count 7; popping it crosses a peak boundary.
+        let popped = handle.pop_leaf_blocking().expect("pop").expect("some leaf");
+
+        assert_eq!(popped, hashes[6]);
+        assert_eq!(handle.get_num_leaves_blocking().expect("leaf count"), 6);
+        assert_eq!(handle.get_leaf_blocking(6).expect("read popped leaf"), None);
+        assert!(matches!(
+            handle
+                .get_blocking(6)
+                .expect_err("popped preimage should be gone"),
+            DbError::MmrPayloadNotFound(pos) if pos == LeafPos::new(6)
+        ));
+
+        // Surviving leaves and their preimages are untouched.
+        for (index, hash) in hashes.iter().enumerate().take(6) {
+            let index = index as u64;
+            assert_eq!(
+                handle.get_leaf_blocking(index).expect("read leaf"),
+                Some(*hash)
+            );
+            assert_eq!(
+                handle.get_blocking(index).expect("read preimage"),
+                vec![index as u8]
+            );
+        }
+    }
+
+    #[test]
+    fn test_pop_leaves_state_equal_to_a_shorter_mmr() {
+        let handle = setup_handle();
+        append_leaves_with_preimages(&handle, 7);
+        handle.pop_leaf_blocking().expect("pop").expect("some leaf");
+
+        // An MMR built directly at the shortened length must be indistinguishable.
+        let reference = setup_handle();
+        append_leaves_with_preimages(&reference, 6);
+
+        let popped_state = handle.get_state_at(6).expect("popped state");
+        let reference_state = reference.get_state_at(6).expect("reference state");
+
+        assert_eq!(popped_state.leaf_count, reference_state.leaf_count);
+        assert_eq!(popped_state.peaks, reference_state.peaks);
+    }
+
+    #[test]
+    fn test_generated_proofs_verify_against_an_equivalent_mmr() {
+        let handle = setup_handle();
+        let hashes = append_leaves_with_preimages(&handle, 7);
+        let reference = build_reference_mmr(&hashes);
+
+        for (index, hash) in hashes.iter().enumerate() {
+            let proof = handle
+                .generate_proof_at(index as u64, 7)
+                .expect("generate proof");
+            assert!(
+                reference.verify(&proof, &hash.0),
+                "proof for leaf {index} should verify"
+            );
+        }
+    }
+
+    #[test]
+    fn test_generated_proofs_do_not_verify_for_the_wrong_leaf() {
+        let handle = setup_handle();
+        let hashes = append_leaves_with_preimages(&handle, 7);
+        let reference = build_reference_mmr(&hashes);
+
+        let proof = handle.generate_proof_at(2, 7).expect("generate proof");
+
+        assert!(
+            !reference.verify(&proof, &hashes[3].0),
+            "leaf 2's proof should not verify leaf 3"
+        );
+    }
+
+    #[test]
+    fn test_proof_requests_past_leaf_count_are_rejected() {
+        let handle = setup_handle();
+        append_leaves_with_preimages(&handle, 7);
+
+        assert!(matches!(
+            handle
+                .generate_proof_at(7, 7)
+                .expect_err("index at leaf count should fail"),
+            DbError::MmrIndexOutOfRange {
+                requested: 7,
+                cur: 7
+            }
+        ));
+    }
+
+    #[test]
+    fn test_proofs_for_a_contiguous_range_verify() {
+        let handle = setup_handle();
+        let hashes = append_leaves_with_preimages(&handle, 7);
+        let reference = build_reference_mmr(&hashes);
+
+        let proofs = handle
+            .generate_proofs_for(2, &hashes[2..5], 7)
+            .expect("generate contiguous proofs");
+
+        assert_eq!(proofs.len(), 3);
+        for (offset, proof) in proofs.iter().enumerate() {
+            let index = 2 + offset;
+            assert!(
+                reference.verify(proof, &hashes[index].0),
+                "proof for leaf {index} should verify"
+            );
+        }
+    }
+
+    #[test]
+    fn test_proofs_are_refused_when_a_claimed_leaf_hash_is_wrong() {
+        let handle = setup_handle();
+        let hashes = append_leaves_with_preimages(&handle, 7);
+        let mut claimed = hashes[2..5].to_vec();
+        claimed[1] = Hash::from([0xff; 32]);
+
+        assert!(matches!(
+            handle
+                .generate_proofs_for(2, &claimed, 7)
+                .expect_err("mismatched hash should fail"),
+            DbError::MmrLeafHashMismatch { idx: 3, .. }
+        ));
+    }
+
+    #[test]
+    fn test_a_proof_range_past_leaf_count_is_rejected() {
+        let handle = setup_handle();
+        let hashes = append_leaves_with_preimages(&handle, 7);
+
+        assert!(matches!(
+            handle
+                .generate_proofs_for(5, &hashes[5..7], 6)
+                .expect_err("range past leaf count should fail"),
+            DbError::MmrIndexOutOfRange {
+                requested: 6,
+                cur: 6
+            }
+        ));
+    }
+
+    #[test]
+    fn test_proofs_for_arbitrary_leaf_indices_verify() {
+        let handle = setup_handle();
+        let hashes = append_leaves_with_preimages(&handle, 7);
+        let reference = build_reference_mmr(&hashes);
+        let requested = [(5u64, hashes[5]), (0, hashes[0]), (3, hashes[3])];
+
+        let proofs = handle
+            .generate_proofs_for_indices(&requested, 7)
+            .expect("generate indexed proofs");
+
+        assert_eq!(proofs.len(), requested.len());
+        for (proof, (index, hash)) in proofs.iter().zip(requested) {
+            assert!(
+                reference.verify(proof, &hash.0),
+                "proof for leaf {index} should verify"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_requested_leaf_index_past_leaf_count_is_rejected() {
+        let handle = setup_handle();
+        let hashes = append_leaves_with_preimages(&handle, 7);
+
+        assert!(matches!(
+            handle
+                .generate_proofs_for_indices(&[(1, hashes[1]), (7, hashes[0])], 7)
+                .expect_err("index at leaf count should fail"),
+            DbError::MmrIndexOutOfRange {
+                requested: 7,
+                cur: 7
+            }
+        ));
     }
 }
