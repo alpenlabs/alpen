@@ -14677,6 +14677,7 @@ dependencies = [
  "strata-asm-proto-checkpoint",
  "strata-asm-proto-checkpoint-txs",
  "strata-asm-proto-checkpoint-types",
+ "strata-asm-proto-txs-test-utils",
  "strata-asm-worker",
  "strata-btc-types",
  "strata-btc-verification",
