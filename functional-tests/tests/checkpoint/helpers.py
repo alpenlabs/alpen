@@ -186,6 +186,35 @@ def _decode_codec_varint(data: bytes, at: int) -> tuple[int, int]:
             return value, at + 4
 
 
+def checkpoint_tag(tx) -> bytes | None:
+    """Return the SPS-50 tag of a decoded OL STF checkpoint tx, else None.
+
+    The tag sits in output 0's OP_RETURN, laid out as `0x6a <push_op> <tag>`
+    (a single-byte push covers tag lengths <= 75).
+    """
+    outputs = tx.get("vout", [])
+    if not outputs:
+        return None
+    script_hex = outputs[0].get("scriptPubKey", {}).get("hex", "")
+    try:
+        script = bytes.fromhex(script_hex)
+    except ValueError:
+        return None
+    if len(script) < 8 or script[0] != 0x6A:
+        return None
+    tag = script[2:]
+    if len(tag) < 6:
+        return None
+    if tag[4] != CHECKPOINT_SUBPROTOCOL_ID or tag[5] != OL_STF_CHECKPOINT_TX_TYPE:
+        return None
+    return tag
+
+
+def is_checkpoint_tx(tx) -> bool:
+    """Return whether a decoded transaction carries an OL STF checkpoint."""
+    return checkpoint_tag(tx) is not None
+
+
 def extract_posted_checkpoint_payload(btc_rpc, txid: str) -> bytes:
     """Extract SSZ CheckpointPayload bytes from a posted L1 checkpoint tx.
 
@@ -195,14 +224,10 @@ def extract_posted_checkpoint_payload(btc_rpc, txid: str) -> bytes:
     """
     tx = btc_rpc.proxy.getrawtransaction(txid, 1)
 
-    spk_hex = tx["vout"][0]["scriptPubKey"]["hex"]
-    spk = bytes.fromhex(spk_hex)
-    assert spk[:1] == b"\x6a", f"output 0 is not OP_RETURN: {spk_hex}"
-    # Skip OP_RETURN + push opcode (single-byte push for tag lengths <= 75).
-    tag = spk[2:]
-    assert len(tag) >= 6, f"SPS-50 tag too short: {spk_hex}"
-    assert tag[4] == CHECKPOINT_SUBPROTOCOL_ID, f"unexpected subprotocol id: {tag[4]}"
-    assert tag[5] == OL_STF_CHECKPOINT_TX_TYPE, f"unexpected tx type: {tag[5]}"
+    assert is_checkpoint_tx(tx), (
+        f"tx {txid} does not carry an SPS-50 checkpoint tag "
+        f"(subprotocol={CHECKPOINT_SUBPROTOCOL_ID}, tx_type={OL_STF_CHECKPOINT_TX_TYPE})"
+    )
 
     witness = tx["vin"][0].get("txinwitness")
     assert witness and len(witness) >= 2, f"checkpoint tx {txid} has no tapscript witness"
