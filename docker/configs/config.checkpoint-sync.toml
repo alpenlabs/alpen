@@ -17,8 +17,8 @@ metrics_port = 9615
 
 [bitcoind]
 rpc_url = "http://bitcoind:38332"
-rpc_user = "rpcuser"
-rpc_password = "rpcpassword"
+rpc_user = "bitcoin"
+rpc_password = "bitcoin"
 network = "signet"
 retry_count = 255
 retry_interval = 5_000
