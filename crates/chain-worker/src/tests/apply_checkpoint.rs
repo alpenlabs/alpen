@@ -723,14 +723,14 @@ mod db_idempotency {
                     .unwrap_or_default();
                 let mmr_handle = self.mmr_index.get_handle(MmrId::SnarkMsgInbox(acct));
                 let mmr_leaves = mmr_handle
-                    .get_num_leaves_blocking()
+                    .get_leaf_count_blocking()
                     .expect("get_num_leaves");
                 per_account.push((acct, updates, inbox, mmr_leaves));
             }
 
             let l1_block_refs_handle = self.mmr_index.get_handle(MmrId::L1BlockRefs);
             let l1_block_refs_leaf_count = l1_block_refs_handle
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .expect("get L1 block refs leaf count");
             let l1_block_refs = l1_block_records
                 .iter()

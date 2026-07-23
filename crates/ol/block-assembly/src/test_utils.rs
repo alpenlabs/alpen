@@ -1457,7 +1457,7 @@ fn create_test_manifests_for_heights(heights: &[L1Height]) -> Vec<AsmManifest> {
 fn prefill_db_asm_mmr_to_match_state(storage: &NodeStorage, state: &impl IStateAccessor) {
     let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::L1BlockRefs);
     let state_prefill = state.l1_block_refs_mmr().num_entries();
-    let db_count = mmr_handle.get_num_leaves_blocking().unwrap();
+    let db_count = mmr_handle.get_leaf_count_blocking().unwrap();
     for _ in db_count..state_prefill {
         mmr_handle
             .append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)

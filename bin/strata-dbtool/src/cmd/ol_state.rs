@@ -446,7 +446,7 @@ mod tests {
         .expect("revert OL state");
 
         assert_eq!(
-            l1_handle.get_num_leaves_blocking().expect("L1 leaf count"),
+            l1_handle.get_leaf_count_blocking().expect("L1 leaf count"),
             2
         );
         assert_eq!(
@@ -537,7 +537,7 @@ mod tests {
             Some(BlockStatus::Valid)
         );
         assert_eq!(
-            l1_handle.get_num_leaves_blocking().expect("L1 leaf count"),
+            l1_handle.get_leaf_count_blocking().expect("L1 leaf count"),
             2
         );
     }

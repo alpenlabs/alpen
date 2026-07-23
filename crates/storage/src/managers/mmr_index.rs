@@ -135,7 +135,7 @@ impl MmrIndexHandle {
         self.mmr_id.to_bytes()
     }
 
-    fn get_leaf_count_blocking(&self) -> DbResult<u64> {
+    pub fn get_leaf_count_blocking(&self) -> DbResult<u64> {
         self.ops.get_leaf_count_blocking(self.mmr_id_bytes())
     }
 
@@ -229,7 +229,7 @@ impl MmrIndexHandle {
         expected_hash: Hash,
         preimage: Vec<u8>,
     ) -> DbResult<()> {
-        let leaf_count = self.get_num_leaves_blocking()?;
+        let leaf_count = self.get_leaf_count_blocking()?;
 
         if expected_idx < leaf_count {
             let Some(existing_hash) = self.get_leaf_blocking(expected_idx)? else {
@@ -361,10 +361,6 @@ impl MmrIndexHandle {
 
     pub fn get_mmr_size_blocking(&self) -> DbResult<u64> {
         Ok(num_leaves_to_mmr_size(self.get_leaf_count_blocking()?))
-    }
-
-    pub fn get_num_leaves_blocking(&self) -> DbResult<u64> {
-        self.get_leaf_count_blocking()
     }
 
     /// Reads raw preimage bytes by leaf index.
@@ -529,7 +525,7 @@ impl MmrIndexHandle {
     }
 
     /// Reads the native MMR state at `at_leaf_count`.
-    pub fn get_state_at(&self, at_leaf_count: u64) -> DbResult<Mmr64B32> {
+    pub fn get_state_at_blocking(&self, at_leaf_count: u64) -> DbResult<Mmr64B32> {
         let mmr_id = self.mmr_id_bytes();
         let peak_node_positions: Vec<_> = peak_positions(at_leaf_count).collect();
         let prefetched =
@@ -875,7 +871,7 @@ mod tests {
                 "leaf {index} preimage"
             );
         }
-        assert_eq!(handle.get_num_leaves_blocking().expect("leaf count"), 7);
+        assert_eq!(handle.get_leaf_count_blocking().expect("leaf count"), 7);
     }
 
     #[test]
@@ -887,7 +883,7 @@ mod tests {
         let popped = handle.pop_leaf_blocking().expect("pop").expect("some leaf");
 
         assert_eq!(popped, hashes[6]);
-        assert_eq!(handle.get_num_leaves_blocking().expect("leaf count"), 6);
+        assert_eq!(handle.get_leaf_count_blocking().expect("leaf count"), 6);
         assert_eq!(handle.get_leaf_blocking(6).expect("read popped leaf"), None);
         assert!(matches!(
             handle
@@ -920,8 +916,8 @@ mod tests {
         let reference = setup_handle();
         append_leaves_with_preimages(&reference, 6);
 
-        let popped_state = handle.get_state_at(6).expect("popped state");
-        let reference_state = reference.get_state_at(6).expect("reference state");
+        let popped_state = handle.get_state_at_blocking(6).expect("popped state");
+        let reference_state = reference.get_state_at_blocking(6).expect("reference state");
 
         assert_eq!(popped_state, reference_state);
     }
@@ -1073,7 +1069,7 @@ mod tests {
         let reference = build_reference_mmr(&leaves);
         assert_eq!(reference.roots.len(), 3, "fixture should have three peaks");
 
-        let state = handle.get_state_at(7).expect("state");
+        let state = handle.get_state_at_blocking(7).expect("state");
         // Whole-value equality also pins root order (lowest-height first), not
         // the highest-first order the peaks are read in.
         assert_eq!(state, reference);
@@ -1087,7 +1083,9 @@ mod tests {
 
         // Construct the expected shape directly because the native mutation API
         // treats zero roots as unset.
-        let state = handle.get_state_at(1).expect("state with zero leaf");
+        let state = handle
+            .get_state_at_blocking(1)
+            .expect("state with zero leaf");
         assert_eq!(state.entries, 1);
         assert_eq!(state.roots.len(), 1);
         assert_eq!(state.roots[0], FixedBytes::from([0u8; 32]));

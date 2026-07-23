@@ -922,7 +922,7 @@ mod tests {
 
         assert_eq!(
             handle
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .expect("test: get leaf count"),
             1
         );

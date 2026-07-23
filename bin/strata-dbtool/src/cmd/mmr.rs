@@ -650,7 +650,7 @@ fn validate_mmr_index_revert_prefixes_with_manager(
     for candidate in &plan.revert_candidates {
         let handle = mmr_index_manager.get_handle(candidate.mmr_id.clone());
         let target_state = handle
-            .get_state_at(candidate.target_leaf_count())
+            .get_state_at_blocking(candidate.target_leaf_count())
             .internal_error("Failed to read target MMR state before revert")?;
         if target_state != candidate.target {
             return Err(DisplayedError::InternalError(
@@ -699,7 +699,7 @@ pub(crate) fn execute_mmr_index_revert_plan(
             }
 
             let final_leaf_count = handle
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .internal_error("Failed to read final MMR leaf count")?;
             if final_leaf_count != candidate.target_leaf_count() {
                 return Err(DisplayedError::InternalError(
@@ -715,7 +715,7 @@ pub(crate) fn execute_mmr_index_revert_plan(
             }
 
             let final_state = handle
-                .get_state_at(final_leaf_count)
+                .get_state_at_blocking(final_leaf_count)
                 .internal_error("Failed to read final MMR state")?;
             if final_state != candidate.target {
                 return Err(DisplayedError::InternalError(
@@ -1221,16 +1221,16 @@ mod tests {
         execute_mmr_index_revert_plan(db.as_ref(), &plan).expect("execute revert");
 
         assert_eq!(
-            l1_handle.get_num_leaves_blocking().expect("L1 leaf count"),
+            l1_handle.get_leaf_count_blocking().expect("L1 leaf count"),
             1
         );
         assert_eq!(
-            &l1_handle.get_state_at(1).expect("L1 state"),
+            &l1_handle.get_state_at_blocking(1).expect("L1 state"),
             target_state.epoch_state().l1_block_refs_mmr()
         );
         assert_eq!(
             snark_handle
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .expect("snark leaf count"),
             0
         );
@@ -1267,7 +1267,7 @@ mod tests {
 
         assert!(err.to_string().contains("does not match target prefix"));
         assert_eq!(
-            l1_handle.get_num_leaves_blocking().expect("L1 leaf count"),
+            l1_handle.get_leaf_count_blocking().expect("L1 leaf count"),
             2
         );
     }
@@ -1298,10 +1298,10 @@ mod tests {
         execute_mmr_index_revert_plan(db.as_ref(), &plan).expect("execute revert");
 
         assert_eq!(
-            l1_handle.get_num_leaves_blocking().expect("L1 leaf count"),
+            l1_handle.get_leaf_count_blocking().expect("L1 leaf count"),
             3
         );
-        let final_state = l1_handle.get_state_at(3).expect("L1 state");
+        let final_state = l1_handle.get_state_at_blocking(3).expect("L1 state");
         assert_eq!(final_state.roots.len(), 2);
         assert_eq!(&final_state, target_state.epoch_state().l1_block_refs_mmr());
     }

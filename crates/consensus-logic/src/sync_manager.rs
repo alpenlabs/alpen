@@ -166,7 +166,7 @@ fn storage_to_worker_state(state: StorageAsmState) -> WorkerAsmState {
 /// `target_count` entries. It is used to align DB-side MMR leaf indices with
 /// L1 block heights, mirroring the in-memory OL state initialization.
 fn prefill_asm_mmr(handle: &MmrIndexHandle, target_count: u64) -> anyhow::Result<()> {
-    let current = handle.get_num_leaves_blocking()?;
+    let current = handle.get_leaf_count_blocking()?;
     if current >= target_count {
         return Ok(());
     }

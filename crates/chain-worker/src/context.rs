@@ -568,7 +568,7 @@ pub(crate) fn prefill_l1_block_refs_mmr_blocking(
     genesis_l1_height: u64,
 ) -> WorkerResult<()> {
     let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-    let leaf_count = handle.get_num_leaves_blocking()?;
+    let leaf_count = handle.get_leaf_count_blocking()?;
     for expected_idx in leaf_count..=genesis_l1_height {
         let appended_idx = handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
         if appended_idx != expected_idx {
@@ -859,14 +859,14 @@ mod tests {
         assert_eq!(
             mmr_index_mgr
                 .get_handle(MmrId::SnarkMsgInbox(account_id))
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .unwrap(),
             1
         );
         assert_eq!(
             mmr_index_mgr
                 .get_handle(MmrId::L1BlockRefs)
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .unwrap(),
             2
         );
@@ -893,14 +893,14 @@ mod tests {
         assert_eq!(
             mmr_index_mgr
                 .get_handle(MmrId::SnarkMsgInbox(account_id))
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .unwrap(),
             1
         );
         assert_eq!(
             mmr_index_mgr
                 .get_handle(MmrId::L1BlockRefs)
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .unwrap(),
             3
         );
@@ -928,14 +928,14 @@ mod tests {
         assert_eq!(
             mmr_index_mgr
                 .get_handle(MmrId::SnarkMsgInbox(account_one))
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .unwrap(),
             2
         );
         assert_eq!(
             mmr_index_mgr
                 .get_handle(MmrId::SnarkMsgInbox(account_two))
-                .get_num_leaves_blocking()
+                .get_leaf_count_blocking()
                 .unwrap(),
             1
         );
@@ -959,7 +959,7 @@ mod tests {
         index_inbox_mmr_writes(&mmr_index_mgr, &output).unwrap();
 
         let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
-        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 2);
+        assert_eq!(handle.get_leaf_count_blocking().unwrap(), 2);
         assert_mmr_entry(&mmr_index_mgr, account_id, 0, &entry_one);
         assert_mmr_entry(&mmr_index_mgr, account_id, 1, &entry_two);
     }
@@ -974,7 +974,7 @@ mod tests {
         index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
 
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 2);
+        assert_eq!(handle.get_leaf_count_blocking().unwrap(), 2);
         assert_eq!(
             handle.get_leaf_blocking(0).unwrap(),
             Some(MMR_SENTINEL_DUMMY_LEAF_HASH)
@@ -991,7 +991,7 @@ mod tests {
         prefill_l1_block_refs_mmr_blocking(&mmr_index_mgr, 3).unwrap();
 
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 4);
+        assert_eq!(handle.get_leaf_count_blocking().unwrap(), 4);
     }
 
     #[test]
@@ -1006,7 +1006,7 @@ mod tests {
         index_l1_block_ref_mmr_writes(&mmr_index_mgr, &output).unwrap();
 
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 3);
+        assert_eq!(handle.get_leaf_count_blocking().unwrap(), 3);
         assert_l1_block_ref_entry(&mmr_index_mgr, 1, &first_real);
         assert_l1_block_ref_entry(&mmr_index_mgr, 2, &second_real);
     }
