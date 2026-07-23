@@ -30,3 +30,4 @@ serde_json.workspace = true
 default = ["chainspec"]
 chainspec = ["dep:alpen-chainspec", "dep:eyre"]
 serde = []
+test-utils = []

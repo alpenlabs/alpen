@@ -16,35 +16,35 @@ use crate::{
 };
 
 /// Canonical per-account storage view used by test oracles.
-pub(crate) type AccountStorage = BTreeMap<U256, U256>;
+pub type AccountStorage = BTreeMap<U256, U256>;
 
 /// Returns a deterministic address derived from a single-byte seed.
-pub(crate) fn addr(seed: u8) -> Address {
+pub fn addr(seed: u8) -> Address {
     Address::from([seed; 20])
 }
 
 /// Returns a deterministic `B256` hash derived from a single-byte seed.
-pub(crate) fn hash(seed: u8) -> B256 {
+pub fn hash(seed: u8) -> B256 {
     B256::from([seed; 32])
 }
 
 /// Returns a storage-slot key from a small integer.
-pub(crate) fn slot(value: u64) -> U256 {
+pub fn slot(value: u64) -> U256 {
     U256::from(value)
 }
 
 /// Returns a storage or balance value from a small integer.
-pub(crate) fn value(value: u64) -> U256 {
+pub fn value(value: u64) -> U256 {
     U256::from(value)
 }
 
 /// Copies bytecode into owned bytes for block-diff fixtures.
-pub(crate) fn bytecode(bytes: &[u8]) -> Bytes {
+pub fn bytecode(bytes: &[u8]) -> Bytes {
     Bytes::copy_from_slice(bytes)
 }
 
 /// Builds a compact account snapshot for test fixtures.
-pub(crate) fn snapshot(balance: u64, nonce: u64, code_hash: B256) -> AccountSnapshot {
+pub fn snapshot(balance: u64, nonce: u64, code_hash: B256) -> AccountSnapshot {
     AccountSnapshot {
         balance: U256::from(balance),
         nonce,
@@ -53,7 +53,7 @@ pub(crate) fn snapshot(balance: u64, nonce: u64, code_hash: B256) -> AccountSnap
 }
 
 /// Inserts an account-level change into a block diff fixture.
-pub(crate) fn account_change(
+pub fn account_change(
     diff: &mut BlockStateChanges,
     address: Address,
     original: Option<AccountSnapshot>,
@@ -64,7 +64,7 @@ pub(crate) fn account_change(
 }
 
 /// Inserts a storage-slot change into a block diff fixture.
-pub(crate) fn storage_change(
+pub fn storage_change(
     diff: &mut BlockStateChanges,
     address: Address,
     slot_key: U256,
@@ -79,21 +79,17 @@ pub(crate) fn storage_change(
 }
 
 /// Records deployed bytecode in a block diff fixture.
-pub(crate) fn deployed_bytecode(
-    diff: &mut BlockStateChanges,
-    code_hash: B256,
-    deployed_bytecode: Bytes,
-) {
+pub fn deployed_bytecode(diff: &mut BlockStateChanges, code_hash: B256, deployed_bytecode: Bytes) {
     diff.deployed_bytecodes.insert(code_hash, deployed_bytecode);
 }
 
 /// Creates an empty per-block state diff fixture.
-pub(crate) fn block_diff() -> BlockStateChanges {
+pub fn block_diff() -> BlockStateChanges {
     BlockStateChanges::new()
 }
 
 /// Aggregates a sequence of block diffs into a single batch diff.
-pub(crate) fn batch_diff(blocks: &[BlockStateChanges]) -> BatchStateDiff {
+pub fn batch_diff(blocks: &[BlockStateChanges]) -> BatchStateDiff {
     let mut builder = BatchBuilder::new();
     for block in blocks {
         builder.apply_block(block);
@@ -103,32 +99,27 @@ pub(crate) fn batch_diff(blocks: &[BlockStateChanges]) -> BatchStateDiff {
 
 /// Canonical account and storage state used by reconstruction oracles.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct CanonicalState {
+pub struct CanonicalState {
     /// Final account records keyed by address.
-    pub(crate) accounts: BTreeMap<Address, StateAccount>,
+    pub accounts: BTreeMap<Address, StateAccount>,
     /// Final storage contents keyed by address and slot.
-    pub(crate) storage: BTreeMap<Address, AccountStorage>,
+    pub storage: BTreeMap<Address, AccountStorage>,
 }
 
 impl CanonicalState {
     /// Creates an empty canonical state.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
     /// Adds or replaces a canonical account entry.
-    pub(crate) fn with_account(mut self, address: Address, account: StateAccount) -> Self {
+    pub fn with_account(mut self, address: Address, account: StateAccount) -> Self {
         self.accounts.insert(address, account);
         self
     }
 
     /// Sets a canonical storage slot value for an account.
-    pub(crate) fn set_storage_slot(
-        mut self,
-        address: Address,
-        slot_key: U256,
-        slot_value: U256,
-    ) -> Self {
+    pub fn set_storage_slot(mut self, address: Address, slot_key: U256, slot_value: U256) -> Self {
         self.storage
             .entry(address)
             .or_default()
@@ -137,7 +128,7 @@ impl CanonicalState {
     }
 
     /// Removes a canonical storage slot and prunes empty account storage maps.
-    pub(crate) fn remove_storage_slot(mut self, address: Address, slot_key: U256) -> Self {
+    pub fn remove_storage_slot(mut self, address: Address, slot_key: U256) -> Self {
         if let Some(account_storage) = self.storage.get_mut(&address) {
             account_storage.remove(&slot_key);
             if account_storage.is_empty() {
@@ -149,7 +140,7 @@ impl CanonicalState {
 }
 
 /// Builds a canonical `StateAccount` with an empty storage root placeholder.
-pub(crate) fn state_account(balance: u64, nonce: u64, code_hash: B256) -> StateAccount {
+pub fn state_account(balance: u64, nonce: u64, code_hash: B256) -> StateAccount {
     StateAccount {
         nonce,
         balance: U256::from(balance),
@@ -159,7 +150,7 @@ pub(crate) fn state_account(balance: u64, nonce: u64, code_hash: B256) -> StateA
 }
 
 /// Builds canonical storage tries for every account present in the state view.
-pub(crate) fn canonical_storage_tries(
+pub fn canonical_storage_tries(
     state: &CanonicalState,
 ) -> Result<BTreeMap<Address, MptNode>, strata_mpt::Error> {
     let mut storage_tries = BTreeMap::new();
@@ -181,7 +172,7 @@ pub(crate) fn canonical_storage_tries(
 }
 
 /// Recomputes canonical accounts with storage roots derived from canonical storage.
-pub(crate) fn canonical_accounts(
+pub fn canonical_accounts(
     state: &CanonicalState,
 ) -> Result<BTreeMap<Address, StateAccount>, strata_mpt::Error> {
     let storage_tries = canonical_storage_tries(state)?;
@@ -200,7 +191,7 @@ pub(crate) fn canonical_accounts(
 }
 
 /// Computes the canonical global state root for the provided state view.
-pub(crate) fn canonical_state_root(state: &CanonicalState) -> Result<B256, strata_mpt::Error> {
+pub fn canonical_state_root(state: &CanonicalState) -> Result<B256, strata_mpt::Error> {
     let accounts = canonical_accounts(state)?;
     let mut state_trie = MptNode::default();
 
