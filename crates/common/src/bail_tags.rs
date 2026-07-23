@@ -26,6 +26,9 @@ pub const BAIL_CSM_EVENT: &str = "csm_event";
 /// Bail point in the CSM worker when finalizing an epoch.
 pub const BAIL_CSM_EVENT_FINALIZE_EPOCH: &str = "csm_event_finalize_epoch";
 
+/// Bail point after btcio stores an L1 canonical-chain entry, before notifying ASM.
+pub const BAIL_BTCIO_AFTER_L1_CANONICAL_WRITE: &str = "btcio_after_l1_canonical_write";
+
 /// All registered bail tags.
 ///
 /// Returned to functional tests via the `debug_listBailTags` RPC so they can
@@ -36,4 +39,5 @@ pub const KNOWN_BAIL_TAGS: &[&str] = &[
     BAIL_FCM_NEW_BLOCK,
     BAIL_CSM_EVENT,
     BAIL_CSM_EVENT_FINALIZE_EPOCH,
+    BAIL_BTCIO_AFTER_L1_CANONICAL_WRITE,
 ];
