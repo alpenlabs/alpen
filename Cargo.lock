@@ -16296,6 +16296,7 @@ name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
  "bitcoin-bosd 0.11.0",
+ "ssz",
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",

@@ -15,7 +15,7 @@ fn make_marker_predicate(marker: &[u8]) -> PredicateKey {
 }
 
 #[test]
-fn ee_predicate_key_update_applies_to_target_snark_account() {
+fn ee_predicate_key_update_lands_in_target_account_inbox() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let initial_vk = make_marker_predicate(b"initial");
     let new_vk = make_marker_predicate(b"rotated");
@@ -40,13 +40,14 @@ fn ee_predicate_key_update_applies_to_target_snark_account() {
     let account_state = fixture.expect_snark_account(snark_acct_id);
     assert_eq!(
         account_state.update_vk(),
-        &new_vk,
-        "predicate key should be rotated"
-    );
-    assert_ne!(
-        account_state.update_vk(),
         &initial_vk,
-        "predicate key must differ from initial"
+        "rotation must not apply until the account consumes the inbox message"
+    );
+    assert_eq!(
+        account_state.inbox_mmr().num_entries(),
+        1,
+        "rotation should land in the account inbox so it activates when \
+         consumed and the EE observes it in its inbox ordering"
     );
 }
 
