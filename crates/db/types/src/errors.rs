@@ -11,18 +11,6 @@ use typed_sled::error::Error;
 
 use crate::mmr_index::{LeafPos, NodePos};
 
-/// Pure MMR algorithm errors - domain-specific, no storage concepts.
-#[derive(Debug, Clone, Error)]
-pub enum MmrError {
-    #[error("MMR leaf {0} not found")]
-    LeafNotFound(u64),
-
-    #[error("invalid mmr range (start {start}, end {end})")]
-    InvalidRange { start: u64, end: u64 },
-
-    #[error("mmr index {pos} out of bounds (max {max_size})")]
-    PositionOutOfBounds { pos: u64, max_size: u64 },
-}
 #[derive(Debug, Error, Clone)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
@@ -243,17 +231,5 @@ impl From<OpsError> for DbError {
 impl From<JoinError> for DbError {
     fn from(err: JoinError) -> Self {
         DbError::WorkerFailedStrangely(err.to_string())
-    }
-}
-
-impl From<MmrError> for DbError {
-    fn from(value: MmrError) -> Self {
-        match value {
-            MmrError::LeafNotFound(idx) => DbError::MmrLeafNotFound(idx),
-            MmrError::InvalidRange { start, end } => DbError::MmrInvalidRange { start, end },
-            MmrError::PositionOutOfBounds { pos, max_size } => {
-                DbError::MmrPositionOutOfBounds { pos, max: max_size }
-            }
-        }
     }
 }
