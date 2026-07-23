@@ -49,10 +49,18 @@ impl IntentEntry {
 /// Unbundled Intents are collected and bundled to create [`BundledPayloadEntry`].
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub enum IntentStatus {
-    // It is not bundled yet, and thus will be collected and processed by bundler.
+    /// The intent has not been bundled yet.
     Unbundled,
-    // It has been bundled to [`BundledPayloadEntry`] with given bundle idx.
+    /// The intent has been bundled into the [`BundledPayloadEntry`] at the given index.
     Bundled(u64),
+    /// Reconciliation abandoned the intent before it could publish.
+    ///
+    /// Intent entries are keyed by commitment, while intent indices reference that shared entry.
+    /// A later submission with the same commitment allocates a fresh index and refreshes the
+    /// shared entry to [`IntentStatus::Unbundled`], so older indices then resolve to the refreshed
+    /// state as well. The bundler still creates the payload exactly once because it skips the
+    /// remaining aliases after the shared entry becomes [`IntentStatus::Bundled`].
+    Abandoned,
 }
 
 /// Represents data for a payload we're still planning to post to L1.
@@ -150,6 +158,12 @@ pub enum L1BundleStatus {
     /// The transactions need to be resigned.
     /// This could be due to transactions input UTXOs already being spent.
     NeedsResign,
+
+    /// The payload was abandoned before its transactions could publish.
+    ///
+    /// This terminal state preserves the payload index so the sequential watcher
+    /// can advance without leaving a database gap.
+    Abandoned,
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
@@ -181,6 +195,9 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
 
     /// Store the [`IntentEntry`].
     fn put_intent_entry(&self, payloadid: Buf32, payloadentry: IntentEntry) -> DbResult<u64>;
+
+    /// Updates an existing [`IntentEntry`] without allocating another index.
+    fn update_intent_entry(&self, payloadid: Buf32, payloadentry: IntentEntry) -> DbResult<()>;
 
     /// Atomically stores a payload entry and marks an existing intent as bundled.
     ///
