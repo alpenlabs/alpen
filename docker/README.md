@@ -44,10 +44,9 @@ cp .env.alpen-fullnode.example .env
 # Edit .env for the target network images and Alpen EE peers.
 ```
 
-`BRIDGE_DENOMINATION` and `MAX_WITHDRAWAL_AMOUNT` must match the target
-network's bridge params. Testnet III uses a 2 BTC denomination. The example
-cap is the largest valid `u64` cap divisible by that denomination:
-`floor((2^64 - 1) / 200000000) * 200000000 = 18446744073600000000`.
+The fullnode compose mounts `configs/ee-params.testnet3.json`, which contains
+the Testnet III EE genesis metadata and bridge params consumed by
+`alpen-client --ee-params`.
 
 Prepare the required key file mounted by the Alpen fullnode service:
 

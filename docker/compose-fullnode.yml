@@ -11,10 +11,6 @@ services:
       GENESIS_L1_HEIGHT: ${GENESIS_L1_HEIGHT:-}
       CHAIN_SPEC: ${CHAIN_SPEC:-testnet3}
       OL_CLIENT_URL: ${OL_CLIENT_URL:-https://strata.testnet.alpen.org}
-      BRIDGE_DENOMINATION: ${BRIDGE_DENOMINATION:-200000000}
-      # Uses ${VAR-default}, not ${VAR:-default}: an explicitly empty value must
-      # survive so the entrypoint serializes max_withdrawal_amount as null.
-      MAX_WITHDRAWAL_AMOUNT: ${MAX_WITHDRAWAL_AMOUNT-}
     command:
       - --sequencer-http
       - ${SEQUENCER_HTTP:-}
