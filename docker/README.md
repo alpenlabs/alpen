@@ -48,6 +48,9 @@ The fullnode compose mounts `configs/ee-params.testnet3.json`, which contains
 the Testnet III EE genesis metadata and bridge params consumed by
 `alpen-client --ee-params`.
 
+The compose defaults HTTP RPC to `eth,net,web3,txpool`; it does not expose
+`admin` or `debug` unless the operator explicitly overrides `HTTP_API`.
+
 Prepare the required key file mounted by the Alpen fullnode service:
 
 ```bash

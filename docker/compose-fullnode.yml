@@ -7,6 +7,7 @@ services:
     image: ${ALPEN_IMAGE:-alpen-client:latest}
     environment:
       RUST_LOG: ${RUST_LOG:-info,alpen_gossip=info}
+      HTTP_API: ${HTTP_API:-eth,net,web3,txpool}
       SEQUENCER_PUBKEY: ${SEQUENCER_PUBKEY:-}
       GENESIS_L1_HEIGHT: ${GENESIS_L1_HEIGHT:-}
       CHAIN_SPEC: ${CHAIN_SPEC:-testnet3}
