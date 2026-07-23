@@ -4,8 +4,11 @@
 //! any account may produce any kind of indexing record.
 //!
 //! Records derive [`serde::Serialize`] / [`serde::Deserialize`] and are persisted
-//! as CBOR. Fields whose native types lack serde derives (e.g. `MessageEntry`)
-//! are stored in their raw SSZ byte form; callers convert at the boundaries.
+//! via serde, preferably as CBOR. Fields whose native types lack serde derives
+//! (e.g. `MessageEntry`) are stored in their raw SSZ byte form; callers convert
+//! at the boundaries.
+
+// TODO(trey): use serde shims for SSZ/Codec types to avoid manual code
 
 use std::collections::BTreeMap;
 
@@ -32,7 +35,7 @@ use crate::DbResult;
 /// epoch. Reads as `None` for fresh epochs and checkpoint-sync rows. Used by
 /// `apply_block_indexing` to reject duplicate / out-of-order applies before
 /// any tree mutation occurs.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Default, Deserialize, Serialize)]
 pub struct EpochIndexingData {
     epoch_commitment: Option<EpochCommitment>,
     created_accounts: Vec<AccountCreatedRecord>,
@@ -108,10 +111,11 @@ impl EpochIndexingData {
 }
 
 /// A record of a created account. Expected to contain more data in the future.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct AccountCreatedRecord {
     /// The account that was created.
     account: AccountId,
+
     /// Block at which the account was created.
     block: Option<OLBlockCommitment>,
 }
@@ -144,7 +148,7 @@ impl AccountCreatedRecord {
 ///
 /// `block_commitment` is `None` on checkpoint-sync rows (no per-block
 /// attribution available). `new_state_root` is always present.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct AccountUpdateMeta {
     block_commitment: Option<OLBlockCommitment>,
     new_state_root: Hash,
@@ -172,7 +176,7 @@ impl AccountUpdateMeta {
 /// Messages consumed by this update are the inbox entries in the range
 /// `[self.prev_next_inbox_idx, self.next_inbox_idx)`. Callers fetch the
 /// actual entries from the inbox MMR when needed.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct AccountUpdateRecord {
     update_meta: Option<AccountUpdateMeta>,
     seq_no: u64,
@@ -255,7 +259,7 @@ impl AccountEpochKey {
 ///
 /// `block_commitment` is `Some` for block-sync writes, `None` for checkpoint-sync.
 /// `entry_bytes` is the SSZ encoding of the underlying `MessageEntry`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct InboxMessageRecord {
     entry_bytes: Vec<u8>,
     block_commitment: Option<OLBlockCommitment>,
@@ -278,7 +282,7 @@ impl InboxMessageRecord {
     }
 }
 
-/// Indexing data produced by a block-sync or checkpoint-sync run.
+/// Indexing data produced by a sync step.
 #[derive(Clone, Debug, Default)]
 pub struct IndexingWrites {
     created_accounts: Vec<AccountId>,

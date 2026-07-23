@@ -10,7 +10,6 @@ pub mod errors;
 pub mod l1;
 pub mod l1_broadcast;
 pub mod l1_writer;
-pub mod legacy;
 pub mod mempool;
 pub mod mmr_index;
 pub mod ol_block;

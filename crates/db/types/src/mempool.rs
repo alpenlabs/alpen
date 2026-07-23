@@ -12,16 +12,18 @@ use crate::DbResult;
 /// Stored mempool transaction with ordering metadata.
 ///
 /// Used by [`MempoolDatabase`] trait for storage and retrieval.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct MempoolTxData {
     /// Transaction ID.
-    pub txid: OLTxId,
+    txid: OLTxId,
+
     /// Raw transaction bytes.
-    pub tx_bytes: Vec<u8>,
+    tx_bytes: Vec<u8>,
+
     /// Timestamp (microseconds since UNIX epoch) for FIFO ordering.
     ///
     /// Persists across restarts.
-    pub timestamp_micros: u64,
+    timestamp_micros: u64,
 }
 
 impl MempoolTxData {
@@ -32,6 +34,18 @@ impl MempoolTxData {
             tx_bytes,
             timestamp_micros,
         }
+    }
+
+    pub fn txid(&self) -> OLTxId {
+        self.txid
+    }
+
+    pub fn tx_bytes(&self) -> &[u8] {
+        &self.tx_bytes
+    }
+
+    pub fn timestamp_micros(&self) -> u64 {
+        self.timestamp_micros
     }
 }
 

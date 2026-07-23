@@ -1,11 +1,13 @@
 //! L1 broadcast database interface and its transaction-entry record types.
 
+// TODO(trey): split apart L1TxEntry into two database fields so we aren't overwriting the serialized tx whenever we update the status
+// TODO(trey): try to remove bitcoin dep from this crate, do conversion in btcio
+
 use std::fmt;
 
 use arbitrary::Arbitrary;
 use bitcoin::consensus::{self, deserialize, serialize};
 use bitcoin::Transaction;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
@@ -18,9 +20,7 @@ use crate::DbResult;
 
 /// This is the entry that gets saved to the database corresponding to a bitcoin transaction that
 /// the broadcaster will publish and watches for until finalization
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct L1TxEntry {
     /// Raw serialized transaction. This is basically `consensus::serialize()` of [`Transaction`]
     tx_raw: Vec<u8>,
@@ -63,10 +63,8 @@ impl L1TxEntry {
 }
 
 /// The possible statuses of a publishable transaction
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
-#[serde(tag = "status")]
+#[derive(Debug, Clone, PartialEq, Eq, Arbitrary, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
 pub enum L1TxStatus {
     /// The transaction is waiting to be published
     Unpublished,
@@ -79,6 +77,7 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Confirmed {
         confirmations: u64,
+        // TODO(trey): use L1BlockCommitment with #[serde(flatten)] maybe
         block_hash: Buf32,
         block_height: L1Height,
     },
@@ -88,6 +87,7 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Finalized {
         confirmations: u64,
+        // TODO(trey): use L1BlockCommitment with #[serde(flatten)] maybe
         block_hash: Buf32,
         block_height: L1Height,
     },

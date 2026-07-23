@@ -2,7 +2,8 @@
 
 use std::fmt;
 
-use borsh::{BorshDeserialize, BorshSerialize};
+// TODO(trey): split ChunkedEnvelopeEntry into different parts for the different types of enveloped and the different stages of processing
+
 use serde::Serialize;
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
@@ -20,7 +21,8 @@ use crate::DbResult;
 /// (`magic + version`); each subsequent P2TR output funds a
 /// reveal whose tapscript carries one chunk under `<sequencer_pk> OP_CHECKSIG`.
 /// Reveals do NOT reference each other; entries are independent across batches.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+// FIXME(trey): this merges information from different stages into a single entry, which creates issues where multiple services are writing to the same database object
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ChunkedEnvelopeEntry {
     /// Raw chunk payloads, ordered by commit-output index.
     pub chunk_data: Vec<Vec<u8>>,
@@ -82,7 +84,8 @@ impl fmt::Display for ChunkedEnvelopeEntry {
 }
 
 /// Metadata for a single reveal transaction within a chunked envelope.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+// FIXME(trey): this "meta" type contains non-meta data, the serialized transaction
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct RevealTxMeta {
     /// Output index in the commit tx that this reveal spends.
     pub vout_index: u32,
@@ -112,7 +115,8 @@ impl fmt::Display for RevealTxMeta {
 ///                 ↓              ↓
 ///            NeedsResign    NeedsResign
 /// ```
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ChunkedEnvelopeStatus {
     /// Chunk data prepared, transactions not yet created.
     Unsigned,

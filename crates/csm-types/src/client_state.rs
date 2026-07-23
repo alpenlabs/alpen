@@ -5,7 +5,6 @@
 use core::fmt;
 
 use arbitrary::{Arbitrary, Unstructured};
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_proto_checkpoint_types::CheckpointTip;
 use strata_identifiers::{
@@ -18,18 +17,7 @@ use strata_identifiers::{
 /// This is updated when we see a consensus-relevant message.  This is L2 blocks
 /// but also L1 blocks being published with relevant things in them, and
 /// various other events.
-#[derive(
-    Clone,
-    Debug,
-    Default,
-    Eq,
-    PartialEq,
-    Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
-    Deserialize,
-    Serialize,
-)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct ClientState {
     // Last *finalized* checkpoint.
     pub(crate) last_finalized_checkpoint: Option<L1Checkpoint>,
@@ -111,9 +99,7 @@ impl CheckpointState {
 ///
 /// `txid` and `wtxid` use [`RBuf32`] so their `Debug`/`Display` follow Bitcoin's
 /// reversed-byte hash convention.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct CheckpointL1Ref {
     pub l1_commitment: L1BlockCommitment,
     pub txid: RBuf32,
@@ -138,17 +124,13 @@ impl CheckpointL1Ref {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct L1Checkpoint {
     /// Tip published by the ASM checkpoint subprotocol for this checkpoint.
     ///
     /// `tip.l1_height` is the L1 view consumed by the OL for this epoch — distinct
     /// from `l1_reference.l1_commitment`, which records where the checkpoint
     /// envelope was observed on L1.
-    ///
-    /// `CheckpointTip` is SSZ-defined; its Borsh impl is provided by
-    /// `impl_borsh_via_ssz_fixed!` in `strata-asm-proto-checkpoint-types`, so a
-    /// plain Borsh derive on the parent works without field-level codecs.
     pub tip: CheckpointTip,
 
     /// L1 reference for the envelope that carried this checkpoint.
@@ -189,20 +171,5 @@ impl<'a> Arbitrary<'a> for L1Checkpoint {
         };
         let l1_reference = CheckpointL1Ref::arbitrary(u)?;
         Ok(Self { tip, l1_reference })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use strata_test_utils::ArbitraryGenerator;
-
-    use super::*;
-
-    #[test]
-    fn l1_checkpoint_borsh_roundtrip() {
-        let original: L1Checkpoint = ArbitraryGenerator::new().generate();
-        let bytes = borsh::to_vec(&original).expect("borsh encode");
-        let decoded: L1Checkpoint = borsh::from_slice(&bytes).expect("borsh decode");
-        assert_eq!(decoded, original);
     }
 }

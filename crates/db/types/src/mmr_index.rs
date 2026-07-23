@@ -2,10 +2,11 @@
 //!
 //! [`MmrIndexDatabase`], [`NodePos`], batch-write structs, preconditions, etc.
 
+// TODO(trey): reorganize everything here
+
 use std::collections::BTreeMap;
 use std::io;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_identifiers::{AccountId, Hash};
@@ -22,22 +23,24 @@ pub type RawMmrId = Vec<u8>;
 ///
 /// Each variant represents a different MMR type, with optional scoping
 /// within that type (e.g., per-account MMRs).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MmrId {
     /// ASM manifest MMR (singleton, no account scope).
     Asm,
+
     /// Snark message inbox MMR (per-account scope).
     SnarkMsgInbox(AccountId),
+
     /// OL L1 block refs MMR (singleton, no account scope).
     L1BlockRefs,
 }
 
 impl MmrId {
     /// Serializes `MmrId` to bytes for use as a database key.
-    ///
-    /// Uses borsh encoding to ensure stable, deterministic serialization.
     pub fn to_bytes(&self) -> Vec<u8> {
-        borsh::to_vec(&self).expect("MmrId serialization should not fail")
+        // TODO(trey): implement this
+        unimplemented!()
     }
 
     /// Deserializes an [`MmrId`] from its database key bytes.
