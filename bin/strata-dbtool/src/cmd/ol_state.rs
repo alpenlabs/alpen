@@ -155,8 +155,7 @@ pub(crate) fn revert_ol_state(
     if target_slot >= chain_tip_slot {
         println!("No changes would be made.");
         println!(
-            "Target slot ({}) is at or after the chain tip slot ({}).",
-            target_slot, chain_tip_slot
+            "Target slot ({target_slot}) is at or after the chain tip slot ({chain_tip_slot})."
         );
         return Ok(());
     }
