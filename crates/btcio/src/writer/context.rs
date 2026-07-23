@@ -3,6 +3,8 @@ use std::{fmt::Debug, sync::Arc};
 use bitcoin::{secp256k1::XOnlyPublicKey, Address};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_config::btcio::WriterConfig;
+use strata_csm_types::L1Payload;
+use strata_identifiers::{Buf32, Epoch};
 use strata_status::StatusChannel;
 
 use crate::BtcioParams;
@@ -40,6 +42,38 @@ impl EnvelopeSigningModeProvider for StaticEnvelopeSigningModeProvider {
     }
 }
 
+/// What a queued writer payload is, as far as checkpoint policy is concerned.
+///
+/// The writer queue carries payloads for every subprotocol and this crate does not
+/// know how any of them are encoded, so classification is delegated to a
+/// [`CheckpointPayloadInspector`]. The three cases are kept apart because they call
+/// for different handling: a payload that is not a checkpoint is none of the
+/// writer's business, while one that claims to be a checkpoint and will not decode
+/// is worth a warning before the writer falls back to publishing it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PayloadCheckpointRef {
+    /// Not a checkpoint payload.
+    NotCheckpoint,
+    /// Tagged as a checkpoint, but the body could not be decoded.
+    Undecodable,
+    /// A checkpoint payload the inspector could identify.
+    Checkpoint {
+        /// Epoch the checkpoint attests to.
+        epoch: Epoch,
+        /// Identity of the checkpoint body, distinguishing candidates within an epoch.
+        id: Buf32,
+    },
+}
+
+/// Identifies the checkpoint a queued writer payload carries, if any.
+///
+/// Implemented above this crate by whoever owns the checkpoint encoding; btcio only
+/// compares the epochs it hands back.
+pub trait CheckpointPayloadInspector: Send + Sync + Debug + 'static {
+    /// Classifies a payload from the writer queue.
+    fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef;
+}
+
 /// All the items that writer tasks need as context.
 #[derive(Debug, Clone)]
 pub struct WriterContext<R: Reader + Signer + Wallet> {
@@ -60,15 +94,25 @@ pub struct WriterContext<R: Reader + Signer + Wallet> {
 
     /// Source for the current SPS-51 envelope authentication mode.
     signing_mode_provider: Arc<dyn EnvelopeSigningModeProvider>,
+
+    /// Identifies the checkpoint behind a queued payload for the watcher's stale gate.
+    checkpoint_inspector: Arc<dyn CheckpointPayloadInspector>,
 }
 
 impl<R: Reader + Signer + Wallet> WriterContext<R> {
+    /// Builds the writer context.
+    ///
+    /// `checkpoint_inspector` is taken up front rather than through a builder method
+    /// with a permissive default: an inspector that recognizes nothing silently
+    /// disables the watcher's stale-checkpoint gate, which is exactly the failure the
+    /// gate exists to prevent.
     pub fn new(
         btcio_params: BtcioParams,
         config: Arc<WriterConfig>,
         sequencer_address: Address,
         client: Arc<R>,
         status_channel: StatusChannel,
+        checkpoint_inspector: Arc<dyn CheckpointPayloadInspector>,
     ) -> Self {
         Self {
             btcio_params,
@@ -79,6 +123,7 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
             signing_mode_provider: Arc::new(StaticEnvelopeSigningModeProvider::new(
                 EnvelopeSigningMode::InProcess,
             )),
+            checkpoint_inspector,
         }
     }
 
@@ -107,5 +152,10 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
     /// Returns the current envelope signing mode.
     pub fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
         self.signing_mode_provider.signing_mode()
+    }
+
+    /// Classifies a queued payload for the watcher's stale-checkpoint gate.
+    pub fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef {
+        self.checkpoint_inspector.inspect_payload(payload)
     }
 }

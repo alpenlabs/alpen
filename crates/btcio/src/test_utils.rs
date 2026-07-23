@@ -614,11 +614,16 @@ pub(crate) mod test_context {
 
     use bitcoin::{secp256k1::SecretKey, Address, Network};
     use strata_config::btcio::{FeePolicy, L1FeePolicyConfig, WriterConfig};
+    use strata_csm_types::L1Payload;
     use strata_l1_txfmt::MagicBytes;
     use strata_status::StatusChannel;
     use strata_test_utils::ArbitraryGenerator;
 
-    use crate::{test_utils::TestBitcoinClient, writer::WriterContext, BtcioParams};
+    use crate::{
+        test_utils::TestBitcoinClient,
+        writer::{CheckpointPayloadInspector, PayloadCheckpointRef, WriterContext},
+        BtcioParams,
+    };
 
     pub(crate) fn get_writer_context_with_client(
         client: Arc<TestBitcoinClient>,
@@ -646,9 +651,26 @@ pub(crate) mod test_context {
         );
         let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
         let (pubkey, _) = sk.x_only_public_key(super::SECP256K1);
-        let ctx = WriterContext::new(btcio_params, cfg, addr, client, status_channel)
-            .with_envelope_pubkey(&pubkey.serialize());
+        let ctx = WriterContext::new(
+            btcio_params,
+            cfg,
+            addr,
+            client,
+            status_channel,
+            Arc::new(NoCheckpointInspector),
+        )
+        .with_envelope_pubkey(&pubkey.serialize());
         Arc::new(ctx)
+    }
+
+    /// Inspector for tests that never exercise the stale-checkpoint gate.
+    #[derive(Debug)]
+    pub(crate) struct NoCheckpointInspector;
+
+    impl CheckpointPayloadInspector for NoCheckpointInspector {
+        fn inspect_payload(&self, _payload: &L1Payload) -> PayloadCheckpointRef {
+            PayloadCheckpointRef::NotCheckpoint
+        }
     }
 
     pub(crate) fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {

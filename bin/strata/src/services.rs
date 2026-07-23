@@ -38,6 +38,7 @@ mod sequencer_services {
     use strata_ol_block_assembly::{
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, LimitAwareSealing, MempoolProviderImpl,
     };
+    use strata_ol_checkpoint::AsmCheckpointInspector;
     use strata_ol_mempool::MempoolHandle;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_service::DumbTickHandle;
@@ -140,6 +141,7 @@ mod sequencer_services {
                 sequencer_address,
                 nodectx.bitcoin_client().clone(),
                 nodectx.status_channel().as_ref().clone(),
+                Arc::new(AsmCheckpointInspector),
             )
             .with_signing_mode_provider(Arc::new(CheckpointSequencerKeyProvider::new(
                 nodectx.storage().clone(),
