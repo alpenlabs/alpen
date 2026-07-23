@@ -4,13 +4,14 @@ use std::collections::BTreeSet;
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use ssz_types::FixedBytes;
 use strata_db_types::mmr_index::MmrIndexDatabase;
 use strata_db_types::{
     num_leaves_to_mmr_size, DbError, DbResult, LeafPos, MmrBatchWrite, MmrId, MmrNodePos,
     MmrNodeTable, NodePos, NodeTable, RawMmrId,
 };
 use strata_identifiers::Hash;
-use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
+use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Mmr64B32, Sha256Hasher};
 use strata_merkle_node_store::{
     assemble_proof, iter_prune_after_positions, peak_positions, proof_positions, write_plan,
 };
@@ -18,13 +19,6 @@ use tokio::runtime::Handle;
 use tokio::task::spawn_blocking;
 
 use crate::ops::mmr_index::MmrIndexOps;
-
-/// Read-only view of MMR state at a specific leaf count.
-#[derive(Debug, Clone)]
-pub struct MmrStateView {
-    pub leaf_count: u64,
-    pub peaks: Vec<Hash>,
-}
 
 /// Retry behavior for optimistic CAS-style MMR updates.
 #[derive(Debug, Clone, Copy)]
@@ -534,26 +528,31 @@ impl MmrIndexHandle {
         assemble_proof_from_table(leaf_index, at_leaf_count, &node_table)
     }
 
-    /// Reads the MMR state (leaf count and peaks) at `at_leaf_count`.
-    pub fn get_state_at(&self, at_leaf_count: u64) -> DbResult<MmrStateView> {
+    /// Reads the native MMR state at `at_leaf_count`.
+    pub fn get_state_at(&self, at_leaf_count: u64) -> DbResult<Mmr64B32> {
         let mmr_id = self.mmr_id_bytes();
         let peak_node_positions: Vec<_> = peak_positions(at_leaf_count).collect();
         let prefetched =
             self.fetch_node_paths_blocking(peak_node_positions.iter().copied(), false)?;
         let node_table = Self::get_scoped_node_table(&prefetched, &mmr_id);
 
-        let mut peaks = Vec::with_capacity(peak_node_positions.len());
+        let mut roots = Vec::with_capacity(peak_node_positions.len());
         for peak_pos in peak_node_positions {
             let peak_hash = node_table
                 .get_node(peak_pos)
                 .copied()
                 .ok_or(DbError::MmrNodeNotFound(peak_pos))?;
-            peaks.push(peak_hash);
+            roots.push(FixedBytes::from(peak_hash.0));
         }
+        // `peak_positions` yields highest-height first; `Mmr64B32` roots are
+        // lowest-height first. Construct directly so all-zero roots are preserved.
+        roots.reverse();
 
-        Ok(MmrStateView {
-            leaf_count: at_leaf_count,
-            peaks,
+        Ok(Mmr64B32 {
+            entries: at_leaf_count,
+            // A `u64` leaf count has at most 64 set bits, so at most 64 peaks —
+            // always within the list's capacity.
+            roots: roots.try_into().expect("MMR has at most 64 peaks"),
         })
     }
 
@@ -924,8 +923,7 @@ mod tests {
         let popped_state = handle.get_state_at(6).expect("popped state");
         let reference_state = reference.get_state_at(6).expect("reference state");
 
-        assert_eq!(popped_state.leaf_count, reference_state.leaf_count);
-        assert_eq!(popped_state.peaks, reference_state.peaks);
+        assert_eq!(popped_state, reference_state);
     }
 
     #[test]
@@ -1060,5 +1058,38 @@ mod tests {
                 cur: 7
             }
         ));
+    }
+
+    #[test]
+    fn test_state_matches_a_natively_built_multi_peak_mmr() {
+        let handle = setup_handle();
+        // Seven leaves give three peaks (4 + 2 + 1), so both multi-peak
+        // reconstruction and native root order are exercised.
+        let leaves: Vec<Hash> = (0..7u8).map(|i| Hash::from([i + 1; 32])).collect();
+        for leaf in &leaves {
+            handle.append_leaf_blocking(*leaf).expect("append leaf");
+        }
+
+        let reference = build_reference_mmr(&leaves);
+        assert_eq!(reference.roots.len(), 3, "fixture should have three peaks");
+
+        let state = handle.get_state_at(7).expect("state");
+        // Whole-value equality also pins root order (lowest-height first), not
+        // the highest-first order the peaks are read in.
+        assert_eq!(state, reference);
+    }
+
+    #[test]
+    fn test_state_reconstructs_an_all_zero_leaf_hash() {
+        let handle = setup_handle();
+        let zero = Hash::from([0u8; 32]);
+        handle.append_leaf_blocking(zero).expect("append zero leaf");
+
+        // Construct the expected shape directly because the native mutation API
+        // treats zero roots as unset.
+        let state = handle.get_state_at(1).expect("state with zero leaf");
+        assert_eq!(state.entries, 1);
+        assert_eq!(state.roots.len(), 1);
+        assert_eq!(state.roots[0], FixedBytes::from([0u8; 32]));
     }
 }

@@ -16,8 +16,9 @@ use strata_db_types::{
 };
 use strata_identifiers::{AccountId, Hash};
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
+use strata_merkle::MmrState;
 use strata_ol_state_types::{OLState, MMR_SENTINEL_DUMMY_LEAF_HASH};
-use strata_storage::{MmrIndexManager, MmrStateView};
+use strata_storage::MmrIndexManager;
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -154,14 +155,12 @@ impl MmrNamespace {
         }
     }
 
-    fn ol_target_view(&self, target_state: &OLState) -> Option<MmrStateView> {
+    fn ol_target_view(&self, target_state: &OLState) -> Option<Mmr64> {
         match &self.mmr_id {
             MmrId::Asm => None,
-            MmrId::L1BlockRefs => Some(get_mmr_state_view(
-                target_state.epoch_state().l1_block_refs_mmr(),
-            )),
+            MmrId::L1BlockRefs => Some(target_state.epoch_state().l1_block_refs_mmr().clone()),
             MmrId::SnarkMsgInbox(account_id) => {
-                Some(get_target_snark_inbox_mmr_state(target_state, account_id))
+                Some(get_target_snark_inbox_mmr(target_state, account_id))
             }
         }
     }
@@ -279,15 +278,22 @@ struct DecodedPreimage {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MmrIndexRevertCandidate {
     mmr_id: MmrId,
+
     current_leaf_count: u64,
-    target_leaf_count: u64,
-    target_peaks: Vec<Hash>,
+
+    /// Target MMR state the index must be reverted to.
+    target: Mmr64,
 }
 
 impl MmrIndexRevertCandidate {
+    /// Returns the target leaf count.
+    fn target_leaf_count(&self) -> u64 {
+        self.target.num_entries()
+    }
+
     /// Returns the number of leaves to remove from this MMR.
     fn pop_count(&self) -> u64 {
-        self.current_leaf_count - self.target_leaf_count
+        self.current_leaf_count - self.target_leaf_count()
     }
 }
 
@@ -306,11 +312,11 @@ struct MmrIndexFinalLeafCountMismatch {
     final_leaf_count: u64,
 }
 
-/// Describes a post-pop peak mismatch for one MMR.
+/// Describes a post-pop state mismatch after the final leaf count matched.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct MmrIndexFinalPeaksMismatch {
+struct MmrIndexFinalStateMismatch {
     revert_candidate: MmrIndexRevertCandidate,
-    final_peaks: Vec<Hash>,
+    final_state: Mmr64,
 }
 
 /// Describes all MMR changes needed for one `revert-ol-state` run.
@@ -524,8 +530,8 @@ fn add_missing_target_ol_namespaces(
             continue;
         };
 
-        let target = get_mmr_state_view(snark_account.inbox_mmr());
-        if target.leaf_count == 0 {
+        let target = snark_account.inbox_mmr().clone();
+        if target.num_entries() == 0 {
             continue;
         }
 
@@ -541,7 +547,7 @@ fn add_missing_target_ol_namespaces(
 fn add_missing_target_namespace(
     plan: &mut MmrIndexRevertPlan,
     namespace: MmrNamespace,
-    target_mmr_state: MmrStateView,
+    target: Mmr64,
 ) {
     plan.inspected += 1;
     add_mmr_target_to_plan(
@@ -551,7 +557,7 @@ fn add_missing_target_namespace(
             namespace,
             leaf_count: 0,
         },
-        target_mmr_state,
+        target,
     );
 }
 
@@ -563,16 +569,15 @@ fn add_missing_target_namespace(
 fn add_mmr_target_to_plan(
     plan: &mut MmrIndexRevertPlan,
     record: MmrNamespaceRecord,
-    target_mmr_state: MmrStateView,
+    target: Mmr64,
 ) {
     let mmr_id = record.namespace.as_mmr_id().clone();
-    let target_leaf_count = target_mmr_state.leaf_count;
+    let target_leaf_count = target.num_entries();
     match record.leaf_count.cmp(&target_leaf_count) {
         Ordering::Greater => plan.revert_candidates.push(MmrIndexRevertCandidate {
             mmr_id,
             current_leaf_count: record.leaf_count,
-            target_leaf_count,
-            target_peaks: target_mmr_state.peaks,
+            target,
         }),
         Ordering::Equal => {}
         Ordering::Less => plan.behind_target.push(MmrIndexBehindTarget {
@@ -583,43 +588,17 @@ fn add_mmr_target_to_plan(
     }
 }
 
-/// Returns the target inbox MMR state for a snark account.
+/// Returns the target inbox MMR for a snark account.
 ///
 /// Missing accounts and non-snark accounts have no target inbox MMR, so they
-/// map to an empty MMR state. This lets revert remove MMRs created only by
-/// blocks above the target.
-fn get_target_snark_inbox_mmr_state(
-    target_state: &OLState,
-    account_id: &AccountId,
-) -> MmrStateView {
-    let Some(snark_account) = target_state
+/// map to an empty MMR. This lets revert remove MMRs created only by blocks
+/// above the target.
+fn get_target_snark_inbox_mmr(target_state: &OLState, account_id: &AccountId) -> Mmr64 {
+    target_state
         .get_account_state(account_id)
         .and_then(|account_state| account_state.as_snark_account().ok())
-    else {
-        return MmrStateView {
-            leaf_count: 0,
-            peaks: Vec::new(),
-        };
-    };
-
-    get_mmr_state_view(snark_account.inbox_mmr())
-}
-
-/// Converts a compact in-state MMR into the storage manager's state view.
-///
-/// Compact roots are stored lowest-height first, while [`MmrStateView`] uses
-/// the same left-to-right peak order returned by
-/// [`strata_storage::MmrIndexHandle::get_state_at`].
-fn get_mmr_state_view(mmr: &Mmr64) -> MmrStateView {
-    MmrStateView {
-        leaf_count: mmr.num_entries(),
-        peaks: mmr
-            .roots
-            .iter()
-            .rev()
-            .map(|peak| Hash::from(peak.0))
-            .collect(),
-    }
+        .map(|snark_account| snark_account.inbox_mmr().clone())
+        .unwrap_or_else(Mmr64::new_empty)
 }
 
 /// Validates that a revert plan can be executed without growing MMRs.
@@ -630,7 +609,7 @@ pub(crate) fn validate_mmr_index_revert_plan(
     plan: &MmrIndexRevertPlan,
 ) -> Result<(), DisplayedError> {
     if let Some(candidate) = plan.revert_candidates.iter().find(|candidate| {
-        candidate.mmr_id == MmrId::L1BlockRefs && candidate.target_leaf_count == 0
+        candidate.mmr_id == MmrId::L1BlockRefs && candidate.target_leaf_count() == 0
     }) {
         return Err(DisplayedError::InternalError(
             "MMR l1-block-refs target would remove the genesis sentinel".to_string(),
@@ -671,14 +650,14 @@ fn validate_mmr_index_revert_prefixes_with_manager(
     for candidate in &plan.revert_candidates {
         let handle = mmr_index_manager.get_handle(candidate.mmr_id.clone());
         let target_state = handle
-            .get_state_at(candidate.target_leaf_count)
+            .get_state_at(candidate.target_leaf_count())
             .internal_error("Failed to read target MMR state before revert")?;
-        if target_state.peaks != candidate.target_peaks {
+        if target_state != candidate.target {
             return Err(DisplayedError::InternalError(
                 format!(
                     "MMR {} does not match target prefix at leaf count {}",
                     display_mmr_id(&candidate.mmr_id),
-                    candidate.target_leaf_count
+                    candidate.target_leaf_count()
                 ),
                 Box::new(display_mmr_id(&candidate.mmr_id)),
             ));
@@ -693,7 +672,7 @@ fn validate_mmr_index_revert_prefixes_with_manager(
 /// Each leaf is removed through
 /// [`strata_storage::MmrIndexHandle::pop_leaf_blocking`] via the storage manager,
 /// preserving the canonical pop behavior. After each MMR is popped, the
-/// function verifies the final leaf count and peaks against the target state
+/// function verifies the final leaf count and MMR state against the target
 /// recorded in the plan.
 pub(crate) fn execute_mmr_index_revert_plan(
     db: &impl DatabaseBackend,
@@ -722,7 +701,7 @@ pub(crate) fn execute_mmr_index_revert_plan(
             let final_leaf_count = handle
                 .get_num_leaves_blocking()
                 .internal_error("Failed to read final MMR leaf count")?;
-            if final_leaf_count != candidate.target_leaf_count {
+            if final_leaf_count != candidate.target_leaf_count() {
                 return Err(DisplayedError::InternalError(
                     format!(
                         "MMR {} final leaf count does not match target",
@@ -738,15 +717,15 @@ pub(crate) fn execute_mmr_index_revert_plan(
             let final_state = handle
                 .get_state_at(final_leaf_count)
                 .internal_error("Failed to read final MMR state")?;
-            if final_state.peaks != candidate.target_peaks {
+            if final_state != candidate.target {
                 return Err(DisplayedError::InternalError(
                     format!(
-                        "MMR {} final peaks do not match target state",
+                        "MMR {} final state does not match target",
                         display_mmr_id(&candidate.mmr_id)
                     ),
-                    Box::new(MmrIndexFinalPeaksMismatch {
+                    Box::new(MmrIndexFinalStateMismatch {
                         revert_candidate: candidate.clone(),
-                        final_peaks: final_state.peaks,
+                        final_state,
                     }),
                 ));
             }
@@ -776,7 +755,7 @@ pub(crate) fn print_mmr_index_revert_summary(plan: &MmrIndexRevertPlan) {
             "MMR revert: {} {} -> {} (pop {})",
             display_mmr_id(&candidate.mmr_id),
             candidate.current_leaf_count,
-            candidate.target_leaf_count,
+            candidate.target_leaf_count(),
             candidate.pop_count()
         );
     }
@@ -992,7 +971,7 @@ mod tests {
     }
 
     #[test]
-    fn gets_mmr_namespace_records_from_backend() {
+    fn test_namespace_records_are_read_from_the_backend() {
         let db = get_test_sled_backend();
         let l1_block_refs = MmrId::L1BlockRefs.to_bytes();
         let empty_asm = MmrId::Asm.to_bytes();
@@ -1021,7 +1000,7 @@ mod tests {
     }
 
     #[test]
-    fn get_mmr_namespace_records_rejects_invalid_namespace_id() {
+    fn test_reading_records_rejects_an_invalid_namespace_id() {
         let db = get_test_sled_backend();
         let invalid_mmr_id = vec![0xff];
 
@@ -1040,7 +1019,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_mmr_index_revert_plan_from_target_state() {
+    fn test_revert_plan_reflects_the_target_state() {
         let target_state = genesis_target_state();
         let account_id = AccountId::new([0x22; 32]);
 
@@ -1078,10 +1057,10 @@ mod tests {
             .find(|candidate| candidate.mmr_id == MmrId::L1BlockRefs)
             .expect("L1 revert");
         assert_eq!(l1_candidate.current_leaf_count, 3);
-        assert_eq!(l1_candidate.target_leaf_count, 1);
+        assert_eq!(l1_candidate.target_leaf_count(), 1);
         assert_eq!(
-            l1_candidate.target_peaks,
-            get_mmr_state_view(target_state.epoch_state().l1_block_refs_mmr()).peaks
+            &l1_candidate.target,
+            target_state.epoch_state().l1_block_refs_mmr()
         );
 
         let snark_candidate = plan
@@ -1090,12 +1069,12 @@ mod tests {
             .find(|candidate| matches!(candidate.mmr_id, MmrId::SnarkMsgInbox(_)))
             .expect("snark revert");
         assert_eq!(snark_candidate.current_leaf_count, 2);
-        assert_eq!(snark_candidate.target_leaf_count, 0);
-        assert_eq!(snark_candidate.target_peaks, Vec::<Hash>::new());
+        assert_eq!(snark_candidate.target_leaf_count(), 0);
+        assert_eq!(snark_candidate.target, Mmr64::new_empty());
     }
 
     #[test]
-    fn validates_mmr_index_revert_plan_rejects_behind_target() {
+    fn test_an_index_behind_target_is_rejected() {
         let target_state = genesis_target_state();
         let plan = build_mmr_index_revert_plan(
             &target_state,
@@ -1122,7 +1101,7 @@ mod tests {
     }
 
     #[test]
-    fn build_mmr_index_revert_plan_requires_l1_block_refs_when_missing() {
+    fn test_missing_l1_block_refs_is_behind_target() {
         let target_state = genesis_target_state();
         let plan = build_mmr_index_revert_plan(&target_state, Vec::new());
 
@@ -1144,7 +1123,7 @@ mod tests {
     }
 
     #[test]
-    fn build_mmr_index_revert_plan_requires_target_snark_inbox_when_missing() {
+    fn test_missing_snark_inbox_is_behind_target() {
         let account_id = AccountId::new([0x44; 32]);
         let target_state =
             target_state_with_snark_inbox(account_id, vec![snark_inbox_message(0x55)]);
@@ -1175,15 +1154,14 @@ mod tests {
     }
 
     #[test]
-    fn validates_mmr_index_revert_plan_rejects_l1_sentinel_removal() {
+    fn test_removing_the_l1_sentinel_is_rejected() {
         let plan = MmrIndexRevertPlan {
             inspected: 1,
             asm_owned_skipped: 0,
             revert_candidates: vec![MmrIndexRevertCandidate {
                 mmr_id: MmrId::L1BlockRefs,
                 current_leaf_count: 1,
-                target_leaf_count: 0,
-                target_peaks: Vec::new(),
+                target: Mmr64::new_empty(),
             }],
             behind_target: Vec::new(),
         };
@@ -1196,7 +1174,7 @@ mod tests {
     }
 
     #[test]
-    fn get_mmr_index_revert_plan_rejects_invalid_namespace_id() {
+    fn test_building_a_revert_plan_rejects_an_invalid_namespace_id() {
         let db = get_test_sled_backend();
         let target_state = genesis_target_state();
         let mut batch = MmrBatchWrite::default();
@@ -1214,7 +1192,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_mmr_index_revert_plan_pops_to_target_count_and_peaks() {
+    fn test_revert_pops_each_index_to_its_target() {
         let db = get_test_sled_backend();
         let target_state = genesis_target_state();
         let account_id = AccountId::new([0x77; 32]);
@@ -1247,8 +1225,8 @@ mod tests {
             1
         );
         assert_eq!(
-            l1_handle.get_state_at(1).expect("L1 state").peaks,
-            get_mmr_state_view(target_state.epoch_state().l1_block_refs_mmr()).peaks
+            &l1_handle.get_state_at(1).expect("L1 state"),
+            target_state.epoch_state().l1_block_refs_mmr()
         );
         assert_eq!(
             snark_handle
@@ -1265,7 +1243,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_mmr_index_revert_plan_rejects_non_prefix_target_before_pop() {
+    fn test_revert_is_rejected_when_the_target_is_not_a_prefix() {
         let db = get_test_sled_backend();
         let target_state = genesis_target_state();
         let runtime = Runtime::new().expect("create runtime");
@@ -1282,7 +1260,7 @@ mod tests {
             get_mmr_index_revert_plan(db.as_ref(), &target_state).expect("build revert plan");
         assert_eq!(plan.mmrs_to_revert(), 1);
         assert_eq!(plan.revert_candidates[0].current_leaf_count, 2);
-        assert_eq!(plan.revert_candidates[0].target_leaf_count, 1);
+        assert_eq!(plan.revert_candidates[0].target_leaf_count(), 1);
 
         let err =
             execute_mmr_index_revert_plan(db.as_ref(), &plan).expect_err("non-prefix should fail");
@@ -1295,7 +1273,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_mmr_index_revert_plan_verifies_multi_peak_l1_target() {
+    fn test_revert_reaches_a_multi_peak_target() {
         let db = get_test_sled_backend();
         let target_records = [l1_block_record(1), l1_block_record(2)];
         let target_state = target_state_with_l1_records(&target_records);
@@ -1314,8 +1292,8 @@ mod tests {
             get_mmr_index_revert_plan(db.as_ref(), &target_state).expect("build revert plan");
         assert_eq!(plan.mmrs_to_revert(), 1);
         assert_eq!(plan.leaves_to_pop(), 2);
-        assert_eq!(plan.revert_candidates[0].target_leaf_count, 3);
-        assert_eq!(plan.revert_candidates[0].target_peaks.len(), 2);
+        assert_eq!(plan.revert_candidates[0].target_leaf_count(), 3);
+        assert_eq!(plan.revert_candidates[0].target.roots.len(), 2);
 
         execute_mmr_index_revert_plan(db.as_ref(), &plan).expect("execute revert");
 
@@ -1323,16 +1301,13 @@ mod tests {
             l1_handle.get_num_leaves_blocking().expect("L1 leaf count"),
             3
         );
-        let final_peaks = l1_handle.get_state_at(3).expect("L1 state").peaks;
-        assert_eq!(final_peaks.len(), 2);
-        assert_eq!(
-            final_peaks,
-            get_mmr_state_view(target_state.epoch_state().l1_block_refs_mmr()).peaks
-        );
+        let final_state = l1_handle.get_state_at(3).expect("L1 state");
+        assert_eq!(final_state.roots.len(), 2);
+        assert_eq!(&final_state, target_state.epoch_state().l1_block_refs_mmr());
     }
 
     #[test]
-    fn builds_mmr_summary_and_skips_empty_namespaces() {
+    fn test_summary_omits_empty_namespaces() {
         let account_id = AccountId::new([0x11; 32]);
         let records = vec![
             MmrNamespaceRecord {
@@ -1368,7 +1343,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_mmr_summary_filters_by_owner() {
+    fn test_summary_can_filter_by_owner() {
         let account_id = AccountId::new([0x33; 32]);
         let records = vec![
             MmrNamespaceRecord {
@@ -1411,7 +1386,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_owner_filter() {
+    fn test_an_invalid_owner_filter_is_rejected() {
         let err = "bad-owner"
             .parse::<MmrOwner>()
             .expect_err("invalid owner should fail");
@@ -1420,7 +1395,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_user_facing_mmr_ids() {
+    fn test_user_facing_mmr_ids_parse() {
         let account_id = AccountId::new([0x44; 32]);
 
         assert_eq!(
@@ -1466,7 +1441,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_mmr_id() {
+    fn test_an_invalid_mmr_id_is_rejected() {
         let err = "l1-blocks".parse::<MmrIdInput>().expect_err("invalid id");
 
         assert_eq!(
@@ -1476,7 +1451,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_snark_inbox_account_id() {
+    fn test_a_short_snark_inbox_account_id_is_rejected() {
         let err = "snark-msg-inbox:abcd"
             .parse::<MmrIdInput>()
             .expect_err("short account id should fail");
@@ -1488,7 +1463,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_l1_block_ref_leaf_from_backend() {
+    fn test_an_l1_block_ref_leaf_is_read_and_decoded() {
         let db = get_test_sled_backend();
         let mmr_id = MmrId::L1BlockRefs;
         let raw_mmr_id = mmr_id.to_bytes();
@@ -1533,7 +1508,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_snark_inbox_leaf_from_backend() {
+    fn test_a_snark_inbox_leaf_is_read_and_decoded() {
         let db = get_test_sled_backend();
         let account_id = AccountId::new([0x99; 32]);
         let source = AccountId::new([0x44; 32]);
@@ -1579,7 +1554,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_mmr_leaf_info_reports_hash_mismatch() {
+    fn test_a_preimage_hash_mismatch_is_reported() {
         let mmr_id = MmrId::L1BlockRefs;
         let record = L1BlockRecord::new([0x11; 32], [0x22; 32]);
         let leaf_data = MmrLeafData {
@@ -1603,7 +1578,7 @@ mod tests {
     }
 
     #[test]
-    fn build_mmr_leaf_info_omits_decoded_fields_for_invalid_typed_preimage() {
+    fn test_an_undecodable_preimage_omits_decoded_fields() {
         let mmr_id = MmrId::L1BlockRefs;
         let leaf_data = MmrLeafData {
             raw_mmr_id: mmr_id.to_bytes(),
@@ -1623,7 +1598,7 @@ mod tests {
     }
 
     #[test]
-    fn get_mmr_leaf_data_rejects_out_of_range_index() {
+    fn test_an_out_of_range_leaf_index_is_rejected() {
         let db = get_test_sled_backend();
         let mmr_id = MmrId::L1BlockRefs;
         let mut batch = MmrBatchWrite::default();
@@ -1642,7 +1617,7 @@ mod tests {
     }
 
     #[test]
-    fn get_mmr_leaf_data_reports_empty_or_missing_mmr() {
+    fn test_reading_an_empty_or_missing_mmr_is_rejected() {
         let db = get_test_sled_backend();
 
         let namespace = MmrNamespace::new(MmrId::L1BlockRefs);
@@ -1655,7 +1630,7 @@ mod tests {
     }
 
     #[test]
-    fn build_mmr_leaf_info_errors_on_missing_typed_preimage() {
+    fn test_a_missing_typed_preimage_is_an_error() {
         let mmr_id = MmrId::L1BlockRefs;
         let leaf_hash = Hash::from([0x66; 32]);
         let leaf_data = MmrLeafData {
@@ -1676,7 +1651,7 @@ mod tests {
     }
 
     #[test]
-    fn build_mmr_leaf_info_allows_hash_only_asm_leaf() {
+    fn test_an_asm_leaf_is_shown_hash_only() {
         let mmr_id = MmrId::Asm;
         let leaf_hash = Hash::from([0x66; 32]);
         let leaf_data = MmrLeafData {
@@ -1699,7 +1674,7 @@ mod tests {
     }
 
     #[test]
-    fn build_mmr_leaf_info_marks_sentinel_dummy_leaf() {
+    fn test_a_sentinel_dummy_leaf_is_marked() {
         let mmr_id = MmrId::L1BlockRefs;
         let leaf_data = MmrLeafData {
             raw_mmr_id: mmr_id.to_bytes(),
