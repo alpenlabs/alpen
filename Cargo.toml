@@ -37,6 +37,8 @@ members = [
   "crates/ee-chain-types",
   "crates/ee-chunk-runtime",
   "crates/evm-ee",
+  "crates/gchain/executor",
+  "crates/gchain/types",
   "crates/key-derivation",
   "crates/ledger-types",
   "crates/mpt",
@@ -173,6 +175,8 @@ strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-ee-chunk-runtime = { path = "crates/ee-chunk-runtime" }
 strata-evm-ee = { path = "crates/evm-ee" }
+strata-gchain-executor = { path = "crates/gchain/executor" }
+strata-gchain-types = { path = "crates/gchain/types" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-ledger-types = { path = "crates/ledger-types" }
 strata-mpt = { path = "crates/mpt" }
