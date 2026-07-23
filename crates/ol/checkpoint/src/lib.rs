@@ -5,6 +5,7 @@ mod context;
 mod errors;
 mod handle;
 pub mod l1_tx;
+pub mod reconcile;
 mod service;
 mod state;
 

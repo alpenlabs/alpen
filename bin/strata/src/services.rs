@@ -1,8 +1,12 @@
 //! Service spawning and lifecycle management.
 
 use std::sync::Arc;
+#[cfg(feature = "sequencer")]
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
+#[cfg(feature = "sequencer")]
+use strata_asm_worker::AsmWorkerHandle;
 use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
 use strata_chain_worker::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
 use strata_consensus_logic::{
@@ -14,7 +18,13 @@ use strata_node_context::NodeContext;
 use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_service::ServiceMonitor;
+#[cfg(feature = "sequencer")]
+use tokio::time::{sleep, timeout};
+#[cfg(feature = "sequencer")]
+use tracing::warn;
 
+#[cfg(feature = "sequencer")]
+use crate::checkpoint_reconcile::reconcile_settled_checkpoint_queue;
 use crate::{
     checkpoint_reconcile::reconcile_unaccepted_checkpoint_artifacts,
     context::ensure_genesis,
@@ -47,6 +57,7 @@ mod sequencer_services {
 
     use crate::{
         checkpoint_auth::CheckpointSequencerKeyProvider,
+        checkpoint_reconcile::CheckpointFailureCleanup,
         helpers::generate_sequencer_address,
         run_context::{SequencerServiceHandles, ServiceHandlesBuilder},
     };
@@ -142,6 +153,7 @@ mod sequencer_services {
                 nodectx.bitcoin_client().clone(),
                 nodectx.status_channel().as_ref().clone(),
                 Arc::new(AsmCheckpointInspector),
+                Arc::new(CheckpointFailureCleanup::new(nodectx.storage().clone())),
             )
             .with_signing_mode_provider(Arc::new(CheckpointSequencerKeyProvider::new(
                 nodectx.storage().clone(),
@@ -246,6 +258,99 @@ mod sequencer_services {
 /// Proof notifier shared between the proof storer and the checkpoint worker.
 pub(crate) type OptionalProofNotify = Option<Arc<strata_ol_checkpoint::ProofNotify>>;
 
+#[cfg(feature = "sequencer")]
+const CHECKPOINT_RECONCILE_POLL_INTERVAL: Duration = Duration::from_millis(10);
+#[cfg(feature = "sequencer")]
+const CHECKPOINT_RECONCILE_CATCHUP_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Runs `reconcile` only after CSM catches up to ASM and retries if either tip
+/// advances during the pass.
+///
+/// The catch-up wait is an optimization, not a precondition: reconciling against a
+/// settled tip is what lets it cancel every stale artifact in one pass. A tip that
+/// keeps moving is the normal shape of a restart with an L1 backlog, since the reader
+/// starts before this runs and ASM ingests continuously while it drains. Giving up on
+/// the wait therefore degrades to a single best-effort pass instead of failing, because
+/// the caller aborts the process on `Err` and the backlog only grows across a restart,
+/// so a hard failure here would crash-loop the sequencer exactly when it is furthest
+/// behind. What the degraded pass still guarantees is the ordering that matters: it runs
+/// before the broadcaster can republish anything, and the writer's stale-checkpoint gate
+/// covers whatever a moving tip made it miss.
+#[cfg(feature = "sequencer")]
+fn reconcile_at_caught_up_checkpoint_tip(
+    nodectx: &NodeContext,
+    asm_handle: &AsmWorkerHandle,
+    csm_monitor: &ServiceMonitor<CsmWorkerStatus>,
+    reconcile: impl Fn(&NodeContext) -> Result<()>,
+) -> Result<()> {
+    let runtime = nodectx.task_manager().handle().clone();
+    let deadline = Instant::now() + CHECKPOINT_RECONCILE_CATCHUP_TIMEOUT;
+
+    loop {
+        // Only the waiting runs on the runtime. `reconcile` blocks on storage, which
+        // panics if it is driven from inside a runtime context, so it runs on this
+        // thread between `block_on` calls, exactly as the non-sequencer path calls it.
+        // The timer is also constructed inside the async block rather than passed as an
+        // argument to `block_on`, because building a `Sleep` needs the current runtime.
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let caught_up = runtime.block_on(async {
+            timeout(remaining, async {
+                loop {
+                    let asm_block = asm_handle.monitor().get_current().cur_block;
+                    let csm_block = csm_monitor.get_current().cur_block;
+                    if let Some(asm_block) = asm_block
+                        && Some(asm_block) == csm_block
+                    {
+                        break asm_block;
+                    }
+                    sleep(CHECKPOINT_RECONCILE_POLL_INTERVAL).await;
+                }
+            })
+            .await
+        });
+
+        let Ok(reconciled_block) = caught_up else {
+            warn_catchup_timeout(asm_handle, csm_monitor, "reconciling against a moving tip");
+            return reconcile(nodectx);
+        };
+
+        reconcile(nodectx)?;
+
+        let asm_block = asm_handle.monitor().get_current().cur_block;
+        let csm_block = csm_monitor.get_current().cur_block;
+        if asm_block == Some(reconciled_block) && csm_block == Some(reconciled_block) {
+            return Ok(());
+        }
+
+        if Instant::now() >= deadline {
+            warn_catchup_timeout(
+                asm_handle,
+                csm_monitor,
+                "keeping the last pass, which ran against a tip that then moved",
+            );
+            return Ok(());
+        }
+    }
+}
+
+/// Reports that CSM never settled at the ASM tip in time, and how that is being absorbed.
+#[cfg(feature = "sequencer")]
+fn warn_catchup_timeout(
+    asm_handle: &AsmWorkerHandle,
+    csm_monitor: &ServiceMonitor<CsmWorkerStatus>,
+    resolution: &str,
+) {
+    let asm_block = asm_handle.monitor().get_current().cur_block;
+    let csm_block = csm_monitor.get_current().cur_block;
+    warn!(
+        ?asm_block,
+        ?csm_block,
+        resolution,
+        "timed out after {CHECKPOINT_RECONCILE_CATCHUP_TIMEOUT:?} waiting for CSM to catch up \
+         before checkpoint reconciliation"
+    );
+}
+
 /// Starts services and returns the run context and an optional proof notifier.
 ///
 /// The proof notifier is created when an integrated prover is configured. The
@@ -273,9 +378,19 @@ pub(crate) fn start_strata_services(
         nodectx.ol_params(),
         nodectx.status_channel().as_ref(),
     )?;
-    reconcile_unaccepted_checkpoint_artifacts(&nodectx)?;
 
     let is_sequencer = nodectx.config().client.is_sequencer;
+    if is_sequencer {
+        #[cfg(feature = "sequencer")]
+        reconcile_at_caught_up_checkpoint_tip(
+            &nodectx,
+            &asm_handle,
+            &csm_monitor,
+            reconcile_unaccepted_checkpoint_artifacts,
+        )?;
+    } else {
+        reconcile_unaccepted_checkpoint_artifacts(&nodectx)?;
+    }
 
     // Checkpoint sync nodes do not have mempool, so start mempool for sequencer node only.
     // NOTE: When there are nodes supporting mempool the if condition needs to change.
@@ -322,6 +437,15 @@ pub(crate) fn start_strata_services(
         (None, None)
     };
 
+    if is_sequencer {
+        #[cfg(feature = "sequencer")]
+        reconcile_at_caught_up_checkpoint_tip(
+            &nodectx,
+            &asm_handle,
+            &csm_monitor,
+            reconcile_settled_checkpoint_queue,
+        )?;
+    }
     let sequencer_handles = sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone())?;
 
     let sync_handle =

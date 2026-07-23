@@ -74,6 +74,16 @@ pub trait CheckpointPayloadInspector: Send + Sync + Debug + 'static {
     fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef;
 }
 
+/// Handles checkpoint-specific cleanup after a retiring envelope fails.
+///
+/// The writer owns intent and bundle state, but the checkpoint signing marker
+/// lives above this crate. Implementations clear that marker only when it still
+/// represents the failed checkpoint candidate.
+pub trait CheckpointFailureHandler: Send + Sync + Debug + 'static {
+    /// Cleans up upper-layer state for a failed retiring checkpoint.
+    fn handle_failed_checkpoint(&self, checkpoint: PayloadCheckpointRef) -> anyhow::Result<()>;
+}
+
 /// All the items that writer tasks need as context.
 #[derive(Debug, Clone)]
 pub struct WriterContext<R: Reader + Signer + Wallet> {
@@ -97,6 +107,9 @@ pub struct WriterContext<R: Reader + Signer + Wallet> {
 
     /// Identifies the checkpoint behind a queued payload for the watcher's stale gate.
     checkpoint_inspector: Arc<dyn CheckpointPayloadInspector>,
+
+    /// Cleans up checkpoint state when a retiring envelope fails.
+    checkpoint_failure_handler: Arc<dyn CheckpointFailureHandler>,
 }
 
 impl<R: Reader + Signer + Wallet> WriterContext<R> {
@@ -113,6 +126,7 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
         client: Arc<R>,
         status_channel: StatusChannel,
         checkpoint_inspector: Arc<dyn CheckpointPayloadInspector>,
+        checkpoint_failure_handler: Arc<dyn CheckpointFailureHandler>,
     ) -> Self {
         Self {
             btcio_params,
@@ -124,6 +138,7 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
                 EnvelopeSigningMode::InProcess,
             )),
             checkpoint_inspector,
+            checkpoint_failure_handler,
         }
     }
 
@@ -157,5 +172,11 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
     /// Classifies a queued payload for the watcher's stale-checkpoint gate.
     pub fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef {
         self.checkpoint_inspector.inspect_payload(payload)
+    }
+
+    /// Cleans up checkpoint state after a retiring envelope fails.
+    pub fn handle_failed_checkpoint(&self, checkpoint: PayloadCheckpointRef) -> anyhow::Result<()> {
+        self.checkpoint_failure_handler
+            .handle_failed_checkpoint(checkpoint)
     }
 }

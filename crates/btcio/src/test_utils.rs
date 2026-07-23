@@ -621,7 +621,10 @@ pub(crate) mod test_context {
 
     use crate::{
         test_utils::TestBitcoinClient,
-        writer::{CheckpointPayloadInspector, PayloadCheckpointRef, WriterContext},
+        writer::{
+            CheckpointFailureHandler, CheckpointPayloadInspector, PayloadCheckpointRef,
+            WriterContext,
+        },
         BtcioParams,
     };
 
@@ -658,6 +661,7 @@ pub(crate) mod test_context {
             client,
             status_channel,
             Arc::new(NoCheckpointInspector),
+            Arc::new(NoCheckpointFailureHandler),
         )
         .with_envelope_pubkey(&pubkey.serialize());
         Arc::new(ctx)
@@ -670,6 +674,19 @@ pub(crate) mod test_context {
     impl CheckpointPayloadInspector for NoCheckpointInspector {
         fn inspect_payload(&self, _payload: &L1Payload) -> PayloadCheckpointRef {
             PayloadCheckpointRef::NotCheckpoint
+        }
+    }
+
+    /// Failure handler for tests that never exercise checkpoint retirement.
+    #[derive(Debug)]
+    pub(crate) struct NoCheckpointFailureHandler;
+
+    impl CheckpointFailureHandler for NoCheckpointFailureHandler {
+        fn handle_failed_checkpoint(
+            &self,
+            _checkpoint: PayloadCheckpointRef,
+        ) -> anyhow::Result<()> {
+            Ok(())
         }
     }
 

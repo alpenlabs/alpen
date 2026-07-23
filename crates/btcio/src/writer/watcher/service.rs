@@ -19,9 +19,9 @@ use strata_csm_types::L1Payload;
 use strata_db_types::{
     common::L1TxId,
     l1_broadcast::{L1TxEntry, L1TxStatus},
-    l1_writer::{BundledPayloadEntry, L1BundleStatus},
+    l1_writer::{BundledPayloadEntry, IntentStatus, L1BundleStatus},
 };
-use strata_identifiers::Epoch;
+use strata_identifiers::{Epoch, L1Height};
 use strata_primitives::buf::Buf32;
 use strata_service::{AsyncService, Response, Service, ServiceState};
 use strata_status::StatusChannel;
@@ -64,6 +64,12 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         entry: BundledPayloadEntry,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
+    fn abandon_checkpoint_intent(
+        &self,
+        checkpoint: PayloadCheckpointRef,
+        payload_idx: u64,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
     /// Returns the current envelope signing mode.
     fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode>;
 
@@ -72,6 +78,12 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
 
     /// Returns the latest checkpoint epoch seen on the canonical L1 chain.
     fn seen_checkpoint_epoch(&self) -> Option<Epoch>;
+
+    /// Returns the height of the last L1 block the client state machine processed.
+    ///
+    /// This bounds what [`Self::seen_checkpoint_epoch`] can possibly know: no checkpoint
+    /// buried above this height has been evaluated yet.
+    fn csm_l1_tip_height(&self) -> L1Height;
 
     /// Identifies the checkpoint a queued payload carries, if it carries one.
     fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef;
@@ -145,6 +157,42 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
             .map_err(Into::into)
     }
 
+    async fn abandon_checkpoint_intent(
+        &self,
+        checkpoint: PayloadCheckpointRef,
+        payload_idx: u64,
+    ) -> anyhow::Result<()> {
+        let PayloadCheckpointRef::Checkpoint { id: intent_id, .. } = checkpoint else {
+            anyhow::bail!("retiring payload {payload_idx} is not a decodable checkpoint");
+        };
+        let Some(mut intent) = self.ops.get_intent_by_id_async(intent_id).await? else {
+            warn!(%intent_id, payload_idx, "retiring payload has no linked intent");
+            self.context.handle_failed_checkpoint(checkpoint)?;
+            return Ok(());
+        };
+
+        match intent.status {
+            IntentStatus::Bundled(linked_payload_idx) if linked_payload_idx == payload_idx => {
+                intent.status = IntentStatus::Abandoned;
+                self.ops
+                    .update_intent_entry_async(intent_id, intent)
+                    .await?;
+                self.context.handle_failed_checkpoint(checkpoint)?;
+            }
+            IntentStatus::Abandoned => self.context.handle_failed_checkpoint(checkpoint)?,
+            ref status => {
+                debug!(
+                    %intent_id,
+                    payload_idx,
+                    ?status,
+                    "retiring payload no longer owns its linked intent"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
         self.context.signing_mode()
     }
@@ -162,6 +210,14 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
             .status_channel
             .get_last_checkpoint()
             .map(|checkpoint| checkpoint.tip.epoch)
+    }
+
+    fn csm_l1_tip_height(&self) -> L1Height {
+        self.context
+            .status_channel
+            .get_cur_checkpoint_state()
+            .block
+            .height()
     }
 
     fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef {
@@ -326,7 +382,8 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 // If entry is signed but not finalized or excluded yet, check broadcast txs status
                 L1BundleStatus::Published
                 | L1BundleStatus::Confirmed
-                | L1BundleStatus::Unpublished => {
+                | L1BundleStatus::Unpublished
+                | L1BundleStatus::Retiring => {
                     state.handle_broadcast_status(payloadentry).await?;
                 }
             }
@@ -351,8 +408,11 @@ impl<C: WatcherServiceContext> WatcherState<C> {
     /// and ASM/CSM state can advance between this check and the broadcast that follows;
     /// combined with the deliberate fail-open above, that makes it a best-effort way to
     /// avoid paying for a checkpoint nobody needs. Startup reconciliation is what
-    /// actually keeps a restart from re-posting settled epochs, because it runs before
-    /// the broadcaster can republish anything.
+    /// actually keeps a restart from re-posting settled epochs: it waits for CSM to catch
+    /// up where it can, retries if the worker tips move, and always runs before the
+    /// broadcaster can republish anything. When the tips never settle it reconciles
+    /// against a moving one rather than blocking the boot, and this gate is what covers
+    /// the difference.
     fn stale_checkpoint_action(&self, payloadentry: &BundledPayloadEntry) -> StaleCheckpointAction {
         let epoch = match self.ctx.inspect_payload(&payloadentry.payload) {
             PayloadCheckpointRef::NotCheckpoint => return StaleCheckpointAction::Publish,
@@ -610,10 +670,12 @@ impl<C: WatcherServiceContext> WatcherState<C> {
 
         match (commit_tx, reveal_tx) {
             (Some(ctx), Some(rtx)) => {
-                let new_status = determine_payload_next_status(&ctx.status, &rtx.status);
-                debug!(?new_status, "The next status for payload");
+                let observed_status = determine_payload_next_status(&ctx.status, &rtx.status);
+                let new_status =
+                    next_watched_bundle_status(&payloadentry.status, observed_status.clone());
+                debug!(?observed_status, ?new_status, "The next status for payload");
                 if matches!(
-                    new_status,
+                    observed_status,
                     L1BundleStatus::Confirmed | L1BundleStatus::Finalized
                 ) {
                     debug!(
@@ -621,14 +683,29 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                         payload_idx = self.curr_payloadidx,
                         commit_txid = ?payloadentry.commit_txid,
                         reveal_txid = ?payloadentry.reveal_txid,
-                        payload_status = ?new_status,
+                        payload_status = ?observed_status,
                         commit_l1_status = ?ctx.status,
                         reveal_l1_status = ?rtx.status,
                         "payload advanced on L1"
                     );
                 }
 
-                self.ctx.report_status(&payloadentry, &new_status).await;
+                self.ctx
+                    .report_status(&payloadentry, &observed_status)
+                    .await;
+
+                if payloadentry.status == L1BundleStatus::Retiring {
+                    match new_status {
+                        L1BundleStatus::Abandoned => {
+                            self.abandon_retiring_intent(&payloadentry).await?
+                        }
+                        L1BundleStatus::Finalized => {
+                            self.release_unaccepted_finalized_intent(&payloadentry, &rtx.status)
+                                .await?
+                        }
+                        _ => {}
+                    }
+                }
 
                 // Update payloadentry with new status
                 let mut updated_entry = payloadentry.clone();
@@ -637,21 +714,145 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     .put_payload_entry(self.curr_payloadidx, updated_entry)
                     .await?;
 
-                if new_status == L1BundleStatus::Finalized {
+                if matches!(
+                    new_status,
+                    L1BundleStatus::Finalized | L1BundleStatus::Abandoned
+                ) {
                     self.curr_payloadidx += 1;
                 }
             }
             _ => {
-                warn!("Corresponding commit/reveal entry for payloadentry not found in broadcast db. Sign and create transactions again.");
+                let payload_idx = self.curr_payloadidx;
                 let mut updated_entry = payloadentry.clone();
                 updated_entry.payload_signature = None;
-                updated_entry.status = L1BundleStatus::Unsigned;
+                if payloadentry.status == L1BundleStatus::Retiring {
+                    warn!("retiring payload lost its broadcaster entries; abandoning it");
+                    updated_entry.status = L1BundleStatus::Abandoned;
+                    self.abandon_retiring_intent(&payloadentry).await?;
+                } else {
+                    warn!("Corresponding commit/reveal entry for payloadentry not found in broadcast db. Sign and create transactions again.");
+                    updated_entry.status = L1BundleStatus::Unsigned;
+                }
                 self.ctx
-                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .put_payload_entry(payload_idx, updated_entry)
                     .await?;
+                if payloadentry.status == L1BundleStatus::Retiring {
+                    self.curr_payloadidx += 1;
+                }
             }
         }
         Ok(())
+    }
+
+    /// Abandons the intent only if it still points at the retiring bundle.
+    async fn abandon_retiring_intent(
+        &self,
+        payloadentry: &BundledPayloadEntry,
+    ) -> anyhow::Result<()> {
+        let checkpoint = self.ctx.inspect_payload(&payloadentry.payload);
+        self.ctx
+            .abandon_checkpoint_intent(checkpoint, self.curr_payloadidx)
+            .await
+    }
+
+    /// Releases the intent behind a retiring bundle that finalized without settling its
+    /// epoch.
+    ///
+    /// A retiring envelope has already been superseded by a rebuild, so finalizing does
+    /// not have to settle the epoch: ASM rejects the original precisely when the rebuild
+    /// exists because the original was stale. Nothing retries afterwards, because the
+    /// watcher advances past a finalized bundle for good, so the epoch and every
+    /// checkpoint behind it would wait for the next startup reconciliation.
+    ///
+    /// Finalization here is the broadcaster's verdict, read from bitcoind's confirmation
+    /// depth, so it says nothing about how far the client state machine has got. Only
+    /// once CSM has processed the block carrying the reveal does a last-seen epoch below
+    /// this one mean the checkpoint was evaluated and not accepted; before that it merely
+    /// means CSM has not looked yet. Releasing on that lag would let the rebuilt
+    /// checkpoint sign while CSM is still on its way to accepting the original, which is
+    /// the duplicate L1 post this whole path exists to prevent.
+    ///
+    /// Once the block is processed, releasing the intent with its signing marker lets the
+    /// rebuilt checkpoint submit a replacement.
+    ///
+    /// When the tip is unknown, or CSM has not reached the reveal's block, this leaves the
+    /// intent alone instead of guessing. An unnecessary release costs a duplicate
+    /// envelope, and if ASM is merely lagging the stale-checkpoint gate abandons that
+    /// duplicate before signing anyway; leaving it costs nothing beyond waiting for the
+    /// next restart, which recovers the epoch.
+    async fn release_unaccepted_finalized_intent(
+        &self,
+        payloadentry: &BundledPayloadEntry,
+        reveal_status: &L1TxStatus,
+    ) -> anyhow::Result<()> {
+        let checkpoint = self.ctx.inspect_payload(&payloadentry.payload);
+        let PayloadCheckpointRef::Checkpoint { epoch, .. } = checkpoint else {
+            return Ok(());
+        };
+        // Read the tip before the epoch: a tip that lags the epoch it is paired with only
+        // ever makes this gate more conservative.
+        let csm_tip = self.ctx.csm_l1_tip_height();
+        let Some(seen_epoch) = self.ctx.seen_checkpoint_epoch() else {
+            return Ok(());
+        };
+        if epoch <= seen_epoch {
+            return Ok(());
+        }
+        let Some(reveal_height) = confirmed_block_height(reveal_status) else {
+            return Ok(());
+        };
+        if csm_tip < reveal_height {
+            debug!(
+                epoch,
+                seen_epoch,
+                %csm_tip,
+                %reveal_height,
+                payload_idx = self.curr_payloadidx,
+                "retiring checkpoint finalized ahead of the client state machine; leaving its \
+                 intent until CSM has judged it"
+            );
+            return Ok(());
+        }
+
+        warn!(
+            epoch,
+            seen_epoch,
+            payload_idx = self.curr_payloadidx,
+            "retiring checkpoint finalized without being accepted; releasing its intent so the \
+             rebuilt checkpoint can publish"
+        );
+        self.ctx
+            .abandon_checkpoint_intent(checkpoint, self.curr_payloadidx)
+            .await
+    }
+}
+
+/// Returns the L1 height a transaction was included at, if it is included at all.
+fn confirmed_block_height(status: &L1TxStatus) -> Option<L1Height> {
+    match status {
+        L1TxStatus::Confirmed { block_height, .. } | L1TxStatus::Finalized { block_height, .. } => {
+            Some(*block_height)
+        }
+        _ => None,
+    }
+}
+
+/// Preserves the retirement marker while an escaped envelope remains live.
+///
+/// A retiring bundle may finalize, but it must never return to [`L1BundleStatus::NeedsResign`]
+/// because startup reconciliation deleted the local checkpoint artifacts it came from.
+fn next_watched_bundle_status(
+    current_status: &L1BundleStatus,
+    observed_status: L1BundleStatus,
+) -> L1BundleStatus {
+    if *current_status != L1BundleStatus::Retiring {
+        return observed_status;
+    }
+
+    match observed_status {
+        L1BundleStatus::Finalized => L1BundleStatus::Finalized,
+        L1BundleStatus::NeedsResign => L1BundleStatus::Abandoned,
+        _ => L1BundleStatus::Retiring,
     }
 }
 
@@ -839,6 +1040,9 @@ mod tests {
         rpc_errors: Mutex<Vec<String>>,
         finalized_checkpoint_epoch: Mutex<Option<Epoch>>,
         seen_checkpoint_epoch: Mutex<Option<Epoch>>,
+        csm_l1_tip_height: Mutex<L1Height>,
+        tx_statuses: Mutex<HashMap<L1TxId, L1TxEntry>>,
+        abandoned_intents: Mutex<Vec<(Buf32, u64)>>,
     }
 
     impl MockWatcherContext {
@@ -860,6 +1064,9 @@ mod tests {
                 rpc_errors: Mutex::new(Vec::new()),
                 finalized_checkpoint_epoch: Mutex::new(None),
                 seen_checkpoint_epoch: Mutex::new(None),
+                csm_l1_tip_height: Mutex::new(L1Height::MAX),
+                tx_statuses: Mutex::new(HashMap::new()),
+                abandoned_intents: Mutex::new(Vec::new()),
             }
         }
 
@@ -908,6 +1115,20 @@ mod tests {
             *self.finalized_checkpoint_epoch.lock().unwrap() = finalized;
             *self.seen_checkpoint_epoch.lock().unwrap() = seen;
         }
+
+        fn set_csm_l1_tip_height(&self, height: L1Height) {
+            *self.csm_l1_tip_height.lock().unwrap() = height;
+        }
+
+        fn set_tx_status(&self, txid: L1TxId, status: L1TxStatus) {
+            let mut entry = L1TxEntry::from_tx(&minimal_envelope_data().commit_tx);
+            entry.status = status;
+            self.tx_statuses.lock().unwrap().insert(txid, entry);
+        }
+
+        fn abandoned_intents(&self) -> Vec<(Buf32, u64)> {
+            self.abandoned_intents.lock().unwrap().clone()
+        }
     }
 
     impl WatcherServiceContext for MockWatcherContext {
@@ -924,6 +1145,21 @@ mod tests {
             Ok(())
         }
 
+        async fn abandon_checkpoint_intent(
+            &self,
+            checkpoint: PayloadCheckpointRef,
+            payload_idx: u64,
+        ) -> anyhow::Result<()> {
+            let PayloadCheckpointRef::Checkpoint { id: intent_id, .. } = checkpoint else {
+                anyhow::bail!("mock retiring payload is not a checkpoint");
+            };
+            self.abandoned_intents
+                .lock()
+                .unwrap()
+                .push((intent_id, payload_idx));
+            Ok(())
+        }
+
         fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
             if *self.signing_mode_fails.lock().unwrap() {
                 anyhow::bail!("mock signing mode failure");
@@ -937,6 +1173,10 @@ mod tests {
 
         fn seen_checkpoint_epoch(&self) -> Option<Epoch> {
             *self.seen_checkpoint_epoch.lock().unwrap()
+        }
+
+        fn csm_l1_tip_height(&self) -> L1Height {
+            *self.csm_l1_tip_height.lock().unwrap()
         }
 
         fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef {
@@ -997,8 +1237,8 @@ mod tests {
                 .map_err(Into::into)
         }
 
-        async fn get_tx_status(&self, _txid: L1TxId) -> anyhow::Result<Option<L1TxEntry>> {
-            Ok(None)
+        async fn get_tx_status(&self, txid: L1TxId) -> anyhow::Result<Option<L1TxEntry>> {
+            Ok(self.tx_statuses.lock().unwrap().get(&txid).cloned())
         }
 
         async fn report_status(&self, _entry: &BundledPayloadEntry, _status: &L1BundleStatus) {}
@@ -1023,6 +1263,13 @@ mod tests {
         let payload = L1Payload::new(vec![epoch.to_be_bytes().to_vec()], test_checkpoint_tag())
             .expect("build checkpoint payload");
         BundledPayloadEntry::new_unsigned(payload)
+    }
+
+    fn checkpoint_test_id(epoch: Epoch) -> Buf32 {
+        let bytes = epoch.to_be_bytes();
+        let mut id = [0u8; 32];
+        id[..4].copy_from_slice(&bytes);
+        Buf32(id)
     }
 
     /// A payload the inspector recognizes as a checkpoint but cannot decode.
@@ -1159,6 +1406,189 @@ mod tests {
             .await
             .expect("process abandoned entry");
 
+        assert_eq!(state.curr_payloadidx, 1);
+    }
+
+    #[tokio::test]
+    async fn retiring_entry_stays_retiring_while_envelope_is_live() {
+        let ctx = MockWatcherContext::new(false);
+        let mut entry = test_checkpoint_entry(5);
+        entry.commit_txid = L1TxId::from([1; 32]);
+        entry.reveal_txid = L1TxId::from([2; 32]);
+        entry.status = L1BundleStatus::Retiring;
+        ctx.set_tx_status(entry.commit_txid, L1TxStatus::Published);
+        ctx.set_tx_status(entry.reveal_txid, L1TxStatus::Unpublished);
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process retiring entry");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Retiring
+        );
+        assert!(state.ctx.abandoned_intents().is_empty());
+        assert_eq!(state.curr_payloadidx, 0);
+    }
+
+    #[tokio::test]
+    async fn retiring_entry_is_abandoned_instead_of_resigned_after_failure() {
+        let ctx = MockWatcherContext::new(false);
+        let mut entry = test_checkpoint_entry(5);
+        entry.commit_txid = L1TxId::from([1; 32]);
+        entry.reveal_txid = L1TxId::from([2; 32]);
+        entry.status = L1BundleStatus::Retiring;
+        ctx.set_tx_status(entry.commit_txid, L1TxStatus::InvalidInputs);
+        ctx.set_tx_status(entry.reveal_txid, L1TxStatus::InvalidInputs);
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process failed retiring entry");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Abandoned
+        );
+        assert_eq!(state.ctx.abandoned_intents(), [(checkpoint_test_id(5), 0)]);
+        assert_eq!(state.curr_payloadidx, 1);
+    }
+
+    #[tokio::test]
+    async fn retiring_entry_with_missing_transactions_abandons_linked_intent() {
+        let ctx = MockWatcherContext::new(false);
+        let mut entry = test_checkpoint_entry(5);
+        entry.commit_txid = L1TxId::from([1; 32]);
+        entry.reveal_txid = L1TxId::from([2; 32]);
+        entry.status = L1BundleStatus::Retiring;
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process retiring entry with missing transactions");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Abandoned
+        );
+        assert_eq!(state.ctx.abandoned_intents(), [(checkpoint_test_id(5), 0)]);
+        assert_eq!(state.curr_payloadidx, 1);
+    }
+
+    /// Also covers the unknown-tip case: the mock reports no seen epoch, so the
+    /// finalization leaves the intent alone rather than guessing.
+    #[tokio::test]
+    async fn retiring_entry_can_finalize() {
+        let ctx = MockWatcherContext::new(false);
+        let mut entry = test_checkpoint_entry(5);
+        entry.commit_txid = L1TxId::from([1; 32]);
+        entry.reveal_txid = L1TxId::from([2; 32]);
+        entry.status = L1BundleStatus::Retiring;
+        ctx.set_tx_status(entry.commit_txid, L1TxStatus::Published);
+        ctx.set_tx_status(
+            entry.reveal_txid,
+            L1TxStatus::Finalized {
+                confirmations: 6,
+                block_hash: Buf32::zero(),
+                block_height: 100,
+            },
+        );
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process finalized retiring entry");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Finalized
+        );
+        assert!(state.ctx.abandoned_intents().is_empty());
+        assert_eq!(state.curr_payloadidx, 1);
+    }
+
+    /// L1 height the retiring reveal finalizes at in [`run_finalized_retiring_entry`].
+    const RETIRING_REVEAL_HEIGHT: L1Height = 100;
+
+    /// Stores a finalized retiring checkpoint for epoch 5 and runs one watcher pass with
+    /// the given ASM checkpoint tip and CSM L1 height.
+    async fn run_finalized_retiring_entry(
+        seen_epoch: Option<Epoch>,
+        csm_tip: L1Height,
+    ) -> WatcherState<MockWatcherContext> {
+        let ctx = MockWatcherContext::new(false);
+        let mut entry = test_checkpoint_entry(5);
+        entry.commit_txid = L1TxId::from([1; 32]);
+        entry.reveal_txid = L1TxId::from([2; 32]);
+        entry.status = L1BundleStatus::Retiring;
+        ctx.set_checkpoint_epochs(None, seen_epoch);
+        ctx.set_csm_l1_tip_height(csm_tip);
+        ctx.set_tx_status(entry.commit_txid, L1TxStatus::Published);
+        ctx.set_tx_status(
+            entry.reveal_txid,
+            L1TxStatus::Finalized {
+                confirmations: 6,
+                block_hash: Buf32::zero(),
+                block_height: RETIRING_REVEAL_HEIGHT,
+            },
+        );
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process finalized retiring entry");
+        state
+    }
+
+    /// A retiring envelope can finalize on L1 without ASM accepting its epoch, which is
+    /// the expected outcome when the rebuild that superseded it exists because the
+    /// original was stale. Nothing retries a finalized bundle, so the intent has to be
+    /// released or the epoch waits for the next startup reconciliation.
+    #[tokio::test]
+    async fn retiring_finalization_releases_intent_when_epoch_is_unaccepted() {
+        let state = run_finalized_retiring_entry(Some(4), RETIRING_REVEAL_HEIGHT).await;
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Finalized
+        );
+        assert_eq!(state.ctx.abandoned_intents(), [(checkpoint_test_id(5), 0)]);
+        assert_eq!(state.curr_payloadidx, 1);
+    }
+
+    /// The mirror case: ASM accepted the epoch, so the finalization settled it and the
+    /// intent must stay put. Releasing it would invite a duplicate envelope.
+    #[tokio::test]
+    async fn retiring_finalization_keeps_intent_when_epoch_is_accepted() {
+        let state = run_finalized_retiring_entry(Some(5), RETIRING_REVEAL_HEIGHT).await;
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Finalized
+        );
+        assert!(state.ctx.abandoned_intents().is_empty());
+        assert_eq!(state.curr_payloadidx, 1);
+    }
+
+    /// Bitcoind's confirmation depth outruns the client state machine after a restart, so
+    /// a finalized reveal one block above the CSM tip has not been judged yet. An
+    /// unaccepted epoch here is CSM lag, not rejection, and releasing the intent on it
+    /// would let the rebuild post a duplicate the original is still on course to settle.
+    #[tokio::test]
+    async fn retiring_finalization_keeps_intent_while_csm_trails_the_reveal() {
+        let state = run_finalized_retiring_entry(Some(4), RETIRING_REVEAL_HEIGHT - 1).await;
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Finalized
+        );
+        assert!(state.ctx.abandoned_intents().is_empty());
         assert_eq!(state.curr_payloadidx, 1);
     }
 

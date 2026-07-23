@@ -164,6 +164,13 @@ pub enum L1BundleStatus {
     /// This terminal state preserves the payload index so the sequential watcher
     /// can advance without leaving a database gap.
     Abandoned,
+
+    /// An escaped envelope whose local checkpoint artifacts were retired.
+    ///
+    /// The watcher keeps tracking its existing transactions, but abandons the bundle
+    /// instead of re-signing if they fail. This lets a rebuilt checkpoint queued behind
+    /// it proceed without reviving the retired payload.
+    Retiring,
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the

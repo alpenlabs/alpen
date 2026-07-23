@@ -112,7 +112,11 @@ zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true
-strata-asm-checkpoint-types.workspace = true
+strata-asm-checkpoint-types = { workspace = true, features = [
+  "test-utils",
+] }
+strata-asm-proto-txs-test-utils.workspace = true
+strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-btc-verification.workspace = true
 strata-l1-txfmt.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
