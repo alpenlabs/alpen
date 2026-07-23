@@ -8,9 +8,11 @@
 //! - [`ReceiptStore`] — persists proof receipts by task bytes (opt-in).
 //! - [`ReceiptHook`] — typed post-prove callback (opt-in).
 //!
-//! The prove-strategy seam (`ProveStrategy` / `ProveContext`) stays
-//! crate-internal: consumers pick a backend via `ProverBuilder::.native()`
-//! / `.remote()`, never by holding the trait.
+//! The prove-strategy seam (`ProveStrategy` / `ProveContext`) is public so
+//! consumers can supply version-aware strategies via
+//! `ProverBuilder::with_strategy` (e.g. per-task host dispatch across a VK
+//! rotation); most consumers still pick a built-in backend via
+//! `ProverBuilder::.native()` / `.remote()`.
 //!
 //! Concrete impls (`InMemoryTaskStore`, `InMemoryReceiptStore`,
 //! `NativeStrategy`, `RemoteStrategy`) and supporting types
@@ -211,7 +213,7 @@ pub trait ReceiptHook<H: ProofSpec>: Send + Sync + 'static {
 /// 2. Call `persist()` right after `start_proving()` so the ID survives a crash
 ///
 /// Strategies that don't need recovery (e.g. native) ignore this entirely.
-pub(crate) struct ProveContext {
+pub struct ProveContext {
     /// Metadata from a prior run (e.g. serialized remote ProofId).
     pub(crate) saved: Option<Vec<u8>>,
     #[cfg(feature = "remote")]
@@ -252,7 +254,7 @@ impl ProveContext {
 ///
 /// Implementations capture the zkVM host internally. The `Host` type
 /// is erased when stored as `Arc<dyn ProveStrategy<H>>` in the prover.
-pub(crate) trait ProveStrategy<H: ProofSpec>: Send + Sync + 'static {
+pub trait ProveStrategy<H: ProofSpec>: Send + Sync + 'static {
     fn prove(
         &self,
         input: &<H::Program as ZkVmProgram>::Input,

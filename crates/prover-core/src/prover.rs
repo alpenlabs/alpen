@@ -575,6 +575,15 @@ impl<H: ProofSpec> ProverBuilder<H> {
         self.build(Arc::new(RemoteStrategy::new(host, poll_interval)))
     }
 
+    /// Builds a prover with a caller-supplied [`ProveStrategy`].
+    ///
+    /// Escape hatch for strategies the built-ins don't cover — e.g.
+    /// version-aware dispatch that picks a host per task at the VK boundary
+    /// of a live upgrade.
+    pub fn with_strategy(self, strategy: Arc<dyn ProveStrategy<H>>) -> Prover<H> {
+        self.build(strategy)
+    }
+
     fn build(self, strategy: Arc<dyn ProveStrategy<H>>) -> Prover<H> {
         Prover {
             spec: Arc::new(self.spec),

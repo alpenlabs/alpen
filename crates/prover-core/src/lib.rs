@@ -21,5 +21,5 @@ pub use error::{ProverError, ProverResult};
 pub use in_memory::{InMemoryReceiptStore, InMemoryTaskStore};
 pub use prover::{Prover, ProverBuilder};
 pub use task::{TaskRecord, TaskRecordData, TaskResult, TaskStatus};
-pub use traits::{ProofSpec, ReceiptHook, ReceiptStore, TaskKey, TaskStore};
+pub use traits::{ProofSpec, ProveContext, ProveStrategy, ReceiptHook, ReceiptStore, TaskKey, TaskStore};
 pub use zkaleido::{ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram};
