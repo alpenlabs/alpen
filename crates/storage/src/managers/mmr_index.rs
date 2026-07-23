@@ -46,14 +46,6 @@ pub struct MmrIndexManagerConfig {
     pub retry: MmrIndexRetryConfig,
 }
 
-/// One append operation for a specific MMR namespace.
-#[derive(Debug, Clone)]
-pub struct MmrAppendRequest {
-    pub mmr_id: MmrId,
-    pub hash: Hash,
-    pub preimage: Option<Vec<u8>>,
-}
-
 /// Node writes an append applies, resolved against a prefetched snapshot.
 #[derive(Debug, Clone)]
 struct AppendPlan {
@@ -130,93 +122,6 @@ impl MmrIndexManager {
     /// Lists MMR namespace identifiers in the index.
     pub async fn list_mmr_ids(&self) -> DbResult<Vec<RawMmrId>> {
         self.ops.list_mmr_ids_async().await
-    }
-
-    fn get_leaf_count_for_mmr_blocking(&self, mmr_id: &RawMmrId) -> DbResult<u64> {
-        self.ops.get_leaf_count_blocking(mmr_id.clone())
-    }
-
-    /// Appends one leaf per distinct MMR namespace in a single read+write cycle.
-    ///
-    /// This API aggregates all required node positions across MMRs, performs
-    /// one batched `fetch_node_paths`, computes append plans in memory, then
-    /// applies one atomic `apply_update`.
-    fn append_many_once_blocking(&self, requests: &[MmrAppendRequest]) -> DbResult<Vec<u64>> {
-        if requests.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut leaf_counts = Vec::with_capacity(requests.len());
-        let mut scoped_fetch_positions = BTreeSet::new();
-        let mut seen_mmr_ids = BTreeSet::new();
-
-        for request in requests {
-            let mmr_id = request.mmr_id.to_bytes();
-            if !seen_mmr_ids.insert(mmr_id.clone()) {
-                return Err(DbError::Other(
-                    "append_many_blocking requires distinct MMR IDs in one call".to_string(),
-                ));
-            }
-
-            let leaf_count = self.get_leaf_count_for_mmr_blocking(&mmr_id)?;
-            leaf_counts.push((mmr_id.clone(), leaf_count));
-
-            let read_positions = compute_append_read_positions(leaf_count);
-            for pos in read_positions {
-                scoped_fetch_positions.insert(MmrNodePos::new(mmr_id.clone(), pos));
-            }
-        }
-
-        // One batched read for all MMR append dependencies.
-        let scoped_positions = scoped_fetch_positions.into_iter().collect::<Vec<_>>();
-        let prefetched = self
-            .ops
-            .fetch_node_paths_blocking(scoped_positions, false)?;
-
-        let mut batch = MmrBatchWrite::from_preconds_table(prefetched.clone());
-        let mut appended_indexes = Vec::with_capacity(requests.len());
-
-        for (request, (mmr_id, leaf_count)) in requests.iter().zip(leaf_counts) {
-            let node_table = MmrIndexHandle::get_scoped_node_table(&prefetched, &mmr_id);
-            let plan = plan_append(request.hash, leaf_count, &node_table)?;
-
-            let mmr_batch = batch.entry(mmr_id);
-            mmr_batch.add_node_precond(plan.leaf_pos.to_node_pos(), None);
-            mmr_batch.set_expected_leaf_count(leaf_count);
-            mmr_batch.set_leaf_count(plan.new_leaf_count);
-
-            for (node_pos, node_hash) in plan.nodes_to_write {
-                mmr_batch.put_node(node_pos, node_hash);
-            }
-
-            if let Some(preimage) = request.preimage.clone() {
-                mmr_batch.add_preimage_precond(plan.leaf_pos, None);
-                mmr_batch.put_preimage(plan.leaf_pos, preimage);
-            }
-
-            appended_indexes.push(plan.leaf_pos.index());
-        }
-
-        // One batched write for all MMR updates.
-        self.ops.apply_update_blocking(batch)?;
-        Ok(appended_indexes)
-    }
-
-    /// Appends one leaf per distinct MMR namespace in a single read+write cycle.
-    ///
-    /// Retries boundedly on MMR precondition failures to handle concurrent writers.
-    pub fn append_many_blocking(&self, requests: Vec<MmrAppendRequest>) -> DbResult<Vec<u64>> {
-        run_with_precondition_retries(self.config.retry.max_precondition_retries, || {
-            self.append_many_once_blocking(&requests)
-        })
-    }
-
-    /// Async wrapper for [`Self::append_many_blocking`].
-    pub async fn append_many(&self, requests: Vec<MmrAppendRequest>) -> DbResult<Vec<u64>> {
-        let this = self.clone();
-        spawn_blocking(move || this.append_many_blocking(requests))
-            .await
-            .map_err(DbError::from)?
     }
 }
 
@@ -629,33 +534,7 @@ impl MmrIndexHandle {
         assemble_proof_from_table(leaf_index, at_leaf_count, &node_table)
     }
 
-    /// Generates proofs for all leaves in `[start, end]` (both inclusive) at
-    /// `at_leaf_count`.
-    pub fn generate_proofs_at(
-        &self,
-        start: u64,
-        end: u64,
-        at_leaf_count: u64,
-    ) -> DbResult<Vec<MerkleProof>> {
-        if start > end {
-            return Err(DbError::MmrInvalidRange { start, end });
-        }
-
-        if end >= at_leaf_count {
-            return Err(DbError::MmrIndexOutOfRange {
-                requested: end,
-                cur: at_leaf_count,
-            });
-        }
-
-        let prefetched = self.fetch_node_paths_blocking(
-            collect_proof_positions_for_range(start, end, at_leaf_count),
-            false,
-        )?;
-        let node_table = Self::get_scoped_node_table(&prefetched, &self.mmr_id_bytes());
-        assemble_proofs_from_table(start, end, at_leaf_count, &node_table)
-    }
-
+    /// Reads the MMR state (leaf count and peaks) at `at_leaf_count`.
     pub fn get_state_at(&self, at_leaf_count: u64) -> DbResult<MmrStateView> {
         let mmr_id = self.mmr_id_bytes();
         let peak_node_positions: Vec<_> = peak_positions(at_leaf_count).collect();
