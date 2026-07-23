@@ -1,9 +1,13 @@
 //! Block transactional processing.
 
+use ssz::Decode;
 use strata_acct_types::*;
 use strata_ledger_types::*;
+use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types::*;
-use tracing::trace;
+use strata_ol_msg_types::PREDICATE_UPDATE_MSG_TYPE_ID;
+use strata_predicate::PredicateKey;
+use tracing::{info, trace};
 
 use crate::{
     OutputCtx, account_processing,
@@ -134,7 +138,17 @@ fn process_update_tx<S: IStateAccessorMut>(
 
     // 3. Actually take balance and write new account inner state.
     let serial = account_state.serial();
-    let upd = sau_payload.operation().update();
+    let op = sau_payload.operation();
+    let upd = op.update();
+    // Predicate rotations activate on consumption: if this update consumed
+    // admin predicate-update messages, the account's update VK rotates now.
+    // The update consuming the message is therefore the last one verified
+    // under the old key, per the Alpen upgrade design. Later rotations in
+    // the same update win, preserving admin ordering.
+    let consumed_rotations: Vec<PredicateKey> = op
+        .messages_iter()
+        .filter_map(parse_predicate_update_message)
+        .collect();
     state.update_account(target, |astate| -> ExecResult<_> {
         // SAFETY: These panics are checked ahead of time so can never get hit.
 
@@ -152,6 +166,11 @@ fn process_update_tx<S: IStateAccessorMut>(
             upd.proof_state().new_next_msg_idx(),
             new_seqno.into(),
         );
+
+        for new_vk in consumed_rotations {
+            info!(account_id = %target, "activating consumed predicate key rotation");
+            acct_tstate.set_update_vk(new_vk);
+        }
 
         Ok(())
     })??;
@@ -423,4 +442,20 @@ mod tests {
 
         assert_gam_structure_error(target_acct_id, &effects, "mismatched target");
     }
+}
+
+/// Parses an admin predicate-update message consumed by an account update.
+///
+/// Only messages sourced from [`ADMIN_MSG_ACCT_ID`] are honored — the source
+/// of an inbox message is the authenticated sender account, and the admin id
+/// is reserved, so ordinary accounts cannot forge a rotation.
+fn parse_predicate_update_message(entry: &MessageEntry) -> Option<PredicateKey> {
+    if entry.source() != ADMIN_MSG_ACCT_ID {
+        return None;
+    }
+    let msg = MsgRef::try_from(entry.payload_buf()).ok()?;
+    if msg.ty() != PREDICATE_UPDATE_MSG_TYPE_ID {
+        return None;
+    }
+    PredicateKey::from_ssz_bytes(msg.body()).ok()
 }
