@@ -15,11 +15,13 @@ use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use serde::Serialize;
 use strata_btc_types::{Buf32BitcoinExt, TxidExt};
+use strata_csm_types::L1Payload;
 use strata_db_types::{
     common::L1TxId,
     l1_broadcast::{L1TxEntry, L1TxStatus},
     l1_writer::{BundledPayloadEntry, L1BundleStatus},
 };
+use strata_identifiers::Epoch;
 use strata_primitives::buf::Buf32;
 use strata_service::{AsyncService, Response, Service, ServiceState};
 use strata_status::StatusChannel;
@@ -32,7 +34,7 @@ use crate::{
     status::{apply_status_updates, L1StatusUpdate},
     writer::{
         builder::{EnvelopeData, EnvelopeError},
-        context::{EnvelopeSigningMode, WriterContext},
+        context::{EnvelopeSigningMode, PayloadCheckpointRef, WriterContext},
         signer::{
             complete_reveal_and_broadcast, create_payload_envelopes,
             sign_and_broadcast_payload_envelopes,
@@ -64,6 +66,15 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
 
     /// Returns the current envelope signing mode.
     fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode>;
+
+    /// Returns the checkpoint epoch that the client has declared final.
+    fn finalized_checkpoint_epoch(&self) -> Option<Epoch>;
+
+    /// Returns the latest checkpoint epoch seen on the canonical L1 chain.
+    fn seen_checkpoint_epoch(&self) -> Option<Epoch>;
+
+    /// Identifies the checkpoint a queued payload carries, if it carries one.
+    fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef;
 
     fn create_envelopes(
         &self,
@@ -136,6 +147,25 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
 
     fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
         self.context.signing_mode()
+    }
+
+    fn finalized_checkpoint_epoch(&self) -> Option<Epoch> {
+        self.context
+            .status_channel
+            .get_cur_client_state()
+            .get_declared_final_epoch()
+            .map(|commitment| commitment.epoch)
+    }
+
+    fn seen_checkpoint_epoch(&self) -> Option<Epoch> {
+        self.context
+            .status_channel
+            .get_last_checkpoint()
+            .map(|checkpoint| checkpoint.tip.epoch)
+    }
+
+    fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef {
+        self.context.inspect_payload(payload)
     }
 
     async fn create_envelopes(
@@ -247,6 +277,32 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
         let _ = dspan.enter();
 
         if let Some(payloadentry) = state.ctx.get_payload_entry(state.curr_payloadidx).await? {
+            if matches!(
+                payloadentry.status,
+                L1BundleStatus::Unsigned
+                    | L1BundleStatus::NeedsResign
+                    | L1BundleStatus::PendingRevealTxSign(_)
+            ) {
+                // The writer drains one payload at a time, so no later queue entry can
+                // advance the ASM tip between this check and broadcast.
+                match state.stale_checkpoint_action(&payloadentry) {
+                    StaleCheckpointAction::Abandon { epoch } => {
+                        state.abandon_stale_entry(payloadentry, epoch).await?;
+                        return Ok(Response::Continue);
+                    }
+                    StaleCheckpointAction::Defer { epoch, seen_epoch } => {
+                        debug!(
+                            epoch,
+                            seen_epoch,
+                            payload_idx = state.curr_payloadidx,
+                            "checkpoint payload is already seen on L1; deferring publication"
+                        );
+                        return Ok(Response::Continue);
+                    }
+                    StaleCheckpointAction::Publish => {}
+                }
+            }
+
             match payloadentry.status {
                 // If unsigned or needs resign, build envelope txs, sign commit with
                 // wallet, and transition to PendingRevealTxSign awaiting the external
@@ -284,6 +340,67 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
 }
 
 impl<C: WatcherServiceContext> WatcherState<C> {
+    /// Decides what to do with a queued payload that L1 may have already moved past.
+    ///
+    /// Abandonment is reserved for epochs at or below the declared-final tip, which
+    /// cannot roll back. An epoch merely at or below the last-seen ASM tip is deferred
+    /// instead, since a reorg can un-see it. Non-checkpoint and undecodable payloads
+    /// publish, so a decoder bug cannot stall the writer.
+    ///
+    /// This is advisory, not a correctness boundary. The status it reads is a snapshot,
+    /// and ASM/CSM state can advance between this check and the broadcast that follows;
+    /// combined with the deliberate fail-open above, that makes it a best-effort way to
+    /// avoid paying for a checkpoint nobody needs. Startup reconciliation is what
+    /// actually keeps a restart from re-posting settled epochs, because it runs before
+    /// the broadcaster can republish anything.
+    fn stale_checkpoint_action(&self, payloadentry: &BundledPayloadEntry) -> StaleCheckpointAction {
+        let epoch = match self.ctx.inspect_payload(&payloadentry.payload) {
+            PayloadCheckpointRef::NotCheckpoint => return StaleCheckpointAction::Publish,
+            PayloadCheckpointRef::Undecodable => {
+                warn!(
+                    payload_idx = self.curr_payloadidx,
+                    "could not decode checkpoint-tagged writer payload; publishing fail-open"
+                );
+                return StaleCheckpointAction::Publish;
+            }
+            PayloadCheckpointRef::Checkpoint { epoch, .. } => epoch,
+        };
+
+        if let Some(finalized_epoch) = self.ctx.finalized_checkpoint_epoch() {
+            if epoch <= finalized_epoch {
+                return StaleCheckpointAction::Abandon { epoch };
+            }
+        }
+
+        if let Some(seen_epoch) = self.ctx.seen_checkpoint_epoch() {
+            if epoch <= seen_epoch {
+                return StaleCheckpointAction::Defer { epoch, seen_epoch };
+            }
+        }
+
+        StaleCheckpointAction::Publish
+    }
+
+    async fn abandon_stale_entry(
+        &mut self,
+        mut payloadentry: BundledPayloadEntry,
+        epoch: Epoch,
+    ) -> anyhow::Result<()> {
+        let payload_idx = self.curr_payloadidx;
+        payloadentry.payload_signature = None;
+        payloadentry.status = L1BundleStatus::Abandoned;
+        self.ctx
+            .put_payload_entry(payload_idx, payloadentry)
+            .await?;
+        self.envelope_cache.remove(&payload_idx);
+        self.curr_payloadidx += 1;
+        info!(
+            epoch,
+            payload_idx, "abandoned checkpoint payload already finalized by ASM"
+        );
+        Ok(())
+    }
+
     /// Resolves the current envelope signing mode, deferring on failure.
     ///
     /// The signing mode is derived from dynamic ASM state, so a transient
@@ -538,6 +655,13 @@ impl<C: WatcherServiceContext> WatcherState<C> {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StaleCheckpointAction {
+    Abandon { epoch: Epoch },
+    Defer { epoch: Epoch, seen_epoch: Epoch },
+    Publish,
+}
+
 async fn update_l1_status(
     payloadentry: &BundledPayloadEntry,
     new_status: &L1BundleStatus,
@@ -601,7 +725,6 @@ mod tests {
         Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
     };
     use bitcoind_async_client::error::ClientError;
-    use strata_csm_types::L1Payload;
     use strata_db_types::{
         common::L1TxId,
         l1_broadcast::L1TxEntry,
@@ -622,6 +745,14 @@ mod tests {
 
     const TEST_REQUIRED_SATS: u64 = 4096;
     const TEST_AVAILABLE_SATS: u64 = 2658;
+
+    /// Tag the mock inspector treats as checkpoint-bearing.
+    ///
+    /// The real encoding lives above this crate, so these tests stand in a trivial
+    /// one: the payload is the big-endian epoch and nothing else. What is under test
+    /// here is the abandon/defer/publish decision, not the decoding.
+    const TEST_CHECKPOINT_SUBPROTO_ID: u8 = 9;
+    const TEST_CHECKPOINT_TX_TYPE: u8 = 9;
 
     #[derive(Clone, Copy)]
     enum MockEnvelopeFailure {
@@ -706,6 +837,8 @@ mod tests {
         create_failure: Option<MockEnvelopeFailure>,
         sign_failure: Option<MockEnvelopeFailure>,
         rpc_errors: Mutex<Vec<String>>,
+        finalized_checkpoint_epoch: Mutex<Option<Epoch>>,
+        seen_checkpoint_epoch: Mutex<Option<Epoch>>,
     }
 
     impl MockWatcherContext {
@@ -725,6 +858,8 @@ mod tests {
                 create_failure: None,
                 sign_failure: None,
                 rpc_errors: Mutex::new(Vec::new()),
+                finalized_checkpoint_epoch: Mutex::new(None),
+                seen_checkpoint_epoch: Mutex::new(None),
             }
         }
 
@@ -768,6 +903,11 @@ mod tests {
         fn set_signing_mode_failure(&self, fails: bool) {
             *self.signing_mode_fails.lock().unwrap() = fails;
         }
+
+        fn set_checkpoint_epochs(&self, finalized: Option<Epoch>, seen: Option<Epoch>) {
+            *self.finalized_checkpoint_epoch.lock().unwrap() = finalized;
+            *self.seen_checkpoint_epoch.lock().unwrap() = seen;
+        }
     }
 
     impl WatcherServiceContext for MockWatcherContext {
@@ -789,6 +929,38 @@ mod tests {
                 anyhow::bail!("mock signing mode failure");
             }
             Ok(*self.signing_mode.lock().unwrap())
+        }
+
+        fn finalized_checkpoint_epoch(&self) -> Option<Epoch> {
+            *self.finalized_checkpoint_epoch.lock().unwrap()
+        }
+
+        fn seen_checkpoint_epoch(&self) -> Option<Epoch> {
+            *self.seen_checkpoint_epoch.lock().unwrap()
+        }
+
+        fn inspect_payload(&self, payload: &L1Payload) -> PayloadCheckpointRef {
+            let tag = payload.tag();
+            if tag.subproto_id() != TEST_CHECKPOINT_SUBPROTO_ID
+                || tag.tx_type() != TEST_CHECKPOINT_TX_TYPE
+            {
+                return PayloadCheckpointRef::NotCheckpoint;
+            }
+
+            let [encoded] = payload.data() else {
+                return PayloadCheckpointRef::Undecodable;
+            };
+            let Ok(bytes) = <[u8; 4]>::try_from(encoded.as_slice()) else {
+                return PayloadCheckpointRef::Undecodable;
+            };
+
+            let epoch = Epoch::from_be_bytes(bytes);
+            let mut id = [0u8; 32];
+            id[..4].copy_from_slice(&bytes);
+            PayloadCheckpointRef::Checkpoint {
+                epoch,
+                id: Buf32(id),
+            }
         }
 
         async fn create_envelopes(
@@ -840,6 +1012,154 @@ mod tests {
         let tag = TagData::new(1, 1, vec![]).unwrap();
         let payload = L1Payload::new(vec![vec![1; 150]; 1], tag).unwrap();
         BundledPayloadEntry::new_unsigned(payload)
+    }
+
+    fn test_checkpoint_tag() -> TagData {
+        TagData::new(TEST_CHECKPOINT_SUBPROTO_ID, TEST_CHECKPOINT_TX_TYPE, vec![])
+            .expect("build test checkpoint tag")
+    }
+
+    fn test_checkpoint_entry(epoch: Epoch) -> BundledPayloadEntry {
+        let payload = L1Payload::new(vec![epoch.to_be_bytes().to_vec()], test_checkpoint_tag())
+            .expect("build checkpoint payload");
+        BundledPayloadEntry::new_unsigned(payload)
+    }
+
+    /// A payload the inspector recognizes as a checkpoint but cannot decode.
+    fn test_undecodable_checkpoint_entry() -> BundledPayloadEntry {
+        let payload = L1Payload::new(vec![vec![0xff; 3]], test_checkpoint_tag())
+            .expect("build checkpoint payload");
+        BundledPayloadEntry::new_unsigned(payload)
+    }
+
+    #[tokio::test]
+    async fn finalized_checkpoint_is_abandoned_before_signing() {
+        let ctx = MockWatcherContext::new(false);
+        ctx.set_checkpoint_epochs(Some(4), Some(4));
+        let entry = test_checkpoint_entry(4);
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process stale checkpoint");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Abandoned
+        );
+        assert_eq!(state.curr_payloadidx, 1);
+    }
+
+    #[tokio::test]
+    async fn seen_but_unfinalized_checkpoint_is_deferred() {
+        let ctx = MockWatcherContext::new(false);
+        ctx.set_checkpoint_epochs(Some(3), Some(4));
+        let entry = test_checkpoint_entry(4);
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process seen checkpoint");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Unsigned
+        );
+        assert_eq!(state.curr_payloadidx, 0);
+    }
+
+    #[tokio::test]
+    async fn checkpoint_after_seen_tip_publishes() {
+        let ctx = MockWatcherContext::new(false);
+        ctx.set_checkpoint_epochs(Some(3), Some(4));
+        let entry = test_checkpoint_entry(5);
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process fresh checkpoint");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Unpublished
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_checkpoint_tips_fail_open() {
+        let ctx = MockWatcherContext::new(false);
+        let entry = test_checkpoint_entry(2);
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process checkpoint without tips");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Unpublished
+        );
+    }
+
+    /// A checkpoint-tagged payload the inspector cannot decode must still publish, so
+    /// that a decoding bug cannot stall the writer behind an entry it refuses to judge.
+    #[tokio::test]
+    async fn undecodable_checkpoint_payload_fails_open() {
+        let ctx = MockWatcherContext::new(false);
+        ctx.set_checkpoint_epochs(Some(9), Some(9));
+        let entry = test_undecodable_checkpoint_entry();
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process undecodable checkpoint");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Unpublished
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_pending_reveal_checkpoint_is_abandoned_and_cache_evicted() {
+        let ctx = MockWatcherContext::new(true);
+        ctx.set_checkpoint_epochs(Some(7), Some(7));
+        let mut entry = test_checkpoint_entry(7);
+        entry.status = L1BundleStatus::PendingRevealTxSign(Buf32([42; 32]));
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.envelope_cache.insert(0, minimal_envelope_data());
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process stale pending checkpoint");
+
+        assert_eq!(
+            state.ctx.get_stored(0).expect("stored entry").status,
+            L1BundleStatus::Abandoned
+        );
+        assert!(state.envelope_cache.is_empty());
+        assert_eq!(state.curr_payloadidx, 1);
+    }
+
+    #[tokio::test]
+    async fn abandoned_entry_advances_watcher() {
+        let ctx = MockWatcherContext::new(false);
+        let mut entry = test_unsigned_entry();
+        entry.status = L1BundleStatus::Abandoned;
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .expect("process abandoned entry");
+
+        assert_eq!(state.curr_payloadidx, 1);
     }
 
     #[tokio::test]
