@@ -3,9 +3,11 @@
 //! This does partially replicate transaction structures so that we have a clean
 //! interface for what this crate's logic cares about.
 
-use strata_acct_types::{MessageEntry, TxEffects};
+use strata_acct_types::{ITxEffects, MessageEntry, TxEffects};
+use strata_identifiers::Buf32;
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, OutputTransfer, ProofState, Seqno, UpdateOutputs,
+    ISnarkAccountUpdateData, LedgerRefs, OutputMessage, OutputTransfer, ProofState, Seqno,
+    UpdateOutputs,
 };
 
 /// Update data extracted from the transaction.
@@ -63,12 +65,50 @@ impl SnarkAccountUpdateData {
     }
 }
 
+impl<'u> ISnarkAccountUpdateData for &'u SnarkAccountUpdateData {
+    type Message = &'u MessageEntry;
+    type LedgerRefs = &'u LedgerRefs;
+    type Effects = &'u TxEffects;
+
+    fn seq_no(&self) -> Seqno {
+        self.seq_no
+    }
+
+    fn new_inner_state(&self) -> Buf32 {
+        self.new_proof_state.inner_state()
+    }
+
+    fn new_next_msg_idx(&self) -> u64 {
+        self.new_proof_state.next_inbox_msg_idx()
+    }
+
+    fn num_messasges(&self) -> u64 {
+        self.processed_messages.len() as u64
+    }
+
+    fn messages_iter(&self) -> impl Iterator<Item = Self::Message> {
+        self.processed_messages.iter()
+    }
+
+    fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+
+    fn ledger_refs(&self) -> Self::LedgerRefs {
+        &self.ledger_refs
+    }
+
+    fn effects(&self) -> Self::Effects {
+        &self.effects
+    }
+}
+
 /// Converts [`TxEffects`] to [`UpdateOutputs`] for proof claim computation.
 ///
 /// The snark proof verification requires [`UpdateOutputs`] format for the public
 /// parameters. This converts the shared [`TxEffects`] type into the format
 /// expected by [`UpdateProofPubParams`](strata_snark_acct_types::UpdateProofPubParams).
-pub fn effects_to_update_outputs(effects: &TxEffects) -> UpdateOutputs {
+pub fn effects_to_update_outputs(effects: impl ITxEffects) -> UpdateOutputs {
     let transfers: Vec<OutputTransfer> = effects
         .transfers_iter()
         .map(|t| OutputTransfer::new(t.dest(), t.value()))

@@ -2,14 +2,17 @@ use std::fmt;
 
 use int_enum::IntEnum;
 use strata_acct_types::{
-    AccountId, BitcoinAmount, MessageEntry, MsgPayload, MsgPayloadData, MsgPayloadError,
-    SentMessage, TxEffects,
+    AccountId, AccumulatorClaim, BitcoinAmount, MessageEntry, MsgPayload, MsgPayloadData,
+    MsgPayloadError, RawMerkleProof, SentMessage, TxEffects,
 };
 use strata_identifiers::{Buf32, OLTxId, Slot};
 use strata_ol_logs::SnarkAccountUpdateLogData;
 use tree_hash::{Sha256Hasher, TreeHash};
 
-use crate::ssz_generated::ssz::{proofs::*, transaction::*};
+use crate::{
+    chain_abstraction::*,
+    ssz_generated::ssz::{proofs::*, transaction::*},
+};
 
 impl OLTransaction {
     pub fn new(data: OLTransactionData, proofs: TxProofs) -> Self {
@@ -41,7 +44,7 @@ impl OLTransaction {
     }
 
     pub fn compute_txid(&self) -> OLTxId {
-        self.data().compute_txid()
+        ITransaction::compute_txid(&self)
     }
 
     /// Returns a new transaction with only accumulator proofs updated.
@@ -70,6 +73,27 @@ impl TransactionPayload {
     }
 }
 
+impl<'tx> ITransaction for &'tx OLTransaction {
+    type Constraints = &'tx TxConstraints;
+    type Proofs = &'tx TxProofs;
+    type Gam = &'tx GamTxPayload;
+    type Sau = &'tx SauTxPayload;
+
+    fn compute_txid(&self) -> OLTxId {
+        self.data().compute_txid()
+    }
+
+    fn tydata(&self) -> TxTyData<Self> {
+        // Copy out the outer reference so the borrows live for `'tx`, not just the
+        // duration of `&self`.
+        let tx: &'tx OLTransaction = *self;
+        match tx.payload() {
+            TransactionPayload::GenericAccountMessage(pl) => TxTyData::GenericAcctMessage(pl),
+            TransactionPayload::SnarkAccountUpdate(pl) => TxTyData::SnarkAcctUpdate(pl),
+        }
+    }
+}
+
 impl TxConstraints {
     pub fn new(min_slot: Option<Slot>, max_slot: Option<Slot>) -> Self {
         Self {
@@ -78,26 +102,38 @@ impl TxConstraints {
         }
     }
 
+    #[deprecated(note = "use ITxConstraints trait")]
     pub fn min_slot(&self) -> Option<Slot> {
-        match &self.min_slot {
-            ssz_types::Optional::Some(slot) => Some(*slot),
-            ssz_types::Optional::None => None,
-        }
+        ITxConstraints::min_slot(&self)
     }
 
     pub fn set_min_slot(&mut self, min_slot: Option<Slot>) {
         self.min_slot = min_slot.into();
     }
 
+    #[deprecated(note = "use ITxConstraints trait")]
     pub fn max_slot(&self) -> Option<Slot> {
-        match &self.max_slot {
+        ITxConstraints::max_slot(&self)
+    }
+
+    pub fn set_max_slot(&mut self, max_slot: Option<Slot>) {
+        self.max_slot = max_slot.into();
+    }
+}
+
+impl<'tx> ITxConstraints for &'tx TxConstraints {
+    fn min_slot(&self) -> Option<Slot> {
+        match &self.min_slot {
             ssz_types::Optional::Some(slot) => Some(*slot),
             ssz_types::Optional::None => None,
         }
     }
 
-    pub fn set_max_slot(&mut self, max_slot: Option<Slot>) {
-        self.max_slot = max_slot.into();
+    fn max_slot(&self) -> Option<Slot> {
+        match &self.max_slot {
+            ssz_types::Optional::Some(slot) => Some(*slot),
+            ssz_types::Optional::None => None,
+        }
     }
 }
 
@@ -132,6 +168,14 @@ impl GamTxPayload {
     }
 }
 
+impl<'tx> ITargetTx for &'tx GamTxPayload {
+    fn target(&self) -> AccountId {
+        self.target
+    }
+}
+
+impl<'tx> IGamTransaction for &'tx GamTxPayload {}
+
 impl SauTxPayload {
     /// Creates a new snark account update transaction payload.
     pub fn new(target: AccountId, operation_data: SauTxOperationData) -> Self {
@@ -146,6 +190,20 @@ impl SauTxPayload {
     }
 
     pub fn operation(&self) -> &SauTxOperationData {
+        &self.operation_data
+    }
+}
+
+impl<'tx> ITargetTx for &'tx SauTxPayload {
+    fn target(&self) -> AccountId {
+        self.target
+    }
+}
+
+impl<'tx> ISauTransaction for &'tx SauTxPayload {
+    type Operation = &'tx SauTxOperationData;
+
+    fn operation(&self) -> Self::Operation {
         &self.operation_data
     }
 }
@@ -179,6 +237,24 @@ impl SauTxOperationData {
     }
 }
 
+impl<'tx> ISauOperationData for &'tx SauTxOperationData {
+    type Data = &'tx SauTxUpdateData;
+    type Message = &'tx MessageEntry;
+    type LedgerRefs = &'tx SauTxLedgerRefs;
+
+    fn update_data(&self) -> Self::Data {
+        &self.update_data
+    }
+
+    fn iter_messages(&self) -> impl Iterator<Item = Self::Message> {
+        self.messages.iter()
+    }
+
+    fn ledger_refs(&self) -> Self::LedgerRefs {
+        &self.ledger_refs
+    }
+}
+
 impl SauTxLedgerRefs {
     /// Creates empty ledger refs.
     pub fn new_empty() -> Self {
@@ -206,6 +282,20 @@ impl SauTxLedgerRefs {
     }
 }
 
+impl<'tx> ISauLedgerRefs for &'tx SauTxLedgerRefs {
+    fn num_l1_block_ref_claims(&self) -> usize {
+        self.l1_block_ref_claims()
+            .map(|l| l.claims().len())
+            .unwrap_or_default()
+    }
+
+    fn get_l1_block_ref_claim(&self, idx: usize) -> Option<AccumulatorClaim> {
+        self.l1_block_ref_claims()
+            .and_then(|l| l.claims().get(idx))
+            .cloned()
+    }
+}
+
 impl SauTxUpdateData {
     /// Creates a new update data.
     pub fn new(seq_no: u64, proof_state: SauTxProofState, extra_data: Vec<u8>) -> Self {
@@ -218,14 +308,16 @@ impl SauTxUpdateData {
         }
     }
 
+    #[deprecated(note = "use ISauUpdateData trait")]
     pub fn seq_no(&self) -> u64 {
-        self.seq_no
+        ISauUpdateData::seq_no(&self)
     }
 
     pub fn proof_state(&self) -> &SauTxProofState {
         &self.proof_state
     }
 
+    #[deprecated(note = "use ISauUpdateData trait")]
     pub fn extra_data(&self) -> &[u8] {
         &self.extra_data
     }
@@ -237,8 +329,26 @@ impl SauTxUpdateData {
     pub fn get_log_data(&self) -> Option<SnarkAccountUpdateLogData> {
         SnarkAccountUpdateLogData::new(
             self.proof_state().new_next_msg_idx(),
-            self.extra_data().to_vec(),
+            ISauUpdateData::extra_data(&self).to_vec(),
         )
+    }
+}
+
+impl<'tx> ISauUpdateData for &'tx SauTxUpdateData {
+    fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
+
+    fn new_next_msg_idx(&self) -> u64 {
+        self.proof_state().new_next_msg_idx()
+    }
+
+    fn new_inner_state_root(&self) -> Buf32 {
+        self.proof_state().inner_state_root().into()
+    }
+
+    fn extra_data(&self) -> &[u8] {
+        &self.extra_data
     }
 }
 
@@ -358,6 +468,32 @@ impl TxProofs {
     ) -> Self {
         self.accumulator_proofs = accumulator_proofs.into();
         self
+    }
+}
+
+impl<'tx> ITxProofs for &'tx TxProofs {
+    fn num_predicate_satisfiers(&self) -> usize {
+        self.predicate_satisfiers()
+            .map(|l| l.proofs().len())
+            .unwrap_or_default()
+    }
+
+    fn get_predicate_satisfier(&self, idx: usize) -> Option<ProofSatisfier> {
+        self.predicate_satisfiers()
+            .and_then(|l| l.proofs().get(idx))
+            .cloned()
+    }
+
+    fn num_accumulator_proofs(&self) -> usize {
+        self.accumulator_proofs()
+            .map(|l| l.proofs().len())
+            .unwrap_or_default()
+    }
+
+    fn get_accumulator_proof(&self, idx: usize) -> Option<RawMerkleProof> {
+        self.accumulator_proofs()
+            .and_then(|l| l.proofs().get(idx))
+            .cloned()
     }
 }
 
