@@ -3,8 +3,10 @@
 use strata_chain_worker::WorkerError;
 use strata_db_types::DbError;
 use strata_identifiers::Epoch;
-use strata_primitives::EpochCommitment;
+use strata_primitives::{EpochCommitment, OLBlockCommitment};
 use thiserror::Error;
+
+use crate::ol_mmr_reconcile::OLMmrReconcileError;
 
 /// Errors from the checkpoint sync service.
 #[derive(Debug, Error)]
@@ -39,6 +41,14 @@ pub enum CheckpointSyncError {
     #[error("epoch summary missing for {0}")]
     MissingEpochSummary(EpochCommitment),
 
+    /// A summarized epoch has no canonical epoch commitment.
+    #[error("canonical epoch commitment missing for summarized epoch {0}")]
+    MissingCanonicalEpochCommitment(Epoch),
+
+    /// A target block has no persisted OL state.
+    #[error("missing OL state for block {0}")]
+    MissingOLState(OLBlockCommitment),
+
     /// A database read failed.
     #[error("db: {0}")]
     Db(#[from] DbError),
@@ -55,6 +65,10 @@ pub enum CheckpointSyncError {
     /// Failure updating the chain worker's safe tip.
     #[error("chain worker update_safe_tip: {0}")]
     SafeTipUpdate(#[source] WorkerError),
+
+    /// Failure reconciling OL-owned MMR indexes before checkpoint sync resumes.
+    #[error("OL MMR index reconciliation: {0}")]
+    OLMmrReconcile(#[from] OLMmrReconcileError),
 }
 
 pub type CheckpointSyncResult<T> = Result<T, CheckpointSyncError>;

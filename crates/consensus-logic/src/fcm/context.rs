@@ -7,7 +7,9 @@ use strata_ol_state_types::OLState;
 use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_status::OLSyncStatus;
 
-use crate::unfinalized_tracker::UnfinalizedOLBlockSource;
+use crate::{
+    ol_mmr_reconcile::OLMmrReconcileTarget, unfinalized_tracker::UnfinalizedOLBlockSource,
+};
 
 /// Chain execution operations required by FCM.
 #[async_trait]
@@ -34,13 +36,7 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
     /// if any.
     async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>>;
 
-    /// Rolls back per-block OL state-indexing writes in `epoch` attributed to
-    /// blocks with slots strictly greater than `cutoff.slot()`.
-    ///
-    /// Called when a block is marked invalid to drop its indexing writes, so
-    /// a replacement block at the same slot can apply its own without
-    /// conflicting against the indexing high-watermark. Idempotent; a no-op
-    /// when the rejected block never reached the persist step.
+    /// Rolls back block-attributed OL state-indexing writes in `epoch` to `cutoff`.
     async fn rollback_block_state_indexing(
         &self,
         epoch: Epoch,
@@ -73,6 +69,13 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
         &self,
         epoch: Epoch,
     ) -> DbResult<Option<EpochCommitment>>;
+
+    /// Reconciles storage-derived indexes to FCM's selected startup tip.
+    ///
+    /// Called after FCM has repaired the canonical block index and loaded the
+    /// selected tip's OL state, before the service launches and replays startup
+    /// candidates.
+    async fn reconcile_ol_mmr_index(&self, target: OLMmrReconcileTarget) -> anyhow::Result<()>;
 }
 
 /// FCM's dependency context.

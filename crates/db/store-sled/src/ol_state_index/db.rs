@@ -28,6 +28,92 @@ define_sled_database!(
     }
 );
 
+impl OLStateIndexingDBSled {
+    /// Prunes block-attributed indexing rows shared by block rollback and exact block deletion.
+    ///
+    /// The predicate decides which block attributions survive. `None`
+    /// attributions are passed through the predicate so callers can preserve
+    /// checkpoint-sync rows explicitly.
+    fn prune_block_attributed_indexing<F>(&self, epoch: Epoch, should_retain: F) -> DbResult<()>
+    where
+        F: Fn(Option<&OLBlockCommitment>) -> bool,
+    {
+        // Pre-scan affected accounts via the non-transactional trees.
+        // SledTransactionalTree has no range API, so we collect keys here and
+        // act on them inside the transaction below.
+        let affected =
+            collect_accounts_in_epoch(epoch, &self.account_update_tree, &self.account_inbox_tree)?;
+
+        self.config.with_retry(
+            (
+                &self.epoch_data_tree,
+                &self.account_update_tree,
+                &self.account_inbox_tree,
+                &self.creation_epoch_tree,
+            ),
+            |(epoch_t, update_t, inbox_t, creation_t): (
+                SledTransactionalTree<OLEpochIndexingDataSchema>,
+                SledTransactionalTree<OLAccountUpdateEntrySchema>,
+                SledTransactionalTree<OLAccountInboxEntrySchema>,
+                SledTransactionalTree<OLAccountCreationEpochSchema>,
+            )| {
+                // Delete update and inbox rows when no records survive.
+                for acct in &affected {
+                    let key = AccountEpochKey::new(epoch, *acct);
+                    if let Some(records) = update_t.get(&key)? {
+                        let kept: Vec<AccountUpdateRecord> = records
+                            .into_iter()
+                            .filter(|r| {
+                                r.update_meta()
+                                    .is_none_or(|meta| should_retain(meta.block_commitment()))
+                            })
+                            .collect();
+                        if kept.is_empty() {
+                            update_t.remove(&key)?;
+                        } else {
+                            update_t.insert(&key, &kept)?;
+                        }
+                    }
+                    if let Some(records) = inbox_t.get(&key)? {
+                        let kept: Vec<InboxMessageRecord> = records
+                            .into_iter()
+                            .filter(|r| should_retain(r.block_commitment()))
+                            .collect();
+                        if kept.is_empty() {
+                            inbox_t.remove(&key)?;
+                        } else {
+                            inbox_t.insert(&key, &kept)?;
+                        }
+                    }
+                }
+
+                // Drop common-row data not retained by the predicate, and
+                // remove creation_epoch entries for accounts with no retained
+                // creator.
+                if let Some(mut common) = epoch_t.get(&epoch)? {
+                    let dropped = common.retain_created_accounts_by_block(|block_commitment| {
+                        should_retain(block_commitment)
+                    });
+                    let prev_high_water = common.last_applied_block().copied();
+                    common.clear_last_applied_block_unless_matching(|block_commitment| {
+                        should_retain(Some(block_commitment))
+                    });
+                    let high_water_changed =
+                        prev_high_water != common.last_applied_block().copied();
+                    if !dropped.is_empty() || high_water_changed {
+                        epoch_t.insert(&epoch, &common)?;
+                        for acct in dropped {
+                            creation_t.remove(&acct)?;
+                        }
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
 type Trees = (
     SledTransactionalTree<OLEpochIndexingDataSchema>,
     SledTransactionalTree<OLAccountUpdateEntrySchema>,
@@ -56,6 +142,25 @@ fn collect_accounts_in_epoch(
         out.insert(key.account_id());
     }
     Ok(out)
+}
+
+fn block_retained_by_rollback(
+    block: Option<&OLBlockCommitment>,
+    target: OLBlockCommitment,
+) -> bool {
+    match block {
+        // Checkpoint-sync rows have no per-block attribution; per-block rollback
+        // must leave them for epoch-level rollback.
+        None => true,
+        // This helper does not verify target ancestry. Its callers assume
+        // lower-slot abandoned rows have already been cleaned by fork-choice
+        // reorg handling, so lower-slot rows are retained here.
+        Some(block) if block.slot() < target.slot() => true,
+        // The target block itself remains visible after rollback.
+        Some(block) if *block == target => true,
+        // Later rows and same-slot siblings belong to abandoned work.
+        Some(_) => false,
+    }
 }
 
 impl OLStateIndexingDatabase for OLStateIndexingDBSled {
@@ -166,75 +271,21 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
     }
 
     fn rollback_to_block(&self, epoch: Epoch, block: OLBlockCommitment) -> DbResult<()> {
-        let cutoff_slot = block.slot();
-        // Pre-scan affected accounts via the non-transactional trees.
-        // SledTransactionalTree has no range API, so we collect keys here and
-        // act on them inside the transaction below.
-        let affected =
-            collect_accounts_in_epoch(epoch, &self.account_update_tree, &self.account_inbox_tree)?;
+        self.prune_block_attributed_indexing(epoch, |block_commitment| {
+            block_retained_by_rollback(block_commitment, block)
+        })
+    }
 
-        self.config.with_retry(
-            (
-                &self.epoch_data_tree,
-                &self.account_update_tree,
-                &self.account_inbox_tree,
-                &self.creation_epoch_tree,
-            ),
-            |(epoch_t, update_t, inbox_t, creation_t): Trees| {
-                // Filter records past the cutoff out of update + inbox rows;
-                // delete the row when nothing is left.
-                for acct in &affected {
-                    let key = AccountEpochKey::new(epoch, *acct);
-                    if let Some(records) = update_t.get(&key)? {
-                        let kept: Vec<AccountUpdateRecord> = records
-                            .into_iter()
-                            .filter(|r| {
-                                r.update_meta().is_none_or(|m| {
-                                    m.block_commitment().is_none_or(|b| b.slot() <= cutoff_slot)
-                                })
-                            })
-                            .collect();
-                        if kept.is_empty() {
-                            update_t.remove(&key)?;
-                        } else {
-                            update_t.insert(&key, &kept)?;
-                        }
-                    }
-                    if let Some(records) = inbox_t.get(&key)? {
-                        let kept: Vec<InboxMessageRecord> = records
-                            .into_iter()
-                            .filter(|r| {
-                                r.block_commitment().is_none_or(|c| c.slot() <= cutoff_slot)
-                            })
-                            .collect();
-                        if kept.is_empty() {
-                            inbox_t.remove(&key)?;
-                        } else {
-                            inbox_t.insert(&key, &kept)?;
-                        }
-                    }
-                }
+    fn del_block_attributed_indexing(
+        &self,
+        epoch: Epoch,
+        blocks: BTreeSet<OLBlockCommitment>,
+    ) -> DbResult<()> {
+        if blocks.is_empty() {
+            return Ok(());
+        }
 
-                // Drop creators past the cutoff from the common row, reset
-                // the high-water mark if it was past the cutoff, and remove
-                // creation_epoch entries for any dropped creators.
-                if let Some(mut common) = epoch_t.get(&epoch)? {
-                    let dropped = common.drop_created_after_slot(cutoff_slot);
-                    let prev_high_water = common.last_applied_block().copied();
-                    common.clear_last_applied_block_after_slot(cutoff_slot);
-                    let high_water_changed =
-                        prev_high_water != common.last_applied_block().copied();
-                    if !dropped.is_empty() || high_water_changed {
-                        epoch_t.insert(&epoch, &common)?;
-                        for acct in dropped {
-                            creation_t.remove(&acct)?;
-                        }
-                    }
-                }
-
-                Ok(())
-            },
-        )
+        self.prune_block_attributed_indexing(epoch, |b| b.is_none_or(|b| !blocks.contains(b)))
     }
 
     fn rollback_to_epoch(&self, epoch: Epoch) -> DbResult<()> {

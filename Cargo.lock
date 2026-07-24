@@ -15211,6 +15211,7 @@ dependencies = [
  "strata-bridge-params",
  "strata-checkpoint-types",
  "strata-codec",
+ "strata-common",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
@@ -15353,9 +15354,11 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "bitcoind-async-client",
+ "hex",
  "metrics",
  "rand 0.8.5",
  "serde",
+ "strata-acct-types",
  "strata-asm-common",
  "strata-asm-params",
  "strata-asm-proto-checkpoint-types",
@@ -15368,12 +15371,15 @@ dependencies = [
  "strata-common",
  "strata-csm-types",
  "strata-csm-worker",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-merkle",
  "strata-node-context",
  "strata-ol-chain-types",
+ "strata-ol-mmr-index",
+ "strata-ol-params",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
@@ -15660,11 +15666,11 @@ dependencies = [
  "strata-ledger-types",
  "strata-merkle",
  "strata-ol-chain-types",
+ "strata-ol-mmr-index",
  "strata-ol-params",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-paas",
- "strata-predicate",
  "strata-primitives",
  "strata-storage",
  "tokio",
@@ -16155,6 +16161,22 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "strata-ol-mmr-index"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-merkle",
+ "strata-ol-params",
+ "strata-ol-state-support-types",
+ "strata-ol-state-types",
+ "strata-predicate",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

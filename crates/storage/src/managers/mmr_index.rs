@@ -317,6 +317,70 @@ impl MmrIndexHandle {
         run_with_precondition_retries(self.max_retries, || self.pop_leaf_once_blocking())
     }
 
+    /// Truncates this MMR namespace to `target_leaf_count` leaves atomically.
+    ///
+    /// Returns [`DbError::MmrIndexOutOfRange`] when `target_leaf_count` is above
+    /// the current count. Truncating to the current count is a no-op.
+    pub fn truncate_to_leaf_count_blocking(&self, target_leaf_count: u64) -> DbResult<()> {
+        run_with_precondition_retries(self.max_retries, || {
+            self.truncate_to_leaf_count_once_blocking(target_leaf_count)
+        })
+    }
+
+    /// Async variant of [`Self::truncate_to_leaf_count_blocking`].
+    pub async fn truncate_to_leaf_count(&self, target_leaf_count: u64) -> DbResult<()> {
+        let this = self.clone();
+        spawn_blocking(move || this.truncate_to_leaf_count_blocking(target_leaf_count))
+            .await
+            .map_err(DbError::from)?
+    }
+
+    fn truncate_to_leaf_count_once_blocking(&self, target_leaf_count: u64) -> DbResult<()> {
+        let leaf_count = self.get_leaf_count_blocking()?;
+        if target_leaf_count == leaf_count {
+            return Ok(());
+        }
+        if target_leaf_count > leaf_count {
+            return Err(DbError::MmrIndexOutOfRange {
+                requested: target_leaf_count,
+                cur: leaf_count,
+            });
+        }
+
+        let mmr_id = self.mmr_id_bytes();
+        let nodes_to_remove: Vec<NodePos> =
+            iter_prune_after_positions(target_leaf_count, leaf_count).collect();
+        let leaves_to_remove: Vec<LeafPos> =
+            (target_leaf_count..leaf_count).map(LeafPos::new).collect();
+        let prefetched = self.fetch_node_paths_blocking(nodes_to_remove.iter().copied(), true)?;
+        let node_table = Self::get_scoped_node_table(&prefetched, &mmr_id);
+        // The DB fetch returns present path nodes; truncate requires every requested node.
+        // Truncate only needs positions, so completeness is verified here at the fetch
+        // boundary instead of inside the plan.
+        for node_pos in &nodes_to_remove {
+            if node_table.get_node(*node_pos).is_none() {
+                return Err(DbError::MmrNodeNotFound(*node_pos));
+            }
+        }
+
+        let mut batch = MmrBatchWrite::from_preconds_table(prefetched);
+        let mmr_batch = batch.entry(mmr_id);
+
+        for leaf_pos in leaves_to_remove {
+            mmr_batch.add_preimage_precond(leaf_pos, node_table.get_preimage(leaf_pos).cloned());
+            mmr_batch.del_preimage(leaf_pos);
+        }
+
+        for node_pos in nodes_to_remove {
+            mmr_batch.del_node(node_pos);
+        }
+
+        mmr_batch.set_expected_leaf_count(leaf_count);
+        mmr_batch.set_leaf_count(target_leaf_count);
+
+        self.ops.apply_update_blocking(batch)
+    }
+
     fn pop_leaf_once_blocking(&self) -> DbResult<Option<Hash>> {
         let leaf_count = self.get_leaf_count_blocking()?;
         if leaf_count == 0 {
@@ -361,6 +425,13 @@ impl MmrIndexHandle {
 
     pub fn get_mmr_size_blocking(&self) -> DbResult<u64> {
         Ok(num_leaves_to_mmr_size(self.get_leaf_count_blocking()?))
+    }
+
+    pub async fn get_leaf_count(&self) -> DbResult<u64> {
+        let this = self.clone();
+        spawn_blocking(move || this.get_leaf_count_blocking())
+            .await
+            .map_err(DbError::from)?
     }
 
     /// Reads raw preimage bytes by leaf index.
@@ -550,6 +621,13 @@ impl MmrIndexHandle {
             // always within the list's capacity.
             roots: roots.try_into().expect("MMR has at most 64 peaks"),
         })
+    }
+
+    pub async fn get_state_at(&self, at_leaf_count: u64) -> DbResult<Mmr64B32> {
+        let this = self.clone();
+        spawn_blocking(move || this.get_state_at_blocking(at_leaf_count))
+            .await
+            .map_err(DbError::from)?
     }
 
     pub fn mmr_id(&self) -> &MmrId {
@@ -764,6 +842,207 @@ mod tests {
     }
 
     #[test]
+    fn test_truncate_noops_at_current_leaf_count() {
+        let handle = setup_handle();
+        handle
+            .append_blocking(vec![0x11])
+            .expect("append first preimage");
+        handle
+            .append_blocking(vec![0x22])
+            .expect("append second preimage");
+
+        let before = handle
+            .get_state_at_blocking(2)
+            .expect("state before truncate");
+        handle
+            .truncate_to_leaf_count_blocking(2)
+            .expect("truncate to current count");
+        let after = handle
+            .get_state_at_blocking(2)
+            .expect("state after truncate");
+
+        assert_eq!(before, after);
+        assert_eq!(handle.get_leaf_count_blocking().expect("leaf count"), 2);
+        assert_eq!(handle.get_blocking(0).expect("first preimage"), vec![0x11]);
+        assert_eq!(handle.get_blocking(1).expect("second preimage"), vec![0x22]);
+    }
+
+    #[test]
+    fn test_truncate_rejects_target_above_current_leaf_count() {
+        let handle = setup_handle();
+        handle.append_blocking(vec![0x11]).expect("append preimage");
+
+        let err = handle
+            .truncate_to_leaf_count_blocking(2)
+            .expect_err("target above current count should fail");
+
+        assert!(matches!(
+            err,
+            DbError::MmrIndexOutOfRange {
+                requested: 2,
+                cur: 1
+            }
+        ));
+        assert_eq!(handle.get_leaf_count_blocking().expect("leaf count"), 1);
+        assert!(handle.get_leaf_blocking(0).expect("leaf").is_some());
+    }
+
+    #[test]
+    fn test_truncate_removes_tail_and_preserves_multi_peak_prefix() {
+        let manager = setup_manager();
+        let handle = manager.get_handle(MmrId::Asm);
+        let prefix_handle = manager.get_handle(MmrId::L1BlockRefs);
+        let payloads = (0u8..9).map(|byte| vec![byte]).collect::<Vec<_>>();
+        let target_leaf_count = 6;
+
+        for payload in payloads.iter().cloned() {
+            handle.append_blocking(payload).expect("append full MMR");
+        }
+        for payload in payloads[..target_leaf_count].iter().cloned() {
+            prefix_handle
+                .append_blocking(payload)
+                .expect("append prefix MMR");
+        }
+        let prefix_leaf_hashes = (0..target_leaf_count as u64)
+            .map(|idx| {
+                handle
+                    .get_leaf_blocking(idx)
+                    .expect("read prefix leaf")
+                    .expect("prefix leaf should exist")
+            })
+            .collect::<Vec<_>>();
+
+        handle
+            .truncate_to_leaf_count_blocking(target_leaf_count as u64)
+            .expect("truncate to prefix");
+
+        assert_eq!(
+            handle.get_leaf_count_blocking().expect("leaf count"),
+            target_leaf_count as u64
+        );
+        assert_eq!(
+            handle
+                .get_state_at_blocking(target_leaf_count as u64)
+                .expect("truncated state"),
+            prefix_handle
+                .get_state_at_blocking(target_leaf_count as u64)
+                .expect("fresh prefix state"),
+        );
+        for (idx, expected_hash) in prefix_leaf_hashes.into_iter().enumerate() {
+            assert_eq!(
+                handle
+                    .get_leaf_blocking(idx as u64)
+                    .expect("read preserved leaf"),
+                Some(expected_hash)
+            );
+            assert_eq!(
+                handle
+                    .get_blocking(idx as u64)
+                    .expect("read prefix preimage"),
+                payloads[idx]
+            );
+        }
+        for idx in target_leaf_count..payloads.len() {
+            assert_eq!(
+                handle
+                    .get_leaf_blocking(idx as u64)
+                    .expect("read removed leaf"),
+                None
+            );
+            assert!(matches!(
+                handle.get_blocking(idx as u64),
+                Err(DbError::MmrPayloadNotFound(pos)) if pos == LeafPos::new(idx as u64)
+            ));
+        }
+
+        let next_payload = vec![0xff];
+        handle
+            .append_blocking(next_payload.clone())
+            .expect("append after truncate");
+        prefix_handle
+            .append_blocking(next_payload)
+            .expect("append to fresh prefix");
+        assert_eq!(
+            handle.get_state_at_blocking(7).expect("state after append"),
+            prefix_handle
+                .get_state_at_blocking(7)
+                .expect("fresh prefix after append"),
+        );
+    }
+
+    #[test]
+    fn test_truncate_can_empty_namespace() {
+        let handle = setup_handle();
+        for byte in 0u8..3 {
+            handle.append_blocking(vec![byte]).expect("append preimage");
+        }
+
+        handle
+            .truncate_to_leaf_count_blocking(0)
+            .expect("truncate to empty");
+
+        assert_eq!(handle.get_leaf_count_blocking().expect("leaf count"), 0);
+        assert_eq!(
+            handle.get_state_at_blocking(0).expect("empty state"),
+            Mmr64B32::new_empty(),
+        );
+        assert_eq!(
+            handle.get_leaf_blocking(0).expect("removed first leaf"),
+            None
+        );
+        assert!(matches!(
+            handle.get_blocking(0),
+            Err(DbError::MmrPayloadNotFound(pos)) if pos == LeafPos::new(0)
+        ));
+        assert_eq!(
+            handle
+                .append_blocking(vec![0xaa])
+                .expect("append after empty truncate"),
+            0
+        );
+    }
+
+    #[test]
+    fn test_truncate_handles_hash_only_leaves() {
+        let handle = setup_handle();
+        let hashes = [
+            Hash::from([0x11; 32]),
+            Hash::from([0x22; 32]),
+            Hash::from([0x33; 32]),
+        ];
+
+        for hash in hashes {
+            handle
+                .append_leaf_blocking(hash)
+                .expect("append hash-only leaf");
+        }
+
+        handle
+            .truncate_to_leaf_count_blocking(1)
+            .expect("truncate hash-only leaves");
+
+        assert_eq!(handle.get_leaf_count_blocking().expect("leaf count"), 1);
+        assert_eq!(
+            handle.get_leaf_blocking(0).expect("read preserved leaf"),
+            Some(hashes[0])
+        );
+        assert_eq!(
+            handle.get_leaf_blocking(1).expect("read removed leaf"),
+            None
+        );
+        assert!(matches!(
+            handle.get_blocking(0),
+            Err(DbError::MmrPayloadNotFound(pos)) if pos == LeafPos::new(0)
+        ));
+        assert_eq!(
+            handle
+                .append_leaf_blocking(Hash::from([0x44; 32]))
+                .expect("append after hash-only truncate"),
+            1
+        );
+    }
+
+    #[test]
     fn test_range_read_returns_contiguous_preimages() {
         let handle = setup_handle();
         let payloads = [vec![0x11], vec![0x22], vec![0x33]];
@@ -779,6 +1058,40 @@ mod tests {
         assert_eq!(
             handle.get_range_blocking(1, 2).expect("get single range"),
             vec![payloads[1].clone()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_async_range_read_returns_contiguous_preimages() {
+        let handle = setup_handle();
+        let payloads = [vec![0xaa], vec![0xbb]];
+
+        for payload in payloads.iter().cloned() {
+            handle.append_blocking(payload).expect("append preimage");
+        }
+
+        assert_eq!(
+            handle.get_range(0, 2).await.expect("get async range"),
+            payloads
+        );
+    }
+
+    #[tokio::test]
+    async fn test_async_state_read_matches_blocking_read_for_multi_peak_mmr() {
+        let handle = setup_handle();
+        for payload in (0u8..6).map(|byte| vec![byte]) {
+            handle.append_blocking(payload).expect("append preimage");
+        }
+
+        assert_eq!(
+            handle.get_leaf_count().await.expect("async leaf count"),
+            handle
+                .get_leaf_count_blocking()
+                .expect("blocking leaf count")
+        );
+        assert_eq!(
+            handle.get_state_at(6).await.expect("async state"),
+            handle.get_state_at_blocking(6).expect("blocking state"),
         );
     }
 

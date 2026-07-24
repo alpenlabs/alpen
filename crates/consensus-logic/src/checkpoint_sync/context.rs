@@ -85,4 +85,7 @@ pub trait CheckpointSyncCtx: Send + Sync + 'static {
 
     /// Publishes an OL sync status update to the status channel.
     fn publish_ol_sync_status(&self, status: OLSyncStatus);
+
+    /// Reconciles OL-owned MMR indexes before checkpoint sync resumes.
+    fn reconcile_ol_mmr_index(&self) -> impl Future<Output = CheckpointSyncResult<()>> + Send;
 }

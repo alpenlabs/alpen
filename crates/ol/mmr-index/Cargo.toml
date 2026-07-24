@@ -1,0 +1,21 @@
+[package]
+name = "strata-ol-mmr-index"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-acct-types.workspace = true
+strata-db-types.workspace = true
+strata-identifiers.workspace = true
+strata-ledger-types.workspace = true
+strata-merkle = { workspace = true, features = ["ssz"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-state-support-types.workspace = true
+strata-ol-state-types.workspace = true
+strata-predicate.workspace = true
+
+[lints]
+workspace = true

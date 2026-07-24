@@ -1,7 +1,12 @@
-use std::{collections::VecDeque, iter, mem, sync::Arc, time};
+use std::{
+    collections::{BTreeSet, VecDeque},
+    iter, mem,
+    sync::Arc,
+    time,
+};
 
 use metrics::{counter, gauge};
-use strata_identifiers::Slot;
+use strata_identifiers::{Epoch, Slot};
 use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
@@ -12,6 +17,7 @@ use tracing::{debug, warn};
 use crate::{
     errors::Error,
     fcm::context::{FcmContext, FcmStorage},
+    ol_mmr_reconcile::OLMmrReconcileTarget,
     unfinalized_tracker::UnfinalizedBlockTracker,
 };
 
@@ -304,12 +310,29 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     // Update the canonical blocks index just in case this might have drifted during the restarts.
     reconcile_canonical_blocks_index(&chain_tracker, cur_tip_block, fcm_ctx.as_ref()).await?;
 
-    // Load in that block's ol_state.
-    let tip_blkid = cur_tip_block;
-    let ol_state = fcm_ctx
-        .get_toplevel_ol_state(tip_blkid)
+    // Load in that block's OL state and header-derived epoch.
+    let tip_commitment = cur_tip_block;
+    let tip_header = fcm_ctx
+        .get_ol_header(*tip_commitment.blkid())
         .await?
-        .ok_or(Error::MissingOLState(tip_blkid))?;
+        .ok_or(Error::MissingOLBlock(*tip_commitment.blkid()))?;
+    let tip_epoch = tip_header.epoch();
+    let ol_state = fcm_ctx
+        .get_toplevel_ol_state(tip_commitment)
+        .await?
+        .ok_or(Error::MissingOLState(tip_commitment))?;
+    let rejected_indexing_blocks =
+        collect_rejected_indexing_blocks_for_target(cur_tip_block, tip_epoch, fcm_ctx.as_ref())
+            .await?;
+
+    fcm_ctx
+        .reconcile_ol_mmr_index(OLMmrReconcileTarget::new(
+            cur_tip_block,
+            tip_epoch,
+            ol_state.clone(),
+            rejected_indexing_blocks,
+        ))
+        .await?;
 
     let fcm_inner = FcmInnerState::new(
         chain_tracker,
@@ -381,6 +404,76 @@ pub(crate) async fn reconcile_canonical_blocks_index(
         .replace_canonical_suffix_from(start_slot, canon_blocks)
         .await?;
     Ok(())
+}
+
+/// Finds block-attributed OL state-indexing rows rejected by the selected target.
+///
+/// FCM calls this after repairing the canonical block index. Each target-epoch
+/// slot on the selected chain must match the repaired canonical row; stored
+/// blocks at those slots that are not canonical are rejected by the target.
+async fn collect_rejected_indexing_blocks_for_target(
+    target_block: OLBlockCommitment,
+    target_epoch: Epoch,
+    storage: &(impl FcmStorage + ?Sized),
+) -> Result<BTreeSet<OLBlockCommitment>, Error> {
+    let target_epoch_block_commitments =
+        collect_target_epoch_block_commitments_from_tip(target_block, target_epoch, storage)
+            .await?;
+    let mut rejected_blocks = BTreeSet::new();
+
+    for target_epoch_block in target_epoch_block_commitments {
+        let slot = target_epoch_block.slot();
+        let canonical_block = storage
+            .get_canonical_block_at(slot)
+            .await?
+            .ok_or_else(|| Error::Other(format!("missing canonical OL block at slot {slot}")))?;
+        if canonical_block != target_epoch_block {
+            return Err(Error::Other(format!(
+                "canonical OL block {canonical_block} at slot {slot} does not match target chain block {target_epoch_block}"
+            )));
+        }
+
+        for blkid in storage.get_blocks_at_height(slot).await? {
+            let block = OLBlockCommitment::new(slot, blkid);
+            if block != canonical_block {
+                rejected_blocks.insert(block);
+            }
+        }
+    }
+
+    Ok(rejected_blocks)
+}
+
+/// Walks the selected target chain through the target epoch.
+async fn collect_target_epoch_block_commitments_from_tip(
+    target_block: OLBlockCommitment,
+    target_epoch: Epoch,
+    storage: &(impl FcmStorage + ?Sized),
+) -> Result<Vec<OLBlockCommitment>, Error> {
+    let mut block_commitments = Vec::new();
+    let mut blkid = *target_block.blkid();
+    let mut child_slot = None;
+
+    loop {
+        let header = storage
+            .get_ol_header(blkid)
+            .await?
+            .ok_or(Error::MissingOLBlock(blkid))?;
+        ensure_parent_slot_descends(header.slot(), child_slot, target_block)?;
+        if header.epoch() != target_epoch {
+            break;
+        }
+
+        let commitment = OLBlockCommitment::new(header.slot(), blkid);
+        block_commitments.push(commitment);
+        if header.slot() == 0 {
+            break;
+        }
+        child_slot = Some(header.slot());
+        blkid = *header.parent_blkid();
+    }
+
+    Ok(block_commitments)
 }
 
 /// Walks from `tip` toward the finalized tip until it reaches the first block

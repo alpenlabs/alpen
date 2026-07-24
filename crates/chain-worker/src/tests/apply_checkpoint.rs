@@ -604,9 +604,8 @@ mod db_idempotency {
 
     use super::{EpochCommitment, build_epoch, mock_for};
     use crate::{
-        context::{
-            build_checkpoint_indexing_writes, index_mmr_writes, prefill_l1_block_refs_mmr_blocking,
-        },
+        context::{build_checkpoint_indexing_writes, index_mmr_writes},
+        prefill_l1_block_refs_mmr_blocking,
         state::{AppliedEpochArtifacts, apply_checkpoint_epoch},
         tests::fixture::EpochShape,
     };
