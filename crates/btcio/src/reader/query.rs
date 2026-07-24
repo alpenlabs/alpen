@@ -93,6 +93,14 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
+    // Keep twice the safe depth so startup can recover a crash near the tip.
+    reconcile_unmaterialized_canonical_tip(
+        storage.as_ref(),
+        btcio_params.genesis_l1_height(),
+        btcio_params.l1_reorg_safe_depth() as L1Height * 2,
+    )
+    .await?;
+
     let target_next_block =
         calculate_target_next_block(storage.as_ref(), btcio_params.genesis_l1_height()).await?;
 
@@ -121,6 +129,53 @@ async fn calculate_target_next_block(
         .unwrap_or(genesis_l1_height);
     let target_next_block = stored_l1_target.max(genesis_l1_height);
     Ok(target_next_block)
+}
+
+/// Reverts canonical entries that have not been materialized into ASM state.
+async fn reconcile_unmaterialized_canonical_tip(
+    storage: &NodeStorage,
+    genesis_l1_height: L1Height,
+    reorg_lookback: L1Height,
+) -> anyhow::Result<()> {
+    let Some((tip_height, _)) = storage.l1().get_canonical_chain_tip_async().await? else {
+        return Ok(());
+    };
+
+    if tip_height < genesis_l1_height {
+        return Ok(());
+    }
+
+    let earliest_height = tip_height
+        .saturating_sub(reorg_lookback)
+        .max(genesis_l1_height);
+    let mut height = tip_height;
+    loop {
+        let blockid = storage
+            .l1()
+            .get_canonical_blockid_at_height_async(height)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("missing canonical L1 block at height {height}"))?;
+        let block = L1BlockCommitment::new(height, blockid);
+
+        if storage.asm().get_state_async(block).await?.is_some() {
+            if height < tip_height {
+                storage.l1().revert_canonical_chain_async(height).await?;
+                info!(
+                    from_height = tip_height,
+                    to_height = height,
+                    "reverted unmaterialized canonical L1 entries for ASM replay"
+                );
+            }
+            return Ok(());
+        }
+
+        if height == earliest_height {
+            bail!(
+                "no ASM anchor state found for canonical L1 heights {earliest_height} through {tip_height}; refusing to resume beyond the reorg lookback window"
+            );
+        }
+        height = height.saturating_sub(1);
+    }
 }
 
 /// Inner function that actually does the reading task.
@@ -583,12 +638,15 @@ mod tests {
         error::ClientError,
         ClientResult,
     };
+    use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
+    use strata_btc_verification::L1Anchor;
     use strata_config::btcio::ReaderConfig;
     use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
     use strata_db_store_sled::{test_utils::get_test_sled_backend, SledBackend};
     use strata_db_types::{backend::DatabaseBackend, l1::L1Database};
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
+    use strata_state::asm_state::AsmState;
     use strata_status::StatusChannel;
     use strata_storage::{create_node_storage, test_runtime_handle, NodeStorage};
 
@@ -771,6 +829,27 @@ mod tests {
             .expect("test: extend canonical chain");
     }
 
+    async fn store_asm_state(storage: &NodeStorage, block: L1BlockCommitment) {
+        let anchor = L1Anchor {
+            block: L1BlockCommitment::default(),
+            next_target: 0,
+            epoch_start_timestamp: 0,
+            network: Network::Regtest,
+        };
+        let state = AnchorState {
+            magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
+            chain_view: ChainViewState {
+                pow_state: strata_asm_common::HeaderVerificationState::init(anchor),
+                history_accumulator: AsmHistoryAccumulatorState::new(0),
+            },
+            sections: Default::default(),
+        };
+        storage
+            .asm()
+            .put_state_blocking(block, AsmState::new(state, vec![]))
+            .expect("test: store ASM state");
+    }
+
     fn block_hash(byte: u8) -> BlockHash {
         BlockHash::from_byte_array([byte; 32])
     }
@@ -855,6 +934,7 @@ mod tests {
     async fn calculate_target_next_block_uses_stored_l1_tip() {
         let storage = test_storage();
         store_l1_canonical(&storage, 100).await;
+        store_asm_state(&storage, l1_block(100)).await;
 
         let target = calculate_target_next_block(&storage, 42)
             .await
@@ -892,12 +972,53 @@ mod tests {
         let storage = test_storage();
         store_client_state(&storage, 100).await;
         store_l1_canonical(&storage, 111).await;
+        store_asm_state(&storage, l1_block(111)).await;
 
         let target = calculate_target_next_block(&storage, 42)
             .await
             .expect("test: target block");
 
         assert_eq!(target, 112);
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_rewinds_unmaterialized_tip() {
+        let storage = test_storage();
+        for height in 42..=44 {
+            store_l1_canonical(&storage, height).await;
+        }
+        store_asm_state(&storage, l1_block(42)).await;
+
+        reconcile_unmaterialized_canonical_tip(&storage, 42, 12)
+            .await
+            .expect("test: reconcile tip");
+        let target = calculate_target_next_block(&storage, 42)
+            .await
+            .expect("test: target block");
+
+        assert_eq!(target, 43);
+        assert_eq!(
+            storage
+                .l1()
+                .get_canonical_chain_tip_async()
+                .await
+                .expect("test: tip"),
+            Some((42, L1BlockId::default()))
+        );
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_errors_without_anchor_in_lookback() {
+        let storage = test_storage();
+        for height in 42..=44 {
+            store_l1_canonical(&storage, height).await;
+        }
+
+        let err = reconcile_unmaterialized_canonical_tip(&storage, 42, 2)
+            .await
+            .expect_err("test: missing ASM anchor should fail");
+
+        assert!(err.to_string().contains("no ASM anchor state found"));
     }
 
     #[tokio::test]
