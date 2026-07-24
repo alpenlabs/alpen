@@ -10,7 +10,7 @@ pub use managers::checkpoint_proof::CheckpointProofDbManager;
 pub use managers::client_state::ClientStateManager;
 pub use managers::l1::L1BlockManager;
 pub use managers::mempool::MempoolDbManager;
-pub use managers::mmr_index::{MmrAppendRequest, MmrIndexHandle, MmrIndexManager, MmrStateView};
+pub use managers::mmr_index::{MmrIndexHandle, MmrIndexManager, MmrStateView};
 pub use managers::ol::OLBlockManager;
 pub use managers::ol_checkpoint::OLCheckpointManager;
 pub use managers::ol_state::OLStateManager;

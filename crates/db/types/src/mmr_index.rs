@@ -623,7 +623,6 @@ mod mmr_math_tests {
     };
 
     use super::num_leaves_to_mmr_size;
-    use crate::errors::MmrError;
 
     fn leaf_index_to_pos(index: u64) -> u64 {
         debug_assert!(index < u64::MAX, "leaf_index_to_pos index overflow");
@@ -707,14 +706,10 @@ mod mmr_math_tests {
         peaks
     }
 
-    fn find_peak_for_pos(pos: u64, max_size: u64) -> Result<u64, MmrError> {
-        let peaks = get_peaks(max_size);
-        for &peak_pos in &peaks {
-            if pos <= peak_pos {
-                return Ok(peak_pos);
-            }
-        }
-        Err(MmrError::PositionOutOfBounds { pos, max_size })
+    fn find_peak_for_pos(pos: u64, max_size: u64) -> Option<u64> {
+        get_peaks(max_size)
+            .into_iter()
+            .find(|&peak_pos| pos <= peak_pos)
     }
 
     #[test]
