@@ -21,7 +21,7 @@ from common.wait import wait_until_with_value
 logger = logging.getLogger(__name__)
 
 # Number of epochs with real account activity to compare between the two nodes.
-EPOCHS_WITH_ACTIVITY_TO_CHECK = 2
+EPOCHS_WITH_ACTIVITY_TO_CHECK = 5
 # Cap on how many epochs to walk while looking for activity.
 MAX_EPOCHS_TO_SCAN = 30
 
@@ -86,6 +86,10 @@ class TestCheckpointSyncNode(BaseTest):
             timeout=120,
         )
 
+        check_top_level_state_equivalent(
+            sequencer.get_sync_status(), checkpoint_node.get_sync_status()
+        )
+
         # Each active epoch's reconstructed account summary must be identical to
         # the sequencer's, including the non-empty update inputs.
         seq_rpc = sequencer.create_rpc()
@@ -95,6 +99,26 @@ class TestCheckpointSyncNode(BaseTest):
             check_summaries_equivalent(seq_summary, node_summary)
             check_commitment_matches_checkpoint(seq_rpc, epoch, node_summary["epoch_commitment"])
             logger.info(f"account epoch summary matches at epoch {epoch}")
+
+
+def check_top_level_state_equivalent(
+    seq_status: ChainSyncStatus, node_status: ChainSyncStatus
+):
+    """Checks CSS's top-level state at the shared finalized checkpoint."""
+    assert node_status["finalized"] == seq_status["finalized"], (
+        "checkpoint-sync finalized commitment differs from sequencer: "
+        f"css={node_status['finalized']} sequencer={seq_status['finalized']}"
+    )
+
+    finalized = node_status["finalized"]
+    assert node_status["confirmed"] == finalized
+    assert node_status["latest"] == finalized
+    assert node_status["tip"] == {
+        "epoch": finalized["epoch"],
+        "slot": finalized["last_slot"],
+        "blkid": finalized["last_blkid"],
+        "is_terminal": True,
+    }
 
 
 def check_summaries_equivalent(seq_summary: AccountEpochSummary, node_summary: AccountEpochSummary):

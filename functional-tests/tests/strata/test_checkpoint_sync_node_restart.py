@@ -22,6 +22,8 @@ from tests.dbtool.helpers import get_mmr_leaf_count, load_genesis_height, run_db
 logger = logging.getLogger(__name__)
 
 L1_BLOCK_REFS_MMR_ID = "l1-block-refs"
+# CSS must reconstruct this many finalized epochs after its restart.
+EPOCHS_TO_BACKFILL_AFTER_RESTART = 5
 
 
 def mine_and_get_status(strata: StrataService, btc_rpc) -> ChainSyncStatus:
@@ -38,10 +40,12 @@ class TestCheckpointSyncNodeRestart(BaseTest):
         ctx.set_env("el_ol_checkpoint_sync")
 
     def main(self, ctx):
+        sequencer: StrataService = self.get_service(ServiceType.Strata)
         checkpoint_node: StrataService = self.get_service(ServiceType.StrataCheckpointNode)
         bitcoin: BitcoinService = self.get_service(ServiceType.Bitcoin)
         btc_rpc = bitcoin.create_rpc()
 
+        sequencer.wait_for_rpc_ready(timeout=20)
         checkpoint_node.wait_for_rpc_ready(timeout=20)
 
         # First get checkpoint node to sync up to first checkpoint.
@@ -57,7 +61,10 @@ class TestCheckpointSyncNodeRestart(BaseTest):
         # Now restart. The node is stopped while dbtool observes the MMR index
         # because the live process owns the sled databases.
         datadir = checkpoint_node.props["datadir"]
-        checkpoint_node.stop()
+        # Stop CSS while the sequencer finalizes a multi-epoch backlog. The
+        # node is stopped while dbtool observes the MMR index because the live
+        # process owns the sled databases.
+        datadir = checkpoint_node.props["datadir"]
         genesis_l1_height = load_genesis_height(datadir)
         genesis_l1_leaf_count = genesis_l1_height + 1
         expected_l1_count = self._epoch_summary_l1_block_refs_count(datadir, finalized_epoch)
@@ -71,6 +78,19 @@ class TestCheckpointSyncNodeRestart(BaseTest):
             f"before restart ({pre_restart_l1_count} != {expected_l1_count})"
         )
 
+        checkpoint_node.stop()
+        target_epoch = finalized_epoch + EPOCHS_TO_BACKFILL_AFTER_RESTART
+        backlog_status = wait_until_with_value(
+            lambda: mine_and_get_status(sequencer, btc_rpc),
+            lambda st: st["finalized"]["epoch"] >= target_epoch,
+            error_with=(
+                "sequencer did not finalize the checkpoint backlog while CSS was stopped"
+            ),
+            timeout=180,
+        )
+
+        # Restart CSS with its existing datadir; it must reconstruct every
+        # finalized epoch accumulated while it was offline.
         checkpoint_node.start()
         checkpoint_node.wait_for_rpc_ready(timeout=30)
 
@@ -78,21 +98,16 @@ class TestCheckpointSyncNodeRestart(BaseTest):
         tip_slot = post_restart_status["tip"]["slot"]
         logger.info(f"checkpoint-sync node restarted; canonical tip at slot {tip_slot}")
 
-        checkpoint_node.stop()
-        restarted_l1_count = get_mmr_leaf_count(datadir, L1_BLOCK_REFS_MMR_ID)
-        assert restarted_l1_count == expected_l1_count, (
-            f"checkpoint-sync L1 refs MMR should match epoch {finalized_epoch} summary "
-            f"after restart ({restarted_l1_count} != {expected_l1_count})"
+        resumed_status = wait_until_with_value(
+            checkpoint_node.get_sync_status,
+            lambda st: st["finalized"]["epoch"] >= target_epoch,
+            error_with="checkpoint-sync node did not resume the finalized checkpoint backlog",
+            timeout=180,
         )
-        checkpoint_node.start()
-        checkpoint_node.wait_for_rpc_ready(timeout=30)
-
-        # Require a strictly new finalization after restart.
-        wait_until_with_value(
-            lambda: mine_and_get_status(checkpoint_node, btc_rpc),
-            lambda st: st["finalized"]["epoch"] > finalized_epoch,
-            error_with="checkpoint-sync node did not finalize a new epoch after restart",
-            timeout=120,
+        assert resumed_status["finalized"] == backlog_status["finalized"], (
+            "checkpoint-sync finalized commitment differs after restart: "
+            f"css={resumed_status['finalized']} "
+            f"sequencer={backlog_status['finalized']}"
         )
 
         checkpoint_node.stop()
