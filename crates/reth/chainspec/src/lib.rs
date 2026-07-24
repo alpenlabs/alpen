@@ -13,7 +13,7 @@ pub const DEV_CHAIN_SPEC: &str = include_str!("res/alpen-dev-chain.json");
 pub const TESTNET3_CHAIN_SPEC: &str = include_str!("res/testnet3-chain.json");
 
 /// Genesis block data that must match the Alpen EE params file.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlpenEeGenesisBlockInfo {
     blockhash: B256,
     stateroot: B256,
@@ -84,10 +84,7 @@ pub fn ee_genesis_block_info(chain_spec: &ChainSpec) -> AlpenEeGenesisBlockInfo 
     let genesis_header = chain_spec.genesis_header();
     let genesis_stateroot = genesis_header.state_root;
     let genesis_hash = chain_spec.genesis_hash();
-    let genesis_blocknum = chain_spec
-        .genesis()
-        .number
-        .expect("genesis block number should be present");
+    let genesis_blocknum = genesis_header.number;
 
     AlpenEeGenesisBlockInfo {
         blockhash: genesis_hash,

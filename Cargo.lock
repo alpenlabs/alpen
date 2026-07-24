@@ -1385,6 +1385,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-params"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-genesis",
+ "alpen-chainspec",
+ "reth-chainspec",
+ "serde",
+ "serde_json",
+ "strata-acct-types",
+ "strata-bridge-params",
+ "strata-l1-txfmt",
+]
+
+[[package]]
 name = "alpen-ee-rpc-api"
 version = "0.3.0-alpha.1"
 dependencies = [
