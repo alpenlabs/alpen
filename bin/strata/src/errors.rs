@@ -4,6 +4,7 @@ use std::{io, path};
 
 use format_serde_error::SerdeError;
 use strata_db_types::DbError;
+use strata_primitives::OLBlockCommitment;
 use thiserror::Error;
 use toml::de;
 
@@ -38,6 +39,9 @@ pub(crate) enum InitError {
 
     #[error("missing genesis epoch commitment after OL genesis initialization")]
     MissingGenesisEpochCommitment,
+
+    #[error("missing OL tip header for {0}")]
+    MissingOLTipHeader(OLBlockCommitment),
 
     #[error("missing sequencer config file: {0}")]
     MissingSequencerConfig(path::PathBuf),

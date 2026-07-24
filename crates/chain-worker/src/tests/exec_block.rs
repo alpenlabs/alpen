@@ -91,6 +91,10 @@ impl ChainWorkerContext for OrderEnforcingContext {
         Ok(())
     }
 
+    fn store_terminal_header(&self, _id: OLBlockId, _header: OLBlockHeader) -> WorkerResult<()> {
+        unimplemented!("not used by exec_block")
+    }
+
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()> {
         let commitment = summary.get_epoch_commitment();
         let epoch = commitment.epoch();

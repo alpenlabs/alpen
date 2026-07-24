@@ -13,6 +13,7 @@ use alpen_ee_database::{EeNodeStorage, EeProverDbSled};
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_store_sled::{chunked_envelope::L1ChunkedEnvelopeDBSled, SledBackend};
 use strata_db_types::backend::DatabaseBackend;
+use strata_storage::{create_node_storage, NodeStorage};
 use tokio::runtime::Builder;
 use tracing_subscriber::fmt::init;
 
@@ -43,6 +44,7 @@ use crate::{
             get_prover_tasks_summary, reset_prover_task,
         },
         syncinfo::get_syncinfo,
+        terminal_header::backfill_terminal_headers,
         writer::{get_writer_payload, get_writer_summary},
     },
     db::{
@@ -88,6 +90,9 @@ fn main() {
         }
         Command::GetEpochSummary(args) => with_ol_db(&datadir, |db| get_epoch_summary(db, args)),
         Command::GetSyncinfo(args) => with_ol_db(&datadir, |db| get_syncinfo(db, args)),
+        Command::BackfillTerminalHeaders(args) => {
+            with_ol_storage(&datadir, |storage| backfill_terminal_headers(storage, args))
+        }
         Command::GetClientStateUpdate(args) => {
             with_ol_db(&datadir, |db| get_client_state_update(db, args))
         }
@@ -158,6 +163,32 @@ fn main() {
         eprintln!("{e}");
         exit(1);
     }
+}
+
+/// Opens the OL sled and constructs the storage managers needed by maintenance commands.
+fn with_ol_storage<F, R>(datadir: &Path, f: F) -> R
+where
+    F: FnOnce(&NodeStorage) -> R,
+{
+    let rt = Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .internal_error("Could not initialize dbtool Tokio runtime")
+        .unwrap_or_else(|e: DisplayedError| {
+            eprintln!("{e}");
+            exit(1);
+        });
+    let db = open_database(datadir).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        exit(1);
+    });
+    let storage = create_node_storage(db, rt.handle().clone())
+        .internal_error("Could not initialize OL storage managers")
+        .unwrap_or_else(|e: DisplayedError| {
+            eprintln!("{e}");
+            exit(1);
+        });
+    f(&storage)
 }
 
 /// Opens the OL sled at `datadir` and runs `f` against it.

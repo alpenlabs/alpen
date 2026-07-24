@@ -79,6 +79,10 @@ class StrataFactory(flexitest.Factory):
         ol_block_time_ms: int | None = None,
         shared_params: "StrataNodeParams | None" = None,
         l1_reorg_safe_depth: int | None = None,
+        existing_datadir: Path | str | None = None,
+        extra_args: list[str] | None = None,
+        auto_start: bool = True,
+        service_type: ServiceType | None = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -101,6 +105,12 @@ class StrataFactory(flexitest.Factory):
             l1_reorg_safe_depth: Optional btcio L1 reorg-safe depth. Pin this in tests
                 whose behavior depends on the buried-manifest cutoff so they do not
                 break when the global default changes.
+            existing_datadir: Reuse an existing node datadir instead of creating one.
+                Existing parameter files are preserved unless shared_params is provided.
+            extra_args: Extra command-line arguments appended to the node command.
+            auto_start: Start the service before returning it. Set False to provision a
+                dormant service that a test starts later.
+            service_type: Optional distinct service label used for its directory and logs.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -109,7 +119,15 @@ class StrataFactory(flexitest.Factory):
             config_overrides = dict()
 
         mode = "sequencer" if is_sequencer else "fullnode"
-        datadir = Path(ctx.make_service_dir(f"{ServiceType.Strata}_{mode}"))
+        service_name = (
+            str(service_type) if service_type is not None else f"{ServiceType.Strata}_{mode}"
+        )
+        if existing_datadir is None:
+            datadir = Path(ctx.make_service_dir(service_name))
+        else:
+            datadir = Path(existing_datadir)
+            if not datadir.is_dir():
+                raise ValueError(f"existing Strata datadir does not exist: {datadir}")
         rpc_port = self.next_port()
         rpc_host = "127.0.0.1"
         admin_rpc_port = self.next_port()
@@ -118,7 +136,7 @@ class StrataFactory(flexitest.Factory):
         submit_rpc_port = self.next_port()
         submit_rpc_host = "127.0.0.1"
         submit_rpc_token = "test-submit-token"
-        logfile = datadir / "service.log"
+        logfile = datadir / ("service.log" if existing_datadir is None else f"{service_name}.log")
 
         # Create config
         client_config = ClientConfig(
@@ -167,13 +185,32 @@ class StrataFactory(flexitest.Factory):
             with open(sequencer_config_path, "w") as f:
                 f.write(sequencer_runtime_config.as_toml_string())
 
+        seq_key_path: Path | None = None
         if shared_params is not None:
             ee_params_path = datadir / "ee-params.json"
             ol_params_path = datadir / "ol-params.json"
             asm_params_path = datadir / "asm-params.json"
-            shutil.copyfile(shared_params.ee_params, ee_params_path)
-            shutil.copyfile(shared_params.ol_params, ol_params_path)
-            shutil.copyfile(shared_params.asm_params, asm_params_path)
+            for source, destination in (
+                (shared_params.ee_params, ee_params_path),
+                (shared_params.ol_params, ol_params_path),
+                (shared_params.asm_params, asm_params_path),
+            ):
+                if source.resolve() != destination.resolve():
+                    shutil.copyfile(source, destination)
+        elif existing_datadir is not None:
+            ee_params_path = datadir / "ee-params.json"
+            ol_params_path = datadir / "ol-params.json"
+            asm_params_path = datadir / "asm-params.json"
+            missing_params = [
+                path
+                for path in (ee_params_path, ol_params_path, asm_params_path)
+                if not path.is_file()
+            ]
+            if missing_params:
+                raise ValueError(
+                    "existing Strata datadir is missing parameter files: "
+                    + ", ".join(str(path) for path in missing_params)
+                )
         else:
             # Generate the sequencer key + operator pubkeys consumed when building ASM params.
             seq_artifacts = generate_sequencer_artifacts(datadir, use_unchecked_cred_rule)
@@ -201,6 +238,8 @@ class StrataFactory(flexitest.Factory):
                 sequencer_pubkey=seq_artifacts.sequencer_pubkey,
                 admin_confirmation_depth=admin_confirmation_depth,
             )
+            if is_sequencer:
+                seq_key_path = seq_artifacts.sequencer_key_path
 
         node_params = StrataNodeParams(
             ee_params=ee_params_path,
@@ -246,6 +285,9 @@ class StrataFactory(flexitest.Factory):
                 ]
             )
 
+        if extra_args:
+            cmd.extend(extra_args)
+
         # Add config overrides
         if config_overrides:
             for key, value in config_overrides.items():
@@ -279,25 +321,24 @@ class StrataFactory(flexitest.Factory):
             "datadir": str(datadir),
             "mode": mode,
             "slots_per_epoch": resolved_slots_per_epoch,
+            "sequencer_key_path": str(seq_key_path) if seq_key_path is not None else None,
         }
 
         svc = StrataService(
             props,
             cmd,
             stdout=str(logfile),
-            name=f"{ServiceType.Strata}_{mode}",
+            name=service_name,
             env=process_env,
         )
         svc.stop_timeout = 30
-        try:
-            svc.start()
-        except Exception as e:
-            # Ensure cleanup on failure to prevent resource leaks
-            with contextlib.suppress(Exception):
-                svc.stop()
-            raise RuntimeError(f"Failed to start strata service ({mode}): {e}") from e
+        if auto_start:
+            try:
+                svc.start()
+            except Exception as e:
+                # Ensure cleanup on failure to prevent resource leaks
+                with contextlib.suppress(Exception):
+                    svc.stop()
+                raise RuntimeError(f"Failed to start strata service ({mode}): {e}") from e
 
-        seq_key_path = (
-            seq_artifacts.sequencer_key_path if is_sequencer and shared_params is None else None
-        )
         return CreateNodeResult(svc, seq_key_path, node_params, genesis_l1_height)

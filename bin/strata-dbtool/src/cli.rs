@@ -31,6 +31,7 @@ use crate::cmd::{
         GetProverTasksSummaryArgs, ResetProverTaskArgs,
     },
     syncinfo::GetSyncinfoArgs,
+    terminal_header::BackfillTerminalHeadersArgs,
     writer::{GetWriterPayloadArgs, GetWriterSummaryArgs},
 };
 
@@ -70,6 +71,7 @@ pub(crate) enum Command {
     GetCheckpointsSummary(GetCheckpointsSummaryArgs),
     GetEpochSummary(GetEpochSummaryArgs),
     GetSyncinfo(GetSyncinfoArgs),
+    BackfillTerminalHeaders(BackfillTerminalHeadersArgs),
     GetOLState(GetOLStateArgs),
     RevertOLState(RevertOLStateArgs),
     GetProverTask(GetProverTaskArgs),

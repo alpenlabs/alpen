@@ -48,6 +48,9 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
     /// Get the last checkpointed payload commitment, if any.
     fn get_last_checkpoint_payload_epoch(&self) -> anyhow::Result<Option<EpochCommitment>>;
 
+    /// Get the epoch at the base of locally available OL block history, if any.
+    fn get_history_base_epoch(&self) -> anyhow::Result<Option<Epoch>>;
+
     /// Store a checkpoint payload entry for the given epoch commitment.
     fn put_checkpoint_payload(
         &self,
@@ -237,6 +240,14 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .map_err(Into::into)
     }
 
+    fn get_history_base_epoch(&self) -> anyhow::Result<Option<Epoch>> {
+        self.storage
+            .ol_block()
+            .get_history_base_blocking()
+            .map(|commitment| commitment.map(|commitment| commitment.epoch()))
+            .map_err(Into::into)
+    }
+
     fn put_checkpoint_payload(
         &self,
         commitment: EpochCommitment,
@@ -286,11 +297,10 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         &self,
         terminal: &OLBlockCommitment,
     ) -> anyhow::Result<Option<OLBlockHeader>> {
-        let maybe_block = self
-            .storage
+        self.storage
             .ol_block()
-            .get_block_data_blocking(*terminal.blkid())?;
-        Ok(maybe_block.map(|block| block.header().clone()))
+            .get_ol_header_blocking(*terminal.blkid())
+            .map_err(Into::into)
     }
 
     fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlock>> {
@@ -432,4 +442,52 @@ fn collect_epoch_blocks<C: CheckpointWorkerContext>(
     let blocks =
         NonEmptyVec::try_from_vec(blocks).map_err(|_| anyhow::anyhow!("Non-empty epoch blocks"))?;
     Ok(blocks)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_identifiers::{Buf32, OLBlockId};
+    use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
+    use strata_storage::create_node_storage;
+
+    use super::{CheckpointWorkerContext, CheckpointWorkerContextImpl};
+
+    #[test]
+    fn production_context_gets_header_from_terminal_header_record() {
+        let storage = Arc::new(
+            create_node_storage(
+                get_test_sled_backend(),
+                strata_storage::test_runtime_handle(),
+            )
+            .expect("create test storage"),
+        );
+        let mut flags = BlockFlags::zero();
+        flags.set_is_terminal(true);
+        let header = OLBlockHeader::new(
+            1_000,
+            flags,
+            9,
+            3,
+            OLBlockId::from(Buf32::zero()),
+            Buf32::from([1; 32]),
+            Buf32::from([2; 32]),
+            Buf32::from([3; 32]),
+        );
+        let commitment = header.compute_block_commitment();
+        storage
+            .ol_block()
+            .put_terminal_header_blocking(*commitment.blkid(), header.clone())
+            .expect("store terminal header");
+
+        let context = CheckpointWorkerContextImpl::new(storage, Default::default());
+        assert_eq!(
+            context
+                .get_block_header(&commitment)
+                .expect("get block header"),
+            Some(header)
+        );
+    }
 }

@@ -133,6 +133,9 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
     }
 
     fn init_cursor_from_db(&mut self) {
+        let history_base_epoch = self.ctx.get_history_base_epoch().ok().flatten();
+        self.last_processed_epoch = history_base_epoch;
+
         let Ok(Some(last_checkpoint_commitment)) = self.ctx.get_last_checkpoint_payload_epoch()
         else {
             return;
@@ -152,7 +155,11 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
             };
 
             if summary.get_epoch_commitment() == last_checkpoint_commitment {
-                self.last_processed_epoch = Some(last_checkpoint_commitment.epoch());
+                let payload_epoch = last_checkpoint_commitment.epoch();
+                self.last_processed_epoch = Some(
+                    self.last_processed_epoch
+                        .map_or(payload_epoch, |floor| floor.max(payload_epoch)),
+                );
                 break;
             }
         }
@@ -203,13 +210,13 @@ mod tests {
     use proptest::prelude::*;
     use strata_asm_proto_checkpoint_types::{
         CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
-        TerminalHeaderComplement,
+        TerminalHeaderComplement, test_utils::create_test_checkpoint_payload,
     };
     use strata_bridge_params::BridgeParams;
     use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{
-        AccountSerial, Buf64, Epoch, OLBlockCommitment,
+        AccountSerial, Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment,
         test_utils::{
             buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy,
             ol_block_id_strategy,
@@ -338,6 +345,10 @@ mod tests {
             self.inner.get_last_checkpoint_payload_epoch()
         }
 
+        fn get_history_base_epoch(&self) -> anyhow::Result<Option<Epoch>> {
+            self.inner.get_history_base_epoch()
+        }
+
         fn put_checkpoint_payload(
             &self,
             commitment: EpochCommitment,
@@ -371,6 +382,110 @@ mod tests {
         ) -> anyhow::Result<(StateDiffRaw, Vec<OLLog>)> {
             Ok((self.stub_state_diff.clone(), self.stub_ol_logs.clone()))
         }
+    }
+
+    fn create_cursor_test_storage() -> Arc<strata_storage::NodeStorage> {
+        let backend = get_test_sled_backend();
+        Arc::new(
+            create_node_storage(backend, strata_storage::test_runtime_handle())
+                .expect("test storage"),
+        )
+    }
+
+    fn initialize_cursor(
+        storage: Arc<strata_storage::NodeStorage>,
+    ) -> OLCheckpointServiceState<CheckpointWorkerContextImpl> {
+        let ctx = CheckpointWorkerContextImpl::new(storage, BridgeParams::default());
+        let mut state = OLCheckpointServiceState::new(ctx);
+        state.initialize();
+        state
+    }
+
+    fn set_history_base(storage: &strata_storage::NodeStorage, epoch: Epoch) -> EpochCommitment {
+        let commitment = EpochCommitment::new(epoch, u64::from(epoch), OLBlockId::null());
+        storage
+            .ol_block()
+            .promote_to_history_anchor_blocking(commitment)
+            .expect("set history base");
+        commitment
+    }
+
+    fn put_checkpoint_payload(
+        storage: &strata_storage::NodeStorage,
+        epoch: Epoch,
+    ) -> EpochCommitment {
+        let payload = create_test_checkpoint_payload(epoch);
+        let commitment = EpochCommitment::from_terminal(epoch, *payload.new_tip().l2_commitment());
+        let summary = EpochSummary::new(
+            epoch,
+            *payload.new_tip().l2_commitment(),
+            OLBlockCommitment::null(),
+            L1BlockCommitment::new(0, L1BlockId::default()),
+            Buf32::zero(),
+        );
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(summary)
+            .expect("insert epoch summary");
+        storage
+            .ol_checkpoint()
+            .put_checkpoint_payload_entry_blocking(commitment, payload)
+            .expect("put checkpoint payload");
+        commitment
+    }
+
+    #[test]
+    fn init_cursor_without_history_base_or_payload_remains_none() {
+        let state = initialize_cursor(create_cursor_test_storage());
+
+        assert_eq!(state.last_processed_epoch(), None);
+    }
+
+    #[test]
+    fn init_cursor_with_history_base_and_no_payload_uses_floor() {
+        let storage = create_cursor_test_storage();
+        set_history_base(&storage, 5);
+
+        let state = initialize_cursor(storage);
+
+        assert_eq!(state.last_processed_epoch(), Some(5));
+    }
+
+    #[test]
+    fn init_cursor_with_payload_after_history_base_uses_payload() {
+        let storage = create_cursor_test_storage();
+        set_history_base(&storage, 5);
+        put_checkpoint_payload(&storage, 6);
+
+        let state = initialize_cursor(storage);
+
+        assert_eq!(state.last_processed_epoch(), Some(6));
+    }
+
+    #[test]
+    fn init_cursor_with_payload_before_history_base_uses_floor() {
+        let storage = create_cursor_test_storage();
+        put_checkpoint_payload(&storage, 4);
+        set_history_base(&storage, 5);
+
+        let state = initialize_cursor(storage);
+
+        assert_eq!(state.last_processed_epoch(), Some(5));
+    }
+
+    #[test]
+    fn init_cursor_uses_history_base_after_payload_is_deleted() {
+        let storage = create_cursor_test_storage();
+        set_history_base(&storage, 5);
+        let payload_commitment = put_checkpoint_payload(&storage, 6);
+        storage
+            .ol_checkpoint()
+            .del_checkpoint_payload_entry_blocking(payload_commitment)
+            .expect("delete checkpoint payload");
+
+        let state = initialize_cursor(storage);
+
+        assert_eq!(state.last_processed_epoch(), Some(5));
     }
 
     proptest! {

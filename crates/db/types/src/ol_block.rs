@@ -4,8 +4,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
-use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_chain_types::OLBlock;
+use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId, Slot};
+use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 
 #[cfg(feature = "proxies")]
 use crate::DbError;
@@ -25,6 +25,20 @@ pub enum BlockStatus {
     /// Block is invalid, for no particular reason.  We'd have to look somewhere
     /// else for that.
     Invalid,
+}
+
+/// Describes whether a full OL block body is locally readable at a known commitment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BlockAvailability {
+    /// The full OL block is locally available.
+    Available(Box<OLBlock>),
+
+    /// The body is not retained locally because the commitment is at or below the history base
+    /// (pruned or bootstrapped history).
+    Pruned,
+
+    /// The commitment is outside known pruned history and has no local block record.
+    Missing,
 }
 
 /// OL data store for OL blocks. Does not store anything about what we think
@@ -69,6 +83,32 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Retrieves an OL block for a given block ID.
     fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>>;
 
+    /// Stores an unsigned checkpoint terminal [`OLBlockHeader`].
+    ///
+    /// Returns [`DbError::OLTerminalHeaderIdMismatch`] when the header does not compute to `id`.
+    fn put_terminal_header(&self, id: OLBlockId, header: OLBlockHeader) -> DbResult<()>;
+
+    /// Retrieves an unsigned checkpoint terminal [`OLBlockHeader`].
+    fn get_terminal_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>>;
+
+    /// Retrieves an [`OLBlockHeader`] from a full block before consulting terminal headers.
+    fn get_ol_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>>;
+
+    /// Returns the immutable base of locally available full OL block history.
+    ///
+    /// An absent marker means the database retains full history from genesis.
+    fn get_history_base(&self) -> DbResult<Option<EpochCommitment>>;
+
+    /// Classifies full-block availability using the commitment's slot and the history base.
+    fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability>;
+
+    /// Atomically promotes a checkpoint terminal into the canonical OL history anchor.
+    ///
+    /// The operation replaces the canonical suffix from the anchor slot with exactly the anchor
+    /// and writes the history-base marker in the same transaction. Reapplying the same anchor is
+    /// idempotent; a different existing marker returns [`DbError::OLHistoryBaseConflict`].
+    fn promote_to_history_anchor(&self, anchor: EpochCommitment) -> DbResult<()>;
+
     /// Tries to delete an OL block from the store, returning if it really
     /// existed or not.
     fn del_block_data(&self, id: OLBlockId) -> DbResult<bool>;
@@ -81,6 +121,9 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Gets the OL block IDs that we have at some slot, in case there's more
     /// than one on competing forks.
     fn get_blocks_at_height(&self, slot: u64) -> DbResult<Vec<OLBlockId>>;
+
+    /// Returns the highest slot with at least one full OL block record.
+    fn get_highest_block_slot(&self) -> DbResult<Option<Slot>>;
 
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;

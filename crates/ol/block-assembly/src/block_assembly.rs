@@ -144,6 +144,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::UnknownTemplateId(_)
         | BlockAssemblyError::TimestampTooEarly(_)
         | BlockAssemblyError::BlockNotFound(_)
+        | BlockAssemblyError::HeaderNotFound(_)
         | BlockAssemblyError::ParentStateNotFound(_)
         | BlockAssemblyError::GenesisEpochNoBoundary
         | BlockAssemblyError::InvalidEpochBoundary { .. }
@@ -301,18 +302,17 @@ where
         "construct_block called with null parent - genesis must be built via init_ol_genesis"
     );
 
-    // Fetch parent block using BlockAssemblyAnchorContext trait
+    // Fetch parent header using BlockAssemblyAnchorContext trait
     let parent_blkid = *parent_commitment.blkid();
-    let parent_block = ctx.fetch_ol_block(parent_blkid).await?.ok_or_else(|| {
-        BlockAssemblyError::Db(DbError::Other(format!(
-            "Parent block not found for blkid: {parent_blkid}"
-        )))
-    })?;
+    let parent_header = ctx
+        .fetch_ol_header(parent_blkid)
+        .await?
+        .ok_or(BlockAssemblyError::HeaderNotFound(parent_blkid))?;
 
     // Create `BlockInfo` with placeholder timestamp (0) for STF processing.
     // Actual timestamp is computed at the end when building the header.
     let block_info = BlockInfo::new(0, block_slot, block_epoch);
-    let block_context = BlockContext::new(&block_info, Some(parent_block.header()));
+    let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
     // Create output buffer to collect logs from all transaction executions.
     let output_buffer = ExecOutputBuffer::new_empty();
@@ -1026,6 +1026,49 @@ mod tests {
             .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         TestEnv::from_fixture(fixture, parent_commitment)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_generate_template_with_header_only_terminal_parent() {
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .build_fixture()
+            .await;
+        let storage = fixture.storage().clone();
+        let parent_header = storage
+            .ol_block()
+            .get_ol_header_async(*parent_commitment.blkid())
+            .await
+            .expect("fetch parent header")
+            .expect("parent header exists");
+        assert!(parent_header.is_terminal());
+        storage
+            .ol_block()
+            .put_terminal_header_async(*parent_commitment.blkid(), parent_header)
+            .await
+            .expect("store terminal parent header");
+        assert!(
+            storage
+                .ol_block()
+                .del_block_data_async(*parent_commitment.blkid())
+                .await
+                .expect("delete parent block")
+        );
+
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("generate template from header-only terminal parent");
+
+        assert_eq!(
+            output.template().header().parent_blkid(),
+            parent_commitment.blkid()
+        );
+        assert_eq!(
+            output.template().header().slot(),
+            parent_commitment.slot() + 1
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

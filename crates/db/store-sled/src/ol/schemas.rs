@@ -2,8 +2,8 @@ use borsh::{BorshDeserialize, to_vec};
 use sled::IVec;
 use ssz::{Decode, Encode};
 use strata_db_types::ol_block::BlockStatus;
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types::OLBlock;
+use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
+use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
 
 use crate::{
@@ -16,8 +16,24 @@ define_table_without_codec!(
     (OLBlockSchema) OLBlockId => OLBlock
 );
 
+define_table_without_codec!(
+    /// Stores reconstructed unsigned headers for checkpoint terminal blocks.
+    (OLTerminalHeaderSchema) OLBlockId => OLBlockHeader
+);
+
 // OLBlockId uses default Borsh codec
 impl KeyCodec<OLBlockSchema> for OLBlockId {
+    fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
+        to_vec(self).map_err(Into::into)
+    }
+
+    fn decode_key(data: &[u8]) -> Result<Self, CodecError> {
+        BorshDeserialize::deserialize_reader(&mut &data[..]).map_err(Into::into)
+    }
+}
+
+// OLBlockId uses the same Borsh key codec as the full-block schema.
+impl KeyCodec<OLTerminalHeaderSchema> for OLBlockId {
     fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
         to_vec(self).map_err(Into::into)
     }
@@ -50,6 +66,13 @@ define_table_without_codec!(
 
 impl_codec_value_codec!(OLBlockHighWatermarkSchema, OLBlockCommitment);
 
+define_table_without_codec!(
+    /// Stores the immutable base of locally available OL block history.
+    (OLHistoryBaseSchema) u8 => EpochCommitment
+);
+
+impl_codec_value_codec!(OLHistoryBaseSchema, EpochCommitment);
+
 // OLBlock is SSZ-generated, so we use SSZ serialization instead of Borsh
 impl ValueCodec<OLBlockSchema> for OLBlock {
     type Decoded = Self;
@@ -61,6 +84,22 @@ impl ValueCodec<OLBlockSchema> for OLBlock {
     fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
         Self::from_ssz_bytes(data.as_ref()).map_err(|err| CodecError::DeserializationFailed {
             schema: OLBlockSchema::tree_name(),
+            source: format!("SSZ decode error: {err:?}").into(),
+        })
+    }
+}
+
+// OLBlockHeader is SSZ-generated, so we use SSZ serialization instead of Borsh.
+impl ValueCodec<OLTerminalHeaderSchema> for OLBlockHeader {
+    type Decoded = Self;
+
+    fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
+        Ok(self.as_ssz_bytes())
+    }
+
+    fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
+        Self::from_ssz_bytes(data.as_ref()).map_err(|err| CodecError::DeserializationFailed {
+            schema: OLTerminalHeaderSchema::tree_name(),
             source: format!("SSZ decode error: {err:?}").into(),
         })
     }

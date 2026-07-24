@@ -63,6 +63,15 @@ pub(crate) struct Args {
     #[argh(switch, description = "is sequencer")]
     pub sequencer: bool,
 
+    /// Promote a checkpoint-sync datadir into a sequencer history anchor.
+    /// Warning: promoting while another sequencer signs with the same key risks double-signing;
+    /// key custody is the operator's responsibility.
+    #[argh(
+        switch,
+        description = "promote a checkpoint-sync datadir; warning: promoting while another sequencer signs with the same key risks double-signing; key custody is the operator's responsibility"
+    )]
+    pub bootstrap_from_checkpoint: bool,
+
     /// Path to the sequencer runtime config TOML file.
     #[argh(option, description = "sequencer runtime config")]
     pub sequencer_config: Option<PathBuf>,
@@ -295,6 +304,7 @@ mod tests {
             config: PathBuf::from("config.toml"),
             datadir: None,
             sequencer: false,
+            bootstrap_from_checkpoint: false,
             sequencer_config: None,
             ol_params: None,
             asm_params: None,
@@ -318,5 +328,25 @@ mod tests {
                 "client.submit_rpc_port=9545"
             ]
         );
+    }
+
+    #[test]
+    fn bootstrap_from_checkpoint_flag_and_warning_are_exposed() {
+        let args = Args::from_args(
+            &["strata"],
+            &["-c", "config.toml", "--bootstrap-from-checkpoint"],
+        )
+        .expect("parse bootstrap flag");
+        assert!(args.bootstrap_from_checkpoint);
+
+        let help = Args::from_args(&["strata"], &["--help"])
+            .expect_err("help exits early")
+            .output;
+        let normalized_help = help.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(normalized_help.contains("--bootstrap-from-checkpoint"));
+        assert!(normalized_help.contains(
+            "promoting while another sequencer signs with the same key risks double-signing"
+        ));
+        assert!(normalized_help.contains("key custody is the operator's responsibility"));
     }
 }

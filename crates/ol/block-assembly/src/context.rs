@@ -14,7 +14,7 @@ use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{IAccountState, IAccountStateMut, IStateAccessor, IStateAccessorMut};
-use strata_ol_chain_types::{OLBlock, OLTransaction};
+use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLTransaction};
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::IComputeStateRootWithWrites;
@@ -66,6 +66,9 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
 
     /// Fetch an OL block by ID.
     async fn fetch_ol_block(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlock>>;
+
+    /// Fetch an OL block header by ID.
+    async fn fetch_ol_header(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlockHeader>>;
 
     /// Fetch the state snapshot for `tip`.
     async fn fetch_state_for_tip(
@@ -166,6 +169,14 @@ where
         self.storage
             .ol_block()
             .get_block_data_async(id)
+            .await
+            .map_err(BlockAssemblyError::Db)
+    }
+
+    async fn fetch_ol_header(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlockHeader>> {
+        self.storage
+            .ol_block()
+            .get_ol_header_async(id)
             .await
             .map_err(BlockAssemblyError::Db)
     }

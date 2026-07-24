@@ -199,12 +199,15 @@ impl<C: FcmContext> FcmServiceState<C> {
         // FIXME(STR-3673): we should have some in-memory cache of blkid->height, although now that
         // we use the manager this is less significant because we're cloning what's already
         // in memory
-        let block = self
+        //
+        // Read the header rather than the full block: a reorg pivot can be the
+        // history-base anchor, which exists only as a terminal-header record.
+        let header = self
             .ctx()
-            .get_ol_block(blkid)
+            .get_ol_header(blkid)
             .await?
             .ok_or(Error::MissingOLBlock(blkid))?;
-        Ok(block.header().slot())
+        Ok(header.slot())
     }
 }
 

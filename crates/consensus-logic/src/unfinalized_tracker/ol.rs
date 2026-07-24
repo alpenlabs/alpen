@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use strata_db_types::{ol_block::BlockStatus, DbResult};
 use strata_identifiers::Slot;
-use strata_ol_chain_types::OLBlock;
+use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 use strata_primitives::OLBlockId;
 use strata_storage::OLBlockManager;
 use tracing::{debug, error, warn};
@@ -16,6 +16,8 @@ pub trait UnfinalizedOLBlockSource: Send + Sync {
     async fn get_block_status(&self, blkid: OLBlockId) -> DbResult<Option<BlockStatus>>;
 
     async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>>;
+
+    async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>>;
 }
 
 #[async_trait]
@@ -30,6 +32,10 @@ impl UnfinalizedOLBlockSource for OLBlockManager {
 
     async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
         self.get_block_data_async(blkid).await
+    }
+
+    async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+        self.get_ol_header_async(blkid).await
     }
 }
 
@@ -171,6 +177,10 @@ mod tests {
 
         async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
             Ok(self.blocks.get(&blkid).cloned())
+        }
+
+        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+            Ok(self.blocks.get(&blkid).map(|block| block.header().clone()))
         }
     }
 

@@ -20,11 +20,17 @@ use tokio::runtime::{self, Handle};
 use tracing::info;
 
 use crate::{
-    args::Args, context::init_node_context, errors::InitError, rpc::start_rpc,
-    services::start_strata_services, startup_checks::run_startup_checks,
+    args::Args,
+    bootstrap::{promote_from_checkpoint, validate_bootstrap_role},
+    context::init_node_context,
+    errors::InitError,
+    rpc::start_rpc,
+    services::start_strata_services,
+    startup_checks::run_startup_checks,
 };
 
 mod args;
+mod bootstrap;
 #[cfg(feature = "sequencer")]
 mod checkpoint_auth;
 mod checkpoint_reconcile;
@@ -52,6 +58,8 @@ fn main() -> Result<()> {
     let config = context::load_config_early(&args)
         .map_err(|e| anyhow!("Failed to load configuration: {e}"))?;
 
+    validate_bootstrap_role(args.bootstrap_from_checkpoint, config.client.is_sequencer)?;
+
     // Init runtime. This needs to exist through the scope of main function so can't be created
     // inside `init_node_context`. Plus, logging also requires a handle to this.
     let rt = runtime::Builder::new_multi_thread()
@@ -75,6 +83,10 @@ fn main() -> Result<()> {
     // Validate params, configs and create node context.
     let nodectx = init_node_context(&args, config.clone(), rt.handle().clone())
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
+
+    if args.bootstrap_from_checkpoint {
+        promote_from_checkpoint(&nodectx)?;
+    }
 
     // Check for db consistency, external rpc clients reachable, etc.
     run_startup_checks(&nodectx)?;

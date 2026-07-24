@@ -1,6 +1,6 @@
-use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
+use strata_db_types::ol_block::{BlockAvailability, BlockStatus, OLBlockDatabase};
 use strata_db_types::DbError;
-use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types::OLBlock;
 
 pub fn test_get_nonexistent_block(db: &impl OLBlockDatabase) {
@@ -51,6 +51,11 @@ pub fn test_get_empty_block_high_watermark(db: &impl OLBlockDatabase) {
         .get_block_high_watermark()
         .expect("test: get block high-watermark");
     assert!(high_watermark.is_none());
+}
+
+pub fn test_get_empty_history_base(db: &impl OLBlockDatabase) {
+    let history_base = db.get_history_base().expect("test: get empty history base");
+    assert!(history_base.is_none());
 }
 
 fn canonical_id(byte: u8) -> OLBlockId {
@@ -168,6 +173,86 @@ pub fn test_replace_canonical_suffix_from_idempotent(db: &impl OLBlockDatabase) 
     assert_eq!(db.get_tip_slot().unwrap(), 4);
 }
 
+pub fn test_promote_to_history_anchor_atomic_surface_and_idempotency(db: &impl OLBlockDatabase) {
+    let seed: Vec<OLBlockId> = (0..=14).map(|slot| canonical_id(slot as u8)).collect();
+    db.replace_canonical_suffix_from(0, seed.clone())
+        .expect("test: seed canonical suffix");
+
+    let anchor = EpochCommitment::new(3, 10, canonical_id(0xa0));
+    db.promote_to_history_anchor(anchor)
+        .expect("test: promote history anchor");
+
+    assert_eq!(
+        db.get_history_base().expect("test: get history base"),
+        Some(anchor)
+    );
+    for (slot, id) in seed.iter().enumerate().take(10) {
+        assert_eq!(
+            db.get_canonical_block(slot as u64)
+                .expect("test: get preserved canonical block"),
+            Some(*id)
+        );
+    }
+    assert_eq!(
+        db.get_canonical_block(anchor.last_slot())
+            .expect("test: get canonical anchor"),
+        Some(*anchor.last_blkid())
+    );
+    for slot in 11..=14 {
+        assert_eq!(
+            db.get_canonical_block(slot)
+                .expect("test: get removed canonical suffix"),
+            None
+        );
+    }
+    assert_eq!(db.get_tip_slot().expect("test: get promoted tip"), 10);
+
+    db.promote_to_history_anchor(anchor)
+        .expect("test: re-promote same history anchor");
+    assert_eq!(
+        db.get_history_base()
+            .expect("test: get idempotent history base"),
+        Some(anchor)
+    );
+    assert_eq!(
+        db.get_canonical_block(anchor.last_slot())
+            .expect("test: get idempotent canonical anchor"),
+        Some(*anchor.last_blkid())
+    );
+}
+
+pub fn test_promote_to_history_anchor_refuses_different_marker(db: &impl OLBlockDatabase) {
+    let first = EpochCommitment::new(3, 10, canonical_id(0xa0));
+    let attempted = EpochCommitment::new(4, 11, canonical_id(0xb0));
+    db.promote_to_history_anchor(first)
+        .expect("test: promote initial history anchor");
+
+    let err = db
+        .promote_to_history_anchor(attempted)
+        .expect_err("test: reject different history anchor");
+    assert!(matches!(
+        err,
+        DbError::OLHistoryBaseConflict {
+            attempted: actual_attempted,
+            current,
+        } if actual_attempted == attempted && current == first
+    ));
+    assert_eq!(
+        db.get_history_base().expect("test: get retained marker"),
+        Some(first)
+    );
+    assert_eq!(
+        db.get_canonical_block(first.last_slot())
+            .expect("test: get retained canonical anchor"),
+        Some(*first.last_blkid())
+    );
+    assert_eq!(
+        db.get_canonical_block(attempted.last_slot())
+            .expect("test: get rejected canonical anchor"),
+        None
+    );
+}
+
 pub fn test_delete_canonical_block_clears_canonical_index(
     db: &impl OLBlockDatabase,
     mut block: OLBlock,
@@ -280,6 +365,28 @@ pub fn proptest_put_and_get_random_block(db: &impl OLBlockDatabase, block: OLBlo
     );
 }
 
+pub fn proptest_del_last_block_at_slot_clears_highest_block_slot(
+    db: &impl OLBlockDatabase,
+    block: OLBlock,
+) {
+    let blkid = block.header().compute_blkid();
+    let slot = block.header().slot();
+    db.put_block_data(block).expect("test: put block");
+    assert_eq!(
+        db.get_highest_block_slot()
+            .expect("test: highest slot after put"),
+        Some(slot)
+    );
+
+    assert!(db.del_block_data(blkid).expect("test: delete block"));
+    assert_eq!(
+        db.get_highest_block_slot()
+            .expect("test: highest slot after delete"),
+        None,
+        "deleting the last block at a slot must not leave a ghost height row"
+    );
+}
+
 pub fn proptest_put_twice_idempotent(db: &impl OLBlockDatabase, block: OLBlock) {
     let block_id = block.header().compute_blkid();
     let slot = block.header().slot();
@@ -294,6 +401,135 @@ pub fn proptest_put_twice_idempotent(db: &impl OLBlockDatabase, block: OLBlock) 
         .expect("test: get blocks at height");
     assert_eq!(blocks.len(), 1);
     assert!(blocks.contains(&block_id));
+}
+
+pub fn proptest_terminal_header_roundtrip_and_mismatch(db: &impl OLBlockDatabase, block: OLBlock) {
+    let header = block.header().clone();
+    let block_id = header.compute_blkid();
+
+    db.put_terminal_header(block_id, header.clone())
+        .expect("test: put terminal header");
+    assert_eq!(
+        db.get_terminal_header(block_id)
+            .expect("test: get terminal header"),
+        Some(header.clone())
+    );
+
+    let first_mismatch = canonical_id(0xfe);
+    let mismatched_id = if first_mismatch == block_id {
+        canonical_id(0xfd)
+    } else {
+        first_mismatch
+    };
+    let err = db
+        .put_terminal_header(mismatched_id, header)
+        .expect_err("test: reject mismatched terminal header");
+    assert!(matches!(
+        err,
+        DbError::OLTerminalHeaderIdMismatch { key, computed }
+            if key == mismatched_id && computed == block_id
+    ));
+    assert!(db
+        .get_terminal_header(mismatched_id)
+        .expect("test: get rejected terminal header")
+        .is_none());
+}
+
+pub fn proptest_block_availability_with_history_base(db: &impl OLBlockDatabase, block: OLBlock) {
+    let mut above = block.clone();
+    above.signed_header.header.slot = 11;
+    above.signed_header.header.timestamp = 11;
+    let above_commitment = above.header().compute_block_commitment();
+
+    let mut below = block.clone();
+    below.signed_header.header.slot = 5;
+    below.signed_header.header.timestamp = 5;
+    let below_commitment = below.header().compute_block_commitment();
+
+    let mut genesis = block.clone();
+    genesis.signed_header.header.slot = 0;
+    genesis.signed_header.header.timestamp = 0;
+    let genesis_commitment = genesis.header().compute_block_commitment();
+
+    db.put_block_data(above)
+        .expect("test: put block above base");
+    db.put_block_data(below)
+        .expect("test: put block below base");
+    db.put_block_data(genesis).expect("test: put genesis block");
+
+    let mut anchor_header = block.clone();
+    anchor_header.signed_header.header.slot = 10;
+    anchor_header.signed_header.header.timestamp = 10;
+    let anchor = EpochCommitment::new(1, 10, anchor_header.header().compute_blkid());
+    db.promote_to_history_anchor(anchor)
+        .expect("test: promote history base");
+
+    assert!(matches!(
+        db.get_block_at(above_commitment)
+            .expect("test: get available block above base"),
+        BlockAvailability::Available(block) if block.header().slot() == 11
+    ));
+    assert!(matches!(
+        db.get_block_at(below_commitment)
+            .expect("test: get available block below base"),
+        BlockAvailability::Available(block) if block.header().slot() == 5
+    ));
+    assert!(matches!(
+        db.get_block_at(genesis_commitment)
+            .expect("test: get available genesis block"),
+        BlockAvailability::Available(block) if block.header().is_genesis_slot()
+    ));
+
+    let mut absent_below = block.clone();
+    absent_below.signed_header.header.slot = 9;
+    absent_below.signed_header.header.timestamp = 9;
+    assert!(matches!(
+        db.get_block_at(absent_below.header().compute_block_commitment())
+            .expect("test: classify absent block below base"),
+        BlockAvailability::Pruned
+    ));
+
+    let mut absent_above = block;
+    absent_above.signed_header.header.slot = 12;
+    absent_above.signed_header.header.timestamp = 12;
+    assert!(matches!(
+        db.get_block_at(absent_above.header().compute_block_commitment())
+            .expect("test: classify absent block above base"),
+        BlockAvailability::Missing
+    ));
+}
+
+pub fn proptest_block_availability_without_history_base(db: &impl OLBlockDatabase, block: OLBlock) {
+    let mut genesis = block.clone();
+    genesis.signed_header.header.slot = 0;
+    genesis.signed_header.header.timestamp = 0;
+    let genesis_commitment = genesis.header().compute_block_commitment();
+    db.put_block_data(genesis)
+        .expect("test: put genesis without history base");
+
+    assert!(matches!(
+        db.get_block_at(genesis_commitment)
+            .expect("test: get genesis without history base"),
+        BlockAvailability::Available(block) if block.header().is_genesis_slot()
+    ));
+
+    let mut absent_genesis = block.clone();
+    absent_genesis.signed_header.header.slot = 0;
+    absent_genesis.signed_header.header.timestamp = 1;
+    assert!(matches!(
+        db.get_block_at(absent_genesis.header().compute_block_commitment())
+            .expect("test: classify absent genesis without history base"),
+        BlockAvailability::Missing
+    ));
+
+    let mut absent_later = block;
+    absent_later.signed_header.header.slot = 100;
+    absent_later.signed_header.header.timestamp = 100;
+    assert!(matches!(
+        db.get_block_at(absent_later.header().compute_block_commitment())
+            .expect("test: classify absent later block without history base"),
+        BlockAvailability::Missing
+    ));
 }
 
 pub fn proptest_put_block_data_does_not_advance_high_watermark(
@@ -689,6 +925,12 @@ macro_rules! ol_block_db_tests {
         }
 
         #[test]
+        fn test_get_empty_history_base() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_get_empty_history_base(&db);
+        }
+
+        #[test]
         fn test_get_canonical_block_empty() {
             let db = $setup_expr;
             $crate::ol_block_tests::test_get_canonical_block_empty(&db);
@@ -728,6 +970,18 @@ macro_rules! ol_block_db_tests {
         fn test_replace_canonical_suffix_from_idempotent() {
             let db = $setup_expr;
             $crate::ol_block_tests::test_replace_canonical_suffix_from_idempotent(&db);
+        }
+
+        #[test]
+        fn test_promote_to_history_anchor_atomic_surface_and_idempotency() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_promote_to_history_anchor_atomic_surface_and_idempotency(&db);
+        }
+
+        #[test]
+        fn test_promote_to_history_anchor_refuses_different_marker() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_promote_to_history_anchor_refuses_different_marker(&db);
         }
 
         proptest::proptest! {
@@ -770,6 +1024,30 @@ macro_rules! ol_block_db_tests {
             fn proptest_put_twice_idempotent(block in ol_test_utils::ol_block_strategy()) {
                 let db = $setup_expr;
                 $crate::ol_block_tests::proptest_put_twice_idempotent(&db, block);
+            }
+
+            #[test]
+            fn proptest_del_last_block_at_slot_clears_highest_block_slot(block in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_del_last_block_at_slot_clears_highest_block_slot(&db, block);
+            }
+
+            #[test]
+            fn proptest_terminal_header_roundtrip_and_mismatch(block in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_terminal_header_roundtrip_and_mismatch(&db, block);
+            }
+
+            #[test]
+            fn proptest_block_availability_with_history_base(block in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_block_availability_with_history_base(&db, block);
+            }
+
+            #[test]
+            fn proptest_block_availability_without_history_base(block in ol_test_utils::ol_block_strategy()) {
+                let db = $setup_expr;
+                $crate::ol_block_tests::proptest_block_availability_without_history_base(&db, block);
             }
 
             #[test]
