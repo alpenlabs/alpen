@@ -70,20 +70,20 @@ impl Formattable for WriterPayloadInfo {
         ));
         output.push(porcelain_field(
             "payload.data_hash",
-            format!("{:?}", payload_hash),
+            format!("{payload_hash:?}"),
         ));
 
         // Add transaction IDs if available
         if let Some(commit_txid) = &self.commit_txid {
             output.push(porcelain_field(
                 "payload.commit_txid",
-                format!("{:?}", commit_txid),
+                format!("{commit_txid:?}"),
             ));
         }
         if let Some(reveal_txid) = &self.reveal_txid {
             output.push(porcelain_field(
                 "payload.reveal_txid",
-                format!("{:?}", reveal_txid),
+                format!("{reveal_txid:?}"),
             ));
         }
 

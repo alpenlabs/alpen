@@ -68,7 +68,7 @@ impl Formattable for L1BlockInfo<'_> {
         if let Some(prev_block_id) = self.prev_block_id {
             output.push(porcelain_field(
                 "prev_block_id",
-                format!("{:?}", prev_block_id),
+                format!("{prev_block_id:?}"),
             ));
         }
         output.push(porcelain_field(
@@ -111,7 +111,7 @@ impl Formattable for L1SummaryInfo {
             if let Some(block_id) = missing_block.block_id {
                 output.push(porcelain_field(
                     &format!("{prefix}.block_id"),
-                    format!("{:?}", block_id),
+                    format!("{block_id:?}"),
                 ));
             }
         }
@@ -126,7 +126,7 @@ impl Formattable for MissingBlockInfo {
         output.push(porcelain_field("height", self.height));
         output.push(porcelain_field("reason", &self.reason));
         if let Some(block_id) = self.block_id {
-            output.push(porcelain_field("block_id", format!("{:?}", block_id)));
+            output.push(porcelain_field("block_id", format!("{block_id:?}")));
         }
         output.join("\n")
     }

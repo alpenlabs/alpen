@@ -133,7 +133,7 @@ impl Formattable for CheckpointInfo {
         if let Some(observed_l1_blkid) = self.observed_l1_blkid {
             output.push(porcelain_field(
                 "checkpoint.l1_ref.blkid",
-                format!("{:?}", observed_l1_blkid),
+                format!("{observed_l1_blkid:?}"),
             ));
         }
 

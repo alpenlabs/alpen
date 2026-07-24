@@ -192,7 +192,7 @@ impl ManifestMmrStore for AsmWorkerCtx {
     /// would collapse this to a single write.
     fn put_manifest_hash(&self, height: u64, hash: AsmManifestHash) -> WorkerResult<()> {
         let leaf = Hash::from(hash);
-        let leaf_count = self.mmr_handle.get_num_leaves_blocking().map_err(|e| {
+        let leaf_count = self.mmr_handle.get_leaf_count_blocking().map_err(|e| {
             error!(?e, "Failed to read manifest MMR leaf count");
             WorkerError::DbError
         })?;
@@ -220,7 +220,7 @@ impl ManifestMmrStore for AsmWorkerCtx {
     }
 
     fn manifest_mmr_leaf_count(&self) -> WorkerResult<u64> {
-        self.mmr_handle.get_num_leaves_blocking().map_err(|e| {
+        self.mmr_handle.get_leaf_count_blocking().map_err(|e| {
             error!(?e, "Failed to read manifest MMR leaf count");
             WorkerError::DbError
         })

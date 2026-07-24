@@ -25,6 +25,7 @@ strata-storage-common.workspace = true
 
 anyhow.workspace = true
 futures.workspace = true
+ssz_types.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 zkaleido.workspace = true
