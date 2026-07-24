@@ -1,5 +1,6 @@
 use bitcoind_async_client::traits::Reader;
 use strata_btc_types::BlockHashExt;
+use strata_common::{check_bail_trigger, BAIL_BTCIO_AFTER_L1_CANONICAL_WRITE};
 use strata_identifiers::{Epoch, L1BlockCommitment};
 use strata_state::BlockSubmitter;
 use tracing::*;
@@ -68,6 +69,7 @@ async fn handle_blockdata<R: Reader>(
         .extend_canonical_chain_async(&l1blockid, height)
         .await?;
     info!(%height, %l1blockid, "stored L1 chain tracking data");
+    check_bail_trigger(BAIL_BTCIO_AFTER_L1_CANONICAL_WRITE);
 
     // Create a sync event - the ASM worker will listen to this and create manifests
     Ok(Option::Some(L1BlockCommitment::new(height, l1blockid)))
