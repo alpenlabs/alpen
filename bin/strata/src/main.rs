@@ -7,12 +7,18 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use argh::from_env;
+#[cfg(all(test, not(feature = "sequencer")))]
+use strata_asm_proto_checkpoint_types as _;
+#[cfg(all(test, not(feature = "sequencer")))]
+use strata_asm_proto_txs_test_utils as _;
 use strata_common::healthz::{HealthCheckState, start_health_check_server};
 use strata_db_types as _;
 use strata_logging::{
     LoggingInitConfig, format_service_name, init_logging_from_config_with_layers,
 };
 use strata_metrics::{MetricsConfig, MetricsInitConfig, MetricsLayer};
+#[cfg(all(test, not(feature = "sequencer")))]
+use strata_ol_block_assembly as _;
 #[cfg(test)]
 use strata_ol_state_types as _;
 use strata_predicate as _;

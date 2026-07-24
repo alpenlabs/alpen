@@ -7,7 +7,11 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-asm-proto-checkpoint-txs.workspace = true
+strata-asm-proto-checkpoint-types.workspace = true
 strata-btc-types.workspace = true
+strata-codec.workspace = true
+strata-codec-utils.workspace = true
 strata-config.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
@@ -42,3 +46,4 @@ strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 strata-test-utils.workspace = true
+strata-test-utils-checkpoint.workspace = true
