@@ -19,7 +19,6 @@ sequencer = [
   "dep:bitcoind-async-client",
   "dep:reth-payload-builder",
   "dep:strata-btcio",
-  "dep:strata-config",
 ]
 # SP1 remote proving for the EE chunk + acct provers. Required for
 # production; native-only test builds can drop this feature.
@@ -64,7 +63,7 @@ strata-bridge-params.workspace = true
 strata-btcio = { workspace = true, optional = true }
 strata-codec.workspace = true
 strata-common = { workspace = true, features = ["async"] }
-strata-config = { workspace = true, optional = true }
+strata-config.workspace = true
 strata-db-types.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true

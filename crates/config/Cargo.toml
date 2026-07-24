@@ -8,9 +8,13 @@ workspace = true
 
 [dependencies]
 bitcoin.workspace = true
+schemars = { workspace = true, optional = true }
 serde.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
 toml.workspace = true
+
+[features]
+jsonschema = ["dep:schemars"]

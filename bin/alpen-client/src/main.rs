@@ -50,7 +50,7 @@ use alpen_ee_exec_chain::{init_exec_chain_state_from_storage, ExecChainState};
 use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
 use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
 use alpen_ee_ol_tracker::init_ol_tracker_state;
-use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcServer};
+use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcContext, EeRpcServer, StaticFeeModelConfig};
 #[cfg(feature = "sequencer")]
 use alpen_ee_sequencer::{
     block_builder_task, build_ol_chain_tracker, init_batch_builder_state, init_lifecycle_state,
@@ -80,7 +80,7 @@ use reth_cli_runner::{tokio_runtime, CliRunner};
 use reth_cli_util::sigsegv_handler;
 use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
-use reth_provider::CanonStateSubscriptions;
+use reth_provider::{BlockNumReader, CanonStateSubscriptions};
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
     broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
@@ -97,11 +97,13 @@ use strata_l1_txfmt::MagicBytes;
 use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, L1Height};
+#[cfg(not(feature = "sp1"))]
+use strata_zkvm_hosts as _;
 use tokio::{
     runtime::Handle,
     sync::{mpsc, watch},
 };
-use tracing::{error, info, info_span, Instrument};
+use tracing::{error, info, info_span, warn, Instrument};
 
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
@@ -155,6 +157,9 @@ const ALPEN_EE_BLOCK_TIME_MS_ENV_VAR: &str = "ALPEN_EE_BLOCK_TIME_MS";
 
 const DEFAULT_HEALTH_CHECK_HOST: &str = "0.0.0.0";
 const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
+const DEFAULT_PROVER_FEE_PER_GAS_WEI: u64 = 15;
+const DEFAULT_DA_OVERHEAD_MULTIPLIER_BPS: u32 = 10_000;
+const DEFAULT_OL_OVERHEAD_WEI: u64 = 0;
 
 /// Default end-to-end deadline applied to the SP1 prover network for the EE
 /// chunk + acct provers when `--sp1-proof-deadline-secs` is not set. Chosen
@@ -404,6 +409,8 @@ fn main() {
             // This channel sends block hash and number received from peers to the engine control
             // task
             let (preconf_tx, preconf_rx) = watch::channel(initial_preconf_head);
+            let initial_fee_config = ext.sequencer.then(|| fee_config_from_ext(&ext));
+            let (fee_config_tx, fee_config_rx) = watch::channel(initial_fee_config);
 
             let ol_tracker = services::ol_tracker::start_ol_tracker_service(
                 ol_tracker_state,
@@ -471,15 +478,13 @@ fn main() {
 
             node_builder = node_builder.extend_rpc_modules({
                 let consensus_watcher = consensus_watcher.clone();
+                let fee_config_rx = fee_config_rx.clone();
                 let storage = storage.clone();
                 move |ctx| {
                     let provider = ctx.provider().clone();
-                    let ee_rpc_server = EeRpcServer::new(
-                        provider,
-                        consensus_watcher,
-                        storage.clone(),
-                        storage.clone(),
-                    );
+                    let rpc_context =
+                        EeRpcContext::new(storage.clone(), storage.clone(), fee_config_rx.clone());
+                    let ee_rpc_server = EeRpcServer::new(provider, consensus_watcher, rpc_context);
                     ctx.modules.merge_configured(ee_rpc_server.into_rpc())?;
                     Ok(())
                 }
@@ -520,9 +525,29 @@ fn main() {
             // Subscribe to canonical state notifications for broadcasting new blocks
             let state_events = node.provider.subscribe_to_canonical_state();
 
+            let initial_highest_seq_no = match node.provider.best_block_number() {
+                Ok(block_number) => block_number,
+                Err(err) => {
+                    warn!(
+                        target: "alpen-gossip",
+                        component = "alpen",
+                        ?err,
+                        "failed to read canonical head for gossip replay guard; falling back to zero"
+                    );
+                    0
+                }
+            };
+
             // Create gossip task for broadcasting new blocks
-            let gossip_task =
-                create_gossip_task(gossip_rx, state_events, preconf_tx.clone(), gossip_config);
+            let gossip_task = create_gossip_task(
+                gossip_rx,
+                state_events,
+                preconf_tx.clone(),
+                fee_config_tx,
+                fee_config_rx.clone(),
+                initial_highest_seq_no,
+                gossip_config,
+            );
 
             // Spawn critical tasks
             node.task_executor.spawn_critical(
@@ -1044,6 +1069,18 @@ pub struct AdditionalConfig {
     #[arg(long, required = true, value_parser = parse_buf32)]
     pub sequencer_pubkey: Buf32,
 
+    /// Static proving fee charged per unit of raw EVM gas.
+    #[arg(long, default_value_t = DEFAULT_PROVER_FEE_PER_GAS_WEI)]
+    pub prover_fee_per_gas_wei: u64,
+
+    /// Basis-points multiplier applied to estimated DA cost.
+    #[arg(long, default_value_t = DEFAULT_DA_OVERHEAD_MULTIPLIER_BPS)]
+    pub da_overhead_multiplier_bps: u32,
+
+    /// Small additive fee charged for OL and infrastructure overhead.
+    #[arg(long, default_value_t = DEFAULT_OL_OVERHEAD_WEI)]
+    pub ol_overhead_wei: u64,
+
     // --- DA Configuration ---
     /// Magic bytes (hex-encoded, 4 bytes) for tagging EE DA envelope transactions.
     /// Example: `ALPN`.
@@ -1482,6 +1519,16 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
 fn parse_magic_bytes(s: &str) -> eyre::Result<MagicBytes> {
     s.parse::<MagicBytes>()
         .map_err(|e| eyre::eyre!("Failed to parse magic bytes: {e}"))
+}
+
+fn fee_config_from_ext(ext: &AdditionalConfig) -> StaticFeeModelConfig {
+    // TODO(STR-2161): source these constants from the canonical SequencerFeeModelConfig once
+    // quote() drives charging, so gossip/RPC match the values the sequencer actually charges.
+    StaticFeeModelConfig::new(
+        ext.prover_fee_per_gas_wei,
+        ext.da_overhead_multiplier_bps,
+        ext.ol_overhead_wei,
+    )
 }
 
 #[cfg(feature = "sequencer")]

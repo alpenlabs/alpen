@@ -122,6 +122,11 @@ class AlpenClientService(RpcService):
         rpc = self.create_rpc()
         return rpc.alpen_getBlockStatus(block_hash)
 
+    def get_fee_model_config(self) -> dict:
+        """Get this node's current static v1 fee-model constants."""
+        rpc = self.create_rpc()
+        return rpc.alpen_getFeeModelConfig()
+
     def get_peers(self) -> list[dict]:
         """Get connected peers via admin_peers."""
         rpc = self.create_rpc()

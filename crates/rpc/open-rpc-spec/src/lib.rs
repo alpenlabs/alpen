@@ -64,6 +64,7 @@ mod tests {
             "strata_submitTransaction",
             "alpen_getBlockStatus",
             "alpen_getChunkProofCoverage",
+            "alpen_getFeeModelConfig",
         ] {
             assert!(
                 method_names.contains(&expected_method),
