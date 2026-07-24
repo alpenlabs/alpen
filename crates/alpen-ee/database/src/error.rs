@@ -40,8 +40,10 @@ pub enum DbError {
     #[error("missing expected exec blkid {0}")]
     MissingExecBlock(Hash),
 
-    #[error("expected exec block finalized chain to be empty")]
-    FinalizedExecChainGenesisBlockMismatch,
+    #[error(
+        "finalized exec chain already initialized at height {height} with anchor {existing_anchor}"
+    )]
+    FinalizedExecChainAnchorMismatch { height: u64, existing_anchor: Hash },
 
     #[error("provided blkid {0} does not extend chain")]
     ExecBlockDoesNotExtendChain(Hash),

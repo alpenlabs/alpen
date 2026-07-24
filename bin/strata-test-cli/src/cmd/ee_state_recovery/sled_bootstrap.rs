@@ -250,7 +250,7 @@ pub(super) fn bootstrap(args: SledBootstrapConfig) -> Result<()> {
             block_hash
         };
         storage
-            .init_finalized_chain(finalized_anchor)
+            .initialize_finalized_chain_anchor(finalized_anchor)
             .await
             .context("initializing sparse finalized execution chain")?;
 
