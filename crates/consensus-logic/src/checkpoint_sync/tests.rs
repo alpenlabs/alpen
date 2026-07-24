@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use strata_chain_worker::WorkerError;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_csm_worker::CsmWorkerStatus;
@@ -68,6 +69,8 @@ struct MockCtx {
     epoch_summaries: Mutex<HashMap<EpochCommitment, EpochSummary>>,
     /// Epochs passed to `apply_checkpoint`, in call order.
     applied_epochs: Mutex<Vec<EpochCommitment>>,
+    /// One synthetic reconstruction failure, consumed by `apply_checkpoint`.
+    apply_failure: Mutex<Option<WorkerError>>,
     /// Tips passed to `update_safe_tip`, in call order.
     safe_tips: Mutex<Vec<OLBlockCommitment>>,
     /// Epochs passed to `finalize_epoch`, in call order.
@@ -91,6 +94,7 @@ impl MockCtx {
             l1_refs: HashMap::new(),
             epoch_summaries: Mutex::new(HashMap::new()),
             applied_epochs: Mutex::new(Vec::new()),
+            apply_failure: Mutex::new(None),
             safe_tips: Mutex::new(Vec::new()),
             finalized_epochs: Mutex::new(Vec::new()),
             published_statuses: Mutex::new(Vec::new()),
@@ -131,6 +135,11 @@ impl MockCtx {
         self.epoch_commitments.insert(0, ec);
         let summary = make_epoch_summary(0, ec, EpochCommitment::null(), 0);
         self.epoch_summaries.get_mut().unwrap().insert(ec, summary);
+        self
+    }
+
+    fn fail_apply_once(mut self, error: WorkerError) -> Self {
+        *self.apply_failure.get_mut().unwrap() = Some(error);
         self
     }
 }
@@ -179,6 +188,13 @@ impl CheckpointSyncCtx for MockCtx {
     }
 
     async fn apply_checkpoint(&self, epoch: EpochCommitment) -> CheckpointSyncResult<()> {
+        if let Some(cause) = self.apply_failure.lock().unwrap().take() {
+            return Err(CheckpointSyncError::EpochOp {
+                epoch,
+                op: "apply_checkpoint",
+                cause,
+            });
+        }
         self.applied_epochs.lock().unwrap().push(epoch);
 
         // Mimic the real chain worker writing the summary after reconstruction,
@@ -342,6 +358,20 @@ async fn scan_errors_when_not_reorg_safe() {
 }
 
 #[tokio::test]
+async fn scan_accepts_checkpoint_at_reorg_safe_depth() {
+    // l1_tip=106, l1_ref height=104, reorg_safe_depth=3 => depth=3.
+    let epoch0 = make_epoch(0, 0, 0x00);
+    let epoch1 = make_epoch(1, 10, 0x01);
+    let ctx = MockCtx::new(3, 106)
+        .add_genesis(epoch0)
+        .add_epoch(epoch1, make_l1_ref(104), None);
+
+    let (_, unapplied) = scan_unapplied_epochs(&ctx, epoch1, 106, 3).await.unwrap();
+
+    assert_eq!(unapplied, vec![epoch1]);
+}
+
+#[tokio::test]
 async fn scan_errors_on_missing_l1_ref() {
     let epoch1 = make_epoch(1, 10, 0x01);
     let ctx = MockCtx::new(3, 200);
@@ -445,6 +475,38 @@ async fn handle_errors_on_chain_hole_leaves_state_unadvanced() {
     assert!(ctx.applied_epochs.lock().unwrap().is_empty());
     assert!(ctx.safe_tips.lock().unwrap().is_empty());
     assert!(ctx.finalized_epochs.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn handle_retries_after_malformed_checkpoint_reconstruction_fails() {
+    let epoch0 = make_epoch(0, 0, 0x00);
+    let epoch1 = make_epoch(1, 10, 0x01);
+    let ctx = Arc::new(
+        MockCtx::new(3, 200)
+            .add_genesis(epoch0)
+            .add_epoch(epoch1, make_l1_ref(110), None)
+            .with_csm_finalized(Some(epoch1))
+            .fail_apply_once(WorkerError::Unexpected(
+                "malformed checkpoint payload".to_owned(),
+            )),
+    );
+    let mut state = CheckpointSyncState::new(ctx.clone(), Some(epoch0));
+
+    let err = state.handle_new_client_state().await.unwrap_err();
+    assert!(matches!(
+        err,
+        CheckpointSyncError::EpochOp {
+            epoch,
+            op: "apply_checkpoint",
+            ..
+        } if epoch == epoch1
+    ));
+    assert_eq!(state.last_finalized_and_applied(), Some(epoch0));
+    assert!(ctx.applied_epochs.lock().unwrap().is_empty());
+
+    state.handle_new_client_state().await.unwrap();
+    assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
+    assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch1]);
 }
 
 // ---- restart / re-run ----
