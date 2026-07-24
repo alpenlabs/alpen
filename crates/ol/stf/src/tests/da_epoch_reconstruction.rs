@@ -1,15 +1,15 @@
 //! Reconstructing an epoch from its DA diff via [`apply_da_epoch`] must yield
 //! the same post-state root as direct block-by-block execution.
 //!
-//! Covers a deposit manifest only, a snark account update only, and both
-//! combined. Each test builds a multi-block epoch with empty filler blocks
-//! around the meaningful ones.
+//! Covers a deposit manifest only, a snark account update only, both
+//! combined, and a bridge withdrawal. Each test builds a multi-block epoch
+//! with empty filler blocks around the meaningful ones.
 
-use strata_acct_types::{BitcoinAmount, MessageEntry};
+use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{Buf32, OLBlockCommitment, SubjectId};
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{IAccountState, IStateAccessor};
 use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLTransaction, OLTransactionData, TxProofs};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
@@ -24,7 +24,7 @@ use crate::{
         epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
         epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
         make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state,
-        make_state_root, snark_inbox_msg,
+        make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload, snark_inbox_msg,
     },
 };
 
@@ -95,6 +95,43 @@ fn test_apply_da_epoch_snark_update_and_deposit() {
             SubjectId::from([42u8; 32]),
             BitcoinAmount::from_sat(150_000_000),
         ),
+    );
+
+    assert_reconstruction_matches(&state, &pre_epoch_state, &genesis, &terminal, &blocks);
+}
+
+#[test]
+fn test_apply_da_epoch_withdrawal() {
+    let mut state = make_genesis_state();
+    seed_accounts(&mut state);
+    let genesis = run_genesis(&mut state);
+    let pre_epoch_state = state.clone();
+
+    let mut blocks = Vec::new();
+    let prev = run_withdrawal_update_blocks(&mut state, &mut blocks, genesis.header());
+    let terminal = run_terminal(
+        &mut state,
+        &mut blocks,
+        &prev,
+        make_empty_manifest(TERMINAL_L1_HEIGHT, 0),
+    );
+
+    // A valid withdrawal debits the account; it must not land in limbo.
+    assert_eq!(
+        state.limbo_funds(),
+        pre_epoch_state.limbo_funds(),
+        "valid withdrawal must not route through limbo"
+    );
+    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let snark_balance = state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .balance();
+    assert_eq!(
+        snark_balance,
+        BitcoinAmount::from_sat(0),
+        "withdrawal must debit the full seeded balance"
     );
 
     assert_reconstruction_matches(&state, &pre_epoch_state, &genesis, &terminal, &blocks);
@@ -194,6 +231,44 @@ fn run_snark_update_blocks(
 
     // The GAM ran above, so the snark account's live state now exists.
     let update_tx = build_snark_update(state, &inbox_msg);
+    run_block(state, blocks, &prev, txs_components(update_tx))
+}
+
+/// Like [`run_snark_update_blocks`], but the update's output message is a
+/// bridge withdrawal instead of a transfer.
+fn run_withdrawal_update_blocks(
+    state: &mut MemoryStateBaseLayer,
+    blocks: &mut Vec<OLBlock>,
+    genesis_header: &OLBlockHeader,
+) -> OLBlockHeader {
+    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let inbox_msg = snark_inbox_msg();
+
+    let mut prev = run_block(state, blocks, genesis_header, BlockComponents::new_empty());
+
+    let gam_tx = OLTransaction::new(
+        OLTransactionData::from_gam_bytes(snark_id, inbox_msg.payload().data().to_vec())
+            .expect("gam payload"),
+        TxProofs::new_empty(),
+    );
+    prev = run_block(state, blocks, &prev, txs_components(gam_tx));
+
+    prev = run_block(state, blocks, &prev, BlockComponents::new_empty());
+
+    let mut inbox_tracker = InboxMmrTracker::new();
+    let proof = inbox_tracker.add_message(&inbox_msg);
+    let (_, snark_state) = get_snark_state_expect(state, snark_id);
+    // One denomination (the full seeded balance) to the bridge gateway with a
+    // valid BOSD descriptor, so the message takes the withdrawal path.
+    let update_tx = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+        .with_processed_msgs(vec![inbox_msg.clone()])
+        .with_inbox_proofs(vec![proof])
+        .with_output_message(
+            BRIDGE_GATEWAY_ACCT_ID,
+            100_000_000,
+            make_withdrawal_payload(make_p2wpkh_bosd_descriptor(0x14)),
+        )
+        .build(snark_id, make_state_root(2), vec![0u8; 32]);
     run_block(state, blocks, &prev, txs_components(update_tx))
 }
 

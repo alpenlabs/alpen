@@ -7,7 +7,7 @@
 
 #![allow(unreachable_pub, reason = "test fixture module")]
 
-use strata_acct_types::{BitcoinAmount, MessageEntry, RawMerkleProof};
+use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
@@ -20,7 +20,10 @@ use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
 };
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
+use strata_ol_chain_types::{
+    MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLTransaction, OLTransactionData,
+    TxProofs,
+};
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
@@ -34,7 +37,8 @@ use strata_ol_stf::{
         epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
         epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
         make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state,
-        make_state_root, snark_inbox_msg_with_data,
+        make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload,
+        snark_inbox_msg_with_data,
     },
     verify_block,
 };
@@ -60,6 +64,18 @@ pub enum EpochShape {
 
     /// More ASM manifests than the epoch manifest cap allows.
     ManifestsExceedEpochCap,
+
+    /// A snark update whose output message is a bridge withdrawal, plus an
+    /// empty terminal.
+    WithdrawalOnly,
+
+    /// A snark update carrying a bridge withdrawal, plus a terminal deposit
+    /// manifest.
+    WithdrawalAndDeposit,
+
+    /// Everything in one epoch: multiple snark updates, a bridge withdrawal,
+    /// and a terminal deposit manifest.
+    All,
 }
 
 /// One built OL epoch with the reference values for cross-mode comparison.
@@ -84,12 +100,19 @@ pub struct BuiltEpoch {
     pub block_sync_summary: EpochSummary,
     /// Merged indexer writes captured by block-sync execution.
     block_sync_indexer_writes: IndexerWrites,
+    /// Logs emitted by block-sync execution, in emission order across the epoch.
+    block_sync_logs: Vec<OLLog>,
 }
 
 impl BuiltEpoch {
     /// Returns the indexer writes captured by block-sync execution.
     pub fn block_sync_indexer_writes(&self) -> &IndexerWrites {
         &self.block_sync_indexer_writes
+    }
+
+    /// Returns the logs emitted by block-sync execution, in emission order.
+    pub fn block_sync_logs(&self) -> &[OLLog] {
+        &self.block_sync_logs
     }
 }
 
@@ -134,7 +157,15 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
             Vec::new()
         }
         EpochShape::SnarkMultiUpdateAndDeposit => {
-            let prev = run_snark_multi_update_blocks(&mut state, &mut blocks, genesis.header());
+            let prev = run_snark_update_blocks(
+                &mut state,
+                &mut blocks,
+                genesis.header(),
+                &[
+                    UpdateEffect::Transfer(1_000_000),
+                    UpdateEffect::Transfer(1_000_000),
+                ],
+            );
             let manifest = make_deposit_manifest_for_account(
                 TERMINAL_L1_HEIGHT,
                 0,
@@ -211,6 +242,57 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
 
             manifests_by_height
         }
+        EpochShape::WithdrawalOnly => {
+            let prev = run_snark_update_blocks(
+                &mut state,
+                &mut blocks,
+                genesis.header(),
+                &[UpdateEffect::Withdrawal],
+            );
+            let manifest = make_empty_manifest(TERMINAL_L1_HEIGHT, 0);
+            run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
+            vec![(TERMINAL_L1_HEIGHT, manifest)]
+        }
+        EpochShape::WithdrawalAndDeposit => {
+            let prev = run_snark_update_blocks(
+                &mut state,
+                &mut blocks,
+                genesis.header(),
+                &[UpdateEffect::Withdrawal],
+            );
+            let manifest = make_deposit_manifest_for_account(
+                TERMINAL_L1_HEIGHT,
+                0,
+                snark_serial,
+                SubjectId::from([42u8; 32]),
+                BitcoinAmount::from_sat(150_000_000),
+            );
+            run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
+            vec![(TERMINAL_L1_HEIGHT, manifest)]
+        }
+        EpochShape::All => {
+            // Two no-op updates keep the full seeded balance available for the
+            // withdrawal, which must equal one denomination.
+            let prev = run_snark_update_blocks(
+                &mut state,
+                &mut blocks,
+                genesis.header(),
+                &[
+                    UpdateEffect::None,
+                    UpdateEffect::None,
+                    UpdateEffect::Withdrawal,
+                ],
+            );
+            let manifest = make_deposit_manifest_for_account(
+                TERMINAL_L1_HEIGHT,
+                0,
+                snark_serial,
+                SubjectId::from([42u8; 32]),
+                BitcoinAmount::from_sat(150_000_000),
+            );
+            run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
+            vec![(TERMINAL_L1_HEIGHT, manifest)]
+        }
     };
 
     let terminal_block = blocks.last().expect("epoch has a terminal block").clone();
@@ -218,8 +300,12 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
 
     // Run the epoch through the block-sync STF to capture reference values.
     let pre_epoch_layer = MemoryStateBaseLayer::new(pre_epoch_state.clone());
-    let (block_sync_state, block_sync_state_root, block_sync_indexer_writes) =
-        run_block_sync(&pre_epoch_layer, &blocks, genesis.header());
+    let BlockSyncResult {
+        state: block_sync_state,
+        state_root: block_sync_state_root,
+        indexer_writes: block_sync_indexer_writes,
+        logs: block_sync_logs,
+    } = run_block_sync(&pre_epoch_layer, &blocks, genesis.header());
 
     // Genesis commitment / summary for epoch 0.
     let genesis_commitment =
@@ -283,6 +369,7 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
         block_sync_state_root,
         block_sync_summary,
         block_sync_indexer_writes,
+        block_sync_logs,
     }
 }
 
@@ -306,22 +393,28 @@ fn assemble_checkpoint_payload(
     CheckpointPayload::new(tip, sidecar, Vec::new()).expect("build checkpoint payload")
 }
 
+/// Reference values captured from a block-sync run of an epoch.
+struct BlockSyncResult {
+    state: OLState,
+    state_root: Buf32,
+    indexer_writes: IndexerWrites,
+    logs: Vec<OLLog>,
+}
+
 /// Runs the epoch's blocks through the block-sync STF, accumulating the write
-/// batch and indexer writes across all blocks into a single pass.
-///
-/// Returns the post-epoch toplevel state, its state root, and the merged
-/// indexer writes.
+/// batch, indexer writes, and emitted logs across all blocks into a single pass.
 fn run_block_sync(
     pre_epoch_state: &MemoryStateBaseLayer,
     blocks: &[OLBlock],
     genesis_header: &OLBlockHeader,
-) -> (OLState, Buf32, IndexerWrites) {
+) -> BlockSyncResult {
     let tracking_state = WriteTrackingState::new_empty(pre_epoch_state);
     let mut indexer_state = IndexerState::new(tracking_state);
 
     let mut prev_header = genesis_header.clone();
+    let mut logs = Vec::new();
     for block in blocks {
-        verify_block(
+        let block_logs = verify_block(
             &mut indexer_state,
             block.header(),
             Some(&prev_header),
@@ -329,6 +422,7 @@ fn run_block_sync(
             BridgeParams::default(),
         )
         .expect("block-sync verify_block");
+        logs.extend(block_logs);
         prev_header = block.header().clone();
     }
 
@@ -343,7 +437,12 @@ fn run_block_sync(
         .compute_state_root()
         .expect("block-sync state root");
 
-    (new_state.into_inner(), state_root, indexer_writes)
+    BlockSyncResult {
+        state: new_state.into_inner(),
+        state_root,
+        indexer_writes,
+        logs,
+    }
 }
 
 /// Rebuilds the epoch DA blob and per-update OL logs via the checkpoint-builder
@@ -369,83 +468,75 @@ fn rebuild_da_and_logs(
     (blob, ol_logs)
 }
 
-/// Runs the non-terminal blocks of a multi-update snark epoch: two GAMs
-/// deliver two distinct inbox messages, then two snark updates each consume
-/// one (in order). Returns the header of the last block.
-fn run_snark_multi_update_blocks(
+/// The effect a snark update applies, beyond consuming its inbox message.
+enum UpdateEffect {
+    /// No transfer or output message; only advances the account cursor.
+    None,
+    /// Transfer sats to the test recipient account.
+    Transfer(u64),
+    /// Emit a bridge withdrawal of one denomination to the bridge gateway.
+    Withdrawal,
+}
+
+/// Runs one GAM + one snark update per effect, returning the last block's header.
+///
+/// Proofs come from a single MMR tracking every message, so each leaf validates
+/// against the final inbox the account sees after all GAMs land.
+fn run_snark_update_blocks(
     state: &mut MemoryStateBaseLayer,
     blocks: &mut Vec<OLBlock>,
     genesis_header: &OLBlockHeader,
+    effects: &[UpdateEffect],
 ) -> OLBlockHeader {
-    use strata_ol_chain_types::{OLTransaction, OLTransactionData, TxProofs};
-
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let msg_a = snark_inbox_msg_with_data(b"multi-msg-a");
-    let msg_b = snark_inbox_msg_with_data(b"multi-msg-b");
+    let msgs: Vec<MessageEntry> = (0..effects.len())
+        .map(|i| snark_inbox_msg_with_data(format!("msg-{i}").as_bytes()))
+        .collect();
 
-    // Two GAMs in successive blocks deliver two distinct inbox messages.
-    let gam_a = OLTransaction::new(
-        OLTransactionData::from_gam_bytes(snark_id, msg_a.payload().data().to_vec())
-            .expect("gam payload"),
-        TxProofs::new_empty(),
-    );
-    let gam_b = OLTransaction::new(
-        OLTransactionData::from_gam_bytes(snark_id, msg_b.payload().data().to_vec())
-            .expect("gam payload"),
-        TxProofs::new_empty(),
-    );
-    let mut prev = run_block(
-        state,
-        blocks,
-        genesis_header,
-        BlockComponents::new_txs_from_ol_transactions(vec![gam_a]),
-    );
-    prev = run_block(
-        state,
-        blocks,
-        &prev,
-        BlockComponents::new_txs_from_ol_transactions(vec![gam_b]),
-    );
+    let mut prev = genesis_header.clone();
+    for msg in &msgs {
+        let gam = OLTransaction::new(
+            OLTransactionData::from_gam_bytes(snark_id, msg.payload().data().to_vec())
+                .expect("gam payload"),
+            TxProofs::new_empty(),
+        );
+        prev = run_block(
+            state,
+            blocks,
+            &prev,
+            BlockComponents::new_txs_from_ol_transactions(vec![gam]),
+        );
+    }
 
-    // Track the MMR across both adds, then read each leaf's *final* proof so
-    // both are valid against the post-GAM-b MMR state the snark account sees.
     let mut tracker = InboxMmrTracker::new();
-    tracker.add_message(&msg_a);
-    tracker.add_message(&msg_b);
-    let proof_a = tracker.proof_for(0);
-    let proof_b = tracker.proof_for(1);
+    for msg in &msgs {
+        tracker.add_message(msg);
+    }
 
-    // First update consumes msg_a; the snark account's seqno/next_inbox_idx
-    // advance accordingly so the second update is built against the post-state.
-    let update_a = build_snark_update_with(state, &msg_a, proof_a, make_state_root(2));
-    prev = run_block(
-        state,
-        blocks,
-        &prev,
-        BlockComponents::new_txs_from_ol_transactions(vec![update_a]),
-    );
+    for (idx, effect) in effects.iter().enumerate() {
+        let (_, snark_state) = get_snark_state_expect(state, snark_id);
+        let mut builder = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+            .with_processed_msgs(vec![msgs[idx].clone()])
+            .with_inbox_proofs(vec![tracker.proof_for(idx)]);
+        builder = match effect {
+            UpdateEffect::None => builder,
+            UpdateEffect::Transfer(amount) => {
+                builder.with_transfer(make_account_id(TEST_RECIPIENT_ID), *amount)
+            }
+            UpdateEffect::Withdrawal => builder.with_output_message(
+                BRIDGE_GATEWAY_ACCT_ID,
+                100_000_000,
+                make_withdrawal_payload(make_p2wpkh_bosd_descriptor(0x14)),
+            ),
+        };
+        let update = builder.build(snark_id, make_state_root(idx as u8 + 2), vec![0u8; 32]);
+        prev = run_block(
+            state,
+            blocks,
+            &prev,
+            BlockComponents::new_txs_from_ol_transactions(vec![update]),
+        );
+    }
 
-    let update_b = build_snark_update_with(state, &msg_b, proof_b, make_state_root(3));
-    run_block(
-        state,
-        blocks,
-        &prev,
-        BlockComponents::new_txs_from_ol_transactions(vec![update_b]),
-    )
-}
-
-/// Helper to build a snark update tx with caller-supplied inbox proof and post-state root.
-fn build_snark_update_with(
-    state: &MemoryStateBaseLayer,
-    inbox_msg: &MessageEntry,
-    proof: RawMerkleProof,
-    new_state_root: Buf32,
-) -> strata_ol_chain_types::OLTransaction {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let (_, snark_state) = get_snark_state_expect(state, snark_id);
-    SnarkUpdateBuilder::from_snark_state(snark_state.clone())
-        .with_processed_msgs(vec![inbox_msg.clone()])
-        .with_inbox_proofs(vec![proof])
-        .with_transfer(make_account_id(TEST_RECIPIENT_ID), 1_000_000)
-        .build(snark_id, new_state_root, vec![0u8; 32])
+    prev
 }
