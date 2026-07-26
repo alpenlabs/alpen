@@ -302,6 +302,12 @@ fn apply_snark_diff<T: IAccountStateMut>(
         next_seqno,
     );
 
+    if let Some(vk_bytes) = diff.update_vk.new_value() {
+        let buf = PredicateKeyBuf::try_from(vk_bytes.as_slice())
+            .map_err(|_| DaError::InvalidStateDiff("invalid predicate key in snark diff"))?;
+        snark.set_update_vk(buf.to_owned());
+    }
+
     for entry in diff.inbox.new_entries() {
         let msg = MessageEntry::new(entry.source, entry.incl_epoch, entry.payload.clone());
         snark
@@ -323,7 +329,7 @@ mod tests {
     use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_stf::test_utils::make_genesis_state;
-    use strata_predicate::PredicateKey;
+    use strata_predicate::{PredicateKey, PredicateTypeId};
 
     use super::{
         super::{MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES},
@@ -331,7 +337,7 @@ mod tests {
     };
     use crate::{
         AccountDiffEntry, DaMessageEntry, DaProofStateDiff, DaScheme, NewAccountEntry,
-        OLDaSchemeV1, SnarkAccountInit, U16LenList,
+        OLDaSchemeV1, SnarkAccountInit, U16LenBytes, U16LenList,
     };
 
     fn test_account_id(seed: u8) -> AccountId {
@@ -404,12 +410,13 @@ mod tests {
             AccountDiff::new(DaCounter::new_changed(delta), SnarkAccountDiff::default())
         }
 
-        /// Snark diff with seqno, proof-state, and inbox changes.
+        /// Snark diff with seqno, proof-state, inbox, and update-VK changes.
         pub(super) fn snark_diff(
             seqno_incr: u16,
             new_root: Option<Hash>,
             next_idx_incr: u64,
             inbox_msgs: Vec<DaMessageEntry>,
+            new_vk: Option<Vec<u8>>,
         ) -> SnarkAccountDiff {
             let inner_state = match new_root {
                 Some(r) => DaRegister::new_set(r),
@@ -430,7 +437,11 @@ mod tests {
             } else {
                 DaCounter::new_changed(seqno_incr)
             };
-            SnarkAccountDiff::new(seq_no, proof_state, inbox)
+            let update_vk = match new_vk {
+                Some(vk) => DaRegister::new_set(U16LenBytes::new(vk)),
+                None => DaRegister::new_unset(),
+            };
+            SnarkAccountDiff::new(seq_no, proof_state, inbox, update_vk)
         }
 
         /// Inbox message entry with a repeated-byte payload.
@@ -499,7 +510,7 @@ mod tests {
                 AccountSerial::from(1u32),
                 AccountDiff::new(
                     DaCounter::new_unchanged(),
-                    build::snark_diff(3, Some(Hash::from([0x22u8; 32])), 2, inbox),
+                    build::snark_diff(3, Some(Hash::from([0x22u8; 32])), 2, inbox, None),
                 ),
             ),
         ];
@@ -536,7 +547,7 @@ mod tests {
     #[test]
     fn test_snark_account_diff_round_trip() {
         let inbox = vec![build::inbox_msg(test_account_id(9), 1, 8, 0x55)];
-        let diff = build::snark_diff(2, Some(Hash::from([0x44u8; 32])), 1, inbox);
+        let diff = build::snark_diff(2, Some(Hash::from([0x44u8; 32])), 1, inbox, None);
         let encoded = encode_to_vec(&diff).expect("encode snark diff");
         let decoded: SnarkAccountDiff = decode_buf_exact(&encoded).expect("decode snark diff");
         let reencoded = encode_to_vec(&decoded).expect("re-encode snark diff");
@@ -757,6 +768,7 @@ mod tests {
             DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
             DaProofStateDiff::default(),
             DaLinacc::new(),
+            DaRegister::new_unset(),
         );
         let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
         let diff = StateDiff::new(
@@ -775,6 +787,47 @@ mod tests {
             .expect("account exists");
         let snark = account.as_snark_account().expect("snark account");
         assert_eq!(*snark.seqno().inner(), 1);
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_snark_update_vk_rotation() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(5);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from_sat(500),
+            NewAccountTypeState::Snark {
+                update_vk: PredicateKey::always_accept(),
+                initial_state_root: Hash::from([0x11u8; 32]),
+            },
+        );
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create snark account");
+
+        let new_vk = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0x42u8; 32]);
+        let snark_diff =
+            build::snark_diff(1, None, 0, Vec::new(), Some(new_vk.as_buf_ref().to_bytes()));
+        let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(serial, account_diff)],
+            ),
+        );
+
+        apply_ol_state_diff(&mut state, diff).expect("apply snark diff");
+
+        let account = state
+            .get_account_state(account_id)
+            .expect("read account")
+            .expect("account exists");
+        let snark = account.as_snark_account().expect("snark account");
+        assert_eq!(
+            snark.update_vk(),
+            &new_vk,
+            "declared rotation must survive DA reconstruction"
+        );
     }
 
     #[derive(Clone, Copy)]
@@ -848,7 +901,13 @@ mod tests {
                         pre_accounts.snark.serial,
                         AccountDiff::new(
                             DaCounter::new_unchanged(),
-                            build::snark_diff(2, Some(inbox_root), 1, vec![inbox_msg.clone()]),
+                            build::snark_diff(
+                                2,
+                                Some(inbox_root),
+                                1,
+                                vec![inbox_msg.clone()],
+                                None,
+                            ),
                         ),
                     ),
                 ],
@@ -962,6 +1021,7 @@ mod tests {
                                     build::inbox_msg(test_account_id(0xB1), 7, 4, 0xEE),
                                     build::inbox_msg(test_account_id(0xB2), 8, 16, 0xCD),
                                 ],
+                                None,
                             ),
                         ),
                     ),
@@ -1118,7 +1178,7 @@ mod tests {
                     pre_accounts.empty.serial,
                     AccountDiff::new(
                         DaCounter::new_unchanged(),
-                        build::snark_diff(1, None, 0, Vec::new()),
+                        build::snark_diff(1, None, 0, Vec::new(), None),
                     ),
                 )],
             ),
@@ -1251,8 +1311,11 @@ mod tests {
                 prop::option::of(hash()),
                 any::<u64>(),
                 prop::collection::vec(inbox_msg(), 0..4),
+                prop::option::of(prop::collection::vec(any::<u8>(), 0..64)),
             )
-                .prop_map(|(seqno, root, idx, msgs)| build::snark_diff(seqno, root, idx, msgs))
+                .prop_map(|(seqno, root, idx, msgs, vk)| {
+                    build::snark_diff(seqno, root, idx, msgs, vk)
+                })
         }
 
         fn account_diff() -> impl Strategy<Value = AccountDiff> {

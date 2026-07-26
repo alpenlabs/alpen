@@ -173,7 +173,7 @@ impl CompoundMember for DaProofStateDiff {
     }
 }
 
-use super::inbox::InboxBuffer;
+use super::{encoding::U16LenBytes, inbox::InboxBuffer};
 
 /// Diff for snark account state.
 #[derive(Debug)]
@@ -186,6 +186,11 @@ pub struct SnarkAccountDiff {
 
     /// Inbox append-only diff.
     pub inbox: DaLinacc<InboxBuffer>,
+
+    /// Update predicate key (VK) register, set when an update declares a
+    /// rotation. Carries the serialized key bytes, as in
+    /// [`SnarkAccountInit`](super::ledger::SnarkAccountInit).
+    pub update_vk: DaRegister<U16LenBytes>,
 }
 
 impl Default for SnarkAccountDiff {
@@ -194,21 +199,25 @@ impl Default for SnarkAccountDiff {
             seq_no: DaCounter::new_unchanged(),
             proof_state: <DaProofStateDiff as Default>::default(),
             inbox: DaLinacc::new(),
+            update_vk: DaRegister::new_unset(),
         }
     }
 }
 
 impl SnarkAccountDiff {
-    /// Creates a new [`SnarkAccountDiff`] from a sequence number, proof state, and inbox diff.
+    /// Creates a new [`SnarkAccountDiff`] from a sequence number, proof state,
+    /// inbox diff, and update VK register.
     pub fn new(
         seq_no: DaCounter<CtrU64ByU16>,
         proof_state: DaProofStateDiff,
         inbox: DaLinacc<InboxBuffer>,
+        update_vk: DaRegister<U16LenBytes>,
     ) -> Self {
         Self {
             seq_no,
             proof_state,
             inbox,
+            update_vk,
         }
     }
 }
@@ -218,6 +227,7 @@ make_compound_impl! {
         seq_no: counter (CtrU64ByU16),
         proof_state: compound (DaProofStateDiff),
         inbox: compound (DaLinacc<InboxBuffer>),
+        update_vk: register (U16LenBytes),
     }
 }
 
@@ -230,6 +240,7 @@ pub struct SnarkAccountTarget {
     pub seq_no: u64,
     pub proof_state: DaProofState,
     pub inbox: InboxBuffer,
+    pub update_vk: U16LenBytes,
 }
 
 impl CompoundMember for SnarkAccountDiff {
@@ -241,6 +252,7 @@ impl CompoundMember for SnarkAccountDiff {
         CompoundMember::is_default(&self.seq_no)
             && CompoundMember::is_default(&self.proof_state)
             && CompoundMember::is_default(&self.inbox)
+            && CompoundMember::is_default(&self.update_vk)
     }
 
     fn decode_set(dec: &mut impl Decoder) -> Result<Self, CodecError> {

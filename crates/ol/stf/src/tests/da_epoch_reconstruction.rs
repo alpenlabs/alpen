@@ -13,6 +13,7 @@ use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLTransaction, OLTransactionData, TxProofs};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
+use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{
     BlockInfo, EpochInfo, apply_da_epoch,
@@ -65,6 +66,41 @@ fn test_apply_da_epoch_snark_update_only() {
 
     let mut blocks = Vec::new();
     let prev = run_snark_update_blocks(&mut state, &mut blocks, genesis.header());
+    let terminal = run_terminal(
+        &mut state,
+        &mut blocks,
+        &prev,
+        make_empty_manifest(TERMINAL_L1_HEIGHT, 0),
+    );
+
+    assert_reconstruction_matches(&state, &pre_epoch_state, &genesis, &terminal, &blocks);
+}
+
+/// A declared predicate rotation changes consensus account state, so the DA
+/// diff must carry it: if reconstruction misses the new VK, the roots diverge.
+#[test]
+fn test_apply_da_epoch_snark_update_with_rotation() {
+    let mut state = make_genesis_state();
+    seed_accounts(&mut state);
+    let genesis = run_genesis(&mut state);
+    let pre_epoch_state = state.clone();
+
+    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let mut blocks = Vec::new();
+    let mut prev = run_block(
+        &mut state,
+        &mut blocks,
+        genesis.header(),
+        BlockComponents::new_empty(),
+    );
+
+    let (_, snark_state) = get_snark_state_expect(&state, snark_id);
+    let new_vk = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0x42u8; 32]);
+    let update_tx = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+        .with_new_predicate(new_vk)
+        .build(snark_id, make_state_root(2), vec![0u8; 32]);
+    prev = run_block(&mut state, &mut blocks, &prev, txs_components(update_tx));
+
     let terminal = run_terminal(
         &mut state,
         &mut blocks,

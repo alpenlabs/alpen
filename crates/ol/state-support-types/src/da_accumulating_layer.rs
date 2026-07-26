@@ -106,6 +106,8 @@ struct SnarkDelta {
     base_proof_state: DaProofState,
     final_proof_state: DaProofState,
     inbox: DaLinacc<InboxBuffer>,
+    base_update_vk: U16LenBytes,
+    final_update_vk: U16LenBytes,
 }
 
 impl SnarkDelta {
@@ -113,12 +115,15 @@ impl SnarkDelta {
         let base_seq_no = *state.seqno().inner();
         let base_proof_state =
             DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
+        let base_update_vk = U16LenBytes::new(state.update_vk().as_buf_ref().to_bytes());
         Self {
             base_seq_no,
             final_seq_no: base_seq_no,
             base_proof_state: base_proof_state.clone(),
             final_proof_state: base_proof_state,
             inbox: DaLinacc::new(),
+            base_update_vk: base_update_vk.clone(),
+            final_update_vk: base_update_vk,
         }
     }
 
@@ -126,6 +131,7 @@ impl SnarkDelta {
         self.final_seq_no = *state.seqno().inner();
         self.final_proof_state =
             DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
+        self.final_update_vk = U16LenBytes::new(state.update_vk().as_buf_ref().to_bytes());
     }
 
     fn build_diff(&self) -> Result<SnarkAccountDiff, DaAccumulationError> {
@@ -142,10 +148,12 @@ impl SnarkDelta {
         next_idx_builder.set(self.final_proof_state.inner().next_inbox_msg_idx())?;
         let next_inbox_msg_idx = next_idx_builder.into_write()?;
         let proof_state = DaProofStateDiff::new(inner_state, next_inbox_msg_idx);
+        let update_vk = DaRegister::compare(&self.base_update_vk, &self.final_update_vk);
         Ok(SnarkAccountDiff::new(
             seq_no,
             proof_state,
             self.inbox.clone(),
+            update_vk,
         ))
     }
 }
