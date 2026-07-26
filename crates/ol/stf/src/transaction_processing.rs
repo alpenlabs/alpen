@@ -3,7 +3,7 @@
 use strata_acct_types::*;
 use strata_ledger_types::*;
 use strata_ol_chain_types::*;
-use tracing::trace;
+use tracing::{info, trace};
 
 use crate::{
     OutputCtx, account_processing,
@@ -134,7 +134,8 @@ fn process_update_tx<S: IStateAccessorMut>(
 
     // 3. Actually take balance and write new account inner state.
     let serial = account_state.serial();
-    let upd = sau_payload.operation().update();
+    let op = sau_payload.operation();
+    let upd = op.update();
     state.update_account(target, |astate| -> ExecResult<_> {
         // SAFETY: These panics are checked ahead of time so can never get hit.
 
@@ -152,6 +153,21 @@ fn process_update_tx<S: IStateAccessorMut>(
             upd.proof_state().new_next_msg_idx(),
             new_seqno.into(),
         );
+
+        // Predicate rotations are account-sovereign: an update may declare a
+        // new update predicate and the OL applies it without restricting what
+        // the account rotates to. The declaration is bound into the update
+        // proof claim, so the account's current predicate authorizes its
+        // successor; this update is the last one verified under the old key
+        // and every later update must be proven under the new one. For the
+        // Alpen EE, admin enactment queues a predicate-update message into
+        // the account inbox, and declaring exactly the queued key (with the
+        // rotation message terminating the batch) is the EE's own policy,
+        // enforced by its guest in the alpen-ee repo — not by the OL.
+        if let Some(new_vk) = upd.new_predicate() {
+            info!(account_id = %target, "activating declared predicate key rotation");
+            acct_tstate.set_update_vk(new_vk.clone());
+        }
 
         Ok(())
     })??;
