@@ -66,6 +66,7 @@ mod tests {
     use proptest::prelude::*;
     use ssz::Encode as _;
     use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
+    use strata_predicate::{PredicateKey, PredicateTypeId};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
@@ -130,18 +131,27 @@ mod tests {
         })
     }
 
+    fn new_predicate_strategy() -> impl Strategy<Value = Option<PredicateKey>> {
+        prop::option::of(
+            prop::collection::vec(any::<u8>(), 0..32)
+                .prop_map(|condition| PredicateKey::new(PredicateTypeId::AlwaysAccept, condition)),
+        )
+    }
+
     fn update_outputs_strategy() -> impl Strategy<Value = UpdateOutputs> {
         (
             prop::collection::vec(output_transfer_strategy(), 0..3),
             prop::collection::vec(output_message_strategy(), 0..3),
+            new_predicate_strategy(),
         )
-            .prop_map(|(transfers, messages)| UpdateOutputs {
+            .prop_map(|(transfers, messages, new_predicate)| UpdateOutputs {
                 transfers: transfers
                     .try_into()
                     .expect("transfers must fit within SSZ max length"),
                 messages: messages
                     .try_into()
                     .expect("messages must fit within SSZ max length"),
+                new_predicate: new_predicate.into(),
             })
     }
 

@@ -4,16 +4,49 @@ use ssz_types::VariableList;
 use strata_acct_types::{
     AccountId, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects,
 };
+use strata_predicate::PredicateKey;
 
 use crate::{
     error::OutputsError,
     ssz_generated::ssz::outputs::{
-        MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
+        MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputNewPredicate, OutputTransfer,
+        UpdateOutputs,
     },
 };
 
+impl OutputNewPredicate {
+    /// Creates an empty declaration (no predicate rotation).
+    pub fn new_empty() -> Self {
+        Self {
+            predicate: ssz_types::Optional::None,
+        }
+    }
+
+    /// Creates a declaration rotating to the given predicate key.
+    pub fn new_with_key(key: PredicateKey) -> Self {
+        Self {
+            predicate: ssz_types::Optional::Some(key),
+        }
+    }
+
+    pub fn predicate(&self) -> Option<&PredicateKey> {
+        match &self.predicate {
+            ssz_types::Optional::Some(key) => Some(key),
+            ssz_types::Optional::None => None,
+        }
+    }
+}
+
+impl From<Option<PredicateKey>> for OutputNewPredicate {
+    fn from(key: Option<PredicateKey>) -> Self {
+        Self {
+            predicate: key.into(),
+        }
+    }
+}
+
 impl UpdateOutputs {
-    /// Creates new update outputs.
+    /// Creates new update outputs with no predicate rotation.
     pub fn new(transfers: Vec<OutputTransfer>, messages: Vec<OutputMessage>) -> Self {
         Self {
             transfers: transfers
@@ -22,12 +55,30 @@ impl UpdateOutputs {
             messages: messages
                 .try_into()
                 .expect("messages should not exceed capacity"),
+            new_predicate: OutputNewPredicate::new_empty(),
         }
     }
 
     /// Creates empty update outputs.
     pub fn new_empty() -> Self {
         Self::new(Vec::new(), Vec::new())
+    }
+
+    /// Sets the new update predicate key declared by this update, consuming
+    /// and returning self.
+    pub fn with_new_predicate(mut self, key: PredicateKey) -> Self {
+        self.new_predicate = OutputNewPredicate::new_with_key(key);
+        self
+    }
+
+    /// Sets the new update predicate key declared by this update.
+    pub fn set_new_predicate(&mut self, key: Option<PredicateKey>) {
+        self.new_predicate = key.into();
+    }
+
+    /// Returns the new update predicate key declared by this update, if any.
+    pub fn new_predicate(&self) -> Option<&PredicateKey> {
+        self.new_predicate.predicate()
     }
 
     /// Gets the transfers.

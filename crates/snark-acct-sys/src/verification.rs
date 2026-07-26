@@ -162,7 +162,7 @@ fn compute_update_claim(
         snark_state.next_inbox_msg_idx(),
     );
 
-    let outputs = effects_to_update_outputs(update.effects());
+    let outputs = effects_to_update_outputs(update.effects(), update.new_predicate());
 
     let pub_params = UpdateProofPubParams::new(
         update.seq_no(),
