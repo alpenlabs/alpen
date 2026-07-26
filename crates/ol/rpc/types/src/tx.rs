@@ -391,10 +391,14 @@ impl TryFrom<RpcOLTransaction> for OLTransaction {
                     proof_state.next_inbox_msg_idx(),
                     proof_state.inner_state(),
                 );
+                // TODO: `UpdateOperationData` does not carry the declared new
+                // predicate yet, so RPC-submitted updates cannot rotate the key
+                // until the snark-acct update format grows the field.
                 let sau_update_data = SauTxUpdateData::new(
                     operation.seq_no(),
                     sau_proof_state,
                     operation.extra_data().to_vec(),
+                    None,
                 );
 
                 let l1_block_refs = operation.ledger_refs().l1_block_refs();

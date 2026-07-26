@@ -1980,6 +1980,7 @@ impl SnarkUpdateBuilder {
             seq_no: self.seq_no,
             proof_state,
             extra_data: self.extra_data,
+            new_predicate: SauTxNewPredicate::new_empty(),
         };
 
         // Build ledger refs

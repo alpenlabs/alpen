@@ -7,6 +7,7 @@ use strata_acct_types::{
 };
 use strata_identifiers::{Buf32, OLTxId, Slot};
 use strata_ol_logs::SnarkAccountUpdateLogData;
+use strata_predicate::PredicateKey;
 use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::ssz_generated::ssz::{proofs::*, transaction::*};
@@ -206,15 +207,52 @@ impl SauTxLedgerRefs {
     }
 }
 
+impl SauTxNewPredicate {
+    /// Creates an empty declaration (no predicate rotation).
+    pub fn new_empty() -> Self {
+        Self {
+            predicate: ssz_types::Optional::None,
+        }
+    }
+
+    /// Creates a declaration rotating to the given predicate key.
+    pub fn new_with_key(key: PredicateKey) -> Self {
+        Self {
+            predicate: ssz_types::Optional::Some(key),
+        }
+    }
+
+    pub fn predicate(&self) -> Option<&PredicateKey> {
+        match &self.predicate {
+            ssz_types::Optional::Some(key) => Some(key),
+            ssz_types::Optional::None => None,
+        }
+    }
+}
+
+impl From<Option<PredicateKey>> for SauTxNewPredicate {
+    fn from(key: Option<PredicateKey>) -> Self {
+        Self {
+            predicate: key.into(),
+        }
+    }
+}
+
 impl SauTxUpdateData {
     /// Creates a new update data.
-    pub fn new(seq_no: u64, proof_state: SauTxProofState, extra_data: Vec<u8>) -> Self {
+    pub fn new(
+        seq_no: u64,
+        proof_state: SauTxProofState,
+        extra_data: Vec<u8>,
+        new_predicate: Option<PredicateKey>,
+    ) -> Self {
         Self {
             seq_no,
             proof_state,
             extra_data: extra_data
                 .try_into()
                 .expect("extra data must fit within SSZ max length"),
+            new_predicate: new_predicate.into(),
         }
     }
 
@@ -228,6 +266,11 @@ impl SauTxUpdateData {
 
     pub fn extra_data(&self) -> &[u8] {
         &self.extra_data
+    }
+
+    /// Returns the new update predicate key this update rotates to, if any.
+    pub fn new_predicate(&self) -> Option<&PredicateKey> {
+        self.new_predicate.predicate()
     }
 
     /// Builds the [`SnarkAccountUpdateLogData`] emitted for this update.
@@ -365,6 +408,7 @@ impl TxProofs {
 mod tests {
     use ssz::{Decode, Encode};
     use strata_acct_types::AccountId;
+    use strata_predicate::PredicateKey;
     use strata_test_utils_ssz::ssz_proptest;
 
     use crate::{
@@ -437,6 +481,7 @@ mod tests {
                         extra_data: Vec::new()
                             .try_into()
                             .expect("extra data must fit within SSZ max length"),
+                        new_predicate: SauTxNewPredicate::new_empty(),
                     },
                     messages: Vec::new()
                         .try_into()
@@ -495,6 +540,9 @@ mod tests {
                                 extra_data: Vec::new()
                                     .try_into()
                                     .expect("extra data must fit within SSZ max length"),
+                                new_predicate: SauTxNewPredicate::new_with_key(
+                                    PredicateKey::always_accept(),
+                                ),
                             },
                             messages: Vec::new()
                                 .try_into()

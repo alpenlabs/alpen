@@ -125,6 +125,7 @@ pub(crate) fn create_test_snark_tx_from_update(
         operation.seq_no(),
         sau_proof_state,
         operation.extra_data().to_vec(),
+        None,
     );
 
     let l1_block_refs = operation.ledger_refs().l1_block_refs();

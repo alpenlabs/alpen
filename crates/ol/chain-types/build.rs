@@ -13,6 +13,7 @@ fn main() {
         "strata_acct_types",
         "strata_snark_acct_types",
         "strata_asm_common",
+        "strata_predicate",
     ];
 
     build_ssz_files(
