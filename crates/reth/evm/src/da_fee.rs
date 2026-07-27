@@ -144,6 +144,19 @@ pub fn btc_fee_rate_to_da_rate(sat_per_vbyte: u64) -> u64 {
         .saturating_div(SEGWIT_WITNESS_DIVISOR)
 }
 
+/// Computes the DA fee to charge, bounded by the caller's unused authorized gas value.
+///
+/// The raw fee is `da_rate * diff_size`, but it is capped at `remaining_value` — the
+/// value of the gas the caller authorized (prepaid) but did not consume. Capping there
+/// guarantees the charge never exceeds what the signature authorized and never fails
+/// (the caller was just refunded `remaining_value`). If the raw fee exceeds the budget
+/// (rate/diff drift versus the quote), the protocol undercharges rather than overcharge.
+pub fn bounded_da_fee(da_rate: U256, diff_size: u64, remaining_value: U256) -> U256 {
+    da_rate
+        .saturating_mul(U256::from(diff_size))
+        .min(remaining_value)
+}
+
 /// Applies a DA fee to the state: debit `caller`, credit `vault`, both by `da_fee`.
 ///
 /// The caller is expected to be present in `state` (it was touched by the transaction)
@@ -301,6 +314,27 @@ mod tests {
         // Genesis label / empty field => no rate => charge is dormant.
         assert_eq!(da_rate_from_extra_data(&Bytes::from_static(b"SC")), 0);
         assert_eq!(da_rate_from_extra_data(&Bytes::new()), 0);
+    }
+
+    #[test]
+    fn bounded_da_fee_caps_at_remaining_value() {
+        let da_rate = U256::from(1_000u64);
+        // raw = 1000 * 50 = 50_000; budget 60_000 => full fee charged.
+        assert_eq!(
+            bounded_da_fee(da_rate, 50, U256::from(60_000u64)),
+            U256::from(50_000u64)
+        );
+        // raw = 50_000 but budget only 20_000 => capped (undercharge, never overcharge).
+        assert_eq!(
+            bounded_da_fee(da_rate, 50, U256::from(20_000u64)),
+            U256::from(20_000u64)
+        );
+        // zero rate or zero budget => zero fee.
+        assert_eq!(
+            bounded_da_fee(U256::ZERO, 50, U256::from(60_000u64)),
+            U256::ZERO
+        );
+        assert_eq!(bounded_da_fee(da_rate, 50, U256::ZERO), U256::ZERO);
     }
 
     #[test]

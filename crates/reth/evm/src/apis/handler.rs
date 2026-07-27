@@ -18,7 +18,7 @@ use revm_primitives::U256;
 use crate::{
     apis::validation,
     constants::DA_FEE_VAULT_ADDRESS,
-    da_fee::{apply_da_fee, calc_diff_size, DaStateAccess},
+    da_fee::{apply_da_fee, bounded_da_fee, calc_diff_size, DaStateAccess},
 };
 
 #[expect(
@@ -96,7 +96,7 @@ where
         // system/zero-fee calls (effective_gas_price == 0) and no-op when no rate is set.
         if effective_gas_price != 0 && self.da_rate != U256::ZERO {
             let diff_size = calc_diff_size(context.evm_state());
-            let da_fee = (self.da_rate * U256::from(diff_size)).min(remaining_value);
+            let da_fee = bounded_da_fee(self.da_rate, diff_size, remaining_value);
             if da_fee != U256::ZERO {
                 apply_da_fee(
                     context.evm_state_mut(),
