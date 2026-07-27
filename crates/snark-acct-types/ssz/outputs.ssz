@@ -29,10 +29,12 @@ class OutputMessage(Container):
 ###
 ### This is a StableContainer because Optional fields are only allowed in
 ### StableContainers, not plain Containers, so we need this wrapper to make
-### the predicate optional.  The spare capacity also lets future optional
-### fields slot in without changing the encoding of existing data.
+### the predicate optional.  Capacity 8 costs nothing extra since the
+### presence bitvector pads to a full byte anyway, and the spare slots let
+### future optional fields slot in without changing the encoding of
+### existing data.
 #~# derive: std::default::Default
-class OutputNewPredicate(StableContainer[4]):
+class OutputNewPredicate(StableContainer[8]):
     #~# external_kind: container
     predicate: Optional[strata_predicate.PredicateKey]
 
