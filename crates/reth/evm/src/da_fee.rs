@@ -16,8 +16,8 @@
 //! disagree with the charge.
 
 use reth_evm::{eth::EthEvmContext, Database};
-use revm::state::{Account, AccountInfo, EvmState};
-use revm_primitives::{Address, Bytes, KECCAK_EMPTY, U256};
+use revm::state::EvmState;
+use revm_primitives::{Bytes, KECCAK_EMPTY, U256};
 
 /// Basis-points denominator for the ratio/discount constants below.
 const BPS_DENOM: u64 = 10_000;
@@ -157,46 +157,20 @@ pub fn bounded_da_fee(da_rate: U256, diff_size: u64, remaining_value: U256) -> U
         .min(remaining_value)
 }
 
-/// Applies a DA fee to the state: debit `caller`, credit `vault`, both by `da_fee`.
-///
-/// The caller is expected to be present in `state` (it was touched by the transaction)
-/// and to hold at least `da_fee` — the handler bounds `da_fee` by the gas value just
-/// refunded to the caller, so the debit is always covered. The vault is created if
-/// absent. Both accounts are marked touched so the change lands in the state diff.
-pub fn apply_da_fee(state: &mut EvmState, caller: Address, vault: Address, da_fee: U256) {
-    if let Some(caller_account) = state.get_mut(&caller) {
-        caller_account.info.balance = caller_account.info.balance.saturating_sub(da_fee);
-        caller_account.mark_touch();
-    }
-
-    let vault_account = state.entry(vault).or_insert_with(|| {
-        let mut account = Account::from(AccountInfo::default());
-        account.mark_touch();
-        account
-    });
-    vault_account.info.balance = vault_account.info.balance.saturating_add(da_fee);
-    vault_account.mark_touch();
-}
-
-/// Access to the raw EVM state change-set on the concrete EVM context.
+/// Read access to the raw EVM state change-set on the concrete EVM context.
 ///
 /// The generic revm `Handler` cannot reach the whole `EvmState` through `JournalTr`, but
 /// the concrete [`EthEvmContext`] exposes it via its journal. The DA charge binds to this
-/// trait so it can size the diff and apply the fee in the handler.
+/// trait so it can size the diff in the handler. The fee itself is applied through the
+/// journal (`load_account_mut`), not by mutating this map, so accounts stay loaded.
 pub trait DaStateAccess {
     /// Returns the transaction's state change-set.
     fn evm_state(&self) -> &EvmState;
-    /// Returns the transaction's state change-set, mutably.
-    fn evm_state_mut(&mut self) -> &mut EvmState;
 }
 
 impl<DB: Database> DaStateAccess for EthEvmContext<DB> {
     fn evm_state(&self) -> &EvmState {
         &self.journaled_state.state
-    }
-
-    fn evm_state_mut(&mut self) -> &mut EvmState {
-        &mut self.journaled_state.state
     }
 }
 
@@ -335,22 +309,5 @@ mod tests {
             U256::ZERO
         );
         assert_eq!(bounded_da_fee(da_rate, 50, U256::ZERO), U256::ZERO);
-    }
-
-    #[test]
-    fn apply_da_fee_debits_caller_and_credits_vault() {
-        let caller = Address::repeat_byte(1);
-        let vault = Address::repeat_byte(2);
-        let mut info = AccountInfo::default();
-        info.balance = U256::from(1_000u64);
-        let mut caller_account = Account::from(info);
-        caller_account.mark_touch();
-        let mut state = state_of([(caller, caller_account)]);
-
-        apply_da_fee(&mut state, caller, vault, U256::from(300u64));
-
-        assert_eq!(state.get(&caller).unwrap().info.balance, U256::from(700u64));
-        assert_eq!(state.get(&vault).unwrap().info.balance, U256::from(300u64));
-        assert!(state.get(&vault).unwrap().is_touched());
     }
 }

@@ -18,7 +18,7 @@ use revm_primitives::U256;
 use crate::{
     apis::validation,
     constants::DA_FEE_VAULT_ADDRESS,
-    da_fee::{apply_da_fee, bounded_da_fee, calc_diff_size, DaStateAccess},
+    da_fee::{bounded_da_fee, calc_diff_size, DaStateAccess},
 };
 
 #[expect(
@@ -98,12 +98,19 @@ where
             let diff_size = calc_diff_size(context.evm_state());
             let da_fee = bounded_da_fee(self.da_rate, diff_size, remaining_value);
             if da_fee != U256::ZERO {
-                apply_da_fee(
-                    context.evm_state_mut(),
-                    caller,
-                    DA_FEE_VAULT_ADDRESS,
-                    da_fee,
-                );
+                // Debit the caller and credit the vault through the journal so both
+                // accounts are loaded/journaled properly. Mutating the state map directly
+                // would leave the vault account unloaded and panic bundle assembly. The
+                // debit is covered because `da_fee` is bounded by the caller's just-
+                // refunded gas value.
+                context
+                    .journal_mut()
+                    .load_account_mut(caller)?
+                    .decr_balance(da_fee);
+                context
+                    .journal_mut()
+                    .load_account_mut(DA_FEE_VAULT_ADDRESS)?
+                    .incr_balance(da_fee);
             }
         }
 
