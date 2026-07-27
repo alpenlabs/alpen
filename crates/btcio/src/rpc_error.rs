@@ -66,6 +66,7 @@ pub(crate) fn is_retryable_envelope_error(err: &EnvelopeError) -> bool {
         | EnvelopeError::P2trChangeAddressUnsupported
         | EnvelopeError::Taproot(_)
         | EnvelopeError::Tag(_)
+        | EnvelopeError::CommitRevealBuild(_)
         | EnvelopeError::EnvelopeBuild(_)
         | EnvelopeError::Sighash(_) => false,
     }

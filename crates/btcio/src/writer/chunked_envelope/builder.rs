@@ -6,7 +6,7 @@
 //! Reveals are independent across batches: fee bumping a single reveal does
 //! not cascade. Chunk ordering is implicit in commit-output ordering.
 
-use core::{iter, slice};
+use core::iter;
 
 use anyhow::anyhow;
 use bitcoin::{
@@ -20,10 +20,9 @@ use bitcoin::{
     Address, Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
-use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+use strata_l1_commit_reveal_fmt::build_commit_reveal_scripts_from_chunks;
 use strata_l1_txfmt::MagicBytes;
 
-use super::commit_op_return::build_commit_op_return;
 use crate::writer::builder::{
     choose_utxos, fee_sats_for_vsize, get_size, sign_reveal_transaction, EnvelopeConfig,
     EnvelopeError, BITCOIN_DUST_LIMIT,
@@ -72,14 +71,16 @@ pub fn build_chunked_envelope_txs(
     }
 
     let sequencer_xonly = XOnlyPublicKey::from_keypair(sequencer_keypair).0;
-    let commit_op_return = build_commit_op_return(magic_bytes, da_blob_version);
+    let scripts = build_commit_reveal_scripts_from_chunks(
+        magic_bytes,
+        da_blob_version.to_be_bytes(),
+        &sequencer_xonly.serialize(),
+        chunks,
+    )?;
+    let (commit_op_return, reveal_scripts) = scripts.into_parts();
 
-    let mut artifacts = Vec::with_capacity(chunks.len());
-    for chunk in chunks {
-        let reveal_script = EnvelopeScriptBuilder::with_pubkey(&sequencer_xonly.serialize())?
-            .add_envelopes(slice::from_ref(chunk))?
-            .build_without_min_check()?;
-
+    let mut artifacts = Vec::with_capacity(reveal_scripts.len());
+    for reveal_script in reveal_scripts {
         let spend_info = TaprootBuilder::new()
             .add_leaf(0, reveal_script.clone())?
             .finalize(SECP256K1, sequencer_xonly)
@@ -299,14 +300,24 @@ mod tests {
         Network, ScriptBuf, Txid,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
-
-    use super::*;
-    use crate::{
-        test_utils::test_context::get_writer_context,
-        writer::chunked_envelope::commit_op_return::COMMIT_OP_RETURN_PAYLOAD_LEN,
+    use strata_l1_commit_reveal_fmt::{
+        extract_authenticated_payload_for_commit, read_commit_marker, CommitRevealBuildError,
     };
 
+    use super::*;
+    use crate::test_utils::test_context::get_writer_context;
+
     const TEST_DA_BLOB_VERSION: u32 = 1;
+    const TEST_MAGIC_BYTES: [u8; 4] = [0xAA, 0xBB, 0xCC, 0xDD];
+    const COMMIT_OP_RETURN_PAYLOAD_LEN: u8 = 8;
+
+    struct BuiltChunkedEnvelope {
+        config: EnvelopeConfig,
+        chunks: Vec<Vec<u8>>,
+        magic: MagicBytes,
+        keypair: Keypair,
+        txs: ChunkedEnvelopeTxs,
+    }
 
     fn test_keypair() -> Keypair {
         let secp = Secp256k1::new();
@@ -366,32 +377,50 @@ mod tests {
         )
     }
 
-    #[test]
-    fn commit_marker_orders_reveals() {
+    fn build_test_chunked_envelope() -> BuiltChunkedEnvelope {
         let config = get_test_config();
         let utxos = get_mock_utxos();
         let chunks = vec![vec![1u8; 150], vec![2u8; 150], vec![3u8; 150]];
-        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
-        let kp = test_keypair();
+        let magic = MagicBytes::from(TEST_MAGIC_BYTES);
+        let keypair = test_keypair();
 
-        let result =
-            build_chunked_envelope_txs(&config, &chunks, &magic, TEST_DA_BLOB_VERSION, &kp, utxos)
-                .unwrap();
+        let txs = build_chunked_envelope_txs(
+            &config,
+            &chunks,
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &keypair,
+            utxos,
+        )
+        .unwrap();
+
+        BuiltChunkedEnvelope {
+            config,
+            chunks,
+            magic,
+            keypair,
+            txs,
+        }
+    }
+
+    #[test]
+    fn commit_marker_orders_reveals() {
+        let fixture = build_test_chunked_envelope();
 
         // commit: OP_RETURN + 3 P2TR + change = 5 outputs.
-        assert_eq!(result.commit_tx.output.len(), 5);
+        assert_eq!(fixture.txs.commit_tx.output.len(), 5);
 
-        let op_return_script = &result.commit_tx.output[0].script_pubkey;
+        let op_return_script = &fixture.txs.commit_tx.output[0].script_pubkey;
         let op_return_bytes = op_return_script.as_bytes();
         assert_eq!(
             op_return_bytes,
             [
                 OP_RETURN.to_u8(),
-                COMMIT_OP_RETURN_PAYLOAD_LEN as u8,
-                0xAA,
-                0xBB,
-                0xCC,
-                0xDD,
+                COMMIT_OP_RETURN_PAYLOAD_LEN,
+                TEST_MAGIC_BYTES[0],
+                TEST_MAGIC_BYTES[1],
+                TEST_MAGIC_BYTES[2],
+                TEST_MAGIC_BYTES[3],
                 0,
                 0,
                 0,
@@ -400,9 +429,9 @@ mod tests {
         );
 
         // reveals: each spends commit output i+1, has a single sequencer-dust output.
-        assert_eq!(result.reveal_txs.len(), 3);
-        let commit_txid = result.commit_tx.compute_txid();
-        for (i, reveal) in result.reveal_txs.iter().enumerate() {
+        assert_eq!(fixture.txs.reveal_txs.len(), 3);
+        let commit_txid = fixture.txs.commit_tx.compute_txid();
+        for (i, reveal) in fixture.txs.reveal_txs.iter().enumerate() {
             assert_eq!(reveal.input[0].previous_output.txid, commit_txid);
             assert_eq!(reveal.input[0].previous_output.vout, (i + 1) as u32);
             assert_eq!(
@@ -412,16 +441,42 @@ mod tests {
             );
             assert_eq!(
                 reveal.output[0].script_pubkey,
-                config.sequencer_address.script_pubkey()
+                fixture.config.sequencer_address.script_pubkey()
             );
         }
+    }
+
+    #[test]
+    fn writer_output_parses_with_shared_commit_reveal_format() {
+        let fixture = build_test_chunked_envelope();
+
+        let marker_tail = read_commit_marker(
+            &fixture.magic,
+            &fixture.txs.commit_tx,
+        )
+        .expect("commit marker exists");
+        assert_eq!(marker_tail, TEST_DA_BLOB_VERSION.to_be_bytes());
+
+        let reveal_pubkey = XOnlyPublicKey::from_keypair(&fixture.keypair).0.serialize();
+        let parsed = extract_authenticated_payload_for_commit(
+            &fixture.magic,
+            &fixture.txs.commit_tx,
+            fixture.txs.reveal_txs.iter(),
+            &reveal_pubkey,
+        )
+        .expect("writer output parses with shared commit-reveal format");
+        assert_eq!(
+            parsed.chunks(),
+            fixture.chunks.as_slice(),
+            "shared parser preserves writer chunk ordering"
+        );
     }
 
     #[test]
     fn build_chunked_envelope_txs_insufficient_utxos() {
         let config = get_test_config();
         let chunks = vec![vec![0u8; 150], vec![0u8; 150], vec![0u8; 150]];
-        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+        let magic = MagicBytes::from(TEST_MAGIC_BYTES);
         let kp = test_keypair();
 
         let address = config.sequencer_address.clone();
@@ -456,6 +511,24 @@ mod tests {
     }
 
     #[test]
+    fn empty_chunk_is_rejected_by_shared_builder() {
+        let config = get_test_config();
+        let chunks = vec![Vec::new()];
+        let magic = MagicBytes::from(TEST_MAGIC_BYTES);
+        let kp = test_keypair();
+
+        let result =
+            build_chunked_envelope_txs(&config, &chunks, &magic, TEST_DA_BLOB_VERSION, &kp, vec![]);
+
+        assert!(matches!(
+            result,
+            Err(EnvelopeError::CommitRevealBuild(
+                CommitRevealBuildError::EmptyChunk { index: 0 }
+            ))
+        ));
+    }
+
+    #[test]
     fn build_chunked_envelope_txs_rejects_p2tr_change_address() {
         let kp = test_keypair();
         let p2tr_address = Address::p2tr(
@@ -474,7 +547,7 @@ mod tests {
             None,
         );
         let chunks = vec![vec![0u8; 150]];
-        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+        let magic = MagicBytes::from(TEST_MAGIC_BYTES);
 
         let result = build_chunked_envelope_txs(
             &config,

@@ -70,7 +70,7 @@ impl AccountIntrinsicState {
 
     /// Creates a new empty account with no balance.
     pub fn new_empty(serial: AccountSerial) -> Self {
-        Self::new(AccountTypeId::Empty, serial, 0.into())
+        Self::new(AccountTypeId::Empty, serial, BitcoinAmount::default())
     }
 
     pub fn raw_ty(&self) -> RawAccountTypeId {
@@ -124,7 +124,7 @@ mod tests {
                 AccountIntrinsicState {
                     raw_ty,
                     serial: AccountSerial::new(serial),
-                    balance: BitcoinAmount::from_sat(sats),
+                    balance: BitcoinAmount::try_from(sats).expect("satoshi amount must be within Bitcoin max money"),
                 }
             })
         );
@@ -156,7 +156,7 @@ mod tests {
                         intrinsics: AccountIntrinsicState {
                             raw_ty,
                             serial: AccountSerial::new(serial),
-                            balance: BitcoinAmount::from_sat(sats),
+                            balance: BitcoinAmount::try_from(sats).expect("satoshi amount must be within Bitcoin max money"),
                         },
                         encoded_state: encoded
                             .try_into()
@@ -191,7 +191,7 @@ mod tests {
                         intrinsics: AccountIntrinsicState {
                             raw_ty,
                             serial: AccountSerial::new(serial),
-                            balance: BitcoinAmount::from_sat(sats),
+                            balance: BitcoinAmount::try_from(sats).expect("satoshi amount must be within Bitcoin max money"),
                         },
                         typed_state_root: root.into(),
                     }

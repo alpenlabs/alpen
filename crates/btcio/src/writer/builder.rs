@@ -26,6 +26,7 @@ use bitcoind_async_client::{
 };
 use rand::{rngs::OsRng, RngCore};
 use strata_csm_types::L1Payload;
+use strata_l1_commit_reveal_fmt::CommitRevealBuildError;
 use strata_l1_envelope_fmt::{builder::EnvelopeScriptBuilder, errors::EnvelopeBuildError};
 use strata_l1_txfmt::{self, MagicBytes, ParseConfig, TxFmtError};
 use strata_primitives::buf::Buf32;
@@ -115,6 +116,9 @@ pub enum EnvelopeError {
 
     #[error("envelope build error")]
     EnvelopeBuild(#[from] EnvelopeBuildError),
+
+    #[error("commit-reveal build error")]
+    CommitRevealBuild(#[from] CommitRevealBuildError),
 
     #[error("failed to compute sighash")]
     Sighash(#[from] TaprootError),

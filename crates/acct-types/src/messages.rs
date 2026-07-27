@@ -36,7 +36,7 @@ impl SentMessage {
 
     /// Creates a new instance with empty data and 0 value.
     pub fn new_empty(dest: AccountId) -> Self {
-        Self::new_dataless(dest, BitcoinAmount::zero())
+        Self::new_dataless(dest, BitcoinAmount::default())
     }
 
     /// Returns the destination account ID.
@@ -60,7 +60,7 @@ impl SentTransfer {
     ///
     /// This shouldn't normally happen but it's a convenience.
     pub fn zero(dest: AccountId) -> Self {
-        Self::new(dest, BitcoinAmount::zero())
+        Self::new(dest, BitcoinAmount::default())
     }
 
     /// Returns the destination account ID.
@@ -87,7 +87,7 @@ impl ReceivedMessage {
 
     /// Creates a new instance with empty data and 0 value.
     pub fn new_empty(dest: AccountId) -> Self {
-        Self::new_dataless(dest, BitcoinAmount::zero())
+        Self::new_dataless(dest, BitcoinAmount::default())
     }
 
     /// Returns the source account ID.
@@ -127,17 +127,17 @@ impl MsgPayload {
 
     /// Creates a new instance with some data and 0 value.
     pub fn new_valueless(data: MsgPayloadData) -> Self {
-        Self::new(BitcoinAmount::zero(), data)
+        Self::new(BitcoinAmount::default(), data)
     }
 
     /// Creates a new instance from raw data and 0 value.
     pub fn from_bytes_valueless(data: Vec<u8>) -> Result<Self, MsgPayloadError> {
-        Self::from_bytes(BitcoinAmount::zero(), data)
+        Self::from_bytes(BitcoinAmount::default(), data)
     }
 
     /// Creates a new instance with empty data and 0 value.
     pub fn new_empty() -> Self {
-        Self::new_dataless(BitcoinAmount::zero())
+        Self::new_dataless(BitcoinAmount::default())
     }
 
     pub fn value(&self) -> BitcoinAmount {
@@ -244,7 +244,7 @@ mod tests {
             MsgPayload,
             (any::<u64>(), prop::collection::vec(any::<u8>(), 0..100)).prop_map(|(sats, data)| {
                 MsgPayload {
-                    value: BitcoinAmount::from_sat(sats),
+                    value: BitcoinAmount::try_from(sats).expect("satoshi amount must be within Bitcoin max money"),
                     data: data
                         .try_into()
                         .expect("message payload bytes must fit within SSZ max length"),
@@ -254,7 +254,7 @@ mod tests {
 
         #[test]
         fn test_zero_ssz() {
-            let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![])
+            let payload = MsgPayload::from_bytes(BitcoinAmount::default(), vec![])
                 .expect("message payload bytes must fit within SSZ max length");
             let encoded = payload.as_ssz_bytes();
             let decoded = MsgPayload::from_ssz_bytes(&encoded).unwrap();
@@ -265,7 +265,7 @@ mod tests {
         #[test]
         fn accepts_max_size_payload() {
             let data = vec![0u8; MAX_MSG_PAYLOAD_DATA_BYTES as usize];
-            let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data)
+            let payload = MsgPayload::from_bytes(BitcoinAmount::default(), data)
                 .expect("max size message payload bytes must fit within SSZ max length");
 
             assert_eq!(payload.data().len(), MAX_MSG_PAYLOAD_DATA_BYTES as usize);
@@ -274,7 +274,7 @@ mod tests {
         #[test]
         fn rejects_oversized_payload() {
             let max = MAX_MSG_PAYLOAD_DATA_BYTES as usize;
-            let err = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![0u8; max + 1])
+            let err = MsgPayload::from_bytes(BitcoinAmount::default(), vec![0u8; max + 1])
                 .expect_err("oversized message payload bytes must fail");
 
             assert_eq!(err, MsgPayloadError::DataTooLarge { len: max + 1, max });
@@ -283,9 +283,9 @@ mod tests {
         #[test]
         fn new_accepts_prebuilt_payload_data() {
             let data = MsgPayloadData::default();
-            let payload = MsgPayload::new(BitcoinAmount::from_sat(42), data);
+            let payload = MsgPayload::new(BitcoinAmount::try_from(42).expect("valid amount"), data);
 
-            assert_eq!(payload.value(), BitcoinAmount::from_sat(42));
+            assert_eq!(payload.value(), BitcoinAmount::try_from(42).expect("valid amount"));
             assert!(payload.data().is_empty());
         }
     }
@@ -304,7 +304,7 @@ mod tests {
                     SentMessage {
                         dest: AccountId::new(id),
                         payload: MsgPayload {
-                            value: BitcoinAmount::from_sat(sats),
+                            value: BitcoinAmount::try_from(sats).expect("satoshi amount must be within Bitcoin max money"),
                             data: data
                                 .try_into()
                                 .expect("message payload bytes must fit within SSZ max length"),
@@ -317,7 +317,7 @@ mod tests {
         fn test_zero_ssz() {
             let msg = SentMessage::new(
                 AccountId::new([0u8; 32]),
-                MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![])
+                MsgPayload::from_bytes(BitcoinAmount::default(), vec![])
                     .expect("message payload bytes must fit within SSZ max length"),
             );
             let encoded = msg.as_ssz_bytes();
@@ -340,7 +340,7 @@ mod tests {
                     ReceivedMessage {
                         source: AccountId::new(id),
                         payload: MsgPayload {
-                            value: BitcoinAmount::from_sat(sats),
+                            value: BitcoinAmount::try_from(sats).expect("satoshi amount must be within Bitcoin max money"),
                             data: data
                                 .try_into()
                                 .expect("message payload bytes must fit within SSZ max length"),
@@ -353,7 +353,7 @@ mod tests {
         fn test_zero_ssz() {
             let msg = ReceivedMessage::new(
                 AccountId::new([0u8; 32]),
-                MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![])
+                MsgPayload::from_bytes(BitcoinAmount::default(), vec![])
                     .expect("message payload bytes must fit within SSZ max length"),
             );
             let encoded = msg.as_ssz_bytes();

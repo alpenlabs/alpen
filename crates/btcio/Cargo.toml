@@ -12,6 +12,7 @@ strata-config.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-l1-commit-reveal-fmt.workspace = true
 strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
