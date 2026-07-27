@@ -35,8 +35,7 @@ use crate::{
     signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
 
-/// Deposits one bridge denomination of BTC plus the bridge fee from signet into Alpen.
-/// The bridge denomination is configured in the `config.toml` file.
+/// Deposits BTC from signet into Alpen
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "deposit")]
 pub struct DepositArgs {
