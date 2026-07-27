@@ -35,6 +35,8 @@ pub struct AlpenAlloyEvm<DB: Database, I> {
         EthFrame,
     >,
     inspect: bool,
+    /// Per-block DA rate (wei per byte) used by the in-EVM DA fee charge.
+    da_rate: U256,
 }
 
 impl<DB: Database, I> AlpenAlloyEvm<DB, I> {
@@ -51,11 +53,18 @@ impl<DB: Database, I> AlpenAlloyEvm<DB, I> {
             EthFrame,
         >,
         inspect: bool,
+        da_rate: U256,
     ) -> Self {
         Self {
             inner: evm,
             inspect,
+            da_rate,
         }
+    }
+
+    /// Returns the per-block DA rate (wei per byte) configured for this EVM instance.
+    pub const fn da_rate(&self) -> U256 {
+        self.da_rate
     }
 
     /// Consumes self and return the inner EVM instance.

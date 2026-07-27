@@ -1,4 +1,8 @@
 use core::error;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
 use reth_evm::{eth::EthEvmContext, precompiles::PrecompilesMap, Database, EvmEnv, EvmFactory};
 use revm::{
@@ -17,10 +21,18 @@ use crate::{apis::AlpenAlloyEvm, precompiles::factory, utils::wei_to_sats};
 
 /// Custom EVM configuration.
 ///
-/// Carries bridge withdrawal policy for precompile validation.
+/// Carries bridge withdrawal policy for precompile validation and the current per-block
+/// DA rate (wei per byte) used by the in-EVM DA fee charge.
+///
+/// The DA rate is interior-mutable and shared across clones: reth's EVM-env plumbing
+/// cannot thread a per-block value into [`EvmFactory::create_evm`], so the caller (which
+/// holds the block header) sets it via [`AlpenEvmFactory::set_da_rate`] just before
+/// executing a block, and `create_evm` reads it into the EVM instance. Block execution is
+/// sequential (the proof processes blocks in order), so this is deterministic.
 #[derive(Debug, Clone)]
 pub struct AlpenEvmFactory {
     bridge_params: BridgeParams,
+    da_rate: Arc<AtomicU64>,
 }
 
 impl AlpenEvmFactory {
@@ -40,6 +52,7 @@ impl AlpenEvmFactory {
                 max_withdrawal_descriptor_len,
             )
             .expect("withdrawal policy constructed from wei must be valid"),
+            da_rate: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -53,7 +66,23 @@ impl AlpenEvmFactory {
 
     /// Creates an [`AlpenEvmFactory`] from [`BridgeParams`].
     pub fn from_bridge_params(bp: &BridgeParams) -> Self {
-        Self { bridge_params: *bp }
+        Self {
+            bridge_params: *bp,
+            da_rate: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    /// Sets the per-block DA rate (wei per byte) used by the DA fee charge.
+    ///
+    /// The caller must set this from the block's committed DA rate before executing the
+    /// block's transactions.
+    pub fn set_da_rate(&self, da_rate: u64) {
+        self.da_rate.store(da_rate, Ordering::Relaxed);
+    }
+
+    /// Returns the currently configured per-block DA rate (wei per byte).
+    pub fn da_rate(&self) -> u64 {
+        self.da_rate.load(Ordering::Relaxed)
     }
 }
 
@@ -94,7 +123,7 @@ impl EvmFactory for AlpenEvmFactory {
             .build_mainnet_with_inspector(NoOpInspector {})
             .with_precompiles(precompiles);
 
-        AlpenAlloyEvm::new(evm, false)
+        AlpenAlloyEvm::new(evm, false, U256::from(self.da_rate()))
     }
 
     fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>, EthInterpreter>>(
@@ -103,11 +132,13 @@ impl EvmFactory for AlpenEvmFactory {
         input: EvmEnv,
         inspector: I,
     ) -> Self::Evm<DB, I> {
+        let da_rate = U256::from(self.da_rate());
         AlpenAlloyEvm::new(
             self.create_evm(db, input)
                 .into_inner()
                 .with_inspector(inspector),
             true,
+            da_rate,
         )
     }
 }

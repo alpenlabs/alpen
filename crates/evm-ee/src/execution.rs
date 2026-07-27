@@ -6,7 +6,9 @@
 use std::sync::Arc;
 
 use alloy_consensus::Block as AlloyBlock;
-use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
+use alpen_reth_evm::{
+    da_fee::da_rate_from_extra_data, evm::AlpenEvmFactory, extract_withdrawal_intents,
+};
 use reth_chainspec::ChainSpec;
 use reth_consensus_common::validation::validate_body_against_header;
 use reth_evm::{
@@ -104,6 +106,10 @@ impl EvmExecutionEnvironment {
             let wit_db = pre_state.create_witness_db();
             WrapDatabaseRef(wit_db)
         };
+        // Set the per-block DA rate (committed in the header `extra_data`) on the factory
+        // before execution, so the DA fee charge inside the EVM reads the correct rate.
+        let da_rate = da_rate_from_extra_data(&block.header().extra_data);
+        self.evm_config.evm_factory().set_da_rate(da_rate);
         let block_executor = BasicBlockExecutor::new(&self.evm_config, db);
         block_executor
             .execute(block)

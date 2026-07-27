@@ -15,8 +15,9 @@
 //! in-EVM charge and the fee-estimation RPCs must both call it, so a quote can never
 //! disagree with the charge.
 
-use revm::state::EvmState;
-use revm_primitives::KECCAK_EMPTY;
+use reth_evm::{eth::EthEvmContext, Database};
+use revm::state::{Account, AccountInfo, EvmState};
+use revm_primitives::{Address, Bytes, KECCAK_EMPTY, U256};
 
 /// Basis-points denominator for the ratio/discount constants below.
 const BPS_DENOM: u64 = 10_000;
@@ -104,6 +105,68 @@ pub fn calc_diff_size(state: &EvmState) -> u64 {
     uncompressed.saturating_mul(COMPRESSION_RATIO_BPS) / BPS_DENOM + DA_FIXED_OVERHEAD
 }
 
+/// Decodes the per-block DA rate (wei per byte) from the EVM header `extra_data`.
+///
+/// The rate is stored as a big-endian `u64` in the first 8 bytes of `extra_data`.
+/// Anything shorter (e.g. the genesis label, or an empty field) decodes to `0`, which
+/// disables the DA charge — so the charge is dormant until a rate is committed.
+pub fn da_rate_from_extra_data(extra_data: &Bytes) -> u64 {
+    if extra_data.len() < 8 {
+        return 0;
+    }
+    let mut buf = [0u8; 8];
+    buf.copy_from_slice(&extra_data[..8]);
+    u64::from_be_bytes(buf)
+}
+
+/// Encodes a per-block DA rate (wei per byte) into big-endian `extra_data` bytes.
+pub fn da_rate_to_extra_data(da_rate: u64) -> Bytes {
+    Bytes::copy_from_slice(&da_rate.to_be_bytes())
+}
+
+/// Applies a DA fee to the state: debit `caller`, credit `vault`, both by `da_fee`.
+///
+/// The caller is expected to be present in `state` (it was touched by the transaction)
+/// and to hold at least `da_fee` — the handler bounds `da_fee` by the gas value just
+/// refunded to the caller, so the debit is always covered. The vault is created if
+/// absent. Both accounts are marked touched so the change lands in the state diff.
+pub fn apply_da_fee(state: &mut EvmState, caller: Address, vault: Address, da_fee: U256) {
+    if let Some(caller_account) = state.get_mut(&caller) {
+        caller_account.info.balance = caller_account.info.balance.saturating_sub(da_fee);
+        caller_account.mark_touch();
+    }
+
+    let vault_account = state.entry(vault).or_insert_with(|| {
+        let mut account = Account::from(AccountInfo::default());
+        account.mark_touch();
+        account
+    });
+    vault_account.info.balance = vault_account.info.balance.saturating_add(da_fee);
+    vault_account.mark_touch();
+}
+
+/// Access to the raw EVM state change-set on the concrete EVM context.
+///
+/// The generic revm `Handler` cannot reach the whole `EvmState` through `JournalTr`, but
+/// the concrete [`EthEvmContext`] exposes it via its journal. The DA charge binds to this
+/// trait so it can size the diff and apply the fee in the handler.
+pub trait DaStateAccess {
+    /// Returns the transaction's state change-set.
+    fn evm_state(&self) -> &EvmState;
+    /// Returns the transaction's state change-set, mutably.
+    fn evm_state_mut(&mut self) -> &mut EvmState;
+}
+
+impl<DB: Database> DaStateAccess for EthEvmContext<DB> {
+    fn evm_state(&self) -> &EvmState {
+        &self.journaled_state.state
+    }
+
+    fn evm_state_mut(&mut self) -> &mut EvmState {
+        &mut self.journaled_state.state
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use revm::state::{Account, AccountInfo, EvmStorageSlot};
@@ -152,7 +215,10 @@ mod tests {
     #[test]
     fn untouched_accounts_are_ignored() {
         // An account present but not touched must not contribute.
-        let state = state_of([(Address::repeat_byte(1), Account::from(AccountInfo::default()))]);
+        let state = state_of([(
+            Address::repeat_byte(1),
+            Account::from(AccountInfo::default()),
+        )]);
         assert_eq!(calc_diff_size(&state), DA_FIXED_OVERHEAD);
     }
 
@@ -176,9 +242,10 @@ mod tests {
     fn changed_storage_counts_unchanged_does_not() {
         let mut account = touched_eoa();
         // changed slot: original != present
-        account
-            .storage
-            .insert(U256::from(1), EvmStorageSlot::new_changed(U256::ZERO, U256::from(9), 0));
+        account.storage.insert(
+            U256::from(1),
+            EvmStorageSlot::new_changed(U256::ZERO, U256::from(9), 0),
+        );
         // unchanged slot: original == present
         account
             .storage
@@ -201,5 +268,35 @@ mod tests {
         let forward = state_of([a.clone(), b.clone()]);
         let backward = state_of([b, a]);
         assert_eq!(calc_diff_size(&forward), calc_diff_size(&backward));
+    }
+
+    #[test]
+    fn da_rate_extra_data_roundtrips() {
+        let rate = 2_500_000_000_u64;
+        assert_eq!(da_rate_from_extra_data(&da_rate_to_extra_data(rate)), rate);
+    }
+
+    #[test]
+    fn short_extra_data_decodes_to_zero() {
+        // Genesis label / empty field => no rate => charge is dormant.
+        assert_eq!(da_rate_from_extra_data(&Bytes::from_static(b"SC")), 0);
+        assert_eq!(da_rate_from_extra_data(&Bytes::new()), 0);
+    }
+
+    #[test]
+    fn apply_da_fee_debits_caller_and_credits_vault() {
+        let caller = Address::repeat_byte(1);
+        let vault = Address::repeat_byte(2);
+        let mut info = AccountInfo::default();
+        info.balance = U256::from(1_000u64);
+        let mut caller_account = Account::from(info);
+        caller_account.mark_touch();
+        let mut state = state_of([(caller, caller_account)]);
+
+        apply_da_fee(&mut state, caller, vault, U256::from(300u64));
+
+        assert_eq!(state.get(&caller).unwrap().info.balance, U256::from(700u64));
+        assert_eq!(state.get(&vault).unwrap().info.balance, U256::from(300u64));
+        assert!(state.get(&vault).unwrap().is_touched());
     }
 }
