@@ -369,6 +369,11 @@ impl EpochDaAccumulator {
         //   + if snark: 32 (state root) + 2 (vk len prefix) + vk bytes
         // We don't know VK size here so use MAX_VK_BYTES as upper bound.
         // In practice most VKs are much smaller, but this is a conservative estimate.
+        // FIXME: the VK bytes are not actually counted despite the comment
+        // above; `NewAccountRecord` doesn't carry the VK length, and blindly
+        // adding MAX_VK_BYTES (64 KiB) per account would over-reserve
+        // absurdly. Track the actual VK length per record so this stays an
+        // upper bound.
         const NEW_ACCT_BASE: usize = 32 + 8 + 1;
         const NEW_ACCT_SNARK_OVERHEAD: usize = 32 + 2;
         let new_accounts_size: usize =
@@ -396,6 +401,10 @@ impl EpochDaAccumulator {
                 // If no entries, no count prefix needed (compound mask handles it).
                 if inbox_count == 0 {
                     account_diffs_size -= 2;
+                }
+                // Rotated update VK register: 2 (len prefix) + key bytes.
+                if snark.final_update_vk != snark.base_update_vk {
+                    account_diffs_size += 2 + snark.final_update_vk.as_slice().len();
                 }
             }
         }
