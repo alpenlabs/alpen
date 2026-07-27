@@ -1,5 +1,5 @@
-use strata_db_types::errors::DbError;
-use strata_primitives::buf::Buf32;
+use bitcoin::consensus::encode::Error as ConsensusEncodeError;
+use strata_db_types::{common::L1TxId, errors::DbError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,7 +11,7 @@ pub enum BroadcasterError {
     Rpc(#[from] anyhow::Error),
 
     #[error("missing transaction entry index for txid {0}")]
-    MissingEntryIndex(Buf32),
+    MissingEntryIndex(L1TxId),
 
     #[error("transaction not found in db at index {0}")]
     TxNotFound(u64),
@@ -19,8 +19,11 @@ pub enum BroadcasterError {
     #[error("inconsistent next idx (expected {expected}, got {got})")]
     InconsistentNextIdx { expected: u64, got: u64 },
 
-    #[error("{0}")]
-    Other(String),
+    #[error("invalid serialized Bitcoin transaction: {0}")]
+    InvalidTransaction(#[from] ConsensusEncodeError),
+
+    #[error("replacement chain from {txid} exceeded {max_hops} hops")]
+    ReplacementChainTooLong { txid: L1TxId, max_hops: usize },
 }
 
 pub(crate) type BroadcasterResult<T> = Result<T, BroadcasterError>;

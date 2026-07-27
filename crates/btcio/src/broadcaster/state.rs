@@ -1,10 +1,11 @@
-use strata_db_types::l1_broadcast::L1TxEntry;
-use strata_primitives::indexed::Indexed;
+use bitcoin::hashes::Hash;
+use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
+use strata_primitives::{buf::Buf32, indexed::Indexed};
 use strata_service::{ServiceState, TickMsg};
 use tracing::*;
 
 use super::{
-    error::{BroadcasterError, BroadcasterResult},
+    error::BroadcasterResult,
     input::BroadcasterInputMessage,
     io::BroadcasterIoContext,
     processor::{fetch_unfinalized_entries, process_unfinalized_entries, update_state},
@@ -70,6 +71,9 @@ where
             TickMsg::Msg(BroadcasterInputMessage::NotifyNewEntry { idx, txentry }) => {
                 self.handle_notify_new_entry(idx, txentry).await?;
             }
+            TickMsg::Msg(BroadcasterInputMessage::NotifyReplacedEntry { txid }) => {
+                self.handle_notify_replaced_entry(txid);
+            }
         }
 
         self.process_unfinalized_entries().await
@@ -84,12 +88,50 @@ where
         .await?;
 
         for entry in updated_entries.iter() {
+            let idx = *entry.index();
+
+            // The fee bumper can mark this entry `Replaced` in the DB between the read that
+            // produced our in-memory copy and this write-back. Writing the stale status here
+            // would resurrect a txid that a broadcast replacement has already superseded, so
+            // re-read and leave replaced entries alone. The matching
+            // `NotifyReplacedEntry` message drops it from `unfinalized_entries`.
+            let replaced_concurrently =
+                self.io.get_tx_entry(idx).await?.is_some_and(|persisted| {
+                    matches!(persisted.status, L1TxStatus::Replaced { .. })
+                });
+            if replaced_concurrently {
+                debug!(%idx, "skipping write-back for entry replaced by a fee bump");
+                continue;
+            }
+
             self.io
-                .put_tx_entry_by_idx(*entry.index(), entry.item().clone())
+                .put_tx_entry_by_idx(idx, entry.item().clone())
                 .await?;
         }
 
         update_state(&mut self.inner, updated_entries.into_iter(), &self.io).await
+    }
+
+    /// Drops the in-memory copy of an entry that a fee bump superseded.
+    fn handle_notify_replaced_entry(&mut self, txid: Buf32) {
+        let entries = &mut self.inner.unfinalized_entries;
+        let before = entries.len();
+
+        entries.retain(|entry| {
+            entry
+                .item()
+                .try_to_tx()
+                .map(|tx| Buf32::from(tx.compute_txid().to_byte_array()) != txid)
+                .unwrap_or(true)
+        });
+
+        if entries.len() == before {
+            // Normal when the entry already left the unfinalized set, e.g. it confirmed in the
+            // same tick the replacement was built and was then dropped from tracking.
+            debug!(?txid, "replaced entry was not tracked in memory");
+        } else {
+            info!(?txid, "stopped tracking entry superseded by a fee bump");
+        }
     }
 
     /// Inserts or replaces a tracked unfinalized entry by index.
@@ -98,10 +140,7 @@ where
         idx: u64,
         txentry: L1TxEntry,
     ) -> BroadcasterResult<()> {
-        let txid = txentry
-            .try_to_tx()
-            .map_err(|e| BroadcasterError::Other(e.to_string()))?
-            .compute_txid();
+        let txid = txentry.try_to_tx()?.compute_txid();
         info!(%idx, %txid, "received txentry");
 
         let state = &mut self.inner;
@@ -135,7 +174,7 @@ mod test {
     use std::sync::Arc;
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{backend::DatabaseBackend, l1_broadcast::L1TxStatus};
+    use strata_db_types::{backend::DatabaseBackend, common::L1TxId, l1_broadcast::L1TxStatus};
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::buf::Buf32;
     use strata_storage::BroadcastDbOps;
@@ -303,5 +342,92 @@ mod test {
             ],
             "warmup must preserve broadcaster entries for the next poll"
         );
+    }
+
+    /// A fee bump marks the old entry `Replaced` in the DB directly. Without the matching
+    /// notification the service would keep the stale `Published` copy in memory, re-publish the
+    /// superseded txid, and write that status back over the persisted `Replaced`.
+    #[tokio::test]
+    async fn replaced_entry_is_dropped_from_memory_and_not_written_back() {
+        let ops = get_ops();
+        let txid: Buf32 = [9; 32].into();
+        let entry = gen_l1_tx_entry_with_status(L1TxStatus::Published);
+        let idx = ops
+            .put_tx_entry_async(txid, entry.clone())
+            .await
+            .unwrap()
+            .expect("entry index should exist");
+
+        let io = make_io(ops.clone(), TestBitcoinClient::new(0));
+        let mut service_state = BroadcasterServiceState::try_new(io, get_test_btcio_params())
+            .await
+            .unwrap();
+        assert_eq!(service_state.inner.unfinalized_entries.len(), 1);
+
+        // The fee bumper's DB write, made behind the service's back.
+        let replacement_txid = L1TxId::from([10u8; 32]);
+        let mut replaced = entry.clone();
+        replaced.status = L1TxStatus::Replaced {
+            by: replacement_txid,
+        };
+        ops.put_tx_entry_async(txid, replaced).await.unwrap();
+
+        let entry_txid = Buf32::from(
+            entry
+                .try_to_tx()
+                .expect("test: entry holds a valid tx")
+                .compute_txid()
+                .to_byte_array(),
+        );
+        service_state
+            .process_input(TickMsg::Msg(BroadcasterInputMessage::NotifyReplacedEntry {
+                txid: entry_txid,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            service_state.inner.unfinalized_entries.is_empty(),
+            "replaced entry should no longer be tracked"
+        );
+        assert!(
+            matches!(
+                ops.get_tx_entry_async(idx).await.unwrap().unwrap().status,
+                L1TxStatus::Replaced { .. }
+            ),
+            "persisted Replaced status must survive the processing pass"
+        );
+    }
+
+    /// Even if the notification is lost, the write-back guard must not resurrect the old status.
+    #[tokio::test]
+    async fn write_back_skips_entries_replaced_concurrently() {
+        let ops = get_ops();
+        let txid: Buf32 = [11; 32].into();
+        let entry = gen_l1_tx_entry_with_status(L1TxStatus::Published);
+        let idx = ops
+            .put_tx_entry_async(txid, entry.clone())
+            .await
+            .unwrap()
+            .expect("entry index should exist");
+
+        let io = make_io(ops.clone(), TestBitcoinClient::new(0));
+        let mut service_state = BroadcasterServiceState::try_new(io, get_test_btcio_params())
+            .await
+            .unwrap();
+
+        let mut replaced = entry;
+        replaced.status = L1TxStatus::Replaced {
+            by: L1TxId::from([12u8; 32]),
+        };
+        ops.put_tx_entry_async(txid, replaced).await.unwrap();
+
+        // No NotifyReplacedEntry: the tick alone must leave the persisted status alone.
+        service_state.process_input(TickMsg::Tick).await.unwrap();
+
+        assert!(matches!(
+            ops.get_tx_entry_async(idx).await.unwrap().unwrap().status,
+            L1TxStatus::Replaced { .. }
+        ));
     }
 }

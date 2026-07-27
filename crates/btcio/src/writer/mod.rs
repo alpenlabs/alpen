@@ -2,8 +2,9 @@ pub mod builder;
 mod bundler;
 pub mod chunked_envelope;
 mod context;
-mod fees;
+pub(crate) mod fees;
 mod handle;
+pub(crate) mod replacement;
 mod signer;
 mod watcher;
 

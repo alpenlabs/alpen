@@ -1,7 +1,11 @@
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hashes::Hash;
-use bitcoin::Transaction;
-use strata_db_types::l1_broadcast::{L1BroadcastDatabase, L1TxEntry, L1TxStatus};
+use bitcoin::{Amount, FeeRate, Transaction};
+use strata_db_types::common::{L1TxId, L1WtxId};
+use strata_db_types::fee_bump::{
+    TerminalError, TxAttempt, TxAttemptParts, TxNodeId, TxNodeKind, TxNodeRecord,
+};
+use strata_db_types::l1_broadcast::{L1BroadcastDatabase, L1TxEntry, L1TxRbfInfo, L1TxStatus};
 use strata_primitives::buf::Buf32;
 
 /// Builds an unpublished entry for a transaction.
@@ -10,6 +14,30 @@ use strata_primitives::buf::Buf32;
 /// database crate.
 fn tx_entry(tx: &Transaction) -> L1TxEntry {
     L1TxEntry::new_unpublished(serialize(tx))
+}
+
+/// Builds the persistent attempt material for `tx`, mirroring `strata_btcio::tx_attempt`.
+fn attempt_parts(tx: &Transaction, fee_rate: FeeRate, fee: Amount) -> TxAttemptParts {
+    TxAttemptParts {
+        raw_tx: serialize(tx),
+        txid: L1TxId::from(tx.compute_txid().to_byte_array()),
+        wtxid: L1WtxId::from(tx.compute_wtxid().to_byte_array()),
+        fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
+        fee_sats: fee.to_sat(),
+    }
+}
+
+/// Builds a writer-owned unpublished entry carrying the RBF metadata for `fee_rate` and `fee`.
+fn tx_entry_with_fee(tx: &Transaction, fee_rate: FeeRate, fee: Amount) -> L1TxEntry {
+    L1TxEntry::from_raw_parts(
+        serialize(tx),
+        L1TxStatus::Unpublished,
+        Some(L1TxRbfInfo {
+            fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
+            fee_sats: fee.to_sat(),
+            replaces: None,
+        }),
+    )
 }
 
 pub fn test_get_last_tx_entry(db: &impl L1BroadcastDatabase) {
@@ -207,6 +235,494 @@ pub fn test_del_tx_entries_empty_database(db: &impl L1BroadcastDatabase) {
     );
 }
 
+/// `Replaced` is terminal for a txid: the broadcaster must not be able to write a stale
+/// pre-replacement status back over a fee bump's transition.
+pub fn test_put_tx_entry_by_idx_refuses_to_unreplace(db: &impl L1BroadcastDatabase) {
+    let (txid, txentry) = generate_l1_tx_entry();
+    let idx = db.put_tx_entry(txid, txentry.clone()).unwrap().unwrap();
+
+    let mut replaced = txentry.clone();
+    replaced.status = L1TxStatus::Replaced {
+        by: L1TxId::from([9u8; 32]),
+    };
+    db.put_tx_entry_by_idx(idx, replaced).unwrap();
+
+    // A stale writer tries to move it back to Published.
+    let mut stale = txentry;
+    stale.status = L1TxStatus::Published;
+    db.put_tx_entry_by_idx(idx, stale).unwrap();
+
+    assert!(matches!(
+        db.get_tx_entry(idx).unwrap().unwrap().status,
+        L1TxStatus::Replaced { .. }
+    ));
+}
+
+/// A later replacement in the same chain must still be recordable.
+pub fn test_put_tx_entry_by_idx_allows_rereplacement(db: &impl L1BroadcastDatabase) {
+    let (txid, txentry) = generate_l1_tx_entry();
+    let idx = db.put_tx_entry(txid, txentry.clone()).unwrap().unwrap();
+
+    let mut replaced = txentry.clone();
+    replaced.status = L1TxStatus::Replaced {
+        by: L1TxId::from([9u8; 32]),
+    };
+    db.put_tx_entry_by_idx(idx, replaced).unwrap();
+
+    let mut replaced_again = txentry;
+    replaced_again.status = L1TxStatus::Replaced {
+        by: L1TxId::from([10u8; 32]),
+    };
+    db.put_tx_entry_by_idx(idx, replaced_again).unwrap();
+
+    assert_eq!(
+        db.get_tx_entry(idx).unwrap().unwrap().status,
+        L1TxStatus::Replaced {
+            by: L1TxId::from([10u8; 32])
+        }
+    );
+}
+
+/// The swap inserts the replacement and supersedes the original in one step.
+pub fn test_put_replacement_tx_entry_swaps_atomically(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let original_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let replacement_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+    let mut original = tx_entry(&txns[0]);
+    original.status = L1TxStatus::Published;
+    db.put_tx_entry(original_txid, original).unwrap();
+
+    let replacement = tx_entry(&txns[1]);
+    let idx = db
+        .put_replacement_tx_entry(original_txid, replacement_txid, replacement.clone())
+        .unwrap()
+        .expect("swap applies to a published original");
+
+    assert_eq!(db.get_tx_entry(idx).unwrap(), Some(replacement));
+    assert_eq!(
+        db.get_tx_entry_by_id(original_txid)
+            .unwrap()
+            .unwrap()
+            .status,
+        L1TxStatus::Replaced {
+            by: L1TxId::from(replacement_txid.0)
+        }
+    );
+}
+
+/// The reverse link is what lets the broadcaster walk back to the ancestors of a replacement, so
+/// the swap has to record it alongside the forward one.
+pub fn test_put_replacement_tx_entry_records_the_reverse_link(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let original_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let replacement_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+    let mut original = tx_entry_with_fee(
+        &txns[0],
+        FeeRate::from_sat_per_vb(2).unwrap(),
+        Amount::from_sat(200),
+    );
+    original.status = L1TxStatus::Published;
+    db.put_tx_entry(original_txid, original).unwrap();
+
+    db.put_replacement_tx_entry(
+        original_txid,
+        replacement_txid,
+        tx_entry_with_fee(
+            &txns[1],
+            FeeRate::from_sat_per_vb(4).unwrap(),
+            Amount::from_sat(400),
+        ),
+    )
+    .unwrap()
+    .expect("swap applies to a published original");
+
+    assert_eq!(
+        db.get_tx_entry_by_id(replacement_txid)
+            .unwrap()
+            .unwrap()
+            .rbf
+            .unwrap()
+            .replaces,
+        Some(L1TxId::from(original_txid.0))
+    );
+}
+
+/// A miner can include an original after the local node accepted its replacement. The chain then
+/// has to be repointed at the winner, or every consumer walks past it and concludes the chain died.
+pub fn test_adopt_confirmed_ancestor_reverses_the_chain(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let winner_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let loser_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+    let mut winner = tx_entry(&txns[0]);
+    winner.status = L1TxStatus::Published;
+    db.put_tx_entry(winner_txid, winner).unwrap();
+    db.put_replacement_tx_entry(winner_txid, loser_txid, tx_entry(&txns[1]))
+        .unwrap()
+        .expect("swap applies");
+
+    let confirmed = L1TxStatus::Confirmed {
+        confirmations: 3,
+        block_hash: Buf32::zero(),
+        block_height: 400,
+    };
+    assert!(db
+        .adopt_confirmed_ancestor(loser_txid, winner_txid, confirmed.clone())
+        .unwrap());
+
+    assert_eq!(
+        db.get_tx_entry_by_id(winner_txid).unwrap().unwrap().status,
+        confirmed
+    );
+    assert_eq!(
+        db.get_tx_entry_by_id(loser_txid).unwrap().unwrap().status,
+        L1TxStatus::Replaced {
+            by: L1TxId::from(winner_txid.0)
+        }
+    );
+}
+
+/// The winner does not have to be the loser's immediate parent. A chain bumped twice has an
+/// intermediate attempt between them, and a miner can still include the original.
+pub fn test_adopt_confirmed_ancestor_reverses_a_multi_hop_chain(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let winner_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let middle_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+    let loser_txid: Buf32 = txns[2].compute_txid().as_raw_hash().to_byte_array().into();
+    let mut winner = tx_entry(&txns[0]);
+    winner.status = L1TxStatus::Published;
+    db.put_tx_entry(winner_txid, winner).unwrap();
+    db.put_replacement_tx_entry(winner_txid, middle_txid, tx_entry(&txns[1]))
+        .unwrap()
+        .expect("first swap applies");
+    // The replacement lands `Unpublished`; only a published entry can itself be replaced.
+    let mut middle = db.get_tx_entry_by_id(middle_txid).unwrap().unwrap();
+    middle.status = L1TxStatus::Published;
+    db.put_tx_entry(middle_txid, middle).unwrap();
+    db.put_replacement_tx_entry(middle_txid, loser_txid, tx_entry(&txns[2]))
+        .unwrap()
+        .expect("second swap applies");
+
+    let confirmed = L1TxStatus::Confirmed {
+        confirmations: 3,
+        block_hash: Buf32::zero(),
+        block_height: 400,
+    };
+    assert!(db
+        .adopt_confirmed_ancestor(loser_txid, winner_txid, confirmed.clone())
+        .unwrap());
+
+    assert_eq!(
+        db.get_tx_entry_by_id(winner_txid).unwrap().unwrap().status,
+        confirmed
+    );
+    assert_eq!(
+        db.get_tx_entry_by_id(loser_txid).unwrap().unwrap().status,
+        L1TxStatus::Replaced {
+            by: L1TxId::from(winner_txid.0)
+        }
+    );
+    // The intermediate keeps its forward link, which now resolves to the winner through the
+    // reversed one rather than dead-ending on the loser.
+    assert_eq!(
+        db.get_tx_entry_by_id(middle_txid).unwrap().unwrap().status,
+        L1TxStatus::Replaced {
+            by: L1TxId::from(loser_txid.0)
+        }
+    );
+}
+
+/// A concurrent fee bump can supersede the loser while an adoption is still deciding, since the
+/// adoption makes an RPC round-trip per ancestor before it writes. Reversing over the loser then
+/// cuts the newer replacement out of the chain while it stays indexed and broadcastable, so the
+/// chain head names the old ancestor while a live transaction spends the same inputs.
+pub fn test_adopt_confirmed_ancestor_refuses_a_superseded_loser(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let winner_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let loser_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+    let newer_txid: Buf32 = txns[2].compute_txid().as_raw_hash().to_byte_array().into();
+    let mut winner = tx_entry(&txns[0]);
+    winner.status = L1TxStatus::Published;
+    db.put_tx_entry(winner_txid, winner).unwrap();
+    db.put_replacement_tx_entry(winner_txid, loser_txid, tx_entry(&txns[1]))
+        .unwrap()
+        .expect("first swap applies");
+
+    // The writer's fee-bump pass supersedes the loser while the adoption is deciding.
+    db.put_replacement_tx_entry(loser_txid, newer_txid, tx_entry(&txns[2]))
+        .unwrap()
+        .expect("second swap applies");
+
+    assert!(!db
+        .adopt_confirmed_ancestor(
+            loser_txid,
+            winner_txid,
+            L1TxStatus::Confirmed {
+                confirmations: 3,
+                block_hash: Buf32::zero(),
+                block_height: 400,
+            },
+        )
+        .unwrap());
+
+    assert_eq!(
+        db.get_tx_entry_by_id(loser_txid).unwrap().unwrap().status,
+        L1TxStatus::Replaced {
+            by: L1TxId::from(newer_txid.0)
+        },
+        "the loser must keep pointing at the replacement that superseded it"
+    );
+    assert_eq!(
+        db.get_tx_entry_by_id(winner_txid).unwrap().unwrap().status,
+        L1TxStatus::Replaced {
+            by: L1TxId::from(loser_txid.0)
+        },
+        "a refused adoption must not advance the winner either"
+    );
+}
+
+/// Only a link the chain actually has may be reversed, otherwise a stale caller could point two
+/// unrelated entries at each other and strand both.
+pub fn test_adopt_confirmed_ancestor_refuses_an_unlinked_pair(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let winner_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let loser_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+    let mut winner = tx_entry(&txns[0]);
+    winner.status = L1TxStatus::Published;
+    db.put_tx_entry(winner_txid, winner).unwrap();
+    db.put_tx_entry(loser_txid, tx_entry(&txns[1])).unwrap();
+
+    assert!(!db
+        .adopt_confirmed_ancestor(
+            loser_txid,
+            winner_txid,
+            L1TxStatus::Confirmed {
+                confirmations: 3,
+                block_hash: Buf32::zero(),
+                block_height: 400,
+            },
+        )
+        .unwrap());
+    assert_eq!(
+        db.get_tx_entry_by_id(winner_txid).unwrap().unwrap().status,
+        L1TxStatus::Published
+    );
+    assert_eq!(
+        db.get_tx_entry_by_id(loser_txid).unwrap().unwrap().status,
+        L1TxStatus::Unpublished
+    );
+}
+
+/// If the original already confirmed the swap writes nothing at all, replacement row included.
+pub fn test_put_replacement_tx_entry_writes_nothing_when_refused(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let original_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let replacement_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+    let confirmed_status = L1TxStatus::Confirmed {
+        confirmations: 1,
+        block_hash: Buf32::zero(),
+        block_height: 100,
+    };
+    let mut original = tx_entry(&txns[0]);
+    original.status = confirmed_status.clone();
+    db.put_tx_entry(original_txid, original).unwrap();
+
+    assert_eq!(
+        db.put_replacement_tx_entry(original_txid, replacement_txid, tx_entry(&txns[1]))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        db.get_tx_entry_by_id(original_txid)
+            .unwrap()
+            .unwrap()
+            .status,
+        confirmed_status
+    );
+    assert_eq!(db.get_tx_entry_by_id(replacement_txid).unwrap(), None);
+}
+
+/// An already-present replacement row means an earlier swap ran. Writing again would transition
+/// the original with no index to report, so the swap must refuse and leave both rows alone.
+pub fn test_put_replacement_tx_entry_refuses_existing_replacement(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let original_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let replacement_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+
+    let mut original = tx_entry(&txns[0]);
+    original.status = L1TxStatus::Published;
+    db.put_tx_entry(original_txid, original.clone()).unwrap();
+    db.put_tx_entry(replacement_txid, tx_entry(&txns[1]))
+        .unwrap();
+
+    assert_eq!(
+        db.put_replacement_tx_entry(original_txid, replacement_txid, tx_entry(&txns[1]))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        db.get_tx_entry_by_id(original_txid)
+            .unwrap()
+            .unwrap()
+            .status,
+        L1TxStatus::Published,
+        "the original must not be transitioned when the swap refuses"
+    );
+}
+
+/// A published transaction can be superseded, and the transition reports that it applied.
+pub fn test_try_mark_tx_entry_replaced_applies_to_published(db: &impl L1BroadcastDatabase) {
+    let (txid, mut txentry) = generate_l1_tx_entry();
+    txentry.status = L1TxStatus::Published;
+    db.put_tx_entry(txid, txentry).unwrap();
+
+    let replacement = L1TxId::from([9u8; 32]);
+    assert!(db.try_mark_tx_entry_replaced(txid, replacement).unwrap());
+    assert_eq!(
+        db.get_tx_entry_by_id(txid).unwrap().unwrap().status,
+        L1TxStatus::Replaced { by: replacement }
+    );
+}
+
+/// A transaction that already confirmed has won. The transition must not apply, and — critically —
+/// must not report success, or callers would advance metadata onto an unconfirmable replacement.
+pub fn test_try_mark_tx_entry_replaced_refuses_confirmed(db: &impl L1BroadcastDatabase) {
+    let (txid, mut txentry) = generate_l1_tx_entry();
+    let confirmed_status = L1TxStatus::Confirmed {
+        confirmations: 1,
+        block_hash: Buf32::zero(),
+        block_height: 100,
+    };
+    txentry.status = confirmed_status.clone();
+    db.put_tx_entry(txid, txentry).unwrap();
+
+    assert!(!db
+        .try_mark_tx_entry_replaced(txid, L1TxId::from([9u8; 32]))
+        .unwrap());
+    assert_eq!(
+        db.get_tx_entry_by_id(txid).unwrap().unwrap().status,
+        confirmed_status
+    );
+}
+
+/// An unknown txid reports no transition rather than erroring.
+pub fn test_try_mark_tx_entry_replaced_missing_entry(db: &impl L1BroadcastDatabase) {
+    assert!(!db
+        .try_mark_tx_entry_replaced(Buf32::from([3u8; 32]), L1TxId::from([9u8; 32]))
+        .unwrap());
+}
+
+pub fn test_tx_node_roundtrip(db: &impl L1BroadcastDatabase) {
+    let kind = TxNodeKind::ChunkedEnvelopeReveal {
+        envelope_idx: 4,
+        reveal_idx: 2,
+    };
+    let node_id = TxNodeId::from_kind(&kind);
+
+    assert_eq!(db.get_tx_node(node_id).unwrap(), None);
+
+    let record = generate_tx_node_record(kind);
+    db.put_tx_node(node_id, record.clone()).unwrap();
+
+    assert_eq!(db.get_tx_node(node_id).unwrap(), Some(record));
+}
+
+pub fn test_tx_node_overwrite_and_list(db: &impl L1BroadcastDatabase) {
+    assert!(db.get_all_tx_nodes().unwrap().is_empty());
+
+    let commit_kind = TxNodeKind::ChunkedEnvelopeCommit { envelope_idx: 1 };
+    let reveal_kind = TxNodeKind::ChunkedEnvelopeReveal {
+        envelope_idx: 1,
+        reveal_idx: 0,
+    };
+    let commit = generate_tx_node_record(commit_kind);
+    let reveal = generate_tx_node_record(reveal_kind);
+
+    db.put_tx_node(commit.node_id, commit.clone()).unwrap();
+    db.put_tx_node(reveal.node_id, reveal.clone()).unwrap();
+    assert_eq!(db.get_all_tx_nodes().unwrap().len(), 2);
+
+    // Re-putting the same node id replaces the record rather than adding a second one.
+    let txns = get_test_bitcoin_txs();
+    let mut bumped = commit.clone();
+    bumped.append_replacement(TxAttempt::active(
+        attempt_parts(
+            &txns[1],
+            FeeRate::from_sat_per_vb(4).expect("test: valid fee rate"),
+            Amount::from_sat(800),
+        ),
+        bumped.next_attempt_no(),
+    ));
+    db.put_tx_node(bumped.node_id, bumped.clone()).unwrap();
+
+    assert_eq!(db.get_all_tx_nodes().unwrap().len(), 2);
+    assert_eq!(db.get_tx_node(commit.node_id).unwrap(), Some(bumped));
+}
+
+pub fn test_active_tx_node_index_lifecycle(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let kind = TxNodeKind::SingleEnvelopeReveal { payload_idx: 11 };
+    let mut record = generate_tx_node_record(kind);
+    let node_id = record.node_id;
+
+    // A non-terminal write enters the active set.
+    db.put_tx_node(node_id, record.clone()).unwrap();
+    assert_eq!(db.get_active_tx_nodes().unwrap(), vec![record.clone()]);
+
+    // A terminal write leaves it, while the record stays readable for point lookups.
+    record.set_terminal_error(TerminalError::MaxAttemptsReached);
+    db.put_tx_node(node_id, record.clone()).unwrap();
+    assert!(db.get_active_tx_nodes().unwrap().is_empty());
+    assert_eq!(db.get_tx_node(node_id).unwrap(), Some(record.clone()));
+
+    // A writer rebuild clears the terminal error and re-enters the set.
+    record.replace_initial_attempt(TxAttempt::active(
+        attempt_parts(
+            &txns[1],
+            FeeRate::from_sat_per_vb(3).expect("test: valid fee rate"),
+            Amount::from_sat(500),
+        ),
+        0,
+    ));
+    db.put_tx_node(node_id, record.clone()).unwrap();
+    assert_eq!(db.get_active_tx_nodes().unwrap().len(), 1);
+
+    // Retirement is guarded on the active txid the caller observed.
+    assert!(!db
+        .retire_tx_node(node_id, L1TxId::from([0xEE; 32]))
+        .unwrap());
+    assert_eq!(db.get_active_tx_nodes().unwrap().len(), 1);
+    assert!(db.retire_tx_node(node_id, record.active_txid).unwrap());
+    assert!(db.get_active_tx_nodes().unwrap().is_empty());
+
+    // The retired record stays readable for point lookups, but its attempts drop their raw
+    // transaction bytes: a retired chain never rebroadcasts, and keeping the bytes would grow
+    // the database without bound.
+    let retired = db
+        .get_tx_node(node_id)
+        .unwrap()
+        .expect("retired record stays readable");
+    assert!(retired
+        .attempts
+        .iter()
+        .all(|attempt| attempt.raw_tx.is_empty()));
+    record.forget_all_raw_txs();
+    assert_eq!(retired, record);
+}
+
+// Helper function to generate a TxNodeRecord with a single active attempt
+fn generate_tx_node_record(kind: TxNodeKind) -> TxNodeRecord {
+    let txns = get_test_bitcoin_txs();
+    let attempt = TxAttempt::active(
+        attempt_parts(
+            &txns[0],
+            FeeRate::from_sat_per_vb(2).expect("test: valid fee rate"),
+            Amount::from_sat(400),
+        ),
+        0,
+    );
+    TxNodeRecord::new(kind, attempt)
+}
+
 // Helper function to generate L1TxEntry
 fn generate_l1_tx_entry() -> (Buf32, L1TxEntry) {
     let txns = get_test_bitcoin_txs();
@@ -294,6 +810,110 @@ macro_rules! l1_broadcast_db_tests {
         fn test_del_tx_entries_empty_database() {
             let db = $setup_expr;
             $crate::l1_broadcast_tests::test_del_tx_entries_empty_database(&db);
+        }
+
+        #[test]
+        fn test_put_replacement_tx_entry_refuses_existing_replacement() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_replacement_tx_entry_refuses_existing_replacement(
+                &db,
+            );
+        }
+
+        #[test]
+        fn test_put_replacement_tx_entry_swaps_atomically() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_replacement_tx_entry_swaps_atomically(&db);
+        }
+
+        #[test]
+        fn test_put_replacement_tx_entry_records_the_reverse_link() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_replacement_tx_entry_records_the_reverse_link(&db);
+        }
+
+        #[test]
+        fn test_adopt_confirmed_ancestor_reverses_the_chain() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_adopt_confirmed_ancestor_reverses_the_chain(&db);
+        }
+
+        #[test]
+        fn test_adopt_confirmed_ancestor_reverses_a_multi_hop_chain() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_adopt_confirmed_ancestor_reverses_a_multi_hop_chain(
+                &db,
+            );
+        }
+
+        #[test]
+        fn test_adopt_confirmed_ancestor_refuses_a_superseded_loser() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_adopt_confirmed_ancestor_refuses_a_superseded_loser(
+                &db,
+            );
+        }
+
+        #[test]
+        fn test_adopt_confirmed_ancestor_refuses_an_unlinked_pair() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_adopt_confirmed_ancestor_refuses_an_unlinked_pair(&db);
+        }
+
+        #[test]
+        fn test_put_replacement_tx_entry_writes_nothing_when_refused() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_replacement_tx_entry_writes_nothing_when_refused(
+                &db,
+            );
+        }
+
+        #[test]
+        fn test_try_mark_tx_entry_replaced_applies_to_published() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_try_mark_tx_entry_replaced_applies_to_published(&db);
+        }
+
+        #[test]
+        fn test_try_mark_tx_entry_replaced_refuses_confirmed() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_try_mark_tx_entry_replaced_refuses_confirmed(&db);
+        }
+
+        #[test]
+        fn test_try_mark_tx_entry_replaced_missing_entry() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_try_mark_tx_entry_replaced_missing_entry(&db);
+        }
+
+        #[test]
+        fn test_put_tx_entry_by_idx_refuses_to_unreplace() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_tx_entry_by_idx_refuses_to_unreplace(&db);
+        }
+
+        #[test]
+        fn test_put_tx_entry_by_idx_allows_rereplacement() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_tx_entry_by_idx_allows_rereplacement(&db);
+        }
+
+        #[test]
+        fn test_tx_node_roundtrip() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_tx_node_roundtrip(&db);
+        }
+
+        #[test]
+        fn test_tx_node_overwrite_and_list() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_tx_node_overwrite_and_list(&db);
+        }
+
+        #[test]
+        fn test_active_tx_node_index_lifecycle() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_active_tx_node_index_lifecycle(&db);
         }
     };
 }

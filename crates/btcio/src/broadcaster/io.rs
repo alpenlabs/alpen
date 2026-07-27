@@ -5,7 +5,7 @@ use bitcoin::{BlockHash, Transaction, Txid};
 use bitcoind_async_client::{error::ClientError, traits::Broadcaster, Client};
 use serde::Deserialize;
 use strata_btc_types::BlockHashExt;
-use strata_db_types::l1_broadcast::L1TxEntry;
+use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
 use strata_primitives::{buf::Buf32, L1Height};
 use strata_storage::BroadcastDbOps;
 use tracing::{debug, info, warn};
@@ -42,6 +42,24 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
         idx: u64,
         entry: L1TxEntry,
     ) -> impl Future<Output = BroadcasterResult<()>> + Send;
+
+    /// Returns the broadcast entry for `txid`, or `None` if the row is missing.
+    fn get_tx_entry_by_id(
+        &self,
+        txid: Buf32,
+    ) -> impl Future<Output = BroadcasterResult<Option<L1TxEntry>>> + Send;
+
+    /// Reverses a replacement after the superseded transaction won on-chain.
+    ///
+    /// See [`L1BroadcastDatabase::adopt_confirmed_ancestor`].
+    ///
+    /// [`L1BroadcastDatabase::adopt_confirmed_ancestor`]: strata_db_types::l1_broadcast::L1BroadcastDatabase::adopt_confirmed_ancestor
+    fn adopt_confirmed_ancestor(
+        &self,
+        loser_txid: Buf32,
+        winner_txid: Buf32,
+        winner_status: L1TxStatus,
+    ) -> impl Future<Output = BroadcasterResult<bool>> + Send;
 
     /// Fetches transaction observation data used for confirmation-state transitions.
     fn get_transaction<'a>(
@@ -221,6 +239,22 @@ where
     async fn put_tx_entry_by_idx(&self, idx: u64, entry: L1TxEntry) -> BroadcasterResult<()> {
         self.ops.put_tx_entry_by_idx_async(idx, entry).await?;
         Ok(())
+    }
+
+    async fn get_tx_entry_by_id(&self, txid: Buf32) -> BroadcasterResult<Option<L1TxEntry>> {
+        Ok(self.ops.get_tx_entry_by_id_async(txid).await?)
+    }
+
+    async fn adopt_confirmed_ancestor(
+        &self,
+        loser_txid: Buf32,
+        winner_txid: Buf32,
+        winner_status: L1TxStatus,
+    ) -> BroadcasterResult<bool> {
+        Ok(self
+            .ops
+            .adopt_confirmed_ancestor_async(loser_txid, winner_txid, winner_status)
+            .await?)
     }
 
     async fn get_transaction<'a>(&'a self, txid: &'a Txid) -> BroadcasterResult<TxLookupOutcome> {

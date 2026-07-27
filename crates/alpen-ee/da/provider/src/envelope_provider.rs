@@ -6,7 +6,7 @@ use alpen_ee_common::{BatchDaProvider, BatchId, DaStatus, L1DaBlockInfo, L1DaBlo
 use alpen_ee_da_types::{wtxids_root_from_txs, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
-use bitcoin::{Block, BlockHash, Txid, Wtxid};
+use bitcoin::{hashes::Hash, Block, BlockHash, Txid, Wtxid};
 use bitcoind_async_client::{traits::Reader, Client as BtcClient};
 use eyre::{bail, ensure};
 use strata_btc_types::{BlockHashExt, Buf32BitcoinExt};
@@ -263,7 +263,7 @@ impl ChunkedEnvelopeDaProvider {
         // first; reveals follow in ascending vout order.
         let mut refs: Vec<L1DaBlockRef> = Vec::with_capacity(block_map.len());
         for ((hash, height), mut txs) in block_map {
-            let block_hash = hash.to_block_hash();
+            let block_hash = BlockHash::from_byte_array(hash.0);
             let block = self.l1_blocks.get_l1_block(&block_hash).await?;
             let wtxids_root = compute_wtxids_root(&block)?;
 

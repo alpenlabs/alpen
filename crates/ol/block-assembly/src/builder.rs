@@ -92,7 +92,7 @@ where
     <P::State as IStateAccessorMut>::AccountStateMut: Clone,
     <<P::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
             Clone,
-    {
+{
         let context = Arc::new(BlockAssemblyContext::new(
             self.storage,
             self.mempool_provider,

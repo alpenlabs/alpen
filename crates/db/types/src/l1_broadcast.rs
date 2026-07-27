@@ -11,6 +11,8 @@ use strata_db_macros::gen_proxy;
 use strata_identifiers::Buf32;
 use strata_primitives::L1Height;
 
+use crate::common::L1TxId;
+use crate::fee_bump::{TxNodeId, TxNodeRecord};
 #[cfg(feature = "proxies")]
 use crate::DbError;
 use crate::DbResult;
@@ -25,6 +27,13 @@ pub struct L1TxEntry {
 
     /// The status of the transaction in bitcoin
     pub status: L1TxStatus,
+
+    /// Metadata used by writer-side RBF replacement logic.
+    ///
+    /// Only set for writer-owned entries published while fee bumping is enabled; `None` for every
+    /// other entry, including ones written before fee bumping existed.
+    #[serde(default)]
+    pub rbf: Option<L1TxRbfInfo>,
 }
 
 impl L1TxEntry {
@@ -36,6 +45,25 @@ impl L1TxEntry {
         Self {
             tx_raw,
             status: L1TxStatus::Unpublished,
+            rbf: None,
+        }
+    }
+
+    /// Records that this entry replaced `original_txid`.
+    ///
+    /// A no-op for an entry with no RBF metadata, which is never part of a replacement chain.
+    pub fn set_replaces(&mut self, original_txid: L1TxId) {
+        if let Some(rbf) = self.rbf.as_mut() {
+            rbf.replaces = Some(original_txid);
+        }
+    }
+
+    /// Creates an entry from persisted raw transaction bytes and metadata.
+    pub fn from_raw_parts(tx_raw: Vec<u8>, status: L1TxStatus, rbf: Option<L1TxRbfInfo>) -> Self {
+        Self {
+            tx_raw,
+            status,
+            rbf,
         }
     }
 
@@ -45,12 +73,43 @@ impl L1TxEntry {
     }
 
     pub fn is_valid(&self) -> bool {
-        !matches!(self.status, L1TxStatus::InvalidInputs)
+        !matches!(
+            self.status,
+            L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. }
+        )
     }
 
     pub fn is_finalized(&self) -> bool {
         matches!(self.status, L1TxStatus::Finalized { .. })
     }
+}
+
+/// RBF metadata for one concrete broadcast transaction.
+///
+/// Replacement bookkeeping (attempt history, publication height, terminal errors) lives on the
+/// [`TxNodeRecord`] for the logical transaction. This entry-level record only carries what the
+/// broadcast row itself needs: the fee rate the transaction was built at, which seeds the
+/// tx-node's first attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Arbitrary, Serialize, Deserialize)]
+pub struct L1TxRbfInfo {
+    /// Fee rate used to construct this transaction in sat/vB.
+    pub fee_rate_sat_vb: u64,
+
+    /// Absolute fee this transaction pays, in satoshis.
+    ///
+    /// Recorded rather than derived: for chunked commits the builder absorbs sub-dust change into
+    /// the fee, so `fee_rate_sat_vb * vsize` under-reports it, and the BIP-125 absolute-fee floor
+    /// for a replacement is computed from this value.
+    pub fee_sats: u64,
+
+    /// The transaction this one replaced, if it is itself a replacement.
+    ///
+    /// [`L1TxStatus::Replaced`] only links forward, which is all the live-entry lookup needs. This
+    /// is the reverse link, and it exists for one case: a superseded ancestor that gets mined
+    /// anyway. Bitcoin Core then reports negative confirmations for the replacement, and without a
+    /// way back through the chain there is no way to find out which transaction actually won.
+    #[serde(default)]
+    pub replaces: Option<L1TxId>,
 }
 
 /// The possible statuses of a publishable transaction
@@ -85,6 +144,12 @@ pub enum L1TxStatus {
 
     /// The transaction is not included in L1 because it's inputs were invalid
     InvalidInputs,
+
+    /// The transaction has been superseded by an RBF replacement.
+    Replaced {
+        /// Replacement transaction id.
+        by: L1TxId,
+    },
 }
 
 impl fmt::Display for L1TxStatus {
@@ -113,6 +178,7 @@ impl fmt::Display for L1TxStatus {
                 )
             }
             Self::InvalidInputs => f.write_str("invalid_inputs"),
+            Self::Replaced { by } => write!(f, "replaced_by({by})"),
         }
     }
 }
@@ -155,6 +221,91 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 
     /// Get last broadcast entry
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
+
+    /// Atomically inserts `replacement` and marks `original_txid` as superseded by it.
+    ///
+    /// Both rows live in the broadcast tree, so the insert and the transition happen in one
+    /// transaction. Doing them separately leaves a window where the replacement exists, and can be
+    /// broadcast, with nothing linking it back to the transaction it supersedes.
+    ///
+    /// The transition follows the same eligibility rule as
+    /// [`try_mark_tx_entry_replaced`](Self::try_mark_tx_entry_replaced). Returns the replacement's
+    /// broadcast index when the swap applied, or `None` when the original was no longer
+    /// replaceable, in which case nothing is written.
+    fn put_replacement_tx_entry(
+        &self,
+        original_txid: Buf32,
+        replacement_txid: Buf32,
+        replacement: L1TxEntry,
+    ) -> DbResult<Option<u64>>;
+
+    /// Atomically marks `txid` as superseded by `replacement_txid`.
+    ///
+    /// The transition only applies to an entry that is still awaiting inclusion
+    /// ([`L1TxStatus::Unpublished`] or [`L1TxStatus::Published`]); a transaction that already
+    /// confirmed has won and is left untouched. Read and write happen in one transaction so a
+    /// concurrent confirmation cannot be clobbered.
+    ///
+    /// Returns whether the entry was transitioned.
+    fn try_mark_tx_entry_replaced(&self, txid: Buf32, replacement_txid: L1TxId) -> DbResult<bool>;
+
+    /// Atomically reverses a replacement after the superseded transaction won on-chain.
+    ///
+    /// A miner can include an original after the local node accepted its replacement. The
+    /// replacement can then never confirm, and the ancestor that did is still marked
+    /// [`L1TxStatus::Replaced`], so the live-entry lookup walks straight past it.
+    ///
+    /// This repoints the chain at the winner: `winner_txid` takes `winner_status`, and `loser_txid`
+    /// becomes `Replaced { by: winner_txid }`. Both writes commit together because the intermediate
+    /// state is a cycle, which would make the lookup exhaust its hop budget and fail.
+    ///
+    /// The winner may sit anywhere in the loser's ancestry, not just one hop back: a chain bumped
+    /// several times has intermediate attempts between them and a miner can include any of them.
+    /// Intermediates keep their forward links, which still resolve to the winner through the
+    /// reversed one.
+    ///
+    /// Returns whether the reversal applied; `false` when either row is missing, when the winner's
+    /// replacement chain does not reach the loser, or when the loser has already left
+    /// `Unpublished`/`Published`, so nothing is written. That last case means a concurrent
+    /// replacement superseded the loser while this adoption was deciding, and reversing over it
+    /// would cut the replacement out of the chain while it stays indexed and broadcastable.
+    fn adopt_confirmed_ancestor(
+        &self,
+        loser_txid: Buf32,
+        winner_txid: Buf32,
+        winner_status: L1TxStatus,
+    ) -> DbResult<bool>;
+
+    /// Stores a logical transaction replacement-chain record.
+    ///
+    /// Also maintains the active-set index behind
+    /// [`get_active_tx_nodes`](Self::get_active_tx_nodes): a record without a terminal error
+    /// enters the set, a record with one leaves it. Record and membership commit together, so a
+    /// crash cannot leave a live chain outside the set the replacement pass scans.
+    fn put_tx_node(&self, node_id: TxNodeId, record: TxNodeRecord) -> DbResult<()>;
+
+    /// Fetches a logical transaction replacement-chain record by id.
+    fn get_tx_node(&self, node_id: TxNodeId) -> DbResult<Option<TxNodeRecord>>;
+
+    /// Fetches all logical transaction replacement-chain records.
+    fn get_all_tx_nodes(&self) -> DbResult<Vec<TxNodeRecord>>;
+
+    /// Fetches the replacement-chain records that may still need fee bumping.
+    ///
+    /// This is the bounded read the replacement pass scans instead of
+    /// [`get_all_tx_nodes`](Self::get_all_tx_nodes): membership is maintained by
+    /// [`put_tx_node`](Self::put_tx_node) and [`retire_tx_node`](Self::retire_tx_node), so
+    /// historical chains whose transaction finalized are not decoded on every pass.
+    fn get_active_tx_nodes(&self) -> DbResult<Vec<TxNodeRecord>>;
+
+    /// Removes a record from the active set once its chain needs no further fee bumping.
+    ///
+    /// Guarded on `expected_active_txid`: a concurrent writer rebuild installs a fresh attempt
+    /// under a new txid, and retiring over it would silently stop bumping a live chain. The
+    /// record itself stays readable through [`get_tx_node`](Self::get_tx_node).
+    ///
+    /// Returns whether the record was retired.
+    fn retire_tx_node(&self, node_id: TxNodeId, expected_active_txid: L1TxId) -> DbResult<bool>;
 }
 
 #[cfg(test)]
@@ -185,6 +336,10 @@ mod tests {
                 r#"{"status":"finalized","confirmations":100,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
             ),
             (L1TxStatus::InvalidInputs, r#"{"status":"invalidinputs"}"#),
+            (
+                L1TxStatus::Replaced { by: L1TxId::zero() },
+                r#"{"status":"replaced","by":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
+            ),
         ];
 
         // check serialization and deserialization

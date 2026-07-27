@@ -1,5 +1,9 @@
-use bitcoin::Txid;
-use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
+use bitcoin::{hashes::Hash, Txid};
+use strata_db_types::{
+    common::L1TxId,
+    l1_broadcast::{L1TxEntry, L1TxStatus},
+};
+use strata_primitives::buf::Buf32;
 use tracing::*;
 
 use super::{
@@ -23,10 +27,7 @@ where
     for entry in unfinalized_entries {
         let idx = *entry.index();
         let txentry = entry.item();
-        let txid = txentry
-            .try_to_tx()
-            .map_err(|e| BroadcasterError::Other(e.to_string()))?
-            .compute_txid();
+        let txid = txentry.try_to_tx()?.compute_txid();
 
         let updated_status = process_tx_entry(io, txentry, &txid, params).await?;
 
@@ -57,7 +58,7 @@ where
     C: BroadcasterIoContext,
 {
     let result = match txentry.status {
-        L1TxStatus::Unpublished => publish_tx(io, txentry).await.map(Some),
+        L1TxStatus::Unpublished => publish_tx(io, params, txentry).await.map(Some),
         L1TxStatus::Published => probe_published_entry(io, txentry, txid, params)
             .await
             .map(Some),
@@ -65,7 +66,7 @@ where
             .await
             .map(Some),
         L1TxStatus::Finalized { .. } => Ok(None),
-        L1TxStatus::InvalidInputs => Ok(None),
+        L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. } => Ok(None),
     };
     if let Ok(ref updated_status) = result {
         debug!(?updated_status);
@@ -84,7 +85,8 @@ where
 /// 3. `Ok(None)`: not found at all. Could be a transient wallet-syncer miss for a freshly broadcast
 ///    tx, or a genuinely dropped tx (mempool eviction, RBF). Re-publish to disambiguate: benign
 ///    mempool messages fold back to Published, `bad-txns-inputs-missingorspent` routes to
-///    InvalidInputs so the watcher rebuilds the envelope.
+///    InvalidInputs so the watcher rebuilds the envelope, unless an ancestor of this entry's own
+///    replacement chain took those inputs by confirming.
 async fn probe_published_entry<C>(
     io: &C,
     txentry: &L1TxEntry,
@@ -101,9 +103,28 @@ where
     match txinfo_res? {
         // `confirmation_status` returns `Published` for 0-conf, which is the
         // correct sighting for an already-Published entry still in mempool.
-        TxLookupOutcome::Found(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
-        TxLookupOutcome::Missing => match publish_tx(io, txentry).await? {
-            L1TxStatus::InvalidInputs => Ok(L1TxStatus::InvalidInputs),
+        TxLookupOutcome::Found(info) => {
+            // Bitcoin Core reports negative confirmations for a wallet transaction that conflicts
+            // with one already in the best chain. For an ordinary entry that reads as "side branch
+            // after a reorg" and is held at `Published` so it can be re-mined. For an entry that is
+            // itself a replacement it is unambiguous: some other transaction in its replacement
+            // chain confirmed, so this one can never enter the chain. Holding it at `Published`
+            // would leave the envelope waiting on a commit that will never confirm.
+            //
+            // The predicate is the reverse `replaces` link, not the presence of RBF metadata:
+            // every writer-owned entry carries that metadata from its first attempt, and a first
+            // attempt has no chain to lose to.
+            if txentry.rbf.and_then(|rbf| rbf.replaces).is_some() && info.confirmations < 0 {
+                warn!(%txid, confirmations = info.confirmations, "replacement-chain transaction conflicts with a confirmed transaction");
+                return resolve_invalid_inputs(io, params, txid, txentry).await;
+            }
+            Ok(confirmation_status(&info, reorg_safe_depth))
+        }
+        // A rejected re-publish resolves the same way a first publish does, including the
+        // ancestor check, so a `Replaced` verdict must reach the caller rather than fold into
+        // `Published`.
+        TxLookupOutcome::Missing => match publish_tx(io, params, txentry).await? {
+            status @ (L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. }) => Ok(status),
             _ => Ok(L1TxStatus::Published),
         },
         TxLookupOutcome::RetryLater { reason } => {
@@ -111,6 +132,101 @@ where
             Ok(L1TxStatus::Published)
         }
     }
+}
+
+/// Bound on how far back a conflicting-ancestor search walks, matching the forward chain walk.
+const MAX_ANCESTOR_SEARCH_HOPS: usize = 32;
+
+/// Settles an `InvalidInputs` verdict against the entry's own replacement chain.
+///
+/// `InvalidInputs` is what sends the writer off to rebuild, and rebuilding republishes a payload a
+/// confirmed transaction may already carry. For an entry in a replacement chain the transaction
+/// that took its inputs is usually an ancestor of that very chain: a miner included an original
+/// after the local node had already accepted its replacement.
+///
+/// Returns [`L1TxStatus::Replaced`] pointing at the ancestor that won. When no ancestor did, the
+/// conflict is with a transaction outside this chain and the [`L1TxStatus::InvalidInputs`] verdict
+/// stands. An entry with no `replaces` link, which is every entry outside a replacement chain,
+/// resolves to `InvalidInputs` without asking bitcoind anything.
+async fn resolve_invalid_inputs<C>(
+    io: &C,
+    params: &BtcioParams,
+    txid: &Txid,
+    txentry: &L1TxEntry,
+) -> BroadcasterResult<L1TxStatus>
+where
+    C: BroadcasterIoContext,
+{
+    if let Some(winner) = adopt_confirmed_ancestor(io, params, txid, txentry).await? {
+        return Ok(L1TxStatus::Replaced { by: winner });
+    }
+    Ok(L1TxStatus::InvalidInputs)
+}
+
+/// Repoints a replacement chain at a superseded ancestor that was mined anyway.
+///
+/// Bitcoin Core reports negative confirmations for a transaction conflicting with one already in
+/// the best chain. For a replacement chain the conflict is usually its own ancestor: the local node
+/// accepted the replacement and evicted the original, then a miner included the original from
+/// somewhere else. The ancestor is still marked [`L1TxStatus::Replaced`], so the live-entry lookup
+/// walks straight past it and every consumer concludes the chain is dead.
+///
+/// Walks `replaces` back-pointers, asks bitcoind about each ancestor, and on finding a confirmed
+/// one reverses the link so the chain resolves to the winner. Returns the winner's txid when the
+/// reversal applied, or `None` when no ancestor won, which means the conflict is with a transaction
+/// outside this chain and the caller's `InvalidInputs` verdict stands.
+async fn adopt_confirmed_ancestor<C>(
+    io: &C,
+    params: &BtcioParams,
+    loser_txid: &Txid,
+    loser_entry: &L1TxEntry,
+) -> BroadcasterResult<Option<L1TxId>>
+where
+    C: BroadcasterIoContext,
+{
+    let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
+    let mut ancestor = loser_entry.rbf.and_then(|rbf| rbf.replaces);
+
+    for _ in 0..MAX_ANCESTOR_SEARCH_HOPS {
+        let Some(candidate) = ancestor else {
+            return Ok(None);
+        };
+        let candidate_raw = Buf32(candidate.0);
+        let Some(candidate_entry) = io.get_tx_entry_by_id(candidate_raw).await? else {
+            return Ok(None);
+        };
+
+        let candidate_txid = candidate_entry.try_to_tx()?.compute_txid();
+        if let TxLookupOutcome::Found(info) = io.get_transaction(&candidate_txid).await? {
+            if info.confirmations > 0 {
+                let winner_status = confirmation_status(&info, reorg_safe_depth);
+                info!(
+                    loser = %loser_txid,
+                    winner = %candidate_txid,
+                    confirmations = info.confirmations,
+                    "superseded transaction won on-chain; adopting it instead of rebuilding"
+                );
+                // `false` means another poll already reversed this pair, or the chain no longer
+                // links the two. Either way the caller must not report the loser as invalid.
+                if io
+                    .adopt_confirmed_ancestor(
+                        Buf32(loser_txid.to_byte_array()),
+                        candidate_raw,
+                        winner_status,
+                    )
+                    .await?
+                {
+                    return Ok(Some(candidate));
+                }
+                return Ok(None);
+            }
+        }
+
+        ancestor = candidate_entry.rbf.and_then(|rbf| rbf.replaces);
+    }
+
+    warn!(loser = %loser_txid, "conflicting-ancestor search exceeded its hop budget");
+    Ok(None)
 }
 
 /// Maps `TxConfirmationInfo` to the natural confirmation-derived status.
@@ -185,7 +301,17 @@ where
 }
 
 /// Attempts to broadcast an unpublished entry and maps publication outcomes to statuses.
-async fn publish_tx<C>(io: &C, txentry: &L1TxEntry) -> BroadcasterResult<L1TxStatus>
+///
+/// A rejection for spent inputs is settled against the replacement chain before it becomes
+/// [`L1TxStatus::InvalidInputs`]: an original mined between the replacement being persisted and
+/// broadcast takes the inputs out from under it, and the replacement is then rejected on its very
+/// first send, without ever reaching `Published` where the negative-confirmation path would have
+/// caught the same conflict.
+async fn publish_tx<C>(
+    io: &C,
+    params: &BtcioParams,
+    txentry: &L1TxEntry,
+) -> BroadcasterResult<L1TxStatus>
 where
     C: BroadcasterIoContext,
 {
@@ -206,7 +332,7 @@ where
             Ok(PublishTxOutcome::AlreadyInMempool) => Ok(L1TxStatus::Published),
             Ok(PublishTxOutcome::InvalidInputs) => {
                 warn!("tx excluded due to invalid inputs");
-                Ok(L1TxStatus::InvalidInputs)
+                resolve_invalid_inputs(io, params, &txid, txentry).await
             }
             Ok(PublishTxOutcome::RetryLater { reason }) => {
                 warn!(%reason, "broadcast should be retried on next poll");
@@ -275,7 +401,13 @@ where
         };
 
         if !txentry.is_valid() {
-            error!(%idx, status = ?txentry.status, "invalid broadcaster entry in DB; skipping");
+            // A superseded entry is a routine outcome of fee bumping, not a fault, and every one of
+            // them is re-read on each restart.
+            if matches!(txentry.status, L1TxStatus::Replaced { .. }) {
+                debug!(%idx, status = ?txentry.status, "skipping superseded broadcaster entry");
+            } else {
+                error!(%idx, status = ?txentry.status, "invalid broadcaster entry in DB; skipping");
+            }
             continue;
         }
 
@@ -290,14 +422,19 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::{collections::BTreeMap, future::Future};
+    use std::{
+        collections::BTreeMap,
+        future::Future,
+        iter::once,
+        sync::{Arc, Mutex},
+    };
 
-    use bitcoin::{Transaction, Txid};
+    use bitcoin::{absolute::LockTime, Amount, FeeRate, Transaction, Txid};
     use proptest::prelude::*;
-    use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
-    use strata_identifiers::test_utils::buf32_strategy;
+    use strata_db_types::l1_broadcast::{L1TxEntry, L1TxRbfInfo, L1TxStatus};
+    use strata_identifiers::{test_utils::buf32_strategy, Buf32};
     use strata_l1_txfmt::MagicBytes;
-    use strata_primitives::{buf::Buf32, L1Height};
+    use strata_primitives::L1Height;
     use tokio::runtime::Builder;
 
     use super::*;
@@ -332,6 +469,9 @@ mod test {
         entries: BTreeMap<u64, L1TxEntry>,
         tx_lookup: BTreeMap<Txid, MockTxLookupResult>,
         broadcast_results: BTreeMap<Txid, MockBroadcastResult>,
+        entries_by_id: BTreeMap<Buf32, L1TxEntry>,
+        adoptions: Arc<Mutex<Vec<(Buf32, Buf32, L1TxStatus)>>>,
+        adoption_applies: bool,
     }
 
     impl MockIoContext {
@@ -343,6 +483,20 @@ mod test {
         fn with_broadcast_result(mut self, txid: Txid, result: MockBroadcastResult) -> Self {
             self.broadcast_results.insert(txid, result);
             self
+        }
+
+        fn with_entry_by_id(mut self, txid: Buf32, entry: L1TxEntry) -> Self {
+            self.entries_by_id.insert(txid, entry);
+            self
+        }
+
+        fn with_adoption_applying(mut self, applies: bool) -> Self {
+            self.adoption_applies = applies;
+            self
+        }
+
+        fn adoptions(&self) -> Vec<(Buf32, Buf32, L1TxStatus)> {
+            self.adoptions.lock().unwrap().clone()
         }
     }
 
@@ -357,6 +511,23 @@ mod test {
 
         async fn put_tx_entry_by_idx(&self, _idx: u64, _entry: L1TxEntry) -> BroadcasterResult<()> {
             Ok(())
+        }
+
+        async fn get_tx_entry_by_id(&self, txid: Buf32) -> BroadcasterResult<Option<L1TxEntry>> {
+            Ok(self.entries_by_id.get(&txid).cloned())
+        }
+
+        async fn adopt_confirmed_ancestor(
+            &self,
+            loser_txid: Buf32,
+            winner_txid: Buf32,
+            winner_status: L1TxStatus,
+        ) -> BroadcasterResult<bool> {
+            self.adoptions
+                .lock()
+                .unwrap()
+                .push((loser_txid, winner_txid, winner_status));
+            Ok(self.adoption_applies)
         }
 
         async fn get_transaction<'a>(
@@ -412,6 +583,21 @@ mod test {
         let entry = gen_l1_tx_entry_with_status(status);
         let txid = entry.try_to_tx().unwrap().compute_txid();
         (entry, txid)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn malformed_transaction_returns_typed_error() {
+        let entry = IndexedEntry::new(
+            0,
+            L1TxEntry::from_raw_parts(vec![0xff], L1TxStatus::Published, None),
+        );
+        let io = MockIoContext::default();
+
+        let err = process_unfinalized_entries(once(&entry), &io, &get_test_btcio_params())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, BroadcasterError::InvalidTransaction(_)));
     }
 
     fn confirmation_info(
@@ -554,7 +740,7 @@ mod test {
         #[test]
         fn test_handle_published_entry(
             block_height in 1_u32..1_000_000,
-            block_hash in buf32_strategy(),
+            block_hash in buf32_strategy().prop_map(|buf| buf),
         ) {
             run_async_test(async move {
                 let (e, txid) = entry_with_txid(L1TxStatus::Published);
@@ -611,7 +797,7 @@ mod test {
         #[test]
         fn test_handle_confirmed_entry(
             block_height in 1_u32..1_000_000,
-            block_hash in buf32_strategy(),
+            block_hash in buf32_strategy().prop_map(|buf| buf),
         ) {
             run_async_test(async move {
                 let (e, txid) = entry_with_txid(confirmed_status(1, block_height, block_hash));
@@ -830,7 +1016,7 @@ mod test {
         fn test_process_unfinalized_entries(
             seed_idx in 1_u64..1_000_000,
             block_height in 1_u32..1_000_000,
-            block_hash in buf32_strategy(),
+            block_hash in buf32_strategy().prop_map(|buf| buf),
         ) {
             run_async_test(async move {
                 let btcio_params = get_test_btcio_params();
@@ -893,6 +1079,262 @@ mod test {
     }
 
     // ── confirmation_status ──
+
+    /// Builds a two-attempt chain: `winner` was superseded by `loser`, and the reverse link is set
+    /// as `put_replacement_tx_entry` would have set it.
+    fn replacement_chain() -> (L1TxEntry, Txid, L1TxEntry, Txid, Buf32) {
+        let (mut winner, winner_txid) = entry_with_txid(L1TxStatus::Published);
+        let winner_raw = Buf32(winner_txid.to_byte_array());
+        winner.rbf = Some(L1TxRbfInfo {
+            fee_rate_sat_vb: 2,
+            fee_sats: 200,
+            replaces: None,
+        });
+
+        // A distinct transaction, so the two entries do not collide by txid.
+        let loser_tx = {
+            let mut tx = winner.try_to_tx().unwrap();
+            tx.lock_time = LockTime::from_consensus(7);
+            tx
+        };
+        let loser_txid = loser_tx.compute_txid();
+        let mut loser = L1TxEntry::from_tx_with_fee(
+            &loser_tx,
+            FeeRate::from_sat_per_vb(4).unwrap(),
+            Amount::from_sat(400),
+        );
+        loser.status = L1TxStatus::Published;
+        loser.set_replaces(L1TxId::from(winner_raw.0));
+
+        winner.status = L1TxStatus::Replaced {
+            by: L1TxId::from(loser_txid.to_byte_array()),
+        };
+
+        (winner, winner_txid, loser, loser_txid, winner_raw)
+    }
+
+    /// Regression: a miner can include the original after the local node accepted the replacement.
+    /// Marking the replacement `InvalidInputs` sends the writer off to rebuild, republishing a
+    /// payload the confirmed ancestor already carries.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn negative_confirmations_adopt_a_confirmed_ancestor() {
+        let (winner, winner_txid, loser, loser_txid, winner_raw) = replacement_chain();
+        let btcio_params = get_test_btcio_params();
+        let io = MockIoContext::default()
+            .with_entry_by_id(winner_raw, winner)
+            .with_adoption_applying(true)
+            .with_tx_lookup(
+                loser_txid,
+                MockTxLookupResult::Found(TxConfirmationInfo {
+                    confirmations: -1,
+                    block_hash: None,
+                    block_height: None,
+                }),
+            )
+            .with_tx_lookup(
+                winner_txid,
+                MockTxLookupResult::Found(confirmation_info(3, 400, Buf32::new([9u8; 32]))),
+            );
+
+        let status = process_status(&io, &loser, &loser_txid, &btcio_params).await;
+
+        assert_eq!(
+            status,
+            Some(L1TxStatus::Replaced {
+                by: L1TxId::from(winner_raw.0)
+            }),
+            "the loser must point at the winner, not be marked invalid"
+        );
+        let adoptions = io.adoptions();
+        assert_eq!(adoptions.len(), 1);
+        assert_eq!(adoptions[0].1, winner_raw);
+        assert_eq!(
+            adoptions[0].2,
+            confirmed_status(3, 400, Buf32::new([9u8; 32]))
+        );
+    }
+
+    /// A conflict with something outside the chain is a real double spend, and the original verdict
+    /// stands.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn negative_confirmations_stay_invalid_without_a_confirmed_ancestor() {
+        let (winner, winner_txid, loser, loser_txid, winner_raw) = replacement_chain();
+        let btcio_params = get_test_btcio_params();
+        let io = MockIoContext::default()
+            .with_entry_by_id(winner_raw, winner)
+            .with_adoption_applying(true)
+            .with_tx_lookup(
+                loser_txid,
+                MockTxLookupResult::Found(TxConfirmationInfo {
+                    confirmations: -1,
+                    block_hash: None,
+                    block_height: None,
+                }),
+            )
+            // The ancestor did not win either.
+            .with_tx_lookup(winner_txid, MockTxLookupResult::Missing);
+
+        let status = process_status(&io, &loser, &loser_txid, &btcio_params).await;
+
+        assert_eq!(status, Some(L1TxStatus::InvalidInputs));
+        assert!(io.adoptions().is_empty());
+    }
+
+    /// Regression: every writer-owned entry carries RBF metadata from its first attempt, so the
+    /// metadata alone must not be read as "in a replacement chain". A first attempt conflicting
+    /// with the best chain is the ordinary side-branch sighting, and rebuilding it would republish
+    /// a payload that gets mined twice once the conflicting transaction is reorged out.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn negative_confirmations_hold_a_first_attempt_at_published() {
+        let (mut entry, txid) = entry_with_txid(L1TxStatus::Published);
+        entry.rbf = Some(L1TxRbfInfo {
+            fee_rate_sat_vb: 2,
+            fee_sats: 200,
+            replaces: None,
+        });
+        let btcio_params = get_test_btcio_params();
+        let io = MockIoContext::default().with_tx_lookup(
+            txid,
+            MockTxLookupResult::Found(TxConfirmationInfo {
+                confirmations: -1,
+                block_hash: None,
+                block_height: None,
+            }),
+        );
+
+        let status = process_status(&io, &entry, &txid, &btcio_params).await;
+
+        assert_eq!(status, Some(L1TxStatus::Published));
+        assert!(io.adoptions().is_empty());
+    }
+
+    /// If the reversal did not apply the caller must not report the loser as invalid either: some
+    /// other pass already resolved the chain.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn negative_confirmations_stay_invalid_when_the_reversal_is_refused() {
+        let (winner, winner_txid, loser, loser_txid, winner_raw) = replacement_chain();
+        let btcio_params = get_test_btcio_params();
+        let io = MockIoContext::default()
+            .with_entry_by_id(winner_raw, winner)
+            .with_adoption_applying(false)
+            .with_tx_lookup(
+                loser_txid,
+                MockTxLookupResult::Found(TxConfirmationInfo {
+                    confirmations: -1,
+                    block_hash: None,
+                    block_height: None,
+                }),
+            )
+            .with_tx_lookup(
+                winner_txid,
+                MockTxLookupResult::Found(confirmation_info(3, 400, Buf32::new([9u8; 32]))),
+            );
+
+        let status = process_status(&io, &loser, &loser_txid, &btcio_params).await;
+
+        assert_eq!(status, Some(L1TxStatus::InvalidInputs));
+        assert_eq!(io.adoptions().len(), 1);
+    }
+
+    /// Regression: the original can be mined between the replacement being persisted and its first
+    /// broadcast. The replacement is then rejected for spent inputs on that very first send, so it
+    /// never reaches `Published` and the negative-confirmation path never runs. Left as
+    /// `InvalidInputs` the chain resolves to a dead entry and the writer rebuilds a payload the
+    /// confirmed original already carries.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_unpublished_replacement_rejected_for_spent_inputs_adopts_its_ancestor() {
+        let (winner, winner_txid, mut loser, loser_txid, winner_raw) = replacement_chain();
+        // Never broadcast: the writer persisted it and the block landed first.
+        loser.status = L1TxStatus::Unpublished;
+        let btcio_params = get_test_btcio_params();
+        let io = MockIoContext::default()
+            .with_entry_by_id(winner_raw, winner)
+            .with_adoption_applying(true)
+            // The original took the inputs, so bitcoind rejects the replacement outright.
+            .with_broadcast_result(loser_txid, MockBroadcastResult::InvalidInputs)
+            .with_tx_lookup(
+                winner_txid,
+                MockTxLookupResult::Found(confirmation_info(1, 400, Buf32::new([9u8; 32]))),
+            );
+
+        let status = process_status(&io, &loser, &loser_txid, &btcio_params).await;
+
+        assert_eq!(
+            status,
+            Some(L1TxStatus::Replaced {
+                by: L1TxId::from(winner_raw.0)
+            }),
+            "a replacement rejected because its ancestor confirmed must adopt that ancestor"
+        );
+        let adoptions = io.adoptions();
+        assert_eq!(adoptions.len(), 1);
+        assert_eq!(adoptions[0].1, winner_raw);
+    }
+
+    /// The verdict still stands when the rejection is a real double spend from outside the chain.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_unpublished_replacement_stays_invalid_without_a_confirmed_ancestor() {
+        let (winner, winner_txid, mut loser, loser_txid, winner_raw) = replacement_chain();
+        loser.status = L1TxStatus::Unpublished;
+        let btcio_params = get_test_btcio_params();
+        let io = MockIoContext::default()
+            .with_entry_by_id(winner_raw, winner)
+            .with_adoption_applying(true)
+            .with_broadcast_result(loser_txid, MockBroadcastResult::InvalidInputs)
+            .with_tx_lookup(winner_txid, MockTxLookupResult::Missing);
+
+        let status = process_status(&io, &loser, &loser_txid, &btcio_params).await;
+
+        assert_eq!(status, Some(L1TxStatus::InvalidInputs));
+        assert!(io.adoptions().is_empty());
+    }
+
+    /// The re-publish probe reaches the same rejection by a different route: a `Published`
+    /// replacement evicted from the wallet's view, re-sent, and refused because its ancestor won.
+    /// The `Replaced` verdict must reach the caller instead of folding back to `Published`.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_republish_probe_rejected_for_spent_inputs_adopts_its_ancestor() {
+        let (winner, winner_txid, loser, loser_txid, winner_raw) = replacement_chain();
+        let btcio_params = get_test_btcio_params();
+        let io = MockIoContext::default()
+            .with_entry_by_id(winner_raw, winner)
+            .with_adoption_applying(true)
+            .with_tx_lookup(loser_txid, MockTxLookupResult::Missing)
+            .with_broadcast_result(loser_txid, MockBroadcastResult::InvalidInputs)
+            .with_tx_lookup(
+                winner_txid,
+                MockTxLookupResult::Found(confirmation_info(1, 400, Buf32::new([9u8; 32]))),
+            );
+
+        let status = process_status(&io, &loser, &loser_txid, &btcio_params).await;
+
+        assert_eq!(
+            status,
+            Some(L1TxStatus::Replaced {
+                by: L1TxId::from(winner_raw.0)
+            }),
+        );
+        assert_eq!(io.adoptions().len(), 1);
+    }
+
+    /// An entry outside a replacement chain has no ancestor to consult, so a rejection is still a
+    /// rejection and the writer rebuilds as before.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_plain_entry_rejected_for_spent_inputs_stays_invalid() {
+        let (e, txid) = entry_with_txid(L1TxStatus::Unpublished);
+        assert!(
+            e.rbf.is_none(),
+            "test: fixture must be outside an RBF chain"
+        );
+        let btcio_params = get_test_btcio_params();
+        let io = MockIoContext::default()
+            .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
+
+        let status = process_status(&io, &e, &txid, &btcio_params).await;
+
+        assert_eq!(status, Some(L1TxStatus::InvalidInputs));
+        assert!(io.adoptions().is_empty());
+    }
 
     #[test]
     fn confirmation_status_zero_confirmations_returns_published() {
