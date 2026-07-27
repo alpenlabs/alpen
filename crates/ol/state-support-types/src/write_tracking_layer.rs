@@ -223,6 +223,25 @@ where
     }
 }
 
+impl<'base, S: IStateAccessor + IComputeStateRootWithWrites> IComputeStateRootWithWrites
+    for WriteTrackingState<'base, S>
+where
+    S::AccountState: Clone + IAccountState + IAccountStateMut,
+{
+    fn compute_state_root_with_writes<'b>(
+        &'b self,
+        writes: impl Iterator<Item = &'b WriteBatch<Self::AccountState>>,
+    ) -> StateResult<Buf32>
+    where
+        Self::AccountState: 'b,
+    {
+        // Our own batch is older than anything layered on top of us, so it goes
+        // first.
+        self.base
+            .compute_state_root_with_writes(iter::once(&self.batch).chain(writes))
+    }
+}
+
 impl<'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAccessorMut
     for WriteTrackingState<'base, S>
 where
@@ -367,14 +386,53 @@ mod tests {
     use super::*;
     use crate::{
         batch_diff_layer::BatchDiffState,
-        common_tests::{WriteTrackingLeaf, impl_mut_layer_tests, impl_read_layer_tests},
+        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
         memory_state_layer::MemoryStateBaseLayer,
         test_utils::*,
     };
 
-    // Shared behavior suites for a `WriteTrackingState` directly over the base.
-    impl_read_layer_tests!(WriteTrackingLeaf);
-    impl_mut_layer_tests!(WriteTrackingLeaf);
+    /// Builds a [`WriteTrackingState`] directly over the base.
+    macro_rules! build_wt_over_base {
+        ($base:expr, $layer:ident) => {
+            let $layer = WriteTrackingState::new_empty($base);
+        };
+        ($base:expr, mut $layer:ident) => {
+            let mut $layer = WriteTrackingState::new_empty($base);
+        };
+    }
+
+    /// Builds a [`WriteTrackingState`] over a [`BatchDiffState`] holding a
+    /// couple of empty pending batches.
+    ///
+    /// The batches are empty so every shared assertion still holds, while the
+    /// batch walk in `BatchDiffState::resolve` — which an empty batch slice
+    /// never enters — is exercised on every read that falls through.
+    macro_rules! build_wt_over_batch_diff {
+        ($base:expr, $layer:ident) => {
+            let batches = [WriteBatch::default(), WriteBatch::default()];
+            let diff = BatchDiffState::new($base, &batches);
+            let $layer = WriteTrackingState::new_empty(&diff);
+        };
+        ($base:expr, mut $layer:ident) => {
+            let batches = [WriteBatch::default(), WriteBatch::default()];
+            let diff = BatchDiffState::new($base, &batches);
+            let mut $layer = WriteTrackingState::new_empty(&diff);
+        };
+    }
+
+    mod over_base {
+        use super::*;
+
+        impl_read_layer_tests!(build_wt_over_base);
+        impl_mut_layer_tests!(build_wt_over_base);
+    }
+
+    mod over_batch_diff {
+        use super::*;
+
+        impl_read_layer_tests!(build_wt_over_batch_diff);
+        impl_mut_layer_tests!(build_wt_over_batch_diff);
+    }
 
     // =========================================================================
     // Copy-on-write tests
@@ -551,29 +609,16 @@ mod tests {
     // Intraepoch pending ASM log bookkeeping
     // =========================================================================
 
-    fn pending_log(tag: u8) -> PendingAsmLog {
-        let entry = strata_asm_manifest_types::AsmLogEntry::from_raw(vec![tag])
-            .expect("bytes within capacity");
-        PendingAsmLog::new(L1Height::from(tag as u32), entry)
-    }
-
-    fn seed_base_with_pending(count: usize) -> MemoryStateBaseLayer {
-        let mut base = create_test_base_layer();
-        for i in 0..count {
-            base.try_append_pending_asm_log(pending_log(i as u8))
-                .expect("base append");
-        }
-        base
-    }
-
     #[test]
     fn test_reset_clears_prior_batch_appends() {
-        let base = seed_base_with_pending(1);
+        let mut base = create_test_base_layer();
+        base.try_append_pending_asm_log(test_pending_asm_log(0))
+            .expect("base append");
         let diff = BatchDiffState::new(&base, &[]);
         let mut tracking = WriteTrackingState::new_empty(&diff);
 
         tracking
-            .try_append_pending_asm_log(pending_log(10))
+            .try_append_pending_asm_log(test_pending_asm_log(10))
             .expect("append before reset");
         assert_eq!(tracking.pending_asm_logs_len(), 2);
 
@@ -581,7 +626,7 @@ mod tests {
         assert_eq!(tracking.pending_asm_logs_len(), 0);
 
         tracking
-            .try_append_pending_asm_log(pending_log(20))
+            .try_append_pending_asm_log(test_pending_asm_log(20))
             .expect("append after reset");
         assert_eq!(tracking.pending_asm_logs_len(), 1);
         assert_eq!(

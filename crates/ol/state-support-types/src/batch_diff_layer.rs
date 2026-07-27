@@ -262,13 +262,56 @@ mod tests {
 
     use super::*;
     use crate::{
-        common_tests::{BatchDiffLeaf, impl_read_layer_tests},
-        test_utils::*,
+        common_tests::impl_read_layer_tests, test_utils::*,
+        write_tracking_layer::WriteTrackingState,
     };
 
-    // Shared read-behavior suite for a `BatchDiffState` with no pending batches
-    // (pure passthrough) over the base.
-    impl_read_layer_tests!(BatchDiffLeaf);
+    /// Builds a [`BatchDiffState`] with no pending batches — a pure read-only
+    /// passthrough to the base.
+    macro_rules! build_batch_diff_over_base {
+        ($base:expr, $layer:ident) => {
+            let $layer = BatchDiffState::new($base, &[]);
+        };
+    }
+
+    /// Builds a [`BatchDiffState`] holding a couple of empty pending batches.
+    ///
+    /// Empty batches leave every shared assertion intact while forcing each read
+    /// through the batch walk in [`BatchDiffState::resolve`] before it falls
+    /// through to the base, which the no-batch stack never exercises.
+    macro_rules! build_batch_diff_pending_over_base {
+        ($base:expr, $layer:ident) => {
+            let batches = [WriteBatch::default(), WriteBatch::default()];
+            let $layer = BatchDiffState::new($base, &batches);
+        };
+    }
+
+    /// Builds a [`BatchDiffState`] over a [`WriteTrackingState`], i.e. the rungs
+    /// in the opposite order from the usual stack.
+    macro_rules! build_batch_diff_over_wt {
+        ($base:expr, $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let $layer = BatchDiffState::new(&tracking, &[]);
+        };
+    }
+
+    mod over_base {
+        use super::*;
+
+        impl_read_layer_tests!(build_batch_diff_over_base);
+    }
+
+    mod pending_over_base {
+        use super::*;
+
+        impl_read_layer_tests!(build_batch_diff_pending_over_base);
+    }
+
+    mod over_write_tracking {
+        use super::*;
+
+        impl_read_layer_tests!(build_batch_diff_over_wt);
+    }
 
     // =========================================================================
     // Single batch tests

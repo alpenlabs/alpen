@@ -537,12 +537,45 @@ mod tests {
 
     use super::*;
     use crate::{
-        common_tests::{
-            BatchDiffLeaf, DaAccumulatingWrap, IndexerWrap, WriteTrackingLeaf,
-            impl_mut_layer_tests, impl_read_layer_tests,
-        },
+        BatchDiffState, DaAccumulatingState, WriteTrackingState,
+        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
         test_utils::*,
     };
+
+    /// Builds an [`IndexerState`] over a [`WriteTrackingState`].
+    macro_rules! build_indexer_over_wt {
+        ($base:expr, $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let $layer = IndexerState::new(tracking);
+        };
+        ($base:expr, mut $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let mut $layer = IndexerState::new(tracking);
+        };
+    }
+
+    /// Builds an [`IndexerState`] over a [`DaAccumulatingState`] over a
+    /// [`WriteTrackingState`].
+    macro_rules! build_indexer_over_da_over_wt {
+        ($base:expr, $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let da = DaAccumulatingState::new(tracking);
+            let $layer = IndexerState::new(da);
+        };
+        ($base:expr, mut $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let da = DaAccumulatingState::new(tracking);
+            let mut $layer = IndexerState::new(da);
+        };
+    }
+
+    /// Builds an [`IndexerState`] over a read-only [`BatchDiffState`].
+    macro_rules! build_indexer_over_batch_diff {
+        ($base:expr, $layer:ident) => {
+            let diff = BatchDiffState::new($base, &[]);
+            let $layer = IndexerState::new(diff);
+        };
+    }
 
     // Shared behavior suites for an `IndexerState` wrapping various inner stacks.
     // Each composition gets its own module so the generated test names don't
@@ -550,22 +583,22 @@ mod tests {
     mod over_write_tracking {
         use super::*;
 
-        impl_read_layer_tests!(IndexerWrap(WriteTrackingLeaf));
-        impl_mut_layer_tests!(IndexerWrap(WriteTrackingLeaf));
+        impl_read_layer_tests!(build_indexer_over_wt);
+        impl_mut_layer_tests!(build_indexer_over_wt);
     }
 
     mod over_da_over_write_tracking {
         use super::*;
 
-        impl_read_layer_tests!(IndexerWrap(DaAccumulatingWrap(WriteTrackingLeaf)));
-        impl_mut_layer_tests!(IndexerWrap(DaAccumulatingWrap(WriteTrackingLeaf)));
+        impl_read_layer_tests!(build_indexer_over_da_over_wt);
+        impl_mut_layer_tests!(build_indexer_over_da_over_wt);
     }
 
     // `BatchDiffState` is read-only, so wrapping it yields a read-only stack.
     mod over_batch_diff {
         use super::*;
 
-        impl_read_layer_tests!(IndexerWrap(BatchDiffLeaf));
+        impl_read_layer_tests!(build_indexer_over_batch_diff);
     }
 
     // =========================================================================
