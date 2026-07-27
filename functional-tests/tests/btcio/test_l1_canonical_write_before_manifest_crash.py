@@ -1,7 +1,6 @@
 """Test restart after crashing between L1 canonical write and ASM notification."""
 
 import logging
-import time
 
 import flexitest
 
@@ -11,9 +10,6 @@ from common.config import ServiceType
 from envconfigs.strata import StrataEnvConfig
 
 logger = logging.getLogger(__name__)
-
-READER_RESTART_SETTLE_SECONDS = 3.0
-
 
 @flexitest.register
 class TestL1CanonicalWriteBeforeManifestCrash(StrataNodeTest):
@@ -54,8 +50,6 @@ class TestL1CanonicalWriteBeforeManifestCrash(StrataNodeTest):
         partial_commitment = strata.wait_for_asm_manifest_commitment_at(
             partial_height, rpc=rpc, timeout=60
         )
-
-        time.sleep(READER_RESTART_SETTLE_SECONDS)
 
         btc_rpc.proxy.generatetoaddress(1, mine_addr)
         final_tip = btc_rpc.proxy.getblockchaininfo()["blocks"]
