@@ -150,10 +150,10 @@ impl SnarkDelta {
         let proof_state = DaProofStateDiff::new(inner_state, next_inbox_msg_idx);
         let update_vk = DaRegister::compare(&self.base_update_vk, &self.final_update_vk);
         Ok(SnarkAccountDiff::new(
-            seq_no,
-            proof_state,
-            self.inbox.clone(),
             update_vk,
+            proof_state,
+            seq_no,
+            self.inbox.clone(),
         ))
     }
 }

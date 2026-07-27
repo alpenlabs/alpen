@@ -441,7 +441,7 @@ mod tests {
                 Some(vk) => DaRegister::new_set(U16LenBytes::new(vk)),
                 None => DaRegister::new_unset(),
             };
-            SnarkAccountDiff::new(seq_no, proof_state, inbox, update_vk)
+            SnarkAccountDiff::new(update_vk, proof_state, seq_no, inbox)
         }
 
         /// Inbox message entry with a repeated-byte payload.
@@ -765,10 +765,10 @@ mod tests {
             .expect("create snark account");
 
         let snark_diff = SnarkAccountDiff::new(
-            DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
-            DaProofStateDiff::default(),
-            DaLinacc::new(),
             DaRegister::new_unset(),
+            DaProofStateDiff::default(),
+            DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
+            DaLinacc::new(),
         );
         let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
         let diff = StateDiff::new(
@@ -1238,7 +1238,7 @@ mod tests {
     ///
     /// The hex was derived from the encoder and acts as a drift detector, not a hand-verified spec
     /// oracle.
-    const GOLDEN_PAYLOAD_V1_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba030000000102070003032222222222222222222222222222222222222222222222222222222222222222020002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+    const GOLDEN_PAYLOAD_V1_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba0300000001020e0322222222222222222222222222222222222222222222222222222222222222220200030002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
 
     fn hex_to_bytes(hex: &str) -> Vec<u8> {
         (0..hex.len())
