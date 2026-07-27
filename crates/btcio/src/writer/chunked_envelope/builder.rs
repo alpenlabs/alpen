@@ -20,13 +20,14 @@ use bitcoin::{
     Address, Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
+use strata_config::btcio::FeeBumpingConfig;
 use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
 use strata_l1_txfmt::MagicBytes;
 
 use super::commit_op_return::build_commit_op_return;
 use crate::writer::builder::{
-    choose_utxos, fee_sats_for_vsize, get_size, sign_reveal_transaction, EnvelopeConfig,
-    EnvelopeError, BITCOIN_DUST_LIMIT,
+    choose_utxos, fee_sats_for_vsize, get_size, reveal_fee_headroom, sign_reveal_transaction,
+    EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT,
 };
 
 /// Intermediate state for each reveal before tx construction.
@@ -41,6 +42,12 @@ struct RevealArtifact {
 pub struct ChunkedEnvelopeTxs {
     pub commit_tx: Transaction,
     pub reveal_txs: Vec<Transaction>,
+    /// Exact absolute fee the commit tx pays.
+    ///
+    /// This is `sum(inputs) - sum(outputs)`, not `vsize * fee_rate`: when the leftover change
+    /// would be dust the builder drops the change output and the excess becomes extra fee. Fee
+    /// bumping needs the real figure to compute the BIP-125 absolute-fee floor for a replacement.
+    pub commit_fee: Amount,
 }
 
 /// Builds a chunked envelope from raw chunk payloads.
@@ -73,7 +80,24 @@ pub fn build_chunked_envelope_txs(
 
     let sequencer_xonly = XOnlyPublicKey::from_keypair(sequencer_keypair).0;
     let commit_op_return = build_commit_op_return(magic_bytes, da_blob_version);
+    let artifacts = build_reveal_artifacts(chunks, sequencer_xonly, config)?;
 
+    let (commit_tx, commit_fee) =
+        build_multi_output_commit(config, &artifacts, &commit_op_return, utxos)?;
+    let reveal_txs = build_reveals_for_commit(config, &artifacts, sequencer_keypair, &commit_tx)?;
+
+    Ok(ChunkedEnvelopeTxs {
+        commit_tx,
+        reveal_txs,
+        commit_fee,
+    })
+}
+
+fn build_reveal_artifacts(
+    chunks: &[Vec<u8>],
+    sequencer_xonly: XOnlyPublicKey,
+    config: &EnvelopeConfig,
+) -> Result<Vec<RevealArtifact>, EnvelopeError> {
     let mut artifacts = Vec::with_capacity(chunks.len());
     for chunk in chunks {
         let reveal_script = EnvelopeScriptBuilder::with_pubkey(&sequencer_xonly.serialize())?
@@ -92,6 +116,7 @@ pub fn build_chunked_envelope_txs(
             config.fee_rate,
             &reveal_script,
             &spend_info,
+            &config.fee_bumping,
         )?;
 
         artifacts.push(RevealArtifact {
@@ -100,8 +125,15 @@ pub fn build_chunked_envelope_txs(
             commit_value,
         });
     }
+    Ok(artifacts)
+}
 
-    let commit_tx = build_multi_output_commit(config, &artifacts, &commit_op_return, utxos)?;
+fn build_reveals_for_commit(
+    config: &EnvelopeConfig,
+    artifacts: &[RevealArtifact],
+    sequencer_keypair: &Keypair,
+    commit_tx: &Transaction,
+) -> Result<Vec<Transaction>, EnvelopeError> {
     let commit_txid = commit_tx.compute_txid();
 
     let mut reveal_txs = Vec::with_capacity(artifacts.len());
@@ -109,7 +141,10 @@ pub fn build_chunked_envelope_txs(
     // Reveals spend commit outputs starting at vout=1 (vout=0 is the OP_RETURN).
     for (i, artifact) in artifacts.iter().enumerate() {
         let vout = (i + 1) as u32;
-        let commit_output = &commit_tx.output[vout as usize];
+        let commit_output = commit_tx
+            .output
+            .get(vout as usize)
+            .ok_or(EnvelopeError::NotEnoughUtxos(config.reveal_amount, 0))?;
 
         let control_block = artifact
             .spend_info
@@ -127,8 +162,13 @@ pub fn build_chunked_envelope_txs(
             Some(&control_block),
         );
         let reveal_fee = fee_sats_for_vsize(reveal_vsize, config.fee_rate)?;
-        let required = config
+        let reveal_vsize = u64::try_from(reveal_vsize).map_err(|_| EnvelopeError::FeeOverflow)?;
+        let headroom = reveal_fee_headroom(config.fee_rate, reveal_vsize, &config.fee_bumping)?;
+        let reveal_output_value = config
             .reveal_amount
+            .checked_add(headroom)
+            .ok_or(EnvelopeError::FeeOverflow)?;
+        let required = reveal_output_value
             .checked_add(reveal_fee)
             .ok_or(EnvelopeError::FeeOverflow)?;
         if commit_output.value < Amount::from_sat(required) {
@@ -143,7 +183,7 @@ pub fn build_chunked_envelope_txs(
             version: Version(2),
             input: vec![make_txin(commit_txid, vout)],
             output: vec![TxOut {
-                value: Amount::from_sat(config.reveal_amount),
+                value: Amount::from_sat(reveal_output_value),
                 script_pubkey: config.sequencer_address.script_pubkey(),
             }],
         };
@@ -159,15 +199,12 @@ pub fn build_chunked_envelope_txs(
         reveal_txs.push(reveal_tx);
     }
 
-    Ok(ChunkedEnvelopeTxs {
-        commit_tx,
-        reveal_txs,
-    })
+    Ok(reveal_txs)
 }
 
 /// Sizes the commit output funding one reveal tx.
 ///
-/// The returned value is `vsize(reveal) * fee_rate + reveal_amount`.
+/// The returned value is `reveal_amount + reveal_fee + reveal_fee_headroom`.
 ///
 /// This is the amount the matching commit P2TR output must hold so the reveal
 /// can pay its fee plus the sequencer dust output.
@@ -177,6 +214,7 @@ fn calculate_reveal_commit_value(
     fee_rate: FeeRate,
     reveal_script: &ScriptBuf,
     spend_info: &TaprootSpendInfo,
+    fee_bumping: &FeeBumpingConfig,
 ) -> Result<u64, EnvelopeError> {
     let reveal_output = TxOut {
         value: Amount::from_sat(reveal_amount),
@@ -192,18 +230,22 @@ fn calculate_reveal_commit_value(
         Some(&control_block),
     );
     let reveal_fee = fee_sats_for_vsize(reveal_vsize, fee_rate)?;
+    let reveal_vsize = u64::try_from(reveal_vsize).map_err(|_| EnvelopeError::FeeOverflow)?;
+    let headroom = reveal_fee_headroom(fee_rate, reveal_vsize, fee_bumping)?;
     reveal_amount
-        .checked_add(reveal_fee)
+        .checked_add(headroom)
+        .and_then(|value| value.checked_add(reveal_fee))
         .ok_or(EnvelopeError::FeeOverflow)
 }
 
 /// Builds the commit tx with `[OP_RETURN, P2TR_0, ..., P2TR_{N-1}, change?]`.
+/// Builds the commit transaction and returns it alongside the exact fee it pays.
 fn build_multi_output_commit(
     config: &EnvelopeConfig,
     artifacts: &[RevealArtifact],
     op_return_script: &ScriptBuf,
     utxos: Vec<ListUnspentItem>,
-) -> Result<Transaction, EnvelopeError> {
+) -> Result<(Transaction, Amount), EnvelopeError> {
     let spendable: Vec<ListUnspentItem> = utxos
         .into_iter()
         .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
@@ -271,12 +313,20 @@ fn build_multi_output_commit(
 
         let size = get_size(&inputs, &outputs, None, None);
         if size == last_size || done {
-            return Ok(Transaction {
-                lock_time: LockTime::ZERO,
-                version: Version(2),
-                input: inputs,
-                output: outputs,
-            });
+            // `done` means the leftover change was dust and got absorbed into the fee, so derive
+            // the fee from the actual input/output totals rather than from `fee_rate * vsize`.
+            let output_total: u64 = outputs.iter().map(|output| output.value.to_sat()).sum();
+            let commit_fee = Amount::from_sat(sum.saturating_sub(output_total));
+
+            return Ok((
+                Transaction {
+                    lock_time: LockTime::ZERO,
+                    version: Version(2),
+                    input: inputs,
+                    output: outputs,
+                },
+                commit_fee,
+            ));
         }
         last_size = size;
     }
@@ -293,6 +343,8 @@ fn make_txin(txid: bitcoin::Txid, vout: u32) -> TxIn {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use bitcoin::{
         opcodes::all::OP_RETURN,
         secp256k1::{rand, Keypair, Secp256k1},
@@ -360,8 +412,9 @@ mod tests {
             ctx.btcio_params.magic_bytes,
             ctx.sequencer_address.clone(),
             Network::Regtest,
-            FeeRate::from_sat_per_vb_u32(1_000),
+            FeeRate::from_sat_per_vb_u32(1),
             546,
+            FeeBumpingConfig::default(),
             None,
         )
     }
@@ -414,7 +467,60 @@ mod tests {
                 reveal.output[0].script_pubkey,
                 config.sequencer_address.script_pubkey()
             );
+            let reveal_vsize = u64::try_from(reveal.vsize()).unwrap();
+            let base_fee = config.fee_rate.fee_vb(reveal_vsize).unwrap();
+            let headroom =
+                reveal_fee_headroom(config.fee_rate, reveal_vsize, &config.fee_bumping).unwrap();
+            let commit_output = &result.commit_tx.output[i + 1];
+            let initial_fee = commit_output
+                .value
+                .checked_sub(reveal.output[0].value)
+                .unwrap();
+
+            assert!(headroom > 0);
+            assert_eq!(
+                commit_output.value.to_sat(),
+                config.reveal_amount + base_fee.to_sat() + headroom
+            );
+            assert_eq!(
+                reveal.output[0].value.to_sat(),
+                config.reveal_amount + headroom
+            );
+            assert_eq!(initial_fee, base_fee);
         }
+    }
+
+    #[test]
+    fn zero_derived_headroom_preserves_legacy_chunked_reveal_values() {
+        let config = EnvelopeConfig {
+            fee_bumping: FeeBumpingConfig {
+                max_attempts: NonZeroU32::new(1).unwrap(),
+                ..FeeBumpingConfig::default()
+            },
+            ..get_test_config()
+        };
+        let chunks = vec![vec![1u8; 150]];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+        let result = build_chunked_envelope_txs(
+            &config,
+            &chunks,
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &test_keypair(),
+            get_mock_utxos(),
+        )
+        .unwrap();
+        let reveal = &result.reveal_txs[0];
+        let base_fee = config
+            .fee_rate
+            .fee_vb(u64::try_from(reveal.vsize()).unwrap())
+            .unwrap();
+
+        assert_eq!(reveal.output[0].value.to_sat(), config.reveal_amount);
+        assert_eq!(
+            result.commit_tx.output[1].value.to_sat(),
+            config.reveal_amount + base_fee.to_sat()
+        );
     }
 
     #[test]
@@ -471,6 +577,7 @@ mod tests {
             Network::Regtest,
             FeeRate::from_sat_per_vb_u32(1_000),
             546,
+            FeeBumpingConfig::default(),
             None,
         );
         let chunks = vec![vec![0u8; 150]];

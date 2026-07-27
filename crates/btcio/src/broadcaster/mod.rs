@@ -1,5 +1,6 @@
 mod builder;
 mod error;
+pub(crate) mod fee_bump;
 mod handle;
 mod input;
 mod io;

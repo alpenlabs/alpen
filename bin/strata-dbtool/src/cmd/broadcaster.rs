@@ -64,6 +64,7 @@ pub(crate) fn get_broadcaster_summary(
                 L1TxStatus::Confirmed { .. } => confirmed_count += 1,
                 L1TxStatus::Finalized { .. } => finalized_count += 1,
                 L1TxStatus::InvalidInputs => invalid_inputs_count += 1,
+                L1TxStatus::Replaced { .. } => {}
             }
         }
     }

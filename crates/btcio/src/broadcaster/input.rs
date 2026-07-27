@@ -1,10 +1,20 @@
 use strata_db_types::l1_broadcast::L1TxEntry;
+use strata_primitives::buf::Buf32;
 
 /// Input messages consumed by the broadcaster service.
 #[derive(Debug)]
 pub(crate) enum BroadcasterInputMessage {
     /// Notify the service about a newly persisted entry.
     NotifyNewEntry { idx: u64, txentry: L1TxEntry },
+
+    /// Notify the service that a tracked entry was superseded by an RBF replacement.
+    ///
+    /// The fee bumper persists the [`L1TxStatus::Replaced`](strata_db_types::l1_broadcast::
+    /// L1TxStatus::Replaced) status itself. This message exists so the service also drops its
+    /// in-memory copy: without it the service would keep probing the replaced txid, find it gone
+    /// from the mempool, re-publish it against its own replacement, and then write the stale
+    /// status back over the persisted one.
+    NotifyReplacedEntry { txid: Buf32 },
 }
 
 #[cfg(test)]

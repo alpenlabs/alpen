@@ -145,6 +145,7 @@ fn build_and_post_ee_da_envelope(args: PostEeDaEnvelopeArgs) -> anyhow::Result<S
         NETWORK,
         fee_rate,
         DEFAULT_REVEAL_AMOUNT_SATS,
+        Default::default(),
         None,
     );
 

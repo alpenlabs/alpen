@@ -9,7 +9,10 @@
 
 use std::{collections::BTreeSet, future::Future, sync::Arc, time::Duration};
 
-use bitcoin::{consensus::encode::deserialize as btc_deserialize, key::Keypair, Address};
+use bitcoin::{
+    consensus::encode::deserialize as btc_deserialize, key::Keypair, Address, Amount, FeeRate,
+    Transaction,
+};
 use bitcoind_async_client::{
     error::ClientError,
     traits::{Broadcaster, Reader, Signer, Wallet},
@@ -19,6 +22,7 @@ use strata_config::btcio::WriterConfig;
 use strata_db_types::{
     chunked_envelope::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, RevealTxMeta},
     common::L1TxId,
+    fee_bump::{TxAttempt, TxNodeId, TxNodeKind, TxNodeRecord},
     l1_broadcast::{L1TxEntry, L1TxStatus},
 };
 use strata_primitives::buf::Buf32;
@@ -28,13 +32,17 @@ use tokio::time::interval;
 use tracing::*;
 
 use super::{
+    commit_phase::CommitPhaseLatch,
     context::ChunkedWriterContext,
     signer::{sign_chunked_envelope, SignedChunkedEnvelope},
 };
 use crate::{
     broadcaster::{is_benign_minus25_message, L1BroadcastHandle},
     rpc_error::{is_retryable_client_error, is_retryable_envelope_error, retryable_reason},
-    writer::builder::EnvelopeError,
+    writer::{
+        builder::EnvelopeError,
+        replacement::driver::{run_replacement_pass, ReplacementContext, ReplacementPacer},
+    },
     BtcioParams,
 };
 
@@ -96,11 +104,23 @@ fn to_raw_buf32(txid: L1TxId) -> Buf32 {
 )]
 pub struct ChunkedEnvelopeHandle {
     ops: Arc<ChunkedEnvelopeOps>,
+    commit_phase: CommitPhaseLatch,
 }
 
 impl ChunkedEnvelopeHandle {
     pub fn new(ops: Arc<ChunkedEnvelopeOps>) -> Self {
-        Self { ops }
+        Self {
+            ops,
+            commit_phase: CommitPhaseLatch::new(),
+        }
+    }
+
+    /// Returns the latch that serialises reveal enqueueing against commit fee bumping.
+    ///
+    /// The fee bumper must be given this same latch, or the two can interleave and a commit
+    /// replacement can orphan a reveal that was handed to the broadcaster moments earlier.
+    pub fn commit_phase_latch(&self) -> CommitPhaseLatch {
+        self.commit_phase.clone()
     }
 
     /// Stores a new unsigned entry and returns the assigned index.
@@ -149,6 +169,7 @@ pub fn create_chunked_envelope_task(
         sequencer_address,
         sequencer_keypair,
         bitcoin_client,
+        handle.commit_phase_latch(),
     ));
 
     let task = async move {
@@ -250,6 +271,7 @@ fn format_tx_status(txid: L1TxId, status: &L1TxStatus) -> String {
         L1TxStatus::Unpublished => format!("{txid:?}:unpublished"),
         L1TxStatus::Published => format!("{txid:?}:published"),
         L1TxStatus::InvalidInputs => format!("{txid:?}:invalid_inputs"),
+        L1TxStatus::Replaced { by } => format!("{txid:?}:replaced_by({by:?})"),
         L1TxStatus::Confirmed {
             confirmations,
             block_hash,
@@ -295,6 +317,18 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     tokio::pin!(tick);
     let mut iteration = 0_u64;
 
+    // Replacement runs inside this watcher rather than in a task of its own: it is the writer that
+    // understands the commit/reveal structure and holds the reveal signing key.
+    let replacement_context = ReplacementContext {
+        chunked_ops: Some(ops.clone()),
+        sequencer_keypair: Some(ctx.sequencer_keypair),
+        commit_phase: ctx.commit_phase.clone(),
+        pacer: Arc::new(ReplacementPacer::new(
+            ctx.config.fee_bumping.check_interval(),
+        )),
+        ..ReplacementContext::default()
+    };
+
     loop {
         tick.as_mut().tick().await;
         let next_db_idx = state.next_db_idx;
@@ -302,7 +336,25 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
         let active_envelopes = state.active_envelopes.len();
         async {
             state.ingest_new_entries(ops.as_ref()).await?;
-            reconcile_active_entries(&mut state, ops.as_ref(), &broadcast_handle).await?;
+            reconcile_active_entries(
+                &mut state,
+                ops.as_ref(),
+                &broadcast_handle,
+                &ctx.commit_phase,
+            )
+            .await?;
+            // A failed replacement pass must not skip the frontier advance: publication progress
+            // matters more than bumping, and the next tick retries the pass anyway.
+            if let Err(error) = run_replacement_pass(
+                ctx.client.as_ref(),
+                &ctx.config,
+                &broadcast_handle,
+                &replacement_context,
+            )
+            .await
+            {
+                warn!(%error, "chunked envelope replacement pass failed");
+            }
             advance_forward_frontier(&mut state, ctx.clone(), ops.as_ref(), &broadcast_handle).await
         }
         .instrument(info_span!(
@@ -414,6 +466,7 @@ async fn reconcile_active_entries(
     state: &mut ChunkedEnvelopeWatcherState,
     ops: &ChunkedEnvelopeOps,
     broadcast_handle: &L1BroadcastHandle,
+    commit_phase: &CommitPhaseLatch,
 ) -> anyhow::Result<()> {
     let active_indices: Vec<u64> = state.active_envelopes.iter().copied().collect();
     for idx in active_indices {
@@ -431,12 +484,13 @@ async fn reconcile_active_entries(
                 continue;
             }
             ChunkedEnvelopeStatus::Unpublished => {
-                check_commit_and_enqueue_reveals(idx, &entry, broadcast_handle).await?
+                check_commit_and_enqueue_reveals(idx, &entry, broadcast_handle, commit_phase)
+                    .await?
             }
             ChunkedEnvelopeStatus::CommitPublished
             | ChunkedEnvelopeStatus::Published
             | ChunkedEnvelopeStatus::Confirmed => {
-                check_full_broadcast_status(idx, &entry, broadcast_handle).await?
+                check_full_broadcast_status(idx, &entry, broadcast_handle, commit_phase).await?
             }
         };
 
@@ -518,11 +572,19 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
 ) -> anyhow::Result<ChunkedEnvelopeEntry> {
     let mut entry = signed.entry;
     let mut commit_tx_entry = signed.commit_tx_entry;
+    let commit_fee = signed.commit_fee;
 
     // Persist the signed envelope before commit publication. If the process
     // stops after bitcoind accepts the commit, recovery still has the reveal
     // metadata needed to continue the envelope lifecycle.
     ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
+        .await?;
+    // Node before broadcast entry, matching the reveal path. A stop between the two writes then
+    // leaves a node whose entry is missing, which `process_record` re-inserts from the record's own
+    // raw tx. The reverse leaves an entry with no node, and nothing backfills it: the commit is
+    // then unbumpable for as long as it stays unconfirmed, which for a multi-reveal envelope is
+    // exactly the window where the reveals cannot be enqueued yet either.
+    put_chunked_commit_tx_node(envelope_idx, &commit_tx_entry, commit_fee, broadcast_handle)
         .await?;
     let commit_broadcast_idx = broadcast_handle
         .put_tx_entry(to_raw_buf32(entry.commit_txid), commit_tx_entry.clone())
@@ -545,8 +607,14 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
                 .get_tx_entry_by_id_async(to_raw_buf32(entry.commit_txid))
                 .await?
                 .expect("commit tx was just stored");
-            try_enqueue_reveals_if_policy_safe(envelope_idx, &entry, &commit, broadcast_handle)
-                .await?;
+            try_enqueue_reveals_if_policy_safe(
+                envelope_idx,
+                &entry,
+                &commit,
+                broadcast_handle,
+                &ctx.commit_phase,
+            )
+            .await?;
             entry.status = ChunkedEnvelopeStatus::CommitPublished;
             ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
                 .await?;
@@ -674,9 +742,10 @@ async fn check_commit_and_enqueue_reveals(
     envelope_idx: u64,
     entry: &ChunkedEnvelopeEntry,
     bcast: &L1BroadcastHandle,
+    commit_phase: &CommitPhaseLatch,
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
-    let Some(commit) = bcast
-        .get_tx_entry_by_id_async(to_raw_buf32(entry.commit_txid))
+    let Some((active_commit_txid, commit)) = bcast
+        .get_active_tx_entry_by_id_async(to_raw_buf32(entry.commit_txid))
         .await?
     else {
         warn!(
@@ -686,7 +755,6 @@ async fn check_commit_and_enqueue_reveals(
         );
         return Ok(ChunkedEnvelopeStatus::Unsigned);
     };
-
     match commit.status {
         L1TxStatus::InvalidInputs => {
             warn!(
@@ -704,17 +772,20 @@ async fn check_commit_and_enqueue_reveals(
             );
             return Ok(ChunkedEnvelopeStatus::Unpublished);
         }
-        L1TxStatus::Published | L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => {}
+        L1TxStatus::Published
+        | L1TxStatus::Confirmed { .. }
+        | L1TxStatus::Finalized { .. }
+        | L1TxStatus::Replaced { .. } => {}
     }
 
     debug!(
         envelope_idx,
-        commit_txid = ?entry.commit_txid,
+        commit_txid = ?active_commit_txid,
         commit_status = ?commit.status,
         reveal_count = entry.reveals.len(),
         "chunked envelope commit publication observed"
     );
-    try_enqueue_reveals_if_policy_safe(envelope_idx, entry, &commit, bcast).await?;
+    try_enqueue_reveals_if_policy_safe(envelope_idx, entry, &commit, bcast, commit_phase).await?;
 
     Ok(ChunkedEnvelopeStatus::CommitPublished)
 }
@@ -724,7 +795,9 @@ fn reveal_enqueue_is_policy_safe(
     commit: &L1TxEntry,
 ) -> anyhow::Result<bool> {
     match commit.status {
-        L1TxStatus::InvalidInputs | L1TxStatus::Unpublished => Ok(false),
+        L1TxStatus::InvalidInputs | L1TxStatus::Unpublished | L1TxStatus::Replaced { .. } => {
+            Ok(false)
+        }
         L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => Ok(true),
         L1TxStatus::Published => {
             let [reveal] = entry.reveals.as_slice() else {
@@ -744,7 +817,37 @@ async fn try_enqueue_reveals_if_policy_safe(
     entry: &ChunkedEnvelopeEntry,
     commit: &L1TxEntry,
     bcast: &L1BroadcastHandle,
+    commit_phase: &CommitPhaseLatch,
 ) -> anyhow::Result<bool> {
+    // Hold the claim across the whole loop. Enqueueing only some reveals and then letting a commit
+    // replacement through would orphan the ones already handed over.
+    let Some(_claim) = commit_phase.try_claim(envelope_idx) else {
+        debug!(
+            envelope_idx,
+            "reveal enqueue deferred: a commit fee bump is in flight for this envelope"
+        );
+        return Ok(false);
+    };
+
+    // The row's reveals each spend an output of `entry.commit_txid`. If a fee bump superseded that
+    // commit but crashed before rewriting this row, the reveals reference a txid that no longer
+    // exists and enqueueing them would publish transactions Core must reject. Wait for the fee
+    // bumper to finish the metadata refresh instead.
+    let recorded_commit_txid = to_raw_buf32(entry.commit_txid);
+    let active_commit_txid = bcast
+        .get_active_tx_entry_by_id_async(recorded_commit_txid)
+        .await?
+        .map(|(txid, _)| txid);
+    if active_commit_txid.is_some_and(|txid| txid != recorded_commit_txid) {
+        warn!(
+            envelope_idx,
+            stale_commit_txid = ?entry.commit_txid,
+            ?active_commit_txid,
+            "reveal enqueue deferred: envelope row still references a superseded commit"
+        );
+        return Ok(false);
+    }
+
     if !reveal_enqueue_is_policy_safe(entry, commit)? {
         debug!(
             envelope_idx,
@@ -766,7 +869,7 @@ async fn try_enqueue_reveals_if_policy_safe(
     );
 
     for reveal in &entry.reveals {
-        ensure_reveal_tx_entry(envelope_idx, reveal, bcast).await?;
+        ensure_reveal_tx_entry(envelope_idx, reveal, commit, bcast).await?;
     }
 
     info!(
@@ -784,8 +887,11 @@ async fn try_enqueue_reveals_if_policy_safe(
 async fn ensure_reveal_tx_entry(
     envelope_idx: u64,
     reveal: &RevealTxMeta,
+    commit: &L1TxEntry,
     bcast: &L1BroadcastHandle,
 ) -> anyhow::Result<()> {
+    let tx = btc_deserialize::<Transaction>(&reveal.tx_bytes)
+        .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
     if bcast
         .get_tx_entry_by_id_async(to_raw_buf32(reveal.txid))
         .await?
@@ -796,21 +902,124 @@ async fn ensure_reveal_tx_entry(
             txid = ?reveal.txid,
             "reveal tx already tracked by broadcaster"
         );
+    } else {
+        let commit_tx = commit.try_to_tx()?;
+        let fee_sats = commit_tx
+            .output
+            .get(reveal.vout_index as usize)
+            .map(|output| {
+                let output_total = tx
+                    .output
+                    .iter()
+                    .map(|txout| txout.value.to_sat())
+                    .sum::<u64>();
+                output.value.to_sat().saturating_sub(output_total)
+            })
+            .unwrap_or_default();
+        let fee_rate = if tx.vsize() == 0 {
+            FeeRate::ZERO
+        } else {
+            FeeRate::from_sat_per_vb(fee_sats.div_ceil(tx.vsize() as u64))
+                .expect("fee rate must fit")
+        };
+        let tx_entry = L1TxEntry::from_tx_with_fee(&tx, fee_rate, Amount::from_sat(fee_sats));
+        // The fee bumper refuses to replace a chunked commit once any reveal for that envelope
+        // has a tx-node record, because a commit replacement changes the commit txid and would
+        // orphan every reveal spending it. Record the reveal node *before* handing the tx to the
+        // broadcaster so a crash between the two writes cannot leave a broadcastable reveal that
+        // the guard is blind to. The reverse order is safe: the fee bumper re-inserts a broadcast
+        // entry that its record still owns.
+        put_chunked_reveal_tx_node(
+            envelope_idx,
+            reveal,
+            &tx,
+            fee_rate,
+            Amount::from_sat(fee_sats),
+            bcast,
+        )
+        .await?;
+        bcast
+            .put_tx_entry(to_raw_buf32(reveal.txid), tx_entry)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to store reveal tx: {}", e))?;
+
+        debug!(
+            envelope_idx,
+            txid = ?reveal.txid,
+            "reveal tx enqueued in broadcaster"
+        );
+    }
+
+    Ok(())
+}
+
+async fn put_chunked_commit_tx_node(
+    envelope_idx: u64,
+    commit_tx_entry: &L1TxEntry,
+    commit_fee: Amount,
+    bcast: &L1BroadcastHandle,
+) -> anyhow::Result<()> {
+    let tx = commit_tx_entry.try_to_tx()?;
+    let Some(rbf) = commit_tx_entry.rbf else {
+        return Ok(());
+    };
+    let fee_rate = FeeRate::from_sat_per_vb(rbf.fee_rate_sat_vb)
+        .ok_or_else(|| anyhow::anyhow!("invalid commit fee rate {}", rbf.fee_rate_sat_vb))?;
+    // `commit_fee` is the builder's exact input-minus-output figure. Reconstructing it as
+    // `fee_rate * vsize` would under-record whenever dust change was absorbed into the fee, and
+    // the fee bumper would then request a replacement fee that Bitcoin Core rejects.
+    let fee_sats = commit_fee;
+    put_tx_node_if_missing(
+        TxNodeKind::ChunkedEnvelopeCommit { envelope_idx },
+        &tx,
+        fee_rate,
+        fee_sats,
+        bcast,
+    )
+    .await
+}
+
+async fn put_chunked_reveal_tx_node(
+    envelope_idx: u64,
+    reveal: &RevealTxMeta,
+    tx: &Transaction,
+    fee_rate: FeeRate,
+    fee_sats: Amount,
+    bcast: &L1BroadcastHandle,
+) -> anyhow::Result<()> {
+    put_tx_node_if_missing(
+        TxNodeKind::ChunkedEnvelopeReveal {
+            envelope_idx,
+            reveal_idx: reveal.vout_index.saturating_sub(1),
+        },
+        tx,
+        fee_rate,
+        fee_sats,
+        bcast,
+    )
+    .await
+}
+
+async fn put_tx_node_if_missing(
+    kind: TxNodeKind,
+    tx: &Transaction,
+    fee_rate: FeeRate,
+    fee_sats: Amount,
+    bcast: &L1BroadcastHandle,
+) -> anyhow::Result<()> {
+    let node_id = TxNodeId::from_kind(&kind);
+    let attempt = TxAttempt::active(tx, fee_rate, fee_sats, 0);
+    if let Some(mut record) = bcast.get_tx_node(node_id).await? {
+        if record.active_txid == attempt.txid {
+            return Ok(());
+        }
+        record.replace_initial_attempt(attempt);
+        bcast.put_tx_node(record).await?;
         return Ok(());
     }
 
-    let tx = btc_deserialize(&reveal.tx_bytes)
-        .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
-    bcast
-        .put_tx_entry(to_raw_buf32(reveal.txid), L1TxEntry::from_tx(&tx))
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to store reveal tx: {}", e))?;
-
-    debug!(
-        envelope_idx,
-        txid = ?reveal.txid,
-        "reveal tx enqueued in broadcaster"
-    );
+    let record = TxNodeRecord::new(kind, attempt);
+    bcast.put_tx_node(record).await?;
     Ok(())
 }
 
@@ -823,9 +1032,10 @@ async fn check_full_broadcast_status(
     envelope_idx: u64,
     entry: &ChunkedEnvelopeEntry,
     bcast: &L1BroadcastHandle,
+    commit_phase: &CommitPhaseLatch,
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
-    let Some(commit) = bcast
-        .get_tx_entry_by_id_async(to_raw_buf32(entry.commit_txid))
+    let Some((active_commit_txid, commit)) = bcast
+        .get_active_tx_entry_by_id_async(to_raw_buf32(entry.commit_txid))
         .await?
     else {
         error!(
@@ -847,12 +1057,24 @@ async fn check_full_broadcast_status(
         return Ok(ChunkedEnvelopeStatus::NeedsResign);
     }
 
+    // Same rule as the normal enqueue path: reveals recorded against a superseded commit must not
+    // be restored into the broadcaster. Wait for the fee bumper to finish refreshing this row.
+    if active_commit_txid != to_raw_buf32(entry.commit_txid) {
+        warn!(
+            envelope_idx,
+            stale_commit_txid = ?entry.commit_txid,
+            ?active_commit_txid,
+            "reveal restore deferred: envelope row still references a superseded commit"
+        );
+        return Ok(ChunkedEnvelopeStatus::CommitPublished);
+    }
+
     let can_enqueue_missing_reveals = reveal_enqueue_is_policy_safe(entry, &commit)?;
     let mut min_progress = commit.status.clone();
     let mut reveal_l1_statuses = Vec::with_capacity(entry.reveals.len());
     for reveal in &entry.reveals {
-        let Some(rtx) = bcast
-            .get_tx_entry_by_id_async(to_raw_buf32(reveal.txid))
+        let Some((active_reveal_txid, rtx)) = bcast
+            .get_active_tx_entry_by_id_async(to_raw_buf32(reveal.txid))
             .await?
         else {
             if !can_enqueue_missing_reveals {
@@ -864,12 +1086,20 @@ async fn check_full_broadcast_status(
                 );
                 return Ok(ChunkedEnvelopeStatus::CommitPublished);
             }
+            let Some(_claim) = commit_phase.try_claim(envelope_idx) else {
+                debug!(
+                    envelope_idx,
+                    txid = ?reveal.txid,
+                    "reveal restore deferred: a commit fee bump is in flight for this envelope"
+                );
+                return Ok(ChunkedEnvelopeStatus::CommitPublished);
+            };
             warn!(
                 envelope_idx,
                 txid = ?reveal.txid,
                 "reveal tx missing from broadcast db, restoring from persisted reveal bytes"
             );
-            ensure_reveal_tx_entry(envelope_idx, reveal, bcast).await?;
+            ensure_reveal_tx_entry(envelope_idx, reveal, &commit, bcast).await?;
             min_progress = L1TxStatus::Unpublished;
             reveal_l1_statuses.push(format_tx_status(reveal.txid, &min_progress));
             continue;
@@ -884,7 +1114,10 @@ async fn check_full_broadcast_status(
             );
             return Ok(ChunkedEnvelopeStatus::NeedsResign);
         }
-        reveal_l1_statuses.push(format_tx_status(reveal.txid, &rtx.status));
+        reveal_l1_statuses.push(format_tx_status(
+            L1TxId::from(active_reveal_txid.0),
+            &rtx.status,
+        ));
         if is_less_progressed(&rtx.status, &min_progress) {
             min_progress = rtx.status;
         }
@@ -895,7 +1128,7 @@ async fn check_full_broadcast_status(
         envelope_status,
         ChunkedEnvelopeStatus::Confirmed | ChunkedEnvelopeStatus::Finalized
     ) {
-        let commit_l1_status = format_tx_status(entry.commit_txid, &commit.status);
+        let commit_l1_status = format_tx_status(L1TxId::from(active_commit_txid.0), &commit.status);
         info!(
             envelope_idx,
             commit_txid = ?entry.commit_txid,
@@ -919,6 +1152,7 @@ fn progress_ordinal(s: &L1TxStatus) -> u8 {
         L1TxStatus::Published => 1,
         L1TxStatus::Confirmed { .. } => 2,
         L1TxStatus::Finalized { .. } => 3,
+        L1TxStatus::Replaced { .. } => 4,
         L1TxStatus::InvalidInputs => {
             unreachable!("InvalidInputs is handled before aggregation")
         }
@@ -945,6 +1179,7 @@ fn to_envelope_status(s: &L1TxStatus) -> ChunkedEnvelopeStatus {
         L1TxStatus::Published => ChunkedEnvelopeStatus::Published,
         L1TxStatus::Confirmed { .. } => ChunkedEnvelopeStatus::Confirmed,
         L1TxStatus::Finalized { .. } => ChunkedEnvelopeStatus::Finalized,
+        L1TxStatus::Replaced { .. } => ChunkedEnvelopeStatus::Published,
         L1TxStatus::InvalidInputs => {
             unreachable!("InvalidInputs is handled before aggregation")
         }
@@ -953,8 +1188,6 @@ fn to_envelope_status(s: &L1TxStatus) -> ChunkedEnvelopeStatus {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use bitcoin::{
         absolute::LockTime, consensus::encode::serialize as btc_serialize, hashes::Hash,
         transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
@@ -965,7 +1198,6 @@ mod tests {
         common::{L1TxId, L1WtxId},
     };
     use strata_l1_txfmt::MagicBytes;
-    use strata_primitives::buf::Buf32;
 
     use super::*;
     use crate::{
@@ -1002,7 +1234,7 @@ mod tests {
         entry.status = status;
         if signed {
             entry.reveals = vec![RevealTxMeta {
-                vout_index: 0,
+                vout_index: 1,
                 txid: L1TxId::from([idx_tag; 32]),
                 wtxid: L1WtxId::from([idx_tag.wrapping_add(1); 32]),
                 tx_bytes: vec![idx_tag],
@@ -1210,7 +1442,7 @@ mod tests {
             .map(|i| {
                 let tx = make_test_tx();
                 RevealTxMeta {
-                    vout_index: i as u32,
+                    vout_index: (i + 1) as u32,
                     txid: L1TxId::from([(0x20 + i as u8); 32]),
                     wtxid: L1WtxId::from([(0x30 + i as u8); 32]),
                     tx_bytes: btc_serialize(&tx),
@@ -1262,7 +1494,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(
@@ -1290,7 +1522,7 @@ mod tests {
         let entry = make_entry_with_reveals(2);
 
         // Don't store commit at all — should return Unsigned for re-signing.
-        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(
@@ -1312,7 +1544,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(result, ChunkedEnvelopeStatus::NeedsResign);
@@ -1335,7 +1567,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(
@@ -1371,7 +1603,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(result, ChunkedEnvelopeStatus::CommitPublished);
@@ -1396,7 +1628,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(result, ChunkedEnvelopeStatus::CommitPublished);
@@ -1442,7 +1674,7 @@ mod tests {
                 .unwrap();
         }
 
-        let result = check_full_broadcast_status(0, &entry, &bcast)
+        let result = check_full_broadcast_status(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(result, ChunkedEnvelopeStatus::Finalized);
@@ -1491,7 +1723,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_full_broadcast_status(0, &entry, &bcast)
+        let result = check_full_broadcast_status(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(
@@ -1506,7 +1738,7 @@ mod tests {
         let bcast = get_broadcast_handle();
         let entry = make_entry_with_reveals(2);
 
-        let err = check_full_broadcast_status(0, &entry, &bcast)
+        let err = check_full_broadcast_status(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1545,7 +1777,7 @@ mod tests {
             .unwrap();
 
         // Second reveal is missing.
-        let result = check_full_broadcast_status(0, &entry, &bcast)
+        let result = check_full_broadcast_status(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(
@@ -1591,7 +1823,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_full_broadcast_status(0, &entry, &bcast)
+        let result = check_full_broadcast_status(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(
@@ -1624,7 +1856,7 @@ mod tests {
                 .unwrap();
         }
 
-        let result = check_full_broadcast_status(0, &entry, &bcast)
+        let result = check_full_broadcast_status(0, &entry, &bcast, &CommitPhaseLatch::new())
             .await
             .unwrap();
         assert_eq!(
