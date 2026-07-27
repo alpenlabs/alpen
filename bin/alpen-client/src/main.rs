@@ -31,7 +31,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process,
-    sync::Arc,
+    sync::{atomic::AtomicU64, Arc},
 };
 
 use alpen_chainspec::{
@@ -417,9 +417,18 @@ fn main() {
             .map_err(|e| eyre::eyre!("failed to start ol tracker service: {e}"))?;
 
             let evm_factory = AlpenEvmFactory::from_bridge_params(&bridge_params);
+            // Live DA rate (wei per byte) consumed by the payload builder, frozen per
+            // block into the header `extra_data` and the in-EVM DA fee charge.
+            //
+            // TODO(fee-model): drive this from the sequencer's Bitcoin fee rate
+            // (`btcio::writer::fees::resolve_fee_rate`, gossiped from the OL via the fee
+            // config) instead of the static seed below, and decouple it from the
+            // publication rate. Seeded to 0 for now, which keeps the DA charge dormant.
+            let live_da_rate = Arc::new(AtomicU64::new(0));
             let node_args = AlpenNodeArgs {
                 sequencer_http: ext.sequencer_http.clone(),
                 evm_factory,
+                live_da_rate,
             };
 
             let consensus_watcher = ol_tracker.consensus_watcher();

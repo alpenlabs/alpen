@@ -124,6 +124,26 @@ pub fn da_rate_to_extra_data(da_rate: u64) -> Bytes {
     Bytes::copy_from_slice(&da_rate.to_be_bytes())
 }
 
+/// Wei per satoshi: the L2 gas token is BTC with 18 decimals, and 1 BTC = 10^8 sat,
+/// so 1 sat = 10^10 wei.
+const WEI_PER_SAT: u64 = 10_000_000_000;
+
+/// SegWit witness discount: DA payload rides in witness data, weighted at 1/4 of a vByte.
+const SEGWIT_WITNESS_DIVISOR: u64 = 4;
+
+/// Converts a Bitcoin fee rate (satoshis per virtual byte) to the DA rate (wei per byte).
+///
+/// `da_rate = btc_fee_rate[sat/vB] * 10^10[wei/sat] / 4` (the SegWit witness discount).
+///
+/// NOTE: for now this reuses the sequencer's Bitcoin publication fee rate
+/// (`btcio::writer::fees::resolve_fee_rate`). The DA fee-model rate is expected to be
+/// decoupled from the publication rate — and smoothed/cached — in a later revision.
+pub fn btc_fee_rate_to_da_rate(sat_per_vbyte: u64) -> u64 {
+    sat_per_vbyte
+        .saturating_mul(WEI_PER_SAT)
+        .saturating_div(SEGWIT_WITNESS_DIVISOR)
+}
+
 /// Applies a DA fee to the state: debit `caller`, credit `vault`, both by `da_fee`.
 ///
 /// The caller is expected to be present in `state` (it was touched by the transaction)

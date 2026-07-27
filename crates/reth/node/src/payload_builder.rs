@@ -1,8 +1,15 @@
-use std::{io, sync::Arc};
+use std::{
+    io,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use alloy_consensus::{Header, Transaction};
 use alpen_reth_evm::{
-    constants::BRIDGEOUT_PRECOMPILE_ADDRESS, evm::AlpenEvmFactory, extract_withdrawal_intents,
+    constants::BRIDGEOUT_PRECOMPILE_ADDRESS, da_fee::da_rate_to_extra_data, evm::AlpenEvmFactory,
+    extract_withdrawal_intents,
 };
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_basic_payload_builder::*;
@@ -38,7 +45,10 @@ use crate::{
 /// A custom payload service builder that supports the custom engine types
 #[derive(Debug, Default, Clone)]
 #[non_exhaustive]
-pub struct AlpenPayloadBuilderBuilder;
+pub struct AlpenPayloadBuilderBuilder {
+    /// Live DA rate (wei per byte) shared with the payload builder, updated out of band.
+    pub live_da_rate: Arc<AtomicU64>,
+}
 
 impl<Node, Pool> PayloadBuilderBuilder<Node, Pool, EthEvmConfig<ChainSpec, AlpenEvmFactory>>
     for AlpenPayloadBuilderBuilder
@@ -71,6 +81,7 @@ where
             pool,
             evm_config,
             EthereumBuilderConfig::new().with_gas_limit(gas_limit),
+            self.live_da_rate,
         ))
     }
 }
@@ -87,6 +98,8 @@ pub struct AlpenPayloadBuilder<Pool, Client> {
     evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
     /// Payload builder configuration.
     builder_config: EthereumBuilderConfig,
+    /// Live DA rate (wei per byte) sampled and frozen per block.
+    live_da_rate: Arc<AtomicU64>,
 }
 
 impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
@@ -96,12 +109,14 @@ impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
         pool: Pool,
         evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
         builder_config: EthereumBuilderConfig,
+        live_da_rate: Arc<AtomicU64>,
     ) -> Self {
         Self {
             client,
             pool,
             evm_config,
             builder_config,
+            live_da_rate,
         }
     }
 }
@@ -123,6 +138,7 @@ where
     ) -> Result<BuildOutcome<Self::BuiltPayload>, PayloadBuilderError> {
         try_build_payload(
             self.evm_config.clone(),
+            self.live_da_rate.clone(),
             self.client.clone(),
             self.pool.clone(),
             self.builder_config.clone(),
@@ -138,6 +154,7 @@ where
         let args = BuildArguments::new(Default::default(), config, Default::default(), None);
         try_build_payload(
             self.evm_config.clone(),
+            self.live_da_rate.clone(),
             self.client.clone(),
             self.pool.clone(),
             self.builder_config.clone(),
@@ -164,6 +181,7 @@ type BestTransactionsIter<Pool> = Box<
 #[inline]
 fn try_build_payload<Pool, Client, F>(
     evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
+    live_da_rate: Arc<AtomicU64>,
     client: Client,
     _pool: Pool,
     builder_config: EthereumBuilderConfig,
@@ -177,6 +195,18 @@ where
     Pool: TransactionPool<Transaction: PoolTransaction<Consensus = TransactionSigned>>,
     F: FnOnce(BestTransactionsAttributes) -> BestTransactionsIter<Pool>,
 {
+    // Freeze the per-block DA rate: sample the live rate once, pin it on the factory (so
+    // the in-EVM DA charge uses exactly this value), and commit the same value into the
+    // block `extra_data`. Freezing per block keeps the charge and the committed rate
+    // identical, so the block re-executes to the same state root on full nodes/provers.
+    //
+    // NOTE: `live_da_rate` currently mirrors the sequencer's Bitcoin publication fee rate
+    // (`btcio::writer::fees::resolve_fee_rate`, gossiped from the OL). It should later be
+    // decoupled from the publication rate and smoothed/cached for the fee model.
+    let da_rate = live_da_rate.load(Ordering::Relaxed);
+    evm_config.evm_factory().set_da_rate(da_rate);
+    let evm_config = evm_config.with_extra_data(da_rate_to_extra_data(da_rate));
+
     let BuildArguments {
         mut cached_reads,
         config,

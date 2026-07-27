@@ -75,7 +75,11 @@ where
             .node_types::<N>()
             .pool(AlpenEthereumPoolBuilder::default())
             .executor(AlpenExecutorBuilder::new(self.args.evm_factory.clone()))
-            .payload(BasicPayloadServiceBuilder::default())
+            .payload(BasicPayloadServiceBuilder::new(
+                AlpenPayloadBuilderBuilder {
+                    live_da_rate: self.args.live_da_rate.clone(),
+                },
+            ))
             .network(EthereumNetworkBuilder::default())
             .consensus(EthereumConsensusBuilder::default())
     }
