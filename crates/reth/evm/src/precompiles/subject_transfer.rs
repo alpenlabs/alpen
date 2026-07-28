@@ -26,8 +26,6 @@ enum SubjectTransferError {
     MalformedCalldata,
     /// `NonIntegerAmount()` — value is not a whole number of satoshis.
     NonIntegerAmount,
-    /// `IncorrectAmount()` — value is zero.
-    IncorrectAmount,
     /// `OversizeAmount()` — value exceeds `u64::MAX` satoshis.
     OversizeAmount,
 }
@@ -39,7 +37,6 @@ impl SubjectTransferError {
             Self::IncorrectCallType => [0x7a, 0x5e, 0x63, 0xdc],
             Self::MalformedCalldata => [0x59, 0x17, 0x0b, 0xf0],
             Self::NonIntegerAmount => [0xf7, 0x73, 0x8c, 0x57],
-            Self::IncorrectAmount => [0x69, 0x64, 0x0e, 0x72],
             Self::OversizeAmount => [0xaf, 0x3a, 0xf8, 0x70],
         }
     }
@@ -120,13 +117,12 @@ fn validate_transfer_amount(amount_wei: U256) -> Result<u64, SubjectTransferErro
         return Err(SubjectTransferError::NonIntegerAmount);
     }
 
+    // NOTE: Zero-valued subject transfers are valid. They let `transfer_data`
+    // carry inter-EE intent, routing, or future contract-call metadata without
+    // forcing BTC value to move with every message.
     let amount_sats: u64 = amount_sats
         .try_into()
         .map_err(|_| SubjectTransferError::OversizeAmount)?;
-
-    if amount_sats == 0 {
-        return Err(SubjectTransferError::IncorrectAmount);
-    }
 
     Ok(amount_sats)
 }
@@ -166,7 +162,7 @@ mod tests {
     fn test_custom_error_selectors_match_signatures() {
         use revm_primitives::keccak256;
 
-        let cases: [(SubjectTransferError, &str); 5] = [
+        let cases: [(SubjectTransferError, &str); 4] = [
             (
                 SubjectTransferError::IncorrectCallType,
                 "IncorrectCallType()",
@@ -176,7 +172,6 @@ mod tests {
                 "MalformedCalldata()",
             ),
             (SubjectTransferError::NonIntegerAmount, "NonIntegerAmount()"),
-            (SubjectTransferError::IncorrectAmount, "IncorrectAmount()"),
             (SubjectTransferError::OversizeAmount, "OversizeAmount()"),
         ];
 
@@ -274,14 +269,15 @@ mod tests {
     }
 
     #[test]
-    fn subject_transfer_rejects_zero_value() {
+    fn subject_transfer_accepts_zero_value() {
         let calldata = calldata();
+        let caller = address!("1111111111111111111111111111111111111111");
         let mut journal: Journal<EmptyDB, JournalEntry> = Journal::new(EmptyDB::new());
         let block_env = BlockEnv::default();
         let input = PrecompileInput {
             data: &calldata,
             gas: u64::MAX,
-            caller: address!("1111111111111111111111111111111111111111"),
+            caller,
             value: U256::ZERO,
             target_address: SUBJECT_TRANSFER_PRECOMPILE_ADDRESS,
             bytecode_address: SUBJECT_TRANSFER_PRECOMPILE_ADDRESS,
@@ -290,11 +286,15 @@ mod tests {
 
         let output = subject_transfer_context_call(input).unwrap();
 
-        assert!(output.reverted);
+        assert!(!output.reverted);
+        let log = journal.logs.last().expect("subject-transfer log");
+        let event = SubjectTransferIntentEvent::decode_log(log).expect("decode event");
+        assert_eq!(event.amount, 0);
         assert_eq!(
-            selector_of(&output.bytes),
-            SubjectTransferError::IncorrectAmount.selector()
+            event.sourceSubject,
+            subject_id_to_bytes32(&address_to_subject(caller))
         );
+        assert_eq!(event.transferData, Bytes::from_static(&[0xaa, 0xbb]));
     }
 
     #[test]

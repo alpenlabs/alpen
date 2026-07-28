@@ -16,7 +16,6 @@ pragma solidity ^0.8.4;
 ///        IncorrectCallType()    0x7a5e63dc
 ///        MalformedCalldata()    0x59170bf0
 ///        NonIntegerAmount()     0xf7738c57
-///        IncorrectAmount()      0x69640e72
 ///        OversizeAmount()       0xaf3af870
 interface ISubjectTransfer {
     /// @notice Emitted when native value is burned for delivery to another EE account.
@@ -42,9 +41,6 @@ interface ISubjectTransfer {
 
     /// @notice The transfer value is not a whole number of satoshis.
     error NonIntegerAmount();
-
-    /// @notice The transfer value is zero.
-    error IncorrectAmount();
 
     /// @notice The transfer value exceeds `uint64` satoshis.
     error OversizeAmount();
