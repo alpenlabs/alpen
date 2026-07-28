@@ -272,7 +272,28 @@ mod tests {
     use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
 
     use super::*;
-    use crate::test_utils::*;
+    use crate::{
+        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
+        test_utils::*,
+    };
+
+    /// Builds the layer under test as a clone of the fixture base.
+    ///
+    /// The base layer owns its state outright, so unlike the wrapper layers it
+    /// has to be cloned to be written to. That makes the suite's "the base is
+    /// untouched" assertions vacuous for this stack; everything else still pins
+    /// the reference semantics the wrappers are expected to match.
+    macro_rules! build_base_clone {
+        ($base:expr, $layer:ident) => {
+            let $layer = $base.clone();
+        };
+        ($base:expr, mut $layer:ident) => {
+            let mut $layer = $base.clone();
+        };
+    }
+
+    impl_read_layer_tests!(build_base_clone);
+    impl_mut_layer_tests!(build_base_clone);
 
     /// Applies a write batch that creates a new account and confirms the
     /// freshly-allocated serial is reachable via `find_account_id_by_serial`.

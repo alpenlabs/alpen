@@ -868,3 +868,58 @@ fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
         }
     }
 }
+
+// DA-specific behaviors (blob encoding, accumulator resets, serial-gap
+// detection) are covered by the integration tests in `crate::tests`. This
+// module only instantiates the shared trait-surface behavior suites.
+#[cfg(test)]
+mod tests {
+    use crate::{
+        DaAccumulatingState, IndexerState, WriteTrackingState,
+        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
+    };
+
+    /// Builds a [`DaAccumulatingState`] over a [`WriteTrackingState`].
+    macro_rules! build_da_over_wt {
+        ($base:expr, $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let $layer = DaAccumulatingState::new(tracking);
+        };
+        ($base:expr, mut $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let mut $layer = DaAccumulatingState::new(tracking);
+        };
+    }
+
+    /// Builds a [`DaAccumulatingState`] over an [`IndexerState`] over a
+    /// [`WriteTrackingState`].
+    macro_rules! build_da_over_indexer_over_wt {
+        ($base:expr, $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let indexer = IndexerState::new(tracking);
+            let $layer = DaAccumulatingState::new(indexer);
+        };
+        ($base:expr, mut $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let indexer = IndexerState::new(tracking);
+            let mut $layer = DaAccumulatingState::new(indexer);
+        };
+    }
+
+    // Shared behavior suites for a `DaAccumulatingState` wrapping various inner
+    // stacks. Each composition gets its own module so the generated test names
+    // don't collide.
+    mod over_write_tracking {
+        use super::*;
+
+        impl_read_layer_tests!(build_da_over_wt);
+        impl_mut_layer_tests!(build_da_over_wt);
+    }
+
+    mod over_indexer_over_write_tracking {
+        use super::*;
+
+        impl_read_layer_tests!(build_da_over_indexer_over_wt);
+        impl_mut_layer_tests!(build_da_over_indexer_over_wt);
+    }
+}

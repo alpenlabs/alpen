@@ -256,64 +256,61 @@ impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrite
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
-    use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot};
+    use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
     use strata_ledger_types::{IAccountState, IStateAccessor, IStateAccessorMut};
-    use strata_ol_params::OLParams;
-    use strata_ol_state_types::{OLAccountState, OLState};
+    use strata_ol_state_types::OLAccountState;
 
     use super::*;
-    use crate::{memory_state_layer::MemoryStateBaseLayer, test_utils::*};
+    use crate::{
+        common_tests::impl_read_layer_tests, test_utils::*,
+        write_tracking_layer::WriteTrackingState,
+    };
 
-    fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
-        let mut params = OLParams::default();
-        params.header.slot = slot;
-        params.header.epoch = epoch;
-        let state = OLState::from_genesis_params(&params)
-            .expect("failed to create OLState from genesis params");
-        MemoryStateBaseLayer::new(state)
+    /// Builds a [`BatchDiffState`] with no pending batches — a pure read-only
+    /// passthrough to the base.
+    macro_rules! build_batch_diff_over_base {
+        ($base:expr, $layer:ident) => {
+            let $layer = BatchDiffState::new($base, &[]);
+        };
     }
 
-    // =========================================================================
-    // Empty batch tests (pure passthrough)
-    // =========================================================================
-
-    #[test]
-    fn test_read_from_base_when_empty_batches() {
-        let account_id = test_account_id(1);
-        let (base_layer, serial) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        // Should read from base
-        let account = diff_state.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
+    /// Builds a [`BatchDiffState`] holding a couple of empty pending batches.
+    ///
+    /// Empty batches leave every shared assertion intact while forcing each read
+    /// through the batch walk in [`BatchDiffState::resolve`] before it falls
+    /// through to the base, which the no-batch stack never exercises.
+    macro_rules! build_batch_diff_pending_over_base {
+        ($base:expr, $layer:ident) => {
+            let batches = [WriteBatch::default(), WriteBatch::default()];
+            let $layer = BatchDiffState::new($base, &batches);
+        };
     }
 
-    #[test]
-    fn test_global_state_from_base_when_empty() {
-        let base_layer = new_layer_at(5, 100);
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        assert_eq!(diff_state.cur_slot(), 100);
-        assert_eq!(diff_state.cur_epoch(), 5);
+    /// Builds a [`BatchDiffState`] over a [`WriteTrackingState`], i.e. the rungs
+    /// in the opposite order from the usual stack.
+    macro_rules! build_batch_diff_over_wt {
+        ($base:expr, $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let $layer = BatchDiffState::new(&tracking, &[]);
+        };
     }
 
-    #[test]
-    fn test_check_account_exists_in_base_only() {
-        let account_id = test_account_id(1);
-        let nonexistent_id = test_account_id(99);
-        let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    mod over_base {
+        use super::*;
 
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
+        impl_read_layer_tests!(build_batch_diff_over_base);
+    }
 
-        assert!(diff_state.check_account_exists(account_id).unwrap());
-        assert!(!diff_state.check_account_exists(nonexistent_id).unwrap());
+    mod pending_over_base {
+        use super::*;
+
+        impl_read_layer_tests!(build_batch_diff_pending_over_base);
+    }
+
+    mod over_write_tracking {
+        use super::*;
+
+        impl_read_layer_tests!(build_batch_diff_over_wt);
     }
 
     // =========================================================================
@@ -634,6 +631,39 @@ mod tests {
             inner.compute_state_root().unwrap(),
             outer.compute_state_root().unwrap()
         );
+    }
+
+    #[test]
+    fn test_new_accounts_count_across_stack() {
+        let base_layer = create_test_base_layer();
+
+        // Build a stack of three batches, each creating one new account.
+        let account_ids = [test_account_id(1), test_account_id(2), test_account_id(3)];
+        let base_serial: u32 = base_layer.next_account_serial().into();
+        let batches: Vec<_> = account_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let mut batch = WriteBatch::default();
+                let snark_state = test_snark_account_state(i as u8 + 1);
+                let new_acct =
+                    test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1000));
+                let serial = AccountSerial::from(base_serial + i as u32);
+                batch
+                    .ledger_mut()
+                    .create_account_from_data(*id, new_acct, serial);
+                batch
+            })
+            .collect();
+
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
+
+        // new_accounts() reports the total across every batch in the layer, and
+        // next_account_serial() advances by the same amount.
+        assert_eq!(diff_state.new_accounts(), account_ids.len());
+        let base_next: u32 = base_layer.next_account_serial().into();
+        let diff_next: u32 = diff_state.next_account_serial().into();
+        assert_eq!(diff_next, base_next + account_ids.len() as u32);
     }
 
     #[test]

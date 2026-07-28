@@ -536,7 +536,70 @@ mod tests {
     use strata_snark_acct_types::Seqno;
 
     use super::*;
-    use crate::test_utils::*;
+    use crate::{
+        BatchDiffState, DaAccumulatingState, WriteTrackingState,
+        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
+        test_utils::*,
+    };
+
+    /// Builds an [`IndexerState`] over a [`WriteTrackingState`].
+    macro_rules! build_indexer_over_wt {
+        ($base:expr, $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let $layer = IndexerState::new(tracking);
+        };
+        ($base:expr, mut $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let mut $layer = IndexerState::new(tracking);
+        };
+    }
+
+    /// Builds an [`IndexerState`] over a [`DaAccumulatingState`] over a
+    /// [`WriteTrackingState`].
+    macro_rules! build_indexer_over_da_over_wt {
+        ($base:expr, $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let da = DaAccumulatingState::new(tracking);
+            let $layer = IndexerState::new(da);
+        };
+        ($base:expr, mut $layer:ident) => {
+            let tracking = WriteTrackingState::new_empty($base);
+            let da = DaAccumulatingState::new(tracking);
+            let mut $layer = IndexerState::new(da);
+        };
+    }
+
+    /// Builds an [`IndexerState`] over a read-only [`BatchDiffState`].
+    macro_rules! build_indexer_over_batch_diff {
+        ($base:expr, $layer:ident) => {
+            let diff = BatchDiffState::new($base, &[]);
+            let $layer = IndexerState::new(diff);
+        };
+    }
+
+    // Shared behavior suites for an `IndexerState` wrapping various inner stacks.
+    // Each composition gets its own module so the generated test names don't
+    // collide.
+    mod over_write_tracking {
+        use super::*;
+
+        impl_read_layer_tests!(build_indexer_over_wt);
+        impl_mut_layer_tests!(build_indexer_over_wt);
+    }
+
+    mod over_da_over_write_tracking {
+        use super::*;
+
+        impl_read_layer_tests!(build_indexer_over_da_over_wt);
+        impl_mut_layer_tests!(build_indexer_over_da_over_wt);
+    }
+
+    // `BatchDiffState` is read-only, so wrapping it yields a read-only stack.
+    mod over_batch_diff {
+        use super::*;
+
+        impl_read_layer_tests!(build_indexer_over_batch_diff);
+    }
 
     // =========================================================================
     // Pass-through tests
@@ -574,71 +637,6 @@ mod tests {
         // Verify inner state was updated
         let (inner, _) = indexer.into_parts();
         assert_eq!(inner.cur_epoch(), 5);
-    }
-
-    #[test]
-    fn test_passthrough_get_account_state() {
-        let account_id = test_account_id(1);
-        let (state, serial) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-        let indexer = IndexerState::new(state);
-
-        // Verify account can be retrieved
-        let account = indexer.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
-    }
-
-    #[test]
-    fn test_passthrough_check_account_exists() {
-        let account_id = test_account_id(1);
-        let nonexistent_id = test_account_id(99);
-        let (state, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-        let indexer = IndexerState::new(state);
-
-        assert!(indexer.check_account_exists(account_id).unwrap());
-        assert!(!indexer.check_account_exists(nonexistent_id).unwrap());
-    }
-
-    #[test]
-    fn test_passthrough_create_account() {
-        let state = create_test_base_layer();
-        let mut indexer = IndexerState::new(state);
-
-        let account_id = test_account_id(1);
-        let snark_state = test_snark_account_state(1);
-        let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(5000),
-            NewAccountTypeState::Snark {
-                update_vk: snark_state.update_vk().clone(),
-                initial_state_root: snark_state.inner_state_root(),
-            },
-        );
-
-        let serial = indexer.create_new_account(account_id, new_acct).unwrap();
-
-        // Verify account was created
-        assert!(indexer.check_account_exists(account_id).unwrap());
-        let account = indexer.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
-    }
-
-    #[test]
-    fn test_passthrough_compute_state_root() {
-        let account_id = test_account_id(1);
-        let (state, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-
-        // Get state root directly
-        let direct_root = state.compute_state_root().unwrap();
-
-        // Get state root through indexer
-        let indexer = IndexerState::new(state);
-        let indexer_root = indexer.compute_state_root().unwrap();
-
-        assert_eq!(direct_root, indexer_root);
     }
 
     // =========================================================================
