@@ -12,7 +12,8 @@ use bdk_bitcoind_rpc::bitcoincore_rpc::{Auth, Client};
 use bdk_wallet::bitcoin::{Amount, Network, XOnlyPublicKey};
 use config::{Config, ConfigError};
 use directories::ProjectDirs;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
+#[cfg(feature = "test-mode")]
 use shrex::Hex;
 use strata_bridge_params::BridgeParams;
 use strata_l1_txfmt::MagicBytes;
@@ -54,7 +55,8 @@ pub struct SettingsFromFile {
     /// Blockscout explorer endpoint.
     pub blockscout_endpoint: Option<String>,
     /// The aggregated Musig2 public key for the bridge.
-    pub bridge_pubkey: Hex<[u8; 32]>,
+    #[serde(deserialize_with = "deserialize_bridge_pubkey")]
+    pub bridge_pubkey: XOnlyPublicKey,
     /// The address of the bridge precompile in alpen evm in hex.
     pub bridge_alpen_address: Option<String>,
     /// Fee to cover mining costs for the bridge to process deposits, in satoshis.
@@ -177,12 +179,6 @@ impl Settings {
 
         // These fields are hand-merged into config.toml by operators, so a bad
         // value must surface as a config error, not a panic.
-        let bridge_musig2_pubkey =
-            XOnlyPublicKey::from_slice(&from_file.bridge_pubkey.0).map_err(|e| {
-                OneOf::new(ConfigError::Message(format!(
-                    "bridge_pubkey is not a valid x-only public key: {e}"
-                )))
-            })?;
         let bridge_params = BridgeParams::new_with_descriptor_limit(
             from_file.bridge_denomination_sats,
             from_file.max_withdrawal_amount_sats,
@@ -199,7 +195,7 @@ impl Settings {
             alpen_endpoint: from_file.alpen_endpoint,
             data_dir: proj_dirs.data_dir().to_owned(),
             faucet_endpoint: from_file.faucet_endpoint,
-            bridge_musig2_pubkey,
+            bridge_musig2_pubkey: from_file.bridge_pubkey,
             descriptor_db: descriptor_file,
             mempool_space_endpoint: from_file.mempool_endpoint,
             blockscout_endpoint: from_file.blockscout_endpoint,
@@ -228,8 +224,28 @@ impl Settings {
     }
 }
 
+const X_ONLY_PUBLIC_KEY_HEX_LENGTH: usize = 64;
+
+fn deserialize_bridge_pubkey<'de, D>(deserializer: D) -> Result<XOnlyPublicKey, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    let actual_length = value.chars().count();
+    if actual_length != X_ONLY_PUBLIC_KEY_HEX_LENGTH {
+        return Err(de::Error::custom(format!(
+            "expected exactly {X_ONLY_PUBLIC_KEY_HEX_LENGTH} hexadecimal characters (32 bytes), \
+             got {actual_length}"
+        )));
+    }
+
+    XOnlyPublicKey::from_str(&value)
+        .map_err(|error| de::Error::custom(format!("invalid x-only public key: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
+    use serde::de::value::{Error as ValueError, StringDeserializer};
     use toml;
 
     use super::*;
@@ -303,6 +319,9 @@ mod tests {
         // Serialize back to TOML string
         let serialized =
             toml::to_string(&parsed).expect("failed to serialize SettingsFromFile to TOML");
+        assert!(serialized.contains(
+            r#"bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7""#
+        ));
 
         // Deserialize again
         let reparsed: SettingsFromFile =
@@ -312,7 +331,7 @@ mod tests {
         assert_eq!(parsed.esplora, reparsed.esplora);
         assert_eq!(parsed.alpen_endpoint, reparsed.alpen_endpoint);
         assert_eq!(parsed.faucet_endpoint, reparsed.faucet_endpoint);
-        assert_eq!(parsed.bridge_pubkey.0, reparsed.bridge_pubkey.0);
+        assert_eq!(parsed.bridge_pubkey, reparsed.bridge_pubkey);
         assert_eq!(parsed.network, reparsed.network);
         assert_eq!(parsed.magic_bytes, reparsed.magic_bytes);
         assert_eq!(
@@ -324,5 +343,33 @@ mod tests {
             parsed.max_withdrawal_descriptor_len,
             reparsed.max_withdrawal_descriptor_len
         );
+    }
+
+    #[test]
+    fn test_bridge_pubkey_requires_exact_hex_length() {
+        for value in ["11".repeat(31), "11".repeat(33)] {
+            let deserializer = StringDeserializer::<ValueError>::new(value.clone());
+            let error =
+                deserialize_bridge_pubkey(deserializer).expect_err("wrong length should fail");
+            let message = error.to_string();
+            assert!(message.contains("exactly 64 hexadecimal characters"));
+            assert!(message.contains(&format!("got {}", value.len())));
+        }
+    }
+
+    #[test]
+    fn test_bridge_pubkey_rejects_invalid_hex() {
+        let value = "z".repeat(X_ONLY_PUBLIC_KEY_HEX_LENGTH);
+        let deserializer = StringDeserializer::<ValueError>::new(value);
+        let error = deserialize_bridge_pubkey(deserializer).expect_err("invalid hex should fail");
+        assert!(error.to_string().starts_with("invalid x-only public key:"));
+    }
+
+    #[test]
+    fn test_bridge_pubkey_accepts_valid_key() {
+        let value = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7";
+        let deserializer = StringDeserializer::<ValueError>::new(value.to_owned());
+        let parsed = deserialize_bridge_pubkey(deserializer).expect("valid x-only public key");
+        assert_eq!(parsed.to_string(), value);
     }
 }
