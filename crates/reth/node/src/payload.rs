@@ -9,7 +9,7 @@ use alloy_rpc_types::{
     },
     Withdrawal,
 };
-use alpen_reth_primitives::WithdrawalIntent;
+use alpen_reth_primitives::{SubjectTransferIntent, WithdrawalIntent};
 use reth_ethereum_engine_primitives::BuiltPayloadConversionError;
 use reth_node_api::{BuiltPayload, PayloadAttributes, PayloadBuilderAttributes};
 use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
@@ -102,6 +102,8 @@ pub struct AlpenBuiltPayload {
     // additional fields for strata
     /// Requested withdrawals
     pub(crate) withdrawal_intents: Vec<WithdrawalIntent>,
+    /// Requested inter-EE subject transfers.
+    pub(crate) subject_transfer_intents: Vec<SubjectTransferIntent>,
     /// Encoded depth-0 per-block proof witness, captured inline during payload
     /// build (see `try_build_payload`). Carried in-memory back to the sequencer
     /// for persistence; `None` for payloads reconstructed from the wire (e.g.
@@ -110,10 +112,15 @@ pub struct AlpenBuiltPayload {
 }
 
 impl AlpenBuiltPayload {
-    pub fn new(inner: EthBuiltPayload, withdrawal_intents: Vec<WithdrawalIntent>) -> Self {
+    pub fn new(
+        inner: EthBuiltPayload,
+        withdrawal_intents: Vec<WithdrawalIntent>,
+        subject_transfer_intents: Vec<SubjectTransferIntent>,
+    ) -> Self {
         Self {
             inner,
             withdrawal_intents,
+            subject_transfer_intents,
             block_witness: None,
         }
     }
@@ -128,13 +135,27 @@ impl AlpenBuiltPayload {
         &self.withdrawal_intents
     }
 
+    pub fn subject_transfer_intents(&self) -> &[SubjectTransferIntent] {
+        &self.subject_transfer_intents
+    }
+
     /// Takes the encoded per-block proof witness captured during build, if any.
     pub fn take_block_witness(&mut self) -> Option<Vec<u8>> {
         self.block_witness.take()
     }
 
-    pub fn into_parts(self) -> (EthBuiltPayload, Vec<WithdrawalIntent>) {
-        (self.inner, self.withdrawal_intents)
+    pub fn into_parts(
+        self,
+    ) -> (
+        EthBuiltPayload,
+        Vec<WithdrawalIntent>,
+        Vec<SubjectTransferIntent>,
+    ) {
+        (
+            self.inner,
+            self.withdrawal_intents,
+            self.subject_transfer_intents,
+        )
     }
 }
 

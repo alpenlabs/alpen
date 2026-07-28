@@ -182,6 +182,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         services[envparams.sequencer_service_key] = sequencer
         fullnodes = []
         fn_enodes = []  # Track fullnode enodes for mesh bootnodes
+        resolved_ee_params_path = Path(sequencer.props["ee_params"])
 
         # Start fullnodes
         for i in range(envparams.fullnode_count):
@@ -200,7 +201,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 instance_id=i,
                 sequencer_http=seq_http_url,  # Forward transactions to sequencer
                 ol_endpoint=ol_endpoint,
-                ee_params_path=ee_params_path,
+                ee_params_path=resolved_ee_params_path,
             )
             fullnode.wait_for_ready(timeout=60)
             fullnodes.append(fullnode)

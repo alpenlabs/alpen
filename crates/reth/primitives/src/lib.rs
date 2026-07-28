@@ -27,6 +27,25 @@ pub struct WithdrawalIntent {
     pub destination: Descriptor,
 }
 
+/// Intent to transfer value from a source EVM subject to a destination EE subject.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct SubjectTransferIntent {
+    /// Amount to be transferred in sats.
+    pub amt: u64,
+
+    /// Subject that initiated the transfer.
+    pub source_subject: SubjectId,
+
+    /// OL account that should receive the subject-transfer message.
+    pub dest_account: AccountId,
+
+    /// Subject that should receive the value in the destination EE.
+    pub dest_subject: SubjectId,
+
+    /// Opaque transfer payload delivered with the subject-transfer message.
+    pub data: Vec<u8>,
+}
+
 sol! {
     event WithdrawalIntentEvent(
         /// Withdrawal amount in sats.
@@ -98,7 +117,8 @@ pub struct SubjectTransferCalldata {
 }
 
 /// Size of the fixed destination account and subject fields.
-const SUBJECT_TRANSFER_FIXED_FIELDS_SIZE: usize = size_of::<[u8; SUBJ_ID_LEN]>() * 2;
+const ACCOUNT_ID_LEN: usize = size_of::<AccountId>();
+const SUBJECT_TRANSFER_FIXED_FIELDS_SIZE: usize = ACCOUNT_ID_LEN + size_of::<[u8; SUBJ_ID_LEN]>();
 
 impl SubjectTransferCalldata {
     /// Encodes the calldata to bytes.
@@ -118,7 +138,7 @@ impl SubjectTransferCalldata {
             return None;
         }
 
-        let (dest_account, rest) = data.split_at(SUBJ_ID_LEN);
+        let (dest_account, rest) = data.split_at(ACCOUNT_ID_LEN);
         let (dest_subject, data) = rest.split_at(SUBJ_ID_LEN);
 
         Some(Self {

@@ -377,6 +377,10 @@ mod tests {
             &[]
         }
 
+        fn subject_transfer_intents(&self) -> &[alpen_reth_node::SubjectTransferIntent] {
+            &[]
+        }
+
         fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
             Ok(self.data.clone())
         }

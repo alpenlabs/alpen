@@ -200,6 +200,7 @@ class AlpenClientFactory(flexitest.Factory):
             "datadir": str(datadir),
             "mode": "sequencer",
             "enode": None,  # Will be populated after start
+            "ee_params": str(ee_params_path),
         }
 
         # Set environment variable for sequencer private key
@@ -349,6 +350,7 @@ class AlpenClientFactory(flexitest.Factory):
             "datadir": str(datadir),
             "mode": "fullnode",
             "enode": None,
+            "ee_params": str(ee_params_path),
         }
 
         svc = AlpenClientService(

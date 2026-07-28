@@ -2,16 +2,18 @@ use std::mem::size_of;
 
 use alloy_consensus::TxReceipt;
 use alloy_sol_types::SolEvent;
-use alpen_reth_primitives::{WithdrawalIntent, WithdrawalIntentEvent};
+use alpen_reth_primitives::{
+    SubjectTransferIntent, SubjectTransferIntentEvent, WithdrawalIntent, WithdrawalIntentEvent,
+};
 use reth_primitives::{Receipt, TransactionSigned};
 use revm_primitives::{alloy_primitives::Bloom, Address, Log, U256};
 use strata_bridge_params::BridgeParams;
-use strata_identifiers::{SubjectId, SubjectIdBytes, SUBJ_ID_LEN};
+use strata_identifiers::{AccountId, SubjectId, SubjectIdBytes, SUBJ_ID_LEN};
 use strata_ol_bridge_types::OperatorSelection;
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 use thiserror::Error;
 
-use crate::constants::BRIDGEOUT_PRECOMPILE_ADDRESS;
+use crate::constants::{BRIDGEOUT_PRECOMPILE_ADDRESS, SUBJECT_TRANSFER_PRECOMPILE_ADDRESS};
 
 pub(crate) const fn u256_from(val: u128) -> U256 {
     U256::from_limbs([(val & ((1 << 64) - 1)) as u64, (val >> 64) as u64, 0, 0])
@@ -39,6 +41,13 @@ pub enum WithdrawalIntentExtractionError {
     InvalidDescriptorLength { txid: Buf32, len: usize, max: u32 },
     #[error("failed to decode withdrawal descriptor for tx {txid:?}")]
     DescriptorDecode { txid: Buf32 },
+}
+
+/// Error returned when a subject-transfer log cannot be decoded into a valid intent.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum SubjectTransferIntentExtractionError {
+    #[error("failed to decode subject-transfer intent event for tx {txid:?}")]
+    EventDecode { txid: Buf32 },
 }
 
 /// Extracts withdrawal intents from bridge-out events in transaction receipts.
@@ -100,6 +109,55 @@ fn extract_withdrawal_intent_from_log(
         amt: event.amount,
         destination,
         selected_operator: OperatorSelection::from_raw(event.selectedOperator),
+    }))
+}
+
+/// Extracts subject-transfer intents from subject-transfer precompile events in receipts.
+///
+/// # Panics
+///
+/// Panics if the number of transactions does not match the number of receipts.
+pub fn extract_subject_transfer_intents(
+    transactions: &[TransactionSigned],
+    receipts: &[Receipt],
+) -> Result<Vec<SubjectTransferIntent>, SubjectTransferIntentExtractionError> {
+    assert_eq!(
+        transactions.len(),
+        receipts.len(),
+        "transactions and receipts must have the same length"
+    );
+
+    transactions
+        .iter()
+        .zip(receipts.iter())
+        .flat_map(|(tx, receipt)| {
+            let txid = Buf32((*tx.hash()).into());
+            receipt
+                .logs
+                .iter()
+                .map(move |log| extract_subject_transfer_intent_from_log(txid, log))
+        })
+        .filter_map(Result::transpose)
+        .collect()
+}
+
+fn extract_subject_transfer_intent_from_log(
+    txid: Buf32,
+    log: &Log,
+) -> Result<Option<SubjectTransferIntent>, SubjectTransferIntentExtractionError> {
+    if log.address != SUBJECT_TRANSFER_PRECOMPILE_ADDRESS {
+        return Ok(None);
+    }
+
+    let event = SubjectTransferIntentEvent::decode_log(log)
+        .map_err(|_| SubjectTransferIntentExtractionError::EventDecode { txid })?;
+
+    Ok(Some(SubjectTransferIntent {
+        amt: event.amount,
+        source_subject: SubjectId::new(event.sourceSubject.0),
+        dest_account: AccountId::new(event.destAccount.0),
+        dest_subject: SubjectId::new(event.destSubject.0),
+        data: event.transferData.to_vec(),
     }))
 }
 
@@ -166,7 +224,7 @@ pub fn address_to_subject(address: Address) -> SubjectId {
 
 #[cfg(test)]
 mod tests {
-    use alpen_reth_primitives::WithdrawalIntentEvent;
+    use alpen_reth_primitives::{SubjectTransferIntentEvent, WithdrawalIntentEvent};
     use proptest::prelude::*;
     use revm_primitives::{Bytes, LogData};
     use strata_bridge_params::DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN;
@@ -225,6 +283,20 @@ mod tests {
         }
     }
 
+    fn subject_transfer_log() -> Log {
+        let event = SubjectTransferIntentEvent {
+            amount: 123,
+            sourceSubject: [0x11; 32].into(),
+            destAccount: [0x22; 32].into(),
+            destSubject: [0x33; 32].into(),
+            transferData: Bytes::from_static(&[0xaa, 0xbb]),
+        };
+        Log {
+            address: SUBJECT_TRANSFER_PRECOMPILE_ADDRESS,
+            data: LogData::from(&event),
+        }
+    }
+
     #[test]
     fn test_extract_withdrawal_intent_from_valid_bridgeout_log() {
         let mut bosd = vec![0u8; DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN as usize];
@@ -238,6 +310,46 @@ mod tests {
 
         assert_eq!(intent.amt, 100);
         assert_eq!(intent.selected_operator, OperatorSelection::any());
+    }
+
+    #[test]
+    fn test_extract_subject_transfer_intent_from_valid_log() {
+        let log = subject_transfer_log();
+
+        let intent = extract_subject_transfer_intent_from_log(test_txid(), &log)
+            .unwrap()
+            .expect("subject-transfer log should produce intent");
+
+        assert_eq!(intent.amt, 123);
+        assert_eq!(intent.source_subject, SubjectId::new([0x11; 32]));
+        assert_eq!(intent.dest_account, AccountId::new([0x22; 32]));
+        assert_eq!(intent.dest_subject, SubjectId::new([0x33; 32]));
+        assert_eq!(intent.data, vec![0xaa, 0xbb]);
+    }
+
+    #[test]
+    fn test_extract_subject_transfer_intent_ignores_other_addresses() {
+        let mut log = subject_transfer_log();
+        log.address = Address::ZERO;
+
+        assert!(extract_subject_transfer_intent_from_log(test_txid(), &log)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn test_extract_subject_transfer_intent_fails_on_bad_event_log() {
+        let log = Log {
+            address: SUBJECT_TRANSFER_PRECOMPILE_ADDRESS,
+            data: LogData::empty(),
+        };
+
+        let err = extract_subject_transfer_intent_from_log(test_txid(), &log).unwrap_err();
+
+        assert!(matches!(
+            err,
+            SubjectTransferIntentExtractionError::EventDecode { .. }
+        ));
     }
 
     #[test]

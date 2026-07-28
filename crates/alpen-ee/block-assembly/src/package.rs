@@ -1,15 +1,16 @@
 use alpen_ee_common::EnginePayload;
+use alpen_reth_evm::SubjectTransferIntent;
 use bitcoin_bosd::Descriptor;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
-use strata_codec::encode_to_vec;
-use strata_ee_acct_types::PendingInputEntry;
+use strata_codec::{encode_to_vec, VarVec};
+use strata_ee_acct_types::{PendingInputEntry, SubjTransferMsgData, SUBJ_TRANSFER_MSG_TYPE};
 use strata_ee_chain_types::{
     ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs, OutputMessage,
 };
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 use strata_ol_bridge_types::OperatorSelection;
 use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 /// Builds [`ExecInputs`] from pending input entries that were executed in the current block.
 pub(crate) fn build_block_inputs(pending_inputs: Vec<PendingInputEntry>) -> ExecInputs {
@@ -29,7 +30,7 @@ pub(crate) fn build_block_inputs(pending_inputs: Vec<PendingInputEntry>) -> Exec
     inputs
 }
 
-/// Builds [`ExecOutputs`] from withdrawal intents in the payload.
+/// Builds [`ExecOutputs`] from output intents in the payload.
 pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
     bridge_gateway_account_id: AccountId,
     payload: &TPayload,
@@ -66,6 +67,39 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
             "created withdrawal output message for bridge gateway",
         );
         outputs.add_message(OutputMessage::new(bridge_gateway_account_id, msg_payload));
+    }
+
+    let subject_transfer_intents = payload.subject_transfer_intents();
+    if !subject_transfer_intents.is_empty() {
+        info!(
+            subject_transfer_intent_count = subject_transfer_intents.len(),
+            "building subject-transfer output messages from payload intents",
+        );
+    }
+    for transfer_intent in subject_transfer_intents {
+        let Some(msg_payload) = create_subject_transfer_message_payload(transfer_intent) else {
+            warn!(
+                amount_sat = transfer_intent.amt,
+                source_subject = ?transfer_intent.source_subject,
+                dest_account = ?transfer_intent.dest_account,
+                dest_subject = ?transfer_intent.dest_subject,
+                data_len = transfer_intent.data.len(),
+                "skipping subject transfer: failed to create subject-transfer message",
+            );
+            continue;
+        };
+        debug!(
+            amount_sat = transfer_intent.amt,
+            source_subject = ?transfer_intent.source_subject,
+            dest_account = ?transfer_intent.dest_account,
+            dest_subject = ?transfer_intent.dest_subject,
+            data_len = transfer_intent.data.len(),
+            "created subject-transfer output message",
+        );
+        outputs.add_message(OutputMessage::new(
+            transfer_intent.dest_account,
+            msg_payload,
+        ));
     }
     outputs
 }
@@ -109,10 +143,24 @@ fn create_withdrawal_init_message_payload(
     MsgPayload::from_bytes(value, payload_data).ok()
 }
 
+fn create_subject_transfer_message_payload(intent: &SubjectTransferIntent) -> Option<MsgPayload> {
+    let transfer_data = VarVec::from_vec(intent.data.clone())?;
+    let transfer_msg =
+        SubjTransferMsgData::new(intent.source_subject, intent.dest_subject, transfer_data);
+    let body = encode_to_vec(&transfer_msg).expect("encode subject transfer data");
+
+    let msg = OwnedMsg::new(SUBJ_TRANSFER_MSG_TYPE, body).expect("create message");
+    let payload_data = msg.to_vec();
+
+    MsgPayload::from_bytes(BitcoinAmount::from_sat(intent.amt), payload_data).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use strata_acct_types::SubjectId;
+    use strata_ee_acct_types::DecodedEeMessageData;
     use strata_ee_chain_types::SubjectDepositData;
+    use strata_msg_fmt::MsgRef;
 
     use super::*;
 
@@ -160,5 +208,37 @@ mod tests {
             block_inputs.subject_deposits()[0].value(),
             BitcoinAmount::from_sat(12345)
         );
+    }
+
+    #[test]
+    fn subject_transfer_payload_uses_subject_transfer_message_envelope() {
+        let source_subject = SubjectId::new([0x11; 32]);
+        let dest_subject = SubjectId::new([0x22; 32]);
+        let transfer_data = vec![0xaa, 0xbb];
+        let amount = 123_456;
+        let intent = SubjectTransferIntent {
+            amt: amount,
+            source_subject,
+            dest_account: AccountId::new([0x33; 32]),
+            dest_subject,
+            data: transfer_data.clone(),
+        };
+
+        let payload =
+            create_subject_transfer_message_payload(&intent).expect("subject-transfer payload");
+
+        assert_eq!(payload.value(), BitcoinAmount::from_sat(amount));
+
+        let msg = MsgRef::try_from(payload.data()).expect("message envelope");
+        assert_eq!(msg.ty(), SUBJ_TRANSFER_MSG_TYPE);
+
+        let DecodedEeMessageData::SubjTransfer(transfer) =
+            DecodedEeMessageData::decode_raw(payload.data()).expect("decode subject transfer")
+        else {
+            panic!("expected subject transfer");
+        };
+        assert_eq!(*transfer.source_subject(), source_subject);
+        assert_eq!(*transfer.dest_subject(), dest_subject);
+        assert_eq!(transfer.data_buf(), transfer_data.as_slice());
     }
 }

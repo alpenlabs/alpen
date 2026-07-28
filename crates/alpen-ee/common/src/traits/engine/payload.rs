@@ -4,7 +4,7 @@ use alloy_eips::eip7685::Requests;
 use alloy_primitives::{B256, U256};
 use alloy_rlp::Decodable;
 use alloy_rpc_types_engine::PayloadId;
-use alpen_reth_node::{AlpenBuiltPayload, WithdrawalIntent};
+use alpen_reth_node::{AlpenBuiltPayload, SubjectTransferIntent, WithdrawalIntent};
 use bincode::{deserialize, serialize};
 use reth_ethereum_engine_primitives::{BlobSidecars, EthBuiltPayload};
 use reth_ethereum_primitives::{Block, EthPrimitives};
@@ -27,6 +27,8 @@ pub trait EnginePayload: Sized + Clone {
     fn state_root(&self) -> Hash;
     /// Returns the withdrawal intents included in this payload.
     fn withdrawal_intents(&self) -> &[WithdrawalIntent];
+    /// Returns the subject-transfer intents included in this payload.
+    fn subject_transfer_intents(&self) -> &[SubjectTransferIntent];
 
     /// Serializes this payload to bytes.
     fn to_bytes(&self) -> Result<Vec<u8>, Self::Error>;
@@ -64,6 +66,10 @@ impl EnginePayload for AlpenBuiltPayload {
         self.withdrawal_intents()
     }
 
+    fn subject_transfer_intents(&self) -> &[SubjectTransferIntent] {
+        self.subject_transfer_intents()
+    }
+
     fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
         let serializable = SerializablePayload::try_from(self.clone())?;
         Ok(serialize(&serializable)?)
@@ -90,13 +96,14 @@ struct SerializablePayload {
     fees: U256,
     requests: Option<Requests>,
     withdrawal_intents: Vec<WithdrawalIntent>,
+    subject_transfer_intents: Vec<SubjectTransferIntent>,
 }
 
 impl TryFrom<AlpenBuiltPayload> for SerializablePayload {
     type Error = AlpenEnginePayloadError;
 
     fn try_from(value: AlpenBuiltPayload) -> Result<Self, Self::Error> {
-        let (eth_built_payload, withdrawal_intents) = value.into_parts();
+        let (eth_built_payload, withdrawal_intents, subject_transfer_intents) = value.into_parts();
 
         if !matches!(eth_built_payload.sidecars(), BlobSidecars::Empty) {
             let blockhash = eth_built_payload.block().hash();
@@ -116,6 +123,7 @@ impl TryFrom<AlpenBuiltPayload> for SerializablePayload {
             fees: eth_built_payload.fees(),
             requests: eth_built_payload.requests().clone(),
             withdrawal_intents,
+            subject_transfer_intents,
         })
     }
 }
@@ -131,6 +139,7 @@ impl TryFrom<SerializablePayload> for AlpenBuiltPayload {
             fees,
             requests,
             withdrawal_intents,
+            subject_transfer_intents,
         } = value;
 
         // Decode the RLP-encoded block and seal it with the stored hash
@@ -144,6 +153,7 @@ impl TryFrom<SerializablePayload> for AlpenBuiltPayload {
         Ok(AlpenBuiltPayload::new(
             eth_built_payload,
             withdrawal_intents,
+            subject_transfer_intents,
         ))
     }
 }
