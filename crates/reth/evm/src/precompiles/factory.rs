@@ -4,8 +4,14 @@ use revm_primitives::hardfork::SpecId;
 use strata_bridge_params::BridgeParams;
 
 use crate::{
-    constants::{BRIDGEOUT_PRECOMPILE_ADDRESS, BRIDGEOUT_PRECOMPILE_ID},
-    precompiles::{bridge::bridge_context_call, AlpenEvmPrecompiles},
+    constants::{
+        BRIDGEOUT_PRECOMPILE_ADDRESS, BRIDGEOUT_PRECOMPILE_ID, SUBJECT_TRANSFER_PRECOMPILE_ADDRESS,
+        SUBJECT_TRANSFER_PRECOMPILE_ID,
+    },
+    precompiles::{
+        bridge::bridge_context_call, subject_transfer::subject_transfer_context_call,
+        AlpenEvmPrecompiles,
+    },
 };
 
 /// Creates a precompiles map with Alpen-specific precompiles, including the bridge precompile.
@@ -18,6 +24,13 @@ pub fn create_precompiles_map(spec: SpecId, bridge_params: BridgeParams) -> Prec
         Some(DynPrecompile::new_stateful(
             PrecompileId::custom(BRIDGEOUT_PRECOMPILE_ID),
             move |input| bridge_context_call(input, bridge_params),
+        ))
+    });
+
+    precompiles.apply_precompile(&SUBJECT_TRANSFER_PRECOMPILE_ADDRESS, |_| {
+        Some(DynPrecompile::new_stateful(
+            PrecompileId::custom(SUBJECT_TRANSFER_PRECOMPILE_ID),
+            subject_transfer_context_call,
         ))
     });
 

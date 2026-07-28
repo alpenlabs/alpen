@@ -7,8 +7,11 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+alloy-primitives.workspace = true
 alloy-sol-types.workspace = true
 serde.workspace = true
 
+strata-acct-types.workspace = true
+strata-identifiers.workspace = true
 strata-ol-bridge-types.workspace = true
 strata-primitives.workspace = true

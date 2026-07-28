@@ -9,6 +9,7 @@ use revm_primitives::hardfork::SpecId;
 mod bridge;
 pub mod factory;
 mod schnorr;
+mod subject_transfer;
 
 /// A custom precompile that contains static precompiles.
 #[expect(

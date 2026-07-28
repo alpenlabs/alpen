@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 PRECOMPILE_BRIDGEOUT_ADDRESS = "0x5400000000000000000000000000000000000001"
 PRECOMPILE_SCHNORR_ADDRESS = "0x5400000000000000000000000000000000000002"
+PRECOMPILE_SUBJECT_TRANSFER_ADDRESS = "0x5400000000000000000000000000000000000003"
 
 # ---------------------------------------------------------------------------
 # Standard EVM precompile addresses (0x01 - 0x08)

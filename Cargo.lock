@@ -1477,6 +1477,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "secp256k1 0.29.1",
+ "strata-acct-types",
  "strata-bridge-params",
  "strata-crypto",
  "strata-identifiers",
@@ -1563,8 +1564,11 @@ dependencies = [
 name = "alpen-reth-primitives"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-primitives",
  "alloy-sol-types",
  "serde",
+ "strata-acct-types",
+ "strata-identifiers",
  "strata-ol-bridge-types",
  "strata-primitives",
 ]
