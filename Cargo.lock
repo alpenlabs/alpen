@@ -1044,6 +1044,7 @@ dependencies = [
  "sha2",
  "shrex",
  "sled",
+ "strata-acct-types",
  "strata-asm-proto-bridge-v1-txs",
  "strata-bridge-params",
  "strata-cli-common",

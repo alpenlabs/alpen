@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     env::var,
     fs::{create_dir_all, File},
     io,
@@ -14,6 +15,7 @@ use config::{Config, ConfigError};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use shrex::Hex;
+use strata_acct_types::AccountId;
 use strata_bridge_params::BridgeParams;
 use strata_l1_txfmt::MagicBytes;
 use terrors::OneOf;
@@ -50,6 +52,11 @@ pub struct SettingsFromFile {
     /// NPAL Alpen EE network RPC endpoint (the `NPAL` EE account). Optional;
     /// only required when targeting the `NPAL` preset.
     pub nepal_endpoint: Option<String>,
+    /// Map of EE account serial (as a string key) to its 32-byte OL `AccountId`
+    /// (64 hex chars, no `0x`). Used by the `transfer` command to resolve the
+    /// destination account from a preset/serial. Optional; only required to use
+    /// `transfer`.
+    pub ee_account_ids: Option<HashMap<String, Hex<[u8; 32]>>>,
     /// Faucet service endpoint.
     pub faucet_endpoint: String,
     /// Mempool explorer endpoint.
@@ -105,6 +112,10 @@ pub struct Settings {
     pub alpen_endpoint: String,
     /// RPC endpoint for the `NPAL` Alpen EE account, if configured.
     pub nepal_endpoint: Option<String>,
+    /// Map of EE account serial to its OL `AccountId`, used by `transfer` to
+    /// resolve a destination preset/serial to the account id the precompile
+    /// requires. Empty if not configured.
+    pub ee_account_ids: HashMap<u32, AccountId>,
     pub data_dir: PathBuf,
     pub faucet_endpoint: String,
     pub bridge_musig2_pubkey: XOnlyPublicKey,
@@ -199,10 +210,29 @@ impl Settings {
             )))
         })?;
 
+        // Parse the EE account-id map, turning the string serial keys into u32
+        // and the hex values into AccountIds. A malformed serial key surfaces as
+        // a config error rather than a panic.
+        let ee_account_ids = from_file
+            .ee_account_ids
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(serial_str, id)| {
+                let serial: u32 = serial_str.parse().map_err(|_| {
+                    OneOf::new(ConfigError::Message(format!(
+                        "invalid EE account serial key '{serial_str}' in [ee_account_ids]; \
+                         must be a non-negative integer"
+                    )))
+                })?;
+                Ok((serial, AccountId::new(id.0)))
+            })
+            .collect::<Result<HashMap<u32, AccountId>, OneOf<(io::Error, ConfigError)>>>()?;
+
         Ok(Settings {
             esplora: from_file.esplora,
             alpen_endpoint: from_file.alpen_endpoint,
             nepal_endpoint: from_file.nepal_endpoint,
+            ee_account_ids,
             data_dir: proj_dirs.data_dir().to_owned(),
             faucet_endpoint: from_file.faucet_endpoint,
             bridge_musig2_pubkey,

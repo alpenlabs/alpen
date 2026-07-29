@@ -46,6 +46,11 @@ pub const ALPN_EE_ACCT_SERIAL: AccountSerial = AccountSerial::new(SYSTEM_RESERVE
 /// [`ALPN_EE_ACCT_SERIAL`].
 pub const NPAL_EE_ACCT_SERIAL: AccountSerial = AccountSerial::new(SYSTEM_RESERVED_ACCTS + 1);
 
+/// Address of the inter-EE subject-transfer precompile, used by the `transfer`
+/// command. This is a fixed protocol address (see `subject_transfer.rs`).
+pub const SUBJECT_TRANSFER_PRECOMPILE_ADDRESS: &str =
+    "0x5400000000000000000000000000000000000003";
+
 /// Alpen CLI [`DerivationPath`](bdk_wallet::bitcoin::bip32::DerivationPath) for Alpen EVM wallet
 ///
 /// This corresponds to the path: `m/44'/60'/0'/0/0`.

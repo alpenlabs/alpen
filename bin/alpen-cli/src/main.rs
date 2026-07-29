@@ -15,8 +15,8 @@ use std::process::exit;
 
 use cmd::{
     backup::backup, balance::balance, config::config, deposit::deposit, drain::drain,
-    faucet::faucet, receive::receive, recover::recover, scan::scan, send::send, withdraw::withdraw,
-    Commands, TopLevel,
+    faucet::faucet, receive::receive, recover::recover, scan::scan, send::send,
+    transfer::transfer, withdraw::withdraw, Commands, TopLevel,
 };
 #[cfg(not(feature = "test-mode"))]
 use cmd::{change_pwd::change_pwd, reset::reset};
@@ -75,6 +75,7 @@ async fn main() {
         Commands::Backup(args) => backup(args, seed).await,
         Commands::Deposit(args) => deposit(args, seed, settings).await,
         Commands::Withdraw(args) => withdraw(args, seed, settings).await,
+        Commands::Transfer(args) => transfer(args, seed, settings).await,
         Commands::Faucet(args) => faucet(args, seed, settings).await,
         Commands::Send(args) => send(args, seed, settings).await,
         Commands::Receive(args) => receive(args, seed, settings).await,

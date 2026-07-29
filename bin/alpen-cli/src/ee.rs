@@ -6,7 +6,7 @@
 
 use std::str::FromStr;
 
-use strata_identifiers::AccountSerial;
+use strata_identifiers::{AccountSerial, SYSTEM_RESERVED_ACCTS};
 
 use crate::constants::{ALPN_EE_ACCT_SERIAL, NPAL_EE_ACCT_SERIAL};
 
@@ -28,6 +28,18 @@ impl EePreset {
         match self {
             EePreset::Alpn => ALPN_EE_ACCT_SERIAL,
             EePreset::Npal => NPAL_EE_ACCT_SERIAL,
+        }
+    }
+
+    /// Returns the numeric account serial backing this preset.
+    ///
+    /// This mirrors [`serial`](Self::serial) as a plain `u32`, for callers that
+    /// need to key on the serial (e.g. the `transfer` command's account-id
+    /// lookup) rather than an [`AccountSerial`].
+    pub fn serial_num(self) -> u32 {
+        match self {
+            EePreset::Alpn => SYSTEM_RESERVED_ACCTS,
+            EePreset::Npal => SYSTEM_RESERVED_ACCTS + 1,
         }
     }
 }
@@ -63,5 +75,12 @@ mod tests {
     fn ee_preset_serial_mapping() {
         assert_eq!(EePreset::Alpn.serial(), ALPN_EE_ACCT_SERIAL);
         assert_eq!(EePreset::Npal.serial(), NPAL_EE_ACCT_SERIAL);
+    }
+
+    #[test]
+    fn ee_preset_serial_num_matches_serial() {
+        assert_eq!(EePreset::Alpn.serial(), AccountSerial::new(EePreset::Alpn.serial_num()));
+        assert_eq!(EePreset::Npal.serial(), AccountSerial::new(EePreset::Npal.serial_num()));
+        assert_eq!(EePreset::Npal.serial_num(), EePreset::Alpn.serial_num() + 1);
     }
 }

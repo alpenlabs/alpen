@@ -13,6 +13,7 @@ use recover::RecoverArgs;
 use reset::ResetArgs;
 use scan::ScanArgs;
 use send::SendArgs;
+use transfer::TransferArgs;
 use withdraw::WithdrawArgs;
 
 use crate::cmd::debug::DebugArgs;
@@ -30,6 +31,7 @@ pub mod recover;
 pub mod reset;
 pub mod scan;
 pub mod send;
+pub mod transfer;
 pub mod withdraw;
 
 /// A CLI for interacting with Alpen and the underlying bitcoin (signet) network
@@ -48,6 +50,7 @@ pub enum Commands {
     Backup(BackupArgs),
     Deposit(DepositArgs),
     Withdraw(WithdrawArgs),
+    Transfer(TransferArgs),
     Faucet(FaucetArgs),
     Send(SendArgs),
     Receive(ReceiveArgs),

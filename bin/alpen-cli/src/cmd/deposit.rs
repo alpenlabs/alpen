@@ -69,7 +69,7 @@ pub struct DepositArgs {
 
     /// the Alpen address to deposit the funds into. defaults to the
     /// wallet's internal address.
-    #[argh(positional)]
+    #[argh(option)]
     alpen_address: Option<String>,
 
     /// override signet fee rate in sat/vbyte. must be >=1

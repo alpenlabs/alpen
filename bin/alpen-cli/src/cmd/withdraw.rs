@@ -36,7 +36,7 @@ pub struct WithdrawArgs {
     preset: Option<EePreset>,
 
     /// the signet address to send funds to. defaults to a new internal wallet address
-    #[argh(positional)]
+    #[argh(option)]
     address: Option<String>,
 
     /// amount to withdraw in sats (must be a positive multiple of the denomination).
@@ -53,7 +53,7 @@ pub struct WithdrawArgs {
 ///
 /// `ALPN` (or no preset) uses `alpen_endpoint`; `NPAL` uses `nepal_endpoint`,
 /// erroring if it is not configured.
-fn resolve_endpoint<'a>(
+pub(crate) fn resolve_endpoint<'a>(
     preset: Option<EePreset>,
     alpen_endpoint: &'a str,
     nepal_endpoint: Option<&'a str>,
