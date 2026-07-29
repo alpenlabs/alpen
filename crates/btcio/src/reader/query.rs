@@ -93,11 +93,12 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    // Keep twice the safe depth so startup can recover a crash near the tip.
+    // Keep at least two blocks so startup can recover a crash near the tip,
+    // including when the configured reorg-safe depth is zero.
     reconcile_unmaterialized_canonical_tip(
         storage.as_ref(),
         btcio_params.genesis_l1_height(),
-        btcio_params.l1_reorg_safe_depth() as L1Height * 2,
+        btcio_params.l1_reorg_safe_depth().max(1).saturating_mul(2) as L1Height,
     )
     .await?;
 
@@ -979,6 +980,28 @@ mod tests {
             .expect("test: target block");
 
         assert_eq!(target, 112);
+    }
+
+    #[tokio::test]
+    async fn recovery_with_zero_reorg_safe_depth_rewinds_unmaterialized_tip() {
+        let storage = test_storage();
+        for height in 42..=43 {
+            store_l1_canonical(&storage, height).await;
+        }
+        store_asm_state(&storage, l1_block(42)).await;
+
+        reconcile_unmaterialized_canonical_tip(&storage, 42, 2)
+            .await
+            .expect("test: zero-depth recovery should rewind the tip");
+
+        assert_eq!(
+            storage
+                .l1()
+                .get_canonical_chain_tip_async()
+                .await
+                .expect("test: tip"),
+            Some((42, L1BlockId::default()))
+        );
     }
 
     #[tokio::test]
