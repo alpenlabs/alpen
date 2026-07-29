@@ -80,14 +80,14 @@ where
     }
 
     async fn process_unfinalized_entries(&mut self) -> BroadcasterResult<()> {
-        let updated_entries = process_unfinalized_entries(
+        let processed = process_unfinalized_entries(
             self.inner.unfinalized_entries.iter(),
             &self.io,
             &self.config,
         )
         .await?;
 
-        for entry in updated_entries.iter() {
+        for entry in processed.updated.iter() {
             let idx = *entry.index();
 
             // The fee bumper can mark this entry `Replaced` in the DB between the read that
@@ -109,7 +109,13 @@ where
                 .await?;
         }
 
-        update_state(&mut self.inner, updated_entries.into_iter(), &self.io).await
+        update_state(
+            &mut self.inner,
+            processed.updated.into_iter(),
+            &self.io,
+            processed.resync_required,
+        )
+        .await
     }
 
     /// Drops the in-memory copy of an entry that a fee bump superseded.
@@ -171,7 +177,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::{iter::once, sync::Arc};
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{backend::DatabaseBackend, common::L1TxId, l1_broadcast::L1TxStatus};
@@ -302,6 +308,7 @@ mod test {
             &mut service_state.inner,
             updated_entries.into_iter(),
             io_ref,
+            false,
         )
         .await
         .unwrap();
@@ -311,7 +318,7 @@ mod test {
 
         let unf_entries = service_state.inner.unfinalized_entries;
         assert!(!unf_entries.iter().any(|e| e.item().is_finalized()));
-        assert!(unf_entries.iter().all(|e| e.item().is_valid()));
+        assert!(unf_entries.iter().all(|e| e.item().is_trackable()));
     }
 
     #[tokio::test]
@@ -397,6 +404,110 @@ mod test {
             ),
             "persisted Replaced status must survive the processing pass"
         );
+    }
+
+    /// A superseded ancestor that wins on-chain has to come back into the tracked set.
+    ///
+    /// It left `unfinalized_entries` when it was first replaced, and the incremental cursor only
+    /// reads rows added since, so without the resync nothing polls it again: it stays `Confirmed`
+    /// forever, never reaches `Finalized`, and a reorg on it goes unnoticed.
+    #[tokio::test]
+    async fn adopted_winner_is_tracked_again() {
+        let (mut service_state, winner_idx, loser_idx, replaced_loser) = adoption_fixture().await;
+
+        let io_ref = &service_state.io;
+        update_state(
+            &mut service_state.inner,
+            once(IndexedEntry::new(loser_idx, replaced_loser)),
+            io_ref,
+            true,
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            service_state
+                .inner
+                .unfinalized_entries
+                .iter()
+                .any(|entry| *entry.index() == winner_idx),
+            "adopted winner must be tracked again"
+        );
+    }
+
+    /// Pins what the resync flag is actually buying: without it the winner stays dropped.
+    #[tokio::test]
+    async fn without_resync_the_adopted_winner_stays_untracked() {
+        let (mut service_state, winner_idx, loser_idx, replaced_loser) = adoption_fixture().await;
+
+        let io_ref = &service_state.io;
+        update_state(
+            &mut service_state.inner,
+            once(IndexedEntry::new(loser_idx, replaced_loser)),
+            io_ref,
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            !service_state
+                .inner
+                .unfinalized_entries
+                .iter()
+                .any(|entry| *entry.index() == winner_idx),
+            "incremental cursor cannot recover the winner on its own"
+        );
+    }
+
+    /// Two entries where the second replaced the first, then the first won on-chain: the winner is
+    /// `Confirmed` in the DB but already dropped from memory, and the loser is `Replaced`.
+    async fn adoption_fixture() -> (
+        BroadcasterServiceState<impl BroadcasterIoContext>,
+        u64,
+        u64,
+        L1TxEntry,
+    ) {
+        let ops = get_ops();
+        let winner = gen_l1_tx_entry_with_status(L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: [1; 32].into(),
+            block_height: 100,
+        });
+        let winner_idx = ops
+            .put_tx_entry_async([20; 32].into(), winner)
+            .await
+            .unwrap()
+            .expect("test: winner index");
+        let loser = gen_l1_tx_entry_with_status(L1TxStatus::Published);
+        let loser_idx = ops
+            .put_tx_entry_async([21; 32].into(), loser.clone())
+            .await
+            .unwrap()
+            .expect("test: loser index");
+
+        let io = make_io(ops.clone(), TestBitcoinClient::new(0));
+        let mut service_state = BroadcasterServiceState::try_new(io, get_test_btcio_params())
+            .await
+            .unwrap();
+        assert_eq!(service_state.inner.unfinalized_entries.len(), 2);
+
+        // The winner stopped being tracked when it was replaced.
+        service_state
+            .inner
+            .unfinalized_entries
+            .retain(|entry| *entry.index() == loser_idx);
+
+        // Adoption reverses the chain, leaving the loser superseded by the winner.
+        let mut replaced_loser = loser;
+        replaced_loser.status = L1TxStatus::Replaced {
+            by: L1TxId::from([20u8; 32]),
+        };
+        ops.put_tx_entry_async([21; 32].into(), replaced_loser.clone())
+            .await
+            .unwrap();
+
+        (service_state, winner_idx, loser_idx, replaced_loser)
     }
 
     /// Even if the notification is lost, the write-back guard must not resurrect the old status.
