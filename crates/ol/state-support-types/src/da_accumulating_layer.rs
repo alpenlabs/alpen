@@ -17,6 +17,7 @@ use strata_da_framework::{
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_ol_da::*;
+use strata_predicate::PredicateKey;
 use thiserror::Error;
 
 use crate::{index_types::IndexerWrites, indexer_layer::IndexerAccountStateMut};
@@ -191,6 +192,8 @@ impl AccountDelta {
 struct NewAccountRecord {
     serial: AccountSerial,
     account_id: AccountId,
+    /// The account's update VK, or `None` if it isn't a snark account.
+    update_vk: Option<PredicateKey>,
 }
 
 /// Per-epoch accumulator of DA writes before encoding.
@@ -340,6 +343,7 @@ impl EpochDaAccumulator {
         expected_first_serial: AccountSerial,
         serial: AccountSerial,
         account_id: AccountId,
+        update_vk: Option<PredicateKey>,
     ) -> Result<(), DaAccumulationError> {
         if self.expected_first_serial.is_none() {
             self.expected_first_serial = Some(expected_first_serial);
@@ -347,8 +351,11 @@ impl EpochDaAccumulator {
         if !self.new_account_ids.insert(account_id) {
             return Err(DaAccumulationError::DuplicateNewAccountId(account_id));
         }
-        self.new_account_records
-            .push(NewAccountRecord { serial, account_id });
+        self.new_account_records.push(NewAccountRecord {
+            serial,
+            account_id,
+            update_vk,
+        });
         Ok(())
     }
 
@@ -367,17 +374,21 @@ impl EpochDaAccumulator {
         // New accounts list: 2-byte u16 length prefix + per-entry overhead.
         // Per new account: 32 (AccountId) + 8 (balance) + 1 (type disc)
         //   + if snark: 32 (state root) + 2 (vk len prefix) + vk bytes
-        // We don't know VK size here so use MAX_VK_BYTES as upper bound.
-        // In practice most VKs are much smaller, but this is a conservative estimate.
-        // FIXME: the VK bytes are not actually counted despite the comment
-        // above; `NewAccountRecord` doesn't carry the VK length, and blindly
-        // adding MAX_VK_BYTES (64 KiB) per account would over-reserve
-        // absurdly. Track the actual VK length per record so this stays an
-        // upper bound.
         const NEW_ACCT_BASE: usize = 32 + 8 + 1;
-        const NEW_ACCT_SNARK_OVERHEAD: usize = 32 + 2;
-        let new_accounts_size: usize =
-            2 + self.new_account_records.len() * (NEW_ACCT_BASE + NEW_ACCT_SNARK_OVERHEAD);
+        const NEW_ACCT_SNARK_FIXED: usize = 32 + 2;
+        let new_accounts_size: usize = 2 + self
+            .new_account_records
+            .iter()
+            .map(|record| {
+                NEW_ACCT_BASE
+                    + match &record.update_vk {
+                        // Encoded as [id: u8][condition bytes], matching
+                        // `PredicateKeyBuf::to_bytes`.
+                        Some(vk) => NEW_ACCT_SNARK_FIXED + 1 + vk.condition().len(),
+                        None => 0,
+                    }
+            })
+            .sum::<usize>();
 
         // Account diffs list: 2-byte u16 length prefix + per-diff overhead.
         // Per diff: 4 (serial u32) + 1 (compound mask) + balance + snark
@@ -832,12 +843,16 @@ where
         id: AccountId,
         new_acct_data: NewAccountData,
     ) -> StateResult<AccountSerial> {
+        let update_vk = match new_acct_data.type_state() {
+            NewAccountTypeState::Empty => None,
+            NewAccountTypeState::Snark { update_vk, .. } => Some(update_vk.clone()),
+        };
         let expected_first_serial = self.inner.next_account_serial();
         let serial = self.inner.create_new_account(id, new_acct_data)?;
 
-        if let Err(err) = self
-            .epoch_acc
-            .record_new_account(expected_first_serial, serial, id)
+        if let Err(err) =
+            self.epoch_acc
+                .record_new_account(expected_first_serial, serial, id, update_vk)
             && self.pending_epoch_error.is_none()
         {
             self.pending_epoch_error = Some(err);
