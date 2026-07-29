@@ -1,0 +1,87 @@
+name: AI Security Review
+
+# AI security review of pull requests, using Claude via anthropics/claude-code-action.
+# Model: Opus 5 for code changes; Sonnet 5 when a PR only touches docs/assets (cost lever).
+# Setup: add a repo or org secret CLAUDE_CODE_OAUTH_TOKEN (Claude Pro/Max subscription token from
+#        `claude setup-token`) OR ANTHROPIC_API_KEY. Without a secret the job errors out (no review).
+# On `pull_request`, GitHub withholds secrets from EXTERNAL fork PRs, so this covers same-repo
+# branches; external-fork PRs are not reviewed. Do NOT switch to `pull_request_target` without
+# a security re-review — that trigger hands secrets + a writable token to untrusted PR content.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Cancel a stale review when new commits land on the same PR (cost + no duplicate comments).
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # to post the review comment
+
+jobs:
+  security-review:
+    # Skip drafts (wasteful) and dependabot (secrets are withheld, so it would only fail).
+    if: github.event.pull_request.draft == false && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false # don't write GITHUB_TOKEN into .git/config (zizmor: artipacked)
+
+      - name: Pick model (Sonnet 5 for docs-only PRs, Opus 5 otherwise)
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # A file is "docs/asset-like" if it matches this; if ANY changed file is not, use Opus 5.
+          DOCS='\.(md|mdx|markdown|txt|rst|adoc|png|jpe?g|gif|svg|webp|ico)$|(^|/)(LICENSE|NOTICE|AUTHORS|CHANGELOG|README|CODEOWNERS)([.-][^/]*)?$|^docs/'
+          files=$(gh pr diff "$PR" --repo "$REPO" --name-only)
+          if [ -z "$files" ] || printf '%s\n' "$files" | grep -qvE "$DOCS"; then
+            model=claude-opus-5
+          else
+            model=claude-sonnet-5
+          fi
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+          { echo "### AI review model: \`$model\`"; echo '```'; printf '%s\n' "$files"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+        with:
+          # Subscription first; fall back to the API key only when no OAuth token is configured.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          github_token: ${{ github.token }}
+          use_sticky_comment: true
+          prompt: |
+            Perform a security review of pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+            Run `gh pr diff ${{ github.event.pull_request.number }}` for the changes; read surrounding code for context.
+
+            Analyze thoroughly for real, exploitable vulnerabilities introduced or exposed by this diff:
+            injection (SQL/command/template), unsafe deserialization, path traversal, SSRF, broken authn/authz,
+            IDOR, cryptographic misuse, secret/credential exposure, memory safety / overflow/underflow /
+            panics on untrusted input (watch Rust `unsafe`), input-validation gaps, unsafe error handling,
+            resource exhaustion / DoS. Favor precision over recall.
+
+            Then post EXACTLY ONE PR comment via
+            `gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "<markdown>"`,
+            following these OUTPUT RULES strictly (a human reads this — keep it tight):
+            - Always start with the heading "## 🔒 AI Security Review (${{ steps.pick.outputs.model }})".
+            - If you found NO real issues: the ENTIRE body is that heading plus one line — "✅ No security issues found."
+              Do NOT add a "scope reviewed" list, a "what I checked / cleared" section, or any reasoning. Reviewers do not want it.
+            - If you found real issues: list them most-severe-first. For each: a bold one-line title with the severity,
+              then `file:line`, a 1–2 sentence exploit scenario, and a concrete fix. Be concise and actionable —
+              no style/formatting/speculative nits, no "what I cleared" prose.
+            Posting this comment is required and must be your final action.
+          # Read-only allowlist: no `sed` (s///e exec), no blanket `git` (`-c alias=!cmd` exec), no `gh api` (write API).
+          claude_args: |
+            --model ${{ steps.pick.outputs.model }}
+            --max-turns 40
+            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(cat:*),Bash(ls:*),Bash(grep:*),Bash(rg:*),Bash(head:*),Bash(tail:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob"
