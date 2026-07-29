@@ -37,7 +37,7 @@ use strata_ol_chain_types::{
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
 
-use super::fixture::{BuiltEpoch, EpochShape, build_epoch};
+use super::fixture::{BlockPlan, BuiltEpoch, EpochPlan, UpdateEffect, build_epoch};
 use crate::{
     WorkerError, WorkerResult,
     output::OLBlockExecutionOutput,
@@ -196,7 +196,7 @@ fn mock_for(built: &BuiltEpoch) -> (MockChainWorkerContext, EpochCommitment) {
 
 #[test]
 fn test_apply_checkpoint_deposit_manifest_only() {
-    let built = build_epoch(EpochShape::DepositManifestOnly);
+    let built = build_epoch(EpochPlan::new().terminal(BlockPlan::new().deposit_manifest()));
     let (ctx, epoch) = mock_for(&built);
 
     let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
@@ -205,7 +205,7 @@ fn test_apply_checkpoint_deposit_manifest_only() {
 
 #[test]
 fn test_apply_checkpoint_replays_empty_l1_range() {
-    let built = build_epoch(EpochShape::NoNewManifests);
+    let built = build_epoch(EpochPlan::new());
     assert!(
         built.manifests_by_height.is_empty(),
         "fixture should seal without new L1 manifests"
@@ -223,7 +223,14 @@ fn test_apply_checkpoint_replays_empty_l1_range() {
 
 #[test]
 fn test_apply_checkpoint_snark_multi_update_and_deposit() {
-    let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
+    let built = build_epoch(
+        EpochPlan::new()
+            .block(BlockPlan::new().snark_updates(vec![
+                UpdateEffect::Transfer(1_000_000),
+                UpdateEffect::Transfer(1_000_000),
+            ]))
+            .terminal(BlockPlan::new().deposit_manifest()),
+    );
     let (ctx, epoch) = mock_for(&built);
 
     let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
@@ -251,7 +258,9 @@ fn test_apply_checkpoint_snark_multi_update_and_deposit() {
 
 #[test]
 fn test_apply_checkpoint_withdrawal_only() {
-    let built = build_epoch(EpochShape::WithdrawalOnly);
+    let built = build_epoch(
+        EpochPlan::new().block(BlockPlan::new().snark_updates(vec![UpdateEffect::Withdrawal])),
+    );
     assert_withdrawal_log_present(built.block_sync_logs());
     let (ctx, epoch) = mock_for(&built);
 
@@ -261,7 +270,11 @@ fn test_apply_checkpoint_withdrawal_only() {
 
 #[test]
 fn test_apply_checkpoint_withdrawal_and_deposit() {
-    let built = build_epoch(EpochShape::WithdrawalAndDeposit);
+    let built = build_epoch(
+        EpochPlan::new()
+            .block(BlockPlan::new().snark_updates(vec![UpdateEffect::Withdrawal]))
+            .terminal(BlockPlan::new().deposit_manifest()),
+    );
     assert_withdrawal_log_present(built.block_sync_logs());
     let (ctx, epoch) = mock_for(&built);
 
@@ -271,7 +284,15 @@ fn test_apply_checkpoint_withdrawal_and_deposit() {
 
 #[test]
 fn test_apply_checkpoint_all() {
-    let built = build_epoch(EpochShape::All);
+    let built = build_epoch(
+        EpochPlan::new()
+            .block(BlockPlan::new().snark_updates(vec![
+                UpdateEffect::None,
+                UpdateEffect::None,
+                UpdateEffect::Withdrawal,
+            ]))
+            .terminal(BlockPlan::new().deposit_manifest()),
+    );
     assert_withdrawal_log_present(built.block_sync_logs());
     let (ctx, epoch) = mock_for(&built);
 
@@ -311,7 +332,7 @@ fn assert_withdrawal_log_present(logs: &[ChainOLLog]) {
 
 #[test]
 fn test_apply_checkpoint_replays_manifests_spread_across_non_terminal_blocks() {
-    let built = build_epoch(EpochShape::ManifestsInNonTerminalBlocks);
+    let built = build_epoch(EpochPlan::new().block(BlockPlan::new().empty_manifests(2)));
     assert!(
         built.manifests_by_height.len() > 1,
         "fixture should spread manifests across multiple blocks"
@@ -323,8 +344,52 @@ fn test_apply_checkpoint_replays_manifests_spread_across_non_terminal_blocks() {
 }
 
 #[test]
+fn test_apply_checkpoint_drains_non_terminal_deposit_at_terminal() {
+    let built = build_epoch(EpochPlan::new().block(BlockPlan::new().deposit_manifest()));
+    let manifest_height = built.manifests_by_height[0].0;
+
+    assert_eq!(
+        built.pre_terminal_pending_asm_logs, 1,
+        "non-terminal deposit log must remain buffered until the terminal"
+    );
+    assert_eq!(
+        built.block_sync_summary.new_l1().height(),
+        manifest_height,
+        "the terminal must apply the buffered deposit manifest"
+    );
+
+    let (ctx, epoch) = mock_for(&built);
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built, &artifacts);
+}
+
+#[test]
+fn test_apply_checkpoint_orders_mixed_manifest_placements_by_block_position() {
+    // Feature declaration order must not make the terminal manifest precede
+    // the non-terminal manifest in L1 height order.
+    let built = build_epoch(
+        EpochPlan::new()
+            .block(BlockPlan::new().empty_manifests(1))
+            .terminal(BlockPlan::new().deposit_manifest()),
+    );
+    assert_eq!(
+        built.manifests_by_height[1].0,
+        built.manifests_by_height[0].0 + 1,
+        "manifest heights must follow physical block order"
+    );
+
+    let (ctx, epoch) = mock_for(&built);
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built, &artifacts);
+}
+
+#[test]
 fn test_apply_checkpoint_rejects_manifests_exceeding_epoch_cap() {
-    let built = build_epoch(EpochShape::ManifestsExceedEpochCap);
+    let built = build_epoch(
+        EpochPlan::new()
+            .block(BlockPlan::new().empty_manifests(MAX_SEALING_MANIFEST_COUNT as u32))
+            .block(BlockPlan::new().empty_manifests(1)),
+    );
     assert_eq!(
         built.manifests_by_height.len(),
         MAX_SEALING_MANIFEST_COUNT as usize + 1,
@@ -349,7 +414,7 @@ fn test_apply_checkpoint_rejects_manifests_exceeding_epoch_cap() {
 
 #[test]
 fn test_apply_checkpoint_missing_manifest_still_errors() {
-    let built = build_epoch(EpochShape::ManifestsInNonTerminalBlocks);
+    let built = build_epoch(EpochPlan::new().block(BlockPlan::new().empty_manifests(2)));
     let missing_height = built.manifests_by_height[1].0;
     let (mut ctx, epoch) = mock_for(&built);
     ctx.manifests.remove(&missing_height);
@@ -363,7 +428,7 @@ fn test_apply_checkpoint_missing_manifest_still_errors() {
 
 #[test]
 fn test_apply_checkpoint_inverted_l1_range_still_errors() {
-    let mut built = build_epoch(EpochShape::DepositManifestOnly);
+    let mut built = build_epoch(EpochPlan::new().terminal(BlockPlan::new().deposit_manifest()));
     let payload = built.checkpoint_payload.clone();
     let base_l1_height = built.prev_summary.new_l1().height();
     let inverted_tip = CheckpointTip::new(
@@ -388,7 +453,14 @@ fn test_apply_checkpoint_inverted_l1_range_still_errors() {
 
 #[test]
 fn test_apply_checkpoint_skips_non_snark_log_in_sidecar() {
-    let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
+    let built = build_epoch(
+        EpochPlan::new()
+            .block(BlockPlan::new().snark_updates(vec![
+                UpdateEffect::Transfer(1_000_000),
+                UpdateEffect::Transfer(1_000_000),
+            ]))
+            .terminal(BlockPlan::new().deposit_manifest()),
+    );
 
     let payload = built.checkpoint_payload.clone();
     let sidecar = payload.sidecar();
@@ -472,7 +544,14 @@ fn test_apply_checkpoint_skips_non_snark_log_in_sidecar() {
 fn test_apply_checkpoint_epoch_is_deterministic() {
     // MMR retry semantics rely on artifact-level determinism (stable index
     // values across two reconstructions of the same payload). Lock that down.
-    let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
+    let built = build_epoch(
+        EpochPlan::new()
+            .block(BlockPlan::new().snark_updates(vec![
+                UpdateEffect::Transfer(1_000_000),
+                UpdateEffect::Transfer(1_000_000),
+            ]))
+            .terminal(BlockPlan::new().deposit_manifest()),
+    );
     let (ctx, epoch) = mock_for(&built);
 
     let a = apply_checkpoint_epoch(&ctx, epoch).expect("first apply");
@@ -709,7 +788,7 @@ mod db_idempotency {
             build_checkpoint_indexing_writes, index_mmr_writes, prefill_l1_block_refs_mmr_blocking,
         },
         state::{AppliedEpochArtifacts, apply_checkpoint_epoch},
-        tests::fixture::EpochShape,
+        tests::fixture::{BlockPlan, EpochPlan, UpdateEffect},
     };
 
     #[derive(Debug, PartialEq)]
@@ -935,7 +1014,14 @@ mod db_idempotency {
     /// Running the three writes twice must yield identical db state.
     #[test]
     fn test_apply_checkpoint_writes_are_idempotent() {
-        let built = build_epoch(EpochShape::SnarkMultiUpdateAndDeposit);
+        let built = build_epoch(
+            EpochPlan::new()
+                .block(BlockPlan::new().snark_updates(vec![
+                    UpdateEffect::Transfer(1_000_000),
+                    UpdateEffect::Transfer(1_000_000),
+                ]))
+                .terminal(BlockPlan::new().deposit_manifest()),
+        );
         let (mock_ctx, epoch) = mock_for(&built);
         let artifacts = apply_checkpoint_epoch(&mock_ctx, epoch).expect("apply_checkpoint_epoch");
 
