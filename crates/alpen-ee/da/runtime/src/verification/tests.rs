@@ -2,24 +2,14 @@ use std::collections::BTreeMap;
 
 use alloy_primitives::{keccak256, Address, Bytes, U256};
 use alpen_ee_da_types::{
-    ArchivedDaWitness, BitcoinMerkleProof, BytecodePreimage, DaBlob, DaBlockWitness, DaParseError,
-    DaTxWitness, DaWitness, DedupWitness, EvmHeaderSummary, L1DaBlockInclusion, DA_BLOB_VERSION,
+    ArchivedDaWitness, BitcoinMerkleProof, BytecodePreimage, DaBlob, DaBlockWitness, DaTxWitness,
+    DaWitness, DedupWitness, EvmHeaderSummary, L1DaBlockInclusion, DA_BLOB_VERSION,
+    EE_DA_MAGIC_BYTES,
 };
 use alpen_reth_statediff::{
     apply_batch_state_diff_to_ethereum_state, AccountChange, AccountDiff, BatchStateDiff,
 };
-use bitcoin::{
-    absolute::LockTime,
-    consensus::serialize,
-    hashes::Hash as _,
-    key::UntweakedKeypair,
-    opcodes::all::OP_RETURN,
-    script,
-    secp256k1::SECP256K1,
-    taproot::{ControlBlock, LeafVersion, TaprootBuilder},
-    transaction::Version,
-    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
-};
+use bitcoin::{consensus::serialize, hashes::Hash as _, Transaction, Txid};
 use rkyv::rancor::Error as RkyvError;
 use rsp_mpt::EthereumState;
 use sha2::{Digest, Sha256};
@@ -28,14 +18,18 @@ use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ArchivedEePrivateInput, ChunkInput, EePrivateInput};
 use strata_ee_chain_types::{ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs};
 use strata_evm_ee::EvmPartialState;
-use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+use strata_l1_commit_reveal_fmt::{
+    test_utils::{build_commit_tx, build_reveal_input, build_reveal_tx},
+    CommitRevealParseError, MarkerTailArrayLengthError,
+};
+use strata_l1_txfmt::MagicBytes;
 use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefs, ProofState, Seqno, UpdateOutputs, UpdateProofPubParams,
 };
 
 use super::{verify_da_witness, DaVerificationError};
 
-const MAGIC: [u8; 4] = *b"ALPN";
+const REVEAL_KEY_SEED: u8 = 0x42;
 
 fn hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
     let mut pair = [0u8; 64];
@@ -46,34 +40,11 @@ fn hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
 }
 
 fn commit_tx() -> Transaction {
-    let mut payload = [0u8; 8];
-    payload[..4].copy_from_slice(&MAGIC);
-    payload[4..].copy_from_slice(&DA_BLOB_VERSION.to_be_bytes());
+    commit_tx_with_tail(&DA_BLOB_VERSION.to_be_bytes())
+}
 
-    let p2tr_script = {
-        let mut bytes = vec![0x51, 0x20];
-        bytes.extend_from_slice(&[0u8; 32]);
-        ScriptBuf::from_bytes(bytes)
-    };
-
-    Transaction {
-        version: Version::TWO,
-        lock_time: LockTime::ZERO,
-        input: Vec::new(),
-        output: vec![
-            TxOut {
-                value: Amount::ZERO,
-                script_pubkey: script::Builder::new()
-                    .push_opcode(OP_RETURN)
-                    .push_slice(payload)
-                    .into_script(),
-            },
-            TxOut {
-                value: Amount::from_sat(1_000),
-                script_pubkey: p2tr_script,
-            },
-        ],
-    }
+fn commit_tx_with_tail(tail: &[u8]) -> Transaction {
+    build_commit_tx(&MagicBytes::new(EE_DA_MAGIC_BYTES), tail, 1, &[])
 }
 
 fn reveal_tx(commit_txid: Txid, chunk: &[u8]) -> Transaction {
@@ -81,47 +52,12 @@ fn reveal_tx(commit_txid: Txid, chunk: &[u8]) -> Transaction {
 }
 
 fn reveal_tx_spending_vout(commit_txid: Txid, vout: u32, chunk: &[u8]) -> Transaction {
-    let secret_bytes = [0x42u8; 32];
-    let key_pair = UntweakedKeypair::from_seckey_slice(SECP256K1, &secret_bytes).unwrap();
-    let pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
-    let reveal_script = EnvelopeScriptBuilder::with_pubkey(&pubkey.serialize())
-        .unwrap()
-        .add_envelopes(&[chunk.to_vec()])
-        .unwrap()
-        .build_without_min_check()
-        .unwrap();
-
-    let spend_info = TaprootBuilder::new()
-        .add_leaf(0, reveal_script.clone())
-        .unwrap()
-        .finalize(SECP256K1, pubkey)
-        .unwrap();
-    let control_block: ControlBlock = spend_info
-        .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
-        .unwrap();
-
-    let mut witness = Witness::new();
-    witness.push([0u8; 64]);
-    witness.push(reveal_script.as_bytes());
-    witness.push(control_block.serialize());
-
-    Transaction {
-        version: Version::TWO,
-        lock_time: LockTime::ZERO,
-        input: vec![TxIn {
-            previous_output: OutPoint {
-                txid: commit_txid,
-                vout,
-            },
-            script_sig: ScriptBuf::new(),
-            sequence: Sequence::MAX,
-            witness,
-        }],
-        output: vec![TxOut {
-            value: Amount::from_sat(500),
-            script_pubkey: ScriptBuf::new(),
-        }],
-    }
+    build_reveal_tx(vec![build_reveal_input(
+        commit_txid,
+        vout,
+        Some(chunk),
+        REVEAL_KEY_SEED,
+    )])
 }
 
 fn archive_inputs(ee_input: &EePrivateInput, da_witness: &DaWitness) -> (Vec<u8>, Vec<u8>) {
@@ -534,7 +470,7 @@ fn verify_da_witness_rejects_missing_reveal() {
 
     assert!(matches!(
         err,
-        DaVerificationError::Parse(DaParseError::MissingReveal(1))
+        DaVerificationError::CommitReveal(CommitRevealParseError::MissingReveal { vout: 1 })
     ));
 }
 
@@ -575,7 +511,7 @@ fn verify_da_witness_rejects_duplicate_reveal() {
 
     assert!(matches!(
         err,
-        DaVerificationError::Parse(DaParseError::DuplicateReveal(1))
+        DaVerificationError::CommitReveal(CommitRevealParseError::DuplicateReveal { vout: 1 })
     ));
 }
 
@@ -617,7 +553,98 @@ fn verify_da_witness_rejects_reveal_spending_marker_vout() {
 
     assert!(matches!(
         err,
-        DaVerificationError::Parse(DaParseError::RevealSpendsMarker)
+        DaVerificationError::CommitReveal(CommitRevealParseError::RevealSpendsMarker)
+    ));
+}
+
+#[test]
+fn verify_da_witness_rejects_bad_commit_marker_tail_length() {
+    let (ee_input, _, pub_params, expected_pre_root) = valid_fixture();
+    let commit = commit_tx_with_tail(&[0xaa, 0xbb]);
+    let reveal = reveal_tx(commit.compute_txid(), &[0xaa]);
+    let commit_wtxid = commit.compute_wtxid().to_byte_array();
+    let reveal_wtxid = reveal.compute_wtxid().to_byte_array();
+    let wtxids_root = hash_pair(commit_wtxid, reveal_wtxid);
+    let block_hash = [0x46; 32];
+    let height = 44;
+    let da_witness = DaWitness::new(
+        vec![DaBlockWitness::new(
+            L1DaBlockInclusion::new(height, block_hash, wtxids_root),
+            vec![
+                DaTxWitness::new(
+                    serialize(&commit),
+                    BitcoinMerkleProof::new(vec![reveal_wtxid], 0),
+                ),
+                DaTxWitness::new(
+                    serialize(&reveal),
+                    BitcoinMerkleProof::new(vec![commit_wtxid], 1),
+                ),
+            ],
+        )],
+        DedupWitness::empty(),
+    );
+    let pub_params = rebuild_pub_params(
+        *pub_params.seq_no().inner(),
+        height,
+        block_hash,
+        wtxids_root,
+    );
+
+    let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
+        .expect_err("DA marker tail must carry a four-byte version");
+
+    assert!(matches!(
+        err,
+        DaVerificationError::CommitMarkerTailLength(MarkerTailArrayLengthError {
+            expected: 4,
+            found: 2,
+        })
+    ));
+}
+
+#[test]
+fn verify_da_witness_rejects_bad_commit_marker_version() {
+    let (ee_input, _, pub_params, expected_pre_root) = valid_fixture();
+    let bad_version = DA_BLOB_VERSION + 1;
+    let commit = commit_tx_with_tail(&bad_version.to_be_bytes());
+    let reveal = reveal_tx(commit.compute_txid(), &[0xaa]);
+    let commit_wtxid = commit.compute_wtxid().to_byte_array();
+    let reveal_wtxid = reveal.compute_wtxid().to_byte_array();
+    let wtxids_root = hash_pair(commit_wtxid, reveal_wtxid);
+    let block_hash = [0x47; 32];
+    let height = 45;
+    let da_witness = DaWitness::new(
+        vec![DaBlockWitness::new(
+            L1DaBlockInclusion::new(height, block_hash, wtxids_root),
+            vec![
+                DaTxWitness::new(
+                    serialize(&commit),
+                    BitcoinMerkleProof::new(vec![reveal_wtxid], 0),
+                ),
+                DaTxWitness::new(
+                    serialize(&reveal),
+                    BitcoinMerkleProof::new(vec![commit_wtxid], 1),
+                ),
+            ],
+        )],
+        DedupWitness::empty(),
+    );
+    let pub_params = rebuild_pub_params(
+        *pub_params.seq_no().inner(),
+        height,
+        block_hash,
+        wtxids_root,
+    );
+
+    let err = run_verify_da_witness(&ee_input, &da_witness, &pub_params, expected_pre_root)
+        .expect_err("DA marker version must match the codec version");
+
+    assert!(matches!(
+        err,
+        DaVerificationError::CommitVersionMismatch {
+            expected: DA_BLOB_VERSION,
+            actual,
+        } if actual == bad_version
     ));
 }
 

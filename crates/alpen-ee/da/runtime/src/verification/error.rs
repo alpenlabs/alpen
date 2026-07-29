@@ -1,8 +1,9 @@
 //! Error types for EE DA proof verification.
 
-use alpen_ee_da_types::{DaParseError, EvmHeaderSummary};
+use alpen_ee_da_types::EvmHeaderSummary;
 use alpen_reth_statediff::ReconstructError;
 use strata_codec::CodecError;
+use strata_l1_commit_reveal_fmt::{CommitRevealParseError, MarkerTailArrayLengthError};
 
 /// Result type used throughout DA verification. Defaults the success type to
 /// `()` for the common "verify and return nothing" case; pass a type parameter
@@ -34,13 +35,17 @@ pub enum DaVerificationError {
         computed: [u8; 32],
     },
 
-    /// Errors from commit/reveal extraction shared with the host builder.
-    #[error("DA parse failure ({0})")]
-    Parse(#[from] DaParseError),
-    #[error("DA commit OP_RETURN magic mismatch (expected {expected:?}, got {actual:?})")]
-    CommitMagicMismatch { expected: [u8; 4], actual: [u8; 4] },
     #[error("DA commit OP_RETURN version mismatch (expected {expected}, got {actual})")]
     CommitVersionMismatch { expected: u32, actual: u32 },
+    /// Commit/reveal extraction via the shared SPS-53 parser: strict leaves,
+    /// single-commit-set selection (`MissingCommit`/`MultipleCommits`), marker
+    /// matching against the configured magic.
+    #[error("DA commit/reveal parse failure ({0})")]
+    CommitReveal(#[from] CommitRevealParseError),
+    /// The commit marker's tail (bytes after the magic) is not the 4-byte
+    /// big-endian version the DA codec expects.
+    #[error("DA commit marker tail is not a 4-byte version ({0})")]
+    CommitMarkerTailLength(#[from] MarkerTailArrayLengthError),
 
     // Pre-state witness. "Partial pre-state" is the `EvmPartialState` sparse-MPT
     // witness: only the trie nodes the batch touches, enough to re-apply the diff

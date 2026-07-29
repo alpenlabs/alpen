@@ -36,6 +36,8 @@ strata-codec.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-chain-types.workspace = true
 strata-evm-ee.workspace = true
+strata-l1-commit-reveal-fmt.workspace = true
+strata-l1-txfmt.workspace = true
 strata-identifiers = { workspace = true, optional = true }
 strata-primitives = { workspace = true, optional = true }
 strata-snark-acct-types.workspace = true
@@ -45,4 +47,4 @@ thiserror.workspace = true
 rkyv.workspace = true
 rsp-mpt.workspace = true
 sha2.workspace = true
-strata-l1-envelope-fmt.workspace = true
+strata-l1-commit-reveal-fmt = { workspace = true, features = ["test-utils"] }
