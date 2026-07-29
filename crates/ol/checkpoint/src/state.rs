@@ -416,6 +416,39 @@ mod tests {
         state
     }
 
+    /// Processes an epoch with a checkpoint worker and returns its stored payload.
+    fn process_epoch_and_load_payload<C: CheckpointWorkerContext>(
+        storage: &strata_storage::NodeStorage,
+        ctx: C,
+        commitment: EpochCommitment,
+    ) -> CheckpointPayload {
+        let mut state = OLCheckpointServiceState::new(ctx);
+        state.initialize();
+        state
+            .handle_complete_epoch(commitment)
+            .expect("build checkpoint");
+        storage
+            .ol_checkpoint()
+            .get_checkpoint_payload_entry_blocking(commitment)
+            .expect("get checkpoint")
+            .expect("checkpoint should be stored")
+    }
+
+    /// Decodes withdrawal intents emitted by the bridge gateway in a sidecar.
+    fn decode_withdrawal_logs(payload: &CheckpointPayload) -> Vec<SimpleWithdrawalIntentLogData> {
+        payload
+            .sidecar()
+            .ol_logs()
+            .iter()
+            .filter(|log| log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
+            .map(|log| {
+                OLLog::new(log.account_serial(), log.payload().to_vec())
+                    .try_into_log::<SimpleWithdrawalIntentLogData>()
+                    .expect("bridge-gateway log must decode as a withdrawal intent")
+            })
+            .collect()
+    }
+
     fn set_history_base(storage: &strata_storage::NodeStorage, epoch: Epoch) -> EpochCommitment {
         let commitment = EpochCommitment::new(epoch, u64::from(epoch), OLBlockId::null());
         storage
@@ -623,17 +656,7 @@ mod tests {
                 .expect("insert summary");
 
             let ctx = TestCheckpointContext::new(Arc::clone(&storage), state_diff, ol_logs);
-            let mut state = OLCheckpointServiceState::new(ctx);
-            state.initialize();
-
-            state
-                .handle_complete_epoch(commitment)
-                .expect("build checkpoint");
-
-            let stored = checkpoint_mgr
-                .get_checkpoint_payload_entry_blocking(commitment)
-                .expect("get checkpoint")
-                .expect("checkpoint should be stored");
+            let stored = process_epoch_and_load_payload(&storage, ctx, commitment);
             let sidecar_terminal_subset = stored.sidecar().terminal_header_complement();
             let stored_tip = stored.new_tip();
 
@@ -765,30 +788,11 @@ mod tests {
             .expect("insert summary");
 
         let ctx = CheckpointWorkerContextImpl::new(Arc::clone(&storage), BridgeParams::default());
-        let mut state = OLCheckpointServiceState::new(ctx);
-        state.initialize();
-        state
-            .handle_complete_epoch(commitment)
-            .expect("build checkpoint");
-
-        let stored = checkpoint_mgr
-            .get_checkpoint_payload_entry_blocking(commitment)
-            .expect("get checkpoint")
-            .expect("checkpoint should be stored");
+        let stored = process_epoch_and_load_payload(&storage, ctx, commitment);
 
         // The sidecar must carry the withdrawal-intent log, and it must decode
         // to the amount and destination the update emitted.
-        let withdrawals = stored
-            .sidecar()
-            .ol_logs()
-            .iter()
-            .filter(|log| log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
-            .map(|log| {
-                OLLog::new(log.account_serial(), log.payload().to_vec())
-                    .try_into_log::<SimpleWithdrawalIntentLogData>()
-                    .expect("bridge-gateway log must decode as a withdrawal intent")
-            })
-            .collect::<Vec<_>>();
+        let withdrawals = decode_withdrawal_logs(&stored);
         assert_eq!(withdrawals.len(), 1, "must have only one withdrawal log");
         let withdrawal = withdrawals
             .first()
