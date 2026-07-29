@@ -19,17 +19,22 @@ use strata_primitives::bitcoin_bosd::Descriptor;
 use crate::{
     alpen::AlpenWallet,
     constants::SATS_TO_WEI,
+    ee::EePreset,
     link::{OnchainObject, PrettyPrint},
     seed::Seed,
     settings::Settings,
     signet::SignetWallet,
 };
 
-/// Withdraws BTC from Alpen to signet. The amount must be a positive
-/// multiple of the bridge denomination configured in params.
+/// Withdraws BTC from Alpen to signet
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "withdraw")]
 pub struct WithdrawArgs {
+    /// source Alpen EE account preset: "ALPN" (uses alpen_endpoint) or "NPAL"
+    /// (uses nepal_endpoint). defaults to "ALPN" when omitted.
+    #[argh(positional)]
+    preset: Option<EePreset>,
+
     /// the signet address to send funds to. defaults to a new internal wallet address
     #[argh(positional)]
     address: Option<String>,
@@ -42,6 +47,27 @@ pub struct WithdrawArgs {
     /// selected operator index for withdrawal assignment
     #[argh(option)]
     operator: Option<u32>,
+}
+
+/// Resolves the Alpen EE RPC endpoint for the selected preset.
+///
+/// `ALPN` (or no preset) uses `alpen_endpoint`; `NPAL` uses `nepal_endpoint`,
+/// erroring if it is not configured.
+fn resolve_endpoint<'a>(
+    preset: Option<EePreset>,
+    alpen_endpoint: &'a str,
+    nepal_endpoint: Option<&'a str>,
+) -> Result<&'a str, DisplayedError> {
+    match preset.unwrap_or(EePreset::Alpn) {
+        EePreset::Alpn => Ok(alpen_endpoint),
+        EePreset::Npal => nepal_endpoint.ok_or_else(|| {
+            DisplayedError::UserError(
+                "NPAL preset selected but 'nepal_endpoint' is not set in the config file"
+                    .to_string(),
+                Box::new(()),
+            )
+        }),
+    }
 }
 
 pub async fn withdraw(
@@ -70,7 +96,12 @@ pub async fn withdraw(
     l1w.sync()
         .await
         .internal_error("Failed to sync signet wallet")?;
-    let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
+    let endpoint = resolve_endpoint(
+        args.preset,
+        &settings.alpen_endpoint,
+        settings.nepal_endpoint.as_deref(),
+    )?;
+    let l2w = AlpenWallet::new(&seed, endpoint)
         .user_error("Invalid Alpen endpoint URL. Check the configuration")?;
 
     let address = match address {
@@ -148,6 +179,38 @@ mod tests {
 
     fn params() -> BridgeParams {
         BridgeParams::new(100_000_000, Some(1_000_000_000)).unwrap()
+    }
+
+    const ALPN_URL: &str = "https://alpn.example";
+    const NPAL_URL: &str = "https://npal.example";
+
+    #[test]
+    fn endpoint_defaults_to_alpen() {
+        let got = resolve_endpoint(None, ALPN_URL, Some(NPAL_URL)).unwrap();
+        assert_eq!(got, ALPN_URL);
+    }
+
+    #[test]
+    fn endpoint_alpn_uses_alpen() {
+        let got = resolve_endpoint(Some(EePreset::Alpn), ALPN_URL, Some(NPAL_URL)).unwrap();
+        assert_eq!(got, ALPN_URL);
+    }
+
+    #[test]
+    fn endpoint_npal_uses_nepal() {
+        let got = resolve_endpoint(Some(EePreset::Npal), ALPN_URL, Some(NPAL_URL)).unwrap();
+        assert_eq!(got, NPAL_URL);
+    }
+
+    #[test]
+    fn endpoint_npal_without_config_errors() {
+        assert!(resolve_endpoint(Some(EePreset::Npal), ALPN_URL, None).is_err());
+    }
+
+    #[test]
+    fn endpoint_alpn_without_nepal_ok() {
+        let got = resolve_endpoint(Some(EePreset::Alpn), ALPN_URL, None).unwrap();
+        assert_eq!(got, ALPN_URL);
     }
 
     #[test]

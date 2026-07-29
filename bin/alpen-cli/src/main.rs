@@ -3,6 +3,7 @@
 pub mod alpen;
 pub mod cmd;
 pub mod constants;
+pub mod ee;
 mod link;
 pub mod net_type;
 pub mod recovery;

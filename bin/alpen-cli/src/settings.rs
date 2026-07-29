@@ -45,8 +45,11 @@ pub struct SettingsFromFile {
     pub bitcoind_rpc_cookie: Option<PathBuf>,
     /// Bitcoind RPC endpoint.
     pub bitcoind_rpc_endpoint: Option<String>,
-    /// Alpen network RPC endpoint.
+    /// Alpen network RPC endpoint (the `ALPN` EE account).
     pub alpen_endpoint: String,
+    /// NPAL Alpen EE network RPC endpoint (the `NPAL` EE account). Optional;
+    /// only required when targeting the `NPAL` preset.
+    pub nepal_endpoint: Option<String>,
     /// Faucet service endpoint.
     pub faucet_endpoint: String,
     /// Mempool explorer endpoint.
@@ -100,6 +103,8 @@ pub struct SettingsFromFile {
 pub struct Settings {
     pub esplora: Option<String>,
     pub alpen_endpoint: String,
+    /// RPC endpoint for the `NPAL` Alpen EE account, if configured.
+    pub nepal_endpoint: Option<String>,
     pub data_dir: PathBuf,
     pub faucet_endpoint: String,
     pub bridge_musig2_pubkey: XOnlyPublicKey,
@@ -197,6 +202,7 @@ impl Settings {
         Ok(Settings {
             esplora: from_file.esplora,
             alpen_endpoint: from_file.alpen_endpoint,
+            nepal_endpoint: from_file.nepal_endpoint,
             data_dir: proj_dirs.data_dir().to_owned(),
             faucet_endpoint: from_file.faucet_endpoint,
             bridge_musig2_pubkey,
@@ -284,6 +290,7 @@ mod tests {
             bitcoind_rpc_pw = "pass"
             bitcoind_rpc_endpoint = "http://127.0.0.1:38332"
             alpen_endpoint = "https://rpc.testnet.alpenlabs.io"
+            nepal_endpoint = "https://rpc-npal.testnet.alpenlabs.io"
             faucet_endpoint = "https://faucet-api.testnet.alpenlabs.io"
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
@@ -311,6 +318,7 @@ mod tests {
         // Assert important fields survived round-trip
         assert_eq!(parsed.esplora, reparsed.esplora);
         assert_eq!(parsed.alpen_endpoint, reparsed.alpen_endpoint);
+        assert_eq!(parsed.nepal_endpoint, reparsed.nepal_endpoint);
         assert_eq!(parsed.faucet_endpoint, reparsed.faucet_endpoint);
         assert_eq!(parsed.bridge_pubkey.0, reparsed.bridge_pubkey.0);
         assert_eq!(parsed.network, reparsed.network);

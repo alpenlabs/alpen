@@ -27,46 +27,14 @@ use strata_primitives::crypto::even_kp;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::{ALPN_EE_ACCT_SERIAL, NPAL_EE_ACCT_SERIAL, SIGNET_BLOCK_TIME},
+    constants::SIGNET_BLOCK_TIME,
+    ee::EePreset,
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,
     settings::Settings,
     signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
-
-/// Named Alpen EE account presets selectable on the `deposit` command.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum EePreset {
-    /// The default Alpen EE account (serial [`ALPN_EE_ACCT_SERIAL`]).
-    Alpn,
-    /// The secondary Alpen EE account (serial [`NPAL_EE_ACCT_SERIAL`]).
-    Npal,
-}
-
-impl EePreset {
-    /// Returns the [`AccountSerial`] backing this preset.
-    fn serial(self) -> AccountSerial {
-        match self {
-            EePreset::Alpn => ALPN_EE_ACCT_SERIAL,
-            EePreset::Npal => NPAL_EE_ACCT_SERIAL,
-        }
-    }
-}
-
-impl FromStr for EePreset {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_uppercase().as_str() {
-            "ALPN" => Ok(EePreset::Alpn),
-            "NPAL" => Ok(EePreset::Npal),
-            other => Err(format!(
-                "unknown EE preset '{other}', expected 'ALPN' or 'NPAL'"
-            )),
-        }
-    }
-}
 
 /// Resolves the destination [`AccountSerial`] from the optional `preset`
 /// positional and the `--serial` flag.
@@ -88,7 +56,8 @@ fn resolve_account_serial(
     }
 }
 
-/// Deposits 10 BTC from signet into Alpen
+/// Deposits one bridge denomination of BTC plus the bridge fee from signet into Alpen.
+/// The bridge denomination is configured in the `config.toml` file.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "deposit")]
 pub struct DepositArgs {
@@ -227,7 +196,7 @@ pub async fn deposit(
         })
         .transpose()?;
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
-    let drt_amount = settings.deposit_amount + settings.bridge_fee;
+    let drt_amount = Amount::from_sat(settings.bridge_params.denomination()) + settings.bridge_fee;
     println!(
         "Bridging {} to Alpen address {}",
         drt_amount.to_string().green(),
@@ -340,6 +309,7 @@ mod tests {
     use strata_test_utils_btcio::BtcioTestHarness;
 
     use super::*;
+    use crate::constants::{ALPN_EE_ACCT_SERIAL, NPAL_EE_ACCT_SERIAL};
 
     /// Populate the wallet with on-chain data by replaying blocks from the corepc node.
     fn sync_wallet_from_node(wallet: &mut Wallet, harness: &BtcioTestHarness) {
@@ -358,15 +328,6 @@ mod tests {
                 .apply_block(&block, height as u32)
                 .expect("apply block");
         }
-    }
-
-    #[test]
-    fn ee_preset_from_str() {
-        assert_eq!(EePreset::from_str("ALPN"), Ok(EePreset::Alpn));
-        assert_eq!(EePreset::from_str("alpn"), Ok(EePreset::Alpn));
-        assert_eq!(EePreset::from_str("NPAL"), Ok(EePreset::Npal));
-        assert_eq!(EePreset::from_str("npal"), Ok(EePreset::Npal));
-        assert!(EePreset::from_str("nope").is_err());
     }
 
     #[test]
