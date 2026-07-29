@@ -86,9 +86,13 @@ class TestCheckpointSyncNode(BaseTest):
             timeout=120,
         )
 
-        check_top_level_state_equivalent(
-            sequencer.get_sync_status(), checkpoint_node.get_sync_status()
+        seq_status, node_status = wait_until_with_value(
+            lambda: (sequencer.get_sync_status(), checkpoint_node.get_sync_status()),
+            lambda statuses: statuses[0]["finalized"] == statuses[1]["finalized"],
+            error_with="sequencer and checkpoint-sync finalized commitments did not converge",
+            timeout=120,
         )
+        check_top_level_state_equivalent(seq_status, node_status)
 
         # Each active epoch's reconstructed account summary must be identical to
         # the sequencer's, including the non-empty update inputs.
@@ -104,7 +108,10 @@ class TestCheckpointSyncNode(BaseTest):
 def check_top_level_state_equivalent(
     seq_status: ChainSyncStatus, node_status: ChainSyncStatus
 ):
-    """Checks CSS's top-level state at the shared finalized checkpoint."""
+    """Checks CSS's top-level state at the shared finalized checkpoint.
+
+    CSS publishes confirmed, latest, and finalized together at the terminal tip.
+    """
     assert node_status["finalized"] == seq_status["finalized"], (
         "checkpoint-sync finalized commitment differs from sequencer: "
         f"css={node_status['finalized']} sequencer={seq_status['finalized']}"

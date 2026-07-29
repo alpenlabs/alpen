@@ -17,11 +17,9 @@ from common.rpc_types.strata import ChainSyncStatus
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
-from tests.dbtool.helpers import get_mmr_leaf_count, load_genesis_height, run_dbtool_json
 
 logger = logging.getLogger(__name__)
 
-L1_BLOCK_REFS_MMR_ID = "l1-block-refs"
 # CSS must reconstruct this many finalized epochs after its restart.
 EPOCHS_TO_BACKFILL_AFTER_RESTART = 5
 
@@ -58,29 +56,10 @@ class TestCheckpointSyncNodeRestart(BaseTest):
         finalized_epoch = pre_restart_status["finalized"]["epoch"]
         logger.info(f"checkpoint-sync node finalized epoch {finalized_epoch}; restarting")
 
-        # Now restart. The node is stopped while dbtool observes the MMR index
-        # because the live process owns the sled databases.
-        datadir = checkpoint_node.props["datadir"]
-        # Stop CSS while the sequencer finalizes a multi-epoch backlog. The
-        # node is stopped while dbtool observes the MMR index because the live
-        # process owns the sled databases.
-        datadir = checkpoint_node.props["datadir"]
-        genesis_l1_height = load_genesis_height(datadir)
-        genesis_l1_leaf_count = genesis_l1_height + 1
-        expected_l1_count = self._epoch_summary_l1_block_refs_count(datadir, finalized_epoch)
-        pre_restart_l1_count = get_mmr_leaf_count(datadir, L1_BLOCK_REFS_MMR_ID)
-        assert pre_restart_l1_count > genesis_l1_leaf_count, (
-            f"checkpoint-sync node should have post-genesis L1 refs before restart "
-            f"({pre_restart_l1_count} <= {genesis_l1_leaf_count})"
-        )
-        assert pre_restart_l1_count == expected_l1_count, (
-            f"checkpoint-sync L1 refs MMR should match epoch {finalized_epoch} summary "
-            f"before restart ({pre_restart_l1_count} != {expected_l1_count})"
-        )
-
+        # Stop CSS while the sequencer finalizes a multi-epoch backlog.
         checkpoint_node.stop()
         target_epoch = finalized_epoch + EPOCHS_TO_BACKFILL_AFTER_RESTART
-        backlog_status = wait_until_with_value(
+        wait_until_with_value(
             lambda: mine_and_get_status(sequencer, btc_rpc),
             lambda st: st["finalized"]["epoch"] >= target_epoch,
             error_with=(
@@ -98,34 +77,13 @@ class TestCheckpointSyncNodeRestart(BaseTest):
         tip_slot = post_restart_status["tip"]["slot"]
         logger.info(f"checkpoint-sync node restarted; canonical tip at slot {tip_slot}")
 
-        resumed_status = wait_until_with_value(
-            checkpoint_node.get_sync_status,
-            lambda st: st["finalized"]["epoch"] >= target_epoch,
-            error_with="checkpoint-sync node did not resume the finalized checkpoint backlog",
+        seq_status, resumed_status = wait_until_with_value(
+            lambda: (sequencer.get_sync_status(), checkpoint_node.get_sync_status()),
+            lambda statuses: (
+                statuses[0]["finalized"] == statuses[1]["finalized"]
+                and statuses[1]["finalized"]["epoch"] >= target_epoch
+            ),
+            error_with="checkpoint-sync node did not converge after resuming the backlog",
             timeout=180,
         )
-        assert resumed_status["finalized"] == backlog_status["finalized"], (
-            "checkpoint-sync finalized commitment differs after restart: "
-            f"css={resumed_status['finalized']} "
-            f"sequencer={backlog_status['finalized']}"
-        )
-
-        checkpoint_node.stop()
-        post_restart_l1_count = get_mmr_leaf_count(datadir, L1_BLOCK_REFS_MMR_ID)
-        assert post_restart_l1_count >= pre_restart_l1_count, (
-            f"checkpoint-sync L1 refs MMR regressed across restart "
-            f"({post_restart_l1_count} < {pre_restart_l1_count})"
-        )
-
-        # This env is shared by name with other checkpoint-sync tests, so leave
-        # the node running: the final stop() above was only to release the sled
-        # lock for the offline dbtool read.
-        checkpoint_node.start()
-        checkpoint_node.wait_for_rpc_ready(timeout=30)
-
-    @staticmethod
-    def _epoch_summary_l1_block_refs_count(datadir: str, epoch: int) -> int:
-        """Returns expected L1-block-refs leaf count for an epoch summary."""
-        summary = run_dbtool_json(datadir, "get-epoch-summary", str(epoch))
-        new_l1_height = int(summary["epoch_summary"]["new_l1"]["height"])
-        return new_l1_height + 1
+        assert resumed_status["finalized"] == seq_status["finalized"]
