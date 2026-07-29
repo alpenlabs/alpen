@@ -22,9 +22,14 @@ use crate::{
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "recover")]
 pub struct RecoverArgs {
-    /// override signet fee rate in sat/vbyte. must be >=1
+    /// override signet fee rate in sat/vbyte; the effective rate is at least 1
     #[argh(option)]
     fee_rate: Option<u64>,
+}
+
+/// Returns whether an already-claimed descriptor's cleanup grace window has elapsed.
+fn cleanup_delay_elapsed(recover_at: u32, current_height: u32) -> bool {
+    current_height >= recover_at.saturating_add(RECOVERY_DESC_CLEANUP_DELAY)
 }
 
 pub async fn recover(
@@ -81,7 +86,7 @@ pub async fn recover(
         let needs_recovery = recovery_wallet.balance().confirmed > Amount::ZERO;
 
         if !needs_recovery {
-            if key.recover_at + RECOVERY_DESC_CLEANUP_DELAY > current_height {
+            if cleanup_delay_elapsed(key.recover_at, current_height) {
                 descriptor_file
                     .remove(&key)
                     .internal_error("Failed to remove old descriptor")?;
@@ -155,4 +160,48 @@ pub async fn recover(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cleanup_delay_not_elapsed_keeps_descriptor() {
+        let recover_at = 1_000;
+
+        assert!(!cleanup_delay_elapsed(recover_at, recover_at));
+        assert!(!cleanup_delay_elapsed(
+            recover_at,
+            recover_at + RECOVERY_DESC_CLEANUP_DELAY - 1
+        ));
+    }
+
+    #[test]
+    fn test_cleanup_delay_exactly_elapsed_removes_descriptor() {
+        let recover_at = 1_000;
+
+        assert!(cleanup_delay_elapsed(
+            recover_at,
+            recover_at + RECOVERY_DESC_CLEANUP_DELAY
+        ));
+    }
+
+    #[test]
+    fn test_cleanup_delay_well_past_removes_descriptor() {
+        let recover_at = 1_000;
+
+        assert!(cleanup_delay_elapsed(
+            recover_at,
+            recover_at + RECOVERY_DESC_CLEANUP_DELAY + 1_000
+        ));
+    }
+
+    #[test]
+    fn test_cleanup_delay_saturates_near_max_height() {
+        let recover_at = u32::MAX;
+
+        assert!(cleanup_delay_elapsed(recover_at, u32::MAX));
+        assert!(!cleanup_delay_elapsed(recover_at, u32::MAX - 1));
+    }
 }

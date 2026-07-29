@@ -55,7 +55,7 @@ pub(crate) fn get_broadcaster_summary(
     for idx in 0..next_idx {
         if let Some(tx_entry) = broadcast_db
             .get_tx_entry(idx)
-            .internal_error(format!("Failed to get tx entry at index {}", idx))?
+            .internal_error(format!("Failed to get tx entry at index {idx}"))?
         {
             total_tx_entries += 1;
             match tx_entry.status {
@@ -95,7 +95,7 @@ pub(crate) fn get_broadcaster_tx(
         }
         Err(e) => {
             // Check if this is a "does not exist" error, which should be a user error
-            let error_msg = format!("{}", e);
+            let error_msg = format!("{e}");
             if error_msg.contains("Entry does not exist") || error_msg.contains("does not exist") {
                 return Err(DisplayedError::UserError(
                     format!("No tx entry found at index {}", args.index),
@@ -125,7 +125,7 @@ pub(crate) fn get_broadcaster_tx(
             }
             Err(e) => {
                 // Check if this is a "does not exist" error, which should be a user error
-                let error_msg = format!("{}", e);
+                let error_msg = format!("{e}");
                 if error_msg.contains("Entry does not exist")
                     || error_msg.contains("does not exist")
                 {

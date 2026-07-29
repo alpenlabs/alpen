@@ -72,7 +72,7 @@ pub(crate) fn init_ol_genesis(
 fn prefill_l1_block_refs_mmr(ol_params: &OLParams, storage: &NodeStorage) -> Result<()> {
     let target_count = ol_params.last_l1_block.height() as u64 + 1;
     let handle = storage.mmr_index().get_handle(MmrId::L1BlockRefs);
-    let current_count = handle.get_num_leaves_blocking()?;
+    let current_count = handle.get_leaf_count_blocking()?;
 
     for _ in current_count..target_count {
         handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;

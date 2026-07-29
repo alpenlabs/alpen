@@ -10,6 +10,7 @@ use crate::l1::L1Database;
 use crate::l1_broadcast::L1BroadcastDatabase;
 use crate::l1_writer::L1WriterDatabase;
 use crate::mempool::MempoolDatabase;
+use crate::mmr_index::MmrIndexDatabase;
 use crate::ol_block::OLBlockDatabase;
 use crate::ol_checkpoint::OLCheckpointDatabase;
 use crate::ol_state::OLStateDatabase;
@@ -33,4 +34,5 @@ pub trait DatabaseBackend: Send + Sync {
     fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase>;
     fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
     fn ol_state_indexing_db(&self) -> Arc<impl OLStateIndexingDatabase>;
+    fn mmr_index_db(&self) -> Arc<impl MmrIndexDatabase>;
 }

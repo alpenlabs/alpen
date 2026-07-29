@@ -12,7 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 alpen-reth-primitives.workspace = true
-strata-asm-params.workspace = true
 strata-asm-proto-bridge-v1-txs.workspace = true
 strata-bridge-params.workspace = true
 strata-cli-common.workspace = true
@@ -40,15 +39,14 @@ bdk_wallet = { workspace = true, features = ["rusqlite"] }
 bip39 = { version = "2.0.0", features = ["all-languages"] }
 chrono.workspace = true
 colored = "3.1.1"
-config = { version = "0.14.0", default-features = false, features = ["toml"] }
+config = { version = "0.15.24", default-features = false, features = ["toml"] }
 dialoguer = "0.12.0"
 directories = "5.0.1"
-indicatif = { version = "0.17.8", features = ["improved_unicode", "tokio"] }
+indicatif = { version = "0.18.4", features = ["improved_unicode", "tokio"] }
 make_buf.workspace = true
 rand_core.workspace = true
 reqwest.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 sha2 = { workspace = true, features = ["loongarch64_asm"] }
 shrex.workspace = true
 sled.workspace = true
@@ -72,6 +70,7 @@ keyring = { version = "3.3.0", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-test-utils-btcio.workspace = true
 toml.workspace = true
 

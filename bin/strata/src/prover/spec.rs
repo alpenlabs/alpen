@@ -88,11 +88,10 @@ fn fetch_input_blocking(
     let target_epoch = summary.epoch();
 
     // Get the parent block header (last block of the previous epoch).
-    let parent_block = storage
+    let parent = storage
         .ol_block()
-        .get_block_data_blocking(*prev_terminal.blkid())?
+        .get_ol_header_blocking(*prev_terminal.blkid())?
         .ok_or(ProverError::BlockNotFound(prev_terminal.slot()))?;
-    let parent = parent_block.header().clone();
 
     // Get the OL state snapshot at the previous terminal block.
     let start_state = storage

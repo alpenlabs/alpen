@@ -1,67 +1,49 @@
 use alpen_ee_common::EnginePayload;
+use alpen_reth_evm::SubjectTransferIntent;
 use bitcoin_bosd::Descriptor;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
-use strata_codec::encode_to_vec;
-use strata_ee_acct_types::DecodedEeMessageData;
+use strata_codec::{encode_to_vec, VarVec};
+use strata_ee_acct_types::{PendingInputEntry, SubjTransferMsgData, SUBJ_TRANSFER_MSG_TYPE};
 use strata_ee_chain_types::{
     ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs, OutputMessage,
-    SubjectDepositData,
 };
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 use strata_ol_bridge_types::OperatorSelection;
 use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
-use strata_snark_acct_runtime::InputMessage;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
-/// Builds [`ExecInputs`] from parsed input messages.
-///
-/// `Deposit` and `SubjTransfer` messages both mint value into an EE subject;
-/// other message types are logged and ignored.
-// TODO(STR-2583) convert this to do it based on extracting pending inputs from the
-// current EE account inner state
-pub(crate) fn build_block_inputs(
-    parsed_inputs: Vec<InputMessage<DecodedEeMessageData>>,
-) -> ExecInputs {
+/// Builds [`ExecInputs`] from pending input entries that were executed in the current block.
+pub(crate) fn build_block_inputs(pending_inputs: Vec<PendingInputEntry>) -> ExecInputs {
     let mut inputs = ExecInputs::new_empty();
-    for msg in parsed_inputs {
-        let value = msg.meta().value();
-        match msg.message() {
-            Some(DecodedEeMessageData::Deposit(deposit_msg_data)) => {
-                let dest_subject = *deposit_msg_data.dest_subject();
+    for pending_input in pending_inputs {
+        match pending_input {
+            PendingInputEntry::Deposit(subj_deposit_data) => {
                 info!(
-                    ?dest_subject,
-                    amount_sat = value.to_sat(),
+                    dest_subject = ?subj_deposit_data.dest,
+                    amount_sat = subj_deposit_data.value.to_sat(),
                     "accepted deposit message as EE input",
                 );
-                inputs.add_subject_deposit(SubjectDepositData::new(dest_subject, value));
-            }
-            Some(DecodedEeMessageData::SubjTransfer(transfer_msg_data)) => {
-                let dest_subject = *transfer_msg_data.dest_subject();
-                info!(
-                    ?dest_subject,
-                    amount_sat = value.to_sat(),
-                    "accepted subject transfer message as EE input",
-                );
-                inputs.add_subject_deposit(SubjectDepositData::new(dest_subject, value));
-            }
-            Some(DecodedEeMessageData::Commit(_)) => {
-                // no need to warn on this
-            }
-            None => {
-                // Unknown message, skip
+                inputs.add_subject_deposit(subj_deposit_data);
             }
         }
     }
     inputs
 }
 
-/// Builds [`ExecOutputs`] from withdrawal intents in the payload.
+/// Builds [`ExecOutputs`] from output intents in the payload.
 pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
     bridge_gateway_account_id: AccountId,
     payload: &TPayload,
 ) -> ExecOutputs {
     let mut outputs = ExecOutputs::new_empty();
-    for withdrawal_intent in payload.withdrawal_intents() {
+    let withdrawal_intents = payload.withdrawal_intents();
+    if !withdrawal_intents.is_empty() {
+        info!(
+            withdrawal_intent_count = withdrawal_intents.len(),
+            "building withdrawal output messages from payload intents",
+        );
+    }
+    for withdrawal_intent in withdrawal_intents {
         let dest_desc_len = withdrawal_intent.destination.to_bytes().len();
         let Some(msg_payload) = create_withdrawal_init_message_payload(
             withdrawal_intent.destination.clone(),
@@ -86,13 +68,46 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
         );
         outputs.add_message(OutputMessage::new(bridge_gateway_account_id, msg_payload));
     }
+
+    let subject_transfer_intents = payload.subject_transfer_intents();
+    if !subject_transfer_intents.is_empty() {
+        info!(
+            subject_transfer_intent_count = subject_transfer_intents.len(),
+            "building subject-transfer output messages from payload intents",
+        );
+    }
+    for transfer_intent in subject_transfer_intents {
+        let Some(msg_payload) = create_subject_transfer_message_payload(transfer_intent) else {
+            warn!(
+                amount_sat = transfer_intent.amt,
+                source_subject = ?transfer_intent.source_subject,
+                dest_account = ?transfer_intent.dest_account,
+                dest_subject = ?transfer_intent.dest_subject,
+                data_len = transfer_intent.data.len(),
+                "skipping subject transfer: failed to create subject-transfer message",
+            );
+            continue;
+        };
+        debug!(
+            amount_sat = transfer_intent.amt,
+            source_subject = ?transfer_intent.source_subject,
+            dest_account = ?transfer_intent.dest_account,
+            dest_subject = ?transfer_intent.dest_subject,
+            data_len = transfer_intent.data.len(),
+            "created subject-transfer output message",
+        );
+        outputs.add_message(OutputMessage::new(
+            transfer_intent.dest_account,
+            msg_payload,
+        ));
+    }
     outputs
 }
 
 /// Builds the block package based on execution inputs and results.
 pub(crate) fn build_block_package<TPayload: EnginePayload>(
     bridge_gateway_account_id: AccountId,
-    parsed_inputs: Vec<InputMessage<DecodedEeMessageData>>,
+    pending_inputs: Vec<PendingInputEntry>,
     payload: &TPayload,
 ) -> ExecBlockPackage {
     // 1. build block commitment
@@ -102,7 +117,7 @@ pub(crate) fn build_block_package<TPayload: EnginePayload>(
     let commitment = ExecBlockCommitment::new(exec_blkid, raw_block_encoded_hash);
 
     // 2. build block inputs
-    let inputs = build_block_inputs(parsed_inputs);
+    let inputs = build_block_inputs(pending_inputs);
 
     // 3. build block outputs
     let outputs = build_block_outputs(bridge_gateway_account_id, payload);
@@ -128,68 +143,63 @@ fn create_withdrawal_init_message_payload(
     MsgPayload::from_bytes(value, payload_data).ok()
 }
 
+fn create_subject_transfer_message_payload(intent: &SubjectTransferIntent) -> Option<MsgPayload> {
+    let transfer_data = VarVec::from_vec(intent.data.clone())?;
+    let transfer_msg =
+        SubjTransferMsgData::new(intent.source_subject, intent.dest_subject, transfer_data);
+    let body = encode_to_vec(&transfer_msg).expect("encode subject transfer data");
+
+    let msg = OwnedMsg::new(SUBJ_TRANSFER_MSG_TYPE, body).expect("create message");
+    let payload_data = msg.to_vec();
+
+    MsgPayload::from_bytes(BitcoinAmount::from_sat(intent.amt), payload_data).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use strata_acct_types::SubjectId;
-    use strata_codec::VarVec;
-    use strata_ee_acct_types::{CommitMsgData, DepositMsgData, SubjTransferMsgData};
-    use strata_snark_acct_runtime::MsgMeta;
+    use strata_ee_acct_types::DecodedEeMessageData;
+    use strata_ee_chain_types::SubjectDepositData;
+    use strata_msg_fmt::MsgRef;
 
     use super::*;
 
-    fn make_deposit_msg(dest_bytes: [u8; 32], sats: u64) -> InputMessage<DecodedEeMessageData> {
-        InputMessage::from_msg(
-            MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(sats)),
-            DecodedEeMessageData::Deposit(DepositMsgData::new(SubjectId::new(dest_bytes))),
-        )
-    }
-
-    fn make_subj_transfer_msg(sats: u64) -> InputMessage<DecodedEeMessageData> {
-        InputMessage::from_msg(
-            MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(sats)),
-            DecodedEeMessageData::SubjTransfer(SubjTransferMsgData::new(
-                SubjectId::new([0xaa; 32]),
-                SubjectId::new([0xbb; 32]),
-                VarVec::new(),
-            )),
-        )
-    }
-
-    fn make_commit_msg() -> InputMessage<DecodedEeMessageData> {
-        InputMessage::from_msg(
-            MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(0)),
-            DecodedEeMessageData::Commit(CommitMsgData::new([0xcc; 32])),
-        )
+    fn make_deposit(dest_bytes: [u8; 32], sats: u64) -> PendingInputEntry {
+        PendingInputEntry::Deposit(SubjectDepositData::new(
+            SubjectId::new(dest_bytes),
+            BitcoinAmount::from_sat(sats),
+        ))
     }
 
     #[test]
-    fn build_block_inputs_accepts_minting_messages() {
-        // Mix of deposit, transfer, and commit messages.
+    fn build_block_inputs_converts_pending_deposits() {
         let inputs = vec![
-            make_deposit_msg([0x01; 32], 1000),
-            make_subj_transfer_msg(500),
-            make_deposit_msg([0x02; 32], 2000),
-            make_commit_msg(), // Should be ignored
-            make_deposit_msg([0x03; 32], 3000),
+            make_deposit([0x01; 32], 1000),
+            make_deposit([0x02; 32], 2000),
+            make_deposit([0x03; 32], 3000),
         ];
 
         let block_inputs = build_block_inputs(inputs);
 
-        // Deposits and subject transfers mint into EE subjects.
-        assert_eq!(block_inputs.total_inputs(), 4);
+        assert_eq!(block_inputs.total_inputs(), 3);
         let deposits = block_inputs.subject_deposits();
         assert_eq!(deposits[0].dest(), SubjectId::new([0x01; 32]));
         assert_eq!(deposits[0].value(), BitcoinAmount::from_sat(1000));
-        assert_eq!(deposits[1].dest(), SubjectId::new([0xbb; 32]));
-        assert_eq!(deposits[1].value(), BitcoinAmount::from_sat(500));
-        assert_eq!(deposits[2].dest(), SubjectId::new([0x02; 32]));
-        assert_eq!(deposits[3].dest(), SubjectId::new([0x03; 32]));
+        assert_eq!(deposits[1].dest(), SubjectId::new([0x02; 32]));
+        assert_eq!(deposits[1].value(), BitcoinAmount::from_sat(2000));
+        assert_eq!(deposits[2].dest(), SubjectId::new([0x03; 32]));
+        assert_eq!(deposits[2].value(), BitcoinAmount::from_sat(3000));
     }
 
     #[test]
-    fn build_block_inputs_preserves_deposit_value_from_msg_meta() {
-        // The value comes from msg.value() (the meta), not from the deposit message itself
-        let inputs = vec![make_deposit_msg([0xaa; 32], 12345)];
+    fn build_block_inputs_empty() {
+        let block_inputs = build_block_inputs(Vec::new());
+        assert_eq!(block_inputs.total_inputs(), 0);
+    }
+
+    #[test]
+    fn build_block_inputs_preserves_deposit_value() {
+        let inputs = vec![make_deposit([0xaa; 32], 12345)];
 
         let block_inputs = build_block_inputs(inputs);
 
@@ -198,5 +208,37 @@ mod tests {
             block_inputs.subject_deposits()[0].value(),
             BitcoinAmount::from_sat(12345)
         );
+    }
+
+    #[test]
+    fn subject_transfer_payload_uses_subject_transfer_message_envelope() {
+        let source_subject = SubjectId::new([0x11; 32]);
+        let dest_subject = SubjectId::new([0x22; 32]);
+        let transfer_data = vec![0xaa, 0xbb];
+        let amount = 123_456;
+        let intent = SubjectTransferIntent {
+            amt: amount,
+            source_subject,
+            dest_account: AccountId::new([0x33; 32]),
+            dest_subject,
+            data: transfer_data.clone(),
+        };
+
+        let payload =
+            create_subject_transfer_message_payload(&intent).expect("subject-transfer payload");
+
+        assert_eq!(payload.value(), BitcoinAmount::from_sat(amount));
+
+        let msg = MsgRef::try_from(payload.data()).expect("message envelope");
+        assert_eq!(msg.ty(), SUBJ_TRANSFER_MSG_TYPE);
+
+        let DecodedEeMessageData::SubjTransfer(transfer) =
+            DecodedEeMessageData::decode_raw(payload.data()).expect("decode subject transfer")
+        else {
+            panic!("expected subject transfer");
+        };
+        assert_eq!(*transfer.source_subject(), source_subject);
+        assert_eq!(*transfer.dest_subject(), dest_subject);
+        assert_eq!(transfer.data_buf(), transfer_data.as_slice());
     }
 }

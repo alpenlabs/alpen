@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use proptest::collection::vec;
 use proptest::prelude::*;
 use strata_db_types::mmr_index::MmrIndexDatabase;
@@ -333,6 +335,38 @@ pub fn test_mmr_index_leaf_count_cas_conflict_rolls_back(
     assert_eq!(db.get_node(mmr_id, pos).expect("node after conflict"), None);
 }
 
+pub fn proptest_mmr_index_list_mmr_ids(
+    db: &impl MmrIndexDatabase,
+    leaf_count_ids: Vec<Vec<u8>>,
+    node_only_ids: Vec<Vec<u8>>,
+    pos: NodePos,
+    hash: Hash,
+) {
+    let expected: BTreeSet<Vec<u8>> = leaf_count_ids.into_iter().collect();
+    let node_only: BTreeSet<Vec<u8>> = node_only_ids
+        .into_iter()
+        .filter(|mmr_id| !expected.contains(mmr_id))
+        .collect();
+
+    let mut setup = MmrBatchWrite::default();
+    for (idx, mmr_id) in expected.iter().enumerate() {
+        setup.entry(mmr_id.clone()).set_leaf_count(idx as u64);
+    }
+    for mmr_id in &node_only {
+        setup.entry(mmr_id.clone()).put_node(pos, hash);
+    }
+    db.apply_update(setup).expect("setup leaf counts");
+
+    let mut listed = db.list_mmr_ids().expect("list mmr ids");
+    listed.sort();
+    let expected = expected.into_iter().collect::<Vec<_>>();
+
+    assert_eq!(listed, expected);
+    for mmr_id in node_only {
+        assert!(!listed.contains(&mmr_id));
+    }
+}
+
 pub fn test_mmr_index_preimage_range_empty(db: &impl MmrIndexDatabase, mmr_id: Vec<u8>) {
     assert_eq!(
         db.get_preimage_range(mmr_id, LeafPos::new(3), LeafPos::new(3))
@@ -550,6 +584,29 @@ macro_rules! mmr_index_db_tests {
                 let db = $setup_expr;
                 $crate::mmr_index_tests::test_mmr_index_leaf_count_cas_conflict_rolls_back(
                     &db, mmr_id, pos, hash
+                );
+            }
+
+            #[test]
+            fn proptest_mmr_index_list_mmr_ids_contract(
+                leaf_count_ids in proptest::collection::vec(
+                    $crate::mmr_index_tests::raw_mmr_id_strategy(),
+                    0..8,
+                ),
+                node_only_ids in proptest::collection::vec(
+                    $crate::mmr_index_tests::raw_mmr_id_strategy(),
+                    0..8,
+                ),
+                pos in $crate::mmr_index_tests::node_pos_strategy(),
+                hash in $crate::mmr_index_tests::hash_strategy(),
+            ) {
+                let db = $setup_expr;
+                $crate::mmr_index_tests::proptest_mmr_index_list_mmr_ids(
+                    &db,
+                    leaf_count_ids,
+                    node_only_ids,
+                    pos,
+                    hash,
                 );
             }
 

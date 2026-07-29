@@ -1,10 +1,11 @@
 //! Deposit-withdraw tests for end-to-end workflows.
 
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount};
+use strata_bridge_params::DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN;
 use strata_identifiers::SubjectId;
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, OwnedMsg};
-use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_chain_types::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::DEPOSIT_MSG_TYPE_ID;
 
 use crate::test_utils::*;
@@ -50,7 +51,7 @@ fn test_snark_account_deposit_and_withdrawal() {
     let deposit_msg_proof = inbox_tracker.add_message(&deposit_msg);
 
     let withdrawal_amount = BitcoinAmount::from_sat(100_000_000); // Withdraw exactly 1 BTC.
-    let withdrawal_dest_desc = b"bc1qexample".to_vec();
+    let withdrawal_dest_desc = make_p2wpkh_bosd_descriptor(0x14);
     let withdrawal_payload = make_withdrawal_payload(withdrawal_dest_desc.clone());
 
     let output = fixture
@@ -161,6 +162,87 @@ fn test_bridge_gateway_non_denomination_withdrawal_is_silently_dropped() {
     assert_eq!(
         fixture.account_balance(snark_acct_id),
         BitcoinAmount::from_sat(50_000_000)
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1
+    );
+}
+
+#[test]
+fn test_bridge_gateway_oversized_withdrawal_descriptor_is_silently_dropped() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .execute_genesis();
+
+    let mut oversized_descriptor = vec![0u8; DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN as usize + 1];
+    oversized_descriptor[0] = 0x00;
+
+    let limbo_before = fixture.state().limbo_funds();
+    let output = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.output_message(
+                BRIDGE_GATEWAY_ACCT_ID,
+                BitcoinAmount::from_sat(100_000_000),
+                make_withdrawal_payload(oversized_descriptor),
+            )
+            .with_state_root(make_state_root(2))
+        })
+        .execute_with_outputs();
+
+    assert_no_bridge_gateway_logs(&output);
+    assert_eq!(
+        fixture.state().limbo_funds(),
+        BitcoinAmount::from_sat(limbo_before.to_sat() + 100_000_000),
+        "oversized withdrawal descriptor should sweep value into limbo"
+    );
+    assert_eq!(
+        fixture.account_balance(snark_acct_id),
+        BitcoinAmount::zero()
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1
+    );
+}
+
+#[test]
+fn test_bridge_gateway_malformed_withdrawal_descriptor_is_silently_dropped() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .execute_genesis();
+
+    let limbo_before = fixture.state().limbo_funds();
+    let output = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.output_message(
+                BRIDGE_GATEWAY_ACCT_ID,
+                BitcoinAmount::from_sat(100_000_000),
+                make_withdrawal_payload(vec![0x03, 0x01, 0x02, 0x03]),
+            )
+            .with_state_root(make_state_root(2))
+        })
+        .execute_with_outputs();
+
+    assert_no_bridge_gateway_logs(&output);
+    assert_eq!(
+        fixture.state().limbo_funds(),
+        BitcoinAmount::from_sat(limbo_before.to_sat() + 100_000_000),
+        "malformed withdrawal descriptor should sweep value into limbo"
+    );
+    assert_eq!(
+        fixture.account_balance(snark_acct_id),
+        BitcoinAmount::zero()
     );
     assert_eq!(
         *fixture.expect_snark_account(snark_acct_id).seqno().inner(),

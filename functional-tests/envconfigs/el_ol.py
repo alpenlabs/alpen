@@ -41,6 +41,7 @@ class EeOLEnv(flexitest.EnvConfig):
         admin_confirmation_depth: int | None = None,
         fund_test_cli_wallet: bool = False,
         ol_block_time_ms: int | None = None,
+        l1_reorg_safe_depth: int | None = None,
         dev_track_latest_epoch: bool = False,
         batch_sealing_block_count: int = 10,
     ):
@@ -65,6 +66,7 @@ class EeOLEnv(flexitest.EnvConfig):
             fund_test_cli_wallet=fund_test_cli_wallet,
             admin_confirmation_depth=admin_confirmation_depth,
             ol_block_time_ms=ol_block_time_ms,
+            l1_reorg_safe_depth=l1_reorg_safe_depth,
         )
 
         if pure_discovery and not enable_discovery:
@@ -78,6 +80,71 @@ class EeOLEnv(flexitest.EnvConfig):
         # Get and pass ol endpoint
         seq: StrataService = strata_services[ServiceType.Strata]
         bitcoin: BitcoinService = strata_services[ServiceType.Bitcoin]
+        sequencer_node = self.strata_config.sequencer_node
+        assert sequencer_node is not None
+
+        alpen_services = AlpenClientEnv.get_services(
+            ectx,
+            self.alpen_env_params,
+            bitcoin_service=bitcoin,
+            ol_endpoint=seq.props["rpc_url"],
+            ol_submit_endpoint=seq.props["submit_rpc_url"],
+            ol_submit_token=seq.props["submit_rpc_token"],
+            ee_params_path=sequencer_node.params.ee_params,
+        )
+
+        services = {**alpen_services, **strata_services}
+        return flexitest.LiveEnv(services)
+
+
+class TwoEeOLEnv(flexitest.EnvConfig):
+    """One Strata OL sequencer with two independent Alpen EE sequencers."""
+
+    def __init__(
+        self,
+        pre_generate_blocks: int = 110,
+        seal_epoch_slots: int = 5,
+        ol_block_time_ms: int = 1000,
+        dev_track_latest_epoch: bool = True,
+        batch_sealing_block_count: int = 5,
+    ):
+        self.alpen_env_params = AlpenClientEnvParams(
+            fullnode_count=0,
+            enable_discovery=False,
+            pure_discovery=False,
+            mesh_bootnodes=False,
+            enable_l1_da=True,
+            batch_sealing_block_count=batch_sealing_block_count,
+            dev_track_latest_epoch=dev_track_latest_epoch,
+            ee_account_id=ALPEN_ACCOUNT_ID,
+            sequencer_service_key=ServiceType.AlpenSequencer,
+            sequencer_instance_name="alpen_sequencer",
+        )
+        self.nepal_env_params = AlpenClientEnvParams(
+            fullnode_count=0,
+            enable_discovery=False,
+            pure_discovery=False,
+            mesh_bootnodes=False,
+            enable_l1_da=True,
+            batch_sealing_block_count=batch_sealing_block_count,
+            dev_track_latest_epoch=dev_track_latest_epoch,
+            ee_account_id=NEPAL_ACCOUNT_ID,
+            sequencer_service_key=NEPAL_SEQUENCER_SERVICE,
+            sequencer_instance_name=NEPAL_SEQUENCER_SERVICE,
+        )
+        self.strata_config = StrataEnvConfig(
+            pre_generate_blocks=pre_generate_blocks,
+            epoch_sealing=EpochSealingConfig.new_fixed_slot(seal_epoch_slots),
+            fund_test_cli_wallet=True,
+            ol_block_time_ms=ol_block_time_ms,
+            genesis_account_copies={NEPAL_ACCOUNT_ID: ALPEN_ACCOUNT_ID},
+        )
+
+    def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
+        strata_services = self.strata_config._get_services(ectx)
+
+        seq: StrataService = strata_services[ServiceType.Strata]
+        bitcoin: BitcoinService = strata_services[ServiceType.Bitcoin]
 
         alpen_services = AlpenClientEnv.get_services(
             ectx,
@@ -87,8 +154,16 @@ class EeOLEnv(flexitest.EnvConfig):
             ol_submit_endpoint=seq.props["submit_rpc_url"],
             ol_submit_token=seq.props["submit_rpc_token"],
         )
+        nepal_services = AlpenClientEnv.get_services(
+            ectx,
+            self.nepal_env_params,
+            bitcoin_service=bitcoin,
+            ol_endpoint=seq.props["rpc_url"],
+            ol_submit_endpoint=seq.props["submit_rpc_url"],
+            ol_submit_token=seq.props["submit_rpc_token"],
+        )
 
-        services = {**alpen_services, **strata_services}
+        services = {**alpen_services, **nepal_services, **strata_services}
         return flexitest.LiveEnv(services)
 
 

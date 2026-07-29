@@ -148,6 +148,11 @@ impl MsgPayload {
         &self.data
     }
 
+    /// Returns the SSZ-bounded message data list.
+    pub fn payload_data(&self) -> &MsgPayloadData {
+        &self.data
+    }
+
     /// Wraps the payload into a [`SentMessage`] to some dest account.
     pub fn into_sent(self, dest: AccountId) -> SentMessage {
         SentMessage::new(dest, self)

@@ -13,3 +13,10 @@ pub const SCHNORR_PRECOMPILE_ADDRESS: Address =
 
 /// Custom PrecompileId for the Schnorr precompile contract.
 pub const SCHNORR_PRECOMPILE_PRECOMPILE_ID: &str = "alpen-schnorr-precompile";
+
+/// The address for the inter-EE subject-transfer precompile contract.
+pub const SUBJECT_TRANSFER_PRECOMPILE_ADDRESS: Address =
+    address!("5400000000000000000000000000000000000003");
+
+/// Custom PrecompileId for the inter-EE subject-transfer precompile contract.
+pub const SUBJECT_TRANSFER_PRECOMPILE_ID: &str = "alpen-subject-transfer-precompile";

@@ -67,7 +67,7 @@
           "027098a1e38159f586536fabcb5537cdbb1454b1464c5c4a1bfd48de6c794d28c4",
           "0288610184701307eef5dbb81ce1d974bc6940d21601a9656b565dab485321a03f"
         ],
-        "denomination": 100000000,
+        "denomination": 200000000,
         "assignment_duration": 64,
         "operator_fee": 150000,
         "recovery_delay": 6,

@@ -27,9 +27,17 @@ strata-datatool \
     --genesis-l1-height 100 \
     --output l1-anchor.json
 
+# Generate the EE params consumed by Alpen and referenced by OL params generation.
+strata-datatool gen-ee-params \
+    --alpen-chain-config alpen-chain.json \
+    --bridge-denomination-sats 200000000 \
+    --max-withdrawal-descriptor-len 81 \
+    -o ee-params.json
+
 # Generate the OL params (provides the genesis OL block id consumed by ASM params).
 strata-datatool gen-ol-params \
     --l1-anchor-file l1-anchor.json \
+    --ee-params ee-params.json \
     -o ol-params.json
 
 # Generate the ASM params from the operator/sequencer pubkeys and the OL params.
@@ -41,8 +49,50 @@ strata-datatool gen-asm-params \
     --ol-params ol-params.json \
     --safe-harbour-address <p2tr-bosd-descriptor> \
     --l1-anchor-file l1-anchor.json \
-    -o asm-params.json
+    -o asm-params.json \
+    --cli-config alpen-cli-profile.toml
 ```
+
+## Alpen CLI network profile
+
+`gen-asm-params --cli-config <path>` additionally emits the network fields the
+`alpen` wallet CLI reads from its `config.toml`, derived from the same inputs
+as the ASM and OL params so they cannot drift apart:
+
+- `network` — the L1 network from the genesis anchor
+- `magic_bytes` — the SPS-50 magic bytes
+- `bridge_pubkey` — the aggregated MuSig2 key of the bridge operator set
+- `bridge_denomination_sats` — the bridge denomination, used for both deposits
+  and withdrawals
+- `recovery_delay` — the deposit-request reclaim delay in Bitcoin blocks
+- `max_withdrawal_amount_sats` and `max_withdrawal_descriptor_len` — the OL's
+  withdrawal limits, from `--ol-params`
+
+Deposits are locked at the ASM bridge denomination while withdrawals are
+validated by the OL STF against the OL bridge denomination, so the two are one
+network value: `--deposit-sats` defaults to the `--ol-params` denomination and
+`gen-asm-params` rejects a value that differs from it. Withdrawals are batched
+in multiples of that denomination, capped at `max_withdrawal_amount_sats` when
+the OL params set a cap. For uncapped networks, the generated snippet omits
+`max_withdrawal_amount_sats`.
+
+Merge the generated snippet into the CLI's `config.toml`, replacing any of
+these keys the file already defines — TOML rejects duplicate keys, so
+appending the snippet to a config that already has `bridge_pubkey` fails to
+parse. The command refuses to overwrite an existing file, so don't point it
+at a live config.
+
+These values are consensus-critical: hand-editing them can produce deposit
+transactions the bridge won't recognize, or withdrawals the OL rejects.
+
+### Migrating CLI configs from the ASM params file
+
+The wallet CLI previously read these values from an `asm-params.json` file
+resolved via the `STRATA_NETWORK_PARAMS` environment variable or the
+`asm_params_path` config key; both are removed. Existing deployments must add
+the fields above to `config.toml`. The former
+`withdrawal_denomination_sats` key is replaced by `bridge_denomination_sats`,
+which now drives both deposits and withdrawals.
 
 ## Envvars
 

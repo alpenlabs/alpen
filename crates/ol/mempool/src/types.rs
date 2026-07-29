@@ -3,8 +3,8 @@
 use std::{cmp::Ordering, collections::BTreeMap};
 
 use strata_acct_types::AccountId;
-pub use strata_ol_chain_types_new::OLTransaction;
-use strata_ol_chain_types_new::TransactionPayload;
+pub use strata_ol_chain_types::OLTransaction;
+use strata_ol_chain_types::TransactionPayload;
 
 use crate::error::OLMempoolError;
 
@@ -407,7 +407,7 @@ mod tests {
         test_runner::TestRunner,
     };
     use strata_acct_types::AccountId;
-    use strata_ol_chain_types_new::{
+    use strata_ol_chain_types::{
         OLTransaction, OLTransactionData, TransactionPayload, TxProofs, test_utils,
     };
 

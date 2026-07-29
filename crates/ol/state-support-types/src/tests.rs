@@ -716,13 +716,15 @@ impl IStateAccessorMut for TestState {
 
     fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
         let amt = coin.amt();
-        let new = self
-            .limbo_funds
-            .checked_add(amt)
-            .ok_or(StateError::LimboFundsOverflow {
+        let Some(new) = self.limbo_funds.checked_add(amt) else {
+            // Defuse the coin before returning so the mock upholds the same
+            // consume-always contract as the real layers (dropping it panics).
+            coin.safely_consume_unchecked();
+            return Err(StateError::LimboFundsOverflow {
                 cur: self.limbo_funds,
                 add: amt,
-            })?;
+            });
+        };
         self.limbo_funds = new;
         coin.safely_consume_unchecked();
         Ok(())

@@ -1,7 +1,7 @@
 //! Test utilities for state-support-types tests.
 
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
-use strata_identifiers::{AccountSerial, L1BlockCommitment};
+use strata_identifiers::AccountSerial;
 use strata_ledger_types::{
     ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState,
 };
@@ -13,7 +13,7 @@ use crate::memory_state_layer::MemoryStateBaseLayer;
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> OLState {
-    let params = OLParams::new_empty(L1BlockCommitment::default());
+    let params = OLParams::default();
     OLState::from_genesis_params(&params).expect("valid params")
 }
 

@@ -6,10 +6,15 @@
 use std::sync::Arc;
 
 use alloy_consensus::Block as AlloyBlock;
-use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
+use alpen_reth_evm::{
+    evm::AlpenEvmFactory, extract_subject_transfer_intents, extract_withdrawal_intents,
+};
 use reth_chainspec::ChainSpec;
 use reth_consensus_common::validation::validate_body_against_header;
-use reth_evm::execute::{BasicBlockExecutor, BlockExecutionOutput, Executor};
+use reth_evm::{
+    ConfigureEvm,
+    execute::{BasicBlockExecutor, BlockExecutionOutput, Executor},
+};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::{
     EthPrimitives, Receipt as EthereumReceipt, RecoveredBlock, TransactionSigned,
@@ -17,9 +22,10 @@ use reth_primitives::{
 use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayload};
-use strata_codec::encode_to_vec;
+use strata_codec::{VarVec, encode_to_vec};
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecPayload, ExecutionEnvironment,
+    SUBJ_TRANSFER_MSG_TYPE, SubjTransferMsgData,
 };
 use strata_ee_chain_types::{ExecInputs, ExecOutputs, OutputMessage};
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
@@ -66,6 +72,29 @@ fn convert_withdrawal_intents_to_messages(
             .expect("withdrawal message payload bytes must fit within SSZ max length");
         let message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload);
         outputs.add_message(message);
+    }
+}
+
+/// Converts subject-transfer intents to messages sent to destination EE accounts.
+fn convert_subject_transfer_intents_to_messages(
+    subject_transfer_intents: Vec<alpen_reth_primitives::SubjectTransferIntent>,
+    outputs: &mut ExecOutputs,
+) {
+    for intent in subject_transfer_intents {
+        let Some(transfer_data) = VarVec::from_vec(intent.data) else {
+            continue;
+        };
+        let transfer_msg =
+            SubjTransferMsgData::new(intent.source_subject, intent.dest_subject, transfer_data);
+        let msg_body = encode_to_vec(&transfer_msg).expect("encoding failed");
+        let msg = OwnedMsg::new(SUBJ_TRANSFER_MSG_TYPE, msg_body).expect("create message");
+        let msg_data = msg.to_vec();
+
+        let Ok(payload) = MsgPayload::from_bytes(BitcoinAmount::from_sat(intent.amt), msg_data)
+        else {
+            continue;
+        };
+        outputs.add_message(OutputMessage::new(intent.dest_account, payload));
     }
 }
 
@@ -135,10 +164,17 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         let block_output =
             EvmBlockOutput::from_header_and_output(header_intrinsics, &execution_output);
 
-        // Step 5: Collect withdrawal intents.
+        // Step 5: Collect output intents.
         let transactions = block.into_transactions();
-        let withdrawal_intents =
-            extract_withdrawal_intents(&transactions, &execution_output.receipts).collect();
+        let withdrawal_intents = extract_withdrawal_intents(
+            &transactions,
+            &execution_output.receipts,
+            self.evm_config.evm_factory().bridge_params(),
+        )
+        .map_err(|_| EnvError::InvalidBlock)?;
+        let subject_transfer_intents =
+            extract_subject_transfer_intents(&transactions, &execution_output.receipts)
+                .map_err(|_| EnvError::InvalidBlock)?;
 
         // Step 6: Convert execution outcome to HashedPostState.
         let block_number = header_intrinsics.number();
@@ -147,9 +183,10 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // Step 7: Split state writes from execution-derived header commitments.
         let write_batch = EvmWriteBatch::new(hashed_post_state);
 
-        // Step 8: Create ExecOutputs with withdrawal intent messages.
+        // Step 8: Create ExecOutputs with execution-derived output messages.
         let mut outputs = ExecOutputs::new_empty();
         convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
+        convert_subject_transfer_intents_to_messages(subject_transfer_intents, &mut outputs);
 
         Ok(ExecBlockOutput::new(write_batch, block_output, outputs))
     }
@@ -206,7 +243,10 @@ mod tests {
     use revm_primitives::{B256, alloy_primitives::Bloom};
     use rsp_client_executor::io::EthClientExecutorInput;
     use serde::Deserialize;
-    use strata_ee_acct_types::{ExecBlock, ExecHeader};
+    use strata_acct_types::AccountId;
+    use strata_ee_acct_types::{
+        DecodedEeMessageData, ExecBlock, ExecHeader, SUBJ_TRANSFER_MSG_TYPE,
+    };
     use strata_msg_fmt::{Msg, MsgRef};
     use strata_ol_bridge_types::OperatorSelection;
     use strata_ol_msg_types::OLMessageExt;
@@ -261,6 +301,48 @@ mod tests {
             OperatorSelection::any().raw()
         );
         assert_eq!(withdrawal.dest_desc(), destination_bytes.as_slice());
+    }
+
+    #[test]
+    fn subject_transfer_messages_are_sent_to_requested_account_with_msg_envelope() {
+        let source_subject = strata_acct_types::SubjectId::new([0x11; 32]);
+        let dest_account = AccountId::new([0x22; 32]);
+        let dest_subject = strata_acct_types::SubjectId::new([0x33; 32]);
+        let transfer_sats = 123_456;
+        let transfer_data = vec![0xaa, 0xbb];
+
+        let intent = alpen_reth_primitives::SubjectTransferIntent {
+            amt: transfer_sats,
+            source_subject,
+            dest_account,
+            dest_subject,
+            data: transfer_data.clone(),
+        };
+
+        let mut outputs = ExecOutputs::new_empty();
+        convert_subject_transfer_intents_to_messages(vec![intent], &mut outputs);
+
+        let [message] = outputs.output_messages() else {
+            panic!("expected exactly one subject-transfer output message");
+        };
+        assert_eq!(message.dest(), dest_account);
+        assert_eq!(
+            message.payload().value(),
+            BitcoinAmount::from_sat(transfer_sats)
+        );
+
+        let msg = MsgRef::try_from(message.payload().data()).expect("message envelope");
+        assert_eq!(msg.ty(), SUBJ_TRANSFER_MSG_TYPE);
+
+        let DecodedEeMessageData::SubjTransfer(transfer) =
+            DecodedEeMessageData::decode_raw(message.payload().data())
+                .expect("decode subject-transfer payload")
+        else {
+            panic!("expected subject-transfer message");
+        };
+        assert_eq!(*transfer.source_subject(), source_subject);
+        assert_eq!(*transfer.dest_subject(), dest_subject);
+        assert_eq!(transfer.data_buf(), transfer_data.as_slice());
     }
 
     #[test]

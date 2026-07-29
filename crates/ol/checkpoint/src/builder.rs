@@ -23,7 +23,7 @@ use crate::{
 /// Builder for constructing and launching an OL checkpoint service.
 pub struct OLCheckpointBuilder {
     storage: Option<Arc<NodeStorage>>,
-    bridge_params: BridgeParams,
+    bridge_params: Option<BridgeParams>,
     epoch_summary_rx: Option<watch::Receiver<Option<EpochCommitment>>>,
     prover: Option<ProverConfig>,
 }
@@ -33,7 +33,7 @@ impl OLCheckpointBuilder {
     pub fn new() -> Self {
         Self {
             storage: None,
-            bridge_params: BridgeParams::default(),
+            bridge_params: None,
             epoch_summary_rx: None,
             prover: None,
         }
@@ -42,7 +42,13 @@ impl OLCheckpointBuilder {
     /// Set storage and withdrawal params from [`NodeContext`].
     pub fn with_node_context(mut self, nodectx: &NodeContext) -> Self {
         self.storage = Some(nodectx.storage().clone());
-        self.bridge_params = *nodectx.ol_params().bridge_params();
+        self.bridge_params = Some(*nodectx.ol_params().bridge_params());
+        self
+    }
+
+    /// Set the bridge denomination and withdrawal policy.
+    pub fn with_bridge_params(mut self, bridge_params: BridgeParams) -> Self {
+        self.bridge_params = Some(bridge_params);
         self
     }
 
@@ -73,6 +79,9 @@ impl OLCheckpointBuilder {
         let epoch_summary_rx = self
             .epoch_summary_rx
             .context("missing required dependency: epoch_summary_rx")?;
+        let bridge_params = self
+            .bridge_params
+            .context("missing required dependency: bridge_params")?;
 
         let runtime_handle = executor.handle().clone();
         let input = TokioWatchInput::from_receiver(epoch_summary_rx);
@@ -80,9 +89,9 @@ impl OLCheckpointBuilder {
 
         let ctx = match self.prover {
             Some(prover) => {
-                CheckpointWorkerContextImpl::with_prover(storage, self.bridge_params, prover)
+                CheckpointWorkerContextImpl::with_prover(storage, bridge_params, prover)
             }
-            None => CheckpointWorkerContextImpl::new(storage, self.bridge_params),
+            None => CheckpointWorkerContextImpl::new(storage, bridge_params),
         };
         let state = OLCheckpointServiceState::new(ctx);
         let builder = ServiceBuilder::<OLCheckpointService<CheckpointWorkerContextImpl>, _>::new()

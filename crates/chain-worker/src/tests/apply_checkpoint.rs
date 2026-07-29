@@ -27,7 +27,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
+use strata_ol_chain_types::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
 
@@ -137,6 +137,10 @@ impl ChainWorkerContext for MockChainWorkerContext {
         _commitment: OLBlockCommitment,
         _state: OLState,
     ) -> WorkerResult<()> {
+        unimplemented!("not used by apply_checkpoint_epoch")
+    }
+
+    fn store_terminal_header(&self, _id: OLBlockId, _header: OLBlockHeader) -> WorkerResult<()> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
@@ -390,7 +394,15 @@ fn test_apply_checkpoint_epoch_is_deterministic() {
     let a = apply_checkpoint_epoch(&ctx, epoch).expect("first apply");
     let b = apply_checkpoint_epoch(&ctx, epoch).expect("second apply");
 
-    assert_eq!(a.terminal, b.terminal, "terminal commitment must be stable");
+    assert_eq!(
+        a.terminal(),
+        b.terminal(),
+        "terminal commitment must be stable"
+    );
+    assert_eq!(
+        a.terminal_header, b.terminal_header,
+        "terminal header must be stable"
+    );
     assert_eq!(a.summary, b.summary, "epoch summary must be stable");
     assert_eq!(
         a.output.computed_state_root(),
@@ -419,6 +431,15 @@ fn test_apply_checkpoint_missing_payload() {
 /// Asserts the checkpoint-reconstructed artifacts match the block-sync run.
 fn assert_consistent(built: &BuiltEpoch, artifacts: &AppliedEpochArtifacts) {
     // Tier 1 — byte-identical: state root, toplevel state, summary.
+    assert!(
+        artifacts.terminal_header.is_terminal(),
+        "reconstructed header must be terminal"
+    );
+    assert_eq!(
+        artifacts.terminal_header.compute_blkid(),
+        *artifacts.summary.terminal().blkid(),
+        "reconstructed header must match the summary terminal blkid"
+    );
     assert_eq!(
         artifacts.output.computed_state_root(),
         &built.block_sync_state_root,
@@ -553,79 +574,118 @@ fn group_snark_by_account(writes: &IndexerWrites) -> HashMap<AccountId, Vec<Snar
 }
 
 // =============================================================================
-// Three-write composite idempotency test
+// Four-write composite idempotency test
 // =============================================================================
 //
-// `ChainWorkerServiceState::apply_checkpoint` performs three writes in sequence
-// (store_toplevel_state, apply_epoch_indexing, store_summary) which need to be idempotent because
-// right now we don't have atomic writes throughout multiple db managers.
+// `ChainWorkerServiceState::apply_checkpoint` performs four writes in sequence
+// (store_toplevel_state, apply_epoch_indexing, store_terminal_header, store_summary) which need to
+// be idempotent because right now we don't have atomic writes throughout multiple db managers.
 
 mod db_idempotency {
     use std::{collections::BTreeSet, sync::Arc};
 
+    use ssz::Encode;
     use strata_db_store_sled::{
-        MmrIndexDb, SledDbConfig, ol_checkpoint::db::OLCheckpointDBSled,
+        MmrIndexDb, SledDbConfig, ol::db::OLBlockDBSled, ol_checkpoint::db::OLCheckpointDBSled,
         ol_state::db::OLStateDBSled, ol_state_index::db::OLStateIndexingDBSled,
     };
     use strata_db_types::{
         errors::DbError,
         ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
     };
-    use strata_identifiers::AccountId;
+    use strata_identifiers::{AccountId, Hash};
     use strata_ledger_types::IStateAccessor;
-    use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_support_types::{L1BlockRecordWrite, MemoryStateBaseLayer};
     use strata_storage::{
-        MmrId, MmrIndexManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager,
+        MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
+        OLStateManager,
     };
     use typed_sled::SledDb;
 
     use super::{EpochCommitment, build_epoch, mock_for};
     use crate::{
-        context::{build_checkpoint_indexing_writes, index_inbox_mmr_writes},
+        context::{
+            build_checkpoint_indexing_writes, index_mmr_writes, prefill_l1_block_refs_mmr_blocking,
+        },
         state::{AppliedEpochArtifacts, apply_checkpoint_epoch},
         tests::fixture::EpochShape,
     };
 
-    /// Sled-backed wiring for the four managers `apply_checkpoint`'s writes
+    #[derive(Debug, PartialEq)]
+    struct DbSnapshot {
+        toplevel_state_root: Option<strata_identifiers::Buf32>,
+        terminal_header: Option<super::OLBlockHeader>,
+        summary: Option<strata_checkpoint_types::EpochSummary>,
+        canonical_epoch_commitment: Option<EpochCommitment>,
+        per_account: Vec<(
+            AccountId,
+            Vec<AccountUpdateRecord>,
+            Vec<InboxMessageRecord>,
+            u64,
+        )>,
+        l1_block_refs_leaf_count: u64,
+        l1_block_refs: Vec<L1BlockRefMirrorEntry>,
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct L1BlockRefMirrorEntry {
+        height: u32,
+        leaf_hash: Option<Hash>,
+        preimage: Vec<u8>,
+    }
+
+    /// Sled-backed wiring for the five managers `apply_checkpoint`'s writes
     /// touch. Each is opened on its own temporary sled, matching how
     /// production constructs them per storage tree.
     struct WriteHarness {
         ol_state: Arc<OLStateManager>,
         ol_indexing: Arc<OLStateIndexingManager>,
+        ol_block: Arc<OLBlockManager>,
         ol_checkpoint: Arc<OLCheckpointManager>,
         mmr_index: Arc<MmrIndexManager>,
     }
 
     impl WriteHarness {
-        fn new() -> Self {
+        fn new(genesis_l1_height: u64) -> Self {
             let handle = strata_storage::test_runtime_handle();
+            let mmr_index = Arc::new(MmrIndexManager::new(handle.clone(), make_mmr_index_db()));
+            prefill_l1_block_refs_mmr_blocking(&mmr_index, genesis_l1_height)
+                .expect("prefill L1 block refs MMR");
+
             Self {
                 ol_state: Arc::new(OLStateManager::new(handle.clone(), make_ol_state_db())),
                 ol_indexing: Arc::new(OLStateIndexingManager::new(
                     handle.clone(),
                     make_ol_state_indexing_db(),
                 )),
+                ol_block: Arc::new(OLBlockManager::new(handle.clone(), make_ol_block_db())),
                 ol_checkpoint: Arc::new(OLCheckpointManager::new(
                     handle.clone(),
                     make_ol_checkpoint_db(),
                 )),
-                mmr_index: Arc::new(MmrIndexManager::new(handle, make_mmr_index_db())),
+                mmr_index,
             }
         }
 
-        /// Runs the same three writes `ChainWorkerServiceState::apply_checkpoint`
+        /// Runs the same four writes `ChainWorkerServiceState::apply_checkpoint`
         /// runs, in the same order.
-        fn run_three_writes(
+        fn run_four_writes(
             &self,
             epoch: EpochCommitment,
             artifacts: &AppliedEpochArtifacts,
         ) -> anyhow::Result<()> {
-            self.ol_state
-                .put_toplevel_ol_state_blocking(artifacts.terminal, artifacts.new_state.clone())?;
+            self.ol_state.put_toplevel_ol_state_blocking(
+                artifacts.terminal(),
+                artifacts.new_state.clone(),
+            )?;
             let indexing_writes = build_checkpoint_indexing_writes(&artifacts.output)?;
             self.ol_indexing
                 .apply_epoch_indexing_blocking(epoch, indexing_writes)?;
-            index_inbox_mmr_writes(&self.mmr_index, &artifacts.output)?;
+            index_mmr_writes(&self.mmr_index, &artifacts.output)?;
+            self.ol_block.put_terminal_header_blocking(
+                *artifacts.terminal().blkid(),
+                artifacts.terminal_header.clone(),
+            )?;
 
             let commitment = artifacts.summary.get_epoch_commitment();
             self.ol_indexing
@@ -661,6 +721,7 @@ mod db_idempotency {
             epoch: EpochCommitment,
             terminal: super::OLBlockCommitment,
             accounts: &[AccountId],
+            l1_block_records: &[L1BlockRecordWrite],
         ) -> DbSnapshot {
             let toplevel_state_root = self
                 .ol_state
@@ -671,6 +732,10 @@ mod db_idempotency {
                         .compute_state_root()
                         .expect("compute_state_root")
                 });
+            let terminal_header = self
+                .ol_block
+                .get_terminal_header_blocking(*terminal.blkid())
+                .expect("get_terminal_header");
             let summary = self
                 .ol_checkpoint
                 .get_epoch_summary_blocking(epoch)
@@ -693,30 +758,43 @@ mod db_idempotency {
                     .unwrap_or_default();
                 let mmr_handle = self.mmr_index.get_handle(MmrId::SnarkMsgInbox(acct));
                 let mmr_leaves = mmr_handle
-                    .get_num_leaves_blocking()
+                    .get_leaf_count_blocking()
                     .expect("get_num_leaves");
                 per_account.push((acct, updates, inbox, mmr_leaves));
             }
+
+            let l1_block_refs_handle = self.mmr_index.get_handle(MmrId::L1BlockRefs);
+            let l1_block_refs_leaf_count = l1_block_refs_handle
+                .get_leaf_count_blocking()
+                .expect("get L1 block refs leaf count");
+            let l1_block_refs = l1_block_records
+                .iter()
+                .map(|write| {
+                    let idx = u64::from(write.height);
+                    let leaf_hash = l1_block_refs_handle
+                        .get_leaf_blocking(idx)
+                        .expect("get L1 block ref leaf hash");
+                    let preimage = l1_block_refs_handle
+                        .get_blocking(idx)
+                        .expect("get L1 block ref preimage");
+                    L1BlockRefMirrorEntry {
+                        height: write.height,
+                        leaf_hash,
+                        preimage,
+                    }
+                })
+                .collect();
+
             DbSnapshot {
                 toplevel_state_root,
+                terminal_header,
                 summary,
                 canonical_epoch_commitment: canonical,
                 per_account,
+                l1_block_refs_leaf_count,
+                l1_block_refs,
             }
         }
-    }
-
-    #[derive(Debug, PartialEq)]
-    struct DbSnapshot {
-        toplevel_state_root: Option<strata_identifiers::Buf32>,
-        summary: Option<strata_checkpoint_types::EpochSummary>,
-        canonical_epoch_commitment: Option<EpochCommitment>,
-        per_account: Vec<(
-            AccountId,
-            Vec<AccountUpdateRecord>,
-            Vec<InboxMessageRecord>,
-            u64,
-        )>,
     }
 
     fn make_temp_sled() -> Arc<SledDb> {
@@ -729,6 +807,10 @@ mod db_idempotency {
 
     fn make_ol_state_db() -> Arc<OLStateDBSled> {
         Arc::new(OLStateDBSled::new(make_temp_sled(), SledDbConfig::test()).expect("OLStateDBSled"))
+    }
+
+    fn make_ol_block_db() -> Arc<OLBlockDBSled> {
+        Arc::new(OLBlockDBSled::new(make_temp_sled(), SledDbConfig::test()).expect("OLBlockDBSled"))
     }
 
     fn make_ol_state_indexing_db() -> Arc<OLStateIndexingDBSled> {
@@ -787,16 +869,56 @@ mod db_idempotency {
             "fixture must touch at least one account for the snapshot to be meaningful"
         );
 
-        let harness = WriteHarness::new();
+        let l1_block_records = artifacts.output.indexer_writes().l1_block_records();
+        assert!(
+            !l1_block_records.is_empty(),
+            "fixture must emit L1 block records for the snapshot to be meaningful"
+        );
+
+        let genesis_l1_height = u64::from(built.prev_summary.new_l1().height());
+        let expected_l1_leaf_count = l1_block_records
+            .iter()
+            .map(|write| u64::from(write.height) + 1)
+            .max()
+            .unwrap_or(genesis_l1_height + 1);
+
+        let harness = WriteHarness::new(genesis_l1_height);
         harness
-            .run_three_writes(epoch, &artifacts)
+            .run_four_writes(epoch, &artifacts)
             .expect("first apply");
-        let first = harness.snapshot(epoch, artifacts.terminal, &touched_accounts);
+        let first = harness.snapshot(
+            epoch,
+            artifacts.terminal(),
+            &touched_accounts,
+            l1_block_records,
+        );
+
+        assert_eq!(first.l1_block_refs_leaf_count, expected_l1_leaf_count);
+        let terminal_header = first
+            .terminal_header
+            .as_ref()
+            .expect("terminal header must be persisted");
+        let summary = first.summary.as_ref().expect("summary must be persisted");
+        assert_eq!(
+            terminal_header.compute_blkid(),
+            *summary.terminal().blkid(),
+            "persisted terminal header must match the summary terminal blkid"
+        );
+        for (actual, expected) in first.l1_block_refs.iter().zip(l1_block_records) {
+            assert_eq!(actual.height, expected.height);
+            assert_eq!(actual.leaf_hash, Some(expected.record.leaf_hash().into()));
+            assert_eq!(actual.preimage, expected.record.as_ssz_bytes());
+        }
 
         harness
-            .run_three_writes(epoch, &artifacts)
+            .run_four_writes(epoch, &artifacts)
             .expect("second apply (idempotency check)");
-        let second = harness.snapshot(epoch, artifacts.terminal, &touched_accounts);
+        let second = harness.snapshot(
+            epoch,
+            artifacts.terminal(),
+            &touched_accounts,
+            l1_block_records,
+        );
 
         assert_eq!(
             first, second,

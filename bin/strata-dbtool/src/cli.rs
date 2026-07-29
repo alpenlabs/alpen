@@ -11,6 +11,7 @@ use crate::cmd::{
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
     checkpoint_proof::{DeleteCheckpointProofArgs, GetCheckpointProofArgs},
     client_state::GetClientStateUpdateArgs,
+    ee_da::EeDaInspectArgs,
     ee_prover_task::{
         EeAbandonProverTaskArgs, EeAbandonProverTasksArgs, EeBackfillProverTaskRawArgs,
         EeDeleteProverTaskArgs, EeGetProverTaskArgs, EeGetProverTasksSummaryArgs,
@@ -19,7 +20,9 @@ use crate::cmd::{
     ee_receipts::{
         EeDeleteAcctProofArgs, EeDeleteChunkReceiptArgs, EeGetAcctProofArgs, EeGetChunkReceiptArgs,
     },
+    ee_revert::EeRevertBatchesArgs,
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
+    mmr::{GetMmrLeafArgs, GetMmrSummaryArgs},
     ol::{DeleteOLBlockArgs, GetOLBlockArgs, GetOLBlocksAtSlotArgs, GetOLSummaryArgs},
     ol_state::{GetOLStateArgs, RevertOLStateArgs},
     prover_task::{
@@ -28,6 +31,7 @@ use crate::cmd::{
         GetProverTasksSummaryArgs, ResetProverTaskArgs,
     },
     syncinfo::GetSyncinfoArgs,
+    terminal_header::BackfillTerminalHeadersArgs,
     writer::{GetWriterPayloadArgs, GetWriterSummaryArgs},
 };
 
@@ -60,11 +64,14 @@ pub(crate) enum Command {
     GetOlBlocksAtSlot(GetOLBlocksAtSlotArgs),
     GetOlSummary(GetOLSummaryArgs),
     DeleteOlBlock(DeleteOLBlockArgs),
+    GetMmrSummary(GetMmrSummaryArgs),
+    GetMmrLeaf(GetMmrLeafArgs),
     GetClientStateUpdate(GetClientStateUpdateArgs),
     GetCheckpoint(GetCheckpointArgs),
     GetCheckpointsSummary(GetCheckpointsSummaryArgs),
     GetEpochSummary(GetEpochSummaryArgs),
     GetSyncinfo(GetSyncinfoArgs),
+    BackfillTerminalHeaders(BackfillTerminalHeadersArgs),
     GetOLState(GetOLStateArgs),
     RevertOLState(RevertOLStateArgs),
     GetProverTask(GetProverTaskArgs),
@@ -84,10 +91,13 @@ pub(crate) enum Command {
     EeResetProverTask(EeResetProverTaskArgs),
     EeDeleteProverTask(EeDeleteProverTaskArgs),
     EeBackfillProverTaskRaw(EeBackfillProverTaskRawArgs),
+    /// Inspect EE DA blobs and replay their state diffs from local sled data.
+    EeDaInspect(EeDaInspectArgs),
     EeGetChunkReceipt(EeGetChunkReceiptArgs),
     EeDeleteChunkReceipt(EeDeleteChunkReceiptArgs),
     EeGetAcctProof(EeGetAcctProofArgs),
     EeDeleteAcctProof(EeDeleteAcctProofArgs),
+    EeRevertBatches(EeRevertBatchesArgs),
 }
 
 /// Output format

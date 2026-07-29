@@ -34,7 +34,7 @@ mod proofs;
 mod state_accessor;
 
 pub use account::*;
-pub use coin::Coin;
+pub use coin::{Coin, CoinError};
 pub use errors::*;
 pub use pending_asm_log::PendingAsmLog;
 pub use proofs::*;

@@ -35,7 +35,8 @@ use crate::{
     signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
 
-/// Deposits 10 BTC from signet into Alpen
+/// Deposits one bridge denomination of BTC plus the bridge fee from signet into Alpen.
+/// The bridge denomination is configured in the `config.toml` file.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "deposit")]
 pub struct DepositArgs {
@@ -44,7 +45,7 @@ pub struct DepositArgs {
     #[argh(positional)]
     alpen_address: Option<String>,
 
-    /// override signet fee rate in sat/vbyte. must be >=1
+    /// override signet fee rate in sat/vbyte; the effective rate is at least 1
     #[argh(option)]
     fee_rate: Option<u64>,
 }
@@ -159,7 +160,7 @@ pub async fn deposit(
         })
         .transpose()?;
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
-    let drt_amount = settings.deposit_amount + settings.bridge_fee;
+    let drt_amount = Amount::from_sat(settings.bridge_params.denomination()) + settings.bridge_fee;
     println!(
         "Bridging {} to Alpen address {}",
         drt_amount.to_string().green(),

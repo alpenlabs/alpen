@@ -13,7 +13,7 @@ use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
 use strata_ledger_types::{
     AccProofCheck, IAccountState, ISnarkAccountState, IStateAccessor, TxProofIndexer, *,
 };
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
 use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
@@ -144,6 +144,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::UnknownTemplateId(_)
         | BlockAssemblyError::TimestampTooEarly(_)
         | BlockAssemblyError::BlockNotFound(_)
+        | BlockAssemblyError::HeaderNotFound(_)
         | BlockAssemblyError::ParentStateNotFound(_)
         | BlockAssemblyError::GenesisEpochNoBoundary
         | BlockAssemblyError::InvalidEpochBoundary { .. }
@@ -301,18 +302,17 @@ where
         "construct_block called with null parent - genesis must be built via init_ol_genesis"
     );
 
-    // Fetch parent block using BlockAssemblyAnchorContext trait
+    // Fetch parent header using BlockAssemblyAnchorContext trait
     let parent_blkid = *parent_commitment.blkid();
-    let parent_block = ctx.fetch_ol_block(parent_blkid).await?.ok_or_else(|| {
-        BlockAssemblyError::Db(DbError::Other(format!(
-            "Parent block not found for blkid: {parent_blkid}"
-        )))
-    })?;
+    let parent_header = ctx
+        .fetch_ol_header(parent_blkid)
+        .await?
+        .ok_or(BlockAssemblyError::HeaderNotFound(parent_blkid))?;
 
     // Create `BlockInfo` with placeholder timestamp (0) for STF processing.
     // Actual timestamp is computed at the end when building the header.
     let block_info = BlockInfo::new(0, block_slot, block_epoch);
-    let block_context = BlockContext::new(&block_info, Some(parent_block.header()));
+    let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
     // Create output buffer to collect logs from all transaction executions.
     let output_buffer = ExecOutputBuffer::new_empty();
@@ -1009,8 +1009,8 @@ mod tests {
     use strata_acct_types::*;
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
-    use strata_identifiers::{Buf32, L1BlockId, L1Height, OLBlockId};
-    use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
+    use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
+    use strata_ol_chain_types::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
 
     use super::*;
@@ -1026,6 +1026,49 @@ mod tests {
             .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         TestEnv::from_fixture(fixture, parent_commitment)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_generate_template_with_header_only_terminal_parent() {
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .build_fixture()
+            .await;
+        let storage = fixture.storage().clone();
+        let parent_header = storage
+            .ol_block()
+            .get_ol_header_async(*parent_commitment.blkid())
+            .await
+            .expect("fetch parent header")
+            .expect("parent header exists");
+        assert!(parent_header.is_terminal());
+        storage
+            .ol_block()
+            .put_terminal_header_async(*parent_commitment.blkid(), parent_header)
+            .await
+            .expect("store terminal parent header");
+        assert!(
+            storage
+                .ol_block()
+                .del_block_data_async(*parent_commitment.blkid())
+                .await
+                .expect("delete parent block")
+        );
+
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("generate template from header-only terminal parent");
+
+        assert_eq!(
+            output.template().header().parent_blkid(),
+            parent_commitment.blkid()
+        );
+        assert_eq!(
+            output.template().header().slot(),
+            parent_commitment.slot() + 1
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1550,7 +1593,7 @@ mod tests {
     /// list even when proof bytes are empty (e.g. from a NoopProver).
     #[test]
     fn test_proof_satisfier_list_accepts_empty_bytes() {
-        use strata_ol_chain_types_new::ProofSatisfierList;
+        use strata_ol_chain_types::ProofSatisfierList;
 
         // Empty bytes should still produce a valid single-element list
         let result = ProofSatisfierList::single(vec![]);
@@ -1873,8 +1916,10 @@ mod tests {
             .extend_canonical_chain_async(&missing_manifest_blkid, first_height_past_cap)
             .await
             .expect("insert missing-manifest canonical entry past cap");
-        // ASM tip still points at the original height's blkid; the fetch path only reads its
-        // height.
+        put_test_asm_state(
+            env.storage().as_ref(),
+            L1BlockCommitment::new(first_height_past_cap, missing_manifest_blkid),
+        );
 
         let output = env
             .construct_empty_block()
@@ -2022,6 +2067,10 @@ mod tests {
             .extend_canonical_chain_async(&missing_manifest_blkid, 2)
             .await
             .expect("insert missing-manifest canonical entry at height 2");
+        put_test_asm_state(
+            env.storage().as_ref(),
+            L1BlockCommitment::new(2, missing_manifest_blkid),
+        );
 
         let err = env
             .generate_block_template()
@@ -2786,7 +2835,7 @@ mod tests {
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
         // Create a tx with 5 withdrawal messages (= 5 logs).
-        let withdrawal_dest = b"bc1qlogcapoverflow".to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x14);
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawals(5, 100_000_000, withdrawal_dest)
@@ -2839,7 +2888,7 @@ mod tests {
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
         // First tx: 10 withdrawal messages = 10 logs.
-        let withdrawal_dest = b"bc1qlogcapfull".to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x15);
         let tx_fill = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawals(10, 100_000_000, withdrawal_dest.clone())
@@ -2894,7 +2943,7 @@ mod tests {
 
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
-            .with_withdrawal(100_000_000, b"bc1qlogcapreached".to_vec())
+            .with_withdrawal(100_000_000, make_p2wpkh_bosd_descriptor(0x16))
             .build();
         let txid = tx.compute_txid();
 
@@ -2964,9 +3013,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_checkpoint_soft_commits_then_stops() {
-        const CHECKPOINT_WITHDRAWAL_DEST: &[u8] = b"bc1qcheckpointlimit";
         let account_id = test_account_id(9);
-        let withdrawal_dest = CHECKPOINT_WITHDRAWAL_DEST.to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x17);
         let tx1 = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest.clone())
@@ -3013,9 +3061,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_checkpoint_hard_rolls_back_then_stops() {
-        const CHECKPOINT_WITHDRAWAL_DEST: &[u8] = b"bc1qcheckpointlimit";
         let account_id = test_account_id(10);
-        let withdrawal_dest = CHECKPOINT_WITHDRAWAL_DEST.to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x18);
         let tx1 = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest.clone())

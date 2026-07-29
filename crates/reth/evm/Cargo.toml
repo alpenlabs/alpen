@@ -20,8 +20,14 @@ reth-evm.workspace = true
 reth-primitives.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 secp256k1.workspace = true
+strata-acct-types.workspace = true
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-crypto.workspace = true
 proptest.workspace = true
+
+[features]
+test-defaults = ["strata-bridge-params/test-defaults"]

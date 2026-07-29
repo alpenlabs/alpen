@@ -13,16 +13,16 @@ use strata_storage::NodeStorage;
 /// Errors produced while resolving checkpoint envelope authentication.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum CheckpointAuthError {
-    /// The latest ASM state could not be loaded from storage.
-    #[error("failed to fetch latest ASM state")]
-    FetchLatestAsmState(#[source] DbError),
+    /// The canonical ASM state could not be loaded from storage.
+    #[error("failed to fetch canonical ASM state")]
+    FetchCanonicalAsmState(#[source] DbError),
 
-    /// No ASM state exists yet.
-    #[error("latest ASM state is not available")]
-    MissingLatestAsmState,
+    /// No canonical ASM state exists yet.
+    #[error("canonical ASM state is not available")]
+    MissingCanonicalAsmState,
 
     /// The checkpoint subprotocol section is missing from ASM state.
-    #[error("latest ASM state is missing checkpoint subprotocol state")]
+    #[error("canonical ASM state is missing checkpoint subprotocol state")]
     MissingCheckpointState,
 
     /// The checkpoint subprotocol section could not be decoded.
@@ -50,7 +50,7 @@ pub(crate) enum CheckpointAuthError {
     Sp1Groth16,
 }
 
-/// Resolves the active checkpoint sequencer key from the latest ASM state.
+/// Resolves the active checkpoint sequencer key from the canonical ASM state.
 #[derive(Clone)]
 pub(crate) struct CheckpointSequencerKeyProvider {
     storage: Arc<NodeStorage>,
@@ -71,10 +71,9 @@ impl CheckpointSequencerKeyProvider {
     fn resolve_signing_mode(&self) -> Result<EnvelopeSigningMode, CheckpointAuthError> {
         let (_, asm_state) = self
             .storage
-            .asm()
-            .fetch_most_recent_state_blocking()
-            .map_err(CheckpointAuthError::FetchLatestAsmState)?
-            .ok_or(CheckpointAuthError::MissingLatestAsmState)?;
+            .fetch_canonical_asm_state_blocking()
+            .map_err(CheckpointAuthError::FetchCanonicalAsmState)?
+            .ok_or(CheckpointAuthError::MissingCanonicalAsmState)?;
 
         let checkpoint_section = asm_state
             .state()

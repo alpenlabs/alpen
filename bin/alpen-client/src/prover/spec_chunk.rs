@@ -8,7 +8,10 @@
 
 use std::{fmt, sync::Arc};
 
-use alpen_ee_common::{BlockWitnessStore, ChunkId, ChunkStorage, ExecBlockStorage};
+use alpen_ee_common::{
+    decode_chunk_task_key, encode_chunk_task_key, BlockWitnessStore, ChunkId, ChunkStorage,
+    ExecBlockStorage, ProverTaskKeyDecodeError,
+};
 use alpen_ee_database::EeNodeStorage;
 use alpen_reth_node::BlockWitnessRecord;
 use async_trait::async_trait;
@@ -46,54 +49,17 @@ impl fmt::Display for ChunkTask {
     }
 }
 
-/// Single-byte kind tag for [`ChunkTask`] encoding.
-///
-/// The chunk + acct provers share one sled prover-task tree; this tag
-/// disambiguates chunk keys from batch keys so single-chunk batches
-/// (same `(prev, last)` pair) can't collide.
-pub(crate) const CHUNK_TASK_TAG: u8 = b'c';
-
-/// Tag byte + the underlying `ChunkId`'s bytes.
-const CHUNK_TASK_BYTES: usize = 1 + size_of::<ChunkId>();
-
 impl From<ChunkTask> for Vec<u8> {
     fn from(task: ChunkTask) -> Self {
-        let mut buf = Vec::with_capacity(CHUNK_TASK_BYTES);
-        buf.push(CHUNK_TASK_TAG);
-        let prev: [u8; 32] = task.0.prev_block().into();
-        let last: [u8; 32] = task.0.last_block().into();
-        buf.extend_from_slice(&prev);
-        buf.extend_from_slice(&last);
-        buf
+        encode_chunk_task_key(task.0)
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ChunkTaskDecodeError {
-    #[error("invalid ChunkTask byte length: expected {CHUNK_TASK_BYTES}, got {0}")]
-    InvalidLength(usize),
-    #[error("invalid ChunkTask tag byte: expected 0x{CHUNK_TASK_TAG:02x}, got 0x{0:02x}")]
-    InvalidTag(u8),
-}
-
 impl TryFrom<Vec<u8>> for ChunkTask {
-    type Error = ChunkTaskDecodeError;
+    type Error = ProverTaskKeyDecodeError;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        if bytes.len() != CHUNK_TASK_BYTES {
-            return Err(ChunkTaskDecodeError::InvalidLength(bytes.len()));
-        }
-        if bytes[0] != CHUNK_TASK_TAG {
-            return Err(ChunkTaskDecodeError::InvalidTag(bytes[0]));
-        }
-        let mut prev = [0u8; 32];
-        let mut last = [0u8; 32];
-        prev.copy_from_slice(&bytes[1..33]);
-        last.copy_from_slice(&bytes[33..]);
-        Ok(ChunkTask(ChunkId::from_parts(
-            Hash::from(prev),
-            Hash::from(last),
-        )))
+        decode_chunk_task_key(&bytes).map(ChunkTask)
     }
 }
 

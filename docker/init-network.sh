@@ -59,6 +59,10 @@ while [ $# -gt 0 ]; do
             echo "  BITCOIND_RPC_URL       Bitcoin RPC URL (enables fetching real L1 anchor)"
             echo "  BITCOIND_RPC_USER      Bitcoin RPC username"
             echo "  BITCOIND_RPC_PASSWORD  Bitcoin RPC password"
+            echo "  ALPEN_CHAIN_CONFIG     optional path to EVM chain config JSON"
+            echo "  BRIDGE_DENOMINATION_SATS           bridge denomination in satoshis"
+            echo "  MAX_WITHDRAWAL_AMOUNT_SATS         optional maximum withdrawal amount in satoshis"
+            echo "  MAX_WITHDRAWAL_DESCRIPTOR_LEN      maximum withdrawal BOSD descriptor length"
             echo "  OUTPUT_DIR            output directory (default: ./configs/generated)"
             exit 0
             ;;
@@ -240,6 +244,20 @@ GEOF
         fi
     fi
 
+    EE_PARAMS="${OUTPUT_DIR}/ee-params.json"
+    if [ ! -f "${EE_PARAMS}" ]; then
+        : "${BRIDGE_DENOMINATION_SATS:?BRIDGE_DENOMINATION_SATS is required when generating ee-params.json}"
+        : "${MAX_WITHDRAWAL_DESCRIPTOR_LEN:?MAX_WITHDRAWAL_DESCRIPTOR_LEN is required}"
+        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
+            gen-ee-params \
+            -o "${EE_PARAMS}" \
+            --bridge-denomination-sats "${BRIDGE_DENOMINATION_SATS}" \
+            ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount-sats "$MAX_WITHDRAWAL_AMOUNT_SATS"} \
+            --max-withdrawal-descriptor-len "${MAX_WITHDRAWAL_DESCRIPTOR_LEN}" \
+            ${ALPEN_CHAIN_CONFIG:+--alpen-chain-config "$ALPEN_CHAIN_CONFIG"}
+        echo "generated ${EE_PARAMS}"
+    fi
+
     OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
     if [ ! -f "${OL_PARAMS}" ]; then
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
@@ -247,6 +265,7 @@ GEOF
             -o "${OL_PARAMS}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --l1-anchor-file "${L1_ANCHOR}" \
+            --ee-params "${EE_PARAMS}" \
             ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"} \
             ${ALPEN_CHAIN_CONFIG:+--alpen-chain-config "$ALPEN_CHAIN_CONFIG"}
         echo "generated ${OL_PARAMS}"
@@ -282,6 +301,7 @@ SEQ_P2P_PUBKEY=${SEQ_P2P_PUBKEY}
 FN_P2P_PUBKEY=${FN_P2P_PUBKEY}
 
 CHAIN_SPEC=${CHAIN_SPEC:-dev}
+EE_PARAMS_PATH=/app/configs/generated/ee-params.json
 
 OL_BLOCK_TIME_MS=${OL_BLOCK_TIME_MS:-5000}
 ALPEN_EE_BLOCK_TIME_MS=${ALPEN_EE_BLOCK_TIME_MS:-5000}
@@ -315,7 +335,7 @@ EOF
 elif [ "${MODE}" = "fullnode" ]; then
     echo "mode: fullnode"
 
-    for f in ol-params.json asm-params.json; do
+    for f in ee-params.json ol-params.json asm-params.json; do
         if [ ! -f "${PARAMS_DIR}/${f}" ]; then
             echo "error: missing ${f} in ${PARAMS_DIR}" >&2
             exit 1
@@ -323,7 +343,7 @@ elif [ "${MODE}" = "fullnode" ]; then
     done
 
     if [ "$(realpath "${PARAMS_DIR}")" != "$(realpath "${OUTPUT_DIR}")" ]; then
-        for f in ol-params.json asm-params.json; do
+        for f in ee-params.json ol-params.json asm-params.json; do
             cp "${PARAMS_DIR}/${f}" "${OUTPUT_DIR}/${f}"
         done
         echo "copied params from ${PARAMS_DIR}"
@@ -373,6 +393,7 @@ SEQUENCER_PUBKEY=${SEQUENCER_PUBKEY}
 FN_P2P_PUBKEY=${FN_P2P_PUBKEY}
 
 CHAIN_SPEC=${CHAIN_SPEC:-dev}
+EE_PARAMS_PATH=/app/configs/generated/ee-params.json
 
 FN_HTTP_PORT=${FN_HTTP_PORT:-9545}
 FN_WS_PORT=${FN_WS_PORT:-9546}

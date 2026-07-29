@@ -173,7 +173,7 @@ def _make_da_blob(update_seq_no: int, block_num: int, state_diff: bytes) -> byte
             (1_700_000_000).to_bytes(8, "big"),
             (1_000_000_000).to_bytes(8, "big"),
             (21_000).to_bytes(8, "big"),
-            (30_000_000).to_bytes(8, "big"),
+            (36_000_000).to_bytes(8, "big"),
             state_diff,
         ]
     )

@@ -19,7 +19,7 @@ thiserror.workspace = true
 [dev-dependencies]
 strata-asm-manifest-types.workspace = true
 strata-merkle.workspace = true
-strata-ol-params.workspace = true
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 
 [lints]
 workspace = true

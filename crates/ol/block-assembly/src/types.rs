@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{Buf64, OLBlockCommitment, OLBlockId, OLTxId};
-use strata_ol_chain_types_new::{OLBlock, OLBlockBody, OLBlockHeader, SignedOLBlockHeader};
+use strata_ol_chain_types::{OLBlock, OLBlockBody, OLBlockHeader, SignedOLBlockHeader};
 use strata_ol_mempool::MempoolTxInvalidReason;
 
 use crate::resource_state::EpochResourceState;

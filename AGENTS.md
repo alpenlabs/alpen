@@ -290,7 +290,7 @@ Worker patterns and service infrastructure.
 | Crate | Description |
 |-------|-------------|
 | `chain-worker` | Legacy chain worker implementation |
-| `chain-worker-new` | Chain worker implementation for new OL types |
+| `chain-worker` | Chain worker implementation for OL types |
 | `csm-worker` | Client state machine worker |
 | `chainexec` | Chain execution context |
 | `chaintsn` | Chain transition logic |

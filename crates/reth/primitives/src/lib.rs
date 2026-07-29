@@ -4,8 +4,11 @@
 
 use std::mem::size_of;
 
+use alloy_primitives::FixedBytes;
 use alloy_sol_types::sol;
 use serde::{Deserialize, Serialize};
+use strata_acct_types::AccountId;
+use strata_identifiers::{SubjectId, SUBJ_ID_LEN};
 use strata_ol_bridge_types::OperatorSelection;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
@@ -22,6 +25,25 @@ pub struct WithdrawalIntent {
 
     /// Dynamic-sized bytes BOSD descriptor for the withdrawal destinations in L1.
     pub destination: Descriptor,
+}
+
+/// Intent to transfer value from a source EVM subject to a destination EE subject.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct SubjectTransferIntent {
+    /// Amount to be transferred in sats.
+    pub amt: u64,
+
+    /// Subject that initiated the transfer.
+    pub source_subject: SubjectId,
+
+    /// OL account that should receive the subject-transfer message.
+    pub dest_account: AccountId,
+
+    /// Subject that should receive the value in the destination EE.
+    pub dest_subject: SubjectId,
+
+    /// Opaque transfer payload delivered with the subject-transfer message.
+    pub data: Vec<u8>,
 }
 
 sol! {
@@ -77,4 +99,77 @@ impl WithdrawalCalldata {
             bosd: bosd.to_vec(),
         })
     }
+}
+
+/// Structured calldata for the inter-EE subject-transfer precompile.
+///
+/// Wire format: `[32 bytes: destination account][32 bytes: destination subject][data...]`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubjectTransferCalldata {
+    /// OL account that should receive the subject-transfer message.
+    pub dest_account: AccountId,
+
+    /// Subject that should receive the value in the destination EE.
+    pub dest_subject: SubjectId,
+
+    /// Opaque transfer payload delivered with the subject-transfer message.
+    pub data: Vec<u8>,
+}
+
+/// Size of the fixed destination account and subject fields.
+const ACCOUNT_ID_LEN: usize = size_of::<AccountId>();
+const SUBJECT_TRANSFER_FIXED_FIELDS_SIZE: usize = ACCOUNT_ID_LEN + size_of::<[u8; SUBJ_ID_LEN]>();
+
+impl SubjectTransferCalldata {
+    /// Encodes the calldata to bytes.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(SUBJECT_TRANSFER_FIXED_FIELDS_SIZE + self.data.len());
+        buf.extend_from_slice(self.dest_account.inner());
+        buf.extend_from_slice(self.dest_subject.inner());
+        buf.extend_from_slice(&self.data);
+        buf
+    }
+
+    /// Decodes calldata from bytes.
+    ///
+    /// Returns `None` if the data is too short to hold the fixed account and subject fields.
+    pub fn decode(data: &[u8]) -> Option<Self> {
+        if data.len() < SUBJECT_TRANSFER_FIXED_FIELDS_SIZE {
+            return None;
+        }
+
+        let (dest_account, rest) = data.split_at(ACCOUNT_ID_LEN);
+        let (dest_subject, data) = rest.split_at(SUBJ_ID_LEN);
+
+        Some(Self {
+            dest_account: AccountId::new(dest_account.try_into().expect("exactly 32 bytes")),
+            dest_subject: SubjectId::new(dest_subject.try_into().expect("exactly 32 bytes")),
+            data: data.to_vec(),
+        })
+    }
+}
+
+sol! {
+    event SubjectTransferIntentEvent(
+        /// Transfer amount in sats.
+        uint64 amount,
+        /// Source subject derived from the EVM caller.
+        bytes32 sourceSubject,
+        /// Destination OL account.
+        bytes32 destAccount,
+        /// Destination subject inside the destination EE.
+        bytes32 destSubject,
+        /// Opaque transfer payload.
+        bytes transferData,
+    );
+}
+
+/// Converts a 32-byte account ID into a Solidity `bytes32` value.
+pub fn account_id_to_bytes32(account_id: &AccountId) -> FixedBytes<32> {
+    FixedBytes::from(*account_id.inner())
+}
+
+/// Converts a 32-byte subject ID into a Solidity `bytes32` value.
+pub fn subject_id_to_bytes32(subject_id: &SubjectId) -> FixedBytes<32> {
+    FixedBytes::from(*subject_id.inner())
 }

@@ -152,6 +152,10 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
         let cur = self.state.global.limbo_funds();
         let amt = coin.amt();
         if cur.checked_add(amt).is_none() {
+            // Defuse the coin before returning: the whole STF is discarded on
+            // this error, so no value is actually lost, and dropping a live coin
+            // would panic in `Coin::drop`.
+            coin.safely_consume_unchecked();
             return Err(StateError::LimboFundsOverflow { cur, add: amt });
         }
         self.state.global.add_limbo_funds_coin(coin);

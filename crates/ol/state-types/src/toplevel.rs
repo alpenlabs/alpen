@@ -293,6 +293,11 @@ impl OLState {
         self.ledger.get_account_state(id)
     }
 
+    /// Iterates over all ledger account states in account-id order.
+    pub fn iter_account_states(&self) -> impl Iterator<Item = (AccountId, &OLAccountState)> + '_ {
+        self.ledger.iter_account_states()
+    }
+
     #[cfg(test)]
     pub fn check_account_exists(&self, id: &AccountId) -> Result<(), StateError> {
         self.ledger

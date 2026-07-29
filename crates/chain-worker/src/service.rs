@@ -90,7 +90,7 @@ pub fn start_chain_worker_service_from_ctx(
 
     // Launch the service using the sync worker.
     let monitor = builder
-        .launch_sync("chain_worker_new", nodectx.executor().as_ref())
+        .launch_sync("chain_worker", nodectx.executor().as_ref())
         .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
 
     Ok(ChainWorkerHandle::new(

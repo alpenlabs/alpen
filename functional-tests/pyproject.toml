@@ -7,14 +7,14 @@ requires-python = ">=3.10"
 dependencies = [
   "flexitest",
   "requests>=2.34.2",
-  "bitcoinlib>=0.7.8",
+  "bitcoinlib>=0.7.9",
   "toml>=0.10.2",
   "eth-account>=0.13.0",
   "eth-abi>=5.0.0",
 ]
 
 [dependency-groups]
-dev = ["ruff==0.15.13", "ty>=0.0.37,<0.0.38"]
+dev = ["ruff==0.15.17", "ty>=0.0.49,<0.0.50"]
 
 [tool.uv]
 

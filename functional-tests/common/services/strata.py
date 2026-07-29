@@ -43,6 +43,7 @@ class StrataProps(TypedDict):
     datadir: str
     mode: str
     slots_per_epoch: int
+    sequencer_key_path: str | None
 
 
 class StrataService(RpcService):

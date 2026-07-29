@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{
     DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer,
 };

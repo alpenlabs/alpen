@@ -12,6 +12,9 @@ pub(crate) const MEMPOOL_CAPACITY_ERROR_CODE: i32 = -32001;
 /// (e.g. mempool on a checkpoint-sync fullnode).
 pub(crate) const NOT_AVAILABLE_ON_NODE_CODE: i32 = -32002;
 
+/// Requested OL block history is below this node's locally available body range.
+pub(crate) const BLOCK_HISTORY_UNAVAILABLE_CODE: i32 = -32003;
+
 /// Creates an RPC error for database failures.
 pub(crate) fn db_error(e: impl Display) -> ErrorObjectOwned {
     ErrorObjectOwned::owned(
@@ -34,6 +37,21 @@ pub(crate) fn internal_error(msg: impl Into<String>) -> ErrorObjectOwned {
 /// Creates an RPC error for invalid parameters.
 pub(crate) fn invalid_params_error(msg: impl Into<String>) -> ErrorObjectOwned {
     ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
+}
+
+/// Creates an RPC error for data this node role does not serve (e.g. OL block
+/// bodies on a checkpoint-sync node).
+pub(crate) fn not_available_on_node_error(msg: impl Into<String>) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(NOT_AVAILABLE_ON_NODE_CODE, msg.into(), None::<()>)
+}
+
+/// Creates an RPC error for OL block bodies outside locally available history.
+pub(crate) fn block_history_unavailable_error(history_base_slot: u64) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(
+        BLOCK_HISTORY_UNAVAILABLE_CODE,
+        format!("OL block history unavailable at or below history base slot {history_base_slot}"),
+        None::<()>,
+    )
 }
 
 /// Maps mempool errors to RPC errors with appropriate error codes.

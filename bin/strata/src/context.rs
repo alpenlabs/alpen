@@ -83,6 +83,12 @@ pub(crate) fn init_node_context(
     let ol_params_path = args.ol_params.as_ref().ok_or(InitError::MissingOLParams)?;
     let ol_params = load_ol_params(ol_params_path)?;
 
+    // TODO(STR-3971): cross-validate the ASM and OL params before booting. The ASM
+    // bridge deposit denomination and the OL withdrawal denomination are one network
+    // value, but the two files are loaded independently here, so a mismatched pair
+    // (hand-edited or from separate datatool runs) starts a node whose deposits
+    // cannot be withdrawn. Only datatool enforces this today, at generation time.
+
     // Init storage
     let storage = init_storage(&config, handle.clone())?;
 
@@ -442,14 +448,26 @@ pub(crate) fn ensure_genesis(
     let olgen_out = ensure_ol_genesis(storage, ol_params)?;
     let (l1blk, client_state) = ensure_client_state_genesis(storage, ol_params)?;
 
+    // Genesis (epoch 0) commitment carries the real genesis block id. Use it as the
+    // fallback before any checkpoint is seen so the status never reports the null
+    // (zeroed-blkid) epoch, which consumers would read as a chain mismatch. It is
+    // always present because `ensure_ol_genesis` above wrote the genesis summary;
+    // its absence is a constraint violation.
+    let genesis_epoch = storage
+        .ol_checkpoint()
+        .get_canonical_epoch_commitment_at_blocking(0)?
+        .ok_or(InitError::MissingGenesisEpochCommitment)?;
+
     // Create sync status and update status channel
     let sync_status = OLSyncStatus::new(
         olgen_out.tip_blk,
         olgen_out.epoch,
         olgen_out.is_terminal,
-        client_state.get_last_epoch().unwrap_or_default(),
-        client_state.get_last_epoch().unwrap_or_default(),
-        client_state.get_declared_final_epoch().unwrap_or_default(),
+        client_state.get_last_epoch().unwrap_or(genesis_epoch),
+        client_state.get_last_epoch().unwrap_or(genesis_epoch),
+        client_state
+            .get_declared_final_epoch()
+            .unwrap_or(genesis_epoch),
         l1blk,
     );
     status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(sync_status));
@@ -513,14 +531,14 @@ fn ensure_ol_genesis(
                 .ol_block()
                 .get_canonical_tip_blocking()?
                 .expect("tip commitment is expected after genesis");
-            let blk = storage
+            let header = storage
                 .ol_block()
-                .get_block_data_blocking(*tip.blkid())?
-                .expect("tip block expected after genesis");
+                .get_ol_header_blocking(*tip.blkid())?
+                .ok_or(InitError::MissingOLTipHeader(tip))?;
             Ok(EnsureOLGenesisOutput {
-                epoch: blk.header().epoch(),
+                epoch: header.epoch(),
                 tip_blk: tip,
-                is_terminal: blk.header().is_terminal(),
+                is_terminal: header.is_terminal(),
             })
         }
     }
@@ -538,11 +556,18 @@ mod tests {
     #[cfg(feature = "prover")]
     use strata_config::ProverBackend;
     use strata_config::{Config, SequencerConfig};
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_identifiers::{Buf32, Buf64, OLBlockId};
+    use strata_ol_chain_types::{
+        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    };
+    use strata_ol_params::OLParams;
     #[cfg(feature = "prover")]
     use strata_predicate::PredicateTypeId;
+    use strata_storage::{create_node_storage, test_runtime_handle};
 
     use super::{
-        load_block_assembly_config, load_sequencer_runtime_config,
+        ensure_ol_genesis, load_block_assembly_config, load_sequencer_runtime_config,
         resolve_default_sequencer_config_path,
     };
     use crate::errors::InitError;
@@ -598,6 +623,63 @@ mod tests {
         let config_path = resolve_default_sequencer_config_path(Path::new("/tmp/config.toml"));
 
         assert_eq!(config_path, PathBuf::from("/tmp/sequencer.toml"));
+    }
+
+    #[test]
+    fn ensure_ol_genesis_reads_header_only_tip() {
+        let storage = create_node_storage(get_test_sled_backend(), test_runtime_handle())
+            .expect("create test storage");
+        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
+        let mut flags = BlockFlags::zero();
+        flags.set_is_terminal(true);
+        let genesis_header = OLBlockHeader::new(
+            1_000,
+            flags,
+            0,
+            0,
+            OLBlockId::null(),
+            Buf32::zero(),
+            Buf32::from([1; 32]),
+            Buf32::zero(),
+        );
+        let genesis_id = genesis_header.compute_blkid();
+        storage
+            .ol_block()
+            .put_block_data_blocking(OLBlock::new(
+                SignedOLBlockHeader::new(genesis_header, Buf64::zero()),
+                body,
+            ))
+            .expect("store genesis block");
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, vec![genesis_id])
+            .expect("store canonical genesis");
+
+        let tip_header = OLBlockHeader::new(
+            2_000,
+            flags,
+            1,
+            1,
+            genesis_id,
+            Buf32::zero(),
+            Buf32::from([2; 32]),
+            Buf32::zero(),
+        );
+        let tip_commitment = tip_header.compute_block_commitment();
+        storage
+            .ol_block()
+            .put_terminal_header_blocking(*tip_commitment.blkid(), tip_header)
+            .expect("store terminal tip header");
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(1, vec![*tip_commitment.blkid()])
+            .expect("store canonical tip");
+
+        let output = ensure_ol_genesis(&storage, &OLParams::default())
+            .expect("header-only tip should satisfy OL genesis check");
+        assert_eq!(output.tip_blk, tip_commitment);
+        assert_eq!(output.epoch, 1);
+        assert!(output.is_terminal);
     }
 
     #[test]

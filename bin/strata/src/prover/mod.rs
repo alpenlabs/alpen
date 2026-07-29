@@ -158,6 +158,13 @@ pub(crate) fn start_prover_service(
         .ok()
         .flatten()
         .map(|c| c.epoch());
+    let history_base_epoch = runctx
+        .storage()
+        .ol_block()
+        .get_history_base_blocking()
+        .ok()
+        .flatten()
+        .map(|commitment| commitment.epoch());
 
     // Spawn checkpoint proof runner
     let chain_worker_handle = runctx.chain_worker_handle();
@@ -169,6 +176,7 @@ pub(crate) fn start_prover_service(
         proof_db,
         runctx.storage().clone(),
         last_payload_epoch,
+        history_base_epoch,
     );
 
     Ok(())
@@ -198,7 +206,9 @@ fn validate_backend_config(backend: ProverBackend) -> Result<()> {
 ///
 /// `last_payload_epoch` is the last epoch for which a checkpoint payload was
 /// already built (read from DB at startup). The runner resumes from the next
-/// epoch, avoiding redundant DB lookups for already-completed epochs.
+/// epoch, avoiding redundant DB lookups for already-completed epochs. The
+/// history base floors the cursor so a promoted sequencer never proves an
+/// anchored epoch whose local block bodies are unavailable.
 // TODO(STR-3064): split this into smaller helpers.
 fn spawn_checkpoint_runner(
     executor: &TaskExecutor,
@@ -207,10 +217,12 @@ fn spawn_checkpoint_runner(
     proof_db: Arc<CheckpointProofDbManager>,
     storage: Arc<strata_storage::NodeStorage>,
     last_payload_epoch: Option<Epoch>,
+    history_base_epoch: Option<Epoch>,
 ) {
     executor.spawn_critical_async("checkpoint-proof-runner", async move {
-        // Resume after the last checkpointed epoch, or start from epoch 1.
-        let mut next_epoch_to_prove: Epoch = last_payload_epoch.map_or(1, |e| e + 1);
+        // Resume after the last checkpointed or anchored epoch, or start from epoch 1.
+        let mut next_epoch_to_prove =
+            derive_next_epoch_to_prove(last_payload_epoch, history_base_epoch);
         // The epoch-summary watch channel resets to `None` on restart, so fall
         // back to the last summarized epoch from storage. Otherwise the catch-up
         // loop below would idle at 0 and never re-prove epochs whose proofs were
@@ -341,4 +353,40 @@ fn spawn_checkpoint_runner(
     });
 
     debug!("spawned checkpoint proof runner");
+}
+
+fn derive_next_epoch_to_prove(
+    last_payload_epoch: Option<Epoch>,
+    history_base_epoch: Option<Epoch>,
+) -> Epoch {
+    last_payload_epoch
+        .max(history_base_epoch)
+        .map_or(1, |epoch| epoch + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::derive_next_epoch_to_prove;
+
+    #[test]
+    fn next_epoch_without_history_base_preserves_existing_behavior() {
+        assert_eq!(derive_next_epoch_to_prove(None, None), 1);
+        assert_eq!(derive_next_epoch_to_prove(Some(4), None), 5);
+    }
+
+    #[test]
+    fn next_epoch_with_history_base_and_no_payload_starts_after_floor() {
+        assert_eq!(derive_next_epoch_to_prove(None, Some(5)), 6);
+        assert_eq!(derive_next_epoch_to_prove(Some(4), Some(5)), 6);
+    }
+
+    #[test]
+    fn next_epoch_with_payload_after_history_base_starts_after_payload() {
+        assert_eq!(derive_next_epoch_to_prove(Some(6), Some(5)), 7);
+    }
+
+    #[test]
+    fn next_epoch_after_payload_deletion_returns_to_history_base_floor() {
+        assert_eq!(derive_next_epoch_to_prove(None, Some(5)), 6);
+    }
 }

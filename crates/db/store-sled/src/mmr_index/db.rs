@@ -85,6 +85,15 @@ impl MmrIndexDatabase for MmrIndexDb {
         Ok(self.leaf_count_tree.get(&mmr_id)?.unwrap_or(0))
     }
 
+    fn list_mmr_ids(&self) -> DbResult<Vec<RawMmrId>> {
+        let mut out = Vec::new();
+        for item in self.leaf_count_tree.range(..)? {
+            let (mmr_id, _) = item?;
+            out.push(mmr_id);
+        }
+        Ok(out)
+    }
+
     /// Fetches requested nodes and available ancestors from the node tree.
     ///
     /// For each requested node, this walks upward through parents and includes

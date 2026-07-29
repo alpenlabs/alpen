@@ -1,7 +1,7 @@
 //! L1 block formatting implementations
 
 use strata_identifiers::L1Height;
-use strata_ol_chain_types_new::AsmManifest;
+use strata_ol_chain_types::AsmManifest;
 use strata_primitives::l1::L1BlockId;
 
 use super::{helpers::porcelain_field, traits::Formattable};
@@ -68,7 +68,7 @@ impl Formattable for L1BlockInfo<'_> {
         if let Some(prev_block_id) = self.prev_block_id {
             output.push(porcelain_field(
                 "prev_block_id",
-                format!("{:?}", prev_block_id),
+                format!("{prev_block_id:?}"),
             ));
         }
         output.push(porcelain_field(
@@ -111,7 +111,7 @@ impl Formattable for L1SummaryInfo {
             if let Some(block_id) = missing_block.block_id {
                 output.push(porcelain_field(
                     &format!("{prefix}.block_id"),
-                    format!("{:?}", block_id),
+                    format!("{block_id:?}"),
                 ));
             }
         }
@@ -126,7 +126,7 @@ impl Formattable for MissingBlockInfo {
         output.push(porcelain_field("height", self.height));
         output.push(porcelain_field("reason", &self.reason));
         if let Some(block_id) = self.block_id {
-            output.push(porcelain_field("block_id", format!("{:?}", block_id)));
+            output.push(porcelain_field("block_id", format!("{block_id:?}")));
         }
         output.join("\n")
     }

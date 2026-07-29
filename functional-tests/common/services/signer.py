@@ -19,6 +19,7 @@ class SignerProps(TypedDict):
     """Properties for strata-signer service."""
 
     datadir: str
+    sequencer_key_path: str
 
 
 class SignerService(flexitest.service.ProcService):

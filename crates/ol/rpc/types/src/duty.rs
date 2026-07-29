@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use ssz::{Decode, Encode};
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_ol_block_assembly::FullBlockTemplate;
-use strata_ol_chain_types_new::{OLBlockBody, OLBlockHeader};
+use strata_ol_chain_types::{OLBlockBody, OLBlockHeader};
 use strata_ol_sequencer::{BlockSigningDuty, CheckpointSigningDuty, Duty, RevealTxSigningDuty};
 use strata_primitives::{Buf32, HexBytes32};
 use thiserror::Error;

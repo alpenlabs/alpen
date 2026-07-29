@@ -265,6 +265,13 @@ impl L1BlockManager {
         })
     }
 
+    pub(crate) fn get_canonical_blockid_at_height_uncached(
+        &self,
+        height: L1Height,
+    ) -> DbResult<Option<L1BlockId>> {
+        self.ops.get_canonical_blockid_at_height_blocking(height)
+    }
+
     // Get [`L1BlockId`] at `height` in tracked canonical chain.
     pub async fn get_canonical_blockid_at_height_async(
         &self,

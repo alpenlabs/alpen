@@ -2,6 +2,7 @@ use std::future::Future;
 
 use reth_tasks::{shutdown::Shutdown, TaskExecutor};
 use strata_service::{AsyncExecutor, AsyncGuard};
+use tracing::{info_span, Instrument};
 
 pub(crate) struct ServiceExecutor {
     inner: TaskExecutor,
@@ -23,11 +24,15 @@ impl AsyncExecutor for ServiceExecutor {
     ) where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
+        let span = info_span!("alpen_service", component = "alpen");
         self.inner
-            .spawn_critical_with_shutdown_signal(name, |shutdown| async move {
-                worker(ServiceShutdownGuard(shutdown))
-                    .await
-                    .expect("critical service should not error")
+            .spawn_critical_with_shutdown_signal(name, |shutdown| {
+                async move {
+                    worker(ServiceShutdownGuard(shutdown))
+                        .await
+                        .expect("critical service should not error")
+                }
+                .instrument(span)
             });
     }
 }

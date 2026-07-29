@@ -20,7 +20,7 @@ use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
 };
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
+use strata_ol_chain_types::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
@@ -377,7 +377,7 @@ fn run_snark_multi_update_blocks(
     blocks: &mut Vec<OLBlock>,
     genesis_header: &OLBlockHeader,
 ) -> OLBlockHeader {
-    use strata_ol_chain_types_new::{OLTransaction, OLTransactionData, TxProofs};
+    use strata_ol_chain_types::{OLTransaction, OLTransactionData, TxProofs};
 
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let msg_a = snark_inbox_msg_with_data(b"multi-msg-a");
@@ -440,7 +440,7 @@ fn build_snark_update_with(
     inbox_msg: &MessageEntry,
     proof: RawMerkleProof,
     new_state_root: Buf32,
-) -> strata_ol_chain_types_new::OLTransaction {
+) -> strata_ol_chain_types::OLTransaction {
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let (_, snark_state) = get_snark_state_expect(state, snark_id);
     SnarkUpdateBuilder::from_snark_state(snark_state.clone())

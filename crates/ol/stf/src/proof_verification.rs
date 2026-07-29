@@ -7,7 +7,7 @@ use strata_ledger_types::{
     TxProofVerifier,
 };
 use strata_merkle::Mmr64B32;
-use strata_ol_chain_types_new::{ProofSatisfierList, RawMerkleProofList, TxProofs};
+use strata_ol_chain_types::{ProofSatisfierList, RawMerkleProofList, TxProofs};
 use strata_predicate::PredicateKey;
 use tracing::warn;
 
@@ -216,9 +216,7 @@ impl TxProofVerifier for TxProofVerifierImpl<'_> {
 #[cfg(test)]
 mod tests {
     use strata_acct_types::RawMerkleProof;
-    use strata_ol_chain_types_new::{
-        ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
-    };
+    use strata_ol_chain_types::{ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs};
     use strata_predicate::{PredicateError, PredicateKey, PredicateTypeId};
 
     use super::*;

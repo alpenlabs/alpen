@@ -4,7 +4,7 @@ use std::{fmt::Display, marker::PhantomData};
 
 use strata_identifiers::{Buf32, OLBlockId};
 use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, verify_sequencer_predicate_signature};
+use strata_ol_chain_types::{OLBlock, OLBlockHeader, verify_sequencer_predicate_signature};
 use strata_ol_state_provider::StateProvider;
 use strata_predicate::PredicateKey;
 use strata_service::{AsyncService, Response, Service};
@@ -275,7 +275,7 @@ mod tests {
     use strata_config::BlockAssemblyConfig;
     use strata_crypto::sign_schnorr_sig;
     use strata_identifiers::{Buf32, Buf64, OLBlockCommitment};
-    use strata_ol_chain_types_new::test_utils::{schnorr_predicate, test_schnorr_keypair};
+    use strata_ol_chain_types::test_utils::{schnorr_predicate, test_schnorr_keypair};
     use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
     use strata_ol_params::OLParams;
     use strata_ol_state_provider::OLStateManagerProviderImpl;

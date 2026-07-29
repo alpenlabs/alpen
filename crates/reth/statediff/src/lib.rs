@@ -10,15 +10,14 @@
 //!                                       ↓
 //! BlockStateChanges[n..m] → BatchBuilder → BatchStateDiff → DA (through Codec)
 //!                                              ↓
-//!                                 StateReconstructor.apply_diff()
+//!                         apply_batch_state_diff_to_ethereum_state()
 //! ```
 //!
 //! # Modules
 //!
 //! - [`block`]: Per-block changes types stored in DB (preserves original values)
 //! - [`batch`]: DA-optimized batch diff types (compact, no originals), actually posted on-chain
-//! - `reconstruct`: State reconstruction from diffs (see [`StateReconstructor`]), currently
-//!   experimental and used only in tests - will be adjusted later (for syncing from diffs).
+//! - `reconstruct`: State reconstruction helpers for applying DA diffs to EVM trie state.
 //!
 //! # Key Types
 //!
@@ -27,7 +26,6 @@
 //! | [`BlockStateChanges`] | `block` | Per-block changes for DB storage |
 //! | [`BatchStateDiff`] | `batch` | Aggregated diff for DA |
 //! | [`BatchBuilder`] | `batch` | Aggregates blocks with revert detection |
-//! | [`StateReconstructor`] | `reconstruct` | Applies diffs to rebuild state |
 //!
 //! # Features
 //!
@@ -62,8 +60,11 @@ pub(crate) mod test_utils;
 // Re-export main types at crate level for convenience
 pub use batch::{AccountChange, AccountDiff, BatchBuilder, BatchStateDiff, StorageDiff};
 pub use block::{AccountSnapshot, BlockAccountChange, BlockStateChanges, BlockStorageDiff};
+#[cfg(feature = "chainspec")]
+pub use reconstruct::ethereum_state_from_chain_spec;
 pub use reconstruct::{
-    apply_batch_state_diff_to_ethereum_state, ReconstructError, StateReconstructor,
+    apply_batch_state_diff_to_ethereum_state, ethereum_state_from_genesis_accounts,
+    EthereumStateExt, GenesisAccount, ReconstructError,
 };
 #[cfg(feature = "serde")]
 pub use serde_impl::{AccountChangeSerde, AccountDiffSerde, BatchStateDiffSerde};

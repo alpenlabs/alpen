@@ -71,14 +71,14 @@ use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
 use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
-    AccountSerial, Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
-    SubjectIdBytes, WtxidsRoot,
+    AccountSerial, Buf32, Buf64, Epoch, L1BlockId, L1Height, Slot, SubjectId, SubjectIdBytes,
+    WtxidsRoot,
 };
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 use strata_ol_msg_types::{
     DEFAULT_OPERATOR_FEE, DEPOSIT_MSG_TYPE_ID, DepositMsgData, WITHDRAWAL_MSG_TYPE_ID,
     WithdrawalMsgData,
@@ -138,7 +138,7 @@ pub fn make_proof(variant: u8) -> Vec<u8> {
 
 /// Builds a genesis state layer using minimal empty parameters.
 pub fn make_genesis_state() -> MemoryStateBaseLayer {
-    let params = OLParams::new_empty(L1BlockCommitment::default());
+    let params = OLParams::default();
     let state = OLState::from_genesis_params(&params).expect("valid params");
     MemoryStateBaseLayer::new(state)
 }
@@ -242,6 +242,13 @@ pub fn make_withdrawal_payload(dest_desc: Vec<u8>) -> Vec<u8> {
     OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, body)
         .expect("withdrawal message should be valid")
         .to_vec()
+}
+
+/// Builds a valid P2WPKH BOSD descriptor for withdrawal tests.
+pub fn make_p2wpkh_bosd_descriptor(byte: u8) -> Vec<u8> {
+    let mut dest_desc = vec![byte; 21];
+    dest_desc[0] = 0x03;
+    dest_desc
 }
 
 /// Builds terminal genesis components with one empty manifest at L1 height 1.
@@ -566,7 +573,7 @@ pub fn assert_verification_succeeds<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
-    body: &strata_ol_chain_types_new::OLBlockBody,
+    body: &strata_ol_chain_types::OLBlockBody,
 ) {
     let result = verify_block(
         state,
@@ -587,7 +594,7 @@ pub fn assert_verification_fails_with(
     state: &mut impl IStateAccessorMut,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
-    body: &strata_ol_chain_types_new::OLBlockBody,
+    body: &strata_ol_chain_types::OLBlockBody,
     error_matcher: impl Fn(&ExecError) -> bool,
 ) {
     let result = verify_block(
@@ -609,7 +616,7 @@ pub fn assert_verification_fails_with(
 /// Returns a block header with a different parent block ID.
 pub fn tamper_parent_blkid(
     header: &OLBlockHeader,
-    new_parent: strata_ol_chain_types_new::OLBlockId,
+    new_parent: strata_ol_chain_types::OLBlockId,
 ) -> OLBlockHeader {
     OLBlockHeader::new(
         header.timestamp(),

@@ -116,6 +116,7 @@ fn u256_from_u64(value: u64) -> U256 {
 mod tests {
     use alpen_ee_common::L1FeeRateSource;
     use strata_acct_types::AccountId;
+    use strata_bridge_params::BridgeParams;
     use strata_config::{
         btcio::{FeePolicy, L1FeePolicyConfig},
         L1FeeRateSourceConfig, SequencerFeeModelConfig,
@@ -132,6 +133,7 @@ mod tests {
             [2u8; 32].into(),
             [3u8; 32].into(),
             0,
+            BridgeParams::new(100_000_000, Some(1_000_000_000)).expect("valid bridge params"),
         );
 
         let config = AlpenEeConfig::new(

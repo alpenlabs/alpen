@@ -6,11 +6,10 @@
 use std::{mem, sync::Arc};
 
 use serde::Serialize;
-use strata_db_types::l1_writer::IntentEntry;
 use strata_service::{AsyncService, Response, Service, ServiceState, TickMsg};
 use strata_storage::ops::writer::EnvelopeDataOps;
 
-use super::logic::process_unbundled_entries;
+use super::logic::{process_unbundled_entries, PendingIntent};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct BundlerStatus {
@@ -19,7 +18,7 @@ pub struct BundlerStatus {
 
 pub(crate) struct BundlerState {
     pub(crate) ops: Arc<EnvelopeDataOps>,
-    pub(crate) unbundled: Vec<IntentEntry>,
+    pub(crate) unbundled: Vec<PendingIntent>,
 }
 
 impl ServiceState for BundlerState {
@@ -32,7 +31,7 @@ pub(crate) struct BundlerService;
 
 impl Service for BundlerService {
     type State = BundlerState;
-    type Msg = TickMsg<IntentEntry>;
+    type Msg = TickMsg<PendingIntent>;
     type Status = BundlerStatus;
 
     fn get_status(state: &Self::State) -> Self::Status {

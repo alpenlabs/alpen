@@ -77,7 +77,8 @@ struct MockCtx {
     l1_tip_height: L1Height,
     /// CSM status returned by `fetch_csm_status`.
     csm_status: CsmWorkerStatus,
-    /// Epoch number -> commitment lookup (canonical chain).
+    /// Epoch number -> commitment, used by mock `apply_checkpoint` to build the
+    /// previous-epoch link in synthesized summaries.
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     /// L1 reference for each finalized epoch's checkpoint tx.
     l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
@@ -133,6 +134,24 @@ impl MockCtx {
         }
         self
     }
+
+    /// Seeds an L1-observed checkpoint without a canonical epoch->commitment entry
+    /// or summary, mirroring CSM's pre-apply state: the checkpoint is observed on
+    /// L1 but the node has not yet reconstructed (applied) the epoch.
+    fn add_observed_epoch(mut self, ec: EpochCommitment, l1_ref: CheckpointL1Ref) -> Self {
+        self.l1_refs.insert(ec, l1_ref);
+        self
+    }
+
+    /// Seeds genesis (epoch 0) faithfully: applied (summary + canonical entry) but
+    /// with no L1 observation, since epoch 0 produces no checkpoint tip update.
+    fn add_genesis(mut self, ec: EpochCommitment) -> Self {
+        assert_eq!(ec.epoch(), 0, "genesis must be epoch 0");
+        self.epoch_commitments.insert(0, ec);
+        let summary = make_epoch_summary(0, ec, EpochCommitment::null(), 0);
+        self.epoch_summaries.get_mut().unwrap().insert(ec, summary);
+        self
+    }
 }
 
 impl CheckpointSyncCtx for MockCtx {
@@ -148,15 +167,30 @@ impl CheckpointSyncCtx for MockCtx {
         Ok(self.csm_status.clone())
     }
 
-    async fn get_canonical_epoch_commitment(&self, ep: Epoch) -> DbResult<Option<EpochCommitment>> {
-        Ok(self.epoch_commitments.get(&ep).copied())
-    }
-
     async fn get_checkpoint_l1_ref(
         &self,
         epoch: EpochCommitment,
     ) -> DbResult<Option<CheckpointL1Ref>> {
         Ok(self.l1_refs.get(&epoch).cloned())
+    }
+
+    async fn get_observed_checkpoint_for_epoch(
+        &self,
+        ep: Epoch,
+    ) -> CheckpointSyncResult<Option<EpochCommitment>> {
+        // Resolve from observed L1 refs by epoch number, mirroring the production
+        // range scan. The mock seeds only canonical observations, so at most one
+        // matches per epoch.
+        let mut found = self.l1_refs.keys().filter(|c| c.epoch() == ep);
+        let result = found.next().copied();
+        if found.next().is_some() {
+            return Err(CheckpointSyncError::AmbiguousObservation(ep));
+        }
+        Ok(result)
+    }
+
+    async fn get_genesis_epoch_commitment(&self) -> DbResult<Option<EpochCommitment>> {
+        Ok(self.epoch_commitments.get(&0).copied())
     }
 
     async fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>> {
@@ -205,7 +239,7 @@ async fn scan_walks_to_genesis_when_nothing_applied() {
     let epoch3 = make_epoch(3, 30, 0x03);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), None)
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), None)
         .add_epoch(epoch2, make_l1_ref(120), None)
         .add_epoch(epoch3, make_l1_ref(130), None);
@@ -215,6 +249,34 @@ async fn scan_walks_to_genesis_when_nothing_applied() {
     // Genesis is the stopping point; epochs 1..=3 are all unapplied, newest-first.
     assert_eq!(last_applied, Some(epoch0));
     assert_eq!(unapplied, vec![epoch3, epoch2, epoch1]);
+}
+
+// Observed checkpoints without summaries must still provide the predecessor chain
+// during cold catch-up.
+#[tokio::test]
+async fn scan_cold_catchup_uses_observed_predecessors() {
+    let epoch131 = make_epoch(131, 1310, 0x83);
+    let epoch132 = make_epoch(132, 1320, 0x84);
+    let epoch133 = make_epoch(133, 1330, 0x85);
+    let epoch134 = make_epoch(134, 1340, 0x86);
+
+    // epoch131 is applied (summary present) and is the stopping point. 132/133/134
+    // are only L1-observed, so the summary-derived canonical index has no entry for
+    // them; the walk must resolve their predecessors from the observations.
+    let summary131 = make_epoch_summary(131, epoch131, make_epoch(130, 1300, 0x82), 1310);
+    let ctx = MockCtx::new(3, 2000)
+        .add_epoch(epoch131, make_l1_ref(1310), Some(summary131))
+        .add_observed_epoch(epoch132, make_l1_ref(1320))
+        .add_observed_epoch(epoch133, make_l1_ref(1330))
+        .add_observed_epoch(epoch134, make_l1_ref(1340))
+        .with_csm_finalized(Some(epoch134));
+
+    let (last_applied, unapplied) = scan_unapplied_epochs(&ctx, epoch134, 2000, 3)
+        .await
+        .unwrap();
+
+    assert_eq!(last_applied, Some(epoch131));
+    assert_eq!(unapplied, vec![epoch134, epoch133, epoch132]);
 }
 
 #[tokio::test]
@@ -227,7 +289,7 @@ async fn scan_all_already_applied() {
     let summary2 = make_epoch_summary(2, epoch2, epoch1, 120);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), None)
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
         .add_epoch(epoch2, make_l1_ref(120), Some(summary2));
 
@@ -244,11 +306,10 @@ async fn scan_collects_unapplied_newest_first_stops_at_applied() {
     let epoch2 = make_epoch(2, 20, 0x02);
     let epoch3 = make_epoch(3, 30, 0x03);
 
-    let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
     let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), Some(summary1)) // applied upto here
         .add_epoch(epoch2, make_l1_ref(120), None)
         .add_epoch(epoch3, make_l1_ref(130), None);
@@ -266,7 +327,7 @@ async fn scan_single_unapplied_epoch_above_genesis() {
     let epoch1 = make_epoch(1, 10, 0x01);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), None)
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), None);
 
     let (last_applied, unapplied) = scan_unapplied_epochs(&ctx, epoch1, 200, 3).await.unwrap();
@@ -308,9 +369,10 @@ async fn scan_errors_on_missing_l1_ref() {
 
 #[tokio::test]
 async fn scan_errors_when_prev_epoch_missing_from_chain() {
-    // epoch2 exists but epoch1 does not — broken invariant for a finalized chain.
+    // epoch2 is observed, but epoch1 has neither an observation nor a canonical
+    // mapping — a genuinely broken finalized chain, distinct from cold catch-up.
     let epoch2 = make_epoch(2, 20, 0x02);
-    let ctx = MockCtx::new(3, 200).add_epoch(epoch2, make_l1_ref(120), None);
+    let ctx = MockCtx::new(3, 200).add_observed_epoch(epoch2, make_l1_ref(120));
 
     let err = scan_unapplied_epochs(&ctx, epoch2, 200, 3)
         .await
@@ -329,11 +391,10 @@ async fn find_and_apply_multi_epoch_catch_up() {
     let epoch2 = make_epoch(2, 20, 0x02);
     let epoch3 = make_epoch(3, 30, 0x03);
 
-    let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
     let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
         .add_epoch(epoch2, make_l1_ref(120), None)
         .add_epoch(epoch3, make_l1_ref(130), None);
@@ -381,12 +442,11 @@ async fn handle_errors_on_chain_hole_leaves_state_unadvanced() {
     let epoch1 = make_epoch(1, 10, 0x01);
     let epoch3 = make_epoch(3, 30, 0x03);
 
-    let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
     let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
 
     let ctx = Arc::new(
         MockCtx::new(3, 200)
-            .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+            .add_genesis(epoch0)
             .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
             .add_epoch(epoch3, make_l1_ref(130), None)
             .with_csm_finalized(Some(epoch3)),
@@ -414,11 +474,10 @@ async fn rerun_after_partial_drain_applies_nothing() {
     let epoch2 = make_epoch(2, 20, 0x02);
     let epoch3 = make_epoch(3, 30, 0x03);
 
-    let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
     let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
 
     let ctx = MockCtx::new(3, 200)
-        .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+        .add_genesis(epoch0)
         .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
         .add_epoch(epoch2, make_l1_ref(120), None)
         .add_epoch(epoch3, make_l1_ref(130), None);

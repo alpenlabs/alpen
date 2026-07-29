@@ -9,6 +9,7 @@ mod constants;
 mod context;
 mod errors;
 mod manifest_processing;
+mod msg_payload_coin;
 mod output;
 mod proof_verification;
 mod sau_processing;

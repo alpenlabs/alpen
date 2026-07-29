@@ -6,7 +6,7 @@ use serde::Serialize;
 use strata_csm_types::CheckpointState;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::Slot;
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     sequencer_predicate_requires_signature, verify_sequencer_predicate_signature, OLBlock,
 };
 use strata_predicate::PredicateKey;
@@ -77,14 +77,8 @@ pub async fn start_fcm_service<C: FcmContext>(
     })
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct FcmService<C: FcmContext>(PhantomData<C>);
-
-impl<C: FcmContext> Default for FcmService<C> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct FcmStatus;
@@ -210,16 +204,16 @@ async fn process_fc_message<C: FcmContext>(
                     .get_ol_block(*canonical_tip.blkid())
                     .await?
                     .ok_or(Error::MissingOLBlock(*canonical_tip.blkid()))?;
-                let status = OLSyncStatus {
-                    tip: canonical_tip,
-                    tip_epoch: tip_block_data.header().epoch(),
-                    tip_is_terminal: tip_block_data.header().is_terminal(),
+                let status = OLSyncStatus::new(
+                    canonical_tip,
+                    tip_block_data.header().epoch(),
+                    tip_block_data.header().is_terminal(),
                     prev_epoch,
                     confirmed_epoch,
                     finalized_epoch,
                     // FIXME(STR-3673): this is a bit convoluted, could this be simpler?
-                    safe_l1: last_l1_blk,
-                };
+                    last_l1_blk,
+                );
 
                 trace!(%blkid, "publishing new ol_state");
                 fcm_state.ctx().publish_sync_status(status);
@@ -579,8 +573,8 @@ where
     S: FcmStorage + ?Sized,
 {
     let mut best_tip = *cur_tip;
-    let mut best_block = storage
-        .get_ol_block(best_tip)
+    let mut best_header = storage
+        .get_ol_header(best_tip)
         .await?
         .ok_or(Error::MissingOLBlock(best_tip))?;
 
@@ -592,17 +586,14 @@ where
             continue;
         }
 
-        let other_block = storage
-            .get_ol_block(*other_tip)
+        let other_header = storage
+            .get_ol_header(*other_tip)
             .await?
             .ok_or(Error::MissingOLBlock(*other_tip))?;
 
-        let best_header = best_block.header();
-        let other_header = other_block.header();
-
         if other_header.slot() > best_header.slot() {
             best_tip = *other_tip;
-            best_block = other_block;
+            best_header = other_header;
         }
     }
 
@@ -812,7 +803,7 @@ mod tests {
     use strata_asm_common::AsmManifest;
     use strata_db_types::{ol_block::BlockStatus, DbResult};
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
-    use strata_ol_chain_types_new::{
+    use strata_ol_chain_types::{
         test_utils::{schnorr_predicate, test_schnorr_keypair},
         BlockFlags, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment,
         SignedOLBlockHeader,
@@ -844,6 +835,7 @@ mod tests {
     #[derive(Default)]
     struct StubFcmStorageInner {
         blocks: HashMap<OLBlockId, OLBlock>,
+        headers: HashMap<OLBlockId, OLBlockHeader>,
         statuses: HashMap<OLBlockId, BlockStatus>,
         blocks_by_slot: BTreeMap<Slot, Vec<OLBlockId>>,
         canonical_blocks: HashMap<Slot, OLBlockCommitment>,
@@ -861,6 +853,13 @@ mod tests {
 
         fn put_ol_block(&self, block: OLBlock) -> OLBlockCommitment {
             self.put_block_parts(block, None, None)
+        }
+
+        fn put_ol_header(&self, header: OLBlockHeader) -> OLBlockCommitment {
+            let blkid = header.compute_blkid();
+            let commitment = OLBlockCommitment::new(header.slot(), blkid);
+            self.inner.lock().unwrap().headers.insert(blkid, header);
+            commitment
         }
 
         fn put_executed_block(
@@ -1010,6 +1009,15 @@ mod tests {
         async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
             Ok(self.inner.lock().unwrap().blocks.get(&blkid).cloned())
         }
+
+        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+            let inner = self.inner.lock().unwrap();
+            Ok(inner
+                .blocks
+                .get(&blkid)
+                .map(|block| block.header().clone())
+                .or_else(|| inner.headers.get(&blkid).cloned()))
+        }
     }
 
     #[async_trait]
@@ -1154,6 +1162,10 @@ mod tests {
 
         async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
             self.storage.get_ol_block(blkid).await
+        }
+
+        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+            self.storage.get_ol_header(blkid).await
         }
     }
 
@@ -1466,6 +1478,35 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn get_block_slot_resolves_header_only_reorg_pivot() {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        let finalized_epoch =
+            EpochCommitment::new(1, chain.x1.commitment().slot(), chain.x1.blkid());
+        let tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
+        let fcm_state = fixture.fcm_state_at(tracker, &chain.x1);
+
+        // A history-base anchor exists only as a terminal-header record; a
+        // reorg pivoting to it must still resolve its slot.
+        let anchor = make_storage_block(7, OLBlockId::from(Buf32::zero()));
+        let anchor_id = anchor.header().compute_blkid();
+        fixture.ctx.storage().put_ol_header(anchor.header().clone());
+        assert_eq!(
+            fixture.ctx.storage().get_ol_block(anchor_id).await.unwrap(),
+            None,
+            "anchor must be header-only for this test"
+        );
+
+        assert_eq!(
+            fcm_state
+                .get_block_slot(anchor_id)
+                .await
+                .expect("header-only slot lookup"),
+            7
+        );
+    }
+
     #[test]
     fn record_observed_finalized_epoch_classifies_ordering() {
         let chain = LinearChain::new();
@@ -1688,7 +1729,7 @@ mod tests {
         let statuses = fixture.ctx.published_statuses();
         assert_eq!(statuses.len(), 1);
         let status = &statuses[0];
-        assert_eq!(status.tip, fork.b3.commitment());
+        assert_eq!(status.tip(), fork.b3.commitment());
         assert_eq!(fcm_state.cur_best_block(), fork.b3.commitment());
         assert_eq!(fixture.ctx.executed_blocks(), vec![fork.b3.commitment()]);
 
@@ -1876,7 +1917,7 @@ mod tests {
         let statuses = fixture.ctx.published_statuses();
         assert_eq!(statuses.len(), 1);
         let status = &statuses[0];
-        assert_eq!(status.tip, chain.x4.commitment());
+        assert_eq!(status.tip(), chain.x4.commitment());
         assert_eq!(fcm_state.cur_best_block(), chain.x4.commitment());
         assert_eq!(fixture.ctx.executed_blocks(), vec![chain.x4.commitment()]);
         assert_eq!(
@@ -2072,6 +2113,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn picker_compares_header_only_current_tip() {
+        let storage = StubFcmStorage::new();
+        let current = make_storage_block(2, OLBlockId::from(Buf32::zero()));
+        let current_id = current.header().compute_blkid();
+        storage.put_ol_header(current.header().clone());
+
+        let candidate = make_storage_block(3, current_id);
+        let candidate_id = candidate.header().compute_blkid();
+        storage.put_ol_block(candidate);
+
+        assert_eq!(storage.get_ol_block(current_id).await.unwrap(), None);
+        assert_eq!(
+            pick_best_block_async(&current_id, &[current_id, candidate_id], &storage)
+                .await
+                .expect("pick best block"),
+            candidate_id
+        );
+    }
+
+    #[tokio::test]
     async fn stub_storage_returns_missing_values_without_creating_statuses() {
         let storage = StubFcmStorage::new();
         let missing = OLBlockId::from(Buf32::zero());
@@ -2137,10 +2198,10 @@ mod tests {
 
         let statuses = ctx.published_statuses();
         assert_eq!(statuses.len(), 1);
-        assert_eq!(statuses[0].tip, block_commitment);
-        assert_eq!(statuses[0].prev_epoch, genesis_epoch);
-        assert_eq!(statuses[0].confirmed_epoch, genesis_epoch);
-        assert_eq!(statuses[0].finalized_epoch, genesis_epoch);
+        assert_eq!(statuses[0].tip(), block_commitment);
+        assert_eq!(statuses[0].recently_complete_epoch(), genesis_epoch);
+        assert_eq!(statuses[0].confirmed_epoch(), genesis_epoch);
+        assert_eq!(statuses[0].finalized_epoch(), genesis_epoch);
     }
 
     #[tokio::test]

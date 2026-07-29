@@ -7,6 +7,8 @@ use strata_storage::ops::writer::EnvelopeDataOps;
 use tokio::sync::mpsc::Sender;
 use tracing::*;
 
+use super::bundler::PendingIntent;
+
 /// A handle to the Envelope task.
 #[expect(
     missing_debug_implementations,
@@ -14,11 +16,11 @@ use tracing::*;
 )]
 pub struct EnvelopeHandle {
     ops: Arc<EnvelopeDataOps>,
-    intent_tx: Sender<IntentEntry>,
+    intent_tx: Sender<PendingIntent>,
 }
 
 impl EnvelopeHandle {
-    pub fn new(ops: Arc<EnvelopeDataOps>, intent_tx: Sender<IntentEntry>) -> Self {
+    pub fn new(ops: Arc<EnvelopeDataOps>, intent_tx: Sender<PendingIntent>) -> Self {
         Self { ops, intent_tx }
     }
 
@@ -43,10 +45,10 @@ impl EnvelopeHandle {
 
         // Create and store IntentEntry
         let entry = IntentEntry::new_unbundled(intent);
-        let _idx = self.ops.put_intent_entry_blocking(id, entry.clone())?;
+        let idx = self.ops.put_intent_entry_blocking(id, entry.clone())?;
 
         // Send to bundler
-        if let Err(e) = self.intent_tx.blocking_send(entry) {
+        if let Err(e) = self.intent_tx.blocking_send(idx) {
             warn!(%e, %id, "could not send intent entry to bundler");
         }
         Ok(())
@@ -86,7 +88,7 @@ impl EnvelopeHandle {
         let intent_idx = self.ops.put_intent_entry_async(id, entry.clone()).await?;
 
         // Send to bundler
-        if let Err(e) = self.intent_tx.send(entry).await {
+        if let Err(e) = self.intent_tx.send(intent_idx).await {
             warn!(%e, %id, "could not send intent entry to bundler");
         }
 

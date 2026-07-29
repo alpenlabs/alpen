@@ -161,7 +161,7 @@ pub enum WorkerError {
 
     /// A snark-account update log failed to decode while sourcing index `extra_data`.
     #[error("failed to decode snark-account update log: {0}")]
-    SnarkUpdateLogDecode(#[from] strata_ol_chain_types_new::LogDecodeError),
+    SnarkUpdateLogDecode(#[from] strata_ol_chain_types::LogDecodeError),
 
     /// The emitted snark-account update logs could not be paired 1:1 with the tracked snark
     /// state updates when sourcing index `extra_data`.

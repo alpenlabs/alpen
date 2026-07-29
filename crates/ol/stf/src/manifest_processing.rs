@@ -1,6 +1,8 @@
 //! ASM manifest processing.
 
-use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, L1BlockRecord, MsgPayload};
+use strata_acct_types::{
+    AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, L1BlockRecord, MsgPayloadData,
+};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
     CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate, constants::AsmLogTypeId,
@@ -17,6 +19,7 @@ use crate::{
     account_processing::{self, handle_misplaced_funds},
     context::BasicExecContext,
     errors::{ExecError, ExecResult},
+    msg_payload_coin::MsgPayloadCoin,
 };
 
 /// Buffers the ASM logs carried by a sequence of manifests into the intraepoch
@@ -29,7 +32,7 @@ use crate::{
 /// ASM-log *effects* are deferred to [`process_epoch_terminal`].
 ///
 /// Accepts a plain slice rather than the per-block
-/// [`OLAsmManifestContainer`](strata_ol_chain_types_new::OLAsmManifestContainer)
+/// [`OLAsmManifestContainer`](strata_ol_chain_types::OLAsmManifestContainer)
 /// so callers replaying a whole epoch (e.g. checkpoint proving) are not bound
 /// by the per-block `MAX_SEALING_MANIFEST_COUNT` limit.
 ///
@@ -236,17 +239,58 @@ fn process_deposit_log<S: IStateAccessorMut>(
 ) -> ExecResult<()> {
     let amt_btc = BitcoinAmount::from_sat(deposit.amount);
 
+    // Resolve the destination before minting any value.  All the fallible steps
+    // run here so their errors propagate cleanly; only once we know whether the
+    // deposit is credited or swept do we mint the coin.  `None` means sweep to
+    // limbo.
+    let resolved = resolve_deposit_destination(state, real_height, deposit)?;
+
+    // Mint the coin exactly once, now that the deposit has been fully validated,
+    // and hand it to whichever sink takes it (both consume it on all paths).
+    let coin = Coin::new_unchecked(amt_btc);
+    match resolved {
+        None => {
+            handle_misplaced_funds(state, coin)?;
+        }
+        Some((dest_id, deposit_data)) => {
+            let msg_payload = MsgPayloadCoin::new(coin, deposit_data);
+
+            // Deliver the deposit message to the target account.
+            // TODO(STR-3677): need to tweak this a bit to deal with the changes to epoch contexts
+            account_processing::process_message(
+                state,
+                BRIDGE_GATEWAY_ACCT_ID,
+                dest_id,
+                msg_payload,
+                context,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Resolves a deposit's destination account and message payload without touching
+/// any value.
+///
+/// Returns [`None`] when the deposit should be swept to limbo (malformed
+/// descriptor or unknown account serial), or `Some` with the target account and
+/// its deposit message data.  Keeping this coin-free lets its fallible steps
+/// propagate errors without a live [`Coin`] in scope.
+fn resolve_deposit_destination<S: IStateAccessorMut>(
+    state: &S,
+    real_height: L1Height,
+    deposit: &DepositLog,
+) -> ExecResult<Option<(AccountId, MsgPayloadData)>> {
     // Parse the raw destination bytes into account serial + subject.
     let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
         // Malformed destination descriptor, sweep to limbo.
-        let coin = Coin::new_unchecked(amt_btc);
         warn!(
             l1_height = real_height,
             amount_sat = deposit.amount,
             "limboing deposit with malformed destination descriptor",
         );
-        handle_misplaced_funds(state, coin)?;
-        return Ok(());
+        return Ok(None);
     };
 
     let acct_serial = *descriptor.dest_acct_serial();
@@ -255,15 +299,13 @@ fn process_deposit_log<S: IStateAccessorMut>(
     // Convert the account serial to account ID.
     let Some(dest_id) = state.find_account_id_by_serial(acct_serial)? else {
         // Account serial not found, sweep to limbo.
-        let coin = Coin::new_unchecked(amt_btc);
         warn!(
             l1_height = real_height,
             ?acct_serial,
             amount_sat = deposit.amount,
             "limboing deposit for unknown account serial",
         );
-        handle_misplaced_funds(state, coin)?;
-        return Ok(());
+        return Ok(None);
     };
 
     // Create the message payload containing the typed deposit message.
@@ -272,7 +314,8 @@ fn process_deposit_log<S: IStateAccessorMut>(
     let deposit_data = OwnedMsg::new(DEPOSIT_MSG_TYPE_ID, deposit_body)
         .expect("deposit message body must fit into msg-fmt envelope")
         .to_vec();
-    let msg_payload = MsgPayload::from_bytes(deposit.amount.into(), deposit_data)
+    let deposit_data: MsgPayloadData = deposit_data
+        .try_into()
         .expect("deposit message payload bytes must fit within SSZ max length");
 
     info!(
@@ -284,17 +327,7 @@ fn process_deposit_log<S: IStateAccessorMut>(
         "crediting deposit to account",
     );
 
-    // Deliver the deposit message to the target account.
-    // TODO(STR-3677): need to tweak this a bit to deal with the changes to epoch contexts
-    account_processing::process_message(
-        state,
-        BRIDGE_GATEWAY_ACCT_ID,
-        dest_id,
-        msg_payload,
-        context,
-    )?;
-
-    Ok(())
+    Ok(Some((dest_id, deposit_data)))
 }
 
 fn process_checkpoint_tip_update<S: IStateAccessorMut>(
