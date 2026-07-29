@@ -25,7 +25,7 @@ use super::{
 /// This is a corruption guard rather than a policy limit: how many replacements a logical
 /// transaction may have is governed by `fee_bumping.max_attempts`, and each replacement adds one
 /// link. The bound is set well above any sane `max_attempts` so a healthy chain never hits it.
-const MAX_REPLACEMENT_CHAIN_HOPS: usize = 64;
+pub(super) const MAX_REPLACEMENT_CHAIN_HOPS: usize = 64;
 
 #[expect(
     missing_debug_implementations,

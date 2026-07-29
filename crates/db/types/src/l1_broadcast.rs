@@ -91,7 +91,14 @@ impl L1TxEntry {
         deserialize(&self.tx_raw)
     }
 
-    pub fn is_valid(&self) -> bool {
+    /// Reports whether the broadcaster should keep polling this entry under its own txid.
+    ///
+    /// `InvalidInputs` is dead: the inputs are gone and nothing can bring the transaction back.
+    /// `Replaced` is not dead, but it is no longer the chain's head, so it is followed through
+    /// the replacement rather than polled directly. A superseded transaction that a miner
+    /// includes anyway is recovered by `adopt_live_ancestor`, which reverses the link and
+    /// re-admits the winner.
+    pub fn is_trackable(&self) -> bool {
         !matches!(
             self.status,
             L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. }
