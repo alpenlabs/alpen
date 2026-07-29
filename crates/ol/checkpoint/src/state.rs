@@ -778,16 +778,20 @@ mod tests {
 
         // The sidecar must carry the withdrawal-intent log, and it must decode
         // to the amount and destination the update emitted.
-        let withdrawal = stored
+        let withdrawals = stored
             .sidecar()
             .ol_logs()
             .iter()
-            .find(|log| log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
+            .filter(|log| log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
             .map(|log| {
                 OLLog::new(log.account_serial(), log.payload().to_vec())
                     .try_into_log::<SimpleWithdrawalIntentLogData>()
                     .expect("bridge-gateway log must decode as a withdrawal intent")
             })
+            .collect::<Vec<_>>();
+        assert_eq!(withdrawals.len(), 1, "must have only one withdrawal log");
+        let withdrawal = withdrawals
+            .first()
             .expect("sidecar must contain the bridge-gateway withdrawal log");
         assert_eq!(
             withdrawal.amt, withdraw_sats,

@@ -287,7 +287,7 @@ fn test_apply_checkpoint_all() {
             .snark_state_updates()
             .len(),
         3,
-        "checkpoint sync should produce one snark record per ol_logs entry"
+        "checkpoint sync should produce 3 snark records"
     );
     assert_eq!(
         built
