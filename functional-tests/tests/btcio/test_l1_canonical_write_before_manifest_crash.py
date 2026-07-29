@@ -11,6 +11,7 @@ from envconfigs.strata import StrataEnvConfig
 
 logger = logging.getLogger(__name__)
 
+
 @flexitest.register
 class TestL1CanonicalWriteBeforeManifestCrash(StrataNodeTest):
     """Verify a canonical L1 entry without a manifest is recovered on restart."""

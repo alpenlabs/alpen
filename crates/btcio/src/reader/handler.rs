@@ -7,7 +7,7 @@ use tracing::*;
 
 use super::{
     event::{BlockData, L1Event},
-    query::ReaderContext,
+    query::{ReaderContext, ReaderStorageContext},
 };
 
 pub(crate) async fn handle_bitcoin_event<R: Reader>(
@@ -20,10 +20,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
             // L1 reorgs will be handled in L2 STF, we just have to reflect
             // what the client is telling us in the database.
             let height = block.height();
-            ctx.storage
-                .l1()
-                .revert_canonical_chain_async(height)
-                .await?;
+            ctx.revert_canonical_chain(height).await?;
             warn!(%height, "reverted L1 block database");
             // We don't submit events related to reverts,
             // as long as we updated canonical chain in the db.
@@ -45,16 +42,10 @@ async fn handle_blockdata<R: Reader>(
     blockdata: BlockData,
     _epoch: Epoch,
 ) -> anyhow::Result<Option<L1BlockCommitment>> {
-    let ReaderContext {
-        btcio_params,
-        storage,
-        ..
-    } = ctx;
-
     let height = blockdata.block_num();
 
     // Bail out fast if we don't have to care.
-    let genesis = btcio_params.genesis_l1_height();
+    let genesis = ctx.btcio_params.genesis_l1_height();
     if height < genesis {
         warn!(%height, %genesis, "ignoring BlockData for block before genesis");
         return Ok(Option::None);
@@ -64,10 +55,7 @@ async fn handle_blockdata<R: Reader>(
     let l1blockid = block.block_hash().to_l1_block_id();
 
     // Store chain tracking data only - ASM worker will handle manifest creation
-    storage
-        .l1()
-        .extend_canonical_chain_async(&l1blockid, height)
-        .await?;
+    ctx.extend_canonical_chain(l1blockid, height).await?;
     info!(%height, %l1blockid, "stored L1 chain tracking data");
     check_bail_trigger(BAIL_BTCIO_AFTER_L1_CANONICAL_WRITE);
 
