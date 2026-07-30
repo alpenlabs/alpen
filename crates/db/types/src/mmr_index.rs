@@ -3,7 +3,7 @@
 //! [`MmrIndexDatabase`], [`NodePos`], batch-write structs, preconditions, etc.
 
 use std::collections::BTreeMap;
-use std::io;
+use std::{fmt, io};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "proxies")]
@@ -26,8 +26,10 @@ pub type RawMmrId = Vec<u8>;
 pub enum MmrId {
     /// ASM manifest MMR (singleton, no account scope).
     Asm,
+
     /// Snark message inbox MMR (per-account scope).
     SnarkMsgInbox(AccountId),
+
     /// OL L1 block refs MMR (singleton, no account scope).
     L1BlockRefs,
 }
@@ -43,6 +45,16 @@ impl MmrId {
     /// Deserializes an [`MmrId`] from its database key bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, io::Error> {
         Self::try_from_slice(bytes)
+    }
+}
+
+impl fmt::Display for MmrId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Asm => f.write_str("asm"),
+            Self::SnarkMsgInbox(account_id) => write!(f, "snark-msg-inbox:{account_id}"),
+            Self::L1BlockRefs => f.write_str("l1-block-refs"),
+        }
     }
 }
 
@@ -80,6 +92,25 @@ impl MmrNodePos {
     /// Returns the node position for this node reference.
     pub fn pos(&self) -> NodePos {
         self.pos
+    }
+}
+
+#[cfg(test)]
+mod mmr_id_tests {
+    use strata_identifiers::AccountId;
+
+    use super::MmrId;
+
+    #[test]
+    fn test_mmr_ids_use_canonical_display_labels() {
+        let account_id = AccountId::new([0x42; 32]);
+
+        assert_eq!(MmrId::Asm.to_string(), "asm");
+        assert_eq!(MmrId::L1BlockRefs.to_string(), "l1-block-refs");
+        assert_eq!(
+            MmrId::SnarkMsgInbox(account_id).to_string(),
+            format!("snark-msg-inbox:{account_id}")
+        );
     }
 }
 

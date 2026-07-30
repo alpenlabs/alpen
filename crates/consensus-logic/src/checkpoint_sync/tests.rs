@@ -9,41 +9,22 @@ use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::DbResult;
-use strata_identifiers::{
-    Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
-};
+use strata_identifiers::{Epoch, OLBlockCommitment};
 use strata_primitives::{EpochCommitment, L1Height};
 use strata_status::OLSyncStatus;
 
-use crate::checkpoint_sync::{
-    context::CheckpointSyncCtx,
-    errors::{CheckpointSyncError, CheckpointSyncResult},
-    state::{find_and_apply_unapplied_epochs, scan_unapplied_epochs, CheckpointSyncState},
+use crate::{
+    checkpoint_sync::{
+        context::CheckpointSyncCtx,
+        errors::{CheckpointSyncError, CheckpointSyncResult},
+        state::{find_and_apply_unapplied_epochs, scan_unapplied_epochs, CheckpointSyncState},
+    },
+    test_utils::{make_buf32, make_epoch_commitment as make_epoch, make_l1_block_commitment},
 };
-
-fn make_buf32(v: u8) -> Buf32 {
-    Buf32([v; 32])
-}
-
-fn make_blkid(v: u8) -> OLBlockId {
-    OLBlockId::from(make_buf32(v))
-}
-
-fn make_l1_blkid(v: u8) -> L1BlockId {
-    L1BlockId::from(make_buf32(v))
-}
-
-fn make_epoch(epoch: Epoch, slot: u64, id_byte: u8) -> EpochCommitment {
-    EpochCommitment::new(epoch, slot, make_blkid(id_byte))
-}
-
-fn make_l1_commitment(height: u32, id_byte: u8) -> L1BlockCommitment {
-    L1BlockCommitment::new(height, make_l1_blkid(id_byte))
-}
 
 fn make_l1_ref(height: u32) -> CheckpointL1Ref {
     CheckpointL1Ref::new(
-        make_l1_commitment(height, height as u8),
+        make_l1_block_commitment(height, height as u8),
         make_buf32(height as u8).0.into(),
         make_buf32(height as u8).0.into(),
     )
@@ -59,7 +40,7 @@ fn make_epoch_summary(
         epoch,
         cur_epoch.to_block_commitment(),
         prev_epoch.to_block_commitment(),
-        make_l1_commitment(l1_height, l1_height as u8),
+        make_l1_block_commitment(l1_height, l1_height as u8),
         make_buf32(0xAA),
     )
 }
@@ -226,6 +207,10 @@ impl CheckpointSyncCtx for MockCtx {
 
     fn publish_ol_sync_status(&self, status: OLSyncStatus) {
         self.published_statuses.lock().unwrap().push(status);
+    }
+
+    async fn reconcile_ol_mmr_index(&self) -> CheckpointSyncResult<()> {
+        Ok(())
     }
 }
 

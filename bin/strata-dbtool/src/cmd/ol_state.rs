@@ -12,8 +12,8 @@ use super::{
         get_latest_checkpoint_last_slot, get_latest_finalized_checkpoint_epoch,
     },
     mmr::{
-        execute_mmr_index_revert_plan, get_mmr_index_revert_plan, print_mmr_index_revert_summary,
-        validate_mmr_index_revert_plan, validate_mmr_index_revert_prefixes,
+        build_mmr_index_revert_plan, execute_mmr_index_revert_plan, print_mmr_index_revert_summary,
+        validate_mmr_index_revert_prefixes,
     },
     ol::{delete_ol_block_data, get_ol_block_slot_and_epoch, mark_ol_block_unchecked},
 };
@@ -187,8 +187,7 @@ pub(crate) fn revert_ol_state(
                 Box::new(target_commitment),
             )
         })?;
-    let mmr_revert_plan = get_mmr_index_revert_plan(db, &target_state)?;
-    validate_mmr_index_revert_plan(&mmr_revert_plan)?;
+    let mmr_revert_plan = build_mmr_index_revert_plan(db, &target_state)?;
     validate_mmr_index_revert_prefixes(db, &mmr_revert_plan)?;
 
     println!("OL state chain tip slot {chain_tip_slot}");

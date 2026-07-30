@@ -7,7 +7,10 @@ use strata_ol_state_types::OLState;
 use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_status::OLSyncStatus;
 
-use crate::unfinalized_tracker::UnfinalizedOLBlockSource;
+use crate::{
+    ol_mmr_reconcile::{OLMmrReconcileResult, OLMmrReconcileTarget},
+    unfinalized_tracker::UnfinalizedOLBlockSource,
+};
 
 /// Chain execution operations required by FCM.
 #[async_trait]
@@ -34,13 +37,13 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
     /// if any.
     async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>>;
 
-    /// Rolls back per-block OL state-indexing writes in `epoch` attributed to
-    /// blocks with slots strictly greater than `cutoff.slot()`.
+    /// Returns the base of locally retained full OL block history, if any.
     ///
-    /// Called when a block is marked invalid to drop its indexing writes, so
-    /// a replacement block at the same slot can apply its own without
-    /// conflicting against the indexing high-watermark. Idempotent; a no-op
-    /// when the rejected block never reached the persist step.
+    /// Promoted checkpoint-sync datadirs can start from this anchor with the
+    /// anchor header/state present while older intra-epoch parents are pruned.
+    async fn get_history_base(&self) -> DbResult<Option<EpochCommitment>>;
+
+    /// Rolls back block-attributed OL state-indexing writes in `epoch` to `cutoff`.
     async fn rollback_block_state_indexing(
         &self,
         epoch: Epoch,
@@ -75,9 +78,23 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
     ) -> DbResult<Option<EpochCommitment>>;
 }
 
+/// Startup reconciliation operations required by FCM.
+#[async_trait]
+pub trait FcmStartupReconciler: Send + Sync {
+    /// Reconciles storage-derived indexes to FCM's selected startup tip.
+    ///
+    /// Called after FCM has repaired the canonical block index and loaded the
+    /// selected tip's OL state, before the service launches and replays startup
+    /// candidates.
+    async fn reconcile_ol_mmr_index(
+        &self,
+        target: OLMmrReconcileTarget,
+    ) -> OLMmrReconcileResult<()>;
+}
+
 /// FCM's dependency context.
 pub trait FcmContext:
-    ChainController + CsmStatusReader + FcmStorage + Send + Sync + 'static
+    ChainController + CsmStatusReader + FcmStorage + FcmStartupReconciler + Send + Sync + 'static
 {
     fn publish_sync_status(&self, status: OLSyncStatus);
 }

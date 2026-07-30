@@ -19,6 +19,7 @@ debug-utils = [
   "strata-common/debug-utils",
   "strata-consensus-logic/debug-utils",
   "strata-csm-worker/debug-utils",
+  "strata-chain-worker/debug-utils",
   "strata-ol-block-assembly?/debug-utils",
   "strata-ol-sequencer?/debug-utils",
 ]

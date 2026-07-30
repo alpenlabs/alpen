@@ -795,7 +795,7 @@ async fn revert_ol_state_to_block<C: FcmContext>(
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::{BTreeMap, HashMap},
+        collections::{BTreeMap, BTreeSet, HashMap},
         sync::{Arc, Mutex},
     };
 
@@ -820,9 +820,10 @@ mod tests {
     use super::*;
     use crate::{
         fcm::{
-            context::{ChainController, CsmStatusReader},
+            context::{ChainController, CsmStatusReader, FcmStartupReconciler},
             state::{reconcile_canonical_blocks_index, FcmInnerState},
         },
+        ol_mmr_reconcile::{OLMmrReconcileResult, OLMmrReconcileTarget},
         tip_update::TipUpdate,
         unfinalized_tracker::{UnfinalizedBlockTracker, UnfinalizedOLBlockSource},
     };
@@ -840,6 +841,7 @@ mod tests {
         blocks_by_slot: BTreeMap<Slot, Vec<OLBlockId>>,
         canonical_blocks: HashMap<Slot, OLBlockCommitment>,
         block_high_watermark: Option<OLBlockCommitment>,
+        history_base: Option<EpochCommitment>,
         states: HashMap<OLBlockCommitment, Arc<OLState>>,
         canonical_epochs: HashMap<Epoch, EpochCommitment>,
         indexing_rollbacks: Vec<(Epoch, OLBlockCommitment)>,
@@ -900,8 +902,9 @@ mod tests {
         fn put_toplevel_ol_state(&self, block: OLBlockCommitment, state: OLState) {
             let mut inner = self.inner.lock().unwrap();
             assert!(
-                inner.blocks.contains_key(block.blkid()),
-                "cannot seed OL state without the corresponding OL block"
+                inner.blocks.contains_key(block.blkid())
+                    || inner.headers.contains_key(block.blkid()),
+                "cannot seed OL state without the corresponding OL block or header"
             );
             inner.states.insert(block, Arc::new(state));
         }
@@ -929,6 +932,10 @@ mod tests {
             self.inner.lock().unwrap().block_high_watermark = Some(block);
         }
 
+        fn set_history_base(&self, history_base: EpochCommitment) {
+            self.inner.lock().unwrap().history_base = Some(history_base);
+        }
+
         fn block_high_watermark(&self) -> Option<OLBlockCommitment> {
             self.inner.lock().unwrap().block_high_watermark
         }
@@ -951,6 +958,7 @@ mod tests {
         safe_tip_updates: Mutex<Vec<OLBlockCommitment>>,
         finalized_epochs: Mutex<Vec<EpochCommitment>>,
         published_statuses: Mutex<Vec<OLSyncStatus>>,
+        startup_mmr_reconcile_targets: Mutex<Vec<OLMmrReconcileTarget>>,
     }
 
     impl StubFcmContext {
@@ -986,6 +994,10 @@ mod tests {
 
         fn published_statuses(&self) -> Vec<OLSyncStatus> {
             self.published_statuses.lock().unwrap().clone()
+        }
+
+        fn startup_mmr_reconcile_targets(&self) -> Vec<OLMmrReconcileTarget> {
+            self.startup_mmr_reconcile_targets.lock().unwrap().clone()
         }
     }
 
@@ -1043,6 +1055,10 @@ mod tests {
 
         async fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>> {
             Ok(self.inner.lock().unwrap().block_high_watermark)
+        }
+
+        async fn get_history_base(&self) -> DbResult<Option<EpochCommitment>> {
+            Ok(self.inner.lock().unwrap().history_base)
         }
 
         async fn rollback_block_state_indexing(
@@ -1183,6 +1199,10 @@ mod tests {
             self.storage.get_block_high_watermark().await
         }
 
+        async fn get_history_base(&self) -> DbResult<Option<EpochCommitment>> {
+            self.storage.get_history_base().await
+        }
+
         async fn rollback_block_state_indexing(
             &self,
             epoch: Epoch,
@@ -1223,6 +1243,20 @@ mod tests {
             epoch: Epoch,
         ) -> DbResult<Option<EpochCommitment>> {
             self.storage.get_canonical_epoch_commitment_at(epoch).await
+        }
+    }
+
+    #[async_trait]
+    impl FcmStartupReconciler for StubFcmContext {
+        async fn reconcile_ol_mmr_index(
+            &self,
+            target: OLMmrReconcileTarget,
+        ) -> OLMmrReconcileResult<()> {
+            self.startup_mmr_reconcile_targets
+                .lock()
+                .unwrap()
+                .push(target);
+            Ok(())
         }
     }
 
@@ -1329,11 +1363,46 @@ mod tests {
         slot: u64,
         epoch: Epoch,
     ) -> ExecutedBlock {
+        execute_test_block_with_components(
+            state,
+            parent,
+            timestamp,
+            slot,
+            epoch,
+            BlockComponents::new_empty(),
+        )
+    }
+
+    fn execute_terminal_test_block_in_epoch(
+        state: &mut MemoryStateBaseLayer,
+        parent: &OLBlock,
+        timestamp: u64,
+        slot: u64,
+        epoch: Epoch,
+    ) -> ExecutedBlock {
+        execute_test_block_with_components(
+            state,
+            parent,
+            timestamp,
+            slot,
+            epoch,
+            BlockComponents::new_empty().as_terminal(),
+        )
+    }
+
+    fn execute_test_block_with_components(
+        state: &mut MemoryStateBaseLayer,
+        parent: &OLBlock,
+        timestamp: u64,
+        slot: u64,
+        epoch: Epoch,
+        components: BlockComponents,
+    ) -> ExecutedBlock {
         let completed = execute_block(
             state,
             &BlockInfo::new(timestamp, slot, epoch),
             Some(parent.header()),
-            BlockComponents::new_empty(),
+            components,
         )
         .expect("test block executes");
 
@@ -1850,10 +1919,10 @@ mod tests {
     async fn startup_preserves_canonical_tip_on_equal_slot_forks() -> anyhow::Result<()> {
         let fork = TestFork::new();
         let fixture = fork.fixture();
-        let (canonical_1, canonical_2, other_2) = if fork.a2.blkid() > fork.b2.blkid() {
-            (&fork.a1, &fork.a2, &fork.b2)
+        let (canonical_1, canonical_2, other_1, other_2) = if fork.a2.blkid() > fork.b2.blkid() {
+            (&fork.a1, &fork.a2, &fork.b1, &fork.b2)
         } else {
-            (&fork.b1, &fork.b2, &fork.a2)
+            (&fork.b1, &fork.b2, &fork.a1, &fork.a2)
         };
         assert!(canonical_2.blkid() > other_2.blkid());
 
@@ -1866,6 +1935,87 @@ mod tests {
         let fcm_state = init_fcm_service_state(PredicateKey::always_accept(), fixture.ctx).await?;
 
         assert_eq!(fcm_state.cur_best_block(), canonical_2.commitment());
+        let reconcile_targets = fcm_state.ctx().startup_mmr_reconcile_targets();
+        assert_eq!(reconcile_targets.len(), 1);
+        assert_eq!(
+            reconcile_targets[0].rejected_indexing_blocks,
+            BTreeSet::from([other_1.commitment(), other_2.commitment()])
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_startup_reconciles_mmr_to_repaired_tip() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let mut state = MemoryStateBaseLayer::new(chain.x4.state.clone());
+        let terminal =
+            execute_terminal_test_block_in_epoch(&mut state, &chain.x4.block, 3_500, 5, 1);
+        let fixture = FcmTestFixture::new(
+            &chain.genesis,
+            &[&chain.x1, &chain.x2, &chain.x3, &chain.x4, &terminal],
+        );
+
+        assert_eq!(terminal.block.header().epoch(), 1);
+        assert_eq!(terminal.state.epoch_state().cur_epoch(), 2);
+
+        let fcm_state =
+            init_fcm_service_state(PredicateKey::always_accept(), fixture.ctx.clone()).await?;
+
+        assert_eq!(fcm_state.cur_best_block(), terminal.commitment());
+        let reconcile_targets = fixture.ctx.startup_mmr_reconcile_targets();
+        assert_eq!(reconcile_targets.len(), 1);
+        let reconcile_target = &reconcile_targets[0];
+        assert_eq!(reconcile_target.block, terminal.commitment());
+        assert_eq!(reconcile_target.epoch, terminal.block.header().epoch());
+        assert_eq!(
+            reconcile_target.state.global_state().get_cur_slot(),
+            terminal.state.global_state().get_cur_slot()
+        );
+        assert!(reconcile_target.rejected_indexing_blocks.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_startup_mmr_reconcile_stops_at_promoted_history_base() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let mut state = MemoryStateBaseLayer::new(chain.x4.state.clone());
+        let terminal =
+            execute_terminal_test_block_in_epoch(&mut state, &chain.x4.block, 3_500, 5, 1);
+        let history_base = EpochCommitment::new(
+            terminal.block.header().epoch(),
+            terminal.commitment().slot(),
+            terminal.blkid(),
+        );
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(history_base))
+                .with_last_confirmed_epoch(Some(history_base)),
+        );
+
+        // A promoted checkpoint-sync datadir has the anchor header/state but may
+        // not retain the full intra-epoch parent chain below it.
+        ctx.storage().seed_canonical_genesis(chain.genesis.blkid());
+        ctx.storage().put_ol_header(terminal.block.header().clone());
+        ctx.storage()
+            .put_toplevel_ol_state(terminal.commitment(), terminal.state.clone());
+        ctx.storage().set_history_base(history_base);
+        ctx.storage()
+            .replace_canonical_suffix_from(terminal.commitment().slot(), vec![terminal.blkid()])
+            .await?;
+
+        assert_eq!(ctx.storage().get_ol_block(terminal.blkid()).await?, None);
+        assert_eq!(ctx.storage().get_ol_header(chain.x4.blkid()).await?, None);
+
+        let fcm_state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
+
+        assert_eq!(fcm_state.cur_best_block(), terminal.commitment());
+        let reconcile_targets = ctx.startup_mmr_reconcile_targets();
+        assert_eq!(reconcile_targets.len(), 1);
+        assert_eq!(reconcile_targets[0].block, terminal.commitment());
+        assert_eq!(reconcile_targets[0].epoch, terminal.block.header().epoch());
+        assert!(reconcile_targets[0].rejected_indexing_blocks.is_empty());
 
         Ok(())
     }

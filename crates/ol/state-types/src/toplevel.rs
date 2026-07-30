@@ -1,7 +1,7 @@
 //! Toplevel state.
 
 use strata_acct_types::{AccountId, AccountSerial, Mmr64, SYSTEM_RESERVED_ACCTS, StrataHasher};
-use strata_ledger_types::{NewAccountData, StateError, StateResult};
+use strata_ledger_types::{IAccountState, NewAccountData, StateError, StateResult};
 use strata_merkle::Mmr;
 use strata_ol_params::OLParams;
 
@@ -87,6 +87,14 @@ impl OLState {
 
     pub fn intraepoch_state_mut(&mut self) -> &mut IntraepochState {
         &mut self.intraepoch
+    }
+
+    /// Iterates over all snark account ids in account-id order.
+    pub fn iter_snark_account_ids(&self) -> impl Iterator<Item = AccountId> + '_ {
+        self.iter_account_states()
+            .filter_map(|(account_id, account_state)| {
+                account_state.as_snark_account().ok().map(|_| account_id)
+            })
     }
 
     /// Checks that a batch can be applied safely.
