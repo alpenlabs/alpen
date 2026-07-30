@@ -4,6 +4,7 @@ use strata_asm_proto_checkpoint_txs::CheckpointTxError;
 use strata_codec::CodecError;
 use strata_da_framework::DaError as FrameworkDaError;
 use strata_l1_txfmt::TxFmtError;
+use strata_predicate::PredicateError;
 use thiserror::Error;
 
 pub type DaResult<T> = Result<T, DaError>;
@@ -12,6 +13,9 @@ pub type DaResult<T> = Result<T, DaError>;
 pub enum DaError {
     #[error("DA framework failure: {0}")]
     FrameworkError(#[from] FrameworkDaError),
+
+    #[error("invalid predicate key: {0}")]
+    InvalidPredicateKey(#[from] PredicateError),
 
     #[error("invalid state diff: {0}")]
     InvalidStateDiff(&'static str),

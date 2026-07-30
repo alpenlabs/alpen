@@ -187,8 +187,7 @@ fn new_account_data_from_init(init: &AccountInit) -> Result<NewAccountData, DaEr
     let type_state = match &init.type_state {
         AccountTypeInit::Empty => NewAccountTypeState::Empty,
         AccountTypeInit::Snark(snark) => {
-            let buf = PredicateKeyBuf::try_from(snark.update_vk.as_slice())
-                .map_err(|_| DaError::InvalidLedgerDiff("invalid predicate key"))?;
+            let buf = PredicateKeyBuf::try_from(snark.update_vk.as_slice())?;
             NewAccountTypeState::Snark {
                 update_vk: buf.to_owned(),
                 initial_state_root: snark.initial_state_root,
@@ -303,8 +302,7 @@ fn apply_snark_diff<T: IAccountStateMut>(
     );
 
     if let Some(vk_bytes) = diff.update_vk.new_value() {
-        let buf = PredicateKeyBuf::try_from(vk_bytes.as_slice())
-            .map_err(|_| DaError::InvalidStateDiff("invalid predicate key in snark diff"))?;
+        let buf = PredicateKeyBuf::try_from(vk_bytes.as_slice())?;
         snark.set_update_vk(buf.to_owned());
     }
 
@@ -1205,10 +1203,7 @@ mod tests {
             ),
         );
         let result = poll_ol_state_diff(&pre_accounts.state, diff);
-        assert!(matches!(
-            result,
-            Err(DaError::InvalidLedgerDiff("invalid predicate key"))
-        ));
+        assert!(matches!(result, Err(DaError::InvalidPredicateKey(_))));
     }
 
     #[test]
