@@ -6,9 +6,7 @@ from common.rpc_types.strata import AccountEpochSummary, ChainSyncStatus
 from common.services.strata import StrataService
 
 
-def check_top_level_state_equivalent(
-    seq_status: ChainSyncStatus, node_status: ChainSyncStatus
-):
+def check_top_level_state_equivalent(seq_status: ChainSyncStatus, node_status: ChainSyncStatus):
     """Checks CSS's top-level state at the shared finalized checkpoint.
 
     CSS publishes confirmed, latest, and finalized together at the terminal tip.

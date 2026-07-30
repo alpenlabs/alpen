@@ -62,9 +62,7 @@ class TestCheckpointSyncNodeRestart(BaseTest):
         wait_until_with_value(
             lambda: mine_and_get_status(sequencer, btc_rpc),
             lambda st: st["finalized"]["epoch"] >= target_epoch,
-            error_with=(
-                "sequencer did not finalize the checkpoint backlog while CSS was stopped"
-            ),
+            error_with=("sequencer did not finalize the checkpoint backlog while CSS was stopped"),
             timeout=180,
         )
 

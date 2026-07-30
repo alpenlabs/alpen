@@ -101,6 +101,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         envparams: AlpenClientEnvParams,
         bitcoin_service: BitcoinService | None = None,
         ol_endpoint: str | None = None,
+        fullnode_ol_endpoint: str | None = None,
         ol_submit_endpoint: str | None = None,
         ol_submit_token: str | None = None,
         ee_params_path: Path | None = None,
@@ -191,7 +192,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 enable_discovery=envparams.enable_discovery,
                 instance_id=i,
                 sequencer_http=seq_http_url,  # Forward transactions to sequencer
-                ol_endpoint=ol_endpoint,
+                ol_endpoint=fullnode_ol_endpoint or ol_endpoint,
                 ee_params_path=ee_params_path,
             )
             fullnode.wait_for_ready(timeout=60)
