@@ -354,10 +354,10 @@ fn assert_withdrawal_log_present(logs: &[ChainOLLog]) {
 
 #[test]
 fn test_apply_checkpoint_replays_manifests_spread_across_non_terminal_blocks() {
-    let built = build_epoch(EpochPlan::new().block(BlockPlan::new().empty_manifests(2)));
-    assert!(
-        built.manifests_by_height.len() > 1,
-        "fixture should spread manifests across multiple blocks"
+    let built = build_epoch(
+        EpochPlan::new()
+            .block(BlockPlan::new().empty_manifests(1))
+            .block(BlockPlan::new().empty_manifests(1)),
     );
     let (ctx, epoch) = mock_for(&built);
 
