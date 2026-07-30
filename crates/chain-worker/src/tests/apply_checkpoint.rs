@@ -614,7 +614,46 @@ fn test_apply_checkpoint_missing_payload() {
     assert!(matches!(err, WorkerError::MissingCheckpointPayload(_)));
 }
 
-/// Asserts the checkpoint-reconstructed artifacts match the block-sync run,
+#[test]
+fn test_apply_checkpoint_rejects_mismatched_payload_then_accepts_valid_retry() {
+    let built = build_epoch(EpochPlan::new().terminal(BlockPlan::new().deposit_manifest()));
+    let (mut ctx, epoch) = mock_for(&built);
+    let valid_payload = ctx
+        .checkpoint_payloads
+        .get(&epoch)
+        .expect("fixture payload")
+        .clone();
+
+    // This exercises the production payload/CSM consistency guard, rather
+    // than a mock error: the payload says it reconstructs a different epoch
+    // from the one whose checkpoint requested it.
+    let mismatched_tip = CheckpointTip::new(
+        valid_payload.new_tip().epoch + 1,
+        valid_payload.new_tip().l1_height(),
+        *valid_payload.new_tip().l2_commitment(),
+    );
+    let mismatched_payload = CheckpointPayload::new(
+        mismatched_tip,
+        valid_payload.sidecar().clone(),
+        valid_payload.proof().to_vec(),
+    )
+    .expect("rebuild payload with mismatched tip");
+    ctx.checkpoint_payloads.insert(epoch, mismatched_payload);
+
+    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("mismatched payload must be rejected");
+    assert!(
+        matches!(err, WorkerError::CheckpointTipMismatch { .. }),
+        "expected CheckpointTipMismatch, got {err:?}"
+    );
+
+    // A corrected payload for the same CSM update must be applicable on a
+    // later retry; a failed attempt must not poison reconstruction state.
+    ctx.checkpoint_payloads.insert(epoch, valid_payload);
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("valid retry must apply");
+    assert_consistent(&built, &artifacts);
+}
+
+/// Asserts the checkpoint-reconstructed artifacts match the block-sync run.
 /// including an identical emitted-log sequence.
 fn assert_consistent(built: &BuiltEpoch, artifacts: &AppliedEpochArtifacts) {
     assert_state_consistent(built, artifacts);
