@@ -11,10 +11,16 @@ name: AI Security Review
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to review
+        required: true
+        type: number
 
 # Cancel a stale review when new commits land on the same PR (cost + no duplicate comments).
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number }}
+  group: ai-review-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 permissions:
@@ -24,13 +30,31 @@ permissions:
 jobs:
   security-review:
     # Skip drafts (wasteful) and dependabot (secrets are withheld, so it would only fail).
-    if: github.event.pull_request.draft == false && github.actor != 'dependabot[bot]'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft == false && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Manual runs have access to secrets, so keep the automatic trigger's fork/dependabot boundary.
+      - name: Validate manually selected PR
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          is_cross_repository=$(gh pr view "$PR" --repo "$REPO" --json isCrossRepository --jq '.isCrossRepository')
+          author=$(gh pr view "$PR" --repo "$REPO" --json author --jq '.author.login')
+          if [ "$is_cross_repository" = true ] || [ "$author" = 'dependabot' ]; then
+            echo "::error::Manual reviews are limited to non-Dependabot PRs from this repository."
+            exit 1
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || format('refs/pull/{0}/head', inputs.pr_number) }}
           fetch-depth: 1
           persist-credentials: false # don't write GITHUB_TOKEN into .git/config (zizmor: artipacked)
 
@@ -38,7 +62,7 @@ jobs:
         id: pick
         env:
           GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
+          PR: ${{ github.event.pull_request.number || inputs.pr_number }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -53,7 +77,7 @@ jobs:
           echo "model=$model" >> "$GITHUB_OUTPUT"
           { echo "### AI review model: \`$model\`"; echo '```'; printf '%s\n' "$files"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+      - uses: anthropics/claude-code-action@787c5a0ce96a9a6cfb050ea0c8f4c05f2447c251 # v1.0.133
         with:
           # Subscription first; fall back to the API key only when no OAuth token is configured.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -61,8 +85,8 @@ jobs:
           github_token: ${{ github.token }}
           use_sticky_comment: true
           prompt: |
-            Perform a security review of pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
-            Run `gh pr diff ${{ github.event.pull_request.number }}` for the changes; read surrounding code for context.
+            Perform a security review of pull request #${{ github.event.pull_request.number || inputs.pr_number }} in ${{ github.repository }}.
+            Run `gh pr diff ${{ github.event.pull_request.number || inputs.pr_number }}` for the changes; read surrounding code for context.
 
             Analyze thoroughly for real, exploitable vulnerabilities introduced or exposed by this diff:
             injection (SQL/command/template), unsafe deserialization, path traversal, SSRF, broken authn/authz,
@@ -71,7 +95,7 @@ jobs:
             resource exhaustion / DoS. Favor precision over recall.
 
             Then post EXACTLY ONE PR comment via
-            `gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "<markdown>"`,
+            `gh pr comment ${{ github.event.pull_request.number || inputs.pr_number }} --repo ${{ github.repository }} --body "<markdown>"`,
             following these OUTPUT RULES strictly (a human reads this — keep it tight):
             - Always start with the heading "## 🔒 AI Security Review (${{ steps.pick.outputs.model }})".
             - If you found NO real issues: the ENTIRE body is that heading plus one line — "✅ No security issues found."
