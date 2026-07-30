@@ -79,39 +79,6 @@ def build_snark_withdrawal(
     return json.loads(result)
 
 
-def create_ee_predicate_update(
-    seq_no: int,
-    predicate: str,
-    admin_xpriv: str,
-    btc_url: str,
-    btc_user: str,
-    btc_password: str,
-    fee_rate: int = 2,
-    commit_output_sats: int = 20_000,
-) -> dict:
-    """Broadcast an admin EE predicate update commit/reveal transaction pair.
-
-    Returns:
-        JSON dict with commit_txid and reveal_txid.
-    """
-    # fmt: off
-    args = [
-        "create-ee-predicate-update",
-        "--seq-no", str(seq_no),
-        "--predicate", predicate,
-        "--admin-xpriv", admin_xpriv,
-        "--btc-url", btc_url,
-        "--btc-user", btc_user,
-        "--btc-password", btc_password,
-        "--fee-rate", str(fee_rate),
-        "--commit-output-sats", str(commit_output_sats),
-    ]
-    # fmt: on
-
-    result = _run_command(args)
-    return json.loads(result)
-
-
 def create_checkpoint_predicate_update(
     seq_no: int,
     predicate: str,

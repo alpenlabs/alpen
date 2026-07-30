@@ -340,11 +340,6 @@ def main(argv: list[str]) -> int:
         ),
         # Environments containing both ee and ol
         "el_ol": EeOLEnv(pre_generate_blocks=110),
-        "el_ol_ee_predicate_transition": EeOLEnv(
-            pre_generate_blocks=110,
-            admin_confirmation_depth=2,
-            fund_test_cli_wallet=True,
-        ),
         # Same as `el_ol` but with a tighter OL block time so bridge tests can
         # drive a deposit -> bridgeout -> WF cycle within reasonable runtime.
         # 500ms was tried first but flagged as likely-flaky in #1699 review;
