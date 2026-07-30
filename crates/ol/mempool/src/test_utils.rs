@@ -87,7 +87,7 @@ pub(crate) fn create_test_snark_update() -> SnarkAccountUpdate {
         proof_state,
         messages,
         ledger_refs,
-        strata_snark_acct_types::UpdateOutputs::new(vec![], vec![]),
+        strata_snark_acct_types::UpdateOutputs::new_empty(),
         update_data.extra_data().to_vec(),
     );
     SnarkAccountUpdate::new(snark_operation, vec![])
@@ -350,7 +350,7 @@ pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
         proof_state,
         messages,
         ledger_refs,
-        strata_snark_acct_types::UpdateOutputs::new(vec![], vec![]),
+        strata_snark_acct_types::UpdateOutputs::new_empty(),
         update_data.extra_data().to_vec(),
     );
 

@@ -46,22 +46,33 @@ impl From<Option<PredicateKey>> for OutputNewPredicate {
 }
 
 impl UpdateOutputs {
-    /// Creates new update outputs with no predicate rotation.
-    pub fn new(transfers: Vec<OutputTransfer>, messages: Vec<OutputMessage>) -> Self {
+    /// Creates empty update outputs.
+    ///
+    /// Use the `with_*`/`try_extend_*` builders to fill them in, rather than
+    /// a positional constructor, so adding a field here doesn't require
+    /// touching every call site.
+    pub fn new_empty() -> Self {
         Self {
-            transfers: transfers
-                .try_into()
-                .expect("transfers should not exceed capacity"),
-            messages: messages
-                .try_into()
-                .expect("messages should not exceed capacity"),
+            transfers: VariableList::empty(),
+            messages: VariableList::empty(),
             new_predicate: OutputNewPredicate::new_empty(),
         }
     }
 
-    /// Creates empty update outputs.
-    pub fn new_empty() -> Self {
-        Self::new(Vec::new(), Vec::new())
+    /// Sets the transfers, consuming and returning self.
+    pub fn with_transfers(mut self, transfers: Vec<OutputTransfer>) -> Self {
+        self.transfers = transfers
+            .try_into()
+            .expect("transfers should not exceed capacity");
+        self
+    }
+
+    /// Sets the messages, consuming and returning self.
+    pub fn with_messages(mut self, messages: Vec<OutputMessage>) -> Self {
+        self.messages = messages
+            .try_into()
+            .expect("messages should not exceed capacity");
+        self
     }
 
     /// Sets the new update predicate key declared by this update, consuming

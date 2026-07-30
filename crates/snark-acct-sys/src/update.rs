@@ -93,7 +93,9 @@ pub fn effects_to_update_outputs(
         .map(|m| OutputMessage::new(m.dest(), m.payload().clone()))
         .collect();
 
-    let mut outputs = UpdateOutputs::new(transfers, messages);
+    let mut outputs = UpdateOutputs::new_empty()
+        .with_transfers(transfers)
+        .with_messages(messages);
     outputs.set_new_predicate(new_predicate.cloned());
     outputs
 }
