@@ -33,10 +33,9 @@ MAX_EPOCHS_TO_SCAN = 30
 @flexitest.register
 class TestCheckpointSyncNode(BaseTest):
     """
-    Tests a checkpoint syncing node. The EE node reads OL state from the
-    checkpoint-sync node and submits transactions to the sequencer; the test
-    asserts that per-epoch account summaries from the checkpoint-sync node
-    match the sequencer's.
+    Tests a checkpoint syncing node. The EE sequencer generates activity via
+    the OL sequencer; the test asserts that CSS reconstructs matching
+    per-epoch account summaries from L1 checkpoints.
     """
 
     def __init__(self, ctx: flexitest.InitContext):

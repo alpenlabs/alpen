@@ -47,18 +47,16 @@ class TestCheckpointSyncNodeRestart(BaseTest):
         checkpoint_node.wait_for_rpc_ready(timeout=20)
 
         # First get checkpoint node to sync up to first checkpoint.
-        pre_restart_status = wait_until_with_value(
+        wait_until_with_value(
             lambda: mine_and_get_status(checkpoint_node, btc_rpc),
             lambda st: st["finalized"]["epoch"] >= 1,
             error_with="checkpoint-sync node did not finalize a post-genesis epoch",
             timeout=120,
         )
-        finalized_epoch = pre_restart_status["finalized"]["epoch"]
-        logger.info(f"checkpoint-sync node finalized epoch {finalized_epoch}; restarting")
-
         # Stop CSS while the sequencer finalizes a multi-epoch backlog.
+        seq_finalized_before_stop = sequencer.get_sync_status()["finalized"]["epoch"]
         checkpoint_node.stop()
-        target_epoch = finalized_epoch + EPOCHS_TO_BACKFILL_AFTER_RESTART
+        target_epoch = seq_finalized_before_stop + EPOCHS_TO_BACKFILL_AFTER_RESTART
         wait_until_with_value(
             lambda: mine_and_get_status(sequencer, btc_rpc),
             lambda st: st["finalized"]["epoch"] >= target_epoch,
