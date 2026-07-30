@@ -10,7 +10,10 @@ use jsonrpsee::core::RpcResult;
 use ssz::{Decode, Encode};
 use strata_acct_types::MessageEntry;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::{ol_block::BlockAvailability, ol_state_index::InboxMessageRecord};
+use strata_db_types::{
+    ol_block::BlockAvailability,
+    ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
+};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId, RBuf32,
@@ -123,6 +126,22 @@ fn local_inbox_message_range(
     })?;
 
     Ok(local_start..local_end)
+}
+
+/// Returns the SAU operation seqno for an indexed update record.
+///
+/// Indexed update records store post-state account seqnos. Missing operation
+/// seqnos indicate an indexing invariant violation and fail the RPC.
+fn require_operation_seq_no(
+    account_id: AccountId,
+    epoch: Epoch,
+    record: &AccountUpdateRecord,
+) -> RpcResult<u64> {
+    record.orig_acct_seq_no().ok_or_else(|| {
+        internal_error(format!(
+            "missing operation seq_no in update record for account {account_id} epoch {epoch}",
+        ))
+    })
 }
 
 impl<P: OLRpcProvider> OLRpcServer<P> {
@@ -422,7 +441,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         // `Pending` triple capturing the inbox slice they consumed.
         struct Pending {
             block_commitment: OLBlockCommitment,
-            seq_no: u64,
+            operation_seq_no: u64,
             new_state_root: Hash,
             extra_data: Vec<u8>,
             cursor_start: u64,
@@ -455,6 +474,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                         continue;
                     }
 
+                    let operation_seq_no = require_operation_seq_no(account_id, epoch, &r)?;
+
                     // Block-attributed `DirectSet` (no `extra_data`) is not
                     // produced by current write paths. Keep the soft fail in
                     // case the invariant ever breaks.
@@ -470,7 +491,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
 
                     pending.push(Pending {
                         block_commitment,
-                        seq_no: r.seq_no(),
+                        operation_seq_no,
                         new_state_root: meta.new_state_root(),
                         extra_data,
                         cursor_start: r.prev_next_inbox_idx(),
@@ -512,7 +533,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     .entry(p.block_commitment)
                     .or_default()
                     .push(UpdateInputData::new(
-                        p.seq_no,
+                        p.operation_seq_no,
                         messages,
                         UpdateStateData::new(
                             ProofState::new(p.new_state_root, p.cursor_end),
@@ -528,7 +549,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     .entry(p.block_commitment)
                     .or_default()
                     .push(UpdateInputData::new(
-                        p.seq_no,
+                        p.operation_seq_no,
                         Vec::new(),
                         UpdateStateData::new(
                             ProofState::new(p.new_state_root, p.cursor_end),
@@ -710,7 +731,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             let skip_fetch = epoch == 0;
 
             struct Pending {
-                seq_no: u64,
+                operation_seq_no: u64,
                 new_state_root: Option<Hash>,
                 extra_data: Vec<u8>,
                 cursor_start: u64,
@@ -720,6 +741,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             let mut pending = Vec::with_capacity(records.len());
             for r in &records {
                 let new_state_root = r.update_meta().map(|m| m.new_state_root());
+                let operation_seq_no = require_operation_seq_no(account_id, epoch, r)?;
                 let extra_data = r
                     .extra_data()
                     .ok_or_else(|| {
@@ -731,7 +753,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                     .to_vec();
 
                 pending.push(Pending {
-                    seq_no: r.seq_no(),
+                    operation_seq_no,
                     new_state_root,
                     extra_data,
                     cursor_start: r.prev_next_inbox_idx(),
@@ -764,7 +786,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                     messages_in_range[message_range].to_vec()
                 };
                 out.push(RpcUpdateInputData {
-                    seq_no: p.seq_no,
+                    seq_no: p.operation_seq_no,
                     next_inbox_msg_idx: p.cursor_end,
                     new_state_root: p.new_state_root.map(|root| root.0.into()),
                     extra_data: p.extra_data.into(),
@@ -1127,12 +1149,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             };
 
             for record in records {
-                let operation_seq_no = record.orig_acct_seq_no().ok_or_else(|| {
-                    internal_error(format!(
-                        "update record for account {account_id} epoch {epoch} has invalid \
-                         post-state seq_no 0",
-                    ))
-                })?;
+                let operation_seq_no = require_operation_seq_no(account_id, epoch, &record)?;
 
                 if operation_seq_no != seq_no {
                     continue;

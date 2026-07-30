@@ -2078,7 +2078,7 @@ async fn blocks_summaries_populates_updates_and_new_inbox_messages_from_index() 
     assert_eq!(summaries[0].updates().len(), 1);
 
     let update = rpc_update_to_input(summaries[0].updates()[0].clone());
-    assert_eq!(update.seq_no(), 6);
+    assert_eq!(update.seq_no(), 5);
     assert_eq!(update.extra_data(), extra_data.as_slice());
     assert_eq!(update.new_state().inner_state(), final_state_root);
     assert_eq!(update.new_state().next_inbox_msg_idx(), 2);
@@ -2098,6 +2098,99 @@ async fn blocks_summaries_populates_updates_and_new_inbox_messages_from_index() 
     assert_eq!(
         returned_messages[0].payload_buf(),
         inbox_message.payload_buf()
+    );
+}
+
+#[tokio::test]
+async fn summaries_match_manifest_operation_seqno_by_root() {
+    let account_id = test_account_id(1);
+    let epoch: Epoch = 1;
+    let post_state_seq_no = 553;
+    let operation_seq_no = 552;
+    let next_inbox_msg_idx = 9;
+
+    let genesis_block = make_block(0, 0, null_blkid());
+    let genesis_blkid = genesis_block.header().compute_blkid();
+    let prev_epoch_commitment = EpochCommitment::new(0, 0, genesis_blkid);
+
+    let block = make_terminal_block(5, epoch, genesis_blkid);
+    let commitment = OLBlockCommitment::new(5, block.header().compute_blkid());
+    let epoch_commitment = EpochCommitment::new(epoch, 5, block.header().compute_blkid());
+    let resulting_state_root = fixed_buf32(0x3F);
+    let record = update_record_with_prev(
+        Some(AccountUpdateMeta::new(
+            Some(commitment),
+            resulting_state_root,
+        )),
+        post_state_seq_no,
+        next_inbox_msg_idx,
+        next_inbox_msg_idx,
+        Some(vec![0xC3, 0x51]),
+    );
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            commitment,
+            epoch,
+            true,
+            prev_epoch_commitment,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, epoch)
+        .with_epoch_commitment(0, prev_epoch_commitment)
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_block_and_state(&genesis_block, genesis_ol_state())
+        .with_block_and_state(
+            &block,
+            ol_state_with_snark_account(account_id, 5, post_state_seq_no, next_inbox_msg_idx),
+        )
+        .with_account_update_records(account_id, epoch, vec![record]);
+    let rpc = make_rpc(provider);
+
+    let epoch_summary = rpc
+        .get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect("epoch summary");
+    let epoch_update = epoch_summary
+        .update_inputs()
+        .iter()
+        .find(|update| {
+            update
+                .new_state_root
+                .as_ref()
+                .is_some_and(|root| root.0 == resulting_state_root.0)
+        })
+        .expect("epoch update with matching state root");
+    assert_eq!(epoch_update.seq_no, operation_seq_no);
+
+    let block_summaries = rpc
+        .get_blocks_summaries(account_id, 5, 5)
+        .await
+        .expect("block summary");
+    assert_eq!(block_summaries.len(), 1);
+    let block_summary = &block_summaries[0];
+    assert_eq!(block_summary.next_seq_no(), post_state_seq_no);
+    let block_update = block_summary
+        .updates()
+        .iter()
+        .find(|update| {
+            update
+                .new_state_root
+                .as_ref()
+                .is_some_and(|root| root.0 == resulting_state_root.0)
+        })
+        .expect("block update with matching state root");
+    assert_eq!(block_update.seq_no, operation_seq_no);
+
+    let manifest = rpc
+        .get_snark_acct_update_manifest(account_id, operation_seq_no)
+        .await
+        .expect("manifest");
+    assert_eq!(manifest.seq_no(), operation_seq_no);
+    assert_eq!(
+        manifest.new_inner_state_root().expect("state root").0,
+        resulting_state_root.0
     );
 }
 
@@ -2523,8 +2616,38 @@ async fn blocks_summaries_out_of_chain_directset_does_not_fail_rpc() {
     assert_eq!(summaries[0].updates().len(), 1);
 
     let update = rpc_update_to_input(summaries[0].updates()[0].clone());
-    assert_eq!(update.seq_no(), 2);
+    assert_eq!(update.seq_no(), 1);
     assert_eq!(update.extra_data(), [0xA0]);
+}
+
+#[tokio::test]
+async fn blocks_summaries_rejects_zero_post_state_seqno() {
+    let account_id = test_account_id(1);
+    let block = make_block(0, 0, null_blkid());
+    let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
+    let record = update_record(
+        Some(AccountUpdateMeta::new(Some(commitment), [0x44; 32].into())),
+        0,
+        0,
+        Some(vec![0xA0]),
+    );
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            commitment,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 0, 0))
+        .with_account_update_records(account_id, 0, vec![record]);
+    let rpc = make_rpc(provider);
+
+    rpc.get_blocks_summaries(account_id, 0, 0)
+        .await
+        .expect_err("blocks summary accepted zero post-state seq_no");
 }
 
 #[tokio::test]
@@ -2627,7 +2750,7 @@ proptest! {
         generated_updates in prop::collection::vec(
             (
                 any::<bool>(),
-                any::<u16>(),
+                1u16..=u16::MAX,
                 any::<[u8; 32]>(),
                 prop::collection::vec(any::<u8>(), 0..16)
             ),
@@ -2696,7 +2819,7 @@ proptest! {
             summaries[0].updates().iter().zip(expected_block0.iter())
         {
             let update = rpc_update_to_input(rpc_update.clone());
-            prop_assert_eq!(update.seq_no(), u64::from(*seq_no));
+            prop_assert_eq!(update.seq_no(), u64::from(*seq_no) - 1);
             prop_assert_eq!(update.extra_data(), extra_data.as_slice());
             prop_assert_eq!(
                 update.new_state().inner_state(),
@@ -2710,7 +2833,7 @@ proptest! {
             summaries[1].updates().iter().zip(expected_block1.iter())
         {
             let update = rpc_update_to_input(rpc_update.clone());
-            prop_assert_eq!(update.seq_no(), u64::from(*seq_no));
+            prop_assert_eq!(update.seq_no(), u64::from(*seq_no) - 1);
             prop_assert_eq!(update.extra_data(), extra_data.as_slice());
             prop_assert_eq!(
                 update.new_state().inner_state(),
@@ -3034,12 +3157,12 @@ async fn epoch_summary_multi_record_slices_messages_per_update() {
     let updates = summary.update_inputs();
     assert_eq!(updates.len(), 3);
 
-    assert_eq!(updates[0].seq_no, 10);
+    assert_eq!(updates[0].seq_no, 9);
     assert_eq!(updates[0].messages.len(), 2);
     assert_eq!(rpc_messages_to_entries(&updates[0].messages), msgs_1);
-    assert_eq!(updates[1].seq_no, 11);
+    assert_eq!(updates[1].seq_no, 10);
     assert!(updates[1].messages.is_empty());
-    assert_eq!(updates[2].seq_no, 12);
+    assert_eq!(updates[2].seq_no, 11);
     assert_eq!(updates[2].messages.len(), 3);
     assert_eq!(rpc_messages_to_entries(&updates[2].messages), msgs_3);
 }
@@ -3096,6 +3219,32 @@ async fn epoch_summary_checkpoint_sync_populates_terminal_root_only() {
         summary.final_state_root().0,
         "terminal update surfaces post-epoch root"
     );
+}
+
+#[tokio::test]
+async fn epoch_summary_rejects_zero_post_state_seqno() {
+    let epoch: Epoch = 2;
+    let account_id = test_account_id(7);
+    let epoch_commitment = test_epoch_commitment(epoch, 40, 0x62);
+    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 30, 0x61);
+    let record = update_record_with_prev(
+        Some(AccountUpdateMeta::new(None, Hash::zero())),
+        0,
+        0,
+        0,
+        Some(vec![0xA0]),
+    );
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_snark_state_at_terminal(epoch_commitment, account_id, 0, 0)
+        .with_account_update_records(account_id, epoch, vec![record]);
+    let rpc = make_rpc(provider);
+
+    rpc.get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect_err("epoch summary accepted zero post-state seq_no");
 }
 
 #[tokio::test]
@@ -3587,7 +3736,7 @@ async fn snark_acct_update_manifest_no_message_update_returns_empty_extra_data()
 }
 
 #[tokio::test]
-async fn snark_acct_update_manifest_rejects_invalid_stored_seqno_zero() {
+async fn snark_acct_update_manifest_rejects_zero_post_state_seqno() {
     let account_id = test_account_id(6);
     let tip_epoch_commitment = test_epoch_commitment(0, 0, 0x60);
     let provider = MockProvider::new()
@@ -3613,13 +3762,9 @@ async fn snark_acct_update_manifest_rejects_invalid_stored_seqno_zero() {
         );
     let rpc = make_rpc(provider);
 
-    let err = rpc
-        .get_snark_acct_update_manifest(account_id, 0)
+    rpc.get_snark_acct_update_manifest(account_id, 0)
         .await
-        .expect_err("stored post-state seqno 0 should be invalid");
-
-    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
-    assert!(err.message().contains("invalid post-state seq_no 0"));
+        .expect_err("manifest accepted zero post-state seq_no");
 }
 
 #[tokio::test]

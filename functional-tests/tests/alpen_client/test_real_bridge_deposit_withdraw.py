@@ -288,7 +288,7 @@ def wait_for_output_snark_update(
 def wait_for_account_update_seq(
     rpc,
     account_id_hex: str,
-    min_next_seq_no: int,
+    min_operation_seq_no: int,
     start_epoch: int,
     btc_rpc,
     miner_addr: str,
@@ -315,10 +315,10 @@ def wait_for_account_update_seq(
             for update in updates:
                 seq_no = int(update.get("seq_no", -1))
                 last_seen_seq_no = max(last_seen_seq_no, seq_no)
-                if seq_no >= min_next_seq_no:
+                if seq_no >= min_operation_seq_no:
                     return epoch
     raise AssertionError(
-        f"account update seq_no >= {min_next_seq_no} not found from epoch {start_epoch}; "
+        f"account update seq_no >= {min_operation_seq_no} not found from epoch {start_epoch}; "
         f"last_terminal_epoch={last_terminal_epoch}, last_seen_seq_no={last_seen_seq_no}"
     )
 
@@ -586,7 +586,7 @@ class TestRealBridgeDepositWithdraw(BaseTest):
         saw_update_at_epoch = wait_for_account_update_seq(
             strata_rpc,
             ALPEN_ACCOUNT_ID,
-            min_next_seq_no=submitted_seq_no,
+            min_operation_seq_no=submitted_seq_no,
             start_epoch=start_terminal_epoch,
             btc_rpc=btc_rpc,
             miner_addr=miner_addr,
