@@ -6,9 +6,9 @@ use strata_codec::decode_buf_exact;
 use strata_msg_fmt::{Msg, MsgRef};
 
 use crate::{
-    DEPOSIT_MSG_TYPE_ID, DepositMsgData, WITHDRAWAL_FEE_BUMP_MSG_TYPE_ID, WITHDRAWAL_MSG_TYPE_ID,
-    WITHDRAWAL_REJECTION_MSG_TYPE_ID, WithdrawalFeeBumpMsgData, WithdrawalMsgData,
-    WithdrawalRejectionMsgData,
+    DEPOSIT_MSG_TYPE_ID, DepositMsgData, PREDICATE_UPDATE_MSG_TYPE_ID, PredicateUpdateMsgData,
+    WITHDRAWAL_FEE_BUMP_MSG_TYPE_ID, WITHDRAWAL_MSG_TYPE_ID, WITHDRAWAL_REJECTION_MSG_TYPE_ID,
+    WithdrawalFeeBumpMsgData, WithdrawalMsgData, WithdrawalRejectionMsgData,
 };
 
 /// Helper function to decode a message body with proper error handling.
@@ -29,6 +29,9 @@ pub trait OLMessageExt {
 
     /// Try to decode as a withdrawal rejection message.
     fn try_as_withdrawal_rejection(&self) -> Option<WithdrawalRejectionMsgData>;
+
+    /// Try to decode as a predicate key (update VK) rotation message.
+    fn try_as_predicate_update(&self) -> Option<PredicateUpdateMsgData>;
 }
 
 impl<'a> OLMessageExt for MsgRef<'a> {
@@ -55,6 +58,13 @@ impl<'a> OLMessageExt for MsgRef<'a> {
 
     fn try_as_withdrawal_rejection(&self) -> Option<WithdrawalRejectionMsgData> {
         if self.ty() != WITHDRAWAL_REJECTION_MSG_TYPE_ID {
+            return None;
+        }
+        decode_msg_body(self.body())
+    }
+
+    fn try_as_predicate_update(&self) -> Option<PredicateUpdateMsgData> {
+        if self.ty() != PREDICATE_UPDATE_MSG_TYPE_ID {
             return None;
         }
         decode_msg_body(self.body())

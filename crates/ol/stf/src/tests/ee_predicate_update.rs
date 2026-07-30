@@ -1,16 +1,13 @@
 //! Tests for the [`EePredicateKeyUpdate`] log handler in manifest processing.
 
-use ssz::Encode;
-use strata_acct_types::{ADMIN_MSG_ACCT_ID, MessageEntry, MsgPayload};
+use strata_acct_types::{ADMIN_MSG_ACCT_ID, MessageEntry};
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::EePredicateKeyUpdate;
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
-use strata_msg_fmt::{Msg, OwnedMsg};
-use strata_ol_msg_types::PREDICATE_UPDATE_MSG_TYPE_ID;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
-use crate::test_utils::*;
+use crate::{manifest_processing::build_predicate_update_payload, test_utils::*};
 
 /// Builds a non-trivial predicate key with a unique condition payload, used to
 /// distinguish "before" and "after" states in tests.
@@ -113,10 +110,7 @@ fn consuming_rotation_message_without_declaration_keeps_key() {
 
     // Reconstruct the queued message (mirrors the manifest processing path,
     // which stamps it with the processing epoch) to prove its consumption.
-    let msg = OwnedMsg::new(PREDICATE_UPDATE_MSG_TYPE_ID, new_vk.as_ssz_bytes())
-        .expect("predicate update message type id is in bounds");
-    let payload = MsgPayload::from_bytes_valueless(msg.to_vec())
-        .expect("predicate key fits in message payload");
+    let payload = build_predicate_update_payload(&new_vk);
     let rotation_msg = MessageEntry::new(ADMIN_MSG_ACCT_ID, 0, payload);
     let mut inbox_tracker = InboxMmrTracker::new();
     let proof = inbox_tracker.add_message(&rotation_msg);

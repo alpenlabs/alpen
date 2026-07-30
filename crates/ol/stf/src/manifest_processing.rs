@@ -13,7 +13,9 @@ use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_msg_types::{DEPOSIT_MSG_TYPE_ID, DepositMsgData, PREDICATE_UPDATE_MSG_TYPE_ID};
+use strata_ol_msg_types::{
+    DEPOSIT_MSG_TYPE_ID, DepositMsgData, PREDICATE_UPDATE_MSG_TYPE_ID, PredicateUpdateMsgData,
+};
 use strata_predicate::PredicateKey;
 use tracing::{debug, info, trace, warn};
 
@@ -400,19 +402,33 @@ fn process_ee_predicate_key_update<S: IStateAccessorMut>(
     Ok(())
 }
 
+/// Builds the message payload announcing a predicate key rotation.
+///
+/// The message carries no value; its body is the predicate key's raw
+/// serialized bytes (`[id: u8][condition: bytes...]`, via
+/// [`PredicateKeyBuf::to_bytes`](strata_predicate::PredicateKeyBuf::to_bytes)),
+/// wrapped in the standard SPS-52 message format under
+/// [`PREDICATE_UPDATE_MSG_TYPE_ID`].
+pub(crate) fn build_predicate_update_payload(new_vk: &PredicateKey) -> MsgPayload {
+    let msg_data = PredicateUpdateMsgData::new(new_vk.as_buf_ref().to_bytes())
+        .expect("predicate key fits in message data");
+    let body = encode_to_vec(&msg_data).expect("predicate update message data should encode");
+    let msg = OwnedMsg::new(PREDICATE_UPDATE_MSG_TYPE_ID, body)
+        .expect("predicate update message body must fit into msg-fmt envelope");
+    MsgPayload::from_bytes_valueless(msg.to_vec())
+        .expect("predicate update message payload bytes must fit within SSZ max length")
+}
+
 /// Builds the inbox message announcing a predicate key rotation.
 ///
-/// The message carries no value; its body is the SSZ encoding of the new
-/// predicate key, wrapped in the standard SPS-52 message format under
-/// [`PREDICATE_UPDATE_MSG_TYPE_ID`]. The source is the admin message account
-/// id, a reserved system id that no ledger account can occupy.
+/// The source is the admin message account id, a reserved system id that no
+/// ledger account can occupy.
 fn build_predicate_update_message(new_vk: &PredicateKey, cur_epoch: u32) -> MessageEntry {
-    let body = ssz::Encode::as_ssz_bytes(new_vk);
-    let msg = OwnedMsg::new(PREDICATE_UPDATE_MSG_TYPE_ID, body)
-        .expect("predicate update message type id is in bounds");
-    let payload = MsgPayload::from_bytes_valueless(msg.to_vec())
-        .expect("predicate key fits in message payload");
-    MessageEntry::new(ADMIN_MSG_ACCT_ID, cur_epoch, payload)
+    MessageEntry::new(
+        ADMIN_MSG_ACCT_ID,
+        cur_epoch,
+        build_predicate_update_payload(new_vk),
+    )
 }
 #[cfg(test)]
 mod tests {
