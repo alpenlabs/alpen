@@ -178,6 +178,7 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
             state: &mut state,
             blocks: &mut blocks,
             snark_serial,
+            inbox_tracker: InboxMmrTracker::new(),
             next_manifest_height: TERMINAL_L1_HEIGHT,
             manifests_by_height: &mut manifests_by_height,
         };
@@ -299,6 +300,7 @@ struct PlannedBlockExecutor<'a> {
     state: &'a mut MemoryStateBaseLayer,
     blocks: &'a mut Vec<OLBlock>,
     snark_serial: AccountSerial,
+    inbox_tracker: InboxMmrTracker,
     next_manifest_height: u32,
     manifests_by_height: &'a mut Vec<(u32, AsmManifest)>,
 }
@@ -314,7 +316,13 @@ impl PlannedBlockExecutor<'_> {
     ) -> (OLBlockHeader, Option<usize>) {
         let mut prev = parent.clone();
         if !block.update_effects.is_empty() {
-            prev = run_snark_update_blocks(self.state, self.blocks, &prev, &block.update_effects);
+            prev = run_snark_update_blocks(
+                self.state,
+                self.blocks,
+                &prev,
+                &block.update_effects,
+                &mut self.inbox_tracker,
+            );
         }
 
         let manifests: Vec<_> = block
@@ -454,13 +462,14 @@ pub enum UpdateEffect {
 
 /// Runs one GAM + one snark update per effect, returning the last block's header.
 ///
-/// Proofs come from a single MMR tracking every message, so each leaf validates
-/// against the final inbox the account sees after all GAMs land.
+/// The epoch-scoped `tracker` mirrors every message the live snark inbox has
+/// accepted, so proofs remain valid across multiple planned update blocks.
 fn run_snark_update_blocks(
     state: &mut MemoryStateBaseLayer,
     blocks: &mut Vec<OLBlock>,
     genesis_header: &OLBlockHeader,
     effects: &[UpdateEffect],
+    tracker: &mut InboxMmrTracker,
 ) -> OLBlockHeader {
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let msgs: Vec<MessageEntry> = (0..effects.len())
@@ -482,7 +491,7 @@ fn run_snark_update_blocks(
         );
     }
 
-    let mut tracker = InboxMmrTracker::new();
+    let first_message_index = tracker.num_entries() as usize;
     for msg in &msgs {
         tracker.add_message(msg);
     }
@@ -491,7 +500,7 @@ fn run_snark_update_blocks(
         let (_, snark_state) = get_snark_state_expect(state, snark_id);
         let mut builder = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
             .with_processed_msgs(vec![msgs[idx].clone()])
-            .with_inbox_proofs(vec![tracker.proof_for(idx)]);
+            .with_inbox_proofs(vec![tracker.proof_for(first_message_index + idx)]);
         builder = match effect {
             UpdateEffect::None => builder,
             UpdateEffect::Transfer(amount) => {

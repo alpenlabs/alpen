@@ -257,6 +257,28 @@ fn test_apply_checkpoint_snark_multi_update_and_deposit() {
 }
 
 #[test]
+fn test_apply_checkpoint_snark_updates_across_planned_blocks() {
+    let built = build_epoch(
+        EpochPlan::new()
+            .block(BlockPlan::new().snark_updates(vec![UpdateEffect::Transfer(1_000_000)]))
+            .block(BlockPlan::new().snark_updates(vec![UpdateEffect::Transfer(1_000_000)])),
+    );
+    let (ctx, epoch) = mock_for(&built);
+
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built, &artifacts);
+    assert_eq!(
+        artifacts
+            .output
+            .indexer_writes()
+            .snark_state_updates()
+            .len(),
+        2,
+        "updates in separate planned blocks must use the accumulated inbox MMR"
+    );
+}
+
+#[test]
 fn test_apply_checkpoint_withdrawal_only() {
     let built = build_epoch(
         EpochPlan::new().block(BlockPlan::new().snark_updates(vec![UpdateEffect::Withdrawal])),
