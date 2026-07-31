@@ -53,9 +53,6 @@ pub trait GChainSpec {
         Self::get_header_ref(lh) == *lref
     }
 
-    /// Gets the header of a node.
-    fn get_link_header(n: &Self::LinkRef) -> Self::LinkHeader;
-
     /// Gets the in-protocol canonical previous node ref from the header (such
     /// as a "parent block"), if there is one.  There may be other completely
     /// valid previous nodes, but this may be across sync modes.

@@ -96,7 +96,11 @@ pub trait GChainProc: Sized + 'static {
     /// (like if there's crashes on startup).  Different processor stages may be
     /// inited on different first node links, such as when opening an older
     /// database with a newer client version (which added a new processor).
-    fn on_init(&self, cur_node: &NodeRef<Self::Spec>, node: &Node<Self::Spec>);
+    fn on_init(
+        &self,
+        cur_node: &NodeRef<Self::Spec>,
+        node: &Node<Self::Spec>,
+    ) -> anyhow::Result<()>;
 
     /// Processes a link and produces some output from the step.
     ///
@@ -154,7 +158,10 @@ pub trait GChainProc: Sized + 'static {
 }
 
 /// Output from a processing stage on a link transition.
-pub trait ProcArtifact: Sync + Send + Any + 'static {
+pub trait ProcArtifact: Sync + Send + Sized + Any + 'static {
+    /// Attempts to decode a buf as the proc artifact.
+    fn from_buf(buf: &[u8]) -> anyhow::Result<Self>;
+
     /// Checks if the output indicates the link transition was valid, as far as
     /// the processor stage cares.  A layer processor stage may be used to
     /// decide that a link is invalid and we should avoid doing more work on it
