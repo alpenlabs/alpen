@@ -1,9 +1,10 @@
 //! GChain processor indirection wrappers.
 
-use strata_gchain_types::{GChainProc, GChainSpec};
+use strata_gchain_types::*;
 
 pub trait GChainProcDyn<S: GChainSpec>: 'static {
     // TODO add methods as needed
+    fn on_init(&self, cur_node: &NodeRef<S>, node: &Node<S>) -> anyhow::Result<()>;
 }
 
 /// Generic processor shim wrapper to expose as `dyn`-safe object.
@@ -12,5 +13,7 @@ struct ProcShim<P: GChainProc> {
 }
 
 impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
-    // TODO
+    fn on_init(&self, cur_node: &NodeRef<S>, node: &Node<S>) -> anyhow::Result<()> {
+        self.proc.on_init(cur_node, node)
+    }
 }

@@ -31,5 +31,5 @@ pub trait ChainProvider {
     fn fetch_backward_links(
         &self,
         nref: &NodeRef<Self::Spec>,
-    ) -> anyhow::Result<LinkRef<Self::Spec>>;
+    ) -> anyhow::Result<Vec<LinkRef<Self::Spec>>>;
 }

@@ -2,13 +2,14 @@
 
 mod artifact_cache;
 mod config;
+mod context;
 mod dispatcher;
 mod errors;
-mod exec;
+mod linear_executor;
 mod process;
 
 pub use artifact_cache::*;
 pub use config::*;
 pub use errors::*;
-pub use exec::*;
+pub use linear_executor::*;
 pub use process::*;
