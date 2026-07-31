@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # CSS must reconstruct this many finalized epochs after its restart.
 EPOCHS_TO_BACKFILL_AFTER_RESTART = 5
 
+
 @flexitest.register
 class TestCheckpointSyncNodeRestart(BaseTest):
     """Restarts a checkpoint-sync node after it syncs a post-genesis epoch."""

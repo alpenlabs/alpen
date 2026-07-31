@@ -58,7 +58,7 @@ struct MockCtx {
     /// L1 reorg-safe depth used to compute reorg-safety of checkpoints.
     l1_reorg_safe_depth: u32,
     /// Simulated L1 tip; used to compute reorg-safety of checkpoints.
-    l1_tip_height: L1Height,
+    l1_tip_height: Mutex<L1Height>,
     /// CSM status returned by `fetch_csm_status`.
     csm_status: CsmWorkerStatus,
     /// Epoch number -> commitment, used by mock `apply_checkpoint` to build the
@@ -85,7 +85,7 @@ impl MockCtx {
     fn new(reorg_safe_depth: u32, l1_tip_height: L1Height) -> Self {
         Self {
             l1_reorg_safe_depth: reorg_safe_depth,
-            l1_tip_height,
+            l1_tip_height: Mutex::new(l1_tip_height),
             csm_status: CsmWorkerStatus {
                 cur_block: None,
                 last_processed_epoch: None,
@@ -144,6 +144,10 @@ impl MockCtx {
         *self.apply_failure.get_mut().unwrap() = Some(error);
         self
     }
+
+    fn set_l1_tip_height(&self, height: L1Height) {
+        *self.l1_tip_height.lock().unwrap() = height;
+    }
 }
 
 impl CheckpointSyncCtx for MockCtx {
@@ -152,7 +156,7 @@ impl CheckpointSyncCtx for MockCtx {
     }
 
     async fn fetch_l1_tip_height(&self) -> CheckpointSyncResult<Option<L1Height>> {
-        Ok(Some(self.l1_tip_height))
+        Ok(Some(*self.l1_tip_height.lock().unwrap()))
     }
 
     async fn fetch_csm_status(&self) -> CheckpointSyncResult<CsmWorkerStatus> {
@@ -542,6 +546,45 @@ async fn service_retries_epoch_operation_failure_on_next_csm_update() {
     .await
     .expect("next CSM update should retry the epoch");
     assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
+}
+
+#[tokio::test]
+async fn service_defers_checkpoint_until_exact_reorg_safe_depth() {
+    // The checkpoint is included at height 100. With a required depth of four,
+    // the CSM updates at tips 100, 101 and 102 must not apply it; the update at
+    // tip 103 must apply it.
+    let epoch0 = make_epoch(0, 0, 0x00);
+    let epoch1 = make_epoch(1, 10, 0x01);
+    let ctx = Arc::new(
+        MockCtx::new(4, 100)
+            .add_genesis(epoch0)
+            .add_epoch(epoch1, make_l1_ref(100), None)
+            .with_csm_finalized(Some(epoch1)),
+    );
+    let mut state = CheckpointSyncState::new(ctx.clone(), Some(epoch0));
+
+    for tip in 100..103 {
+        ctx.set_l1_tip_height(tip);
+        let response = <CheckpointSyncService<MockCtx> as AsyncService>::process_input(
+            &mut state,
+            CheckpointState::default(),
+        )
+        .await
+        .expect("unsafe checkpoint must keep CSS running");
+        assert!(matches!(response, Response::Continue));
+        assert_eq!(state.last_finalized_and_applied(), Some(epoch0));
+        assert!(ctx.applied_epochs.lock().unwrap().is_empty());
+    }
+
+    ctx.set_l1_tip_height(103);
+    <CheckpointSyncService<MockCtx> as AsyncService>::process_input(
+        &mut state,
+        CheckpointState::default(),
+    )
+    .await
+    .expect("checkpoint must apply at the reorg-safe boundary");
+    assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
+    assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch1]);
 }
 
 // ---- restart / re-run ----
