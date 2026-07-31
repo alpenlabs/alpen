@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+// TODO(trey): maybe make this better-typed?
+
 /// Errors that can occur during storage operations.
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -8,21 +10,19 @@ pub enum StorageError {
     StateNotFound(u64),
 
     /// Attempted to store a slot that would create a gap in the stored sequence.
-    #[error(
-        "missing slot: attempted to store slot {attempted_slot} but last stored slot is {last_slot}"
-    )]
+    #[error("missing slot (attempted {attempted_slot}, last stored {last_slot})")]
     MissingSlot { attempted_slot: u64, last_slot: u64 },
 
     /// Database operation failed.
-    #[error("database error: {0}")]
+    #[error("database: {0}")]
     Database(String),
 
     /// Failed to serialize data.
-    #[error("serialization error: {0}")]
+    #[error("serialization: {0}")]
     Serialization(String),
 
     /// Failed to deserialize data.
-    #[error("deserialization error: {0}")]
+    #[error("deserialization: {0}")]
     Deserialization(String),
 
     /// Attempted to delete a block that is in the finalized chain.

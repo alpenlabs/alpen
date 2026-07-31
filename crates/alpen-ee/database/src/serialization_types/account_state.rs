@@ -1,9 +1,9 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
 use strata_acct_types::{BitcoinAmount, Hash, SubjectId};
 use strata_ee_acct_types::{EeAccountState, PendingFinclEntry, PendingInputEntry};
 use strata_ee_chain_types::SubjectDepositData;
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBAccountStateAtEpoch {
     epoch: u32,
     slot: u64,
@@ -24,10 +24,10 @@ impl DBAccountStateAtEpoch {
     }
 }
 
-// TODO(STR-3421): Migrate EE account-state persistence away from this Borsh
+// TODO(STR-3421): Migrate EE account-state persistence away from this Borsh/serde
 // mirror and store the SSZ account-state type directly, including any needed
 // DB compatibility/versioning path for existing local data.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBEeAccountState {
     last_exec_blkid: Hash,
     last_exec_state_root: Hash,
@@ -59,7 +59,7 @@ impl From<DBEeAccountState> for EeAccountState {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 struct DBBitcoinAmount(u64);
 
 impl From<DBBitcoinAmount> for BitcoinAmount {
@@ -74,8 +74,8 @@ impl From<BitcoinAmount> for DBBitcoinAmount {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
-struct DBPendingFinclEntry {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct DBPendingFinclEntry {
     epoch: u32,
     raw_tx_hash: Hash,
 }
@@ -94,7 +94,8 @@ impl From<DBPendingFinclEntry> for PendingFinclEntry {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 enum DBPendingInputEntry {
     Deposit(DBSubjectDepositData),
 }
@@ -115,7 +116,7 @@ impl From<PendingInputEntry> for DBPendingInputEntry {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 struct DBSubjectDepositData {
     dest: DBSubjectId,
     value: DBBitcoinAmount,
@@ -136,7 +137,7 @@ impl From<SubjectDepositData> for DBSubjectDepositData {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 struct DBSubjectId([u8; 32]);
 
 impl From<DBSubjectId> for SubjectId {
