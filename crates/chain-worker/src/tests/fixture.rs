@@ -7,7 +7,7 @@
 
 #![allow(unreachable_pub, reason = "test fixture module")]
 
-use strata_acct_types::{BitcoinAmount, MessageEntry, RawMerkleProof};
+use strata_acct_types::{AccountSerial, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
@@ -20,7 +20,10 @@ use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
 };
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader};
+use strata_ol_chain_types::{
+    MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLTransaction, OLTransactionData,
+    TxProofs,
+};
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
@@ -31,35 +34,89 @@ use strata_ol_stf::{
     test_utils::{
         EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
         TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
-        epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
-        epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
-        make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state,
-        make_state_root, snark_inbox_msg_with_data,
+        epoch_runner_run_genesis as run_genesis, epoch_runner_seed_accounts as seed_accounts,
+        get_snark_state_expect, make_account_id, make_deposit_manifest_for_account,
+        make_empty_manifest, make_genesis_state, make_p2wpkh_bosd_descriptor, make_state_root,
+        make_withdrawal_payload, snark_inbox_msg_with_data,
     },
     verify_block,
 };
 
-/// The shape of the epoch [`build_epoch`] constructs.
-#[derive(Debug, Clone, Copy)]
-pub enum EpochShape {
-    /// Empty filler blocks plus a terminal carrying a deposit manifest. No
-    /// snark updates: covers the path where `ol_logs` is empty.
-    DepositManifestOnly,
+/// An ordered epoch layout with one explicit terminal block.
+#[derive(Debug, Default)]
+pub struct EpochPlan {
+    blocks: Vec<BlockPlan>,
+    terminal: TerminalPlan,
+}
 
-    /// Empty filler blocks plus an empty terminal. Covers a sealed epoch with
-    /// no new L1 manifests.
-    NoNewManifests,
+impl EpochPlan {
+    /// Creates a plan with an empty terminal block.
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-    /// Multiple OL txs, plus a terminal deposit manifest. Exercises per-update record
-    /// reconstruction from `ol_logs` (N > 1) alongside deposit-manifest indexing.
-    SnarkMultiUpdateAndDeposit,
+    /// Appends an ordinary block before the terminal.
+    pub fn add_block(mut self, block: BlockPlan) -> Self {
+        self.blocks.push(block);
+        self
+    }
 
-    /// ASM manifests are carried by non-terminal blocks; the terminal block has no
-    /// manifests.
-    ManifestsInNonTerminalBlocks,
+    /// Replaces the explicit epoch terminal block.
+    pub fn terminal(mut self, terminal: impl Into<TerminalPlan>) -> Self {
+        self.terminal = terminal.into();
+        self
+    }
+}
 
-    /// More ASM manifests than the epoch manifest cap allows.
-    ManifestsExceedEpochCap,
+/// The test inputs carried by one physical position in an [`EpochPlan`].
+///
+/// Snark updates expand into their required GAM and update blocks; manifests
+/// occupy the final block at this position. The terminal is specified by its
+/// position in [`EpochPlan`], never inferred from its manifests.
+#[derive(Debug, Default)]
+pub struct BlockPlan {
+    update_effects: Vec<UpdateEffect>,
+    manifests: Vec<ManifestPlan>,
+}
+
+/// The unique terminal block of an epoch plan.
+#[derive(Debug, Default)]
+pub struct TerminalPlan(BlockPlan);
+
+impl From<BlockPlan> for TerminalPlan {
+    fn from(block: BlockPlan) -> Self {
+        Self(block)
+    }
+}
+
+impl BlockPlan {
+    /// Creates an empty block plan.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds snark updates to this block position.
+    pub fn set_snark_updates(mut self, effects: Vec<UpdateEffect>) -> Self {
+        self.update_effects = effects;
+        self
+    }
+
+    /// Adds a deposit manifest for the seeded snark account.
+    pub fn deposit_manifest(mut self) -> Self {
+        self.manifests.push(ManifestPlan::Deposit);
+        self
+    }
+
+    /// Adds `count` empty manifests with consecutive L1 heights.
+    pub fn empty_manifests(mut self, count: u32) -> Self {
+        assert!(
+            count <= MAX_SEALING_MANIFEST_COUNT as u32,
+            "a block plan may contain at most {MAX_SEALING_MANIFEST_COUNT} manifests"
+        );
+        self.manifests
+            .extend((0..count).map(|_| ManifestPlan::Empty));
+        self
+    }
 }
 
 /// One built OL epoch with the reference values for cross-mode comparison.
@@ -74,6 +131,8 @@ pub struct BuiltEpoch {
     pub prev_terminal: OLBlockCommitment,
     /// Toplevel state at the start of the epoch (post-genesis).
     pub pre_epoch_state: OLState,
+    /// Number of ASM logs buffered immediately before the epoch terminal executes.
+    pub pre_terminal_pending_asm_logs: usize,
     /// ASM manifests of the epoch keyed by their L1 height.
     pub manifests_by_height: Vec<(u32, AsmManifest)>,
     /// Checkpoint payload a checkpoint-sync run consumes to reconstruct.
@@ -84,6 +143,8 @@ pub struct BuiltEpoch {
     pub block_sync_summary: EpochSummary,
     /// Merged indexer writes captured by block-sync execution.
     block_sync_indexer_writes: IndexerWrites,
+    /// Logs emitted by block-sync execution, in emission order across the epoch.
+    block_sync_logs: Vec<OLLog>,
 }
 
 impl BuiltEpoch {
@@ -91,126 +152,43 @@ impl BuiltEpoch {
     pub fn block_sync_indexer_writes(&self) -> &IndexerWrites {
         &self.block_sync_indexer_writes
     }
+
+    /// Returns the logs emitted by block-sync execution, in emission order.
+    pub fn block_sync_logs(&self) -> &[OLLog] {
+        &self.block_sync_logs
+    }
 }
 
-/// Builds one OL epoch of the given shape and the reference values needed to
+/// Builds one OL epoch with the given physical plan and the reference values needed to
 /// compare block-sync against checkpoint-sync reconstruction.
-pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
+pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
     let mut state = make_genesis_state();
     let snark_serial = seed_accounts(&mut state);
 
     let genesis = run_genesis(&mut state);
     let pre_epoch_state = state.clone().into_inner();
 
-    // Build the epoch's blocks per shape.
+    // Build ordinary blocks first. Manifests may appear in any block; the
+    // explicit terminal below is what applies their buffered L1 logs.
     let mut blocks: Vec<OLBlock> = Vec::new();
-    let manifests_by_height = match shape {
-        EpochShape::DepositManifestOnly => {
-            let mut prev = genesis.header().clone();
-            for _ in 0..4 {
-                prev = run_block(&mut state, &mut blocks, &prev, BlockComponents::new_empty());
-            }
-            let manifest = make_deposit_manifest_for_account(
-                TERMINAL_L1_HEIGHT,
-                0,
-                snark_serial,
-                SubjectId::from([42u8; 32]),
-                BitcoinAmount::from_sat(150_000_000),
-            );
-            run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
-            vec![(TERMINAL_L1_HEIGHT, manifest)]
+    let mut prev = genesis.header().clone();
+    let mut manifests_by_height = Vec::new();
+    let pre_terminal_pending_asm_logs = {
+        let mut executor = PlannedBlockExecutor {
+            state: &mut state,
+            blocks: &mut blocks,
+            snark_serial,
+            inbox_tracker: InboxMmrTracker::new(),
+            next_manifest_height: TERMINAL_L1_HEIGHT,
+            manifests_by_height: &mut manifests_by_height,
+        };
+        for block in plan.blocks {
+            prev = executor.execute(&prev, block, false).0;
         }
-        EpochShape::NoNewManifests => {
-            let mut prev = genesis.header().clone();
-            for _ in 0..4 {
-                prev = run_block(&mut state, &mut blocks, &prev, BlockComponents::new_empty());
-            }
-            run_block(
-                &mut state,
-                &mut blocks,
-                &prev,
-                BlockComponents::new_empty().as_terminal(),
-            );
-            Vec::new()
-        }
-        EpochShape::SnarkMultiUpdateAndDeposit => {
-            let prev = run_snark_multi_update_blocks(&mut state, &mut blocks, genesis.header());
-            let manifest = make_deposit_manifest_for_account(
-                TERMINAL_L1_HEIGHT,
-                0,
-                snark_serial,
-                SubjectId::from([42u8; 32]),
-                BitcoinAmount::from_sat(150_000_000),
-            );
-            run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
-            vec![(TERMINAL_L1_HEIGHT, manifest)]
-        }
-        EpochShape::ManifestsInNonTerminalBlocks => {
-            let mut prev = genesis.header().clone();
-            let manifest_a = make_empty_manifest(TERMINAL_L1_HEIGHT, 2);
-            prev = run_block(
-                &mut state,
-                &mut blocks,
-                &prev,
-                BlockComponents::new_manifests(vec![manifest_a.clone()]),
-            );
-
-            let manifest_b = make_empty_manifest(TERMINAL_L1_HEIGHT + 1, 3);
-            prev = run_block(
-                &mut state,
-                &mut blocks,
-                &prev,
-                BlockComponents::new_manifests(vec![manifest_b.clone()]),
-            );
-            run_block(
-                &mut state,
-                &mut blocks,
-                &prev,
-                BlockComponents::new_empty().as_terminal(),
-            );
-
-            vec![
-                (TERMINAL_L1_HEIGHT, manifest_a),
-                (TERMINAL_L1_HEIGHT + 1, manifest_b),
-            ]
-        }
-        EpochShape::ManifestsExceedEpochCap => {
-            let max_per_block = MAX_SEALING_MANIFEST_COUNT as u32;
-            let mut manifests_by_height =
-                Vec::with_capacity(MAX_SEALING_MANIFEST_COUNT as usize + 1);
-
-            let first_chunk: Vec<_> = (TERMINAL_L1_HEIGHT..TERMINAL_L1_HEIGHT + max_per_block)
-                .map(|height| {
-                    let manifest = make_empty_manifest(height, height as u8);
-                    manifests_by_height.push((height, manifest.clone()));
-                    manifest
-                })
-                .collect();
-            let mut prev = run_block(
-                &mut state,
-                &mut blocks,
-                genesis.header(),
-                BlockComponents::new_manifests(first_chunk),
-            );
-
-            let overflow_height = TERMINAL_L1_HEIGHT + max_per_block;
-            let overflow_manifest = make_empty_manifest(overflow_height, overflow_height as u8);
-            manifests_by_height.push((overflow_height, overflow_manifest.clone()));
-            prev = run_block(
-                &mut state,
-                &mut blocks,
-                &prev,
-                BlockComponents::new_manifests(vec![overflow_manifest]),
-            );
-            run_block(
-                &mut state,
-                &mut blocks,
-                &prev,
-                BlockComponents::new_empty().as_terminal(),
-            );
-
-            manifests_by_height
-        }
+        executor
+            .execute(&prev, plan.terminal.0, true)
+            .1
+            .expect("terminal execution captures buffered logs")
     };
 
     let terminal_block = blocks.last().expect("epoch has a terminal block").clone();
@@ -218,8 +196,12 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
 
     // Run the epoch through the block-sync STF to capture reference values.
     let pre_epoch_layer = MemoryStateBaseLayer::new(pre_epoch_state.clone());
-    let (block_sync_state, block_sync_state_root, block_sync_indexer_writes) =
-        run_block_sync(&pre_epoch_layer, &blocks, genesis.header());
+    let BlockSyncResult {
+        state: block_sync_state,
+        state_root: block_sync_state_root,
+        indexer_writes: block_sync_indexer_writes,
+        logs: block_sync_logs,
+    } = run_block_sync(&pre_epoch_layer, &blocks, genesis.header());
 
     // Genesis commitment / summary for epoch 0.
     let genesis_commitment =
@@ -278,11 +260,97 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
         prev_summary,
         prev_terminal: genesis_commitment,
         pre_epoch_state,
+        pre_terminal_pending_asm_logs,
         manifests_by_height,
         checkpoint_payload,
         block_sync_state_root,
         block_sync_summary,
         block_sync_indexer_writes,
+        block_sync_logs,
+    }
+}
+
+/// A manifest included in a [`BlockPlan`].
+#[derive(Debug)]
+enum ManifestPlan {
+    Deposit,
+    Empty,
+}
+
+/// Materializes a manifest plan at its assigned L1 height.
+fn make_feature_manifest(
+    feature: ManifestPlan,
+    height: u32,
+    snark_serial: AccountSerial,
+) -> AsmManifest {
+    match feature {
+        ManifestPlan::Deposit => make_deposit_manifest_for_account(
+            height,
+            0,
+            snark_serial,
+            SubjectId::from([42u8; 32]),
+            BitcoinAmount::from_sat(150_000_000),
+        ),
+        ManifestPlan::Empty => make_empty_manifest(height, height as u8),
+    }
+}
+
+/// Mutable context used while materializing an [`EpochPlan`].
+struct PlannedBlockExecutor<'a> {
+    state: &'a mut MemoryStateBaseLayer,
+    blocks: &'a mut Vec<OLBlock>,
+    snark_serial: AccountSerial,
+    inbox_tracker: InboxMmrTracker,
+    next_manifest_height: u32,
+    manifests_by_height: &'a mut Vec<(u32, AsmManifest)>,
+}
+
+impl PlannedBlockExecutor<'_> {
+    /// Executes one planned block position and returns its header and, for a
+    /// terminal, the number of logs buffered before the terminal drains them.
+    fn execute(
+        &mut self,
+        parent: &OLBlockHeader,
+        block: BlockPlan,
+        is_terminal: bool,
+    ) -> (OLBlockHeader, Option<usize>) {
+        let mut prev = parent.clone();
+        if !block.update_effects.is_empty() {
+            prev = run_snark_update_blocks(
+                self.state,
+                self.blocks,
+                &prev,
+                &block.update_effects,
+                &mut self.inbox_tracker,
+            );
+        }
+
+        let manifests: Vec<_> = block
+            .manifests
+            .into_iter()
+            .map(|feature| {
+                let height = self.next_manifest_height;
+                self.next_manifest_height += 1;
+                let manifest = make_feature_manifest(feature, height, self.snark_serial);
+                self.manifests_by_height.push((height, manifest.clone()));
+                manifest
+            })
+            .collect();
+        let pending = is_terminal.then(|| self.state.pending_asm_logs_len());
+        let components = if manifests.is_empty() {
+            BlockComponents::new_empty()
+        } else {
+            BlockComponents::new_manifests(manifests)
+        };
+        (
+            run_block(
+                self.state,
+                self.blocks,
+                &prev,
+                components.with_terminal(is_terminal),
+            ),
+            pending,
+        )
     }
 }
 
@@ -306,22 +374,28 @@ fn assemble_checkpoint_payload(
     CheckpointPayload::new(tip, sidecar, Vec::new()).expect("build checkpoint payload")
 }
 
+/// Reference values captured from a block-sync run of an epoch.
+struct BlockSyncResult {
+    state: OLState,
+    state_root: Buf32,
+    indexer_writes: IndexerWrites,
+    logs: Vec<OLLog>,
+}
+
 /// Runs the epoch's blocks through the block-sync STF, accumulating the write
-/// batch and indexer writes across all blocks into a single pass.
-///
-/// Returns the post-epoch toplevel state, its state root, and the merged
-/// indexer writes.
+/// batch, indexer writes, and emitted logs across all blocks into a single pass.
 fn run_block_sync(
     pre_epoch_state: &MemoryStateBaseLayer,
     blocks: &[OLBlock],
     genesis_header: &OLBlockHeader,
-) -> (OLState, Buf32, IndexerWrites) {
+) -> BlockSyncResult {
     let tracking_state = WriteTrackingState::new_empty(pre_epoch_state);
     let mut indexer_state = IndexerState::new(tracking_state);
 
     let mut prev_header = genesis_header.clone();
+    let mut logs = Vec::new();
     for block in blocks {
-        verify_block(
+        let block_logs = verify_block(
             &mut indexer_state,
             block.header(),
             Some(&prev_header),
@@ -329,6 +403,7 @@ fn run_block_sync(
             BridgeParams::default(),
         )
         .expect("block-sync verify_block");
+        logs.extend(block_logs);
         prev_header = block.header().clone();
     }
 
@@ -343,7 +418,12 @@ fn run_block_sync(
         .compute_state_root()
         .expect("block-sync state root");
 
-    (new_state.into_inner(), state_root, indexer_writes)
+    BlockSyncResult {
+        state: new_state.into_inner(),
+        state_root,
+        indexer_writes,
+        logs,
+    }
 }
 
 /// Rebuilds the epoch DA blob and per-update OL logs via the checkpoint-builder
@@ -369,83 +449,77 @@ fn rebuild_da_and_logs(
     (blob, ol_logs)
 }
 
-/// Runs the non-terminal blocks of a multi-update snark epoch: two GAMs
-/// deliver two distinct inbox messages, then two snark updates each consume
-/// one (in order). Returns the header of the last block.
-fn run_snark_multi_update_blocks(
+/// The effect a snark update applies, beyond consuming its inbox message.
+#[derive(Debug)]
+pub enum UpdateEffect {
+    /// No transfer or output message; only advances the account cursor.
+    None,
+    /// Transfer sats to the test recipient account.
+    Transfer(u64),
+    /// Emit a bridge withdrawal of one denomination to the bridge gateway.
+    Withdrawal,
+}
+
+/// Runs one GAM + one snark update per effect, returning the last block's header.
+///
+/// The epoch-scoped `tracker` mirrors every message the live snark inbox has
+/// accepted, so proofs remain valid across multiple planned update blocks.
+fn run_snark_update_blocks(
     state: &mut MemoryStateBaseLayer,
     blocks: &mut Vec<OLBlock>,
     genesis_header: &OLBlockHeader,
+    effects: &[UpdateEffect],
+    tracker: &mut InboxMmrTracker,
 ) -> OLBlockHeader {
-    use strata_ol_chain_types::{OLTransaction, OLTransactionData, TxProofs};
-
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let msg_a = snark_inbox_msg_with_data(b"multi-msg-a");
-    let msg_b = snark_inbox_msg_with_data(b"multi-msg-b");
+    let msgs: Vec<MessageEntry> = (0..effects.len())
+        .map(|i| snark_inbox_msg_with_data(format!("msg-{i}").as_bytes()))
+        .collect();
 
-    // Two GAMs in successive blocks deliver two distinct inbox messages.
-    let gam_a = OLTransaction::new(
-        OLTransactionData::from_gam_bytes(snark_id, msg_a.payload().data().to_vec())
-            .expect("gam payload"),
-        TxProofs::new_empty(),
-    );
-    let gam_b = OLTransaction::new(
-        OLTransactionData::from_gam_bytes(snark_id, msg_b.payload().data().to_vec())
-            .expect("gam payload"),
-        TxProofs::new_empty(),
-    );
-    let mut prev = run_block(
-        state,
-        blocks,
-        genesis_header,
-        BlockComponents::new_txs_from_ol_transactions(vec![gam_a]),
-    );
-    prev = run_block(
-        state,
-        blocks,
-        &prev,
-        BlockComponents::new_txs_from_ol_transactions(vec![gam_b]),
-    );
+    let mut prev = genesis_header.clone();
+    for msg in &msgs {
+        let gam = OLTransaction::new(
+            OLTransactionData::from_gam_bytes(snark_id, msg.payload().data().to_vec())
+                .expect("gam payload"),
+            TxProofs::new_empty(),
+        );
+        prev = run_block(
+            state,
+            blocks,
+            &prev,
+            BlockComponents::new_txs_from_ol_transactions(vec![gam]),
+        );
+    }
 
-    // Track the MMR across both adds, then read each leaf's *final* proof so
-    // both are valid against the post-GAM-b MMR state the snark account sees.
-    let mut tracker = InboxMmrTracker::new();
-    tracker.add_message(&msg_a);
-    tracker.add_message(&msg_b);
-    let proof_a = tracker.proof_for(0);
-    let proof_b = tracker.proof_for(1);
+    let first_message_index = tracker.num_entries() as usize;
+    for msg in &msgs {
+        tracker.add_message(msg);
+    }
 
-    // First update consumes msg_a; the snark account's seqno/next_inbox_idx
-    // advance accordingly so the second update is built against the post-state.
-    let update_a = build_snark_update_with(state, &msg_a, proof_a, make_state_root(2));
-    prev = run_block(
-        state,
-        blocks,
-        &prev,
-        BlockComponents::new_txs_from_ol_transactions(vec![update_a]),
-    );
+    for (idx, effect) in effects.iter().enumerate() {
+        let (_, snark_state) = get_snark_state_expect(state, snark_id);
+        let mut builder = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+            .with_processed_msgs(vec![msgs[idx].clone()])
+            .with_inbox_proofs(vec![tracker.proof_for(first_message_index + idx)]);
+        builder = match effect {
+            UpdateEffect::None => builder,
+            UpdateEffect::Transfer(amount) => {
+                builder.with_transfer(make_account_id(TEST_RECIPIENT_ID), *amount)
+            }
+            UpdateEffect::Withdrawal => builder.with_output_message(
+                BRIDGE_GATEWAY_ACCT_ID,
+                100_000_000,
+                make_withdrawal_payload(make_p2wpkh_bosd_descriptor(0x14)),
+            ),
+        };
+        let update = builder.build(snark_id, make_state_root(idx as u8 + 2), vec![0u8; 32]);
+        prev = run_block(
+            state,
+            blocks,
+            &prev,
+            BlockComponents::new_txs_from_ol_transactions(vec![update]),
+        );
+    }
 
-    let update_b = build_snark_update_with(state, &msg_b, proof_b, make_state_root(3));
-    run_block(
-        state,
-        blocks,
-        &prev,
-        BlockComponents::new_txs_from_ol_transactions(vec![update_b]),
-    )
-}
-
-/// Helper to build a snark update tx with caller-supplied inbox proof and post-state root.
-fn build_snark_update_with(
-    state: &MemoryStateBaseLayer,
-    inbox_msg: &MessageEntry,
-    proof: RawMerkleProof,
-    new_state_root: Buf32,
-) -> strata_ol_chain_types::OLTransaction {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let (_, snark_state) = get_snark_state_expect(state, snark_id);
-    SnarkUpdateBuilder::from_snark_state(snark_state.clone())
-        .with_processed_msgs(vec![inbox_msg.clone()])
-        .with_inbox_proofs(vec![proof])
-        .with_transfer(make_account_id(TEST_RECIPIENT_ID), 1_000_000)
-        .build(snark_id, new_state_root, vec![0u8; 32])
+    prev
 }

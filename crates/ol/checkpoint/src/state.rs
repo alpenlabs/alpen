@@ -208,6 +208,7 @@ mod tests {
     use std::sync::Arc;
 
     use proptest::prelude::*;
+    use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount};
     use strata_asm_proto_checkpoint_types::{
         CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
         TerminalHeaderComplement, test_utils::create_test_checkpoint_payload,
@@ -222,11 +223,25 @@ mod tests {
             ol_block_id_strategy,
         },
     };
+    use strata_ledger_types::{IAccountState, IStateAccessor};
     use strata_ol_chain_types::{
-        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLBlockId, OLLog, OLTxSegment,
-        SignedOLBlockHeader,
+        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLBlockId, OLLog, OLTransaction,
+        OLTransactionData, OLTxSegment, SignedOLBlockHeader, SimpleWithdrawalIntentLogData,
+        TxProofs,
     };
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::OLState;
+    use strata_ol_stf::{
+        BlockComponents,
+        test_utils::{
+            EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker,
+            SnarkUpdateBuilder, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
+            epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
+            epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
+            make_empty_manifest, make_genesis_state, make_p2wpkh_bosd_descriptor, make_state_root,
+            make_withdrawal_payload, snark_inbox_msg, to_ol_block,
+        },
+    };
     use strata_primitives::epoch::EpochCommitment;
     use strata_storage::create_node_storage;
 
@@ -399,6 +414,39 @@ mod tests {
         let mut state = OLCheckpointServiceState::new(ctx);
         state.initialize();
         state
+    }
+
+    /// Processes an epoch with a checkpoint worker and returns its stored payload.
+    fn process_epoch_and_load_payload<C: CheckpointWorkerContext>(
+        storage: &strata_storage::NodeStorage,
+        ctx: C,
+        commitment: EpochCommitment,
+    ) -> CheckpointPayload {
+        let mut state = OLCheckpointServiceState::new(ctx);
+        state.initialize();
+        state
+            .handle_complete_epoch(commitment)
+            .expect("build checkpoint");
+        storage
+            .ol_checkpoint()
+            .get_checkpoint_payload_entry_blocking(commitment)
+            .expect("get checkpoint")
+            .expect("checkpoint should be stored")
+    }
+
+    /// Decodes withdrawal intents emitted by the bridge gateway in a sidecar.
+    fn decode_withdrawal_logs(payload: &CheckpointPayload) -> Vec<SimpleWithdrawalIntentLogData> {
+        payload
+            .sidecar()
+            .ol_logs()
+            .iter()
+            .filter(|log| log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
+            .map(|log| {
+                OLLog::new(log.account_serial(), log.payload().to_vec())
+                    .try_into_log::<SimpleWithdrawalIntentLogData>()
+                    .expect("bridge-gateway log must decode as a withdrawal intent")
+            })
+            .collect()
     }
 
     fn set_history_base(storage: &strata_storage::NodeStorage, epoch: Epoch) -> EpochCommitment {
@@ -608,17 +656,7 @@ mod tests {
                 .expect("insert summary");
 
             let ctx = TestCheckpointContext::new(Arc::clone(&storage), state_diff, ol_logs);
-            let mut state = OLCheckpointServiceState::new(ctx);
-            state.initialize();
-
-            state
-                .handle_complete_epoch(commitment)
-                .expect("build checkpoint");
-
-            let stored = checkpoint_mgr
-                .get_checkpoint_payload_entry_blocking(commitment)
-                .expect("get checkpoint")
-                .expect("checkpoint should be stored");
+            let stored = process_epoch_and_load_payload(&storage, ctx, commitment);
             let sidecar_terminal_subset = stored.sidecar().terminal_header_complement();
             let stored_tip = stored.new_tip();
 
@@ -631,5 +669,158 @@ mod tests {
             prop_assert_eq!(*sidecar_terminal_subset.logs_root(), *terminal_header.logs_root());
             prop_assert!(stored.proof().is_empty());
         }
+    }
+
+    /// Exercises the real (non-stubbed) `fetch_da_for_epoch` replay, which the
+    /// fixture-derived chain-worker tests cannot reach.
+    #[test]
+    fn build_checkpoint_payload_includes_withdrawal_log_from_real_replay() {
+        let withdraw_sats: u64 = 100_000_000;
+        let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x14);
+
+        // Build an epoch whose snark update emits a withdrawal, then seal it.
+        let mut sim_state = make_genesis_state();
+        seed_accounts(&mut sim_state);
+        let genesis = run_genesis(&mut sim_state);
+        let pre_epoch_state = sim_state.clone().into_inner();
+
+        let mut blocks = Vec::new();
+        let inbox_msg = snark_inbox_msg();
+        let gam = OLTransaction::new(
+            OLTransactionData::from_gam_bytes(snark_id, inbox_msg.payload().data().to_vec())
+                .expect("gam payload"),
+            TxProofs::new_empty(),
+        );
+        let prev = run_block(
+            &mut sim_state,
+            &mut blocks,
+            genesis.header(),
+            BlockComponents::new_txs_from_ol_transactions(vec![gam]),
+        );
+
+        let mut tracker = InboxMmrTracker::new();
+        let proof = tracker.add_message(&inbox_msg);
+        let (_, snark_state) = get_snark_state_expect(&sim_state, snark_id);
+        let withdrawal_update = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+            .with_processed_msgs(vec![inbox_msg.clone()])
+            .with_inbox_proofs(vec![proof])
+            .with_output_message(
+                BRIDGE_GATEWAY_ACCT_ID,
+                withdraw_sats,
+                make_withdrawal_payload(withdrawal_dest.clone()),
+            )
+            .build(snark_id, make_state_root(2), vec![0u8; 32]);
+        let prev = run_block(
+            &mut sim_state,
+            &mut blocks,
+            &prev,
+            BlockComponents::new_txs_from_ol_transactions(vec![withdrawal_update]),
+        );
+        let terminal = run_terminal(
+            &mut sim_state,
+            &mut blocks,
+            &prev,
+            make_empty_manifest(TERMINAL_L1_HEIGHT, 0),
+        );
+
+        let post_epoch_state = sim_state.into_inner();
+        let terminal_header = terminal.header().clone();
+
+        // The real replay reads the genesis terminal block and its state plus
+        // every epoch block from storage, so persist all of them.
+        let backend = get_test_sled_backend();
+        let storage = Arc::new(
+            create_node_storage(backend, strata_storage::test_runtime_handle())
+                .expect("test storage"),
+        );
+        let ol_block_mgr = storage.ol_block();
+        let ol_state_mgr = storage.ol_state();
+        let checkpoint_mgr = storage.ol_checkpoint();
+
+        ol_block_mgr
+            .put_block_data_blocking(to_ol_block(&genesis))
+            .expect("insert genesis block");
+        for block in &blocks {
+            ol_block_mgr
+                .put_block_data_blocking(block.clone())
+                .expect("insert epoch block");
+        }
+
+        let genesis_commitment =
+            OLBlockCommitment::new(genesis.header().slot(), genesis.header().compute_blkid());
+        ol_state_mgr
+            .put_toplevel_ol_state_blocking(genesis_commitment, pre_epoch_state.clone())
+            .expect("insert pre-epoch state");
+
+        let genesis_epoch_state = pre_epoch_state.epoch_state();
+        let genesis_l1 = L1BlockCommitment::new(
+            genesis_epoch_state.last_l1_height(),
+            *genesis_epoch_state.last_l1_blkid(),
+        );
+        let genesis_summary = EpochSummary::new(
+            0,
+            genesis_commitment,
+            OLBlockCommitment::null(),
+            genesis_l1,
+            *genesis.header().state_root(),
+        );
+        checkpoint_mgr
+            .insert_epoch_summary_blocking(genesis_summary)
+            .expect("insert genesis summary");
+
+        let terminal_commitment =
+            OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
+        let post_epoch_l1 = L1BlockCommitment::new(
+            post_epoch_state.epoch_state().last_l1_height(),
+            *post_epoch_state.epoch_state().last_l1_blkid(),
+        );
+        let summary = EpochSummary::new(
+            terminal_header.epoch(),
+            terminal_commitment,
+            genesis_commitment,
+            post_epoch_l1,
+            *terminal_header.state_root(),
+        );
+        let commitment = summary.get_epoch_commitment();
+        checkpoint_mgr
+            .insert_epoch_summary_blocking(summary)
+            .expect("insert summary");
+
+        let ctx = CheckpointWorkerContextImpl::new(Arc::clone(&storage), BridgeParams::default());
+        let stored = process_epoch_and_load_payload(&storage, ctx, commitment);
+
+        // The sidecar must carry the withdrawal-intent log, and it must decode
+        // to the amount and destination the update emitted.
+        let withdrawals = decode_withdrawal_logs(&stored);
+        assert_eq!(withdrawals.len(), 1, "must have only one withdrawal log");
+        let withdrawal = withdrawals
+            .first()
+            .expect("sidecar must contain the bridge-gateway withdrawal log");
+        assert_eq!(
+            withdrawal.amt, withdraw_sats,
+            "withdrawal amount must match"
+        );
+        assert_eq!(
+            withdrawal.dest.as_slice(),
+            withdrawal_dest.as_slice(),
+            "withdrawal destination must match the emitted descriptor"
+        );
+        assert_eq!(
+            withdrawal.selected_operator,
+            u32::MAX,
+            "withdrawal must preserve the any-operator sentinel"
+        );
+
+        // The withdrawal must have debited the account, not routed to limbo.
+        assert_eq!(
+            MemoryStateBaseLayer::new(post_epoch_state.clone())
+                .get_account_state(snark_id)
+                .unwrap()
+                .unwrap()
+                .balance(),
+            BitcoinAmount::from_sat(0),
+            "withdrawal must debit the full seeded balance"
+        );
     }
 }
