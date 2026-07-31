@@ -56,7 +56,7 @@ impl EpochPlan {
     }
 
     /// Appends an ordinary block before the terminal.
-    pub fn block(mut self, block: BlockPlan) -> Self {
+    pub fn add_block(mut self, block: BlockPlan) -> Self {
         self.blocks.push(block);
         self
     }
@@ -96,7 +96,7 @@ impl BlockPlan {
     }
 
     /// Adds snark updates to this block position.
-    pub fn snark_updates(mut self, effects: Vec<UpdateEffect>) -> Self {
+    pub fn set_snark_updates(mut self, effects: Vec<UpdateEffect>) -> Self {
         self.update_effects = effects;
         self
     }

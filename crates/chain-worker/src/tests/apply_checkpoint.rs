@@ -225,7 +225,7 @@ fn test_apply_checkpoint_replays_empty_l1_range() {
 fn test_apply_checkpoint_snark_multi_update_and_deposit() {
     let built = build_epoch(
         EpochPlan::new()
-            .block(BlockPlan::new().snark_updates(vec![
+            .add_block(BlockPlan::new().set_snark_updates(vec![
                 UpdateEffect::Transfer(1_000_000),
                 UpdateEffect::Transfer(1_000_000),
             ]))
@@ -260,8 +260,8 @@ fn test_apply_checkpoint_snark_multi_update_and_deposit() {
 fn test_apply_checkpoint_snark_updates_across_planned_blocks() {
     let built = build_epoch(
         EpochPlan::new()
-            .block(BlockPlan::new().snark_updates(vec![UpdateEffect::Transfer(1_000_000)]))
-            .block(BlockPlan::new().snark_updates(vec![UpdateEffect::Transfer(1_000_000)])),
+            .add_block(BlockPlan::new().set_snark_updates(vec![UpdateEffect::Transfer(1_000_000)]))
+            .add_block(BlockPlan::new().set_snark_updates(vec![UpdateEffect::Transfer(1_000_000)])),
     );
     let (ctx, epoch) = mock_for(&built);
 
@@ -281,7 +281,8 @@ fn test_apply_checkpoint_snark_updates_across_planned_blocks() {
 #[test]
 fn test_apply_checkpoint_withdrawal_only() {
     let built = build_epoch(
-        EpochPlan::new().block(BlockPlan::new().snark_updates(vec![UpdateEffect::Withdrawal])),
+        EpochPlan::new()
+            .add_block(BlockPlan::new().set_snark_updates(vec![UpdateEffect::Withdrawal])),
     );
     assert_withdrawal_log_present(built.block_sync_logs());
     let (ctx, epoch) = mock_for(&built);
@@ -294,7 +295,7 @@ fn test_apply_checkpoint_withdrawal_only() {
 fn test_apply_checkpoint_withdrawal_and_deposit() {
     let built = build_epoch(
         EpochPlan::new()
-            .block(BlockPlan::new().snark_updates(vec![UpdateEffect::Withdrawal]))
+            .add_block(BlockPlan::new().set_snark_updates(vec![UpdateEffect::Withdrawal]))
             .terminal(BlockPlan::new().deposit_manifest()),
     );
     assert_withdrawal_log_present(built.block_sync_logs());
@@ -308,7 +309,7 @@ fn test_apply_checkpoint_withdrawal_and_deposit() {
 fn test_apply_checkpoint_all() {
     let built = build_epoch(
         EpochPlan::new()
-            .block(BlockPlan::new().snark_updates(vec![
+            .add_block(BlockPlan::new().set_snark_updates(vec![
                 UpdateEffect::None,
                 UpdateEffect::None,
                 UpdateEffect::Withdrawal,
@@ -356,8 +357,8 @@ fn assert_withdrawal_log_present(logs: &[ChainOLLog]) {
 fn test_apply_checkpoint_replays_manifests_spread_across_non_terminal_blocks() {
     let built = build_epoch(
         EpochPlan::new()
-            .block(BlockPlan::new().empty_manifests(1))
-            .block(BlockPlan::new().empty_manifests(1)),
+            .add_block(BlockPlan::new().empty_manifests(1))
+            .add_block(BlockPlan::new().empty_manifests(1)),
     );
     let (ctx, epoch) = mock_for(&built);
 
@@ -367,7 +368,7 @@ fn test_apply_checkpoint_replays_manifests_spread_across_non_terminal_blocks() {
 
 #[test]
 fn test_apply_checkpoint_drains_non_terminal_deposit_at_terminal() {
-    let built = build_epoch(EpochPlan::new().block(BlockPlan::new().deposit_manifest()));
+    let built = build_epoch(EpochPlan::new().add_block(BlockPlan::new().deposit_manifest()));
     let manifest_height = built.manifests_by_height[0].0;
 
     assert_eq!(
@@ -391,7 +392,7 @@ fn test_apply_checkpoint_orders_mixed_manifest_placements_by_block_position() {
     // the non-terminal manifest in L1 height order.
     let built = build_epoch(
         EpochPlan::new()
-            .block(BlockPlan::new().empty_manifests(1))
+            .add_block(BlockPlan::new().empty_manifests(1))
             .terminal(BlockPlan::new().deposit_manifest()),
     );
     assert_eq!(
@@ -409,8 +410,8 @@ fn test_apply_checkpoint_orders_mixed_manifest_placements_by_block_position() {
 fn test_apply_checkpoint_rejects_manifests_exceeding_epoch_cap() {
     let built = build_epoch(
         EpochPlan::new()
-            .block(BlockPlan::new().empty_manifests(MAX_SEALING_MANIFEST_COUNT as u32))
-            .block(BlockPlan::new().empty_manifests(1)),
+            .add_block(BlockPlan::new().empty_manifests(MAX_SEALING_MANIFEST_COUNT as u32))
+            .add_block(BlockPlan::new().empty_manifests(1)),
     );
     assert_eq!(
         built.manifests_by_height.len(),
@@ -436,7 +437,7 @@ fn test_apply_checkpoint_rejects_manifests_exceeding_epoch_cap() {
 
 #[test]
 fn test_apply_checkpoint_missing_manifest_still_errors() {
-    let built = build_epoch(EpochPlan::new().block(BlockPlan::new().empty_manifests(2)));
+    let built = build_epoch(EpochPlan::new().add_block(BlockPlan::new().empty_manifests(2)));
     let missing_height = built.manifests_by_height[1].0;
     let (mut ctx, epoch) = mock_for(&built);
     ctx.manifests.remove(&missing_height);
@@ -477,7 +478,7 @@ fn test_apply_checkpoint_inverted_l1_range_still_errors() {
 fn test_apply_checkpoint_skips_non_snark_log_in_sidecar() {
     let built = build_epoch(
         EpochPlan::new()
-            .block(BlockPlan::new().snark_updates(vec![
+            .add_block(BlockPlan::new().set_snark_updates(vec![
                 UpdateEffect::Transfer(1_000_000),
                 UpdateEffect::Transfer(1_000_000),
             ]))
@@ -568,7 +569,7 @@ fn test_apply_checkpoint_epoch_is_deterministic() {
     // values across two reconstructions of the same payload). Lock that down.
     let built = build_epoch(
         EpochPlan::new()
-            .block(BlockPlan::new().snark_updates(vec![
+            .add_block(BlockPlan::new().set_snark_updates(vec![
                 UpdateEffect::Transfer(1_000_000),
                 UpdateEffect::Transfer(1_000_000),
             ]))
@@ -1038,7 +1039,7 @@ mod db_idempotency {
     fn test_apply_checkpoint_writes_are_idempotent() {
         let built = build_epoch(
             EpochPlan::new()
-                .block(BlockPlan::new().snark_updates(vec![
+                .add_block(BlockPlan::new().set_snark_updates(vec![
                     UpdateEffect::Transfer(1_000_000),
                     UpdateEffect::Transfer(1_000_000),
                 ]))
