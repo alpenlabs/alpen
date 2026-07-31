@@ -8,6 +8,8 @@ mod proofs;
 mod transaction;
 mod validation;
 
+mod chain_abstraction;
+
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 

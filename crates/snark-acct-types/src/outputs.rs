@@ -2,7 +2,7 @@
 
 use ssz_types::VariableList;
 use strata_acct_types::{
-    AccountId, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects,
+    AccountId, BitcoinAmount, ITxEffects, MsgPayload, SentMessage, SentTransfer, TxEffects,
 };
 
 use crate::{
@@ -156,5 +156,27 @@ impl OutputMessage {
     /// Gets the message payload.
     pub fn payload(&self) -> &MsgPayload {
         &self.payload
+    }
+}
+
+impl ITxEffects for &UpdateOutputs {
+    fn num_transfers(&self) -> usize {
+        self.transfers.len()
+    }
+
+    fn get_transfer(&self, idx: usize) -> Option<SentTransfer> {
+        self.transfers
+            .get(idx)
+            .map(|t| SentTransfer::new(t.dest(), t.value()))
+    }
+
+    fn num_messages(&self) -> usize {
+        self.messages.len()
+    }
+
+    fn get_message(&self, idx: usize) -> Option<SentMessage> {
+        self.messages
+            .get(idx)
+            .map(|m| SentMessage::new(m.dest(), m.payload().clone()))
     }
 }

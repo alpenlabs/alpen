@@ -1,5 +1,10 @@
 //! Types relating to snark accounts and the snark account proof interface.
 
+// reexport for compatibility
+// TODO(trey): remove
+pub use strata_acct_types::AccumulatorClaim;
+
+mod abstract_update;
 mod error;
 mod ledger;
 mod manifest;
@@ -20,9 +25,9 @@ mod ssz_generated {
     include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 }
 
+pub use abstract_update::*;
 pub use error::OutputsError;
 pub use ledger::LedgerInterface;
 pub use manifest::UpdateManifest;
 pub use ssz_generated::ssz::{outputs::*, proof_interface::*, state::*, update::*};
 pub use state::Seqno;
-pub use strata_acct_types::AccumulatorClaim;

@@ -4,35 +4,30 @@ use strata_ledger_types::{ExecResult, ISnarkAccountState, TxProofVerifier};
 use strata_snark_acct_types::*;
 use tracing::warn;
 
-use crate::update::{SnarkAccountUpdateData, effects_to_update_outputs};
+use crate::update::effects_to_update_outputs;
 
 /// Verifies an account update is correct with respect to the current state of
 /// snark account, including checking account balances.
 pub fn verify_update_correctness(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
-    update: &SnarkAccountUpdateData,
+    update: impl ISnarkAccountUpdateData,
     proof_verifier: &mut impl TxProofVerifier,
 ) -> ExecResult<()> {
     // 1. Check seq_no matches.
     verify_seq_no(target, snark_state, update.seq_no())?;
 
     // 2. Check message / proof entries and indices line up.
-    verify_message_index(target, snark_state, update)?;
+    verify_message_index(target, snark_state, &update)?;
 
     // 3. Verify ledger references using the proof verifier.
     verify_ledger_refs(target, proof_verifier, update.ledger_refs())?;
 
     // 4. Verify inbox mmr proofs.
-    verify_inbox_mmr_proofs(
-        target,
-        snark_state,
-        proof_verifier,
-        update.processed_messages(),
-    )?;
+    verify_inbox_mmr_proofs(target, snark_state, proof_verifier, &update)?;
 
     // 5. Verify the proof.
-    verify_update_proof(target, snark_state, update, proof_verifier)?;
+    verify_update_proof(target, snark_state, &update, proof_verifier)?;
 
     Ok(())
 }
@@ -59,14 +54,14 @@ pub fn verify_seq_no(
 pub fn verify_message_index(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
-    update: &SnarkAccountUpdateData,
+    update: &impl ISnarkAccountUpdateData,
 ) -> ExecResult<()> {
     let expected_idx = snark_state
         .next_inbox_msg_idx()
-        .checked_add(update.processed_messages().len() as u64)
+        .checked_add(update.num_messasges())
         .ok_or(AcctError::MsgIndexOverflow { account_id: target })?;
 
-    let claimed_idx = update.new_proof_state().next_inbox_msg_idx();
+    let claimed_idx = update.new_next_msg_idx();
 
     if expected_idx != claimed_idx {
         return Err(AcctError::InvalidMsgIndex {
@@ -84,13 +79,11 @@ pub fn verify_message_index(
 fn verify_ledger_refs(
     target: AccountId,
     proof_verifier: &mut impl TxProofVerifier,
-    ledger_refs: &LedgerRefs,
+    ledger_refs: impl ILedgerRefs,
 ) -> ExecResult<()> {
-    let l1_block_ref_claims = ledger_refs.l1_block_refs();
-
-    for claim in l1_block_ref_claims {
+    for claim in ledger_refs.l1_block_refs_iter() {
         proof_verifier
-            .verify_l1_block_ref_mmr_proof_next(claim)
+            .verify_l1_block_ref_mmr_proof_next(&claim)
             .map_err(|_| AcctError::InvalidLedgerReference {
                 account_id: target,
                 ref_idx: claim.idx(),
@@ -106,12 +99,12 @@ fn verify_inbox_mmr_proofs(
     target: AccountId,
     state: &impl ISnarkAccountState,
     proof_verifier: &mut impl TxProofVerifier,
-    processed_msgs: &[MessageEntry],
+    update: &impl ISnarkAccountUpdateData,
 ) -> ExecResult<()> {
     let mut cur_index = state.next_inbox_msg_idx();
 
-    for msg in processed_msgs {
-        let msg_hash = msg.compute_msg_commitment();
+    for msg in update.messages_iter() {
+        let msg_hash = msg.compute_commitment();
         let claim = AccumulatorClaim::new(cur_index, msg_hash);
 
         proof_verifier
@@ -133,7 +126,7 @@ fn verify_inbox_mmr_proofs(
 pub(crate) fn verify_update_proof(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
-    update: &SnarkAccountUpdateData,
+    update: &impl ISnarkAccountUpdateData,
     verifier: &mut impl TxProofVerifier,
 ) -> ExecResult<()> {
     let claim: Vec<u8> = compute_update_claim(snark_state, update);
@@ -155,7 +148,7 @@ pub(crate) fn verify_update_proof(
 /// Converts [`TxEffects`] to [`UpdateOutputs`] for proof parameter construction.
 fn compute_update_claim(
     snark_state: &impl ISnarkAccountState,
-    update: &SnarkAccountUpdateData,
+    update: &impl ISnarkAccountUpdateData,
 ) -> Vec<u8> {
     let cur_state = ProofState::new(
         snark_state.inner_state_root(),
@@ -167,9 +160,12 @@ fn compute_update_claim(
     let pub_params = UpdateProofPubParams::new(
         update.seq_no(),
         cur_state,
-        update.new_proof_state().clone(),
-        update.processed_messages().to_vec(),
-        update.ledger_refs().clone(),
+        ProofState::new(update.new_inner_state(), update.new_next_msg_idx()),
+        update
+            .messages_iter()
+            .map(|e| MessageEntry::new(e.source(), e.incl_epoch(), e.get_payload()))
+            .collect::<Vec<_>>(),
+        LedgerRefs::new(update.ledger_refs().l1_block_refs_iter().collect()),
         outputs,
         update.extra_data().to_vec(),
     );

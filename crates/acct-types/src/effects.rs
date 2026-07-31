@@ -87,3 +87,56 @@ impl TxEffects {
             .try_fold(BitcoinAmount::zero(), |acc, e| acc.checked_add(e))
     }
 }
+
+impl ITxEffects for &TxEffects {
+    fn num_transfers(&self) -> usize {
+        self.transfers_iter().count()
+    }
+
+    fn get_transfer(&self, idx: usize) -> Option<SentTransfer> {
+        self.transfers_iter()
+            .nth(idx)
+            .map(|t| SentTransfer::new(t.dest(), t.value()))
+    }
+
+    fn num_messages(&self) -> usize {
+        self.messages_iter().count()
+    }
+
+    fn get_message(&self, idx: usize) -> Option<SentMessage> {
+        self.messages_iter()
+            .nth(idx)
+            .map(|m| SentMessage::new(m.dest(), m.payload().clone()))
+    }
+}
+
+/// Describes outputs from a transaction abstractly.
+pub trait ITxEffects {
+    /// Gets the number of transfers being sent.
+    fn num_transfers(&self) -> usize;
+
+    /// Gets the transfer data by idx.
+    fn get_transfer(&self, idx: usize) -> Option<SentTransfer>;
+
+    /// Returns an iterator over the transfers.
+    fn transfers_iter(&self) -> impl Iterator<Item = SentTransfer> {
+        (0..self.num_transfers()).map(|i| {
+            self.get_transfer(i)
+                .expect("acct-types: incorrect ITxEffects impl")
+        })
+    }
+
+    /// Gets the number of messages being sent.
+    fn num_messages(&self) -> usize;
+
+    /// Gets the message data by idx.
+    fn get_message(&self, idx: usize) -> Option<SentMessage>;
+
+    /// Returns an iterator over the transfers.
+    fn messages_iter(&self) -> impl Iterator<Item = SentMessage> {
+        (0..self.num_messages()).map(|i| {
+            self.get_message(i)
+                .expect("acct-types: incorrectt ITxEffects impl")
+        })
+    }
+}
