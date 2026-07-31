@@ -10,10 +10,7 @@ use jsonrpsee::core::RpcResult;
 use ssz::{Decode, Encode};
 use strata_acct_types::MessageEntry;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::{
-    ol_block::BlockAvailability,
-    ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
-};
+use strata_db_types::{ol_block::BlockAvailability, ol_state_index::InboxMessageRecord};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId, RBuf32,
@@ -126,22 +123,6 @@ fn local_inbox_message_range(
     })?;
 
     Ok(local_start..local_end)
-}
-
-/// Returns the SAU operation seqno for an indexed update record.
-///
-/// Indexed update records store post-state account seqnos. Missing operation
-/// seqnos indicate an indexing invariant violation and fail the RPC.
-fn require_operation_seq_no(
-    account_id: AccountId,
-    epoch: Epoch,
-    record: &AccountUpdateRecord,
-) -> RpcResult<u64> {
-    record.orig_acct_seq_no().ok_or_else(|| {
-        internal_error(format!(
-            "missing operation seq_no in update record for account {account_id} epoch {epoch}",
-        ))
-    })
 }
 
 impl<P: OLRpcProvider> OLRpcServer<P> {
@@ -474,7 +455,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                         continue;
                     }
 
-                    let operation_seq_no = require_operation_seq_no(account_id, epoch, &r)?;
+                    let operation_seq_no = r.orig_acct_seq_no();
 
                     // Block-attributed `DirectSet` (no `extra_data`) is not
                     // produced by current write paths. Keep the soft fail in
@@ -741,7 +722,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             let mut pending = Vec::with_capacity(records.len());
             for r in &records {
                 let new_state_root = r.update_meta().map(|m| m.new_state_root());
-                let operation_seq_no = require_operation_seq_no(account_id, epoch, r)?;
+                let operation_seq_no = r.orig_acct_seq_no();
                 let extra_data = r
                     .extra_data()
                     .ok_or_else(|| {
@@ -1149,7 +1130,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             };
 
             for record in records {
-                let operation_seq_no = require_operation_seq_no(account_id, epoch, &record)?;
+                let operation_seq_no = record.orig_acct_seq_no();
 
                 if operation_seq_no != seq_no {
                     continue;

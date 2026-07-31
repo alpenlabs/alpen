@@ -12,9 +12,6 @@ use strata_primitives::{HexBytes, HexBytes32, HexBytes64, OLBlockCommitment};
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLClientRpc {
     /// Get an account's epoch summary for a given epoch.
-    ///
-    /// Snark account `update_inputs[*].seq_no` values are SAU operation
-    /// sequence numbers. They are not the post-update account `next_seq_no`.
     #[method(name = "getAccountEpochSummary")]
     async fn get_acct_epoch_summary(
         &self,
@@ -50,15 +47,10 @@ pub trait OLClientRpc {
 
     /// Get account-specific summaries for blocks in a slot range.
     ///
-    /// Returns the account's post-block state (`balance`, `next_seq_no`, inbox
-    /// position) at each block in the range `[start_slot, end_slot]`.
-    ///
-    /// Snark account `updates[*].seq_no` values are SAU operation sequence
-    /// numbers. They are not the post-update account `next_seq_no`.
-    ///
-    /// This is useful for clients that need to track how an account's state
-    /// evolved over a series of blocks, such as snark account provers that need
-    /// to know inbox messages and state transitions.
+    /// Returns the account's state (balance, sequence number, inbox position) at each block
+    /// in the range `[start_slot, end_slot]`. This is useful for clients that need to track
+    /// how an account's state evolved over a series of blocks, such as snark account provers
+    /// that need to know inbox messages and state transitions.
     ///
     /// Results are returned in ascending slot order. Only blocks on the canonical chain
     /// are included; the implementation walks parent references to ensure chain continuity.
@@ -91,9 +83,6 @@ pub trait OLClientRpc {
     ) -> RpcResult<Option<RpcSnarkAccountState>>;
 
     /// Get published manifest metadata for a Snark account update.
-    ///
-    /// The `seq_no` parameter is the SAU operation sequence number, not the
-    /// post-update account `next_seq_no`.
     ///
     /// The consumed inbox range inside the resulting [`RpcSnarkAcctUpdateManifest`] is half-open:
     /// `[prev_next_msg_idx, new_next_msg_idx)`.

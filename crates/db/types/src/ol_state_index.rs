@@ -8,6 +8,7 @@
 //! are stored in their raw SSZ byte form; callers convert at the boundaries.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU64;
 
 use serde::{Deserialize, Serialize};
 use strata_codec::Codec;
@@ -191,16 +192,24 @@ impl AccountUpdateMeta {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AccountUpdateRecord {
     update_meta: Option<AccountUpdateMeta>,
-    seq_no: u64,
+
+    /// Account seqno after this update.
+    ///
+    /// The STF writes `operation seqno + 1`, so the minimum is 1, from an
+    /// account's first update.
+    seq_no: NonZeroU64,
+
     prev_next_inbox_idx: u64,
+
     next_inbox_idx: u64,
+
     extra_data: Option<Vec<u8>>,
 }
 
 impl AccountUpdateRecord {
     pub fn new(
         update_meta: Option<AccountUpdateMeta>,
-        seq_no: u64,
+        seq_no: NonZeroU64,
         prev_next_inbox_idx: u64,
         next_inbox_idx: u64,
         extra_data: Option<Vec<u8>>,
@@ -218,16 +227,18 @@ impl AccountUpdateRecord {
         self.update_meta.as_ref()
     }
 
+    /// Returns the post-update account seqno.
     pub fn seq_no(&self) -> u64 {
-        self.seq_no
+        self.seq_no.get()
     }
 
     /// Returns the operation seqno that produced this record.
     ///
-    /// The record stores the post-update account seqno. Snark account updates
-    /// publish the pre-update operation seqno, so this is `seq_no - 1`.
-    pub fn orig_acct_seq_no(&self) -> Option<u64> {
-        self.seq_no.checked_sub(1)
+    /// The record stores the post-update account seqno, and snark account
+    /// updates declare the pre-update operation seqno, so this is `seq_no - 1`.
+    /// It is zero for an account's first update.
+    pub fn orig_acct_seq_no(&self) -> u64 {
+        self.seq_no.get() - 1
     }
 
     pub fn prev_next_inbox_idx(&self) -> u64 {

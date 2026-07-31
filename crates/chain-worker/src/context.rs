@@ -3,7 +3,7 @@
 //! This module provides [`ChainWorkerContextImpl`], a production implementation
 //! of the worker context that uses the storage layer managers for database access.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, num::NonZeroU64, sync::Arc};
 
 use ssz::Encode;
 use strata_acct_types::{
@@ -26,6 +26,7 @@ use strata_ol_chain_types::{
     SnarkAccountUpdateLogData,
 };
 use strata_ol_params::OLParams;
+use strata_ol_state_support_types::SnarkAcctStateUpdate;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
@@ -453,7 +454,7 @@ fn build_indexing_writes(
         let meta = AccountUpdateMeta::new(Some(commitment), state);
         let record = AccountUpdateRecord::new(
             Some(meta),
-            *update.seqno().inner(),
+            post_update_seqno(update)?,
             update.prev_next_read_idx(),
             update.next_read_idx(),
             Some(log.extra_data().to_vec()),
@@ -481,6 +482,16 @@ fn build_indexing_writes(
         account_updates,
         account_inbox_writes,
     ))
+}
+
+/// Returns the post-update account seqno carried by a tracked snark state update.
+///
+/// The STF writes `operation seqno + 1` when applying an update, so a zero here means the
+/// tracked update did not come from an applied update transaction.
+fn post_update_seqno(update: &SnarkAcctStateUpdate) -> WorkerResult<NonZeroU64> {
+    NonZeroU64::new(*update.seqno().inner()).ok_or(WorkerError::SnarkUpdateZeroSeqno {
+        account_id: update.account_id(),
+    })
 }
 
 /// Decodes the [`SnarkAccountUpdateLogData`] logs from `logs`, in emission order, skipping logs
@@ -551,7 +562,7 @@ pub(crate) fn build_checkpoint_indexing_writes(
             .map(|root| AccountUpdateMeta::new(None, root));
         let record = AccountUpdateRecord::new(
             update_meta,
-            *update.seqno().inner(),
+            post_update_seqno(update)?,
             update.prev_next_read_idx(),
             update.next_read_idx(),
             Some(log.extra_data().to_vec()),

@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    num::NonZeroU64,
     ops::Range,
     slice,
     sync::{
@@ -68,7 +69,7 @@ fn update_record_with_prev(
 ) -> AccountUpdateRecord {
     AccountUpdateRecord::new(
         update_meta,
-        seq_no,
+        NonZeroU64::new(seq_no).expect("record post-state seqno must be non-zero"),
         prev_next_inbox_idx,
         next_inbox_idx,
         extra_data,
@@ -2621,36 +2622,6 @@ async fn blocks_summaries_out_of_chain_directset_does_not_fail_rpc() {
 }
 
 #[tokio::test]
-async fn blocks_summaries_rejects_zero_post_state_seqno() {
-    let account_id = test_account_id(1);
-    let block = make_block(0, 0, null_blkid());
-    let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
-    let record = update_record(
-        Some(AccountUpdateMeta::new(Some(commitment), [0x44; 32].into())),
-        0,
-        0,
-        Some(vec![0xA0]),
-    );
-
-    let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(
-            commitment,
-            0,
-            false,
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-        ))
-        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 0, 0))
-        .with_account_update_records(account_id, 0, vec![record]);
-    let rpc = make_rpc(provider);
-
-    rpc.get_blocks_summaries(account_id, 0, 0)
-        .await
-        .expect_err("blocks summary accepted zero post-state seq_no");
-}
-
-#[tokio::test]
 async fn blocks_summaries_reads_ranges_past_checkpoint_sync_row() {
     let account_id = test_account_id(1);
     let epoch: Epoch = 2;
@@ -3222,32 +3193,6 @@ async fn epoch_summary_checkpoint_sync_populates_terminal_root_only() {
 }
 
 #[tokio::test]
-async fn epoch_summary_rejects_zero_post_state_seqno() {
-    let epoch: Epoch = 2;
-    let account_id = test_account_id(7);
-    let epoch_commitment = test_epoch_commitment(epoch, 40, 0x62);
-    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 30, 0x61);
-    let record = update_record_with_prev(
-        Some(AccountUpdateMeta::new(None, Hash::zero())),
-        0,
-        0,
-        0,
-        Some(vec![0xA0]),
-    );
-
-    let provider = MockProvider::new()
-        .with_epoch_commitment(epoch, epoch_commitment)
-        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
-        .with_snark_state_at_terminal(epoch_commitment, account_id, 0, 0)
-        .with_account_update_records(account_id, epoch, vec![record]);
-    let rpc = make_rpc(provider);
-
-    rpc.get_acct_epoch_summary(account_id, epoch)
-        .await
-        .expect_err("epoch summary accepted zero post-state seq_no");
-}
-
-#[tokio::test]
 async fn epoch_summary_epoch_zero_has_no_messages() {
     let epoch = 0;
     let account_id = test_account_id(12);
@@ -3733,38 +3678,6 @@ async fn snark_acct_update_manifest_no_message_update_returns_empty_extra_data()
         manifest.new_inner_state_root().expect("state root").0,
         final_state_root.0
     );
-}
-
-#[tokio::test]
-async fn snark_acct_update_manifest_rejects_zero_post_state_seqno() {
-    let account_id = test_account_id(6);
-    let tip_epoch_commitment = test_epoch_commitment(0, 0, 0x60);
-    let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(
-            tip_epoch_commitment.to_block_commitment(),
-            0,
-            false,
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-        ))
-        .with_account_creation_epoch(account_id, 0)
-        .with_snark_tip_state(tip_epoch_commitment, account_id, 1, 0)
-        .with_account_update_records(
-            account_id,
-            0,
-            vec![update_record(
-                Some(AccountUpdateMeta::new(None, [0x11; 32].into())),
-                0,
-                0,
-                Some(Vec::new()),
-            )],
-        );
-    let rpc = make_rpc(provider);
-
-    rpc.get_snark_acct_update_manifest(account_id, 0)
-        .await
-        .expect_err("manifest accepted zero post-state seq_no");
 }
 
 #[tokio::test]

@@ -172,6 +172,11 @@ pub enum WorkerError {
     #[error("snark update log next_read_idx mismatch (expected {expected}, got {found})")]
     SnarkUpdateLogMismatch { expected: u64, found: u64 },
 
+    /// A tracked snark state update carried a zero post-update seqno. The STF writes
+    /// `operation seqno + 1`, so this cannot come from an applied update transaction.
+    #[error("snark update has zero post-update seqno for account {account_id}")]
+    SnarkUpdateZeroSeqno { account_id: AccountId },
+
     /// Missing a required dependency for operation.
     #[error("missing required dependency: {0}")]
     MissingDependency(&'static str),
