@@ -12,8 +12,8 @@ import logging
 import flexitest
 
 from common.base_test import BaseTest
+from common.checkpoint_sync import mine_and_get_status
 from common.config.constants import ServiceType
-from common.rpc_types.strata import ChainSyncStatus
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
@@ -22,13 +22,6 @@ logger = logging.getLogger(__name__)
 
 # CSS must reconstruct this many finalized epochs after its restart.
 EPOCHS_TO_BACKFILL_AFTER_RESTART = 5
-
-
-def mine_and_get_status(strata: StrataService, btc_rpc) -> ChainSyncStatus:
-    """Mines L1 blocks so OL checkpoints confirm, then returns the node's status."""
-    btc_rpc.proxy.generatetoaddress(2, btc_rpc.proxy.getnewaddress())
-    return strata.get_sync_status()
-
 
 @flexitest.register
 class TestCheckpointSyncNodeRestart(BaseTest):

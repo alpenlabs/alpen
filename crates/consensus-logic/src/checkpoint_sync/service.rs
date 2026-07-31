@@ -84,6 +84,12 @@ where
             Err(CheckpointSyncError::L1TipNotReady) => {
                 debug!("L1 tip not yet ready, will retry on next CSM update");
             }
+            // A checkpoint payload may be temporarily unavailable or replaced
+            // by a later canonical CSM update. Keep CSS alive so that update
+            // can trigger reconstruction again.
+            Err(CheckpointSyncError::EpochOp { epoch, op, cause }) => {
+                warn!(%epoch, op, ?cause, "checkpoint reconstruction failed, will retry on next CSM update");
+            }
             Err(e) => return Err(e.into()),
         }
         Ok(Response::Continue)

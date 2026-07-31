@@ -7,17 +7,19 @@ use std::{
 
 use strata_chain_worker::WorkerError;
 use strata_checkpoint_types::EpochSummary;
-use strata_csm_types::CheckpointL1Ref;
+use strata_csm_types::{CheckpointL1Ref, CheckpointState};
 use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::DbResult;
 use strata_identifiers::{Epoch, OLBlockCommitment};
 use strata_primitives::{EpochCommitment, L1Height};
+use strata_service::{AsyncService, Response};
 use strata_status::OLSyncStatus;
 
 use crate::{
     checkpoint_sync::{
         context::CheckpointSyncCtx,
         errors::{CheckpointSyncError, CheckpointSyncResult},
+        service::CheckpointSyncService,
         state::{find_and_apply_unapplied_epochs, scan_unapplied_epochs, CheckpointSyncState},
     },
     test_utils::{make_buf32, make_epoch_commitment as make_epoch, make_l1_block_commitment},
@@ -507,6 +509,39 @@ async fn handle_retries_after_malformed_checkpoint_reconstruction_fails() {
     state.handle_new_client_state().await.unwrap();
     assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
     assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch1]);
+}
+
+#[tokio::test]
+async fn service_retries_epoch_operation_failure_on_next_csm_update() {
+    let epoch0 = make_epoch(0, 0, 0x00);
+    let epoch1 = make_epoch(1, 10, 0x01);
+    let ctx = Arc::new(
+        MockCtx::new(3, 200)
+            .add_genesis(epoch0)
+            .add_epoch(epoch1, make_l1_ref(110), None)
+            .with_csm_finalized(Some(epoch1))
+            .fail_apply_once(WorkerError::Unexpected(
+                "malformed checkpoint payload".to_owned(),
+            )),
+    );
+    let mut state = CheckpointSyncState::new(ctx.clone(), Some(epoch0));
+
+    let response = <CheckpointSyncService<MockCtx> as AsyncService>::process_input(
+        &mut state,
+        CheckpointState::default(),
+    )
+    .await
+    .expect("epoch operation failure should not stop CSS");
+    assert!(matches!(response, Response::Continue));
+    assert_eq!(state.last_finalized_and_applied(), Some(epoch0));
+
+    <CheckpointSyncService<MockCtx> as AsyncService>::process_input(
+        &mut state,
+        CheckpointState::default(),
+    )
+    .await
+    .expect("next CSM update should retry the epoch");
+    assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
 }
 
 // ---- restart / re-run ----
