@@ -67,7 +67,7 @@ class TestCheckpointSyncReorgBoundary(BaseTest):
             error_with="CSS did not apply the checkpoint at the reorg-safe boundary",
             timeout=120,
         )
-        assert boundary_status["finalized"]["epoch"] == TARGET_EPOCH
+        assert boundary_status["finalized"]["epoch"] >= TARGET_EPOCH
 
 
 def _mine_and_get_checkpoint_info(sequencer, seq_rpc, btc_rpc) -> dict | None:

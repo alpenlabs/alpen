@@ -19,7 +19,7 @@ use crate::{
     checkpoint_sync::{
         context::CheckpointSyncCtx,
         errors::{CheckpointSyncError, CheckpointSyncResult},
-        service::CheckpointSyncService,
+        service::{initialize_css_inner_state, CheckpointSyncService},
         state::{find_and_apply_unapplied_epochs, scan_unapplied_epochs, CheckpointSyncState},
     },
     test_utils::{make_buf32, make_epoch_commitment as make_epoch, make_l1_block_commitment},
@@ -484,7 +484,7 @@ async fn handle_errors_on_chain_hole_leaves_state_unadvanced() {
 }
 
 #[tokio::test]
-async fn handle_retries_after_malformed_checkpoint_reconstruction_fails() {
+async fn handle_can_retry_after_apply_checkpoint_failure() {
     let epoch0 = make_epoch(0, 0, 0x00);
     let epoch1 = make_epoch(1, 10, 0x01);
     let ctx = Arc::new(
@@ -516,7 +516,7 @@ async fn handle_retries_after_malformed_checkpoint_reconstruction_fails() {
 }
 
 #[tokio::test]
-async fn service_retries_epoch_operation_failure_on_next_csm_update() {
+async fn initialization_recovers_after_reconstruction_failure() {
     let epoch0 = make_epoch(0, 0, 0x00);
     let epoch1 = make_epoch(1, 10, 0x01);
     let ctx = Arc::new(
@@ -528,24 +528,24 @@ async fn service_retries_epoch_operation_failure_on_next_csm_update() {
                 "malformed checkpoint payload".to_owned(),
             )),
     );
-    let mut state = CheckpointSyncState::new(ctx.clone(), Some(epoch0));
+    let err = initialize_css_inner_state(ctx.as_ref()).await.unwrap_err();
+    assert!(matches!(
+        err,
+        CheckpointSyncError::EpochOp {
+            epoch,
+            op: "apply_checkpoint",
+            ..
+        } if epoch == epoch1
+    ));
+    assert!(ctx.applied_epochs.lock().unwrap().is_empty());
 
-    let response = <CheckpointSyncService<MockCtx> as AsyncService>::process_input(
-        &mut state,
-        CheckpointState::default(),
-    )
-    .await
-    .expect("epoch operation failure should not stop CSS");
-    assert!(matches!(response, Response::Continue));
-    assert_eq!(state.last_finalized_and_applied(), Some(epoch0));
-
-    <CheckpointSyncService<MockCtx> as AsyncService>::process_input(
-        &mut state,
-        CheckpointState::default(),
-    )
-    .await
-    .expect("next CSM update should retry the epoch");
-    assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
+    // A fresh CSS initialization sees the now-valid checkpoint and finishes
+    // reconstruction plus the idempotent finalize/publish recovery tail.
+    let recovered = initialize_css_inner_state(ctx.as_ref()).await.unwrap();
+    assert_eq!(recovered, Some(epoch1));
+    assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch1]);
+    assert!(!ctx.finalized_epochs.lock().unwrap().is_empty());
+    assert!(!ctx.published_statuses.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
