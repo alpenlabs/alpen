@@ -1,0 +1,34 @@
+# Use esplora for the bitcoin signet backend
+esplora = "https://esplora.development.stratabtc.org"
+# EVM-compatible endpoint for Alpen transactions
+alpen_endpoint = "https://rpc-alpen.development.stratabtc.org"
+# EVM-compatible endpoint for Nepal transactions
+nepal_endpoint = "https://rpc-nepal.development.stratabtc.org"
+# Alpen's hosted faucet API
+faucet_endpoint = "http://faucet-api.development.stratabtc.org/"
+# mempool.space instance to explore the bitcoin signet
+mempool_endpoint = "https://bitcoin.development.stratabtc.org/"
+# Blockscout instance to explore Alpen's chain
+blockscout_endpoint = "https://explorer.development.stratabtc.org"
+# Blockscout instance to explore Nepal's chain
+blockscout_endpoint_nepal = "https://explorer-ee2.development.stratabtc.org/"
+# Bridge multisig public key
+bridge_pubkey = "e48b64678069bcbfcb1755e16a80302d4bf79d4d5d453161dd3e7f14f87dc28a"
+# Prefix added to OP_RETURN metadata to identify deposit requests
+magic_bytes = "ALPN"
+
+recovery_delay = 1_008
+
+network = "signet"
+bridge_denomination_sats = 200000000
+
+max_withdrawal_descriptor_len = 81
+
+finality_depth = 0
+
+#bridge_fee_sats = 100
+
+
+[ee_account_ids]
+128 = "0101010101010101010101010101010101010101010101010101010101010101"  # ALPN
+129 = "0202020202020202020202020202020202020202020202020202020202020202"  # NPAL
