@@ -49,7 +49,7 @@ impl FromStr for ProcId {
         }
 
         let mut inner = [0; PROC_ID_LEN];
-        inner.copy_from_slice(sb);
+        inner[..sb.len()].copy_from_slice(sb);
         Ok(Self(inner))
     }
 }
@@ -215,4 +215,15 @@ impl ProcDeps {
 pub trait ProcContext<P: GChainProc> {
     /// Creates a new empty context instance.
     fn new() -> Self;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProcId;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_parse_short_proc_id() {
+        ProcId::from_str("foo").expect("test: parse ProcId");
+    }
 }
