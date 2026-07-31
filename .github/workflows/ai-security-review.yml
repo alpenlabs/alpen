@@ -7,6 +7,9 @@ name: AI Security Review
 # On `pull_request`, GitHub withholds secrets from EXTERNAL fork PRs, so this covers same-repo
 # branches; external-fork PRs are not reviewed. Do NOT switch to `pull_request_target` without
 # a security re-review — that trigger hands secrets + a writable token to untrusted PR content.
+# Pass/fail contract: the job is green iff the review comment was posted. Claude exiting non-zero
+# (typically `--max-turns` on a very large diff, which fires *after* it has already commented) is
+# downgraded to a warning; a run that posts nothing still fails.
 
 on:
   pull_request:
@@ -34,7 +37,8 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.draft == false && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Headroom for the raised turn budget: ~12s/turn observed, so 60 turns is ~13min worst case.
+    timeout-minutes: 30
     steps:
       # Manual runs have access to secrets, so keep the automatic trigger's fork/dependabot boundary.
       - name: Validate manually selected PR
@@ -77,7 +81,16 @@ jobs:
           echo "model=$model" >> "$GITHUB_OUTPUT"
           { echo "### AI review model: \`$model\`"; echo '```'; printf '%s\n' "$files"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
+      # Anything the review posts must be newer than this, so a stale comment from an earlier run
+      # can't satisfy the gate below. One minute of slack absorbs runner/API clock skew.
+      - name: Record review start time
+        id: started
+        run: echo "at=$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@787c5a0ce96a9a6cfb050ea0c8f4c05f2447c251 # v1.0.133
+        id: review
+        # Never fail the job here — the "Require review comment" step below decides the outcome.
+        continue-on-error: true
         with:
           # Subscription first; fall back to the API key only when no OAuth token is configured.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -94,6 +107,15 @@ jobs:
             panics on untrusted input (watch Rust `unsafe`), input-validation gaps, unsafe error handling,
             resource exhaustion / DoS. Favor precision over recall.
 
+            TOOLS — this is the complete set you have. Every call outside it is denied and burns a
+            turn for nothing, so do not guess or retry with a different command:
+            - Read, Grep, Glob — use these for ALL file reading and searching. Grep replaces `rg`,
+              Read with offset/limit replaces `sed -n '10,40p'`, Glob replaces `find`.
+            - Bash, and only these commands: `gh pr diff`, `gh pr view`, `gh pr comment`, `cat`,
+              `ls`, `grep`, `head`, `tail`, `git diff`, `git log`, `git show`.
+            Notably unavailable: `sed`, `awk`, `find`, `rg`, `wc`, `sort`, `gh api`, `python`, and
+            anything that writes or executes. There is no way to request more; work within this set.
+
             Then post EXACTLY ONE PR comment via
             `gh pr comment ${{ github.event.pull_request.number || inputs.pr_number }} --repo ${{ github.repository }} --body "<markdown>"`,
             following these OUTPUT RULES strictly (a human reads this — keep it tight):
@@ -107,5 +129,33 @@ jobs:
           # Read-only allowlist: no `sed` (s///e exec), no blanket `git` (`-c alias=!cmd` exec), no `gh api` (write API).
           claude_args: |
             --model ${{ steps.pick.outputs.model }}
-            --max-turns 40
+            --max-turns 60
             --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(cat:*),Bash(ls:*),Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob"
+
+      # The deliverable is the comment, not Claude's exit code. Hitting --max-turns generally means
+      # it commented on its last turn and had none left to sign off, which is a pass. Nothing posted
+      # (auth failure, crash, silent stop) is a real failure and still goes red.
+      - name: Require review comment
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || inputs.pr_number }}
+          REPO: ${{ github.repository }}
+          SINCE: ${{ steps.started.outputs.at }}
+          OUTCOME: ${{ steps.review.outcome }}
+        run: |
+          set -euo pipefail
+          posted=$(gh pr view "$PR" --repo "$REPO" --json comments | jq --arg since "$SINCE" '
+            [ .comments[]
+              | select(.author.login == "github-actions")
+              | select(.createdAt >= $since)
+              | select(.body | startswith("## 🔒 AI Security Review"))
+            ] | length')
+          if [ "$posted" -eq 0 ]; then
+            echo "::error::No AI security review comment was posted (claude-code-action outcome: $OUTCOME)."
+            exit 1
+          fi
+          if [ "$OUTCOME" != success ]; then
+            echo "::warning::claude-code-action ended as '$OUTCOME' (most likely --max-turns), but the review was posted — passing. If this recurs, raise --max-turns."
+          fi
+          echo "Review comment posted; claude-code-action outcome: $OUTCOME."
