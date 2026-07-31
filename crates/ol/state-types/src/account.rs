@@ -2,21 +2,30 @@ use strata_acct_types::*;
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::*;
 
+use ssz_types::Optional;
+
 use crate::ssz_generated::ssz::state::{OLAccountState, OLAccountTypeState, OLSnarkAccountState};
 
 impl OLAccountState {
     /// Creates a new account state.
     pub fn new(serial: AccountSerial, balance: BitcoinAmount, state: OLAccountTypeState) -> Self {
         Self {
-            serial,
-            balance,
-            state,
+            serial: Optional::Some(serial),
+            balance: Optional::Some(balance),
+            state: Optional::Some(state),
         }
     }
 
     /// Returns the account serial.
     pub fn serial(&self) -> AccountSerial {
-        self.serial
+        self.serial.unwrap()
+    }
+
+    fn type_state_ref(&self) -> &OLAccountTypeState {
+        match &self.state {
+            Optional::Some(state) => state,
+            Optional::None => panic!("account: missing type state"),
+        }
     }
 }
 
@@ -39,29 +48,29 @@ impl IAccountState for OLAccountState {
     }
 
     fn serial(&self) -> AccountSerial {
-        self.serial
+        self.serial.unwrap()
     }
 
     fn balance(&self) -> BitcoinAmount {
-        self.balance
+        self.balance.unwrap()
     }
 
     fn ty(&self) -> AccountTypeId {
-        match &self.state {
+        match self.type_state_ref() {
             OLAccountTypeState::Empty => AccountTypeId::Empty,
             OLAccountTypeState::Snark(_) => AccountTypeId::Snark,
         }
     }
 
     fn type_state(&self) -> AccountTypeStateRef<'_, Self> {
-        match &self.state {
+        match self.type_state_ref() {
             OLAccountTypeState::Empty => AccountTypeStateRef::Empty,
             OLAccountTypeState::Snark(state) => AccountTypeStateRef::Snark(state),
         }
     }
 
     fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
-        match &self.state {
+        match self.type_state_ref() {
             OLAccountTypeState::Snark(state) => Ok(state),
             _ => Err(StateError::MismatchedAcctType {
                 got: self.ty(),
@@ -75,28 +84,28 @@ impl IAccountStateMut for OLAccountState {
     type SnarkAccountStateMut = OLSnarkAccountState;
 
     fn add_balance(&mut self, coin: Coin) {
-        self.balance = self
-            .balance
-            .checked_add(coin.amt())
-            .expect("ledger: overflow balance");
+        self.balance = Optional::Some(
+            self.balance()
+                .checked_add(coin.amt())
+                .expect("ledger: overflow balance"),
+        );
         coin.safely_consume_unchecked();
     }
 
     fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
-        self.balance = self
-            .balance
-            .checked_sub(amt)
-            .ok_or(StateError::InsufficientBalance {
+        self.balance = Optional::Some(self.balance().checked_sub(amt).ok_or(
+            StateError::InsufficientBalance {
                 need: amt,
-                have: self.balance,
-            })?;
+                have: self.balance(),
+            },
+        )?);
         Ok(Coin::new_unchecked(amt))
     }
 
     fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut> {
         let ty = self.ty();
         match &mut self.state {
-            OLAccountTypeState::Snark(state) => Ok(state),
+            Optional::Some(OLAccountTypeState::Snark(state)) => Ok(state),
             _ => Err(StateError::MismatchedAcctType {
                 got: ty,
                 expected: AccountTypeId::Snark,

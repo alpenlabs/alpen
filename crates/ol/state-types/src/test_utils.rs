@@ -93,11 +93,7 @@ pub fn ol_account_state_strategy() -> impl Strategy<Value = OLAccountState> {
         bitcoin_amount_strategy(),
         ol_account_type_state_strategy(),
     )
-        .prop_map(|(serial, balance, state)| OLAccountState {
-            serial,
-            balance,
-            state,
-        })
+        .prop_map(|(serial, balance, state)| OLAccountState::new(serial, balance, state))
 }
 
 pub fn tsnl_account_entry_strategy() -> impl Strategy<Value = TsnlAccountEntry> {

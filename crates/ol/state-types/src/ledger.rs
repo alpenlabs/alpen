@@ -93,7 +93,7 @@ impl TsnlLedgerAccountsTable {
         self.accounts
             .iter()
             .fold(BitcoinAmount::ZERO, |acc, entry| {
-                acc.checked_add(entry.state.balance)
+                acc.checked_add(entry.state.balance())
                     .expect("ol/state: total funds overflow")
             })
     }

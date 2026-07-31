@@ -41,15 +41,15 @@ class TsnlAccountEntry(Container):
     state: OLAccountState
 
 ### Account state
-class OLAccountState(Container):
+class OLAccountState(StableContainer[16]):
     ### Account serial number
-    serial: strata_identifiers.AccountSerial
+    serial: Optional[strata_identifiers.AccountSerial]
 
     ### Account balance
-    balance: strata_acct_types.BitcoinAmount
+    balance: Optional[strata_acct_types.BitcoinAmount]
 
     ### Account type-specific state
-    state: OLAccountTypeState
+    state: Optional[OLAccountTypeState]
 
 ### Account type state as union
 class OLAccountTypeState(Union):
