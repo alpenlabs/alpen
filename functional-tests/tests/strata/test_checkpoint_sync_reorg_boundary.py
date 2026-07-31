@@ -37,10 +37,11 @@ class TestCheckpointSyncReorgBoundary(BaseTest):
         checkpoint_node.wait_for_rpc_ready(timeout=20)
 
         checkpoint_info = wait_until_with_value(
-            lambda: _mine_and_get_checkpoint_info(seq_rpc, btc_rpc),
+            lambda: _mine_and_get_checkpoint_info(sequencer, seq_rpc, btc_rpc),
             lambda info: info is not None and info["confirmation_status"]["status"] == "confirmed",
             error_with="checkpoint was not observed on L1 before reaching finality",
             timeout=120,
+            step=0,
         )
         l1_height = checkpoint_info["confirmation_status"]["l1_reference"]["l1_block"]["height"]
         tip_height = btc_rpc.proxy.getblockcount()
@@ -69,6 +70,13 @@ class TestCheckpointSyncReorgBoundary(BaseTest):
         assert boundary_status["finalized"]["epoch"] == TARGET_EPOCH
 
 
-def _mine_and_get_checkpoint_info(seq_rpc, btc_rpc) -> dict | None:
+def _mine_and_get_checkpoint_info(sequencer, seq_rpc, btc_rpc) -> dict | None:
+    checkpoint_info = seq_rpc.strata_getCheckpointInfo(TARGET_EPOCH)
+    status = None if checkpoint_info is None else checkpoint_info["confirmation_status"]["status"]
+    assert status != "finalized", "checkpoint reached finality before the test observed it"
+    if status == "confirmed":
+        return checkpoint_info
+
     btc_rpc.proxy.generatetoaddress(1, btc_rpc.proxy.getnewaddress())
-    return seq_rpc.strata_getCheckpointInfo(TARGET_EPOCH)
+    sequencer.wait_for_asm_manifest_commitment_at(btc_rpc.proxy.getblockcount(), timeout=30)
+    return checkpoint_info
