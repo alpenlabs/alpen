@@ -18,13 +18,47 @@ use strata_identifiers::Buf64;
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types::{OLBlock, SignedOLBlockHeader};
 use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
-use strata_ol_stf::test_utils::{build_empty_chain, make_genesis_state};
+use std::collections::BTreeMap;
+
+use strata_acct_types::AccountId;
+use strata_identifiers::Buf32;
+use strata_ol_params::{GenesisSnarkAccountData, OLParams};
+use strata_ol_state_support_types::MemoryStateBaseLayer;
+use strata_ol_state_types::OLState;
+use strata_ol_stf::test_utils::build_empty_chain;
+use strata_predicate::PredicateKey;
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use tracing::info;
 use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
 
 const SLOTS_PER_EPOCH: u64 = 9;
 const NUM_BLOCKS: usize = 10;
+
+/// Builds a genesis state with `BENCH_ACCTS` ledger accounts (default 0) so
+/// state-root hashing cost over a populated ledger shows up in cycle counts.
+fn make_genesis_state() -> MemoryStateBaseLayer {
+    let n: u64 = std::env::var("BENCH_ACCTS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let mut params = OLParams::default();
+    let mut accounts = BTreeMap::new();
+    for i in 0..n {
+        let mut id_bytes = [0u8; 32];
+        id_bytes[..8].copy_from_slice(&(1_000_000 + i).to_be_bytes());
+        accounts.insert(
+            AccountId::from(id_bytes),
+            GenesisSnarkAccountData {
+                predicate: PredicateKey::always_accept(),
+                inner_state: Buf32::zero(),
+                balance: strata_acct_types::BitcoinAmount::from_sat(1_000),
+            },
+        );
+    }
+    params.accounts = accounts;
+    let state = OLState::from_genesis_params(&params).expect("valid params");
+    MemoryStateBaseLayer::new(state)
+}
 
 fn prepare_checkpoint_input() -> CheckpointProverInput {
     let mut state = make_genesis_state();

@@ -30,6 +30,10 @@ strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-da.workspace = true
+strata-predicate.workspace = true
+strata-ol-params.workspace = true
+strata-ol-state-support-types.workspace = true
+strata-ol-state-types.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true

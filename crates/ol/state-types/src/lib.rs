@@ -25,6 +25,8 @@ mod ledger;
 mod serial_map;
 mod snark_account;
 mod toplevel;
+#[cfg(test)]
+mod tree_hash_bench;
 mod write_batch;
 
 #[cfg(any(test, feature = "test-utils"))]
