@@ -70,6 +70,23 @@ pub(crate) fn resolve_endpoint<'a>(
     }
 }
 
+/// Resolves the Blockscout explorer endpoint for the selected preset, for use
+/// in result links.
+///
+/// `ALPN` (or no preset) uses `blockscout_endpoint`; `NPAL` uses
+/// `blockscout_endpoint_nepal`. Returns `None` when the relevant endpoint is
+/// not configured, in which case no explorer link is shown.
+pub(crate) fn resolve_explorer<'a>(
+    preset: Option<EePreset>,
+    alpen_explorer: Option<&'a str>,
+    nepal_explorer: Option<&'a str>,
+) -> Option<&'a str> {
+    match preset.unwrap_or(EePreset::Alpn) {
+        EePreset::Alpn => alpen_explorer,
+        EePreset::Npal => nepal_explorer,
+    }
+}
+
 pub async fn withdraw(
     args: WithdrawArgs,
     seed: Seed,
@@ -147,7 +164,11 @@ pub async fn withdraw(
     println!(
         "{}",
         OnchainObject::from(res.tx_hash())
-            .with_maybe_explorer(settings.blockscout_endpoint.as_deref())
+            .with_maybe_explorer(resolve_explorer(
+                args.preset,
+                settings.blockscout_endpoint.as_deref(),
+                settings.blockscout_endpoint_nepal.as_deref(),
+            ))
             .pretty(),
     );
 
@@ -211,6 +232,27 @@ mod tests {
     fn endpoint_alpn_without_nepal_ok() {
         let got = resolve_endpoint(Some(EePreset::Alpn), ALPN_URL, None).unwrap();
         assert_eq!(got, ALPN_URL);
+    }
+
+    #[test]
+    fn explorer_defaults_to_alpen() {
+        assert_eq!(
+            resolve_explorer(None, Some(ALPN_URL), Some(NPAL_URL)),
+            Some(ALPN_URL)
+        );
+    }
+
+    #[test]
+    fn explorer_npal_uses_nepal() {
+        assert_eq!(
+            resolve_explorer(Some(EePreset::Npal), Some(ALPN_URL), Some(NPAL_URL)),
+            Some(NPAL_URL)
+        );
+    }
+
+    #[test]
+    fn explorer_npal_without_config_is_none() {
+        assert_eq!(resolve_explorer(Some(EePreset::Npal), Some(ALPN_URL), None), None);
     }
 
     #[test]

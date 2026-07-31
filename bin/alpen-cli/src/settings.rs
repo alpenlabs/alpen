@@ -61,8 +61,11 @@ pub struct SettingsFromFile {
     pub faucet_endpoint: String,
     /// Mempool explorer endpoint.
     pub mempool_endpoint: Option<String>,
-    /// Blockscout explorer endpoint.
+    /// Blockscout explorer endpoint for the ALPN EE chain.
     pub blockscout_endpoint: Option<String>,
+    /// Blockscout explorer endpoint for the NPAL EE chain. Optional; used for
+    /// explorer links when a command targets the `NPAL` preset.
+    pub blockscout_endpoint_nepal: Option<String>,
     /// The aggregated Musig2 public key for the bridge.
     pub bridge_pubkey: Hex<[u8; 32]>,
     /// The address of the bridge precompile in alpen evm in hex.
@@ -122,6 +125,8 @@ pub struct Settings {
     pub descriptor_db: PathBuf,
     pub mempool_space_endpoint: Option<String>,
     pub blockscout_endpoint: Option<String>,
+    /// Blockscout explorer endpoint for the NPAL EE chain, if configured.
+    pub blockscout_endpoint_nepal: Option<String>,
     pub bridge_alpen_address: AlpenAddress,
     pub linux_seed_file: PathBuf,
     pub config_file: PathBuf,
@@ -239,6 +244,7 @@ impl Settings {
             descriptor_db: descriptor_file,
             mempool_space_endpoint: from_file.mempool_endpoint,
             blockscout_endpoint: from_file.blockscout_endpoint,
+            blockscout_endpoint_nepal: from_file.blockscout_endpoint_nepal,
             bridge_alpen_address: AlpenAddress::from_str(
                 from_file
                     .bridge_alpen_address

@@ -7,8 +7,8 @@ use bdk_wallet::bitcoin::Amount;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
-    alpen::AlpenWallet, constants::SATS_TO_WEI, net_type::NetworkType, seed::Seed,
-    settings::Settings, signet::SignetWallet,
+    alpen::AlpenWallet, cmd::withdraw::resolve_endpoint, constants::SATS_TO_WEI, ee::EePreset,
+    net_type::NetworkType, seed::Seed, settings::Settings, signet::SignetWallet,
 };
 
 /// Prints the wallet's current balance(s)
@@ -18,6 +18,11 @@ pub struct BalanceArgs {
     /// either "signet" or "alpen"
     #[argh(positional)]
     network_type: String,
+
+    /// for "alpen": which EE to query, "ALPN" (uses alpen_endpoint) or "NPAL"
+    /// (uses nepal_endpoint). defaults to "ALPN". ignored for "signet".
+    #[argh(positional)]
+    preset: Option<EePreset>,
 }
 
 pub async fn balance(
@@ -47,7 +52,12 @@ pub async fn balance(
     }
 
     if let NetworkType::Alpen = network_type {
-        let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
+        let endpoint = resolve_endpoint(
+            args.preset,
+            &settings.alpen_endpoint,
+            settings.nepal_endpoint.as_deref(),
+        )?;
+        let l2w = AlpenWallet::new(&seed, endpoint)
             .user_error("Invalid Alpen endpoint URL. Check the config file")?;
         println!("Getting balance...");
         let eth_balance = l2w

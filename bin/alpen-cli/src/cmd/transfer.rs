@@ -15,7 +15,7 @@ use strata_identifiers::SubjectIdBytes;
 
 use crate::{
     alpen::AlpenWallet,
-    cmd::withdraw::resolve_endpoint,
+    cmd::withdraw::{resolve_endpoint, resolve_explorer},
     constants::{SATS_TO_WEI, SUBJECT_TRANSFER_PRECOMPILE_ADDRESS},
     ee::EePreset,
     link::{OnchainObject, PrettyPrint},
@@ -155,7 +155,11 @@ pub async fn transfer(
     println!(
         "{}",
         OnchainObject::from(res.tx_hash())
-            .with_maybe_explorer(settings.blockscout_endpoint.as_deref())
+            .with_maybe_explorer(resolve_explorer(
+                args.source,
+                settings.blockscout_endpoint.as_deref(),
+                settings.blockscout_endpoint_nepal.as_deref(),
+            ))
             .pretty(),
     );
 
