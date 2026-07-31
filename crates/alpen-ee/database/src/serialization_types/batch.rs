@@ -9,9 +9,7 @@ use strata_acct_types::Hash;
 use strata_identifiers::{Buf32, L1BlockCommitment, WtxidsRoot};
 
 /// Database representation of a (Txid, Wtxid) pair.
-///
-/// Uses named fields to avoid confusion between the two identically-typed 32-byte arrays.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBTxidPair {
     txid: [u8; 32],
     wtxid: [u8; 32],
@@ -28,7 +26,8 @@ impl DBTxidPair {
 }
 
 /// Database representation of a BatchId.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+// TODO(trey): as a key type, we should probably concat the values together
+#[derive(Clone, Debug, Clone, Hash, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBBatchId {
     prev_block: [u8; 32],
     last_block: [u8; 32],
@@ -50,6 +49,7 @@ impl From<DBBatchId> for BatchId {
 }
 
 /// Database representation of a Batch.
+// TODO(trey): I think idx might be more of a key-like property that shouldn't be in this container
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) struct DBBatch {
     idx: u64,
@@ -96,12 +96,14 @@ impl TryFrom<DBBatch> for Batch {
 }
 
 /// Database representation of L1DaBlockRef.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBL1DaBlockRef {
     /// L1BlockCommitment serialized via its Borsh impl.
     block: L1BlockCommitment,
+
     /// Witness transaction Merkle root for the L1 block.
     wtxids_root: [u8; 32],
+
     /// This batch's DA txs in this L1 block as raw `(txid, wtxid)` pairs.
     txns: Vec<DBTxidPair>,
 }
@@ -143,7 +145,8 @@ impl From<DBL1DaBlockRef> for L1DaBlockRef {
 }
 
 /// Database representation of BatchStatus.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum DBBatchStatus {
     Genesis,
     Sealed,
@@ -203,7 +206,8 @@ impl From<DBBatchStatus> for BatchStatus {
 }
 
 /// Database representation of a Batch with its status, stored together.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+// TODO(trey): split apart batch data and status
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBBatchWithStatus {
     batch: DBBatch,
     status: DBBatchStatus,
@@ -225,7 +229,8 @@ impl DBBatchWithStatus {
 }
 
 /// Database representation of a ChunkId.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+// TODO(trey): this is really a key-like type
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBChunkId {
     prev_block: [u8; 32],
     last_block: [u8; 32],
@@ -247,7 +252,7 @@ impl From<DBChunkId> for ChunkId {
 }
 
 /// Database representation of a Chunk.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBChunk {
     idx: u64,
     prev_block: [u8; 32],
@@ -285,7 +290,8 @@ impl From<DBChunk> for Chunk {
 }
 
 /// Database representation of ChunkStatus.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum DBChunkStatus {
     ProvingNotStarted,
     ProofPending(String),
@@ -313,7 +319,8 @@ impl From<DBChunkStatus> for ChunkStatus {
 }
 
 /// Database representation of a Chunk with its status, stored together.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+// TODO(trey): split apart chunk and status
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBChunkWithStatus {
     chunk: DBChunk,
     status: DBChunkStatus,

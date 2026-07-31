@@ -23,8 +23,8 @@ strata-storage-common.workspace = true
 zkaleido.workspace = true
 
 async-trait.workspace = true
-borsh.workspace = true
 eyre.workspace = true
+serde.workspace = true
 sled.workspace = true
 ssz.workspace = true
 thiserror.workspace = true

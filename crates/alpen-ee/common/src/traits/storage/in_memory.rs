@@ -1,5 +1,7 @@
 //! In-memory implementation of BatchStorage for testing.
 
+// TODO(trey): make all fields on InMemoryStorage non-pub
+
 use std::{
     collections::{BTreeMap, HashMap},
     sync::RwLock,
