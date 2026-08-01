@@ -369,7 +369,19 @@ fn process_ee_predicate_key_update<S: IStateAccessorMut>(
         return Ok(());
     };
 
-    let new_vk = data.new_predicate().clone();
+    // The predicate type id is an unvalidated raw byte at the SSZ level, so a log entry
+    // can carry a key with an unregistered type. Parse it through `PredicateKeyBuf`, which
+    // does validate the type first.
+    let Ok(buf) = data.new_predicate().try_as_buf_ref() else {
+        warn!(
+            %acct_serial,
+            %acct_id,
+            "dropping ee predicate key update with unregistered predicate type id"
+        );
+        return Ok(());
+    };
+    let new_vk = buf.to_owned();
+
     let update_msg = build_predicate_update_message(&new_vk, context.epoch());
     let applied = state.update_account(acct_id, |astate| -> StateResult<bool> {
         // Skip if the target is not a snark account; non-snark accounts have

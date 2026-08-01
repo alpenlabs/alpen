@@ -165,8 +165,16 @@ fn process_update_tx<S: IStateAccessorMut>(
         // rotation message terminating the batch) is the EE's own policy,
         // enforced by its guest in the alpen-ee repo — not by the OL.
         if let Some(new_vk) = upd.new_predicate() {
+            // The predicate type id is an unvalidated raw byte at the SSZ level, so a
+            // proof-valid update could still declare a successor with an unregistered
+            // type. Parse it through `PredicateKeyBuf`, which does validate the type,
+            // rather than installing a key that panics the next time something calls
+            // `PredicateKey::as_buf_ref` on it.
+            let buf = new_vk.try_as_buf_ref().map_err(|_| {
+                ExecError::TxStructureCheckFailed("declared predicate key has unregistered type id")
+            })?;
             info!(account_id = %target, "activating declared predicate key rotation");
-            acct_tstate.set_update_vk(new_vk.clone());
+            acct_tstate.set_update_vk(buf.to_owned());
         }
 
         Ok(())
