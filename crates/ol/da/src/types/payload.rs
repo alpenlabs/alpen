@@ -7,7 +7,7 @@ use strata_codec::{Codec, CodecError, decode_buf_exact};
 use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::*;
-use strata_predicate::PredicateKeyBuf;
+use strata_predicate::{MAX_CONDITION_LEN, PredicateError, PredicateKey, PredicateKeyBuf};
 use strata_snark_acct_types::Seqno;
 
 use super::{
@@ -186,15 +186,30 @@ impl<S: IStateAccessorMut> DaWrite for OLStateDiff<S> {
 fn new_account_data_from_init(init: &AccountInit) -> Result<NewAccountData, DaError> {
     let type_state = match &init.type_state {
         AccountTypeInit::Empty => NewAccountTypeState::Empty,
-        AccountTypeInit::Snark(snark) => {
-            let buf = PredicateKeyBuf::try_from(snark.update_vk.as_slice())?;
-            NewAccountTypeState::Snark {
-                update_vk: buf.to_owned(),
-                initial_state_root: snark.initial_state_root,
-            }
-        }
+        AccountTypeInit::Snark(snark) => NewAccountTypeState::Snark {
+            update_vk: owned_predicate_key(snark.update_vk.as_slice())?,
+            initial_state_root: snark.initial_state_root,
+        },
     };
     Ok(NewAccountData::new(init.balance, type_state))
+}
+
+/// Parses a predicate key from its wire bytes, rejecting a condition that's too long to fit
+/// the predicate's SSZ bound instead of panicking on the owned conversion.
+fn owned_predicate_key(vk_bytes: &[u8]) -> Result<PredicateKey, DaError> {
+    let buf = PredicateKeyBuf::try_from(vk_bytes)?;
+    if buf.condition().len() > MAX_CONDITION_LEN as usize {
+        return Err(DaError::InvalidPredicateKey(
+            PredicateError::ConditionParsingFailed {
+                id: buf.id(),
+                reason: format!(
+                    "condition length {} exceeds max {MAX_CONDITION_LEN}",
+                    buf.condition().len()
+                ),
+            },
+        ));
+    }
+    Ok(buf.to_owned())
 }
 
 fn validate_ledger_entries(
@@ -302,8 +317,7 @@ fn apply_snark_diff<T: IAccountStateMut>(
     );
 
     if let Some(vk_bytes) = diff.update_vk.new_value() {
-        let buf = PredicateKeyBuf::try_from(vk_bytes.as_slice())?;
-        snark.set_update_vk(buf.to_owned());
+        snark.set_update_vk(owned_predicate_key(vk_bytes.as_slice())?);
     }
 
     for entry in diff.inbox.new_entries() {
@@ -327,7 +341,7 @@ mod tests {
     use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_stf::test_utils::make_genesis_state;
-    use strata_predicate::{PredicateKey, PredicateTypeId};
+    use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 
     use super::{
         super::{MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES},
@@ -828,6 +842,39 @@ mod tests {
         );
     }
 
+    /// A rotation to a valid predicate type with an oversized condition must be rejected
+    /// with a `DaError`, not panic on the owned conversion.
+    #[test]
+    fn test_ol_state_diff_apply_snark_update_vk_rotation_rejects_oversized_condition() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(5);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from_sat(500),
+            NewAccountTypeState::Snark {
+                update_vk: PredicateKey::always_accept(),
+                initial_state_root: Hash::from([0x11u8; 32]),
+            },
+        );
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create snark account");
+
+        let mut oversized_vk = vec![PredicateTypeId::AlwaysAccept.as_u8()];
+        oversized_vk.extend(vec![0u8; MAX_CONDITION_LEN as usize + 1]);
+        let snark_diff = build::snark_diff(1, None, 0, Vec::new(), Some(oversized_vk));
+        let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(serial, account_diff)],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+        assert!(matches!(result, Err(DaError::InvalidPredicateKey(_))));
+    }
+
     #[derive(Clone, Copy)]
     struct AcctRef {
         id: AccountId,
@@ -1195,6 +1242,25 @@ mod tests {
         let pre_accounts = pre_state_with_accounts();
         let bad_vk = vec![0xFFu8; 3];
         let init = build::snark_init(1, Hash::from([0u8; 32]), bad_vk);
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                vec![NewAccountEntry::new(test_account_id(0x40), init)],
+                Vec::new(),
+            ),
+        );
+        let result = poll_ol_state_diff(&pre_accounts.state, diff);
+        assert!(matches!(result, Err(DaError::InvalidPredicateKey(_))));
+    }
+
+    /// A valid predicate type with a condition longer than the SSZ bound must be rejected
+    /// with a `DaError`, not panic on the owned conversion.
+    #[test]
+    fn test_poll_context_rejects_oversized_vk_condition() {
+        let pre_accounts = pre_state_with_accounts();
+        let mut oversized_vk = vec![PredicateTypeId::AlwaysAccept.as_u8()];
+        oversized_vk.extend(vec![0u8; MAX_CONDITION_LEN as usize + 1]);
+        let init = build::snark_init(1, Hash::from([0u8; 32]), oversized_vk);
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
             build::ledger_diff(
