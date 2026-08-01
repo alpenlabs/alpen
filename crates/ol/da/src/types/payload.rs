@@ -7,7 +7,7 @@ use strata_codec::{Codec, CodecError, decode_buf_exact};
 use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::*;
-use strata_predicate::PredicateKeyBuf;
+use strata_predicate::{MAX_CONDITION_LEN, PredicateError, PredicateKey, PredicateKeyBuf};
 use strata_snark_acct_types::Seqno;
 
 use super::{
@@ -186,16 +186,30 @@ impl<S: IStateAccessorMut> DaWrite for OLStateDiff<S> {
 fn new_account_data_from_init(init: &AccountInit) -> Result<NewAccountData, DaError> {
     let type_state = match &init.type_state {
         AccountTypeInit::Empty => NewAccountTypeState::Empty,
-        AccountTypeInit::Snark(snark) => {
-            let buf = PredicateKeyBuf::try_from(snark.update_vk.as_slice())
-                .map_err(|_| DaError::InvalidLedgerDiff("invalid predicate key"))?;
-            NewAccountTypeState::Snark {
-                update_vk: buf.to_owned(),
-                initial_state_root: snark.initial_state_root,
-            }
-        }
+        AccountTypeInit::Snark(snark) => NewAccountTypeState::Snark {
+            update_vk: owned_predicate_key(snark.update_vk.as_slice())?,
+            initial_state_root: snark.initial_state_root,
+        },
     };
     Ok(NewAccountData::new(init.balance, type_state))
+}
+
+/// Parses a predicate key from its wire bytes, rejecting a condition that's too long to fit
+/// the predicate's SSZ bound instead of panicking on the owned conversion.
+fn owned_predicate_key(vk_bytes: &[u8]) -> Result<PredicateKey, DaError> {
+    let buf = PredicateKeyBuf::try_from(vk_bytes)?;
+    if buf.condition().len() > MAX_CONDITION_LEN as usize {
+        return Err(DaError::InvalidPredicateKey(
+            PredicateError::ConditionParsingFailed {
+                id: buf.id(),
+                reason: format!(
+                    "condition length {} exceeds max {MAX_CONDITION_LEN}",
+                    buf.condition().len()
+                ),
+            },
+        ));
+    }
+    Ok(buf.to_owned())
 }
 
 fn validate_ledger_entries(
@@ -302,6 +316,10 @@ fn apply_snark_diff<T: IAccountStateMut>(
         next_seqno,
     );
 
+    if let Some(vk_bytes) = diff.update_vk.new_value() {
+        snark.set_update_vk(owned_predicate_key(vk_bytes.as_slice())?);
+    }
+
     for entry in diff.inbox.new_entries() {
         let msg = MessageEntry::new(entry.source, entry.incl_epoch, entry.payload.clone());
         snark
@@ -323,7 +341,7 @@ mod tests {
     use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_stf::test_utils::make_genesis_state;
-    use strata_predicate::PredicateKey;
+    use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 
     use super::{
         super::{MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES},
@@ -331,7 +349,7 @@ mod tests {
     };
     use crate::{
         AccountDiffEntry, DaMessageEntry, DaProofStateDiff, DaScheme, NewAccountEntry,
-        OLDaSchemeV1, SnarkAccountInit, U16LenList,
+        OLDaSchemeV1, SnarkAccountInit, U16LenBytes, U16LenList,
     };
 
     fn test_account_id(seed: u8) -> AccountId {
@@ -404,12 +422,13 @@ mod tests {
             AccountDiff::new(DaCounter::new_changed(delta), SnarkAccountDiff::default())
         }
 
-        /// Snark diff with seqno, proof-state, and inbox changes.
+        /// Snark diff with seqno, proof-state, inbox, and update-VK changes.
         pub(super) fn snark_diff(
             seqno_incr: u16,
             new_root: Option<Hash>,
             next_idx_incr: u64,
             inbox_msgs: Vec<DaMessageEntry>,
+            new_vk: Option<Vec<u8>>,
         ) -> SnarkAccountDiff {
             let inner_state = match new_root {
                 Some(r) => DaRegister::new_set(r),
@@ -430,7 +449,11 @@ mod tests {
             } else {
                 DaCounter::new_changed(seqno_incr)
             };
-            SnarkAccountDiff::new(seq_no, proof_state, inbox)
+            let update_vk = match new_vk {
+                Some(vk) => DaRegister::new_set(U16LenBytes::new(vk)),
+                None => DaRegister::new_unset(),
+            };
+            SnarkAccountDiff::new(update_vk, proof_state, seq_no, inbox)
         }
 
         /// Inbox message entry with a repeated-byte payload.
@@ -499,7 +522,7 @@ mod tests {
                 AccountSerial::from(1u32),
                 AccountDiff::new(
                     DaCounter::new_unchanged(),
-                    build::snark_diff(3, Some(Hash::from([0x22u8; 32])), 2, inbox),
+                    build::snark_diff(3, Some(Hash::from([0x22u8; 32])), 2, inbox, None),
                 ),
             ),
         ];
@@ -536,7 +559,7 @@ mod tests {
     #[test]
     fn test_snark_account_diff_round_trip() {
         let inbox = vec![build::inbox_msg(test_account_id(9), 1, 8, 0x55)];
-        let diff = build::snark_diff(2, Some(Hash::from([0x44u8; 32])), 1, inbox);
+        let diff = build::snark_diff(2, Some(Hash::from([0x44u8; 32])), 1, inbox, None);
         let encoded = encode_to_vec(&diff).expect("encode snark diff");
         let decoded: SnarkAccountDiff = decode_buf_exact(&encoded).expect("decode snark diff");
         let reencoded = encode_to_vec(&decoded).expect("re-encode snark diff");
@@ -754,8 +777,9 @@ mod tests {
             .expect("create snark account");
 
         let snark_diff = SnarkAccountDiff::new(
-            DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
+            DaRegister::new_unset(),
             DaProofStateDiff::default(),
+            DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
             DaLinacc::new(),
         );
         let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
@@ -775,6 +799,80 @@ mod tests {
             .expect("account exists");
         let snark = account.as_snark_account().expect("snark account");
         assert_eq!(*snark.seqno().inner(), 1);
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_snark_update_vk_rotation() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(5);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from_sat(500),
+            NewAccountTypeState::Snark {
+                update_vk: PredicateKey::always_accept(),
+                initial_state_root: Hash::from([0x11u8; 32]),
+            },
+        );
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create snark account");
+
+        let new_vk = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0x42u8; 32]);
+        let snark_diff =
+            build::snark_diff(1, None, 0, Vec::new(), Some(new_vk.as_buf_ref().to_bytes()));
+        let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(serial, account_diff)],
+            ),
+        );
+
+        apply_ol_state_diff(&mut state, diff).expect("apply snark diff");
+
+        let account = state
+            .get_account_state(account_id)
+            .expect("read account")
+            .expect("account exists");
+        let snark = account.as_snark_account().expect("snark account");
+        assert_eq!(
+            snark.update_vk(),
+            &new_vk,
+            "declared rotation must survive DA reconstruction"
+        );
+    }
+
+    /// A rotation to a valid predicate type with an oversized condition must be rejected
+    /// with a `DaError`, not panic on the owned conversion.
+    #[test]
+    fn test_ol_state_diff_apply_snark_update_vk_rotation_rejects_oversized_condition() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(5);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from_sat(500),
+            NewAccountTypeState::Snark {
+                update_vk: PredicateKey::always_accept(),
+                initial_state_root: Hash::from([0x11u8; 32]),
+            },
+        );
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create snark account");
+
+        let mut oversized_vk = vec![PredicateTypeId::AlwaysAccept.as_u8()];
+        oversized_vk.extend(vec![0u8; MAX_CONDITION_LEN as usize + 1]);
+        let snark_diff = build::snark_diff(1, None, 0, Vec::new(), Some(oversized_vk));
+        let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(serial, account_diff)],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+        assert!(matches!(result, Err(DaError::InvalidPredicateKey(_))));
     }
 
     #[derive(Clone, Copy)]
@@ -848,7 +946,13 @@ mod tests {
                         pre_accounts.snark.serial,
                         AccountDiff::new(
                             DaCounter::new_unchanged(),
-                            build::snark_diff(2, Some(inbox_root), 1, vec![inbox_msg.clone()]),
+                            build::snark_diff(
+                                2,
+                                Some(inbox_root),
+                                1,
+                                vec![inbox_msg.clone()],
+                                None,
+                            ),
                         ),
                     ),
                 ],
@@ -962,6 +1066,7 @@ mod tests {
                                     build::inbox_msg(test_account_id(0xB1), 7, 4, 0xEE),
                                     build::inbox_msg(test_account_id(0xB2), 8, 16, 0xCD),
                                 ],
+                                None,
                             ),
                         ),
                     ),
@@ -1118,7 +1223,7 @@ mod tests {
                     pre_accounts.empty.serial,
                     AccountDiff::new(
                         DaCounter::new_unchanged(),
-                        build::snark_diff(1, None, 0, Vec::new()),
+                        build::snark_diff(1, None, 0, Vec::new(), None),
                     ),
                 )],
             ),
@@ -1145,10 +1250,26 @@ mod tests {
             ),
         );
         let result = poll_ol_state_diff(&pre_accounts.state, diff);
-        assert!(matches!(
-            result,
-            Err(DaError::InvalidLedgerDiff("invalid predicate key"))
-        ));
+        assert!(matches!(result, Err(DaError::InvalidPredicateKey(_))));
+    }
+
+    /// A valid predicate type with a condition longer than the SSZ bound must be rejected
+    /// with a `DaError`, not panic on the owned conversion.
+    #[test]
+    fn test_poll_context_rejects_oversized_vk_condition() {
+        let pre_accounts = pre_state_with_accounts();
+        let mut oversized_vk = vec![PredicateTypeId::AlwaysAccept.as_u8()];
+        oversized_vk.extend(vec![0u8; MAX_CONDITION_LEN as usize + 1]);
+        let init = build::snark_init(1, Hash::from([0u8; 32]), oversized_vk);
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                vec![NewAccountEntry::new(test_account_id(0x40), init)],
+                Vec::new(),
+            ),
+        );
+        let result = poll_ol_state_diff(&pre_accounts.state, diff);
+        assert!(matches!(result, Err(DaError::InvalidPredicateKey(_))));
     }
 
     #[test]
@@ -1178,7 +1299,7 @@ mod tests {
     ///
     /// The hex was derived from the encoder and acts as a drift detector, not a hand-verified spec
     /// oracle.
-    const GOLDEN_PAYLOAD_V1_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba030000000102070003032222222222222222222222222222222222222222222222222222222222222222020002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+    const GOLDEN_PAYLOAD_V1_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba0300000001020e0322222222222222222222222222222222222222222222222222222222222222220200030002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
 
     fn hex_to_bytes(hex: &str) -> Vec<u8> {
         (0..hex.len())
@@ -1251,8 +1372,11 @@ mod tests {
                 prop::option::of(hash()),
                 any::<u64>(),
                 prop::collection::vec(inbox_msg(), 0..4),
+                prop::option::of(prop::collection::vec(any::<u8>(), 0..64)),
             )
-                .prop_map(|(seqno, root, idx, msgs)| build::snark_diff(seqno, root, idx, msgs))
+                .prop_map(|(seqno, root, idx, msgs, vk)| {
+                    build::snark_diff(seqno, root, idx, msgs, vk)
+                })
         }
 
         fn account_diff() -> impl Strategy<Value = AccountDiff> {

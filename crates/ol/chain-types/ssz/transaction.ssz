@@ -1,5 +1,6 @@
 import strata_acct_types
 import strata_identifiers
+import strata_predicate
 import strata_snark_acct_types
 
 import proofs
@@ -30,11 +31,31 @@ class SauTxProofState(Container):
     new_next_msg_idx: uint64
     inner_state_root: Bytes32
 
+### Optional rotation of the account's update predicate key.
+###
+### Empty for ordinary updates.  Set when the update consumes an admin
+### predicate-update message from its inbox, committing to the key that
+### verifies every later update.
+###
+### This is a StableContainer because Optional fields are only allowed in
+### StableContainers, not plain Containers, so we need this wrapper to make
+### the predicate optional.  Capacity 8 costs nothing extra since the
+### presence bitvector pads to a full byte anyway, and the spare slots let
+### future optional fields slot in without changing the encoding of
+### existing data.
+#~# derive: std::default::Default
+class SauTxNewPredicate(StableContainer[8]):
+    #~# external_kind: container
+    predicate: Optional[strata_predicate.PredicateKey]
+
 ### Description of the precise "update" being made to the account.
 class SauTxUpdateData(Container):
     seq_no: uint64
     proof_state: SauTxProofState
     extra_data: List[uint8, SAU_MAX_EXTRA_DATA_BYTES]
+
+    ### New update predicate declared by this update, if it rotates the key.
+    new_predicate: SauTxNewPredicate
 
 ### References to other accessible ledger accumulators.
 class SauTxLedgerRefs(StableContainer[16]):

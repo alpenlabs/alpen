@@ -1426,6 +1426,12 @@ impl FixtureSauBuilder {
         self
     }
 
+    /// Declares a rotation of the account's update predicate key.
+    pub fn with_new_predicate(mut self, new_predicate: PredicateKey) -> Self {
+        self.builder = self.builder.with_new_predicate(new_predicate);
+        self
+    }
+
     /// Forces an explicit sequence number for negative-path tests.
     pub fn force_seqno(mut self, seq_no: u64) -> Self {
         self.builder = self.builder.with_seq_no(seq_no);
@@ -1857,6 +1863,7 @@ pub struct SnarkUpdateBuilder {
     ledger_ref_proofs: Vec<RawMerkleProof>,
     extra_data: VariableList<u8, 1024>,
     next_msg_idx_override: Option<u64>,
+    new_predicate: Option<PredicateKey>,
 }
 
 impl SnarkUpdateBuilder {
@@ -1872,6 +1879,7 @@ impl SnarkUpdateBuilder {
             ledger_ref_proofs: vec![],
             extra_data: VariableList::default(),
             next_msg_idx_override: None,
+            new_predicate: None,
         }
     }
 
@@ -1887,7 +1895,14 @@ impl SnarkUpdateBuilder {
             ledger_ref_proofs: vec![],
             extra_data: VariableList::default(),
             next_msg_idx_override: None,
+            new_predicate: None,
         }
+    }
+
+    /// Declares a rotation of the account's update predicate key.
+    pub fn with_new_predicate(mut self, new_predicate: PredicateKey) -> Self {
+        self.new_predicate = Some(new_predicate);
+        self
     }
 
     fn seq_no(&self) -> u64 {
@@ -1980,6 +1995,7 @@ impl SnarkUpdateBuilder {
             seq_no: self.seq_no,
             proof_state,
             extra_data: self.extra_data,
+            new_predicate: self.new_predicate.into(),
         };
 
         // Build ledger refs

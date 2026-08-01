@@ -60,6 +60,7 @@ fn build_snark_acct_update_data(
         ledger_refs,
         effects.clone(),
         upd.extra_data().to_vec(),
+        upd.new_predicate().cloned(),
     )
 }
 

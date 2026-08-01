@@ -17,6 +17,7 @@ use strata_da_framework::{
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_ol_da::*;
+use strata_predicate::PredicateKey;
 use thiserror::Error;
 
 use crate::{index_types::IndexerWrites, indexer_layer::IndexerAccountStateMut};
@@ -106,6 +107,8 @@ struct SnarkDelta {
     base_proof_state: DaProofState,
     final_proof_state: DaProofState,
     inbox: DaLinacc<InboxBuffer>,
+    base_update_vk: U16LenBytes,
+    final_update_vk: U16LenBytes,
 }
 
 impl SnarkDelta {
@@ -113,12 +116,15 @@ impl SnarkDelta {
         let base_seq_no = *state.seqno().inner();
         let base_proof_state =
             DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
+        let base_update_vk = U16LenBytes::new(state.update_vk().as_buf_ref().to_bytes());
         Self {
             base_seq_no,
             final_seq_no: base_seq_no,
             base_proof_state: base_proof_state.clone(),
             final_proof_state: base_proof_state,
             inbox: DaLinacc::new(),
+            base_update_vk: base_update_vk.clone(),
+            final_update_vk: base_update_vk,
         }
     }
 
@@ -126,6 +132,7 @@ impl SnarkDelta {
         self.final_seq_no = *state.seqno().inner();
         self.final_proof_state =
             DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
+        self.final_update_vk = U16LenBytes::new(state.update_vk().as_buf_ref().to_bytes());
     }
 
     fn build_diff(&self) -> Result<SnarkAccountDiff, DaAccumulationError> {
@@ -142,9 +149,11 @@ impl SnarkDelta {
         next_idx_builder.set(self.final_proof_state.inner().next_inbox_msg_idx())?;
         let next_inbox_msg_idx = next_idx_builder.into_write()?;
         let proof_state = DaProofStateDiff::new(inner_state, next_inbox_msg_idx);
+        let update_vk = DaRegister::compare(&self.base_update_vk, &self.final_update_vk);
         Ok(SnarkAccountDiff::new(
-            seq_no,
+            update_vk,
             proof_state,
+            seq_no,
             self.inbox.clone(),
         ))
     }
@@ -183,6 +192,8 @@ impl AccountDelta {
 struct NewAccountRecord {
     serial: AccountSerial,
     account_id: AccountId,
+    /// The account's update VK, or `None` if it isn't a snark account.
+    update_vk: Option<PredicateKey>,
 }
 
 /// Per-epoch accumulator of DA writes before encoding.
@@ -332,6 +343,7 @@ impl EpochDaAccumulator {
         expected_first_serial: AccountSerial,
         serial: AccountSerial,
         account_id: AccountId,
+        update_vk: Option<PredicateKey>,
     ) -> Result<(), DaAccumulationError> {
         if self.expected_first_serial.is_none() {
             self.expected_first_serial = Some(expected_first_serial);
@@ -339,8 +351,11 @@ impl EpochDaAccumulator {
         if !self.new_account_ids.insert(account_id) {
             return Err(DaAccumulationError::DuplicateNewAccountId(account_id));
         }
-        self.new_account_records
-            .push(NewAccountRecord { serial, account_id });
+        self.new_account_records.push(NewAccountRecord {
+            serial,
+            account_id,
+            update_vk,
+        });
         Ok(())
     }
 
@@ -359,12 +374,21 @@ impl EpochDaAccumulator {
         // New accounts list: 2-byte u16 length prefix + per-entry overhead.
         // Per new account: 32 (AccountId) + 8 (balance) + 1 (type disc)
         //   + if snark: 32 (state root) + 2 (vk len prefix) + vk bytes
-        // We don't know VK size here so use MAX_VK_BYTES as upper bound.
-        // In practice most VKs are much smaller, but this is a conservative estimate.
         const NEW_ACCT_BASE: usize = 32 + 8 + 1;
-        const NEW_ACCT_SNARK_OVERHEAD: usize = 32 + 2;
-        let new_accounts_size: usize =
-            2 + self.new_account_records.len() * (NEW_ACCT_BASE + NEW_ACCT_SNARK_OVERHEAD);
+        const NEW_ACCT_SNARK_FIXED: usize = 32 + 2;
+        let new_accounts_size: usize = 2 + self
+            .new_account_records
+            .iter()
+            .map(|record| {
+                NEW_ACCT_BASE
+                    + match &record.update_vk {
+                        // Encoded as [id: u8][condition bytes], matching
+                        // `PredicateKeyBuf::to_bytes`.
+                        Some(vk) => NEW_ACCT_SNARK_FIXED + 1 + vk.condition().len(),
+                        None => 0,
+                    }
+            })
+            .sum::<usize>();
 
         // Account diffs list: 2-byte u16 length prefix + per-diff overhead.
         // Per diff: 4 (serial u32) + 1 (compound mask) + balance + snark
@@ -388,6 +412,10 @@ impl EpochDaAccumulator {
                 // If no entries, no count prefix needed (compound mask handles it).
                 if inbox_count == 0 {
                     account_diffs_size -= 2;
+                }
+                // Rotated update VK register: 2 (len prefix) + key bytes.
+                if snark.final_update_vk != snark.base_update_vk {
+                    account_diffs_size += 2 + snark.final_update_vk.as_slice().len();
                 }
             }
         }
@@ -815,12 +843,16 @@ where
         id: AccountId,
         new_acct_data: NewAccountData,
     ) -> StateResult<AccountSerial> {
+        let update_vk = match new_acct_data.type_state() {
+            NewAccountTypeState::Empty => None,
+            NewAccountTypeState::Snark { update_vk, .. } => Some(update_vk.clone()),
+        };
         let expected_first_serial = self.inner.next_account_serial();
         let serial = self.inner.create_new_account(id, new_acct_data)?;
 
-        if let Err(err) = self
-            .epoch_acc
-            .record_new_account(expected_first_serial, serial, id)
+        if let Err(err) =
+            self.epoch_acc
+                .record_new_account(expected_first_serial, serial, id, update_vk)
             && self.pending_epoch_error.is_none()
         {
             self.pending_epoch_error = Some(err);

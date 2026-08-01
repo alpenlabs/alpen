@@ -16755,6 +16755,7 @@ dependencies = [
  "ssz",
  "strata-acct-types",
  "strata-ledger-types",
+ "strata-predicate",
  "strata-snark-acct-types",
  "tracing",
 ]
@@ -16771,6 +16772,7 @@ dependencies = [
  "ssz_types",
  "strata-acct-types",
  "strata-identifiers",
+ "strata-predicate",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
  "tree_hash 0.17.0",

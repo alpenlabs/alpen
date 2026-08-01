@@ -1010,6 +1010,33 @@ fn test_vk_size_at_predicate_limit_roundtrips() {
 }
 
 #[test]
+fn test_estimated_encoded_size_scales_with_new_account_vk_len() {
+    let estimate_for = |vk_len: usize| {
+        let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![]));
+        let account_id = test_account_id(1);
+        let snark_state = TestSnarkState::new(vec![0u8; vk_len]);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from_sat(0),
+            NewAccountTypeState::Snark {
+                update_vk: snark_state.update_vk.clone(),
+                initial_state_root: snark_state.inner_state_root,
+            },
+        );
+        da_state.create_new_account(account_id, new_acct).unwrap();
+        da_state.accumulator().estimated_encoded_size()
+    };
+
+    let small_vk_len = 8;
+    let large_vk_len = 512;
+    let grown = estimate_for(large_vk_len) - estimate_for(small_vk_len);
+    assert_eq!(
+        grown,
+        large_vk_len - small_vk_len,
+        "estimate must scale with the new account's VK length"
+    );
+}
+
+#[test]
 #[should_panic(expected = "valid length")]
 fn test_oversized_predicate_key_panics() {
     let oversized_vk_len = MAX_CONDITION_LEN as usize + 1;

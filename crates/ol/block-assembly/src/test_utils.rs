@@ -542,7 +542,7 @@ impl MempoolSnarkTxBuilder {
             .proof_state()
             .inner_state_root();
         let proof_state = SauTxProofState::new(self.new_msg_idx, inner_state);
-        let update_data = SauTxUpdateData::new(self.seq_no, proof_state, vec![]);
+        let update_data = SauTxUpdateData::new(self.seq_no, proof_state, vec![], None);
 
         let ledger_refs = if self.l1_block_ref_claims.is_empty() {
             SauTxLedgerRefs::new_empty()

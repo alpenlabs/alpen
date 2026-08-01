@@ -48,7 +48,7 @@ pub(crate) fn build_snark_withdrawal_json(
         .expect("withdrawal message payload bytes must fit within SSZ max length");
 
     let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
-    let outputs = UpdateOutputs::new(vec![], vec![output_message]);
+    let outputs = UpdateOutputs::new_empty().with_messages(vec![output_message]);
 
     let proof_state = ProofState::new(inner_state, next_inbox_idx);
 
@@ -321,7 +321,7 @@ mod tests {
             MsgPayload::from_bytes(BitcoinAmount::from_sat(100_000_000), owned_msg.to_vec())
                 .expect("withdrawal message payload bytes must fit within SSZ max length");
         let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
-        let outputs = UpdateOutputs::new(vec![], vec![output_message]);
+        let outputs = UpdateOutputs::new_empty().with_messages(vec![output_message]);
         let claim_ssz = sign_claim_ssz(Seqno::new(seq_no), &proof_state, &proof_state, &outputs);
 
         let proof_hex = json["payload"]["update_proof"].as_str().unwrap();

@@ -163,6 +163,14 @@ pub fn gam_tx_payload_strategy() -> impl Strategy<Value = GamTxPayload> {
     })
 }
 
+/// Strategy for generating an optional [`PredicateKey`] rotation declaration.
+pub fn new_predicate_strategy() -> impl Strategy<Value = Option<PredicateKey>> {
+    prop::option::of(prop_oneof![
+        Just(PredicateKey::always_accept()),
+        buf32_strategy().prop_map(|pubkey| schnorr_predicate(&pubkey)),
+    ])
+}
+
 pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
     (
         any::<[u8; 32]>(),
@@ -170,28 +178,32 @@ pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
         any::<u64>(),
         prop::collection::vec(message_entry_strategy(), 0..10),
         prop::collection::vec(any::<u8>(), 0..32),
+        new_predicate_strategy(),
     )
         .prop_map(
-            |(target_bytes, state_bytes, seq_no, messages, extra_data)| SauTxPayload {
-                target: AccountId::from(target_bytes),
-                operation_data: SauTxOperationData {
-                    update_data: SauTxUpdateData {
-                        seq_no,
-                        proof_state: SauTxProofState {
-                            new_next_msg_idx: 0,
-                            inner_state_root: state_bytes.into(),
+            |(target_bytes, state_bytes, seq_no, messages, extra_data, new_predicate)| {
+                SauTxPayload {
+                    target: AccountId::from(target_bytes),
+                    operation_data: SauTxOperationData {
+                        update_data: SauTxUpdateData {
+                            seq_no,
+                            proof_state: SauTxProofState {
+                                new_next_msg_idx: 0,
+                                inner_state_root: state_bytes.into(),
+                            },
+                            extra_data: extra_data
+                                .try_into()
+                                .expect("extra data must fit within SSZ max length"),
+                            new_predicate: new_predicate.into(),
                         },
-                        extra_data: extra_data
+                        messages: messages
                             .try_into()
-                            .expect("extra data must fit within SSZ max length"),
+                            .expect("messages must fit within SSZ max length"),
+                        ledger_refs: SauTxLedgerRefs {
+                            l1_block_ref_claims: ssz_types::Optional::None,
+                        },
                     },
-                    messages: messages
-                        .try_into()
-                        .expect("messages must fit within SSZ max length"),
-                    ledger_refs: SauTxLedgerRefs {
-                        l1_block_ref_claims: ssz_types::Optional::None,
-                    },
-                },
+                }
             },
         )
 }

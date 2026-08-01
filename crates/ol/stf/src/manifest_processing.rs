@@ -1,7 +1,8 @@
 //! ASM manifest processing.
 
 use strata_acct_types::{
-    AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, L1BlockRecord, MsgPayloadData,
+    ADMIN_MSG_ACCT_ID, AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, L1BlockRecord,
+    MessageEntry, MsgPayload, MsgPayloadData,
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
@@ -12,7 +13,10 @@ use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_msg_types::{DEPOSIT_MSG_TYPE_ID, DepositMsgData};
+use strata_ol_msg_types::{
+    DEPOSIT_MSG_TYPE_ID, DepositMsgData, PREDICATE_UPDATE_MSG_TYPE_ID, PredicateUpdateMsgData,
+};
+use strata_predicate::PredicateKey;
 use tracing::{debug, info, trace, warn};
 
 use crate::{
@@ -211,7 +215,7 @@ fn process_asm_log<S: IStateAccessorMut>(
                 );
                 return Ok(());
             };
-            process_ee_predicate_key_update(state, &data)?;
+            process_ee_predicate_key_update(state, &data, context)?;
         }
 
         Ok(ty) => {
@@ -350,6 +354,7 @@ fn process_checkpoint_tip_update<S: IStateAccessorMut>(
 fn process_ee_predicate_key_update<S: IStateAccessorMut>(
     state: &mut S,
     data: &EePredicateKeyUpdate,
+    context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     let acct_serial = data.account();
 
@@ -364,17 +369,39 @@ fn process_ee_predicate_key_update<S: IStateAccessorMut>(
         return Ok(());
     };
 
-    let new_vk = data.new_predicate().clone();
-    let applied = state.update_account(acct_id, |astate| {
+    // The predicate type id is an unvalidated raw byte at the SSZ level, so a log entry
+    // can carry a key with an unregistered type. Parse it through `PredicateKeyBuf`, which
+    // does validate the type first.
+    let Ok(buf) = data.new_predicate().try_as_buf_ref() else {
+        warn!(
+            %acct_serial,
+            %acct_id,
+            "dropping ee predicate key update with unregistered predicate type id"
+        );
+        return Ok(());
+    };
+    let new_vk = buf.to_owned();
+
+    let update_msg = build_predicate_update_message(&new_vk, context.epoch());
+    let applied = state.update_account(acct_id, |astate| -> StateResult<bool> {
         // Skip if the target is not a snark account; non-snark accounts have
         // no predicate key to update.
         if let Ok(snark) = astate.as_snark_account_mut() {
-            snark.set_update_vk(new_vk);
-            true
+            // The rotation is not applied here. It lands in the account's
+            // inbox and takes effect when an account update consumes the
+            // message (see `process_update_tx`). That makes the update that
+            // consumes the message the last one verified under the old key —
+            // the consensus-level fork boundary of the Alpen upgrade design —
+            // and gives the EE a deterministic position in its inbox
+            // ordering to derive the fork activation from. Applying the key
+            // immediately would instead reject every in-flight update still
+            // proven under the old key.
+            snark.insert_inbox_message(update_msg)?;
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
-    })?;
+    })??;
 
     if !applied {
         warn!(
@@ -385,6 +412,35 @@ fn process_ee_predicate_key_update<S: IStateAccessorMut>(
     }
 
     Ok(())
+}
+
+/// Builds the message payload announcing a predicate key rotation.
+///
+/// The message carries no value; its body is the predicate key's raw
+/// serialized bytes (`[id: u8][condition: bytes...]`, via
+/// [`PredicateKeyBuf::to_bytes`](strata_predicate::PredicateKeyBuf::to_bytes)),
+/// wrapped in the standard SPS-52 message format under
+/// [`PREDICATE_UPDATE_MSG_TYPE_ID`].
+pub(crate) fn build_predicate_update_payload(new_vk: &PredicateKey) -> MsgPayload {
+    let msg_data = PredicateUpdateMsgData::new(new_vk.as_buf_ref().to_bytes())
+        .expect("predicate key fits in message data");
+    let body = encode_to_vec(&msg_data).expect("predicate update message data should encode");
+    let msg = OwnedMsg::new(PREDICATE_UPDATE_MSG_TYPE_ID, body)
+        .expect("predicate update message body must fit into msg-fmt envelope");
+    MsgPayload::from_bytes_valueless(msg.to_vec())
+        .expect("predicate update message payload bytes must fit within SSZ max length")
+}
+
+/// Builds the inbox message announcing a predicate key rotation.
+///
+/// The source is the admin message account id, a reserved system id that no
+/// ledger account can occupy.
+fn build_predicate_update_message(new_vk: &PredicateKey, cur_epoch: u32) -> MessageEntry {
+    MessageEntry::new(
+        ADMIN_MSG_ACCT_ID,
+        cur_epoch,
+        build_predicate_update_payload(new_vk),
+    )
 }
 #[cfg(test)]
 mod tests {

@@ -263,6 +263,18 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// were supposed to have been dealt with but weren't.
     pub(crate) fn check_obligations(&self) -> EnvResult<()> {
         // Check that the expected outputs match the ones we accumulated.
+        //
+        // Predicate rotations: the OL applies whatever predicate an update
+        // declares, without restriction — declaring only the admin-queued key
+        // is this EE's own policy. The batch-building side (alpen-ee repo)
+        // detects a pending admin predicate-update message in the inbox,
+        // terminates the batch with that message as the last one consumed,
+        // and declares the queued VK in the update outputs. This verification
+        // path must mirror that by accumulating the rotation when it
+        // processes the admin message; until it does, an update declaring a
+        // rotation fails this equality. That mirror is what enforces the
+        // policy inside the proof: a builder that declares a key it didn't
+        // consume (or vice versa) cannot produce a valid update.
         if self.expected_outputs != self.accumulated_outputs {
             return Err(EnvError::UnsatisfiedObligations(
                 "expected and accumulated outputs mismatch",

@@ -4,30 +4,92 @@ use ssz_types::VariableList;
 use strata_acct_types::{
     AccountId, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects,
 };
+use strata_predicate::PredicateKey;
 
 use crate::{
     error::OutputsError,
     ssz_generated::ssz::outputs::{
-        MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
+        MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputNewPredicate, OutputTransfer,
+        UpdateOutputs,
     },
 };
 
-impl UpdateOutputs {
-    /// Creates new update outputs.
-    pub fn new(transfers: Vec<OutputTransfer>, messages: Vec<OutputMessage>) -> Self {
+impl OutputNewPredicate {
+    /// Creates an empty declaration (no predicate rotation).
+    pub fn new_empty() -> Self {
         Self {
-            transfers: transfers
-                .try_into()
-                .expect("transfers should not exceed capacity"),
-            messages: messages
-                .try_into()
-                .expect("messages should not exceed capacity"),
+            predicate: ssz_types::Optional::None,
         }
     }
 
+    /// Creates a declaration rotating to the given predicate key.
+    pub fn new_with_key(key: PredicateKey) -> Self {
+        Self {
+            predicate: ssz_types::Optional::Some(key),
+        }
+    }
+
+    pub fn predicate(&self) -> Option<&PredicateKey> {
+        match &self.predicate {
+            ssz_types::Optional::Some(key) => Some(key),
+            ssz_types::Optional::None => None,
+        }
+    }
+}
+
+impl From<Option<PredicateKey>> for OutputNewPredicate {
+    fn from(key: Option<PredicateKey>) -> Self {
+        Self {
+            predicate: key.into(),
+        }
+    }
+}
+
+impl UpdateOutputs {
     /// Creates empty update outputs.
+    ///
+    /// Use the `with_*`/`try_extend_*` builders to fill them in, rather than
+    /// a positional constructor, so adding a field here doesn't require
+    /// touching every call site.
     pub fn new_empty() -> Self {
-        Self::new(Vec::new(), Vec::new())
+        Self {
+            transfers: VariableList::empty(),
+            messages: VariableList::empty(),
+            new_predicate: OutputNewPredicate::new_empty(),
+        }
+    }
+
+    /// Sets the transfers, consuming and returning self.
+    pub fn with_transfers(mut self, transfers: Vec<OutputTransfer>) -> Self {
+        self.transfers = transfers
+            .try_into()
+            .expect("transfers should not exceed capacity");
+        self
+    }
+
+    /// Sets the messages, consuming and returning self.
+    pub fn with_messages(mut self, messages: Vec<OutputMessage>) -> Self {
+        self.messages = messages
+            .try_into()
+            .expect("messages should not exceed capacity");
+        self
+    }
+
+    /// Sets the new update predicate key declared by this update, consuming
+    /// and returning self.
+    pub fn with_new_predicate(mut self, key: PredicateKey) -> Self {
+        self.new_predicate = OutputNewPredicate::new_with_key(key);
+        self
+    }
+
+    /// Sets the new update predicate key declared by this update.
+    pub fn set_new_predicate(&mut self, key: Option<PredicateKey>) {
+        self.new_predicate = key.into();
+    }
+
+    /// Returns the new update predicate key declared by this update, if any.
+    pub fn new_predicate(&self) -> Option<&PredicateKey> {
+        self.new_predicate.predicate()
     }
 
     /// Gets the transfers.

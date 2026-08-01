@@ -9,6 +9,7 @@ use strata_ol_chain_types::{
     SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
     TxConstraints, TxProofs,
 };
+use strata_predicate::PredicateKey;
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{SnarkAccountUpdate, UpdateOperationData};
 
@@ -336,6 +337,9 @@ pub struct RpcSauTxSummary {
     seq_no: u64,
     new_next_msg_idx: u64,
     inner_state_root: HexBytes32,
+    /// New update predicate key declared by this update, if it rotates the key.
+    #[cfg_attr(feature = "jsonschema", schemars(with = "Option<String>"))]
+    new_predicate: Option<PredicateKey>,
 }
 
 impl RpcSauTxSummary {
@@ -350,6 +354,10 @@ impl RpcSauTxSummary {
     pub fn inner_state_root(&self) -> &HexBytes32 {
         &self.inner_state_root
     }
+
+    pub fn new_predicate(&self) -> Option<&PredicateKey> {
+        self.new_predicate.as_ref()
+    }
 }
 
 impl From<&SauTxPayload> for RpcSauTxSummary {
@@ -360,6 +368,7 @@ impl From<&SauTxPayload> for RpcSauTxSummary {
             seq_no: update.seq_no(),
             new_next_msg_idx: proof_state.new_next_msg_idx(),
             inner_state_root: HexBytes32::from(proof_state.inner_state_root().0),
+            new_predicate: update.new_predicate().cloned(),
         }
     }
 }
@@ -391,10 +400,13 @@ impl TryFrom<RpcOLTransaction> for OLTransaction {
                     proof_state.next_inbox_msg_idx(),
                     proof_state.inner_state(),
                 );
+                // The declared predicate rotation rides in the update's proven
+                // outputs; lift it into the tx update data the txid commits to.
                 let sau_update_data = SauTxUpdateData::new(
                     operation.seq_no(),
                     sau_proof_state,
                     operation.extra_data().to_vec(),
+                    operation.outputs().new_predicate().cloned(),
                 );
 
                 let l1_block_refs = operation.ledger_refs().l1_block_refs();
@@ -423,5 +435,59 @@ impl TryFrom<RpcOLTransaction> for OLTransaction {
                 Ok(OLTransaction::new(tx_data, tx_proofs))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ssz::Encode;
+    use strata_predicate::PredicateTypeId;
+    use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs};
+
+    use super::*;
+    use crate::RpcSnarkAccountUpdate;
+
+    fn make_rpc_sau_update(outputs: UpdateOutputs) -> RpcSnarkAccountUpdate {
+        let operation = UpdateOperationData::new(
+            7,
+            ProofState::new([1u8; 32].into(), 3),
+            vec![],
+            LedgerRefs::new_empty(),
+            outputs,
+            vec![],
+        );
+        RpcSnarkAccountUpdate::new(
+            HexBytes32([2u8; 32]),
+            HexBytes(operation.as_ssz_bytes()),
+            HexBytes(vec![0xAA]),
+        )
+    }
+
+    fn convert(update: RpcSnarkAccountUpdate) -> OLTransaction {
+        OLTransaction::try_from(RpcOLTransaction::new_snark_acct_update(update))
+            .expect("test: conversion should succeed")
+    }
+
+    fn tx_new_predicate(tx: &OLTransaction) -> Option<PredicateKey> {
+        match tx.payload() {
+            TransactionPayload::SnarkAccountUpdate(sau) => {
+                sau.operation().update().new_predicate().cloned()
+            }
+            _ => panic!("test: expected SAU payload"),
+        }
+    }
+
+    #[test]
+    fn test_sau_conversion_without_new_predicate() {
+        let tx = convert(make_rpc_sau_update(UpdateOutputs::new_empty()));
+        assert_eq!(tx_new_predicate(&tx), None);
+    }
+
+    #[test]
+    fn test_sau_conversion_with_new_predicate() {
+        let key = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![3u8; 32]);
+        let outputs = UpdateOutputs::new_empty().with_new_predicate(key.clone());
+        let tx = convert(make_rpc_sau_update(outputs));
+        assert_eq!(tx_new_predicate(&tx), Some(key));
     }
 }
