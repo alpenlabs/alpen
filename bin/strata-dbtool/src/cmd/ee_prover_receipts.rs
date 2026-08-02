@@ -1,4 +1,7 @@
-//! Admin commands operating on the EE chunk-receipt and acct-proof trees.
+//! Admin commands operating on the EE chunk prover-receipt and acct-proof trees.
+//!
+//! "Receipt" here means a zkVM proof receipt, not an EVM transaction execution
+//! receipt. The subcommand names are unchanged.
 //!
 //! Chunk receipts are keyed by the opaque chunk-task key (`Vec<u8>`),
 //! matching the `paas::ReceiptStore` shape. Acct proofs are keyed by
@@ -22,7 +25,7 @@ use crate::{
     cli::OutputFormat,
     cmd::prover_task_common::{parse_task_key, print_force_hint},
     output::{
-        ee_receipts::{
+        ee_prover_receipts::{
             DeletedEeReceiptInfo, EeChunkReproofInfo, EeChunkReproofMutation, EeReceiptInfo,
         },
         output,
@@ -57,6 +60,13 @@ pub(crate) struct EeGetChunkReceiptArgs {
 /// every step is idempotent and the command reconstructs the same owning batch
 /// from the persisted chunk row, so re-running after a partial failure is safe.
 /// Dry-run unless `--force` is passed.
+///
+/// Caveat: do not run this against a batch whose `EEUpdate` has already been
+/// submitted to OL. [`BatchStatus`] has no submitted state and the update
+/// submitter tracks its own frontier, so the command cannot detect this.
+/// Resetting such a batch makes the sequencer re-prove it and potentially
+/// re-submit the update. Confirm against the OL account state that the batch is
+/// not yet submitted before forcing.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "ee-delete-chunk-receipt")]
 pub(crate) struct EeDeleteChunkReceiptArgs {
@@ -90,8 +100,11 @@ pub(crate) struct EeGetAcctProofArgs {
 ///
 /// Also clears the secondary `ProofId → BatchId` index so future
 /// `get_proof_by_id` lookups miss instead of dangling. This is a low-level
-/// proof-store operation: it does not reset the acct task or batch lifecycle
-/// status and therefore does not schedule re-proving. Use the coupled
+/// proof-store operation: it touches neither the acct task record nor the batch
+/// lifecycle status. Re-proving is not scheduled by this command, but it does
+/// follow on its own once the node runs again: `check_proof_status` sees the
+/// `Completed` acct task with no proof, resets that task, and the batch
+/// lifecycle re-requests the acct proof on its next tick. Use the coupled
 /// `ee-delete-chunk-receipt` command when invalidating a chunk and its dependent
 /// acct proof. Dry-run unless `--force` is passed.
 #[derive(FromArgs, PartialEq, Debug)]
@@ -478,7 +491,7 @@ mod tests {
     /// dependency chain; a dry run must leave every row and status intact.
     #[tokio::test]
     async fn ee_delete_chunk_receipt_resets_dependent_proof_chain() {
-        use alpen_ee_database::init_db_storage;
+        use alpen_ee_database::open_for_offline_tooling;
         use strata_paas::{TaskRecordData, TaskStatus};
         use tokio::runtime::Handle;
         use zkaleido::{
@@ -487,7 +500,8 @@ mod tests {
         };
 
         let datadir = tempfile::tempdir().unwrap();
-        let databases = init_db_storage(datadir.path(), 2).unwrap();
+        // Matches how the dbtool opens the datadir in production.
+        let databases = open_for_offline_tooling(datadir.path(), 2).unwrap();
         let storage = databases.node_storage(Handle::current());
         let db = databases.prover_db();
 

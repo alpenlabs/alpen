@@ -67,11 +67,13 @@ where
                     }
 
                     ProofGenerationStatus::Failed { reason } => {
+                        // Prover-core emits the operator-facing error when it durably records the
+                        // terminal task state. The batch stays at this frontier, so this observer
+                        // only reports the continuing state at debug level.
                         debug!(
                             %reason,
-                            "acct proof task is permanently failed; batch remains ProofPending"
+                            "acct proof task remains permanently failed; batch remains ProofPending"
                         );
-                        // Stay at frontier - manual intervention required
                     }
 
                     ProofGenerationStatus::Pending => {

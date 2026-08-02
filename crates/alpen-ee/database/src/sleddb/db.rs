@@ -21,12 +21,10 @@ use crate::{
         BatchByIdxSchema, BatchChunksSchema, BatchIdToIdxSchema, BlockAccessedStateSchema,
         BlockWitnessSchema, BytecodeSchema, ChunkByIdxSchema, ChunkIdToIdxSchema,
         EeDbMaintenanceSchema, ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema,
-        ExecBlocksAtHeightSchema, ProofPendingChunkByIdxSchema, SealedChunkByIdxSchema,
+        ExecBlocksAtHeightSchema, ProofPendingChunkWorkByIdxSchema, SealedChunkWorkByIdxSchema,
     },
     DbError, DbResult,
 };
-
-const CHUNK_WORK_INDEX_BACKFILL_MARKER: u8 = 0;
 
 fn abort<T>(reason: impl Error + Send + Sync + 'static) -> Result<T, TSledError> {
     Err(TSledError::abort(reason))
@@ -61,10 +59,10 @@ where
                     %err,
                     "finalized tip shifted while extending chain; retrying whole operation"
                 );
-                // NOTE: blocking sleep is safe here because EE DB ops are dispatched on a
-                // dedicated threadpool via `inst_ops_generic!`, so this blocks a worker
-                // thread rather than the async runtime. If this helper is ever invoked
-                // directly from async context, switch to a non-blocking sleep.
+                // NOTE: blocking sleep is safe here because EE DB ops are dispatched through
+                // the generated proxy via `spawn_blocking`, so this blocks a worker thread rather
+                // than the async runtime. If this helper is ever invoked directly from async
+                // context, switch to a non-blocking sleep.
                 thread::sleep(Duration::from_millis(delay_ms));
                 delay_ms = config.backoff.next_delay_ms(delay_ms);
             }
@@ -86,21 +84,26 @@ pub(crate) struct EeNodeDBSled {
     // Batch storage trees
     batch_by_idx_tree: SledTree<BatchByIdxSchema>,
     batch_id_to_idx_tree: SledTree<BatchIdToIdxSchema>,
-    chunk_by_idx_tree: SledTree<ChunkByIdxSchema>,
+    pub(super) chunk_by_idx_tree: SledTree<ChunkByIdxSchema>,
     chunk_id_to_idx_tree: SledTree<ChunkIdToIdxSchema>,
-    sealed_chunk_by_idx_tree: SledTree<SealedChunkByIdxSchema>,
-    proof_pending_chunk_by_idx_tree: SledTree<ProofPendingChunkByIdxSchema>,
-    ee_db_maintenance_tree: SledTree<EeDbMaintenanceSchema>,
+    pub(super) sealed_chunk_work_by_idx_tree: SledTree<SealedChunkWorkByIdxSchema>,
+    pub(super) proof_pending_chunk_work_by_idx_tree: SledTree<ProofPendingChunkWorkByIdxSchema>,
+    pub(super) ee_db_maintenance_tree: SledTree<EeDbMaintenanceSchema>,
     batch_chunks_tree: SledTree<BatchChunksSchema>,
     block_accessed_state_tree: SledTree<BlockAccessedStateSchema>,
     bytecode_tree: SledTree<BytecodeSchema>,
     block_witness_tree: SledTree<BlockWitnessSchema>,
-    config: SledDbConfig,
+    pub(super) config: SledDbConfig,
 }
 
 impl EeNodeDBSled {
+    /// Opens the typed EE node trees without running startup maintenance.
     pub(crate) fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        let db = Self {
+        Self::open_trees(db, config)
+    }
+
+    fn open_trees(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
+        Ok(Self {
             ol_blockid_tree: db.get_tree()?,
             account_state_tree: db.get_tree()?,
             exec_block_tree: db.get_tree()?,
@@ -111,88 +114,15 @@ impl EeNodeDBSled {
             batch_id_to_idx_tree: db.get_tree()?,
             chunk_by_idx_tree: db.get_tree()?,
             chunk_id_to_idx_tree: db.get_tree()?,
-            sealed_chunk_by_idx_tree: db.get_tree()?,
-            proof_pending_chunk_by_idx_tree: db.get_tree()?,
+            sealed_chunk_work_by_idx_tree: db.get_tree()?,
+            proof_pending_chunk_work_by_idx_tree: db.get_tree()?,
             ee_db_maintenance_tree: db.get_tree()?,
             batch_chunks_tree: db.get_tree()?,
             block_accessed_state_tree: db.get_tree()?,
             bytecode_tree: db.get_tree()?,
             block_witness_tree: db.get_tree()?,
             config,
-        };
-        db.backfill_chunk_work_indexes()?;
-        Ok(db)
-    }
-
-    fn backfill_chunk_work_indexes(&self) -> DbResult<()> {
-        if self
-            .ee_db_maintenance_tree
-            .get(&CHUNK_WORK_INDEX_BACKFILL_MARKER)?
-            .unwrap_or(false)
-        {
-            return Ok(());
-        }
-
-        let mut sealed_work = Vec::new();
-        let mut proof_pending_work = Vec::new();
-        let mut existing_sealed_work_keys = Vec::new();
-        let mut existing_proof_pending_work_keys = Vec::new();
-
-        for item in self.chunk_by_idx_tree.iter() {
-            let (idx, db_chunk) = item?;
-            let (chunk, status): (Chunk, ChunkStatus) = db_chunk.into_parts();
-            let chunk_id = DBChunkId::from(chunk.id());
-            match status {
-                ChunkStatus::Sealed => sealed_work.push((idx, chunk_id)),
-                ChunkStatus::ProofPending(_) => proof_pending_work.push((idx, chunk_id)),
-                ChunkStatus::ProofReady(_) => {}
-            }
-        }
-
-        for item in self.sealed_chunk_by_idx_tree.iter() {
-            let (idx, _chunk_id) = item?;
-            existing_sealed_work_keys.push(idx);
-        }
-        for item in self.proof_pending_chunk_by_idx_tree.iter() {
-            let (idx, _chunk_id) = item?;
-            existing_proof_pending_work_keys.push(idx);
-        }
-
-        (
-            &self.sealed_chunk_by_idx_tree,
-            &self.proof_pending_chunk_by_idx_tree,
-            &self.ee_db_maintenance_tree,
-        )
-            .transaction_with_retry(
-                self.config.backoff.as_ref(),
-                self.config.retry_count.into(),
-                |(sealed_chunk_tree, pending_chunk_tree, maintenance_tree)| {
-                    if maintenance_tree
-                        .get(&CHUNK_WORK_INDEX_BACKFILL_MARKER)?
-                        .unwrap_or(false)
-                    {
-                        return Ok(());
-                    }
-
-                    for idx in &existing_sealed_work_keys {
-                        sealed_chunk_tree.remove(idx)?;
-                    }
-                    for idx in &existing_proof_pending_work_keys {
-                        pending_chunk_tree.remove(idx)?;
-                    }
-                    for (idx, chunk_id) in &sealed_work {
-                        sealed_chunk_tree.insert(idx, chunk_id)?;
-                    }
-                    for (idx, chunk_id) in &proof_pending_work {
-                        pending_chunk_tree.insert(idx, chunk_id)?;
-                    }
-                    maintenance_tree.insert(&CHUNK_WORK_INDEX_BACKFILL_MARKER, &true)?;
-
-                    Ok(())
-                },
-            )?;
-
-        Ok(())
+        })
     }
 
     fn extend_finalized_chain_once(&self, new_tip: Hash) -> DbResult<()> {
@@ -916,7 +846,7 @@ impl EeNodeDb for EeNodeDBSled {
         (
             &self.chunk_by_idx_tree,
             &self.chunk_id_to_idx_tree,
-            &self.sealed_chunk_by_idx_tree,
+            &self.sealed_chunk_work_by_idx_tree,
         )
             .transaction_with_retry(
                 self.config.backoff.as_ref(),
@@ -944,8 +874,8 @@ impl EeNodeDb for EeNodeDBSled {
         // Use transaction for read-modify-write; verify chunk_id inside to guard against reorgs
         (
             &self.chunk_by_idx_tree,
-            &self.sealed_chunk_by_idx_tree,
-            &self.proof_pending_chunk_by_idx_tree,
+            &self.sealed_chunk_work_by_idx_tree,
+            &self.proof_pending_chunk_work_by_idx_tree,
         )
             .transaction_with_retry(
                 self.config.backoff.as_ref(),
@@ -1010,8 +940,8 @@ impl EeNodeDb for EeNodeDBSled {
         (
             &self.chunk_by_idx_tree,
             &self.chunk_id_to_idx_tree,
-            &self.sealed_chunk_by_idx_tree,
-            &self.proof_pending_chunk_by_idx_tree,
+            &self.sealed_chunk_work_by_idx_tree,
+            &self.proof_pending_chunk_work_by_idx_tree,
         )
             .transaction_with_retry(
                 self.config.backoff.as_ref(),
@@ -1069,7 +999,7 @@ impl EeNodeDb for EeNodeDBSled {
         }
 
         let mut chunks = Vec::new();
-        for item in self.sealed_chunk_by_idx_tree.range(start_idx..)? {
+        for item in self.sealed_chunk_work_by_idx_tree.range(start_idx..)? {
             let (idx, _chunk_id) = item?;
             if let Some((chunk, status)) = self.get_chunk_by_idx(idx)? {
                 if matches!(status, ChunkStatus::Sealed) {
@@ -1093,7 +1023,10 @@ impl EeNodeDb for EeNodeDBSled {
         }
 
         let mut chunks = Vec::new();
-        for item in self.proof_pending_chunk_by_idx_tree.range(start_idx..)? {
+        for item in self
+            .proof_pending_chunk_work_by_idx_tree
+            .range(start_idx..)?
+        {
             let (idx, _chunk_id) = item?;
             if let Some((chunk, status)) = self.get_chunk_by_idx(idx)? {
                 if matches!(status, ChunkStatus::ProofPending(_)) {
@@ -1190,141 +1123,8 @@ mod tests {
         EeNodeDBSled::new(Arc::new(sled_db), config).unwrap()
     }
 
-    fn test_chunk(idx: u64, prev_block: u8, last_block: u8) -> Chunk {
-        Chunk::new(
-            idx,
-            hash_from_u8(prev_block),
-            hash_from_u8(last_block),
-            idx,
-            0,
-            Vec::new(),
-        )
-    }
-
-    fn seed_legacy_chunk(sled_db: &SledDb, chunk: Chunk, status: ChunkStatus) {
-        let idx = chunk.idx();
-        let chunk_id = DBChunkId::from(chunk.id());
-        let db_chunk = DBChunkWithStatus::new(chunk, status);
-        let chunk_tree: SledTree<ChunkByIdxSchema> = sled_db.get_tree().unwrap();
-        let chunk_id_tree: SledTree<ChunkIdToIdxSchema> = sled_db.get_tree().unwrap();
-
-        chunk_tree.insert(&idx, &db_chunk).unwrap();
-        chunk_id_tree.insert(&chunk_id, &idx).unwrap();
-    }
-
     fn save_block(db: &EeNodeDBSled, block: ExecBlockRecord) {
         db.save_exec_block(block, vec![]).unwrap();
-    }
-
-    #[test]
-    fn backfill_chunk_work_indexes_repairs_partial_legacy_indexes() {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = Arc::new(SledDb::new(db).unwrap());
-
-        let sealed_chunk = test_chunk(0, 1, 2);
-        let pending_chunk = test_chunk(1, 2, 3);
-        let ready_chunk = test_chunk(2, 3, 4);
-        let sealed_chunk_id = DBChunkId::from(sealed_chunk.id());
-        seed_legacy_chunk(&sled_db, sealed_chunk, ChunkStatus::Sealed);
-        seed_legacy_chunk(
-            &sled_db,
-            pending_chunk.clone(),
-            ChunkStatus::ProofPending("task".to_string()),
-        );
-        seed_legacy_chunk(
-            &sled_db,
-            ready_chunk,
-            ChunkStatus::ProofReady(hash_from_u8(4)),
-        );
-
-        // Simulates a crash during the old one-time backfill after only one index write.
-        let sealed_work_tree: SledTree<SealedChunkByIdxSchema> = sled_db.get_tree().unwrap();
-        sealed_work_tree.insert(&0, &sealed_chunk_id).unwrap();
-
-        let config = SledDbConfig::new_with_constant_backoff(2, 0);
-        let ee_db = EeNodeDBSled::new(sled_db, config).unwrap();
-
-        let sealed_work = ee_db.get_sealed_chunks(0, 10).unwrap();
-        assert_eq!(sealed_work.len(), 1);
-        assert_eq!(sealed_work[0].0.idx(), 0);
-
-        let proof_pending_work = ee_db.get_proof_pending_chunks(0, 10).unwrap();
-        assert_eq!(proof_pending_work.len(), 1);
-        assert_eq!(proof_pending_work[0].0.id(), pending_chunk.id());
-
-        assert_eq!(
-            ee_db
-                .ee_db_maintenance_tree
-                .get(&CHUNK_WORK_INDEX_BACKFILL_MARKER)
-                .unwrap(),
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn backfill_chunk_work_indexes_runs_once_per_marker() {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = Arc::new(SledDb::new(db).unwrap());
-
-        seed_legacy_chunk(&sled_db, test_chunk(0, 1, 2), ChunkStatus::Sealed);
-        seed_legacy_chunk(
-            &sled_db,
-            test_chunk(1, 2, 3),
-            ChunkStatus::ProofPending("task".to_string()),
-        );
-        seed_legacy_chunk(
-            &sled_db,
-            test_chunk(2, 3, 4),
-            ChunkStatus::ProofReady(hash_from_u8(4)),
-        );
-
-        let sealed_index_keys = |db: &EeNodeDBSled| -> Vec<u64> {
-            db.sealed_chunk_by_idx_tree
-                .iter()
-                .map(|item| item.unwrap().0)
-                .collect()
-        };
-        let pending_index_keys = |db: &EeNodeDBSled| -> Vec<u64> {
-            db.proof_pending_chunk_by_idx_tree
-                .iter()
-                .map(|item| item.unwrap().0)
-                .collect()
-        };
-
-        let config = SledDbConfig::new_with_constant_backoff(2, 0);
-        let ee_db = EeNodeDBSled::new(sled_db.clone(), config).unwrap();
-
-        assert_eq!(sealed_index_keys(&ee_db), vec![0]);
-        assert_eq!(pending_index_keys(&ee_db), vec![1]);
-        assert_eq!(
-            ee_db
-                .ee_db_maintenance_tree
-                .get(&CHUNK_WORK_INDEX_BACKFILL_MARKER)
-                .unwrap(),
-            Some(true)
-        );
-
-        // Flip chunk 2's row back to Sealed behind the indexes' back: with the
-        // marker set, re-opening the DB must not rebuild the indexes.
-        seed_legacy_chunk(&sled_db, test_chunk(2, 3, 4), ChunkStatus::Sealed);
-        let config = SledDbConfig::new_with_constant_backoff(2, 0);
-        let ee_db = EeNodeDBSled::new(sled_db.clone(), config).unwrap();
-        assert_eq!(
-            sealed_index_keys(&ee_db),
-            vec![0],
-            "marker must make the backfill a no-op"
-        );
-
-        // Clearing the marker (an interrupted backfill never set it) makes the
-        // next open rebuild both indexes from the chunk rows.
-        ee_db
-            .ee_db_maintenance_tree
-            .remove(&CHUNK_WORK_INDEX_BACKFILL_MARKER)
-            .unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(2, 0);
-        let ee_db = EeNodeDBSled::new(sled_db, config).unwrap();
-        assert_eq!(sealed_index_keys(&ee_db), vec![0, 2]);
-        assert_eq!(pending_index_keys(&ee_db), vec![1]);
     }
 
     #[test]

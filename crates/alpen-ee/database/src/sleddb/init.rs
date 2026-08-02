@@ -73,12 +73,23 @@ impl EeDatabases {
     }
 }
 
-/// Opens a single sled instance at `<datadir>/sled` and creates all database
-/// types from it.
+/// Opens a single sled instance at `<datadir>/sled` and creates all database types from it.
 ///
-/// All typed-sled trees coexist in one sled directory — each DB type uses
-/// uniquely named trees so there are no collisions.
-pub(crate) fn init_database(datadir: &Path, db_retry_count: u16) -> Result<EeDatabases> {
+/// This is the raw offline-tooling boundary and does not run startup maintenance. All typed-sled
+/// trees coexist in one sled directory, with unique names to avoid collisions.
+pub(crate) fn open_database(datadir: &Path, db_retry_count: u16) -> Result<EeDatabases> {
+    open_database_inner(datadir, db_retry_count)
+}
+
+/// Opens the databases and completes every required startup-maintenance job before returning.
+pub(crate) fn open_database_for_node(datadir: &Path, db_retry_count: u16) -> Result<EeDatabases> {
+    let databases = open_database_inner(datadir, db_retry_count)?;
+    super::maintenance::run_startup_jobs(&databases.ee_node_db)
+        .map_err(|e| eyre!("failed to run EE database startup maintenance: {e}"))?;
+    Ok(databases)
+}
+
+fn open_database_inner(datadir: &Path, db_retry_count: u16) -> Result<EeDatabases> {
     let database_dir = datadir.join("sled");
 
     fs::create_dir_all(&database_dir)
@@ -130,4 +141,85 @@ pub(crate) fn init_database(datadir: &Path, db_retry_count: u16) -> Result<EeDat
         da_context_db,
         prover_db,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use alpen_ee_common::{Chunk, ChunkStatus};
+    use strata_acct_types::Hash;
+
+    use super::*;
+    use crate::database::EeNodeDb;
+
+    fn hash_from_u8(value: u8) -> Hash {
+        let mut bytes = [0u8; 32];
+        bytes[31] = value;
+        Hash::from(bytes)
+    }
+
+    fn chunk(idx: u64, prev: u8, last: u8) -> Chunk {
+        Chunk::new(
+            idx,
+            hash_from_u8(prev),
+            hash_from_u8(last),
+            idx,
+            0,
+            Vec::new(),
+        )
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn tooling_open_skips_jobs_and_node_open_rebuilds_before_returning() {
+        let datadir = tempfile::tempdir().unwrap();
+        let databases = open_database(datadir.path(), 2).unwrap();
+        let node_db = &databases.ee_node_db;
+
+        let sealed = chunk(0, 1, 2);
+        let pending = chunk(1, 2, 3);
+        node_db.save_next_chunk(sealed).unwrap();
+        node_db.save_next_chunk(pending.clone()).unwrap();
+        node_db
+            .update_chunk_status(pending.id(), ChunkStatus::ProofPending("task".to_string()))
+            .unwrap();
+
+        node_db.sealed_chunk_work_by_idx_tree.remove(&0).unwrap();
+        node_db
+            .proof_pending_chunk_work_by_idx_tree
+            .remove(&1)
+            .unwrap();
+        drop(databases);
+
+        let tooling_databases = open_database(datadir.path(), 2).unwrap();
+        assert!(tooling_databases
+            .ee_node_db
+            .get_sealed_chunks(0, 10)
+            .unwrap()
+            .is_empty());
+        assert!(tooling_databases
+            .ee_node_db
+            .get_proof_pending_chunks(0, 10)
+            .unwrap()
+            .is_empty());
+        drop(tooling_databases);
+
+        let node_databases = crate::open_for_node(datadir.path().to_path_buf(), 2)
+            .await
+            .unwrap();
+        assert_eq!(
+            node_databases
+                .ee_node_db
+                .get_sealed_chunks(0, 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            node_databases
+                .ee_node_db
+                .get_proof_pending_chunks(0, 10)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
 }

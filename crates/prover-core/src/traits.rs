@@ -119,7 +119,12 @@ pub trait TaskStore: Send + Sync + 'static {
     fn insert(&self, record: TaskRecord) -> ProverResult<()>;
     fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()>;
     fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()>;
-    fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()>;
+    /// Writes strategy-specific state for a task, or clears it with `None`.
+    ///
+    /// Clearing matters for the remote strategy: a saved remote proof id is
+    /// resumed by the next attempt, so a failure that leaves the remote job
+    /// unusable must drop the id or every retry re-polls the same dead job.
+    fn set_metadata(&self, key: &[u8], data: Option<Vec<u8>>) -> ProverResult<()>;
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>>;
     /// Every record that was submitted but hasn't reached a terminal state —
     /// Pending or Proving. Used by startup recovery to re-spawn
@@ -150,7 +155,7 @@ impl<T: TaskStore + ?Sized> TaskStore for Arc<T> {
     fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
         (**self).set_retry_after(key, when_secs)
     }
-    fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
+    fn set_metadata(&self, key: &[u8], data: Option<Vec<u8>>) -> ProverResult<()> {
         (**self).set_metadata(key, data)
     }
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
@@ -218,13 +223,15 @@ pub trait ReceiptHook<H: ProofSpec>: Send + Sync + 'static {
 /// Strategies that talk to remote provers (SP1, etc.) use this to:
 /// 1. Check `saved` for a proof ID from a prior crashed run
 /// 2. Call `persist()` right after `start_proving()` so the ID survives a crash
+/// 3. Call `clear()` when the saved ID becomes worthless, so the next attempt submits a fresh
+///    remote job instead of resuming a dead one
 ///
 /// Strategies that don't need recovery (e.g. native) ignore this entirely.
 pub(crate) struct ProveContext {
     /// Metadata from a prior run (e.g. serialized remote ProofId).
     pub(crate) saved: Option<Vec<u8>>,
     #[cfg(feature = "remote")]
-    persist_fn: Option<Box<dyn FnOnce(Vec<u8>) + Send>>,
+    persist_fn: Box<dyn Fn(Option<Vec<u8>>) + Send>,
 }
 
 impl fmt::Debug for ProveContext {
@@ -238,12 +245,12 @@ impl fmt::Debug for ProveContext {
 impl ProveContext {
     pub(crate) fn new(
         saved: Option<Vec<u8>>,
-        _persist: impl FnOnce(Vec<u8>) + Send + 'static,
+        _persist: impl Fn(Option<Vec<u8>>) + Send + 'static,
     ) -> Self {
         Self {
             saved,
             #[cfg(feature = "remote")]
-            persist_fn: Some(Box::new(_persist)),
+            persist_fn: Box::new(_persist),
         }
     }
 
@@ -251,9 +258,18 @@ impl ProveContext {
     /// a remote proof ID, before starting the poll loop.
     #[cfg(feature = "remote")]
     pub(crate) fn persist(&mut self, data: Vec<u8>) {
-        if let Some(f) = self.persist_fn.take() {
-            f(data);
-        }
+        (self.persist_fn)(Some(data));
+    }
+
+    /// Forget previously persisted metadata.
+    ///
+    /// Call this when the persisted remote proof ID can no longer produce a
+    /// receipt (the remote job reached a terminal `Failed`) but the task is
+    /// still worth retrying: the next attempt must submit a new job rather
+    /// than resume the dead one.
+    #[cfg(feature = "remote")]
+    pub(crate) fn clear(&mut self) {
+        (self.persist_fn)(None);
     }
 }
 

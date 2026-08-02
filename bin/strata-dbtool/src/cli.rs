@@ -12,13 +12,13 @@ use crate::cmd::{
     checkpoint_proof::{DeleteCheckpointProofArgs, GetCheckpointProofArgs},
     client_state::GetClientStateUpdateArgs,
     ee_da::EeDaInspectArgs,
+    ee_prover_receipts::{
+        EeDeleteAcctProofArgs, EeDeleteChunkReceiptArgs, EeGetAcctProofArgs, EeGetChunkReceiptArgs,
+    },
     ee_prover_task::{
         EeAbandonProverTaskArgs, EeAbandonProverTasksArgs, EeBackfillProverTaskRawArgs,
         EeDeleteProverTaskArgs, EeGetProverTaskArgs, EeGetProverTasksSummaryArgs,
         EeResetProverTaskArgs,
-    },
-    ee_receipts::{
-        EeDeleteAcctProofArgs, EeDeleteChunkReceiptArgs, EeGetAcctProofArgs, EeGetChunkReceiptArgs,
     },
     ee_revert::EeRevertBatchesArgs,
     l1::{GetL1BlockArgs, GetL1SummaryArgs},

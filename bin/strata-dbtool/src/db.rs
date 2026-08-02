@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use alpen_ee_database::{init_db_storage, EeDatabases, EeProverDbSled};
+use alpen_ee_database::{open_for_offline_tooling, EeDatabases, EeProverDbSled};
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_store_sled::{
     chunked_envelope::L1ChunkedEnvelopeDBSled, open_sled_database, SledBackend, SledDbConfig,
@@ -24,7 +24,7 @@ pub(crate) fn open_database(path: &Path) -> Result<Arc<SledBackend>, DisplayedEr
 /// Opens the EE prover sled store at `<datadir>/sled`.
 ///
 /// `datadir` is expected to be the alpen-client's `--datadir`. This opens
-/// the same sled directory as [`alpen_ee_database::init_db_storage`], but
+/// the same sled directory as [`alpen_ee_database::open_for_node`], but
 /// constructs only the prover-task / chunk-receipt / acct-proof trees. The
 /// dbtool's prover commands read nothing else, so opening the other EE DBs
 /// (node, witness, broadcast, chunked-envelope, DA context) would be wasted
@@ -57,15 +57,18 @@ pub(crate) fn open_ee_prover_database(
 /// trees. The narrower [`open_ee_prover_database`] helper stays in place for
 /// receipt/task-only commands so those commands do not construct unrelated DB
 /// wrappers.
+///
+/// This skips all EE startup maintenance. No dbtool command reads the sealed or proof-pending work
+/// indexes; every dbtool read derives from the authoritative chunk rows.
 pub(crate) fn open_full_ee_database(datadir: &Path) -> Result<EeDatabases, DisplayedError> {
-    init_db_storage(datadir, 5).internal_error("Could not open full EE database")
+    open_for_offline_tooling(datadir, 5).internal_error("Could not open full EE database")
 }
 
 /// Opens the EE chunked-envelope sled store at `<datadir>/sled`.
 ///
 /// `datadir` is expected to be the alpen-client's `--datadir`. Like
 /// [`open_ee_prover_database`], this opens the same sled directory as
-/// [`alpen_ee_database::init_db_storage`], but constructs only the
+/// [`alpen_ee_database::open_for_node`], but constructs only the
 /// chunked-envelope tree. The `ee-da-inspect` command reads nothing else, so
 /// opening the other EE DBs (node, witness, broadcast, prover, DA context)
 /// would be wasted work.

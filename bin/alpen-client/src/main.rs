@@ -42,7 +42,7 @@ use alpen_ee_common::{
     SequencerOLClient, Storage,
 };
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
-use alpen_ee_database::init_db_storage;
+use alpen_ee_database::open_for_node;
 use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
 #[cfg(feature = "sequencer")]
 use alpen_ee_exec_chain::{init_exec_chain_state_from_storage, ExecChainState};
@@ -284,7 +284,8 @@ fn main() {
 
             // --- INITIALIZE STATE ---
 
-            let dbs = init_db_storage(&datadir, config.db_retry_count())
+            let dbs = open_for_node(datadir.clone(), config.db_retry_count())
+                .await
                 .context("failed to load alpen database")?;
 
             let db_handle = Handle::current();

@@ -61,13 +61,13 @@ impl TaskStore for InMemoryTaskStore {
         Ok(())
     }
 
-    fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
+    fn set_metadata(&self, key: &[u8], data: Option<Vec<u8>>) -> ProverResult<()> {
         self.records
             .write()
             .get_mut(key)
             .ok_or_else(|| ProverError::TaskNotFound(format!("{:?}", key)))?
             .data_mut()
-            .set_metadata(Some(data));
+            .set_metadata(data);
         Ok(())
     }
 

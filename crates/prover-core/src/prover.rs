@@ -428,6 +428,8 @@ impl<H: ProofSpec> Prover<H> {
                 .and_then(|r| r.metadata().map(|m| m.to_vec()));
             let store = self.task_store.clone();
             let persist_key = task.key.clone();
+            // `Some(bytes)` persists strategy state (a remote proof id),
+            // `None` forgets it so the next attempt starts from scratch.
             let ctx = ProveContext::new(saved_metadata, move |data| {
                 let _ = store.set_metadata(&persist_key, data);
             });
@@ -537,12 +539,21 @@ impl<H: ProofSpec> Prover<H> {
             .flatten()
             .map(|record| record.status().clone());
 
-        let _ = self.task_store.update_status(
+        let persist_result = self.task_store.update_status(
             task.key(),
             TaskStatus::PermanentFailure {
                 error: error.clone(),
             },
         );
+
+        if let Err(storage_error) = persist_result {
+            error!(
+                reason = %error,
+                %storage_error,
+                "failed to persist permanent proof-task failure"
+            );
+            return;
+        }
 
         if should_log_permanent_failure(previous_status.as_ref(), &error) {
             error!(

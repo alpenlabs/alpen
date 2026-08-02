@@ -37,6 +37,16 @@ fn db_err(e: DbError) -> ProverError {
     }
 }
 
+/// Prover task store backed by any [`ProverTaskDatabase`].
+///
+/// Both chunk and acct provers hold an `Arc<Self>` and pass it to
+/// `ProverBuilder::task_store(...)`. Task keys carry a single-byte
+/// kind tag (`b'c'` / `b'a'`) inside their `Task::into()` encoding,
+/// so entries from the two provers don't collide in the shared tree.
+///
+/// Generic over the database so the node can drive it over the sled
+/// implementation while `strata-dbtool` drives it over whatever database
+/// handle it opened.
 #[derive(Debug, Clone)]
 pub(crate) struct EeProverTaskDbManager<D: ProverTaskDatabase> {
     db: Arc<D>,
@@ -83,8 +93,8 @@ impl<D: ProverTaskDatabase> TaskStore for EeProverTaskDbManager<D> {
         self.modify(key, |d| d.set_retry_after_secs(Some(when_secs)))
     }
 
-    fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
-        self.modify(key, |d| d.set_metadata(Some(data)))
+    fn set_metadata(&self, key: &[u8], data: Option<Vec<u8>>) -> ProverResult<()> {
+        self.modify(key, |d| d.set_metadata(data))
     }
 
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {

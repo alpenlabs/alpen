@@ -371,6 +371,12 @@ the same UX as `revert-ol-state`. Without `--force`, the command prints
 what *would* happen and a `Use --force to execute these changes.` hint;
 with `--force`, the mutation actually lands.
 
+The dry-run guarantee covers opening the datadir as well: the dbtool opens the
+EE node database without the one-time chunk work index backfill, so inspecting a
+datadir leaves it byte-identical. The node performs that backfill on startup. No
+dbtool read depends on those indexes; every dbtool read derives from the chunk
+rows.
+
 ### Semantics — `abandon` vs `reset` vs `delete`
 
 | Verb       | Final status                                    | When to use                                               |
@@ -573,6 +579,13 @@ mutate when the chunk no longer belongs to the current batch at its recorded
 index, preventing an orphaned pre-reorg chunk from invalidating a replacement
 batch.
 
+**Caveat:** do not run this against a batch whose `EEUpdate` has already been
+submitted to OL. `BatchStatus` has no submitted state and the update submitter
+tracks its own frontier, so the command cannot detect this. Resetting such a
+batch makes the sequencer re-prove it and potentially re-submit the update.
+Confirm against the OL account state that the batch is not yet submitted before
+passing `--force`.
+
 ```bash
 strata-dbtool ee-get-chunk-receipt <key_hex> [OPTIONS]
 strata-dbtool ee-delete-chunk-receipt <key_hex> --force
@@ -584,10 +597,16 @@ Inspect or remove a stored acct/batch proof. The batch id is passed as
 prefix), which is exactly what `BatchId::Display` emits — copy a
 `%batch_id` field straight from the alpen-client's logs. Delete also
 clears the secondary `ProofId → BatchId` index. This is a low-level
-proof-store operation: it does not reset the acct task or batch lifecycle
-status and does not schedule re-proving. Use the coupled
-`ee-delete-chunk-receipt` command when invalidating a chunk and its dependent
-acct proof.
+proof-store operation: it touches neither the acct task record nor the batch
+lifecycle status.
+
+Re-proving still follows on its own once the node is running again, the same
+way `ee-delete-chunk-receipt` self-heals: the node sees the `Completed` acct
+task with no stored proof, resets that task, and the batch lifecycle
+re-requests the acct proof on its next tick. Deleting an acct proof for a
+batch that has already been proven is therefore not a way to stop it from
+being proven. Use the coupled `ee-delete-chunk-receipt` command when
+invalidating a chunk and its dependent acct proof.
 
 ```bash
 strata-dbtool ee-get-acct-proof <prev_block>:<last_block> [OPTIONS]

@@ -1303,6 +1303,7 @@ dependencies = [
  "strata-paas",
  "strata-storage",
  "strata-storage-common",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

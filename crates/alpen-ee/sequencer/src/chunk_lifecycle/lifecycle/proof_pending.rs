@@ -29,12 +29,16 @@ where
                 .await?;
         }
         ProofGenerationStatus::Failed { reason } => {
+            // Prover-core owns the durable transition to PermanentFailure and emits the
+            // operator-facing error there. This observer is re-entered on every lifecycle tick,
+            // so repeating an error here would turn persistent state into a log flood.
             debug!(
                 ?chunk_id,
                 chunk_idx = chunk.idx(),
+                batch_idx = chunk.batch_idx(),
                 %reason,
-                "chunk proof task failed permanently; keeping chunk ProofPending until the task is \
-                 reset"
+                "chunk proof task remains permanently failed; keeping chunk ProofPending until \
+                 operator recovery"
             );
         }
         ProofGenerationStatus::NotStarted => {

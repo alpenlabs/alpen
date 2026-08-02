@@ -35,3 +35,4 @@ typed-sled.workspace = true
 [dev-dependencies]
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
 strata-storage = { workspace = true, features = ["test-utils"] }
+tempfile.workspace = true

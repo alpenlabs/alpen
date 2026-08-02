@@ -71,26 +71,25 @@ define_table_with_default_codec!(
 );
 
 define_table_without_codec!(
-    /// Persistent EE DB maintenance markers.
+    /// Persistent completion markers for EE startup-maintenance jobs.
     ///
-    /// NOTE: This is temporary migration bookkeeping, not domain data. Replace this
-    /// ad hoc marker tree with shared DB migration/version infrastructure once
-    /// that exists.
+    /// This is maintenance bookkeeping, not authoritative domain data. Each key is owned by one
+    /// job and means only that the job completed successfully.
     (EeDbMaintenanceSchema) u8 => bool
 );
 impl_borsh_value_codec!(EeDbMaintenanceSchema, bool);
 
 define_table_without_codec!(
     /// Sealed chunk proof work by chunk idx.
-    (SealedChunkByIdxSchema) u64 => DBChunkId
+    (SealedChunkWorkByIdxSchema) u64 => DBChunkId
 );
-impl_borsh_value_codec!(SealedChunkByIdxSchema, DBChunkId);
+impl_borsh_value_codec!(SealedChunkWorkByIdxSchema, DBChunkId);
 
 define_table_without_codec!(
     /// Proof-pending chunk proof work by chunk idx.
-    (ProofPendingChunkByIdxSchema) u64 => DBChunkId
+    (ProofPendingChunkWorkByIdxSchema) u64 => DBChunkId
 );
-impl_borsh_value_codec!(ProofPendingChunkByIdxSchema, DBChunkId);
+impl_borsh_value_codec!(ProofPendingChunkWorkByIdxSchema, DBChunkId);
 
 define_table_with_default_codec!(
     /// Batch-Chunk association

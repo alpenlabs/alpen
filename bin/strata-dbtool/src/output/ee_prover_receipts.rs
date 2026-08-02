@@ -1,4 +1,7 @@
-//! Output structs for the EE receipt admin commands.
+//! Output structs for the EE prover-receipt admin commands.
+//!
+//! "Receipt" here means a zkVM proof receipt, not an EVM transaction execution
+//! receipt.
 //!
 //! Chunk receipts and acct proofs share the same `ProofReceiptWithMetadata`
 //! shape, so the inspection output is identical to OL's

@@ -68,8 +68,8 @@ impl TaskStore for ProverTaskDbManager {
         self.modify(key, |d| d.set_retry_after_secs(Some(when_secs)))
     }
 
-    fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
-        self.modify(key, |d| d.set_metadata(Some(data)))
+    fn set_metadata(&self, key: &[u8], data: Option<Vec<u8>>) -> ProverResult<()> {
+        self.modify(key, |d| d.set_metadata(data))
     }
 
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
