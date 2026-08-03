@@ -1,7 +1,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::OnceLock};
 
 use bdk_wallet::{
-    rusqlite::{self, Connection},
+    rusqlite::{self, Connection, OptionalExtension},
     ChangeSet, WalletPersister,
 };
 
@@ -45,6 +45,7 @@ impl WalletPersister for Persister {
         let db = Self::db();
         let mut db_ref = db.borrow_mut();
         let db_tx = db_ref.transaction()?;
+        db_tx.execute(CREATE_FULL_SCAN_STATE_TABLE, [])?;
         ChangeSet::init_sqlite_tables(&db_tx)?;
         let changeset = ChangeSet::from_sqlite(&db_tx)?;
         db_tx.commit()?;
@@ -60,5 +61,91 @@ impl WalletPersister for Persister {
         let db_tx = db_ref.transaction()?;
         changeset.persist_to_sqlite(&db_tx)?;
         db_tx.commit()
+    }
+}
+
+impl Persister {
+    /// True once a full scan has completed at least once for this wallet.
+    ///
+    /// This is tracked independently of revealed addresses: some code
+    /// paths (e.g. `faucet` with no address argument) reveal an address
+    /// without ever syncing, which would otherwise look identical to a
+    /// wallet that has actually been scanned.
+    pub fn full_scan_completed() -> Result<bool, rusqlite::Error> {
+        let db = Self::db();
+        let db_ref = db.borrow();
+        full_scan_completed(&db_ref)
+    }
+
+    /// Records that a full scan has completed for this wallet.
+    pub fn mark_full_scan_completed() -> Result<(), rusqlite::Error> {
+        let db = Self::db();
+        let db_ref = db.borrow();
+        mark_full_scan_completed(&db_ref)
+    }
+}
+
+const CREATE_FULL_SCAN_STATE_TABLE: &str = "CREATE TABLE IF NOT EXISTS full_scan_state (
+    id INTEGER PRIMARY KEY CHECK (id = 0),
+    completed INTEGER NOT NULL
+)";
+
+fn full_scan_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    let completed: Option<bool> = conn
+        .query_row(
+            "SELECT completed FROM full_scan_state WHERE id = 0",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(completed.unwrap_or(false))
+}
+
+fn mark_full_scan_completed(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO full_scan_state (id, completed) VALUES (0, TRUE)
+         ON CONFLICT(id) DO UPDATE SET completed = TRUE",
+        [],
+    )
+    .map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use bdk_wallet::rusqlite::Connection;
+
+    use super::{full_scan_completed, mark_full_scan_completed, CREATE_FULL_SCAN_STATE_TABLE};
+
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        conn.execute(CREATE_FULL_SCAN_STATE_TABLE, [])
+            .expect("table should be created");
+        conn
+    }
+
+    #[test]
+    fn test_full_scan_completed_is_false_before_any_scan() {
+        let conn = test_conn();
+
+        assert!(!full_scan_completed(&conn).unwrap());
+    }
+
+    #[test]
+    fn test_full_scan_completed_is_true_after_marking() {
+        let conn = test_conn();
+
+        mark_full_scan_completed(&conn).unwrap();
+
+        assert!(full_scan_completed(&conn).unwrap());
+    }
+
+    #[test]
+    fn test_mark_full_scan_completed_is_idempotent() {
+        let conn = test_conn();
+
+        mark_full_scan_completed(&conn).unwrap();
+        mark_full_scan_completed(&conn).unwrap();
+
+        assert!(full_scan_completed(&conn).unwrap());
     }
 }

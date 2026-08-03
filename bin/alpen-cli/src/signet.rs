@@ -15,7 +15,7 @@ use bdk_esplora::esplora_client::{self, AsyncClient};
 use bdk_wallet::{
     bitcoin::{FeeRate, Network},
     rusqlite::{self, Connection},
-    KeychainKind, PersistedWallet, Wallet,
+    PersistedWallet, Wallet,
 };
 use persist::Persister;
 use terrors::OneOf;
@@ -50,18 +50,18 @@ pub async fn get_fee_rate(
 mod tests {
     use async_trait::async_trait;
     use bdk_wallet::{
-        bitcoin::{bip32::Xpriv, FeeRate, Network, Transaction},
+        bitcoin::{FeeRate, Transaction},
         chain::{
             spk_client::{FullScanRequestBuilder, SyncRequestBuilder},
             CheckPoint,
         },
-        KeychainKind, Wallet,
+        KeychainKind,
     };
     use terrors::OneOf;
 
     use super::{
         backend::{BroadcastTxError, GetFeeRateError, InvalidFee, ScanError, UpdateSender},
-        get_fee_rate, needs_full_scan, SignetBackend, SyncError,
+        get_fee_rate, SignetBackend, SyncError,
     };
 
     #[derive(Debug)]
@@ -129,34 +129,6 @@ mod tests {
 
         assert_eq!(fee_rate, FeeRate::BROADCAST_MIN);
     }
-
-    fn test_wallet() -> Wallet {
-        let rootpriv = Xpriv::new_master(Network::Signet, &[7u8; 32]).expect("valid xpriv");
-        let base_desc = format!("tr({rootpriv}/86h/0h/0h");
-        let external_desc = format!("{base_desc}/0/*)");
-        let internal_desc = format!("{base_desc}/1/*)");
-
-        Wallet::create(external_desc, internal_desc)
-            .network(Network::Signet)
-            .create_wallet_no_persist()
-            .expect("test wallet should be created")
-    }
-
-    #[test]
-    fn test_needs_full_scan_is_true_for_freshly_created_wallet() {
-        let wallet = test_wallet();
-
-        assert!(needs_full_scan(&wallet));
-    }
-
-    #[test]
-    fn test_needs_full_scan_is_false_once_an_address_is_revealed() {
-        let mut wallet = test_wallet();
-
-        wallet.reveal_next_address(KeychainKind::External);
-
-        assert!(!needs_full_scan(&wallet));
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -221,15 +193,15 @@ impl SignetWallet {
         })
     }
 
-    /// Syncs already-revealed addresses. If the wallet has not revealed any
-    /// addresses yet on either keychain (e.g. right after a fresh recovery
-    /// from seed), this runs a full scan instead, since a plain sync can
-    /// never discover funds sitting at indices the wallet doesn't know
-    /// about yet.
+    /// Syncs already-revealed addresses. Until a full scan has completed at
+    /// least once for this wallet (e.g. right after a fresh recovery from
+    /// seed), this runs a full scan instead, since a plain sync can never
+    /// discover funds sitting at indices the wallet doesn't know about yet.
     pub async fn sync(
         &mut self,
     ) -> Result<(), OneOf<(UpdateError, SyncError, ScanError, rusqlite::Error)>> {
-        if needs_full_scan(&self.wallet) {
+        let needs_full_scan = !Persister::full_scan_completed().map_err(OneOf::new)?;
+        if needs_full_scan {
             scan_wallet(&mut self.wallet, self.sync_backend.clone())
                 .await
                 .map_err(OneOf::broaden)?;
@@ -238,29 +210,26 @@ impl SignetWallet {
                 .await
                 .map_err(OneOf::broaden)?;
         }
+        // Persist the scan results before recording completion, so a crash
+        // in between leaves us re-scanning next time rather than silently
+        // skipping a scan we never actually saved the results of.
         self.persist().map_err(OneOf::new)?;
+        if needs_full_scan {
+            Persister::mark_full_scan_completed().map_err(OneOf::new)?;
+        }
         Ok(())
     }
 
     pub async fn scan(&mut self) -> Result<(), OneOf<(UpdateError, ScanError, rusqlite::Error)>> {
         scan_wallet(&mut self.wallet, self.sync_backend.clone()).await?;
         self.persist().map_err(OneOf::new)?;
+        Persister::mark_full_scan_completed().map_err(OneOf::new)?;
         Ok(())
     }
 
     pub fn persist(&mut self) -> Result<bool, rusqlite::Error> {
         self.wallet.persist(&mut Persister)
     }
-}
-
-/// True when neither keychain has ever revealed an address, which is the
-/// state of a wallet right after a fresh recovery from seed with no
-/// persisted history. A plain sync only rechecks already-revealed
-/// addresses, so a wallet in this state needs a full scan instead to
-/// discover funds sitting at indices it doesn't know about yet.
-fn needs_full_scan(wallet: &Wallet) -> bool {
-    wallet.derivation_index(KeychainKind::External).is_none()
-        && wallet.derivation_index(KeychainKind::Internal).is_none()
 }
 
 pub async fn scan_wallet(
