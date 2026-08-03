@@ -15189,7 +15189,7 @@ dependencies = [
 
 [[package]]
 name = "strata-chain-worker"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -16000,7 +16000,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-chain-types"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "int-enum",
  "proptest",
