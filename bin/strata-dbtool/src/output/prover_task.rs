@@ -17,6 +17,10 @@ pub(crate) struct StatusInfo {
     pub(crate) retry_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) resubmit_count: Option<u32>,
+    /// Number of dependency rechecks burned while `Blocked`. Only set for the
+    /// blocked status.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) recheck_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
 }
@@ -28,6 +32,7 @@ impl From<&TaskStatus> for StatusInfo {
                 name: "pending",
                 retry_count: None,
                 resubmit_count: None,
+                recheck_count: None,
                 error: None,
             },
             TaskStatus::Proving {
@@ -37,18 +42,24 @@ impl From<&TaskStatus> for StatusInfo {
                 name: "proving",
                 retry_count: Some(*retry_count),
                 resubmit_count: Some(*resubmit_count),
+                recheck_count: None,
                 error: None,
             },
             TaskStatus::Completed => Self {
                 name: "completed",
                 retry_count: None,
                 resubmit_count: None,
+                recheck_count: None,
                 error: None,
             },
-            TaskStatus::Blocked { reason } => Self {
+            TaskStatus::Blocked {
+                reason,
+                recheck_count,
+            } => Self {
                 name: "blocked",
                 retry_count: None,
                 resubmit_count: None,
+                recheck_count: Some(*recheck_count),
                 error: Some(reason.clone()),
             },
             TaskStatus::TransientFailure {
@@ -59,12 +70,14 @@ impl From<&TaskStatus> for StatusInfo {
                 name: "transient_failure",
                 retry_count: Some(*retry_count),
                 resubmit_count: Some(*resubmit_count),
+                recheck_count: None,
                 error: Some(error.clone()),
             },
             TaskStatus::PermanentFailure { error } => Self {
                 name: "permanent_failure",
                 retry_count: None,
                 resubmit_count: None,
+                recheck_count: None,
                 error: Some(error.clone()),
             },
         }

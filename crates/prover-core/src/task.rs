@@ -34,7 +34,13 @@ pub enum TaskStatus {
     /// Parked waiting for an input dependency (e.g. an upstream chunk proof
     /// not yet produced). Not a failure: rechecked on a steady cadence via
     /// `retry_after`, and does NOT consume the retry/resubmit budget.
-    Blocked { reason: String },
+    ///
+    /// `recheck_count` tracks how many times the dependency has been rechecked
+    /// while still blocked; it survives the `Blocked → Proving → Blocked` loop
+    /// (snapshotted before the `Proving` overwrite) so a dependency that never
+    /// materializes can be bounded by `RetryConfig::max_blocked_rechecks`
+    /// instead of hanging waiters forever.
+    Blocked { reason: String, recheck_count: u32 },
     /// Temporary failure; will be retried after backoff.
     TransientFailure {
         retry_count: u32,
