@@ -87,7 +87,7 @@ jobs:
         id: started
         run: echo "at=$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - uses: anthropics/claude-code-action@787c5a0ce96a9a6cfb050ea0c8f4c05f2447c251 # v1.0.133
+      - uses: anthropics/claude-code-action@3553f84341b92da26052e28acf1aa898f9511f32 # v1.0.177
         id: review
         # Never fail the job here — the "Require review comment" step below decides the outcome.
         continue-on-error: true
