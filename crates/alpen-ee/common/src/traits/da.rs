@@ -1,6 +1,6 @@
 //! Data availability provider trait for batch lifecycle management.
 
-use alpen_ee_da_types::{DaBlob, EvmHeaderSummary};
+use alpen_ee_da_types::EvmHeaderSummary;
 use async_trait::async_trait;
 
 use crate::{BatchId, L1DaBlockRef};
@@ -44,6 +44,15 @@ pub trait BatchDaProvider: Send + Sync {
     /// block references, not yet requested, or has permanently failed.
     async fn check_da_status(&self, batch_id: BatchId, envelope_idx: u64)
         -> eyre::Result<DaStatus>;
+
+    /// Notifies the provider that the batch's DA reached completion, allowing it to perform
+    /// DA-internal bookkeeping such as cross-batch deduplication.
+    ///
+    /// Invoked once by the batch lifecycle on the `DaPending -> DaComplete`
+    /// transition, before the new status is persisted. On error the batch stays
+    /// in `DaPending` and the lifecycle retries, so implementations must be
+    /// idempotent.
+    async fn confirm_da_complete(&self, batch_id: BatchId) -> eyre::Result<()>;
 }
 
 /// Provides EVM block header summaries by block number.
@@ -54,27 +63,4 @@ pub trait BatchDaProvider: Send + Sync {
 pub trait HeaderSummaryProvider: Send + Sync {
     /// Returns the [`EvmHeaderSummary`] for the given block number.
     fn header_summary(&self, block_num: u64) -> eyre::Result<EvmHeaderSummary>;
-}
-
-/// Source of [`DaBlob`]s for a batch.
-///
-/// Encapsulates both readiness checking (are the underlying state diffs
-/// available?) and blob assembly, separating data preparation from
-/// publication (encoding, chunking, posting to Bitcoin, tracking).
-#[cfg_attr(feature = "test-utils", mockall::automock)]
-#[async_trait]
-pub trait DaBlobSource: Send + Sync {
-    /// Returns the [`DaBlob`] for the given batch.
-    ///
-    /// The blob contains batch metadata and the aggregated state diff.
-    /// Even batches with no state changes return a blob (with empty state diff)
-    /// to ensure L1 chain continuity.
-    async fn get_blob(&self, batch_id: BatchId) -> eyre::Result<DaBlob>;
-
-    /// Returns `true` if state diffs are ready for all blocks in the given batch.
-    ///
-    /// Used by the batch lifecycle to ensure state diffs have been written
-    /// by the Reth exex before attempting to post DA. This prevents race
-    /// conditions where DA posting is attempted before state diffs are ready.
-    async fn are_state_diffs_ready(&self, batch_id: BatchId) -> bool;
 }

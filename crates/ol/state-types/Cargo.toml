@@ -29,11 +29,11 @@ ssz_codegen.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
-strata-ol-params = { workspace = true, features = ["arbitrary"] }
+strata-ol-params = { workspace = true, features = ["arbitrary", "test-defaults"] }
 strata-test-utils-ssz.workspace = true
 
 [features]
-test-utils = ["dep:proptest", "strata-identifiers/test-utils"]
+test-utils = ["dep:proptest", "strata-identifiers/test-utils", "strata-ol-params/test-defaults"]
 
 [lints]
 workspace = true

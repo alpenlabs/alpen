@@ -6,7 +6,7 @@ use strata_acct_types::AcctError;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::StateError;
-use strata_ol_chain_types_new::ChainTypesError;
+use strata_ol_chain_types::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_stf::ExecError;
 

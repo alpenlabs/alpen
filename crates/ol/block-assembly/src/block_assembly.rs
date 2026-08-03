@@ -13,7 +13,7 @@ use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
 use strata_ledger_types::{
     AccProofCheck, IAccountState, ISnarkAccountState, IStateAccessor, TxProofIndexer, *,
 };
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
 use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
@@ -1009,8 +1009,8 @@ mod tests {
     use strata_acct_types::*;
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
-    use strata_identifiers::{Buf32, L1BlockId, L1Height, OLBlockId};
-    use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
+    use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
+    use strata_ol_chain_types::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
 
     use super::*;
@@ -1550,7 +1550,7 @@ mod tests {
     /// list even when proof bytes are empty (e.g. from a NoopProver).
     #[test]
     fn test_proof_satisfier_list_accepts_empty_bytes() {
-        use strata_ol_chain_types_new::ProofSatisfierList;
+        use strata_ol_chain_types::ProofSatisfierList;
 
         // Empty bytes should still produce a valid single-element list
         let result = ProofSatisfierList::single(vec![]);
@@ -1873,8 +1873,10 @@ mod tests {
             .extend_canonical_chain_async(&missing_manifest_blkid, first_height_past_cap)
             .await
             .expect("insert missing-manifest canonical entry past cap");
-        // ASM tip still points at the original height's blkid; the fetch path only reads its
-        // height.
+        put_test_asm_state(
+            env.storage().as_ref(),
+            L1BlockCommitment::new(first_height_past_cap, missing_manifest_blkid),
+        );
 
         let output = env
             .construct_empty_block()
@@ -2022,6 +2024,10 @@ mod tests {
             .extend_canonical_chain_async(&missing_manifest_blkid, 2)
             .await
             .expect("insert missing-manifest canonical entry at height 2");
+        put_test_asm_state(
+            env.storage().as_ref(),
+            L1BlockCommitment::new(2, missing_manifest_blkid),
+        );
 
         let err = env
             .generate_block_template()
@@ -2786,7 +2792,7 @@ mod tests {
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
         // Create a tx with 5 withdrawal messages (= 5 logs).
-        let withdrawal_dest = b"bc1qlogcapoverflow".to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x14);
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawals(5, 100_000_000, withdrawal_dest)
@@ -2839,7 +2845,7 @@ mod tests {
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
         // First tx: 10 withdrawal messages = 10 logs.
-        let withdrawal_dest = b"bc1qlogcapfull".to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x15);
         let tx_fill = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawals(10, 100_000_000, withdrawal_dest.clone())
@@ -2894,7 +2900,7 @@ mod tests {
 
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
-            .with_withdrawal(100_000_000, b"bc1qlogcapreached".to_vec())
+            .with_withdrawal(100_000_000, make_p2wpkh_bosd_descriptor(0x16))
             .build();
         let txid = tx.compute_txid();
 
@@ -2964,9 +2970,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_checkpoint_soft_commits_then_stops() {
-        const CHECKPOINT_WITHDRAWAL_DEST: &[u8] = b"bc1qcheckpointlimit";
         let account_id = test_account_id(9);
-        let withdrawal_dest = CHECKPOINT_WITHDRAWAL_DEST.to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x17);
         let tx1 = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest.clone())
@@ -3013,9 +3018,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_checkpoint_hard_rolls_back_then_stops() {
-        const CHECKPOINT_WITHDRAWAL_DEST: &[u8] = b"bc1qcheckpointlimit";
         let account_id = test_account_id(10);
-        let withdrawal_dest = CHECKPOINT_WITHDRAWAL_DEST.to_vec();
+        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x18);
         let tx1 = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest.clone())

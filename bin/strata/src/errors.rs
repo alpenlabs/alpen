@@ -36,6 +36,9 @@ pub(crate) enum InitError {
     #[error("failed to create node storage: {0}")]
     StorageCreation(String),
 
+    #[error("missing genesis epoch commitment after OL genesis initialization")]
+    MissingGenesisEpochCommitment,
+
     #[error("missing sequencer config file: {0}")]
     MissingSequencerConfig(path::PathBuf),
 

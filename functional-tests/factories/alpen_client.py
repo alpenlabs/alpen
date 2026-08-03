@@ -12,6 +12,7 @@ import flexitest
 
 from common.config import EeDaConfig
 from common.config.constants import DEFAULT_EE_BLOCK_TIME_MS
+from common.datatool import generate_ee_params
 from common.services import AlpenClientProps, AlpenClientService
 
 
@@ -63,6 +64,7 @@ class AlpenClientFactory(flexitest.Factory):
         p2p_secret_key: str | None = None,
         enable_discovery: bool = False,
         custom_chain: str = "dev",
+        ee_params_path: Path | None = None,
         ol_endpoint: str | None = None,
         ol_submit_endpoint: str | None = None,
         ol_submit_token: str | None = None,
@@ -83,6 +85,7 @@ class AlpenClientFactory(flexitest.Factory):
             p2p_secret_key: P2P secret key for deterministic enode (hex, 32 bytes)
             enable_discovery: Enable discv5 peer discovery (for bootnode mode)
             custom_chain: Chain spec to use
+            ee_params_path: EE params file to use; generated when omitted
             da_config: Optional DA pipeline configuration for posting state diffs to L1
         """
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -110,12 +113,20 @@ class AlpenClientFactory(flexitest.Factory):
         else:
             ol_client_args = ["--dummy-ol-client"]
 
+        if ee_params_path is None:
+            ee_params_path = generate_ee_params(
+                datadir,
+                bridge_denomination=bridge_denomination,
+                max_withdrawal_amount=max_withdrawal_amount,
+            )
+
         # fmt: off
         cmd = [
             "alpen-client",
             "--datadir", str(datadir),
             "--sequencer",
             "--sequencer-pubkey", sequencer_pubkey,
+            "--ee-params", str(ee_params_path),
             *ol_client_args,
             "--addr", "127.0.0.1",  # Force IPv4 for testing
             "--nat", "extip:127.0.0.1",  # Force enode to show 127.0.0.1
@@ -158,11 +169,6 @@ class AlpenClientFactory(flexitest.Factory):
         else:
             # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
             cmd.append("-d")
-
-        # Withdrawal denomination and cap (bridge params)
-        cmd.extend(["--bridge-denomination", str(bridge_denomination)])
-        if max_withdrawal_amount is not None:
-            cmd.extend(["--max-withdrawal-amount", str(max_withdrawal_amount)])
 
         if beneficiary_address is not None:
             cmd.extend(["--beneficiary-address", beneficiary_address])
@@ -227,6 +233,7 @@ class AlpenClientFactory(flexitest.Factory):
         enable_discovery: bool = False,
         p2p_secret_key: str | None = None,
         custom_chain: str = "dev",
+        ee_params_path: Path | None = None,
         instance_id: int = 0,
         datadir_override: str | None = None,
         sequencer_http: str | None = None,
@@ -245,6 +252,7 @@ class AlpenClientFactory(flexitest.Factory):
             enable_discovery: Enable discv5 peer discovery
             p2p_secret_key: P2P secret key for deterministic enode
             custom_chain: Chain spec to use
+            ee_params_path: EE params file to use; generated when omitted
             instance_id: Instance ID for multiple fullnodes
             datadir_override: Optional datadir path (bypasses EnvContext requirement)
             sequencer_http: Sequencer HTTP URL for transaction forwarding
@@ -271,11 +279,19 @@ class AlpenClientFactory(flexitest.Factory):
         p2p_secret_key_file.write_text(key_hex)
 
         ol_client_args = ["--ol-client-url", ol_endpoint] if ol_endpoint else ["--dummy-ol-client"]
+        if ee_params_path is None:
+            ee_params_path = generate_ee_params(
+                datadir,
+                bridge_denomination=bridge_denomination,
+                max_withdrawal_amount=max_withdrawal_amount,
+            )
+
         # fmt: off
         cmd = [
             "alpen-client",
             "--datadir", str(datadir),
             "--sequencer-pubkey", sequencer_pubkey,
+            "--ee-params", str(ee_params_path),
             *ol_client_args,
             "--addr", "127.0.0.1",  # Force IPv4 for testing
             "--nat", "extip:127.0.0.1",  # Force enode to show 127.0.0.1
@@ -320,11 +336,6 @@ class AlpenClientFactory(flexitest.Factory):
         else:
             # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
             cmd.append("-d")
-
-        # Withdrawal denomination and cap (bridge params)
-        cmd.extend(["--bridge-denomination", str(bridge_denomination)])
-        if max_withdrawal_amount is not None:
-            cmd.extend(["--max-withdrawal-amount", str(max_withdrawal_amount)])
 
         http_url = f"http://127.0.0.1:{http_port}"
 

@@ -10,6 +10,11 @@ configs/*.hex
 configs/*.key
 configs/*.json
 
+# Exception: shipped with the repo rather than generated, so that
+# compose-fullnode.yml has an EE params file to mount on a fresh clone. Every
+# field in it is public. See the note in .env.alpen-fullnode.example.
+!configs/ee-params.testnet3.json
+
 .env
 .env.alpen
 .env.alpen-fullnode

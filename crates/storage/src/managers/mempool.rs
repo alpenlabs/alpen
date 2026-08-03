@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use ops::mempool::{Context, MempoolDataOps};
-use strata_db_types::{traits::MempoolDatabase, types::MempoolTxData, DbResult};
+use ops::mempool::MempoolDataOps;
+use strata_db_types::mempool::{MempoolDatabase, MempoolTxData};
+use strata_db_types::DbResult;
 use strata_identifiers::OLTxId;
-use threadpool::ThreadPool;
+use tokio::runtime::Handle;
 
 use crate::ops;
 
@@ -18,8 +19,8 @@ pub struct MempoolDbManager {
 
 impl MempoolDbManager {
     /// Create new instance of [`MempoolDbManager`].
-    pub fn new(pool: ThreadPool, db: Arc<impl MempoolDatabase + 'static>) -> Self {
-        let ops = Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl MempoolDatabase + 'static>) -> Self {
+        let ops = MempoolDataOps::new(handle, db);
         Self { ops }
     }
 
@@ -51,17 +52,16 @@ mod tests {
     use std::sync::Arc;
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::traits::DatabaseBackend;
+    use strata_db_types::backend::DatabaseBackend;
     use strata_identifiers::{Buf32, OLTxId};
-    use threadpool::ThreadPool;
 
     use super::*;
 
     fn setup_manager() -> MempoolDbManager {
-        let pool = ThreadPool::new(1);
+        let handle = crate::test_runtime_handle();
         let db = Arc::new(get_test_sled_backend());
         let mempool_db = db.mempool_db();
-        MempoolDbManager::new(pool, mempool_db)
+        MempoolDbManager::new(handle, mempool_db)
     }
 
     #[test]

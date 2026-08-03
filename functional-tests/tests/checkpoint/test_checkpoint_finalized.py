@@ -53,7 +53,7 @@ class TestCheckpointFinalized(StrataNodeTest):
 
             # The L1 reference returned by getCheckpointInfo must carry the real
             # txid/wtxid extracted by CSM, not the legacy zero placeholders.
-            info = strata_rpc.call("strata_getCheckpointInfo", target_epoch)
+            info = strata_rpc.strata_getCheckpointInfo(target_epoch)
             assert info is not None, f"no checkpoint info for finalized epoch {target_epoch}"
             status = info["confirmation_status"]
             assert status["status"] == "finalized", (

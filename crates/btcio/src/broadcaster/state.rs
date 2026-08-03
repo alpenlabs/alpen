@@ -1,4 +1,4 @@
-use strata_db_types::types::L1TxEntry;
+use strata_db_types::l1_broadcast::L1TxEntry;
 use strata_primitives::indexed::Indexed;
 use strata_service::{ServiceState, TickMsg};
 use tracing::*;
@@ -135,10 +135,11 @@ mod test {
     use std::sync::Arc;
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{traits::DatabaseBackend, types::L1TxStatus};
+    use strata_db_types::{backend::DatabaseBackend, l1_broadcast::L1TxStatus};
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::buf::Buf32;
-    use strata_storage::{ops::l1tx_broadcast::Context, BroadcastDbOps};
+    use strata_storage::BroadcastDbOps;
+    use tokio::runtime::Handle;
 
     use super::*;
     use crate::{
@@ -147,9 +148,8 @@ mod test {
     };
 
     fn get_ops() -> Arc<BroadcastDbOps> {
-        let pool = threadpool::Builder::new().num_threads(2).build();
         let db = get_test_sled_backend().broadcast_db();
-        let ops = Context::new(db).into_ops(pool);
+        let ops = BroadcastDbOps::new(Handle::current(), db);
         Arc::new(ops)
     }
 

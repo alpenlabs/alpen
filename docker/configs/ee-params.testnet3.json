@@ -1,0 +1,11 @@
+{
+  "account_id": "0101010101010101010101010101010101010101010101010101010101010101",
+  "genesis_blockhash": "0xa0f19ca687f984785ab9d6f1558ec4ab31cc497679aa55bf73ee14328be15baf",
+  "genesis_stateroot": "0x0253f1b4ee3eb61b1ce6fb3718032f6d1201b7e1cb0bdcdb548248a5ba5bd070",
+  "genesis_blocknum": 0,
+  "bridge_params": {
+    "denomination": 200000000,
+    "max_withdrawal_amount": null,
+    "max_withdrawal_descriptor_len": 81
+  }
+}

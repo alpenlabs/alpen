@@ -3,7 +3,7 @@
 //! Three managers, all wrapping the shared [`EeProverDbSled`]:
 //!
 //! - [`EeProverTaskDbManager`] — impls `paas::TaskStore`. Shared across chunk + acct provers via
-//!   the kind-tagged task-key encoding (see `CHUNK_TASK_TAG` / `BATCH_TASK_TAG`).
+//!   the kind-tagged task-key encoding (see `CHUNK_TASK_KEY_TAG` / `BATCH_TASK_KEY_TAG`).
 //! - [`EeChunkReceiptStore`] — impls `paas::ReceiptStore`. The chunk prover writes here; the acct
 //!   `fetch_input` reads from here.
 //! - [`EeBatchProofDbManager`] — typed API keyed by [`BatchId`]; the outer (acct) prover writes
@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use alpen_ee_common::{BatchId, Proof, ProofId};
 use alpen_ee_database::EeProverDbSled;
-use strata_db_types::{errors::DbError, traits::ProverTaskDatabase};
+use strata_db_types::{errors::DbError, prover_task::ProverTaskDatabase};
 use strata_paas::{
     ProverError, ProverResult, ReceiptStore, TaskRecord, TaskRecordData, TaskStatus, TaskStore,
 };

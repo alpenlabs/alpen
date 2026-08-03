@@ -3,12 +3,14 @@
 use std::{fmt, sync::Arc};
 
 use alloy_primitives::B256;
-use alpen_ee_common::{BatchId, BatchStorage, DaBlobSource, HeaderSummaryProvider};
+use alpen_ee_common::{BatchId, BatchStorage, HeaderSummaryProvider};
 use alpen_ee_da_types::DaBlob;
 use alpen_reth_db::{EeDaContext, StateDiffProvider};
 use alpen_reth_statediff::BatchBuilder;
 use async_trait::async_trait;
 use tracing::*;
+
+use crate::DaBlobSource;
 
 /// [`DaBlobSource`] that builds encoded DA blobs from Reth state diffs.
 ///
@@ -168,5 +170,21 @@ where
         }
 
         true
+    }
+
+    async fn mark_batch_published(&self, batch_id: BatchId) -> eyre::Result<()> {
+        let (batch, _status) = self
+            .batch_storage
+            .get_batch_by_id(batch_id)
+            .await?
+            .ok_or_else(|| eyre::eyre!("batch {batch_id:?} not found in storage"))?;
+
+        let block_hashes: Vec<B256> = batch.blocks_iter().map(|h| B256::from(h.0)).collect();
+
+        self.da_ctx
+            .update_da_filter(&block_hashes)
+            .map_err(|e| eyre::eyre!("failed to update DA filter for batch {batch_id:?}: {e}"))?;
+
+        Ok(())
     }
 }

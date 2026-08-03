@@ -3,10 +3,8 @@ use std::sync::Arc;
 use sled::transaction::{ConflictableTransactionResult, TransactionError};
 use strata_db_types::{DbError, DbResult};
 use tracing::instrument;
-use typed_sled::{
-    error::Error,
-    transaction::{Backoff, ConstantBackoff, SledTransactional},
-};
+use typed_sled::error::Error;
+use typed_sled::transaction::{Backoff, ConstantBackoff, SledTransactional};
 
 use crate::instrumentation::components;
 

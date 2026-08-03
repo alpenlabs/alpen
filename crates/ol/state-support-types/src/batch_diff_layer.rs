@@ -256,7 +256,7 @@ impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrite
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
-    use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot};
+    use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot};
     use strata_ledger_types::{IAccountState, IStateAccessor, IStateAccessorMut};
     use strata_ol_params::OLParams;
     use strata_ol_state_types::{OLAccountState, OLState};
@@ -265,7 +265,7 @@ mod tests {
     use crate::{memory_state_layer::MemoryStateBaseLayer, test_utils::*};
 
     fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
-        let mut params = OLParams::new_empty(L1BlockCommitment::default());
+        let mut params = OLParams::default();
         params.header.slot = slot;
         params.header.epoch = epoch;
         let state = OLState::from_genesis_params(&params)

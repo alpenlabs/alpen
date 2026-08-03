@@ -1,5 +1,5 @@
 use strata_asm_common::AsmManifest;
-use strata_db_types::traits::L1Database;
+use strata_db_types::l1::L1Database;
 use strata_primitives::L1Height;
 use strata_test_utils::ArbitraryGenerator;
 

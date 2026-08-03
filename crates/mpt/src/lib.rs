@@ -894,7 +894,12 @@ pub fn to_encoded_path(mut nibs: &[u8], is_leaf: bool) -> Vec<u8> {
         nibs = &nibs[1..];
     }
     iter::once(prefix)
-        .chain(nibs.chunks_exact(2).map(|byte| (byte[0] << 4) + byte[1]))
+        .chain(
+            nibs.as_chunks::<2>()
+                .0
+                .iter()
+                .map(|byte| (byte[0] << 4) + byte[1]),
+        )
         .collect()
 }
 

@@ -1,7 +1,7 @@
 use bitcoin::Network;
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
 use strata_btc_verification::L1Anchor;
-use strata_db_types::traits::AsmDatabase;
+use strata_db_types::asm::AsmDatabase;
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
 use strata_state::asm_state::AsmState;
@@ -18,6 +18,11 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
 
     let update = db.get_asm_state(another_block).expect("test: get").unwrap();
     assert_eq!(update, state);
+}
+
+/// Minimal [`AsmState`] for tests that only need a persistable value.
+pub fn make_test_asm_state() -> AsmState {
+    AsmState::new(make_anchor_state(), vec![])
 }
 
 fn make_anchor_state() -> AnchorState {

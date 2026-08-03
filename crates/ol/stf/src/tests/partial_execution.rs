@@ -4,7 +4,7 @@ use strata_acct_types::{AccountId, BitcoinAmount, TxEffects};
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     BlockFlags, GamTxPayload, OLBlockBody, OLBlockHeader, OLTransaction, OLTransactionData,
     OLTxSegment, TransactionPayload, TxProofs,
 };
@@ -20,7 +20,7 @@ fn assert_mid_block_failure_state(
     recipient_ok: AccountId,
     recipient_not_executed: AccountId,
 ) {
-    // Intentional contract pin: STF mutates state in-place and caller (chain-worker-new)
+    // Intentional contract pin: STF mutates state in-place and caller (chain-worker)
     // owns any snapshot/rollback behavior around block processing.
     let (ledger_account_state, account_state) = state.expect_snark_account_state(snark_acct_id);
     assert_eq!(

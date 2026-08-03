@@ -1,6 +1,6 @@
 //! OL block formatting implementations for `get-ol-*` commands.
 
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{Buf32, Epoch, OLBlockId, Slot};
 use strata_primitives::l1::L1BlockId;
 

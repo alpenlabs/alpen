@@ -11,6 +11,7 @@ alpen-ee-common.workspace = true
 alpen-reth-db.workspace = true
 bitcoin.workspace = true
 strata-acct-types.workspace = true
+strata-db-macros.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-ee-acct-types.workspace = true
@@ -27,10 +28,10 @@ eyre.workspace = true
 sled.workspace = true
 ssz.workspace = true
 thiserror.workspace = true
-threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 typed-sled.workspace = true
 
 [dev-dependencies]
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
+strata-storage = { workspace = true, features = ["test-utils"] }

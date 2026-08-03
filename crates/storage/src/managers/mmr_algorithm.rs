@@ -6,7 +6,8 @@
 //! [`NodeTable`] snapshots and `DbError` contract the manager uses, and adds the
 //! pop algorithm (which the node-store crate does not provide).
 
-use std::{collections::BTreeSet, convert::Infallible};
+use std::collections::BTreeSet;
+use std::convert::Infallible;
 
 use strata_db_types::{DbError, DbResult, LeafPos, NodePos, NodeTable};
 use strata_identifiers::Hash;

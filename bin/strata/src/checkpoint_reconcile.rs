@@ -110,11 +110,10 @@ where
 fn first_unaccepted_checkpoint_epoch(nodectx: &NodeContext) -> Result<Option<Epoch>> {
     let Some((asm_l1, asm_state)) = nodectx
         .storage()
-        .asm()
-        .fetch_most_recent_state_blocking()
-        .context("fetch latest ASM state")?
+        .fetch_canonical_asm_state_blocking()
+        .context("fetch canonical ASM state")?
     else {
-        debug!("latest ASM state is not available; skipping checkpoint artifact reconciliation");
+        debug!("canonical ASM state is not available; skipping checkpoint artifact reconciliation");
         return Ok(None);
     };
 

@@ -15,11 +15,11 @@
 //! limbo balance grew.
 
 use strata_acct_types::{
-    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount, MsgPayload,
+    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount, MsgPayloadData,
 };
 use strata_codec::encode_to_vec;
 use strata_identifiers::{AccountSerial, SubjectId};
-use strata_ledger_types::{IAccountState, IStateAccessor};
+use strata_ledger_types::{Coin, IAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 
@@ -27,6 +27,7 @@ use crate::{
     account_processing,
     assembly::BlockComponents,
     context::{BasicExecContext, BlockInfo},
+    msg_payload_coin::MsgPayloadCoin,
     output::ExecOutputBuffer,
     test_utils::*,
 };
@@ -47,8 +48,7 @@ fn limbo_message_to_nonexistent_account() {
     let context = BasicExecContext::new(block_info, &outputs);
 
     let value = BitcoinAmount::from_sat(2_500_000);
-    let payload = MsgPayload::from_bytes(value, vec![])
-        .expect("message payload bytes must fit within SSZ max length");
+    let payload = MsgPayloadCoin::new(Coin::new_unchecked(value), MsgPayloadData::default());
 
     account_processing::process_message(
         &mut state,
@@ -83,8 +83,14 @@ fn limbo_transfer_to_nonexistent_account() {
     let context = BasicExecContext::new(block_info, &outputs);
 
     let value = BitcoinAmount::from_sat(4_000_000);
-    account_processing::process_transfer(&mut state, sender_acct_id, nonexistent, value, &context)
-        .expect("process_transfer should not error");
+    account_processing::process_transfer(
+        &mut state,
+        sender_acct_id,
+        nonexistent,
+        Coin::new_unchecked(value),
+        &context,
+    )
+    .expect("process_transfer should not error");
 
     let limbo_after = state.limbo_funds();
     assert_eq!(

@@ -482,8 +482,10 @@ mod tests {
         params: Arc<AsmParams>,
     ) -> (Arc<strata_storage::NodeStorage>, Arc<StatusChannel>) {
         let db = get_test_sled_backend();
-        let pool = threadpool::ThreadPool::new(4);
-        let storage = Arc::new(create_node_storage(db, pool).expect("Failed to create storage"));
+        let storage = Arc::new(
+            create_node_storage(db, strata_storage::test_runtime_handle())
+                .expect("Failed to create storage"),
+        );
 
         let tip_block = L1BlockCommitment::new(20, L1BlockId::default());
         storage
@@ -769,8 +771,9 @@ mod tests {
     fn bootstrap_persists_anchor_on_empty_storage() {
         let params = create_test_params();
         let db = get_test_sled_backend();
-        let pool = threadpool::ThreadPool::new(4);
-        let storage = Arc::new(create_node_storage(db, pool).expect("create storage"));
+        let storage = Arc::new(
+            create_node_storage(db, strata_storage::test_runtime_handle()).expect("create storage"),
+        );
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),

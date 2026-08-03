@@ -1,7 +1,9 @@
-use strata_db_types::{DbResult, traits::L1ChunkedEnvelopeDatabase, types::ChunkedEnvelopeEntry};
+use strata_db_types::DbResult;
+use strata_db_types::chunked_envelope::{ChunkedEnvelopeEntry, L1ChunkedEnvelopeDatabase};
 
 use super::schemas::ChunkedEnvelopeSchema;
-use crate::{define_sled_database, utils::first};
+use crate::define_sled_database;
+use crate::utils::first;
 
 define_sled_database!(
     pub struct L1ChunkedEnvelopeDBSled {

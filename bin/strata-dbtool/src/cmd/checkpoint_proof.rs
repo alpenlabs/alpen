@@ -6,7 +6,7 @@
 
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::traits::{CheckpointProofDatabase, DatabaseBackend};
+use strata_db_types::{backend::DatabaseBackend, checkpoint_proof::CheckpointProofDatabase};
 use strata_identifiers::Epoch;
 
 use crate::{

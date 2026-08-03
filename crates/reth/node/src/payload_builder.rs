@@ -341,7 +341,8 @@ where
     let receipts: Vec<Receipt> = execution_result.receipts;
     let txns: Vec<TransactionSigned> = block.body().transactions().cloned().collect();
     let withdrawal_intents: Vec<WithdrawalIntent> =
-        extract_withdrawal_intents(&txns, &receipts).collect();
+        extract_withdrawal_intents(&txns, &receipts, evm_config.evm_factory().bridge_params())
+            .map_err(PayloadBuilderError::other)?;
 
     let strata_payload =
         AlpenBuiltPayload::new(eth_payload, withdrawal_intents).with_block_witness(block_witness);

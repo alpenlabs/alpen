@@ -1,7 +1,9 @@
 use std::{fmt, ops};
 
 use strata_db_types::errors::DbError;
-use typed_sled::{Schema, ValueCodec, error::Error, tree::SledTransactionalTree};
+use typed_sled::error::Error;
+use typed_sled::tree::SledTransactionalTree;
+use typed_sled::{Schema, ValueCodec};
 
 pub fn second<A, B>((_, b): (A, B)) -> B {
     b

@@ -15,7 +15,7 @@ use crate::ssz_generated::ssz::state::*;
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub fn create_test_genesis_state() -> OLState {
-    let params = OLParams::new_empty(L1BlockCommitment::default());
+    let params = OLParams::default();
     OLState::from_genesis_params(&params).expect("valid params")
 }
 

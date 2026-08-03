@@ -6,9 +6,11 @@
 //! it is never linked into proof/guest builds.
 
 mod blob_provider;
+mod blob_source;
 mod chunking;
 mod envelope_provider;
 
 pub use blob_provider::StateDiffBlobProvider;
+pub use blob_source::DaBlobSource;
 pub use chunking::prepare_da_chunks;
 pub use envelope_provider::{ChunkedEnvelopeDaProvider, L1BlockReader};

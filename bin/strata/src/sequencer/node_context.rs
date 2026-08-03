@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_ol_sequencer::{BlockGenerationConfig, SequencerContext, SequencerContextError};
@@ -235,7 +235,7 @@ mod tests {
         BlockCompletionData, BlockasmBuilder, FixedSlotSealing, LimitAwareSealing,
         test_utils::{MockMempoolProvider, TestStorageFixtureBuilder},
     };
-    use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
+    use strata_ol_chain_types::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
     use strata_ol_params::OLParams;
     use strata_ol_sequencer::SequencerBuilder;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
@@ -262,7 +262,7 @@ mod tests {
         let executor = task_manager.create_executor();
         let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
         let blockasm = BlockasmBuilder::new(
-            Arc::new(OLParams::new_empty(L1BlockCommitment::default())),
+            Arc::new(OLParams::default()),
             Arc::new(BlockAssemblyConfig::new(Duration::from_millis(1_000))),
             storage,
             Arc::new(MockMempoolProvider::new()),

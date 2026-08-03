@@ -14,7 +14,7 @@ use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{IAccountState, IAccountStateMut, IStateAccessor, IStateAccessorMut};
-use strata_ol_chain_types_new::{OLBlock, OLTransaction};
+use strata_ol_chain_types::{OLBlock, OLTransaction};
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::IComputeStateRootWithWrites;
@@ -193,8 +193,8 @@ where
 
         let asm_tip_height = match self
             .storage
-            .asm()
-            .fetch_most_recent_state_blocking()
+            .fetch_canonical_asm_state_async()
+            .await
             .map_err(BlockAssemblyError::Db)?
         {
             Some((commitment, _)) => commitment.height(),

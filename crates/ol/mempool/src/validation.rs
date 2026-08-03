@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
 use strata_ledger_types::{IAccountState, IStateAccessor, IStateAccessorMut};
-use strata_ol_chain_types_new::{OLTransaction, TransactionPayload};
+use strata_ol_chain_types::{OLTransaction, TransactionPayload};
 use strata_ol_stf::{ExecError, ExecResult, check_tx_constraints};
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::Seqno;

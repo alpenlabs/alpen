@@ -5,7 +5,7 @@ use bitcoin::{BlockHash, Transaction, Txid};
 use bitcoind_async_client::{error::ClientError, traits::Broadcaster, Client};
 use serde::Deserialize;
 use strata_btc_types::BlockHashExt;
-use strata_db_types::types::L1TxEntry;
+use strata_db_types::l1_broadcast::L1TxEntry;
 use strata_primitives::{buf::Buf32, L1Height};
 use strata_storage::BroadcastDbOps;
 use tracing::{debug, info, warn};

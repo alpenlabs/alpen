@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use strata_db_types::{traits::BlockStatus, DbResult};
+use strata_db_types::{ol_block::BlockStatus, DbResult};
 use strata_identifiers::Slot;
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use strata_primitives::OLBlockId;
 use strata_storage::OLBlockManager;
 use tracing::{debug, error, warn};
@@ -122,8 +122,8 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
 
     use async_trait::async_trait;
-    use strata_db_types::{traits::BlockStatus, DbResult};
-    use strata_ol_chain_types_new::{
+    use strata_db_types::{ol_block::BlockStatus, DbResult};
+    use strata_ol_chain_types::{
         BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
     use strata_primitives::{Buf32, Buf64, EpochCommitment, OLBlockId};

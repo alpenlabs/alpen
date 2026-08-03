@@ -8,7 +8,7 @@ use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_ledger_types::*;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     AsmManifest, MAX_LOGS_PER_BLOCK, OLAsmManifestContainer, OLBlockBody, OLBlockHeader, OLLog,
     OLTxSegment,
 };
@@ -438,7 +438,7 @@ mod tests {
     use strata_acct_types::BitcoinAmount;
     use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_identifiers::AccountSerial;
-    use strata_ol_chain_types_new::{
+    use strata_ol_chain_types::{
         BlockFlags, OLAsmManifestContainer, OLBlockId, OLLog, OLTxSegment,
     };
     use strata_ol_da::{

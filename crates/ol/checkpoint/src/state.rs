@@ -215,7 +215,7 @@ mod tests {
             ol_block_id_strategy,
         },
     };
-    use strata_ol_chain_types_new::{
+    use strata_ol_chain_types::{
         BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLBlockId, OLLog, OLTxSegment,
         SignedOLBlockHeader,
     };
@@ -392,7 +392,7 @@ mod tests {
 
             let backend = get_test_sled_backend();
             let storage = Arc::new(
-                create_node_storage(backend, threadpool::ThreadPool::new(1))
+                create_node_storage(backend, strata_storage::test_runtime_handle())
                     .expect("test storage"),
             );
             let checkpoint_mgr = storage.ol_checkpoint();
@@ -450,7 +450,7 @@ mod tests {
         ) {
             let backend = get_test_sled_backend();
             let storage = Arc::new(
-                create_node_storage(backend, threadpool::ThreadPool::new(1)).expect("test storage"),
+                create_node_storage(backend, strata_storage::test_runtime_handle()).expect("test storage"),
             );
             let checkpoint_mgr = storage.ol_checkpoint();
             let ol_block_mgr = storage.ol_block();

@@ -1,7 +1,7 @@
 use serde::Serialize;
 use strata_crypto::hash;
 use strata_csm_types::L1Payload;
-use strata_db_types::types::{L1BundleStatus, L1TxId};
+use strata_db_types::{common::L1TxId, l1_writer::L1BundleStatus};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 

@@ -23,7 +23,7 @@ use crate::{
     payload_builder::AlpenPayloadBuilderBuilder, pool::AlpenEthereumPoolBuilder, AlpenEngineTypes,
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct AlpenEthereumNode {
     // Strata node args.

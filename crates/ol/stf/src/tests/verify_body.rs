@@ -3,7 +3,7 @@
 use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MAX_MESSAGES};
 use strata_identifiers::Buf32;
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::MAX_LOGS_PER_BLOCK;
+use strata_ol_chain_types::MAX_LOGS_PER_BLOCK;
 
 use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
 
@@ -510,7 +510,7 @@ fn with_withdrawal_log_saus<'a>(
                 sau = sau.output_message(
                     BRIDGE_GATEWAY_ACCT_ID,
                     BitcoinAmount::from_sat(WITHDRAWAL_LOG_AMOUNT),
-                    make_withdrawal_payload(b"bc1qlogcap".to_vec()),
+                    make_withdrawal_payload(make_p2wpkh_bosd_descriptor(0x15)),
                 );
             }
             sau.with_state_root(state_root).with_proof(proof)

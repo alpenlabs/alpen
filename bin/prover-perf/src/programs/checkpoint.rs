@@ -16,7 +16,7 @@ use strata_codec::encode_to_vec;
 use strata_da_framework::DaCounter;
 use strata_identifiers::Buf64;
 use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
+use strata_ol_chain_types::{OLBlock, SignedOLBlockHeader};
 use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
 use strata_ol_stf::test_utils::{build_empty_chain, make_genesis_state};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};

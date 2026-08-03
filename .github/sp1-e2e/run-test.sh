@@ -8,6 +8,9 @@ set -euo pipefail
 #
 # Required env vars:
 #   ECR_REGISTRY, IMAGE_TAG, NETWORK_PRIVATE_KEY
+#
+# Optional env vars, defaulted below and set from GitHub Actions variables:
+#   SP1_PROVER, SP1_PROOF_STRATEGY, NETWORK_RPC_URL
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -39,10 +42,18 @@ export CHECKPOINT_PREDICATE=sp1-groth16
 export ALPEN_PREDICATE=sp1-groth16
 export ALPEN_CHAIN_CONFIG="${REPO_ROOT}/crates/reth/chainspec/src/res/testnet-chain.json"
 export CHAIN_SPEC=testnet
+export BRIDGE_DENOMINATION_SATS=200000000
+export MAX_WITHDRAWAL_AMOUNT_SATS=1000000000
+export MAX_WITHDRAWAL_DESCRIPTOR_LEN=81
 # P2TR BOSD for the bridge safe harbour address (required by init-network.sh).
 # CI-only throwaway value — 04 (P2TR type tag) + 32-byte x-only pubkey derived
 # from the "abandon" mnemonic. Not used for real funds.
 export SAFE_HARBOUR_ADDRESS="0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+
+# An unset GitHub Actions variable expands to empty, not absent — hence `:-`.
+export SP1_PROVER="${SP1_PROVER:-network}"
+export SP1_PROOF_STRATEGY="${SP1_PROOF_STRATEGY:-reserved}"
+export NETWORK_RPC_URL="${NETWORK_RPC_URL:-https://rpc.production.succinct.xyz}"
 
 # --- Low-level helpers ---
 
@@ -515,6 +526,8 @@ assert_no_always_accept() {
 # --- Orchestration ---
 
 rm -f "${FAILURE_REASON_FILE}"
+
+echo "=== SP1 proving: ${SP1_PROVER} (strategy=${SP1_PROOF_STRATEGY}, rpc=${NETWORK_RPC_URL}) ==="
 
 preflight_cleanup
 start_signet_fast

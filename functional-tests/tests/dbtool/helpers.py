@@ -93,6 +93,49 @@ def run_dbtool_json(datadir: str, *args: str, timeout: int = 60) -> dict[str, An
     return extract_json_from_output(stdout)
 
 
+def get_mmr_summary(datadir: str) -> dict[str, Any]:
+    """Return the JSON MMR summary for a Strata datadir."""
+    return run_dbtool_json(datadir, "get-mmr-summary")
+
+
+def find_mmr(summary: dict[str, Any], mmr_id: str) -> dict[str, Any] | None:
+    """Find one MMR summary entry by operator-facing MMR id."""
+    return next(
+        (entry for entry in summary.get("entries", []) if entry.get("mmr_id") == mmr_id),
+        None,
+    )
+
+
+def get_mmr_leaf_count(datadir: str, mmr_id: str) -> int:
+    """Return one MMR namespace leaf count from `get-mmr-summary`.
+
+    Empty namespaces are omitted from summary output, so absence is interpreted
+    as zero leaves.
+    """
+    entry = find_mmr(get_mmr_summary(datadir), mmr_id)
+    return 0 if entry is None else int(entry["leaf_count"])
+
+
+def submit_generic_account_message(
+    submit_rpc: Any,
+    target_account_id: str,
+    payload: bytes,
+) -> str:
+    """Submit a GenericAccountMessage transaction to the authenticated OL submit RPC."""
+    tx = {
+        "payload": {
+            "type": "generic_account_message",
+            "target": target_account_id,
+            "payload": payload.hex(),
+        },
+        "constraints": {
+            "min_slot": None,
+            "max_slot": None,
+        },
+    }
+    return submit_rpc.strata_submitTransaction(tx)
+
+
 def run_dbtool_ee(ee_datadir: str, *args: str, timeout: int = 60) -> tuple[int, str, str]:
     """Run strata-dbtool against an alpen-client datadir.
 

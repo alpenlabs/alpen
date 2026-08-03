@@ -2,7 +2,7 @@ use k256::schnorr::SigningKey;
 use ssz::{Decode, Encode};
 use strata_asm_proto_checkpoint_types::CheckpointClaim;
 use strata_bridge_params::BridgeParams;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::OLState;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use zkaleido::{PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
@@ -94,7 +94,7 @@ mod tests {
     use strata_da_framework::DaCounter;
     use strata_identifiers::Buf64;
     use strata_ledger_types::IStateAccessor;
-    use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
+    use strata_ol_chain_types::{OLBlock, SignedOLBlockHeader};
     use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_stf::test_utils::{build_empty_chain, make_genesis_state};

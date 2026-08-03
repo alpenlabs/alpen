@@ -3,7 +3,7 @@
 use strata_acct_types::{BitcoinAmount, Hash};
 use strata_bridge_params::BridgeParams;
 use strata_ledger_types::ISnarkAccountState;
-use strata_ol_chain_types_new::OLBlockHeader;
+use strata_ol_chain_types::OLBlockHeader;
 
 use crate::{test_utils::*, verify_block};
 

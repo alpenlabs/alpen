@@ -1,5 +1,5 @@
 //! Binary entry‑point for the offline Alpen database tool.
-//! Parses CLI arguments with **Clap** and delegates to the `alpen_dbtool` lib.
+//! Parses CLI arguments with **argh** and delegates to command modules.
 
 mod cli;
 mod cmd;
@@ -7,11 +7,13 @@ mod db;
 mod output;
 mod utils;
 
-use std::{path::Path, process::exit};
+use std::{future::Future, path::Path, process::exit, sync::Arc};
 
-use alpen_ee_database::EeProverDbSled;
-use strata_db_store_sled::SledBackend;
-use strata_db_types::traits::DatabaseBackend;
+use alpen_ee_database::{EeNodeStorage, EeProverDbSled};
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_db_store_sled::{chunked_envelope::L1ChunkedEnvelopeDBSled, SledBackend};
+use strata_db_types::backend::DatabaseBackend;
+use tokio::runtime::Builder;
 use tracing_subscriber::fmt::init;
 
 use crate::{
@@ -21,6 +23,7 @@ use crate::{
         checkpoint::{get_checkpoint, get_checkpoints_summary, get_epoch_summary},
         checkpoint_proof::{delete_checkpoint_proof, get_checkpoint_proof},
         client_state::get_client_state_update,
+        ee_da::ee_da_inspect,
         ee_prover_task::{
             ee_abandon_prover_task, ee_abandon_prover_tasks, ee_backfill_prover_task_raw,
             ee_delete_prover_task, ee_get_prover_task, ee_get_prover_tasks_summary,
@@ -29,7 +32,9 @@ use crate::{
         ee_receipts::{
             ee_delete_acct_proof, ee_delete_chunk_receipt, ee_get_acct_proof, ee_get_chunk_receipt,
         },
+        ee_revert::ee_revert_batches,
         l1::{get_l1_block, get_l1_summary},
+        mmr::{get_mmr_leaf, get_mmr_summary},
         ol::{delete_ol_block, get_ol_block, get_ol_blocks_at_slot, get_ol_summary},
         ol_state::{get_ol_state, revert_ol_state},
         prover_task::{
@@ -40,7 +45,10 @@ use crate::{
         syncinfo::get_syncinfo,
         writer::{get_writer_payload, get_writer_summary},
     },
-    db::{open_database, open_ee_database},
+    db::{
+        open_database, open_ee_chunked_envelope_database, open_ee_prover_database,
+        open_full_ee_database,
+    },
 };
 
 fn main() {
@@ -62,6 +70,8 @@ fn main() {
         }
         Command::GetOlSummary(args) => with_ol_db(&datadir, |db| get_ol_summary(db, args)),
         Command::DeleteOlBlock(args) => with_ol_db(&datadir, |db| delete_ol_block(db, args)),
+        Command::GetMmrSummary(args) => with_ol_db(&datadir, |db| get_mmr_summary(db, args)),
+        Command::GetMmrLeaf(args) => with_ol_db(&datadir, |db| get_mmr_leaf(db, args)),
         Command::GetL1Block(args) => with_ol_db(&datadir, |db| get_l1_block(db, args)),
         Command::GetL1Summary(args) => with_ol_db(&datadir, |db| get_l1_summary(db, args)),
         Command::GetWriterSummary(args) => with_ol_db(&datadir, |db| get_writer_summary(db, args)),
@@ -124,6 +134,9 @@ fn main() {
         Command::EeBackfillProverTaskRaw(args) => {
             with_ee_db(&datadir, |db| ee_backfill_prover_task_raw(db, args))
         }
+        Command::EeDaInspect(args) => {
+            with_ee_chunked_envelope_db(&datadir, |db| ee_da_inspect(db, args))
+        }
         Command::EeGetChunkReceipt(args) => {
             with_ee_db(&datadir, |db| ee_get_chunk_receipt(db, args))
         }
@@ -133,6 +146,11 @@ fn main() {
         Command::EeGetAcctProof(args) => with_ee_db(&datadir, |db| ee_get_acct_proof(db, args)),
         Command::EeDeleteAcctProof(args) => {
             with_ee_db(&datadir, |db| ee_delete_acct_proof(db, args))
+        }
+        Command::EeRevertBatches(args) => {
+            with_full_ee_db(&datadir, |storage, prover_db| async move {
+                ee_revert_batches(&storage, prover_db.as_ref(), args).await
+            })
         }
     };
 
@@ -159,9 +177,44 @@ fn with_ee_db<F, R>(datadir: &Path, f: F) -> R
 where
     F: FnOnce(&EeProverDbSled) -> R,
 {
-    let db = open_ee_database(datadir).unwrap_or_else(|e| {
+    let db = open_ee_prover_database(datadir).unwrap_or_else(|e| {
         eprintln!("{e}");
         exit(1);
     });
     f(db.as_ref())
+}
+
+/// Opens the EE chunked-envelope sled at `datadir` and runs `f` against it.
+fn with_ee_chunked_envelope_db<F, R>(datadir: &Path, f: F) -> R
+where
+    F: FnOnce(&L1ChunkedEnvelopeDBSled) -> R,
+{
+    let db = open_ee_chunked_envelope_database(datadir).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        exit(1);
+    });
+    f(db.as_ref())
+}
+
+/// Opens the full EE sled at `datadir` and runs `f` against it.
+fn with_full_ee_db<F, Fut>(datadir: &Path, f: F) -> Result<(), DisplayedError>
+where
+    F: FnOnce(EeNodeStorage, Arc<EeProverDbSled>) -> Fut,
+    Fut: Future<Output = Result<(), DisplayedError>>,
+{
+    let rt = Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .internal_error("Could not initialize dbtool Tokio runtime")
+        .unwrap_or_else(|e: DisplayedError| {
+            eprintln!("{e}");
+            exit(1);
+        });
+    let db = open_full_ee_database(datadir).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        exit(1);
+    });
+    let storage = db.node_storage(rt.handle().clone());
+    let prover_db = db.prover_db();
+    rt.block_on(f(storage, prover_db))
 }

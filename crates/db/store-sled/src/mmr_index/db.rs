@@ -1,9 +1,11 @@
+use strata_db_types::mmr_index::MmrIndexDatabase;
 use strata_db_types::{
     DbError, DbResult, LeafPos, MmrBatchWrite, MmrIndexPrecondition, MmrNodePos, MmrNodeTable,
-    NodePos, RawMmrId, traits::MmrIndexDatabase,
+    NodePos, RawMmrId,
 };
 use strata_identifiers::Hash;
-use typed_sled::{error, tree::SledTransactionalTree};
+use typed_sled::error;
+use typed_sled::tree::SledTransactionalTree;
 
 use super::schemas::{MmrIndexLeafCountSchema, MmrIndexNodeSchema, MmrIndexPreimageSchema};
 use crate::define_sled_database;
@@ -81,6 +83,15 @@ impl MmrIndexDatabase for MmrIndexDb {
     /// Absent entries are treated as zero leaves.
     fn get_leaf_count(&self, mmr_id: RawMmrId) -> DbResult<u64> {
         Ok(self.leaf_count_tree.get(&mmr_id)?.unwrap_or(0))
+    }
+
+    fn list_mmr_ids(&self) -> DbResult<Vec<RawMmrId>> {
+        let mut out = Vec::new();
+        for item in self.leaf_count_tree.range(..)? {
+            let (mmr_id, _) = item?;
+            out.push(mmr_id);
+        }
+        Ok(out)
     }
 
     /// Fetches requested nodes and available ancestors from the node tree.

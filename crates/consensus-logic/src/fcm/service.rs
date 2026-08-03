@@ -4,9 +4,9 @@ use anyhow::{anyhow, Context};
 use metrics::{counter, histogram};
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::Slot;
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     sequencer_predicate_requires_signature, verify_sequencer_predicate_signature, OLBlock,
 };
 use strata_predicate::PredicateKey;
@@ -77,14 +77,8 @@ pub async fn start_fcm_service<C: FcmContext>(
     })
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct FcmService<C: FcmContext>(PhantomData<C>);
-
-impl<C: FcmContext> Default for FcmService<C> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct FcmStatus;
@@ -210,16 +204,16 @@ async fn process_fc_message<C: FcmContext>(
                     .get_ol_block(*canonical_tip.blkid())
                     .await?
                     .ok_or(Error::MissingOLBlock(*canonical_tip.blkid()))?;
-                let status = OLSyncStatus {
-                    tip: canonical_tip,
-                    tip_epoch: tip_block_data.header().epoch(),
-                    tip_is_terminal: tip_block_data.header().is_terminal(),
+                let status = OLSyncStatus::new(
+                    canonical_tip,
+                    tip_block_data.header().epoch(),
+                    tip_block_data.header().is_terminal(),
                     prev_epoch,
                     confirmed_epoch,
                     finalized_epoch,
                     // FIXME(STR-3673): this is a bit convoluted, could this be simpler?
-                    safe_l1: last_l1_blk,
-                };
+                    last_l1_blk,
+                );
 
                 trace!(%blkid, "publishing new ol_state");
                 fcm_state.ctx().publish_sync_status(status);
@@ -810,9 +804,9 @@ mod tests {
 
     use async_trait::async_trait;
     use strata_asm_common::AsmManifest;
-    use strata_db_types::{traits::BlockStatus, DbResult};
+    use strata_db_types::{ol_block::BlockStatus, DbResult};
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
-    use strata_ol_chain_types_new::{
+    use strata_ol_chain_types::{
         test_utils::{schnorr_predicate, test_schnorr_keypair},
         BlockFlags, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment,
         SignedOLBlockHeader,
@@ -1688,7 +1682,7 @@ mod tests {
         let statuses = fixture.ctx.published_statuses();
         assert_eq!(statuses.len(), 1);
         let status = &statuses[0];
-        assert_eq!(status.tip, fork.b3.commitment());
+        assert_eq!(status.tip(), fork.b3.commitment());
         assert_eq!(fcm_state.cur_best_block(), fork.b3.commitment());
         assert_eq!(fixture.ctx.executed_blocks(), vec![fork.b3.commitment()]);
 
@@ -1876,7 +1870,7 @@ mod tests {
         let statuses = fixture.ctx.published_statuses();
         assert_eq!(statuses.len(), 1);
         let status = &statuses[0];
-        assert_eq!(status.tip, chain.x4.commitment());
+        assert_eq!(status.tip(), chain.x4.commitment());
         assert_eq!(fcm_state.cur_best_block(), chain.x4.commitment());
         assert_eq!(fixture.ctx.executed_blocks(), vec![chain.x4.commitment()]);
         assert_eq!(
@@ -2137,10 +2131,10 @@ mod tests {
 
         let statuses = ctx.published_statuses();
         assert_eq!(statuses.len(), 1);
-        assert_eq!(statuses[0].tip, block_commitment);
-        assert_eq!(statuses[0].prev_epoch, genesis_epoch);
-        assert_eq!(statuses[0].confirmed_epoch, genesis_epoch);
-        assert_eq!(statuses[0].finalized_epoch, genesis_epoch);
+        assert_eq!(statuses[0].tip(), block_commitment);
+        assert_eq!(statuses[0].recently_complete_epoch(), genesis_epoch);
+        assert_eq!(statuses[0].confirmed_epoch(), genesis_epoch);
+        assert_eq!(statuses[0].finalized_epoch(), genesis_epoch);
     }
 
     #[tokio::test]

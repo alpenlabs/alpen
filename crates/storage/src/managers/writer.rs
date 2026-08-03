@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use strata_db_types::{traits::L1WriterDatabase, types::BundledPayloadEntry, DbResult};
-use threadpool::ThreadPool;
+use strata_db_types::l1_writer::{BundledPayloadEntry, L1WriterDatabase};
+use strata_db_types::DbResult;
+use tokio::runtime::Handle;
 
 use crate::ops;
 
@@ -16,8 +17,8 @@ pub struct L1WriterManager {
 
 impl L1WriterManager {
     /// Creates a new [`L1WriterManager`].
-    pub fn new(pool: ThreadPool, db: Arc<impl L1WriterDatabase + 'static>) -> Self {
-        let ops = ops::writer::Context::new(db).into_ops(pool);
+    pub fn new(handle: Handle, db: Arc<impl L1WriterDatabase + 'static>) -> Self {
+        let ops = ops::writer::EnvelopeDataOps::new(handle, db);
         Self { ops }
     }
 

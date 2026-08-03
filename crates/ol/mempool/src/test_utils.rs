@@ -14,11 +14,11 @@ use proptest::{
 };
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_identifiers::{Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{Buf32, Hash, OLBlockCommitment, OLBlockId, Slot};
 use strata_ledger_types::{
     IAccountStateMut, ISnarkAccountStateMut, IStateAccessorMut, NewAccountData, NewAccountTypeState,
 };
-use strata_ol_chain_types_new::{
+use strata_ol_chain_types::{
     ClaimList, OLTransaction, OLTransactionData, ProofSatisfierList, SauTxLedgerRefs,
     SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
     TxConstraints, TxProofs, test_utils as ol_test_utils,
@@ -30,7 +30,6 @@ use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
 use strata_storage::create_node_storage;
-use threadpool::ThreadPool;
 
 use crate::{state::MempoolContext, types::OLMempoolConfig};
 
@@ -185,7 +184,7 @@ pub(crate) fn with_max_slot(tx: OLTransaction, max_slot: Option<Slot>) -> OLTran
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> OLState {
-    let params = OLParams::new_empty(L1BlockCommitment::default());
+    let params = OLParams::default();
     OLState::from_genesis_params(&params).expect("valid params")
 }
 
@@ -364,14 +363,14 @@ pub(crate) fn create_test_context<P: StateProvider>(
     config: OLMempoolConfig,
     provider: Arc<P>,
 ) -> MempoolContext<P> {
-    let pool = ThreadPool::new(1);
-
     // Create a minimal test storage using a test sled database
     // In real usage, this would be a full NodeStorage with all managers
     // For tests, we create a minimal storage since validation isn't called yet
     let test_db = get_test_sled_backend();
-    let test_storage =
-        Arc::new(create_node_storage(test_db, pool).expect("Failed to create test NodeStorage"));
+    let test_storage = Arc::new(
+        create_node_storage(test_db, strata_storage::test_runtime_handle())
+            .expect("Failed to create test NodeStorage"),
+    );
 
     MempoolContext::new(config, test_storage, provider)
 }

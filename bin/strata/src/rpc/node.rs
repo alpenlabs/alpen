@@ -16,7 +16,7 @@ use strata_identifiers::{
     OLBlockCommitment, OLBlockId, OLTxId, RBuf32,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
-use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
+use strata_ol_chain_types::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
     OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
@@ -241,9 +241,9 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .ok_or_else(|| internal_error("OL sync status not available"))?;
 
         Ok(match tag {
-            OLBlockTag::Latest => sync_status.tip,
-            OLBlockTag::Confirmed => sync_status.confirmed_epoch.to_block_commitment(),
-            OLBlockTag::Finalized => sync_status.finalized_epoch.to_block_commitment(),
+            OLBlockTag::Latest => sync_status.tip(),
+            OLBlockTag::Confirmed => sync_status.confirmed_epoch().to_block_commitment(),
+            OLBlockTag::Finalized => sync_status.finalized_epoch().to_block_commitment(),
         })
     }
 
@@ -300,7 +300,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         let finalized_slot = self
             .provider
             .get_ol_sync_status()
-            .map(|css| css.finalized_epoch.last_slot())
+            .map(|css| css.finalized_epoch().last_slot())
             .unwrap_or(0);
 
         let mut chain = Vec::new();
@@ -548,13 +548,15 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         )))
     }
 
-    /// Resolves an epoch to its terminal-block OL state. Errors if either the
-    /// canonical commitment or the terminal-block state is missing.
+    /// Resolves an epoch to its terminal-block OL state.
+    ///
+    /// Errors if either the canonical epoch commitment or the terminal-block
+    /// state is missing.
     async fn get_toplevel_ol_state_for_epoch(
         &self,
         epoch: Epoch,
     ) -> RpcResult<(EpochCommitment, Arc<OLState>)> {
-        let epoch_commitment = self
+        let Some(epoch_commitment) = self
             .provider
             .get_canonical_epoch_commitment_at(epoch)
             .await
@@ -562,12 +564,14 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 error!(?e, ?epoch, "Failed to get canonical epoch commitment");
                 db_error(e)
             })?
-            .ok_or_else(|| {
-                not_found_error(format!("No canonical commitment found for epoch {epoch}"))
-            })?;
+        else {
+            return Err(not_found_error(format!(
+                "No canonical commitment found for epoch {epoch}"
+            )));
+        };
 
         let terminal_commitment = epoch_commitment.to_block_commitment();
-        let ol_state = self
+        let Some(ol_state) = self
             .provider
             .get_toplevel_ol_state(terminal_commitment)
             .await
@@ -575,22 +579,39 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 error!(?e, %terminal_commitment, "Failed to get OL state");
                 db_error(e)
             })?
-            .ok_or_else(|| {
-                not_found_error(format!(
-                    "No OL state found for terminal block {terminal_commitment}"
-                ))
-            })?;
+        else {
+            return Err(internal_error(format!(
+                "No OL state found for terminal block {terminal_commitment}"
+            )));
+        };
 
         Ok((epoch_commitment, ol_state))
     }
 
-    /// Returns the account's current Snark update seqno at the tip epoch.
+    /// Returns the account's current Snark update seqno at the current OL tip.
+    ///
+    /// This is an optimization for out-of-range manifest queries. The sync
+    /// status tip is used directly so in-progress, non-terminal epochs still
+    /// retain the cheap upper-bound check.
     async fn current_snark_account_seq_no(
         &self,
         account_id: AccountId,
-        tip_epoch: Epoch,
+        tip_commitment: OLBlockCommitment,
     ) -> RpcResult<Option<u64>> {
-        let (_, tip_ol_state) = self.get_toplevel_ol_state_for_epoch(tip_epoch).await?;
+        let tip_ol_state = self
+            .provider
+            .get_toplevel_ol_state(tip_commitment)
+            .await
+            .map_err(|e| {
+                error!(?e, %tip_commitment, "Failed to get OL state");
+                db_error(e)
+            })?
+            .ok_or_else(|| {
+                internal_error(format!(
+                    "No OL state found for sync status tip {tip_commitment}"
+                ))
+            })?;
+
         Ok(tip_ol_state
             .get_account_state(&account_id)
             .and_then(|state| state.as_snark_account().ok())
@@ -714,14 +735,14 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .ok_or_else(|| internal_error("OL sync status not available"))?;
 
         let tip = RpcOLBlockInfo::new(
-            *chain_sync_status.tip.blkid(),
-            chain_sync_status.tip.slot(),
-            chain_sync_status.tip_epoch,
-            chain_sync_status.tip_is_terminal,
+            *chain_sync_status.tip().blkid(),
+            chain_sync_status.tip().slot(),
+            chain_sync_status.tip_epoch(),
+            chain_sync_status.tip_is_terminal(),
         );
-        let confirmed = chain_sync_status.confirmed_epoch;
-        let finalized = chain_sync_status.finalized_epoch;
-        let latest = chain_sync_status.prev_epoch;
+        let confirmed = chain_sync_status.confirmed_epoch();
+        let finalized = chain_sync_status.finalized_epoch();
+        let latest = chain_sync_status.recently_complete_epoch();
 
         Ok(RpcOLChainStatus::new(tip, confirmed, finalized, latest))
     }
@@ -822,7 +843,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             let is_finalized = self
                 .provider
                 .get_ol_sync_status()
-                .is_some_and(|sync_status| sync_status.finalized_epoch.epoch() >= epoch);
+                .is_some_and(|sync_status| sync_status.finalized_epoch().epoch() >= epoch);
 
             if is_finalized {
                 RpcCheckpointConfStatus::Finalized { l1_reference }
@@ -1009,13 +1030,12 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .ok_or_else(|| {
                 not_found_error(format!("No creation epoch found for account {account_id}"))
             })?;
-        let tip_epoch = self
+        let sync_status = self
             .provider
             .get_ol_sync_status()
-            .ok_or_else(|| internal_error("OL sync status not available"))?
-            .tip_epoch;
+            .ok_or_else(|| internal_error("OL sync status not available"))?;
         if let Some(current_seq_no) = self
-            .current_snark_account_seq_no(account_id, tip_epoch)
+            .current_snark_account_seq_no(account_id, sync_status.tip())
             .await?
         {
             // Account state stores the next operation seqno. Published manifests
@@ -1026,7 +1046,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 )));
             }
         }
-        for epoch in creation_epoch..=tip_epoch {
+        for epoch in creation_epoch..=sync_status.tip_epoch() {
             let Some(records) = self
                 .provider
                 .get_account_update_records(epoch, account_id)
@@ -1226,7 +1246,7 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             .provider
             .get_ol_sync_status()
             .ok_or_else(|| internal_error("OL sync status not available"))?
-            .tip
+            .tip()
             .blkid();
 
         let mut summaries = Vec::with_capacity(count as usize);

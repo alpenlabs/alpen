@@ -22,7 +22,7 @@ strata-identifiers.workspace = true
 strata-l1-txfmt = { workspace = true, optional = true }
 strata-ledger-types.workspace = true
 strata-msg-fmt = { workspace = true, optional = true }
-strata-ol-chain-types-new.workspace = true
+strata-ol-chain-types.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-msg-types = { workspace = true, optional = true }
 strata-ol-params.workspace = true
@@ -45,7 +45,6 @@ proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
-threadpool = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 
@@ -63,9 +62,11 @@ test-utils = [
   "dep:strata-msg-fmt",
   "dep:strata-ol-msg-types",
   "dep:strata-state",
-  "dep:threadpool",
   "strata-db-store-sled/test_utils",
-  "strata-ol-chain-types-new/test-utils",
+  "strata-bridge-params/test-defaults",
+  "strata-ol-chain-types/test-utils",
+  "strata-ol-params/test-defaults",
+  "strata-storage/test-utils",
 ]
 
 [dev-dependencies]
@@ -73,14 +74,16 @@ bitcoin.workspace = true
 proptest.workspace = true
 strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-btc-verification.workspace = true
 strata-codec.workspace = true
 strata-crypto.workspace = true
 strata-db-store-sled.workspace = true
 strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
-strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
+strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-msg-types.workspace = true
 strata-predicate.workspace = true
 strata-state.workspace = true
-threadpool.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }

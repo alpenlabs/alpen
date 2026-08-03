@@ -19,7 +19,7 @@ members = [
   "crates/alpen-ee/rpc/types",
   "crates/alpen-ee/sequencer",
   "crates/btcio",
-  "crates/chain-worker-new",
+  "crates/chain-worker",
   "crates/checkpoint-types",
   "crates/cli-common",
   "crates/codec-utils",
@@ -155,7 +155,7 @@ alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
 strata-bridge-params = { path = "crates/bridge-params" }
 strata-btcio = { path = "crates/btcio" }
-strata-chain-worker-new = { path = "crates/chain-worker-new" }
+strata-chain-worker = { path = "crates/chain-worker" }
 strata-checkpoint-types = { path = "crates/checkpoint-types" }
 strata-cli-common = { path = "crates/cli-common" }
 strata-codec-utils = { path = "crates/codec-utils" }
@@ -179,7 +179,7 @@ strata-mpt = { path = "crates/mpt" }
 strata-node-context = { path = "crates/node-context" }
 strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-bridge-types = { path = "crates/bridge-types" }
-strata-ol-chain-types-new = { path = "crates/ol/chain-types" }
+strata-ol-chain-types = { path = "crates/ol/chain-types" }
 strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
 strata-ol-da = { path = "crates/ol/da" }
 strata-ol-genesis = { path = "crates/ol/genesis" }
@@ -224,6 +224,7 @@ strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = 
 ], tag = "v0.3.0-rc.2" }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
 strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
+strata-db-macros = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
 strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.3.0-rc.2" }
@@ -468,12 +469,11 @@ sled = "0.34.7"
 tempfile = "3.27.0"
 terrors = "0.3.0"
 thiserror = "2.0.11"
-threadpool = "1.8"
 tokio = { version = "1.52", features = ["full"] }
 tokio-stream = "0.1.17"
 toml = "0.5"
 tower = "0.5"
-tower-http = { version = "0.6", default-features = false, features = ["cors"] }
+tower-http = { version = "0.7", default-features = false, features = ["cors"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-opentelemetry = "0.32"

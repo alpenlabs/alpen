@@ -1,6 +1,5 @@
-use strata_db_types::{
-    traits::L1ChunkedEnvelopeDatabase,
-    types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus},
+use strata_db_types::chunked_envelope::{
+    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1ChunkedEnvelopeDatabase,
 };
 use strata_l1_txfmt::MagicBytes;
 

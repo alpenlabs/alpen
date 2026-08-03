@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
-use strata_chain_worker_new::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
+use strata_chain_worker::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
 use strata_consensus_logic::{
     AsmBlockSubmitter, SyncServiceHandle,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
@@ -33,7 +33,7 @@ mod sequencer_services {
         writer::{BundlerBuilder, EnvelopeHandle, WatcherBuilder, WriterContext},
     };
     use strata_config::EpochSealingConfig;
-    use strata_db_types::traits::DatabaseBackend;
+    use strata_db_types::backend::DatabaseBackend;
     use strata_node_context::NodeContext;
     use strata_ol_block_assembly::{
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, LimitAwareSealing, MempoolProviderImpl,
@@ -41,7 +41,7 @@ mod sequencer_services {
     use strata_ol_mempool::MempoolHandle;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_service::DumbTickHandle;
-    use strata_storage::ops::{l1tx_broadcast, writer::Context};
+    use strata_storage::{BroadcastDbOps, ops::writer::EnvelopeDataOps};
     use tokio::sync::mpsc;
 
     use crate::{
@@ -86,8 +86,10 @@ mod sequencer_services {
     /// Manages L1 transaction broadcasting and tracks confirmation status.
     fn start_broadcaster(nodectx: &NodeContext) -> Result<L1BroadcastHandle> {
         let broadcast_db = nodectx.storage().db().broadcast_db();
-        let broadcast_ctx = l1tx_broadcast::Context::new(broadcast_db);
-        let broadcast_ops = Arc::new(broadcast_ctx.into_ops(nodectx.storage().pool().clone()));
+        let broadcast_ops = Arc::new(BroadcastDbOps::new(
+            nodectx.storage().handle().clone(),
+            broadcast_db,
+        ));
 
         nodectx.task_manager().handle().block_on(async {
             BroadcasterBuilder::new(
@@ -125,8 +127,10 @@ mod sequencer_services {
         let executor = nodectx.executor();
 
         nodectx.task_manager().handle().block_on(async {
-            let writer_ops =
-                Arc::new(Context::new(writer_db).into_ops(nodectx.storage().pool().clone()));
+            let writer_ops = Arc::new(EnvelopeDataOps::new(
+                nodectx.storage().handle().clone(),
+                writer_db,
+            ));
             let (intent_tx, intent_rx) = mpsc::channel(64);
             let envelope_handle = Arc::new(EnvelopeHandle::new(writer_ops.clone(), intent_tx));
 
@@ -392,7 +396,7 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
         .status_channel()
         .get_ol_sync_status()
         .expect("OL sync status must be set before starting mempool")
-        .tip;
+        .tip();
 
     let storage = nodectx.storage().clone();
     let status_channel = nodectx.status_channel().as_ref().clone();

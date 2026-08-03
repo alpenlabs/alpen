@@ -30,6 +30,7 @@ class ChainSyncStatus(TypedDict):
     tip: OLBlockInfo
     confirmed: EpochCommitment
     finalized: EpochCommitment
+    latest: EpochCommitment
 
 
 class RpcProofState(TypedDict):

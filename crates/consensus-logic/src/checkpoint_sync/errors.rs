@@ -1,6 +1,6 @@
 //! Error types for the checkpoint sync service.
 
-use strata_chain_worker_new::WorkerError;
+use strata_chain_worker::WorkerError;
 use strata_db_types::DbError;
 use strata_identifiers::Epoch;
 use strata_primitives::EpochCommitment;

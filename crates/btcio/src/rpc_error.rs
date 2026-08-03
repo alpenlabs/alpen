@@ -7,7 +7,32 @@ use crate::writer::builder::EnvelopeError;
 
 /// Returns `true` when a Bitcoin RPC error may be resolved by retrying later.
 pub(crate) fn is_retryable_client_error(err: &ClientError) -> bool {
-    err.is_retriable()
+    err.is_retriable() || is_bitcoind_warmup_error(err)
+}
+
+/// Returns `true` when bitcoind is reachable but still in RPC warmup.
+pub fn is_bitcoind_warmup_error(err: &ClientError) -> bool {
+    matches!(err, ClientError::Server(-28, _))
+}
+
+/// Returns `true` when bitcoind reports a missing block height.
+pub fn is_block_height_out_of_range_error(err: &ClientError) -> bool {
+    match err {
+        ClientError::Server(-8, msg) => {
+            let msg = msg.to_ascii_lowercase();
+            msg.contains("height") && msg.contains("out of range")
+        }
+        _ => false,
+    }
+}
+
+/// Returns `true` when an [`anyhow::Error`] wraps a missing block height error.
+pub(crate) fn is_missing_block_height_anyhow_error(err: &AnyhowError) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<ClientError>()
+            .is_some_and(is_block_height_out_of_range_error)
+    })
 }
 
 /// Returns `true` when an [`anyhow::Error`] wraps a retryable Bitcoin RPC error.
@@ -56,19 +81,28 @@ mod tests {
     use bitcoind_async_client::error::ClientError;
 
     use super::{
+        is_block_height_out_of_range_error, is_missing_block_height_anyhow_error,
         is_retryable_anyhow_error, is_retryable_client_error, is_retryable_envelope_error,
         retryable_reason,
     };
     use crate::writer::builder::EnvelopeError;
 
     #[test]
-    fn client_errors_delegate_to_bitcoind_async_client() {
+    fn client_errors_include_bitcoind_warmup() {
         assert!(is_retryable_client_error(&ClientError::Connection(
             "connection refused".into()
+        )));
+        assert!(is_retryable_client_error(&ClientError::Server(
+            -28,
+            "Loading block index...".into()
         )));
         assert!(!is_retryable_client_error(&ClientError::Server(
             -25,
             "bad-txns-inputs-missingorspent".into()
+        )));
+        assert!(!is_retryable_client_error(&ClientError::Server(
+            -8,
+            "Block height out of range".into()
         )));
     }
 
@@ -78,6 +112,25 @@ mod tests {
             .context("failed to fetch envelope prerequisites");
 
         assert!(is_retryable_anyhow_error(&err));
+    }
+
+    #[test]
+    fn anyhow_context_preserves_bitcoind_warmup_classification() {
+        let err = anyhow::Error::from(ClientError::Server(-28, "Loading block index...".into()))
+            .context("failed to poll Bitcoin client");
+
+        assert!(is_retryable_anyhow_error(&err));
+    }
+
+    #[test]
+    fn block_height_out_of_range_classification_is_scoped() {
+        let err = ClientError::Server(-8, "Block height out of range".into());
+        let wrapped = anyhow::Error::from(err.clone()).context("failed to fetch anchor block");
+
+        assert!(is_block_height_out_of_range_error(&err));
+        assert!(is_missing_block_height_anyhow_error(&wrapped));
+        assert!(!is_retryable_client_error(&err));
+        assert!(!is_retryable_anyhow_error(&wrapped));
     }
 
     #[test]
@@ -92,6 +145,16 @@ mod tests {
     fn envelope_signing_rpc_outages_are_retryable() {
         let err =
             EnvelopeError::SignRawTransaction(ClientError::Connection("connection refused".into()));
+
+        assert!(is_retryable_envelope_error(&err));
+    }
+
+    #[test]
+    fn envelope_signing_bitcoind_warmup_is_retryable() {
+        let err = EnvelopeError::SignRawTransaction(ClientError::Server(
+            -28,
+            "Loading block index...".into(),
+        ));
 
         assert!(is_retryable_envelope_error(&err));
     }

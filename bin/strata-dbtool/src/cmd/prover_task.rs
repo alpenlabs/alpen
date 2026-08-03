@@ -1,6 +1,6 @@
 //! Admin commands operating on the OL prover task store.
 //!
-//! These talk directly to [`strata_db_types::traits::ProverTaskDatabase`]
+//! These talk directly to [`strata_db_types::prover_task::ProverTaskDatabase`]
 //! so they can manipulate records without going through the running
 //! prover service — by design, the node must be offline.
 //!
@@ -12,7 +12,7 @@
 use argh::FromArgs;
 use strata_checkpoint_types::CheckpointProofTask;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::traits::{DatabaseBackend, ProverTaskDatabase};
+use strata_db_types::{backend::DatabaseBackend, prover_task::ProverTaskDatabase};
 use strata_identifiers::Epoch;
 use strata_paas::{TaskRecordData, TaskStatus};
 

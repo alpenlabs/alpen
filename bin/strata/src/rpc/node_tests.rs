@@ -21,7 +21,7 @@ use strata_db_types::{
 };
 use strata_identifiers::*;
 use strata_ledger_types::*;
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types::*;
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
@@ -582,7 +582,10 @@ fn make_block_with_gam_tx(
 }
 
 fn genesis_ol_state() -> OLState {
-    let params = OLParams::new_empty(test_l1_commitment());
+    let params = OLParams {
+        last_l1_block: test_l1_commitment(),
+        ..Default::default()
+    };
     OLState::from_genesis_params(&params).expect("genesis state")
 }
 
@@ -2577,6 +2580,29 @@ async fn epoch_summary_nonexistent_epoch_errors() {
 }
 
 #[tokio::test]
+async fn epoch_summary_rejects_canonical_epoch_without_terminal_state() {
+    let epoch_commitment = test_epoch_commitment(1, 10, 0x35);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            epoch_commitment.to_block_commitment(),
+            1,
+            true,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_epoch_commitment(1, epoch_commitment);
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_acct_epoch_summary(test_account_id(1), 1)
+        .await
+        .expect_err("canonical epoch without terminal state should be rejected");
+
+    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
+}
+
+#[tokio::test]
 async fn epoch_summary_nonexistent_account_errors() {
     let block = make_block(10, 0, null_blkid());
     let blkid = block.header().compute_blkid();
@@ -3171,6 +3197,42 @@ async fn snark_acct_update_manifest_returns_record_with_indexed_range() {
 }
 
 #[tokio::test]
+async fn snark_acct_manifest_bounds_seqno_at_noncanonical_tip() {
+    let account_id = test_account_id(8);
+    let tip_epoch_commitment = test_epoch_commitment(2, 10, 0x28);
+    let fetch_count = Arc::new(AtomicUsize::new(0));
+    let fetch_count_for_closure = fetch_count.clone();
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            2,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 1)
+        .with_state_at(
+            tip_epoch_commitment.to_block_commitment(),
+            ol_state_with_snark_account(account_id, 10, 10, 5),
+        )
+        .with_update_records_fetch_fn(move |_epoch, _account| {
+            fetch_count_for_closure.fetch_add(1, Ordering::Relaxed);
+            Ok(None)
+        });
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_update_manifest(account_id, 10)
+        .await
+        .expect_err("out-of-range seqno should be rejected");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(fetch_count.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
 async fn snark_acct_update_manifest_unknown_account_errors() {
     let rpc = make_rpc(MockProvider::new());
 
@@ -3262,6 +3324,30 @@ async fn snark_acct_update_manifest_errors_when_ol_sync_unavailable() {
 
     assert_eq!(err.code(), INTERNAL_ERROR_CODE);
     assert_eq!(err.message(), "OL sync status not available");
+}
+
+#[tokio::test]
+async fn snark_acct_manifest_rejects_missing_sync_tip_state() {
+    let account_id = test_account_id(2);
+    let tip_epoch_commitment = test_epoch_commitment(2, 10, 0x29);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip_epoch_commitment.to_block_commitment(),
+            2,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_account_creation_epoch(account_id, 1);
+    let rpc = make_rpc(provider);
+
+    let err = rpc
+        .get_snark_acct_update_manifest(account_id, 1)
+        .await
+        .expect_err("missing sync status tip state should be rejected");
+
+    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
 }
 
 #[tokio::test]

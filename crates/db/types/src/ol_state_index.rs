@@ -1,4 +1,4 @@
-//! Record types for the [`OLStateIndexingDatabase`] schema.
+//! Types around the [`OLStateIndexingDatabase`] schema.
 //!
 //! Captures the indexing data persisted for later querying. Account-type-agnostic:
 //! any account may produce any kind of indexing record.
@@ -6,14 +6,18 @@
 //! Records derive [`serde::Serialize`] / [`serde::Deserialize`] and are persisted
 //! as CBOR. Fields whose native types lack serde derives (e.g. `MessageEntry`)
 //! are stored in their raw SSZ byte form; callers convert at the boundaries.
-//!
-//! [`OLStateIndexingDatabase`]: crate::traits::OLStateIndexingDatabase
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use strata_codec::Codec;
+#[cfg(feature = "proxies")]
+use strata_db_macros::gen_proxy;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, OLBlockCommitment};
+
+#[cfg(feature = "proxies")]
+use crate::DbError;
+use crate::DbResult;
 
 /// Global epoch-level indexing facts. Mutable until epoch finalization.
 ///
@@ -306,4 +310,92 @@ impl IndexingWrites {
     pub fn account_inbox(&self) -> &BTreeMap<AccountId, Vec<InboxMessageRecord>> {
         &self.account_inbox
     }
+}
+
+/// Database for OL state indexing data.
+///
+/// Two write paths reflect the two producer modes:
+/// - [`apply_epoch_indexing`](Self::apply_epoch_indexing): single atomic write for an entire epoch.
+///   Used by checkpoint-sync producers.
+/// - [`apply_block_indexing`](Self::apply_block_indexing): incremental per-block write. Used by
+///   block-sync producers.
+///
+/// Block-sync also calls [`set_epoch_commitment`](Self::set_epoch_commitment)
+/// once at epoch finalization to stamp the commitment onto the existing common
+/// row; checkpoint-sync includes the commitment in its single write.
+///
+/// Both paths target the same tables; atomicity granularity differs.
+#[cfg_attr(
+    feature = "proxies",
+    gen_proxy(error = DbError, tracing_component = "storage:ol_state_indexing")
+)]
+pub trait OLStateIndexingDatabase: Send + Sync + 'static {
+    /// Atomically persists an epoch's indexing data in a single call.
+    ///
+    /// Writes the common record, per-account update entries, per-account
+    /// inbox entries, and creation-epoch index entries for newly created
+    /// accounts. The common record's `epoch_commitment` is set from
+    /// `commitment`. All in one transaction.
+    fn apply_epoch_indexing(
+        &self,
+        commitment: EpochCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()>;
+
+    /// Atomically applies a single block's incremental indexing writes.
+    ///
+    /// Appends to existing per-(account, epoch) entries, updates the common
+    /// row's `created_accounts`, and inserts creation-epoch index entries
+    /// for any newly created accounts. Errors with
+    /// `DbError::BlockIndexingConflict` when `block.slot()` does not strictly
+    /// advance past the last applied block for `epoch`.
+    fn apply_block_indexing(
+        &self,
+        epoch: Epoch,
+        block: OLBlockCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()>;
+
+    /// Atomically rolls back all block-attributed writes in `epoch` whose
+    /// block slot is strictly greater than `block.slot()`. Records and
+    /// creators tagged with `block.slot()` itself are kept. Entries with
+    /// `None` attribution (checkpoint-sync) are preserved; they only drop
+    /// when the entire epoch is dropped via [`Self::rollback_to_epoch`].
+    ///
+    /// Idempotent. Does not clear `EpochIndexingData.epoch_commitment`.
+    fn rollback_to_block(&self, epoch: Epoch, block: OLBlockCommitment) -> DbResult<()>;
+
+    /// Atomically drops all indexing data for epochs strictly greater than
+    /// `epoch`. The given `epoch` is preserved. Idempotent.
+    fn rollback_to_epoch(&self, epoch: Epoch) -> DbResult<()>;
+
+    /// Sets the epoch commitment on the existing common row.
+    ///
+    /// Called once by block-sync producers at epoch finalization. Errors if
+    /// no common row exists for the epoch.
+    fn set_epoch_commitment(&self, epoch: Epoch, commitment: EpochCommitment) -> DbResult<()>;
+
+    /// Returns the common indexing data for the given epoch.
+    fn get_epoch_indexing_data(&self, epoch: Epoch) -> DbResult<Option<EpochIndexingData>>;
+
+    /// Returns the per-(account, epoch) update records.
+    ///
+    /// Returns `None` when the account had no indexed activity in the epoch.
+    fn get_account_update_records(
+        &self,
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<AccountUpdateRecord>>>;
+
+    /// Returns the per-(account, epoch) inbox records.
+    ///
+    /// Returns `None` when no inbox writes were recorded for the account in the epoch.
+    fn get_account_inbox_records(
+        &self,
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<InboxMessageRecord>>>;
+
+    /// Returns the epoch in which an account was created.
+    fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>>;
 }

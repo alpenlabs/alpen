@@ -13,7 +13,7 @@ use strata_db_types::{
     ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
-use strata_ol_chain_types_new::{OLBlock, OLTransaction};
+use strata_ol_chain_types::{OLBlock, OLTransaction};
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::OLRpcProvider;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};

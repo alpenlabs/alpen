@@ -1,4 +1,4 @@
-use strata_db_types::types::{BundledPayloadEntry, IntentEntry};
+use strata_db_types::l1_writer::{BundledPayloadEntry, IntentEntry};
 use strata_primitives::buf::Buf32;
 
 use crate::{define_table_with_default_codec, define_table_with_integer_key};

@@ -101,6 +101,7 @@ class ReassembledBlob:
     """Result of blob reassembly with validation metadata."""
 
     blob: DaBlob
+    raw_blob: bytes
     total_chunks: int
     chunk_sizes: list[int]
     total_size: int
@@ -248,6 +249,13 @@ def reassemble_blobs_from_envelopes(envelopes: list[DaEnvelope]) -> list[DaBlob]
     return [r.blob for r in reassemble_and_validate_blobs(envelopes)]
 
 
+def reassemble_raw_blobs_from_envelopes(
+    envelopes: list[DaEnvelope],
+) -> list[tuple[str, bytes, DaBlob]]:
+    """Reassemble DA blobs and keep the exact raw bytes recovered from L1."""
+    return [(r.commit_txid, r.raw_blob, r.blob) for r in reassemble_and_validate_blobs(envelopes)]
+
+
 def reassemble_and_validate_blobs(envelopes: list[DaEnvelope]) -> list[ReassembledBlob]:
     """Reassemble DaBlobs from DA envelopes with full validation.
 
@@ -296,6 +304,7 @@ def reassemble_and_validate_blobs(envelopes: list[DaEnvelope]) -> list[Reassembl
         results.append(
             ReassembledBlob(
                 blob=da_blob,
+                raw_blob=full_blob,
                 total_chunks=total_chunks,
                 chunk_sizes=chunk_sizes,
                 total_size=total_size,

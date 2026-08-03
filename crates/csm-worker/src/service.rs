@@ -98,8 +98,9 @@ mod tests {
     ) {
         let params = strata_test_utils_l2::gen_asm_params();
         let db = get_test_sled_backend();
-        let pool = threadpool::ThreadPool::new(4);
-        let storage = Arc::new(create_node_storage(db, pool).expect("create storage"));
+        let storage = Arc::new(
+            create_node_storage(db, strata_storage::test_runtime_handle()).expect("create storage"),
+        );
 
         // Seed the genesis ClientState row keyed at `last`, so bootstrap
         // resolves `last_asm_block = last` with no prior finality.
@@ -198,8 +199,9 @@ mod tests {
     ) {
         let params = strata_test_utils_l2::gen_asm_params();
         let db = get_test_sled_backend();
-        let pool = threadpool::ThreadPool::new(4);
-        let storage = Arc::new(create_node_storage(db, pool).expect("create storage"));
+        let storage = Arc::new(
+            create_node_storage(db, strata_storage::test_runtime_handle()).expect("create storage"),
+        );
 
         let last = L1BlockCommitment::new(100, L1BlockId::from(Buf32::from([7; 32])));
         storage

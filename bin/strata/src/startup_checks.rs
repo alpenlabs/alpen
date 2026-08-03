@@ -5,10 +5,11 @@ use bitcoind_async_client::{
     Client, corepc_types::model::GetBlockchainInfo, error::ClientError, traits::Reader,
 };
 use strata_btc_types::BlockHashExt;
-use strata_db_types::traits::BlockStatus;
+use strata_btcio::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types_new::OLBlock;
+use strata_ol_chain_types::OLBlock;
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -40,9 +41,11 @@ pub(crate) enum StartupBitcoinCheck {
 
 fn is_retryable_startup_error(err: &anyhow::Error) -> bool {
     err.chain().any(|cause| {
-        cause
-            .downcast_ref::<ClientError>()
-            .is_some_and(ClientError::is_retriable)
+        cause.downcast_ref::<ClientError>().is_some_and(|err| {
+            err.is_retriable()
+                || is_bitcoind_warmup_error(err)
+                || is_block_height_out_of_range_error(err)
+        })
     })
 }
 
@@ -462,12 +465,11 @@ mod tests {
     use bitcoin::{BlockHash, Network, Work, hashes::Hash};
     use bitcoind_async_client::corepc_types::model::GetBlockchainInfo;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{MmrId, traits::BlockStatus};
+    use strata_db_types::{MmrId, ol_block::BlockStatus};
     use strata_identifiers::{Buf32, L1BlockId};
     use strata_ol_params::OLParams;
     use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use strata_storage::{NodeStorage, create_node_storage};
-    use threadpool::ThreadPool;
 
     use super::*;
     use crate::genesis::init_ol_genesis;
@@ -544,6 +546,16 @@ mod tests {
         }
     }
 
+    fn mock_client_warming_up() -> MockBitcoinClient {
+        MockBitcoinClient {
+            blockchain_info_result: Some(MockResult::ClientError(ClientError::Server(
+                -28,
+                "Loading block index...".into(),
+            ))),
+            block_hash_result: None,
+        }
+    }
+
     fn mock_client_with_block_hash(hash: BlockHash) -> MockBitcoinClient {
         MockBitcoinClient {
             blockchain_info_result: None,
@@ -560,6 +572,26 @@ mod tests {
         }
     }
 
+    fn mock_client_block_hash_warming_up() -> MockBitcoinClient {
+        MockBitcoinClient {
+            blockchain_info_result: None,
+            block_hash_result: Some(MockResult::ClientError(ClientError::Server(
+                -28,
+                "Loading block index...".into(),
+            ))),
+        }
+    }
+
+    fn mock_client_block_hash_height_out_of_range() -> MockBitcoinClient {
+        MockBitcoinClient {
+            blockchain_info_result: None,
+            block_hash_result: Some(MockResult::ClientError(ClientError::Server(
+                -8,
+                "Block height out of range".into(),
+            ))),
+        }
+    }
+
     #[tokio::test]
     async fn test_bitcoind_unreachable() {
         let client = mock_client_unreachable();
@@ -568,6 +600,32 @@ mod tests {
 
         let check = result.expect("retryable connection failure should defer");
         assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_bitcoind_warmup_deferred() {
+        let client = mock_client_warming_up();
+
+        let result = run_bitcoin_connectivity_and_network_checks(&client, Network::Regtest).await;
+
+        let check = result.expect("bitcoind warmup should defer");
+        assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
+    }
+
+    #[test]
+    fn test_context_wrapped_bitcoind_warmup_is_retryable() {
+        let err = anyhow::Error::from(ClientError::Server(-28, "Loading block index...".into()))
+            .context("startup: could not connect to bitcoind via getblockchaininfo");
+
+        assert!(is_retryable_startup_error(&err));
+    }
+
+    #[test]
+    fn test_context_wrapped_block_height_out_of_range_is_retryable() {
+        let err = anyhow::Error::from(ClientError::Server(-8, "Block height out of range".into()))
+            .context("startup: failed to fetch L1 block hash from bitcoind");
+
+        assert!(is_retryable_startup_error(&err));
     }
 
     #[tokio::test]
@@ -635,12 +693,44 @@ mod tests {
         assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
     }
 
+    #[tokio::test]
+    async fn test_l1_anchor_block_warmup_deferred() {
+        let hash = BlockHash::all_zeros();
+        let commitment = make_l1_block_commitment(42, hash);
+        let client = mock_client_block_hash_warming_up();
+
+        let result = verify_l1_anchor_block(&client, commitment).await;
+
+        let check = result.expect("bitcoind warmup should defer");
+        assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_l1_anchor_block_height_out_of_range_deferred() {
+        let hash = BlockHash::all_zeros();
+        let commitment = make_l1_block_commitment(42, hash);
+        let client = mock_client_block_hash_height_out_of_range();
+
+        let result = verify_l1_anchor_block(&client, commitment).await;
+
+        let check = result.expect("bitcoind missing anchor height should defer");
+        assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
+    }
+
     fn setup_storage_with_genesis() -> (NodeStorage, OLBlockCommitment) {
         let db = get_test_sled_backend();
-        let pool = ThreadPool::new(1);
-        let storage = create_node_storage(db, pool).expect("test: create node storage");
+        let storage = create_node_storage(db, strata_storage::test_runtime_handle())
+            .expect("test: create node storage");
         let genesis_l1_block = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
-        let params = OLParams::new_empty(genesis_l1_block);
+        let params = OLParams::new_empty(
+            genesis_l1_block,
+            strata_ol_params::BridgeParams::new_with_descriptor_limit(
+                100_000_000,
+                Some(1_000_000_000),
+                81,
+            )
+            .expect("valid bridge params"),
+        );
         let genesis_commitment = init_ol_genesis(&params, &storage).expect("test: init ol genesis");
         (storage, genesis_commitment)
     }
@@ -845,8 +935,8 @@ mod tests {
     #[test]
     fn test_genesis_entries_missing() {
         let db = get_test_sled_backend();
-        let pool = ThreadPool::new(1);
-        let storage = create_node_storage(db, pool).expect("test: create node storage");
+        let storage = create_node_storage(db, strata_storage::test_runtime_handle())
+            .expect("test: create node storage");
 
         let commitment = get_ol_genesis_block(&storage).expect("test: query genesis OL block");
         assert!(commitment.is_none());

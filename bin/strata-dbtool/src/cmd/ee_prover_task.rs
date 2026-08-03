@@ -1,7 +1,7 @@
 //! Admin commands operating on the EE prover task store.
 //!
 //! These talk directly to [`alpen_ee_database::EeProverDbSled`]'s
-//! [`strata_db_types::traits::ProverTaskDatabase`] impl. Same DB contract
+//! [`strata_db_types::prover_task::ProverTaskDatabase`] impl. Same DB contract
 //! as the OL surface, but the underlying store lives in a separate sled
 //! instance under the alpen-client datadir (`<datadir>/sled`), so
 //! mutations here can't race with OL writers. Point `-d`/`--datadir` at
@@ -20,7 +20,7 @@ use std::{fmt, str::FromStr};
 use alpen_ee_database::EeProverDbSled;
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::traits::ProverTaskDatabase;
+use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_paas::{TaskRecordData, TaskStatus};
 
 use crate::{

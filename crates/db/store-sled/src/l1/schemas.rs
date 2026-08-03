@@ -1,5 +1,6 @@
 use strata_asm_common::AsmManifest;
-use strata_primitives::{L1Height, l1::L1BlockId};
+use strata_primitives::L1Height;
+use strata_primitives::l1::L1BlockId;
 
 use crate::{define_table_with_default_codec, define_table_with_integer_key};
 

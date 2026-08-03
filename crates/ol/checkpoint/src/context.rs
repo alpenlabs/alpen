@@ -9,7 +9,7 @@ use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
+use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::execute_block_batch_predrain;

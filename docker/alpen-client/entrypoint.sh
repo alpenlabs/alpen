@@ -16,6 +16,7 @@ fi
 SEQUENCER_MODE="${SEQUENCER_MODE:-false}"
 SEQUENCER_PUBKEY="${SEQUENCER_PUBKEY:?SEQUENCER_PUBKEY must be set}"
 CHAIN_SPEC="${CHAIN_SPEC:-dev}"
+EE_PARAMS_PATH="${EE_PARAMS_PATH:-/app/configs/generated/ee-params.json}"
 
 if [ "${DUMMY_OL_CLIENT:-0}" = "1" ]; then
     set -- --dummy-ol-client "$@"
@@ -64,6 +65,7 @@ fi
 exec alpen-client \
     --sequencer-pubkey "${SEQUENCER_PUBKEY}" \
     --custom-chain "${CHAIN_SPEC}" \
+    --ee-params "${EE_PARAMS_PATH}" \
     --datadir "${DATADIR:-/app/data}" \
     --addr 0.0.0.0 \
     --http \
@@ -79,8 +81,6 @@ exec alpen-client \
     --authrpc.jwtsecret "${JWT_SECRET:-/app/keys/jwt.hex}" \
     --l1-reorg-safe-depth "${L1_REORG_SAFE_DEPTH:-4}" \
     --batch-sealing-block-count "${BATCH_SEALING_BLOCK_COUNT:-120}" \
-    --bridge-denomination "${BRIDGE_DENOMINATION:-100000000}" \
-    ${MAX_WITHDRAWAL_AMOUNT:+--max-withdrawal-amount "$MAX_WITHDRAWAL_AMOUNT"} \
     --txpool.minimal-protocol-fee "${TXPOOL_MIN_PROTOCOL_FEE:-0}" \
     --genesis-l1-height "${GENESIS_L1_HEIGHT:?GENESIS_L1_HEIGHT must be set}" \
     "$@"

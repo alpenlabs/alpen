@@ -13,7 +13,7 @@ import flexitest
 
 from common.base_test import BaseTest
 from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
-from common.rpc_types.strata import AccountEpochSummary, ChainSyncStatus
+from common.rpc_types.strata import AccountEpochSummary, ChainSyncStatus, EpochCommitment
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
@@ -88,10 +88,12 @@ class TestCheckpointSyncNode(BaseTest):
 
         # Each active epoch's reconstructed account summary must be identical to
         # the sequencer's, including the non-empty update inputs.
+        seq_rpc = sequencer.create_rpc()
         for epoch in active_epochs:
             seq_summary = sequencer.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
             node_summary = checkpoint_node.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
             check_summaries_equivalent(seq_summary, node_summary)
+            check_commitment_matches_checkpoint(seq_rpc, epoch, node_summary["epoch_commitment"])
             logger.info(f"account epoch summary matches at epoch {epoch}")
 
 
@@ -115,7 +117,40 @@ def check_summaries_equivalent(seq_summary: AccountEpochSummary, node_summary: A
         assert su == nu
 
 
+def check_commitment_matches_checkpoint(seq_rpc, epoch: int, commitment: EpochCommitment):
+    """Anchors the reconstructed epoch commitment to the published checkpoint.
+
+    The terminal blkid hashes the reconstructed header (which commits to
+    state_root), so equality proves replay yielded the expected post-state.
+    """
+    info = seq_rpc.strata_getCheckpointInfo(epoch)
+    assert info is not None, f"missing checkpoint info at epoch {epoch}"
+    terminal = info["l2_end"]
+    assert commitment["last_slot"] == terminal["slot"], (
+        f"epoch {epoch} commitment slot {commitment['last_slot']} != "
+        f"checkpoint terminal slot {terminal['slot']}"
+    )
+    assert commitment["last_blkid"] == terminal["blkid"], (
+        f"epoch {epoch} commitment blkid {commitment['last_blkid']} != "
+        f"checkpoint terminal blkid {terminal['blkid']}"
+    )
+
+
 def mine_and_get_status(strata: StrataService, btc_rpc) -> ChainSyncStatus:
     """Mines L1 blocks so OL checkpoints confirm, then returns the node's status."""
     btc_rpc.proxy.generatetoaddress(2, btc_rpc.proxy.getnewaddress())
-    return strata.get_sync_status()
+    status = strata.get_sync_status()
+    check_epoch_ordering_invariant(status)
+    return status
+
+
+def check_epoch_ordering_invariant(status: ChainSyncStatus):
+    """The latest (recently complete) epoch can never lag confirmed or finalized."""
+    tip = status["tip"]["epoch"]
+    latest = status["latest"]["epoch"]
+    confirmed = status["confirmed"]["epoch"]
+    finalized = status["finalized"]["epoch"]
+    assert tip >= latest >= confirmed >= finalized, (
+        f"epoch ordering violated: tip={tip}, latest={latest},"
+        "confirmed={confirmed}, finalized={finalized}"
+    )

@@ -6,7 +6,7 @@ use strata_acct_types::AcctError;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Buf64, OLBlockCommitment};
 use strata_ledger_types::StateError;
-use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
+use strata_ol_chain_types::{OLBlock, SignedOLBlockHeader};
 use strata_ol_params::OLParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::OLState;

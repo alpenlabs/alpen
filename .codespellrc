@@ -1,3 +1,3 @@
 [codespell]
 skip = .git,target,Cargo.toml,Cargo.lock,mutants*,*/_dd/*,venv,*.venv,.venv,functional-tests/venv
-ignore-words-list = crate,ser,ment,checkin,daty
+ignore-words-list = crate,ser,ment,checkin,daty,olt
