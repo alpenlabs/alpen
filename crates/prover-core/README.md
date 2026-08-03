@@ -254,7 +254,10 @@ failures *and* blocked tasks) and re-spawns them. No background scheduler thread
 On the first tick after startup, `recover()` re-spawns every unfinished
 (`Pending`/`Proving`) task. A task found mid-`Proving` is counted as a synthetic
 transient failure (bumping `retry_count`) so a crash loop is bounded by
-`max_retries`. Blocked tasks are picked up by the normal recheck scan.
+`max_retries`; it is rescheduled through the normal backoff (a *future*
+`retry_after`) rather than re-spawned inline, so recovery and the same tick's
+retriable scan can't double-spawn it. Blocked tasks are picked up by the normal
+recheck scan.
 
 ### Prover and ProverBuilder
 
@@ -275,7 +278,7 @@ The consumer API is intentionally small:
 |--------|-------------|
 | `submit(task)` | Spawn a background prove. Idempotent — submitting the same task twice is a no-op. |
 | `execute(task)` | Submit + block until terminal. Returns `TaskResult<Task>`. |
-| `wait_for_tasks(tasks)` | Block until all tasks reach a terminal state (watch-channel, zero-poll). Blocked is *not* terminal — waiters keep waiting. |
+| `wait_for_tasks(tasks)` | Block until all tasks reach a terminal state (watch-channel, zero-poll). Blocked is *not* terminal — waiters keep waiting, until the `max_blocked_rechecks` backstop promotes a never-resolving dependency to `PermanentFailure`. |
 | `get_receipt(task)` | Read the stored receipt (requires a configured `ReceiptStore`). |
 | `get_status(task)` | Current `TaskStatus` for a task. |
 
@@ -290,6 +293,7 @@ RetryConfig {
     jitter_frac: 0.2,           // ±20% randomized spread on each delay
     max_resubmits: 3,           // resubmit-class budget (each re-runs the proof)
     blocked_recheck_secs: 10,   // steady recheck cadence for Blocked tasks
+    max_blocked_rechecks: 8640, // backstop: give up on a never-resolving dep (~24h)
     local: LocalRetryConfig {   // in-attempt tier for idempotent remote polls
         max_attempts: 5,
         base_delay_ms: 500,
