@@ -10,12 +10,13 @@ mod pending_block;
 
 use std::{
     fmt::{self, Formatter},
+    future::Future,
     marker::PhantomData,
     sync::Arc,
 };
 
 use alloy_network::Ethereum;
-use alloy_primitives::U256;
+use alloy_primitives::{B256, U256};
 use reth_chainspec::{EthereumHardforks, Hardforks};
 use reth_evm::ConfigureEvm;
 use reth_node_api::{FullNodeComponents, FullNodeTypes, HeaderTy, NodeTypes};
@@ -39,6 +40,20 @@ use reth_tasks::{
 };
 
 use crate::SequencerClient;
+
+const DEFAULT_SPARSE_HISTORY_SUGGESTED_FEE_WEI: u64 = 1_000_000_000;
+
+fn sparse_history_suggested_fee(
+    error: &EthApiError,
+    configured_default: Option<U256>,
+) -> Option<U256> {
+    match error {
+        EthApiError::HeaderNotFound(block_id) if block_id.as_block_hash() == Some(B256::ZERO) => {
+            Some(configured_default.unwrap_or(U256::from(DEFAULT_SPARSE_HISTORY_SUGGESTED_FEE_WEI)))
+        }
+        _ => None,
+    }
+}
 
 /// Adapter for [`EthApiInner`], which holds all the data required to serve core `eth_` API.
 pub type EthApiNodeBackend<N, Rpc> = EthApiInner<N, Rpc>;
@@ -190,6 +205,32 @@ where
     #[inline]
     fn fee_history_cache(&self) -> &FeeHistoryCache<ProviderHeader<N::Provider>> {
         self.inner.eth_api().fee_history_cache()
+    }
+
+    fn suggested_priority_fee(&self) -> impl Future<Output = Result<U256, Self::Error>> + Send
+    where
+        Self: 'static,
+    {
+        async move {
+            match self.gas_oracle().suggest_tip_cap().await {
+                Ok(suggested_fee) => Ok(suggested_fee),
+                Err(error) => {
+                    let Some(suggested_fee) = sparse_history_suggested_fee(
+                        &error,
+                        self.gas_oracle().config().default_suggested_fee,
+                    ) else {
+                        return Err(error);
+                    };
+
+                    tracing::debug!(
+                        %suggested_fee,
+                        "gas price oracle reached sparse history boundary; using default suggested fee"
+                    );
+
+                    Ok(suggested_fee)
+                }
+            }
+        }
     }
 }
 
@@ -346,5 +387,38 @@ where
                 sequencer_client,
             }),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sparse_history_boundary_uses_default_suggested_fee() {
+        let error = EthApiError::HeaderNotFound(B256::ZERO.into());
+
+        assert_eq!(
+            sparse_history_suggested_fee(&error, None),
+            Some(U256::from(DEFAULT_SPARSE_HISTORY_SUGGESTED_FEE_WEI))
+        );
+    }
+
+    #[test]
+    fn sparse_history_boundary_uses_configured_suggested_fee() {
+        let error = EthApiError::HeaderNotFound(B256::ZERO.into());
+        let configured_fee = U256::from(42);
+
+        assert_eq!(
+            sparse_history_suggested_fee(&error, Some(configured_fee)),
+            Some(configured_fee)
+        );
+    }
+
+    #[test]
+    fn nonzero_missing_header_does_not_use_sparse_history_fallback() {
+        let error = EthApiError::HeaderNotFound(B256::repeat_byte(1).into());
+
+        assert_eq!(sparse_history_suggested_fee(&error, None), None);
     }
 }
