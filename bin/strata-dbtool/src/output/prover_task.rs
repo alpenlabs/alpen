@@ -1,6 +1,8 @@
 //! Prover task formatting implementations.
 
 use serde::Serialize;
+#[cfg(test)]
+use strata_paas::AttemptCounts;
 use strata_paas::{TaskRecordData, TaskStatus};
 
 use super::{helpers::porcelain_field, traits::Formattable};
@@ -35,14 +37,11 @@ impl From<&TaskStatus> for StatusInfo {
                 recheck_count: None,
                 error: None,
             },
-            TaskStatus::Proving {
-                retry_count,
-                resubmit_count,
-            } => Self {
+            TaskStatus::Proving { counts } => Self {
                 name: "proving",
-                retry_count: Some(*retry_count),
-                resubmit_count: Some(*resubmit_count),
-                recheck_count: None,
+                retry_count: Some(counts.retry),
+                resubmit_count: Some(counts.resubmit),
+                recheck_count: Some(counts.recheck),
                 error: None,
             },
             TaskStatus::Completed => Self {
@@ -52,25 +51,18 @@ impl From<&TaskStatus> for StatusInfo {
                 recheck_count: None,
                 error: None,
             },
-            TaskStatus::Blocked {
-                reason,
-                recheck_count,
-            } => Self {
+            TaskStatus::Blocked { reason, counts } => Self {
                 name: "blocked",
-                retry_count: None,
-                resubmit_count: None,
-                recheck_count: Some(*recheck_count),
+                retry_count: Some(counts.retry),
+                resubmit_count: Some(counts.resubmit),
+                recheck_count: Some(counts.recheck),
                 error: Some(reason.clone()),
             },
-            TaskStatus::TransientFailure {
-                retry_count,
-                resubmit_count,
-                error,
-            } => Self {
+            TaskStatus::TransientFailure { counts, error } => Self {
                 name: "transient_failure",
-                retry_count: Some(*retry_count),
-                resubmit_count: Some(*resubmit_count),
-                recheck_count: None,
+                retry_count: Some(counts.retry),
+                resubmit_count: Some(counts.resubmit),
+                recheck_count: Some(counts.recheck),
                 error: Some(error.clone()),
             },
             TaskStatus::PermanentFailure { error } => Self {
@@ -238,12 +230,16 @@ mod tests {
         assert_eq!(pending.error, None);
 
         let proving = StatusInfo::from(&TaskStatus::Proving {
-            retry_count: 3,
-            resubmit_count: 1,
+            counts: AttemptCounts {
+                retry: 3,
+                resubmit: 1,
+                recheck: 4,
+            },
         });
         assert_eq!(proving.name, "proving");
         assert_eq!(proving.retry_count, Some(3));
         assert_eq!(proving.resubmit_count, Some(1));
+        assert_eq!(proving.recheck_count, Some(4));
         assert_eq!(proving.error, None);
 
         let completed = StatusInfo::from(&TaskStatus::Completed);
@@ -252,8 +248,11 @@ mod tests {
         assert_eq!(completed.error, None);
 
         let transient = StatusInfo::from(&TaskStatus::TransientFailure {
-            retry_count: 2,
-            resubmit_count: 0,
+            counts: AttemptCounts {
+                retry: 2,
+                resubmit: 0,
+                recheck: 0,
+            },
             error: "rpc down".into(),
         });
         assert_eq!(transient.name, "transient_failure");
@@ -296,8 +295,11 @@ mod tests {
     fn porcelain_output_includes_known_keys() {
         let key = vec![0xaa, 0xbb];
         let record = TaskRecordData::new(TaskStatus::Proving {
-            retry_count: 1,
-            resubmit_count: 0,
+            counts: AttemptCounts {
+                retry: 1,
+                resubmit: 0,
+                recheck: 0,
+            },
         });
         let info = ProverTaskInfo::from_record(&key, &record);
 
