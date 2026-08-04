@@ -108,6 +108,8 @@ pub async fn recover(
             address.to_string().yellow(),
             recover_to.to_string().yellow()
         );
+        l1w.persist()
+            .internal_error("Failed to persist signet wallet")?;
 
         let policy = recovery_wallet
             .policies(KeychainKind::External)

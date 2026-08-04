@@ -86,6 +86,8 @@ pub async fn send(args: SendArgs, seed: Seed, settings: Settings) -> Result<(), 
                     Err(e) => panic!("Unexpected error in creating PSBT: {e:?}"),
                 }
             };
+            l1w.persist()
+                .internal_error("Failed to persist signet wallet")?;
             l1w.sign(&mut psbt, Default::default())
                 .expect("tx should be signed");
             let tx = psbt.extract_tx().expect("tx should be signed and ready");

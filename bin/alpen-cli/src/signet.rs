@@ -14,6 +14,7 @@ use backend::{ScanError, SignetBackend, SyncError, UpdateError, WalletUpdate};
 use bdk_esplora::esplora_client::{self, AsyncClient};
 use bdk_wallet::{
     bitcoin::{FeeRate, Network},
+    chain::keychain_txout::DEFAULT_LOOKAHEAD,
     rusqlite::{self, Connection},
     PersistedWallet, Wallet,
 };
@@ -178,14 +179,17 @@ impl SignetWallet {
         sync_backend: Arc<dyn SignetBackend>,
     ) -> io::Result<Self> {
         let (load, create) = seed.signet_wallet().split();
+        let lookahead = recovery_lookahead();
         Ok(Self {
             wallet: load
                 .check_network(network)
+                .lookahead(lookahead)
                 .load_wallet(&mut Persister)
                 .expect("should be able to load wallet")
                 .unwrap_or_else(|| {
                     create
                         .network(network)
+                        .lookahead(lookahead)
                         .create_wallet(&mut Persister)
                         .expect("wallet creation to succeed")
                 }),
@@ -193,20 +197,67 @@ impl SignetWallet {
         })
     }
 
-    pub async fn sync(&mut self) -> Result<(), OneOf<(UpdateError, SyncError, rusqlite::Error)>> {
-        sync_wallet(&mut self.wallet, self.sync_backend.clone()).await?;
+    /// Syncs already-revealed addresses. Until a full scan has completed at
+    /// least once for this wallet (e.g. right after a fresh recovery from
+    /// seed), this runs a full scan instead, since a plain sync can never
+    /// discover funds sitting at indices the wallet doesn't know about yet.
+    pub async fn sync(
+        &mut self,
+    ) -> Result<(), OneOf<(UpdateError, SyncError, ScanError, rusqlite::Error)>> {
+        let needs_full_scan = !Persister::full_scan_completed().map_err(OneOf::new)?;
+        if needs_full_scan {
+            scan_wallet(&mut self.wallet, self.sync_backend.clone())
+                .await
+                .map_err(OneOf::broaden)?;
+        } else {
+            sync_wallet(&mut self.wallet, self.sync_backend.clone())
+                .await
+                .map_err(OneOf::broaden)?;
+        }
+        // Persist the scan results before recording completion, so a crash
+        // in between leaves us re-scanning next time rather than silently
+        // skipping a scan we never actually saved the results of.
         self.persist().map_err(OneOf::new)?;
+        if needs_full_scan {
+            Persister::mark_full_scan_completed().map_err(OneOf::new)?;
+        }
         Ok(())
     }
 
     pub async fn scan(&mut self) -> Result<(), OneOf<(UpdateError, ScanError, rusqlite::Error)>> {
         scan_wallet(&mut self.wallet, self.sync_backend.clone()).await?;
         self.persist().map_err(OneOf::new)?;
+        Persister::mark_full_scan_completed().map_err(OneOf::new)?;
         Ok(())
     }
 
     pub fn persist(&mut self) -> Result<bool, rusqlite::Error> {
         self.wallet.persist(&mut Persister)
+    }
+}
+
+/// Number of addresses cached beyond the last known one during the single
+/// scan that follows a restore from seed.
+///
+/// The Bitcoin Core backend never uses the Esplora `stop_gap`. It replays
+/// each block once and only recognizes an address already held in this
+/// cache, so a payment that confirms out of derivation order is missed for
+/// good. That one pass from genesis to the tip is the only chance to find
+/// old addresses, because the emitter resumes from the agreed tip
+/// afterwards. A wide cache makes payment order irrelevant below this
+/// index.
+const RECOVERY_LOOKAHEAD: u32 = 1000;
+
+/// Picks how many addresses to cache ahead of the last known one.
+///
+/// Only the scan that follows a restore needs the wide cache, so every
+/// later command pays the default. A database error keeps the wide value,
+/// since an unnecessarily wide cache is harmless but a narrow one during
+/// recovery loses coins.
+fn recovery_lookahead() -> u32 {
+    match Persister::full_scan_completed() {
+        Ok(true) => DEFAULT_LOOKAHEAD,
+        Ok(false) | Err(_) => RECOVERY_LOOKAHEAD,
     }
 }
 

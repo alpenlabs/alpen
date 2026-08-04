@@ -207,6 +207,9 @@ pub async fn deposit(
     )?;
     println!("Built transaction");
 
+    l1w.persist()
+        .internal_error("Failed to persist signet wallet")?;
+
     let pb = ProgressBar::new_spinner().with_message("Saving output descriptor");
     pb.enable_steady_tick(Duration::from_millis(100));
 
