@@ -16,6 +16,9 @@ class ChunkTransition(Container):
     ### Previous exec blkid being built on top of.
     parent_exec_blkid: Bytes32
 
+    ### State root of the previous exec block.
+    parent_state_root: Bytes32
+
     ### New tip exec blkid.
     tip_exec_blkid: Bytes32
 

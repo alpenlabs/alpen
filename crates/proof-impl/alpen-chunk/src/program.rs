@@ -171,6 +171,7 @@ mod tests {
         // Build chunk transition.
         let chunk_transition = ChunkTransition::new(
             parent_blkid,
+            parent_evm_header.get_state_root(),
             tip_blkid,
             tip_state_root,
             tip_exec_header_summary,

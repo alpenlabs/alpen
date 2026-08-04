@@ -88,6 +88,7 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
 
     let chunk_transition = strata_ee_chain_types::ChunkTransition::new(
         parent_blkid,
+        parent_evm_header.get_state_root(),
         tip_blkid,
         tip_state_root,
         tip_exec_header_summary,

@@ -1,6 +1,6 @@
 //! Batch lifecycle state management.
 
-use alpen_ee_common::{require_genesis_batch, BatchId, BatchStatus, BatchStorage, StorageError};
+use alpen_ee_common::{require_batch_anchor, BatchId, BatchStatus, BatchStorage, StorageError};
 
 /// A frontier tracks the latest batch that has reached a particular status.
 ///
@@ -18,14 +18,6 @@ impl Frontier {
     /// Create a new frontier.
     pub(crate) fn new(idx: u64, id: BatchId) -> Self {
         Self { idx, id }
-    }
-
-    /// Create a genesis frontier (idx 0 with the given genesis batch id).
-    pub(crate) fn genesis(genesis_id: BatchId) -> Self {
-        Self {
-            idx: 0,
-            id: genesis_id,
-        }
     }
 
     /// Get the batch index.
@@ -74,14 +66,14 @@ pub struct BatchLifecycleState {
 }
 
 impl BatchLifecycleState {
-    /// Create a new state with all frontiers at genesis.
-    fn new_at_genesis(genesis_id: BatchId) -> Self {
-        let genesis = Frontier::genesis(genesis_id);
+    /// Create a new state with all frontiers at the earliest retained batch.
+    fn new_at_anchor(anchor_idx: u64, anchor_id: BatchId) -> Self {
+        let anchor = Frontier::new(anchor_idx, anchor_id);
         Self {
-            da_pending: genesis,
-            da_complete: genesis,
-            proof_pending: genesis,
-            proof_ready: genesis,
+            da_pending: anchor,
+            da_complete: anchor,
+            proof_pending: anchor,
+            proof_ready: anchor,
         }
     }
 
@@ -125,13 +117,12 @@ impl BatchLifecycleState {
         self.proof_ready = Frontier::new(idx, id);
     }
 
-    /// Reset all frontiers to genesis state.
-    pub(crate) fn reset_to_genesis(&mut self, genesis_id: BatchId) {
-        let genesis = Frontier::genesis(genesis_id);
-        self.da_pending = genesis;
-        self.da_complete = genesis;
-        self.proof_pending = genesis;
-        self.proof_ready = genesis;
+    /// Reset all frontiers to the earliest retained batch.
+    pub(crate) fn reset_to_anchor(&mut self, anchor: Frontier) {
+        self.da_pending = anchor;
+        self.da_complete = anchor;
+        self.proof_pending = anchor;
+        self.proof_ready = anchor;
     }
 
     /// Reset da_pending to match da_complete.
@@ -160,21 +151,22 @@ impl BatchLifecycleState {
 pub async fn init_lifecycle_state(
     storage: &impl BatchStorage,
 ) -> Result<BatchLifecycleState, StorageError> {
-    let (genesis_batch, _) = require_genesis_batch(storage).await?;
-    let genesis_id = genesis_batch.id();
+    let (anchor_batch, _) = require_batch_anchor(storage).await?;
+    let anchor_idx = anchor_batch.idx();
+    let anchor_id = anchor_batch.id();
 
-    // Start with all frontiers at genesis
-    let mut state = BatchLifecycleState::new_at_genesis(genesis_id);
+    // The earliest retained batch is either normal genesis or a trusted sparse anchor.
+    let mut state = BatchLifecycleState::new_at_anchor(anchor_idx, anchor_id);
 
     // Get the latest batch to know the scan range
     let Some((latest_batch, _)) = storage.get_latest_batch().await? else {
-        // Only genesis exists, return genesis state
+        // Only the retained anchor exists.
         return Ok(state);
     };
 
     let latest_idx = latest_batch.idx();
-    if latest_idx == 0 {
-        // Only genesis exists
+    if latest_idx == anchor_idx {
+        // Only the retained anchor exists.
         return Ok(state);
     }
 
@@ -199,8 +191,9 @@ pub(crate) async fn recover_from_storage(
     let mut found_proof_pending = false;
     let mut found_proof_ready = false;
 
-    // Scan from latest to earliest (skip genesis at idx 0)
-    for idx in (1..=latest_idx).rev() {
+    // Scan only the batches retained above the trusted lifecycle anchor.
+    let anchor_idx = state.proof_ready.idx();
+    for idx in ((anchor_idx + 1)..=latest_idx).rev() {
         let Some((batch, status)) = storage.get_batch_by_idx(idx).await? else {
             continue;
         };
@@ -260,12 +253,12 @@ mod tests {
 
     use super::*;
     use crate::batch_lifecycle::test_utils::{
-        fill_storage, make_genesis_batch, TestBatchStatus::*,
+        fill_storage, make_batch, make_genesis_batch, TestBatchStatus::*,
     };
 
     fn genesis_state() -> BatchLifecycleState {
         let genesis = make_genesis_batch(0);
-        BatchLifecycleState::new_at_genesis(genesis.id())
+        BatchLifecycleState::new_at_anchor(0, genesis.id())
     }
 
     #[tokio::test]
@@ -350,5 +343,27 @@ mod tests {
         assert_eq!(state.da_complete().idx(), 1);
         assert_eq!(state.proof_pending().idx(), 1);
         assert_eq!(state.proof_ready().idx(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_sparse_batch_history_starts_at_retained_anchor() {
+        let storage = InMemoryStorage::new_empty();
+        let anchor = make_batch(14, 13, 14);
+        storage.save_genesis_batch(anchor.clone()).await.unwrap();
+
+        let state = init_lifecycle_state(&storage).await.unwrap();
+        assert_eq!(state.da_pending().idx(), 14);
+        assert_eq!(state.da_complete().idx(), 14);
+        assert_eq!(state.proof_pending().idx(), 14);
+        assert_eq!(state.proof_ready().idx(), 14);
+
+        let next = make_batch(15, 14, 15);
+        storage.save_next_batch(next).await.unwrap();
+
+        let state = init_lifecycle_state(&storage).await.unwrap();
+        assert_eq!(state.da_pending().idx(), 14);
+        assert_eq!(state.da_complete().idx(), 14);
+        assert_eq!(state.proof_pending().idx(), 14);
+        assert_eq!(state.proof_ready().idx(), 14);
     }
 }

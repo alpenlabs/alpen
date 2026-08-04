@@ -411,30 +411,27 @@ impl EeNodeDb for EeNodeDBSled {
             .map_err(Into::into)
     }
 
-    fn init_finalized_chain(&self, hash: Hash) -> DbResult<()> {
-        // 1. Check if chain is already initialized (check genesis at height 0)
-        if let Some(existing_genesis_hash) = self.exec_block_finalized_tree.get(&0)? {
-            if existing_genesis_hash == hash {
-                // Already initialized with the same genesis block - idempotent success
+    fn initialize_finalized_chain_anchor(&self, hash: Hash) -> DbResult<()> {
+        // Check whether the finalized-chain view already has an anchor.
+        if let Some((existing_height, existing_hash)) = self.exec_block_finalized_tree.first()? {
+            if existing_hash == hash {
                 return Ok(());
             }
-            // Chain is already initialized with a different genesis block
-            return Err(DbError::FinalizedExecChainGenesisBlockMismatch);
+            return Err(DbError::FinalizedExecChainAnchorMismatch {
+                height: existing_height,
+                existing_anchor: existing_hash,
+            });
         }
 
-        // 2. Check that the requested block exists.
+        // The anchor block must already be present in local block storage.
         let block = self
             .get_exec_block(hash)?
             .ok_or(DbError::MissingExecBlock(hash))?;
 
-        // 3. Insert the block hash as finalized at height 0.
+        // Preserve its real height. At genesis the anchor height is 0, but in the L1 recovery
+        // scenario the chain starts at the anchored block's height, which is non-zero. Callers
+        // that require a specific anchor height must check it themselves.
         let height = block.blocknum();
-        if height != 0 {
-            return Err(DbError::Other(format!(
-                "init_finalized_chain called with non-genesis block at height {}",
-                height
-            )));
-        }
         self.exec_block_finalized_tree.insert(&height, &hash)?;
 
         Ok(())
@@ -526,6 +523,14 @@ impl EeNodeDb for EeNodeDBSled {
         };
 
         self.get_exec_block(best_blockhash)
+    }
+
+    fn first_finalized_block(&self) -> DbResult<Option<ExecBlockRecord>> {
+        let Some((_, first_blockhash)) = self.exec_block_finalized_tree.first()? else {
+            return Ok(None);
+        };
+
+        self.get_exec_block(first_blockhash)
     }
 
     fn get_finalized_block_at_height(&self, height: u64) -> DbResult<Option<ExecBlockRecord>> {
@@ -1092,7 +1097,7 @@ mod tests {
         save_block(&db, create_exec_block(1, h0, h1, 1));
         save_block(&db, create_exec_block(2, h1, h2, 2));
 
-        db.init_finalized_chain(h0).unwrap();
+        db.initialize_finalized_chain_anchor(h0).unwrap();
         db.extend_finalized_chain(h2).unwrap();
 
         // Simulates "caller behind" after another writer already finalized beyond h1.
@@ -1106,6 +1111,41 @@ mod tests {
     }
 
     #[test]
+    fn initialize_finalized_chain_anchor_accepts_sparse_anchor() {
+        let db = setup_db(2);
+        let anchor = hash_from_u8(15);
+        save_block(&db, create_exec_block(15, Hash::default(), anchor, 15));
+
+        db.initialize_finalized_chain_anchor(anchor).unwrap();
+
+        assert_eq!(db.get_finalized_height(anchor).unwrap(), Some(15));
+        let best = db.best_finalized_block().unwrap().unwrap();
+        assert_eq!(best.blockhash(), anchor);
+        assert_eq!(best.blocknum(), 15);
+    }
+
+    #[test]
+    fn initialize_finalized_chain_anchor_rejects_reanchoring() {
+        let db = setup_db(2);
+        let first_anchor = hash_from_u8(15);
+        let second_anchor = hash_from_u8(16);
+        save_block(
+            &db,
+            create_exec_block(15, Hash::default(), first_anchor, 15),
+        );
+        save_block(&db, create_exec_block(16, first_anchor, second_anchor, 16));
+        db.initialize_finalized_chain_anchor(first_anchor).unwrap();
+
+        let error = db
+            .initialize_finalized_chain_anchor(second_anchor)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("already initialized"));
+        assert_eq!(db.get_finalized_height(first_anchor).unwrap(), Some(15));
+        assert_eq!(db.get_finalized_height(second_anchor).unwrap(), None);
+    }
+
+    #[test]
     fn extend_finalized_chain_cycle_errors_with_step_budget_exceeded() {
         let db = setup_db(2);
         let h0 = hash_from_u8(0);
@@ -1113,7 +1153,7 @@ mod tests {
         let h3 = hash_from_u8(3);
 
         save_block(&db, create_exec_block(0, Hash::default(), h0, 0));
-        db.init_finalized_chain(h0).unwrap();
+        db.initialize_finalized_chain_anchor(h0).unwrap();
 
         // Corrupt graph above finalized tip:
         // h3 -> h2 and h2 -> h3 (cycle).

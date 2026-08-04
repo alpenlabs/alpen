@@ -34,8 +34,8 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Save block data and payload for a given block hash
     fn save_exec_block(&self, block: ExecBlockRecord, payload: Vec<u8>) -> DbResult<()>;
 
-    /// Insert first block to local view of canonical finalized chain (ie. genesis block)
-    fn init_finalized_chain(&self, hash: Hash) -> DbResult<()>;
+    /// Insert the first trusted block into an empty local finalized-chain view.
+    fn initialize_finalized_chain_anchor(&self, hash: Hash) -> DbResult<()>;
 
     /// Extend local view of canonical chain up to and including the specified block hash.
     fn extend_finalized_chain(&self, new_tip: Hash) -> DbResult<()>;
@@ -48,6 +48,9 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
 
     /// Get exec block for the highest blocknum available in the local view of canonical chain.
     fn best_finalized_block(&self) -> DbResult<Option<ExecBlockRecord>>;
+
+    /// Get the first exec block retained in the local view of canonical chain.
+    fn first_finalized_block(&self) -> DbResult<Option<ExecBlockRecord>>;
 
     /// Get the finalized block at a specific height.
     fn get_finalized_block_at_height(&self, height: u64) -> DbResult<Option<ExecBlockRecord>>;

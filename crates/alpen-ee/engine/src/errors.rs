@@ -24,6 +24,21 @@ pub enum SyncError {
     #[error("finalized chain is empty")]
     EmptyFinalizedChain,
 
+    /// The finalized chain has a best block but no readable local anchor.
+    #[error("finalized chain has no readable local anchor")]
+    MissingFinalizedChainAnchor,
+
+    /// The local finalized-chain bounds are inconsistent.
+    #[error(
+        "invalid finalized chain bounds: first retained height {first_height} exceeds best height \
+         {best_height}"
+    )]
+    InvalidFinalizedChainBounds { first_height: u64, best_height: u64 },
+
+    /// A trusted non-genesis finalized anchor is absent from the paired Reth database.
+    #[error("trusted finalized anchor at height {height} with hash {hash:?} is missing from Reth")]
+    FinalizedAnchorMissingInEngine { height: u64, hash: Hash },
+
     /// Storage error.
     #[error("failure in storage: {0}")]
     Storage(#[from] StorageError),

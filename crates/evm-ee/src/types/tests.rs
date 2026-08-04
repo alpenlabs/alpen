@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, fs::read_to_string, path::PathBuf};
 
-use alloy_consensus::{Header, Sealable};
+use alloy_consensus::{Header, Sealable, Sealed};
 use revm::{DatabaseRef, state::Bytecode};
 use revm_primitives::alloy_primitives::{Address, B256, Bloom, Bytes, U256};
 use rsp_client_executor::io::EthClientExecutorInput;
@@ -312,6 +312,39 @@ fn test_evm_partial_state_block_hashes_survive_codec_roundtrip() {
     let decoded: EvmPartialState = decode_buf_exact(&encoded).expect("decode failed");
 
     assert_block_hashes_match_headers(&decoded, &ancestor_headers);
+}
+
+#[test]
+fn test_evm_partial_state_preserves_authoritative_recovery_anchor_hash() {
+    let witness = load_witness_test_data();
+    let anchor = create_test_header_at(100, B256::from([42u8; 32]));
+    let authoritative_anchor_hash = B256::from([0xa5; 32]);
+    assert_ne!(anchor.hash_slow(), authoritative_anchor_hash);
+
+    let child = create_test_header_at(101, authoritative_anchor_hash);
+    let child_hash = child.hash_slow();
+    let partial_state = EvmPartialState::new_with_sealed_headers(
+        witness.parent_state,
+        BTreeMap::new(),
+        vec![
+            Sealed::new_unchecked(anchor, authoritative_anchor_hash),
+            child.seal_slow(),
+        ],
+    );
+
+    assert_eq!(
+        partial_state.block_hashes().get(&100),
+        Some(&authoritative_anchor_hash)
+    );
+    assert_eq!(partial_state.block_hashes().get(&101), Some(&child_hash));
+
+    let encoded = encode_to_vec(&partial_state).expect("encode partial state");
+    let decoded: EvmPartialState = decode_buf_exact(&encoded).expect("decode partial state");
+    assert_eq!(
+        decoded.block_hashes().get(&100),
+        Some(&authoritative_anchor_hash)
+    );
+    assert_eq!(decoded.block_hashes().get(&101), Some(&child_hash));
 }
 
 #[test]

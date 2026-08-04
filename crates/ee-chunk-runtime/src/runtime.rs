@@ -50,7 +50,14 @@ pub fn verify_input<E: ExecutionEnvironment>(
     let chunk = Chunk::<'_, E>::new(blocks);
 
     // 3. Verify the chunk against the pre state.
-    verify_chunk_transition(&tsn, ee, &prev_header, &mut pre_state, &chunk)?;
+    verify_chunk_transition(
+        &tsn,
+        ee,
+        input.raw_chunk().prev_exec_blkid(),
+        &prev_header,
+        &mut pre_state,
+        &chunk,
+    )?;
 
     Ok(())
 }

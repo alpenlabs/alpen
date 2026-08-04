@@ -170,6 +170,7 @@ fn rebuild_ee_input(
 ) -> EePrivateInput {
     let transition = ChunkTransition::new(
         Hash::from([1; 32]),
+        Hash::zero(),
         Hash::from([2; 32]),
         Hash::from(tip_state_root),
         ExecHeaderSummary::from_vec(encode_to_vec(&header).unwrap()).unwrap(),
@@ -290,6 +291,7 @@ fn verify_da_witness_accepts_deduped_bytecode_from_private_witness() {
 
     let transition = ChunkTransition::new(
         Hash::from([1; 32]),
+        Hash::zero(),
         Hash::from([2; 32]),
         Hash::from(post_root),
         ExecHeaderSummary::from_vec(encode_to_vec(&header).unwrap()).unwrap(),
@@ -358,6 +360,7 @@ fn verify_da_blob_metadata_rejects_missing_deployed_bytecode() {
     };
     let transition = ChunkTransition::new(
         Hash::from([1; 32]),
+        Hash::zero(),
         Hash::from([2; 32]),
         Hash::from([3; 32]),
         ExecHeaderSummary::from_vec(encode_to_vec(&header).unwrap()).unwrap(),
@@ -395,6 +398,7 @@ fn verify_da_blob_metadata_rejects_missing_deployed_bytecode() {
 fn verify_da_witness_rejects_empty_witness_for_non_empty_batch() {
     let transition = ChunkTransition::new(
         Hash::from([1; 32]),
+        Hash::zero(),
         Hash::from([2; 32]),
         Hash::from([3; 32]),
         ExecHeaderSummary::new_empty(),

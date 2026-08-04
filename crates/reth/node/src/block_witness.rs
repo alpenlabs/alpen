@@ -37,6 +37,13 @@ pub struct BlockWitnessRecord {
     pub codes: Vec<Vec<u8>>,
     /// RLP-encoded BLOCKHASH ancestor headers covering the block's range.
     pub ancestor_headers: Vec<Vec<u8>>,
+    /// Authoritative block hash paired by index with each `ancestor_headers` entry.
+    ///
+    /// This is optional for backward compatibility with witness records written before hashes were
+    /// retained explicitly. Legacy records recompute canonical header hashes during proof-input
+    /// assembly.
+    #[serde(default)]
+    pub ancestor_header_hashes: Vec<B256>,
     /// RLP-encoded reth `Block` (header + body) for guest re-execution.
     pub raw_block_rlp: Vec<u8>,
     /// RLP-encoded parent alloy [`Header`] (anchors the block's pre-state root).
@@ -108,10 +115,14 @@ where
     // BLOCKHASH ancestor headers: the contiguous range from the lowest block
     // referenced (or just the parent) up to the parent.
     let smallest = lowest_block_number.unwrap_or_else(|| block_num.saturating_sub(1));
-    let ancestor_headers = header_provider
-        .headers_range(smallest..block_num)?
+    let sealed_ancestor_headers = header_provider.sealed_headers_range(smallest..block_num)?;
+    let ancestor_headers = sealed_ancestor_headers
         .iter()
-        .map(alloy_rlp::encode)
+        .map(|sealed| alloy_rlp::encode(sealed.header()))
+        .collect();
+    let ancestor_header_hashes = sealed_ancestor_headers
+        .iter()
+        .map(|sealed| sealed.hash())
         .collect();
 
     let raw_parent_header_rlp = alloy_rlp::encode(parent_header);
@@ -120,6 +131,7 @@ where
         witness_state,
         codes,
         ancestor_headers,
+        ancestor_header_hashes,
         raw_block_rlp: block_rlp,
         raw_parent_header_rlp,
     })
@@ -189,8 +201,51 @@ mod tests {
     use alloy_primitives::{Address, U256};
     use reth_revm::db::{states::cache_account::CacheAccount, EmptyDB, State};
     use revm::state::{AccountInfo, Bytecode};
+    use serde::Serialize;
 
     use super::*;
+
+    #[derive(Serialize)]
+    struct LegacyBlockWitnessRecord {
+        witness_state: Vec<Vec<u8>>,
+        codes: Vec<Vec<u8>>,
+        ancestor_headers: Vec<Vec<u8>>,
+        raw_block_rlp: Vec<u8>,
+        raw_parent_header_rlp: Vec<u8>,
+    }
+
+    #[test]
+    fn decodes_legacy_record_without_explicit_ancestor_hashes() {
+        let legacy = LegacyBlockWitnessRecord {
+            witness_state: vec![vec![1]],
+            codes: vec![vec![2]],
+            ancestor_headers: vec![vec![3]],
+            raw_block_rlp: vec![4],
+            raw_parent_header_rlp: vec![5],
+        };
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&legacy, &mut bytes).unwrap();
+
+        let decoded = BlockWitnessRecord::decode(&bytes).unwrap();
+        assert_eq!(decoded.ancestor_headers, vec![vec![3]]);
+        assert!(decoded.ancestor_header_hashes.is_empty());
+    }
+
+    #[test]
+    fn roundtrip_preserves_authoritative_ancestor_hashes() {
+        let hash = B256::repeat_byte(0xa5);
+        let record = BlockWitnessRecord {
+            witness_state: vec![vec![1]],
+            codes: vec![vec![2]],
+            ancestor_headers: vec![vec![3]],
+            ancestor_header_hashes: vec![hash],
+            raw_block_rlp: vec![4],
+            raw_parent_header_rlp: vec![5],
+        };
+
+        let decoded = BlockWitnessRecord::decode(&record.encode().unwrap()).unwrap();
+        assert_eq!(decoded.ancestor_header_hashes, vec![hash]);
+    }
 
     /// A contract whose code is attached to its account `info.code` but never
     /// entered `cache.contracts` (the in-memory bytecode store

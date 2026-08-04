@@ -46,9 +46,9 @@ use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
 #[cfg(feature = "sequencer")]
 use alpen_ee_exec_chain::{init_exec_chain_state_from_storage, ExecChainState};
+use alpen_ee_genesis::ensure_genesis_ee_account_state;
 #[cfg(feature = "sequencer")]
-use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
-use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
+use alpen_ee_genesis::ensure_local_history;
 use alpen_ee_ol_tracker::init_ol_tracker_state;
 use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcServer};
 #[cfg(feature = "sequencer")]
@@ -1760,24 +1760,22 @@ fn block_builder_config_from_env(sequencer_enabled: bool) -> eyre::Result<BlockB
     Ok(default_config.with_blocktime_ms(blocktime_ms))
 }
 
-/// Handle genesis related tasks.
-/// Mainly deals with ensuring database has minimal expected state.
+/// Ensures the database has a valid normal or sparse local-history anchor.
 async fn ensure_genesis<TStorage: Storage + ExecBlockStorage + BatchStorage>(
     config: &AlpenEeConfig,
     genesis_epoch: &EpochCommitment,
     storage: &TStorage,
     is_sequencer: bool,
 ) -> eyre::Result<()> {
-    ensure_genesis_ee_account_state(config, genesis_epoch, storage).await?;
-
     #[cfg(feature = "sequencer")]
     if is_sequencer {
-        ensure_finalized_exec_chain_genesis(config, genesis_epoch.to_block_commitment(), storage)
-            .await?;
-        ensure_batch_genesis(config, storage).await?;
+        ensure_local_history(config, genesis_epoch, storage).await?;
+        return Ok(());
     }
     #[cfg(not(feature = "sequencer"))]
     let _ = is_sequencer;
+
+    ensure_genesis_ee_account_state(config, genesis_epoch, storage).await?;
 
     Ok(())
 }

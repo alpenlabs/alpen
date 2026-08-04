@@ -243,6 +243,7 @@ pub(crate) fn simple_chunk(
     }
     ChunkTransition::new(
         parent,
+        Hash::zero(),
         tip,
         tip_state_root,
         tip_exec_header_summary,
@@ -266,6 +267,7 @@ pub(crate) fn create_chunk_transition(
 ) -> ChunkTransition {
     ChunkTransition::new(
         parent,
+        Hash::zero(),
         tip,
         tip_state_root,
         tip_exec_header_summary,

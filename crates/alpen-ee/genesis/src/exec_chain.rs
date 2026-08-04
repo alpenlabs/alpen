@@ -17,6 +17,11 @@ pub async fn ensure_finalized_exec_chain_genesis<TStorage: ExecBlockStorage>(
     info!(%genesis_ee_blockhash, "genesis ee blockhash");
     let (genesis_block, genesis_block_payload) =
         build_genesis_exec_block(config.params(), genesis_ol_block);
+    eyre::ensure!(
+        genesis_block.blocknum() == 0,
+        "execution genesis block must be at height 0, got {}",
+        genesis_block.blocknum(),
+    );
 
     // If exists, does not overwrite
     storage
@@ -26,7 +31,7 @@ pub async fn ensure_finalized_exec_chain_genesis<TStorage: ExecBlockStorage>(
         .context("ensure_finalized_exec_chain_genesis: failed to create genesis exec block")?;
     // Inserts if empty, checks genesis blockhash is correct if exists.
     storage
-        .init_finalized_chain(genesis_ee_blockhash)
+        .initialize_finalized_chain_anchor(genesis_ee_blockhash)
         .await
         .map_err(eyre::Error::from)
         .context("ensure_finalized_exec_chain_genesis: failed to set genesis exec block")?;

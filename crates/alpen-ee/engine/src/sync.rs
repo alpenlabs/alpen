@@ -110,62 +110,88 @@ where
         return Err(SyncError::EmptyFinalizedChain);
     };
 
-    // Get the latest height of the finalized chain
+    let Some(first_finalized) = storage.first_finalized_block().await? else {
+        return Err(SyncError::MissingFinalizedChainAnchor);
+    };
+
+    // Get the locally retained bounds of the finalized chain.
+    let first_height = first_finalized.blocknum();
     let latest_height = best_finalized.blocknum();
+    if first_height > latest_height {
+        return Err(SyncError::InvalidFinalizedChainBounds {
+            first_height,
+            best_height: latest_height,
+        });
+    }
 
     info!(
+        first_height = %first_height,
+        first_hash = ?first_finalized.blockhash(),
         latest_height = %latest_height,
         latest_hash = ?best_finalized.blockhash(),
         "starting chainstate sync check"
     );
 
-    let total_blocks = latest_height + 1; // 0-indexed heights
+    let retained_blocks = latest_height - first_height + 1;
 
-    info!(total_blocks = %total_blocks, "searching for last known block in engine");
+    info!(%retained_blocks, "searching for last known block in engine");
 
     // Find the last block in the canonical chain that exists in Reth using binary search.
-    // Fetches blocks on-demand during the search (O(log n).
-    let sync_from_height = find_last_match((0, latest_height as usize), |height| async move {
-        let Some(block) = storage.get_finalized_block_at_height(height as u64).await? else {
-            return Err(SyncError::MissingExecBlock(height as u64));
-        };
-        block_exists_with_retry(checker, block.blockhash()).await
-    })
-    .await?
-    .map(|height| height + 1) // sync from next block
-    .unwrap_or(0); // sync from genesis
+    // Fetches blocks on-demand during the search (O(log n)).
+    let last_existing_height =
+        find_last_match((first_height, latest_height), |height| async move {
+            let Some(block) = storage.get_finalized_block_at_height(height).await? else {
+                return Err(SyncError::MissingExecBlock(height));
+            };
+            block_exists_with_retry(checker, block.blockhash()).await
+        })
+        .await?;
 
-    if sync_from_height as u64 > latest_height {
+    if last_existing_height == Some(latest_height) {
         info!("all finalized blocks already in engine");
         // Still need to check unfinalized blocks
         sync_unfinalized_blocks(storage, checker, engine).await?;
         return Ok(());
     }
 
+    let sync_from_height = match last_existing_height {
+        Some(height) => height + 1,
+        // Preserve normal startup recovery: genesis-anchored storage can replay block zero.
+        None if first_height == 0 => 0,
+        // A sparse anchor has no replayable local predecessor or payload. It must already have
+        // been materialized into the paired Reth database.
+        None => {
+            return Err(SyncError::FinalizedAnchorMissingInEngine {
+                height: first_height,
+                hash: first_finalized.blockhash(),
+            });
+        }
+    };
+
     // Calculate the number of blocks to sync
-    let blocks_to_sync = total_blocks as usize - sync_from_height;
+    let blocks_to_sync = latest_height - sync_from_height + 1;
     info!(
         %sync_from_height,
-        %total_blocks,
+        %retained_blocks,
         %blocks_to_sync,
         "syncing missing blocks to engine"
     );
 
     // Track the previous block hash for forkchoice updates
-    let mut prev_blockhash: Option<Hash> = if sync_from_height > 0 {
+    let mut prev_blockhash: Option<Hash> = if sync_from_height > first_height {
         let prev_block = storage
-            .get_finalized_block_at_height((sync_from_height - 1) as u64)
+            .get_finalized_block_at_height(sync_from_height - 1)
             .await?
-            .ok_or(SyncError::MissingExecBlock((sync_from_height - 1) as u64))?;
+            .ok_or(SyncError::MissingExecBlock(sync_from_height - 1))?;
         Some(prev_block.blockhash())
     } else {
         None
     };
 
     // Sync all blocks from sync_from_height onwards
-    for height in sync_from_height..=(latest_height as usize) {
-        let Some(block) = storage.get_finalized_block_at_height(height as u64).await? else {
-            return Err(SyncError::MissingExecBlock(height as u64));
+    for height in sync_from_height..=latest_height {
+        let Some(block) = storage.get_finalized_block_at_height(height).await? else {
+            return Err(SyncError::MissingExecBlock(height));
         };
         let blockhash = block.blockhash();
 
@@ -208,17 +234,14 @@ where
 
 /// Binary search to find the last index where the predicate returns true.
 ///
-/// Assumes the predicate returns `true` for a contiguous range starting from index `0`,
-/// and `false` for all indices after that range.
+/// Assumes the predicate returns `true` for a contiguous range starting from the supplied left
+/// bound, and `false` for all indices after that range.
 ///
 /// The predicate is async to allow fetching data on-demand during the search,
 /// resulting in O(log n) fetches instead of requiring all data upfront.
-async fn find_last_match<F, Fut>(
-    range: (usize, usize),
-    predicate: F,
-) -> Result<Option<usize>, SyncError>
+async fn find_last_match<F, Fut>(range: (u64, u64), predicate: F) -> Result<Option<u64>, SyncError>
 where
-    F: Fn(usize) -> Fut,
+    F: Fn(u64) -> Fut,
     Fut: Future<Output = Result<bool, SyncError>>,
 {
     let (mut left, mut right) = range;
@@ -539,6 +562,12 @@ mod tests {
             .expect_best_finalized_block()
             .returning(move || Ok(best.clone()));
 
+        // Setup first_finalized_block
+        let first = chain.first().cloned();
+        mock_storage
+            .expect_first_finalized_block()
+            .returning(move || Ok(first.clone()));
+
         // Setup get_finalized_block_at_height
         let chain_for_height = chain.clone();
         mock_storage
@@ -649,6 +678,83 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn test_no_sync_needed_when_sparse_anchor_exists() {
+            // Scenario: The reconstructed Reth database already contains the trusted anchor.
+            // Local storage:  [27]
+            // Reth:           [27]
+            // Expected:       No payloads submitted
+
+            let chain = create_exec_block_chain(&[27]);
+            let mut mock_storage = MockExecBlockStorage::new();
+            let mut mock_checker = MockBlockExistenceChecker::new();
+            let mock_engine = MockExecutionEngine::new();
+
+            setup_mock_storage_with_chain(&mut mock_storage, chain);
+            setup_mock_checker_with_known_blocks(&mut mock_checker, &[27]);
+
+            let result =
+                sync_chainstate_to_engine_internal(&mock_storage, &mock_checker, &mock_engine)
+                    .await;
+
+            assert!(result.is_ok());
+            assert_eq!(mock_engine.submitted_payloads().len(), 0);
+            assert_eq!(mock_engine.forkchoice_updates().len(), 0);
+        }
+
+        #[tokio::test]
+        async fn test_syncs_tail_after_sparse_anchor() {
+            // Scenario: Reth contains the trusted anchor and part of the post-recovery tail.
+            // Local storage:  [27, 28, 29, 30]
+            // Reth:           [27, 28]
+            // Expected:       Sync blocks 29-30
+
+            let chain = create_exec_block_chain(&[27, 28, 29, 30]);
+            let mut mock_storage = MockExecBlockStorage::new();
+            let mut mock_checker = MockBlockExistenceChecker::new();
+            let mock_engine = MockExecutionEngine::new();
+
+            setup_mock_storage_with_chain(&mut mock_storage, chain);
+            setup_mock_checker_with_known_blocks(&mut mock_checker, &[27, 28]);
+
+            let result =
+                sync_chainstate_to_engine_internal(&mock_storage, &mock_checker, &mock_engine)
+                    .await;
+
+            assert!(result.is_ok());
+            let payloads = mock_engine.submitted_payloads();
+            assert_eq!(payloads.len(), 2);
+            assert_eq!(payloads[0].blocknum(), 29);
+            assert_eq!(payloads[1].blocknum(), 30);
+        }
+
+        #[tokio::test]
+        async fn test_rejects_sparse_anchor_missing_from_engine() {
+            // Scenario: Sled and Reth datadirs do not share the same trusted recovery anchor.
+            // Local storage:  [27]
+            // Reth:           []
+            // Expected:       Explicit anchor mismatch; do not try to replay the empty payload
+
+            let chain = create_exec_block_chain(&[27]);
+            let mut mock_storage = MockExecBlockStorage::new();
+            let mut mock_checker = MockBlockExistenceChecker::new();
+            let mock_engine = MockExecutionEngine::new();
+
+            setup_mock_storage_with_chain(&mut mock_storage, chain);
+            setup_mock_checker_with_known_blocks(&mut mock_checker, &[]);
+
+            let result =
+                sync_chainstate_to_engine_internal(&mock_storage, &mock_checker, &mock_engine)
+                    .await;
+
+            assert!(matches!(
+                result,
+                Err(SyncError::FinalizedAnchorMissingInEngine { height: 27, .. })
+            ));
+            assert_eq!(mock_engine.submitted_payloads().len(), 0);
+            assert_eq!(mock_engine.forkchoice_updates().len(), 0);
+        }
+
+        #[tokio::test]
         async fn test_syncs_all_blocks_from_genesis() {
             // Scenario: Reth is empty, sync entire chain
             // Local storage:  [0, 1, 2, 3]
@@ -727,6 +833,58 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn test_returns_error_when_finalized_anchor_is_unreadable() {
+            let best = create_exec_block_chain(&[3]).pop().unwrap();
+            let mut mock_storage = MockExecBlockStorage::new();
+            let mock_checker = MockBlockExistenceChecker::new();
+            let mock_engine = MockExecutionEngine::new();
+
+            mock_storage
+                .expect_best_finalized_block()
+                .returning(move || Ok(Some(best.clone())));
+            mock_storage
+                .expect_first_finalized_block()
+                .returning(|| Ok(None));
+
+            let result =
+                sync_chainstate_to_engine_internal(&mock_storage, &mock_checker, &mock_engine)
+                    .await;
+
+            assert!(matches!(
+                result,
+                Err(SyncError::MissingFinalizedChainAnchor)
+            ));
+        }
+
+        #[tokio::test]
+        async fn test_returns_error_when_finalized_bounds_are_reversed() {
+            let first = create_exec_block_chain(&[4]).pop().unwrap();
+            let best = create_exec_block_chain(&[3]).pop().unwrap();
+            let mut mock_storage = MockExecBlockStorage::new();
+            let mock_checker = MockBlockExistenceChecker::new();
+            let mock_engine = MockExecutionEngine::new();
+
+            mock_storage
+                .expect_best_finalized_block()
+                .returning(move || Ok(Some(best.clone())));
+            mock_storage
+                .expect_first_finalized_block()
+                .returning(move || Ok(Some(first.clone())));
+
+            let result =
+                sync_chainstate_to_engine_internal(&mock_storage, &mock_checker, &mock_engine)
+                    .await;
+
+            assert!(matches!(
+                result,
+                Err(SyncError::InvalidFinalizedChainBounds {
+                    first_height: 4,
+                    best_height: 3,
+                })
+            ));
+        }
+
+        #[tokio::test]
         async fn test_returns_error_when_block_missing_at_height() {
             // Scenario: Gap in storage chain (missing block at height 2)
             // Local storage:  [0, 1, _, 3, 4] (block 2 missing)
@@ -742,6 +900,10 @@ mod tests {
             mock_storage
                 .expect_best_finalized_block()
                 .returning(move || Ok(Some(chain_for_best[3].clone())));
+            let chain_for_first = chain.clone();
+            mock_storage
+                .expect_first_finalized_block()
+                .returning(move || Ok(Some(chain_for_first[0].clone())));
 
             // Heights 0, 1, 3, 4 exist, but 2 is missing
             let chain_for_height = chain.clone();
@@ -785,6 +947,10 @@ mod tests {
             mock_storage
                 .expect_best_finalized_block()
                 .returning(move || Ok(best.clone()));
+            let first = chain.first().cloned();
+            mock_storage
+                .expect_first_finalized_block()
+                .returning(move || Ok(first.clone()));
 
             let chain_for_height = chain.clone();
             mock_storage
@@ -833,9 +999,13 @@ mod tests {
             let mock_checker = MockBlockExistenceChecker::new();
             let mock_engine = MockExecutionEngine::new();
 
+            let chain_for_best = chain.clone();
             mock_storage
                 .expect_best_finalized_block()
-                .returning(move || Ok(Some(chain[2].clone())));
+                .returning(move || Ok(Some(chain_for_best[2].clone())));
+            mock_storage
+                .expect_first_finalized_block()
+                .returning(move || Ok(Some(chain[0].clone())));
 
             mock_storage
                 .expect_get_finalized_block_at_height()
@@ -1081,6 +1251,10 @@ mod tests {
             mock_storage
                 .expect_best_finalized_block()
                 .returning(move || Ok(best.clone()));
+            let first = finalized_chain.first().cloned();
+            mock_storage
+                .expect_first_finalized_block()
+                .returning(move || Ok(first.clone()));
 
             // Setup get_finalized_block_at_height
             let chain_for_height = finalized_chain.clone();
@@ -1166,6 +1340,10 @@ mod tests {
             mock_storage
                 .expect_best_finalized_block()
                 .returning(move || Ok(best.clone()));
+            let first = finalized_chain.first().cloned();
+            mock_storage
+                .expect_first_finalized_block()
+                .returning(move || Ok(first.clone()));
 
             // Setup get_finalized_block_at_height
             let chain_for_height = finalized_chain.clone();
@@ -1239,6 +1417,10 @@ mod tests {
             mock_storage
                 .expect_best_finalized_block()
                 .returning(move || Ok(best.clone()));
+            let first = finalized_chain.first().cloned();
+            mock_storage
+                .expect_first_finalized_block()
+                .returning(move || Ok(first.clone()));
 
             // Setup get_finalized_block_at_height
             let chain_for_height = finalized_chain.clone();

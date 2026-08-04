@@ -6,6 +6,7 @@ pub mod create_deposit_tx;
 pub mod create_ee_predicate_update;
 pub mod create_mock_deposit;
 pub mod create_withdrawal_fulfillment;
+pub mod ee_state_recovery;
 pub mod extract_p2tr_pubkey;
 pub mod get_address;
 pub mod musig_aggregate_pks;

@@ -4,10 +4,10 @@
 //! manager must detect when its in-flight operations have been invalidated by comparing
 //! batch identity (BatchId), not just index.
 
-use alpen_ee_common::{require_genesis_batch, Batch, BatchStorage, StorageError};
+use alpen_ee_common::{require_batch_anchor, Batch, BatchStorage, StorageError};
 use tracing::warn;
 
-use super::state::{recover_from_storage, BatchLifecycleState};
+use super::state::{recover_from_storage, BatchLifecycleState, Frontier};
 
 /// Result of reorg detection.
 ///
@@ -142,11 +142,8 @@ pub(crate) async fn handle_reorg(
                 "Reorg detected: full rescan required"
             );
 
-            // Get genesis batch id for reset
-            let (genesis_batch, _) = require_genesis_batch(storage).await?;
-            let genesis_id = genesis_batch.id();
-
-            state.reset_to_genesis(genesis_id);
+            let (anchor_batch, _) = require_batch_anchor(storage).await?;
+            state.reset_to_anchor(Frontier::new(anchor_batch.idx(), anchor_batch.id()));
             recover_from_storage(state, storage, latest_batch.idx()).await
         }
     }

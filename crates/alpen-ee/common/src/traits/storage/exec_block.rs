@@ -22,11 +22,14 @@ pub trait ExecBlockStorage: Send + Sync {
         payload: ExecBlockPayload,
     ) -> Result<(), StorageError>;
 
-    /// Initialize the finalized chain with a genesis block.
+    /// Initialize an empty local finalized-chain view from its first trusted block.
     ///
-    /// The block must have been previously saved via `save_exec_block`. Should be idempotent:
-    /// calling multiple times with the same hash should succeed. Fails if block doesn't exist.
-    async fn init_finalized_chain(&self, hash: Hash) -> Result<(), StorageError>;
+    /// The block must have been previously saved via [`Self::save_exec_block`]. Its actual block
+    /// height becomes the first locally available finalized height, so the anchor may be genesis
+    /// or a later block in a sparse reconstructed database. Calling this repeatedly with the same
+    /// anchor is idempotent. The call fails if the block is missing or the chain is already
+    /// initialized from a different anchor.
+    async fn initialize_finalized_chain_anchor(&self, hash: Hash) -> Result<(), StorageError>;
 
     /// Extend the finalized chain up to and including `new_tip`.
     ///
@@ -54,6 +57,13 @@ pub trait ExecBlockStorage: Send + Sync {
     /// Returns `None` if the finalized chain is empty (not yet initialized). Returns the block
     /// with the highest block number that has been finalized.
     async fn best_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError>;
+
+    /// Get the first block retained in the local finalized chain.
+    ///
+    /// Returns `None` if the finalized chain is empty (not yet initialized). For a normal
+    /// database this is the genesis block. For a sparse reconstructed database this is the
+    /// trusted non-genesis block passed to [`Self::initialize_finalized_chain_anchor`].
+    async fn first_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError>;
 
     /// Get the finalized block at a specific height.
     ///
@@ -230,6 +240,18 @@ macro_rules! exec_block_storage_tests {
         async fn test_best_finalized_block_empty() {
             let storage = $setup_expr;
             $crate::exec_block_storage_test_fns::test_best_finalized_block_empty(&storage).await;
+        }
+
+        #[tokio::test]
+        async fn test_first_finalized_block() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_first_finalized_block(&storage).await;
+        }
+
+        #[tokio::test]
+        async fn test_first_finalized_block_sparse() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_first_finalized_block_sparse(&storage).await;
         }
 
         #[tokio::test]
@@ -463,7 +485,10 @@ pub mod exec_block_storage_test_fns {
             .unwrap();
 
         // Initialize finalized chain
-        storage.init_finalized_chain(genesis_hash).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(genesis_hash)
+            .await
+            .unwrap();
 
         // Genesis should be the best finalized block
         let best = storage.best_finalized_block().await.unwrap().unwrap();
@@ -491,10 +516,16 @@ pub mod exec_block_storage_test_fns {
             .unwrap();
 
         // First init
-        storage.init_finalized_chain(genesis_hash).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(genesis_hash)
+            .await
+            .unwrap();
 
         // Second init with same hash - should succeed (idempotent)
-        storage.init_finalized_chain(genesis_hash).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(genesis_hash)
+            .await
+            .unwrap();
 
         // Verify genesis is still the best finalized block
         let best = storage.best_finalized_block().await.unwrap().unwrap();
@@ -507,7 +538,9 @@ pub mod exec_block_storage_test_fns {
         let missing_hash = hash_from_u8(99);
 
         // Should fail because block doesn't exist
-        let result = storage.init_finalized_chain(missing_hash).await;
+        let result = storage
+            .initialize_finalized_chain_anchor(missing_hash)
+            .await;
         assert!(result.is_err());
     }
 
@@ -531,10 +564,15 @@ pub mod exec_block_storage_test_fns {
             .unwrap();
 
         // Initialize with first genesis
-        storage.init_finalized_chain(genesis_hash_a).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(genesis_hash_a)
+            .await
+            .unwrap();
 
         // Try to initialize with different genesis - should fail
-        let result = storage.init_finalized_chain(genesis_hash_b).await;
+        let result = storage
+            .initialize_finalized_chain_anchor(genesis_hash_b)
+            .await;
         assert!(result.is_err());
     }
 
@@ -559,11 +597,17 @@ pub mod exec_block_storage_test_fns {
             .unwrap();
 
         // Initialize and extend chain
-        storage.init_finalized_chain(genesis_hash).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(genesis_hash)
+            .await
+            .unwrap();
         storage.extend_finalized_chain(block1_hash).await.unwrap();
 
         // Try to init again with same genesis - should succeed (idempotent)
-        storage.init_finalized_chain(genesis_hash).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(genesis_hash)
+            .await
+            .unwrap();
 
         // Chain should still be at block 1 (no changes made)
         let best = storage.best_finalized_block().await.unwrap().unwrap();
@@ -580,7 +624,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, ExecBlockPayload::from_bytes(vec![]))
             .await
             .unwrap();
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
 
         // Create and save block 1 (child of genesis)
         let hash1 = hash_from_u8(1);
@@ -623,7 +670,10 @@ pub mod exec_block_storage_test_fns {
             save_block(storage, create_exec_block(i, parent, hash, i)).await;
             hashes.push(hash);
         }
-        storage.init_finalized_chain(hashes[0]).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hashes[0])
+            .await
+            .unwrap();
         hashes
     }
 
@@ -699,7 +749,10 @@ pub mod exec_block_storage_test_fns {
             create_exec_block(0, Hash::default(), genesis_hash, 0),
         )
         .await;
-        storage.init_finalized_chain(genesis_hash).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(genesis_hash)
+            .await
+            .unwrap();
 
         // Block at height 2 whose parent (height 1) was never saved.
         let missing_parent = hash_from_u8(1);
@@ -720,7 +773,10 @@ pub mod exec_block_storage_test_fns {
             create_exec_block(0, Hash::default(), genesis_hash, 0),
         )
         .await;
-        storage.init_finalized_chain(genesis_hash).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(genesis_hash)
+            .await
+            .unwrap();
 
         // Corrupt graph above finalized tip:
         // h3 -> h2 and h2 -> h3 (cycle), never descending to finalized tip.
@@ -758,7 +814,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, ExecBlockPayload::from_bytes(vec![]))
             .await
             .unwrap();
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
 
         // Create block with wrong parent
         let hash1 = hash_from_u8(1);
@@ -783,7 +842,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, ExecBlockPayload::from_bytes(vec![]))
             .await
             .unwrap();
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
 
         // Try to extend with non-existent block
         let missing_hash = hash_from_u8(99);
@@ -815,7 +877,10 @@ pub mod exec_block_storage_test_fns {
             .await
             .unwrap();
 
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
         storage.extend_finalized_chain(hash1).await.unwrap();
         storage.extend_finalized_chain(hash2).await.unwrap();
 
@@ -830,6 +895,46 @@ pub mod exec_block_storage_test_fns {
         // Should return None for empty chain
         let best = storage.best_finalized_block().await.unwrap();
         assert!(best.is_none());
+    }
+
+    /// Test getting the first finalized block from a genesis-anchored chain.
+    pub async fn test_first_finalized_block(storage: &impl ExecBlockStorage) {
+        assert!(storage.first_finalized_block().await.unwrap().is_none());
+
+        let hashes = save_linear_chain(storage, 3).await;
+        storage
+            .initialize_finalized_chain_anchor(hashes[0])
+            .await
+            .unwrap();
+        storage.extend_finalized_chain(hashes[2]).await.unwrap();
+
+        let first = storage.first_finalized_block().await.unwrap().unwrap();
+        assert_eq!(first.blockhash(), hashes[0]);
+        assert_eq!(first.blocknum(), 0);
+    }
+
+    /// Test that extending a sparse finalized chain preserves its non-genesis anchor.
+    pub async fn test_first_finalized_block_sparse(storage: &impl ExecBlockStorage) {
+        let anchor_hash = hash_from_u8(15);
+        let next_hash = hash_from_u8(16);
+        let anchor = create_exec_block(15, Hash::default(), anchor_hash, 15);
+        let next = create_exec_block(16, anchor_hash, next_hash, 16);
+
+        save_block(storage, anchor).await;
+        save_block(storage, next).await;
+        storage
+            .initialize_finalized_chain_anchor(anchor_hash)
+            .await
+            .unwrap();
+        storage.extend_finalized_chain(next_hash).await.unwrap();
+
+        let first = storage.first_finalized_block().await.unwrap().unwrap();
+        assert_eq!(first.blockhash(), anchor_hash);
+        assert_eq!(first.blocknum(), 15);
+
+        let best = storage.best_finalized_block().await.unwrap().unwrap();
+        assert_eq!(best.blockhash(), next_hash);
+        assert_eq!(best.blocknum(), 16);
     }
 
     /// Test getting finalized height
@@ -856,7 +961,10 @@ pub mod exec_block_storage_test_fns {
             .await
             .unwrap();
 
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
         storage.extend_finalized_chain(hash1).await.unwrap();
 
         // Block 0 and 1 should have finalized heights
@@ -882,7 +990,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, ExecBlockPayload::from_bytes(vec![]))
             .await
             .unwrap();
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
 
         // Save block 1 but don't finalize it
         let hash1 = hash_from_u8(1);
@@ -906,7 +1017,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, ExecBlockPayload::from_bytes(vec![]))
             .await
             .unwrap();
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
 
         // Finalize block 1a
         let hash1a = hash_from_u8(1);
@@ -970,7 +1084,10 @@ pub mod exec_block_storage_test_fns {
             .unwrap();
 
         // Finalize only blocks 0 and 1
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
         storage.extend_finalized_chain(hash1).await.unwrap();
 
         // Should return blocks 2 and 3
@@ -1011,7 +1128,10 @@ pub mod exec_block_storage_test_fns {
             .unwrap();
 
         // Finalize only blocks 0 and 1
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
         storage.extend_finalized_chain(hash1).await.unwrap();
 
         // Should return both fork blocks
@@ -1041,7 +1161,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, ExecBlockPayload::from_bytes(vec![]))
             .await
             .unwrap();
-        storage.init_finalized_chain(hashes[0]).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hashes[0])
+            .await
+            .unwrap();
 
         // Save and finalize blocks 1-4
         for i in 1..5usize {
@@ -1079,7 +1202,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, ExecBlockPayload::from_bytes(vec![]))
             .await
             .unwrap();
-        storage.init_finalized_chain(hashes[0]).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hashes[0])
+            .await
+            .unwrap();
 
         for i in 1..4usize {
             let block = create_exec_block(i as u64, hashes[i - 1], hashes[i], i as u64);
@@ -1140,7 +1266,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, payloads[0].clone())
             .await
             .unwrap();
-        storage.init_finalized_chain(hashes[0]).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hashes[0])
+            .await
+            .unwrap();
 
         for i in 1..5usize {
             let block = create_exec_block(i as u64, hashes[i - 1], hashes[i], i as u64);
@@ -1211,7 +1340,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, ExecBlockPayload::from_bytes(vec![0]))
             .await
             .unwrap();
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
 
         // Save and finalize block 1
         let hash1 = hash_from_u8(1);
@@ -1256,7 +1388,10 @@ pub mod exec_block_storage_test_fns {
             .save_exec_block(block0, ExecBlockPayload::from_bytes(vec![0]))
             .await
             .unwrap();
-        storage.init_finalized_chain(hash0).await.unwrap();
+        storage
+            .initialize_finalized_chain_anchor(hash0)
+            .await
+            .unwrap();
 
         // Save and finalize block 1
         let hash1 = hash_from_u8(1);

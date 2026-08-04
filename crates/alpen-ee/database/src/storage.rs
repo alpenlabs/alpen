@@ -123,10 +123,10 @@ impl ExecBlockStorage for EeNodeStorage {
             .map_err(Into::into)
     }
 
-    /// Insert first block to local view of canonical finalized chain (ie. genesis block)
-    async fn init_finalized_chain(&self, hash: Hash) -> Result<(), StorageError> {
+    /// Insert the first trusted block into an empty local finalized-chain view.
+    async fn initialize_finalized_chain_anchor(&self, hash: Hash) -> Result<(), StorageError> {
         self.ops
-            .init_finalized_chain_async(hash)
+            .initialize_finalized_chain_anchor_async(hash)
             .await
             .map_err(Into::into)
     }
@@ -159,6 +159,14 @@ impl ExecBlockStorage for EeNodeStorage {
     async fn best_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError> {
         self.ops
             .best_finalized_block_async()
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Get the first exec block retained in the local view of canonical chain.
+    async fn first_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError> {
+        self.ops
+            .first_finalized_block_async()
             .await
             .map_err(Into::into)
     }

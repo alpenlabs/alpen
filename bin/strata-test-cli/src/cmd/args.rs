@@ -10,6 +10,7 @@ use super::{
     },
     create_mock_deposit::CreateMockDepositArgs,
     create_withdrawal_fulfillment::CreateWithdrawalFulfillmentArgs,
+    ee_state_recovery::EeStateRecoverArgs,
     extract_p2tr_pubkey::ExtractP2trPubkeyArgs,
     get_address::GetAddressArgs,
     musig_aggregate_pks::MusigAggregatePksArgs,
@@ -48,6 +49,9 @@ pub enum Commands {
 
     /// Compute the bridge_in P2TR address and SPS-50 OP_RETURN script for a DRT
     ComputeDrtOutput(ComputeDrtOutputArgs),
+
+    /// Reconstruct EE state and atomically materialize a fresh sequencer datadir
+    EeStateRecover(EeStateRecoverArgs),
 
     /// Build a snark account withdrawal transaction JSON
     BuildSnarkWithdrawal(BuildSnarkWithdrawalArgs),
