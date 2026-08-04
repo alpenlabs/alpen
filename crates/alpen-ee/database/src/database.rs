@@ -49,6 +49,9 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Get exec block for the highest blocknum available in the local view of canonical chain.
     fn best_finalized_block(&self) -> DbResult<Option<ExecBlockRecord>>;
 
+    /// Get the first exec block retained in the local view of canonical chain.
+    fn first_finalized_block(&self) -> DbResult<Option<ExecBlockRecord>>;
+
     /// Get the finalized block at a specific height.
     fn get_finalized_block_at_height(&self, height: u64) -> DbResult<Option<ExecBlockRecord>>;
 

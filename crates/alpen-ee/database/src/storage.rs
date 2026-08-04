@@ -163,6 +163,14 @@ impl ExecBlockStorage for EeNodeStorage {
             .map_err(Into::into)
     }
 
+    /// Get the first exec block retained in the local view of canonical chain.
+    async fn first_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError> {
+        self.ops
+            .first_finalized_block_async()
+            .await
+            .map_err(Into::into)
+    }
+
     /// Get the finalized block at a specific height.
     async fn get_finalized_block_at_height(
         &self,

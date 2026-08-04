@@ -58,6 +58,13 @@ pub trait ExecBlockStorage: Send + Sync {
     /// with the highest block number that has been finalized.
     async fn best_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError>;
 
+    /// Get the first block retained in the local finalized chain.
+    ///
+    /// Returns `None` if the finalized chain is empty (not yet initialized). For a normal
+    /// database this is the genesis block. For a sparse reconstructed database this is the
+    /// trusted non-genesis block passed to [`Self::initialize_finalized_chain_anchor`].
+    async fn first_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError>;
+
     /// Get the finalized block at a specific height.
     ///
     /// Returns `None` if no block is finalized at the given height. Returns the block
@@ -233,6 +240,18 @@ macro_rules! exec_block_storage_tests {
         async fn test_best_finalized_block_empty() {
             let storage = $setup_expr;
             $crate::exec_block_storage_test_fns::test_best_finalized_block_empty(&storage).await;
+        }
+
+        #[tokio::test]
+        async fn test_first_finalized_block() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_first_finalized_block(&storage).await;
+        }
+
+        #[tokio::test]
+        async fn test_first_finalized_block_sparse() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_first_finalized_block_sparse(&storage).await;
         }
 
         #[tokio::test]
@@ -876,6 +895,46 @@ pub mod exec_block_storage_test_fns {
         // Should return None for empty chain
         let best = storage.best_finalized_block().await.unwrap();
         assert!(best.is_none());
+    }
+
+    /// Test getting the first finalized block from a genesis-anchored chain.
+    pub async fn test_first_finalized_block(storage: &impl ExecBlockStorage) {
+        assert!(storage.first_finalized_block().await.unwrap().is_none());
+
+        let hashes = save_linear_chain(storage, 3).await;
+        storage
+            .initialize_finalized_chain_anchor(hashes[0])
+            .await
+            .unwrap();
+        storage.extend_finalized_chain(hashes[2]).await.unwrap();
+
+        let first = storage.first_finalized_block().await.unwrap().unwrap();
+        assert_eq!(first.blockhash(), hashes[0]);
+        assert_eq!(first.blocknum(), 0);
+    }
+
+    /// Test that extending a sparse finalized chain preserves its non-genesis anchor.
+    pub async fn test_first_finalized_block_sparse(storage: &impl ExecBlockStorage) {
+        let anchor_hash = hash_from_u8(15);
+        let next_hash = hash_from_u8(16);
+        let anchor = create_exec_block(15, Hash::default(), anchor_hash, 15);
+        let next = create_exec_block(16, anchor_hash, next_hash, 16);
+
+        save_block(storage, anchor).await;
+        save_block(storage, next).await;
+        storage
+            .initialize_finalized_chain_anchor(anchor_hash)
+            .await
+            .unwrap();
+        storage.extend_finalized_chain(next_hash).await.unwrap();
+
+        let first = storage.first_finalized_block().await.unwrap().unwrap();
+        assert_eq!(first.blockhash(), anchor_hash);
+        assert_eq!(first.blocknum(), 15);
+
+        let best = storage.best_finalized_block().await.unwrap().unwrap();
+        assert_eq!(best.blockhash(), next_hash);
+        assert_eq!(best.blocknum(), 16);
     }
 
     /// Test getting finalized height
