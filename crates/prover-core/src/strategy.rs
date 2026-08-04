@@ -53,7 +53,7 @@ where
 ///
 /// Each `prove()` drives the remote futures on a **single long-lived runtime**
 /// owned by the strategy, not a fresh runtime per call. The futures are `Send`
-/// (zkaleido v0.3.0-rc.1+ defines `ZkVmRemoteProgram::start_proving` as
+/// (zkaleido v0.3.0 defines `ZkVmRemoteProgram::start_proving` as
 /// `-> impl Future + Send`), so they run directly on the multi-thread runtime —
 /// no `LocalSet` thread-pinning needed.
 ///

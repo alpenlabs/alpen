@@ -95,7 +95,7 @@ The full API:
 |--------|-------------|
 | `submit(task)` | Spawn a background prove. Idempotent. |
 | `execute(task)` | Submit + block until terminal. Returns `TaskResult<Task>`. |
-| `wait_for_tasks(tasks)` | Block until all reach a terminal state. Watch-channel, zero-poll. A `Blocked` task is *not* terminal — the wait stays parked. |
+| `wait_for_tasks(tasks)` | Block until all reach a terminal state. Watch-channel, zero-poll. A `Blocked` task is *not* terminal — the wait stays parked, until the `max_blocked_rechecks` backstop promotes a never-resolving dependency to `PermanentFailure`. |
 | `get_receipt(task)` | Read the stored receipt (requires a configured `ReceiptStore`). |
 | `get_status(task)` | Current `TaskStatus` (`Pending`/`Proving`/`Blocked`/`Completed`/`TransientFailure`/`PermanentFailure`). |
 

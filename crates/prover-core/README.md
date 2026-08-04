@@ -236,12 +236,17 @@ failure therefore never re-proves. (Requires a configured `ReceiptStore`.)
 Pending ─▶ Proving ─▶ Completed                       (terminal)
    ▲          │  ╲
    │          │   ╲─▶ Blocked ──────────┐  (waiting on a dependency; rechecked,
-   │          │        ▲                │   does NOT consume the retry budget)
-   │          │        └────────────────┘
+   │          │        ▲                │   does NOT consume the retry budget;
+   │          │        └────────────────┘   → PermanentFailure after
+   │          │                              max_blocked_rechecks)
    │          ├─▶ TransientFailure ──────┐ (retry/resubmit after backoff)
    └──────────┴────────────────◀─────────┘
               ╲─▶ PermanentFailure                    (terminal)
 ```
+
+Terminal edges into `PermanentFailure`: a `Rejected` input resolution, a budget
+exhausted from `TransientFailure`, and the `max_blocked_rechecks` backstop on a
+never-resolving `Blocked` dependency.
 
 `Proving` and `TransientFailure` carry both a `retry_count` and a
 `resubmit_count`, so the budgets survive a mid-attempt crash. Re-runs are
@@ -315,7 +320,7 @@ Internally the prover bridges zkaleido's host layer through a crate-private
   local proving.
 - **remote** (behind the `remote` feature) — drives the async `start_proving` →
   poll `get_status` → `get_proof` cycle for backends like the SP1 network. The
-  remote futures are `Send` (zkaleido `v0.3.0-rc.1` makes `start_proving` return
+  remote futures are `Send` (zkaleido `v0.3.0` makes `start_proving` return
   `-> impl Future + Send`, with `ProofId` and `ZkVmProgram::Input: Send + Sync`),
   so each `prove()` drives them directly on the strategy's runtime via
   `Runtime::block_on` — no `LocalSet` thread-pinning. That runtime is still a
