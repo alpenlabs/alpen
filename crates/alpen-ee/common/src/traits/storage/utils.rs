@@ -60,6 +60,34 @@ pub async fn require_genesis_batch(
     })
 }
 
+/// Gets the earliest contiguous batch retained in storage, if one exists.
+///
+/// Normal databases retain batch zero. Sparse databases reconstructed from L1 may instead start
+/// from a later trusted batch. This walks backwards from the latest batch until it reaches either
+/// batch zero or the first gap in retained history.
+pub async fn get_batch_anchor(
+    storage: &impl BatchStorage,
+) -> Result<Option<(Batch, BatchStatus)>, StorageError> {
+    // Preserve the constant-time normal startup path.
+    if let Some(genesis) = storage.get_batch_by_idx(0).await? {
+        return Ok(Some(genesis));
+    }
+
+    let Some(mut anchor) = storage.get_latest_batch().await? else {
+        return Ok(None);
+    };
+
+    while anchor.0.idx() > 0 {
+        let previous_idx = anchor.0.idx() - 1;
+        let Some(previous) = storage.get_batch_by_idx(previous_idx).await? else {
+            break;
+        };
+        anchor = previous;
+    }
+
+    Ok(Some(anchor))
+}
+
 /// Gets the best EE account state from storage, returning an error if none exists.
 ///
 /// This function enforces the system invariant that at least one EE account state
