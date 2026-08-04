@@ -13,8 +13,6 @@ path = "src/main.rs"
 [dependencies]
 shrex.workspace = true
 strata-acct-types.workspace = true
-strata-asm-logs.workspace = true
-strata-asm-manifest-types.workspace = true
 strata-asm-proto-admin-txs = { workspace = true, features = ["test-utils"] }
 strata-asm-proto-bridge-txs = { workspace = true, features = ["test-utils"] }
 strata-btcio.workspace = true
