@@ -3,7 +3,7 @@
 use std::{fmt, sync::Arc};
 
 use bitcoin::secp256k1::{Error as Secp256k1Error, XOnlyPublicKey};
-use strata_asm_common::Subprotocol;
+use strata_asm_common::{SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_btcio::writer::{EnvelopeSigningMode, EnvelopeSigningModeProvider};
 use strata_db_types::errors::DbError;

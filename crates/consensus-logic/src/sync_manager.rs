@@ -7,15 +7,12 @@ use std::sync::Arc;
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
 use strata_asm_spec::StrataAsmSpec;
-#[cfg(feature = "debug-asm")]
-use strata_asm_spec_debug::DebugAsmSpec;
-use strata_asm_worker::{AsmState as WorkerAsmState, AsmWorkerHandle, AsmWorkerStatus};
+use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_node_context::NodeContext;
 use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
-use strata_state::asm_state::AsmState as StorageAsmState;
 use strata_status::StatusChannel;
 use strata_storage::{MmrId, MmrIndexHandle, NodeStorage};
 use strata_tasks::TaskExecutor;
@@ -85,7 +82,7 @@ fn spawn_csm_listener(
         .map(|(block, state)| AsmWorkerStatus {
             is_initialized: true,
             cur_block: Some(block),
-            cur_state: Some(storage_to_worker_state(state)),
+            cur_state: Some(state.state().clone()),
         })
         .collect();
 
@@ -139,11 +136,7 @@ pub fn spawn_asm_worker(
         mmr_handle,
     );
 
-    // Construct the ASM spec based on the enabled feature.
-    #[cfg(not(feature = "debug-asm"))]
     let asm_spec = StrataAsmSpec;
-    #[cfg(feature = "debug-asm")]
-    let asm_spec = DebugAsmSpec::new(StrataAsmSpec);
 
     // Use the new builder API to launch the worker and get a handle.
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
@@ -153,10 +146,6 @@ pub fn spawn_asm_worker(
         .launch(executor)?;
 
     Ok(handle)
-}
-
-fn storage_to_worker_state(state: StorageAsmState) -> WorkerAsmState {
-    WorkerAsmState::new(state.state().clone(), state.logs().clone())
 }
 
 /// Prefills the ASM manifest MMR with sentinel leaves until it has at least

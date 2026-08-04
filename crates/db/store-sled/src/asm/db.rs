@@ -1,4 +1,4 @@
-use strata_asm_common::AuxData;
+use strata_asm_common::{AnchorState, AsmLogEntry, AuxData};
 use strata_db_types::DbResult;
 use strata_db_types::asm::AsmDatabase;
 use strata_primitives::l1::L1BlockCommitment;
@@ -31,6 +31,26 @@ impl AsmDatabase for AsmDBSled {
         Ok(())
     }
 
+    fn put_anchor_state(&self, block: L1BlockCommitment, state: AnchorState) -> DbResult<()> {
+        self.config
+            .with_retry((&self.asm_state_tree,), |(state_tree,)| {
+                state_tree.insert(&block, &state)?;
+                Ok(())
+            })?;
+
+        Ok(())
+    }
+
+    fn put_asm_logs(&self, block: L1BlockCommitment, logs: Vec<AsmLogEntry>) -> DbResult<()> {
+        self.config
+            .with_retry((&self.asm_log_tree,), |(log_tree,)| {
+                log_tree.insert(&block, &logs)?;
+                Ok(())
+            })?;
+
+        Ok(())
+    }
+
     fn get_asm_state(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>> {
         self.config.with_retry(
             (&self.asm_state_tree, &self.asm_log_tree),
@@ -53,9 +73,11 @@ impl AsmDatabase for AsmDBSled {
                 Ok(Some((state_block, AsmState::new(state, logs))))
             }
             (Some((state_block, _)), Some((logs_block, _))) => {
-                // The state and log entries are written in one transaction, but this method reads
-                // the two trees separately. A concurrent append can commit between those reads, so
-                // fall back to the latest block that both trees had to contain when observed.
+                // The two trees can legitimately disagree at the tip: this method reads them
+                // separately, and the ASM worker writes a block's logs (with its manifest)
+                // before its anchor state (the commit point), so the log tree runs ahead
+                // mid-block. Fall back to the latest block both trees had to contain when
+                // observed.
                 let latest_common_block = state_block.min(logs_block);
                 Ok(self
                     .get_asm_state(latest_common_block)?

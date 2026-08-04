@@ -1,7 +1,7 @@
 //! Reconciles local checkpoint artifacts against ASM-accepted state.
 
 use anyhow::{Context, Result};
-use strata_asm_common::Subprotocol;
+use strata_asm_common::{SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_checkpoint_types::CheckpointProofTask;
 use strata_identifiers::{Epoch, EpochCommitment};

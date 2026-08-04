@@ -1,7 +1,7 @@
 //! One-shot promotion of a checkpoint-sync datadir into a sequencer history anchor.
 
 use anyhow::{Context, Result, anyhow, bail};
-use strata_asm_common::Subprotocol;
+use strata_asm_common::{SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_checkpoint_types::reconstruct_terminal_header;
 use strata_identifiers::{Buf32, EpochCommitment};
@@ -240,15 +240,15 @@ fn promote_from_checkpoint_storage(storage: &NodeStorage, l1_reorg_safe_depth: u
 #[cfg(test)]
 mod tests {
     use bitcoin::Network;
+    use strata_asm_checkpoint_types::{
+        CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
+    };
     use strata_asm_common::{
         AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
         SectionState,
     };
     use strata_asm_params::CheckpointInitConfig;
     use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
-    use strata_asm_proto_checkpoint_types::{
-        CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
-    };
     use strata_btc_verification::L1Anchor;
     use strata_checkpoint_types::{EpochSummary, reconstruct_terminal_header};
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};

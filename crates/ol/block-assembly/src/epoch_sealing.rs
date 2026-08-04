@@ -375,7 +375,7 @@ impl CadencePolicy for FixedSlotSealing {
 
 #[cfg(test)]
 mod fixed_slot_sealing_tests {
-    use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
+    use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
 
     use super::*;
 

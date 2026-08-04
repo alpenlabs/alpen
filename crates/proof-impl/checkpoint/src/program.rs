@@ -1,6 +1,6 @@
 use k256::schnorr::SigningKey;
 use ssz::{Decode, Encode};
-use strata_asm_proto_checkpoint_types::CheckpointClaim;
+use strata_asm_checkpoint_types::CheckpointClaim;
 use strata_bridge_params::BridgeParams;
 use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::OLState;
@@ -87,7 +87,7 @@ impl CheckpointProgram {
 mod tests {
     use std::panic::catch_unwind;
 
-    use strata_asm_proto_checkpoint_types::TerminalHeaderComplement;
+    use strata_asm_checkpoint_types::TerminalHeaderComplement;
     use strata_bridge_params::BridgeParams;
     use strata_codec::encode_to_vec;
     use strata_crypto::hash;

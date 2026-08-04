@@ -1,6 +1,6 @@
 //! ASM state database interface.
 
-use strata_asm_common::AuxData;
+use strata_asm_common::{AnchorState, AsmLogEntry, AuxData};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_primitives::prelude::*;
@@ -18,6 +18,21 @@ use crate::DbResult;
 pub trait AsmDatabase: Send + Sync + 'static {
     /// Writes a new ASM state for a given l1 block.
     fn put_asm_state(&self, block: L1BlockCommitment, state: AsmState) -> DbResult<()>;
+
+    /// Writes just the anchor state for a given l1 block, leaving that block's
+    /// logs untouched.
+    ///
+    /// The ASM worker produces the two halves at different points: the logs
+    /// arrive with the block's manifest, the anchor state afterwards as the
+    /// block's commit point. Callers must write the logs first, since
+    /// [`Self::get_asm_state`] only yields a block once both halves are present.
+    fn put_anchor_state(&self, block: L1BlockCommitment, state: AnchorState) -> DbResult<()>;
+
+    /// Writes just the ASM logs for a given l1 block, leaving that block's
+    /// anchor state untouched.
+    ///
+    /// See [`Self::put_anchor_state`] for the ordering this pairs with.
+    fn put_asm_logs(&self, block: L1BlockCommitment, logs: Vec<AsmLogEntry>) -> DbResult<()>;
 
     /// Gets the ASM state for the given l1 block.
     fn get_asm_state(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>>;

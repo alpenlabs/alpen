@@ -159,7 +159,7 @@ fn build_terminal_header_backfill_report(
 mod tests {
     use std::sync::OnceLock;
 
-    use strata_asm_proto_checkpoint_types::{
+    use strata_asm_checkpoint_types::{
         CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
     };
     use strata_checkpoint_types::EpochSummary;

@@ -9,7 +9,7 @@ use bdk_wallet::{
     bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     KeychainKind, TxOrdering,
 };
-use strata_asm_proto_bridge_v1_txs::withdrawal_fulfillment::WithdrawalFulfillmentTxHeaderAux;
+use strata_asm_proto_bridge_txs::withdrawal_fulfillment::WithdrawalFulfillmentTxHeaderAux;
 use strata_l1_txfmt::ParseConfig;
 use strata_primitives::bitcoin_bosd::Descriptor;
 

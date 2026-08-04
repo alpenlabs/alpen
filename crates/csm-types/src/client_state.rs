@@ -7,7 +7,7 @@ use core::fmt;
 use arbitrary::{Arbitrary, Unstructured};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_asm_proto_checkpoint_types::CheckpointTip;
+use strata_asm_checkpoint_types::CheckpointTip;
 use strata_identifiers::{
     Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, RBuf32,
 };

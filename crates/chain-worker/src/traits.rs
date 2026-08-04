@@ -1,7 +1,7 @@
 //! Traits for the chain worker to interface with the underlying system.
 
+use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
-use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types::{OLBlock, OLBlockHeader};

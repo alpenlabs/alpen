@@ -9,11 +9,12 @@ use std::{
 
 use bitcoin::{secp256k1::PublicKey, Network, XOnlyPublicKey};
 use serde::Serialize;
+use strata_asm_admin_types::ConfirmationDepths;
+use strata_asm_bridge_types::SafeHarbourAddress;
 use strata_asm_params::{
-    AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
-    ConfirmationDepths, SubprotocolInstance,
+    AdministrationInitConfig, AsmParams, BridgeInitConfig, CheckpointInitConfig,
+    SubprotocolInstance,
 };
-use strata_asm_proto_bridge_v1_types::SafeHarbourAddress;
 use strata_btc_types::BitcoinAmount;
 use strata_crypto::{
     aggregate_schnorr_keys, keys::compressed::CompressedPublicKey,
@@ -164,7 +165,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let safe_harbour_address = resolve_safe_harbour_address(&cmd.safe_harbour_address)?;
     let operators: Vec<EvenPublicKey> = pubkeys.into_iter().map(EvenPublicKey::from).collect();
 
-    let bridge = BridgeV1InitConfig {
+    let bridge = BridgeInitConfig {
         operators,
         denomination: BitcoinAmount::from_sat(deposit_sats),
         assignment_duration: cmd

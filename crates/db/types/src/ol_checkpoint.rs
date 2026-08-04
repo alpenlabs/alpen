@@ -1,6 +1,6 @@
 //! OL checkpoint database interface.
 
-use strata_asm_proto_checkpoint_types::CheckpointPayload;
+use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 #[cfg(feature = "proxies")]

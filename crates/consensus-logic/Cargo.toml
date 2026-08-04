@@ -10,9 +10,8 @@ workspace = true
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
-strata-asm-proto-checkpoint-types.workspace = true
+strata-asm-checkpoint-types.workspace = true
 strata-asm-spec.workspace = true
-strata-asm-spec-debug = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-chain-worker.workspace = true
@@ -58,5 +57,4 @@ strata-storage = { workspace = true, features = ["test-utils"] }
 rand = { version = "0.8.5", features = ["getrandom", "std_rng"] }
 
 [features]
-debug-asm = ["dep:strata-asm-spec-debug"]
 debug-utils = ["strata-common/debug-utils"]

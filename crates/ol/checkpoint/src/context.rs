@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use strata_asm_proto_checkpoint_types::CheckpointPayload;
+use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};

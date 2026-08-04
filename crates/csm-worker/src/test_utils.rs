@@ -3,8 +3,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use bitcoin::Block;
+use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AuxData;
-use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;
@@ -86,8 +86,19 @@ impl StubCtx {
         blkid: L1BlockId,
         state: AsmState,
     ) -> Self {
-        self.canonical_asm_states.insert(height, (blkid, state));
+        self.insert_canonical_asm_state(height, blkid, state);
         self
+    }
+
+    /// Registers a canonical ASM state at `height` after the context has already
+    /// been moved into a worker state.
+    pub(crate) fn insert_canonical_asm_state(
+        &mut self,
+        height: L1Height,
+        blkid: L1BlockId,
+        state: AsmState,
+    ) {
+        self.canonical_asm_states.insert(height, (blkid, state));
     }
 
     /// Registers a canonical block id at `height` for fork-detection lookups.

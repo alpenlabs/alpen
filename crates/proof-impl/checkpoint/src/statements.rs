@@ -5,8 +5,8 @@
 
 use ssz::{Decode, Encode};
 use ssz_primitives::FixedBytes;
+use strata_asm_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalHeaderComplement};
 use strata_asm_manifest_types::{AsmManifestRangeHash, compute_asm_manifests_hash};
-use strata_asm_proto_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalHeaderComplement};
 use strata_bridge_params::BridgeParams;
 use strata_crypto::hash;
 use strata_ledger_types::IStateAccessor;

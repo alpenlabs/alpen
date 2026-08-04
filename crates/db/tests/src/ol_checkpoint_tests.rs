@@ -1,74 +1,16 @@
-use proptest::prelude::*;
-use strata_asm_proto_checkpoint_types::test_utils::{
-    checkpoint_tip_strategy, create_test_checkpoint_payload,
-};
-use strata_asm_proto_checkpoint_types::{
-    CheckpointPayload, CheckpointSidecar, OLLog, TerminalHeaderComplement,
-    MAX_TOTAL_LOG_PAYLOAD_BYTES,
-};
+use strata_asm_checkpoint_types::test_utils::create_test_checkpoint_payload;
+use strata_asm_checkpoint_types::CheckpointPayload;
+// Re-exported because the sled test macro resolves the strategy through this module.
+pub use strata_asm_checkpoint_types::test_utils::checkpoint_payload_strategy;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::common::L1PayloadIntentIndex;
 use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
 use strata_identifiers::{
-    AccountSerial, Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment,
-    OLBlockId, RBuf32,
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
+    RBuf32,
 };
 use strata_test_utils::ArbitraryGenerator;
-
-/// Upper bound on the number of OL logs generated per checkpoint by
-/// [`checkpoint_payload_strategy`].
-const MAX_GENERATED_OL_LOGS: usize = 10;
-
-/// Strategy for generating arbitrary, size-valid [`CheckpointPayload`] values.
-///
-/// The upstream strategy in `strata-asm-proto-checkpoint-types` bounds each OL log payload
-/// independently but not their sum, so it can produce sidecars whose total log payload exceeds
-/// the [`MAX_TOTAL_LOG_PAYLOAD_BYTES`] cap and panics in `CheckpointSidecar::new`. This local
-/// strategy caps each log payload to a per-log share of the total budget so the summed payload
-/// always stays within the limit.
-// TODO(STR-3804): drop this once https://github.com/alpenlabs/asm/pull/154 lands and we bump to a
-// tag that includes it, then go back to
-// `strata_asm_proto_checkpoint_types::test_utils::checkpoint_payload_strategy`.
-pub fn checkpoint_payload_strategy() -> impl Strategy<Value = CheckpointPayload> {
-    let per_log_max = MAX_TOTAL_LOG_PAYLOAD_BYTES / MAX_GENERATED_OL_LOGS;
-    let ol_logs = prop::collection::vec(
-        (
-            any::<u32>(),
-            prop::collection::vec(any::<u8>(), 0..=per_log_max),
-        )
-            .prop_map(|(serial, payload)| OLLog::new(AccountSerial::from(serial), payload)),
-        0..MAX_GENERATED_OL_LOGS,
-    );
-    let terminal = (
-        any::<u64>(),
-        any::<[u8; 32]>(),
-        any::<[u8; 32]>(),
-        any::<[u8; 32]>(),
-    )
-        .prop_map(|(timestamp, parent, body_root, logs_root)| {
-            TerminalHeaderComplement::new(
-                timestamp,
-                OLBlockId::from(Buf32::from(parent)),
-                Buf32::from(body_root),
-                Buf32::from(logs_root),
-            )
-        });
-    let state_diff = prop::collection::vec(any::<u8>(), 0..1024);
-    let proof = prop::collection::vec(any::<u8>(), 0..512);
-    (
-        checkpoint_tip_strategy(),
-        state_diff,
-        ol_logs,
-        terminal,
-        proof,
-    )
-        .prop_map(|(tip, state_diff, ol_logs, terminal, proof)| {
-            let sidecar = CheckpointSidecar::new(state_diff, ol_logs, terminal)
-                .expect("test sidecar is within size limits");
-            CheckpointPayload::new(tip, sidecar, proof).expect("test payload is within size limits")
-        })
-}
 
 fn checkpoint_epoch_commitment(payload: &CheckpointPayload) -> EpochCommitment {
     EpochCommitment::from_terminal(
