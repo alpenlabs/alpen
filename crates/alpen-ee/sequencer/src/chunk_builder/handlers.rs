@@ -12,7 +12,7 @@ use tracing::{debug, warn};
 
 use super::{
     recovery,
-    state::{ChunkBuilderState, PendingEntry},
+    state::{state_from_batch_anchor, ChunkBuilderState, PendingEntry},
 };
 use crate::sealing_policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy};
 
@@ -220,13 +220,7 @@ async fn reset_state_to_storage_frontier<P: AccumulationPolicy>(
             chunk.batch_idx() + 1,
         )
     } else {
-        let (genesis, _) = batch_storage
-            .get_batch_by_idx(0)
-            .await?
-            .ok_or_else(|| eyre!("genesis batch missing from storage"))?;
-        let mut state = ChunkBuilderState::new(genesis.last_blocknumhash());
-        state.set_current_batch_idx(1);
-        state
+        state_from_batch_anchor(batch_storage).await?
     };
 
     Ok(())

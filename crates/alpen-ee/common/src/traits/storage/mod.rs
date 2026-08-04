@@ -31,6 +31,6 @@ pub use exec_block::{exec_block_storage_test_fns, MockExecBlockStorage};
 #[cfg(feature = "test-utils")]
 pub use in_memory::InMemoryStorage;
 pub use utils::{
-    get_batch_anchor, require_best_ee_account_state, require_best_finalized_block,
-    require_genesis_batch, require_latest_batch,
+    get_batch_anchor, require_batch_anchor, require_best_ee_account_state,
+    require_best_finalized_block, require_genesis_batch, require_latest_batch,
 };

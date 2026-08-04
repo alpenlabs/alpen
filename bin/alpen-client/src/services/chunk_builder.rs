@@ -58,9 +58,13 @@ where
         .map_err(|e| anyhow::anyhow!("repair batch linkage: {e}"))?;
 
     // Load state from (now-consistent) storage.
-    let state = init_chunk_builder_state::<ChunkPolicy>(chunk_storage.as_ref(), genesis)
-        .await
-        .map_err(|e| anyhow::anyhow!("init_chunk_builder_state: {e}"))?;
+    let state = init_chunk_builder_state::<ChunkPolicy>(
+        chunk_storage.as_ref(),
+        batch_storage.as_ref(),
+        genesis,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("init_chunk_builder_state: {e}"))?;
 
     let block_data_provider = Arc::new(ComposedDataProvider::new(
         BlockCountDataProvider,

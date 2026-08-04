@@ -88,6 +88,15 @@ pub async fn get_batch_anchor(
     Ok(Some(anchor))
 }
 
+/// Gets the earliest contiguous batch retained in storage.
+pub async fn require_batch_anchor(
+    storage: &impl BatchStorage,
+) -> Result<(Batch, BatchStatus), StorageError> {
+    get_batch_anchor(storage).await?.ok_or_else(|| {
+        StorageError::invariant_violated("no batch exists in storage after batch initialization")
+    })
+}
+
 /// Gets the best EE account state from storage, returning an error if none exists.
 ///
 /// This function enforces the system invariant that at least one EE account state

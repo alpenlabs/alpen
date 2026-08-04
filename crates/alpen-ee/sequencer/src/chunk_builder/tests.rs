@@ -1,6 +1,6 @@
 use alpen_ee_common::{
-    exec_block_storage_test_fns::create_exec_block, Batch, BatchId, BatchStorage, BlockNumHash,
-    Chunk, ChunkStorage, InMemoryStorage, MockExecBlockStorage,
+    exec_block_storage_test_fns::create_exec_block, Batch, BatchId, BatchStatus, BatchStorage,
+    BlockNumHash, Chunk, ChunkStorage, InMemoryStorage, MockExecBlockStorage,
 };
 use strata_acct_types::Hash;
 
@@ -403,7 +403,7 @@ async fn init_state_from_storage() {
 
     // Simulate restart: init from storage.
     let recovered: ChunkBuilderState<BlockCountPolicy> =
-        init_chunk_builder_state(&storage, genesis)
+        init_chunk_builder_state(&storage, &storage, genesis)
             .await
             .expect("init failed");
 
@@ -423,14 +423,91 @@ async fn init_state_from_storage() {
 async fn init_state_empty_storage() {
     let storage = InMemoryStorage::new_empty();
     let genesis = test_block(0);
+    seed_genesis_batch(&storage, genesis).await;
 
-    let state: ChunkBuilderState<BlockCountPolicy> = init_chunk_builder_state(&storage, genesis)
-        .await
-        .expect("init failed");
+    let state: ChunkBuilderState<BlockCountPolicy> =
+        init_chunk_builder_state(&storage, &storage, genesis)
+            .await
+            .expect("init failed");
 
     assert_eq!(state.next_chunk_idx(), 0);
     assert_eq!(state.prev_chunk_end(), genesis);
     assert_eq!(state.current_batch_idx(), 1);
+}
+
+#[tokio::test]
+async fn init_state_from_sparse_batch_anchor() {
+    let storage = InMemoryStorage::new_empty();
+    let configured_genesis = test_block(0);
+    let anchor = Batch::new(14, test_hash(39), test_hash(42), 42, Vec::new()).unwrap();
+    storage.save_genesis_batch(anchor.clone()).await.unwrap();
+
+    let state: ChunkBuilderState<BlockCountPolicy> =
+        init_chunk_builder_state(&storage, &storage, configured_genesis)
+            .await
+            .expect("init failed");
+
+    assert_eq!(state.next_chunk_idx(), 0);
+    assert_eq!(state.prev_chunk_end(), anchor.last_blocknumhash());
+    assert_eq!(state.current_batch_idx(), 15);
+}
+
+#[tokio::test]
+async fn init_state_rejects_untrusted_first_retained_batch() {
+    let storage = InMemoryStorage::new_empty();
+    let configured_genesis = test_block(0);
+    let anchor = Batch::new(14, test_hash(39), test_hash(42), 42, Vec::new()).unwrap();
+    storage.save_genesis_batch(anchor.clone()).await.unwrap();
+    storage
+        .update_batch_status(anchor.id(), BatchStatus::Sealed)
+        .await
+        .unwrap();
+
+    let error =
+        init_chunk_builder_state::<BlockCountPolicy>(&storage, &storage, configured_genesis)
+            .await
+            .err()
+            .expect("untrusted anchor should fail");
+
+    assert!(error
+        .to_string()
+        .contains("is not a trusted local-history anchor"));
+}
+
+#[tokio::test]
+async fn init_state_rejects_configured_genesis_mismatch() {
+    let storage = InMemoryStorage::new_empty();
+    let stored_genesis = test_block(0);
+    let configured_genesis = test_block(1);
+    seed_genesis_batch(&storage, stored_genesis).await;
+
+    let error =
+        init_chunk_builder_state::<BlockCountPolicy>(&storage, &storage, configured_genesis)
+            .await
+            .err()
+            .expect("mismatched genesis should fail");
+
+    assert!(error
+        .to_string()
+        .contains("does not match configured genesis"));
+}
+
+#[tokio::test]
+async fn init_state_rejects_batch_anchor_index_overflow() {
+    let storage = InMemoryStorage::new_empty();
+    let configured_genesis = test_block(0);
+    let anchor = Batch::new(u64::MAX, test_hash(39), test_hash(42), 42, Vec::new()).unwrap();
+    storage.save_genesis_batch(anchor).await.unwrap();
+
+    let error =
+        init_chunk_builder_state::<BlockCountPolicy>(&storage, &storage, configured_genesis)
+            .await
+            .err()
+            .expect("overflowing anchor should fail");
+
+    assert!(error
+        .to_string()
+        .contains("retained batch anchor index overflow"));
 }
 
 // ---------------------------------------------------------------------------
@@ -728,6 +805,100 @@ async fn backfill_noop_when_caught_up() {
     assert!(!state.has_pending());
 }
 
+#[tokio::test]
+async fn sparse_anchor_backfills_only_post_recovery_batches() {
+    let storage = InMemoryStorage::new_empty();
+    let configured_genesis = test_block(0);
+    let anchor = Batch::new(
+        14,
+        test_hash(0),
+        test_hash(3),
+        3,
+        vec![test_hash(1), test_hash(2)],
+    )
+    .unwrap();
+    storage.save_genesis_batch(anchor.clone()).await.unwrap();
+    let batch15 = save_test_batch(&storage, 15, 3, 6).await;
+    let mock_blocks = mock_block_storage();
+
+    let mut state: ChunkBuilderState<BlockCountPolicy> =
+        init_chunk_builder_state(&storage, &storage, configured_genesis)
+            .await
+            .expect("init failed");
+    enqueue_backfill(&mut state, &storage, &mock_blocks)
+        .await
+        .expect("backfill failed");
+
+    assert_eq!(state.prev_chunk_end(), anchor.last_blocknumhash());
+    assert_eq!(state.current_batch_idx(), 15);
+
+    let mut block_numbers = Vec::new();
+    let mut boundary = None;
+    while let Some(entry) = state.pop_pending() {
+        match entry {
+            PendingEntry::Block { block, batch_idx } => {
+                assert_eq!(batch_idx, 15);
+                block_numbers.push(block.blocknum());
+            }
+            PendingEntry::BatchBoundary(batch_id) => boundary = Some(batch_id),
+        }
+    }
+
+    assert_eq!(block_numbers, [4, 5, 6]);
+    assert_eq!(boundary, Some(batch15.id()));
+}
+
+#[tokio::test]
+async fn reorg_removing_all_post_recovery_chunks_resets_to_sparse_anchor() {
+    let storage = InMemoryStorage::new_empty();
+    let anchor = Batch::new(
+        14,
+        test_hash(0),
+        test_hash(3),
+        3,
+        vec![test_hash(1), test_hash(2)],
+    )
+    .unwrap();
+    storage.save_genesis_batch(anchor.clone()).await.unwrap();
+    let batch15 = save_test_batch(&storage, 15, 3, 6).await;
+
+    let chunk = Chunk::new(
+        0,
+        anchor.last_block(),
+        batch15.last_block(),
+        batch15.last_blocknum(),
+        15,
+        vec![test_hash(4), test_hash(5)],
+    );
+    let chunk_id = chunk.id();
+    storage.save_next_chunk(chunk).await.unwrap();
+    storage
+        .set_batch_chunks(batch15.id(), vec![chunk_id])
+        .await
+        .unwrap();
+
+    let mut state =
+        ChunkBuilderState::<BlockCountPolicy>::from_last_chunk(0, batch15.last_blocknumhash(), 16);
+    storage.revert_batches(anchor.idx()).await.unwrap();
+
+    handle_reorg(
+        &mut state,
+        &storage,
+        &storage,
+        &mock_block_storage(),
+        anchor.last_blocknumhash(),
+        anchor.idx(),
+    )
+    .await
+    .expect("handle_reorg failed");
+
+    assert!(storage.get_latest_chunk().await.unwrap().is_none());
+    assert_eq!(state.next_chunk_idx(), 0);
+    assert_eq!(state.prev_chunk_end(), anchor.last_blocknumhash());
+    assert_eq!(state.current_batch_idx(), 15);
+    assert!(!state.has_pending());
+}
+
 // ---------------------------------------------------------------------------
 // Reorg → resume round-trip
 // ---------------------------------------------------------------------------
@@ -977,7 +1148,7 @@ async fn full_startup_sequence() {
 
     // Step 3: init.
     let mut state: ChunkBuilderState<BlockCountPolicy> =
-        init_chunk_builder_state(&storage, genesis)
+        init_chunk_builder_state(&storage, &storage, genesis)
             .await
             .expect("init failed");
 

@@ -2,8 +2,10 @@
 
 use std::{collections::VecDeque, mem};
 
-use alpen_ee_common::{BatchId, BlockNumHash, ChunkId, ChunkStorage};
-use eyre::Result;
+use alpen_ee_common::{
+    require_batch_anchor, BatchId, BatchStatus, BatchStorage, BlockNumHash, ChunkId, ChunkStorage,
+};
+use eyre::{ensure, eyre, Result};
 use tracing::debug;
 
 use crate::sealing_policy::{AccumulationPolicy, Accumulator};
@@ -161,6 +163,7 @@ impl<P: AccumulationPolicy> ChunkBuilderState<P> {
 /// that gap.
 pub async fn init_chunk_builder_state<P: AccumulationPolicy>(
     chunk_storage: &dyn ChunkStorage,
+    batch_storage: &impl BatchStorage,
     genesis: BlockNumHash,
 ) -> Result<ChunkBuilderState<P>> {
     if let Some((chunk, _)) = chunk_storage.get_latest_chunk().await? {
@@ -180,10 +183,47 @@ pub async fn init_chunk_builder_state<P: AccumulationPolicy>(
             current_batch_idx,
         ))
     } else {
-        // No chunks: genesis batch (idx=0) always exists, real batches start at 1.
-        debug!("starting chunk builder from genesis");
-        let mut state = ChunkBuilderState::new(genesis);
-        state.set_current_batch_idx(1);
+        let state = state_from_batch_anchor(batch_storage).await?;
+        if state.current_batch_idx() == 1 {
+            ensure!(
+                state.prev_chunk_end() == genesis,
+                "batch-zero anchor {:?} does not match configured genesis {:?}",
+                state.prev_chunk_end(),
+                genesis
+            );
+        }
         Ok(state)
     }
+}
+
+/// Creates an empty-chunk frontier from the earliest trusted retained batch.
+///
+/// A normal database retains batch zero. A sparse recovered database retains a later batch with
+/// [`BatchStatus::Genesis`] to mark its trusted local-history boundary.
+pub(super) async fn state_from_batch_anchor<P: AccumulationPolicy>(
+    batch_storage: &impl BatchStorage,
+) -> Result<ChunkBuilderState<P>> {
+    let (anchor, status) = require_batch_anchor(batch_storage).await?;
+    ensure!(
+        matches!(status, BatchStatus::Genesis),
+        "earliest retained batch {} is not a trusted local-history anchor",
+        anchor.idx()
+    );
+
+    let current_batch_idx = anchor
+        .idx()
+        .checked_add(1)
+        .ok_or_else(|| eyre!("retained batch anchor index overflow"))?;
+    let anchor_end = anchor.last_blocknumhash();
+
+    debug!(
+        anchor_batch_idx = anchor.idx(),
+        ?anchor_end,
+        current_batch_idx,
+        "starting chunk builder from retained batch anchor"
+    );
+
+    let mut state = ChunkBuilderState::new(anchor_end);
+    state.set_current_batch_idx(current_batch_idx);
+    Ok(state)
 }

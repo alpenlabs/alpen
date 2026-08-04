@@ -29,9 +29,10 @@ pub use traits::{
     },
     prover::{BatchProver, ProofGenerationStatus},
     storage::{
-        get_batch_anchor, require_best_ee_account_state, require_best_finalized_block,
-        require_genesis_batch, require_latest_batch, AccessedStateStore, BatchStorage,
-        BlockWitnessStore, ChunkStorage, ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
+        get_batch_anchor, require_batch_anchor, require_best_ee_account_state,
+        require_best_finalized_block, require_genesis_batch, require_latest_batch,
+        AccessedStateStore, BatchStorage, BlockWitnessStore, ChunkStorage, ExecBlockStorage,
+        OLBlockOrEpoch, Storage, StorageError,
     },
 };
 pub use types::{
