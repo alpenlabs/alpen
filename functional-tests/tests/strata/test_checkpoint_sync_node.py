@@ -7,13 +7,17 @@ account state.
 """
 
 import logging
-from typing import cast
 
 import flexitest
 
 from common.base_test import BaseTest
+from common.checkpoint_sync import (
+    check_summaries_equivalent,
+    check_top_level_state_equivalent,
+    mine_and_get_status,
+)
 from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
-from common.rpc_types.strata import AccountEpochSummary, ChainSyncStatus, EpochCommitment
+from common.rpc_types.strata import EpochCommitment
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
@@ -21,7 +25,7 @@ from common.wait import wait_until_with_value
 logger = logging.getLogger(__name__)
 
 # Number of epochs with real account activity to compare between the two nodes.
-EPOCHS_WITH_ACTIVITY_TO_CHECK = 2
+EPOCHS_WITH_ACTIVITY_TO_CHECK = 5
 # Cap on how many epochs to walk while looking for activity.
 MAX_EPOCHS_TO_SCAN = 30
 
@@ -29,10 +33,9 @@ MAX_EPOCHS_TO_SCAN = 30
 @flexitest.register
 class TestCheckpointSyncNode(BaseTest):
     """
-    Tests a checkpoint syncing node. The EE node reads OL state from the
-    checkpoint-sync node and submits transactions to the sequencer; the test
-    asserts that per-epoch account summaries from the checkpoint-sync node
-    match the sequencer's.
+    Tests a checkpoint syncing node. The EE sequencer generates activity via
+    the OL sequencer; the test asserts that CSS reconstructs matching
+    per-epoch account summaries from L1 checkpoints.
     """
 
     def __init__(self, ctx: flexitest.InitContext):
@@ -86,6 +89,14 @@ class TestCheckpointSyncNode(BaseTest):
             timeout=120,
         )
 
+        seq_status, node_status = wait_until_with_value(
+            lambda: (sequencer.get_sync_status(), checkpoint_node.get_sync_status()),
+            lambda statuses: statuses[0]["finalized"] == statuses[1]["finalized"],
+            error_with="sequencer and checkpoint-sync finalized commitments did not converge",
+            timeout=120,
+        )
+        check_top_level_state_equivalent(seq_status, node_status)
+
         # Each active epoch's reconstructed account summary must be identical to
         # the sequencer's, including the non-empty update inputs.
         seq_rpc = sequencer.create_rpc()
@@ -95,26 +106,6 @@ class TestCheckpointSyncNode(BaseTest):
             check_summaries_equivalent(seq_summary, node_summary)
             check_commitment_matches_checkpoint(seq_rpc, epoch, node_summary["epoch_commitment"])
             logger.info(f"account epoch summary matches at epoch {epoch}")
-
-
-def check_summaries_equivalent(seq_summary: AccountEpochSummary, node_summary: AccountEpochSummary):
-    """Checks that the two summaries match. The checkpoint-sync node may report
-    `new_state_root=None` for non-terminal updates within a multi-update epoch
-    (DA reconstruction only recovers terminal-per-account roots); when present,
-    the root must match the sequencer's.
-    """
-    seq_summary_d = dict(seq_summary)
-    node_summary_d = dict(node_summary)
-    seq_updates = cast(list, seq_summary_d.pop("update_inputs"))
-    node_updates = cast(list, node_summary_d.pop("update_inputs"))
-
-    assert seq_summary_d == node_summary_d
-
-    for su, nu in zip(seq_updates, node_updates, strict=True):
-        s_root = su.pop("new_state_root")
-        n_root = nu.pop("new_state_root")
-        assert n_root is None or n_root == s_root, "new_state_root if present must match"
-        assert su == nu
 
 
 def check_commitment_matches_checkpoint(seq_rpc, epoch: int, commitment: EpochCommitment):
@@ -133,24 +124,4 @@ def check_commitment_matches_checkpoint(seq_rpc, epoch: int, commitment: EpochCo
     assert commitment["last_blkid"] == terminal["blkid"], (
         f"epoch {epoch} commitment blkid {commitment['last_blkid']} != "
         f"checkpoint terminal blkid {terminal['blkid']}"
-    )
-
-
-def mine_and_get_status(strata: StrataService, btc_rpc) -> ChainSyncStatus:
-    """Mines L1 blocks so OL checkpoints confirm, then returns the node's status."""
-    btc_rpc.proxy.generatetoaddress(2, btc_rpc.proxy.getnewaddress())
-    status = strata.get_sync_status()
-    check_epoch_ordering_invariant(status)
-    return status
-
-
-def check_epoch_ordering_invariant(status: ChainSyncStatus):
-    """The latest (recently complete) epoch can never lag confirmed or finalized."""
-    tip = status["tip"]["epoch"]
-    latest = status["latest"]["epoch"]
-    confirmed = status["confirmed"]["epoch"]
-    finalized = status["finalized"]["epoch"]
-    assert tip >= latest >= confirmed >= finalized, (
-        f"epoch ordering violated: tip={tip}, latest={latest},"
-        "confirmed={confirmed}, finalized={finalized}"
     )

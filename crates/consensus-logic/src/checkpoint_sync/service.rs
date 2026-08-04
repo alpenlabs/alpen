@@ -137,7 +137,7 @@ pub async fn start_css<C: CheckpointSyncCtx>(
 /// the chain worker's `last_finalized_epoch` would otherwise stay behind
 /// silently. The re-finalize is idempotent.
 #[expect(clippy::result_large_err, reason = "No need to box the error")]
-async fn initialize_css_inner_state(
+pub(super) async fn initialize_css_inner_state(
     ctx: &impl CheckpointSyncCtx,
 ) -> CheckpointSyncResult<Option<EpochCommitment>> {
     let Some(cur_finalized) = ctx.fetch_csm_status().await?.last_finalized_epoch else {

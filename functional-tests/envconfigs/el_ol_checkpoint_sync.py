@@ -18,8 +18,8 @@ class EeOLCheckpointSyncEnv(EeOLEnv):
     """`el_ol` plus a checkpoint-sync Strata node.
 
     The checkpoint-sync node reconstructs OL state from L1-buried checkpoints
-    instead of executing OL blocks. The EE node reads OL state from the
-    checkpoint-sync node and submits transactions to the sequencer.
+    instead of executing OL blocks. The EE sequencer reads OL state from the
+    OL sequencer, while the EE full node reads it from the checkpoint-sync node.
     """
 
     def __init__(
@@ -47,7 +47,8 @@ class EeOLCheckpointSyncEnv(EeOLEnv):
             ectx,
             self.alpen_env_params,
             bitcoin_service=bitcoin,
-            ol_endpoint=checkpoint_node.props["rpc_url"],
+            ol_endpoint=sequencer.props["rpc_url"],
+            fullnode_ol_endpoint=checkpoint_node.props["rpc_url"],
             ol_submit_endpoint=sequencer.props["submit_rpc_url"],
             ol_submit_token=sequencer.props["submit_rpc_token"],
             ee_params_path=sequencer_node.params.ee_params,
