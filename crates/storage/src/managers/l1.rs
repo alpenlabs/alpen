@@ -198,6 +198,36 @@ impl L1BlockManager {
             .await
     }
 
+    /// Removes tracked canonical chain entries from `height` through the current tip.
+    #[instrument(
+        skip(self),
+        fields(
+            component = components::STORAGE_L1,
+            from_height = height,
+        )
+    )]
+    pub async fn remove_canonical_chain_entries_from_async(
+        &self,
+        height: L1Height,
+    ) -> DbResult<()> {
+        let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_async().await? else {
+            return Ok(());
+        };
+
+        if height > tip_height {
+            return Ok(());
+        }
+
+        self.blockheight_cache
+            .purge_if_async(|stored_height| {
+                height <= *stored_height && *stored_height <= tip_height
+            })
+            .await;
+        self.ops
+            .remove_canonical_chain_entries_async(height, tip_height)
+            .await
+    }
+
     // Get tracked canonical chain tip height and blockid.
     pub fn get_canonical_chain_tip(&self) -> DbResult<Option<(L1Height, L1BlockId)>> {
         self.ops.get_canonical_chain_tip_blocking()
