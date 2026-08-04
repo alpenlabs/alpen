@@ -45,7 +45,7 @@ impl WalletPersister for Persister {
         let db = Self::db();
         let mut db_ref = db.borrow_mut();
         let db_tx = db_ref.transaction()?;
-        db_tx.execute(CREATE_FULL_SCAN_STATE_TABLE, [])?;
+        ensure_full_scan_state_table(&db_tx)?;
         ChangeSet::init_sqlite_tables(&db_tx)?;
         let changeset = ChangeSet::from_sqlite(&db_tx)?;
         db_tx.commit()?;
@@ -71,9 +71,13 @@ impl Persister {
     /// paths (e.g. `faucet` with no address argument) reveal an address
     /// without ever syncing, which would otherwise look identical to a
     /// wallet that has actually been scanned.
+    ///
+    /// This creates its own table if needed, so callers may use it before
+    /// the wallet itself is loaded.
     pub fn full_scan_completed() -> Result<bool, rusqlite::Error> {
         let db = Self::db();
         let db_ref = db.borrow();
+        ensure_full_scan_state_table(&db_ref)?;
         full_scan_completed(&db_ref)
     }
 
@@ -81,6 +85,7 @@ impl Persister {
     pub fn mark_full_scan_completed() -> Result<(), rusqlite::Error> {
         let db = Self::db();
         let db_ref = db.borrow();
+        ensure_full_scan_state_table(&db_ref)?;
         mark_full_scan_completed(&db_ref)
     }
 }
@@ -89,6 +94,10 @@ const CREATE_FULL_SCAN_STATE_TABLE: &str = "CREATE TABLE IF NOT EXISTS full_scan
     id INTEGER PRIMARY KEY CHECK (id = 0),
     completed INTEGER NOT NULL
 )";
+
+fn ensure_full_scan_state_table(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute(CREATE_FULL_SCAN_STATE_TABLE, []).map(|_| ())
+}
 
 fn full_scan_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {
     let completed: Option<bool> = conn
@@ -114,12 +123,11 @@ fn mark_full_scan_completed(conn: &Connection) -> Result<(), rusqlite::Error> {
 mod tests {
     use bdk_wallet::rusqlite::Connection;
 
-    use super::{full_scan_completed, mark_full_scan_completed, CREATE_FULL_SCAN_STATE_TABLE};
+    use super::{ensure_full_scan_state_table, full_scan_completed, mark_full_scan_completed};
 
     fn test_conn() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory db should open");
-        conn.execute(CREATE_FULL_SCAN_STATE_TABLE, [])
-            .expect("table should be created");
+        ensure_full_scan_state_table(&conn).expect("table should be created");
         conn
     }
 
@@ -145,6 +153,18 @@ mod tests {
 
         mark_full_scan_completed(&conn).unwrap();
         mark_full_scan_completed(&conn).unwrap();
+
+        assert!(full_scan_completed(&conn).unwrap());
+    }
+
+    #[test]
+    fn test_ensure_table_preserves_an_existing_flag() {
+        let conn = test_conn();
+        mark_full_scan_completed(&conn).unwrap();
+
+        // Runs on every open, including for wallets created before this
+        // table existed, so it must never clear what is already recorded.
+        ensure_full_scan_state_table(&conn).unwrap();
 
         assert!(full_scan_completed(&conn).unwrap());
     }

@@ -14,6 +14,7 @@ use backend::{ScanError, SignetBackend, SyncError, UpdateError, WalletUpdate};
 use bdk_esplora::esplora_client::{self, AsyncClient};
 use bdk_wallet::{
     bitcoin::{FeeRate, Network},
+    chain::keychain_txout::DEFAULT_LOOKAHEAD,
     rusqlite::{self, Connection},
     PersistedWallet, Wallet,
 };
@@ -178,14 +179,17 @@ impl SignetWallet {
         sync_backend: Arc<dyn SignetBackend>,
     ) -> io::Result<Self> {
         let (load, create) = seed.signet_wallet().split();
+        let lookahead = recovery_lookahead();
         Ok(Self {
             wallet: load
                 .check_network(network)
+                .lookahead(lookahead)
                 .load_wallet(&mut Persister)
                 .expect("should be able to load wallet")
                 .unwrap_or_else(|| {
                     create
                         .network(network)
+                        .lookahead(lookahead)
                         .create_wallet(&mut Persister)
                         .expect("wallet creation to succeed")
                 }),
@@ -229,6 +233,31 @@ impl SignetWallet {
 
     pub fn persist(&mut self) -> Result<bool, rusqlite::Error> {
         self.wallet.persist(&mut Persister)
+    }
+}
+
+/// Number of addresses cached beyond the last known one during the single
+/// scan that follows a restore from seed.
+///
+/// The Bitcoin Core backend never uses the Esplora `stop_gap`. It replays
+/// each block once and only recognizes an address already held in this
+/// cache, so a payment that confirms out of derivation order is missed for
+/// good. That one pass from genesis to the tip is the only chance to find
+/// old addresses, because the emitter resumes from the agreed tip
+/// afterwards. A wide cache makes payment order irrelevant below this
+/// index.
+const RECOVERY_LOOKAHEAD: u32 = 1000;
+
+/// Picks how many addresses to cache ahead of the last known one.
+///
+/// Only the scan that follows a restore needs the wide cache, so every
+/// later command pays the default. A database error keeps the wide value,
+/// since an unnecessarily wide cache is harmless but a narrow one during
+/// recovery loses coins.
+fn recovery_lookahead() -> u32 {
+    match Persister::full_scan_completed() {
+        Ok(true) => DEFAULT_LOOKAHEAD,
+        Ok(false) | Err(_) => RECOVERY_LOOKAHEAD,
     }
 }
 
