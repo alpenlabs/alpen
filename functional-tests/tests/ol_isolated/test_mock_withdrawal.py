@@ -1,8 +1,17 @@
 """
-Test mock deposit and withdrawal via strata-test-cli.
+Test snark-account withdrawal via strata-test-cli, without a real EE.
 
-This test verifies the end-to-end flow of depositing funds into a snark account
-via the debug subprotocol and then withdrawing them, all without a real EE.
+The point of this test is the withdrawal half: building a snark-account
+update with `build-snark-withdrawal` and submitting it to the OL. The
+deposit is setup, and goes through the real bridge subprotocol — ASM
+v0.4.0-rc.1 removed the debug subprotocol that used to accept synthetic
+deposit logs, so there is no shortcut any more. Each deposit credits exactly
+the configured bridge denomination, so the starting balance is built up from
+a whole number of them rather than an arbitrary figure.
+
+Balances are asserted as deltas: this environment is shared with
+`test_deposit_unregistered_serial`, which also makes real deposits, so the
+account may already hold funds when this test starts.
 """
 
 import logging
@@ -10,22 +19,31 @@ import logging
 import flexitest
 
 from common.base_test import StrataNodeTest
+from common.bridge import read_bridge_denomination, read_operator_xprivs, submit_real_bridge_deposit
 from common.config import ServiceType
-from common.test_cli import build_snark_withdrawal, create_mock_deposit
+from common.test_cli import build_snark_withdrawal
+from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
-# Test account reference byte (matches OLIsolatedEnvConfig default)
+# Test account reference byte (matches the `ol_isolated` env's genesis account)
 TEST_ACCOUNT_REF = 0x42
 # First user serial: system accounts occupy serials 0-127, so the first
 # genesis user account is assigned serial 128.
 TEST_ACCOUNT_SERIAL = 128
 
-# Withdrawal denomination: 1 BTC in satoshis
-WITHDRAWAL_DENOMINATION_SATS = 100_000_000
+# Number of bridge deposits to fund the account with. Each credits exactly the
+# bridge denomination, so this must be >= 2 for the withdrawal below to leave a
+# non-zero remainder.
+DEPOSIT_COUNT = 2
 
-# Deposit amount: 20 BTC in satoshis
-DEPOSIT_AMOUNT_SATS = 2_000_000_000
+# Bridge deposit indices must be unique across the env.
+# `test_deposit_unregistered_serial` shares it and uses the high indices.
+FIRST_DT_INDEX = 0
+
+# Destination subject is opaque to balance crediting — only the serial in the
+# descriptor selects the account.
+DEPOSIT_SUBJECT_HEX = "00" * 20
 
 
 def make_test_account_id_hex() -> str:
@@ -55,17 +73,14 @@ def get_account_balance(rpc, account_id_hex: str) -> int:
 @flexitest.register
 class TestMockWithdrawal(StrataNodeTest):
     """
-    Test deposit + withdrawal via strata-test-cli.
+    Test bridge deposit + snark-account withdrawal via strata-test-cli.
 
     1. Start bitcoind + strata (OL, no EE)
     2. Wait for OL RPC ready
-    3. Deposit via create-mock-deposit (debug subprotocol)
-    4. Generate Bitcoin blocks to mature the tx
-    5. Wait for OL to process the manifest
-    6. Assert balance == deposit amount
-    7. Build and submit withdrawal via build-snark-withdrawal
-    8. Wait for OL blocks
-    9. Assert balance == deposit - withdrawal
+    3. Fund the account with DEPOSIT_COUNT real bridge deposits
+    4. Assert the balance rose by DEPOSIT_COUNT * denomination
+    5. Build and submit a withdrawal of one denomination via build-snark-withdrawal
+    6. Assert the balance fell by exactly that withdrawal
     """
 
     def __init__(self, ctx: flexitest.InitContext):
@@ -82,53 +97,55 @@ class TestMockWithdrawal(StrataNodeTest):
         account_id_hex = make_test_account_id_hex()
         logger.info(f"Test account ID: {account_id_hex}")
 
-        # Get Bitcoin RPC config
-        btc_url = bitcoin.props["rpc_url"]
-        btc_user = bitcoin.props["rpc_user"]
-        btc_password = bitcoin.props["rpc_password"]
         btc_rpc = bitcoin.create_rpc()
+        miner_addr = btc_rpc.proxy.getnewaddress()
 
-        # Step 1: Deposit via debug subprotocol
-        logger.info(
-            f"Injecting mock deposit: {DEPOSIT_AMOUNT_SATS} sats to serial {TEST_ACCOUNT_SERIAL:#x}"
-        )
-        txid = create_mock_deposit(
-            account_serial=TEST_ACCOUNT_SERIAL,
-            amount=DEPOSIT_AMOUNT_SATS,
-            btc_url=btc_url,
-            btc_user=btc_user,
-            btc_password=btc_password,
-        )
-        logger.info(f"Mock deposit broadcast, txid: {txid}")
-
-        # Step 2: Mine Bitcoin blocks to mature the tx and let ASM process it
-        logger.info("Mining Bitcoin blocks to mature deposit tx...")
-        addr = btc_rpc.proxy.getnewaddress()
-        btc_rpc.proxy.generatetoaddress(8, addr)
-
-        # Wait for OL to reach a terminal block (epoch boundary).
-        # L1 manifests are only processed during terminal blocks, so we need
-        # to cross at least two epoch boundaries to be sure the deposit is picked up.
+        operator_xprivs = read_operator_xprivs(strata)
+        denomination = read_bridge_denomination(strata)
         slots_per_epoch = strata.props["slots_per_epoch"]
-        blocks_to_wait = 2 * slots_per_epoch
-        logger.info(
-            "Waiting %d blocks (2 * slots_per_epoch=%d) for terminal block...",
-            blocks_to_wait,
-            slots_per_epoch,
-        )
-        strata.wait_for_additional_blocks(blocks_to_wait, rpc, timeout_per_block=15)
+        logger.info("Bridge denomination: %d sats", denomination)
 
-        # Step 4: Query account balance and verify deposit
-        balance = get_account_balance(rpc, account_id_hex)
-        logger.info(f"Account balance after deposit: {balance} sats")
+        baseline = get_account_balance(rpc, account_id_hex)
+        logger.info("Starting balance: %d sats", baseline)
 
-        if balance != DEPOSIT_AMOUNT_SATS:
-            raise AssertionError(
-                f"Balance mismatch after deposit: expected {DEPOSIT_AMOUNT_SATS}, got {balance}"
+        # Step 1: fund the account through the real bridge.
+        for offset in range(DEPOSIT_COUNT):
+            dt_index = FIRST_DT_INDEX + offset
+            drt_txid, dt_txid, _ = submit_real_bridge_deposit(
+                btc_rpc,
+                operator_xprivs_hex=operator_xprivs,
+                alpen_address_hex=DEPOSIT_SUBJECT_HEX,
+                dt_index=dt_index,
+                account_serial=TEST_ACCOUNT_SERIAL,
             )
+            logger.info(
+                "Deposit %d/%d submitted dt_index=%d drt=%s dt=%s",
+                offset + 1,
+                DEPOSIT_COUNT,
+                dt_index,
+                drt_txid,
+                dt_txid,
+            )
+            # Mine past the reorg-safe depth, then cross an epoch boundary so
+            # the deposit-bearing manifest is folded into OL state.
+            btc_rpc.proxy.generatetoaddress(8, miner_addr)
+            strata.wait_for_additional_blocks(2 * slots_per_epoch, rpc, timeout_per_block=15)
 
-        # Step 5: Build withdrawal transaction
-        # Get snark account state for withdrawal params
+        # Step 2: assert the deposits credited.
+        deposited_total = DEPOSIT_COUNT * denomination
+        expected_after_deposit = baseline + deposited_total
+        balance = wait_until_with_value(
+            lambda: get_account_balance(rpc, account_id_hex),
+            lambda b: b == expected_after_deposit,
+            error_with=(
+                f"account {account_id_hex} not credited with {deposited_total} sats "
+                f"(expected total {expected_after_deposit})"
+            ),
+            timeout=120,
+        )
+        logger.info("Balance after deposits: %d sats (+%d)", balance, deposited_total)
+
+        # Step 3: build the withdrawal from current snark account state.
         account_state = rpc.strata_getSnarkAccountStateByTag(account_id_hex, "latest")
         if account_state is None:
             raise AssertionError("Account state not found")
@@ -140,29 +157,28 @@ class TestMockWithdrawal(StrataNodeTest):
         withdrawal_dest = b"bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
         dest_hex = withdrawal_dest.hex()
 
-        logger.info(f"Building withdrawal: {WITHDRAWAL_DENOMINATION_SATS} sats")
+        logger.info("Building withdrawal: %d sats", denomination)
         tx_json = build_snark_withdrawal(
             target_hex=account_id_hex,
             seq_no=seq_no,
             inner_state_hex=inner_state_hex,
             next_inbox_idx=next_inbox_idx,
             dest_hex=dest_hex,
-            amount=WITHDRAWAL_DENOMINATION_SATS,
+            amount=denomination,
             fees=0,
         )
         logger.info(f"Built withdrawal tx: {tx_json}")
 
-        # Step 6: Submit withdrawal
+        # Step 4: submit it.
         logger.info("Submitting withdrawal transaction...")
         tx_id = submit_rpc.strata_submitTransaction(tx_json)
         logger.info(f"Withdrawal submitted, ID: {tx_id}")
 
-        # Step 7: Wait for OL blocks to process withdrawal
         strata.wait_for_additional_blocks(2, rpc, timeout_per_block=15)
 
-        # Step 8: Verify final balance
+        # Step 5: assert the withdrawal debited exactly one denomination.
         final_balance = get_account_balance(rpc, account_id_hex)
-        expected_balance = DEPOSIT_AMOUNT_SATS - WITHDRAWAL_DENOMINATION_SATS
+        expected_balance = expected_after_deposit - denomination
 
         logger.info(f"Balance: {balance} -> {final_balance} (expected: {expected_balance})")
 
