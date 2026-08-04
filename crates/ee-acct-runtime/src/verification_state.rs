@@ -198,6 +198,9 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
         if transition.parent_exec_blkid() != self.cur_verified_exec_blkid {
             return Err(EnvError::MismatchedChainSegment);
         }
+        if transition.parent_state_root() != self.cur_verified_exec_state_root {
+            return Err(EnvError::MismatchedCurStateData);
+        }
 
         // Match inputs in the transition with our pending inputs.
         //

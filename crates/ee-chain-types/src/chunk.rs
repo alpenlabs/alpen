@@ -32,6 +32,7 @@ impl ExecHeaderSummary {
 impl ChunkTransition {
     pub fn new(
         parent_exec_blkid: Hash,
+        parent_state_root: Hash,
         tip_exec_blkid: Hash,
         tip_state_root: Hash,
         tip_exec_header_summary: ExecHeaderSummary,
@@ -40,6 +41,7 @@ impl ChunkTransition {
     ) -> Self {
         Self {
             parent_exec_blkid: parent_exec_blkid.0.into(),
+            parent_state_root: parent_state_root.0.into(),
             tip_exec_blkid: tip_exec_blkid.0.into(),
             tip_state_root: tip_state_root.0.into(),
             tip_exec_header_summary,
@@ -50,6 +52,10 @@ impl ChunkTransition {
 
     pub fn parent_exec_blkid(&self) -> Hash {
         self.parent_exec_blkid.0.into()
+    }
+
+    pub fn parent_state_root(&self) -> Hash {
+        self.parent_state_root.0.into()
     }
 
     pub fn tip_exec_blkid(&self) -> Hash {

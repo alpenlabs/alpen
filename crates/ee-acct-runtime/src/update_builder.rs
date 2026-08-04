@@ -176,6 +176,12 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
                 parent: transition.parent_exec_blkid(),
             });
         }
+        if transition.parent_state_root() != self.cur_tip_state_root {
+            return Err(BuilderError::StateRootMismatch {
+                expected: self.cur_tip_state_root,
+                actual: transition.parent_state_root(),
+            });
+        }
 
         // 2. Validate input matching against pending inputs.
         let deposits = transition.inputs().subject_deposits();

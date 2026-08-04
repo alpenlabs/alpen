@@ -17,7 +17,9 @@ use strata_acct_types::{AccountId, BitcoinAmount, Hash, SubjectId};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{BuilderError, EeVerificationInput, UpdateBuilder};
 use strata_ee_acct_types::{PendingInputEntry, UpdateExtraData};
-use strata_ee_chain_types::{ExecInputs, ExecOutputs, SequenceTracker, SubjectDepositData};
+use strata_ee_chain_types::{
+    ChunkTransition, ExecInputs, ExecOutputs, SequenceTracker, SubjectDepositData,
+};
 use strata_predicate::PredicateKey;
 use strata_simple_ee::SimpleExecutionEnvironment;
 use strata_snark_acct_runtime::ProgramError;
@@ -362,6 +364,37 @@ fn test_chain_linkage_mismatch() {
         ),
         "expected MismatchedChainSegment, got: {result:?}"
     );
+}
+
+#[test]
+fn test_parent_state_root_mismatch() {
+    let (initial_state, _snark_state) = create_initial_state();
+    let ee = SimpleExecutionEnvironment;
+    let transition = ChunkTransition::new(
+        initial_state.last_exec_blkid(),
+        Hash::new([0x44; 32]),
+        Hash::new([0x55; 32]),
+        Hash::zero(),
+        empty_exec_header_summary(),
+        ExecInputs::new_empty(),
+        ExecOutputs::new_empty(),
+    );
+
+    let predicate_key = PredicateKey::always_accept();
+    let mut vstate = create_vstate(
+        &ee,
+        &predicate_key,
+        &initial_state,
+        UpdateOutputs::new_empty(),
+    );
+    let pending: Vec<PendingInputEntry> = vec![];
+    let mut tracker = SequenceTracker::new(&pending);
+
+    let result = vstate.process_decoded_transition(&transition, &mut tracker);
+    assert!(matches!(
+        result,
+        Err(strata_ee_acct_types::EnvError::MismatchedCurStateData)
+    ));
 }
 
 #[test]

@@ -60,15 +60,30 @@ impl EvmPartialState {
         bytecodes: BTreeMap<B256, Bytecode>,
         ancestor_headers: Vec<Header>,
     ) -> Self {
-        // Seal ancestor headers once (compute hashes) and index by block number
-        let ancestor_headers: BTreeMap<u64, Sealed<Header>> = ancestor_headers
+        // Seal ordinary full-history headers once (compute hashes) before using the common
+        // authoritative-hash constructor.
+        let ancestor_headers = ancestor_headers
             .into_iter()
-            .map(|header| {
-                let block_num = header.number;
-                (block_num, header.seal_slow())
-            })
+            .map(Sealable::seal_slow)
             .collect();
 
+        Self::new_with_sealed_headers(ethereum_state, bytecodes, ancestor_headers)
+    }
+
+    /// Creates an [`EvmPartialState`] from headers carrying authoritative block hashes.
+    ///
+    /// Normal headers use their canonical RLP hash. A sparse recovery anchor may instead carry the
+    /// proof-backed execution block ID under which Reth imported and extended its synthetic header.
+    /// Child linkage is still validated against every authoritative hash.
+    pub fn new_with_sealed_headers(
+        ethereum_state: EthereumState,
+        bytecodes: BTreeMap<B256, Bytecode>,
+        ancestor_headers: Vec<Sealed<Header>>,
+    ) -> Self {
+        let ancestor_headers: BTreeMap<u64, Sealed<Header>> = ancestor_headers
+            .into_iter()
+            .map(|sealed| (sealed.number(), sealed))
+            .collect();
         let block_hashes = build_block_hashes(&ancestor_headers);
 
         Self {
@@ -114,6 +129,33 @@ impl EvmPartialState {
             .collect();
 
         Self::new(ethereum_state, bytecodes, ancestor_headers)
+    }
+
+    /// Builds an [`EvmPartialState`] from raw witness parts and authoritative sealed headers.
+    ///
+    /// This is the chunk-proof entry point when witness capture retained Reth's stored block hashes
+    /// alongside each ancestor header.
+    pub fn from_witness_parts_with_sealed_headers(
+        witness_state: Vec<Vec<u8>>,
+        pre_state_root: B256,
+        codes: Vec<Vec<u8>>,
+        ancestor_headers: Vec<Sealed<Header>>,
+    ) -> Self {
+        let witness = ExecutionWitness {
+            state: witness_state.into_iter().map(Bytes::from).collect(),
+            ..Default::default()
+        };
+        let ethereum_state = EthereumState::from_execution_witness(&witness, pre_state_root);
+
+        let bytecodes = codes
+            .into_iter()
+            .map(|code| {
+                let bytes = Bytes::from(code);
+                (keccak256(&bytes), Bytecode::new_raw(bytes))
+            })
+            .collect();
+
+        Self::new_with_sealed_headers(ethereum_state, bytecodes, ancestor_headers)
     }
 
     /// Gets a reference to the underlying EthereumState.

@@ -6,8 +6,9 @@
 //! reads chunk blocks + parent header + pre-state from EE storage and
 //! assembles `ee_chunk_runtime::PrivateInput`.
 
-use std::{fmt, sync::Arc};
+use std::{collections::BTreeMap, fmt, sync::Arc};
 
+use alloy_consensus::{BlockHeader, Header, Sealed};
 use alpen_ee_common::{
     decode_chunk_task_key, encode_chunk_task_key, BlockWitnessStore, ChunkId, ChunkStorage,
     ExecBlockStorage, ProverTaskKeyDecodeError,
@@ -146,7 +147,7 @@ impl ProofSpec for ChunkSpec {
         // per-block node bags fully covers the chunk's start state).
         let mut union_witness_state: Vec<Vec<u8>> = Vec::new();
         let mut union_codes: Vec<Vec<u8>> = Vec::new();
-        let mut union_ancestor_headers_rlp: Vec<Vec<u8>> = Vec::new();
+        let mut union_ancestor_headers: BTreeMap<u64, Sealed<Header>> = BTreeMap::new();
 
         for (idx, block_hash) in block_hashes.iter().enumerate() {
             // Per-block witness record: depth-0 witness + RLP block + parent
@@ -233,7 +234,39 @@ impl ProofSpec for ChunkSpec {
             // Accumulate this block's raw witness parts into the chunk union.
             union_witness_state.extend(record.witness_state);
             union_codes.extend(record.codes);
-            union_ancestor_headers_rlp.extend(record.ancestor_headers);
+            if !record.ancestor_header_hashes.is_empty()
+                && record.ancestor_header_hashes.len() != record.ancestor_headers.len()
+            {
+                return Err(PaasError::PermanentFailure(format!(
+                    "ancestor header/hash count mismatch for {block_hash:?}: {} headers, {} hashes",
+                    record.ancestor_headers.len(),
+                    record.ancestor_header_hashes.len()
+                )));
+            }
+            for (ancestor_idx, raw_header) in record.ancestor_headers.iter().enumerate() {
+                let header: Header = alloy_rlp::decode_exact(&raw_header[..]).map_err(|e| {
+                    PaasError::PermanentFailure(format!(
+                        "decode ancestor header {ancestor_idx} for {block_hash:?}: {e}"
+                    ))
+                })?;
+                let authoritative_hash = record
+                    .ancestor_header_hashes
+                    .get(ancestor_idx)
+                    .copied()
+                    .unwrap_or_else(|| header.hash_slow());
+                let sealed = Sealed::new_unchecked(header, authoritative_hash);
+
+                if let Some(existing) = union_ancestor_headers.get(&sealed.number()) {
+                    if existing.hash() != sealed.hash() || existing.inner() != sealed.inner() {
+                        return Err(PaasError::PermanentFailure(format!(
+                            "conflicting ancestor header {} while assembling chunk {chunk_id:?}",
+                            sealed.number()
+                        )));
+                    }
+                } else {
+                    union_ancestor_headers.insert(sealed.number(), sealed);
+                }
+            }
         }
 
         // 3. Parent header (from the first block's witness) — wrap + encode for the guest, and
@@ -245,36 +278,24 @@ impl ProofSpec for ChunkSpec {
         // root. `from_witness_parts` reconstructs the sparse trie purely
         // in-memory from the node bag — no historical-state access, no OOM.
         let chunk_start_state_root = prev_header.state_root;
-        let ancestor_headers: Vec<alloy_consensus::Header> = union_ancestor_headers_rlp
-            .iter()
-            .map(|raw| alloy_rlp::decode_exact(&raw[..]))
-            .collect::<Result<_, _>>()
-            .map_err(|e| {
-                PaasError::PermanentFailure(format!("decode chunk ancestor header: {e}"))
-            })?;
-        let chunk_pre_state = EvmPartialState::from_witness_parts(
+        let chunk_pre_state = EvmPartialState::from_witness_parts_with_sealed_headers(
             union_witness_state,
             chunk_start_state_root,
             union_codes,
-            ancestor_headers,
+            union_ancestor_headers.into_values().collect(),
         );
         let raw_chunk_pre_state = encode_to_vec(&chunk_pre_state)
             .map_err(|e| PaasError::PermanentFailure(format!("encode chunk pre-state: {e}")))?;
 
         let parent_evm_header = EvmHeader::new(prev_header);
-        let parent_blkid: Hash = parent_evm_header.compute_block_id();
-        if parent_blkid != chunk_id.prev_block() {
-            return Err(PaasError::PermanentFailure(format!(
-                "chunk witness prev-block mismatch for {chunk_id:?}: \
-                 chunk expects {:?}, witness has {parent_blkid:?}",
-                chunk_id.prev_block(),
-            )));
-        }
+        let parent_blkid = chunk_id.prev_block();
+        let parent_state_root: Hash = chunk_start_state_root.0.into();
         let raw_prev_header = encode_to_vec(&parent_evm_header)
             .map_err(|e| PaasError::PermanentFailure(format!("encode prev header: {e}")))?;
 
         let chunk_transition = ChunkTransition::new(
             parent_blkid,
+            parent_state_root,
             tip_blkid,
             tip_state_root,
             tip_exec_header_summary,

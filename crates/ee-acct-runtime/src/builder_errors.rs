@@ -28,6 +28,10 @@ pub enum BuilderError {
     #[error("chunk parent {parent} does not match current tip {expected}")]
     ChainLinkage { expected: Hash, parent: Hash },
 
+    /// Parent state root mismatch when accepting a chunk transition.
+    #[error("chunk parent state root {actual} does not match current root {expected}")]
+    StateRootMismatch { expected: Hash, actual: Hash },
+
     /// Pending input mismatch when accepting a chunk transition.
     #[error("chunk input at position {position} does not match pending input")]
     InputMismatch { position: usize },
