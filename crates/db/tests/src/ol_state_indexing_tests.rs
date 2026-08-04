@@ -1,6 +1,7 @@
 //! OL state indexing database tests.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU64;
 
 use strata_db_types::ol_state_index::{
     AccountCreatedRecord, AccountUpdateMeta, AccountUpdateRecord, EpochIndexingData,
@@ -32,6 +33,7 @@ fn record(
     idx: u64,
     extra: Option<Vec<u8>>,
 ) -> AccountUpdateRecord {
+    let seq = NonZeroU64::new(seq).expect("record post-state seqno must be non-zero");
     AccountUpdateRecord::new(meta, seq, 0, idx, extra)
 }
 
@@ -69,7 +71,7 @@ pub fn test_apply_epoch_indexing_round_trip(db: &impl OLStateIndexingDatabase) {
 
     let commitment = epoch_commit(epoch, 9);
     let mut updates = BTreeMap::new();
-    updates.insert(acct_a, vec![record(None, 0, 0, Some(vec![1, 2, 3]))]);
+    updates.insert(acct_a, vec![record(None, 1, 0, Some(vec![1, 2, 3]))]);
     let mut inbox = BTreeMap::new();
     inbox.insert(acct_b, vec![InboxMessageRecord::new(vec![9, 9], None)]);
 
@@ -258,7 +260,7 @@ pub fn test_account_active_in_multiple_epochs_creation_epoch_unchanged(
         acct_a,
         vec![record(
             Some(AccountUpdateMeta::new(Some(block(2, 2)), hash(1))),
-            0,
+            1,
             0,
             None,
         )],

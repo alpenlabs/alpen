@@ -14,13 +14,17 @@ use strata_snark_acct_types::{ProofState, UpdateInputData};
 pub struct RpcAccountEpochSummary {
     /// The epoch commitment.
     epoch_commitment: EpochCommitment,
+
     /// Previous epoch commitment.
     prev_epoch_commitment: EpochCommitment,
+
     /// Balance of account at the end of this epoch in sats.
     final_balance: u64,
+
     /// Account's state root at the end of this epoch.
     final_state_root: HexBytes32,
-    /// Update inputs for this epoch if present
+
+    /// Update inputs for this epoch.
     update_inputs: Vec<RpcUpdateInputData>,
 }
 
@@ -77,16 +81,22 @@ impl RpcAccountEpochSummary {
 pub struct RpcAccountBlockSummary {
     /// Account Id
     pub account: HexBytes32,
+
     /// Block commitment.
     pub block_commitment: OLBlockCommitment,
+
     /// Balance of account after block execution in sats.
     pub balance: u64,
-    /// Next expected sequence number for account after block execution.
+
+    /// Next expected account sequence number after block execution.
     pub next_seq_no: u64,
+
     /// Account's updates processed in the block.
     pub updates: Vec<RpcUpdateInputData>,
+
     /// New messages added to account's inbox in this block.
     pub new_inbox_messages: Vec<RpcMessageEntry>,
+
     /// Next expected message inbox accumulator index after block execution.
     pub next_inbox_msg_idx: u64,
 }
@@ -128,7 +138,7 @@ impl RpcAccountBlockSummary {
         self.balance
     }
 
-    /// Returns the next expected sequence number for account after block execution.
+    /// Returns the next expected account sequence number after block execution.
     pub fn next_seq_no(&self) -> u64 {
         self.next_seq_no
     }
@@ -152,17 +162,21 @@ impl RpcAccountBlockSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcUpdateInputData {
-    /// Sequence number of the update.
+    /// Operation sequence number consumed by this update.
     pub seq_no: u64,
+
     /// Inbox cursor after this update.
     pub next_inbox_msg_idx: u64,
+
     /// Inner state root after this update. On checkpoint-sync nodes only the
     /// terminal update of an epoch carries a root (the recoverable post-epoch
     /// root); earlier updates are `None`, since intermediate roots are not in
     /// the checkpoint DA. The epoch's `final_state_root` is always populated.
     pub new_state_root: Option<HexBytes32>,
+
     /// Extra data posted with this update.
     pub extra_data: HexBytes,
+
     /// Account inbox messages processed in this update.
     pub messages: Vec<RpcMessageEntry>,
 }
@@ -171,14 +185,18 @@ pub struct RpcUpdateInputData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcSnarkAcctUpdateManifest {
-    /// Sequence number of the update.
+    /// Operation sequence number consumed by this update.
     seq_no: u64,
+
     /// Inner state root after this update, if stored by the serving node.
     new_inner_state_root: Option<HexBytes32>,
+
     /// Inbox cursor before this update.
     prev_next_msg_idx: u64,
+
     /// Inbox cursor after this update.
     new_next_msg_idx: u64,
+
     /// Extra data posted with this update, if stored by the serving node.
     extra_data: Option<HexBytes>,
 }
@@ -216,7 +234,7 @@ impl RpcSnarkAcctUpdateManifest {
         }
     }
 
-    /// Returns the update sequence number.
+    /// Returns the operation sequence number consumed by this update.
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }
