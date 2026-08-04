@@ -364,17 +364,37 @@ async fn scan_errors_when_not_reorg_safe() {
 }
 
 #[tokio::test]
-async fn scan_accepts_checkpoint_at_reorg_safe_depth() {
-    // l1_tip=106, l1_ref height=104, reorg_safe_depth=3 => depth=3.
+async fn scan_defers_all_epochs_until_latest_checkpoint_is_reorg_safe() {
+    // At tip 103, epochs 1 and 2 have depths 4 and 3, but epoch 3 has depth 2.
+    // The scan must defer the whole contiguous catch-up range until its newest
+    // checkpoint is reorg-safe.
     let epoch0 = make_epoch(0, 0, 0x00);
     let epoch1 = make_epoch(1, 10, 0x01);
-    let ctx = MockCtx::new(3, 106)
+    let epoch2 = make_epoch(2, 20, 0x02);
+    let epoch3 = make_epoch(3, 30, 0x03);
+    let ctx = MockCtx::new(3, 103)
         .add_genesis(epoch0)
-        .add_epoch(epoch1, make_l1_ref(104), None);
+        .add_epoch(epoch1, make_l1_ref(100), None)
+        .add_epoch(epoch2, make_l1_ref(101), None)
+        .add_epoch(epoch3, make_l1_ref(102), None);
 
-    let (_, unapplied) = scan_unapplied_epochs(&ctx, epoch1, 106, 3).await.unwrap();
+    let err = scan_unapplied_epochs(&ctx, epoch3, 103, 3)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        CheckpointSyncError::NotReorgSafe {
+            epoch,
+            depth: 2,
+            required: 3,
+        } if epoch == epoch3
+    ));
 
-    assert_eq!(unapplied, vec![epoch1]);
+    // With the configured reorg-safe depth reduced to two, the same finalized
+    // range is now eligible and every epoch is returned, newest-first.
+    let (_, unapplied) = scan_unapplied_epochs(&ctx, epoch3, 103, 2).await.unwrap();
+
+    assert_eq!(unapplied, vec![epoch3, epoch2, epoch1]);
 }
 
 #[tokio::test]
