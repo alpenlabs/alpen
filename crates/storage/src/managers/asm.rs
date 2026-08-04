@@ -44,6 +44,21 @@ impl AsmStateManager {
         self.ops.get_asm_state_blocking(block)
     }
 
+    /// Returns the [`AnchorState`] at `block`, without requiring its logs.
+    pub fn get_anchor_state_blocking(
+        &self,
+        block: L1BlockCommitment,
+    ) -> DbResult<Option<AnchorState>> {
+        self.ops.get_anchor_state_blocking(block)
+    }
+
+    /// Returns the [`AnchorState`] at the highest block, without requiring its logs.
+    pub fn fetch_most_recent_anchor_state_blocking(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AnchorState)>> {
+        self.ops.get_latest_anchor_state_blocking()
+    }
+
     /// Returns [`AsmState`] that corresponds to passed block.
     pub async fn get_state_async(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>> {
         self.ops.get_asm_state_async(block).await

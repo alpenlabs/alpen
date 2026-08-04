@@ -40,6 +40,21 @@ pub trait AsmDatabase: Send + Sync + 'static {
     /// Gets latest ASM state (the entry that corresponds to the highest l1 block).
     fn get_latest_asm_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>>;
 
+    /// Gets just the anchor state for the given l1 block, without requiring that
+    /// block's logs to be present.
+    ///
+    /// The genesis anchor state has no logs — it is not produced by processing a
+    /// block, so no manifest ever carries logs for it — so readers that only need
+    /// the anchor state must use this rather than [`Self::get_asm_state`].
+    fn get_anchor_state(&self, block: L1BlockCommitment) -> DbResult<Option<AnchorState>>;
+
+    /// Gets the anchor state at the highest l1 block, without requiring that
+    /// block's logs to be present.
+    ///
+    /// See [`Self::get_anchor_state`] for why this does not go through
+    /// [`Self::get_latest_asm_state`].
+    fn get_latest_anchor_state(&self) -> DbResult<Option<(L1BlockCommitment, AnchorState)>>;
+
     /// Gets ASM states starting from a given L1BlockCommitment up to a maximum count.
     ///
     /// Returns entries in ascending order (oldest first). If `from_block` doesn't exist,

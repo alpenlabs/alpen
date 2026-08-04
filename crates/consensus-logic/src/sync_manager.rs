@@ -60,10 +60,12 @@ fn spawn_csm_listener(
     let from_block = if let Some(last_block) = csm_state.get_last_asm_block() {
         last_block
     } else {
-        // Get the latest ASM state as fallback
+        // Get the latest ASM state as fallback. This reads the anchor state
+        // alone: on a fresh node the only entry is the genesis anchor, which
+        // has no logs, so the combined read would come back empty.
         let (latest_block, _) = storage
             .asm()
-            .fetch_most_recent_state_blocking()?
+            .fetch_most_recent_anchor_state_blocking()?
             .expect("No ASM state available");
         latest_block
     };

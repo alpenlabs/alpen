@@ -87,6 +87,15 @@ impl AsmDatabase for AsmDBSled {
         }
     }
 
+    fn get_anchor_state(&self, block: L1BlockCommitment) -> DbResult<Option<AnchorState>> {
+        Ok(self.asm_state_tree.get(&block)?)
+    }
+
+    fn get_latest_anchor_state(&self) -> DbResult<Option<(L1BlockCommitment, AnchorState)>> {
+        // Relying on the lexicographical order of L1BlockCommitment.
+        Ok(self.asm_state_tree.last()?)
+    }
+
     fn get_asm_states_from(
         &self,
         from_block: L1BlockCommitment,

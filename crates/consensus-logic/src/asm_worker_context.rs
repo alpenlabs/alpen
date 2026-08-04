@@ -134,18 +134,25 @@ impl L1DataProvider for AsmWorkerCtx {
 }
 
 impl AnchorStateStore for AsmWorkerCtx {
+    /// Reads the anchor state alone, not the combined [`AsmState`].
+    ///
+    /// The genesis anchor state is written by the worker itself and never has
+    /// logs, so going through the combined read would miss it and the worker
+    /// would fail to resolve a sync base.
+    ///
+    /// [`AsmState`]: strata_state::asm_state::AsmState
     fn get_latest_anchor_state(&self) -> WorkerResult<Option<AnchorState>> {
         self.asmman
-            .fetch_most_recent_state_blocking()
+            .fetch_most_recent_anchor_state_blocking()
             .map_err(conv_db_err)
-            .map(|entry| entry.map(|(_, state)| state.state().clone()))
+            .map(|entry| entry.map(|(_, state)| state))
     }
 
+    /// Reads the anchor state alone — see [`Self::get_latest_anchor_state`].
     fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<AnchorState> {
         self.asmman
-            .get_state_blocking(*blockid)
+            .get_anchor_state_blocking(*blockid)
             .map_err(conv_db_err)?
-            .map(|state| state.state().clone())
             .ok_or(WorkerError::MissingAsmState(*blockid.blkid()))
     }
 
