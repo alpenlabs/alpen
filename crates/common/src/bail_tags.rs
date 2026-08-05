@@ -29,6 +29,9 @@ pub const BAIL_CSM_EVENT_FINALIZE_EPOCH: &str = "csm_event_finalize_epoch";
 /// Bail point after the chain worker persists MMR index writes for an OL block.
 pub const BAIL_CHAIN_WORKER_AFTER_MMR_INDEX: &str = "chain_worker_after_mmr_index";
 
+/// Bail point after btcio stores an L1 canonical-chain entry, before notifying ASM.
+pub const BAIL_BTCIO_AFTER_L1_CANONICAL_WRITE: &str = "btcio_after_l1_canonical_write";
+
 /// All registered bail tags.
 ///
 /// Returned to functional tests via the `debug_listBailTags` RPC so they can
@@ -40,4 +43,5 @@ pub const KNOWN_BAIL_TAGS: &[&str] = &[
     BAIL_CSM_EVENT,
     BAIL_CSM_EVENT_FINALIZE_EPOCH,
     BAIL_CHAIN_WORKER_AFTER_MMR_INDEX,
+    BAIL_BTCIO_AFTER_L1_CANONICAL_WRITE,
 ];

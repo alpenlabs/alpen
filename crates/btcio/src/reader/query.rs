@@ -4,7 +4,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use bitcoin::{Block, BlockHash, Network};
 use bitcoind_async_client::{corepc_types::model::GetBlockchainInfo, traits::Reader};
 use strata_btc_types::{BlockHashExt, L1BlockIdBitcoinExt};
@@ -83,6 +83,12 @@ enum ReaderError {
     },
 }
 
+#[derive(Debug)]
+struct PollResult {
+    events: Vec<L1Event>,
+    is_at_client_tip: bool,
+}
+
 /// The main task that initializes the reader state and starts reading from bitcoin.
 pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     client: Arc<impl Reader>,
@@ -133,6 +139,9 @@ async fn do_reader_task<R: Reader>(
 
     let poll_dur = Duration::from_millis(ctx.config.client_poll_dur_ms as u64);
     let mut state: Option<ReaderState> = None;
+    // Canonical storage advances before block delivery. Re-deliver one reconciled tip on startup
+    // so a crash between those operations cannot strand ASM until another L1 block arrives.
+    let mut startup_tip_delivered = false;
 
     loop {
         let mut status_updates: Vec<L1StatusUpdate> = Vec::new();
@@ -142,10 +151,31 @@ async fn do_reader_task<R: Reader>(
                 Err(err) => {
                     handle_poll_error(&err, &mut status_updates);
                 }
-                Ok(events) => {
-                    // handle events
-                    for ev in events {
+                Ok(result) => {
+                    for ev in result.events {
+                        let submitted_block = matches!(
+                            &ev,
+                            L1Event::BlockData(block_data, _)
+                                if block_data.block_num() >= ctx.btcio_params.genesis_l1_height()
+                        );
                         handle_bitcoin_event(ev, &ctx, event_submitter).await?;
+                        startup_tip_delivered |= submitted_block;
+                    }
+
+                    if !startup_tip_delivered
+                        && result.is_at_client_tip
+                        && reader_state.best_block_idx() >= ctx.btcio_params.genesis_l1_height()
+                    {
+                        let tip = L1BlockCommitment::new(
+                            reader_state.best_block_idx(),
+                            reader_state.best_block().to_l1_block_id(),
+                        );
+                        event_submitter
+                            .submit_block(tip)
+                            .await
+                            .with_context(|| format!("failed to re-submit L1 reader tip {tip}"))?;
+                        info!(%tip, "re-submitted L1 reader tip after startup reconciliation");
+                        startup_tip_delivered = true;
                     }
                 }
             }
@@ -375,7 +405,7 @@ async fn poll_for_new_blocks<R: Reader>(
     ctx: &ReaderContext<R>,
     state: &mut ReaderState,
     status_updates: &mut Vec<L1StatusUpdate>,
-) -> anyhow::Result<Vec<L1Event>> {
+) -> anyhow::Result<PollResult> {
     let chain_info = ctx.client.get_blockchain_info().await?;
     status_updates.push(L1StatusUpdate::RpcConnected(true));
     let client_height = chain_info.blocks as L1Height;
@@ -383,7 +413,10 @@ async fn poll_for_new_blocks<R: Reader>(
 
     if fresh_best_block == *state.best_block() {
         trace!("polled client, nothing to do");
-        return Ok(vec![]);
+        return Ok(PollResult {
+            events: vec![],
+            is_at_client_tip: true,
+        });
     }
 
     let mut events = Vec::new();
@@ -398,7 +431,10 @@ async fn poll_for_new_blocks<R: Reader>(
                 %pivot_blkid,
                 "Bitcoin client tip is a prefix of reader state; waiting for client to catch up"
             );
-            return Ok(vec![]);
+            return Ok(PollResult {
+                events: vec![],
+                is_at_client_tip: false,
+            });
         }
 
         if pivot_height < reader_best_height {
@@ -408,7 +444,10 @@ async fn poll_for_new_blocks<R: Reader>(
 
             // Return with the revert event immediately
             let revert_ev = L1Event::RevertTo(block);
-            return Ok(vec![revert_ev]);
+            return Ok(PollResult {
+                events: vec![revert_ev],
+                is_at_client_tip: false,
+            });
         }
     } else {
         let reader_best_height = state.best_block_idx();
@@ -427,7 +466,10 @@ async fn poll_for_new_blocks<R: Reader>(
                 %lowest_tracked_height,
                 "Bitcoin client tip is a deeply lagging prefix of stored reader state; waiting for client to catch up"
             );
-            return Ok(vec![]);
+            return Ok(PollResult {
+                events: vec![],
+                is_at_client_tip: false,
+            });
         }
 
         let known_depth = state.iter_blocks_back().count();
@@ -458,7 +500,10 @@ async fn poll_for_new_blocks<R: Reader>(
         };
     }
 
-    Ok(events)
+    Ok(PollResult {
+        events,
+        is_at_client_tip: *state.best_block() == fresh_best_block,
+    })
 }
 
 async fn client_tip_matches_stored_canonical<R: Reader>(
@@ -1019,6 +1064,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn poll_for_new_blocks_marks_matching_tip_current() {
+        let storage = test_storage();
+        let bitcoind_chain = chain_client(&[0, 1, 2, 3, 4, 5]).await;
+
+        for height in 0..=5 {
+            store_l1_canonical_hash(&storage, height, bitcoind_chain.block_hash(height)).await;
+        }
+
+        let ctx = chain_reader_context(storage, bitcoind_chain);
+        let mut state = init_reader_state(&ctx, 6)
+            .await
+            .expect("test: initialize reader state");
+        let mut status_updates = Vec::new();
+
+        let result = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+            .await
+            .expect("test: poll matching tip");
+
+        assert!(result.events.is_empty());
+        assert!(result.is_at_client_tip);
+    }
+
+    #[tokio::test]
     async fn poll_for_new_blocks_reverts_offline_reorg_then_continues() {
         let storage = test_storage();
         let stored_chain = chain_client(&[0, 1, 2, 103, 104]).await;
@@ -1034,12 +1102,13 @@ mod tests {
             .expect("test: initialize reader state");
         let mut status_updates = Vec::new();
 
-        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+        let result = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
             .await
             .expect("test: poll reorg");
 
-        assert_eq!(events.len(), 1);
-        match &events[0] {
+        assert!(!result.is_at_client_tip);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
             L1Event::RevertTo(block) => {
                 assert_eq!(block.height(), 2);
                 assert_eq!(
@@ -1058,11 +1127,13 @@ mod tests {
             .await
             .expect("test: apply revert");
 
-        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+        let result = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
             .await
             .expect("test: poll new fork");
 
-        let new_block_heights = events
+        assert!(result.is_at_client_tip);
+        let new_block_heights = result
+            .events
             .iter()
             .map(|event| match event {
                 L1Event::BlockData(block_data, _) => block_data.block_num(),
@@ -1095,11 +1166,12 @@ mod tests {
             .expect("test: initialize reader state");
         let mut status_updates = Vec::new();
 
-        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+        let result = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
             .await
             .expect("test: poll matching prefix");
 
-        assert!(events.is_empty());
+        assert!(result.events.is_empty());
+        assert!(!result.is_at_client_tip);
         assert_eq!(state.next_height(), 6);
         assert_eq!(*state.best_block(), stored_chain.block_hash(5));
     }
@@ -1120,11 +1192,12 @@ mod tests {
             .expect("test: initialize reader state");
         let mut status_updates = Vec::new();
 
-        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+        let result = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
             .await
             .expect("test: poll deeply lagging matching prefix");
 
-        assert!(events.is_empty());
+        assert!(result.events.is_empty());
+        assert!(!result.is_at_client_tip);
         assert_eq!(state.next_height(), 9);
         assert_eq!(*state.best_block(), stored_chain.block_hash(8));
     }
@@ -1177,12 +1250,13 @@ mod tests {
             .expect("test: initialize reader state");
         let mut status_updates = Vec::new();
 
-        let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+        let result = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
             .await
             .expect("test: poll shorter divergent chain");
 
-        assert_eq!(events.len(), 1);
-        match &events[0] {
+        assert!(!result.is_at_client_tip);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
             L1Event::RevertTo(block) => {
                 assert_eq!(block.height(), 1);
                 assert_eq!(
