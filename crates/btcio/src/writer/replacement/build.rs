@@ -41,6 +41,11 @@ pub(crate) enum ReplacementError {
     InvalidControlBlock(String),
     #[error("invalid reveal tapscript pubkey: {0}")]
     InvalidRevealPubkey(String),
+    /// Keys are held as strings so the variant stays small: an inline [`XOnlyPublicKey`] pair is
+    /// 128 bytes, which would grow every `Result<_, ReplacementError>` in this module past
+    /// `clippy::result_large_err`.
+    #[error("reveal tapscript commits to {committed} but the signer holds {held}")]
+    RevealKeyRotated { committed: String, held: String },
     #[error("replacement would reduce reveal output below dust")]
     ReplacementWouldDustOutput,
     #[error("replacement commit output layout is incompatible with the envelope: {0}")]
@@ -68,6 +73,7 @@ impl ReplacementError {
             | Self::MissingRevealWitness
             | Self::InvalidControlBlock(_)
             | Self::InvalidRevealPubkey(_)
+            | Self::RevealKeyRotated { .. }
             | Self::ReplacementWouldDustOutput
             | Self::IncompatibleCommitLayout(_)
             | Self::ReplacementAddsInputs(_)
@@ -93,6 +99,7 @@ impl ReplacementError {
             Self::MissingRevealWitness
             | Self::InvalidControlBlock(_)
             | Self::InvalidRevealPubkey(_)
+            | Self::RevealKeyRotated { .. }
             | Self::RevealSigning(_)
             | Self::IncompatibleCommitLayout(_) => TerminalError::UnsupportedRbfKind,
             Self::ReplacementAddsInputs(_) => TerminalError::ReplacementAddsInputs,
@@ -303,6 +310,27 @@ fn reject_added_inputs(
     Ok(())
 }
 
+/// Verifies the sequencer still holds the key `reveal_tx`'s tapscript commits to.
+///
+/// A replacement reuses the original tapscript, so a signature under any other key yields a witness
+/// that can never satisfy it — and by the time bitcoind says so the original is already marked
+/// `Replaced`, leaving the envelope stuck with nothing to rebuild it. The single-envelope path
+/// makes the same check against its external signer's key.
+pub(crate) fn ensure_reveal_signable(
+    reveal_tx: &Transaction,
+    sequencer_keypair: &Keypair,
+) -> Result<(), ReplacementError> {
+    let committed = extract_reveal_pubkey(reveal_tx)?;
+    let held = XOnlyPublicKey::from_keypair(sequencer_keypair).0;
+    if committed != held {
+        return Err(ReplacementError::RevealKeyRotated {
+            committed: committed.to_string(),
+            held: held.to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// Rebuilds and signs a chunked-envelope reveal by reducing its spendable output.
 pub(crate) fn build_chunked_reveal_replacement(
     active_reveal_tx: &Transaction,
@@ -311,6 +339,8 @@ pub(crate) fn build_chunked_reveal_replacement(
     attempt_no: u32,
     sequencer_keypair: &Keypair,
 ) -> Result<TxAttempt, ReplacementError> {
+    ensure_reveal_signable(active_reveal_tx, sequencer_keypair)?;
+
     let mut replacement_tx = active_reveal_tx.clone();
     set_reveal_replacement_fee(&mut replacement_tx, commit_output, target_fee_rate)?;
 
@@ -369,6 +399,8 @@ pub(crate) fn rebuild_reveal_for_replaced_commit(
     replacement_commit_output: &TxOut,
     sequencer_keypair: &Keypair,
 ) -> Result<Transaction, ReplacementError> {
+    ensure_reveal_signable(old_reveal_tx, sequencer_keypair)?;
+
     let mut replacement_reveal = old_reveal_tx.clone();
     let input = replacement_reveal
         .input
@@ -554,9 +586,12 @@ mod tests {
         }
     }
 
+    fn test_keypair(seed: u8) -> Keypair {
+        Keypair::from_seckey_slice(SECP256K1, &[seed; 32]).expect("valid secret key")
+    }
+
     fn test_pubkey(seed: u8) -> XOnlyPublicKey {
-        let keypair = Keypair::from_seckey_slice(SECP256K1, &[seed; 32]).expect("valid secret key");
-        XOnlyPublicKey::from_keypair(&keypair).0
+        XOnlyPublicKey::from_keypair(&test_keypair(seed)).0
     }
 
     /// Builds a reveal spending a tapscript that commits to `pubkey`, as SPS-51 reveals do.
@@ -605,6 +640,100 @@ mod tests {
             .expect("pubkey is recoverable");
 
         assert_ne!(extracted, test_pubkey(2));
+    }
+
+    #[test]
+    fn accepts_a_reveal_the_signer_still_holds_the_key_for() {
+        let reveal = reveal_committing_to(&test_pubkey(1));
+
+        assert!(ensure_reveal_signable(&reveal, &test_keypair(1)).is_ok());
+    }
+
+    /// Regression: a replacement reuses the original tapscript, so signing it under a rotated key
+    /// yields a witness that can never satisfy that script — and the original is marked `Replaced`
+    /// before bitcoind ever says so. Refusing is what leaves the envelope for the writer to
+    /// rebuild.
+    #[test]
+    fn refuses_a_reveal_whose_committed_key_has_rotated() {
+        let reveal = reveal_committing_to(&test_pubkey(1));
+
+        let error = ensure_reveal_signable(&reveal, &test_keypair(2))
+            .expect_err("a rotated key must not be signed with");
+
+        assert!(matches!(error, ReplacementError::RevealKeyRotated { .. }));
+        assert!(!error.is_retryable());
+        assert_eq!(error.terminal_error(), TerminalError::UnsupportedRbfKind);
+    }
+
+    /// Documents why [`evaluate_fee_bump`] refuses reveal kinds outright.
+    ///
+    /// Both envelope builders size a reveal's commit output at exactly
+    /// `reveal_amount + reveal_fee(build_rate)`, with `reveal_amount` equal to the dust limit
+    /// (`calculate_reveal_commit_value`, `calculate_commit_output_value`). The reveal's own output
+    /// therefore already sits at dust, and shrinking it is the only way a replacement can pay more.
+    /// A target one sat/vB above the build rate is enough to push it under.
+    ///
+    /// If this ever starts returning `Ok`, the commit output has gained build-time headroom and the
+    /// refusal in the fee-bump policy can be lifted — see TODO(STR-4198), which replaces this test
+    /// with one asserting a production-shaped reveal bump succeeds.
+    ///
+    /// [`evaluate_fee_bump`]: crate::broadcaster::fee_bump::evaluate_fee_bump
+    #[test]
+    fn a_production_shaped_reveal_has_no_headroom_to_bump_into() {
+        let build_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let mut reveal = reveal_committing_to(&test_pubkey(1));
+        reveal.output = vec![p2tr_output(BITCOIN_DUST_LIMIT, 1)];
+        let commit_value = Amount::from_sat(BITCOIN_DUST_LIMIT)
+            + build_rate
+                .fee_vb(reveal.vsize() as u64)
+                .expect("reveal fee fits");
+        let commit_output = TxOut {
+            value: commit_value,
+            script_pubkey: reveal.output[0].script_pubkey.clone(),
+        };
+
+        let error = build_chunked_reveal_replacement(
+            &reveal,
+            &commit_output,
+            FeeRate::from_sat_per_vb(3).expect("valid fee rate"),
+            1,
+            &test_keypair(1),
+        )
+        .expect_err("a reveal built this way cannot fund any bump");
+
+        assert!(matches!(
+            error,
+            ReplacementError::ReplacementWouldDustOutput
+        ));
+    }
+
+    #[test]
+    fn chunked_reveal_replacement_refuses_a_rotated_key() {
+        let error = build_chunked_reveal_replacement(
+            &reveal_committing_to(&test_pubkey(1)),
+            &p2tr_output(10_000, 2),
+            FeeRate::from_sat_per_vb(4).expect("valid fee rate"),
+            1,
+            &test_keypair(2),
+        )
+        .expect_err("a rotated key must not be signed with");
+
+        assert!(matches!(error, ReplacementError::RevealKeyRotated { .. }));
+    }
+
+    /// The commit path re-signs every reveal of the envelope, so the same guard has to hold there:
+    /// one rotated reveal would otherwise take the whole envelope down with it.
+    #[test]
+    fn commit_replacement_reveal_rebuild_refuses_a_rotated_key() {
+        let error = rebuild_reveal_for_replaced_commit(
+            &reveal_committing_to(&test_pubkey(1)),
+            Txid::from_byte_array([3u8; 32]),
+            &p2tr_output(10_000, 2),
+            &test_keypair(2),
+        )
+        .expect_err("a rotated key must not be signed with");
+
+        assert!(matches!(error, ReplacementError::RevealKeyRotated { .. }));
     }
 
     #[test]
