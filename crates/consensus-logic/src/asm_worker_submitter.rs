@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use strata_asm_worker::AsmWorkerHandle;
 use strata_btc_types::L1BlockIdBitcoinExt;
+use strata_node_context::BlockSubmitter;
 use strata_primitives::L1BlockCommitment;
-use strata_state::BlockSubmitter;
 
 /// Adapter for using [`AsmWorkerHandle`] as a [`BlockSubmitter`].
 #[derive(Clone, Debug)]

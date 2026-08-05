@@ -2,7 +2,7 @@ use bitcoind_async_client::traits::Reader;
 use strata_btc_types::BlockHashExt;
 use strata_common::{check_bail_trigger, BAIL_BTCIO_AFTER_L1_CANONICAL_WRITE};
 use strata_identifiers::{Epoch, L1BlockCommitment};
-use strata_state::BlockSubmitter;
+use strata_node_context::BlockSubmitter;
 use tracing::*;
 
 use super::{

@@ -15,10 +15,10 @@ use crate::managers::ol_state::OLStateManager;
 use crate::managers::ol_state_indexing::OLStateIndexingManager;
 use crate::managers::prover_task::ProverTaskDbManager;
 use crate::managers::writer::L1WriterManager;
+use strata_db_types::asm::AsmExecOutput;
 use strata_db_types::backend::DatabaseBackend;
 use strata_db_types::DbResult;
 use strata_primitives::L1BlockCommitment;
-use strata_state::asm_state::AsmState;
 use tokio::runtime::Handle;
 use tracing::warn;
 
@@ -184,7 +184,7 @@ impl NodeStorage {
     /// down the canonical chain instead. See STR-3832.
     pub fn fetch_canonical_asm_state_blocking(
         &self,
-    ) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+    ) -> DbResult<Option<(L1BlockCommitment, AsmExecOutput)>> {
         let Some((recent_block, recent_state)) =
             self.asm_state_manager.fetch_most_recent_state_blocking()?
         else {
@@ -226,7 +226,7 @@ impl NodeStorage {
     /// [`None`] if there is none. May lag the L1 canonical tip when ASM is behind.
     pub async fn fetch_canonical_asm_state_async(
         &self,
-    ) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+    ) -> DbResult<Option<(L1BlockCommitment, AsmExecOutput)>> {
         let Some((recent_block, recent_state)) = self
             .asm_state_manager
             .fetch_most_recent_state_async()

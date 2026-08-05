@@ -34,7 +34,7 @@ use strata_btc_verification::L1Anchor;
 use strata_codec::encode_to_vec;
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_db_types::{DbError, MmrId};
+use strata_db_types::{DbError, MmrId, asm::AsmExecOutput};
 use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
     WtxidsRoot,
@@ -59,7 +59,6 @@ use strata_ol_stf::{
 };
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;
-use strata_state::asm_state::AsmState;
 use strata_storage::{NodeStorage, create_node_storage};
 
 /// Creates a genesis OLState using minimal empty parameters.
@@ -805,7 +804,7 @@ pub(crate) fn put_test_asm_state(storage: &NodeStorage, l1_commitment: L1BlockCo
         chain_view,
         sections: Default::default(),
     };
-    let asm_state = AsmState::new(anchor_state, vec![]);
+    let asm_state = AsmExecOutput::new(anchor_state, vec![]);
 
     storage
         .asm()

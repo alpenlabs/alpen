@@ -20,7 +20,6 @@ strata-ol-chain-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
-strata-state.workspace = true
 strata-storage-common.workspace = true
 zkaleido.workspace = true
 

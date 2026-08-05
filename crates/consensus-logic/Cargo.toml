@@ -31,7 +31,6 @@ strata-ol-state-types.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
-strata-state.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 strata-tasks.workspace = true

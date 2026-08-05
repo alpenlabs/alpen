@@ -22,7 +22,6 @@ strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
-strata-state.workspace = true
 
 anyhow.workspace = true
 bitcoin.workspace = true

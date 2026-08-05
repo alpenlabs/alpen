@@ -20,7 +20,6 @@ strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
 strata-ol-state-types.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
-strata-state.workspace = true
 strata-storage-common.workspace = true
 
 anyhow.workspace = true

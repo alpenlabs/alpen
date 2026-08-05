@@ -11,6 +11,7 @@ use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_csm_worker::{CsmWorkerContext, CsmWorkerError, CsmWorkerResult};
+use strata_db_types::asm::AsmExecOutput;
 use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
@@ -18,7 +19,6 @@ use strata_primitives::{
     l1::{L1BlockCommitment, L1BlockId},
     L1Height,
 };
-use strata_state::asm_state::AsmState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
@@ -127,7 +127,7 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         self.asm_params.magic
     }
 
-    fn get_asm_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AsmState> {
+    fn get_asm_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AsmExecOutput> {
         self.storage
             .asm()
             .get_state_blocking(*block)?

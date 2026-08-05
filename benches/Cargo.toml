@@ -9,7 +9,6 @@ db = [
   "dep:strata-asm-manifest-types",
   "dep:strata-db-types",
   "dep:strata-primitives",
-  "dep:strata-state",
   "dep:tempfile",
 ]
 sled = ["db", "dep:strata-db-store-sled", "dep:typed-sled"]
@@ -34,6 +33,5 @@ strata-asm-manifest-types = { workspace = true, optional = true, features = [
 strata-db-store-sled = { workspace = true, optional = true }
 strata-db-types = { workspace = true, optional = true }
 strata-primitives = { workspace = true, optional = true }
-strata-state = { workspace = true, optional = true }
 
 typed-sled = { workspace = true, optional = true }

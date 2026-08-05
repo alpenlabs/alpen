@@ -253,6 +253,7 @@ mod tests {
     use strata_checkpoint_types::{EpochSummary, reconstruct_terminal_header};
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::asm::AsmExecOutput;
     use strata_identifiers::{
         Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId, RBuf32,
     };
@@ -261,7 +262,6 @@ mod tests {
     use strata_ol_params::OLParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_predicate::PredicateKey;
-    use strata_state::asm_state::AsmState;
     use strata_storage::{NodeStorage, create_node_storage};
 
     use super::*;
@@ -532,7 +532,7 @@ mod tests {
         };
         storage
             .asm()
-            .put_state_blocking(l1_block, AsmState::new(anchor_state, Vec::new()))
+            .put_state_blocking(l1_block, AsmExecOutput::new(anchor_state, Vec::new()))
             .expect("store ASM checkpoint state");
     }
 

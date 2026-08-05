@@ -1,16 +1,39 @@
 //! ASM state database interface.
 
-// TODO(trey): replace AsmState with versionable serde-ish wrappers
+// TODO(trey): replace AsmExecOutput with versionable serde-ish wrappers
 
+use serde::{Deserialize, Serialize};
 use strata_asm_common::{AnchorState, AsmLogEntry, AuxData};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_primitives::prelude::*;
-use strata_state::asm_state::AsmState;
 
 #[cfg(feature = "proxies")]
 use crate::DbError;
 use crate::DbResult;
+
+/// Full output of an ASM state transition, as persisted by the node.
+///
+/// Bundles the post-state anchor state with the logs the transition emitted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AsmExecOutput {
+    state: AnchorState,
+    logs: Vec<AsmLogEntry>,
+}
+
+impl AsmExecOutput {
+    pub fn new(state: AnchorState, logs: Vec<AsmLogEntry>) -> Self {
+        Self { state, logs }
+    }
+
+    pub fn logs(&self) -> &Vec<AsmLogEntry> {
+        &self.logs
+    }
+
+    pub fn state(&self) -> &AnchorState {
+        &self.state
+    }
+}
 
 /// Database interface to control our view of ASM state.
 #[cfg_attr(
@@ -19,7 +42,7 @@ use crate::DbResult;
 )]
 pub trait AsmDatabase: Send + Sync + 'static {
     /// Writes a new ASM state for a given l1 block.
-    fn put_asm_state(&self, block: L1BlockCommitment, state: AsmState) -> DbResult<()>;
+    fn put_asm_state(&self, block: L1BlockCommitment, state: AsmExecOutput) -> DbResult<()>;
 
     /// Writes just the anchor state for a given l1 block, leaving that block's
     /// logs untouched.
@@ -37,10 +60,10 @@ pub trait AsmDatabase: Send + Sync + 'static {
     fn put_asm_logs(&self, block: L1BlockCommitment, logs: Vec<AsmLogEntry>) -> DbResult<()>;
 
     /// Gets the ASM state for the given l1 block.
-    fn get_asm_state(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>>;
+    fn get_asm_state(&self, block: L1BlockCommitment) -> DbResult<Option<AsmExecOutput>>;
 
     /// Gets latest ASM state (the entry that corresponds to the highest l1 block).
-    fn get_latest_asm_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>>;
+    fn get_latest_asm_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmExecOutput)>>;
 
     /// Gets just the anchor state for the given l1 block, without requiring that
     /// block's logs to be present.
@@ -65,7 +88,7 @@ pub trait AsmDatabase: Send + Sync + 'static {
         &self,
         from_block: L1BlockCommitment,
         max_count: usize,
-    ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>>;
+    ) -> DbResult<Vec<(L1BlockCommitment, AsmExecOutput)>>;
 
     /// Writes auxiliary data for a given L1 block.
     fn put_aux_data(&self, block: L1BlockCommitment, data: AuxData) -> DbResult<()>;

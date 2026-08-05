@@ -6,6 +6,7 @@ use bitcoin::Block;
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AuxData;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
+use strata_db_types::asm::AsmExecOutput;
 use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
@@ -13,7 +14,6 @@ use strata_primitives::{
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
 };
-use strata_state::asm_state::AsmState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
@@ -39,7 +39,7 @@ pub(crate) struct StubCtx {
     genesis_l1_block: L1BlockCommitment,
     l1_fetch: L1Fetch,
     /// Canonical ASM states keyed by L1 height, used to serve gap-fill walks.
-    canonical_asm_states: HashMap<L1Height, (L1BlockId, AsmState)>,
+    canonical_asm_states: HashMap<L1Height, (L1BlockId, AsmExecOutput)>,
     /// Canonical block ids keyed by L1 height, for fork-detection lookups that
     /// don't need a full ASM state.
     canonical_blocks: HashMap<L1Height, L1BlockId>,
@@ -84,7 +84,7 @@ impl StubCtx {
         mut self,
         height: L1Height,
         blkid: L1BlockId,
-        state: AsmState,
+        state: AsmExecOutput,
     ) -> Self {
         self.insert_canonical_asm_state(height, blkid, state);
         self
@@ -192,7 +192,7 @@ impl CsmWorkerContext for StubCtx {
         self.magic
     }
 
-    fn get_asm_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AsmState> {
+    fn get_asm_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AsmExecOutput> {
         self.canonical_asm_states
             .get(&block.height())
             .filter(|(blkid, _)| blkid == block.blkid())

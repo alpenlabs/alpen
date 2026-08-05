@@ -134,13 +134,13 @@ impl L1DataProvider for AsmWorkerCtx {
 }
 
 impl AnchorStateStore for AsmWorkerCtx {
-    /// Reads the anchor state alone, not the combined [`AsmState`].
+    /// Reads the anchor state alone, not the combined [`AsmExecOutput`].
     ///
     /// The genesis anchor state is written by the worker itself and never has
     /// logs, so going through the combined read would miss it and the worker
     /// would fail to resolve a sync base.
     ///
-    /// [`AsmState`]: strata_state::asm_state::AsmState
+    /// [`AsmExecOutput`]: strata_db_types::asm::AsmExecOutput
     fn get_latest_anchor_state(&self) -> WorkerResult<Option<AnchorState>> {
         self.asmman
             .fetch_most_recent_anchor_state_blocking()

@@ -4,6 +4,7 @@ use bitcoin::Block;
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AuxData;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
+use strata_db_types::asm::AsmExecOutput;
 use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
@@ -11,7 +12,6 @@ use strata_primitives::{
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
 };
-use strata_state::asm_state::AsmState;
 
 use crate::errors::CsmWorkerResult;
 
@@ -61,7 +61,7 @@ pub trait CsmWorkerContext: Send + Sync {
     fn magic_bytes(&self) -> MagicBytes;
 
     /// Fetches the ASM state recorded at `block`.
-    fn get_asm_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AsmState>;
+    fn get_asm_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AsmExecOutput>;
 
     /// Fetches the auxiliary data ASM consumed when processing `block`.
     fn get_aux_data(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AuxData>;

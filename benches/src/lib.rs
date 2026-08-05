@@ -42,12 +42,6 @@ use strata_db_types as _;
 )]
 use strata_primitives as _;
 #[cfg(feature = "db")]
-#[allow(
-    unused_imports,
-    clippy::allow_attributes,
-    reason = "used for benchmarking"
-)]
-use strata_state as _;
 #[cfg(feature = "db")]
 #[allow(
     unused_imports,

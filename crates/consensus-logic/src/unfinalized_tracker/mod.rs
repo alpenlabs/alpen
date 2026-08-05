@@ -3,8 +3,11 @@
 use std::collections::*;
 
 use strata_identifiers::Slot;
-use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l2::L2BlockCommitment};
-use strata_state::prelude::*;
+use strata_primitives::{
+    buf::Buf32,
+    epoch::EpochCommitment,
+    l2::{L2BlockCommitment, L2BlockId},
+};
 use tracing::*;
 
 use crate::errors::ChainTipError;

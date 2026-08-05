@@ -7,10 +7,13 @@ edition = "2024"
 strata-asm-params.workspace = true
 strata-config.workspace = true
 strata-ol-params.workspace = true
+strata-primitives.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 strata-tasks.workspace = true
 
+anyhow.workspace = true
+async-trait.workspace = true
 bitcoind-async-client.workspace = true
 tokio.workspace = true
 
