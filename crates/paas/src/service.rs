@@ -84,8 +84,26 @@ async fn handle_cmd<H: ProofSpec>(prover: &Arc<Prover<H>>, cmd: Cmd<H::Task>) {
         }
         Cmd::Execute { task, completion } => {
             trace!(?task, "handling execute command");
-            let result = prover.execute(task).await;
-            completion.send(result).await;
+            // `submit` registers the task and spawns proving in the background;
+            // it returns quickly. We must NOT await terminal completion inline:
+            // `handle_cmd` runs on the service loop, which also drives `tick()`
+            // (retry scanning + startup recovery). Blocking the loop until the
+            // task is terminal would starve the very ticks that reschedule a
+            // transiently-failed or `Blocked` first attempt — deadlocking the
+            // task behind its own `execute`. Spawn the wait so ticks keep
+            // flowing while the caller's completion resolves out-of-band.
+            if let Err(e) = prover.submit(task.clone()).await {
+                completion.send(Err(e)).await;
+                return;
+            }
+            let prover = Arc::clone(prover);
+            tokio::spawn(async move {
+                let result = prover
+                    .wait_for_tasks(&[task])
+                    .await
+                    .map(|mut results| results.pop().expect("one result for one task"));
+                completion.send(result).await;
+            });
         }
     }
 }

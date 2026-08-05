@@ -10,32 +10,104 @@ use serde::{Deserialize, Serialize};
 // TaskStatus / TaskResult
 // ============================================================================
 
+/// The three retry budgets a working (non-terminal) task accrues.
+///
+/// Bundled into one value and embedded in *every* non-terminal status
+/// (`Proving`, `Blocked`, `TransientFailure`) so no counter is silently reset
+/// when a task moves between them. A `Blocked` dependency wait interspersed with
+/// transient infra errors used to reset the retry/resubmit budget on each block
+/// and the recheck budget on each transient failure, letting a flaky task escape
+/// all three ceilings and hang its waiters forever. Carrying all three together
+/// makes a working status that omits a counter unrepresentable.
+///
+/// Terminal (`Completed`/`PermanentFailure`) and `Pending` statuses carry none.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+pub struct AttemptCounts {
+    /// Resume-class retries: network blips / crash recovery — re-poll the same
+    /// request. Bounded by `RetryConfig::max_retries`.
+    pub retry: u32,
+    /// Resubmit-class retries: a dead remote request resubmitted fresh (each
+    /// re-runs the whole proof). Bounded by `RetryConfig::max_resubmits`.
+    pub resubmit: u32,
+    /// Dependency rechecks accrued while `Blocked`. Bounded by
+    /// `RetryConfig::max_blocked_rechecks`.
+    pub recheck: u32,
+}
+
 /// Status of a proof task in the lifecycle.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum TaskStatus {
     /// Task registered but not yet picked up for proving.
     Pending,
-    /// Actively being proved. Carries the retry counter so the count survives
-    /// the `TransientFailure → Proving → (crash)` transition: if the process
-    /// dies mid-attempt (OOM, SIGKILL, panic) the persisted record still
-    /// reflects how many retries the task has already burned, and `recover`
-    /// can bump it correctly instead of resetting to zero.
-    Proving { retry_count: u32 },
+    /// Actively being proved. Carries the [`AttemptCounts`] so they survive the
+    /// `TransientFailure → Proving → (crash)` transition: if the process dies
+    /// mid-attempt (OOM, SIGKILL, panic) the persisted record still reflects how
+    /// many attempts the task has already burned, and `recover` can bump
+    /// correctly instead of resetting to zero.
+    Proving { counts: AttemptCounts },
     /// Proof completed successfully, receipt available.
     Completed,
+    /// Parked waiting for an input dependency (e.g. an upstream chunk proof
+    /// not yet produced). Not a failure: rechecked on a steady cadence via
+    /// `retry_after`, and does NOT consume the retry/resubmit budget — but the
+    /// [`AttemptCounts`] (including `recheck`) travel through so the
+    /// `Blocked → Proving → Blocked` loop, and any interleaved transient
+    /// failures, stay bounded.
+    Blocked {
+        reason: String,
+        counts: AttemptCounts,
+    },
     /// Temporary failure; will be retried after backoff.
-    TransientFailure { retry_count: u32, error: String },
+    TransientFailure {
+        counts: AttemptCounts,
+        error: String,
+    },
     /// Unrecoverable failure; task will not be retried.
     PermanentFailure { error: String },
 }
 
 impl TaskStatus {
+    /// The retry/resubmit/recheck counters this status carries, or all-zero for
+    /// terminal and `Pending` statuses. Snapshotted before the `Proving`
+    /// overwrite in `run_task` so counters survive every status transition.
+    pub fn counts(&self) -> AttemptCounts {
+        match self {
+            Self::Proving { counts }
+            | Self::Blocked { counts, .. }
+            | Self::TransientFailure { counts, .. } => *counts,
+            Self::Pending | Self::Completed | Self::PermanentFailure { .. } => {
+                AttemptCounts::default()
+            }
+        }
+    }
+
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Completed | Self::PermanentFailure { .. })
     }
 
     pub fn is_retriable(&self) -> bool {
         matches!(self, Self::TransientFailure { .. })
+    }
+
+    pub fn is_blocked(&self) -> bool {
+        matches!(self, Self::Blocked { .. })
+    }
+
+    /// Statuses the scanner re-spawns once their `retry_after` elapses:
+    /// transient failures (retry) and blocked tasks (dependency recheck).
+    pub fn wants_rescan(&self) -> bool {
+        self.is_retriable() || self.is_blocked()
     }
 
     pub fn is_in_progress(&self) -> bool {
@@ -202,5 +274,51 @@ impl TaskRecord {
 
     pub fn metadata(&self) -> Option<&[u8]> {
         self.data.metadata()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every working status must round-trip all three counters through
+    /// `counts()`, and terminal/pending statuses must report all-zero. This is
+    /// the invariant `run_task`'s snapshot relies on to keep the retry,
+    /// resubmit, and recheck budgets bounded across `Blocked ↔ Proving ↔
+    /// TransientFailure` transitions — if any working variant dropped a counter,
+    /// a flaky-dependency task could reset it and bypass its ceiling forever.
+    #[test]
+    fn counts_survive_every_working_status() {
+        let c = AttemptCounts {
+            retry: 4,
+            resubmit: 2,
+            recheck: 7,
+        };
+
+        assert_eq!(TaskStatus::Proving { counts: c }.counts(), c);
+        assert_eq!(
+            TaskStatus::Blocked {
+                reason: "dep not ready".into(),
+                counts: c,
+            }
+            .counts(),
+            c
+        );
+        assert_eq!(
+            TaskStatus::TransientFailure {
+                counts: c,
+                error: "rpc down".into(),
+            }
+            .counts(),
+            c
+        );
+
+        // Terminal / pending statuses carry no counters.
+        assert_eq!(TaskStatus::Pending.counts(), AttemptCounts::default());
+        assert_eq!(TaskStatus::Completed.counts(), AttemptCounts::default());
+        assert_eq!(
+            TaskStatus::PermanentFailure { error: "x".into() }.counts(),
+            AttemptCounts::default()
+        );
     }
 }

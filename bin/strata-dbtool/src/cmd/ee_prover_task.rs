@@ -222,6 +222,7 @@ pub(crate) fn ee_get_prover_tasks_summary(
     let mut pending = 0usize;
     let mut proving = 0usize;
     let mut completed = 0usize;
+    let mut blocked = 0usize;
     let mut transient_failure = 0usize;
     let mut permanent_failure = 0usize;
     let mut matched = 0usize;
@@ -235,6 +236,7 @@ pub(crate) fn ee_get_prover_tasks_summary(
             TaskStatus::Pending => pending += 1,
             TaskStatus::Proving { .. } => proving += 1,
             TaskStatus::Completed => completed += 1,
+            TaskStatus::Blocked { .. } => blocked += 1,
             TaskStatus::TransientFailure { .. } => transient_failure += 1,
             TaskStatus::PermanentFailure { .. } => permanent_failure += 1,
         }
@@ -251,6 +253,7 @@ pub(crate) fn ee_get_prover_tasks_summary(
         pending,
         proving,
         completed,
+        blocked,
         transient_failure,
         permanent_failure,
         matched,

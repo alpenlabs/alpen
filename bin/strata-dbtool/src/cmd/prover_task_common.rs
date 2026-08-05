@@ -9,6 +9,8 @@
 use std::{fmt, str::FromStr};
 
 use strata_cli_common::errors::DisplayedError;
+#[cfg(test)]
+use strata_paas::AttemptCounts;
 use strata_paas::TaskStatus;
 
 /// Status filter accepted by the summary commands.
@@ -100,10 +102,20 @@ mod tests {
     #[test]
     fn status_filter_matches_each_variant() {
         let pending = TaskStatus::Pending;
-        let proving = TaskStatus::Proving { retry_count: 2 };
+        let proving = TaskStatus::Proving {
+            counts: AttemptCounts {
+                retry: 2,
+                resubmit: 0,
+                recheck: 0,
+            },
+        };
         let completed = TaskStatus::Completed;
         let transient = TaskStatus::TransientFailure {
-            retry_count: 1,
+            counts: AttemptCounts {
+                retry: 1,
+                resubmit: 0,
+                recheck: 0,
+            },
             error: "x".into(),
         };
         let permanent = TaskStatus::PermanentFailure { error: "y".into() };

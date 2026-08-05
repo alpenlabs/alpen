@@ -38,16 +38,74 @@ pub(crate) enum ProverError {
 /// Classifies input-fetch failures as retriable or permanent for the paas
 /// service.
 ///
-/// Stale commitments and missing epoch metadata reflect expected race
-/// conditions — the orchestration layer resubmits the canonical epoch on
-/// its next tick, so those retry. Anything else is treated as permanent.
+/// Missing epoch metadata is a genuine not-ready-yet wait — the epoch's
+/// commitment/summary hasn't been produced yet — so those become transient
+/// (the paas layer parks them as `Blocked` and rechecks).
+///
+/// A *stale* commitment is different: the task was submitted for an epoch
+/// commitment that is no longer canonical (a same-epoch reorg replaced it). It
+/// can never become canonical again, so retrying/reblocking it forever would
+/// hang the checkpoint runner, which awaits `execute` inline. Mark it permanent
+/// (→ `Rejected`) so `execute` returns `Failed` and the runner's recovery path
+/// re-reads the now-canonical commitment and resubmits the replacement task.
 impl From<ProverError> for PaasError {
     fn from(e: ProverError) -> Self {
         match e {
-            ProverError::StaleTaskCommitment { .. }
-            | ProverError::EpochCommitmentNotFound(_)
-            | ProverError::EpochSummaryNotFound(_) => PaasError::TransientFailure(e.to_string()),
-            _ => PaasError::PermanentFailure(e.to_string()),
+            ProverError::EpochCommitmentNotFound(_) | ProverError::EpochSummaryNotFound(_) => {
+                PaasError::transient(e.to_string())
+            }
+            ProverError::StaleTaskCommitment { .. } => PaasError::permanent(e.to_string()),
+            // Infra: surface as a retryable error, not a domain verdict.
+            ProverError::Database(_) => PaasError::Storage(e.to_string()),
+            _ => PaasError::permanent(e.to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_paas::FailureAction;
+
+    use super::*;
+
+    fn action_of(e: ProverError) -> FailureAction {
+        PaasError::from(e).action()
+    }
+
+    #[test]
+    fn missing_epoch_metadata_is_transient() {
+        // Not produced yet — the OL will fill it in; park as Blocked and recheck.
+        assert_eq!(
+            action_of(ProverError::EpochCommitmentNotFound(7)),
+            FailureAction::RetryResume
+        );
+        assert_eq!(
+            action_of(ProverError::EpochSummaryNotFound(7)),
+            FailureAction::RetryResume
+        );
+    }
+
+    #[test]
+    fn stale_commitment_is_permanent() {
+        // A same-epoch reorg replaced the commitment; it can never become
+        // canonical again. Must be permanent (-> Rejected) so the checkpoint
+        // runner's inline `execute` returns instead of blocking forever, letting
+        // it re-read the canonical commitment and resubmit.
+        assert_eq!(
+            action_of(ProverError::StaleTaskCommitment {
+                epoch: 3,
+                task: EpochCommitment::null(),
+                canonical: EpochCommitment::null(),
+            }),
+            FailureAction::Permanent
+        );
+    }
+
+    #[test]
+    fn database_errors_surface_as_storage() {
+        assert_eq!(
+            action_of(ProverError::DaComputation("boom".into())),
+            FailureAction::Permanent
+        );
     }
 }

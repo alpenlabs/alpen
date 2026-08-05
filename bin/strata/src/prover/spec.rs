@@ -12,7 +12,7 @@ use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_params::BridgeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_stf::execute_block_batch_predrain;
-use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
+use strata_paas::{InputResolution, ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::NodeStorage;
 use tokio::task::spawn_blocking;
@@ -41,17 +41,25 @@ impl ProofSpec for CheckpointSpec {
     type Task = CheckpointTask;
     type Program = CheckpointProgram;
 
-    async fn fetch_input(&self, task: &Self::Task) -> ProverResult<CheckpointProverInput> {
+    async fn resolve_input(
+        &self,
+        task: &Self::Task,
+    ) -> ProverResult<InputResolution<CheckpointProverInput>> {
         let commitment = task.0;
         debug!(epoch = %commitment.epoch, "fetching checkpoint proof input");
         let storage = Arc::clone(&self.storage);
         let bridge_params = self.bridge_params;
         // All storage access is blocking; hop to a blocking thread so we
-        // don't stall the async runtime while reading blocks and state.
-        spawn_blocking(move || fetch_input_blocking(storage, commitment, bridge_params))
-            .await
-            .map_err(|e| PaasError::TransientFailure(format!("input fetch join: {e}")))?
-            .map_err(PaasError::from)
+        // don't stall the async runtime while reading blocks and state. A join
+        // error is an infra fault (Err → retried); the inner classification
+        // (epoch-not-ready → Blocked, DB → Err, else → Rejected) is bridged by
+        // `InputResolution::from_result`.
+        let assembled =
+            spawn_blocking(move || fetch_input_blocking(storage, commitment, bridge_params))
+                .await
+                .map_err(|e| PaasError::Storage(format!("input fetch join: {e}")))?
+                .map_err(PaasError::from);
+        InputResolution::from_result(assembled)
     }
 }
 
