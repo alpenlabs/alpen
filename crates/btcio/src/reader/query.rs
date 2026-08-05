@@ -9,7 +9,8 @@ use bitcoin::{Block, BlockHash, Network};
 use bitcoind_async_client::{corepc_types::model::GetBlockchainInfo, traits::Reader};
 use strata_btc_types::{BlockHashExt, L1BlockIdBitcoinExt};
 use strata_config::btcio::ReaderConfig;
-use strata_primitives::l1::{L1BlockCommitment, L1Height};
+use strata_db_types::DbResult;
+use strata_primitives::l1::{L1BlockCommitment, L1BlockId, L1Height};
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -50,6 +51,62 @@ pub(crate) struct ReaderContext<R: Reader> {
 
     /// Status transmitter
     pub status_channel: StatusChannel,
+}
+
+/// Storage operations required by reader startup and recovery.
+pub(crate) trait ReaderStorageContext {
+    /// Returns the current canonical L1 chain tip, if one is stored.
+    async fn canonical_chain_tip(&self) -> DbResult<Option<(L1Height, L1BlockId)>>;
+
+    /// Returns the canonical L1 block ID at `height`, if one is stored.
+    async fn canonical_blockid_at_height(&self, height: L1Height) -> DbResult<Option<L1BlockId>>;
+
+    /// Returns whether ASM state has been materialized for `block`.
+    async fn has_asm_state(&self, block: L1BlockCommitment) -> DbResult<bool>;
+
+    /// Reverts the stored canonical L1 chain to `height`.
+    async fn revert_canonical_chain(&self, height: L1Height) -> DbResult<()>;
+
+    /// Removes the stored canonical L1 chain entries from `height` through the tip.
+    async fn remove_canonical_chain_entries_from(&self, height: L1Height) -> DbResult<()>;
+
+    /// Extends the stored canonical L1 chain with `blockid` at `height`.
+    async fn extend_canonical_chain(&self, blockid: L1BlockId, height: L1Height) -> DbResult<()>;
+}
+
+impl<R: Reader> ReaderStorageContext for ReaderContext<R> {
+    async fn canonical_chain_tip(&self) -> DbResult<Option<(L1Height, L1BlockId)>> {
+        self.storage.l1().get_canonical_chain_tip_async().await
+    }
+
+    async fn canonical_blockid_at_height(&self, height: L1Height) -> DbResult<Option<L1BlockId>> {
+        self.storage
+            .l1()
+            .get_canonical_blockid_at_height_async(height)
+            .await
+    }
+
+    async fn has_asm_state(&self, block: L1BlockCommitment) -> DbResult<bool> {
+        Ok(self.storage.asm().get_state_async(block).await?.is_some())
+    }
+
+    async fn revert_canonical_chain(&self, height: L1Height) -> DbResult<()> {
+        self.storage.l1().revert_canonical_chain_async(height).await
+    }
+
+    async fn remove_canonical_chain_entries_from(&self, height: L1Height) -> DbResult<()> {
+        self.storage
+            .l1()
+            .remove_canonical_chain_entries_from_async(height)
+            .await
+    }
+
+    async fn extend_canonical_chain(&self, blockid: L1BlockId, height: L1Height) -> DbResult<()> {
+        self.storage
+            .l1()
+            .extend_canonical_chain_async(&blockid, height)
+            .await
+    }
 }
 
 /// Expected Bitcoin chain properties validated before reader ingestion starts.
@@ -99,9 +156,6 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    let target_next_block =
-        calculate_target_next_block(storage.as_ref(), btcio_params.genesis_l1_height()).await?;
-
     let ctx = ReaderContext {
         client,
         storage,
@@ -111,22 +165,73 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
         expected_l1_anchor: validation.expected_l1_anchor,
         status_channel,
     };
+
+    reconcile_unmaterialized_canonical_tip(&ctx, ctx.btcio_params.genesis_l1_height()).await?;
+
+    let target_next_block =
+        calculate_target_next_block(&ctx, ctx.btcio_params.genesis_l1_height()).await?;
     do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
 }
 
 /// Calculates target next block to start polling l1 from.
-async fn calculate_target_next_block(
-    storage: &NodeStorage,
+async fn calculate_target_next_block<C: ReaderStorageContext>(
+    ctx: &C,
     genesis_l1_height: L1Height,
 ) -> anyhow::Result<L1Height> {
-    let stored_l1_target = storage
-        .l1()
-        .get_canonical_chain_tip_async()
+    let stored_l1_target = ctx
+        .canonical_chain_tip()
         .await?
         .map(|(height, _)| height.saturating_add(1))
         .unwrap_or(genesis_l1_height);
     let target_next_block = stored_l1_target.max(genesis_l1_height);
     Ok(target_next_block)
+}
+
+/// Reverts canonical entries that have not been materialized into ASM state.
+async fn reconcile_unmaterialized_canonical_tip<C: ReaderStorageContext>(
+    ctx: &C,
+    genesis_l1_height: L1Height,
+) -> anyhow::Result<()> {
+    let Some((tip_height, _)) = ctx.canonical_chain_tip().await? else {
+        return Ok(());
+    };
+
+    if tip_height < genesis_l1_height {
+        return Ok(());
+    }
+
+    let mut height = tip_height;
+    loop {
+        let blockid = ctx
+            .canonical_blockid_at_height(height)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("missing canonical L1 block at height {height}"))?;
+        let block = L1BlockCommitment::new(height, blockid);
+
+        if ctx.has_asm_state(block).await? {
+            if height < tip_height {
+                ctx.revert_canonical_chain(height).await?;
+                info!(
+                    from_height = tip_height,
+                    to_height = height,
+                    "reverted unmaterialized canonical L1 entries for ASM replay"
+                );
+            }
+            return Ok(());
+        }
+
+        if height == genesis_l1_height {
+            ctx.remove_canonical_chain_entries_from(genesis_l1_height)
+                .await?;
+            warn!(
+                from_height = tip_height,
+                to_height = genesis_l1_height,
+                "discarded unmaterialized canonical L1 entries without an ASM anchor for replay"
+            );
+            return Ok(());
+        }
+        height = height.saturating_sub(1);
+    }
 }
 
 /// Inner function that actually does the reading task.
@@ -247,7 +352,7 @@ async fn init_reader_state<R: Reader>(
     let chain_info = client.get_blockchain_info().await?;
     validate_bitcoind(ctx, &chain_info).await?;
 
-    let stored_canonical_tip = ctx.storage.l1().get_canonical_chain_tip_async().await?;
+    let stored_canonical_tip = ctx.canonical_chain_tip().await?;
     let (init_queue, real_cur_height) = match stored_canonical_tip {
         Some((stored_tip_height, _stored_tip_blkid))
             if stored_tip_height.saturating_add(1) >= target_next_block =>
@@ -317,12 +422,7 @@ async fn seed_queue_from_stored_chain<R: Reader>(
     let mut height = stored_tip_height;
 
     loop {
-        match ctx
-            .storage
-            .l1()
-            .get_canonical_blockid_at_height_async(height)
-            .await?
-        {
+        match ctx.canonical_blockid_at_height(height).await? {
             Some(blockid) => init_queue.push_front(blockid.to_block_hash()),
             None if height < genesis_height => break,
             None if height == stored_tip_height => {
@@ -511,12 +611,7 @@ async fn client_tip_matches_stored_canonical<R: Reader>(
     client_height: L1Height,
     client_tip_hash: BlockHash,
 ) -> anyhow::Result<bool> {
-    let Some(stored_blockid) = ctx
-        .storage
-        .l1()
-        .get_canonical_blockid_at_height_async(client_height)
-        .await?
-    else {
+    let Some(stored_blockid) = ctx.canonical_blockid_at_height(client_height).await? else {
         debug!(
             %client_height,
             %client_tip_hash,
@@ -617,7 +712,10 @@ async fn process_block<R: Reader>(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::VecDeque, sync::Arc};
+    use std::{
+        collections::{BTreeMap, VecDeque},
+        sync::{Arc, Mutex},
+    };
 
     use bitcoin::{block::Header, hashes::Hash, Block, BlockHash, Network, Txid};
     use bitcoind_async_client::{
@@ -784,6 +882,90 @@ mod tests {
         L1BlockCommitment::new(height, L1BlockId::default())
     }
 
+    #[derive(Default)]
+    struct TestReaderStorageContext {
+        canonical_blocks: Mutex<BTreeMap<L1Height, L1BlockId>>,
+        asm_state_blocks: Mutex<Vec<L1BlockCommitment>>,
+    }
+
+    impl TestReaderStorageContext {
+        fn store_canonical_block(&self, height: L1Height) {
+            self.canonical_blocks
+                .lock()
+                .expect("test: lock canonical blocks")
+                .insert(height, L1BlockId::default());
+        }
+
+        fn store_asm_state(&self, block: L1BlockCommitment) {
+            self.asm_state_blocks
+                .lock()
+                .expect("test: lock ASM state blocks")
+                .push(block);
+        }
+
+        fn canonical_tip(&self) -> Option<(L1Height, L1BlockId)> {
+            self.canonical_blocks
+                .lock()
+                .expect("test: lock canonical blocks")
+                .last_key_value()
+                .map(|(&height, &blockid)| (height, blockid))
+        }
+    }
+
+    impl ReaderStorageContext for TestReaderStorageContext {
+        async fn canonical_chain_tip(&self) -> DbResult<Option<(L1Height, L1BlockId)>> {
+            Ok(self.canonical_tip())
+        }
+
+        async fn canonical_blockid_at_height(
+            &self,
+            height: L1Height,
+        ) -> DbResult<Option<L1BlockId>> {
+            Ok(self
+                .canonical_blocks
+                .lock()
+                .expect("test: lock canonical blocks")
+                .get(&height)
+                .copied())
+        }
+
+        async fn has_asm_state(&self, block: L1BlockCommitment) -> DbResult<bool> {
+            Ok(self
+                .asm_state_blocks
+                .lock()
+                .expect("test: lock ASM state blocks")
+                .contains(&block))
+        }
+
+        async fn revert_canonical_chain(&self, height: L1Height) -> DbResult<()> {
+            self.canonical_blocks
+                .lock()
+                .expect("test: lock canonical blocks")
+                .retain(|stored_height, _| *stored_height <= height);
+            Ok(())
+        }
+
+        async fn remove_canonical_chain_entries_from(&self, height: L1Height) -> DbResult<()> {
+            self.canonical_blocks
+                .lock()
+                .expect("test: lock canonical blocks")
+                .retain(|stored_height, _| *stored_height < height);
+            Ok(())
+        }
+
+        async fn extend_canonical_chain(
+            &self,
+            blockid: L1BlockId,
+            height: L1Height,
+        ) -> DbResult<()> {
+            self.canonical_blocks
+                .lock()
+                .expect("test: lock canonical blocks")
+                .insert(height, blockid);
+            Ok(())
+        }
+    }
+
     async fn store_client_state(storage: &NodeStorage, height: L1Height) {
         let block = l1_block(height);
         storage
@@ -794,14 +976,6 @@ mod tests {
             )
             .await
             .expect("test: put client state");
-    }
-
-    async fn store_l1_canonical(storage: &NodeStorage, height: L1Height) {
-        storage
-            .l1()
-            .extend_canonical_chain_async(&L1BlockId::default(), height)
-            .await
-            .expect("test: extend canonical chain");
     }
 
     async fn store_l1_canonical_hash(
@@ -887,9 +1061,9 @@ mod tests {
 
     #[tokio::test]
     async fn calculate_target_next_block_starts_at_genesis_without_stored_l1() {
-        let storage = test_storage();
+        let ctx = TestReaderStorageContext::default();
 
-        let target = calculate_target_next_block(&storage, 42)
+        let target = calculate_target_next_block(&ctx, 42)
             .await
             .expect("test: target block");
 
@@ -898,10 +1072,10 @@ mod tests {
 
     #[tokio::test]
     async fn calculate_target_next_block_uses_stored_l1_tip() {
-        let storage = test_storage();
-        store_l1_canonical(&storage, 100).await;
+        let ctx = TestReaderStorageContext::default();
+        ctx.store_canonical_block(100);
 
-        let target = calculate_target_next_block(&storage, 42)
+        let target = calculate_target_next_block(&ctx, 42)
             .await
             .expect("test: target block");
 
@@ -912,8 +1086,9 @@ mod tests {
     async fn calculate_target_next_block_ignores_client_state_without_stored_l1() {
         let storage = test_storage();
         store_client_state(&storage, 100).await;
+        let ctx = reader_context(storage);
 
-        let target = calculate_target_next_block(&storage, 42)
+        let target = calculate_target_next_block(&ctx, 42)
             .await
             .expect("test: target block");
 
@@ -922,10 +1097,10 @@ mod tests {
 
     #[tokio::test]
     async fn calculate_target_next_block_clamps_pregenesis_l1_tip_to_genesis() {
-        let storage = test_storage();
-        store_l1_canonical(&storage, 10).await;
+        let ctx = TestReaderStorageContext::default();
+        ctx.store_canonical_block(10);
 
-        let target = calculate_target_next_block(&storage, 42)
+        let target = calculate_target_next_block(&ctx, 42)
             .await
             .expect("test: target block");
 
@@ -936,13 +1111,140 @@ mod tests {
     async fn calculate_target_next_block_ignores_client_state_when_l1_tip_exists() {
         let storage = test_storage();
         store_client_state(&storage, 100).await;
-        store_l1_canonical(&storage, 111).await;
+        storage
+            .l1()
+            .extend_canonical_chain_async(&L1BlockId::default(), 111)
+            .await
+            .expect("test: extend canonical chain");
+        let ctx = reader_context(storage);
 
-        let target = calculate_target_next_block(&storage, 42)
+        let target = calculate_target_next_block(&ctx, 42)
             .await
             .expect("test: target block");
 
         assert_eq!(target, 112);
+    }
+
+    #[tokio::test]
+    async fn recovery_rewinds_unmaterialized_tip_regardless_of_reorg_safe_depth() {
+        let ctx = TestReaderStorageContext::default();
+        for height in 42..=43 {
+            ctx.store_canonical_block(height);
+        }
+        ctx.store_asm_state(l1_block(42));
+
+        reconcile_unmaterialized_canonical_tip(&ctx, 42)
+            .await
+            .expect("test: recovery should rewind the tip");
+
+        assert_eq!(ctx.canonical_tip(), Some((42, L1BlockId::default())));
+    }
+
+    #[tokio::test]
+    async fn recovery_rewinds_unmaterialized_history_beyond_previous_lookback() {
+        let ctx = TestReaderStorageContext::default();
+        for height in 42..=52 {
+            ctx.store_canonical_block(height);
+        }
+        ctx.store_asm_state(l1_block(42));
+
+        reconcile_unmaterialized_canonical_tip(&ctx, 42)
+            .await
+            .expect("test: recovery should scan back to the ASM anchor");
+
+        assert_eq!(ctx.canonical_tip(), Some((42, L1BlockId::default())));
+    }
+
+    #[tokio::test]
+    async fn calculate_target_next_block_rewinds_unmaterialized_tip() {
+        let ctx = TestReaderStorageContext::default();
+        for height in 42..=44 {
+            ctx.store_canonical_block(height);
+        }
+        ctx.store_asm_state(l1_block(42));
+
+        reconcile_unmaterialized_canonical_tip(&ctx, 42)
+            .await
+            .expect("test: reconcile tip");
+        let target = calculate_target_next_block(&ctx, 42)
+            .await
+            .expect("test: target block");
+
+        assert_eq!(target, 43);
+        assert_eq!(ctx.canonical_tip(), Some((42, L1BlockId::default())));
+    }
+
+    #[tokio::test]
+    async fn recovery_without_asm_anchor_discards_canonical_entries_for_replay() {
+        let ctx = TestReaderStorageContext::default();
+        for height in 42..=44 {
+            ctx.store_canonical_block(height);
+        }
+
+        reconcile_unmaterialized_canonical_tip(&ctx, 42)
+            .await
+            .expect("test: recovery without an anchor should discard canonical entries");
+
+        assert_eq!(ctx.canonical_tip(), None);
+    }
+
+    #[tokio::test]
+    async fn recovery_without_asm_anchor_discards_lone_genesis_entry_for_replay() {
+        let ctx = TestReaderStorageContext::default();
+        ctx.store_canonical_block(42);
+
+        reconcile_unmaterialized_canonical_tip(&ctx, 42)
+            .await
+            .expect("test: recovery should discard the lone genesis entry");
+
+        assert_eq!(ctx.canonical_tip(), None);
+        assert_eq!(
+            calculate_target_next_block(&ctx, 42)
+                .await
+                .expect("test: target block"),
+            42
+        );
+    }
+
+    #[tokio::test]
+    async fn recovery_without_asm_anchor_clears_persisted_canonical_entries() {
+        let storage = test_storage();
+        store_l1_canonical_hash(&storage, 42, block_hash(42)).await;
+        store_l1_canonical_hash(&storage, 43, block_hash(43)).await;
+        let ctx = reader_context(storage);
+
+        reconcile_unmaterialized_canonical_tip(&ctx, 42)
+            .await
+            .expect("test: recovery should clear persisted canonical entries");
+
+        assert_eq!(
+            ctx.canonical_chain_tip()
+                .await
+                .expect("test: canonical chain tip"),
+            None
+        );
+        assert_eq!(
+            calculate_target_next_block(&ctx, 42)
+                .await
+                .expect("test: target block"),
+            42
+        );
+    }
+
+    #[tokio::test]
+    async fn reconcile_unmaterialized_canonical_tip_errors_on_canonical_gap() {
+        let ctx = TestReaderStorageContext::default();
+        ctx.store_canonical_block(42);
+        ctx.store_canonical_block(44);
+        ctx.store_asm_state(l1_block(42));
+
+        let err = reconcile_unmaterialized_canonical_tip(&ctx, 42)
+            .await
+            .expect_err("test: canonical gap should fail");
+
+        assert!(err
+            .to_string()
+            .contains("missing canonical L1 block at height 43"));
     }
 
     #[tokio::test]
@@ -1121,9 +1423,7 @@ mod tests {
         assert_eq!(state.next_height(), 3);
         assert_eq!(*state.best_block(), bitcoind_chain.block_hash(2));
 
-        ctx.storage
-            .l1()
-            .revert_canonical_chain_async(2)
+        ctx.revert_canonical_chain(2)
             .await
             .expect("test: apply revert");
 
