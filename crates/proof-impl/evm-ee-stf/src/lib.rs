@@ -2,42 +2,8 @@
 //! and utilities to process Ethereum block transactions and state transitions in a zkVM.
 pub mod executor;
 pub mod primitives;
-pub mod program;
-pub mod utils;
 
-pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput, EvmEeProofOutput};
-use rsp_client_executor::io::EthClientExecutorInput;
-use strata_bridge_params::BridgeParams;
-use utils::generate_exec_update;
-use zkaleido::{ZkVmEnvBorsh, ZkVmEnvSerde};
-
-use crate::executor::process_block;
-
-/// Processes a sequence of EL block transactions from the given `zkvm` environment, ensuring block
-/// hash continuity and committing the resulting updates.
-pub fn process_block_transaction_outer(zkvm: &(impl ZkVmEnvBorsh + ZkVmEnvSerde)) {
-    let num_blocks: u32 = zkvm.read_serde();
-    assert!(num_blocks > 0, "At least one block is required.");
-    let bridge_params: BridgeParams = zkvm.read_serde();
-
-    let mut exec_updates = Vec::with_capacity(num_blocks as usize);
-    let mut current_blockhash = None;
-
-    for _ in 0..num_blocks {
-        let input: EthClientExecutorInput = zkvm.read_serde();
-        let output =
-            process_block(input, bridge_params).expect("Failed to process block transaction");
-
-        if let Some(expected_hash) = current_blockhash {
-            assert_eq!(output.prev_blockhash, expected_hash, "Block hash mismatch");
-        }
-
-        current_blockhash = Some(output.new_blockhash);
-        exec_updates.push(generate_exec_update(&output));
-    }
-
-    zkvm.commit_borsh(&EvmEeProofOutput::new(bridge_params, exec_updates));
-}
+pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
 
 #[cfg(test)]
 mod tests {
@@ -45,8 +11,9 @@ mod tests {
     use std::{fs::read_to_string, path::PathBuf};
 
     use serde::{Deserialize, Serialize};
+    use strata_bridge_params::BridgeParams;
 
-    use super::{process_block, BridgeParams, EvmBlockStfInput, EvmBlockStfOutput};
+    use super::{executor::process_block, EvmBlockStfInput, EvmBlockStfOutput};
 
     #[derive(Serialize, Deserialize)]
     struct TestData {

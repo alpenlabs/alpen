@@ -16561,7 +16561,6 @@ dependencies = [
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "bincode",
- "borsh",
  "reth-chainspec",
  "reth-evm",
  "reth-evm-ethereum",
@@ -16574,11 +16573,6 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-bridge-params",
- "strata-ol-bridge-types",
- "strata-primitives",
- "strata-state",
- "zkaleido",
- "zkaleido-native-adapter",
 ]
 
 [[package]]
