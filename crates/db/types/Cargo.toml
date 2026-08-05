@@ -47,4 +47,3 @@ proxies = ["dep:strata-db-macros", "dep:tokio", "dep:tracing"]
 proptest.workspace = true
 serde_json.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
-strata-merkle = { workspace = true, features = ["ssz"] }

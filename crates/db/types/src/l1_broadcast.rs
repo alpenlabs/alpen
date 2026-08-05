@@ -142,12 +142,14 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// Delete a specific tx entry by its ID.
     ///
     /// Returns true if the tx entry existed and was deleted, false otherwise.
+    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_tx_entry(&self, txid: Buf32) -> DbResult<bool>;
 
     /// Delete tx entries from the specified index onwards (inclusive).
     ///
     /// This method deletes all tx entries with index >= start_idx.
     /// Returns a vector of deleted tx indices.
+    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_tx_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 
     /// Fetch [`L1TxEntry`] from db

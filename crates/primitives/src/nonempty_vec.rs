@@ -1,11 +1,9 @@
 use std::ops::Deref;
 
-use borsh::{BorshDeserialize, BorshSerialize};
-
 /// A variant of `Vec` where non-emptyness is always guaranteed.
 /// This exposes all read-only methods and only the safe methods(no removals) as `Vec`.
 /// To use unsafe methods that break non-emptyness, use `to_vec`;
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NonEmptyVec<T>(Vec<T>);
 
 impl<T> NonEmptyVec<T> {

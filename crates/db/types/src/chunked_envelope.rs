@@ -182,11 +182,13 @@ pub trait L1ChunkedEnvelopeDatabase: Send + Sync + 'static {
     /// Deletes a single entry by index.
     ///
     /// Returns true if the entry existed and was deleted.
+    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_chunked_envelope_entry(&self, idx: u64) -> DbResult<bool>;
 
     /// Deletes all entries from the given index onwards (inclusive).
     ///
     /// Returns indices of deleted entries.
+    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_chunked_envelope_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 }
 

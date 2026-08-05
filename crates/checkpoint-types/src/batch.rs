@@ -1,11 +1,7 @@
-use std::fmt;
-
 use arbitrary::Arbitrary;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use strata_identifiers::{
-    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment, L2BlockId, Slot,
-};
+use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L2BlockCommitment};
 
 /// Summary generated when we accept the last block of an epoch.
 ///
@@ -110,84 +106,5 @@ impl EpochSummary {
             new_l1,
             new_state,
         )
-    }
-}
-
-/// Contains metadata describing a batch checkpoint, including the L1 and L2 height ranges
-/// it covers and the final L2 block ID in that range.
-// TODO(trey): convert to SSZ def or use serde
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, Deserialize, Serialize, Encode, Decode)]
-pub struct BatchInfo {
-    /// Checkpoint epoch
-    pub epoch: Epoch,
-
-    /// L1 block range(inclusive) the checkpoint covers
-    pub l1_range: (L1BlockCommitment, L1BlockCommitment),
-
-    /// L2 block range(inclusive) the checkpoint covers
-    pub l2_range: (L2BlockCommitment, L2BlockCommitment),
-}
-
-impl fmt::Display for BatchInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <Self as fmt::Debug>::fmt(self, f)
-    }
-}
-
-impl BatchInfo {
-    pub fn new(
-        checkpoint_idx: Epoch,
-        l1_range: (L1BlockCommitment, L1BlockCommitment),
-        l2_range: (L2BlockCommitment, L2BlockCommitment),
-    ) -> Self {
-        Self {
-            epoch: checkpoint_idx,
-            l1_range,
-            l2_range,
-        }
-    }
-
-    /// Geets the epoch index.
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
-    }
-
-    /// Gets the epoch commitment for this batch.
-    pub fn get_epoch_commitment(&self) -> EpochCommitment {
-        EpochCommitment::from_terminal(self.epoch(), *self.final_l2_block())
-    }
-
-    /// Gets the final L2 block commitment in the batch's L2 range.
-    pub fn final_l2_block(&self) -> &L2BlockCommitment {
-        &self.l2_range.1
-    }
-
-    /// Gets the final L2 blkid in the batch's L2 range.
-    pub fn final_l2_blockid(&self) -> &L2BlockId {
-        self.l2_range.1.blkid()
-    }
-
-    /// Gets the final L1 block commitment in the batch's L1 range.
-    pub fn final_l1_block(&self) -> &L1BlockCommitment {
-        &self.l1_range.1
-    }
-
-    /// Check if the L2 slot is at or before the end of this checkpoint's L2 range.
-    ///
-    /// Note: This only checks the upper bound, not the lower bound. It returns `true`
-    /// if the slot is <= the checkpoint's final L2 slot. Use this to check if a slot
-    /// is included in any batch up to this one (including).
-    pub fn l2_slot_at_or_before_end(&self, slot: Slot) -> bool {
-        let (_, last_l2_commitment) = self.l2_range;
-        slot <= last_l2_commitment.slot()
-    }
-
-    /// Check if the L1 height is at or before the end of this checkpoint's L1 range.
-    ///
-    /// Note: This only checks the upper bound, not the lower bound. It returns `true`
-    /// if the height is <= the checkpoint's final L1 height.
-    pub fn l1_height_at_or_before_end(&self, height: L1Height) -> bool {
-        let (_, last_l1_commitment) = self.l1_range;
-        height <= last_l1_commitment.height()
     }
 }

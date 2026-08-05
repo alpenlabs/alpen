@@ -39,54 +39,6 @@ impl<'a> Arbitrary<'a> for PayloadDest {
     }
 }
 
-/// Summary of a DA blob expected on a DA layer. Specifies the target and a
-/// commitment to the payload.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Arbitrary, Serialize, Deserialize)]
-pub struct BlobSpec {
-    /// Target settlement layer we're expecting the DA on.
-    dest: PayloadDest,
-
-    /// Commitment to the payload (probably just a hash or a merkle root) that we
-    /// expect to see committed to DA.
-    commitment: Buf32,
-}
-
-impl BlobSpec {
-    /// The target we expect the DA payload to be stored on.
-    pub fn dest(&self) -> PayloadDest {
-        self.dest
-    }
-
-    /// Commitment to the payload.
-    pub fn commitment(&self) -> &Buf32 {
-        &self.commitment
-    }
-}
-
-/// Summary of a DA payload to be included on a DA layer. Specifies the target
-/// and a commitment to the payload.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Arbitrary, Serialize, Deserialize)]
-pub struct PayloadSpec {
-    /// Target settlement layer we're expecting the DA on.
-    dest: PayloadDest,
-
-    /// Commitment to the payload (probably just a hash or a merkle root) that we
-    /// expect to see committed to DA.
-    commitment: Buf32,
-}
-
-impl PayloadSpec {
-    /// The target we expect the DA payload to be stored on.
-    pub fn dest(&self) -> PayloadDest {
-        self.dest
-    }
-
-    /// Commitment to the payload.
-    pub fn commitment(&self) -> &Buf32 {
-        &self.commitment
-    }
-}
-
 /// Error constructing an [`L1Payload`].
 #[derive(Debug, thiserror::Error)]
 pub enum L1PayloadError {
