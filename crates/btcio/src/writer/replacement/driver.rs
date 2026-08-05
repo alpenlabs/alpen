@@ -31,9 +31,9 @@ use tracing::*;
 
 use super::build::{
     build_chunked_reveal_replacement, build_pending_single_reveal_replacement,
-    build_wallet_commit_replacement, chunked_commit_change_index, extract_reveal_pubkey,
-    rebuild_reveal_for_replaced_commit, validate_chunked_commit_replacement_layout,
-    ReplacementError,
+    build_wallet_commit_replacement, chunked_commit_change_index, ensure_reveal_signable,
+    extract_reveal_pubkey, rebuild_reveal_for_replaced_commit,
+    validate_chunked_commit_replacement_layout, ReplacementError,
 };
 use crate::{
     broadcaster::{
@@ -740,20 +740,34 @@ where
     // Tell Core which output to recycle rather than letting it guess. Its own change detection
     // skips anything in the wallet's address book, which is where the sequencer address lives, so
     // an unguided bump would add inputs and be refused every time.
-    let original_change_index = match record.kind {
-        TxNodeKind::ChunkedEnvelopeCommit { envelope_idx } => {
-            let Some(chunked_ops) = context.chunked_ops.as_ref() else {
-                bail!("chunked commit replacement requires chunked envelope context");
-            };
-            let Some(envelope_entry) = chunked_ops
-                .get_chunked_envelope_entry_async(envelope_idx)
-                .await?
-            else {
-                bail!("chunked envelope {envelope_idx} missing");
-            };
-            chunked_commit_change_index(&original_commit_tx, envelope_entry.reveals.len())
-        }
+    let chunked_envelope_idx = match record.kind {
+        TxNodeKind::ChunkedEnvelopeCommit { envelope_idx } => Some(envelope_idx),
         _ => None,
+    };
+    let original_change_index = if let Some(envelope_idx) = chunked_envelope_idx {
+        let Some(chunked_ops) = context.chunked_ops.as_ref() else {
+            bail!("chunked commit replacement requires chunked envelope context");
+        };
+        let Some(envelope_entry) = chunked_ops
+            .get_chunked_envelope_entry_async(envelope_idx)
+            .await?
+        else {
+            bail!("chunked envelope {envelope_idx} missing");
+        };
+        // Replacing the commit re-points every reveal at the new commit output and re-signs it,
+        // while each reveal keeps its original tapscript. Under a rotated sequencer key those
+        // signatures could never satisfy those scripts, and the refusal only surfaces at broadcast,
+        // by which point the original commit is already `Replaced` and the envelope has nothing
+        // live left. Refuse before anything is written; the writer rebuilds under the new key, and
+        // that fresh initial attempt clears the terminal error.
+        if let Err(error) = chunked_reveals_signable(context, &envelope_entry) {
+            warn!(envelope_idx, %error, "sequencer key rotated since the envelope was built; refusing to bump its commit");
+            mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
+            return Ok(());
+        }
+        chunked_commit_change_index(&original_commit_tx, envelope_entry.reveals.len())
+    } else {
+        None
     };
 
     let replacement = match build_wallet_commit_replacement(
@@ -1071,6 +1085,7 @@ async fn replace_chunked_reveal(
             return Ok(());
         }
         Err(error) => {
+            warn!(envelope_idx, reveal_idx, %error, "failed to build chunked reveal replacement");
             mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
             return Ok(());
         }
@@ -1290,6 +1305,27 @@ async fn validate_chunked_commit_layout(
         Ok(()) => Ok(CommitLayoutCheck::Ok),
         Err(error) => Ok(CommitLayoutCheck::IncompatibleCandidate(error)),
     }
+}
+
+/// Reports whether every reveal of a chunked envelope still commits to the sequencer's current key.
+///
+/// A commit replacement re-signs all of them, so one rotated reveal is enough to make the whole
+/// envelope unspendable. Reveals whose stored bytes do not decode are left alone here; the metadata
+/// refresh surfaces that as the state corruption it is rather than as a routine refusal to bump.
+fn chunked_reveals_signable(
+    context: &ReplacementContext,
+    envelope_entry: &ChunkedEnvelopeEntry,
+) -> Result<(), ReplacementError> {
+    let Some(sequencer_keypair) = context.sequencer_keypair.as_ref() else {
+        return Ok(());
+    };
+    for reveal in &envelope_entry.reveals {
+        let Ok(reveal_tx) = deserialize::<Transaction>(&reveal.tx_bytes) else {
+            continue;
+        };
+        ensure_reveal_signable(&reveal_tx, sequencer_keypair)?;
+    }
+    Ok(())
 }
 
 async fn update_chunked_commit_replacement_metadata(
