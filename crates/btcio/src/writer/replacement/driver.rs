@@ -1474,7 +1474,8 @@ async fn commit_replacement_allowed(
 /// writer persists a reveal's tx-node record and its broadcast entry:
 ///
 /// 1. the persisted envelope row, whose `reveals` carry the authoritative reveal txids, and
-/// 2. the tx-node tree, which covers reveals recorded before the envelope row was refreshed.
+/// 2. the tx-node records for `(envelope_idx, reveal_idx)`, looked up one per reveal, which cover
+///    reveals recorded before the envelope row was refreshed.
 ///
 /// A missing envelope row is treated as disqualifying rather than permissive: without it there is
 /// no way to enumerate the reveals that a commit replacement would orphan.
@@ -1507,16 +1508,26 @@ async fn chunked_reveals_not_handed_to_broadcaster(
         }
     }
 
-    let nodes = broadcast_handle.get_all_tx_nodes().await?;
-    Ok(!nodes.iter().any(|node| {
-        matches!(
-            node.kind,
-            TxNodeKind::ChunkedEnvelopeReveal {
-                envelope_idx: node_envelope_idx,
-                ..
-            } if node_envelope_idx == envelope_idx
-        )
-    }))
+    // Point lookups rather than a tree scan. Tx-node ids are content-derived, and every chunked
+    // reveal node is created from this same row's reveal enumeration with
+    // `reveal_idx = vout_index - 1`, so the row names exactly the ids that can exist. Scanning
+    // instead would cost a full decode of every node the writer has ever published, once per
+    // eligible commit per pass.
+    //
+    // Reading them here rather than from a snapshot taken at pass start also keeps the check
+    // fail-closed: a reveal enqueued between pass start and the commit-phase claim would be
+    // invisible to a snapshot.
+    for reveal_idx in 0..entry.reveals.len() {
+        let node_id = TxNodeId::from_kind(&TxNodeKind::ChunkedEnvelopeReveal {
+            envelope_idx,
+            reveal_idx: reveal_idx as u32,
+        });
+        if broadcast_handle.get_tx_node(node_id).await?.is_some() {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }
 
 /// Reports whether this reveal has not yet been handed to the broadcaster.
@@ -1873,6 +1884,44 @@ mod tests {
                 reveal_idx: 0,
             },
             TxAttempt::active(attempt_parts(&reveal_tx, fee_rate(), Amount::from_sat(100)), 0));
+        bcast
+            .put_tx_node(reveal_record)
+            .await
+            .expect("test: reveal node persists");
+
+        assert!(
+            !commit_replacement_allowed(&commit_record(), &bcast, &context)
+                .await
+                .unwrap()
+        );
+    }
+
+    /// The tx-node check enumerates `reveal_idx` from the envelope row rather than scanning the
+    /// node tree, so an off-by-one in that enumeration would silently stop seeing the reveals it
+    /// exists to catch. Pin the last index of a multi-reveal envelope, which is the one a
+    /// half-open/inclusive slip drops.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn commit_replacement_blocked_by_a_tx_node_at_the_last_reveal_index() {
+        let bcast = get_broadcast_handle();
+        let (mut entry, reveal_tx) = envelope_entry_with_reveal();
+        // Three reveals, so the last index is 2.
+        let extra = |vout: u32| RevealTxMeta {
+            vout_index: vout,
+            txid: L1TxId::from(reveal_tx.compute_txid().to_byte_array()),
+            wtxid: L1WtxId::from(reveal_tx.compute_wtxid().to_byte_array()),
+            tx_bytes: serialize(&reveal_tx),
+        };
+        entry.reveals.push(extra(2));
+        entry.reveals.push(extra(3));
+        let context = context_with(Some(entry)).await;
+
+        let reveal_record = TxNodeRecord::new(
+            TxNodeKind::ChunkedEnvelopeReveal {
+                envelope_idx: ENVELOPE_IDX,
+                reveal_idx: 2,
+            },
+            TxAttempt::active(&reveal_tx, fee_rate(), Amount::from_sat(100), 0),
+        );
         bcast
             .put_tx_node(reveal_record)
             .await
