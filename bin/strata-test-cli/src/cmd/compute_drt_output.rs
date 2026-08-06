@@ -15,7 +15,7 @@
 use argh::FromArgs;
 use bdk_wallet::bitcoin::{secp256k1::SECP256K1, Address, Network};
 use serde_json::json;
-use strata_asm_proto_bridge_v1_txs::deposit_request::{
+use strata_asm_proto_bridge_txs::deposit_request::{
     create_deposit_request_locking_script, DrtHeaderAux,
 };
 use strata_cli_common::errors::{DisplayableError, DisplayedError};

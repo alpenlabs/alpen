@@ -22,11 +22,11 @@
 use std::collections::HashMap;
 
 use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_SERIAL};
-use strata_asm_common::AsmManifest;
-use strata_asm_proto_checkpoint_types::{
+use strata_asm_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog, SimpleWithdrawalIntentLogData,
     TerminalHeaderComplement,
 };
+use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};

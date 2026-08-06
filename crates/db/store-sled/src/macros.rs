@@ -218,6 +218,38 @@ macro_rules! impl_borsh_value_codec {
     };
 }
 
+/// SSZ value codec macro.
+///
+/// For values whose canonical encoding is SSZ, which is the only encoding some
+/// consensus types (e.g. `AnchorState`) implement.
+#[macro_export]
+macro_rules! impl_ssz_value_codec {
+    ($table_name:ident, $value:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
+            type Decoded = Self;
+
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(::ssz::Encode::as_ssz_bytes(self))
+            }
+
+            fn decode_value(
+                data: ::sled::IVec,
+            ) -> ::std::result::Result<Self::Decoded, ::typed_sled::codec::CodecError> {
+                <Self as ::ssz::Decode>::from_ssz_bytes(data.as_ref()).map_err(|err| {
+                    ::typed_sled::codec::CodecError::DeserializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: ::std::boxed::Box::new(::std::io::Error::other(::std::format!(
+                            "{err:?}"
+                        ))),
+                    }
+                })
+            }
+        }
+    };
+}
+
 #[macro_export]
 macro_rules! impl_rkyv_value_codec {
     ($table_name:ident, $value:ty) => {

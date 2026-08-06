@@ -34,7 +34,12 @@ import flexitest
 from eth_account import Account
 
 from common.base_test import BaseTest
-from common.bridge import submit_real_bridge_deposit
+from common.bridge import (
+    read_bridge_denomination,
+    read_operator_fee,
+    read_operator_xprivs,
+    submit_real_bridge_deposit,
+)
 from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
 from common.precompile import PRECOMPILE_BRIDGEOUT_ADDRESS, wait_for_receipt
 from common.rpc import RpcError
@@ -53,8 +58,6 @@ BOSD_P2WPKH_TAG = "03"
 # Bridgeout calldata: [4 bytes: selected_operator (big-endian u32)][BOSD bytes].
 # 0xFFFFFFFF = u32::MAX = "no specific operator, bridge picks".
 NO_OPERATOR_SELECTION_HEX = "ffffffff"
-
-OPERATOR_KEYS_FILENAME = "bridge-operator_keys"
 
 
 def derive_p2wpkh_bosd_hex(btc_rpc) -> tuple[str, str]:
@@ -172,75 +175,6 @@ def get_ol_balance(rpc, account_id_hex: str) -> int:
     tip_slot = status["tip"]["slot"]
     summaries = rpc.strata_getBlocksSummaries(account_id_hex, tip_slot, tip_slot)
     return summaries[0]["balance"] if summaries else 0
-
-
-def _read_asm_params_int(strata_service: StrataService, key: str) -> int:
-    """Recursively scan `asm-params.json` for the first integer field named `key`.
-
-    Tolerates list-of-dict or flat-dict shapes so the schema can move
-    Bridge fields under `subprotocols[N].Bridge.*` without breaking us.
-    """
-    import json
-
-    datadir = Path(strata_service.props["datadir"])
-    path = datadir / "asm-params.json"
-    if not path.exists():
-        raise RuntimeError(f"asm-params not found: {path}")
-    raw = json.loads(path.read_text())
-
-    def find(node) -> int | None:
-        if isinstance(node, dict):
-            if key in node:
-                return int(node[key])
-            for v in node.values():
-                hit = find(v)
-                if hit is not None:
-                    return hit
-        elif isinstance(node, list):
-            for v in node:
-                hit = find(v)
-                if hit is not None:
-                    return hit
-        return None
-
-    found = find(raw)
-    if found is None:
-        raise RuntimeError(f"`{key}` not found in {path}")
-    return found
-
-
-def read_operator_fee(strata_service: StrataService) -> int:
-    """Bridge `operator_fee` (sats). Read from asm-params so the WF amount
-    stays in sync with whatever datatool actually wrote."""
-    return _read_asm_params_int(strata_service, "operator_fee")
-
-
-def read_bridge_denomination(strata_service: StrataService) -> int:
-    """Bridge `denomination` (sats). Read from asm-params for the same reason
-    as `read_operator_fee`."""
-    return _read_asm_params_int(strata_service, "denomination")
-
-
-def read_operator_xprivs(strata_service: StrataService) -> list[str]:
-    """Read operator BIP32 xprivs (one per line) from the strata datadir.
-
-    The strata factory writes this file at boot to seed the bridge
-    subprotocol's genesis operator set; reading the same file keeps DT
-    signing keys aligned with on-chain state.
-    """
-    datadir = Path(strata_service.props["datadir"])
-    path = datadir / OPERATOR_KEYS_FILENAME
-    if not path.exists():
-        raise RuntimeError(f"operator key file not found: {path}")
-    lines = [line.strip() for line in path.read_text().splitlines() if line.strip()]
-    if not lines:
-        raise RuntimeError(f"operator key file is empty: {path}")
-    for i, line in enumerate(lines):
-        if not (line.startswith("tprv") or line.startswith("xprv")):
-            raise RuntimeError(
-                f"line {i + 1} of {path} doesn't look like a BIP32 base58 xpriv: {line[:8]!r}..."
-            )
-    return lines
 
 
 def ee_log_path(alpen_service: AlpenClientService) -> Path:

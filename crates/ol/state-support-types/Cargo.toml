@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 strata-acct-types.workspace = true
-strata-asm-proto-checkpoint-types.workspace = true
+strata-asm-checkpoint-types.workspace = true
 strata-da-framework.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use strata_asm_proto_checkpoint_types::CheckpointPayload;
+use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::common::L1PayloadIntentIndex;
@@ -493,8 +493,8 @@ mod tests {
     use std::sync::Arc;
 
     use proptest::prelude::*;
-    use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
-    use strata_asm_proto_checkpoint_types::CheckpointPayload;
+    use strata_asm_checkpoint_types::test_utils::create_test_checkpoint_payload;
+    use strata_asm_checkpoint_types::CheckpointPayload;
     use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     // The upstream `checkpoint_payload_strategy` can generate sidecars whose total OL log

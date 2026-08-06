@@ -1,7 +1,7 @@
 //! Service state for OL checkpoint builder.
 
 use metrics::{counter, gauge};
-use strata_asm_proto_checkpoint_types::{
+use strata_asm_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
     TerminalHeaderComplement,
 };
@@ -209,7 +209,7 @@ mod tests {
 
     use proptest::prelude::*;
     use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount};
-    use strata_asm_proto_checkpoint_types::{
+    use strata_asm_checkpoint_types::{
         CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
         TerminalHeaderComplement, test_utils::create_test_checkpoint_payload,
     };
@@ -292,7 +292,7 @@ mod tests {
 
     // TODO(STR-3804): drop this once https://github.com/alpenlabs/asm/pull/154 lands and we bump
     // to a tag that includes it, then go back to
-    // `strata_asm_proto_checkpoint_types::test_utils::checkpoint_sidecar_strategy`. The upstream
+    // `strata_asm_checkpoint_types::test_utils::checkpoint_sidecar_strategy`. The upstream
     // strategy can emit ~40 KiB of logs and `CheckpointSidecar::new` rejects anything over the
     // 16 KiB cap, so it panics. The local `checkpoint_ol_logs_strategy` stays well under the cap.
     fn checkpoint_sidecar_strategy() -> impl Strategy<Value = CheckpointSidecar> {

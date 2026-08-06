@@ -2,19 +2,18 @@
 
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use bitcoin::block::Header;
 use bitcoind_async_client::{client::Client, traits::Reader};
-use strata_asm_common::{AsmManifest, AsmManifestHash, AuxData};
+use strata_asm_common::{AnchorState, AsmManifest, AsmManifestHash, AuxData};
 use strata_asm_worker::{
-    AnchorStateStore, AsmState as WorkerAsmState, AuxDataStore, L1DataProvider, ManifestMmrStore,
-    WorkerError, WorkerResult,
+    AnchorStateStore, AuxDataStore, L1DataProvider, ManifestMmrStore, WorkerError, WorkerResult,
 };
 use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_db_types::DbError;
 use strata_identifiers::Hash;
 use strata_primitives::prelude::*;
-use strata_state::asm_state::AsmState as StorageAsmState;
 use strata_storage::{AsmStateManager, L1BlockManager, MmrIndexHandle};
 use tokio::runtime::Handle;
 use tracing::{self, error};
@@ -88,7 +87,7 @@ impl L1DataProvider for AsmWorkerCtx {
                         ?e,
                         "failed to fetch L1 block header at height for ASM"
                     );
-                    WorkerError::BtcRpc(format!("get_block_header_at({height}): {e}"))
+                    WorkerError::BtcRpc(anyhow!("get_block_header_at({height}): {e}"))
                 })
         })
     }
@@ -111,7 +110,7 @@ impl L1DataProvider for AsmWorkerCtx {
     fn get_network(&self) -> WorkerResult<bitcoin::Network> {
         self.handle
             .block_on(self.bitcoin_client.network())
-            .map_err(|e| WorkerError::BtcRpc(format!("network: {e}")))
+            .map_err(|e| WorkerError::BtcRpc(anyhow!("network: {e}")))
     }
 
     fn get_bitcoin_tx(&self, txid: &strata_btc_types::BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
@@ -135,35 +134,56 @@ impl L1DataProvider for AsmWorkerCtx {
 }
 
 impl AnchorStateStore for AsmWorkerCtx {
-    fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, WorkerAsmState)>> {
+    /// Reads the anchor state alone, not the combined [`AsmState`].
+    ///
+    /// The genesis anchor state is written by the worker itself and never has
+    /// logs, so going through the combined read would miss it and the worker
+    /// would fail to resolve a sync base.
+    ///
+    /// [`AsmState`]: strata_state::asm_state::AsmState
+    fn get_latest_anchor_state(&self) -> WorkerResult<Option<AnchorState>> {
         self.asmman
-            .fetch_most_recent_state_blocking()
+            .fetch_most_recent_anchor_state_blocking()
             .map_err(conv_db_err)
-            .map(|state| state.map(|(block, state)| (block, storage_to_worker_state(state))))
+            .map(|entry| entry.map(|(_, state)| state))
     }
 
-    fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<WorkerAsmState> {
+    /// Reads the anchor state alone — see [`Self::get_latest_anchor_state`].
+    fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<AnchorState> {
         self.asmman
-            .get_state_blocking(*blockid)
+            .get_anchor_state_blocking(*blockid)
             .map_err(conv_db_err)?
-            .map(storage_to_worker_state)
             .ok_or(WorkerError::MissingAsmState(*blockid.blkid()))
     }
 
-    fn store_anchor_state(
-        &self,
-        blockid: &L1BlockCommitment,
-        state: &WorkerAsmState,
-    ) -> WorkerResult<()> {
+    /// Stores the anchor state under the block it was produced by.
+    ///
+    /// The block's logs are written separately, by
+    /// [`put_manifest`](ManifestMmrStore::put_manifest). The worker records the
+    /// manifest before this call, so a block's logs are always durable by the
+    /// time its anchor state — the commit point — lands.
+    fn store_anchor_state(&self, state: &AnchorState) -> WorkerResult<()> {
         self.asmman
-            .put_state_blocking(*blockid, worker_to_storage_state(state))
+            .put_anchor_state_blocking(state.last_processed_block(), state.clone())
             .map_err(conv_db_err)
     }
 }
 
 impl ManifestMmrStore for AsmWorkerCtx {
+    /// Persists the manifest and, alongside it, the block's ASM logs.
+    ///
+    /// The logs are the manifest's own; storing them here keeps them available
+    /// under the block key that [`AsmStateManager::get_state_blocking`] reads,
+    /// which is where the CSM worker picks them up.
     fn put_manifest(&self, manifest: AsmManifest) -> WorkerResult<()> {
-        self.l1man.put_block_data(manifest).map_err(conv_db_err)
+        let block = L1BlockCommitment::new(manifest.height(), *manifest.blkid());
+        let logs = manifest.logs().to_vec();
+
+        self.l1man.put_block_data(manifest).map_err(conv_db_err)?;
+
+        self.asmman
+            .put_logs_blocking(block, logs)
+            .map_err(conv_db_err)
     }
 
     /// Writes a manifest hash as the height-indexed MMR leaf for `height`.
@@ -194,7 +214,7 @@ impl ManifestMmrStore for AsmWorkerCtx {
         let leaf = Hash::from(hash);
         let leaf_count = self.mmr_handle.get_leaf_count_blocking().map_err(|e| {
             error!(?e, "Failed to read manifest MMR leaf count");
-            WorkerError::DbError
+            WorkerError::DbError(anyhow!("{e:?}"))
         })?;
 
         if height > leaf_count {
@@ -207,13 +227,13 @@ impl ManifestMmrStore for AsmWorkerCtx {
         for _ in height..leaf_count {
             self.mmr_handle.pop_leaf_blocking().map_err(|e| {
                 error!(?e, "Failed to pop leaf from MMR");
-                WorkerError::DbError
+                WorkerError::DbError(anyhow!("{e:?}"))
             })?;
         }
 
         self.mmr_handle.append_leaf_blocking(leaf).map_err(|e| {
             error!(?e, "Failed to append leaf to MMR");
-            WorkerError::DbError
+            WorkerError::DbError(anyhow!("{e:?}"))
         })?;
 
         Ok(())
@@ -222,7 +242,7 @@ impl ManifestMmrStore for AsmWorkerCtx {
     fn manifest_mmr_leaf_count(&self) -> WorkerResult<u64> {
         self.mmr_handle.get_leaf_count_blocking().map_err(|e| {
             error!(?e, "Failed to read manifest MMR leaf count");
-            WorkerError::DbError
+            WorkerError::DbError(anyhow!("{e:?}"))
         })
     }
 
@@ -244,7 +264,7 @@ impl ManifestMmrStore for AsmWorkerCtx {
             .get_leaf_blocking(index)
             .map_err(|e| {
                 error!(?e, index, "Failed to get leaf hash from MMR");
-                WorkerError::DbError
+                WorkerError::DbError(anyhow!("{e:?}"))
             })?
             .map(AsmManifestHash::from)
             .ok_or(WorkerError::ManifestHashNotFound { index })
@@ -266,14 +286,6 @@ impl AuxDataStore for AsmWorkerCtx {
     }
 }
 
-fn conv_db_err(_e: DbError) -> WorkerError {
-    WorkerError::DbError
-}
-
-fn storage_to_worker_state(state: StorageAsmState) -> WorkerAsmState {
-    WorkerAsmState::new(state.state().clone(), state.logs().clone())
-}
-
-fn worker_to_storage_state(state: &WorkerAsmState) -> StorageAsmState {
-    StorageAsmState::new(state.state().clone(), state.logs().clone())
+fn conv_db_err(e: DbError) -> WorkerError {
+    WorkerError::DbError(e.into())
 }

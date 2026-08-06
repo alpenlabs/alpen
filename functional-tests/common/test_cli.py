@@ -24,31 +24,6 @@ def _run_command(args: list[str]) -> str:
     return result.stdout.strip()
 
 
-def create_mock_deposit(
-    account_serial: int,
-    amount: int,
-    btc_url: str,
-    btc_user: str,
-    btc_password: str,
-) -> str:
-    """Inject a deposit via the debug subprotocol.
-
-    Returns the broadcast transaction ID (hex string).
-    """
-    # fmt: off
-    args = [
-        "create-mock-deposit",
-        "--account-serial", str(account_serial),
-        "--amount", str(amount),
-        "--btc-url", btc_url,
-        "--btc-user", btc_user,
-        "--btc-password", btc_password,
-    ]
-    # fmt: on
-
-    return _run_command(args)
-
-
 def build_snark_withdrawal(
     target_hex: str,
     seq_no: int,

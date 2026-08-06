@@ -20,6 +20,49 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
     assert_eq!(update, state);
 }
 
+/// An anchor state written on its own must be readable on its own.
+///
+/// This is the genesis shape: the ASM worker stores the genesis anchor state
+/// directly, and no manifest ever carries logs for it, so the block has a state
+/// entry and no log entry. Reads that demand both halves must not see it, and
+/// reads that want only the anchor must.
+pub fn test_get_anchor_state_without_logs(db: &impl AsmDatabase) {
+    let anchor = make_anchor_state();
+    let block = L1BlockCommitment::new(110, L1BlockId::default());
+
+    db.put_anchor_state(block, anchor.clone())
+        .expect("test: put anchor state");
+
+    let fetched = db
+        .get_anchor_state(block)
+        .expect("test: get anchor state")
+        .expect("test: anchor state missing");
+    assert_eq!(fetched, anchor);
+
+    let (latest_block, latest) = db
+        .get_latest_anchor_state()
+        .expect("test: get latest anchor state")
+        .expect("test: latest anchor state missing");
+    assert_eq!(latest_block, block);
+    assert_eq!(latest, anchor);
+
+    // The combined read needs both halves, so it must not yield this block.
+    assert!(
+        db.get_asm_state(block)
+            .expect("test: get asm state")
+            .is_none(),
+        "combined read must not yield a block whose logs are absent"
+    );
+
+    // Once the logs land, the combined read completes.
+    db.put_asm_logs(block, vec![]).expect("test: put asm logs");
+    let combined = db
+        .get_asm_state(block)
+        .expect("test: get asm state")
+        .expect("test: asm state missing after logs");
+    assert_eq!(combined, AsmState::new(anchor, vec![]));
+}
+
 /// Minimal [`AsmState`] for tests that only need a persistable value.
 pub fn make_test_asm_state() -> AsmState {
     AsmState::new(make_anchor_state(), vec![])
@@ -73,6 +116,12 @@ macro_rules! asm_state_db_tests {
         fn test_put_get_aux_data() {
             let db = $setup_expr;
             $crate::asm_tests::test_put_get_aux_data(&db);
+        }
+
+        #[test]
+        fn test_get_anchor_state_without_logs() {
+            let db = $setup_expr;
+            $crate::asm_tests::test_get_anchor_state_without_logs(&db);
         }
     };
 }

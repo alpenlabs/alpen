@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_asm_common::AuxData;
+use strata_asm_common::{AnchorState, AsmLogEntry, AuxData};
 use strata_db_types::asm::AsmDatabase;
 use strata_db_types::DbResult;
 use strata_primitives::L1BlockCommitment;
@@ -44,6 +44,21 @@ impl AsmStateManager {
         self.ops.get_asm_state_blocking(block)
     }
 
+    /// Returns the [`AnchorState`] at `block`, without requiring its logs.
+    pub fn get_anchor_state_blocking(
+        &self,
+        block: L1BlockCommitment,
+    ) -> DbResult<Option<AnchorState>> {
+        self.ops.get_anchor_state_blocking(block)
+    }
+
+    /// Returns the [`AnchorState`] at the highest block, without requiring its logs.
+    pub fn fetch_most_recent_anchor_state_blocking(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AnchorState)>> {
+        self.ops.get_latest_anchor_state_blocking()
+    }
+
     /// Returns [`AsmState`] that corresponds to passed block.
     pub async fn get_state_async(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>> {
         self.ops.get_asm_state_async(block).await
@@ -56,6 +71,27 @@ impl AsmStateManager {
         asm_state: AsmState,
     ) -> DbResult<()> {
         self.ops.put_asm_state_blocking(block, asm_state)
+    }
+
+    /// Puts the [`AnchorState`] half of the given block's ASM state.
+    ///
+    /// Pairs with [`Self::put_logs_blocking`], which must run first — see
+    /// [`AsmDatabase::put_anchor_state`].
+    pub fn put_anchor_state_blocking(
+        &self,
+        block: L1BlockCommitment,
+        state: AnchorState,
+    ) -> DbResult<()> {
+        self.ops.put_anchor_state_blocking(block, state)
+    }
+
+    /// Puts the log half of the given block's ASM state.
+    pub fn put_logs_blocking(
+        &self,
+        block: L1BlockCommitment,
+        logs: Vec<AsmLogEntry>,
+    ) -> DbResult<()> {
+        self.ops.put_asm_logs_blocking(block, logs)
     }
 
     /// Returns [`AsmState`] entries starting from a given block up to a maximum count.

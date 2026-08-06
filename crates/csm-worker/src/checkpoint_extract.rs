@@ -1,13 +1,13 @@
 //! Locate the L1 transaction carrying a validated checkpoint.
 
 use bitcoin::{Block, hashes::Hash};
+use strata_asm_checkpoint_types::{
+    AsmManifestRangeHash, CheckpointPayload, CheckpointTip, compute_asm_manifests_hash_from_leaves,
+};
 use strata_asm_common::{TxInputRef, VerifiedAuxData};
 use strata_asm_proto_checkpoint::CheckpointState;
 use strata_asm_proto_checkpoint_txs::{
     CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_checkpoint_from_envelope,
-};
-use strata_asm_proto_checkpoint_types::{
-    AsmManifestRangeHash, CheckpointPayload, CheckpointTip, compute_asm_manifests_hash_from_leaves,
 };
 use strata_checkpoint_verification::{
     CheckpointL1Range, verify_progression, verify_sequencer_predicate,
@@ -139,6 +139,11 @@ fn verify_checkpoint(
         )
     })?;
 
+    // Pick the verifying key from the covered territory before resolving any
+    // manifests, matching the subprotocol: a range straddling a predicate
+    // boundary is rejected here rather than after the manifest work.
+    let selection = checkpoint_state.select_predicate(&coverage)?;
+
     let asm_manifests_hash = match &coverage {
         CheckpointL1Range::Empty => AsmManifestRangeHash::ZERO,
         CheckpointL1Range::Range {
@@ -150,7 +155,7 @@ fn verify_checkpoint(
             compute_asm_manifests_hash_from_leaves(&manifest_hashes)
         }
     };
-    checkpoint_state.advance(&envelope.payload, asm_manifests_hash)?;
+    checkpoint_state.advance(&envelope.payload, asm_manifests_hash, selection)?;
     Ok(())
 }
 
@@ -168,9 +173,9 @@ mod tests {
         transaction::Version,
     };
     use rand::{RngCore, rngs::OsRng};
+    use strata_asm_checkpoint_types::{CheckpointPayload, CheckpointTip};
     use strata_asm_params::CheckpointInitConfig;
     use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
-    use strata_asm_proto_checkpoint_types::{CheckpointPayload, CheckpointTip};
     use strata_asm_proto_txs_test_utils::{TEST_MAGIC_BYTES, create_dummy_tx};
     use strata_codec::encode_to_vec;
     use strata_codec_utils::CodecSsz;

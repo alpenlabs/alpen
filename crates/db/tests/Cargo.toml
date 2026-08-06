@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
-strata-asm-proto-checkpoint-types = { workspace = true, features = [
+strata-asm-checkpoint-types = { workspace = true, features = [
   "test-utils",
 ] }
 strata-btc-verification.workspace = true

@@ -1,7 +1,7 @@
 //! Post-state effects and rollback-focused block assembly tests.
 
 use strata_acct_types::{AccountSerial, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount};
-use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
+use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
 use strata_ol_chain_types::OLLog;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::EpochDaAccumulator;

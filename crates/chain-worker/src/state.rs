@@ -12,8 +12,8 @@
 use std::collections::HashMap;
 
 use strata_acct_types::AccountSerial;
+use strata_asm_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_asm_common::AsmManifest;
-use strata_asm_proto_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::{
     EpochSummary, TerminalHeaderReconstructionError, reconstruct_terminal_header,

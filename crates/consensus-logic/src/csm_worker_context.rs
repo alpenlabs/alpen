@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use bitcoin::Block;
 use bitcoind_async_client::{client::Client, traits::Reader};
+use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AuxData;
 use strata_asm_params::AsmParams;
-use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};

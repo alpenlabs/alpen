@@ -8,11 +8,11 @@
 #![allow(unreachable_pub, reason = "test fixture module")]
 
 use strata_acct_types::{AccountSerial, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
-use strata_asm_common::AsmManifest;
-use strata_asm_proto_checkpoint_types::{
+use strata_asm_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
     TerminalHeaderComplement,
 };
+use strata_asm_common::AsmManifest;
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::decode_buf_exact;

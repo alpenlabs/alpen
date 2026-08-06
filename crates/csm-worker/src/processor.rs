@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use bitcoin::hashes::Hash;
-use strata_asm_common::{AsmLogEntry, Subprotocol, VerifiedAuxData};
+use strata_asm_common::{AsmLogEntry, SectionStateExt, Subprotocol, VerifiedAuxData};
 use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
@@ -416,13 +416,13 @@ mod tests {
     use std::{iter::once, sync::Arc};
 
     use bitcoin::Network;
+    use strata_asm_checkpoint_types::test_utils::create_test_checkpoint_payload;
     use strata_asm_common::{
         AnchorState, AsmHistoryAccumulatorState, AsmLogEntry, ChainViewState,
         HeaderVerificationState,
     };
     use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_params::AsmParams;
-    use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
     use strata_btc_verification::L1Anchor;
     use strata_checkpoint_types::EpochSummary;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
@@ -615,8 +615,8 @@ mod tests {
     /// `CheckpointTip` because tests using this helper short-circuit before
     /// reaching extraction, so the tip content is irrelevant.
     fn placeholder_tip_log(epoch: u32) -> (AsmLogEntry, OLBlockCommitment) {
+        use strata_asm_checkpoint_types::CheckpointTip;
         use strata_asm_logs::CheckpointTipUpdate;
-        use strata_asm_proto_checkpoint_types::CheckpointTip;
         let ol_tip = OLBlockCommitment::new(
             epoch as u64 * 10,
             OLBlockId::from(Buf32::from([epoch as u8; 32])),

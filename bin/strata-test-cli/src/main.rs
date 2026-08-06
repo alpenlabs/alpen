@@ -25,7 +25,6 @@ use cmd::{
     convert_to_xonly_pk::convert_to_xonly_pk,
     create_deposit_tx::create_deposit_tx,
     create_ee_predicate_update::{create_checkpoint_predicate_update, create_ee_predicate_update},
-    create_mock_deposit::create_mock_deposit,
     create_withdrawal_fulfillment::create_withdrawal_fulfillment,
     extract_p2tr_pubkey::extract_p2tr_pubkey,
     get_address::get_address,
@@ -42,7 +41,6 @@ fn main() {
     let result = match cmd {
         Commands::CreateDepositTx(args) => create_deposit_tx(args),
         Commands::CreateWithdrawalFulfillment(args) => create_withdrawal_fulfillment(args),
-        Commands::CreateMockDeposit(args) => create_mock_deposit(args),
         Commands::CreateEePredicateUpdate(args) => create_ee_predicate_update(args),
         Commands::CreateCheckpointPredicateUpdate(args) => create_checkpoint_predicate_update(args),
         Commands::ComputeDrtOutput(args) => compute_drt_output(args),

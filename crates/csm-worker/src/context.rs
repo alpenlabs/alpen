@@ -1,8 +1,8 @@
 //! External operations the CSM worker performs during state transitions.
 
 use bitcoin::Block;
+use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AuxData;
-use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;

@@ -1007,8 +1007,8 @@ mod tests {
     const CHECKPOINT_MSG_VALUE_SATS: u64 = 100_000_000;
 
     use strata_acct_types::*;
+    use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
     use strata_asm_manifest_types::AsmLogEntry;
-    use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;

@@ -8,7 +8,6 @@ use super::{
     create_ee_predicate_update::{
         CreateCheckpointPredicateUpdateArgs, CreateEePredicateUpdateArgs,
     },
-    create_mock_deposit::CreateMockDepositArgs,
     create_withdrawal_fulfillment::CreateWithdrawalFulfillmentArgs,
     extract_p2tr_pubkey::ExtractP2trPubkeyArgs,
     get_address::GetAddressArgs,
@@ -36,9 +35,6 @@ pub enum Commands {
 
     /// Create a withdrawal fulfillment transaction (WFT) for bridge withdrawals
     CreateWithdrawalFulfillment(CreateWithdrawalFulfillmentArgs),
-
-    /// Inject a mock deposit via the debug subprotocol
-    CreateMockDeposit(CreateMockDepositArgs),
 
     /// Queue an admin update that changes the EE account predicate key
     CreateEePredicateUpdate(CreateEePredicateUpdateArgs),

@@ -10,13 +10,18 @@
 //! past its hard limit (drop the tx) or past the 90% soft limit (commit the tx
 //! and seal the epoch).
 
-use strata_asm_proto_checkpoint_types::{
-    MAX_OL_LOGS_PER_CHECKPOINT, MAX_TOTAL_LOG_PAYLOAD_BYTES, OL_DA_DIFF_MAX_SIZE,
-};
+use strata_asm_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
 use strata_ol_chain_types::OLLog;
 
 /// L1 envelope limit for the full `CheckpointPayload` (single envelope, not chunked).
 pub(crate) const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
+
+/// Maximum total OL log payload size per checkpoint (16 KiB per SPS-ol-chain-structures).
+///
+/// ASM dropped this as a parse-side cap in v0.4.0-rc.1 because it is incoherent with
+/// the SSZ schema caps a payload must already satisfy on-chain. It survives here as
+/// the sequencer-side construction budget, which is where it always belonged.
+pub(crate) const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
 
 /// Fixed overhead in the `CheckpointPayload` SSZ encoding.
 ///

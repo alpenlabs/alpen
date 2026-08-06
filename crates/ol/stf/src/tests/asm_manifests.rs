@@ -1,9 +1,9 @@
 //! Tests for ASM manifest processing in the OL STF.
 
 use strata_acct_types::{AccountSerial, BitcoinAmount};
+use strata_asm_checkpoint_types::CheckpointTip;
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
-use strata_asm_proto_checkpoint_types::CheckpointTip;
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{

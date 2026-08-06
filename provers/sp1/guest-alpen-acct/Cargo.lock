@@ -5035,9 +5035,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-proto-bridge-v1-types"
+name = "strata-asm-bridge-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.3.0#c96738b7f15a78d73b6fcc922a9f0cd580e6e345"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1#482939382eefd02ef449f041e4569c48164834f6"
 dependencies = [
  "arbitrary",
  "bitcoin-bosd",
@@ -5047,6 +5047,7 @@ dependencies = [
  "ssz",
  "ssz_derive",
  "strata-btc-types",
+ "strata-crypto",
  "strata-identifiers",
  "thiserror 2.0.18",
 ]
@@ -5299,7 +5300,7 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_derive",
- "strata-asm-proto-bridge-v1-types",
+ "strata-asm-bridge-types",
  "strata-codec",
  "strata-identifiers",
  "strata-primitives",
@@ -5397,6 +5398,7 @@ dependencies = [
  "ssz_types",
  "strata-acct-types",
  "strata-identifiers",
+ "strata-predicate",
  "thiserror 2.0.18",
  "tree_hash",
  "tree_hash_derive",
