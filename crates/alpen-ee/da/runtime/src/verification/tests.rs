@@ -534,7 +534,7 @@ fn verify_da_witness_rejects_missing_reveal() {
 
     assert!(matches!(
         err,
-        DaVerificationError::Parse(DaParseError::MissingReveal(1))
+        DaVerificationError::Parse(DaParseError::MissingReveal { vout: 1 })
     ));
 }
 
@@ -575,7 +575,7 @@ fn verify_da_witness_rejects_duplicate_reveal() {
 
     assert!(matches!(
         err,
-        DaVerificationError::Parse(DaParseError::DuplicateReveal(1))
+        DaVerificationError::Parse(DaParseError::DuplicateReveal { vout: 1 })
     ));
 }
 

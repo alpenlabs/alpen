@@ -17,7 +17,10 @@ pub use bitcoin_merkle::{
     compute_bitcoin_merkle_root_from_proof, hash_pair_sha256d, wtxid_leaves, wtxids_root_from_txs,
 };
 pub use blob::{reassemble_da_blob, DaBlob, EvmHeaderSummary, DA_BLOB_VERSION, EE_DA_MAGIC_BYTES};
-pub use commit_reveal::{extract_da_chunks, read_commit_marker_payload, DaParseError};
+pub use commit_reveal::{
+    extract_da_chunks, is_reveal_slot, last_commit_reveal_vout, read_commit_marker_payload,
+    DaParseError,
+};
 pub use dedup_witness::{
     ArchivedBytecodePreimage, ArchivedDedupWitness, BytecodePreimage, DedupWitness,
 };
