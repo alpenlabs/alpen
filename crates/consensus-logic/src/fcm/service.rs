@@ -175,48 +175,7 @@ async fn process_fc_message<C: FcmContext>(
                     error!(%err, "failed to finalize epoch");
                 }
 
-                // Update status.
-                let last_l1_blk = L1BlockCommitment::new(
-                    fcm_state.cur_ol_state().epoch_state().last_l1_height(),
-                    *fcm_state.cur_ol_state().epoch_state().last_l1_blkid(),
-                );
-
-                let cur_state = fcm_state.cur_ol_state();
-                // Get prev epoch summary
-                let prev_epoch_num = cur_state.epoch_state().cur_epoch().saturating_sub(1);
-                let prev_epoch = fcm_state
-                    .ctx()
-                    .get_canonical_epoch_commitment_at(prev_epoch_num)
-                    .await?
-                    .ok_or(anyhow!(
-                        "expected epoch commitment for previous epoch {} not in db",
-                        prev_epoch_num
-                    ))?;
-                let finalized_epoch = *fcm_state.chain_tracker().finalized_epoch();
-                let confirmed_epoch = fcm_state
-                    .ctx()
-                    .last_confirmed_epoch()
-                    .unwrap_or(finalized_epoch);
-
-                let canonical_tip = fcm_state.cur_best_block();
-                let tip_block_data = fcm_state
-                    .ctx()
-                    .get_ol_block(*canonical_tip.blkid())
-                    .await?
-                    .ok_or(Error::MissingOLBlock(*canonical_tip.blkid()))?;
-                let status = OLSyncStatus::new(
-                    canonical_tip,
-                    tip_block_data.header().epoch(),
-                    tip_block_data.header().is_terminal(),
-                    prev_epoch,
-                    confirmed_epoch,
-                    finalized_epoch,
-                    // FIXME(STR-3673): this is a bit convoluted, could this be simpler?
-                    last_l1_blk,
-                );
-
-                trace!(%blkid, "publishing new ol_state");
-                fcm_state.ctx().publish_sync_status(status);
+                publish_sync_status(fcm_state).await?;
 
                 BlockStatus::Valid
             } else {
@@ -389,24 +348,70 @@ async fn check_finalization_progress<C: FcmContext>(
         Err(err) => {
             error!(%err, "failed to finalize epoch");
         }
-        Ok(Some(finalized_epoch)) if finalized_epoch == observed_finalized_epoch => {
-            debug!(
-                ?finalized_epoch,
-                "FCM caught up to observed finalized epoch"
-            );
-        }
         Ok(Some(finalized_epoch)) => {
-            debug!(
-                ?finalized_epoch,
-                ?observed_finalized_epoch,
-                "FCM finalized earlier recorded epoch; still behind observed finalized epoch"
-            );
+            publish_sync_status(fcm_state).await?;
+            if finalized_epoch == observed_finalized_epoch {
+                debug!(
+                    ?finalized_epoch,
+                    "FCM caught up to observed finalized epoch"
+                );
+            } else {
+                debug!(
+                    ?finalized_epoch,
+                    ?observed_finalized_epoch,
+                    "FCM finalized earlier recorded epoch; still behind observed finalized epoch"
+                );
+            }
         }
         Ok(None) => {
             // there were no epochs that could be finalized
             debug!(?observed_finalized_epoch, "no finalization progress");
         }
     };
+
+    Ok(())
+}
+
+async fn publish_sync_status<C: FcmContext>(fcm_state: &FcmServiceState<C>) -> anyhow::Result<()> {
+    let last_l1_blk = L1BlockCommitment::new(
+        fcm_state.cur_ol_state().epoch_state().last_l1_height(),
+        *fcm_state.cur_ol_state().epoch_state().last_l1_blkid(),
+    );
+
+    let cur_state = fcm_state.cur_ol_state();
+    let prev_epoch_num = cur_state.epoch_state().cur_epoch().saturating_sub(1);
+    let prev_epoch = fcm_state
+        .ctx()
+        .get_canonical_epoch_commitment_at(prev_epoch_num)
+        .await?
+        .ok_or(anyhow!(
+            "expected epoch commitment for previous epoch {} not in db",
+            prev_epoch_num
+        ))?;
+    let finalized_epoch = *fcm_state.chain_tracker().finalized_epoch();
+    let confirmed_epoch = fcm_state
+        .ctx()
+        .last_confirmed_epoch()
+        .unwrap_or(finalized_epoch);
+
+    let canonical_tip = fcm_state.cur_best_block();
+    let tip_block_data = fcm_state
+        .ctx()
+        .get_ol_block(*canonical_tip.blkid())
+        .await?
+        .ok_or(Error::MissingOLBlock(*canonical_tip.blkid()))?;
+    let status = OLSyncStatus::new(
+        canonical_tip,
+        tip_block_data.header().epoch(),
+        tip_block_data.header().is_terminal(),
+        prev_epoch,
+        confirmed_epoch,
+        finalized_epoch,
+        last_l1_blk,
+    );
+
+    trace!(%canonical_tip, "publishing new ol_state");
+    fcm_state.ctx().publish_sync_status(status);
 
     Ok(())
 }
@@ -1646,6 +1651,10 @@ mod tests {
                 .with_last_finalized_epoch(Some(pending_epoch))
                 .with_last_confirmed_epoch(Some(pending_epoch)),
         );
+        seed_executed_block(ctx.storage(), &chain.genesis, BlockStatus::Valid);
+        seed_executed_block(ctx.storage(), &chain.x1, BlockStatus::Valid);
+        seed_executed_block(ctx.storage(), &chain.x2, BlockStatus::Valid);
+        ctx.storage().put_canonical_epoch_commitment(pending_epoch);
         let tracker = tracker_with_blocks(&chain.genesis, &[&chain.x1, &chain.x2]);
         let mut finalizable_state = chain.x2.state.clone();
         let mut epoch_update = WriteBatch::<OLAccountState>::default();
@@ -1667,6 +1676,9 @@ mod tests {
 
         assert_eq!(ctx.finalized_epochs(), vec![pending_epoch]);
         assert_eq!(*fcm_state.chain_tracker().finalized_epoch(), pending_epoch);
+        let statuses = ctx.published_statuses();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].finalized_epoch(), pending_epoch);
 
         Ok(())
     }
