@@ -669,6 +669,7 @@ where
             TxNodeKind::ChunkedEnvelopeCommit { .. } => {
                 replace_wallet_commit(
                     client,
+                    writer_config,
                     broadcast_handle,
                     context,
                     record,
@@ -694,6 +695,7 @@ where
 
 async fn replace_wallet_commit<C>(
     client: &C,
+    writer_config: &WriterConfig,
     broadcast_handle: &L1BroadcastHandle,
     context: &ReplacementContext,
     mut record: TxNodeRecord,
@@ -773,6 +775,7 @@ where
         &original_commit_tx,
         record.active_txid,
         target_fee_rate,
+        writer_config.fee_bumping.max_fee_rate(),
         attempt_no,
         original_change_index,
     )
@@ -781,6 +784,13 @@ where
         Ok(replacement) => replacement,
         Err(error) if error.is_retryable() => {
             warn!(node_id = ?record.node_id, kind = ?record.kind, %error, "RBF replacement build failed transiently, retrying next poll");
+            return Ok(());
+        }
+        // Discard rather than terminate. The overshoot comes from the wallet's coin selection, not
+        // from our escalation policy, so a later candidate built against a different UTXO set can
+        // land under the ceiling; marking the node terminal would strand the envelope for good.
+        Err(error @ ReplacementError::ExceedsMaxFeeRate { .. }) => {
+            warn!(node_id = ?record.node_id, kind = ?record.kind, %error, "discarding replacement commit that breaches the configured fee-rate ceiling");
             return Ok(());
         }
         Err(error) => {
