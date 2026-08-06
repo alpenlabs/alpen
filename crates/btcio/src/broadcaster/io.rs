@@ -11,6 +11,7 @@ use strata_storage::BroadcastDbOps;
 use tracing::{debug, info, warn};
 
 use super::error::{BroadcasterError, BroadcasterResult};
+use crate::rpc_error::is_retryable_client_error;
 
 /// Classifies a bitcoind `-25` reject reason as benign (already accepted) or
 /// not. Bitcoind's reject strings use hyphenated tokens (see
@@ -121,7 +122,7 @@ impl WalletTxLookup for Client {
                 debug!(%err, %txid, "get_transaction: tx not found");
                 Ok(TxLookupOutcome::Missing)
             }
-            Err(err) if err.is_retriable() => {
+            Err(err) if is_retryable_client_error(&err) => {
                 warn!(%err, %txid, "get_transaction hit transient Bitcoin RPC error");
                 Ok(TxLookupOutcome::RetryLater {
                     reason: err.to_string(),
@@ -154,7 +155,7 @@ mod test_impls {
                     block_height: info.block_height,
                 })),
                 Err(err) if err.is_tx_not_found() => Ok(TxLookupOutcome::Missing),
-                Err(err) if err.is_retriable() => Ok(TxLookupOutcome::RetryLater {
+                Err(err) if is_retryable_client_error(&err) => Ok(TxLookupOutcome::RetryLater {
                     reason: err.to_string(),
                 }),
                 Err(err) => Err(BroadcasterError::Rpc(anyhow!(err))),
@@ -268,7 +269,7 @@ where
                 warn!(%txid, %err, "sendrawtransaction verify-rejected (treated as InvalidInputs)");
                 Ok(PublishTxOutcome::InvalidInputs)
             }
-            Err(err) if err.is_retriable() => {
+            Err(err) if is_retryable_client_error(&err) => {
                 warn!(%txid, %err, "sendrawtransaction hit transient Bitcoin RPC error");
                 Ok(PublishTxOutcome::RetryLater {
                     reason: err.to_string(),

@@ -33,7 +33,7 @@ use super::{
 };
 use crate::{
     broadcaster::{is_benign_minus25_message, L1BroadcastHandle},
-    rpc_error::{is_retryable_envelope_error, retryable_reason},
+    rpc_error::{is_retryable_client_error, is_retryable_envelope_error, retryable_reason},
     writer::builder::EnvelopeError,
     BtcioParams,
 };
@@ -504,7 +504,7 @@ async fn publish_commit_immediately<R: Broadcaster>(
             warn!(%txid, ?e, "commit broadcast rejected by mempool; will resign");
             Ok(CommitPublishResult::InvalidInputs)
         }
-        Err(e) if e.is_retriable() => Ok(CommitPublishResult::Deferred(e.to_string())),
+        Err(e) if is_retryable_client_error(&e) => Ok(CommitPublishResult::Deferred(e.to_string())),
         Err(e) => Err(e.into()),
     }
 }
@@ -1235,6 +1235,19 @@ mod tests {
             result,
             CommitPublishResult::Deferred(reason) if reason.contains("connection refused")
         ));
+    }
+
+    #[tokio::test]
+    async fn test_publish_commit_immediately_defers_bitcoind_warmup() {
+        let client = TestBitcoinClient::new(0)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::BitcoindWarmup);
+        let commit_tx_entry = L1TxEntry::from_tx(&make_test_tx());
+
+        let result = publish_commit_immediately(&client, &commit_tx_entry)
+            .await
+            .unwrap();
+
+        assert!(matches!(result, CommitPublishResult::Deferred(_)));
     }
 
     #[tokio::test]

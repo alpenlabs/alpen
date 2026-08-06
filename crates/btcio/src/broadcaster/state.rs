@@ -144,7 +144,7 @@ mod test {
     use super::*;
     use crate::{
         broadcaster::io::BroadcasterIo,
-        test_utils::{gen_l1_tx_entry_with_status, TestBitcoinClient},
+        test_utils::{gen_l1_tx_entry_with_status, SendRawTransactionMode, TestBitcoinClient},
     };
 
     fn get_ops() -> Arc<BroadcastDbOps> {
@@ -273,5 +273,35 @@ mod test {
         let unf_entries = service_state.inner.unfinalized_entries;
         assert!(!unf_entries.iter().any(|e| e.item().is_finalized()));
         assert!(unf_entries.iter().all(|e| e.item().is_valid()));
+    }
+
+    #[tokio::test]
+    async fn bitcoind_warmup_does_not_terminate_broadcaster_poll() {
+        let ops = get_ops();
+        let entries = populate_broadcast_db(ops.clone()).await;
+        let client = TestBitcoinClient::new(0)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::BitcoindWarmup);
+        let io = make_io(ops, client);
+        let mut service_state = BroadcasterServiceState::try_new(io, get_test_btcio_params())
+            .await
+            .unwrap();
+
+        service_state.process_input(TickMsg::Tick).await.unwrap();
+
+        let statuses: Vec<_> = service_state
+            .inner
+            .unfinalized_entries
+            .iter()
+            .map(|entry| entry.item().status.clone())
+            .collect();
+        assert_eq!(
+            statuses,
+            vec![
+                entries[0].1.status.clone(),
+                entries[1].1.status.clone(),
+                entries[3].1.status.clone(),
+            ],
+            "warmup must preserve broadcaster entries for the next poll"
+        );
     }
 }

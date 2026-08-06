@@ -63,6 +63,7 @@ pub enum SendRawTransactionMode {
     InvalidParameter,
     HttpInternalServerError,
     ConnectionError,
+    BitcoindWarmup,
     GenericError,
 }
 
@@ -292,6 +293,9 @@ impl Broadcaster for TestBitcoinClient {
             SendRawTransactionMode::ConnectionError => {
                 Err(ClientError::Connection("connection refused".to_string()))
             }
+            SendRawTransactionMode::BitcoindWarmup => {
+                Err(ClientError::Server(-28, "Loading wallet...".to_string()))
+            }
             SendRawTransactionMode::GenericError => Err(ClientError::Server(
                 -1,
                 "generic broadcast failure".to_string(),
@@ -346,6 +350,9 @@ impl Wallet for TestBitcoinClient {
     }
 
     async fn get_transaction(&self, txid: &Txid) -> ClientResult<GetTransaction> {
+        if self.send_raw_transaction_mode == SendRawTransactionMode::BitcoindWarmup {
+            return Err(ClientError::Server(-28, "Loading wallet...".to_string()));
+        }
         let some_tx = consensus::encode::deserialize_hex(SOME_TX).unwrap();
         Ok(GetTransaction {
             tx: some_tx,
