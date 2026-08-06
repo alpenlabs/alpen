@@ -418,7 +418,10 @@ pub(crate) fn build_pending_single_reveal_replacement(
     let fee = reveal_fee(&replacement_tx, commit_output);
 
     Ok((
-        TxAttempt::pending_signature(attempt_parts(&replacement_tx, target_fee_rate, fee), attempt_no),
+        TxAttempt::pending_signature(
+            attempt_parts(&replacement_tx, target_fee_rate, fee),
+            attempt_no,
+        ),
         Buf32(sighash),
     ))
 }
@@ -588,13 +591,24 @@ fn reveal_fee(reveal_tx: &Transaction, commit_output: &TxOut) -> Amount {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU64;
+
     use bitcoin::{
         absolute::LockTime, opcodes, script::Builder as ScriptBuilder, transaction::Version,
         OutPoint, TxIn, Witness, WitnessProgram, WitnessVersion,
     };
+    use strata_config::btcio::FeeBumpingConfig;
+    use strata_db_types::fee_bump::TxNodeRecord;
 
     use super::*;
-    use crate::test_utils::TestBitcoinClient;
+    use crate::{
+        broadcaster::fee_bump::{
+            evaluate_fee_bump, FeeBumpDecision, FeeBumpEvaluation, FeeBumpRequest,
+        },
+        test_utils::TestBitcoinClient,
+        tx_attempt::TxAttemptExt,
+        writer::builder::reveal_fee_headroom,
+    };
 
     fn op_return_output() -> TxOut {
         TxOut {
@@ -701,46 +715,203 @@ mod tests {
         assert_eq!(error.terminal_error(), TerminalError::UnsupportedRbfKind);
     }
 
-    /// Documents why [`evaluate_fee_bump`] refuses reveal kinds outright.
-    ///
-    /// Both envelope builders size a reveal's commit output at exactly
-    /// `reveal_amount + reveal_fee(build_rate)`, with `reveal_amount` equal to the dust limit
-    /// (`calculate_reveal_commit_value`, `calculate_commit_output_value`). The reveal's own output
-    /// therefore already sits at dust, and shrinking it is the only way a replacement can pay more.
-    /// A target one sat/vB above the build rate is enough to push it under.
-    ///
-    /// If this ever starts returning `Ok`, the commit output has gained build-time headroom and the
-    /// refusal in the fee-bump policy can be lifted — see TODO(STR-4198), which replaces this test
-    /// with one asserting a production-shaped reveal bump succeeds.
-    ///
-    /// [`evaluate_fee_bump`]: crate::broadcaster::fee_bump::evaluate_fee_bump
+    /// A production-shaped reveal uses build-time headroom to pay a valid replacement fee.
     #[test]
-    fn a_production_shaped_reveal_has_no_headroom_to_bump_into() {
+    fn a_production_shaped_reveal_with_headroom_bumps_successfully() {
         let build_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let target_rate = FeeRate::from_sat_per_vb(3).expect("valid fee rate");
+        let keypair = test_keypair(1);
         let mut reveal = reveal_committing_to(&test_pubkey(1));
-        reveal.output = vec![p2tr_output(BITCOIN_DUST_LIMIT, 1)];
-        let commit_value = Amount::from_sat(BITCOIN_DUST_LIMIT)
-            + build_rate
-                .fee_vb(reveal.vsize() as u64)
-                .expect("reveal fee fits");
+        let reveal_vsize = u64::try_from(reveal.vsize()).expect("vsize fits");
+        let base_fee = build_rate.fee_vb(reveal_vsize).expect("reveal fee fits");
+        let headroom = reveal_fee_headroom(build_rate, reveal_vsize, &FeeBumpingConfig::default())
+            .expect("headroom fits");
+        reveal.output = vec![p2tr_output(BITCOIN_DUST_LIMIT + headroom, 1)];
+        let commit_value = reveal.output[0].value + base_fee;
         let commit_output = TxOut {
             value: commit_value,
             script_pubkey: reveal.output[0].script_pubkey.clone(),
         };
 
-        let error = build_chunked_reveal_replacement(
-            &reveal,
-            &commit_output,
-            FeeRate::from_sat_per_vb(3).expect("valid fee rate"),
-            1,
-            &test_keypair(1),
+        let replacement =
+            build_chunked_reveal_replacement(&reveal, &commit_output, target_rate, 1, &keypair)
+                .expect("headroom funds the replacement");
+        let replacement_tx = replacement.try_to_tx().expect("replacement decodes");
+        let target_fee = target_rate
+            .fee_vb(u64::try_from(replacement_tx.vsize()).expect("vsize fits"))
+            .expect("target fee fits");
+        let actual_fee = reveal_fee(&replacement_tx, &commit_output);
+        let (reveal_script, _) = extract_reveal_witness(&replacement_tx).expect("witness parses");
+        let sighash =
+            compute_taproot_script_spend_sighash(&replacement_tx, &commit_output, &reveal_script)
+                .expect("sighash computes");
+        let message = Message::from_digest_slice(&sighash).expect("message parses");
+        let signature = Signature::from_slice(
+            replacement_tx.input[0]
+                .witness
+                .iter()
+                .next()
+                .expect("signature witness"),
         )
-        .expect_err("a reveal built this way cannot fund any bump");
+        .expect("signature parses");
 
-        assert!(matches!(
-            error,
-            ReplacementError::ReplacementWouldDustOutput
-        ));
+        assert_eq!(actual_fee, target_fee);
+        assert!(replacement_tx.output.last().unwrap().value.to_sat() >= BITCOIN_DUST_LIMIT);
+        SECP256K1
+            .verify_schnorr(&signature, &message, &test_pubkey(1))
+            .expect("replacement witness verifies under the sequencer key");
+    }
+
+    #[test]
+    fn every_policy_replacement_fits_the_reveal_builder_budget() {
+        let keypair = test_keypair(1);
+        let reveal_kind = TxNodeKind::ChunkedEnvelopeReveal {
+            envelope_idx: 0,
+            reveal_idx: 0,
+        };
+
+        for extra_output_count in 0..=2 {
+            for case in [
+                "fundable_boundary",
+                "above_fundable_boundary",
+                "fractional_build_rate",
+                "raised_incremental_relay_fee",
+                "estimator_jump",
+                "headroom_cap",
+                "build_rate_at_max",
+            ] {
+                let default_config = FeeBumpingConfig::default();
+                let config = if case == "headroom_cap" {
+                    FeeBumpingConfig {
+                        max_reveal_fee_headroom_sats: NonZeroU64::new(7).unwrap(),
+                        ..default_config
+                    }
+                } else {
+                    default_config
+                };
+                let build_rate = if case == "fractional_build_rate" {
+                    FeeRate::from_sat_per_kwu(125)
+                } else if case == "build_rate_at_max" {
+                    config.max_fee_rate()
+                } else {
+                    FeeRate::from_sat_per_vb(1).unwrap()
+                };
+                let mut reveal = reveal_committing_to(&test_pubkey(1));
+                for _ in 0..extra_output_count {
+                    reveal.output.insert(0, op_return_output());
+                }
+                let reveal_vsize = u64::try_from(reveal.vsize()).expect("vsize fits");
+                let base_fee = build_rate.fee_vb(reveal_vsize).expect("base fee fits");
+                let headroom = reveal_fee_headroom(build_rate, reveal_vsize, &config)
+                    .expect("headroom derives");
+                reveal.output.last_mut().unwrap().value =
+                    Amount::from_sat(BITCOIN_DUST_LIMIT + headroom);
+                let other_output_value = reveal
+                    .output
+                    .iter()
+                    .take(reveal.output.len() - 1)
+                    .map(|output| output.value)
+                    .sum::<Amount>();
+                let commit_output = TxOut {
+                    value: other_output_value + reveal.output.last().unwrap().value + base_fee,
+                    script_pubkey: reveal.output.last().unwrap().script_pubkey.clone(),
+                };
+                let reveal_fee_budget = commit_output
+                    .value
+                    .checked_sub(other_output_value)
+                    .and_then(|remaining| {
+                        remaining.checked_sub(Amount::from_sat(BITCOIN_DUST_LIMIT))
+                    })
+                    .expect("budget is funded");
+                let fundable_rate =
+                    FeeRate::from_sat_per_vb(reveal_fee_budget.to_sat() / reveal_vsize)
+                        .expect("fundable rate fits");
+                let estimate_fee_rate = match case {
+                    "above_fundable_boundary" => FeeRate::from_sat_per_vb(
+                        fundable_rate.to_sat_per_vb_ceil().saturating_add(1),
+                    )
+                    .unwrap(),
+                    "estimator_jump" => FeeRate::from_sat_per_vb(50_000).unwrap(),
+                    _ => fundable_rate,
+                };
+                let incremental_relay_fee_rate = if case == "raised_incremental_relay_fee" {
+                    FeeRate::from_sat_per_vb(3).unwrap()
+                } else {
+                    FeeRate::from_sat_per_vb(1).unwrap()
+                };
+                let mut active_attempt =
+                    TxAttempt::active(attempt_parts(&reveal, build_rate, base_fee), 0);
+                active_attempt.first_published_l1_height = Some(100);
+                let record = TxNodeRecord::new(reveal_kind.clone(), active_attempt);
+                let decision = evaluate_fee_bump(
+                    &config,
+                    &record,
+                    record.active_attempt().unwrap(),
+                    FeeBumpEvaluation {
+                        current_l1_tip: 102,
+                        estimate_fee_rate,
+                        incremental_relay_fee_rate,
+                        replacement_vsize: reveal.vsize(),
+                        reveal_fee_budget: Some(reveal_fee_budget),
+                    },
+                );
+
+                match decision {
+                    FeeBumpDecision::Replace(FeeBumpRequest {
+                        target_fee_rate, ..
+                    }) => {
+                        let mut direct_replacement = reveal.clone();
+                        set_reveal_replacement_fee(
+                            &mut direct_replacement,
+                            &commit_output,
+                            target_fee_rate,
+                        )
+                        .unwrap_or_else(|error| {
+                            panic!(
+                                "policy returned Replace rejected by direct builder for {case} with {extra_output_count} extra outputs: {error}"
+                            )
+                        });
+                        let chunked_replacement = build_chunked_reveal_replacement(
+                            &reveal,
+                            &commit_output,
+                            target_fee_rate,
+                            1,
+                            &keypair,
+                        )
+                        .unwrap_or_else(|error| {
+                            panic!(
+                                "policy returned Replace rejected by chunked builder for {case} with {extra_output_count} extra outputs: {error}"
+                            )
+                        })
+                        .try_to_tx()
+                        .expect("replacement decodes");
+
+                        assert!(
+                            direct_replacement.output.last().unwrap().value.to_sat()
+                                >= BITCOIN_DUST_LIMIT
+                        );
+                        assert!(
+                            chunked_replacement.output.last().unwrap().value.to_sat()
+                                >= BITCOIN_DUST_LIMIT
+                        );
+                    }
+                    FeeBumpDecision::BlockedByCeiling { ceiling, .. } => {
+                        assert!(matches!(case, "above_fundable_boundary" | "estimator_jump"));
+                        assert_eq!(ceiling, fundable_rate.min(config.max_fee_rate()));
+                    }
+                    FeeBumpDecision::Terminal(error) => match case {
+                        "headroom_cap" => {
+                            assert_eq!(error, TerminalError::RevealFeeHeadroomExhausted)
+                        }
+                        "build_rate_at_max" => {
+                            assert_eq!(error, TerminalError::Bip125FeeRuleUnsatisfiable)
+                        }
+                        _ => panic!("unexpected terminal decision for {case}: {error}"),
+                    },
+                    FeeBumpDecision::Wait => panic!("stale reveal unexpectedly waited for {case}"),
+                }
+            }
+        }
     }
 
     #[test]

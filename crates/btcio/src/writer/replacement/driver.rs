@@ -1695,7 +1695,10 @@ mod tests {
     }
 
     fn commit_record() -> TxNodeRecord {
-        let attempt = TxAttempt::active(attempt_parts(&tx_with_output(10_000), fee_rate(), Amount::from_sat(500)), 0);
+        let attempt = TxAttempt::active(
+            attempt_parts(&tx_with_output(10_000), fee_rate(), Amount::from_sat(500)),
+            0,
+        );
         TxNodeRecord::new(
             TxNodeKind::ChunkedEnvelopeCommit {
                 envelope_idx: ENVELOPE_IDX,
@@ -1758,7 +1761,11 @@ mod tests {
             TxNodeKind::SingleEnvelopeReveal {
                 payload_idx: PAYLOAD_IDX,
             },
-            TxAttempt::active(attempt_parts(&tx_with_output(900), fee_rate(), Amount::from_sat(100)), 0))
+            TxAttempt::active(
+                attempt_parts(&tx_with_output(900), fee_rate(), Amount::from_sat(100)),
+                0,
+            ),
+        )
     }
 
     /// Runs a single-envelope reveal replacement against `provider` and returns the persisted
@@ -1893,7 +1900,11 @@ mod tests {
                 envelope_idx: ENVELOPE_IDX,
                 reveal_idx: 0,
             },
-            TxAttempt::active(attempt_parts(&reveal_tx, fee_rate(), Amount::from_sat(100)), 0));
+            TxAttempt::active(
+                attempt_parts(&reveal_tx, fee_rate(), Amount::from_sat(100)),
+                0,
+            ),
+        );
         bcast
             .put_tx_node(reveal_record)
             .await
@@ -1930,7 +1941,10 @@ mod tests {
                 envelope_idx: ENVELOPE_IDX,
                 reveal_idx: 2,
             },
-            TxAttempt::active(&reveal_tx, fee_rate(), Amount::from_sat(100), 0),
+            TxAttempt::active(
+                attempt_parts(&reveal_tx, fee_rate(), Amount::from_sat(100)),
+                0,
+            ),
         );
         bcast
             .put_tx_node(reveal_record)
@@ -2004,8 +2018,15 @@ mod tests {
 
         let mut record = TxNodeRecord::new(
             TxNodeKind::SingleEnvelopeCommit { payload_idx: 1 },
-            TxAttempt::active(attempt_parts(&original_tx, fee_rate(), Amount::from_sat(100)), 0));
-        record.append_replacement(TxAttempt::active(attempt_parts(&replacement_tx, fee_rate(), Amount::from_sat(200)), 1));
+            TxAttempt::active(
+                attempt_parts(&original_tx, fee_rate(), Amount::from_sat(100)),
+                0,
+            ),
+        );
+        record.append_replacement(TxAttempt::active(
+            attempt_parts(&replacement_tx, fee_rate(), Amount::from_sat(200)),
+            1,
+        ));
         let node_id = record.node_id;
         bcast
             .put_tx_node(record.clone())
@@ -2092,8 +2113,15 @@ mod tests {
                 envelope_idx: ENVELOPE_IDX,
                 reveal_idx: 0,
             },
-            TxAttempt::active(attempt_parts(&reveal_tx, fee_rate(), Amount::from_sat(100)), 0));
-        record.append_replacement(TxAttempt::active(attempt_parts(&replacement_tx, fee_rate(), Amount::from_sat(200)), 1));
+            TxAttempt::active(
+                attempt_parts(&reveal_tx, fee_rate(), Amount::from_sat(100)),
+                0,
+            ),
+        );
+        record.append_replacement(TxAttempt::active(
+            attempt_parts(&replacement_tx, fee_rate(), Amount::from_sat(200)),
+            1,
+        ));
 
         (bcast, context, record, replacement_txid)
     }
@@ -2130,7 +2158,10 @@ mod tests {
         let (bcast, context, mut record, _) =
             chunked_reveal_stranded_after_partial_replacement().await;
         let unrelated_tx = tx_with_output(700);
-        record.append_replacement(TxAttempt::active(attempt_parts(&unrelated_tx, fee_rate(), Amount::from_sat(300)), 2));
+        record.append_replacement(TxAttempt::active(
+            attempt_parts(&unrelated_tx, fee_rate(), Amount::from_sat(300)),
+            2,
+        ));
 
         retry_stale_chunked_reveal_metadata(&bcast, &context, &record, ENVELOPE_IDX, 0)
             .await
@@ -2168,7 +2199,11 @@ mod tests {
             TxNodeKind::SingleEnvelopeReveal {
                 payload_idx: PAYLOAD_IDX,
             },
-            TxAttempt::active(attempt_parts(reveal_tx, fee_rate(), Amount::from_sat(100)), 0));
+            TxAttempt::active(
+                attempt_parts(reveal_tx, fee_rate(), Amount::from_sat(100)),
+                0,
+            ),
+        );
         (
             ReplacementContext {
                 envelope_ops: Some(envelope_ops),
@@ -2246,8 +2281,10 @@ mod tests {
         // The writer rebuilds the logical transaction under a new txid while the poll is
         // mid-flight.
         let mut rebuilt = snapshot.clone();
-        let rebuilt_attempt =
-            TxAttempt::active(attempt_parts(&tx_with_output(700), fee_rate(), Amount::from_sat(300)), 0);
+        let rebuilt_attempt = TxAttempt::active(
+            attempt_parts(&tx_with_output(700), fee_rate(), Amount::from_sat(300)),
+            0,
+        );
         let rebuilt_txid = rebuilt_attempt.txid;
         rebuilt.replace_initial_attempt(rebuilt_attempt);
         bcast
@@ -2281,7 +2318,10 @@ mod tests {
         let node_id = snapshot.node_id;
 
         let mut rebuilt = snapshot.clone();
-        rebuilt.replace_initial_attempt(TxAttempt::active(attempt_parts(&tx_with_output(700), fee_rate(), Amount::from_sat(300)), 0));
+        rebuilt.replace_initial_attempt(TxAttempt::active(
+            attempt_parts(&tx_with_output(700), fee_rate(), Amount::from_sat(300)),
+            0,
+        ));
         bcast
             .put_tx_node(rebuilt)
             .await
@@ -2347,7 +2387,8 @@ mod tests {
 
         let record = TxNodeRecord::new(
             TxNodeKind::SingleEnvelopeCommit { payload_idx: 1 },
-            TxAttempt::active(attempt_parts(&tx, fee_rate(), Amount::from_sat(100)), 0));
+            TxAttempt::active(attempt_parts(&tx, fee_rate(), Amount::from_sat(100)), 0),
+        );
         let node_id = record.node_id;
         bcast
             .put_tx_node(record.clone())
@@ -2427,7 +2468,10 @@ mod tests {
             .expect("test: payload row persists");
 
         let mut record = single_reveal_record();
-        record.append_pending_signature_replacement(TxAttempt::active(attempt_parts(&tx_with_output(800), fee_rate(), Amount::from_sat(200)), 1));
+        record.append_pending_signature_replacement(TxAttempt::active(
+            attempt_parts(&tx_with_output(800), fee_rate(), Amount::from_sat(200)),
+            1,
+        ));
 
         (
             ReplacementContext {
@@ -2468,7 +2512,11 @@ mod tests {
                 envelope_idx: ENVELOPE_IDX,
                 reveal_idx: 0,
             },
-            TxAttempt::active(attempt_parts(&tx_with_output(900), fee_rate(), Amount::from_sat(100)), 0));
+            TxAttempt::active(
+                attempt_parts(&tx_with_output(900), fee_rate(), Amount::from_sat(100)),
+                0,
+            ),
+        );
 
         assert!(
             commit_replacement_allowed(&reveal_record, &bcast, &ReplacementContext::default())
