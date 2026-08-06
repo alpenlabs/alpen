@@ -51,6 +51,13 @@ pub(crate) enum ReplacementError {
     RevealKeyRotated { committed: String, held: String },
     #[error("replacement would reduce reveal output below dust")]
     ReplacementWouldDustOutput,
+    /// Discarded by the commit path rather than treated as terminal: which candidate the wallet
+    /// builds depends on its UTXO set, so a later one can land under the ceiling.
+    #[error("wallet built a replacement paying {built_sat_vb} sat/vB, above the configured ceiling of {ceiling_sat_vb} sat/vB")]
+    ExceedsMaxFeeRate {
+        built_sat_vb: u64,
+        ceiling_sat_vb: u64,
+    },
     #[error("replacement commit output layout is incompatible with the envelope: {0}")]
     IncompatibleCommitLayout(String),
     #[error("replacement would spend {0} wallet input(s) the original did not")]
@@ -70,6 +77,9 @@ impl ReplacementError {
             Self::PsbtBumpFee(error) | Self::WalletProcessPsbt(error) => {
                 is_retryable_client_error(error)
             }
+            // Not transient, but the commit path discards this candidate instead of ending the
+            // chain; see the variant's own note.
+            Self::ExceedsMaxFeeRate { .. } => false,
             Self::UnsupportedKind(_)
             | Self::IncompletePsbt
             | Self::MissingFinalTransaction
@@ -107,6 +117,7 @@ impl ReplacementError {
             | Self::IncompatibleCommitLayout(_) => TerminalError::UnsupportedRbfKind,
             Self::ReplacementAddsInputs(_) => TerminalError::ReplacementAddsInputs,
             Self::ReplacementWouldDustOutput => TerminalError::ReplacementWouldDustOutput,
+            Self::ExceedsMaxFeeRate { .. } => TerminalError::AboveMaxFeeRate,
         }
     }
 }
@@ -130,12 +141,21 @@ impl ReplacementError {
 /// `original_change_index` names the output Core should recycle to pay the higher fee. Passing it
 /// is not an optimisation: see [`chunked_commit_change_index`] for why leaving Core to find the
 /// change itself would make every chunked commit bump fail.
+///
+/// `max_fee_rate` is the operator's configured replacement ceiling. `target_fee_rate` is already
+/// capped by it, but the wallet prices the fee off the transaction it ends up building and can pay
+/// more than it was asked for, so the built candidate is checked against the ceiling too.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the wallet call needs every input threaded through explicitly"
+)]
 pub(crate) async fn build_wallet_commit_replacement<C: Signer>(
     client: &C,
     kind: &TxNodeKind,
     original_tx: &Transaction,
     active_txid: L1TxId,
     target_fee_rate: FeeRate,
+    max_fee_rate: FeeRate,
     attempt_no: u32,
     original_change_index: Option<u32>,
 ) -> Result<TxAttempt, ReplacementError> {
@@ -179,9 +199,21 @@ pub(crate) async fn build_wallet_commit_replacement<C: Signer>(
     // from this number, and a target below the fee rate already on the wire is one Core rejects.
     let fee = Amount::from_sat(bumped.fee.to_sat());
     let effective_fee_rate = effective_fee_rate(&tx, fee).unwrap_or(target_fee_rate);
+    let recorded_fee_rate = effective_fee_rate.max(target_fee_rate);
+
+    // `target_fee_rate` already clears the ceiling, but what the wallet built need not: absorbing a
+    // sub-dust change output into the fee raises the rate above what was asked for. Adopting it
+    // anyway would put a transaction on the wire that breaches the operator's safety cap, and would
+    // also seed the next bump's floors from a rate the ceiling forbids.
+    if recorded_fee_rate > max_fee_rate {
+        return Err(ReplacementError::ExceedsMaxFeeRate {
+            built_sat_vb: recorded_fee_rate.to_sat_per_vb_ceil(),
+            ceiling_sat_vb: max_fee_rate.to_sat_per_vb_ceil(),
+        });
+    }
 
     Ok(TxAttempt::new(
-        attempt_parts(&tx, effective_fee_rate.max(target_fee_rate), fee),
+        attempt_parts(&tx, recorded_fee_rate, fee),
         attempt_no,
         TxAttemptStatus::Active,
     ))
@@ -562,6 +594,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::test_utils::TestBitcoinClient;
 
     fn op_return_output() -> TxOut {
         TxOut {
@@ -942,5 +975,49 @@ mod tests {
         let fee = Amount::from_sat(tx.vsize() as u64 * 3);
 
         assert_eq!(effective_fee_rate(&tx, fee), FeeRate::from_sat_per_vb(3));
+    }
+
+    /// The mock wallet always reports a 0.01 BTC fee, which over this transaction is far more than
+    /// the target asks for — the same overshoot Core produces when it absorbs sub-dust change.
+    async fn wallet_replacement_with_ceiling(
+        ceiling_sat_vb: u64,
+    ) -> Result<TxAttempt, ReplacementError> {
+        let original = commit_with(vec![p2wpkh_output(1_000)]);
+        let client =
+            TestBitcoinClient::new(1).with_wallet_process_psbt_result(true, Some(original.clone()));
+
+        build_wallet_commit_replacement(
+            &client,
+            &TxNodeKind::ChunkedEnvelopeCommit { envelope_idx: 0 },
+            &original,
+            L1TxId::from([0u8; 32]),
+            FeeRate::from_sat_per_vb(4).expect("valid fee rate"),
+            FeeRate::from_sat_per_vb(ceiling_sat_vb).expect("valid fee rate"),
+            1,
+            None,
+        )
+        .await
+    }
+
+    /// Regression: the target is capped by the ceiling, but the rate the wallet actually builds is
+    /// not, and it is that transaction which reaches the wire and seeds the next bump's floors.
+    #[tokio::test]
+    async fn rejects_a_wallet_replacement_that_breaches_the_fee_rate_ceiling() {
+        let error = wallet_replacement_with_ceiling(1_000)
+            .await
+            .expect_err("a replacement above the ceiling must not be adopted");
+
+        assert!(matches!(error, ReplacementError::ExceedsMaxFeeRate { .. }));
+        assert!(!error.is_retryable());
+        assert_eq!(error.terminal_error(), TerminalError::AboveMaxFeeRate);
+    }
+
+    #[tokio::test]
+    async fn accepts_a_wallet_replacement_that_stays_under_the_fee_rate_ceiling() {
+        let attempt = wallet_replacement_with_ceiling(1_000_000)
+            .await
+            .expect("a replacement under the ceiling is adopted");
+
+        assert_eq!(attempt.fee(), Amount::from_sat(1_000_000));
     }
 }
