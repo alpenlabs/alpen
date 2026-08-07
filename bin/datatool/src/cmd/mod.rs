@@ -2,7 +2,6 @@
 
 mod asm_params;
 mod ee_params;
-mod gen_checkpoint_predicate;
 mod genesis_info;
 #[cfg(feature = "btc-client")]
 mod l1_anchor;
@@ -21,7 +20,6 @@ pub(crate) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
         Subcommand::SeqPubkey(subc) => seq_pubkey::exec(subc, ctx),
         Subcommand::SeqPrivkey(subc) => seq_privkey::exec(subc, ctx),
         Subcommand::OpPubkey(subc) => op_pubkey::exec(subc, ctx),
-        Subcommand::CheckpointPredicate(subc) => gen_checkpoint_predicate::exec(subc, ctx),
         Subcommand::AsmParams(subc) => asm_params::exec(subc, ctx),
         Subcommand::OlParams(subc) => ol_params::exec(subc, ctx),
         Subcommand::EeParams(subc) => ee_params::exec(subc, ctx),
