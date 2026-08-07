@@ -442,29 +442,20 @@ mod test {
     }
 
     #[tokio::test]
-    async fn abandoned_policy_does_not_send_to_bitcoin() {
-        let (entry, txid) = entry_with_txid(L1TxStatus::Unpublished);
-        let io = MockIoContext::default().with_publish_decision(PublishDecision::Abandon);
+    async fn policy_can_abandon_or_defer_without_broadcasting() {
+        for (decision, expected) in [
+            (PublishDecision::Abandon, L1TxStatus::Abandoned),
+            (PublishDecision::Defer, L1TxStatus::Unpublished),
+        ] {
+            let (entry, txid) = entry_with_txid(L1TxStatus::Unpublished);
+            let io = MockIoContext::default().with_publish_decision(decision);
+            let status = process_tx_entry(&io, &entry, &txid, &get_test_btcio_params())
+                .await
+                .expect("policy decision succeeds");
 
-        let status = process_tx_entry(&io, &entry, &txid, &get_test_btcio_params())
-            .await
-            .expect("policy decision succeeds");
-
-        assert_eq!(status, Some(L1TxStatus::Abandoned));
-        assert_eq!(io.broadcast_count.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn deferred_policy_does_not_send_to_bitcoin() {
-        let (entry, txid) = entry_with_txid(L1TxStatus::Unpublished);
-        let io = MockIoContext::default().with_publish_decision(PublishDecision::Defer);
-
-        let status = process_tx_entry(&io, &entry, &txid, &get_test_btcio_params())
-            .await
-            .expect("policy decision succeeds");
-
-        assert_eq!(status, Some(L1TxStatus::Unpublished));
-        assert_eq!(io.broadcast_count.load(Ordering::SeqCst), 0);
+            assert_eq!(status, Some(expected));
+            assert_eq!(io.broadcast_count.load(Ordering::SeqCst), 0);
+        }
     }
 
     fn confirmation_info(
