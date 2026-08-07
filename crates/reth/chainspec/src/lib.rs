@@ -45,7 +45,8 @@ pub struct AlpenChainSpecParser;
 impl ChainSpecParser for AlpenChainSpecParser {
     type ChainSpec = ChainSpec;
 
-    const SUPPORTED_CHAINS: &'static [&'static str] = &["dev", "devnet", "testnet", "testnet3"];
+    const SUPPORTED_CHAINS: &'static [&'static str] =
+        &["dev", "devnet", "testnet", "testnet3", "mainnet"];
 
     fn parse(s: &str) -> eyre::Result<Arc<Self::ChainSpec>> {
         chain_value_parser(s)
