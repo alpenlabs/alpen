@@ -7,7 +7,7 @@ use strata_primitives::buf::Buf32;
 
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 use crate::define_sled_database;
-use crate::utils::{find_next_available_id, first};
+use crate::utils::{conv_sled_err, find_next_available_id, first};
 
 define_sled_database!(
     pub struct L1WriterDBSled {
@@ -19,18 +19,21 @@ define_sled_database!(
 
 impl L1WriterDatabase for L1WriterDBSled {
     fn put_payload_entry(&self, idx: u64, entry: BundledPayloadEntry) -> DbResult<()> {
-        self.payload_tree.insert(&idx, &entry)?;
+        self.payload_tree
+            .insert(&idx, &entry)
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
     fn get_payload_entry_by_idx(&self, idx: u64) -> DbResult<Option<BundledPayloadEntry>> {
-        Ok(self.payload_tree.get(&idx)?)
+        self.payload_tree.get(&idx).map_err(conv_sled_err)
     }
 
     fn get_next_payload_idx(&self) -> DbResult<u64> {
         Ok(self
             .payload_tree
-            .last()?
+            .last()
+            .map_err(conv_sled_err)?
             .map(first)
             .map(|x| x + 1)
             .unwrap_or(0))
@@ -39,7 +42,8 @@ impl L1WriterDatabase for L1WriterDBSled {
     fn put_intent_entry(&self, intent_id: Buf32, intent_entry: IntentEntry) -> DbResult<u64> {
         let next_idx = self
             .intent_idx_tree
-            .last()?
+            .last()
+            .map_err(conv_sled_err)?
             .map(first)
             .map(|x| x + 1)
             .unwrap_or(0);
@@ -62,7 +66,8 @@ impl L1WriterDatabase for L1WriterDBSled {
     ) -> DbResult<u64> {
         let next_payload_idx = self
             .payload_tree
-            .last()?
+            .last()
+            .map_err(conv_sled_err)?
             .map(first)
             .map(|idx| idx + 1)
             .unwrap_or(0);
@@ -72,20 +77,22 @@ impl L1WriterDatabase for L1WriterDBSled {
                 let payload_idx = find_next_available_id(&pt, next_payload_idx)?;
                 pt.insert(&payload_idx, &payload_entry)?;
                 let mut bundled_intent_entry = intent_entry.clone();
-                bundled_intent_entry.status = IntentStatus::Bundled(payload_idx);
+                bundled_intent_entry.status = IntentStatus::Bundled {
+                    bundle_idx: payload_idx,
+                };
                 it.insert(&intent_id, &bundled_intent_entry)?;
                 Ok(payload_idx)
             })
     }
 
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>> {
-        Ok(self.intent_tree.get(&id)?)
+        self.intent_tree.get(&id).map_err(conv_sled_err)
     }
 
     fn get_intent_by_idx(&self, idx: u64) -> DbResult<Option<IntentEntry>> {
-        if let Some(id) = self.intent_idx_tree.get(&idx)? {
+        if let Some(id) = self.intent_idx_tree.get(&idx).map_err(conv_sled_err)? {
             self.intent_tree
-                .get(&id)?
+                .get(&id).map_err(conv_sled_err)?
                 .ok_or_else(|| {
                     DbError::Other(format!(
                         "Intent index({idx}) exists but corresponding id does not exist in writer db"
@@ -100,22 +107,26 @@ impl L1WriterDatabase for L1WriterDBSled {
     fn get_next_intent_idx(&self) -> DbResult<u64> {
         Ok(self
             .intent_idx_tree
-            .last()?
+            .last()
+            .map_err(conv_sled_err)?
             .map(first)
             .map(|x| x + 1)
             .unwrap_or(0))
     }
 
     fn del_payload_entry(&self, idx: u64) -> DbResult<bool> {
-        let exists = self.payload_tree.contains_key(&idx)?;
+        let exists = self
+            .payload_tree
+            .contains_key(&idx)
+            .map_err(conv_sled_err)?;
         if exists {
-            self.payload_tree.remove(&idx)?;
+            self.payload_tree.remove(&idx).map_err(conv_sled_err)?;
         }
         Ok(exists)
     }
 
     fn del_payload_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
-        let last_idx = self.payload_tree.last()?.map(first);
+        let last_idx = self.payload_tree.last().map_err(conv_sled_err)?.map(first);
         let Some(last_idx) = last_idx else {
             return Ok(Vec::new());
         };
@@ -138,13 +149,17 @@ impl L1WriterDatabase for L1WriterDBSled {
     }
 
     fn del_intent_entry(&self, id: Buf32) -> DbResult<bool> {
-        let exists = self.intent_tree.contains_key(&id)?;
+        let exists = self.intent_tree.contains_key(&id).map_err(conv_sled_err)?;
         if !exists {
             return Ok(false);
         }
 
         // Get the last index to know the range to scan
-        let last_idx = self.intent_idx_tree.last()?.map(first);
+        let last_idx = self
+            .intent_idx_tree
+            .last()
+            .map_err(conv_sled_err)?
+            .map(first);
 
         // Delete both the intent entry and its index mapping
         self.config
@@ -176,7 +191,11 @@ impl L1WriterDatabase for L1WriterDBSled {
     }
 
     fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
-        let last_idx = self.intent_idx_tree.last()?.map(first);
+        let last_idx = self
+            .intent_idx_tree
+            .last()
+            .map_err(conv_sled_err)?
+            .map(first);
         let Some(last_idx) = last_idx else {
             return Ok(Vec::new());
         };

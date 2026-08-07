@@ -7,7 +7,7 @@ use typed_sled::batch::SledBatch;
 
 use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema};
 use crate::define_sled_database;
-use crate::utils::{first, to_db_error};
+use crate::utils::{conv_sled_err, first};
 
 define_sled_database!(
     pub struct L1DBSled {
@@ -19,7 +19,7 @@ define_sled_database!(
 
 impl L1DBSled {
     pub fn get_latest_block(&self) -> DbResult<Option<(L1Height, L1BlockId)>> {
-        Ok(self.l1_canonical_tree.last()?)
+        self.l1_canonical_tree.last().map_err(conv_sled_err)
     }
 }
 
@@ -28,24 +28,24 @@ impl L1Database for L1DBSled {
         let blockid = manifest.blkid();
         let height = manifest.height();
 
-        self.config
-            .with_retry(
-                (&self.l1_blk_tree, &self.l1_blks_height_tree),
-                |(bt, bht)| {
-                    let mut blocks_at_height = bht.get(&height)?.unwrap_or_default();
-                    blocks_at_height.push(*blockid);
+        self.config.with_retry(
+            (&self.l1_blk_tree, &self.l1_blks_height_tree),
+            |(bt, bht)| {
+                let mut blocks_at_height = bht.get(&height)?.unwrap_or_default();
+                blocks_at_height.push(*blockid);
 
-                    bt.insert(blockid, &manifest)?;
-                    bht.insert(&height, &blocks_at_height)?;
+                bt.insert(blockid, &manifest)?;
+                bht.insert(&height, &blocks_at_height)?;
 
-                    Ok(())
-                },
-            )
-            .map_err(to_db_error)
+                Ok(())
+            },
+        )
     }
 
     fn set_canonical_chain_entry(&self, height: L1Height, blockid: L1BlockId) -> DbResult<()> {
-        Ok(self.l1_canonical_tree.insert(&height, &blockid)?)
+        self.l1_canonical_tree
+            .insert(&height, &blockid)
+            .map_err(conv_sled_err)
     }
 
     fn remove_canonical_chain_entries(
@@ -55,42 +55,46 @@ impl L1Database for L1DBSled {
     ) -> DbResult<()> {
         let mut batch = SledBatch::<L1CanonicalBlockSchema>::new();
         for height in (start_height..=end_height).rev() {
-            batch.remove(height)?;
+            batch.remove(height).map_err(conv_sled_err)?;
         }
         // Execute the batch
-        self.l1_canonical_tree.apply_batch(batch)?;
+        self.l1_canonical_tree
+            .apply_batch(batch)
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
     fn prune_to_height(&self, end_height: L1Height) -> DbResult<()> {
-        let earliest = self.l1_blks_height_tree.first()?.map(first);
+        let earliest = self
+            .l1_blks_height_tree
+            .first()
+            .map_err(conv_sled_err)?
+            .map(first);
         let Some(start_height) = earliest else {
             // empty db
             return Ok(());
         };
 
-        self.config
-            .with_retry(
-                (
-                    &self.l1_blk_tree,
-                    &self.l1_blks_height_tree,
-                    &self.l1_canonical_tree,
-                ),
-                |(bt, bht, ct)| {
-                    for height in start_height..=end_height {
-                        let blocks = bht.get(&height)?.unwrap_or_default();
+        self.config.with_retry(
+            (
+                &self.l1_blk_tree,
+                &self.l1_blks_height_tree,
+                &self.l1_canonical_tree,
+            ),
+            |(bt, bht, ct)| {
+                for height in start_height..=end_height {
+                    let blocks = bht.get(&height)?.unwrap_or_default();
 
-                        bht.remove(&height)?;
-                        ct.remove(&height)?;
-                        for blockid in blocks {
-                            bt.remove(&blockid)?;
-                        }
+                    bht.remove(&height)?;
+                    ct.remove(&height)?;
+                    for blockid in blocks {
+                        bt.remove(&blockid)?;
                     }
+                }
 
-                    Ok(())
-                },
-            )
-            .map_err(to_db_error)?;
+                Ok(())
+            },
+        )?;
         Ok(())
     }
 
@@ -105,7 +109,7 @@ impl L1Database for L1DBSled {
     ) -> DbResult<Vec<L1BlockId>> {
         let mut result = Vec::new();
         for height in start_idx..end_idx {
-            if let Some(blockid) = self.l1_canonical_tree.get(&height)? {
+            if let Some(blockid) = self.l1_canonical_tree.get(&height).map_err(conv_sled_err)? {
                 result.push(blockid);
             }
         }
@@ -113,11 +117,11 @@ impl L1Database for L1DBSled {
     }
 
     fn get_canonical_blockid_at_height(&self, height: L1Height) -> DbResult<Option<L1BlockId>> {
-        Ok(self.l1_canonical_tree.get(&height)?)
+        self.l1_canonical_tree.get(&height).map_err(conv_sled_err)
     }
 
     fn get_block_manifest(&self, blockid: L1BlockId) -> DbResult<Option<AsmManifest>> {
-        Ok(self.l1_blk_tree.get(&blockid)?)
+        self.l1_blk_tree.get(&blockid).map_err(conv_sled_err)
     }
 }
 

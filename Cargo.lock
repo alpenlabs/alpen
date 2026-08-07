@@ -15644,7 +15644,6 @@ dependencies = [
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-codec",
- "strata-codec-utils 0.1.0",
  "strata-csm-types",
  "strata-db-macros",
  "strata-identifiers",
@@ -15658,7 +15657,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "typed-sled",
  "zkaleido",
 ]
 

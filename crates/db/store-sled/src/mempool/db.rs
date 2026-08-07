@@ -6,7 +6,7 @@ use strata_identifiers::OLTxId;
 
 use super::schemas::{MempoolTxEntry, MempoolTxSchema};
 use crate::define_sled_database;
-use crate::utils::to_db_error;
+use crate::utils::conv_sled_err;
 
 define_sled_database!(
     pub struct MempoolDBSled {
@@ -17,25 +17,27 @@ define_sled_database!(
 impl MempoolDatabase for MempoolDBSled {
     fn put_tx(&self, data: MempoolTxData) -> DbResult<()> {
         let entry = MempoolTxEntry::new(data.tx_bytes, data.timestamp_micros);
-        self.config
-            .with_retry((&self.tx_tree,), |(tx_tree,)| {
-                tx_tree.insert(&data.txid, &entry)?;
-                Ok(())
-            })
-            .map_err(to_db_error)
+        self.config.with_retry((&self.tx_tree,), |(tx_tree,)| {
+            tx_tree.insert(&data.txid, &entry)?;
+            Ok(())
+        })
     }
 
     fn get_tx(&self, txid: OLTxId) -> DbResult<Option<MempoolTxData>> {
-        Ok(self.tx_tree.get(&txid)?.map(|entry| {
-            let (tx_bytes, timestamp_micros) = entry.into_tuple();
-            MempoolTxData::new(txid, tx_bytes, timestamp_micros)
-        }))
+        Ok(self
+            .tx_tree
+            .get(&txid)
+            .map_err(conv_sled_err)?
+            .map(|entry| {
+                let (tx_bytes, timestamp_micros) = entry.into_tuple();
+                MempoolTxData::new(txid, tx_bytes, timestamp_micros)
+            }))
     }
 
     fn get_all_txs(&self) -> DbResult<Vec<MempoolTxData>> {
         let mut result = Vec::new();
         for item in self.tx_tree.iter() {
-            let (txid, entry) = item?;
+            let (txid, entry) = item.map_err(conv_sled_err)?;
             let (tx_bytes, timestamp_micros) = entry.into_tuple();
             result.push(MempoolTxData::new(txid, tx_bytes, timestamp_micros));
         }
@@ -43,10 +45,10 @@ impl MempoolDatabase for MempoolDBSled {
     }
 
     fn del_tx(&self, txid: OLTxId) -> DbResult<bool> {
-        let old_entry = self.tx_tree.get(&txid)?;
+        let old_entry = self.tx_tree.get(&txid).map_err(conv_sled_err)?;
         let existed = old_entry.is_some();
         if existed {
-            self.tx_tree.remove(&txid)?;
+            self.tx_tree.remove(&txid).map_err(conv_sled_err)?;
         }
         Ok(existed)
     }

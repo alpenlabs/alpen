@@ -177,15 +177,15 @@ mod tests {
     #[test]
     fn check_serde_of_l1txstatus() {
         let test_cases: Vec<(L1TxStatus, &str)> = vec![
-            (L1TxStatus::Unpublished, r#"{"status":"Unpublished"}"#),
-            (L1TxStatus::Published, r#"{"status":"Published"}"#),
+            (L1TxStatus::Unpublished, r#"{"status":"unpublished"}"#),
+            (L1TxStatus::Published, r#"{"status":"published"}"#),
             (
                 L1TxStatus::Confirmed {
                     confirmations: 10,
                     block_hash: Buf32::zero(),
                     block_height: 42,
                 },
-                r#"{"status":"Confirmed","confirmations":10,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
+                r#"{"status":"confirmed","confirmations":10,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
             ),
             (
                 L1TxStatus::Finalized {
@@ -193,9 +193,9 @@ mod tests {
                     block_hash: Buf32::zero(),
                     block_height: 42,
                 },
-                r#"{"status":"Finalized","confirmations":100,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
+                r#"{"status":"finalized","confirmations":100,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
             ),
-            (L1TxStatus::InvalidInputs, r#"{"status":"InvalidInputs"}"#),
+            (L1TxStatus::InvalidInputs, r#"{"status":"invalidinputs"}"#),
         ];
 
         // check serialization and deserialization

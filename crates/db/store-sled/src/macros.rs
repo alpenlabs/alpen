@@ -395,7 +395,7 @@ macro_rules! define_sled_database {
             pub fn new(db: std::sync::Arc<typed_sled::SledDb>, config: $crate::SledDbConfig) -> strata_db_types::DbResult<Self> {
                 Ok(Self {
                     $(
-                        $field: db.get_tree()?,
+                        $field: db.get_tree().map_err($crate::utils::conv_sled_err)?,
                     )*
                     config,
                 })

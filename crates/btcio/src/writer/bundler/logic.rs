@@ -46,7 +46,7 @@ async fn is_predecessor_bundled(ops: &EnvelopeDataOps, idx: u64) -> anyhow::Resu
     };
 
     match prev_entry.status {
-        IntentStatus::Bundled(_) => Ok(true),
+        IntentStatus::Bundled { .. } => Ok(true),
         IntentStatus::Unbundled => Ok(false),
     }
 }
@@ -94,7 +94,7 @@ pub(crate) fn get_initial_unbundled_entries(
         if let Some(intent) = ops.get_intent_by_idx_blocking(curr_idx)? {
             match intent.status {
                 IntentStatus::Unbundled => unbundled.push(curr_idx),
-                IntentStatus::Bundled(_) => {
+                IntentStatus::Bundled { .. } => {
                     // Bundled intent found, no more to scan
                     break;
                 }
@@ -157,8 +157,11 @@ mod tests {
             .expect("test: second intent exists");
 
         assert_eq!(stored_first.intent, first_entry.intent);
-        assert_eq!(stored_first.status, IntentStatus::Bundled(0));
-        assert_eq!(stored_second.status, IntentStatus::Bundled(1));
+        assert_eq!(stored_first.status, IntentStatus::Bundled { bundle_idx: 0 });
+        assert_eq!(
+            stored_second.status,
+            IntentStatus::Bundled { bundle_idx: 1 }
+        );
         assert!(
             get_initial_unbundled_entries(ops.as_ref())
                 .expect("test: scan unbundled")

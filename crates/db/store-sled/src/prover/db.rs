@@ -8,6 +8,7 @@ use zkaleido::ProofReceiptWithMetadata;
 
 use super::schemas::{CheckpointProofSchema, ProverTaskTree};
 use crate::define_sled_database;
+use crate::utils::conv_sled_err;
 
 define_sled_database!(
     pub struct ProofDBSled {
@@ -23,57 +24,76 @@ impl CheckpointProofDatabase for ProofDBSled {
         // Refusing the write would only turn "we already have a valid proof"
         // into a confusing PermanentFailure on the prover task. Matches the EE
         // side's `put_acct_proof`.
-        let old = self.checkpoint_proof_tree.get(&epoch)?;
+        let old = self
+            .checkpoint_proof_tree
+            .get(&epoch)
+            .map_err(conv_sled_err)?;
         self.checkpoint_proof_tree
-            .compare_and_swap(epoch, old, Some(proof))?;
+            .compare_and_swap(epoch, old, Some(proof))
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
     fn get_proof(&self, epoch: EpochCommitment) -> DbResult<Option<ProofReceiptWithMetadata>> {
-        Ok(self.checkpoint_proof_tree.get(&epoch)?)
+        self.checkpoint_proof_tree
+            .get(&epoch)
+            .map_err(conv_sled_err)
     }
 
     fn del_proof(&self, epoch: EpochCommitment) -> DbResult<bool> {
-        let old = self.checkpoint_proof_tree.get(&epoch)?;
+        let old = self
+            .checkpoint_proof_tree
+            .get(&epoch)
+            .map_err(conv_sled_err)?;
         let existed = old.is_some();
         self.checkpoint_proof_tree
-            .compare_and_swap(epoch, old, None)?;
+            .compare_and_swap(epoch, old, None)
+            .map_err(conv_sled_err)?;
         Ok(existed)
     }
 }
 
 impl ProverTaskDatabase for ProofDBSled {
     fn get_task(&self, key: Vec<u8>) -> DbResult<Option<TaskRecordData>> {
-        Ok(self.prover_task_tree.get(&key)?)
+        self.prover_task_tree.get(&key).map_err(conv_sled_err)
     }
 
     fn insert_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()> {
-        if self.prover_task_tree.get(&key)?.is_some() {
+        if self
+            .prover_task_tree
+            .get(&key)
+            .map_err(conv_sled_err)?
+            .is_some()
+        {
             return Err(DbError::EntryAlreadyExists);
         }
         self.prover_task_tree
-            .compare_and_swap(key, None, Some(record))?;
+            .compare_and_swap(key, None, Some(record))
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
     fn put_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()> {
-        let old = self.prover_task_tree.get(&key)?;
+        let old = self.prover_task_tree.get(&key).map_err(conv_sled_err)?;
         self.prover_task_tree
-            .compare_and_swap(key, old, Some(record))?;
+            .compare_and_swap(key, old, Some(record))
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
     fn delete_task(&self, key: Vec<u8>) -> DbResult<bool> {
-        let old = self.prover_task_tree.get(&key)?;
+        let old = self.prover_task_tree.get(&key).map_err(conv_sled_err)?;
         let existed = old.is_some();
-        self.prover_task_tree.compare_and_swap(key, old, None)?;
+        self.prover_task_tree
+            .compare_and_swap(key, old, None)
+            .map_err(conv_sled_err)?;
         Ok(existed)
     }
 
     fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
         let mut out = Vec::new();
         for item in self.prover_task_tree.iter() {
-            let (key, record) = item?;
+            let (key, record) = item.map_err(conv_sled_err)?;
             if record.status().wants_rescan()
                 && record.retry_after_secs().is_some_and(|t| t <= now_secs)
             {
@@ -86,7 +106,7 @@ impl ProverTaskDatabase for ProofDBSled {
     fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
         let mut out = Vec::new();
         for item in self.prover_task_tree.iter() {
-            let (key, record) = item?;
+            let (key, record) = item.map_err(conv_sled_err)?;
             if record.status().is_unfinished() {
                 out.push((key, record));
             }
@@ -97,7 +117,7 @@ impl ProverTaskDatabase for ProofDBSled {
     fn list_all_tasks(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
         let mut out = Vec::new();
         for item in self.prover_task_tree.iter() {
-            out.push(item?);
+            out.push(item.map_err(conv_sled_err)?);
         }
         Ok(out)
     }
@@ -105,7 +125,7 @@ impl ProverTaskDatabase for ProofDBSled {
     fn count_tasks(&self) -> DbResult<usize> {
         let mut n = 0;
         for item in self.prover_task_tree.iter() {
-            item?;
+            item.map_err(conv_sled_err)?;
             n += 1;
         }
         Ok(n)

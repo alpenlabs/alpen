@@ -5,7 +5,6 @@ use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 #[cfg(feature = "proxies")]
 use tokio::task::JoinError;
-use typed_sled::error::Error;
 
 use crate::mmr_index::{LeafPos, NodePos};
 
@@ -140,25 +139,8 @@ pub enum DbError {
     Other(String),
 }
 
-// TODO(trey): remove anyhow-in-thiserror error
-impl From<anyhow::Error> for DbError {
-    fn from(value: anyhow::Error) -> Self {
-        Self::Other(value.to_string())
-    }
-}
-
-impl From<Error> for DbError {
-    fn from(value: Error) -> Self {
-        // If the typed-sled error wraps an aborted `DbError`, recover the
-        // original variant so downstream callers can match on it instead of
-        // dealing with a stringified payload.
-        match value.downcast_abort::<DbError>() {
-            Ok(db_err) => db_err,
-            Err(other) => Self::Other(format!("sled error: {other:?}")),
-        }
-    }
-}
-
+// TODO(db-refactor-part-10): this conversion is inverted -- the ops layer should map into
+// `DbError`, not the other way around. Part 10 owns the move.
 impl From<OpsError> for DbError {
     fn from(value: OpsError) -> Self {
         match value {

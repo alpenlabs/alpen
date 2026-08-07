@@ -9,6 +9,7 @@ use typed_sled::tree::SledTransactionalTree;
 
 use super::schemas::{MmrIndexLeafCountSchema, MmrIndexNodeSchema, MmrIndexPreimageSchema};
 use crate::define_sled_database;
+use crate::utils::conv_sled_err;
 
 fn make_precond_fail_abort(
     mmr_id: RawMmrId,
@@ -30,12 +31,14 @@ define_sled_database!(
 impl MmrIndexDatabase for MmrIndexDb {
     /// Returns a single node hash by `(mmr_id, NodePos)`.
     fn get_node(&self, mmr_id: RawMmrId, pos: NodePos) -> DbResult<Option<Hash>> {
-        Ok(self.node_tree.get(&(mmr_id, pos))?)
+        self.node_tree.get(&(mmr_id, pos)).map_err(conv_sled_err)
     }
 
     /// Returns an optional leaf preimage by `(mmr_id, LeafPos)`.
     fn get_preimage(&self, mmr_id: RawMmrId, pos: LeafPos) -> DbResult<Option<Vec<u8>>> {
-        Ok(self.preimage_tree.get(&(mmr_id, pos))?)
+        self.preimage_tree
+            .get(&(mmr_id, pos))
+            .map_err(conv_sled_err)
     }
 
     /// Returns optional leaf preimages for `[start, end_exclusive)`.
@@ -82,13 +85,17 @@ impl MmrIndexDatabase for MmrIndexDb {
     ///
     /// Absent entries are treated as zero leaves.
     fn get_leaf_count(&self, mmr_id: RawMmrId) -> DbResult<u64> {
-        Ok(self.leaf_count_tree.get(&mmr_id)?.unwrap_or(0))
+        Ok(self
+            .leaf_count_tree
+            .get(&mmr_id)
+            .map_err(conv_sled_err)?
+            .unwrap_or(0))
     }
 
     fn list_mmr_ids(&self) -> DbResult<Vec<RawMmrId>> {
         let mut out = Vec::new();
-        for item in self.leaf_count_tree.range(..)? {
-            let (mmr_id, _) = item?;
+        for item in self.leaf_count_tree.range(..).map_err(conv_sled_err)? {
+            let (mmr_id, _) = item.map_err(conv_sled_err)?;
             out.push(mmr_id);
         }
         Ok(out)

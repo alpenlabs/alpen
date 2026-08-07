@@ -5,6 +5,7 @@ use strata_primitives::l1::L1BlockCommitment;
 
 use super::schemas::{AsmAuxDataSchema, AsmLogSchema, AsmStateSchema};
 use crate::define_sled_database;
+use crate::utils::conv_sled_err;
 
 define_sled_database!(
     pub struct AsmDBSled {
@@ -64,8 +65,8 @@ impl AsmDatabase for AsmDBSled {
 
     fn get_latest_asm_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmExecOutput)>> {
         // Relying on the lexicographical order of L1BlockCommitment.
-        let state = self.asm_state_tree.last()?;
-        let logs = self.asm_log_tree.last()?;
+        let state = self.asm_state_tree.last().map_err(conv_sled_err)?;
+        let logs = self.asm_log_tree.last().map_err(conv_sled_err)?;
 
         match (state, logs) {
             (Some((state_block, state)), Some((logs_block, logs))) if state_block == logs_block => {
@@ -87,12 +88,12 @@ impl AsmDatabase for AsmDBSled {
     }
 
     fn get_anchor_state(&self, block: L1BlockCommitment) -> DbResult<Option<AnchorState>> {
-        Ok(self.asm_state_tree.get(&block)?)
+        self.asm_state_tree.get(&block).map_err(conv_sled_err)
     }
 
     fn get_latest_anchor_state(&self) -> DbResult<Option<(L1BlockCommitment, AnchorState)>> {
         // Relying on the lexicographical order of L1BlockCommitment.
-        Ok(self.asm_state_tree.last()?)
+        self.asm_state_tree.last().map_err(conv_sled_err)
     }
 
     fn get_asm_states_from(
@@ -104,15 +105,19 @@ impl AsmDatabase for AsmDBSled {
         let mut count = 0;
 
         // Iterate from from_block onwards
-        for item in self.asm_state_tree.range(from_block..)? {
+        for item in self
+            .asm_state_tree
+            .range(from_block..)
+            .map_err(conv_sled_err)?
+        {
             if count >= max_count {
                 break;
             }
 
-            let (block, state) = item?;
+            let (block, state) = item.map_err(conv_sled_err)?;
 
             // Get corresponding logs
-            if let Some(logs) = self.asm_log_tree.get(&block)? {
+            if let Some(logs) = self.asm_log_tree.get(&block).map_err(conv_sled_err)? {
                 result.push((block, AsmExecOutput::new(state, logs)));
                 count += 1;
             }
@@ -122,12 +127,14 @@ impl AsmDatabase for AsmDBSled {
     }
 
     fn put_aux_data(&self, block: L1BlockCommitment, data: AuxData) -> DbResult<()> {
-        self.asm_aux_data_tree.insert(&block, &data)?;
+        self.asm_aux_data_tree
+            .insert(&block, &data)
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
     fn get_aux_data(&self, block: L1BlockCommitment) -> DbResult<Option<AuxData>> {
-        Ok(self.asm_aux_data_tree.get(&block)?)
+        self.asm_aux_data_tree.get(&block).map_err(conv_sled_err)
     }
 }
 

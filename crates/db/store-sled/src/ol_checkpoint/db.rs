@@ -9,6 +9,7 @@ use typed_sled::error;
 
 use super::schemas::*;
 use crate::define_sled_database;
+use crate::utils::conv_sled_err;
 
 define_sled_database!(
     pub struct OLCheckpointDBSled {
@@ -28,7 +29,10 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         let commitment = summary.get_epoch_commitment();
         let terminal = summary.terminal();
 
-        let old_summaries = self.epoch_summary_tree.get(&epoch_idx)?;
+        let old_summaries = self
+            .epoch_summary_tree
+            .get(&epoch_idx)
+            .map_err(conv_sled_err)?;
         let mut summaries = old_summaries.clone().unwrap_or_default();
         let pos = match summaries.binary_search_by_key(&terminal, |s| s.terminal()) {
             Ok(_) => return Err(DbError::OverwriteEpoch(commitment)),
@@ -36,12 +40,17 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         };
         summaries.insert(pos, summary);
         self.epoch_summary_tree
-            .compare_and_swap(epoch_idx, old_summaries, Some(summaries))?;
+            .compare_and_swap(epoch_idx, old_summaries, Some(summaries))
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
     fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>> {
-        let Some(mut summaries) = self.epoch_summary_tree.get(&(epoch.epoch() as u64))? else {
+        let Some(mut summaries) = self
+            .epoch_summary_tree
+            .get(&(epoch.epoch() as u64))
+            .map_err(conv_sled_err)?
+        else {
             return Ok(None);
         };
 
@@ -56,7 +65,8 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
     fn get_epoch_commitments_at(&self, epoch: Epoch) -> DbResult<Vec<EpochCommitment>> {
         let summaries = self
             .epoch_summary_tree
-            .get(&u64::from(epoch))?
+            .get(&u64::from(epoch))
+            .map_err(conv_sled_err)?
             .unwrap_or_else(Vec::new);
         Ok(summaries
             .into_iter()
@@ -65,14 +75,22 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
     }
 
     fn get_last_summarized_epoch(&self) -> DbResult<Option<Epoch>> {
-        Ok(self.epoch_summary_tree.last()?.map(|(e, _)| e as Epoch))
+        Ok(self
+            .epoch_summary_tree
+            .last()
+            .map_err(conv_sled_err)?
+            .map(|(e, _)| e as Epoch))
     }
 
     fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
         let epoch_idx = epoch.epoch() as u64;
         let terminal = epoch.to_block_commitment();
 
-        let Some(mut summaries) = self.epoch_summary_tree.get(&epoch_idx)? else {
+        let Some(mut summaries) = self
+            .epoch_summary_tree
+            .get(&epoch_idx)
+            .map_err(conv_sled_err)?
+        else {
             return Ok(false);
         };
         let old_summaries = summaries.clone();
@@ -85,13 +103,12 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
 
         if summaries.is_empty() {
             self.epoch_summary_tree
-                .compare_and_swap(epoch_idx, Some(old_summaries), None)?;
+                .compare_and_swap(epoch_idx, Some(old_summaries), None)
+                .map_err(conv_sled_err)?;
         } else {
-            self.epoch_summary_tree.compare_and_swap(
-                epoch_idx,
-                Some(old_summaries),
-                Some(summaries),
-            )?;
+            self.epoch_summary_tree
+                .compare_and_swap(epoch_idx, Some(old_summaries), Some(summaries))
+                .map_err(conv_sled_err)?;
         }
 
         Ok(true)
@@ -158,7 +175,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         &self,
         epoch: EpochCommitment,
     ) -> DbResult<Option<CheckpointPayload>> {
-        Ok(self.payload_tree.get(&epoch)?)
+        self.payload_tree.get(&epoch).map_err(conv_sled_err)
     }
 
     fn get_last_checkpoint_payload_epoch(&self) -> DbResult<Option<EpochCommitment>> {
@@ -166,7 +183,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         // payload-epoch index table. This query is not on a hot write path.
         let mut max_commitment: Option<EpochCommitment> = None;
         for item in self.payload_tree.iter() {
-            let (commitment, _payload) = item?;
+            let (commitment, _payload) = item.map_err(conv_sled_err)?;
             max_commitment = Some(match max_commitment {
                 None => commitment,
                 Some(current) if commitment.epoch() > current.epoch() => commitment,
@@ -210,7 +227,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
     ) -> DbResult<Vec<EpochCommitment>> {
         let mut keys = Vec::new();
         for item in self.payload_tree.iter() {
-            let (epoch_comm, _entry) = item?;
+            let (epoch_comm, _entry) = item.map_err(conv_sled_err)?;
             if epoch_comm.epoch() >= start_epoch {
                 keys.push(epoch_comm);
             }
@@ -255,7 +272,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
     ) -> DbResult<Vec<EpochCommitment>> {
         let mut keys = Vec::new();
         for item in self.payload_tree.iter() {
-            let (epoch_comm, _entry) = item?;
+            let (epoch_comm, _entry) = item.map_err(conv_sled_err)?;
             if epoch_comm.epoch() >= start_epoch {
                 keys.push(epoch_comm);
             }
@@ -314,7 +331,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         &self,
         epoch: EpochCommitment,
     ) -> DbResult<Option<L1PayloadIntentIndex>> {
-        Ok(self.signing_tree.get(&epoch)?)
+        self.signing_tree.get(&epoch).map_err(conv_sled_err)
     }
 
     fn del_checkpoint_signing_entry(&self, epoch: EpochCommitment) -> DbResult<bool> {
@@ -340,7 +357,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
     ) -> DbResult<Vec<EpochCommitment>> {
         let mut keys = Vec::new();
         for item in self.signing_tree.iter() {
-            let (epoch_comm, _entry) = item?;
+            let (epoch_comm, _entry) = item.map_err(conv_sled_err)?;
             if epoch_comm.epoch() >= start_epoch {
                 keys.push(epoch_comm);
             }
@@ -390,7 +407,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
     }
 
     fn get_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<Option<CheckpointL1Ref>> {
-        Ok(self.l1_ref_tree.get(&epoch)?)
+        self.l1_ref_tree.get(&epoch).map_err(conv_sled_err)
     }
 
     fn get_last_checkpoint_l1_ref_epoch(&self) -> DbResult<Option<EpochCommitment>> {
@@ -398,7 +415,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         // hot write path.
         let mut max_commitment: Option<EpochCommitment> = None;
         for item in self.l1_ref_tree.iter() {
-            let (commitment, _l1_ref) = item?;
+            let (commitment, _l1_ref) = item.map_err(conv_sled_err)?;
             max_commitment = Some(match max_commitment {
                 None => commitment,
                 Some(current) if commitment.epoch() > current.epoch() => commitment,
@@ -414,7 +431,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
     ) -> DbResult<Vec<(EpochCommitment, CheckpointL1Ref)>> {
         let mut refs = Vec::new();
         for item in self.l1_ref_tree.iter() {
-            let (commitment, l1_ref) = item?;
+            let (commitment, l1_ref) = item.map_err(conv_sled_err)?;
             if commitment.epoch() >= start_epoch {
                 refs.push((commitment, l1_ref));
             }
@@ -427,7 +444,11 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         &self,
         epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>> {
-        if let Some(candidates) = self.l1_ref_epoch_index_tree.get(&epoch)? {
+        if let Some(candidates) = self
+            .l1_ref_epoch_index_tree
+            .get(&epoch)
+            .map_err(conv_sled_err)?
+        {
             return Ok(candidates);
         }
 
@@ -482,7 +503,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
     ) -> DbResult<Vec<EpochCommitment>> {
         let mut keys = Vec::new();
         for item in self.l1_ref_tree.iter() {
-            let (epoch_comm, _entry) = item?;
+            let (epoch_comm, _entry) = item.map_err(conv_sled_err)?;
             if epoch_comm.epoch() >= start_epoch {
                 keys.push(epoch_comm);
             }
@@ -511,7 +532,11 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
 
     fn get_next_unsigned_checkpoint_epoch(&self) -> DbResult<Option<Epoch>> {
         let mut iter = self.unsigned_tree.iter();
-        Ok(iter.next().transpose()?.map(|(epoch, _)| epoch))
+        Ok(iter
+            .next()
+            .transpose()
+            .map_err(conv_sled_err)?
+            .map(|(epoch, _)| epoch))
     }
 
     fn put_checkpoint_l1_observation(
@@ -552,7 +577,9 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         &self,
         epoch: EpochCommitment,
     ) -> DbResult<Option<CheckpointPayload>> {
-        Ok(self.l1_observed_payload_tree.get(&epoch)?)
+        self.l1_observed_payload_tree
+            .get(&epoch)
+            .map_err(conv_sled_err)
     }
 
     fn del_checkpoint_l1_observed_payload(&self, epoch: EpochCommitment) -> DbResult<bool> {
@@ -572,7 +599,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
     ) -> DbResult<Vec<EpochCommitment>> {
         let mut keys = Vec::new();
         for item in self.l1_observed_payload_tree.iter() {
-            let (epoch_comm, _entry) = item?;
+            let (epoch_comm, _entry) = item.map_err(conv_sled_err)?;
             if epoch_comm.epoch() >= start_epoch {
                 keys.push(epoch_comm);
             }

@@ -4,7 +4,7 @@ use std::fmt;
 
 // TODO(trey): split ChunkedEnvelopeEntry into different parts for the different types of enveloped and the different stages of processing
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_l1_txfmt::MagicBytes;
@@ -115,7 +115,7 @@ impl fmt::Display for RevealTxMeta {
 ///                 ↓              ↓
 ///            NeedsResign    NeedsResign
 /// ```
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ChunkedEnvelopeStatus {
     /// Chunk data prepared, transactions not yet created.

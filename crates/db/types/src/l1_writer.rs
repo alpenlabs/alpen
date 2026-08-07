@@ -43,7 +43,7 @@ impl IntentEntry {
     pub fn new_bundled(intent: PayloadIntent, bundle_idx: BundleIdx) -> Self {
         Self {
             intent,
-            status: IntentStatus::Bundled(bundle_idx),
+            status: IntentStatus::Bundled { bundle_idx },
         }
     }
 
@@ -61,7 +61,7 @@ pub enum IntentStatus {
     Unbundled,
 
     /// It has been bundled to [`BundledPayloadEntry`] with given bundle idx.
-    Bundled(u64),
+    Bundled { bundle_idx: BundleIdx },
 }
 
 /// Represents data for a payload we're still planning to post to L1.
@@ -104,13 +104,8 @@ impl BundledPayloadEntry {
     }
 
     /// Sets the signature, overwriting any previous value.
-    ///
-    /// # Panics
-    ///
-    /// If the signature provided is not 64 bytes.
-    pub fn set_signature(&mut self, sig: Vec<u8>) {
-        assert_eq!(sig.len(), 64, "db: payload entry sig not 64 bytes");
-        self.payload_signature = Some(sig.try_into().unwrap());
+    pub fn set_signature(&mut self, sig: Buf64) {
+        self.payload_signature = Some(sig);
     }
 
     /// Returns the payload signature as a [`Buf64`].

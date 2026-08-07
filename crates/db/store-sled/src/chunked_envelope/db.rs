@@ -3,7 +3,7 @@ use strata_db_types::chunked_envelope::{ChunkedEnvelopeEntry, L1ChunkedEnvelopeD
 
 use super::schemas::ChunkedEnvelopeSchema;
 use crate::define_sled_database;
-use crate::utils::first;
+use crate::utils::{conv_sled_err, first};
 
 define_sled_database!(
     pub struct L1ChunkedEnvelopeDBSled {
@@ -13,12 +13,14 @@ define_sled_database!(
 
 impl L1ChunkedEnvelopeDatabase for L1ChunkedEnvelopeDBSled {
     fn put_chunked_envelope_entry(&self, idx: u64, entry: ChunkedEnvelopeEntry) -> DbResult<()> {
-        self.entry_tree.insert(&idx, &entry)?;
+        self.entry_tree
+            .insert(&idx, &entry)
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
     fn get_chunked_envelope_entry(&self, idx: u64) -> DbResult<Option<ChunkedEnvelopeEntry>> {
-        Ok(self.entry_tree.get(&idx)?)
+        self.entry_tree.get(&idx).map_err(conv_sled_err)
     }
 
     fn get_chunked_envelope_entries_from(
@@ -27,12 +29,12 @@ impl L1ChunkedEnvelopeDatabase for L1ChunkedEnvelopeDBSled {
         max_count: usize,
     ) -> DbResult<Vec<(u64, ChunkedEnvelopeEntry)>> {
         let mut entries = Vec::with_capacity(max_count);
-        for item in self.entry_tree.range(start_idx..)? {
+        for item in self.entry_tree.range(start_idx..).map_err(conv_sled_err)? {
             if entries.len() >= max_count {
                 break;
             }
 
-            let (idx, entry) = item?;
+            let (idx, entry) = item.map_err(conv_sled_err)?;
             entries.push((idx, entry));
         }
 
@@ -42,22 +44,23 @@ impl L1ChunkedEnvelopeDatabase for L1ChunkedEnvelopeDBSled {
     fn get_next_chunked_envelope_idx(&self) -> DbResult<u64> {
         Ok(self
             .entry_tree
-            .last()?
+            .last()
+            .map_err(conv_sled_err)?
             .map(first)
             .map(|x| x + 1)
             .unwrap_or(0))
     }
 
     fn del_chunked_envelope_entry(&self, idx: u64) -> DbResult<bool> {
-        let exists = self.entry_tree.contains_key(&idx)?;
+        let exists = self.entry_tree.contains_key(&idx).map_err(conv_sled_err)?;
         if exists {
-            self.entry_tree.remove(&idx)?;
+            self.entry_tree.remove(&idx).map_err(conv_sled_err)?;
         }
         Ok(exists)
     }
 
     fn del_chunked_envelope_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
-        let last_idx = self.entry_tree.last()?.map(first);
+        let last_idx = self.entry_tree.last().map_err(conv_sled_err)?.map(first);
         let Some(last_idx) = last_idx else {
             return Ok(Vec::new());
         };

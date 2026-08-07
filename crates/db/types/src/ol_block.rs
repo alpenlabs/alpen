@@ -2,7 +2,7 @@
 
 // TODO(trey): replace OLBlock to a versionable wrapper
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId, Slot};

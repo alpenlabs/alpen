@@ -7,12 +7,13 @@ use typed_sled::error::Error;
 use typed_sled::transaction::{Backoff, ConstantBackoff, SledTransactional};
 
 use crate::instrumentation::components;
+use crate::utils::conv_sled_err;
 
 /// Flattens a `TransactionError<typed_sled::Error>` into a `DbError`,
-/// preserving aborted `DbError` variants via the `From<Error>` impl.
+/// preserving aborted `DbError` variants via [`conv_sled_err`].
 fn tx_error_to_db_error(err: TransactionError<Error>) -> DbError {
     match err {
-        TransactionError::Abort(e) => DbError::from(e),
+        TransactionError::Abort(e) => conv_sled_err(e),
         TransactionError::Storage(e) => DbError::Other(format!("sled storage: {e:?}")),
     }
 }

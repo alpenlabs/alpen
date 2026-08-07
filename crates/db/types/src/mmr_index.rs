@@ -5,8 +5,10 @@
 // TODO(trey): reorganize everything here
 
 use std::collections::BTreeMap;
-use std::{fmt, io};
+use std::fmt;
 
+use serde::{Deserialize, Serialize};
+use strata_codec::{decode_buf_exact, encode_to_vec, Codec, CodecError, Decoder, Encoder};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_identifiers::{AccountId, Hash};
@@ -36,16 +38,53 @@ pub enum MmrId {
     L1BlockRefs,
 }
 
+/// Tag byte prefixing an encoded [`MmrId::Asm`].
+const MMR_ID_TAG_ASM: u8 = 0x00;
+
+/// Tag byte prefixing an encoded [`MmrId::SnarkMsgInbox`], followed by its account id.
+const MMR_ID_TAG_SNARK_MSG_INBOX: u8 = 0x01;
+
+/// Tag byte prefixing an encoded [`MmrId::L1BlockRefs`].
+const MMR_ID_TAG_L1_BLOCK_REFS: u8 = 0x02;
+
 impl MmrId {
     /// Serializes `MmrId` to bytes for use as a database key.
     pub fn to_bytes(&self) -> Vec<u8> {
-        // TODO(trey): implement this
-        unimplemented!()
+        encode_to_vec(self).expect("db: MMR id encoding is infallible")
     }
 
     /// Deserializes an [`MmrId`] from its database key bytes.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, io::Error> {
-        Self::try_from_slice(bytes)
+    ///
+    /// Rejects unknown tag bytes and inputs whose length does not match the tag.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CodecError> {
+        decode_buf_exact(bytes)
+    }
+}
+
+/// Encodes as a tag byte optionally followed by the variant's scope.
+///
+/// The layout is `[0x00]` for [`MmrId::Asm`], `[0x01] ‖ account_id(32)` for
+/// [`MmrId::SnarkMsgInbox`], and `[0x02]` for [`MmrId::L1BlockRefs`]. Written by hand because
+/// `strata-codec` derive has no enum support.
+impl Codec for MmrId {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        match self {
+            Self::Asm => MMR_ID_TAG_ASM.encode(enc),
+            Self::SnarkMsgInbox(account_id) => {
+                MMR_ID_TAG_SNARK_MSG_INBOX.encode(enc)?;
+                account_id.encode(enc)
+            }
+            Self::L1BlockRefs => MMR_ID_TAG_L1_BLOCK_REFS.encode(enc),
+        }
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        match u8::decode(dec)? {
+            MMR_ID_TAG_ASM => Ok(Self::Asm),
+            MMR_ID_TAG_SNARK_MSG_INBOX => Ok(Self::SnarkMsgInbox(AccountId::decode(dec)?)),
+            MMR_ID_TAG_L1_BLOCK_REFS => Ok(Self::L1BlockRefs),
+            _ => Err(CodecError::InvalidVariant("MmrId")),
+        }
     }
 }
 
@@ -435,6 +474,18 @@ mod tests {
     #[test]
     fn mmr_id_from_bytes_rejects_invalid_input() {
         assert!(MmrId::from_bytes(&[0xff]).is_err());
+    }
+
+    /// Pins the on-disk key layout, which must stay byte-identical to the borsh encoding these
+    /// keys were originally written with.
+    #[test]
+    fn mmr_id_byte_layout_is_stable() {
+        assert_eq!(MmrId::Asm.to_bytes(), vec![0x00]);
+        assert_eq!(MmrId::L1BlockRefs.to_bytes(), vec![0x02]);
+        assert_eq!(
+            MmrId::SnarkMsgInbox(AccountId::new([0x42; 32])).to_bytes(),
+            [vec![0x01], vec![0x42; 32]].concat()
+        );
     }
 
     // NOTE: `NodePos`/`LeafPos` position math (parent/sibling/children/etc.) is
