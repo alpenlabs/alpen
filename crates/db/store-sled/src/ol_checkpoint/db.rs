@@ -176,6 +176,20 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         Ok(max_commitment)
     }
 
+    fn get_checkpoint_payload_commitments_from_epoch(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        let mut commitments = Vec::new();
+        for item in self.payload_tree.iter() {
+            let (commitment, _) = item?;
+            if commitment.epoch() >= start_epoch {
+                commitments.push(commitment);
+            }
+        }
+        Ok(commitments)
+    }
+
     fn del_checkpoint_payload_entry(&self, epoch: EpochCommitment) -> DbResult<bool> {
         let epoch_num = epoch.epoch();
         self.config.with_retry(

@@ -231,19 +231,23 @@ fn checkpoint_commitments_from_epoch(
     first_unaccepted_epoch: Epoch,
 ) -> Result<Vec<EpochCommitment>> {
     let storage = nodectx.storage();
+    let mut commitments = storage
+        .db()
+        .ol_checkpoint_db()
+        .get_checkpoint_payload_commitments_from_epoch(first_unaccepted_epoch)
+        .context("read unaccepted checkpoint payload commitments")?;
     let Some(last_summarized_epoch) = storage
         .ol_checkpoint()
         .get_last_summarized_epoch_blocking()
         .context("read last summarized checkpoint epoch")?
     else {
-        return Ok(Vec::new());
+        return Ok(commitments);
     };
 
     if first_unaccepted_epoch > last_summarized_epoch {
-        return Ok(Vec::new());
+        return Ok(commitments);
     }
 
-    let mut commitments = Vec::new();
     for epoch in first_unaccepted_epoch..=last_summarized_epoch {
         let epoch_commitments = storage
             .ol_checkpoint()
