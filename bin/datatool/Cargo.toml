@@ -27,12 +27,7 @@ strata-ol-genesis.workspace = true
 strata-ol-params.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
-strata-proofimpl-alpen-acct.workspace = true
-strata-proofimpl-checkpoint.workspace = true
-strata-proofimpl-predicate-keys = { workspace = true, optional = true }
 strata-snark-acct-runtime.workspace = true
-
-strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
 
 alloy-primitives.workspace = true
 anyhow.workspace = true
@@ -48,14 +43,9 @@ toml.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 tempfile.workspace = true
 
 [features]
 default = ["btc-client"]
 btc-client = ["dep:bitcoind-async-client", "dep:tokio"]
-sp1-builder = [
-  "strata-sp1-guest-builder/sp1-dev",
-  "dep:strata-proofimpl-predicate-keys",
-  "strata-proofimpl-predicate-keys/sp1",
-]
-sp1-docker-builder = ["sp1-builder", "strata-sp1-guest-builder/docker-build"]
