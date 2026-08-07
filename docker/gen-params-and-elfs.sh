@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds strata-datatool (and optionally SP1 ELFs), waits for bitcoin,
+# Builds strata-datatool and SP1 guest artifacts, waits for bitcoin,
 # validates params, and runs init-network.sh to generate keys + params.
 #
 # Called by `just docker-seq-up` before starting the compose stack.
@@ -21,6 +21,7 @@ fi
 
 OUTPUT_DIR="${SCRIPT_DIR}/configs/generated"
 ELF_DIR="${SCRIPT_DIR}/elfs"
+PREDICATE_DIR="${SCRIPT_DIR}/predicates/sp1"
 DATATOOL_BIN="${REPO_ROOT}/target/release/strata-datatool"
 
 # This script runs on the host, so replace docker container hostname with localhost.
@@ -82,20 +83,23 @@ validate_params() {
     fi
 }
 
-# ---- Build datatool (and ELFs if DATATOOL_CARGO_FEATURES is set) ----
+# ---- Build datatool and SP1 guest artifacts ----
 
 echo "building strata-datatool (fast if unchanged)..."
 cd "${REPO_ROOT}"
-cargo build --locked --release --bin strata-datatool \
-    ${DATATOOL_CARGO_FEATURES:+--features "$DATATOOL_CARGO_FEATURES"}
+cargo build --locked --release --bin strata-datatool
 
-# ---- Export SP1 ELFs if built ----
+echo "building SP1 guest artifacts (fast if unchanged)..."
+cargo build --locked --release -p strata-sp1-guest-builder --features sp1-dev
+
+# ---- Export SP1 artifacts ----
 
 mkdir -p "${ELF_DIR}"
-if [ -n "${DATATOOL_CARGO_FEATURES:-}" ]; then
-    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.elf "${ELF_DIR}/"
-    echo "exported SP1 ELFs to ${ELF_DIR}/"
-fi
+mkdir -p "${PREDICATE_DIR}"
+cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.elf "${ELF_DIR}/"
+cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.predicate "${PREDICATE_DIR}/"
+echo "exported SP1 ELFs to ${ELF_DIR}/"
+echo "exported SP1 predicates to ${PREDICATE_DIR}/"
 
 # ---- Wait for bitcoin, validate params, generate ----
 
@@ -103,5 +107,6 @@ wait_for_bitcoin
 validate_params
 
 export OUTPUT_DIR
+export CHECKPOINT_PREDICATE_FILE="${PREDICATE_DIR}/guest-checkpoint.predicate"
 
 "${SCRIPT_DIR}/init-network.sh" --sequencer "${DATATOOL_BIN}"
