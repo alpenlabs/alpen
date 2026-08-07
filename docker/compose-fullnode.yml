@@ -3,7 +3,7 @@ services:
     platform: linux/amd64
     build:
       context: ..
-      dockerfile: docker/alpen-client/Dockerfile.local
+      dockerfile: docker/alpen-client/Dockerfile
     image: ${ALPEN_IMAGE:-alpen-client:latest}
     environment:
       RUST_LOG: ${RUST_LOG:-info,alpen_gossip=info}
