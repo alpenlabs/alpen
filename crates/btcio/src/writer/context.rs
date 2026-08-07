@@ -3,9 +3,13 @@ use std::{fmt::Debug, sync::Arc};
 use bitcoin::{secp256k1::XOnlyPublicKey, Address};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_config::btcio::WriterConfig;
+use strata_csm_types::L1Payload;
 use strata_status::StatusChannel;
 
-use crate::BtcioParams;
+use crate::{
+    broadcaster::{AllowAllPublishPolicy, PublishDecision, PublishPolicy},
+    BtcioParams,
+};
 
 /// How the writer should authenticate the next envelope transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,6 +64,8 @@ pub struct WriterContext<R: Reader + Signer + Wallet> {
 
     /// Source for the current SPS-51 envelope authentication mode.
     signing_mode_provider: Arc<dyn EnvelopeSigningModeProvider>,
+
+    publish_policy: Arc<dyn PublishPolicy>,
 }
 
 impl<R: Reader + Signer + Wallet> WriterContext<R> {
@@ -79,6 +85,7 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
             signing_mode_provider: Arc::new(StaticEnvelopeSigningModeProvider::new(
                 EnvelopeSigningMode::InProcess,
             )),
+            publish_policy: Arc::new(AllowAllPublishPolicy),
         }
     }
 
@@ -104,8 +111,18 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
         self
     }
 
+    /// Sets the policy evaluated before a payload's commit/reveal pair is queued.
+    pub fn with_publish_policy(mut self, policy: Arc<dyn PublishPolicy>) -> Self {
+        self.publish_policy = policy;
+        self
+    }
+
     /// Returns the current envelope signing mode.
     pub fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
         self.signing_mode_provider.signing_mode()
+    }
+
+    pub fn payload_publish_decision(&self, payload: &L1Payload) -> PublishDecision {
+        self.publish_policy.decide_payload(payload)
     }
 }

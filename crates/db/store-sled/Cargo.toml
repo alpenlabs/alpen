@@ -6,8 +6,8 @@ edition = "2024"
 [dependencies]
 ssz.workspace = true
 ssz_derive.workspace = true
-strata-asm-common.workspace = true
 strata-asm-checkpoint-types.workspace = true
+strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-csm-types.workspace = true
@@ -32,9 +32,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-strata-asm-checkpoint-types = { workspace = true, features = [
-  "test-utils",
-] }
+strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
 strata-db-tests.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }

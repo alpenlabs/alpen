@@ -44,6 +44,7 @@ pub(crate) fn get_broadcaster_summary(
     let mut published_count = 0;
     let mut confirmed_count = 0;
     let mut finalized_count = 0;
+    let mut abandoned_count = 0;
     let mut invalid_inputs_count = 0;
 
     // Get the next index to determine the range
@@ -64,6 +65,7 @@ pub(crate) fn get_broadcaster_summary(
                 L1TxStatus::Confirmed { .. } => confirmed_count += 1,
                 L1TxStatus::Finalized { .. } => finalized_count += 1,
                 L1TxStatus::InvalidInputs => invalid_inputs_count += 1,
+                L1TxStatus::Abandoned => abandoned_count += 1,
             }
         }
     }
@@ -74,6 +76,7 @@ pub(crate) fn get_broadcaster_summary(
         published_count,
         confirmed_count,
         finalized_count,
+        abandoned_count,
         invalid_inputs_count,
     };
 

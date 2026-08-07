@@ -856,13 +856,18 @@ pub fn test_del_local_checkpoint_payload_entries_preserves_l1_observations(
             .expect("get unsigned before local cleanup"),
         Some(Epoch::from(11u32))
     );
+    let mut payload_commitments = db
+        .get_checkpoint_payload_commitments_from_epoch(Epoch::from(10u32))
+        .expect("list local payloads without epoch summaries");
+    payload_commitments.sort();
+    let mut expected = vec![observed_key, unsigned_key];
+    expected.sort();
+    assert_eq!(payload_commitments, expected);
 
     let mut deleted = db
         .del_local_checkpoint_payload_entries_from_epoch(Epoch::from(10u32))
         .expect("delete local payloads");
     deleted.sort();
-    let mut expected = vec![observed_key, unsigned_key];
-    expected.sort();
     assert_eq!(deleted, expected);
 
     assert!(db

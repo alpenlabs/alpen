@@ -4,7 +4,10 @@ use tracing::*;
 
 use super::{
     error::{BroadcasterError, BroadcasterResult},
-    io::{BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo, TxLookupOutcome},
+    io::{
+        BroadcasterIoContext, PublishDecision, PublishTxOutcome, TxConfirmationInfo,
+        TxLookupOutcome,
+    },
     state::{BroadcasterState, IndexedEntry},
 };
 use crate::BtcioParams;
@@ -65,7 +68,7 @@ where
             .await
             .map(Some),
         L1TxStatus::Finalized { .. } => Ok(None),
-        L1TxStatus::InvalidInputs => Ok(None),
+        L1TxStatus::InvalidInputs | L1TxStatus::Abandoned => Ok(None),
     };
     if let Ok(ref updated_status) = result {
         debug!(?updated_status);
@@ -195,6 +198,11 @@ where
     let output_count = tx.output.len();
 
     async {
+        match io.publish_decision(&tx)? {
+            PublishDecision::Publish => {}
+            PublishDecision::Defer => return Ok(L1TxStatus::Unpublished),
+            PublishDecision::Abandon => return Ok(L1TxStatus::Abandoned),
+        }
         if tx.input.is_empty() {
             error!("tx has no inputs, excluding from broadcast");
             return Ok(L1TxStatus::InvalidInputs);
@@ -290,7 +298,14 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::{collections::BTreeMap, future::Future};
+    use std::{
+        collections::BTreeMap,
+        future::Future,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    };
 
     use bitcoin::{Transaction, Txid};
     use proptest::prelude::*;
@@ -332,6 +347,8 @@ mod test {
         entries: BTreeMap<u64, L1TxEntry>,
         tx_lookup: BTreeMap<Txid, MockTxLookupResult>,
         broadcast_results: BTreeMap<Txid, MockBroadcastResult>,
+        publish_decision: PublishDecision,
+        broadcast_count: Arc<AtomicUsize>,
     }
 
     impl MockIoContext {
@@ -344,9 +361,18 @@ mod test {
             self.broadcast_results.insert(txid, result);
             self
         }
+
+        fn with_publish_decision(mut self, decision: PublishDecision) -> Self {
+            self.publish_decision = decision;
+            self
+        }
     }
 
     impl BroadcasterIoContext for MockIoContext {
+        fn publish_decision(&self, _: &Transaction) -> BroadcasterResult<PublishDecision> {
+            Ok(self.publish_decision)
+        }
+
         async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
             Ok(self.next_idx)
         }
@@ -382,6 +408,7 @@ mod test {
             &'a self,
             tx: &'a Transaction,
         ) -> BroadcasterResult<PublishTxOutcome> {
+            self.broadcast_count.fetch_add(1, Ordering::SeqCst);
             let txid = tx.compute_txid();
             let result = self
                 .broadcast_results
@@ -412,6 +439,23 @@ mod test {
         let entry = gen_l1_tx_entry_with_status(status);
         let txid = entry.try_to_tx().unwrap().compute_txid();
         (entry, txid)
+    }
+
+    #[tokio::test]
+    async fn policy_can_abandon_or_defer_without_broadcasting() {
+        for (decision, expected) in [
+            (PublishDecision::Abandon, L1TxStatus::Abandoned),
+            (PublishDecision::Defer, L1TxStatus::Unpublished),
+        ] {
+            let (entry, txid) = entry_with_txid(L1TxStatus::Unpublished);
+            let io = MockIoContext::default().with_publish_decision(decision);
+            let status = process_tx_entry(&io, &entry, &txid, &get_test_btcio_params())
+                .await
+                .expect("policy decision succeeds");
+
+            assert_eq!(status, Some(expected));
+            assert_eq!(io.broadcast_count.load(Ordering::SeqCst), 0);
+        }
     }
 
     fn confirmation_info(

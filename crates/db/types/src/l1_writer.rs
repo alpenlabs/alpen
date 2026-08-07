@@ -150,6 +150,9 @@ pub enum L1BundleStatus {
     /// The transactions need to be resigned.
     /// This could be due to transactions input UTXOs already being spent.
     NeedsResign,
+
+    /// This payload is intentionally not published and must not be retried.
+    Abandoned,
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
@@ -191,6 +194,17 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
         intent_entry: IntentEntry,
         payloadentry: BundledPayloadEntry,
     ) -> DbResult<u64>;
+
+    /// Appends a replacement payload for an abandoned bundled intent.
+    ///
+    /// Returns the new payload index when the intent still points to the specified abandoned
+    /// payload, or [`None`] when it has changed state.
+    fn requeue_abandoned_intent(
+        &self,
+        intent_id: Buf32,
+        abandoned_payload_idx: u64,
+        payloadentry: BundledPayloadEntry,
+    ) -> DbResult<Option<u64>>;
 
     /// Get a [`IntentEntry`] by its hash
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>>;
