@@ -58,8 +58,7 @@ FROM debian:13-slim AS runtime
 
 ENV APP_HOME=/app \
     HOME=/app \
-    RUST_LOG=info \
-    ELF_BASE_PATH=/app/elfs/sp1
+    RUST_LOG=info
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates libssl3 curl jq && \
