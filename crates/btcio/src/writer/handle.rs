@@ -217,6 +217,10 @@ mod test {
         let next = determine_payload_next_status(&commit_status, &reveal_status);
         assert_eq!(next, L1BundleStatus::NeedsResign);
 
+        // A deliberate cancellation is terminal: it must not trigger a resign.
+        let next = determine_payload_next_status(&L1TxStatus::Published, &L1TxStatus::Abandoned);
+        assert_eq!(next, L1BundleStatus::Abandoned);
+
         // When reveal has invalid inputs but commit is confirmed. I doubt this would happen in
         // practice for our case.
         // Then the payload status should be NeedsResign i.e. the payload should be signed again and

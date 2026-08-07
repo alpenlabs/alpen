@@ -263,7 +263,7 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 }
 
                 // If finalized, nothing to do, move on to process next entry
-                L1BundleStatus::Finalized => {
+                L1BundleStatus::Finalized | L1BundleStatus::Abandoned => {
                     state.curr_payloadidx += 1;
                 }
 
@@ -520,7 +520,10 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     .put_payload_entry(self.curr_payloadidx, updated_entry)
                     .await?;
 
-                if new_status == L1BundleStatus::Finalized {
+                if matches!(
+                    new_status,
+                    L1BundleStatus::Finalized | L1BundleStatus::Abandoned
+                ) {
                     self.curr_payloadidx += 1;
                 }
             }
@@ -564,6 +567,7 @@ pub(crate) fn determine_payload_next_status(
     reveal_status: &L1TxStatus,
 ) -> L1BundleStatus {
     match (&commit_status, &reveal_status) {
+        (_, L1TxStatus::Abandoned) | (L1TxStatus::Abandoned, _) => L1BundleStatus::Abandoned,
         // If reveal is finalized, both are finalized
         (_, L1TxStatus::Finalized { .. }) => L1BundleStatus::Finalized,
         // If reveal is confirmed, both are confirmed

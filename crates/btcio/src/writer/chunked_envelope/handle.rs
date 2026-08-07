@@ -250,6 +250,7 @@ fn format_tx_status(txid: L1TxId, status: &L1TxStatus) -> String {
         L1TxStatus::Unpublished => format!("{txid:?}:unpublished"),
         L1TxStatus::Published => format!("{txid:?}:published"),
         L1TxStatus::InvalidInputs => format!("{txid:?}:invalid_inputs"),
+        L1TxStatus::Abandoned => format!("{txid:?}:abandoned"),
         L1TxStatus::Confirmed {
             confirmations,
             block_hash,
@@ -705,6 +706,9 @@ async fn check_commit_and_enqueue_reveals(
             return Ok(ChunkedEnvelopeStatus::Unpublished);
         }
         L1TxStatus::Published | L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => {}
+        L1TxStatus::Abandoned => {
+            unreachable!("checkpoint-only broadcast policy cannot abandon chunked envelopes")
+        }
     }
 
     debug!(
@@ -735,6 +739,9 @@ fn reveal_enqueue_is_policy_safe(
                 .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
             let package_vsize = commit_tx.vsize() + reveal_tx.vsize();
             Ok(package_vsize < DEFAULT_DESCENDANT_SIZE_LIMIT_VBYTES)
+        }
+        L1TxStatus::Abandoned => {
+            unreachable!("checkpoint-only broadcast policy cannot abandon chunked envelopes")
         }
     }
 }
@@ -922,6 +929,9 @@ fn progress_ordinal(s: &L1TxStatus) -> u8 {
         L1TxStatus::InvalidInputs => {
             unreachable!("InvalidInputs is handled before aggregation")
         }
+        L1TxStatus::Abandoned => {
+            unreachable!("checkpoint-only broadcast policy cannot abandon chunked envelopes")
+        }
     }
 }
 
@@ -947,6 +957,9 @@ fn to_envelope_status(s: &L1TxStatus) -> ChunkedEnvelopeStatus {
         L1TxStatus::Finalized { .. } => ChunkedEnvelopeStatus::Finalized,
         L1TxStatus::InvalidInputs => {
             unreachable!("InvalidInputs is handled before aggregation")
+        }
+        L1TxStatus::Abandoned => {
+            unreachable!("checkpoint-only broadcast policy cannot abandon chunked envelopes")
         }
     }
 }

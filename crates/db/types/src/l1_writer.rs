@@ -150,6 +150,9 @@ pub enum L1BundleStatus {
     /// The transactions need to be resigned.
     /// This could be due to transactions input UTXOs already being spent.
     NeedsResign,
+
+    /// This payload is intentionally not published and must not be retried.
+    Abandoned,
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the

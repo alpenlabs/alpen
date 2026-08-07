@@ -94,6 +94,9 @@ pub enum L1TxStatus {
 
     /// The transaction is not included in L1 because it's inputs were invalid
     InvalidInputs,
+
+    /// The transaction is intentionally not broadcast and must not be retried.
+    Abandoned,
 }
 
 impl fmt::Display for L1TxStatus {
@@ -122,6 +125,7 @@ impl fmt::Display for L1TxStatus {
                 )
             }
             Self::InvalidInputs => f.write_str("invalid_inputs"),
+            Self::Abandoned => f.write_str("abandoned"),
         }
     }
 }
