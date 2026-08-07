@@ -10,7 +10,6 @@ use strata_btc_verification as _;
 mod args;
 #[cfg(feature = "btc-client")]
 mod btc_client;
-mod checkpoint_predicate;
 mod cmd;
 mod util;
 
