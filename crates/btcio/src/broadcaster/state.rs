@@ -165,7 +165,11 @@ mod test {
         ops: Arc<BroadcastDbOps>,
         client: TestBitcoinClient,
     ) -> BroadcasterIo<TestBitcoinClient> {
-        BroadcasterIo::new(Arc::new(client), ops)
+        BroadcasterIo::new(
+            Arc::new(client),
+            ops,
+            Arc::new(crate::broadcaster::AllowAllPublishPolicy),
+        )
     }
 
     async fn populate_broadcast_db(ops: Arc<BroadcastDbOps>) -> Vec<(u64, L1TxEntry)> {

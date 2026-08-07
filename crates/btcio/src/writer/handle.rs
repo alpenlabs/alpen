@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_csm_types::{PayloadDest, PayloadIntent};
-use strata_db_types::l1_writer::{IntentEntry, L1BundleStatus};
+use strata_db_types::l1_writer::{BundledPayloadEntry, IntentEntry, IntentStatus, L1BundleStatus};
 use strata_primitives::buf::Buf32;
 use strata_storage::ops::writer::EnvelopeDataOps;
 use tokio::sync::mpsc::Sender;
@@ -77,8 +77,9 @@ impl EnvelopeHandle {
         debug!(commitment = %id, "Received intent for processing");
 
         // Check if it is duplicate
-        if self.ops.get_intent_by_id_async(id).await?.is_some() {
+        if let Some(existing) = self.ops.get_intent_by_id_async(id).await? {
             warn!(commitment = %id, "Received duplicate intent");
+            self.requeue_if_abandoned_async(id, &existing).await?;
             let next_idx = self.ops.get_next_intent_idx_async().await?;
             return self.find_intent_idx_in_range(id, 0, next_idx).await;
         }
@@ -93,6 +94,29 @@ impl EnvelopeHandle {
         }
 
         Ok(Some(intent_idx))
+    }
+
+    async fn requeue_if_abandoned_async(
+        &self,
+        id: Buf32,
+        intent: &IntentEntry,
+    ) -> anyhow::Result<()> {
+        let IntentStatus::Bundled(payload_idx) = intent.status else {
+            return Ok(());
+        };
+        let Some(payload) = self.ops.get_payload_entry_by_idx_async(payload_idx).await? else {
+            return Ok(());
+        };
+        if payload.status == L1BundleStatus::Abandoned {
+            self.ops
+                .requeue_abandoned_intent_async(
+                    id,
+                    payload_idx,
+                    BundledPayloadEntry::new_unsigned(intent.payload().clone()),
+                )
+                .await?;
+        }
+        Ok(())
     }
 
     async fn find_intent_idx_in_range(
@@ -134,9 +158,12 @@ pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow
 
 #[cfg(test)]
 mod test {
+    use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
     use strata_db_types::{l1_broadcast::L1TxStatus, l1_writer::BundledPayloadEntry};
+    use strata_l1_txfmt::TagData;
     use strata_primitives::buf::Buf32;
     use strata_test_utils::ArbitraryGenerator;
+    use tokio::sync::mpsc;
 
     use super::*;
     use crate::writer::{test_utils::get_envelope_ops, watcher::determine_payload_next_status};
@@ -151,6 +178,62 @@ mod test {
         let idx = get_next_payloadidx_to_watch(&iops).unwrap();
 
         assert_eq!(idx, 0);
+    }
+
+    #[tokio::test]
+    async fn duplicate_abandoned_intent_requeues_at_the_payload_tail() {
+        let ops = get_envelope_ops();
+        let payload = L1Payload::new(
+            vec![vec![1, 2, 3]],
+            TagData::new(1, 1, vec![]).expect("test tag is valid"),
+        )
+        .expect("test payload is valid");
+        let intent = PayloadIntent::new(PayloadDest::L1, Buf32::from([1; 32]), payload.clone());
+        let intent_id = *intent.commitment();
+        let mut abandoned = BundledPayloadEntry::new_unsigned(payload);
+        abandoned.status = L1BundleStatus::Abandoned;
+        ops.put_payload_entry_async(0, abandoned)
+            .await
+            .expect("test: store abandoned payload");
+        let intent_idx = ops
+            .put_intent_entry_async(intent_id, IntentEntry::new_bundled(intent.clone(), 0))
+            .await
+            .expect("test: store intent");
+
+        let (intent_tx, _intent_rx) = mpsc::channel(1);
+        let handle = EnvelopeHandle::new(ops.clone(), intent_tx);
+        assert_eq!(
+            handle
+                .submit_intent_async_with_idx(intent)
+                .await
+                .expect("test: submit replacement"),
+            Some(intent_idx)
+        );
+
+        assert_eq!(
+            ops.get_intent_by_idx_async(intent_idx)
+                .await
+                .expect("test: get intent")
+                .expect("test: intent exists")
+                .status,
+            IntentStatus::Bundled(1)
+        );
+        assert_eq!(
+            ops.get_payload_entry_by_idx_async(0)
+                .await
+                .expect("test: get abandoned payload")
+                .expect("test: abandoned payload exists")
+                .status,
+            L1BundleStatus::Abandoned
+        );
+        assert_eq!(
+            ops.get_payload_entry_by_idx_async(1)
+                .await
+                .expect("test: get replacement payload")
+                .expect("test: replacement payload exists")
+                .status,
+            L1BundleStatus::Unsigned
+        );
     }
 
     #[test]
