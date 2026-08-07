@@ -7,10 +7,7 @@ use bitcoin::Network;
 use rand_core::OsRng;
 use strata_primitives::L1Height;
 
-use crate::{
-    acct_predicate::AcctPredicateOverride, checkpoint_predicate::CheckpointPredicateOverride,
-    util::resolve_network,
-};
+use crate::util::resolve_network;
 
 /// Args.
 #[derive(FromArgs)]
@@ -54,7 +51,6 @@ pub(crate) enum Subcommand {
     SeqPubkey(SubcSeqPubkey),
     SeqPrivkey(SubcSeqPrivkey),
     OpPubkey(SubcOpPubkey),
-    CheckpointPredicate(SubcCheckpointPredicate),
     AsmParams(SubcAsmParams),
     OlParams(SubcOlParams),
     EeParams(SubcEeParams),
@@ -124,21 +120,6 @@ pub(crate) struct SubcSeqPrivkey {
 pub(crate) struct SubcOpPubkey {
     #[argh(option, description = "reads key from specified file", short = 'f')]
     pub(crate) key_file: PathBuf,
-}
-
-/// Print the resolved checkpoint predicate (e.g. the SP1 checkpoint VK).
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(
-    subcommand,
-    name = "gen-checkpoint-predicate",
-    description = "prints the resolved checkpoint predicate to stdout"
-)]
-pub(crate) struct SubcCheckpointPredicate {
-    #[argh(
-        option,
-        description = "checkpoint predicate type: 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test' (default: feature-gated)"
-    )]
-    pub(crate) checkpoint_predicate: Option<CheckpointPredicateOverride>,
 }
 
 /// Generate an ASM params file from inputs.
@@ -218,9 +199,9 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
-        description = "checkpoint predicate type: 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test' (default: feature-gated)"
+        description = "path to JSON string containing the checkpoint predicate metadata"
     )]
-    pub(crate) checkpoint_predicate: Option<CheckpointPredicateOverride>,
+    pub(crate) checkpoint_predicate_file: PathBuf,
 
     #[argh(option, description = "assignment duration in blocks (default 64)")]
     pub(crate) assignment_duration: Option<u16>,
@@ -280,9 +261,9 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "alpen snark account predicate type: 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test' (default: feature-gated)"
+        description = "path to JSON string containing the Alpen snark account predicate metadata"
     )]
-    pub(crate) alpen_predicate: Option<AcctPredicateOverride>,
+    pub(crate) alpen_predicate_file: PathBuf,
 
     #[argh(
         option,

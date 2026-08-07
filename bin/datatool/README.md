@@ -38,6 +38,7 @@ strata-datatool gen-ee-params \
 strata-datatool gen-ol-params \
     --l1-anchor-file l1-anchor.json \
     --ee-params ee-params.json \
+    --alpen-predicate-file provers/sp1/guest-alpen-acct/cache/guest-alpen-acct.predicate \
     -o ol-params.json
 
 # Generate the ASM params from the operator/sequencer pubkeys and the OL params.
@@ -47,6 +48,7 @@ strata-datatool gen-asm-params \
     -b <operator1-compressed-pubkey> \
     -b <operator2-compressed-pubkey> \
     --ol-params ol-params.json \
+    --checkpoint-predicate-file provers/sp1/guest-checkpoint/cache/guest-checkpoint.predicate \
     --safe-harbour-address <p2tr-bosd-descriptor> \
     --l1-anchor-file l1-anchor.json \
     -o asm-params.json \
@@ -99,26 +101,27 @@ which now drives both deposits and withdrawals.
 Alternatively, instead of passing `-f`, you can pass `-E` and define either
 `STRATA_SEQ_KEY` or `STRATA_OP_KEY` to pass the seed keys to the program.
 
-## Generating VerifyingKey
+## Generating Predicate Metadata
 
 Before proceeding, make sure that you have SP1 correctly set up by following the installation instructions provided [here](https://docs.succinct.xyz/docs/sp1/getting-started/install)
 
-The checkpoint verifying key is baked into the ASM checkpoint predicate. To ensure it is the correct verifying key, build the binary in release mode and confirm that SP1 is set up correctly by following its installation instructions.
-
-For production usage—since SP1 verification key generation is platform and workspace dependent—build the data tool in release mode with the sp1-docker-builder feature:
+Build the SP1 guest artifacts first. The build writes predicate metadata files
+for each guest, which consumers can use wherever they need the corresponding
+predicate.
 
 ```bash
-cargo build --bin strata-datatool -F "sp1-docker-builder" --release
+cargo build -p strata-sp1-guest-builder --features sp1-dev --release
 ```
 
-Because building the guest code in Docker can be time-consuming, you can generate the verification key locally for testing or development using:
+The guest builder writes predicate metadata next to the guest ELFs under
+`provers/sp1/guest-*/cache/`.
 
 ```bash
-cargo build --bin strata-datatool -F "sp1-builder" --release
-```
+strata-datatool gen-asm-params \
+    --checkpoint-predicate-file provers/sp1/guest-checkpoint/cache/guest-checkpoint.predicate \
+    ...
 
-Print the resolved checkpoint predicate (the SP1 verifying key under `sp1-builder`):
-
-```bash
-strata-datatool gen-checkpoint-predicate
+strata-datatool gen-ol-params \
+    --alpen-predicate-file provers/sp1/guest-alpen-acct/cache/guest-alpen-acct.predicate \
+    ...
 ```
