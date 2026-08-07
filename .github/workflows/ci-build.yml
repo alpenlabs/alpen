@@ -42,6 +42,10 @@ on:
         description: "Build strata-signer"
         type: boolean
         default: true
+      strata_datatool:
+        description: "Build strata-datatool"
+        type: boolean
+        default: true
       ref:
         description: "Git ref to build from (default: current branch)"
         required: false
@@ -103,10 +107,6 @@ jobs:
     permissions: {}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
-      # true only when a selected program consumes SP1 artifacts (strata).
-      # Lets build-sp1-artifacts skip itself entirely when the run builds only
-      # non-SP1 images (strata-checkpoint-sync, strata-signer).
-      needs_sp1: ${{ steps.set-matrix.outputs.needs_sp1 }}
     steps:
       - name: Set build matrix
         id: set-matrix
@@ -115,6 +115,7 @@ jobs:
           SEL_STRATA: ${{ inputs.strata }}
           SEL_CHECKPOINT_SYNC: ${{ inputs.strata_checkpoint_sync }}
           SEL_STRATA_SIGNER: ${{ inputs.strata_signer }}
+          SEL_STRATA_DATATOOL: ${{ inputs.strata_datatool }}
         run: |
           # New architecture images only — pushed to shared ECR account.
           #
@@ -131,9 +132,10 @@ jobs:
           PROGRAM_CONFIG='{
             "strata":                 {"public_repo":"strata"},
             "strata-checkpoint-sync": {"public_repo":"strata-checkpoint-sync","private":false},
-            "strata-signer":          {"public_repo":""}
+            "strata-signer":          {"public_repo":""},
+            "strata-datatool":        {"public_repo":""}
           }'
-          ALL='["strata","strata-checkpoint-sync","strata-signer"]'
+          ALL='["strata","strata-checkpoint-sync","strata-signer","strata-datatool"]'
 
           if [ "$EVENT" != "workflow_dispatch" ]; then
             # Scheduled / push builds every program.
@@ -145,6 +147,7 @@ jobs:
             if [ "$SEL_STRATA" = "true" ];          then SEL+=( '"strata"' ); fi
             if [ "$SEL_CHECKPOINT_SYNC" = "true" ]; then SEL+=( '"strata-checkpoint-sync"' ); fi
             if [ "$SEL_STRATA_SIGNER" = "true" ];   then SEL+=( '"strata-signer"' ); fi
+            if [ "$SEL_STRATA_DATATOOL" = "true" ]; then SEL+=( '"strata-datatool"' ); fi
             PROGRAMS="[$(IFS=,; echo "${SEL[*]}")]"
           fi
 
@@ -157,95 +160,13 @@ jobs:
           echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
           echo "Building: $PROGRAMS"
 
-          # Only strata consumes the SP1 artifacts (datatool + guest ELFs).
-          # If it is not selected, the SP1 build job is skipped.
-          NEEDS_SP1=$(jq -rn --argjson progs "$PROGRAMS" \
-            '($progs | any(. == "strata")) | tostring')
-          echo "needs_sp1=${NEEDS_SP1}" >> "$GITHUB_OUTPUT"
-          echo "needs_sp1: ${NEEDS_SP1}"
-
-  # ---------------------------------------------------------------------------
-  # Build SP1 artifacts (datatool + guest ELFs) — shared by all images
-  # ---------------------------------------------------------------------------
-  build-sp1-artifacts:
-    name: Build SP1 artifacts
-    # Depends on prepare so it can read needs_sp1; skips entirely when no
-    # selected program consumes SP1 artifacts (prepare already carries the
-    # check-new-commits gating).
-    needs: [prepare]
-    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.needs_sp1 == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      # Inline cleanup before checkout — the local composite action needs the
-      # repo to exist, but the repo is too large to clone without freeing space.
-      - name: Free up disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /usr/local/.ghcup \
-            /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" /usr/share/swift \
-            /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
-
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-          persist-credentials: false
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (pinned 2026-04-21)
-        with:
-          toolchain: stable
-
-      - name: Install protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install SP1 core runner override
-        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
-
-      - name: Install SP1 toolchain
-        run: |
-          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
-          ~/.sp1/bin/sp1up
-          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.sp1/bin:$PATH"
-          cargo prove --version
-
-      - name: Build strata-datatool + SP1 guest ELFs
-        run: |
-          cargo build --bin strata-datatool --features sp1-builder --release
-
-          mkdir -p artifacts/elfs/sp1
-          install -m 0755 target/release/strata-datatool artifacts/strata-datatool
-
-          # strata-sp1-guest-builder writes compiled ELFs to
-          # provers/sp1/guest-*/cache/*.elf.
-          cp -v provers/sp1/guest-checkpoint/cache/guest-checkpoint.elf \
-            artifacts/elfs/sp1/
-
-          ls -la artifacts/ artifacts/elfs/sp1/
-
-          # Echo VKs for human-readable build output.
-          CHECKPOINT_VK=$(./target/release/strata-datatool gen-checkpoint-predicate)
-          echo "Checkpoint VK (ci-build): ${CHECKPOINT_VK}"
-
-      - name: Upload SP1 artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: sp1-artifacts
-          path: artifacts/
-          retention-days: 1
-
   # ---------------------------------------------------------------------------
   # Build and push each program in parallel
   # ---------------------------------------------------------------------------
   build-and-push:
     name: "Build ${{ matrix.program }}"
-    needs: [prepare, build-sp1-artifacts]
-    # SP1 job may legitimately be skipped (non-SP1 programs only) — accept both.
-    if: always() && needs.prepare.result == 'success' && (needs.build-sp1-artifacts.result == 'success' || needs.build-sp1-artifacts.result == 'skipped')
+    needs: [prepare]
+    if: needs.prepare.result == 'success'
     runs-on: ubuntu-latest
     environment: prod
     permissions:
@@ -306,26 +227,6 @@ jobs:
         run: |
           aws ecr-public get-login-password --region us-east-1 \
             | docker login --username AWS --password-stdin public.ecr.aws
-
-      # --- Download pre-built SP1 artifacts from shared job --------------------
-      # Only the SP1-consuming programs need these; for others the SP1 job is
-      # skipped and no artifact exists to download.
-      - name: Download SP1 artifacts
-        if: matrix.program == 'strata'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: sp1-artifacts
-          path: sp1-artifacts/
-
-      - name: Stage SP1 artifacts for strata
-        if: matrix.program == 'strata'
-        run: |
-          mkdir -p docker/strata/artifacts/elfs/sp1
-          install -m 0755 sp1-artifacts/strata-datatool \
-            docker/strata/artifacts/strata-datatool
-          cp -v sp1-artifacts/elfs/sp1/guest-checkpoint.elf \
-            docker/strata/artifacts/elfs/sp1/
-          ls -la docker/strata/artifacts/ docker/strata/artifacts/elfs/sp1/
 
       # --- Build and push via Buildx ------------------------------------------
       - name: Build and push Docker image
@@ -388,31 +289,6 @@ jobs:
             -f "${DOCKERFILE_PATH}" .
 
           echo "Successfully pushed ${PROGRAM}:${SHORT_TAG} -> ${TAGS[*]}"
-
-      # --- Publish strata-datatool as its own image ---------------------------
-      # Reuses the binary already staged at docker/strata/artifacts/ for the
-      # strata image. Consumers can
-      # `docker run` this image directly instead of extracting the binary
-      # from the larger strata image.
-      - name: Build and push strata-datatool image
-        if: matrix.program == 'strata'
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
-          SHORT_TAG: ${{ steps.resolve.outputs.short_tag }}
-          COMMIT_SHA: ${{ steps.resolve.outputs.commit_sha }}
-        run: |
-          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}/strata-datatool:${SHORT_TAG}"
-
-          docker buildx build \
-            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --label "org.opencontainers.image.revision=${COMMIT_SHA}" \
-            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --push \
-            -t "${FULL_IMAGE}" \
-            -f docker/strata-datatool/Dockerfile .
-
-          echo "Successfully pushed: ${FULL_IMAGE}"
 
   # ---------------------------------------------------------------------------
   # Summary
