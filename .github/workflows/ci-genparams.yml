@@ -4,6 +4,10 @@
 # dynamic values (VKs, genesis L1 anchor, genesis_ol_blkid) are filled in by
 # datatool.
 #
+# TODO(STR-4204): move this workflow to the deployments repo. This PR does not
+# maintain or refactor this workflow; deployment params are release/deployment
+# artifacts, so that repo is their natural owner.
+#
 # Ref: STR-3635
 
 name: CI — Generate Params
