@@ -43,6 +43,7 @@ sp1 = [
 ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
+strata-asm-checkpoint-types.workspace = true
 strata-asm-params.workspace = true
 strata-asm-proto-checkpoint.workspace = true
 strata-asm-proto-checkpoint-txs = { workspace = true, optional = true }
@@ -63,6 +64,7 @@ strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
+strata-l1-txfmt.workspace = true
 strata-logging.workspace = true
 strata-metrics.workspace = true
 strata-node-context.workspace = true
@@ -114,6 +116,7 @@ zkaleido-sp1-host = { workspace = true, optional = true }
 proptest.workspace = true
 strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
 strata-btc-verification.workspace = true
+strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-l1-txfmt.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 strata-state.workspace = true

@@ -74,6 +74,12 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
         start_epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>>;
 
+    /// Delete a locally-built checkpoint payload entry while preserving any L1 observation.
+    ///
+    /// Returns true if it existed and was deleted. The signing entry for the same commitment is
+    /// also deleted.
+    fn del_local_checkpoint_payload_entry(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
     /// Delete locally-built checkpoint payload entries from the specified epoch onwards.
     ///
     /// Returns a vector of deleted epoch commitments. Signing entries for deleted

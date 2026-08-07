@@ -214,6 +214,14 @@ impl OLCheckpointManager {
             .del_checkpoint_payload_entries_from_epoch_blocking(start_epoch)
     }
 
+    /// Deletes a locally-built OL checkpoint payload entry while preserving any L1 observation.
+    pub fn del_local_checkpoint_payload_entry_blocking(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<bool> {
+        self.ops.del_local_checkpoint_payload_entry_blocking(epoch)
+    }
+
     /// Deletes locally-built OL checkpoint payload entries from the specified epoch onwards.
     pub async fn del_local_checkpoint_payload_entries_from_epoch_async(
         &self,

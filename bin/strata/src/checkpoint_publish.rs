@@ -1,79 +1,93 @@
 //! Checkpoint publication decisions derived from existing payload and ASM state.
 
-use anyhow::{Context, Result};
+use std::{fmt, sync::Arc};
+
+use bitcoin::Transaction;
 use strata_asm_checkpoint_types::CheckpointPayload;
-use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
-use strata_codec::decode_buf_exact;
-use strata_codec_utils::CodecSsz;
-use strata_csm_types::L1Payload;
+use strata_asm_common::{SectionStateExt, Subprotocol, TxInputRef};
+use strata_asm_proto_checkpoint::CheckpointSubprotocol;
+use strata_asm_proto_checkpoint_txs::{OL_STF_CHECKPOINT_TX_TAG, extract_checkpoint_from_envelope};
+use strata_btcio::broadcaster::{BroadcasterError, PublishDecision, PublishPolicy};
 use strata_identifiers::Epoch;
+use strata_l1_txfmt::{MagicBytes, ParseConfig};
+use strata_storage::NodeStorage;
 
-/// Returns whether a writer payload is a checkpoint already accepted by ASM.
-pub(crate) fn is_accepted_checkpoint_payload(
-    payload: &L1Payload,
-    verified_epoch: Epoch,
-) -> Result<bool> {
-    let checkpoint_tag = OL_STF_CHECKPOINT_TX_TAG.as_ref();
-    if payload.tag().subproto_id() != checkpoint_tag.subproto_id()
-        || payload.tag().tx_type() != checkpoint_tag.tx_type()
-        || payload.tag().aux_data() != checkpoint_tag.aux_data()
-    {
-        return Ok(false);
+fn is_accepted_checkpoint(checkpoint: &CheckpointPayload, verified_epoch: Epoch) -> bool {
+    checkpoint.new_tip().epoch <= verified_epoch
+}
+
+/// Strata's checkpoint-aware decision policy for the generic L1 broadcaster.
+pub(crate) struct CheckpointPublishPolicy {
+    storage: Arc<NodeStorage>,
+    magic_bytes: MagicBytes,
+}
+
+impl fmt::Debug for CheckpointPublishPolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CheckpointPublishPolicy")
+            .finish_non_exhaustive()
     }
+}
 
-    let encoded = payload.data().concat();
-    let checkpoint: CodecSsz<CheckpointPayload> =
-        decode_buf_exact(&encoded).context("decode checkpoint writer payload")?;
+impl CheckpointPublishPolicy {
+    pub(crate) fn new(storage: Arc<NodeStorage>, magic_bytes: MagicBytes) -> Self {
+        Self {
+            storage,
+            magic_bytes,
+        }
+    }
+}
 
-    Ok(checkpoint.into_inner().new_tip().epoch <= verified_epoch)
+impl PublishPolicy for CheckpointPublishPolicy {
+    fn decide(&self, tx: &Transaction) -> Result<PublishDecision, BroadcasterError> {
+        let Ok(tag) = ParseConfig::new(self.magic_bytes).try_parse_tx(tx) else {
+            return Ok(PublishDecision::Publish);
+        };
+        if tag.subproto_id() != OL_STF_CHECKPOINT_TX_TAG.subproto_id()
+            || tag.tx_type() != OL_STF_CHECKPOINT_TX_TAG.tx_type()
+            || tag.aux_data() != OL_STF_CHECKPOINT_TX_TAG.aux_data()
+        {
+            return Ok(PublishDecision::Publish);
+        }
+        let Ok(envelope) = extract_checkpoint_from_envelope(&TxInputRef::new(tx, tag)) else {
+            return Ok(PublishDecision::Publish);
+        };
+        let Some((_, asm_state)) = self
+            .storage
+            .fetch_canonical_asm_state_blocking()
+            .map_err(|err| BroadcasterError::Other(err.to_string()))?
+        else {
+            return Ok(PublishDecision::Publish);
+        };
+        let state = asm_state
+            .state()
+            .find_section(<CheckpointSubprotocol as Subprotocol>::ID)
+            .ok_or_else(|| BroadcasterError::Other("ASM checkpoint section is missing".into()))?
+            .try_to_state::<CheckpointSubprotocol>()
+            .map_err(|err| BroadcasterError::Other(err.to_string()))?;
+        Ok(
+            if is_accepted_checkpoint(&envelope.payload, state.verified_tip().epoch) {
+                PublishDecision::Abandon
+            } else {
+                PublishDecision::Publish
+            },
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use strata_asm_checkpoint_types::test_utils::create_test_checkpoint_payload;
-    use strata_codec::encode_to_vec;
-    use strata_l1_txfmt::TagData;
 
     use super::*;
 
-    fn checkpoint_writer_payload(epoch: u32) -> L1Payload {
-        let encoded = encode_to_vec(&CodecSsz::new(create_test_checkpoint_payload(epoch)))
-            .expect("encode checkpoint");
-        L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone())
-            .expect("checkpoint payload fits writer limit")
-    }
-
     #[test]
-    fn skips_checkpoint_at_or_below_verified_tip() {
+    fn only_abandons_checkpoints_at_or_below_verified_tip() {
+        let checkpoint = create_test_checkpoint_payload(14);
         assert!(
-            is_accepted_checkpoint_payload(&checkpoint_writer_payload(14), Epoch::from(14u32))
-                .expect("decode checkpoint")
-        );
-        assert!(
-            is_accepted_checkpoint_payload(&checkpoint_writer_payload(14), Epoch::from(28u32))
-                .expect("decode checkpoint")
-        );
-    }
-
-    #[test]
-    fn keeps_checkpoint_ahead_of_verified_tip() {
-        assert!(
-            !is_accepted_checkpoint_payload(&checkpoint_writer_payload(29), Epoch::from(28u32))
-                .expect("decode checkpoint")
-        );
-    }
-
-    #[test]
-    fn keeps_non_checkpoint_payload() {
-        let payload = L1Payload::new(
-            vec![vec![1, 2, 3]],
-            TagData::new(0, 0, vec![]).expect("valid tag"),
-        )
-        .expect("payload fits writer limit");
-
-        assert!(
-            !is_accepted_checkpoint_payload(&payload, Epoch::from(28u32))
-                .expect("non-checkpoint payload is not decoded")
+            is_accepted_checkpoint(&checkpoint, Epoch::from(14u32))
+                && is_accepted_checkpoint(&checkpoint, Epoch::from(28u32))
+                && !is_accepted_checkpoint(&checkpoint, Epoch::from(13u32))
         );
     }
 }

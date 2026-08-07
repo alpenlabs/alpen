@@ -249,6 +249,25 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         Ok(deleted_epochs)
     }
 
+    fn del_local_checkpoint_payload_entry(&self, epoch: EpochCommitment) -> DbResult<bool> {
+        let epoch_num = epoch.epoch();
+        self.config.with_retry(
+            (&self.payload_tree, &self.signing_tree, &self.unsigned_tree),
+            |(pt, st, ut)| {
+                if !pt.contains_key(&epoch)? {
+                    return Ok(false);
+                }
+                let had_signing = st.contains_key(&epoch)?;
+                pt.remove(&epoch)?;
+                st.remove(&epoch)?;
+                if !had_signing {
+                    ut.remove(&epoch_num)?;
+                }
+                Ok(true)
+            },
+        )
+    }
+
     fn del_local_checkpoint_payload_entries_from_epoch(
         &self,
         start_epoch: Epoch,
