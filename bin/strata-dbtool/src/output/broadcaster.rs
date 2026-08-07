@@ -37,6 +37,7 @@ impl Formattable for BroadcasterSummary {
             porcelain_field("published_count", self.published_count),
             porcelain_field("confirmed_count", self.confirmed_count),
             porcelain_field("finalized_count", self.finalized_count),
+            porcelain_field("abandoned_count", self.abandoned_count),
             porcelain_field("invalid_inputs_count", self.invalid_inputs_count),
         ]
         .join("\n")
