@@ -1,23 +1,46 @@
-# Minimal runtime image wrapping the strata-datatool binary.
-#
-# The binary is pre-built on the CI runner with `--features sp1-builder`
-# (see .github/workflows/ci-build.yml) and staged into
-# docker/strata/artifacts/ alongside the guest ELFs. This image is meant
-# to be consumed by downstream pipelines (deployments/generate-params.yml,
-# bridge, opnet, etc.) that need to invoke datatool without bundling an
-# SP1 toolchain or rebuilding from source.
-#
-# Example:
-#   docker run --rm \
-#     -v $(pwd):/out \
-#     strata-datatool:<sha> \
-#     -b signet \
-#     --bitcoin-rpc-url http://... --bitcoin-rpc-user ... --bitcoin-rpc-password ... \
-#     gen-asm-params --checkpoint-predicate sp1-groth16 \
-#       --l1-anchor-file /out/l1-anchor.json --ol-params /out/ol-params.json \
-#       -o /out/asm-params.json
+ARG RUST_VERSION=1.92
 
-FROM debian:13-slim
+FROM rust:${RUST_VERSION}-slim-trixie AS chef
+WORKDIR /app
+
+ENV CARGO_HOME=/usr/local/cargo \
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_INCREMENTAL=0 \
+    CARGO_TERM_COLOR=always
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential ca-certificates clang libclang-dev pkg-config libssl-dev protobuf-compiler libprotobuf-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN cargo install cargo-chef --locked
+
+FROM chef AS planner
+COPY rust-toolchain.toml ./
+RUN rustup toolchain install
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY rust-toolchain.toml ./
+RUN rustup toolchain install
+
+COPY --from=planner /app/recipe.json recipe.json
+
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=private,target=/app/target \
+    cargo chef cook --release --recipe-path recipe.json
+
+COPY . .
+
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=private,target=/app/target \
+    cargo build --locked --release --bin strata-datatool && \
+    install -m 0555 /app/target/release/strata-datatool /usr/local/bin/strata-datatool
+
+FROM debian:13-slim AS runtime
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates libssl3 curl jq && \
@@ -27,8 +50,7 @@ RUN useradd --system --create-home --home-dir /app --uid 10001 --shell /usr/sbin
 
 WORKDIR /app
 
-COPY docker/strata/artifacts/strata-datatool /usr/local/bin/strata-datatool
-RUN chmod 0555 /usr/local/bin/strata-datatool
+COPY --from=builder /usr/local/bin/strata-datatool /usr/local/bin/strata-datatool
 
 USER alpen
 
