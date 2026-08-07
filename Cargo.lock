@@ -16795,6 +16795,7 @@ dependencies = [
  "bincode",
  "cargo_metadata 0.19.2",
  "cfg-if",
+ "hex",
  "once_cell",
  "sha2",
  "sp1-helper",
