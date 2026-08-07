@@ -291,7 +291,10 @@ fn generate_elf_contents_and_vk_hash(program: &str) -> ([u32; 8], String, [u8; 3
     // Now, ensure cache validity
     let vk = ensure_cache_validity(program)
         .expect("Failed to ensure cache validity after building program");
-    (vk.hash_u32(), vk.bytes32(), vk_program_id(&vk))
+    let vk_hash_str = vk.bytes32();
+    let program_id = vk_program_id(&vk);
+    write_guest_predicate_metadata(program, &vk_hash_str, &program_id);
+    (vk.hash_u32(), vk_hash_str, program_id)
 }
 
 /// Computes the BN254 program ID (`[u8; 32]`) for a verifying key.
@@ -329,6 +332,34 @@ fn get_mock_elf_contents_and_vk_hash() -> ([u32; 8], String, [u8; 32]) {
         "0x0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
         [0u8; 32],
     )
+}
+
+/// Writes artifact metadata derived from a built guest's verifying key.
+///
+/// The datatool currently reads equivalent VK hashes from generated Rust
+/// constants. These files give future params-generation flows an explicit
+/// artifact boundary without changing current datatool behavior.
+#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+fn write_guest_predicate_metadata(program: &str, vk_hash_str: &str, program_id: &[u8; 32]) {
+    let cache_dir = Path::new(program).join("cache");
+    fs::create_dir_all(&cache_dir)
+        .unwrap_or_else(|e| panic!("failed to create cache dir for {program}: {e}"));
+
+    let vk_hash_path = cache_dir.join(format!("{program}.vk-hash"));
+    fs::write(&vk_hash_path, format!("{vk_hash_str}\n"))
+        .unwrap_or_else(|e| panic!("failed to write {}: {e}", vk_hash_path.display()));
+
+    let predicate = sp1_groth16_predicate_string(program_id);
+    let predicate_path = cache_dir.join(format!("{program}.predicate"));
+    fs::write(&predicate_path, format!("{predicate}\n"))
+        .unwrap_or_else(|e| panic!("failed to write {}: {e}", predicate_path.display()));
+}
+
+/// Renders the human-readable predicate key string for an SP1 Groth16 program ID.
+#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+fn sp1_groth16_predicate_string(program_id: &[u8; 32]) -> String {
+    let condition = compute_groth16_condition(program_id);
+    format!("Sp1Groth16:{}", hex::encode(condition))
 }
 
 /// Computes the Groth16 verifying key condition bytes for the given BN254
