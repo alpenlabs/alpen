@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use bitcoin::consensus::encode::serialize as btc_serialize;
+use bitcoin::{consensus::encode::serialize as btc_serialize, Amount};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_btc_types::{TxidExt, WtxidExt};
 use strata_db_types::{
@@ -47,6 +47,8 @@ pub(crate) struct SignedChunkedEnvelope {
     pub entry: ChunkedEnvelopeEntry,
     /// Wallet-signed commit tx entry, initially stored as unpublished.
     pub commit_tx_entry: L1TxEntry,
+    /// Exact absolute fee the commit tx pays, used to seed its fee-bump record.
+    pub commit_fee: Amount,
 }
 
 /// Builds and signs a chunked envelope's commit + N reveal transactions.
@@ -119,6 +121,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             network,
             fee_rate,
             BITCOIN_DUST_LIMIT,
+            ctx.config.fee_bumping,
             None,
         );
 
@@ -172,9 +175,13 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         updated.commit_wtxid = commit_wtxid;
         updated.reveals = reveals;
         updated.status = ChunkedEnvelopeStatus::Unpublished;
+        let commit_tx_entry =
+            L1TxEntry::from_tx_with_fee(&signed_commit, fee_rate, built.commit_fee);
+
         Ok(SignedChunkedEnvelope {
             entry: updated,
-            commit_tx_entry: L1TxEntry::from_tx(&signed_commit),
+            commit_tx_entry,
+            commit_fee: built.commit_fee,
         })
     }
     .instrument(sign_chunked_envelope_span)

@@ -1,7 +1,7 @@
 //! Module for resolving fee rates for transactions, supporting multiple fee policies including
 //! Bitcoin Core's `estimatesmartfee` and mempool.space's recommended fees endpoint.
 
-use std::sync::LazyLock;
+use std::{sync::LazyLock, time::Duration};
 
 use anyhow::Context;
 use bitcoin::FeeRate;
@@ -13,8 +13,29 @@ use strata_config::btcio::{
 };
 use tracing::warn;
 
+/// How long a mempool explorer fee lookup may take before it is abandoned.
+///
+/// `resolve_fee_rate` runs on the writer's watcher tick, which also drives the replacement pass, so
+/// an explorer that accepts a connection and then stalls would hold up publication as well as
+/// bumping. `reqwest::Client::new` sets no timeout at all.
+const MEMPOOL_FEE_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long the connection itself may take to establish.
+const MEMPOOL_FEE_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Shared HTTP client reused across mempool fee lookups for connection pooling.
-static SHARED_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+static SHARED_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(MEMPOOL_FEE_REQUEST_TIMEOUT)
+        .connect_timeout(MEMPOOL_FEE_CONNECT_TIMEOUT)
+        .build()
+        // Only fails when the TLS backend cannot initialise, which an untimed client would hit
+        // just the same. Fall back rather than panic in a `LazyLock`.
+        .unwrap_or_else(|err| {
+            warn!(%err, "falling back to an untimed HTTP client for mempool fee lookups");
+            reqwest::Client::new()
+        })
+});
 
 /// Represents the response from the mempool explorer recommended fees endpoint.
 #[derive(Debug, Deserialize, PartialEq)]
@@ -109,37 +130,22 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
     config: &WriterConfig,
 ) -> anyhow::Result<FeeRate> {
     let fee_rate = match config.fee_policy() {
-        // NOTE(STR-2545, STR-2433): fee estimation is currently being doubled since we don't fully
-        //                           support fee bumping ostensive mechanisms for making sure
-        //                           transactions confirm in a timely manner. This is a temporary
-        //                           measure until we implement more robust fee bumping strategies,
-        //                           at which point we can remove the doubling and rely on the fee
-        //                           policies to provide accurate fee rates.
-        FeePolicy::BitcoinD { conf_target } => {
-            let fee_estimate = client
-                .estimate_smart_fee(*conf_target)
-                .await
-                .context("failed to estimate smart fee")
-                .and_then(|estimate| {
-                    estimate.fee_rate.ok_or_else(|| {
-                        anyhow::anyhow!("smart fee estimate unavailable: {:?}", estimate.errors)
-                    })
-                })?;
-            fee_estimate
-                .checked_mul(2)
-                .ok_or_else(|| anyhow::anyhow!("smart fee estimate overflows when doubled"))?
-        }
+        FeePolicy::BitcoinD { conf_target } => client
+            .estimate_smart_fee(*conf_target)
+            .await
+            .context("failed to estimate smart fee")
+            .and_then(|estimate| {
+                estimate.fee_rate.ok_or_else(|| {
+                    anyhow::anyhow!("smart fee estimate unavailable: {:?}", estimate.errors)
+                })
+            })?,
         FeePolicy::MempoolExplorer {
             policy,
             mempool_base_url,
             fallback_conf_target,
         } => {
-            let fee_estimate =
-                resolve_mempool_fee_rate(client, mempool_base_url, *fallback_conf_target, *policy)
-                    .await?;
-            fee_estimate
-                .checked_mul(2)
-                .ok_or_else(|| anyhow::anyhow!("mempool fee estimate overflows when doubled"))?
+            resolve_mempool_fee_rate(client, mempool_base_url, *fallback_conf_target, *policy)
+                .await?
         }
         FeePolicy::Fixed { fee_rate } => *fee_rate,
     };
@@ -310,8 +316,8 @@ mod tests {
             .await
             .expect("mempool fee lookup should succeed");
 
-        // NOTE: double the fees here, so 0.2 sat/vB becomes 0.4 sat/vB.
-        assert_eq!(fee_rate, FeeRate::from_sat_per_kwu(100));
+        // 0.2 sat/vB, used as reported.
+        assert_eq!(fee_rate, FeeRate::from_sat_per_kwu(50));
     }
 
     #[tokio::test]
@@ -328,8 +334,7 @@ mod tests {
             .await
             .expect("mempool fee lookup should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(7 * 2));
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(7));
     }
 
     #[tokio::test]
@@ -346,8 +351,7 @@ mod tests {
             .await
             .expect("mempool fee lookup should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(4 * 2));
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(4));
     }
 
     #[tokio::test]
@@ -360,8 +364,7 @@ mod tests {
             .await
             .expect("smart fee fallback should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3 * 2));
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3));
     }
 
     #[tokio::test]
@@ -374,8 +377,7 @@ mod tests {
             .await
             .expect("smart fee fallback should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3 * 2));
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3));
     }
 
     #[tokio::test]
@@ -400,7 +402,20 @@ mod tests {
             .await
             .expect("smart fee lookup should succeed");
 
-        // NOTE: double the fees here
-        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3 * 2));
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fee_rate_fixed_policy_is_unscaled() {
+        let client = Arc::new(TestBitcoinClient::new(1));
+        let config = writer_config(L1FeePolicyConfig::new(FeePolicy::Fixed {
+            fee_rate: FeeRate::from_sat_per_vb_u32(9),
+        }));
+
+        let fee_rate = resolve_fee_rate(client.as_ref(), &config)
+            .await
+            .expect("fixed fee policy should resolve");
+
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(9));
     }
 }

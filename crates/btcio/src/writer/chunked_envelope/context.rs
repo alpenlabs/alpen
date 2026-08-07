@@ -4,6 +4,7 @@ use bitcoin::{key::Keypair, Address};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_config::btcio::WriterConfig;
 
+use super::commit_phase::CommitPhaseLatch;
 use crate::BtcioParams;
 
 /// All the items that chunked writer tasks need as context.
@@ -26,6 +27,9 @@ pub(crate) struct ChunkedWriterContext<R: Reader + Signer + Wallet> {
 
     /// Bitcoin client to sign and submit transactions.
     pub client: Arc<R>,
+
+    /// Serialises reveal enqueueing against commit fee bumping for the same envelope.
+    pub commit_phase: CommitPhaseLatch,
 }
 
 impl<R: Reader + Signer + Wallet> ChunkedWriterContext<R> {
@@ -35,6 +39,7 @@ impl<R: Reader + Signer + Wallet> ChunkedWriterContext<R> {
         sequencer_address: Address,
         sequencer_keypair: Keypair,
         client: Arc<R>,
+        commit_phase: CommitPhaseLatch,
     ) -> Self {
         Self {
             btcio_params,
@@ -42,6 +47,7 @@ impl<R: Reader + Signer + Wallet> ChunkedWriterContext<R> {
             sequencer_address,
             sequencer_keypair,
             client,
+            commit_phase,
         }
     }
 }

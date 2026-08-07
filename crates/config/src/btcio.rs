@@ -1,4 +1,9 @@
-use bitcoin::FeeRate;
+use std::{
+    num::{NonZeroU32, NonZeroU64},
+    time::Duration,
+};
+
+use bitcoin::{Amount, FeeRate};
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Configuration for btcio tasks.
@@ -54,6 +59,9 @@ pub struct WriterConfig {
     pub reveal_amount: u64,
     /// How often to bundle write intents.
     pub bundle_interval_ms: u64,
+    /// Fee bumping parameters for writer-published transactions.
+    #[serde(default)]
+    pub fee_bumping: FeeBumpingConfig,
 }
 
 impl WriterConfig {
@@ -65,6 +73,135 @@ impl WriterConfig {
     /// Returns the configured L1 fee policy.
     pub fn fee_policy(&self) -> &FeePolicy {
         self.l1_fee_policy_config.fee_policy()
+    }
+}
+
+/// Configures automatic fee bumping for BTCIO writer transactions.
+///
+/// Fee bumping is unconditional: every writer-published transaction that stays unconfirmed for
+/// longer than [`min_age_blocks`](Self::min_age_blocks) is replaced at a higher fee rate. There is
+/// no switch to turn it off, because the writer no longer scales its fee estimates to compensate
+/// for a stuck transaction. [`max_attempts`](Self::max_attempts) and
+/// [`max_fee_rate_sat_vb`](Self::max_fee_rate_sat_vb) are what bound the escalation.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub struct FeeBumpingConfig {
+    /// Minimum time between replacement passes, in ms.
+    ///
+    /// The pass runs inside the writer's watcher tick, which is paced for payload processing and
+    /// is far faster than this work needs: `write_poll_dur_ms` is commonly 200. Without its own
+    /// interval the pass would rescan every tx-node record, and re-resolve the fee estimate,
+    /// several times a second.
+    pub check_interval_ms: NonZeroU64,
+
+    /// Number of L1 blocks a published transaction may remain unconfirmed before it is stale.
+    pub min_age_blocks: NonZeroU32,
+
+    /// Maximum number of broadcast attempts for one replacement chain.
+    pub max_attempts: NonZeroU32,
+
+    /// Minimum multiplicative fee increase, expressed in basis points.
+    ///
+    /// This value must be at least `10_000` so an RBF replacement never lowers
+    /// the active fee rate, which would violate BIP-125 replacement rules.
+    pub multiplier_bps: u32,
+
+    /// Minimum additive fee-rate increase over the active attempt.
+    pub min_fee_rate_delta_sat_vb: NonZeroU64,
+
+    /// Maximum replacement fee rate the service is allowed to use.
+    pub max_fee_rate_sat_vb: NonZeroU64,
+
+    /// Maximum absolute fee headroom funded into each reveal transaction.
+    pub max_reveal_fee_headroom_sats: NonZeroU64,
+}
+
+impl FeeBumpingConfig {
+    /// Returns the minimum time between replacement passes.
+    pub fn check_interval(&self) -> Duration {
+        Duration::from_millis(self.check_interval_ms.get())
+    }
+
+    /// Validates the fee bumping configuration.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.max_attempts.get() > 64 {
+            return Err(
+                "fee_bumping.max_attempts must be at most 64 because replacement-chain resolution gives up after MAX_REPLACEMENT_CHAIN_HOPS (64) hops, so a larger value cannot be resolved"
+                    .to_string(),
+            );
+        }
+
+        if self.multiplier_bps < 10_000 {
+            return Err(
+                "fee_bumping.multiplier_bps must be at least 10_000 so bumps do not lower fees"
+                    .to_string(),
+            );
+        }
+
+        if self.max_fee_rate_sat_vb < self.min_fee_rate_delta_sat_vb {
+            return Err(
+                "fee_bumping.max_fee_rate_sat_vb must be at least min_fee_rate_delta_sat_vb"
+                    .to_string(),
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Returns the replacement fee-rate ceiling.
+    pub fn max_fee_rate(&self) -> FeeRate {
+        FeeRate::from_sat_per_vb(self.max_fee_rate_sat_vb.get())
+            .expect("config: max fee rate is bounded by validation")
+    }
+
+    /// Returns the minimum additive fee-rate increase over the active attempt.
+    pub fn min_fee_rate_delta(&self) -> FeeRate {
+        FeeRate::from_sat_per_vb(self.min_fee_rate_delta_sat_vb.get())
+            .expect("config: min fee-rate delta is bounded by validation")
+    }
+
+    /// Returns the maximum absolute fee headroom funded into each reveal transaction.
+    pub fn max_reveal_fee_headroom(&self) -> Amount {
+        Amount::from_sat(self.max_reveal_fee_headroom_sats.get())
+    }
+}
+
+/// Mirror of [`FeeBumpingConfig`] that runs [`FeeBumpingConfig::validate`] after deserialization.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FeeBumpingConfigUnchecked {
+    #[serde(default = "default_fee_bumping_check_interval_ms")]
+    check_interval_ms: NonZeroU64,
+    #[serde(default = "default_fee_bumping_min_age_blocks")]
+    min_age_blocks: NonZeroU32,
+    #[serde(default = "default_fee_bumping_max_attempts")]
+    max_attempts: NonZeroU32,
+    #[serde(default = "default_fee_bumping_multiplier_bps")]
+    multiplier_bps: u32,
+    #[serde(default = "default_fee_bumping_min_fee_rate_delta_sat_vb")]
+    min_fee_rate_delta_sat_vb: NonZeroU64,
+    #[serde(default = "default_fee_bumping_max_fee_rate_sat_vb")]
+    max_fee_rate_sat_vb: NonZeroU64,
+    #[serde(default = "default_fee_bumping_max_reveal_fee_headroom_sats")]
+    max_reveal_fee_headroom_sats: NonZeroU64,
+}
+
+impl<'de> Deserialize<'de> for FeeBumpingConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let unchecked = FeeBumpingConfigUnchecked::deserialize(deserializer)?;
+        let config = Self {
+            check_interval_ms: unchecked.check_interval_ms,
+            min_age_blocks: unchecked.min_age_blocks,
+            max_attempts: unchecked.max_attempts,
+            multiplier_bps: unchecked.multiplier_bps,
+            min_fee_rate_delta_sat_vb: unchecked.min_fee_rate_delta_sat_vb,
+            max_fee_rate_sat_vb: unchecked.max_fee_rate_sat_vb,
+            max_reveal_fee_headroom_sats: unchecked.max_reveal_fee_headroom_sats,
+        };
+        config.validate().map_err(DeError::custom)?;
+        Ok(config)
     }
 }
 
@@ -220,6 +357,21 @@ impl Default for WriterConfig {
             reveal_amount: 1_000,
             bundle_interval_ms: 500,
             l1_fee_policy_config: L1FeePolicyConfig::default(),
+            fee_bumping: FeeBumpingConfig::default(),
+        }
+    }
+}
+
+impl Default for FeeBumpingConfig {
+    fn default() -> Self {
+        Self {
+            check_interval_ms: default_fee_bumping_check_interval_ms(),
+            min_age_blocks: default_fee_bumping_min_age_blocks(),
+            max_attempts: default_fee_bumping_max_attempts(),
+            multiplier_bps: default_fee_bumping_multiplier_bps(),
+            min_fee_rate_delta_sat_vb: default_fee_bumping_min_fee_rate_delta_sat_vb(),
+            max_fee_rate_sat_vb: default_fee_bumping_max_fee_rate_sat_vb(),
+            max_reveal_fee_headroom_sats: default_fee_bumping_max_reveal_fee_headroom_sats(),
         }
     }
 }
@@ -234,6 +386,48 @@ impl Default for FeePolicy {
 
 const fn default_bitcoind_conf_target() -> u16 {
     1
+}
+
+const fn nonzero_u32(value: u32) -> NonZeroU32 {
+    match NonZeroU32::new(value) {
+        Some(value) => value,
+        None => panic!("default value must be non-zero"),
+    }
+}
+
+const fn nonzero_u64(value: u64) -> NonZeroU64 {
+    match NonZeroU64::new(value) {
+        Some(value) => value,
+        None => panic!("default value must be non-zero"),
+    }
+}
+
+const fn default_fee_bumping_check_interval_ms() -> NonZeroU64 {
+    nonzero_u64(30_000)
+}
+
+const fn default_fee_bumping_min_age_blocks() -> NonZeroU32 {
+    nonzero_u32(2)
+}
+
+const fn default_fee_bumping_max_attempts() -> NonZeroU32 {
+    nonzero_u32(5)
+}
+
+const fn default_fee_bumping_multiplier_bps() -> u32 {
+    12_500
+}
+
+const fn default_fee_bumping_min_fee_rate_delta_sat_vb() -> NonZeroU64 {
+    nonzero_u64(1)
+}
+
+const fn default_fee_bumping_max_fee_rate_sat_vb() -> NonZeroU64 {
+    nonzero_u64(1_000)
+}
+
+const fn default_fee_bumping_max_reveal_fee_headroom_sats() -> NonZeroU64 {
+    nonzero_u64(10_000_000)
 }
 
 impl Default for ReaderConfig {
@@ -257,6 +451,35 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+
+    #[test]
+    fn fee_bumping_reveal_headroom_serde_default_and_roundtrip() {
+        let defaulted: FeeBumpingConfig = toml::from_str("").expect("defaults should deserialize");
+        assert_eq!(
+            defaulted.max_reveal_fee_headroom_sats,
+            nonzero_u64(10_000_000)
+        );
+
+        let configured = FeeBumpingConfig {
+            max_reveal_fee_headroom_sats: nonzero_u64(42_000),
+            ..FeeBumpingConfig::default()
+        };
+        let encoded = toml::to_string(&configured).expect("config should serialize");
+        let decoded: FeeBumpingConfig =
+            toml::from_str(&encoded).expect("serialized config should deserialize");
+
+        assert_eq!(decoded, configured);
+        assert_eq!(decoded.max_reveal_fee_headroom(), Amount::from_sat(42_000));
+    }
+
+    #[test]
+    fn fee_bumping_rejects_more_attempts_than_replacement_resolution_can_follow() {
+        let error = toml::from_str::<FeeBumpingConfig>("max_attempts = 65")
+            .expect_err("more than 64 attempts must be rejected")
+            .to_string();
+
+        assert!(error.contains("MAX_REPLACEMENT_CHAIN_HOPS (64)"));
+    }
 
     proptest! {
         #[test]
