@@ -62,6 +62,8 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
 pub enum PublishDecision {
     #[default]
     Publish,
+    /// Keep the transaction unpublished and retry policy evaluation on the next poll.
+    Defer,
     Abandon,
 }
 

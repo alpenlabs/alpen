@@ -198,8 +198,10 @@ where
     let output_count = tx.output.len();
 
     async {
-        if io.publish_decision(&tx)? == PublishDecision::Abandon {
-            return Ok(L1TxStatus::Abandoned);
+        match io.publish_decision(&tx)? {
+            PublishDecision::Publish => {}
+            PublishDecision::Defer => return Ok(L1TxStatus::Unpublished),
+            PublishDecision::Abandon => return Ok(L1TxStatus::Abandoned),
         }
         if tx.input.is_empty() {
             error!("tx has no inputs, excluding from broadcast");
@@ -449,6 +451,19 @@ mod test {
             .expect("policy decision succeeds");
 
         assert_eq!(status, Some(L1TxStatus::Abandoned));
+        assert_eq!(io.broadcast_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn deferred_policy_does_not_send_to_bitcoin() {
+        let (entry, txid) = entry_with_txid(L1TxStatus::Unpublished);
+        let io = MockIoContext::default().with_publish_decision(PublishDecision::Defer);
+
+        let status = process_tx_entry(&io, &entry, &txid, &get_test_btcio_params())
+            .await
+            .expect("policy decision succeeds");
+
+        assert_eq!(status, Some(L1TxStatus::Unpublished));
         assert_eq!(io.broadcast_count.load(Ordering::SeqCst), 0);
     }
 
