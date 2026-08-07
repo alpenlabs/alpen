@@ -95,7 +95,10 @@ mod sequencer_services {
             nodectx.asm_params(),
             nodectx.config().btcio.l1_reorg_safe_depth,
         );
-        let magic_bytes = btcio_params.magic_bytes();
+        let checkpoint_publish_policy = Arc::new(CheckpointPublishPolicy::new(
+            nodectx.storage().clone(),
+            btcio_params.magic_bytes(),
+        ));
 
         nodectx.task_manager().handle().block_on(async {
             BroadcasterBuilder::new(
@@ -103,10 +106,7 @@ mod sequencer_services {
                 broadcast_ops,
                 btcio_params,
             )
-            .with_publish_policy(Arc::new(CheckpointPublishPolicy::new(
-                nodectx.storage().clone(),
-                magic_bytes,
-            )))
+            .with_publish_policy(checkpoint_publish_policy)
             .with_broadcast_poll_interval_ms(nodectx.config().btcio.broadcaster.poll_interval_ms)
             .launch(nodectx.executor().as_ref())
             .await
@@ -131,6 +131,10 @@ mod sequencer_services {
             nodectx.asm_params(),
             nodectx.config().btcio.l1_reorg_safe_depth,
         );
+        let checkpoint_publish_policy = Arc::new(CheckpointPublishPolicy::new(
+            nodectx.storage().clone(),
+            btcio_params.magic_bytes(),
+        ));
         let executor = nodectx.executor();
 
         nodectx.task_manager().handle().block_on(async {
@@ -150,7 +154,8 @@ mod sequencer_services {
             )
             .with_signing_mode_provider(Arc::new(CheckpointSequencerKeyProvider::new(
                 nodectx.storage().clone(),
-            )));
+            )))
+            .with_publish_policy(checkpoint_publish_policy);
             let ctx = Arc::new(ctx);
 
             let (watcher_handle, _) = WatcherBuilder::new(

@@ -1,10 +1,11 @@
-use std::{future::Future, sync::Arc};
+use std::{fmt::Debug, future::Future, sync::Arc};
 
 use anyhow::anyhow;
 use bitcoin::{BlockHash, Transaction, Txid};
 use bitcoind_async_client::{error::ClientError, traits::Broadcaster, Client};
 use serde::Deserialize;
 use strata_btc_types::BlockHashExt;
+use strata_csm_types::L1Payload;
 use strata_db_types::l1_broadcast::L1TxEntry;
 use strata_primitives::{buf::Buf32, L1Height};
 use strata_storage::BroadcastDbOps;
@@ -68,8 +69,13 @@ pub enum PublishDecision {
 }
 
 /// Optional application policy evaluated immediately before Bitcoin RPC.
-pub trait PublishPolicy: Send + Sync + 'static {
+pub trait PublishPolicy: Send + Sync + Debug + 'static {
     fn decide(&self, tx: &Transaction) -> BroadcasterResult<PublishDecision>;
+
+    /// Decides whether an entire payload envelope should enter the broadcaster queue.
+    fn decide_payload(&self, _: &L1Payload) -> PublishDecision {
+        PublishDecision::Publish
+    }
 }
 
 #[derive(Debug)]

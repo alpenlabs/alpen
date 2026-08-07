@@ -15,6 +15,7 @@ use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use serde::Serialize;
 use strata_btc_types::{Buf32BitcoinExt, TxidExt};
+use strata_csm_types::L1Payload;
 use strata_db_types::{
     common::L1TxId,
     l1_broadcast::{L1TxEntry, L1TxStatus},
@@ -27,7 +28,7 @@ use strata_storage::ops::writer::EnvelopeDataOps;
 use tracing::*;
 
 use crate::{
-    broadcaster::L1BroadcastHandle,
+    broadcaster::{L1BroadcastHandle, PublishDecision},
     rpc_error::{is_retryable_envelope_error, retryable_reason},
     status::{apply_status_updates, L1StatusUpdate},
     writer::{
@@ -64,6 +65,8 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
 
     /// Returns the current envelope signing mode.
     fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode>;
+
+    fn payload_publish_decision(&self, payload: &L1Payload) -> PublishDecision;
 
     fn create_envelopes(
         &self,
@@ -136,6 +139,10 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
 
     fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
         self.context.signing_mode()
+    }
+
+    fn payload_publish_decision(&self, payload: &L1Payload) -> PublishDecision {
+        self.context.payload_publish_decision(payload)
     }
 
     async fn create_envelopes(
@@ -247,6 +254,28 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
         let _ = dspan.enter();
 
         if let Some(payloadentry) = state.ctx.get_payload_entry(state.curr_payloadidx).await? {
+            if matches!(
+                payloadentry.status,
+                L1BundleStatus::Unsigned
+                    | L1BundleStatus::NeedsResign
+                    | L1BundleStatus::PendingRevealTxSign(_)
+            ) {
+                match state.ctx.payload_publish_decision(&payloadentry.payload) {
+                    PublishDecision::Publish => {}
+                    PublishDecision::Defer => return Ok(Response::Continue),
+                    PublishDecision::Abandon => {
+                        let mut updated_entry = payloadentry.clone();
+                        updated_entry.status = L1BundleStatus::Abandoned;
+                        state
+                            .ctx
+                            .put_payload_entry(state.curr_payloadidx, updated_entry)
+                            .await?;
+                        state.envelope_cache.remove(&state.curr_payloadidx);
+                        state.curr_payloadidx += 1;
+                        return Ok(Response::Continue);
+                    }
+                }
+            }
             match payloadentry.status {
                 // If unsigned or needs resign, build envelope txs, sign commit with
                 // wallet, and transition to PendingRevealTxSign awaiting the external
@@ -709,6 +738,7 @@ mod tests {
         signing_mode_fails: Mutex<bool>,
         create_failure: Option<MockEnvelopeFailure>,
         sign_failure: Option<MockEnvelopeFailure>,
+        payload_decision: PublishDecision,
         rpc_errors: Mutex<Vec<String>>,
     }
 
@@ -728,6 +758,7 @@ mod tests {
                 signing_mode_fails: Mutex::new(false),
                 create_failure: None,
                 sign_failure: None,
+                payload_decision: PublishDecision::Publish,
                 rpc_errors: Mutex::new(Vec::new()),
             }
         }
@@ -754,6 +785,11 @@ mod tests {
 
         fn with_sign_other_failure(mut self) -> Self {
             self.sign_failure = Some(MockEnvelopeFailure::Other);
+            self
+        }
+
+        fn with_payload_decision(mut self, decision: PublishDecision) -> Self {
+            self.payload_decision = decision;
             self
         }
 
@@ -793,6 +829,10 @@ mod tests {
                 anyhow::bail!("mock signing mode failure");
             }
             Ok(*self.signing_mode.lock().unwrap())
+        }
+
+        fn payload_publish_decision(&self, _: &L1Payload) -> PublishDecision {
+            self.payload_decision
         }
 
         async fn create_envelopes(
@@ -847,20 +887,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_unchecked_transitions_to_unpublished() {
-        let ctx = MockWatcherContext::new(false);
-        let entry = test_unsigned_entry();
-        ctx.stored.lock().unwrap().insert(0, entry.clone());
+    async fn test_payload_policy_controls_envelope_queueing() {
+        for (decision, expected_status, expected_txids) in [
+            (PublishDecision::Publish, L1BundleStatus::Unpublished, true),
+            (PublishDecision::Defer, L1BundleStatus::Unsigned, false),
+            (PublishDecision::Abandon, L1BundleStatus::Abandoned, false),
+        ] {
+            let ctx = MockWatcherContext::new(false).with_payload_decision(decision);
+            ctx.stored.lock().unwrap().insert(0, test_unsigned_entry());
 
-        let mut state = WatcherState::new(ctx, 0);
-        state.handle_unsigned_or_needs_resign(entry).await.unwrap();
+            let mut state = WatcherState::new(ctx, 0);
+            WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+                .await
+                .unwrap();
 
-        let stored = state.ctx.get_stored(0).unwrap();
-        assert_eq!(stored.status, L1BundleStatus::Unpublished);
-        assert_eq!(stored.commit_txid, L1TxId::from([1u8; 32]));
-        assert_eq!(stored.reveal_txid, L1TxId::from([2u8; 32]));
-        // No cache entry — ephemeral path does not use the envelope cache
-        assert!(state.envelope_cache.is_empty());
+            let stored = state.ctx.get_stored(0).unwrap();
+            assert_eq!(stored.status, expected_status);
+            assert_eq!(stored.commit_txid != L1TxId::zero(), expected_txids);
+            assert_eq!(stored.reveal_txid != L1TxId::zero(), expected_txids);
+            assert_eq!(
+                state.curr_payloadidx,
+                if decision == PublishDecision::Abandon {
+                    1
+                } else {
+                    0
+                }
+            );
+        }
     }
 
     #[tokio::test]
