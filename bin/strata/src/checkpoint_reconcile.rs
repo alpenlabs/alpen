@@ -242,7 +242,9 @@ mod tests {
         backend::DatabaseBackend,
         common::L1TxId,
         l1_broadcast::{L1BroadcastDatabase, L1TxEntry, L1TxStatus},
-        l1_writer::{BundledPayloadEntry, IntentEntry, L1BundleStatus, L1WriterDatabase},
+        l1_writer::{
+            BundledPayloadEntry, IntentEntry, IntentStatus, L1BundleStatus, L1WriterDatabase,
+        },
         ol_checkpoint::OLCheckpointDatabase,
     };
     use strata_identifiers::{Buf32, Epoch, EpochCommitment};
@@ -330,7 +332,7 @@ mod tests {
                 .expect("test: get writer intent")
                 .expect("test: writer intent exists")
                 .status,
-            strata_db_types::l1_writer::IntentStatus::Bundled(payload_idx)
+            IntentStatus::Bundled(payload_idx)
         );
         for txid in [commit_txid, reveal_txid] {
             assert_eq!(

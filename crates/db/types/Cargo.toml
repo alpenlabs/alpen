@@ -7,8 +7,8 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-strata-asm-common.workspace = true
 strata-asm-checkpoint-types.workspace = true
+strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-csm-types.workspace = true

@@ -143,7 +143,7 @@ mod test {
 
     use super::*;
     use crate::{
-        broadcaster::io::BroadcasterIo,
+        broadcaster::{io::BroadcasterIo, AllowAllPublishPolicy},
         test_utils::{gen_l1_tx_entry_with_status, SendRawTransactionMode, TestBitcoinClient},
     };
 
@@ -165,11 +165,7 @@ mod test {
         ops: Arc<BroadcastDbOps>,
         client: TestBitcoinClient,
     ) -> BroadcasterIo<TestBitcoinClient> {
-        BroadcasterIo::new(
-            Arc::new(client),
-            ops,
-            Arc::new(crate::broadcaster::AllowAllPublishPolicy),
-        )
+        BroadcasterIo::new(Arc::new(client), ops, Arc::new(AllowAllPublishPolicy))
     }
 
     async fn populate_broadcast_db(ops: Arc<BroadcastDbOps>) -> Vec<(u64, L1TxEntry)> {

@@ -15,6 +15,7 @@ pub(crate) struct BroadcasterSummary {
     pub(crate) published_count: u64,
     pub(crate) confirmed_count: u64,
     pub(crate) finalized_count: u64,
+    pub(crate) abandoned_count: u64,
     pub(crate) invalid_inputs_count: u64,
 }
 

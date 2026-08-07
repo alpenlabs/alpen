@@ -58,16 +58,11 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
 }
 
 /// Policy decision made immediately before submitting a transaction to Bitcoin.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum PublishDecision {
+    #[default]
     Publish,
     Abandon,
-}
-
-impl Default for PublishDecision {
-    fn default() -> Self {
-        Self::Publish
-    }
 }
 
 /// Optional application policy evaluated immediately before Bitcoin RPC.

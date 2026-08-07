@@ -7,12 +7,12 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+strata-asm-checkpoint-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-proto-checkpoint.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true
-strata-asm-checkpoint-types.workspace = true
 strata-asm-worker.workspace = true
 strata-checkpoint-verification.workspace = true
 strata-common.workspace = true
@@ -34,9 +34,7 @@ tracing.workspace = true
 strata-checkpoint-types.workspace = true
 strata-test-utils.workspace = true
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
-strata-asm-checkpoint-types = { workspace = true, features = [
-  "test-utils",
-] }
+strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
 strata-asm-params.workspace = true
 strata-asm-proto-txs-test-utils.workspace = true
 strata-btc-verification.workspace = true
