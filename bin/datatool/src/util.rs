@@ -26,11 +26,10 @@ pub(crate) const SEQKEY_ENVVAR: &str = "STRATA_SEQ_KEY";
 /// 1. Command-line argument (if provided)
 /// 2. `BITCOIN_NETWORK` environment variable (if set)
 /// 3. Default network (Signet)
-pub(crate) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
+pub(crate) fn resolve_network(arg: Option<Network>) -> anyhow::Result<Network> {
     // First, check if a command-line argument was provided
-    if let Some(network_str) = arg {
-        return Network::from_str(network_str)
-            .map_err(|_| anyhow::anyhow!("unsupported network option: {network_str}"));
+    if let Some(network) = arg {
+        return Ok(network);
     }
 
     // If no argument provided, check environment variable
