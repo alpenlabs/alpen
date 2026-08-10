@@ -96,7 +96,7 @@ jobs:
         run: cargo prove --version
 
       - name: Build SP1 guest artifacts
-        run: cargo build --locked -p strata-sp1-guest-builder --features sp1-dev --release
+        run: cargo build --locked -p strata-sp1-guest-builder --features docker-build --release
 
       - name: Verify artifacts and emit traceability summary
         id: summarize
