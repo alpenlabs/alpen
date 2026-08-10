@@ -92,6 +92,12 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
         start_epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>>;
 
+    /// Deletes a locally-built payload only when no L1 observation exists.
+    ///
+    /// Returns `true` when the local payload existed and was deleted. The check and deletion are
+    /// atomic, and observed payload and reference tables are never modified.
+    fn del_local_checkpoint_payload_if_unobserved(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
     /// Store an OL checkpoint signing entry by epoch.
     fn put_checkpoint_signing_entry(
         &self,

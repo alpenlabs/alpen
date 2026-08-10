@@ -916,6 +916,21 @@ pub fn test_del_local_checkpoint_payload_entries_preserves_l1_observations(
         .expect("put l1 observation");
     db.put_checkpoint_signing_entry(observed_key, 10)
         .expect("put signing entry");
+    assert!(!db
+        .del_local_checkpoint_payload_if_unobserved(observed_key)
+        .expect("preserve observed local payload"));
+    assert!(db
+        .get_checkpoint_payload_entry(observed_key)
+        .expect("get preserved local payload")
+        .is_some());
+
+    let unobserved_payload = payload_for_epoch(9);
+    let unobserved_key = checkpoint_epoch_commitment(&unobserved_payload);
+    db.put_checkpoint_payload_entry(unobserved_key, unobserved_payload)
+        .expect("put unobserved local payload");
+    assert!(db
+        .del_local_checkpoint_payload_if_unobserved(unobserved_key)
+        .expect("delete unobserved local payload"));
 
     let unsigned_payload = payload_for_epoch(11);
     let unsigned_key = checkpoint_epoch_commitment(&unsigned_payload);
