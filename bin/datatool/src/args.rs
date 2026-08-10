@@ -15,8 +15,12 @@ use crate::{
 /// Args.
 #[derive(FromArgs)]
 pub(crate) struct Args {
-    #[argh(option, description = "network name [signet, regtest]", short = 'b')]
-    pub(crate) bitcoin_network: Option<String>,
+    #[argh(
+        option,
+        description = "bitcoin network name accepted by `bitcoin::Network`",
+        short = 'b'
+    )]
+    pub(crate) bitcoin_network: Option<Network>,
 
     #[argh(
         option,
@@ -399,7 +403,7 @@ pub(crate) struct CmdContext {
 pub(crate) fn resolve_context_and_subcommand(
     args: Args,
 ) -> anyhow::Result<(CmdContext, Subcommand)> {
-    let network = resolve_network(args.bitcoin_network.as_deref())?;
+    let network = resolve_network(args.bitcoin_network)?;
 
     let bitcoind_config = create_bitcoind_config(&args);
 
