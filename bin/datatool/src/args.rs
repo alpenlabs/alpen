@@ -15,7 +15,11 @@ use crate::{
 /// Args.
 #[derive(FromArgs)]
 pub(crate) struct Args {
-    #[argh(option, description = "network name [signet, regtest]", short = 'b')]
+    #[argh(
+        option,
+        description = "network name [bitcoin, signet, regtest]",
+        short = 'b'
+    )]
     pub(crate) bitcoin_network: Option<String>,
 
     #[argh(

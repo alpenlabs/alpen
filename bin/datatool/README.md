@@ -12,6 +12,10 @@ strata-datatool genxpriv sequencer.bin
 strata-datatool genxpriv operator1.bin
 strata-datatool genxpriv operator2.bin
 
+# Select the Bitcoin network with --bitcoin-network or BITCOIN_NETWORK.
+# Supported values are bitcoin, signet, and regtest.
+strata-datatool --bitcoin-network bitcoin genxpriv bitcoin-sequencer.bin
+
 # Generate the pubkeys, also on their original machines.
 strata-datatool genseqpubkey -f sequencer.bin
 strata-datatool genoppubkey -f operator1.bin

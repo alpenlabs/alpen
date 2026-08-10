@@ -480,7 +480,8 @@ mod tests {
 
     #[test]
     fn deposit_sats_defaults_to_the_ol_denomination() {
-        let ol_bridge_params = BridgeParams::new(50_000_000, None).expect("valid bridge params");
+        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(50_000_000, None, 81)
+            .expect("valid bridge params");
 
         let deposit_sats =
             resolve_deposit_sats(None, &ol_bridge_params).expect("default should resolve");
@@ -490,7 +491,8 @@ mod tests {
 
     #[test]
     fn deposit_sats_may_restate_the_ol_denomination() {
-        let ol_bridge_params = BridgeParams::new(100_000_000, None).expect("valid bridge params");
+        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(100_000_000, None, 81)
+            .expect("valid bridge params");
 
         let deposit_sats =
             resolve_deposit_sats(Some("100M"), &ol_bridge_params).expect("matching value is fine");
@@ -500,7 +502,8 @@ mod tests {
 
     #[test]
     fn deposit_sats_rejects_denomination_mismatch() {
-        let ol_bridge_params = BridgeParams::new(100_000_000, None).expect("valid bridge params");
+        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(100_000_000, None, 81)
+            .expect("valid bridge params");
 
         let err = resolve_deposit_sats(Some("200M"), &ol_bridge_params).unwrap_err();
 
