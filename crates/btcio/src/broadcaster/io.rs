@@ -47,6 +47,8 @@ pub(crate) async fn send_raw_transaction_with_max_fee_rate(
 
 /// IO context abstraction for broadcaster service internals.
 pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
+    fn publish_decision(&self, tx: &Transaction) -> PublishDecision;
+
     /// Returns the next write index in broadcaster database.
     fn get_next_tx_idx(&self) -> impl Future<Output = BroadcasterResult<u64>> + Send;
 
@@ -92,6 +94,27 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
         &'a self,
         tx: &'a Transaction,
     ) -> impl Future<Output = BroadcasterResult<PublishTxOutcome>> + Send + 'a;
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PublishDecision {
+    #[default]
+    Publish,
+    Defer,
+    Abandon,
+}
+
+pub trait PublishPolicy: Send + Sync + 'static {
+    fn decide(&self, tx: &Transaction) -> PublishDecision;
+}
+
+#[derive(Debug)]
+pub struct AllowAllPublishPolicy;
+
+impl PublishPolicy for AllowAllPublishPolicy {
+    fn decide(&self, _: &Transaction) -> PublishDecision {
+        PublishDecision::Publish
+    }
 }
 
 /// Minimal transaction view needed by broadcaster confirmation logic.
@@ -239,15 +262,22 @@ pub(crate) struct BroadcasterIo<T> {
     rpc_client: Arc<T>,
     ops: Arc<BroadcastDbOps>,
     max_fee_rate: FeeRate,
+    policy: Arc<dyn PublishPolicy>,
 }
 
 impl<T> BroadcasterIo<T> {
     /// Creates a production IO adapter from RPC client and broadcast DB ops.
-    pub(crate) fn new(rpc_client: Arc<T>, ops: Arc<BroadcastDbOps>, max_fee_rate: FeeRate) -> Self {
+    pub(crate) fn new(
+        rpc_client: Arc<T>,
+        ops: Arc<BroadcastDbOps>,
+        max_fee_rate: FeeRate,
+        policy: Arc<dyn PublishPolicy>,
+    ) -> Self {
         Self {
             rpc_client,
             ops,
             max_fee_rate,
+            policy,
         }
     }
 }
@@ -256,6 +286,10 @@ impl<T> BroadcasterIoContext for BroadcasterIo<T>
 where
     T: Broadcaster + WalletTxLookup,
 {
+    fn publish_decision(&self, tx: &Transaction) -> PublishDecision {
+        self.policy.decide(tx)
+    }
+
     async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
         Ok(self.ops.get_next_tx_idx_async().await?)
     }
@@ -386,7 +420,7 @@ mod tests {
     ) -> BroadcasterIo<TestBitcoinClient> {
         let db = get_test_sled_backend().broadcast_db();
         let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
-        BroadcasterIo::new(client, ops, max_fee_rate)
+        BroadcasterIo::new(client, ops, max_fee_rate, Arc::new(AllowAllPublishPolicy))
     }
 
     #[test]

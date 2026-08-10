@@ -219,7 +219,12 @@ impl ChunkedEnvelopeWatcherState {
     fn from_entries(next_db_idx: u64, entries: &[(u64, ChunkedEnvelopeEntry)]) -> Self {
         let active_envelopes = entries
             .iter()
-            .filter(|(_, entry)| entry.status != ChunkedEnvelopeStatus::Finalized)
+            .filter(|(_, entry)| {
+                !matches!(
+                    entry.status,
+                    ChunkedEnvelopeStatus::Finalized | ChunkedEnvelopeStatus::Abandoned
+                )
+            })
             .map(|(idx, _)| *idx)
             .collect();
         let forward_frontier = entries
@@ -255,7 +260,10 @@ impl ChunkedEnvelopeWatcherState {
 
         let entries = load_entries_range_async(ops, self.next_db_idx, observed_next_idx).await?;
         for (idx, entry) in entries {
-            if entry.status != ChunkedEnvelopeStatus::Finalized {
+            if !matches!(
+                entry.status,
+                ChunkedEnvelopeStatus::Finalized | ChunkedEnvelopeStatus::Abandoned
+            ) {
                 self.active_envelopes.insert(idx);
             }
         }
@@ -278,6 +286,7 @@ fn format_tx_status(txid: L1TxId, status: &L1TxStatus) -> String {
         L1TxStatus::Published => format!("{txid:?}:published"),
         L1TxStatus::InvalidInputs => format!("{txid:?}:invalid_inputs"),
         L1TxStatus::Replaced { by } => format!("{txid:?}:replaced_by({by:?})"),
+        L1TxStatus::Abandoned => format!("{txid:?}:abandoned"),
         L1TxStatus::Confirmed {
             confirmations,
             block_hash,
@@ -482,7 +491,7 @@ async fn reconcile_active_entries(
         };
 
         let new_status = match entry.status {
-            ChunkedEnvelopeStatus::Finalized => {
+            ChunkedEnvelopeStatus::Finalized | ChunkedEnvelopeStatus::Abandoned => {
                 state.active_envelopes.remove(&idx);
                 continue;
             }
@@ -800,6 +809,7 @@ async fn check_commit_and_enqueue_reveals(
             );
             return Ok(ChunkedEnvelopeStatus::NeedsResign);
         }
+        L1TxStatus::Abandoned => return Ok(ChunkedEnvelopeStatus::Abandoned),
         L1TxStatus::Unpublished => {
             debug!(
                 envelope_idx,
@@ -831,9 +841,10 @@ fn reveal_enqueue_is_policy_safe(
     commit: &L1TxEntry,
 ) -> anyhow::Result<bool> {
     match commit.status {
-        L1TxStatus::InvalidInputs | L1TxStatus::Unpublished | L1TxStatus::Replaced { .. } => {
-            Ok(false)
-        }
+        L1TxStatus::InvalidInputs
+        | L1TxStatus::Abandoned
+        | L1TxStatus::Unpublished
+        | L1TxStatus::Replaced { .. } => Ok(false),
         L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => Ok(true),
         L1TxStatus::Published => {
             let [reveal] = entry.reveals.as_slice() else {
@@ -1089,8 +1100,10 @@ async fn check_full_broadcast_status(
             .into(),
         );
     };
-    if commit.status == L1TxStatus::InvalidInputs {
-        return Ok(ChunkedEnvelopeStatus::NeedsResign);
+    match commit.status {
+        L1TxStatus::InvalidInputs => return Ok(ChunkedEnvelopeStatus::NeedsResign),
+        L1TxStatus::Abandoned => return Ok(ChunkedEnvelopeStatus::Abandoned),
+        _ => {}
     }
 
     // Same rule as the normal enqueue path: reveals recorded against a superseded commit must not
@@ -1140,6 +1153,9 @@ async fn check_full_broadcast_status(
             reveal_l1_statuses.push(format_tx_status(reveal.txid, &min_progress));
             continue;
         };
+        if rtx.status == L1TxStatus::Abandoned {
+            return Ok(ChunkedEnvelopeStatus::Abandoned);
+        }
         if rtx.status == L1TxStatus::InvalidInputs {
             // This shouldn't happen if we waited for commit to be published first,
             // but handle it gracefully by re-signing.
@@ -1192,6 +1208,7 @@ fn progress_ordinal(s: &L1TxStatus) -> u8 {
         L1TxStatus::InvalidInputs => {
             unreachable!("InvalidInputs is handled before aggregation")
         }
+        L1TxStatus::Abandoned => unreachable!("Abandoned is handled before aggregation"),
     }
 }
 
@@ -1219,6 +1236,7 @@ fn to_envelope_status(s: &L1TxStatus) -> ChunkedEnvelopeStatus {
         L1TxStatus::InvalidInputs => {
             unreachable!("InvalidInputs is handled before aggregation")
         }
+        L1TxStatus::Abandoned => ChunkedEnvelopeStatus::Abandoned,
     }
 }
 

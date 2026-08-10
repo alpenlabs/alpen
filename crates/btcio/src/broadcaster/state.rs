@@ -87,28 +87,6 @@ where
         )
         .await?;
 
-        for entry in processed.updated.iter() {
-            let idx = *entry.index();
-
-            // The fee bumper can mark this entry `Replaced` in the DB between the read that
-            // produced our in-memory copy and this write-back. Writing the stale status here
-            // would resurrect a txid that a broadcast replacement has already superseded, so
-            // re-read and leave replaced entries alone. The matching
-            // `NotifyReplacedEntry` message drops it from `unfinalized_entries`.
-            let replaced_concurrently =
-                self.io.get_tx_entry(idx).await?.is_some_and(|persisted| {
-                    matches!(persisted.status, L1TxStatus::Replaced { .. })
-                });
-            if replaced_concurrently {
-                debug!(%idx, "skipping write-back for entry replaced by a fee bump");
-                continue;
-            }
-
-            self.io
-                .put_tx_entry_by_idx(idx, entry.item().clone())
-                .await?;
-        }
-
         update_state(
             &mut self.inner,
             processed.updated.into_iter(),
@@ -215,6 +193,7 @@ mod test {
             Arc::new(client),
             ops,
             FeeRate::from_sat_per_vb(1_000).unwrap(),
+            Arc::new(crate::broadcaster::AllowAllPublishPolicy),
         )
     }
 

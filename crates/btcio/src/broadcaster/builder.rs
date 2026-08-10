@@ -14,7 +14,7 @@ use crate::{
     broadcaster::{
         handle::L1BroadcastHandle,
         input::BroadcasterInputMessage,
-        io::{BroadcasterIo, WalletTxLookup},
+        io::{AllowAllPublishPolicy, BroadcasterIo, PublishPolicy, WalletTxLookup},
         service::BroadcasterService,
         state::BroadcasterServiceState,
     },
@@ -31,6 +31,7 @@ pub struct BroadcasterBuilder<T> {
     config: BtcioParams,
     max_fee_rate: FeeRate,
     broadcast_poll_interval_ms: u64,
+    policy: Arc<dyn PublishPolicy>,
 }
 
 impl<T> Debug for BroadcasterBuilder<T> {
@@ -64,7 +65,13 @@ where
             config,
             max_fee_rate,
             broadcast_poll_interval_ms: DEFAULT_BROADCAST_POLL_INTERVAL_MS,
+            policy: Arc::new(AllowAllPublishPolicy),
         }
+    }
+
+    pub fn with_publish_policy(mut self, policy: Arc<dyn PublishPolicy>) -> Self {
+        self.policy = policy;
+        self
     }
 
     pub fn with_broadcast_poll_interval_ms(mut self, broadcast_poll_interval_ms: u64) -> Self {
@@ -74,7 +81,12 @@ where
 
     /// Launches the broadcaster service and returns a broadcaster handle.
     pub async fn launch(self, executor: &impl AsyncExecutor) -> anyhow::Result<L1BroadcastHandle> {
-        let io = BroadcasterIo::new(self.rpc_client, self.ops.clone(), self.max_fee_rate);
+        let io = BroadcasterIo::new(
+            self.rpc_client,
+            self.ops.clone(),
+            self.max_fee_rate,
+            self.policy,
+        );
         let state = BroadcasterServiceState::try_new(io, self.config).await?;
 
         let (command_tx, command_rx) = mpsc::channel::<BroadcasterInputMessage>(64);
