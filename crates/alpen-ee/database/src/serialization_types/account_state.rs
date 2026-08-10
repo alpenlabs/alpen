@@ -29,8 +29,10 @@ impl DBAccountStateAtEpoch {
 // DB compatibility/versioning path for existing local data.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBEeAccountState {
-    last_exec_blkid: Hash,
-    last_exec_state_root: Hash,
+    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
+    last_exec_blkid: [u8; 32],
+    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
+    last_exec_state_root: [u8; 32],
     pending_inputs: Vec<DBPendingInputEntry>,
     pending_fincls: Vec<DBPendingFinclEntry>,
 }
@@ -40,8 +42,8 @@ impl From<EeAccountState> for DBEeAccountState {
         let (last_exec_blkid, last_exec_state_root, pending_inputs, pending_fincls) =
             value.into_parts();
         Self {
-            last_exec_blkid,
-            last_exec_state_root,
+            last_exec_blkid: last_exec_blkid.into(),
+            last_exec_state_root: last_exec_state_root.into(),
             pending_inputs: pending_inputs.into_iter().map(Into::into).collect(),
             pending_fincls: pending_fincls.into_iter().map(Into::into).collect(),
         }
@@ -51,8 +53,8 @@ impl From<EeAccountState> for DBEeAccountState {
 impl From<DBEeAccountState> for EeAccountState {
     fn from(value: DBEeAccountState) -> Self {
         Self::new(
-            value.last_exec_blkid,
-            value.last_exec_state_root,
+            Hash::from(value.last_exec_blkid),
+            Hash::from(value.last_exec_state_root),
             value.pending_inputs.into_iter().map(Into::into).collect(),
             value.pending_fincls.into_iter().map(Into::into).collect(),
         )
@@ -77,20 +79,24 @@ impl From<BitcoinAmount> for DBBitcoinAmount {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DBPendingFinclEntry {
     epoch: u32,
-    raw_tx_hash: Hash,
+    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
+    raw_tx_hash: [u8; 32],
 }
 
 impl From<PendingFinclEntry> for DBPendingFinclEntry {
     fn from(value: PendingFinclEntry) -> Self {
         let (epoch, raw_tx_hash) = value.into_parts();
-        Self { epoch, raw_tx_hash }
+        Self {
+            epoch,
+            raw_tx_hash: raw_tx_hash.into(),
+        }
     }
 }
 
 impl From<DBPendingFinclEntry> for PendingFinclEntry {
     fn from(value: DBPendingFinclEntry) -> Self {
         let DBPendingFinclEntry { epoch, raw_tx_hash } = value;
-        Self::new(epoch, raw_tx_hash)
+        Self::new(epoch, Hash::from(raw_tx_hash))
     }
 }
 

@@ -1175,7 +1175,6 @@ dependencies = [
  "async-trait",
  "bincode",
  "bitcoin",
- "borsh",
  "eyre",
  "mockall",
  "reth-ethereum-engine-primitives",
@@ -1287,11 +1286,13 @@ dependencies = [
  "alpen-reth-db",
  "async-trait",
  "bitcoin",
+ "ciborium",
  "eyre",
  "serde",
  "sled",
  "ssz",
  "strata-acct-types",
+ "strata-codec",
  "strata-db-macros",
  "strata-db-store-sled",
  "strata-db-types",
@@ -1305,7 +1306,6 @@ dependencies = [
  "tokio",
  "tracing",
  "typed-sled",
- "zkaleido",
 ]
 
 [[package]]
@@ -15406,6 +15406,7 @@ dependencies = [
  "strata-btc-types",
  "strata-chain-worker",
  "strata-checkpoint-types",
+ "strata-codec",
  "strata-common",
  "strata-csm-types",
  "strata-csm-worker",

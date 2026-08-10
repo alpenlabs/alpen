@@ -1,7 +1,5 @@
 //! In-memory implementation of BatchStorage for testing.
 
-// TODO(trey): make all fields on InMemoryStorage non-pub
-
 use std::{
     collections::{BTreeMap, HashMap},
     sync::RwLock,
@@ -18,14 +16,14 @@ use crate::{
 /// In-memory storage for batches and chunks.
 #[derive(Debug, Default)]
 pub struct InMemoryStorage {
-    pub batches: RwLock<BTreeMap<u64, (Batch, BatchStatus)>>,
-    pub batch_id_to_idx: RwLock<HashMap<BatchId, u64>>,
-    pub chunks: RwLock<BTreeMap<u64, (Chunk, ChunkStatus)>>,
-    pub chunk_id_to_idx: RwLock<HashMap<ChunkId, u64>>,
-    pub batch_chunks: RwLock<HashMap<BatchId, Vec<ChunkId>>>,
-    pub block_accessed_state: RwLock<HashMap<Hash, AccessedStateRecord>>,
-    pub bytecodes: RwLock<HashMap<Hash, Vec<u8>>>,
-    pub block_witnesses: RwLock<HashMap<Hash, Vec<u8>>>,
+    batches: RwLock<BTreeMap<u64, (Batch, BatchStatus)>>,
+    batch_id_to_idx: RwLock<HashMap<BatchId, u64>>,
+    chunks: RwLock<BTreeMap<u64, (Chunk, ChunkStatus)>>,
+    chunk_id_to_idx: RwLock<HashMap<ChunkId, u64>>,
+    batch_chunks: RwLock<HashMap<BatchId, Vec<ChunkId>>>,
+    block_accessed_state: RwLock<HashMap<Hash, AccessedStateRecord>>,
+    bytecodes: RwLock<HashMap<Hash, Vec<u8>>>,
+    block_witnesses: RwLock<HashMap<Hash, Vec<u8>>>,
 }
 
 impl InMemoryStorage {

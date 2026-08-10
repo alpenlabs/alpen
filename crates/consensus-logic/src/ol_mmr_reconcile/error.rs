@@ -1,7 +1,6 @@
 //! Error types for OL MMR index reconciliation.
 
-use std::io;
-
+use strata_codec::CodecError;
 use strata_db_types::{DbError, MmrId};
 use strata_ol_mmr_index::OLMmrIndexError;
 use thiserror::Error;
@@ -20,7 +19,7 @@ pub enum OLMmrReconcileError {
 
         /// Decode error.
         #[source]
-        source: io::Error,
+        source: CodecError,
     },
 
     /// The shared OL MMR index classifier rejected the plan.

@@ -96,7 +96,7 @@ impl StubCtx {
         &mut self,
         height: L1Height,
         blkid: L1BlockId,
-        state: AsmState,
+        state: AsmExecOutput,
     ) {
         self.canonical_asm_states.insert(height, (blkid, state));
     }
