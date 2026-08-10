@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use strata_csm_types::{PayloadDest, PayloadIntent};
 use strata_db_types::l1_writer::{BundledPayloadEntry, IntentEntry, IntentStatus, L1BundleStatus};
 use strata_primitives::buf::Buf32;
@@ -131,22 +132,19 @@ impl EnvelopeHandle {
     }
 }
 
-/// Looks into the database from descending index order till it reaches 0 or `Finalized`
-/// [`PayloadEntry`] from which the rest of the [`PayloadEntry`]s should be watched.
+/// Returns the earliest nonterminal payload index that the watcher must resume from.
 pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow::Result<u64> {
-    let mut next_idx = insc_ops.get_next_payload_idx_blocking()?;
-
-    while next_idx > 0 {
-        let Some(payload) = insc_ops.get_payload_entry_by_idx_blocking(next_idx - 1)? else {
-            break;
-        };
-        if matches!(
+    let next_idx = insc_ops.get_next_payload_idx_blocking()?;
+    for idx in 0..next_idx {
+        let payload = insc_ops
+            .get_payload_entry_by_idx_blocking(idx)?
+            .with_context(|| format!("inconsistent L1 writer DB: missing payload idx {idx}"))?;
+        if !matches!(
             payload.status,
             L1BundleStatus::Finalized | L1BundleStatus::Abandoned
         ) {
-            break;
-        };
-        next_idx -= 1;
+            return Ok(idx);
+        }
     }
     Ok(next_idx)
 }
@@ -196,7 +194,7 @@ mod test {
         iops.put_payload_entry_blocking(2, e3).unwrap();
 
         let mut e4: BundledPayloadEntry = ArbitraryGenerator::new().generate();
-        e4.status = L1BundleStatus::Unsigned;
+        e4.status = L1BundleStatus::Abandoned;
         iops.put_payload_entry_blocking(3, e4).unwrap();
 
         let idx = get_next_payloadidx_to_watch(&iops).unwrap();
