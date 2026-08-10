@@ -15,10 +15,12 @@ use strata_csm_types::L1Payload;
 use strata_db_types::{
     DbResult,
     backend::DatabaseBackend,
+    chunked_envelope::L1ChunkedEnvelopeDatabase,
     l1_broadcast::{L1BroadcastDatabase, L1TxStatus},
     l1_writer::{BundledPayloadEntry, L1BundleStatus, L1WriterDatabase},
 };
 use strata_identifiers::Epoch;
+use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 use strata_storage::NodeStorage;
 use tracing::warn;
 
@@ -104,11 +106,11 @@ impl CheckpointPublishPolicy {
 
 impl PublishPolicy for CheckpointPublishPolicy {
     fn decide(&self, tx: &Transaction) -> PublishDecision {
-        match writer_bundle_for_tx(self.storage.db().as_ref(), tx) {
-            Ok(Some(bundle)) => self.decide_bundle(&bundle, tx),
-            Ok(None) => PublishDecision::Publish,
+        match publication_for_tx(self.storage.db().as_ref(), tx) {
+            Ok((Some(bundle), _)) => self.decide_bundle(&bundle, tx),
+            Ok((None, decision)) => decision,
             Err(err) => {
-                warn!(%err, "deferring transaction while writer queue is unavailable");
+                warn!(%err, "deferring transaction while publication linkage is unavailable");
                 PublishDecision::Defer
             }
         }
@@ -131,10 +133,10 @@ pub(crate) fn checkpoint_from_payload(
         .map_err(|_| ())
 }
 
-fn writer_bundle_for_tx(
+fn publication_for_tx(
     db: &impl DatabaseBackend,
     tx: &Transaction,
-) -> DbResult<Option<BundledPayloadEntry>> {
+) -> DbResult<(Option<BundledPayloadEntry>, PublishDecision)> {
     let txid = tx.compute_txid().to_buf32().0;
     let writer = db.writer_db();
     for idx in (0..writer.get_next_payload_idx()?).rev() {
@@ -142,13 +144,71 @@ fn writer_bundle_for_tx(
             continue;
         };
         if entry.commit_txid.0 == txid || entry.reveal_txid.0 == txid {
-            return Ok(Some(entry));
-        }
-        if matches!(entry.status, L1BundleStatus::Finalized) {
-            break;
+            return Ok((Some(entry), PublishDecision::Publish));
         }
     }
-    Ok(None)
+
+    let chunked = db.chunked_envelope_db();
+    for idx in (0..chunked.get_next_chunked_envelope_idx()?).rev() {
+        let Some(entry) = chunked.get_chunked_envelope_entry(idx)? else {
+            continue;
+        };
+        if entry.commit_txid.0 == txid || entry.reveals.iter().any(|reveal| reveal.txid.0 == txid) {
+            return Ok((None, PublishDecision::Publish));
+        }
+    }
+
+    let broadcast = db.broadcast_db();
+    let current = broadcast
+        .get_tx_entry_by_id(txid.into())?
+        .map(|entry| entry.status);
+    if is_envelope_reveal(tx)
+        && let Some(parent) = tx.input.first().map(|input| input.previous_output)
+        && parent.vout == 0
+        && let Some(parent) = broadcast.get_tx_entry_by_id(parent.txid.to_buf32())?
+    {
+        return Ok((
+            None,
+            pair_decision(
+                PublishDecision::Abandon,
+                PairMember::Reveal,
+                Some(parent.status),
+                current,
+            ),
+        ));
+    }
+    for idx in 0..broadcast.get_next_tx_idx()? {
+        let Some(entry) = broadcast.get_tx_entry(idx)? else {
+            continue;
+        };
+        let Ok(candidate) = entry.try_to_tx() else {
+            continue;
+        };
+        if is_envelope_reveal(&candidate)
+            && candidate.input.first().is_some_and(|input| {
+                input.previous_output.txid.to_buf32().0 == txid && input.previous_output.vout == 0
+            })
+        {
+            return Ok((
+                None,
+                pair_decision(
+                    PublishDecision::Abandon,
+                    PairMember::Commit,
+                    current,
+                    Some(entry.status),
+                ),
+            ));
+        }
+    }
+    warn!(txid = %tx.compute_txid(), "deferring transaction without durable publication linkage");
+    Ok((None, PublishDecision::Defer))
+}
+
+fn is_envelope_reveal(tx: &Transaction) -> bool {
+    tx.input
+        .first()
+        .and_then(|input| input.witness.taproot_leaf_script())
+        .is_some_and(|leaf| parse_envelope_payload(&leaf.script.into()).is_ok())
 }
 
 fn checkpoint_decision(
@@ -208,7 +268,117 @@ fn pair_decision(
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::{OutPoint, Sequence, Transaction, TxIn, Witness, absolute, transaction};
+    use strata_asm_proto_txs_test_utils::create_reveal_transaction_stub;
+    use strata_btc_types::TxidExt;
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::{
+        backend::DatabaseBackend,
+        chunked_envelope::{ChunkedEnvelopeEntry, L1ChunkedEnvelopeDatabase},
+        l1_broadcast::L1TxEntry,
+    };
+    use strata_l1_txfmt::MagicBytes;
+
     use super::*;
+
+    #[test]
+    fn unlinked_transaction_is_quarantined_but_chunked_transaction_is_known() {
+        let db = get_test_sled_backend();
+        let tx = Transaction {
+            version: transaction::Version::TWO,
+            lock_time: absolute::LockTime::ZERO,
+            input: vec![],
+            output: vec![],
+        };
+        assert_eq!(
+            publication_for_tx(db.as_ref(), &tx).unwrap().1,
+            PublishDecision::Defer
+        );
+
+        let mut chunked =
+            ChunkedEnvelopeEntry::new_unsigned(vec![vec![1]], MagicBytes::new([1; 4]), 1);
+        chunked.commit_txid = tx.compute_txid().to_buf32().0.into();
+        db.chunked_envelope_db()
+            .put_chunked_envelope_entry(0, chunked)
+            .unwrap();
+        assert_eq!(
+            publication_for_tx(db.as_ref(), &tx).unwrap().1,
+            PublishDecision::Publish
+        );
+    }
+
+    #[test]
+    fn unlinked_legacy_pair_probes_reveal_before_abandoning_commit() {
+        let db = get_test_sled_backend();
+        let funding = Transaction {
+            version: transaction::Version::TWO,
+            lock_time: absolute::LockTime::ZERO,
+            input: vec![],
+            output: vec![],
+        };
+        let commit = Transaction {
+            version: transaction::Version::ONE,
+            lock_time: absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(funding.compute_txid(), 0),
+                script_sig: Default::default(),
+                sequence: Sequence::MAX,
+                witness: Witness::new(),
+            }],
+            output: vec![],
+        };
+        let mut reveal = create_reveal_transaction_stub(vec![1; 126], &OL_STF_CHECKPOINT_TX_TAG);
+        reveal.input[0].previous_output = OutPoint::new(commit.compute_txid(), 0);
+        for tx in [&funding, &commit] {
+            db.broadcast_db()
+                .put_tx_entry(tx.compute_txid().to_buf32(), L1TxEntry::from_tx(tx))
+                .unwrap();
+        }
+        assert_eq!(
+            publication_for_tx(db.as_ref(), &commit).unwrap().1,
+            PublishDecision::Defer
+        );
+        db.broadcast_db()
+            .put_tx_entry(
+                reveal.compute_txid().to_buf32(),
+                L1TxEntry::from_tx(&reveal),
+            )
+            .unwrap();
+
+        for (tx, expected) in [
+            (&commit, PublishDecision::Defer),
+            (&reveal, PublishDecision::Publish),
+        ] {
+            assert_eq!(publication_for_tx(db.as_ref(), tx).unwrap().1, expected);
+        }
+
+        let mut published_commit = L1TxEntry::from_tx(&commit);
+        published_commit.status = L1TxStatus::Published;
+        db.broadcast_db()
+            .put_tx_entry(commit.compute_txid().to_buf32(), published_commit)
+            .unwrap();
+        let next_commit = Transaction {
+            version: transaction::Version::TWO,
+            lock_time: absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(reveal.compute_txid(), 1),
+                script_sig: Default::default(),
+                sequence: Sequence::MAX,
+                witness: Witness::new(),
+            }],
+            output: vec![],
+        };
+        db.broadcast_db()
+            .put_tx_entry(
+                next_commit.compute_txid().to_buf32(),
+                L1TxEntry::from_tx(&next_commit),
+            )
+            .unwrap();
+        assert_eq!(
+            publication_for_tx(db.as_ref(), &reveal).unwrap().1,
+            PublishDecision::Publish
+        );
+    }
 
     #[test]
     fn checkpoint_and_pair_decisions_cover_safe_publication_states() {

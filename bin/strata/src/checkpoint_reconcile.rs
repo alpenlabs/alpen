@@ -32,36 +32,15 @@ pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -
     };
 
     let storage = nodectx.storage();
-    let mut cleanup_commitments =
-        checkpoint_commitments_from_epoch(nodectx, first_unaccepted_epoch)?;
-
     let mut deleted_payloads = Vec::new();
-    let mut cancelled = Vec::new();
-    for commitment in cleanup_commitments {
+    let mut deleted_proofs = 0usize;
+    let mut deleted_tasks = 0usize;
+    for commitment in checkpoint_commitments_from_epoch(nodectx, first_unaccepted_epoch)? {
         #[cfg(feature = "sequencer")]
         if !cancel_queued_checkpoint(storage.db().as_ref(), commitment)? {
             continue;
         }
 
-        cancelled.push(commitment);
-
-        if storage
-            .ol_checkpoint()
-            .get_checkpoint_l1_ref_blocking(commitment)?
-            .is_none()
-            && storage
-                .ol_checkpoint()
-                .del_checkpoint_payload_entry_blocking(commitment)?
-        {
-            deleted_payloads.push(commitment);
-        }
-    }
-    cleanup_commitments = cancelled;
-
-    let mut deleted_proofs = 0usize;
-    let mut deleted_tasks = 0usize;
-
-    for commitment in cleanup_commitments {
         if storage
             .checkpoint_proof()
             .del_proof(commitment)
@@ -77,6 +56,14 @@ pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -
             .with_context(|| format!("delete checkpoint prover task for commitment {commitment}"))?
         {
             deleted_tasks += 1;
+        }
+
+        if storage
+            .db()
+            .ol_checkpoint_db()
+            .del_local_checkpoint_payload_if_unobserved(commitment)?
+        {
+            deleted_payloads.push(commitment);
         }
     }
 
