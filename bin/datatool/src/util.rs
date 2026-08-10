@@ -19,7 +19,7 @@ const DEFAULT_NETWORK: Network = Network::Signet;
 /// Sequencer key environment variable.
 pub(crate) const SEQKEY_ENVVAR: &str = "STRATA_SEQ_KEY";
 
-/// Resolves a [`Network`] from a string.
+/// Resolves a [`Network`] from a string accepted by [`Network::from_str`].
 ///
 /// Priority:
 ///
@@ -29,28 +29,19 @@ pub(crate) const SEQKEY_ENVVAR: &str = "STRATA_SEQ_KEY";
 pub(crate) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
     // First, check if a command-line argument was provided
     if let Some(network_str) = arg {
-        return parse_network(network_str)
+        return Network::from_str(network_str)
             .map_err(|_| anyhow::anyhow!("unsupported network option: {network_str}"));
     }
 
     // If no argument provided, check environment variable
     if let Ok(env_network) = env::var(BITCOIN_NETWORK_ENVVAR) {
-        return parse_network(&env_network).map_err(|_| {
+        return Network::from_str(&env_network).map_err(|_| {
             anyhow::anyhow!("unsupported network option in {BITCOIN_NETWORK_ENVVAR}: {env_network}")
         });
     }
 
     // Fall back to default
     Ok(DEFAULT_NETWORK)
-}
-
-fn parse_network(network: &str) -> anyhow::Result<Network> {
-    match network {
-        "bitcoin" => Ok(Network::Bitcoin),
-        "signet" => Ok(Network::Signet),
-        "regtest" => Ok(Network::Regtest),
-        n => anyhow::bail!("unsupported network option: {n}"),
-    }
 }
 
 /// Parses an abbreviated amount string.
@@ -127,31 +118,4 @@ fn parse_xpriv_from_env(env: &'static str) -> anyhow::Result<Xpriv> {
     };
 
     Ok(xpriv)
-}
-
-#[cfg(test)]
-mod tests {
-    use bitcoin::Network;
-
-    use super::parse_network;
-
-    #[test]
-    fn test_parse_network_accepts_bitcoin_network() {
-        assert_eq!(parse_network("bitcoin").unwrap(), Network::Bitcoin);
-    }
-
-    #[test]
-    fn test_parse_network_accepts_existing_networks() {
-        assert_eq!(parse_network("signet").unwrap(), Network::Signet);
-        assert_eq!(parse_network("regtest").unwrap(), Network::Regtest);
-    }
-
-    #[test]
-    fn test_parse_network_rejects_unsupported_networks() {
-        let error = parse_network("testnet").expect_err("testnet should remain unsupported");
-        assert_eq!(error.to_string(), "unsupported network option: testnet");
-
-        let error = parse_network("mainnet").expect_err("mainnet should remain unsupported");
-        assert_eq!(error.to_string(), "unsupported network option: mainnet");
-    }
 }

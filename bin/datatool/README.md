@@ -11,9 +11,14 @@ The basic flow to generate the params files looks like this:
 strata-datatool genxpriv sequencer.bin
 strata-datatool genxpriv operator1.bin
 strata-datatool genxpriv operator2.bin
+```
 
-# Select the Bitcoin network with --bitcoin-network or BITCOIN_NETWORK.
-# Supported values are bitcoin, signet, and regtest.
+Accepted `--bitcoin-network` and `BITCOIN_NETWORK` values are those supported by
+[`bitcoin::Network`].
+
+[`bitcoin::Network`]: https://docs.rs/bitcoin/latest/bitcoin/enum.Network.html
+
+```sh
 strata-datatool --bitcoin-network bitcoin genxpriv bitcoin-sequencer.bin
 
 # Generate the pubkeys, also on their original machines.

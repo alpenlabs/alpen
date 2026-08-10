@@ -17,7 +17,7 @@ use crate::{
 pub(crate) struct Args {
     #[argh(
         option,
-        description = "network name [bitcoin, signet, regtest]",
+        description = "bitcoin network name accepted by `bitcoin::Network`",
         short = 'b'
     )]
     pub(crate) bitcoin_network: Option<String>,
