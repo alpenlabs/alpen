@@ -19,30 +19,24 @@ const DEFAULT_NETWORK: Network = Network::Signet;
 /// Sequencer key environment variable.
 pub(crate) const SEQKEY_ENVVAR: &str = "STRATA_SEQ_KEY";
 
-/// Resolves a [`Network`] from a string.
+/// Resolves a [`Network`] from a string accepted by [`Network::from_str`].
 ///
 /// Priority:
 ///
 /// 1. Command-line argument (if provided)
 /// 2. `BITCOIN_NETWORK` environment variable (if set)
 /// 3. Default network (Signet)
-pub(crate) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
+pub(crate) fn resolve_network(arg: Option<Network>) -> anyhow::Result<Network> {
     // First, check if a command-line argument was provided
-    if let Some(network_str) = arg {
-        return match network_str {
-            "signet" => Ok(Network::Signet),
-            "regtest" => Ok(Network::Regtest),
-            n => anyhow::bail!("unsupported network option: {n}"),
-        };
+    if let Some(network) = arg {
+        return Ok(network);
     }
 
     // If no argument provided, check environment variable
     if let Ok(env_network) = env::var(BITCOIN_NETWORK_ENVVAR) {
-        return match env_network.as_str() {
-            "signet" => Ok(Network::Signet),
-            "regtest" => Ok(Network::Regtest),
-            n => anyhow::bail!("unsupported network option in {BITCOIN_NETWORK_ENVVAR}: {n}"),
-        };
+        return Network::from_str(&env_network).map_err(|_| {
+            anyhow::anyhow!("unsupported network option in {BITCOIN_NETWORK_ENVVAR}: {env_network}")
+        });
     }
 
     // Fall back to default
