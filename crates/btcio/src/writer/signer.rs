@@ -56,6 +56,9 @@ async fn persist_envelope_pair(
     linked.commit_txid = cid;
     linked.reveal_txid = rid;
     linked.status = L1BundleStatus::Unpublished;
+    // Persist writer linkage before exposing either transaction to the broadcaster. If this
+    // process stops between the writes, reconciliation can cancel the unsent pair or the watcher
+    // can reset it for rebuilding.
     ops.put_payload_entry_async(payload_idx, linked)
         .await
         .map_err(|e| EnvelopeError::Other(e.into()))?;
