@@ -5,8 +5,8 @@ use thiserror::Error;
 /// Errors that can occur during storage operations.
 #[derive(Debug, Error)]
 pub enum StorageError {
-    /// No state found for the requested slot.
-    #[error("state not found for slot {0}")]
+    /// No state found for the requested epoch.
+    #[error("state not found for epoch {0}")]
     StateNotFound(u64),
 
     /// Attempted to store a slot that would create a gap in the stored sequence.

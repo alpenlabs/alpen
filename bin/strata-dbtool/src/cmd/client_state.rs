@@ -35,7 +35,7 @@ pub(crate) fn get_client_state_update(
     ))?;
     let block_commitment = L1BlockCommitment::new(block_mf.height(), *block_mf.blkid());
 
-    let (client_state, actions) = db
+    let client_state = db
         .client_state_db()
         .get_client_update(block_commitment)
         .internal_error("Failed to fetch client state")?
@@ -45,12 +45,11 @@ pub(crate) fn get_client_state_update(
                 Box::new(()),
             )
         })?
-        .into_parts();
+        .into_state();
 
     // Create the output data structure
     let client_state_info = ClientStateUpdateInfo {
         state: client_state,
-        sync_actions: &actions,
         block: block_commitment,
     };
 

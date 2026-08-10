@@ -21,9 +21,12 @@ use strata_db_types::{
 use tracing::*;
 
 use super::{builder::build_chunked_envelope_txs, context::ChunkedWriterContext};
-use crate::writer::{
-    builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
-    fees::resolve_fee_rate,
+use crate::{
+    tx_entry::L1TxEntryExt,
+    writer::{
+        builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
+        fees::resolve_fee_rate,
+    },
 };
 
 fn format_reveal_refs(reveals: &[RevealTxMeta]) -> Vec<String> {

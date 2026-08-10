@@ -21,6 +21,7 @@ use crate::{
         ee_receipts::{DeletedEeReceiptInfo, EeReceiptInfo},
         output,
     },
+    utils::proof_receipt::decode_receipt,
 };
 
 /// Fetch a stored chunk-proof receipt by its task key.
@@ -140,6 +141,7 @@ pub(crate) fn ee_get_chunk_receipt(
             )
         })?;
 
+    let receipt = decode_receipt(&receipt)?;
     let info = EeReceiptInfo::from_receipt(args.key_hex, "chunk", &receipt);
     output(&info, args.output_format)
 }
@@ -195,6 +197,7 @@ pub(crate) fn ee_get_acct_proof(
             )
         })?;
 
+    let receipt = decode_receipt(&receipt)?;
     let info = EeReceiptInfo::from_receipt(args.batch_id, "acct", &receipt);
     output(&info, args.output_format)
 }

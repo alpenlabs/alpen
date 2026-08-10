@@ -120,7 +120,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &last,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed client state");
 
@@ -225,7 +225,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &last,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed client state");
 

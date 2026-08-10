@@ -475,7 +475,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 block,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed client state row");
     }
@@ -496,10 +496,7 @@ mod tests {
         let initial_block = L1BlockCommitment::new(0, L1BlockId::default());
         storage
             .client_state()
-            .put_update_blocking(
-                &initial_block,
-                ClientUpdateOutput::new(initial_state, vec![]),
-            )
+            .put_update_blocking(&initial_block, ClientUpdateOutput::new_state(initial_state))
             .expect("Failed to initialize client state");
 
         let mut arbgen = ArbitraryGenerator::new();
@@ -1150,7 +1147,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &anchor,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed fork row");
 
@@ -1236,7 +1233,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &tip,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed client state at tip");
 

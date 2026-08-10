@@ -16,6 +16,7 @@ use crate::{
         checkpoint_proof::{CheckpointProofInfo, DeletedCheckpointProofInfo},
         output,
     },
+    utils::proof_receipt::decode_receipt,
 };
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -75,6 +76,7 @@ pub(crate) fn get_checkpoint_proof(
             )
         })?;
 
+    let receipt = decode_receipt(&receipt)?;
     let info = CheckpointProofInfo::from_receipt(args.epoch, *commitment.last_blkid(), &receipt);
     output(&info, args.output_format)
 }

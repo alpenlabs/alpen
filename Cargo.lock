@@ -15634,7 +15634,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
  "arbitrary",
- "bitcoin",
  "proptest",
  "serde",
  "serde_json",

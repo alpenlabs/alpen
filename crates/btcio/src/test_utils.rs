@@ -39,7 +39,10 @@ use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
 use strata_l1_envelope_fmt::builder::build_envelope_script;
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
-use crate::writer::builder::{build_reveal_transaction, EnvelopeError};
+use crate::{
+    tx_entry::L1TxEntryExt,
+    writer::builder::{build_reveal_transaction, EnvelopeError},
+};
 
 /// A test implementation of a Bitcoin client.
 #[derive(Debug, Clone)]

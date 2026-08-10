@@ -386,10 +386,10 @@ mod tests {
                     .client_state()
                     .put_update_blocking(
                         &l1_tip,
-                        ClientUpdateOutput::new(
-                            ClientState::new(Some(checkpoint.clone()), Some(checkpoint)),
-                            Vec::new(),
-                        ),
+                        ClientUpdateOutput::new_state(ClientState::new(
+                            Some(checkpoint.clone()),
+                            Some(checkpoint),
+                        )),
                     )
                     .expect("insert client state");
             }
@@ -574,10 +574,10 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &L1BlockCommitment::new(L1_TIP_HEIGHT + 1, l1_blkid(L1_TIP_HEIGHT + 1)),
-                ClientUpdateOutput::new(
-                    ClientState::new(Some(newer_checkpoint.clone()), Some(newer_checkpoint)),
-                    Vec::new(),
-                ),
+                ClientUpdateOutput::new_state(ClientState::new(
+                    Some(newer_checkpoint.clone()),
+                    Some(newer_checkpoint),
+                )),
             )
             .expect("insert newer client state");
 
@@ -607,7 +607,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &later,
-                ClientUpdateOutput::new(ClientState::new(None, None), Vec::new()),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("overwrite latest client state");
         fixture.assert_failure("no declared final epoch");

@@ -34,6 +34,7 @@ use super::{
 use crate::{
     broadcaster::{is_benign_minus25_message, L1BroadcastHandle},
     rpc_error::{is_retryable_client_error, is_retryable_envelope_error, retryable_reason},
+    tx_entry::L1TxEntryExt,
     writer::builder::EnvelopeError,
     BtcioParams,
 };

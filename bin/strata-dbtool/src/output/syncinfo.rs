@@ -199,7 +199,7 @@ mod tests {
         assert!(output.contains("\"ol_finalized_block_id\""));
 
         // Verify status is present
-        assert!(output.contains("\"ol_tip_block_status\": \"Valid\""));
+        assert!(output.contains("\"ol_tip_block_status\": \"valid\""));
 
         // Verify epoch and block information is present
         assert!(output.contains("\"previous_block\""));

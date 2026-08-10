@@ -16,6 +16,7 @@ use super::{
     input::BroadcasterInputMessage,
     service::BroadcasterStatus,
 };
+use crate::tx_entry::L1TxEntryExt;
 
 #[expect(
     missing_debug_implementations,

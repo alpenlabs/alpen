@@ -2,7 +2,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::RwLock,
+    sync::{RwLock, RwLockReadGuard},
 };
 
 use async_trait::async_trait;
@@ -30,6 +30,13 @@ impl InMemoryStorage {
     /// Create a new empty in-memory storage.
     pub fn new_empty() -> Self {
         Self::default()
+    }
+
+    /// Returns a read guard over the stored batches, keyed by index.
+    ///
+    /// Read-only view for test assertions; mutation goes through the storage traits.
+    pub fn batches(&self) -> RwLockReadGuard<'_, BTreeMap<u64, (Batch, BatchStatus)>> {
+        self.batches.read().expect("batches lock poisoned")
     }
 
     /// Create storage pre-populated with a genesis batch.

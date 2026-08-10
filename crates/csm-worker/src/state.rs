@@ -492,7 +492,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &tip_block,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("Failed to initialize client state");
 
@@ -657,7 +657,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &baseline_block,
-                ClientUpdateOutput::new(baseline.clone(), vec![]),
+                ClientUpdateOutput::new_state(baseline.clone()),
             )
             .expect("seed baseline client state");
 
@@ -759,7 +759,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 block,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("put client state row");
     }

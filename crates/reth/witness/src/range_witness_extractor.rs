@@ -202,7 +202,7 @@ where
 
             // Resolve bytecodes from the content-addressed store and
             // merge into the accumulator.
-            for code_hash_bytes in &record.bytecode_hashes {
+            for code_hash_bytes in record.bytecode_hashes() {
                 let code_hash_storage_key = Hash::from(*code_hash_bytes);
                 let code = handle
                     .block_on(
@@ -220,15 +220,15 @@ where
                     .entry(B256::from(*code_hash_bytes))
                     .or_insert_with(|| Bytecode::new_raw(code.into()));
             }
-            for stored_account in &record.accounts {
-                let address = Address::from(stored_account.address);
+            for stored_account in record.accounts() {
+                let address = Address::from(stored_account.address());
                 let entry = acc.accounts.entry(address).or_default();
-                for slot_bytes in &stored_account.storage_slots {
+                for slot_bytes in stored_account.storage_slots() {
                     entry.insert(U256::from_be_bytes(*slot_bytes));
                 }
             }
             acc.block_idxs
-                .extend(record.ancestor_block_numbers.iter().copied());
+                .extend(record.ancestor_block_numbers().iter().copied());
 
             blocks.push(block);
         }

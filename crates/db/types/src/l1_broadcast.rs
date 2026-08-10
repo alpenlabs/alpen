@@ -1,13 +1,10 @@
 //! L1 broadcast database interface and its transaction-entry record types.
 
 // TODO(trey): split apart L1TxEntry into two database fields so we aren't overwriting the serialized tx whenever we update the status
-// TODO(trey): try to remove bitcoin dep from this crate, do conversion in btcio
 
 use std::fmt;
 
 use arbitrary::Arbitrary;
-use bitcoin::consensus::{self, deserialize, serialize};
-use bitcoin::Transaction;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
@@ -30,27 +27,20 @@ pub struct L1TxEntry {
 }
 
 impl L1TxEntry {
-    /// Create a new [`L1TxEntry`] from a [`Transaction`].
-    pub fn from_tx(tx: &Transaction) -> Self {
+    /// Creates an unpublished entry wrapping an already-serialized transaction.
+    ///
+    /// The database layer treats `tx_raw` as opaque; Bitcoin encoding lives with the callers
+    /// that own a `Transaction` (see `strata_btcio::tx_entry::L1TxEntryExt`).
+    pub fn new_unpublished(tx_raw: Vec<u8>) -> Self {
         Self {
-            tx_raw: serialize(tx),
+            tx_raw,
             status: L1TxStatus::Unpublished,
         }
     }
 
     /// Returns the raw serialized transaction.
-    ///
-    /// # Note
-    ///
-    /// Whenever possible use [`try_to_tx()`](L1TxEntry::try_to_tx) to deserialize the transaction.
-    /// This imposes more strict type checks.
     pub fn tx_raw(&self) -> &[u8] {
         &self.tx_raw
-    }
-
-    /// Deserializes the raw transaction into a [`Transaction`].
-    pub fn try_to_tx(&self) -> Result<Transaction, consensus::encode::Error> {
-        deserialize(&self.tx_raw)
     }
 
     pub fn is_valid(&self) -> bool {

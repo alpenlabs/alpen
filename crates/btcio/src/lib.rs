@@ -8,7 +8,9 @@ pub mod status;
 
 #[cfg(test)]
 pub mod test_utils;
+pub mod tx_entry;
 pub mod writer;
 
 pub use params::BtcioParams;
 pub use rpc_error::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
+pub use tx_entry::L1TxEntryExt;

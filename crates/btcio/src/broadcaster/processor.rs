@@ -7,7 +7,7 @@ use super::{
     io::{BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo, TxLookupOutcome},
     state::{BroadcasterState, IndexedEntry},
 };
-use crate::BtcioParams;
+use crate::{tx_entry::L1TxEntryExt, BtcioParams};
 
 /// Processes unfinalized entries and returns the indexed entries whose status changed.
 pub(super) async fn process_unfinalized_entries<C>(

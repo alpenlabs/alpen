@@ -248,7 +248,7 @@ mod tests {
     }
 
     fn empty_update() -> ClientUpdateOutput {
-        ClientUpdateOutput::new(ClientState::new(None, None), vec![])
+        ClientUpdateOutput::new_state(ClientState::new(None, None))
     }
 
     #[test]

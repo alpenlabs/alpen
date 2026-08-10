@@ -14,7 +14,7 @@ use super::{
     },
     context::WriterContext,
 };
-use crate::broadcaster::L1BroadcastHandle;
+use crate::{broadcaster::L1BroadcastHandle, tx_entry::L1TxEntryExt};
 
 fn to_l1_txid(txid: bitcoin::Txid) -> L1TxId {
     L1TxId::from(txid.to_buf32().0)

@@ -25,8 +25,4 @@ impl ClientUpdateOutput {
     pub fn into_state(self) -> ClientState {
         self.state
     }
-
-    pub fn into_parts(self) -> (ClientState, Vec<()>) {
-        (self.state, Vec::new())
-    }
 }
