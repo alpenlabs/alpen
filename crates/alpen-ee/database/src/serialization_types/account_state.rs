@@ -24,9 +24,9 @@ impl DBAccountStateAtEpoch {
     }
 }
 
-// TODO(STR-3421): Migrate EE account-state persistence away from this Borsh/serde
-// mirror and store the SSZ account-state type directly, including any needed
-// DB compatibility/versioning path for existing local data.
+// TODO(STR-3421): Migrate EE account-state persistence away from this serde mirror and store
+// the SSZ account-state type directly, including any needed DB compatibility/versioning path
+// for existing local data.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBEeAccountState {
     // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix

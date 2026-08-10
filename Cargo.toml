@@ -407,7 +407,6 @@ bitcoind-async-client = { version = "0.10.8", default-features = false, features
   "raw_rpc",
 ] }
 bitvec = { version = "1.0.1", features = ["serde"] }
-borsh = { version = "1.6.1", features = ["derive"] }
 bytes = "1.11.1"
 cfg-if = "1.0.0"
 chrono = "0.4.44"
