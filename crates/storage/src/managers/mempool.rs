@@ -79,8 +79,8 @@ mod tests {
         let result = manager.get_tx(txid).expect("get_tx failed");
         assert!(result.is_some());
         let retrieved = result.unwrap();
-        assert_eq!(retrieved.tx_bytes, tx_bytes);
-        assert_eq!(retrieved.timestamp_micros, timestamp_micros);
+        assert_eq!(retrieved.tx_bytes(), tx_bytes);
+        assert_eq!(retrieved.timestamp_micros(), timestamp_micros);
     }
 
     #[test]
@@ -156,14 +156,14 @@ mod tests {
 
         // Verify both transactions are present
         let tx1_found = all_txs.iter().any(|tx| {
-            tx.txid == tx1_id
-                && tx.tx_bytes == tx1_bytes
-                && tx.timestamp_micros == tx1_timestamp_micros
+            tx.txid() == tx1_id
+                && tx.tx_bytes() == tx1_bytes
+                && tx.timestamp_micros() == tx1_timestamp_micros
         });
         let tx2_found = all_txs.iter().any(|tx| {
-            tx.txid == tx2_id
-                && tx.tx_bytes == tx2_bytes
-                && tx.timestamp_micros == tx2_timestamp_micros
+            tx.txid() == tx2_id
+                && tx.tx_bytes() == tx2_bytes
+                && tx.timestamp_micros() == tx2_timestamp_micros
         });
 
         assert!(tx1_found);

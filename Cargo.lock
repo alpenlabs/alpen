@@ -15582,7 +15582,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "borsh",
  "ciborium",
  "proptest",
  "rkyv",
@@ -15604,7 +15603,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "typed-sled",
- "zkaleido",
 ]
 
 [[package]]
@@ -15627,7 +15625,6 @@ dependencies = [
  "strata-paas",
  "strata-primitives",
  "strata-test-utils",
- "zkaleido",
 ]
 
 [[package]]
@@ -15657,7 +15654,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "zkaleido",
 ]
 
 [[package]]
@@ -16577,7 +16573,6 @@ name = "strata-prover-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "borsh",
  "parking_lot 0.12.5",
  "serde",
  "thiserror 2.0.18",

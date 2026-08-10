@@ -83,8 +83,8 @@ const ACCT_TASK_TAG: u8 = b'a';
 
 /// Classifies an EE task key by its kind tag.
 ///
-/// Returns `None` for OL keys (which don't carry a tag — they're borsh
-/// commitments) and for EE raw-backfilled keys that don't follow the
+/// Returns `None` for OL keys (which don't carry a tag — they're encoded
+/// epoch commitments) and for EE raw-backfilled keys that don't follow the
 /// chunk/acct convention.
 pub(crate) fn ee_kind_for_key(key: &[u8]) -> Option<&'static str> {
     match key.first().copied() {

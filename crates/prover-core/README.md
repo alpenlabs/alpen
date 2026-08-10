@@ -68,7 +68,8 @@ A `ProofSpec` is the single trait consumers implement. It answers three question
 pub trait ProofSpec: Send + Sync + 'static {
     // `TaskKey` bundles these bounds: Clone + Debug + Display + Eq + Hash
     // + Into<Vec<u8>> + TryFrom<Vec<u8>> (byte-key storage) + Send + Sync + 'static.
-    // Must be deterministic (same task → same bytes): borsh/bincode, not JSON.
+    // Must be deterministic (same task → same bytes): fixed-width big-endian
+    // concatenation or bincode, not JSON.
     type Task: TaskKey;
     type Program: ZkVmProgram<Input: Send + Sync> + Send + Sync + 'static;
 
@@ -365,10 +366,9 @@ usually enough.
 ### TaskStore
 
 Persists task records. `InMemoryTaskStore` ships for tests; the node's storage
-managers implement the trait against sled for production. Records are
-borsh-friendly byte-keyed values and carry an optional `metadata` field for
-strategy state (the remote `ProofId`); `clear_metadata` drops it for the
-resubmit path.
+managers implement the trait against sled for production. Records are plain
+byte-keyed values and carry an optional `metadata` field for strategy state
+(the remote `ProofId`); `clear_metadata` drops it for the resubmit path.
 
 ## Feature flags
 

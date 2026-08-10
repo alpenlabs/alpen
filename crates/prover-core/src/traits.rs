@@ -45,8 +45,8 @@ use crate::{
 ///
 /// Byte encoding contract: `Into<Vec<u8>> + TryFrom<Vec<u8>>` must be
 /// deterministic (same task → same bytes) and round-trip lossless,
-/// otherwise idempotent submit and crash recovery break. Borsh and
-/// bincode are deterministic; JSON is not.
+/// otherwise idempotent submit and crash recovery break. Fixed-width
+/// big-endian concatenation is deterministic; JSON is not.
 pub trait TaskKey:
     Clone + Debug + Display + Eq + Hash + Send + Sync + Into<Vec<u8>> + TryFrom<Vec<u8>> + 'static
 {

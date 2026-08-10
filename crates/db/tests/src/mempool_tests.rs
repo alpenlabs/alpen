@@ -14,8 +14,8 @@ pub fn test_put_and_get_tx(db: &impl MempoolDatabase) {
     let result = db.get_tx(txid).unwrap();
     assert!(result.is_some());
     let retrieved = result.unwrap();
-    assert_eq!(retrieved.tx_bytes, tx_bytes);
-    assert_eq!(retrieved.timestamp_micros, timestamp_micros);
+    assert_eq!(retrieved.tx_bytes(), tx_bytes);
+    assert_eq!(retrieved.timestamp_micros(), timestamp_micros);
 }
 
 pub fn test_get_nonexistent_tx(db: &impl MempoolDatabase) {
@@ -69,9 +69,9 @@ pub fn test_get_all_txs(db: &impl MempoolDatabase) {
     for i in 1u8..=3 {
         assert!(all_txs
             .iter()
-            .any(|tx| tx.txid == OLTxId::from(Buf32::from([i; 32]))
-                && tx.tx_bytes == vec![i; 10]
-                && tx.timestamp_micros == (i as u64) * 1_000_000));
+            .any(|tx| tx.txid() == OLTxId::from(Buf32::from([i; 32]))
+                && tx.tx_bytes() == vec![i; 10]
+                && tx.timestamp_micros() == (i as u64) * 1_000_000));
     }
 }
 
@@ -103,8 +103,8 @@ pub fn test_overwrite_tx(db: &impl MempoolDatabase) {
     let result = db.get_tx(txid).unwrap();
     assert!(result.is_some());
     let retrieved = result.unwrap();
-    assert_eq!(retrieved.tx_bytes, tx_bytes_2);
-    assert_eq!(retrieved.timestamp_micros, timestamp_micros_2);
+    assert_eq!(retrieved.tx_bytes(), tx_bytes_2);
+    assert_eq!(retrieved.timestamp_micros(), timestamp_micros_2);
 }
 
 pub fn test_empty_tx_bytes(db: &impl MempoolDatabase) {
@@ -120,8 +120,8 @@ pub fn test_empty_tx_bytes(db: &impl MempoolDatabase) {
     let result = db.get_tx(txid).unwrap();
     assert!(result.is_some());
     let retrieved = result.unwrap();
-    assert_eq!(retrieved.tx_bytes, tx_bytes);
-    assert_eq!(retrieved.timestamp_micros, timestamp_micros);
+    assert_eq!(retrieved.tx_bytes(), tx_bytes);
+    assert_eq!(retrieved.timestamp_micros(), timestamp_micros);
 }
 
 pub fn test_large_tx_bytes(db: &impl MempoolDatabase) {
@@ -137,8 +137,8 @@ pub fn test_large_tx_bytes(db: &impl MempoolDatabase) {
     let result = db.get_tx(txid).unwrap();
     assert!(result.is_some());
     let retrieved = result.unwrap();
-    assert_eq!(retrieved.tx_bytes, tx_bytes);
-    assert_eq!(retrieved.timestamp_micros, timestamp_micros);
+    assert_eq!(retrieved.tx_bytes(), tx_bytes);
+    assert_eq!(retrieved.timestamp_micros(), timestamp_micros);
 }
 
 #[macro_export]

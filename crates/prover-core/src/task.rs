@@ -3,7 +3,6 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -21,18 +20,7 @@ use serde::{Deserialize, Serialize};
 /// makes a working status that omits a counter unrepresentable.
 ///
 /// Terminal (`Completed`/`PermanentFailure`) and `Pending` statuses carry none.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Default,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttemptCounts {
     /// Resume-class retries: network blips / crash recovery — re-poll the same
     /// request. Bounded by `RetryConfig::max_retries`.
@@ -46,7 +34,7 @@ pub struct AttemptCounts {
 }
 
 /// Status of a proof task in the lifecycle.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskStatus {
     /// Task registered but not yet picked up for proving.
     Pending,
@@ -164,7 +152,7 @@ impl<T> TaskResult<T> {
 /// Current wall-clock seconds since UNIX epoch.
 ///
 /// Internal helper — timestamps in task records are plain `u64` seconds
-/// since epoch so the record is borsh-stable.
+/// since epoch so the record encodes stably.
 pub(crate) fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -178,11 +166,11 @@ pub(crate) fn now_secs() -> u64 {
 /// explicit: storage backends store `TaskRecordData` against a `Vec<u8>`
 /// key, and [`TaskRecord`] is just the key-value pair surfaced to callers.
 ///
-/// All time fields are `u64` seconds since UNIX epoch so the record is
-/// directly borsh-serializable — persistent backends store this type as-is,
-/// no on-disk shadow type, no conversion. Sub-second precision isn't
-/// needed anywhere in the prover.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+/// All time fields are `u64` seconds since UNIX epoch so the record serializes
+/// directly — persistent backends store this type as-is, no on-disk shadow
+/// type, no conversion. Sub-second precision isn't needed anywhere in the
+/// prover.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskRecordData {
     status: TaskStatus,
     updated_at_secs: u64,

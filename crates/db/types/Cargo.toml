@@ -20,7 +20,6 @@ strata-ol-state-types.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
 strata-storage-common.workspace = true
-zkaleido.workspace = true
 
 # Optional: only pulled in by the `proxies` feature, which generates the
 # tokio-backed `*Proxy` database wrappers via `gen_proxy`.

@@ -11,7 +11,6 @@ workspace = true
 
 [dependencies]
 async-trait.workspace = true
-borsh.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 thiserror.workspace = true

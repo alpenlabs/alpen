@@ -3,6 +3,7 @@ use std::sync::Arc;
 use alpen_reth_statediff::BlockStateChanges;
 use revm_primitives::alloy_primitives::B256;
 use sled::transaction::{ConflictableTransactionError, ConflictableTransactionResult};
+use strata_db_store_sled::utils::conv_sled_err;
 use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 use tracing::warn;
 use typed_sled::{error::Error, transaction::SledTransactional, SledDb, SledTree};
@@ -48,7 +49,7 @@ impl WitnessDB {
 
 impl WitnessProvider for WitnessDB {
     fn get_block_witness(&self, block_hash: B256) -> DbResult<Option<EvmBlockStfInput>> {
-        let raw = self.witness_tree.get(&block_hash)?;
+        let raw = self.witness_tree.get(&block_hash).map_err(conv_sled_err)?;
 
         let parsed: Option<EvmBlockStfInput> = raw
             .map(|bytes| bincode::deserialize(&bytes))
@@ -59,7 +60,7 @@ impl WitnessProvider for WitnessDB {
     }
 
     fn get_block_witness_raw(&self, block_hash: B256) -> DbResult<Option<Vec<u8>>> {
-        Ok(self.witness_tree.get(&block_hash)?)
+        self.witness_tree.get(&block_hash).map_err(conv_sled_err)
     }
 }
 
@@ -68,17 +69,22 @@ impl WitnessStore for WitnessDB {
         let serialized =
             bincode::serialize(witness).map_err(|err| DbError::Other(err.to_string()))?;
 
-        Ok(self.witness_tree.insert(&block_hash, &serialized)?)
+        self.witness_tree
+            .insert(&block_hash, &serialized)
+            .map_err(conv_sled_err)
     }
 
     fn del_block_witness(&self, block_hash: B256) -> DbResult<()> {
-        Ok(self.witness_tree.remove(&block_hash)?)
+        self.witness_tree.remove(&block_hash).map_err(conv_sled_err)
     }
 }
 
 impl StateDiffProvider for WitnessDB {
     fn get_state_diff_by_hash(&self, block_hash: B256) -> DbResult<Option<BlockStateChanges>> {
-        let raw = self.state_diff_tree.get(&block_hash)?;
+        let raw = self
+            .state_diff_tree
+            .get(&block_hash)
+            .map_err(conv_sled_err)?;
 
         let parsed: Option<BlockStateChanges> = raw
             .map(|bytes| bincode::deserialize(&bytes))
@@ -129,7 +135,9 @@ impl StateDiffStore for WitnessDB {
     }
 
     fn del_state_diff(&self, block_hash: B256) -> DbResult<()> {
-        Ok(self.state_diff_tree.remove(&block_hash)?)
+        self.state_diff_tree
+            .remove(&block_hash)
+            .map_err(conv_sled_err)
     }
 }
 

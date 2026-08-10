@@ -1,10 +1,9 @@
 use strata_db_types::DbResult;
-use strata_db_types::checkpoint_proof::CheckpointProofDatabase;
+use strata_db_types::checkpoint_proof::{CheckpointProofDatabase, ProofReceiptEntry};
 use strata_db_types::errors::DbError;
 use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_identifiers::EpochCommitment;
 use strata_paas::TaskRecordData;
-use zkaleido::ProofReceiptWithMetadata;
 
 use super::schemas::{CheckpointProofSchema, ProverTaskTree};
 use crate::define_sled_database;
@@ -18,7 +17,7 @@ define_sled_database!(
 );
 
 impl CheckpointProofDatabase for ProofDBSled {
-    fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptWithMetadata) -> DbResult<()> {
+    fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptEntry) -> DbResult<()> {
         // Upsert: a re-prove for the same epoch attests to the same statement,
         // so overwriting is safe and lets the receipt hook be idempotent.
         // Refusing the write would only turn "we already have a valid proof"
@@ -34,7 +33,7 @@ impl CheckpointProofDatabase for ProofDBSled {
         Ok(())
     }
 
-    fn get_proof(&self, epoch: EpochCommitment) -> DbResult<Option<ProofReceiptWithMetadata>> {
+    fn get_proof(&self, epoch: EpochCommitment) -> DbResult<Option<ProofReceiptEntry>> {
         self.checkpoint_proof_tree
             .get(&epoch)
             .map_err(conv_sled_err)

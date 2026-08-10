@@ -2,7 +2,10 @@ use strata_db_types::{LeafPos, NodePos, RawMmrId};
 use strata_primitives::buf::Buf32;
 use typed_sled::codec::{CodecError, KeyCodec};
 
-use crate::{define_table_with_seek_key_codec, define_table_without_codec, impl_borsh_value_codec};
+use crate::{
+    define_table_without_codec, impl_codec_value_codec, impl_opaque_value_codec,
+    impl_raw_bytes_key_codec,
+};
 
 define_table_without_codec!(
     /// MMR index node storage: (mmr_id, node_pos) -> hash
@@ -14,13 +17,15 @@ define_table_without_codec!(
     (MmrIndexPreimageSchema) (RawMmrId, LeafPos) => Vec<u8>
 );
 
-define_table_with_seek_key_codec!(
+define_table_without_codec!(
     /// MMR index leaf count storage: mmr_id -> leaf count
     (MmrIndexLeafCountSchema) RawMmrId => u64
 );
+impl_raw_bytes_key_codec!(MmrIndexLeafCountSchema, RawMmrId);
+impl_codec_value_codec!(MmrIndexLeafCountSchema, u64);
 
-impl_borsh_value_codec!(MmrIndexNodeSchema, Buf32);
-impl_borsh_value_codec!(MmrIndexPreimageSchema, Vec<u8>);
+impl_codec_value_codec!(MmrIndexNodeSchema, Buf32);
+impl_opaque_value_codec!(MmrIndexPreimageSchema, Vec<u8>);
 
 // The position types live in `strata-merkle-node-store` and carry no `serde`
 // impls, so the generic bincode seek-key codec cannot be used for the scoped

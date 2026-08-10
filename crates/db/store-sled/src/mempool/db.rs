@@ -16,9 +16,9 @@ define_sled_database!(
 
 impl MempoolDatabase for MempoolDBSled {
     fn put_tx(&self, data: MempoolTxData) -> DbResult<()> {
-        let entry = MempoolTxEntry::new(data.tx_bytes, data.timestamp_micros);
+        let entry = MempoolTxEntry::new(data.tx_bytes().to_vec(), data.timestamp_micros());
         self.config.with_retry((&self.tx_tree,), |(tx_tree,)| {
-            tx_tree.insert(&data.txid, &entry)?;
+            tx_tree.insert(&data.txid(), &entry)?;
             Ok(())
         })
     }

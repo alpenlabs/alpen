@@ -26,4 +26,3 @@ strata-test-utils.workspace = true
 bitcoin.workspace = true
 hex.workspace = true
 proptest.workspace = true
-zkaleido.workspace = true
