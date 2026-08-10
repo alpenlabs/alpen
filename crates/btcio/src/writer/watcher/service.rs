@@ -97,6 +97,7 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
     fn complete_reveal_and_broadcast(
         &self,
         idx: u64,
+        entry: &BundledPayloadEntry,
         envelope: &EnvelopeData,
         sig: &[u8; 64],
     ) -> impl Future<Output = anyhow::Result<L1TxId>> + Send;
@@ -231,6 +232,7 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
             idx,
             entry,
             self.context.clone(),
+            self.ops.as_ref(),
             &self.broadcast_handle,
         )
         .await
@@ -239,12 +241,20 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
     async fn complete_reveal_and_broadcast(
         &self,
         idx: u64,
+        entry: &BundledPayloadEntry,
         envelope: &EnvelopeData,
         sig: &[u8; 64],
     ) -> anyhow::Result<L1TxId> {
-        complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
-            .await
-            .map_err(Into::into)
+        complete_reveal_and_broadcast(
+            idx,
+            entry,
+            envelope,
+            sig,
+            self.ops.as_ref(),
+            &self.broadcast_handle,
+        )
+        .await
+        .map_err(Into::into)
     }
 
     async fn complete_pending_reveal_replacement(
@@ -377,7 +387,7 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 }
 
                 // If finalized, nothing to do, move on to process next entry
-                L1BundleStatus::Finalized => {
+                L1BundleStatus::Finalized | L1BundleStatus::Abandoned => {
                     state.curr_payloadidx += 1;
                 }
 
@@ -473,14 +483,13 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 .await
             {
                 Ok((cid, rid)) => {
-                    let mut updated_entry = payloadentry.clone();
-                    updated_entry.commit_txid = cid;
-                    updated_entry.reveal_txid = rid;
-                    updated_entry.status = L1BundleStatus::Unpublished;
+                    let mut updated = payloadentry.clone();
+                    updated.commit_txid = cid;
+                    updated.reveal_txid = rid;
+                    updated.status = L1BundleStatus::Unpublished;
                     self.ctx
-                        .put_payload_entry(self.curr_payloadidx, updated_entry)
+                        .put_payload_entry(self.curr_payloadidx, updated)
                         .await?;
-
                     debug!(?cid, reveal_txid = ?rid, "envelope signed and queued for broadcast");
                 }
                 Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
@@ -731,14 +740,19 @@ impl<C: WatcherServiceContext> WatcherState<C> {
 
         match self
             .ctx
-            .complete_reveal_and_broadcast(self.curr_payloadidx, &envelope, sig.as_ref())
+            .complete_reveal_and_broadcast(
+                self.curr_payloadidx,
+                &payloadentry,
+                &envelope,
+                sig.as_ref(),
+            )
             .await
         {
             Ok(_rid) => {
-                let mut updated_entry = payloadentry.clone();
-                updated_entry.status = L1BundleStatus::Unpublished;
+                let mut updated = payloadentry.clone();
+                updated.status = L1BundleStatus::Unpublished;
                 self.ctx
-                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .put_payload_entry(self.curr_payloadidx, updated)
                     .await?;
                 debug!("reveal signed and stored for broadcast");
             }
@@ -915,7 +929,10 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     .put_payload_entry(self.curr_payloadidx, updated_entry)
                     .await?;
 
-                if new_status == L1BundleStatus::Finalized {
+                if matches!(
+                    new_status,
+                    L1BundleStatus::Finalized | L1BundleStatus::Abandoned
+                ) {
                     self.curr_payloadidx += 1;
                 }
             }
@@ -959,6 +976,7 @@ pub(crate) fn determine_payload_next_status(
     reveal_status: &L1TxStatus,
 ) -> L1BundleStatus {
     match (&commit_status, &reveal_status) {
+        (_, L1TxStatus::Abandoned) | (L1TxStatus::Abandoned, _) => L1BundleStatus::Abandoned,
         // If reveal is finalized, both are finalized
         (_, L1TxStatus::Finalized { .. }) => L1BundleStatus::Finalized,
         // If reveal is confirmed, both are confirmed
@@ -1020,6 +1038,7 @@ mod tests {
             replacement::build::build_pending_single_reveal_replacement,
             signer::{complete_pending_reveal_replacement, complete_reveal_and_broadcast},
             test_utils::get_broadcast_handle,
+            test_utils::get_envelope_ops,
         },
     };
 
@@ -1235,12 +1254,20 @@ mod tests {
         async fn complete_reveal_and_broadcast(
             &self,
             idx: u64,
+            entry: &BundledPayloadEntry,
             envelope: &EnvelopeData,
             sig: &[u8; 64],
         ) -> anyhow::Result<L1TxId> {
-            complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
-                .await
-                .map_err(Into::into)
+            complete_reveal_and_broadcast(
+                idx,
+                entry,
+                envelope,
+                sig,
+                get_envelope_ops().as_ref(),
+                &self.broadcast_handle,
+            )
+            .await
+            .map_err(Into::into)
         }
 
         async fn complete_pending_reveal_replacement(

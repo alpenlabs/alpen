@@ -124,7 +124,10 @@ pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow
         let Some(payload) = insc_ops.get_payload_entry_by_idx_blocking(next_idx - 1)? else {
             break;
         };
-        if payload.status == L1BundleStatus::Finalized {
+        if matches!(
+            payload.status,
+            L1BundleStatus::Finalized | L1BundleStatus::Abandoned
+        ) {
             break;
         };
         next_idx -= 1;

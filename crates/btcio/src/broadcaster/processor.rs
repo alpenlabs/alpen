@@ -9,7 +9,10 @@ use tracing::*;
 use super::{
     error::{BroadcasterError, BroadcasterResult},
     handle::MAX_REPLACEMENT_CHAIN_HOPS,
-    io::{BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo, TxLookupOutcome},
+    io::{
+        BroadcasterIoContext, PublishDecision, PublishTxOutcome, TxConfirmationInfo,
+        TxLookupOutcome,
+    },
     state::{BroadcasterState, IndexedEntry},
 };
 use crate::{tx_entry::L1TxEntryExt, BtcioParams};
@@ -58,6 +61,7 @@ where
             }
             let mut new_txentry = txentry.clone();
             new_txentry.status = status;
+            io.put_tx_entry_by_idx(idx, new_txentry.clone()).await?;
             processed.updated.push(IndexedEntry::new(idx, new_txentry));
         }
     }
@@ -90,7 +94,7 @@ where
             .await
             .map(Some),
         L1TxStatus::Finalized { .. } => Ok(None),
-        L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. } => Ok(None),
+        L1TxStatus::InvalidInputs | L1TxStatus::Abandoned | L1TxStatus::Replaced { .. } => Ok(None),
     };
     if let Ok(ref updated_status) = result {
         debug!(?updated_status);
@@ -155,7 +159,7 @@ where
         // ancestor check, so a `Replaced` verdict must reach the caller rather than fold into
         // `Published`.
         TxLookupOutcome::Missing => match publish_tx(io, params, txentry).await? {
-            status @ (L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. }) => Ok(status),
+            status @ (L1TxStatus::InvalidInputs | L1TxStatus::Abandoned | L1TxStatus::Replaced { .. }) => Ok(status),
             _ => Ok(L1TxStatus::Published),
         },
         TxLookupOutcome::RetryLater { reason } => {
@@ -421,6 +425,11 @@ where
     let output_count = tx.output.len();
 
     async {
+        match io.publish_decision(&tx) {
+            PublishDecision::Publish => {}
+            PublishDecision::Defer => return Ok(L1TxStatus::Unpublished),
+            PublishDecision::Abandon => return Ok(L1TxStatus::Abandoned),
+        }
         if tx.input.is_empty() {
             error!("tx has no inputs, excluding from broadcast");
             return Ok(L1TxStatus::InvalidInputs);
@@ -561,7 +570,8 @@ mod test {
     use super::*;
     use crate::{
         broadcaster::io::{
-            BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo, TxLookupOutcome,
+            BroadcasterIoContext, PublishDecision, PublishTxOutcome, TxConfirmationInfo,
+            TxLookupOutcome,
         },
         test_utils::gen_l1_tx_entry_with_status,
     };
@@ -593,6 +603,7 @@ mod test {
         entries_by_id: BTreeMap<Buf32, L1TxEntry>,
         adoptions: Arc<Mutex<Vec<(Buf32, Buf32, L1TxStatus)>>>,
         adoption_applies: bool,
+        publish_decision: PublishDecision,
     }
 
     impl MockIoContext {
@@ -619,9 +630,18 @@ mod test {
         fn adoptions(&self) -> Vec<(Buf32, Buf32, L1TxStatus)> {
             self.adoptions.lock().unwrap().clone()
         }
+
+        fn with_publish_decision(mut self, decision: PublishDecision) -> Self {
+            self.publish_decision = decision;
+            self
+        }
     }
 
     impl BroadcasterIoContext for MockIoContext {
+        fn publish_decision(&self, _: &Transaction) -> PublishDecision {
+            self.publish_decision
+        }
+
         async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
             Ok(self.next_idx)
         }
@@ -808,6 +828,21 @@ mod test {
             Some(L1TxStatus::Published),
             "Status should be published for unpublished tx after successful broadcast"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn abandoned_pair_is_not_submitted_to_bitcoin() {
+        let (commit, commit_txid) = entry_with_txid(L1TxStatus::Unpublished);
+        let (reveal, reveal_txid) = entry_with_txid(L1TxStatus::Unpublished);
+        let io = MockIoContext::default().with_publish_decision(PublishDecision::Abandon);
+        let params = get_test_btcio_params();
+
+        for (entry, txid) in [(commit, commit_txid), (reveal, reveal_txid)] {
+            assert_eq!(
+                process_status(&io, &entry, &txid, &params).await,
+                Some(L1TxStatus::Abandoned)
+            );
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

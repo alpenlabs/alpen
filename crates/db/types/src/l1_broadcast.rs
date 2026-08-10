@@ -82,7 +82,7 @@ impl L1TxEntry {
     pub fn is_trackable(&self) -> bool {
         !matches!(
             self.status,
-            L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. }
+            L1TxStatus::InvalidInputs | L1TxStatus::Abandoned | L1TxStatus::Replaced { .. }
         )
     }
 
@@ -157,6 +157,9 @@ pub enum L1TxStatus {
         /// Replacement transaction id.
         by: L1TxId,
     },
+
+    /// The transaction was deliberately excluded from publication.
+    Abandoned,
 }
 
 impl fmt::Display for L1TxStatus {
@@ -186,6 +189,7 @@ impl fmt::Display for L1TxStatus {
             }
             Self::InvalidInputs => f.write_str("invalid_inputs"),
             Self::Replaced { by } => write!(f, "replaced_by({by})"),
+            Self::Abandoned => f.write_str("abandoned"),
         }
     }
 }
@@ -199,6 +203,13 @@ impl fmt::Display for L1TxStatus {
 pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// Updates/Inserts a txentry to database. Returns Some(idx) if newly inserted else None
     fn put_tx_entry(&self, txid: Buf32, txentry: L1TxEntry) -> DbResult<Option<u64>>;
+
+    /// Atomically inserts a commit/reveal pair at consecutive indices.
+    fn put_tx_entry_pair(
+        &self,
+        commit: (Buf32, L1TxEntry),
+        reveal: (Buf32, L1TxEntry),
+    ) -> DbResult<(u64, u64)>;
 
     /// Updates an existing txentry
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()>;
@@ -347,6 +358,7 @@ mod tests {
                 L1TxStatus::Replaced { by: L1TxId::zero() },
                 r#"{"status":"replaced","by":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
             ),
+            (L1TxStatus::Abandoned, r#"{"status":"abandoned"}"#),
         ];
 
         // check serialization and deserialization

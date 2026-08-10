@@ -51,6 +51,34 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
         Ok(idx)
     }
 
+    fn put_tx_entry_pair(
+        &self,
+        commit: (Buf32, L1TxEntry),
+        reveal: (Buf32, L1TxEntry),
+    ) -> DbResult<(u64, u64)> {
+        if commit.0 == reveal.0 {
+            return Err(DbError::Other("commit and reveal txids must differ".into()));
+        }
+        let next = self.get_next_idx()?;
+        self.config
+            .with_retry((&self.tx_tree, &self.tx_id_tree), |(txs, ids)| {
+                if txs.get(&commit.0)?.is_some() || txs.get(&reveal.0)?.is_some() {
+                    return Err(ConflictableTransactionError::Abort(
+                        TSledError::abort(DbError::Other(
+                            "commit/reveal pair already exists".into(),
+                        )),
+                    ));
+                }
+                let commit_idx = find_next_available_id(&ids, next)?;
+                let reveal_idx = find_next_available_id(&ids, commit_idx + 1)?;
+                ids.insert(&commit_idx, &commit.0)?;
+                ids.insert(&reveal_idx, &reveal.0)?;
+                txs.insert(&commit.0, &commit.1)?;
+                txs.insert(&reveal.0, &reveal.1)?;
+                Ok((commit_idx, reveal_idx))
+            })
+    }
+
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()> {
         let Some(txid) = self.tx_id_tree.get(&idx).map_err(conv_sled_err)? else {
             return Err(DbError::Other(format!(

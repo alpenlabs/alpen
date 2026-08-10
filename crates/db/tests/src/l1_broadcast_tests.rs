@@ -76,6 +76,21 @@ pub fn test_put_tx_existing_entry(db: &impl L1BroadcastDatabase) {
     assert_eq!(db.get_tx_entry(idx).unwrap(), Some(txentry));
 }
 
+pub fn test_put_tx_entry_pair(db: &impl L1BroadcastDatabase) {
+    let txs = get_test_bitcoin_txs();
+    let pair = |tx: &Transaction| {
+        (
+            tx.compute_txid().as_raw_hash().to_byte_array().into(),
+            L1TxEntry::from_tx(tx),
+        )
+    };
+    let (commit_idx, reveal_idx) = db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[1])).unwrap();
+
+    assert_eq!((commit_idx, reveal_idx), (0, 1));
+    assert!(db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[2])).is_err());
+    assert_eq!(db.get_next_tx_idx().unwrap(), 2);
+}
+
 pub fn test_update_tx_entry(db: &impl L1BroadcastDatabase) {
     let (txid, txentry) = generate_l1_tx_entry();
 
@@ -768,6 +783,12 @@ macro_rules! l1_broadcast_db_tests {
         fn test_put_tx_existing_entry() {
             let db = $setup_expr;
             $crate::l1_broadcast_tests::test_put_tx_existing_entry(&db);
+        }
+
+        #[test]
+        fn test_put_tx_entry_pair() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_tx_entry_pair(&db);
         }
 
         #[test]
