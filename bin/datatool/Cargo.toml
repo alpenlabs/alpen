@@ -53,7 +53,7 @@ tempfile.workspace = true
 default = ["btc-client"]
 btc-client = ["dep:bitcoind-async-client", "dep:tokio"]
 sp1-builder = [
-  "strata-sp1-guest-builder/sp1-dev",
+  "strata-sp1-guest-builder/build-elf",
   "dep:strata-proofimpl-predicate-keys",
   "strata-proofimpl-predicate-keys/sp1",
 ]
