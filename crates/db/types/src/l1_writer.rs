@@ -213,6 +213,14 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
         payloadentry: BundledPayloadEntry,
     ) -> DbResult<IntentIdx>;
 
+    /// Appends a replacement only while the intent still points to an abandoned payload.
+    fn requeue_abandoned_intent(
+        &self,
+        intent_id: Buf32,
+        abandoned_payload_idx: u64,
+        payloadentry: BundledPayloadEntry,
+    ) -> DbResult<Option<u64>>;
+
     /// Get a [`IntentEntry`] by its hash
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>>;
 

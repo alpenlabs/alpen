@@ -4,9 +4,18 @@ use anyhow::{Context, Result};
 use strata_asm_common::{SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_checkpoint_types::CheckpointProofTask;
+use strata_db_types::{backend::DatabaseBackend, ol_checkpoint::OLCheckpointDatabase};
+#[cfg(feature = "sequencer")]
+use strata_db_types::{
+    l1_broadcast::{L1BroadcastDatabase, L1TxStatus},
+    l1_writer::{BundledPayloadEntry, IntentEntry, IntentStatus, L1BundleStatus, L1WriterDatabase},
+};
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_node_context::NodeContext;
 use tracing::{debug, info};
+
+#[cfg(feature = "sequencer")]
+use crate::checkpoint_publish::checkpoint_from_payload;
 
 /// Deletes local checkpoint artifacts after ASM's accepted checkpoint tip.
 ///
@@ -26,11 +35,28 @@ pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -
     let mut cleanup_commitments =
         checkpoint_commitments_from_epoch(nodectx, first_unaccepted_epoch)?;
 
-    let deleted_payloads = storage
-        .ol_checkpoint()
-        .del_local_checkpoint_payload_entries_from_epoch_blocking(first_unaccepted_epoch)
-        .context("delete unaccepted local checkpoint payloads")?;
-    extend_missing(&mut cleanup_commitments, deleted_payloads.iter().copied());
+    let mut deleted_payloads = Vec::new();
+    let mut cancelled = Vec::new();
+    for commitment in cleanup_commitments {
+        #[cfg(feature = "sequencer")]
+        if !cancel_queued_checkpoint(storage.db().as_ref(), commitment)? {
+            continue;
+        }
+
+        cancelled.push(commitment);
+
+        if storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_ref_blocking(commitment)?
+            .is_none()
+            && storage
+                .ol_checkpoint()
+                .del_checkpoint_payload_entry_blocking(commitment)?
+        {
+            deleted_payloads.push(commitment);
+        }
+    }
+    cleanup_commitments = cancelled;
 
     let mut deleted_proofs = 0usize;
     let mut deleted_tasks = 0usize;
@@ -72,19 +98,23 @@ fn checkpoint_commitments_from_epoch(
     first_unaccepted_epoch: Epoch,
 ) -> Result<Vec<EpochCommitment>> {
     let storage = nodectx.storage();
+    let mut commitments = storage
+        .db()
+        .ol_checkpoint_db()
+        .get_checkpoint_payload_commitments_from_epoch(first_unaccepted_epoch)
+        .context("read unaccepted checkpoint payload commitments")?;
     let Some(last_summarized_epoch) = storage
         .ol_checkpoint()
         .get_last_summarized_epoch_blocking()
         .context("read last summarized checkpoint epoch")?
     else {
-        return Ok(Vec::new());
+        return Ok(commitments);
     };
 
     if first_unaccepted_epoch > last_summarized_epoch {
-        return Ok(Vec::new());
+        return Ok(commitments);
     }
 
-    let mut commitments = Vec::new();
     for epoch in first_unaccepted_epoch..=last_summarized_epoch {
         let epoch_commitments = storage
             .ol_checkpoint()
@@ -94,6 +124,90 @@ fn checkpoint_commitments_from_epoch(
     }
 
     Ok(commitments)
+}
+
+#[cfg(feature = "sequencer")]
+fn cancel_queued_checkpoint(
+    db: &impl DatabaseBackend,
+    commitment: EpochCommitment,
+) -> Result<bool> {
+    let writer = db.writer_db();
+    let mut intents = Vec::new();
+    for idx in 0..writer.get_next_intent_idx()? {
+        let Some(intent) = writer.get_intent_by_idx(idx)? else {
+            continue;
+        };
+        match checkpoint_from_payload(intent.payload()) {
+            Ok(Some(payload))
+                if {
+                    EpochCommitment::from_terminal(
+                        Epoch::from(payload.new_tip().epoch),
+                        *payload.new_tip().l2_commitment(),
+                    ) == commitment
+                } =>
+            {
+                intents.push(intent)
+            }
+            Err(()) => return Ok(false),
+            _ => {}
+        }
+    }
+    if intents.is_empty() {
+        return Ok(true);
+    }
+    let mut all_cancelled = true;
+    for intent in intents {
+        all_cancelled &= cancel_writer_intent(db, intent)?;
+    }
+    Ok(all_cancelled)
+}
+
+#[cfg(feature = "sequencer")]
+fn cancel_writer_intent(db: &impl DatabaseBackend, intent: IntentEntry) -> Result<bool> {
+    let writer = db.writer_db();
+    let IntentStatus::Bundled(payload_idx) = intent.status else {
+        let mut payload = BundledPayloadEntry::new_unsigned(intent.payload().clone());
+        payload.status = L1BundleStatus::Abandoned;
+        writer.bundle_intent_payload(*intent.intent.commitment(), intent, payload)?;
+        return Ok(true);
+    };
+    let mut payload = writer
+        .get_payload_entry_by_idx(payload_idx)?
+        .with_context(|| format!("missing checkpoint writer payload {payload_idx}"))?;
+    if matches!(
+        payload.status,
+        L1BundleStatus::Published | L1BundleStatus::Confirmed | L1BundleStatus::Finalized
+    ) {
+        return Ok(false);
+    }
+    let broadcast = db.broadcast_db();
+    let entries = [payload.commit_txid.0, payload.reveal_txid.0]
+        .map(|txid| broadcast.get_tx_entry_by_id(txid.into()))
+        .into_iter()
+        .collect::<strata_db_types::DbResult<Vec<_>>>()?;
+    if entries.iter().flatten().any(|entry| {
+        matches!(
+            entry.status,
+            L1TxStatus::Unpublished
+                | L1TxStatus::Published
+                | L1TxStatus::Confirmed { .. }
+                | L1TxStatus::Finalized { .. }
+        )
+    }) {
+        return Ok(false);
+    }
+    for (txid, mut entry) in [payload.commit_txid.0, payload.reveal_txid.0]
+        .into_iter()
+        .zip(entries)
+    {
+        if let Some(ref mut entry) = entry {
+            entry.status = L1TxStatus::Abandoned;
+            broadcast.put_tx_entry(txid.into(), entry.clone())?;
+        }
+    }
+    payload.status = L1BundleStatus::Abandoned;
+    writer.put_payload_entry(payload_idx, payload)?;
+    Ok(true)
 }
 
 fn extend_missing<T>(items: &mut Vec<T>, candidates: impl IntoIterator<Item = T>)
@@ -142,4 +256,95 @@ fn first_unaccepted_checkpoint_epoch(nodectx: &NodeContext) -> Result<Option<Epo
     );
 
     Ok(Some(first_unaccepted_epoch))
+}
+
+#[cfg(all(test, feature = "sequencer"))]
+mod tests {
+    use bitcoin::{Transaction, absolute, transaction};
+    use strata_asm_checkpoint_types::test_utils::create_test_checkpoint_payload;
+    use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
+    use strata_codec::encode_to_vec;
+    use strata_codec_utils::CodecSsz;
+    use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::{
+        backend::DatabaseBackend,
+        common::L1TxId,
+        l1_broadcast::{L1BroadcastDatabase, L1TxEntry, L1TxStatus},
+        l1_writer::{BundledPayloadEntry, IntentEntry, L1BundleStatus, L1WriterDatabase},
+    };
+    use strata_identifiers::{Buf32, Epoch, EpochCommitment};
+
+    use super::cancel_queued_checkpoint;
+
+    #[test]
+    fn queued_checkpoint_without_signing_marker_is_reconciled_safely() {
+        let db = get_test_sled_backend();
+        let checkpoint = create_test_checkpoint_payload(14);
+        let commitment = EpochCommitment::from_terminal(
+            Epoch::from(14u32),
+            *checkpoint.new_tip().l2_commitment(),
+        );
+        let encoded = encode_to_vec(&CodecSsz::new(checkpoint.clone())).unwrap();
+        let payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone()).unwrap();
+        let intent = PayloadIntent::new(PayloadDest::L1, Buf32::from([3; 32]), payload.clone());
+        let (commit_txid, reveal_txid) = (L1TxId::from([4; 32]), L1TxId::from([5; 32]));
+        db.writer_db()
+            .put_payload_entry(
+                0,
+                BundledPayloadEntry::new(
+                    payload,
+                    commit_txid,
+                    reveal_txid,
+                    L1BundleStatus::Unpublished,
+                ),
+            )
+            .unwrap();
+        db.writer_db()
+            .put_intent_entry(*intent.commitment(), IntentEntry::new_bundled(intent, 0))
+            .unwrap();
+
+        let tx = Transaction {
+            version: transaction::Version::TWO,
+            lock_time: absolute::LockTime::ZERO,
+            input: vec![],
+            output: vec![],
+        };
+        for txid in [commit_txid, reveal_txid] {
+            db.broadcast_db()
+                .put_tx_entry(Buf32(txid.0), L1TxEntry::from_tx(&tx))
+                .unwrap();
+        }
+
+        assert!(!cancel_queued_checkpoint(db.as_ref(), commitment).unwrap());
+        assert_eq!(
+            db.writer_db()
+                .get_payload_entry_by_idx(0)
+                .unwrap()
+                .unwrap()
+                .status,
+            L1BundleStatus::Unpublished
+        );
+        for txid in [commit_txid, reveal_txid] {
+            assert_eq!(
+                db.broadcast_db()
+                    .get_tx_entry_by_id(Buf32(txid.0))
+                    .unwrap()
+                    .unwrap()
+                    .status,
+                L1TxStatus::Unpublished
+            );
+            db.broadcast_db().del_tx_entry(Buf32(txid.0)).unwrap();
+        }
+
+        assert!(cancel_queued_checkpoint(db.as_ref(), commitment).unwrap());
+        assert_eq!(
+            db.writer_db()
+                .get_payload_entry_by_idx(0)
+                .unwrap()
+                .unwrap()
+                .status,
+            L1BundleStatus::Abandoned
+        );
+    }
 }

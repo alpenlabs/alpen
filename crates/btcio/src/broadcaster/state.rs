@@ -167,7 +167,7 @@ mod test {
 
     use super::*;
     use crate::{
-        broadcaster::io::BroadcasterIo,
+        broadcaster::{io::BroadcasterIo, AllowAllPublishPolicy},
         test_utils::{gen_l1_tx_entry_with_status, SendRawTransactionMode, TestBitcoinClient},
     };
 
@@ -193,7 +193,7 @@ mod test {
             Arc::new(client),
             ops,
             FeeRate::from_sat_per_vb(1_000).unwrap(),
-            Arc::new(crate::broadcaster::AllowAllPublishPolicy),
+            Arc::new(AllowAllPublishPolicy),
         )
     }
 

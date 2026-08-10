@@ -46,6 +46,7 @@ mod sequencer_services {
 
     use crate::{
         checkpoint_auth::CheckpointSequencerKeyProvider,
+        checkpoint_publish::CheckpointPublishPolicy,
         helpers::generate_sequencer_address,
         run_context::{SequencerServiceHandles, ServiceHandlesBuilder},
     };
@@ -90,17 +91,20 @@ mod sequencer_services {
             nodectx.storage().handle().clone(),
             broadcast_db,
         ));
+        let btcio_params = super::build_btcio_params(
+            nodectx.asm_params(),
+            nodectx.config().btcio.l1_reorg_safe_depth,
+        );
+        let policy = Arc::new(CheckpointPublishPolicy::new(nodectx.storage().clone()));
 
         nodectx.task_manager().handle().block_on(async {
             BroadcasterBuilder::new(
                 nodectx.bitcoin_client().clone(),
                 broadcast_ops,
-                super::build_btcio_params(
-                    nodectx.asm_params(),
-                    nodectx.config().btcio.l1_reorg_safe_depth,
-                ),
+                btcio_params,
                 nodectx.config().btcio.broadcaster.max_fee_rate(),
             )
+            .with_publish_policy(policy)
             .with_broadcast_poll_interval_ms(nodectx.config().btcio.broadcaster.poll_interval_ms)
             .launch(nodectx.executor().as_ref())
             .await
