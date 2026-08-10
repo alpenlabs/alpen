@@ -49,7 +49,7 @@ async fn persist_envelope_pair(
     reveal_fee: Amount,
     ops: &EnvelopeDataOps,
     broadcaster: &L1BroadcastHandle,
-) -> Result<(L1TxId, L1TxId), EnvelopeError> {
+) -> Result<(), EnvelopeError> {
     let cid = to_l1_txid(commit.compute_txid());
     let rid = to_l1_txid(reveal.compute_txid());
     let mut linked = payload.clone();
@@ -88,7 +88,8 @@ async fn persist_envelope_pair(
         )
         .await
         .map_err(|e| EnvelopeError::Other(e.into()))?;
-    Ok((cid, rid))
+    info!(?cid, reveal_txid = ?rid, "envelope stored for broadcast");
+    Ok(())
 }
 
 /// Builds envelope transactions for a payload entry.
@@ -148,14 +149,13 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
 /// them in the broadcaster DB.
 ///
 /// Used when no external signer is required.
-/// Returns `(commit_txid, reveal_txid)`.
 pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wallet>(
     payload_idx: u64,
     payloadentry: &BundledPayloadEntry,
     ctx: Arc<WriterContext<R>>,
     ops: &EnvelopeDataOps,
     broadcast_handle: &L1BroadcastHandle,
-) -> Result<(L1TxId, L1TxId), EnvelopeError> {
+) -> Result<(), EnvelopeError> {
     let span = debug_span!(
         "btcio_payload_envelope_unchecked",
         component = "btcio_writer_signer",
@@ -177,7 +177,7 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
         let commit_fee_rate = effective_fee_rate(&envelope.commit_tx, envelope.commit_fee)?;
         let reveal_fee_rate = effective_fee_rate(&envelope.reveal_tx, envelope.reveal_fee)?;
 
-        let (cid, rid) = persist_envelope_pair(
+        persist_envelope_pair(
             payload_idx,
             payloadentry,
             &envelope.commit_tx,
@@ -190,9 +190,7 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
             broadcast_handle,
         )
         .await?;
-
-        info!(?cid, reveal_txid = ?rid, "envelope signed and stored for broadcast");
-        Ok((cid, rid))
+        Ok(())
     }
     .instrument(span)
     .await
@@ -210,7 +208,7 @@ pub(crate) async fn complete_reveal_and_broadcast(
     signature: &[u8; 64],
     ops: &EnvelopeDataOps,
     broadcast_handle: &L1BroadcastHandle,
-) -> Result<L1TxId, EnvelopeError> {
+) -> Result<(), EnvelopeError> {
     let span = debug_span!(
         "btcio_payload_reveal",
         component = "btcio_writer_signer",
@@ -234,7 +232,7 @@ pub(crate) async fn complete_reveal_and_broadcast(
         let commit_fee_rate = effective_fee_rate(&envelope.commit_tx, envelope.commit_fee)?;
         let reveal_fee_rate = effective_fee_rate(&reveal_tx, envelope.reveal_fee)?;
 
-        let (cid, rid) = persist_envelope_pair(
+        persist_envelope_pair(
             payload_idx,
             payloadentry,
             &envelope.commit_tx,
@@ -247,9 +245,7 @@ pub(crate) async fn complete_reveal_and_broadcast(
             broadcast_handle,
         )
         .await?;
-
-        info!(?cid, reveal_txid = ?rid, "commit and reveal stored for broadcast");
-        Ok(rid)
+        Ok(())
     }
     .instrument(span)
     .await
@@ -596,12 +592,17 @@ mod test {
             .await
             .unwrap();
 
-        let (cid, rid) =
-            sign_and_broadcast_payload_envelopes(0, &entry, ctx, iops.as_ref(), &bcast_handle)
-                .await
-                .unwrap();
+        sign_and_broadcast_payload_envelopes(0, &entry, ctx, iops.as_ref(), &bcast_handle)
+            .await
+            .unwrap();
+        let linked = iops
+            .get_payload_entry_by_idx_async(0)
+            .await
+            .unwrap()
+            .unwrap();
+        let (cid, rid) = (linked.commit_txid, linked.reveal_txid);
 
-        // Both txids should be non-zero
+        assert_eq!(linked.status, L1BundleStatus::Unpublished);
         assert_ne!(cid, L1TxId::zero());
         assert_ne!(rid, L1TxId::zero());
 
