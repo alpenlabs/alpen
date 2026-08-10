@@ -748,8 +748,10 @@ impl<C: WatcherServiceContext> WatcherState<C> {
             )
             .await
         {
-            Ok(_rid) => {
+            Ok(rid) => {
                 let mut updated = payloadentry.clone();
+                updated.commit_txid = to_l1_txid(envelope.commit_tx.compute_txid());
+                updated.reveal_txid = rid;
                 updated.status = L1BundleStatus::Unpublished;
                 self.ctx
                     .put_payload_entry(self.curr_payloadidx, updated)
@@ -1590,6 +1592,8 @@ mod tests {
 
         let stored = state.ctx.get_stored(0).unwrap();
         assert_eq!(stored.status, L1BundleStatus::Unpublished);
+        assert_eq!(Buf32(stored.commit_txid.0), commit_txid);
+        assert_eq!(Buf32(stored.reveal_txid.0), reveal_txid);
         // Cache entry consumed
         assert!(!state.envelope_cache.contains_key(&0));
         // Both txs stored in broadcaster DB

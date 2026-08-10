@@ -14,6 +14,13 @@ use super::schemas::{
 use crate::define_sled_database;
 use crate::utils::{conv_sled_err, find_next_available_id, first, second};
 
+fn reusable_pair_entry(entry: &L1TxEntry) -> bool {
+    matches!(
+        entry.status,
+        L1TxStatus::Unpublished | L1TxStatus::Abandoned
+    )
+}
+
 define_sled_database!(
     pub struct L1BroadcastDBSled {
         tx_id_tree: BcastL1TxIdSchema,
@@ -29,6 +36,16 @@ impl L1BroadcastDBSled {
             Some((idx, _)) => Ok(idx + 1),
             None => Ok(0),
         }
+    }
+
+    fn get_tx_idx(&self, txid: Buf32) -> DbResult<Option<u64>> {
+        for item in self.tx_id_tree.iter() {
+            let (idx, stored_txid) = item?;
+            if stored_txid == txid {
+                return Ok(Some(idx));
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -59,23 +76,53 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
         if commit.0 == reveal.0 {
             return Err(DbError::Other("commit and reveal txids must differ".into()));
         }
+        let existing_indices = match (self.tx_tree.get(&commit.0)?, self.tx_tree.get(&reveal.0)?) {
+            (None, None) => (None, None),
+            (Some(old_commit), Some(old_reveal))
+                if reusable_pair_entry(&old_commit)
+                    && reusable_pair_entry(&old_reveal)
+                    && old_commit.tx_raw() == commit.1.tx_raw()
+                    && old_reveal.tx_raw() == reveal.1.tx_raw() =>
+            {
+                (self.get_tx_idx(commit.0)?, self.get_tx_idx(reveal.0)?)
+            }
+            _ => return Err(DbError::Other("commit/reveal pair already exists".into())),
+        };
         let next = self.get_next_idx()?;
         self.config
             .with_retry((&self.tx_tree, &self.tx_id_tree), |(txs, ids)| {
-                if txs.get(&commit.0)?.is_some() || txs.get(&reveal.0)?.is_some() {
-                    return Err(ConflictableTransactionError::Abort(
-                        TSledError::abort(DbError::Other(
-                            "commit/reveal pair already exists".into(),
-                        )),
-                    ));
-                }
-                let commit_idx = find_next_available_id(&ids, next)?;
-                let reveal_idx = find_next_available_id(&ids, commit_idx + 1)?;
-                ids.insert(&commit_idx, &commit.0)?;
-                ids.insert(&reveal_idx, &reveal.0)?;
+                let stored = (txs.get(&commit.0)?, txs.get(&reveal.0)?);
+                let indices = match (stored, existing_indices) {
+                    ((None, None), (None, None)) => {
+                        let commit_idx = find_next_available_id(&ids, next)?;
+                        let reveal_idx = find_next_available_id(&ids, commit_idx + 1)?;
+                        ids.insert(&commit_idx, &commit.0)?;
+                        ids.insert(&reveal_idx, &reveal.0)?;
+                        (commit_idx, reveal_idx)
+                    }
+                    (
+                        (Some(old_commit), Some(old_reveal)),
+                        (Some(commit_idx), Some(reveal_idx)),
+                    ) if reusable_pair_entry(&old_commit)
+                        && reusable_pair_entry(&old_reveal)
+                        && old_commit.tx_raw() == commit.1.tx_raw()
+                        && old_reveal.tx_raw() == reveal.1.tx_raw()
+                        && ids.get(&commit_idx)? == Some(commit.0)
+                        && ids.get(&reveal_idx)? == Some(reveal.0) =>
+                    {
+                        (commit_idx, reveal_idx)
+                    }
+                    _ => {
+                        return Err(ConflictableTransactionError::Abort(
+                            TSledError::abort(DbError::Other(
+                                "commit/reveal pair already exists".into(),
+                            )),
+                        ));
+                    }
+                };
                 txs.insert(&commit.0, &commit.1)?;
                 txs.insert(&reveal.0, &reveal.1)?;
-                Ok((commit_idx, reveal_idx))
+                Ok(indices)
             })
     }
 
