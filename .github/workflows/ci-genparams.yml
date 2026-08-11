@@ -18,6 +18,7 @@ on:
         options:
           - staging-v2
           - prod
+          - mainnet
       datatool_image_commit:
         description: "Alpen commit whose first 7 chars identify the datatool image tag"
         required: true
@@ -150,6 +151,7 @@ jobs:
           COMMIT: ${{ steps.resolve.outputs.datatool_image_tag }}
           GENESIS_L1_HEIGHT: ${{ inputs.genesis_l1_height }}
           CHAIN_CONFIG: ${{ inputs.chain_config }}
+          NETWORK: ${{ inputs.env == 'mainnet' && 'bitcoin' || 'signet' }}
           BTC_RPC_URL: ${{ secrets.PARAMS_BTC_RPC_URL }}
           BTC_RPC_USER: ${{ secrets.PARAMS_BTC_RPC_USER }}
           BTC_RPC_PASSWORD: ${{ secrets.PARAMS_BTC_RPC_PASSWORD }}
