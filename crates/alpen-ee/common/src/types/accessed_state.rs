@@ -16,7 +16,6 @@
 // value-like data
 
 use serde::{Deserialize, Serialize};
-
 use serde_bytes::ByteArray;
 
 use super::address::{EvmAddress, EvmSlot};

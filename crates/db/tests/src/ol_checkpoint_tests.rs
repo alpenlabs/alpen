@@ -432,6 +432,68 @@ pub fn test_del_checkpoint_l1_refs_from_epoch(db: &impl OLCheckpointDatabase) {
     }
 }
 
+/// Exercises the range-seek queries across a byte boundary in the big-endian epoch prefix.
+///
+/// Epochs 255 and 256 differ only in that prefix, so a regression to little-endian or varint
+/// key encoding would order them backwards and make the `range()` scans drop or over-delete
+/// entries. The other range tests all use epochs 0..4, which sort identically either way.
+pub fn test_del_checkpoint_l1_refs_from_epoch_across_byte_boundary(db: &impl OLCheckpointDatabase) {
+    for epoch in 254u32..=257 {
+        let payload = payload_for_epoch(epoch);
+        let key = checkpoint_epoch_commitment(&payload);
+        db.put_checkpoint_payload_entry(key, payload)
+            .expect("put payload");
+        db.put_checkpoint_l1_ref(key, l1_ref_entry(100 + epoch))
+            .expect("put l1 ref");
+    }
+
+    let deleted = db
+        .del_checkpoint_l1_refs_from_epoch(Epoch::from(256u32))
+        .expect("delete l1 refs from epoch");
+    let expected: Vec<EpochCommitment> = (256u32..=257)
+        .map(|e| checkpoint_epoch_commitment(&payload_for_epoch(e)))
+        .collect();
+    assert_eq!(deleted, expected);
+
+    for epoch in 254u32..=255 {
+        let key = checkpoint_epoch_commitment(&payload_for_epoch(epoch));
+        assert!(
+            db.get_checkpoint_l1_ref(key)
+                .expect("get retained l1 ref")
+                .is_some(),
+            "epoch {epoch} should have been retained"
+        );
+    }
+
+    for epoch in 256u32..=257 {
+        let key = checkpoint_epoch_commitment(&payload_for_epoch(epoch));
+        assert!(
+            db.get_checkpoint_l1_ref(key)
+                .expect("get deleted l1 ref")
+                .is_none(),
+            "epoch {epoch} should have been deleted"
+        );
+    }
+}
+
+/// The last checkpoint epoch must be the numerically greatest, not the lexicographically
+/// greatest under a byte-order regression.
+pub fn test_get_last_checkpoint_payload_epoch_across_byte_boundary(db: &impl OLCheckpointDatabase) {
+    for epoch in [255u32, 256] {
+        let payload = payload_for_epoch(epoch);
+        db.put_checkpoint_payload_entry(checkpoint_epoch_commitment(&payload), payload)
+            .expect("put payload");
+    }
+
+    let last = db
+        .get_last_checkpoint_payload_epoch()
+        .expect("get last epoch");
+    assert_eq!(
+        last,
+        Some(checkpoint_epoch_commitment(&payload_for_epoch(256)))
+    );
+}
+
 fn commitment_at(epoch: u32, tag: u8) -> EpochCommitment {
     let blkid = OLBlockId::from(Buf32::from([tag; 32]));
     EpochCommitment::new(Epoch::from(epoch), u64::from(epoch), blkid)
@@ -1044,6 +1106,18 @@ macro_rules! ol_checkpoint_db_tests {
         fn test_del_checkpoint_l1_refs_from_epoch() {
             let db = $setup_expr;
             $crate::ol_checkpoint_tests::test_del_checkpoint_l1_refs_from_epoch(&db);
+        }
+
+        #[test]
+        fn test_del_checkpoint_l1_refs_from_epoch_across_byte_boundary() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_del_checkpoint_l1_refs_from_epoch_across_byte_boundary(&db);
+        }
+
+        #[test]
+        fn test_get_last_checkpoint_payload_epoch_across_byte_boundary() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_get_last_checkpoint_payload_epoch_across_byte_boundary(&db);
         }
 
         #[test]

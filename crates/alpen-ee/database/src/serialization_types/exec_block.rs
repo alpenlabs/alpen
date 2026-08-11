@@ -7,6 +7,7 @@ use strata_ee_chain_types::ExecBlockPackage;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId, Slot};
 
 use super::account_state::DBEeAccountState;
+use crate::error::DbError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct DBExecBlockRecord {
@@ -65,11 +66,17 @@ impl From<ExecBlockRecord> for DBExecBlockRecord {
 }
 
 impl TryFrom<DBExecBlockRecord> for ExecBlockRecord {
-    type Error = ssz::DecodeError;
+    type Error = DbError;
 
     fn try_from(value: DBExecBlockRecord) -> Result<Self, Self::Error> {
-        let package = ExecBlockPackage::from_ssz_bytes(&value.package_ssz)?;
-        let account_state: EeAccountState = value.account_state.into();
+        let package = ExecBlockPackage::from_ssz_bytes(&value.package_ssz)
+            .map_err(|err| DbError::ExecBlockDeserialize(format!("{err:?}")))?;
+        let account_state: EeAccountState = value.account_state.try_into()?;
+        let messages = value
+            .messages
+            .into_iter()
+            .map(MessageEntry::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
 
         let ol_block = OLBlockCommitment::new(
             value.ol_block_slot,
@@ -85,7 +92,7 @@ impl TryFrom<DBExecBlockRecord> for ExecBlockRecord {
             Hash::from(value.parent_blockhash),
             value.next_inbox_msg_idx,
             value.next_deposit_idx,
-            value.messages.into_iter().map(Into::into).collect(),
+            messages,
         ))
     }
 }
@@ -111,16 +118,24 @@ impl From<MessageEntry> for DBMessageEntry {
     }
 }
 
-impl From<DBMessageEntry> for MessageEntry {
-    fn from(value: DBMessageEntry) -> Self {
-        MessageEntry::new(
+impl TryFrom<DBMessageEntry> for MessageEntry {
+    type Error = DbError;
+
+    /// Rebuilds the message entry, checking the stored payload against its SSZ bound.
+    ///
+    /// Only a corrupt row can exceed it, but that must not panic the node on a read.
+    fn try_from(value: DBMessageEntry) -> Result<Self, Self::Error> {
+        let payload_len = value.payload_data.len();
+        let payload = MsgPayload::from_bytes(
+            BitcoinAmount::from_sat(value.payload_value_sats),
+            value.payload_data,
+        )
+        .map_err(|_| DbError::MessagePayloadOverCapacity(payload_len))?;
+
+        Ok(MessageEntry::new(
             value.source.into(),
             value.incl_epoch,
-            MsgPayload::from_bytes(
-                BitcoinAmount::from_sat(value.payload_value_sats),
-                value.payload_data,
-            )
-            .expect("database message payload bytes must fit within SSZ max length"),
-        )
+            payload,
+        ))
     }
 }

@@ -176,8 +176,8 @@ mod tests {
         // the single-buffer path (compared via re-encoding, as DaBlob is not Eq).
         for chunk_size in 1..=encoded.len() {
             let chunks: Vec<Vec<u8>> = encoded.chunks(chunk_size).map(|c| c.to_vec()).collect();
-            let got = reassemble_da_blob(chunks.iter().map(Vec::as_slice))
-                .expect("decode across chunks");
+            let got =
+                reassemble_da_blob(chunks.iter().map(Vec::as_slice)).expect("decode across chunks");
             assert_eq!(
                 encode_to_vec(&got).unwrap(),
                 encoded,

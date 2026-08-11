@@ -371,20 +371,19 @@ mod tests {
     fn commit_marker_orders_reveals() {
         let config = get_test_config();
         let utxos = get_mock_utxos();
-        let chunks = vec![vec![1u8; 150], vec![2u8; 150], vec![3u8; 150]];
+        let chunks = [vec![1u8; 150], vec![2u8; 150], vec![3u8; 150]];
         let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
         let kp = test_keypair();
 
-        let result =
-            build_chunked_envelope_txs(
-                &config,
-                chunks.iter().map(Vec::as_slice),
-                &magic,
-                TEST_DA_BLOB_VERSION,
-                &kp,
-                utxos,
-            )
-                .unwrap();
+        let result = build_chunked_envelope_txs(
+            &config,
+            chunks.iter().map(Vec::as_slice),
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &kp,
+            utxos,
+        )
+        .unwrap();
 
         // commit: OP_RETURN + 3 P2TR + change = 5 outputs.
         assert_eq!(result.commit_tx.output.len(), 5);
@@ -428,7 +427,7 @@ mod tests {
     #[test]
     fn build_chunked_envelope_txs_insufficient_utxos() {
         let config = get_test_config();
-        let chunks = vec![vec![0u8; 150], vec![0u8; 150], vec![0u8; 150]];
+        let chunks = [vec![0u8; 150], vec![0u8; 150], vec![0u8; 150]];
         let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
         let kp = test_keypair();
 
@@ -481,7 +480,7 @@ mod tests {
             546,
             None,
         );
-        let chunks = vec![vec![0u8; 150]];
+        let chunks = [vec![0u8; 150]];
         let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
 
         let result = build_chunked_envelope_txs(

@@ -343,7 +343,7 @@ impl EeNodeDb for EeNodeDBSled {
 
         Ok(Some(EeAccountStateAtEpoch::new(
             ol_epoch,
-            account_state.into(),
+            account_state.try_into()?,
         )))
     }
 
@@ -362,7 +362,7 @@ impl EeNodeDb for EeNodeDBSled {
 
         Ok(Some(EeAccountStateAtEpoch::new(
             ol_epoch,
-            account_state.into(),
+            account_state.try_into()?,
         )))
     }
 
@@ -584,11 +584,7 @@ impl EeNodeDb for EeNodeDBSled {
             return Ok(None);
         };
 
-        let block = db_block
-            .try_into()
-            .map_err(|err| DbError::Other(format!("Failed to decode block: {err:?}")))?;
-
-        Ok(Some(block))
+        Ok(Some(db_block.try_into()?))
     }
 
     fn get_block_payload(&self, hash: Hash) -> DbResult<Option<Vec<u8>>> {

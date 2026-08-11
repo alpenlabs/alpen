@@ -199,17 +199,22 @@ impl EeBatchProofDbManager {
             .map_err(db_err)
     }
 
-    pub(crate) fn has_proof(&self, batch_id: BatchId) -> bool {
-        // sled errors surface as "not found"; callers treat this as a
-        // storage-level concern and log separately.
-        self.db.has_acct_proof(batch_id).unwrap_or(false)
+    pub(crate) fn has_proof(&self, batch_id: BatchId) -> ProverResult<bool> {
+        self.db.has_acct_proof(batch_id).map_err(db_err)
     }
 
-    pub(crate) fn get_proof_by_id(&self, proof_id: ProofId) -> Option<Proof> {
-        let entry = self.db.get_acct_proof_by_id(proof_id).ok().flatten()?;
-        let receipt = decode_receipt(&entry).ok()?;
-        Some(Proof::from_vec(
+    /// Loads a stored proof.
+    ///
+    /// `Ok(None)` means no row; a row that fails to decode is an error rather than an
+    /// absence, so it cannot masquerade as "not yet proven" to a caller that already saw
+    /// [`Self::has_proof`] return `true`.
+    pub(crate) fn get_proof_by_id(&self, proof_id: ProofId) -> ProverResult<Option<Proof>> {
+        let Some(entry) = self.db.get_acct_proof_by_id(proof_id).map_err(db_err)? else {
+            return Ok(None);
+        };
+        let receipt = decode_receipt(&entry)?;
+        Ok(Some(Proof::from_vec(
             receipt.receipt().proof().as_bytes().to_vec(),
-        ))
+        )))
     }
 }

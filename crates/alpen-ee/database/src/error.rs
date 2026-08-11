@@ -34,6 +34,19 @@ pub enum DbError {
     #[error("account state missing (at blkid {0})")]
     MissingAccountState(OLBlockId),
 
+    /// A stored account state holds more list entries than the SSZ type can represent.
+    ///
+    /// Only reachable from a corrupt or hand-written row, since anything written through this
+    /// crate came from a valid `EeAccountState`.
+    #[error(
+        "stored account state {list} list is over capacity (expected at most {max}, got {got})"
+    )]
+    AccountStateListOverCapacity {
+        list: &'static str,
+        max: usize,
+        got: usize,
+    },
+
     /// Finalized chain is empty.
     #[error("finalized exec block expected to be present")]
     FinalizedExecChainEmpty,
@@ -94,6 +107,14 @@ pub enum DbError {
     /// Batch deserialization error.
     #[error("Failed to deserialize batch: {0}")]
     BatchDeserialize(String),
+
+    /// Exec block deserialization error.
+    #[error("failed to deserialize exec block: {0}")]
+    ExecBlockDeserialize(String),
+
+    /// A stored message payload is longer than the SSZ type can represent.
+    #[error("stored message payload is over capacity ({0} bytes)")]
+    MessagePayloadOverCapacity(usize),
 
     /// Database operation error.
     #[error("db ops: {0}")]

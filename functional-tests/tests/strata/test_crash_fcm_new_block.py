@@ -23,9 +23,9 @@ def get_single_block_at_slot(datadir: str, slot: int) -> str:
 def assert_single_block_at_slot(datadir: str, slot: int, expected_block_id: str) -> None:
     block_id = get_single_block_at_slot(datadir, slot)
 
-    assert (
-        block_id == expected_block_id
-    ), f"expected slot {slot} to contain only {expected_block_id}, got {block_id}"
+    assert block_id == expected_block_id, (
+        f"expected slot {slot} to contain only {expected_block_id}, got {block_id}"
+    )
 
 
 @flexitest.register
