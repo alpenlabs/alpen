@@ -208,12 +208,14 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// Updates/Inserts a txentry to database. Returns Some(idx) if newly inserted else None
     fn put_tx_entry(&self, txid: Buf32, txentry: L1TxEntry) -> DbResult<Option<u64>>;
 
-    /// Atomically inserts a commit/reveal pair at consecutive indices.
+    /// Atomically inserts a new commit/reveal pair at consecutive indices.
+    ///
+    /// Returns the assigned indices, or `None` when the same pair already exists.
     fn put_tx_entry_pair(
         &self,
         commit: (Buf32, L1TxEntry),
         reveal: (Buf32, L1TxEntry),
-    ) -> DbResult<(u64, u64)>;
+    ) -> DbResult<Option<(u64, u64)>>;
 
     /// Updates an existing txentry
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()>;
