@@ -67,48 +67,8 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  alpen-client:
-    build:
-      context: ..
-      dockerfile: docker/alpen-client/Dockerfile.local
-    image: alpen-client:latest
-    depends_on:
-      strata:
-        condition: service_healthy
-    # Remove --dev-native-prover when using real SP1 proofs.
-    command: ["--dev-native-prover"]
-    env_file:
-      - .env
-      - ./configs/generated/.env.alpen
-    environment:
-      SEQUENCER_MODE: "true"
-      OL_SUBMIT_URL: ws://strata:8435
-      STRATA_SUBMIT_RPC_TOKEN: ${STRATA_SUBMIT_RPC_TOKEN:-dev-only-submit-token}
-    volumes:
-      # Alpen-client reads only the JWT secret for authrpc.
-      # Env vars (pubkey, chain spec, etc.) come from env_file above.
-      - ./configs/generated/ee-params.json:/app/configs/generated/ee-params.json:ro
-      - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
-      # SP1 ELFs (empty dir when SP1 disabled — harmless)
-      - ./elfs:/app/elfs/sp1:ro
-      - alpen-client-data:/app/data
-    ports:
-      - "8545:8545"
-      - "8546:8546"
-    networks:
-      - alpen_network
-    entrypoint: ["/usr/local/bin/entrypoint.sh"]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 30s
-    restart: unless-stopped
-
 volumes:
   strata-data:
-  alpen-client-data:
 
 networks:
   alpen_network:

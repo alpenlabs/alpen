@@ -111,8 +111,6 @@ Crate tables list repository paths. Package names usually carry a `strata-*` or 
 |------|---------------|-------------|
 | `bin/strata` | `strata` | OL (Strata) client, sequencer, RPC, and prover entrypoint |
 | `bin/strata-signer` | `strata-signer` | Detached signer for OL sequencer duties |
-| `bin/alpen-client` | `alpen-client` | EE client with OL tracking and payload building, embedding Alpen Reth |
-| `bin/alpen-cli` | `alpen` | End-user wallet CLI for deposits, withdrawals, L2 transactions, and bridge tooling |
 | `bin/strata-dbtool` | `strata-dbtool` | Database inspection and debugging utility |
 | `bin/strata-test-cli` | `strata-test-cli` | Bridge, ASM, and transaction testing utility |
 | `bin/datatool` | `strata-datatool` | Development utility for test data and key generation |
