@@ -17,11 +17,13 @@ use tracing::{debug, info};
 #[cfg(feature = "sequencer")]
 use crate::checkpoint_publish::checkpoint_from_payload;
 
-/// Deletes local checkpoint artifacts after ASM's accepted checkpoint tip.
+/// Reconciles local checkpoint artifacts after ASM's accepted checkpoint tip.
 ///
 /// Checkpoint payloads, proofs, and prover tasks past the ASM verified tip are
 /// local candidate state. Rebuilding them on startup prevents a rotated OL
-/// image from reusing stale pre-rotation proof artifacts.
+/// image from reusing stale pre-rotation proof artifacts. Artifacts are deleted
+/// only when every corresponding writer intent can be safely abandoned; live or
+/// ambiguous publication state preserves both halves for recovery.
 pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -> Result<()> {
     if nodectx.config().prover.is_none() {
         return Ok(());
@@ -80,6 +82,10 @@ pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -
     Ok(())
 }
 
+/// Collects locally known checkpoint commitments at or after the given epoch.
+///
+/// This combines checkpoint payload records with summarized epoch state because
+/// either side may survive an interrupted write or an earlier cleanup.
 fn checkpoint_commitments_from_epoch(
     nodectx: &NodeContext,
     first_unaccepted_epoch: Epoch,
@@ -114,6 +120,11 @@ fn checkpoint_commitments_from_epoch(
 }
 
 #[cfg(feature = "sequencer")]
+/// Cancels every writer intent for a checkpoint before its artifacts are deleted.
+///
+/// Returns `true` only when every matching intent is safely terminalized. A
+/// `false` result preserves the checkpoint artifacts; independently safe intents
+/// may already have been terminalized.
 fn cancel_queued_checkpoint(
     db: &impl DatabaseBackend,
     commitment: EpochCommitment,
@@ -150,6 +161,10 @@ fn cancel_queued_checkpoint(
 }
 
 #[cfg(feature = "sequencer")]
+/// Abandons one writer intent only when no associated transaction may be live on L1.
+///
+/// Unbundled intents are terminalized directly. Bundled intents are preserved if
+/// either broadcaster entry is pending or has reached Bitcoin.
 fn cancel_writer_intent(db: &impl DatabaseBackend, intent: IntentEntry) -> Result<bool> {
     let writer = db.writer_db();
     let IntentStatus::Bundled(payload_idx) = intent.status else {
@@ -197,6 +212,7 @@ fn cancel_writer_intent(db: &impl DatabaseBackend, intent: IntentEntry) -> Resul
     Ok(true)
 }
 
+/// Appends candidates that are not already present while preserving discovery order.
 fn extend_missing<T>(items: &mut Vec<T>, candidates: impl IntoIterator<Item = T>)
 where
     T: Copy + Eq,
@@ -208,6 +224,7 @@ where
     }
 }
 
+/// Resolves the first epoch after the canonical ASM checkpoint verified tip.
 fn first_unaccepted_checkpoint_epoch(nodectx: &NodeContext) -> Result<Option<Epoch>> {
     let Some((asm_l1, asm_state)) = nodectx
         .storage()

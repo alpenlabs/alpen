@@ -138,26 +138,50 @@ fn publication_for_tx(
     tx: &Transaction,
 ) -> DbResult<(Option<BundledPayloadEntry>, PublishDecision)> {
     let txid = tx.compute_txid().to_buf32().0;
+
+    if let Some(bundle) = find_writer_publication(db, txid)? {
+        return Ok((Some(bundle), PublishDecision::Publish));
+    }
+    if is_chunked_publication(db, txid)? {
+        return Ok((None, PublishDecision::Publish));
+    }
+    unlinked_pair_decision(db, tx, txid).map(|decision| (None, decision))
+}
+
+fn find_writer_publication(
+    db: &impl DatabaseBackend,
+    txid: [u8; 32],
+) -> DbResult<Option<BundledPayloadEntry>> {
     let writer = db.writer_db();
     for idx in (0..writer.get_next_payload_idx()?).rev() {
         let Some(entry) = writer.get_payload_entry_by_idx(idx)? else {
             continue;
         };
         if entry.commit_txid.0 == txid || entry.reveal_txid.0 == txid {
-            return Ok((Some(entry), PublishDecision::Publish));
+            return Ok(Some(entry));
         }
     }
+    Ok(None)
+}
 
+fn is_chunked_publication(db: &impl DatabaseBackend, txid: [u8; 32]) -> DbResult<bool> {
     let chunked = db.chunked_envelope_db();
     for idx in (0..chunked.get_next_chunked_envelope_idx()?).rev() {
         let Some(entry) = chunked.get_chunked_envelope_entry(idx)? else {
             continue;
         };
         if entry.commit_txid.0 == txid || entry.reveals.iter().any(|reveal| reveal.txid.0 == txid) {
-            return Ok((None, PublishDecision::Publish));
+            return Ok(true);
         }
     }
+    Ok(false)
+}
 
+fn unlinked_pair_decision(
+    db: &impl DatabaseBackend,
+    tx: &Transaction,
+    txid: [u8; 32],
+) -> DbResult<PublishDecision> {
     let broadcast = db.broadcast_db();
     let current = broadcast
         .get_tx_entry_by_id(txid.into())?
@@ -167,14 +191,11 @@ fn publication_for_tx(
         && parent.vout == 0
         && let Some(parent) = broadcast.get_tx_entry_by_id(parent.txid.to_buf32())?
     {
-        return Ok((
-            None,
-            pair_decision(
-                PublishDecision::Abandon,
-                PairMember::Reveal,
-                Some(parent.status),
-                current,
-            ),
+        return Ok(pair_decision(
+            PublishDecision::Abandon,
+            PairMember::Reveal,
+            Some(parent.status),
+            current,
         ));
     }
     for idx in 0..broadcast.get_next_tx_idx()? {
@@ -189,19 +210,16 @@ fn publication_for_tx(
                 input.previous_output.txid.to_buf32().0 == txid && input.previous_output.vout == 0
             })
         {
-            return Ok((
-                None,
-                pair_decision(
-                    PublishDecision::Abandon,
-                    PairMember::Commit,
-                    current,
-                    Some(entry.status),
-                ),
+            return Ok(pair_decision(
+                PublishDecision::Abandon,
+                PairMember::Commit,
+                current,
+                Some(entry.status),
             ));
         }
     }
     warn!(txid = %tx.compute_txid(), "deferring transaction without durable publication linkage");
-    Ok((None, PublishDecision::Defer))
+    Ok(PublishDecision::Defer)
 }
 
 fn is_envelope_reveal(tx: &Transaction) -> bool {
@@ -231,6 +249,17 @@ enum PairMember {
     Reveal,
 }
 
+/// Preserves commit/reveal recovery while applying the checkpoint decision.
+///
+/// If either transaction may already be on L1, the other is published to finish
+/// the pair. A reveal is also published when its commit record is missing or
+/// unpublished. This probes whether a crash occurred after the commit reached
+/// bitcoind; a genuinely absent commit makes the reveal fail safely with invalid
+/// inputs.
+///
+/// A commit is deferred until its reveal is durably recorded. When both records
+/// exist but a stale pair is still unpublished, the commit remains deferred so
+/// the reveal probe runs first. All other states use the checkpoint decision.
 fn pair_decision(
     decision: PublishDecision,
     member: PairMember,
