@@ -7,7 +7,6 @@
 
 use strata_btc_verification as _;
 
-mod acct_predicate;
 mod args;
 #[cfg(feature = "btc-client")]
 mod btc_client;

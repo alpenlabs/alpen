@@ -7,10 +7,7 @@ use bitcoin::Network;
 use rand_core::OsRng;
 use strata_primitives::L1Height;
 
-use crate::{
-    acct_predicate::AcctPredicateOverride, checkpoint_predicate::CheckpointPredicateOverride,
-    util::resolve_network,
-};
+use crate::{checkpoint_predicate::CheckpointPredicateOverride, util::resolve_network};
 
 /// Args.
 #[derive(FromArgs)]
@@ -61,7 +58,6 @@ pub(crate) enum Subcommand {
     CheckpointPredicate(SubcCheckpointPredicate),
     AsmParams(SubcAsmParams),
     OlParams(SubcOlParams),
-    EeParams(SubcEeParams),
     #[cfg(feature = "btc-client")]
     GenL1Anchor(SubcGenL1Anchor),
 }
@@ -284,61 +280,9 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "alpen snark account predicate type: 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test' (default: feature-gated)"
+        description = "path to a JSON map of account id to genesis snark account data; each entry is pre-registered in the genesis state"
     )]
-    pub(crate) alpen_predicate: Option<AcctPredicateOverride>,
-
-    #[argh(
-        option,
-        description = "alpen EE account initial balance in sats (default 0)"
-    )]
-    pub(crate) alpen_balance: Option<u64>,
-
-    #[argh(
-        option,
-        description = "alpen EE account inner state root as 64-char hex; overrides --alpen-chain-config and EE params genesis state"
-    )]
-    pub(crate) alpen_inner_state: Option<String>,
-
-    #[argh(
-        option,
-        description = "path to EVM chain config JSON; used for the Alpen EE account inner state when --alpen-inner-state is omitted"
-    )]
-    pub(crate) alpen_chain_config: Option<PathBuf>,
-
-    #[argh(
-        option,
-        description = "path to JSON-serialized EE params; supplies the Alpen EE account id, genesis state, and bridge params"
-    )]
-    pub(crate) ee_params: Option<PathBuf>,
-}
-
-/// Generate an EE params file from inputs.
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(
-    subcommand,
-    name = "gen-ee-params",
-    description = "generates EE params from inputs"
-)]
-pub(crate) struct SubcEeParams {
-    #[argh(
-        option,
-        description = "output file path .json (default stdout)",
-        short = 'o'
-    )]
-    pub(crate) output: Option<PathBuf>,
-
-    #[argh(
-        option,
-        description = "alpen EE account id as 64-char hex (default all 01 bytes)"
-    )]
-    pub(crate) account_id: Option<String>,
-
-    #[argh(
-        option,
-        description = "path to EVM chain config JSON; used to compute execution genesis params"
-    )]
-    pub(crate) alpen_chain_config: Option<PathBuf>,
+    pub(crate) genesis_accounts: Option<PathBuf>,
 
     #[argh(option, description = "bridge denomination in satoshis")]
     pub(crate) bridge_denomination_sats: u64,
