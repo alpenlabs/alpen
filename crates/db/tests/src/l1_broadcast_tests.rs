@@ -84,29 +84,32 @@ pub fn test_put_tx_entry_pair(db: &impl L1BroadcastDatabase) {
             L1TxEntry::from_tx(tx),
         )
     };
-    let (commit_idx, reveal_idx) = db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[1])).unwrap();
+    let (commit_idx, reveal_idx) = db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .unwrap();
 
     assert_eq!((commit_idx, reveal_idx), (0, 1));
-    assert_eq!(
-        db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[1])).unwrap(),
-        (commit_idx, reveal_idx)
-    );
+    assert!(db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .is_none());
     assert!(db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[2])).is_err());
     for idx in [commit_idx, reveal_idx] {
         let mut entry = db.get_tx_entry(idx).unwrap().unwrap();
         entry.status = L1TxStatus::Abandoned;
         db.put_tx_entry_by_idx(idx, entry).unwrap();
     }
-    assert_eq!(
-        db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[1])).unwrap(),
-        (commit_idx, reveal_idx)
-    );
+    assert!(db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .is_none());
     assert!([commit_idx, reveal_idx].into_iter().all(|idx| db
         .get_tx_entry(idx)
         .unwrap()
         .unwrap()
         .status
-        == L1TxStatus::Unpublished));
+        == L1TxStatus::Abandoned));
     assert_eq!(db.get_next_tx_idx().unwrap(), 2);
 }
 
