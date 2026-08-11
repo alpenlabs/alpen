@@ -270,36 +270,35 @@ enum PairMember {
 fn pair_decision(
     decision: PublishDecision,
     member: PairMember,
-    commit: Option<L1TxStatus>,
-    reveal: Option<L1TxStatus>,
+    commit_status: Option<L1TxStatus>,
+    reveal_status: Option<L1TxStatus>,
 ) -> PublishDecision {
-    let reached_l1 = |status: &Option<L1TxStatus>| {
-        matches!(
-            status,
-            Some(
-                L1TxStatus::Published | L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. }
-            )
-        )
-    };
-    if reached_l1(&commit) || reached_l1(&reveal) {
-        return PublishDecision::Publish;
-    }
-    if matches!(member, PairMember::Reveal)
-        && matches!(commit, None | Some(L1TxStatus::Unpublished))
+    if commit_status
+        .as_ref()
+        .is_some_and(L1TxStatus::has_reached_l1)
+        || reveal_status
+            .as_ref()
+            .is_some_and(L1TxStatus::has_reached_l1)
     {
         return PublishDecision::Publish;
     }
-    if matches!(member, PairMember::Commit) && reveal.is_none() {
-        return PublishDecision::Defer;
+
+    let commit_pending = commit_status
+        .as_ref()
+        .is_none_or(L1TxStatus::is_unpublished);
+    let reveal_pending = reveal_status
+        .as_ref()
+        .is_none_or(L1TxStatus::is_unpublished);
+    match member {
+        PairMember::Reveal if commit_pending => PublishDecision::Publish,
+        PairMember::Commit
+            if reveal_status.is_none()
+                || (decision == PublishDecision::Abandon && commit_pending && reveal_pending) =>
+        {
+            PublishDecision::Defer
+        }
+        _ => decision,
     }
-    if decision == PublishDecision::Abandon
-        && matches!(member, PairMember::Commit)
-        && matches!(commit, None | Some(L1TxStatus::Unpublished))
-        && matches!(reveal, None | Some(L1TxStatus::Unpublished))
-    {
-        return PublishDecision::Defer;
-    }
-    decision
 }
 
 #[cfg(test)]

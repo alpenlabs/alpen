@@ -162,7 +162,20 @@ pub enum L1TxStatus {
 impl L1TxStatus {
     /// Returns whether the transaction may still be pending or present on L1.
     pub fn may_be_live(&self) -> bool {
-        !matches!(self, Self::InvalidInputs | Self::Abandoned)
+        self.is_unpublished() || self.has_reached_l1()
+    }
+
+    /// Returns whether the transaction has not been submitted to L1.
+    pub fn is_unpublished(&self) -> bool {
+        matches!(self, Self::Unpublished)
+    }
+
+    /// Returns whether the transaction was submitted to or observed on L1.
+    pub fn has_reached_l1(&self) -> bool {
+        matches!(
+            self,
+            Self::Published | Self::Confirmed { .. } | Self::Finalized { .. }
+        )
     }
 }
 
