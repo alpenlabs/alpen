@@ -18,6 +18,7 @@ pub struct MempoolTxData {
     txid: OLTxId,
 
     /// Raw transaction bytes.
+    #[serde(with = "serde_bytes")]
     tx_bytes: Vec<u8>,
 
     /// Timestamp (microseconds since UNIX epoch) for FIFO ordering.

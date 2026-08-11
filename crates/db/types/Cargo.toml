@@ -28,6 +28,7 @@ strata-db-macros = { workspace = true, optional = true }
 anyhow.workspace = true
 arbitrary.workspace = true
 serde.workspace = true
+serde_bytes.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, optional = true, features = ["rt"] }
 tracing = { workspace = true, optional = true }

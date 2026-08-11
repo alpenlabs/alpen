@@ -17,6 +17,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use serde_bytes::ByteArray;
+
 use super::address::{EvmAddress, EvmSlot};
 
 /// Accessed-state captured during one block's execution.
@@ -31,7 +33,7 @@ pub struct AccessedStateRecord {
     /// Code hashes referenced during execution. Resolve via
     /// [`crate::AccessedStateStore`] bytecode lookups (see
     /// `AccessedStateStore::get_bytecode`).
-    bytecode_hashes: Vec<[u8; 32]>,
+    bytecode_hashes: Vec<ByteArray<32>>,
 
     /// Ancestor block numbers queried via the EVM `BLOCKHASH` opcode.
     ancestor_block_numbers: Vec<u64>,
@@ -45,7 +47,7 @@ impl AccessedStateRecord {
     ) -> Self {
         Self {
             accounts,
-            bytecode_hashes,
+            bytecode_hashes: bytecode_hashes.into_iter().map(ByteArray::new).collect(),
             ancestor_block_numbers,
         }
     }
@@ -54,8 +56,12 @@ impl AccessedStateRecord {
         &self.accounts
     }
 
-    pub fn bytecode_hashes(&self) -> &[[u8; 32]] {
-        &self.bytecode_hashes
+    /// Returns the referenced code hashes.
+    ///
+    /// The stored field wraps each hash so that serde encodes it as a byte string; callers
+    /// should not have to know that.
+    pub fn bytecode_hashes(&self) -> impl Iterator<Item = [u8; 32]> + '_ {
+        self.bytecode_hashes.iter().map(|hash| hash.into_array())
     }
 
     pub fn ancestor_block_numbers(&self) -> &[u64] {
@@ -67,17 +73,18 @@ impl AccessedStateRecord {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AccessedAccount {
     /// 20-byte account address (alloy `Address` bytes).
+    #[serde(with = "serde_bytes")]
     address: EvmAddress,
 
     /// 32-byte storage slot keys (alloy `B256` bytes).
-    storage_slots: Vec<EvmSlot>,
+    storage_slots: Vec<ByteArray<32>>,
 }
 
 impl AccessedAccount {
     pub fn new(address: EvmAddress, storage_slots: Vec<EvmSlot>) -> Self {
         Self {
             address,
-            storage_slots,
+            storage_slots: storage_slots.into_iter().map(ByteArray::new).collect(),
         }
     }
 
@@ -85,7 +92,11 @@ impl AccessedAccount {
         self.address
     }
 
-    pub fn storage_slots(&self) -> &[EvmSlot] {
-        &self.storage_slots
+    /// Returns the accessed storage slot keys.
+    ///
+    /// The stored field wraps each key so that serde encodes it as a byte string; callers
+    /// should not have to know that.
+    pub fn storage_slots(&self) -> impl Iterator<Item = EvmSlot> + '_ {
+        self.storage_slots.iter().map(|slot| slot.into_array())
     }
 }

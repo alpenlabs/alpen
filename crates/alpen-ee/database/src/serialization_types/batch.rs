@@ -5,13 +5,16 @@ use alpen_ee_common::{
 };
 use bitcoin::{hashes::Hash as _, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
+use serde_bytes::ByteArray;
 use strata_acct_types::Hash;
 use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 
 /// Database representation of a (Txid, Wtxid) pair.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBTxidPair {
+    #[serde(with = "serde_bytes")]
     txid: [u8; 32],
+    #[serde(with = "serde_bytes")]
     wtxid: [u8; 32],
 }
 
@@ -31,7 +34,9 @@ impl DBTxidPair {
 /// (see the `KeyCodec` impls in `sleddb::schema`); as a value it goes through serde.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBBatchId {
+    #[serde(with = "serde_bytes")]
     prev_block: [u8; 32],
+    #[serde(with = "serde_bytes")]
     last_block: [u8; 32],
 }
 
@@ -71,10 +76,12 @@ impl DBBatchId {
 /// type via [`DBBatch::into_batch`].
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct DBBatch {
+    #[serde(with = "serde_bytes")]
     prev_block: [u8; 32],
+    #[serde(with = "serde_bytes")]
     last_block: [u8; 32],
     last_blocknum: u64,
-    inner_blocks: Vec<[u8; 32]>,
+    inner_blocks: Vec<ByteArray<32>>,
 }
 
 impl From<Batch> for DBBatch {
@@ -83,18 +90,30 @@ impl From<Batch> for DBBatch {
             prev_block: value.prev_block().into(),
             last_block: value.last_block().into(),
             last_blocknum: value.last_blocknum(),
-            inner_blocks: value.inner_blocks().iter().map(|h| (*h).into()).collect(),
+            inner_blocks: value
+                .inner_blocks()
+                .iter()
+                .map(|h| ByteArray::new((*h).into()))
+                .collect(),
         }
     }
 }
 
 impl DBBatch {
+    /// Returns the inner block hashes as plain arrays.
+    ///
+    /// The stored field wraps each hash so that serde encodes it as a byte string; callers
+    /// should not have to know that.
+    fn inner_blocks(&self) -> impl Iterator<Item = [u8; 32]> + '_ {
+        self.inner_blocks.iter().map(|blkid| blkid.into_array())
+    }
+
     /// Rebuilds the domain batch, taking `idx` from the table key.
     ///
     /// Returns `Err` because `Batch::new` and `Batch::new_genesis_batch` already return
     /// `Result<Batch, &'static str>`, which is propagated directly here.
     fn into_batch(self, idx: u64) -> Result<Batch, &'static str> {
-        let inner_blocks: Vec<Hash> = self.inner_blocks.into_iter().map(Hash::from).collect();
+        let inner_blocks: Vec<Hash> = self.inner_blocks().map(Hash::from).collect();
 
         if idx == 0 {
             Batch::new_genesis_batch(Hash::from(self.last_block), self.last_blocknum)
@@ -116,12 +135,12 @@ pub(crate) struct DBL1DaBlockRef {
     /// Height of the L1 block.
     block_height: L1Height,
 
-    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
     /// Id of the L1 block.
+    #[serde(with = "serde_bytes")]
     block_id: [u8; 32],
 
-    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
     /// Witness transaction Merkle root for the L1 block.
+    #[serde(with = "serde_bytes")]
     wtxids_root: [u8; 32],
 
     /// This batch's DA txs in this L1 block as raw `(txid, wtxid)` pairs.
@@ -185,6 +204,7 @@ pub(crate) enum DBBatchStatus {
     },
     ProofReady {
         da: Vec<DBL1DaBlockRef>,
+        #[serde(with = "serde_bytes")]
         proof: [u8; 32],
     },
 }
@@ -259,7 +279,9 @@ impl DBBatchWithStatus {
 /// (see the `KeyCodec` impls in `sleddb::schema`); as a value it goes through serde.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBChunkId {
+    #[serde(with = "serde_bytes")]
     prev_block: [u8; 32],
+    #[serde(with = "serde_bytes")]
     last_block: [u8; 32],
 }
 
@@ -299,11 +321,13 @@ impl DBChunkId {
 /// type via [`DBChunk::into_chunk`]. `batch_idx` is kept -- it is a real field, not the key.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBChunk {
+    #[serde(with = "serde_bytes")]
     prev_block: [u8; 32],
+    #[serde(with = "serde_bytes")]
     last_block: [u8; 32],
     last_blocknum: u64,
     batch_idx: u64,
-    inner_blocks: Vec<[u8; 32]>,
+    inner_blocks: Vec<ByteArray<32>>,
 }
 
 impl From<Chunk> for DBChunk {
@@ -313,15 +337,27 @@ impl From<Chunk> for DBChunk {
             last_block: value.last_block().into(),
             last_blocknum: value.last_blocknum(),
             batch_idx: value.batch_idx(),
-            inner_blocks: value.inner_blocks().iter().map(|h| (*h).into()).collect(),
+            inner_blocks: value
+                .inner_blocks()
+                .iter()
+                .map(|blkid| ByteArray::new((*blkid).into()))
+                .collect(),
         }
     }
 }
 
 impl DBChunk {
+    /// Returns the inner block hashes as plain arrays.
+    ///
+    /// The stored field wraps each hash so that serde encodes it as a byte string; callers
+    /// should not have to know that.
+    fn inner_blocks(&self) -> impl Iterator<Item = [u8; 32]> + '_ {
+        self.inner_blocks.iter().map(|blkid| blkid.into_array())
+    }
+
     /// Rebuilds the domain chunk, taking `idx` from the table key.
     fn into_chunk(self, idx: u64) -> Chunk {
-        let inner_blocks: Vec<Hash> = self.inner_blocks.into_iter().map(Hash::from).collect();
+        let inner_blocks: Vec<Hash> = self.inner_blocks().map(Hash::from).collect();
         Chunk::new(
             idx,
             Hash::from(self.prev_block),
@@ -339,7 +375,7 @@ impl DBChunk {
 pub(crate) enum DBChunkStatus {
     ProvingNotStarted,
     ProofPending(String),
-    ProofReady([u8; 32]),
+    ProofReady(#[serde(with = "serde_bytes")] [u8; 32]),
 }
 
 impl From<ChunkStatus> for DBChunkStatus {

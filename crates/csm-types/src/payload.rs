@@ -13,7 +13,8 @@
 // consumer uses these local types.
 
 use arbitrary::Arbitrary;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
+use serde_bytes::ByteBuf;
 use strata_identifiers::Buf32;
 use strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE;
 use strata_l1_txfmt::TagData;
@@ -58,13 +59,37 @@ pub enum L1PayloadError {
 ///
 /// The serde representation flattens the [`TagData`] fields alongside the
 /// payload (`{payload, subproto_id, tx_type, aux_data}`).
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct L1Payload {
+    /// Wrapped so that serde encodes each chunk as a byte string rather than a sequence of
+    /// integers; read it through [`L1Payload::data`].
     #[serde(rename = "payload")]
-    data: Vec<Vec<u8>>,
+    data: Vec<ByteBuf>,
 
     #[serde(flatten)]
     tag: TagData,
+}
+
+impl<'de> Deserialize<'de> for L1Payload {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Route reconstruction through `L1Payload::new` so that deserialized values are
+        // validated against `MAX_ENVELOPE_PAYLOAD_SIZE` instead of trusting the input
+        // verbatim. `TagData` validates itself the same way upstream.
+        //
+        // The helper is unavoidable: `#[serde(flatten)]` forces the buffered `Content` path,
+        // so field attributes on the real struct cannot be reused here.
+        #[derive(Deserialize)]
+        struct Helper {
+            #[serde(rename = "payload")]
+            data: Vec<ByteBuf>,
+            #[serde(flatten)]
+            tag: TagData,
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        let data = helper.data.into_iter().map(ByteBuf::into_vec).collect();
+        L1Payload::new(data, helper.tag).map_err(de::Error::custom)
+    }
 }
 
 impl L1Payload {
@@ -79,12 +104,13 @@ impl L1Payload {
         if total > MAX_ENVELOPE_PAYLOAD_SIZE {
             return Err(L1PayloadError::PayloadTooLarge { total });
         }
-        Ok(Self { data: payload, tag })
+        let data = payload.into_iter().map(ByteBuf::from).collect();
+        Ok(Self { data, tag })
     }
 
     /// Returns the data payload chunks.
-    pub fn data(&self) -> &[Vec<u8>] {
-        &self.data
+    pub fn data(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.data.iter().map(|chunk| chunk.as_slice())
     }
 
     /// Returns the tag metadata.
@@ -120,7 +146,7 @@ impl<'a> Arbitrary<'a> for L1Payload {
         let tag = TagData::new(subproto_id, tx_type, aux_data)
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
 
-        Ok(Self { data, tag })
+        Self::new(data, tag).map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
 
@@ -212,6 +238,46 @@ mod tests {
         );
 
         let decoded: L1Payload = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded, payload);
+    }
+
+    /// Decoding must enforce the same size bound as [`L1Payload::new`]; a stored row is not
+    /// trusted just because it is already in the database.
+    #[test]
+    fn deserialize_rejects_oversized_payload() {
+        let oversized = serde_json::json!({
+            "payload": [vec![0u8; MAX_ENVELOPE_PAYLOAD_SIZE + 1]],
+            "subproto_id": 5,
+            "tx_type": 9,
+            "aux_data": [],
+        });
+
+        let err = serde_json::from_value::<L1Payload>(oversized)
+            .expect_err("oversized payload must not decode");
+        assert!(
+            err.to_string().contains("exceeds maximum"),
+            "unexpected error {err}"
+        );
+    }
+
+    /// Chunks must reach CBOR as byte strings, not sequences of integers, which would cost
+    /// roughly two bytes per payload byte.
+    #[test]
+    fn cbor_encodes_chunks_as_byte_strings() {
+        let chunk_len = 1024;
+        let payload = L1Payload::new(vec![vec![0xAB; chunk_len]], tag()).unwrap();
+
+        let mut encoded = Vec::new();
+        ciborium::into_writer(&payload, &mut encoded).unwrap();
+
+        assert!(
+            encoded.len() < chunk_len + 64,
+            "expected a compact byte-string encoding, got {} bytes for {chunk_len} bytes of \
+             payload",
+            encoded.len()
+        );
+
+        let decoded: L1Payload = ciborium::from_reader(encoded.as_slice()).unwrap();
         assert_eq!(decoded, payload);
     }
 }

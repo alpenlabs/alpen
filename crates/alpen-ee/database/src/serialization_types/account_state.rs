@@ -29,9 +29,9 @@ impl DBAccountStateAtEpoch {
 // for existing local data.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBEeAccountState {
-    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
+    #[serde(with = "serde_bytes")]
     last_exec_blkid: [u8; 32],
-    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
+    #[serde(with = "serde_bytes")]
     last_exec_state_root: [u8; 32],
     pending_inputs: Vec<DBPendingInputEntry>,
     pending_fincls: Vec<DBPendingFinclEntry>,
@@ -79,7 +79,7 @@ impl From<BitcoinAmount> for DBBitcoinAmount {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DBPendingFinclEntry {
     epoch: u32,
-    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
+    #[serde(with = "serde_bytes")]
     raw_tx_hash: [u8; 32],
 }
 
@@ -144,7 +144,7 @@ impl From<SubjectDepositData> for DBSubjectDepositData {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-struct DBSubjectId([u8; 32]);
+struct DBSubjectId(#[serde(with = "serde_bytes")] [u8; 32]);
 
 impl From<DBSubjectId> for SubjectId {
     fn from(value: DBSubjectId) -> Self {

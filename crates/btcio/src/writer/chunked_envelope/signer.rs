@@ -68,7 +68,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     let sign_chunked_envelope_span = debug_span!(
         "btcio_chunked_envelope_sign",
         envelope_idx,
-        chunk_count = entry.chunk_data.len(),
+        chunk_count = entry.chunk_count(),
     );
 
     async {
@@ -108,7 +108,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 
         debug!(
             envelope_idx,
-            chunk_count = entry.chunk_data.len(),
+            chunk_count = entry.chunk_count(),
             utxo_count = utxos.len(),
             spendable_utxo_count,
             spendable_value_sats,
@@ -127,7 +127,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 
         let built = build_chunked_envelope_txs(
             &env_config,
-            &entry.chunk_data,
+            entry.chunk_data(),
             &entry.magic_bytes,
             entry.da_blob_version,
             &ctx.sequencer_keypair,

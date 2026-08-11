@@ -63,12 +63,15 @@ pub struct EvmHeaderSummary {
 /// `chunks` must be in commit-output order. The blob is decoded directly across
 /// the chunk slices (no intermediate contiguous copy), and any trailing bytes
 /// after a complete `DaBlob` are rejected — matching `decode_buf_exact`.
-pub fn reassemble_da_blob(chunks: &[Vec<u8>]) -> Result<DaBlob, CodecError> {
+pub fn reassemble_da_blob<'a>(
+    chunks: impl IntoIterator<Item = &'a [u8]>,
+) -> Result<DaBlob, CodecError> {
+    let chunks: Vec<&[u8]> = chunks.into_iter().collect();
     if chunks.is_empty() {
         return Err(CodecError::MalformedField("no DA chunks provided"));
     }
 
-    let mut dec = MultiSliceDecoder::new(chunks);
+    let mut dec = MultiSliceDecoder::new(&chunks);
     let blob = DaBlob::decode(&mut dec)?;
     if dec.remaining() > 0 {
         return Err(CodecError::ExtraInput);
@@ -83,7 +86,7 @@ pub fn reassemble_da_blob(chunks: &[Vec<u8>]) -> Result<DaBlob, CodecError> {
 /// commit/reveal chunk payloads, avoiding an O(blob) allocation + copy on the
 /// proof-verification path.
 struct MultiSliceDecoder<'a> {
-    chunks: &'a [Vec<u8>],
+    chunks: &'a [&'a [u8]],
     /// Index of the chunk currently being read.
     chunk: usize,
     /// Read offset within `chunks[chunk]`.
@@ -91,7 +94,7 @@ struct MultiSliceDecoder<'a> {
 }
 
 impl<'a> MultiSliceDecoder<'a> {
-    fn new(chunks: &'a [Vec<u8>]) -> Self {
+    fn new(chunks: &'a [&'a [u8]]) -> Self {
         Self {
             chunks,
             chunk: 0,
@@ -105,7 +108,10 @@ impl<'a> MultiSliceDecoder<'a> {
             return 0;
         }
         let current = self.chunks[self.chunk].len().saturating_sub(self.offset);
-        let later: usize = self.chunks[self.chunk + 1..].iter().map(Vec::len).sum();
+        let later: usize = self.chunks[self.chunk + 1..]
+            .iter()
+            .map(|chunk| chunk.len())
+            .sum();
         current + later
     }
 }
@@ -170,7 +176,8 @@ mod tests {
         // the single-buffer path (compared via re-encoding, as DaBlob is not Eq).
         for chunk_size in 1..=encoded.len() {
             let chunks: Vec<Vec<u8>> = encoded.chunks(chunk_size).map(|c| c.to_vec()).collect();
-            let got = reassemble_da_blob(&chunks).expect("decode across chunks");
+            let got = reassemble_da_blob(chunks.iter().map(Vec::as_slice))
+                .expect("decode across chunks");
             assert_eq!(
                 encode_to_vec(&got).unwrap(),
                 encoded,
@@ -181,7 +188,7 @@ mod tests {
 
     #[test]
     fn empty_chunks_is_error() {
-        assert!(reassemble_da_blob(&[]).is_err());
+        assert!(reassemble_da_blob([]).is_err());
     }
 
     #[test]
@@ -189,7 +196,7 @@ mod tests {
         let mut encoded = encode_to_vec(&sample_blob()).unwrap();
         encoded.push(0xFF);
         assert!(matches!(
-            reassemble_da_blob(&[encoded]),
+            reassemble_da_blob([encoded.as_slice()]),
             Err(CodecError::ExtraInput)
         ));
     }

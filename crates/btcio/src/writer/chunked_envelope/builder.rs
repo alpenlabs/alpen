@@ -6,7 +6,7 @@
 //! Reveals are independent across batches: fee bumping a single reveal does
 //! not cascade. Chunk ordering is implicit in commit-output ordering.
 
-use core::{iter, slice};
+use core::iter;
 
 use anyhow::anyhow;
 use bitcoin::{
@@ -52,14 +52,15 @@ pub struct ChunkedEnvelopeTxs {
 ///
 /// The SPS-51 envelope framing applied to reveals lets the sigCheck transitively
 /// authenticate the commit whose outputs the reveals spend.
-pub fn build_chunked_envelope_txs(
+pub fn build_chunked_envelope_txs<'a>(
     config: &EnvelopeConfig,
-    chunks: &[Vec<u8>],
+    chunks: impl IntoIterator<Item = &'a [u8]>,
     magic_bytes: &MagicBytes,
     da_blob_version: u32,
     sequencer_keypair: &Keypair,
     utxos: Vec<ListUnspentItem>,
 ) -> Result<ChunkedEnvelopeTxs, EnvelopeError> {
+    let chunks: Vec<&[u8]> = chunks.into_iter().collect();
     if chunks.is_empty() {
         return Err(EnvelopeError::EmptyPayload);
     }
@@ -77,7 +78,7 @@ pub fn build_chunked_envelope_txs(
     let mut artifacts = Vec::with_capacity(chunks.len());
     for chunk in chunks {
         let reveal_script = EnvelopeScriptBuilder::with_pubkey(&sequencer_xonly.serialize())?
-            .add_envelopes(slice::from_ref(chunk))?
+            .add_envelopes([chunk])?
             .build_without_min_check()?;
 
         let spend_info = TaprootBuilder::new()
@@ -375,7 +376,14 @@ mod tests {
         let kp = test_keypair();
 
         let result =
-            build_chunked_envelope_txs(&config, &chunks, &magic, TEST_DA_BLOB_VERSION, &kp, utxos)
+            build_chunked_envelope_txs(
+                &config,
+                chunks.iter().map(Vec::as_slice),
+                &magic,
+                TEST_DA_BLOB_VERSION,
+                &kp,
+                utxos,
+            )
                 .unwrap();
 
         // commit: OP_RETURN + 3 P2TR + change = 5 outputs.
@@ -445,7 +453,7 @@ mod tests {
 
         let result = build_chunked_envelope_txs(
             &config,
-            &chunks,
+            chunks.iter().map(Vec::as_slice),
             &magic,
             TEST_DA_BLOB_VERSION,
             &kp,
@@ -478,7 +486,7 @@ mod tests {
 
         let result = build_chunked_envelope_txs(
             &config,
-            &chunks,
+            chunks.iter().map(Vec::as_slice),
             &magic,
             TEST_DA_BLOB_VERSION,
             &kp,

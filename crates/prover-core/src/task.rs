@@ -176,6 +176,7 @@ pub struct TaskRecordData {
     updated_at_secs: u64,
     retry_after_secs: Option<u64>,
     /// Opaque bytes for strategy-specific state (e.g. remote ProofId for crash recovery).
+    #[serde(with = "serde_bytes")]
     metadata: Option<Vec<u8>>,
 }
 

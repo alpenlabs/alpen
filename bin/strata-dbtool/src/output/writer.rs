@@ -58,7 +58,7 @@ impl Formattable for WriterPayloadInfo {
 
         // Add payload details
         // Concatenate all payload chunks into a single payload for hashing
-        let concatenated_payload: Vec<u8> = self.payload.data().iter().flatten().copied().collect();
+        let concatenated_payload: Vec<u8> = self.payload.data().flatten().copied().collect();
         let payload_hash = hash::raw(&concatenated_payload);
         output.push(porcelain_field(
             "payload.subproto_id",

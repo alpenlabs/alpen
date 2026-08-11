@@ -161,7 +161,7 @@ fn build_and_post_ee_da_envelope(args: PostEeDaEnvelopeArgs) -> anyhow::Result<S
     let keypair = Keypair::from_secret_key(SECP256K1, &secret_key);
     let txs = build_chunked_envelope_txs(
         &config,
-        &chunks,
+        chunks.iter().map(Vec::as_slice),
         &config.magic_bytes,
         CRAFTED_DA_BLOB_VERSION,
         &keypair,

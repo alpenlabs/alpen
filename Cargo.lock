@@ -1182,6 +1182,7 @@ dependencies = [
  "reth-node-builder",
  "reth-primitives-traits",
  "serde",
+ "serde_bytes",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-types",
@@ -1289,6 +1290,7 @@ dependencies = [
  "ciborium",
  "eyre",
  "serde",
+ "serde_bytes",
  "sled",
  "ssz",
  "strata-acct-types",
@@ -13071,6 +13073,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_bytes"
+version = "0.11.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
+dependencies = [
+ "serde",
+ "serde_core",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -15465,7 +15477,9 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "bitcoin",
+ "ciborium",
  "serde",
+ "serde_bytes",
  "serde_json",
  "strata-asm-checkpoint-types",
  "strata-btc-types",
@@ -15636,6 +15650,7 @@ dependencies = [
  "arbitrary",
  "proptest",
  "serde",
+ "serde_bytes",
  "serde_json",
  "strata-asm-checkpoint-types",
  "strata-asm-common",
@@ -16575,6 +16590,7 @@ dependencies = [
  "async-trait",
  "parking_lot 0.12.5",
  "serde",
+ "serde_bytes",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

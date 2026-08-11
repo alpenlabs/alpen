@@ -110,7 +110,7 @@ pub(crate) fn reassemble_da_blob_from_txs(
     txs: &[Transaction],
 ) -> Result<DaBlob, DaWitnessBuildError> {
     let chunks = extract_da_chunks(txs.iter())?;
-    reassemble_da_blob(&chunks).map_err(DaWitnessBuildError::Reassembly)
+    reassemble_da_blob(chunks.iter().map(Vec::as_slice)).map_err(DaWitnessBuildError::Reassembly)
 }
 
 #[cfg(test)]

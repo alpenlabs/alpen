@@ -26,6 +26,7 @@ async-trait.workspace = true
 ciborium.workspace = true
 eyre.workspace = true
 serde.workspace = true
+serde_bytes.workspace = true
 sled.workspace = true
 ssz.workspace = true
 thiserror.workspace = true

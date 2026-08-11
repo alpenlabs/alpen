@@ -20,6 +20,7 @@ use crate::DbResult;
 #[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct L1TxEntry {
     /// Raw serialized transaction. This is basically `consensus::serialize()` of [`Transaction`]
+    #[serde(with = "serde_bytes")]
     tx_raw: Vec<u8>,
 
     /// The status of the transaction in bitcoin

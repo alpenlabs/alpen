@@ -65,7 +65,8 @@ pub fn verify_da_witness(
     }
 
     let encoded_chunks = extract_and_verify_da_chunks(included_txs.iter())?;
-    let blob = reassemble_da_blob(&encoded_chunks).map_err(DaVerificationError::Reassembly)?;
+    let blob = reassemble_da_blob(encoded_chunks.iter().map(Vec::as_slice))
+        .map_err(DaVerificationError::Reassembly)?;
     let last_chunk = decode_last_chunk_transition(ee_input)?;
     verify_da_blob_metadata(
         &blob,

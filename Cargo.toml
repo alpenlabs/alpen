@@ -458,6 +458,7 @@ rlp = "0.6.1"
 schemars = "1"
 secp256k1 = { version = "0.29.1", features = ["global-context", "std"] }
 serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11.15"
 serde_json = "1.0.94"
 serde_with = "3.18.0"
 sha2 = "0.10.8"

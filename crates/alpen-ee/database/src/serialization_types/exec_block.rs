@@ -12,7 +12,7 @@ use super::account_state::DBEeAccountState;
 pub(crate) struct DBExecBlockRecord {
     pub(crate) blocknum: u64,
 
-    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
+    #[serde(with = "serde_bytes")]
     parent_blockhash: [u8; 32],
 
     timestamp_ms: u64,
@@ -20,12 +20,13 @@ pub(crate) struct DBExecBlockRecord {
     /// Slot of the OL block this record is anchored to.
     ol_block_slot: Slot,
 
-    // TODO(db-refactor-part-17): mirror field pending upstream Buf32 serde fix
     /// Id of the OL block this record is anchored to.
+    #[serde(with = "serde_bytes")]
     ol_block_id: [u8; 32],
 
     /// ExecBlockPackage serialized using SSZ, stored as opaque bytes.
     // TODO(db-refactor-part-1): store the SSZ value directly via a SerdeSsz wrapper
+    #[serde(with = "serde_bytes")]
     package_ssz: Vec<u8>,
     account_state: DBEeAccountState,
     next_inbox_msg_idx: u64,
@@ -91,9 +92,11 @@ impl TryFrom<DBExecBlockRecord> for ExecBlockRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct DBMessageEntry {
+    #[serde(with = "serde_bytes")]
     source: [u8; 32],
     incl_epoch: u32,
     payload_value_sats: u64,
+    #[serde(with = "serde_bytes")]
     payload_data: Vec<u8>,
 }
 

@@ -16,10 +16,12 @@ strata-primitives.workspace = true
 
 arbitrary.workspace = true
 serde.workspace = true
+serde_bytes.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 bitcoin.workspace = true
+ciborium.workspace = true
 serde_json.workspace = true
 
 [features]

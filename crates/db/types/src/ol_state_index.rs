@@ -207,6 +207,7 @@ pub struct AccountUpdateRecord {
 
     next_inbox_idx: u64,
 
+    #[serde(with = "serde_bytes")]
     extra_data: Option<Vec<u8>>,
 }
 
@@ -288,6 +289,7 @@ impl AccountEpochKey {
 /// `entry_bytes` is the SSZ encoding of the underlying `MessageEntry`.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct InboxMessageRecord {
+    #[serde(with = "serde_bytes")]
     entry_bytes: Vec<u8>,
     block_commitment: Option<OLBlockCommitment>,
 }
