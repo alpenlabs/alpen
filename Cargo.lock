@@ -15621,8 +15621,6 @@ dependencies = [
  "hex",
  "sp1-verifier",
  "strata-predicate",
- "strata-proofimpl-alpen-acct",
- "strata-proofimpl-alpen-chunk",
  "strata-proofimpl-checkpoint",
  "thiserror 2.0.18",
  "zkaleido-sp1-groth16-verifier",
