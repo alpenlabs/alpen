@@ -3,21 +3,6 @@ resolver = "2"
 
 members = [
   "crates/acct-types",
-  "crates/alpen-ee/block-assembly",
-  "crates/alpen-ee/exec-chain",
-  "crates/alpen-ee/common",
-  "crates/alpen-ee/config",
-  "crates/alpen-ee/da/provider",
-  "crates/alpen-ee/da/runtime",
-  "crates/alpen-ee/da/types",
-  "crates/alpen-ee/database",
-  "crates/alpen-ee/engine",
-  "crates/alpen-ee/genesis",
-  "crates/alpen-ee/ol-tracker",
-  "crates/alpen-ee/rpc/api",
-  "crates/alpen-ee/rpc/server",
-  "crates/alpen-ee/rpc/types",
-  "crates/alpen-ee/sequencer",
   "crates/btcio",
   "crates/chain-worker",
   "crates/checkpoint-types",
@@ -32,14 +17,8 @@ members = [
   "crates/db/types",
   "crates/db/store-sled",
   "crates/db/tests",
-  "crates/ee-acct-runtime",
-  "crates/ee-acct-types",
-  "crates/ee-chain-types",
-  "crates/ee-chunk-runtime",
-  "crates/evm-ee",
   "crates/key-derivation",
   "crates/ledger-types",
-  "crates/mpt",
   "crates/node-context",
   "crates/ol/block-assembly",
   "crates/ol/chain-types",
@@ -60,23 +39,12 @@ members = [
   "crates/prover-core",
   "crates/bridge-params",
   "crates/primitives",
-  "crates/proof-impl/evm-ee-stf",
-  "crates/proof-impl/alpen-chunk",
-  "crates/proof-impl/alpen-acct",
   "crates/proof-impl/checkpoint",
   "crates/proof-impl/predicate-keys",
   "crates/zkvm/hosts",
-  "crates/reth/chainspec",
-  "crates/reth/db",
-  "crates/reth/evm",
-  "crates/reth/exex",
-  "crates/reth/node",
-  "crates/reth/rpc",
-  "crates/reth/witness",
   "crates/rpc/open-rpc",
   "crates/rpc/open-rpc-macros",
   "crates/rpc/open-rpc-spec",
-  "crates/simple-ee",
   "crates/snark-acct-runtime",
   "crates/snark-acct-sys",
   "crates/snark-acct-types",
@@ -124,30 +92,6 @@ clippy.absolute_paths = "warn"
 rustdoc.all = "warn"
 
 [workspace.dependencies]
-alpen-chainspec = { path = "crates/reth/chainspec" }
-alpen-ee-block-assembly = { path = "crates/alpen-ee/block-assembly" }
-alpen-ee-common = { path = "crates/alpen-ee/common" }
-alpen-ee-config = { path = "crates/alpen-ee/config" }
-alpen-ee-da-provider = { path = "crates/alpen-ee/da/provider" }
-alpen-ee-da-runtime = { path = "crates/alpen-ee/da/runtime" }
-alpen-ee-da-types = { path = "crates/alpen-ee/da/types" }
-alpen-ee-database = { path = "crates/alpen-ee/database", default-features = false }
-alpen-ee-engine = { path = "crates/alpen-ee/engine" }
-alpen-ee-exec-chain = { path = "crates/alpen-ee/exec-chain" }
-alpen-ee-genesis = { path = "crates/alpen-ee/genesis" }
-alpen-ee-ol-tracker = { path = "crates/alpen-ee/ol-tracker" }
-alpen-ee-rpc-api = { path = "crates/alpen-ee/rpc/api" }
-alpen-ee-rpc-server = { path = "crates/alpen-ee/rpc/server" }
-alpen-ee-rpc-types = { path = "crates/alpen-ee/rpc/types" }
-alpen-ee-sequencer = { path = "crates/alpen-ee/sequencer" }
-alpen-reth-db = { path = "crates/reth/db" }
-alpen-reth-evm = { path = "crates/reth/evm" }
-alpen-reth-exex = { path = "crates/reth/exex" }
-alpen-reth-node = { path = "crates/reth/node" }
-alpen-reth-primitives = { path = "crates/reth/primitives" }
-alpen-reth-rpc = { path = "crates/reth/rpc" }
-alpen-reth-statediff = { path = "crates/reth/statediff", default-features = false }
-alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
 strata-bridge-params = { path = "crates/bridge-params" }
 strata-btcio = { path = "crates/btcio" }
@@ -164,14 +108,8 @@ strata-da-framework = { path = "crates/da-framework" }
 strata-db-store-sled = { path = "crates/db/store-sled" }
 strata-db-tests = { path = "crates/db/tests" }
 strata-db-types = { path = "crates/db/types" }
-strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
-strata-ee-acct-types = { path = "crates/ee-acct-types" }
-strata-ee-chain-types = { path = "crates/ee-chain-types" }
-strata-ee-chunk-runtime = { path = "crates/ee-chunk-runtime" }
-strata-evm-ee = { path = "crates/evm-ee" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-ledger-types = { path = "crates/ledger-types" }
-strata-mpt = { path = "crates/mpt" }
 strata-node-context = { path = "crates/node-context" }
 strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-bridge-types = { path = "crates/bridge-types" }
@@ -194,13 +132,9 @@ strata-open-rpc = { path = "crates/rpc/open-rpc" }
 strata-open-rpc-macros = { path = "crates/rpc/open-rpc-macros" }
 strata-paas = { path = "crates/paas" }
 strata-primitives = { path = "crates/primitives" }
-strata-proofimpl-alpen-acct = { path = "crates/proof-impl/alpen-acct" }
-strata-proofimpl-alpen-chunk = { path = "crates/proof-impl/alpen-chunk" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
-strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-proofimpl-predicate-keys = { path = "crates/proof-impl/predicate-keys" }
 strata-prover-core = { path = "crates/prover-core" }
-strata-simple-ee = { path = "crates/simple-ee" }
 strata-snark-acct-runtime = { path = "crates/snark-acct-runtime" }
 strata-snark-acct-sys = { path = "crates/snark-acct-sys" }
 strata-snark-acct-types = { path = "crates/snark-acct-types" }
