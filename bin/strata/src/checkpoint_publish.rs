@@ -54,23 +54,28 @@ impl CheckpointPublishPolicy {
             return PublishDecision::Publish;
         }
 
-        let safe_epoch = self
-            .storage
-            .client_state()
-            .fetch_most_recent_state()
-            .ok()
-            .flatten()
-            .filter(|(block, _)| {
-                self.storage
-                    .l1()
-                    .get_canonical_blockid_at_height(block.height())
-                    .ok()
-                    .flatten()
-                    == Some(*block.blkid())
-            })
-            .and_then(|(_, state)| state.get_declared_final_epoch())
-            .map(|commitment| commitment.epoch());
+        let safe_epoch = self.safe_checkpoint_epoch().unwrap_or_else(|err| {
+            warn!(%err, "checkpoint safe epoch is unavailable");
+            None
+        });
         checkpoint_decision(checkpoint.new_tip().epoch, latest_epoch, safe_epoch)
+    }
+
+    /// Returns the final epoch from the latest client state when its L1 anchor is canonical.
+    fn safe_checkpoint_epoch(&self) -> DbResult<Option<Epoch>> {
+        let Some((block, state)) = self.storage.client_state().fetch_most_recent_state()? else {
+            return Ok(None);
+        };
+        let canonical = self
+            .storage
+            .l1()
+            .get_canonical_blockid_at_height(block.height())?;
+        if canonical != Some(*block.blkid()) {
+            return Ok(None);
+        }
+        Ok(state
+            .get_declared_final_epoch()
+            .map(|commitment| commitment.epoch()))
     }
 
     fn decide_bundle(&self, bundle: &BundledPayloadEntry, tx: &Transaction) -> PublishDecision {
