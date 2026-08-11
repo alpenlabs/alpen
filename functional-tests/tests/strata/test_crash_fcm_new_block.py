@@ -67,6 +67,6 @@ class TestCrashFcmNewBlock(CrashTest):
         strata.stop()
 
         assert_single_block_at_slot(datadir, slot, block_id)
-        assert_ol_block_status(datadir, block_id, "Valid")
+        assert_ol_block_status(datadir, block_id, "valid")
         logger.info("Recovered crashed block is valid and unique at slot=%s", slot)
         return True
