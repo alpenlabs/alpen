@@ -229,6 +229,8 @@ fn is_envelope_reveal(tx: &Transaction) -> bool {
         .is_some_and(|leaf| parse_envelope_payload(&leaf.script.into()).is_ok())
 }
 
+/// Publishes checkpoints ahead of ASM, abandons reorg-safe checkpoints, and
+/// defers those accepted by canonical ASM but not yet safe.
 fn checkpoint_decision(
     checkpoint_epoch: Epoch,
     latest_epoch: Epoch,
