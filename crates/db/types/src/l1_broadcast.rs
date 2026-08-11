@@ -80,10 +80,7 @@ impl L1TxEntry {
     /// includes anyway is recovered by `adopt_live_ancestor`, which reverses the link and
     /// re-admits the winner.
     pub fn is_trackable(&self) -> bool {
-        !matches!(
-            self.status,
-            L1TxStatus::InvalidInputs | L1TxStatus::Abandoned | L1TxStatus::Replaced { .. }
-        )
+        self.status.may_be_live() && !matches!(self.status, L1TxStatus::Replaced { .. })
     }
 
     pub fn is_finalized(&self) -> bool {
@@ -160,6 +157,13 @@ pub enum L1TxStatus {
 
     /// The transaction was deliberately excluded from publication.
     Abandoned,
+}
+
+impl L1TxStatus {
+    /// Returns whether the transaction may still be pending or present on L1.
+    pub fn may_be_live(&self) -> bool {
+        !matches!(self, Self::InvalidInputs | Self::Abandoned)
+    }
 }
 
 impl fmt::Display for L1TxStatus {

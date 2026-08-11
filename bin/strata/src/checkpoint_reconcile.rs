@@ -1,5 +1,8 @@
 //! Reconciles local checkpoint artifacts against ASM-accepted state.
 
+#[cfg(feature = "sequencer")]
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use strata_asm_common::{SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
@@ -34,12 +37,26 @@ pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -
     };
 
     let storage = nodectx.storage();
+    let commitments = checkpoint_commitments_from_epoch(nodectx, first_unaccepted_epoch)?;
+    if commitments.is_empty() {
+        return Ok(());
+    }
+    #[cfg(feature = "sequencer")]
+    let Some(checkpoint_intents) = checkpoint_intents_by_commitment(storage.db().as_ref())? else {
+        return Ok(());
+    };
     let mut deleted_payloads = Vec::new();
     let mut deleted_proofs = 0usize;
     let mut deleted_tasks = 0usize;
-    for commitment in checkpoint_commitments_from_epoch(nodectx, first_unaccepted_epoch)? {
+    for commitment in commitments {
         #[cfg(feature = "sequencer")]
-        if !cancel_queued_checkpoint(storage.db().as_ref(), commitment)? {
+        if !cancel_queued_checkpoint(
+            storage.db().as_ref(),
+            checkpoint_intents
+                .get(&commitment)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+        )? {
             continue;
         }
 
@@ -120,42 +137,43 @@ fn checkpoint_commitments_from_epoch(
 }
 
 #[cfg(feature = "sequencer")]
-/// Cancels every writer intent for a checkpoint before its artifacts are deleted.
+/// Groups checkpoint writer intents by commitment with one database scan.
 ///
-/// Returns `true` only when every matching intent is safely terminalized. A
-/// `false` result preserves the checkpoint artifacts; independently safe intents
-/// may already have been terminalized.
-fn cancel_queued_checkpoint(
+/// A malformed checkpoint payload returns `None`, conservatively disabling the
+/// cleanup because its relationship to the candidate artifacts is unknown.
+fn checkpoint_intents_by_commitment(
     db: &impl DatabaseBackend,
-    commitment: EpochCommitment,
-) -> Result<bool> {
+) -> Result<Option<HashMap<EpochCommitment, Vec<IntentEntry>>>> {
     let writer = db.writer_db();
-    let mut intents = Vec::new();
+    let mut grouped = HashMap::<EpochCommitment, Vec<IntentEntry>>::new();
     for idx in 0..writer.get_next_intent_idx()? {
         let Some(intent) = writer.get_intent_by_idx(idx)? else {
             continue;
         };
-        match checkpoint_from_payload(intent.payload()) {
-            Ok(Some(payload))
-                if {
-                    EpochCommitment::from_terminal(
-                        Epoch::from(payload.new_tip().epoch),
-                        *payload.new_tip().l2_commitment(),
-                    ) == commitment
-                } =>
-            {
-                intents.push(intent)
-            }
-            Err(()) => return Ok(false),
-            _ => {}
-        }
+        let payload = match checkpoint_from_payload(intent.payload()) {
+            Ok(Some(payload)) => payload,
+            Ok(None) => continue,
+            Err(()) => return Ok(None),
+        };
+        let commitment = EpochCommitment::from_terminal(
+            Epoch::from(payload.new_tip().epoch),
+            *payload.new_tip().l2_commitment(),
+        );
+        grouped.entry(commitment).or_default().push(intent);
     }
-    if intents.is_empty() {
-        return Ok(true);
-    }
+    Ok(Some(grouped))
+}
+
+#[cfg(feature = "sequencer")]
+/// Cancels every supplied writer intent before its checkpoint artifacts are deleted.
+///
+/// Returns `true` only when every matching intent is safely terminalized. A
+/// `false` result preserves the checkpoint artifacts; independently safe intents
+/// may already have been terminalized.
+fn cancel_queued_checkpoint(db: &impl DatabaseBackend, intents: &[IntentEntry]) -> Result<bool> {
     let mut all_cancelled = true;
     for intent in intents {
-        all_cancelled &= cancel_writer_intent(db, intent)?;
+        all_cancelled &= cancel_writer_intent(db, intent.clone())?;
     }
     Ok(all_cancelled)
 }
@@ -184,27 +202,24 @@ fn cancel_writer_intent(db: &impl DatabaseBackend, intent: IntentEntry) -> Resul
     }
     let broadcast = db.broadcast_db();
     let entries = [payload.commit_txid.0, payload.reveal_txid.0]
-        .map(|txid| broadcast.get_tx_entry_by_id(txid.into()))
         .into_iter()
+        .map(|txid| {
+            broadcast
+                .get_tx_entry_by_id(txid.into())
+                .map(|entry| (txid, entry))
+        })
         .collect::<strata_db_types::DbResult<Vec<_>>>()?;
-    if entries.iter().flatten().any(|entry| {
-        matches!(
-            entry.status,
-            L1TxStatus::Unpublished
-                | L1TxStatus::Published
-                | L1TxStatus::Confirmed { .. }
-                | L1TxStatus::Finalized { .. }
-        )
-    }) {
+    if entries
+        .iter()
+        .filter_map(|(_, entry)| entry.as_ref())
+        .any(|entry| entry.status.may_be_live())
+    {
         return Ok(false);
     }
-    for (txid, mut entry) in [payload.commit_txid.0, payload.reveal_txid.0]
-        .into_iter()
-        .zip(entries)
-    {
-        if let Some(ref mut entry) = entry {
+    for (txid, entry) in entries {
+        if let Some(mut entry) = entry {
             entry.status = L1TxStatus::Abandoned;
-            broadcast.put_tx_entry(txid.into(), entry.clone())?;
+            broadcast.put_tx_entry(txid.into(), entry)?;
         }
     }
     payload.status = L1BundleStatus::Abandoned;
@@ -279,7 +294,7 @@ mod tests {
     };
     use strata_identifiers::{Buf32, Epoch, EpochCommitment};
 
-    use super::cancel_queued_checkpoint;
+    use super::{cancel_queued_checkpoint, checkpoint_intents_by_commitment};
 
     #[test]
     fn queued_checkpoint_without_signing_marker_is_reconciled_safely() {
@@ -320,7 +335,11 @@ mod tests {
                 .unwrap();
         }
 
-        assert!(!cancel_queued_checkpoint(db.as_ref(), commitment).unwrap());
+        let intents = checkpoint_intents_by_commitment(db.as_ref())
+            .unwrap()
+            .unwrap();
+        let matching = intents.get(&commitment).unwrap();
+        assert!(!cancel_queued_checkpoint(db.as_ref(), matching).unwrap());
         assert_eq!(
             db.writer_db()
                 .get_payload_entry_by_idx(0)
@@ -341,7 +360,7 @@ mod tests {
             db.broadcast_db().del_tx_entry(Buf32(txid.0)).unwrap();
         }
 
-        assert!(cancel_queued_checkpoint(db.as_ref(), commitment).unwrap());
+        assert!(cancel_queued_checkpoint(db.as_ref(), matching).unwrap());
         assert_eq!(
             db.writer_db()
                 .get_payload_entry_by_idx(0)
