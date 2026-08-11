@@ -15,7 +15,7 @@ When adding a new environment or updating an existing one, commit the static val
 
 ```
 gh workflow run ci-genparams.yml --ref <branch> \
-  -f env=<staging-v2|prod> \
+  -f env=<staging-v2|prod|mainnet> \
   -f datatool_image_commit=<7-to-40-char-hex-sha> \
   -f genesis_l1_height=<height> \
   -f chain_config=<path-to-chainspec>
@@ -38,6 +38,8 @@ Workflow inputs:
 
 When `checkout_ref` is omitted, the job checks out the workflow run commit (`github.sha`) for params scripts/templates. In the common case, this is the commit selected by `--ref`.
 
+Use `crates/reth/chainspec/src/res/mainnet-chain.json` when generating the `mainnet` environment. The workflow passes `NETWORK=bitcoin` to datatool for that environment; other environments continue to use `signet`.
+
 Download the artifact:
 ```
 gh run download <run-id> -n params-<env>-<datatool-image-tag>
@@ -45,7 +47,7 @@ gh run download <run-id> -n params-<env>-<datatool-image-tag>
 
 ## GitHub Environment Setup
 
-Each environment in the workflow input (`staging-v2`, `prod`) must have a matching GitHub environment with these configured:
+Each environment in the workflow input (`staging-v2`, `prod`, `mainnet`) must have a matching GitHub environment with these configured:
 
 | Name | Type | Description |
 |------|------|-------------|

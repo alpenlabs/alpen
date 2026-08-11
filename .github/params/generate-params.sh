@@ -4,14 +4,14 @@ set -euo pipefail
 # Generate params from templates using prebuilt datatool image.
 #
 # Required env vars:
-#   DEPLOY_ENV            - environment (staging-v2, testnet-prod)
+#   DEPLOY_ENV            - environment (staging-v2, prod, mainnet)
 #   DATATOOL_IMAGE_TAG    - datatool image tag
 #   BTC_RPC_URL           - bitcoin RPC endpoint
 #   BTC_RPC_USER          - bitcoin RPC username
 #   BTC_RPC_PASSWORD      - bitcoin RPC password
 #   GENESIS_L1_HEIGHT     - genesis L1 block height
 #   CHAIN_CONFIG          - path to chainspec JSON
-#   NETWORK               - bitcoin network (default: signet)
+#   NETWORK               - bitcoin network (default: signet; bitcoin for DEPLOY_ENV=mainnet)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ECR_REGISTRY="496607027995.dkr.ecr.us-east-1.amazonaws.com"

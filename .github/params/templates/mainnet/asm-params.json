@@ -1,0 +1,78 @@
+{
+  "magic": "ALPN",
+  "anchor": "__ANCHOR__",
+  "subprotocols": [
+    {
+      "Admin": {
+        "strata_administrator": {
+          "keys": [
+            "038b8909c72c19f6165beae2a6127b462cf83bc27c0542a039dcf96b4085f51edd",
+            "03fceec575d5f1c1da2a143867aff92d652a6fd24337f040cb6370a43ca41942c0",
+            "0300f92fc119602ab9affa5e8e02ccdafb604163585f14f923a25a6f5b10b39cbc"
+          ],
+          "threshold": 2
+        },
+        "strata_sequencer_manager": {
+          "keys": [
+            "0268d9cbadbc9379cc160648560c43bcf671c5705da28d1ed3d4cb4cfafa5dab95",
+            "029e0bcd4cd3d1f78af131426ad3431f83440f5138af600e324cfcf1455e18252a",
+            "0390d0946a047787c5e03a452c1cac70ba3b1870410f6e3c08715ccb7cb5e6d644"
+          ],
+          "threshold": 2
+        },
+        "alpen_administrator": {
+          "keys": [
+            "031e4e781365f16774ef01d282ae5b40aa0e3ced25252657397e583741da10035b",
+            "03fa0c48d612b9c3191d1db2f0f41706831e52bba822300729432551f3da467fa5",
+            "03f32daff82d1627bc72126da54fa5c70f7b277fc8672345d54c120443c372f726"
+          ],
+          "threshold": 2
+        },
+        "strata_security_council": {
+          "keys": [
+            "0373633b52f26359bc1e9580d8767e099438267010c2c9f817a36a701b6c2a37e8",
+            "0249dd6827ed1b57157d02a74deee5fd66a4913d2287ba155c53e9471470369372",
+            "0343f066e7ac9065fbb99d08723f6703dd382e56f3c8d81d2242cda18ff91da890"
+          ],
+          "threshold": 2
+        },
+        "confirmation_depths": {
+          "strata_admin_multisig_update": 12,
+          "strata_seq_manager_multisig_update": 12,
+          "alpen_admin_multisig_update": 12,
+          "strata_security_council_multisig_update": 12,
+          "operator_update": 12,
+          "sequencer_update": 12,
+          "ol_stf_vk_update": 12,
+          "asm_stf_vk_update": 12,
+          "ee_stf_vk_update": 12,
+          "defcon3": 12,
+          "safe_harbour_address_update": 12
+        },
+        "max_seqno_gap": 10
+      }
+    },
+    {
+      "Checkpoint": {
+        "sequencer_predicate": "Bip340Schnorr:74acdd685f79c3e831590b0ab18711728f5b3c5c3ab9512b9b046363cf15d47e",
+        "checkpoint_predicate": "__CHECKPOINT_PREDICATE__",
+        "genesis_l1_height": "__GENESIS_L1_HEIGHT__",
+        "genesis_ol_blkid": "__GENESIS_OL_BLKID__"
+      }
+    },
+    {
+      "Bridge": {
+        "operators": [
+          "02485e0cfb6a4923d4fdce551f43d323cabb0503a0fb144c281ab69fc332f15bc6",
+          "028178910b555a27bc8cd120b4005ca7cca78b41b8b16de6d54fb60acce9db3202",
+          "02dcb416c8da99b89e1157003232aa526e301ee050c5f0e221071671088dbb3ef1"
+        ],
+        "denomination": 200000000,
+        "assignment_duration": 530,
+        "operator_fee": 300000,
+        "recovery_delay": 36,
+        "safe_harbour_address": "047dac92fd2e107fac7d68536f75de86e13819188a4b68cc8c827b68767232ffc5"
+      }
+    }
+  ]
+}
