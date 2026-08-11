@@ -23,9 +23,9 @@ def get_single_block_at_slot(datadir: str, slot: int) -> str:
 def assert_single_block_at_slot(datadir: str, slot: int, expected_block_id: str) -> None:
     block_id = get_single_block_at_slot(datadir, slot)
 
-    assert block_id == expected_block_id, (
-        f"expected slot {slot} to contain only {expected_block_id}, got {block_id}"
-    )
+    assert (
+        block_id == expected_block_id
+    ), f"expected slot {slot} to contain only {expected_block_id}, got {block_id}"
 
 
 @flexitest.register
@@ -43,7 +43,7 @@ class TestCrashFcmNewBlock(CrashTest):
         def inspect_crashed_block(pre_status: dict) -> None:
             slot = int(pre_status["tip"]["slot"]) + 1
             block_id = get_single_block_at_slot(datadir, slot)
-            block = assert_ol_block_status(datadir, block_id, "Unchecked")
+            block = assert_ol_block_status(datadir, block_id, "unchecked")
             assert int(block["header_slot"]) == slot
 
             crashed_block["slot"] = slot
