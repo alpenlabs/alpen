@@ -24,11 +24,6 @@
 
 # Rust workspace domains
 /crates/btcio/ @storopoli @irnb @bewakes
-/crates/alpen-ee/ @storopoli @sapinb @delbonis @purusang @evgenyzdanovich
-/crates/ee-*/ @storopoli @sapinb @delbonis
-/crates/evm-ee/ @sapinb @evgenyzdanovich
-/crates/simple-ee/ @storopoli @sapinb @delbonis
-/crates/reth/ @sapinb @evgenyzdanovich @MdTeach
 
 /crates/ol/ @delbonis @krsnapaudel @bewakes
 /crates/acct-types/ @delbonis @krsnapaudel @bewakes
@@ -59,9 +54,7 @@
 /crates/test-utils/ @voidash @delbonis
 
 # Binaries
-/bin/alpen-client/ @irnb @sapinb @evgenyzdanovich @prajwolrg
 /bin/strata/ @storopoli @krsnapaudel @bewakes
-/bin/alpen-cli/ @Zk2u @krsnapaudel @voidash
 /bin/datatool/ @prajwolrg @krsnapaudel @voidash
 /bin/strata-dbtool/ @krsnapaudel @delbonis
 /bin/strata-test-cli/ @krsnapaudel @voidash

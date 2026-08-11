@@ -131,7 +131,6 @@ jobs:
         run: |
           export PATH="${{ github.workspace }}/target/llvm-cov-target/debug:$PATH"
           which strata
-          which alpen-client
           cd functional-tests && uv run python entry.py
 
       - name: Generate combined coverage lcov
