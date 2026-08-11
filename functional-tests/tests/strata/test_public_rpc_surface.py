@@ -15,7 +15,7 @@ class TestPublicRpcSurface(BaseTest):
     """Checks role-specific public RPC method exposure."""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("el_ol_checkpoint_sync")
+        ctx.set_env("checkpoint_sync")
 
     def main(self, ctx):
         sequencer: StrataService = self.get_service(ServiceType.Strata)

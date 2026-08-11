@@ -7,12 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from common.accounts import RECIPIENT_ADDRESS, get_dev_account
 from common.base_test import BaseTest
 from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
-from common.evm_utils import send_raw_transaction, wait_for_receipt
 from common.rpc_types.strata import AccountEpochSummary, EpochCommitment, OLBlockInfo
-from common.services.alpen_client import AlpenClientService
 from common.services.signer import SignerService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
@@ -61,35 +58,22 @@ class PromotedChain:
 
 
 def finalize_active_checkpoint(test: BaseTest) -> FinalizedAnchor:
-    """Drives EE activity, then finalizes and records a checkpoint-sync anchor."""
-    logger.info("driving EE/account activity before recovery")
+    """Finalizes and records a checkpoint-sync anchor.
+
+    The Alpen EE account is registered at genesis but stays idle: driving real
+    snark-account updates needs an EE, which lives in the alpen-ee repo. The
+    summary comparisons below still pin that both nodes reconstruct the same
+    account state, they just do it over an account with no updates.
+    """
     sequencer = test.get_service(ServiceType.Strata)
     checkpoint_node = cast(StrataService, test.get_service(ServiceType.StrataCheckpointNode))
     bitcoin = test.get_service(ServiceType.Bitcoin)
-    alpen = cast(AlpenClientService, test.get_service(ServiceType.AlpenSequencer))
 
     sequencer_rpc = sequencer.wait_for_rpc_ready(timeout=30)
     checkpoint_rpc = checkpoint_node.wait_for_rpc_ready(timeout=30)
-    alpen.wait_for_ready(timeout=60)
-    alpen_rpc = alpen.create_rpc()
     btc_rpc = bitcoin.create_rpc()
 
-    account = get_dev_account(alpen_rpc)
-    gas_price = int(alpen_rpc.eth_gasPrice(), 16)
-    raw_tx = account.sign_transfer(
-        to=RECIPIENT_ADDRESS,
-        value=1_000_000,
-        gas_price=gas_price,
-        gas=21_000,
-    )
-    tx_hash = send_raw_transaction(alpen_rpc, raw_tx)
-    receipt = wait_for_receipt(alpen_rpc, tx_hash, timeout=120)
-    assert receipt["status"] == "0x1", f"EE activity transaction failed: {receipt}"
-    receipt_block = int(receipt["blockNumber"], 16)
-    alpen.wait_for_block(receipt_block + 4, timeout=120)
-    logger.info("EE transfer %s included at block %s", tx_hash, receipt_block)
-
-    active_epoch = _wait_for_active_epoch(sequencer, sequencer_rpc, btc_rpc)
+    active_epoch = _wait_for_completed_epoch(sequencer, sequencer_rpc, btc_rpc)
     target_epoch = max(MIN_FINALIZED_EPOCH, active_epoch)
 
     logger.info("finalizing checkpoint-sync node through epoch %s", target_epoch)
@@ -318,23 +302,18 @@ def assert_summaries_equivalent(
         assert actual_update == expected_update
 
 
-def _wait_for_active_epoch(sequencer: StrataService, sequencer_rpc, btc_rpc) -> int:
-    next_epoch = 1
-    for _ in range(30):
-        status = wait_until_with_value(
-            lambda: _mine_and_get_status(sequencer, sequencer_rpc, btc_rpc),
-            lambda value, epoch=next_epoch: value["tip"]["epoch"] > epoch,
-            error_with=f"sequencer did not complete epoch {next_epoch}",
-            timeout=120,
-            step=0.5,
-        )
-        for epoch in range(next_epoch, status["tip"]["epoch"]):
-            summary = sequencer.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch, sequencer_rpc)
-            if summary["update_inputs"]:
-                logger.info("account activity landed in OL epoch %s", epoch)
-                return epoch
-        next_epoch = status["tip"]["epoch"]
-    raise AssertionError("no Alpen account activity found within 30 completed OL epochs")
+def _wait_for_completed_epoch(sequencer: StrataService, sequencer_rpc, btc_rpc) -> int:
+    """Mines until the sequencer completes an epoch and returns the last completed one."""
+    status = wait_until_with_value(
+        lambda: _mine_and_get_status(sequencer, sequencer_rpc, btc_rpc),
+        lambda value: value["tip"]["epoch"] > MIN_FINALIZED_EPOCH,
+        error_with=f"sequencer did not complete epoch {MIN_FINALIZED_EPOCH}",
+        timeout=120,
+        step=0.5,
+    )
+    completed = status["tip"]["epoch"] - 1
+    logger.info("sequencer completed OL epoch %s", completed)
+    return completed
 
 
 def _mine_and_get_status(sequencer: StrataService, sequencer_rpc, btc_rpc):

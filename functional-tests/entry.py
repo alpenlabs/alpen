@@ -26,13 +26,10 @@ from common.config.params import GenesisAccountData
 from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
 from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
-from envconfigs.alpen_client import AlpenClientEnv
-from envconfigs.el_ol import EeOLEnv
-from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
+from envconfigs.checkpoint_sync import CheckpointSyncEnv
 from envconfigs.strata import StrataEnvConfig
 
 # Import factories
-from factories.alpen_client import AlpenClientFactory
 from factories.bitcoin import BitcoinFactory
 from factories.signer import SignerFactory
 from factories.strata import StrataFactory
@@ -279,7 +276,6 @@ def main(argv: list[str]) -> int:
 
     # Create factories
     factories: dict[ServiceType, flexitest.Factory] = {
-        ServiceType.AlpenClient: AlpenClientFactory(range(30303, 30503)),
         ServiceType.Bitcoin: BitcoinFactory(range(18443, 19443)),
         ServiceType.Strata: StrataFactory(range(19443, 19643)),
         ServiceType.StrataSigner: SignerFactory(range(19643, 19663)),
@@ -318,47 +314,7 @@ def main(argv: list[str]) -> int:
             epoch_sealing=EpochSealingConfig(slots_per_epoch=5),
             fund_test_cli_wallet=True,
         ),
-        # Alpen-client (EE) environments
-        "alpen_ee": AlpenClientEnv(enable_l1_da=True),
-        # EEST needs the externally observable OL/EE path, not a
-        # test-only client surface.
-        "alpen_eest": EeOLEnv(
-            fullnode_count=0,
-            pre_generate_blocks=110,
-            batch_sealing_block_count=5,
-        ),
-        "alpen_ee_discovery": AlpenClientEnv(
-            enable_discovery=True, pure_discovery=True, enable_l1_da=True
-        ),
-        "alpen_ee_multi": AlpenClientEnv(fullnode_count=3, enable_l1_da=True),
-        "alpen_ee_mesh": AlpenClientEnv(
-            fullnode_count=5,
-            enable_discovery=True,
-            pure_discovery=True,
-            mesh_bootnodes=True,
-            enable_l1_da=True,
-        ),
-        # Environments containing both ee and ol
-        "el_ol": EeOLEnv(pre_generate_blocks=110),
-        # Same as `el_ol` but with a tighter OL block time so bridge tests can
-        # drive a deposit -> bridgeout -> WF cycle within reasonable runtime.
-        # 500ms was tried first but flagged as likely-flaky in #1699 review;
-        # 1000ms is the balance point where the test still fits in one CI
-        # job but the alpen-client tracker, ASM checkpoint pipeline, and
-        # btcio reader all stay comfortable. If this proves flaky on CI,
-        # bump to 2000ms and accept a longer runtime.
-        # `dev_track_latest_epoch=True` switches the alpen-client's OL
-        # chain tracker to advance against Strata's latest completed OL
-        # epoch instead of `confirmed` (CSM/L1-checkpoint-based) so the EE
-        # block builder consumes inbox messages without waiting for the L1
-        # checkpoint round-trip.
-        "el_ol_bridge": EeOLEnv(
-            pre_generate_blocks=110,
-            ol_block_time_ms=1000,
-            dev_track_latest_epoch=True,
-            batch_sealing_block_count=5,
-        ),
-        "el_ol_checkpoint_sync": EeOLCheckpointSyncEnv(pre_generate_blocks=110),
+        "checkpoint_sync": CheckpointSyncEnv(pre_generate_blocks=110),
     }
 
     # Set up test runtime

@@ -29,7 +29,7 @@ class TestCheckpointSyncNodeRestart(BaseTest):
     """Restarts a checkpoint-sync node after it syncs a post-genesis epoch."""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("el_ol_checkpoint_sync")
+        ctx.set_env("checkpoint_sync")
 
     def main(self, ctx):
         sequencer: StrataService = self.get_service(ServiceType.Strata)

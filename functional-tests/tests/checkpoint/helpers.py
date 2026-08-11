@@ -5,10 +5,10 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from common.envelope import extract_envelope_payload
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
-from tests.alpen_client.ee_da.codec import extract_envelope_payload
 
 logger = logging.getLogger(__name__)
 

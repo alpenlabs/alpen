@@ -62,11 +62,3 @@ class StrataNodeTest(BaseTest):
     """
 
     pass
-
-
-class AlpenClientTest(BaseTest):
-    """
-    Base Test class for alpen-client P2P tests.
-    """
-
-    pass

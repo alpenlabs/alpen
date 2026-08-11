@@ -1,9 +1,12 @@
 """A checkpoint-sync OL node reconstructs the same OL state as the sequencer.
 
 The checkpoint-sync node syncs purely from L1-buried checkpoints, with no peer
-OL connection. The test drives real account activity on the sequencer (via the
-EE node) and asserts the checkpoint-sync node reconstructs identical per-epoch
-account state.
+OL connection. The test asserts it reconstructs identical top-level state and
+identical per-epoch account state.
+
+The Alpen EE account is registered at genesis but idle: producing real
+snark-account updates needs an EE, which lives in the alpen-ee repo. So the
+per-epoch summaries compared here carry no update inputs.
 """
 
 import logging
@@ -24,22 +27,19 @@ from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
-# Number of epochs with real account activity to compare between the two nodes.
-EPOCHS_WITH_ACTIVITY_TO_CHECK = 5
-# Cap on how many epochs to walk while looking for activity.
-MAX_EPOCHS_TO_SCAN = 30
+# Number of epochs to compare between the two nodes.
+EPOCHS_TO_CHECK = 5
 
 
 @flexitest.register
 class TestCheckpointSyncNode(BaseTest):
     """
-    Tests a checkpoint syncing node. The EE sequencer generates activity via
-    the OL sequencer; the test asserts that CSS reconstructs matching
+    Tests a checkpoint syncing node: asserts that CSS reconstructs matching
     per-epoch account summaries from L1 checkpoints.
     """
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("el_ol_checkpoint_sync")
+        ctx.set_env("checkpoint_sync")
 
     def main(self, ctx):
         sequencer: StrataService = self.get_service(ServiceType.Strata)
@@ -51,41 +51,23 @@ class TestCheckpointSyncNode(BaseTest):
         sequencer.wait_for_rpc_ready(timeout=20)
         checkpoint_node.wait_for_rpc_ready(timeout=20)
 
-        # Walk epochs as the EE node posts updates, collecting epochs whose EE
-        # account summary on the sequencer has real activity.
-        active_epochs: list[int] = []
-        next_epoch = 1
-        while len(active_epochs) < EPOCHS_WITH_ACTIVITY_TO_CHECK:
-            if next_epoch > MAX_EPOCHS_TO_SCAN:
-                raise AssertionError(
-                    f"only found {len(active_epochs)} active epochs within "
-                    f"{MAX_EPOCHS_TO_SCAN} epochs"
-                )
-
-            seq_status = wait_until_with_value(
-                lambda: mine_and_get_status(sequencer, btc_rpc),
-                lambda st, ep=next_epoch: st["tip"]["epoch"] > ep,
-                error_with=f"sequencer did not advance past epoch {next_epoch}",
-                timeout=120,
-            )
-
-            for epoch in range(next_epoch, seq_status["tip"]["epoch"]):
-                summary = sequencer.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
-                # Add to active epochs if updates are present for the account
-                if len(summary["update_inputs"]) > 0:
-                    active_epochs.append(epoch)
-                    logger.info(f"epoch {epoch} has account activity")
-            next_epoch = seq_status["tip"]["epoch"]
-
-        last_active = active_epochs[-1]
-        logger.info(f"comparing checkpoint-sync node up to epoch {last_active}")
+        # Drive the sequencer past the epochs we intend to compare.
+        wait_until_with_value(
+            lambda: mine_and_get_status(sequencer, btc_rpc),
+            lambda st: st["tip"]["epoch"] > EPOCHS_TO_CHECK,
+            error_with=f"sequencer did not advance past epoch {EPOCHS_TO_CHECK}",
+            timeout=120,
+        )
+        epochs = list(range(1, EPOCHS_TO_CHECK + 1))
+        last_epoch = epochs[-1]
+        logger.info(f"comparing checkpoint-sync node up to epoch {last_epoch}")
 
         # The checkpoint-sync node reconstructs state from L1; wait for it to
-        # finalize the last active epoch.
+        # finalize the last epoch under comparison.
         wait_until_with_value(
             lambda: mine_and_get_status(checkpoint_node, btc_rpc),
-            lambda st: st["finalized"]["epoch"] >= last_active,
-            error_with=f"checkpoint-sync node did not finalize epoch {last_active}",
+            lambda st: st["finalized"]["epoch"] >= last_epoch,
+            error_with=f"checkpoint-sync node did not finalize epoch {last_epoch}",
             timeout=120,
         )
 
@@ -97,10 +79,10 @@ class TestCheckpointSyncNode(BaseTest):
         )
         check_top_level_state_equivalent(seq_status, node_status)
 
-        # Each active epoch's reconstructed account summary must be identical to
-        # the sequencer's, including the non-empty update inputs.
+        # Each epoch's reconstructed account summary must be identical to the
+        # sequencer's.
         seq_rpc = sequencer.create_rpc()
-        for epoch in active_epochs:
+        for epoch in epochs:
             seq_summary = sequencer.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
             node_summary = checkpoint_node.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch)
             check_summaries_equivalent(seq_summary, node_summary)

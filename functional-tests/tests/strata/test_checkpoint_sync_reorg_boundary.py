@@ -7,7 +7,7 @@ from common.config.constants import ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
-from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
+from envconfigs.checkpoint_sync import CheckpointSyncEnv
 
 REORG_SAFE_DEPTH = 4
 TARGET_EPOCH = 1
@@ -19,7 +19,7 @@ class TestCheckpointSyncReorgBoundary(BaseTest):
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
-            EeOLCheckpointSyncEnv(
+            CheckpointSyncEnv(
                 pre_generate_blocks=110,
                 seal_epoch_slots=4,
                 ol_block_time_ms=750,

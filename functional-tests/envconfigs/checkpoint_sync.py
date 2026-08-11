@@ -1,63 +1,67 @@
-"""EE + OL environment with a checkpoint-sync OL node alongside the sequencer."""
+"""OL environment with a checkpoint-sync node alongside the sequencer."""
 
 from pathlib import Path
 from typing import cast
 
 import flexitest
 
-from common.config import BitcoindConfig, ServiceType
+from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
-from envconfigs.alpen_client import AlpenClientEnv
-from envconfigs.el_ol import EeOLEnv
+from envconfigs.strata import StrataEnvConfig
 from factories.signer import SignerFactory
 from factories.strata import CreateNodeResult, StrataFactory
 
 
-class EeOLCheckpointSyncEnv(EeOLEnv):
-    """`el_ol` plus a checkpoint-sync Strata node.
+class CheckpointSyncEnv(flexitest.EnvConfig):
+    """A Strata sequencer plus a checkpoint-sync Strata node.
 
     The checkpoint-sync node reconstructs OL state from L1-buried checkpoints
-    instead of executing OL blocks. The EE sequencer reads OL state from the
-    OL sequencer, while the EE full node reads it from the checkpoint-sync node.
+    instead of executing OL blocks.
+
+    Parameters:
+        pre_generate_blocks: How many bitcoin blocks to pre-generate
+        provision_promotion: Provision a dormant sequencer + signer pair that a
+            test can start after stopping the checkpoint node
+        provision_recovery_node: Provision a dormant, empty checkpoint-sync node
+            for the DA continuity recovery check
     """
 
     def __init__(
         self,
-        *args,
+        pre_generate_blocks: int = 0,
+        seal_epoch_slots: int | None = None,
+        admin_confirmation_depth: int | None = None,
+        ol_block_time_ms: int | None = None,
+        l1_reorg_safe_depth: int | None = None,
         provision_promotion: bool = False,
         provision_recovery_node: bool = False,
-        **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        epoch_seal_config = (
+            EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
+            if seal_epoch_slots
+            else EpochSealingConfig()
+        )
+
+        self.strata_config = StrataEnvConfig(
+            pre_generate_blocks=pre_generate_blocks,
+            epoch_sealing=epoch_seal_config,
+            admin_confirmation_depth=admin_confirmation_depth,
+            ol_block_time_ms=ol_block_time_ms,
+            l1_reorg_safe_depth=l1_reorg_safe_depth,
+        )
         self.provision_promotion = provision_promotion
         self.provision_recovery_node = provision_recovery_node
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
         strata_services = self.strata_config._get_services(ectx)
-        sequencer: StrataService = strata_services[ServiceType.Strata]
         bitcoin: BitcoinService = strata_services[ServiceType.Bitcoin]
-        sequencer_node = self.strata_config.sequencer_node
-        assert sequencer_node is not None
 
         checkpoint_result = self._start_checkpoint_node(ectx, bitcoin)
-        checkpoint_node = checkpoint_result.service
-
-        alpen_services = AlpenClientEnv.get_services(
-            ectx,
-            self.alpen_env_params,
-            bitcoin_service=bitcoin,
-            ol_endpoint=sequencer.props["rpc_url"],
-            fullnode_ol_endpoint=checkpoint_node.props["rpc_url"],
-            ol_submit_endpoint=sequencer.props["submit_rpc_url"],
-            ol_submit_token=sequencer.props["submit_rpc_token"],
-            ee_params_path=sequencer_node.params.ee_params,
-        )
 
         services = {
             **strata_services,
-            **alpen_services,
-            ServiceType.StrataCheckpointNode: checkpoint_node,
+            ServiceType.StrataCheckpointNode: checkpoint_result.service,
         }
 
         if self.provision_promotion:
@@ -78,13 +82,8 @@ class EeOLCheckpointSyncEnv(EeOLEnv):
         sequencer_node = self.strata_config.sequencer_node
         assert sequencer_node is not None
 
-        bconfig = BitcoindConfig(
-            rpc_url=f"http://localhost:{bitcoin.get_prop('rpc_port')}",
-            rpc_user=bitcoin.get_prop("rpc_user"),
-            rpc_password=bitcoin.get_prop("rpc_password"),
-        )
         checkpoint_result = strata_factory.create_node(
-            bconfig,
+            self._bitcoind_config(bitcoin),
             sequencer_node.genesis_l1_height,
             is_sequencer=False,
             shared_params=sequencer_node.params,

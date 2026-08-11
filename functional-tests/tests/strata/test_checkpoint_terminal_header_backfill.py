@@ -7,7 +7,7 @@ import flexitest
 from common.base_test import BaseTest
 from common.config.constants import ServiceType
 from common.services.strata import StrataService
-from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
+from envconfigs.checkpoint_sync import CheckpointSyncEnv
 from tests.dbtool.helpers import extract_json_from_output, run_dbtool
 from tests.strata.checkpoint_promotion import finalize_active_checkpoint
 
@@ -20,12 +20,11 @@ class TestCheckpointTerminalHeaderBackfill(BaseTest):
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
-            EeOLCheckpointSyncEnv(
+            CheckpointSyncEnv(
                 pre_generate_blocks=110,
                 seal_epoch_slots=4,
                 ol_block_time_ms=750,
                 l1_reorg_safe_depth=4,
-                batch_sealing_block_count=3,
             )
         )
 
