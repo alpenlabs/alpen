@@ -396,6 +396,7 @@ fn entry_unlocks_successor(entry: &ChunkedEnvelopeEntry) -> bool {
             | ChunkedEnvelopeStatus::Published
             | ChunkedEnvelopeStatus::Confirmed
             | ChunkedEnvelopeStatus::Finalized
+            | ChunkedEnvelopeStatus::Abandoned
     )
 }
 
@@ -681,7 +682,7 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
             return Err(invalid_gap_error(idx).into());
         };
 
-        if entry.status == ChunkedEnvelopeStatus::Finalized || entry_unlocks_successor(&entry) {
+        if entry_unlocks_successor(&entry) {
             state.forward_frontier += 1;
             continue;
         }
@@ -1295,7 +1296,7 @@ mod tests {
 
         ops.put_chunked_envelope_entry_blocking(
             0,
-            make_recovery_entry(ChunkedEnvelopeStatus::Finalized, 0x01, true),
+            make_recovery_entry(ChunkedEnvelopeStatus::Abandoned, 0x01, true),
         )
         .unwrap();
         ops.put_chunked_envelope_entry_blocking(
