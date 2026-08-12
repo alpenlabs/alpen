@@ -10,8 +10,8 @@ use super::{
     error::{BroadcasterError, BroadcasterResult},
     handle::MAX_REPLACEMENT_CHAIN_HOPS,
     io::{
-        BroadcasterIoContext, PublishContext, PublishDecision, PublishTxOutcome,
-        TxConfirmationInfo, TxLookupOutcome,
+        BroadcasterIoContext, PublishDecision, PublishTxOutcome, TxConfirmationInfo,
+        TxLookupOutcome,
     },
     state::{BroadcasterState, IndexedEntry},
 };
@@ -342,10 +342,7 @@ where
         TxLookupOutcome::Found(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
         TxLookupOutcome::Missing => {
             let tx = txentry.try_to_tx().expect("could not deserialize tx");
-            match io
-                .publish_decision(idx, &tx, PublishContext::Recovery)
-                .await
-            {
+            match io.publish_decision(idx, &tx).await {
                 PublishDecision::Publish => {
                     let mut submitting = txentry.clone();
                     submitting.status = L1TxStatus::Submitting;
@@ -446,7 +443,7 @@ where
     C: BroadcasterIoContext,
 {
     let tx = txentry.try_to_tx().expect("could not deserialize tx");
-    match io.publish_decision(idx, &tx, PublishContext::Initial).await {
+    match io.publish_decision(idx, &tx).await {
         PublishDecision::Publish => {}
         PublishDecision::Defer => return Ok(L1TxStatus::Queued),
         PublishDecision::Abandon => return Ok(L1TxStatus::Abandoned),
@@ -661,7 +658,6 @@ mod test {
         adoptions: Arc<Mutex<Vec<(Buf32, Buf32, L1TxStatus)>>>,
         adoption_applies: bool,
         publish_decision: PublishDecision,
-        recovery_decision: PublishDecision,
         persisted_statuses: Arc<Mutex<Vec<L1TxStatus>>>,
         require_submitting_before_send: bool,
     }
@@ -696,11 +692,6 @@ mod test {
             self
         }
 
-        fn with_recovery_decision(mut self, decision: PublishDecision) -> Self {
-            self.recovery_decision = decision;
-            self
-        }
-
         fn require_submitting_before_send(mut self) -> Self {
             self.require_submitting_before_send = true;
             self
@@ -708,17 +699,8 @@ mod test {
     }
 
     impl BroadcasterIoContext for MockIoContext {
-        async fn publish_decision(
-            &self,
-            _: u64,
-            _: &Transaction,
-            context: PublishContext,
-        ) -> PublishDecision {
-            if context == PublishContext::Recovery {
-                self.recovery_decision
-            } else {
-                self.publish_decision
-            }
+        async fn publish_decision(&self, _: u64, _: &Transaction) -> PublishDecision {
+            self.publish_decision
         }
 
         async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
@@ -966,20 +948,6 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn submitting_entry_uses_recovery_policy() {
-        let (entry, txid) = entry_with_txid(L1TxStatus::Submitting);
-        let io = MockIoContext::default()
-            .with_publish_decision(PublishDecision::Abandon)
-            .with_recovery_decision(PublishDecision::Publish)
-            .with_tx_lookup(txid, MockTxLookupResult::Missing);
-
-        assert_eq!(
-            process_status(&io, &entry, &txid, &get_test_btcio_params()).await,
-            Some(L1TxStatus::Published)
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_unpublished_entry_above_max_fee_requires_rebuild() {
         let (entry, txid) = entry_with_txid(L1TxStatus::Unpublished);
         let btcio_params = get_test_btcio_params();
@@ -1146,7 +1114,7 @@ mod test {
 
         let io = MockIoContext::default()
             .with_tx_lookup(txid, MockTxLookupResult::Missing)
-            .with_recovery_decision(PublishDecision::Abandon);
+            .with_publish_decision(PublishDecision::Abandon);
         let e = enter_missing_published_recovery(&io, e, &txid, &btcio_params).await;
         assert_eq!(
             process_status(&io, &e, &txid, &btcio_params).await,

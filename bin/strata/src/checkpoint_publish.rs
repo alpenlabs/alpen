@@ -8,7 +8,7 @@ use strata_asm_common::{SectionStateExt, Subprotocol, TxInputRef};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_asm_proto_checkpoint_txs::{OL_STF_CHECKPOINT_TX_TAG, extract_checkpoint_from_envelope};
 use strata_btc_types::TxidExt;
-use strata_btcio::broadcaster::{PublishContext, PublishDecision, PublishPolicy};
+use strata_btcio::broadcaster::{PublishDecision, PublishPolicy};
 use strata_codec::decode_buf_exact;
 use strata_codec_utils::CodecSsz;
 use strata_csm_types::L1Payload;
@@ -90,7 +90,7 @@ impl CheckpointPublishPolicy {
 
 #[async_trait::async_trait]
 impl PublishPolicy for CheckpointPublishPolicy {
-    async fn decide(&self, idx: u64, tx: &Transaction, context: PublishContext) -> PublishDecision {
+    async fn decide(&self, idx: u64, tx: &Transaction) -> PublishDecision {
         match publication_for_tx(self.storage.db().as_ref(), idx, tx, &self.parser) {
             Ok(Publication::Checkpoint {
                 checkpoint,
@@ -102,7 +102,6 @@ impl PublishPolicy for CheckpointPublishPolicy {
                 member,
                 commit_status,
                 reveal_status,
-                context,
             ),
             Ok(Publication::Other) => PublishDecision::Publish,
             Ok(Publication::Unknown) => PublishDecision::Defer,
@@ -273,16 +272,14 @@ enum PairMember {
 /// Preserves commit/reveal recovery while applying the checkpoint decision.
 ///
 /// If either transaction reached L1, the other is published to finish the pair.
-/// A reveal probes a missing or ambiguously submitted commit; a genuinely absent
-/// commit fails safely with invalid inputs. Commit recovery stays deferred until
-/// that reveal probe has a definitive outcome. Definitely-unsent pairs use the
-/// checkpoint decision directly.
+/// Otherwise the commit is decided first and the reveal waits until that commit
+/// is observed, so recovery never rejects a reveal merely because its original
+/// commit is temporarily absent from the local Bitcoin node.
 fn pair_decision(
     decision: PublishDecision,
     member: PairMember,
     commit_status: Option<L1TxStatus>,
     reveal_status: Option<L1TxStatus>,
-    context: PublishContext,
 ) -> PublishDecision {
     let reached_l1 = commit_status
         .as_ref()
@@ -293,40 +290,21 @@ fn pair_decision(
     if reached_l1 {
         return PublishDecision::Publish;
     }
-    if matches!(member, PairMember::Commit)
-        && reveal_status
-            .as_ref()
-            .is_some_and(|status| !status.may_be_live())
-    {
+    let sibling_dead = match member {
+        PairMember::Commit => reveal_status.as_ref(),
+        PairMember::Reveal => commit_status.as_ref(),
+    }
+    .is_some_and(|status| !status.may_be_live());
+    if sibling_dead {
         return match decision {
             PublishDecision::Publish => PublishDecision::Invalidate,
             decision => decision,
         };
     }
 
-    let reveal_unresolved = reveal_status
-        .as_ref()
-        .is_some_and(L1TxStatus::submission_pending);
     match member {
-        PairMember::Reveal
-            if commit_status.is_none()
-                || commit_status
-                    .as_ref()
-                    .is_some_and(L1TxStatus::submission_started)
-                || (context == PublishContext::Recovery
-                    && reveal_status
-                        .as_ref()
-                        .is_some_and(L1TxStatus::submission_started)) =>
-        {
-            PublishDecision::Publish
-        }
-        PairMember::Commit
-            if reveal_status.is_none()
-                || (context == PublishContext::Recovery && reveal_unresolved) =>
-        {
-            PublishDecision::Defer
-        }
-        _ => decision,
+        PairMember::Commit => decision,
+        PairMember::Reveal => PublishDecision::Defer,
     }
 }
 
@@ -395,19 +373,13 @@ mod tests {
     }
 
     #[test]
-    fn unlinked_legacy_pair_is_deferred_until_reveal_is_known() {
+    fn ambiguous_pair_recovers_commit_before_reveal() {
         let db = get_test_sled_backend();
-        let funding = Transaction {
-            version: transaction::Version::TWO,
-            lock_time: absolute::LockTime::ZERO,
-            input: vec![],
-            output: vec![],
-        };
         let commit = Transaction {
             version: transaction::Version::ONE,
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn {
-                previous_output: OutPoint::new(funding.compute_txid(), 0),
+                previous_output: OutPoint::null(),
                 script_sig: Default::default(),
                 sequence: Sequence::MAX,
                 witness: Witness::new(),
@@ -418,53 +390,33 @@ mod tests {
         let encoded = encode_to_vec(&CodecSsz::new(checkpoint)).unwrap();
         let mut reveal = create_reveal_transaction_stub(encoded, &OL_STF_CHECKPOINT_TX_TAG);
         reveal.input[0].previous_output = OutPoint::new(commit.compute_txid(), 0);
-        for tx in [&funding, &commit] {
-            db.broadcast_db()
-                .put_tx_entry(tx.compute_txid().to_buf32(), L1TxEntry::from_tx(tx))
-                .unwrap();
-        }
-        assert_eq!(
-            publication_decision(db.as_ref(), 1, &commit),
-            PublishDecision::Defer,
-        );
+        let mut commit_entry = L1TxEntry::from_tx(&commit);
+        commit_entry.status = L1TxStatus::Submitting;
+        let mut reveal_entry = L1TxEntry::from_tx(&reveal);
+        reveal_entry.status = L1TxStatus::Submitting;
         db.broadcast_db()
-            .put_tx_entry(
-                reveal.compute_txid().to_buf32(),
-                L1TxEntry::from_tx(&reveal),
+            .put_tx_entry_pair(
+                (commit.compute_txid().to_buf32(), commit_entry),
+                (reveal.compute_txid().to_buf32(), reveal_entry),
             )
             .unwrap();
 
-        for (idx, tx, expected) in [
-            (1, &commit, PublishDecision::Abandon),
-            (2, &reveal, PublishDecision::Abandon),
-        ] {
-            assert_eq!(publication_decision(db.as_ref(), idx, tx), expected);
-        }
+        assert_eq!(
+            publication_decision(db.as_ref(), 0, &commit, PublishDecision::Publish),
+            PublishDecision::Publish,
+        );
+        assert_eq!(
+            publication_decision(db.as_ref(), 1, &reveal, PublishDecision::Publish),
+            PublishDecision::Defer,
+        );
 
         let mut published_commit = L1TxEntry::from_tx(&commit);
         published_commit.status = L1TxStatus::Published;
         db.broadcast_db()
             .put_tx_entry(commit.compute_txid().to_buf32(), published_commit)
             .unwrap();
-        let next_commit = Transaction {
-            version: transaction::Version::TWO,
-            lock_time: absolute::LockTime::ZERO,
-            input: vec![TxIn {
-                previous_output: OutPoint::new(reveal.compute_txid(), 1),
-                script_sig: Default::default(),
-                sequence: Sequence::MAX,
-                witness: Witness::new(),
-            }],
-            output: vec![],
-        };
-        db.broadcast_db()
-            .put_tx_entry(
-                next_commit.compute_txid().to_buf32(),
-                L1TxEntry::from_tx(&next_commit),
-            )
-            .unwrap();
         assert_eq!(
-            publication_decision(db.as_ref(), 2, &reveal),
+            publication_decision(db.as_ref(), 1, &reveal, PublishDecision::Publish),
             PublishDecision::Publish
         );
     }
@@ -473,6 +425,7 @@ mod tests {
         db: &impl DatabaseBackend,
         idx: u64,
         tx: &Transaction,
+        decision: PublishDecision,
     ) -> PublishDecision {
         match publication_for_tx(db, idx, tx, &ParseConfig::new(TEST_MAGIC_BYTES)).unwrap() {
             Publication::Checkpoint {
@@ -480,13 +433,7 @@ mod tests {
                 commit_status,
                 reveal_status,
                 ..
-            } => pair_decision(
-                PublishDecision::Abandon,
-                member,
-                commit_status,
-                reveal_status,
-                PublishContext::Initial,
-            ),
+            } => pair_decision(decision, member, commit_status, reveal_status),
             Publication::Other => PublishDecision::Publish,
             Publication::Unknown => PublishDecision::Defer,
         }
@@ -504,99 +451,58 @@ mod tests {
             PublishDecision::Abandon
         );
 
-        for (member, commit, reveal, expected) in [
+        for (decision, member, commit, reveal, expected) in [
             (
+                PublishDecision::Abandon,
                 PairMember::Commit,
                 Some(L1TxStatus::Queued),
                 Some(L1TxStatus::Queued),
                 PublishDecision::Abandon,
             ),
             (
+                PublishDecision::Abandon,
                 PairMember::Reveal,
                 Some(L1TxStatus::Queued),
                 Some(L1TxStatus::Queued),
-                PublishDecision::Abandon,
+                PublishDecision::Defer,
             ),
             (
+                PublishDecision::Abandon,
                 PairMember::Commit,
                 Some(L1TxStatus::Queued),
                 Some(L1TxStatus::InvalidInputs),
                 PublishDecision::Abandon,
             ),
             (
+                PublishDecision::Abandon,
                 PairMember::Reveal,
                 Some(L1TxStatus::Published),
                 Some(L1TxStatus::Unpublished),
                 PublishDecision::Publish,
             ),
             (
+                PublishDecision::Abandon,
                 PairMember::Reveal,
                 Some(L1TxStatus::Submitting),
                 Some(L1TxStatus::Unpublished),
-                PublishDecision::Publish,
+                PublishDecision::Defer,
             ),
-        ] {
-            assert_eq!(
-                pair_decision(
-                    PublishDecision::Abandon,
-                    member,
-                    commit,
-                    reveal,
-                    PublishContext::Initial,
-                ),
-                expected
-            );
-        }
-
-        assert_eq!(
-            pair_decision(
+            (
                 PublishDecision::Publish,
                 PairMember::Commit,
                 Some(L1TxStatus::Submitting),
                 Some(L1TxStatus::InvalidInputs),
-                PublishContext::Recovery,
+                PublishDecision::Invalidate,
             ),
-            PublishDecision::Invalidate
-        );
-        assert_eq!(
-            pair_decision(
-                PublishDecision::Abandon,
-                PairMember::Commit,
-                Some(L1TxStatus::Submitting),
-                Some(L1TxStatus::Unpublished),
-                PublishContext::Recovery,
-            ),
-            PublishDecision::Defer
-        );
-        assert_eq!(
-            pair_decision(
-                PublishDecision::Abandon,
+            (
+                PublishDecision::Publish,
                 PairMember::Reveal,
-                Some(L1TxStatus::Unpublished),
-                Some(L1TxStatus::Unpublished),
-                PublishContext::Recovery,
+                Some(L1TxStatus::InvalidInputs),
+                Some(L1TxStatus::Submitting),
+                PublishDecision::Invalidate,
             ),
-            PublishDecision::Publish
-        );
-        assert_eq!(
-            pair_decision(
-                PublishDecision::Abandon,
-                PairMember::Commit,
-                Some(L1TxStatus::Submitting),
-                Some(L1TxStatus::Submitting),
-                PublishContext::Recovery,
-            ),
-            PublishDecision::Defer
-        );
-        assert_eq!(
-            pair_decision(
-                PublishDecision::Abandon,
-                PairMember::Reveal,
-                Some(L1TxStatus::Submitting),
-                Some(L1TxStatus::Submitting),
-                PublishContext::Recovery,
-            ),
-            PublishDecision::Publish
-        );
+        ] {
+            assert_eq!(pair_decision(decision, member, commit, reveal), expected);
+        }
     }
 }
