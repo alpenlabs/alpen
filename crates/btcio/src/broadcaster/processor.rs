@@ -116,11 +116,8 @@ where
 /// 1. `Some(info)` with `confirmations >= 1`: tx mined, derive Confirmed/Finalized.
 /// 2. `Some(info)` with `confirmations == 0`: tx alive in mempool. Hold at Published. Re-publishing
 ///    here would only spam bitcoind and the logs every poll for the entire pre-confirmation window.
-/// 3. `Ok(None)`: not found at all. Could be a transient wallet-syncer miss for a freshly broadcast
-///    tx, or a genuinely dropped tx (mempool eviction, RBF). Re-publish to disambiguate: benign
-///    mempool messages fold back to Published, a rejection routes to InvalidInputs so the watcher
-///    rebuilds the envelope, unless an ancestor of this entry's own replacement chain is still
-///    live.
+/// 3. `Ok(None)`: not found at all. Could be a transient wallet-syncer miss or a genuinely dropped
+///    tx. Mark it as ambiguously submitted so recovery applies policy before any re-publication.
 async fn probe_published_entry<C>(
     io: &C,
     txentry: &L1TxEntry,
@@ -161,7 +158,7 @@ where
             }
             Ok(confirmation_status(&info, reorg_safe_depth))
         }
-        TxLookupOutcome::Missing => submit_tx(io, params, txentry, L1TxStatus::Published).await,
+        TxLookupOutcome::Missing => Ok(L1TxStatus::Submitting),
         TxLookupOutcome::RetryLater { reason } => {
             warn!(%reason, "transaction lookup should be retried on next poll");
             Ok(L1TxStatus::Published)
@@ -400,7 +397,7 @@ fn confirmation_status(info: &TxConfirmationInfo, reorg_safe_depth: i64) -> L1Tx
 
 /// Resolves a `Confirmed` entry to its next confirmation-derived status. A
 /// confirmed tx that disappears or drops to 0 confirmations regresses to
-/// `Published`, whose recovery path re-publishes it without consulting policy.
+/// `Published`, whose recovery path probes it again before consulting policy.
 ///
 /// Callers in `Published` state must use `probe_published_entry` instead; that
 /// path holds 0-conf and not-found differently to avoid publish/revert
@@ -884,6 +881,17 @@ mod test {
         process_tx_entry(io, 0, entry, txid, params).await.unwrap()
     }
 
+    async fn enter_missing_published_recovery(
+        io: &MockIoContext,
+        mut entry: L1TxEntry,
+        txid: &Txid,
+        params: &BtcioParams,
+    ) -> L1TxEntry {
+        entry.status = process_status(io, &entry, txid, params).await.unwrap();
+        assert_eq!(entry.status, L1TxStatus::Submitting);
+        entry
+    }
+
     fn run_async_test<F>(future: F)
     where
         F: Future<Output = ()>,
@@ -1105,21 +1113,17 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_handle_published_entry_missing_tx_holds_published() {
-        // Bitcoind's `gettransaction` can briefly report a freshly broadcast
-        // tx as missing before the wallet's chain syncer catches up. A
-        // `Published` entry must not regress to `Unpublished` on that
-        // transient miss; otherwise the broadcaster oscillates and the
-        // watcher's curr_payloadidx never advances past it.
+    async fn missing_published_entry_uses_recovery_policy() {
         let (e, txid) = entry_with_txid(L1TxStatus::Published);
         let btcio_params = get_test_btcio_params();
 
-        let io = MockIoContext::default().with_tx_lookup(txid, MockTxLookupResult::Missing);
-        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        let io = MockIoContext::default()
+            .with_tx_lookup(txid, MockTxLookupResult::Missing)
+            .with_recovery_decision(PublishDecision::Abandon);
+        let e = enter_missing_published_recovery(&io, e, &txid, &btcio_params).await;
         assert_eq!(
-            res,
-            Some(L1TxStatus::Published),
-            "Published entry must hold its status when get_transaction returns NotFound"
+            process_status(&io, &e, &txid, &btcio_params).await,
+            Some(L1TxStatus::Abandoned)
         );
     }
 
@@ -1139,6 +1143,7 @@ mod test {
         let io = MockIoContext::default()
             .with_tx_lookup(txid, MockTxLookupResult::Missing)
             .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
+        let e = enter_missing_published_recovery(&io, e, &txid, &btcio_params).await;
         let res = process_status(&io, &e, &txid, &btcio_params).await;
         assert_eq!(
             res,
@@ -1159,6 +1164,7 @@ mod test {
         let io = MockIoContext::default()
             .with_tx_lookup(txid, MockTxLookupResult::Missing)
             .with_broadcast_result(txid, MockBroadcastResult::AlreadyInMempool);
+        let e = enter_missing_published_recovery(&io, e, &txid, &btcio_params).await;
         let res = process_status(&io, &e, &txid, &btcio_params).await;
         assert_eq!(
             res,
@@ -1224,10 +1230,11 @@ mod test {
             "A missing confirmed tx should return to publication recovery"
         );
         entry.status = res.unwrap();
+        entry = enter_missing_published_recovery(&io, entry, &txid, &btcio_params).await;
         assert_eq!(
             process_status(&io, &entry, &txid, &btcio_params).await,
             Some(L1TxStatus::Published),
-            "publication recovery must re-submit without applying stale-checkpoint policy"
+            "publication recovery must re-submit after applying policy"
         );
     }
 
