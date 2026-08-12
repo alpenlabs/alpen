@@ -6,7 +6,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use strata_bridge_params::BridgeParams;
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
@@ -15,6 +14,7 @@ use strata_ledger_types::{
 };
 use strata_ol_chain_types::*;
 use strata_ol_mempool::MempoolTxInvalidReason;
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
 use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
 use strata_ol_stf::*;
@@ -187,7 +187,6 @@ pub(crate) async fn generate_block_template_inner<C, E>(
     sequencer_config: &SequencerConfig,
     block_generation_config: BlockGenerationConfig,
     resource_state_before_block: EpochResourceState,
-    bridge_params: BridgeParams,
 ) -> BlockAssemblyResult<BlockTemplateResult>
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator + MempoolProvider,
@@ -226,7 +225,6 @@ where
         block_epoch,
         mempool_txs,
         resource_state_before_block,
-        bridge_params,
     )
     .await?;
 
@@ -287,7 +285,6 @@ pub(crate) async fn construct_block<C, E>(
     block_epoch: Epoch,
     mempool_txs: Vec<(OLTxId, OLTransaction)>,
     resource_state_before_block: EpochResourceState,
-    bridge_params: BridgeParams,
 ) -> BlockAssemblyResult<ConstructBlockOutput<C::State>>
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator,
@@ -323,6 +320,7 @@ where
     let epoch_cumulative_manifest_count = resource_state_before_block.manifest_count();
     let (accumulated_batch, accumulated_da) =
         execute_block_initialization(parent_state.as_ref(), &block_context, epoch_cumulative_da);
+    let runtime_params = ctx.runtime_params();
 
     // Phase 2: Process transactions, filtering out invalid ones.
     let ProcessTransactionsOutput {
@@ -341,7 +339,7 @@ where
         mempool_txs,
         accumulated_da,
         epoch_cumulative_manifest_count,
-        bridge_params,
+        runtime_params,
     );
 
     // Phase 3: Fetch buried ASM manifests for this block. Manifest selection may also request
@@ -606,7 +604,7 @@ fn process_transactions<P, E, S>(
     mempool_txs: Vec<(OLTxId, OLTransaction)>,
     accumulated_da: AccumulatedDaData,
     epoch_cumulative_manifest_count: u32,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> ProcessTransactionsOutput<S>
 where
     P: AccumulatorProofGenerator,
@@ -683,7 +681,7 @@ where
         // Logs are only merged into main buffer on success; on failure they're discarded.
         let tx_buffer = ExecOutputBuffer::new_empty();
         let basic_ctx = BasicExecContext::new(*block_context.block_info(), &tx_buffer)
-            .with_bridge_params(bridge_params);
+            .with_runtime_params(runtime_params);
         let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
 
         debug!(%txid, kind = %tx.payload().type_id(), "processing transaction");
@@ -2859,7 +2857,7 @@ mod tests {
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
             0,
-            BridgeParams::default(),
+            OLRuntimeParams::default(),
         );
 
         assert!(
@@ -2918,7 +2916,7 @@ mod tests {
             vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
             AccumulatedDaData::new_empty(),
             0,
-            BridgeParams::default(),
+            OLRuntimeParams::default(),
         );
 
         assert_eq!(
@@ -2965,7 +2963,7 @@ mod tests {
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
             0,
-            BridgeParams::default(),
+            OLRuntimeParams::default(),
         );
 
         assert!(
@@ -3007,7 +3005,7 @@ mod tests {
             mempool_txs,
             seeded_da,
             0,
-            BridgeParams::default(),
+            OLRuntimeParams::default(),
         )
     }
 

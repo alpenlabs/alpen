@@ -2,11 +2,11 @@
 
 use strata_acct_types::TxEffects;
 use strata_asm_common::AsmManifest;
-use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_ledger_types::IStateAccessorMut;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types::*;
+use strata_ol_params::OLRuntimeParams;
 
 use crate::{
     chain_processing,
@@ -130,7 +130,7 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_exec_input: BlockExecInput<'_>,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> ExecResult<BlockExecOutputs> {
     // 0. Construct the block exec context for tracking verification state
     // across phases.
@@ -144,7 +144,7 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
 
     // 3. Call process_block_tx_segment for every block as usual.
     let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output)
-        .with_bridge_params(bridge_params);
+        .with_runtime_params(runtime_params);
     let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
     execute_block_tx_segment(state, block_exec_input.tx_segment(), &tx_ctx)?;
     // Defense-in-depth: `emit_logs` enforces the cap at insertion time, and this
@@ -380,12 +380,13 @@ pub fn construct_block<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> ExecResult<ConstructBlockOutput> {
     // 1. First just execute the block with the inputs.
     let is_terminal = block_components.is_terminal();
     let block_exec_input = block_components.to_exec_input();
-    let exec_outputs = execute_block_inputs(state, block_context, block_exec_input, bridge_params)?;
+    let exec_outputs =
+        execute_block_inputs(state, block_context, block_exec_input, runtime_params)?;
 
     // 2. Take the inputs and outputs and compute the commitments for the header.
 
@@ -432,9 +433,9 @@ pub fn execute_and_complete_block<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> ExecResult<CompletedBlock> {
-    let construct_output = construct_block(state, block_context, block_components, bridge_params)?;
+    let construct_output = construct_block(state, block_context, block_components, runtime_params)?;
     Ok(construct_output.completed_block)
 }
 
@@ -449,7 +450,7 @@ pub fn execute_block_batch<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let mut parent = initial_parent.clone();
     let mut batch_logs = Vec::with_capacity(blocks.len());
@@ -460,7 +461,7 @@ pub fn execute_block_batch<S: IStateAccessorMut>(
             block.header(),
             Some(&parent),
             block.body(),
-            bridge_params,
+            runtime_params,
         )?;
         parent = block.header().clone();
         batch_logs.push(logs);
@@ -482,7 +483,7 @@ pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let mut parent = initial_parent.clone();
     let mut batch_logs = Vec::with_capacity(blocks.len());
@@ -493,7 +494,7 @@ pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
             block.header(),
             Some(&parent),
             block.body(),
-            bridge_params,
+            runtime_params,
         )?;
         parent = block.header().clone();
         batch_logs.push(logs);

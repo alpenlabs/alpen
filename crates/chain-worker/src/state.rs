@@ -31,6 +31,7 @@ use strata_ol_chain_types::{
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate, WriteTrackingState,
 };
@@ -192,7 +193,7 @@ impl ChainWorkerServiceState {
         block_commitment: &OLBlockCommitment,
     ) -> WorkerResult<()> {
         self.check_initialized()?;
-        exec_block(&self.ctx, self.ctx.bridge_params(), block_commitment)
+        exec_block(&self.ctx, self.ctx.runtime_params(), block_commitment)
     }
 
     /// Updates the current tip as managed by the worker.
@@ -251,7 +252,7 @@ impl ChainWorkerServiceState {
 /// creates that row, so stamping first fails with a missing-row error.
 pub(crate) fn exec_block(
     ctx: &impl ChainWorkerContext,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
     block_commitment: &OLBlockCommitment,
 ) -> WorkerResult<()> {
     let blkid = block_commitment.blkid();
@@ -263,7 +264,7 @@ pub(crate) fn exec_block(
     // Execute STF and get output and new state
     let (output, new_state) = execute_stf(
         ctx,
-        bridge_params,
+        runtime_params,
         &block,
         parent_header.as_ref(),
         parent_commitment,
@@ -340,7 +341,7 @@ fn fetch_block_with_parent(
 )]
 fn execute_stf(
     ctx: &impl ChainWorkerContext,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
     block: &OLBlock,
     parent_header: Option<&OLBlockHeader>,
     parent_commitment: OLBlockCommitment,
@@ -353,7 +354,7 @@ fn execute_stf(
 
     // Execute and extract outputs
     let (write_batch, indexer_writes, logs) =
-        run_stf_verification(&parent_state, block, parent_header, bridge_params)?;
+        run_stf_verification(&parent_state, block, parent_header, runtime_params)?;
 
     // Apply write batch to parent state to get new state
     let mut new_state = parent_state;
@@ -897,7 +898,7 @@ fn run_stf_verification(
     parent_state: &MemoryStateBaseLayer,
     block: &OLBlock,
     parent_header: Option<&OLBlockHeader>,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites, Vec<OLLog>)> {
     // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
     let tracking_state = WriteTrackingState::new_empty(parent_state);
@@ -908,7 +909,7 @@ fn run_stf_verification(
         block.header(),
         parent_header,
         block.body(),
-        bridge_params,
+        runtime_params,
     )?;
 
     // Extract outputs

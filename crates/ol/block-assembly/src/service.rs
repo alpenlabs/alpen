@@ -165,7 +165,6 @@ where
         state.sequencer_config(),
         config,
         resource_state_before_block,
-        *state.ol_params().bridge_params(),
     )
     .await?;
 

@@ -98,6 +98,7 @@ where
             self.mempool_provider,
             self.state_provider,
             self.l1_reorg_safe_depth,
+            self.ol_params.runtime_params(),
         ));
 
         let state = BlockasmServiceState::new(
