@@ -2,7 +2,7 @@
 //!
 //! [`MmrIndexDatabase`], [`NodePos`], batch-write structs, preconditions, etc.
 
-// TODO(trey): reorganize everything here
+// TODO(STR-4248): reorganize everything here
 
 use std::collections::BTreeMap;
 use std::fmt;

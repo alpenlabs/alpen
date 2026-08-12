@@ -40,7 +40,7 @@ define_table_without_codec!(
     /// All ExecBlocks by height
     (ExecBlocksAtHeightSchema) u64 => Vec<Hash>
 );
-// TODO(db-refactor-part-17): `Hash` serializes as a hex string under CBOR; a `[u8; 32]`
+// TODO(STR-4250): `Hash` serializes as a hex string under CBOR; a `[u8; 32]`
 // mirror would be more compact once the upstream serde impl is fixed.
 impl_cbor_value_codec!(ExecBlocksAtHeightSchema, Vec<Hash>);
 
@@ -118,7 +118,7 @@ define_table_without_codec!(
     /// Named distinctly from `alpen_reth_db::sled::BlockWitnessSchema`: typed-sled memoizes
     /// trees by `TREE_NAME`, and both live on the same `SledDb` instance, so a shared name
     /// would hand out one tree with two different value codecs.
-    // TODO(db-refactor-part-14): make typed-sled reject duplicate tree names structurally.
+    // TODO(STR-4247): make typed-sled reject duplicate tree names structurally.
     (EeBlockWitnessSchema) Hash => Vec<u8>
 );
 impl_codec_key_codec!(EeBlockWitnessSchema, Hash);

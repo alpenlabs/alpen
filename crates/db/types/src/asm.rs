@@ -1,6 +1,6 @@
 //! ASM state database interface.
 
-// TODO(trey): replace AsmExecOutput with versionable serde-ish wrappers
+// TODO(STR-4220): replace AsmExecOutput with versionable serde-ish wrappers
 
 use serde::{Deserialize, Serialize};
 use strata_asm_common::{AnchorState, AsmLogEntry, AuxData};

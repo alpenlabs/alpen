@@ -1,6 +1,6 @@
 //! OL block database interface and its block-status type.
 
-// TODO(trey): replace OLBlock to a versionable wrapper
+// TODO(STR-4220): replace OLBlock to a versionable wrapper
 
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "proxies")]

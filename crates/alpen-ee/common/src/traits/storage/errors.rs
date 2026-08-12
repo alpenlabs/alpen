@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-// TODO(trey): maybe make this better-typed?
+// TODO(STR-4246): maybe make this better-typed?
 
 /// Errors that can occur during storage operations.
 #[derive(Debug, Error)]

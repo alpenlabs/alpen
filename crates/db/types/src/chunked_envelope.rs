@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-// TODO(trey): split ChunkedEnvelopeEntry into different parts for the different types of enveloped and the different stages of processing
+// TODO(STR-4238): split ChunkedEnvelopeEntry into different parts for the different types of enveloped and the different stages of processing
 
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
@@ -22,7 +22,7 @@ use crate::DbResult;
 /// (`magic + version`); each subsequent P2TR output funds a
 /// reveal whose tapscript carries one chunk under `<sequencer_pk> OP_CHECKSIG`.
 /// Reveals do NOT reference each other; entries are independent across batches.
-// FIXME(trey): this merges information from different stages into a single entry, which creates issues where multiple services are writing to the same database object
+// FIXME(STR-4238): this merges information from different stages into a single entry, which creates issues where multiple services are writing to the same database object
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ChunkedEnvelopeEntry {
     /// Raw chunk payloads, ordered by commit-output index.
@@ -98,7 +98,7 @@ impl fmt::Display for ChunkedEnvelopeEntry {
 }
 
 /// Metadata for a single reveal transaction within a chunked envelope.
-// FIXME(trey): this "meta" type contains non-meta data, the serialized transaction
+// FIXME(STR-4238): this "meta" type contains non-meta data, the serialized transaction
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct RevealTxMeta {
     /// Output index in the commit tx that this reveal spends.
@@ -197,13 +197,11 @@ pub trait L1ChunkedEnvelopeDatabase: Send + Sync + 'static {
     /// Deletes a single entry by index.
     ///
     /// Returns true if the entry existed and was deleted.
-    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_chunked_envelope_entry(&self, idx: u64) -> DbResult<bool>;
 
     /// Deletes all entries from the given index onwards (inclusive).
     ///
     /// Returns indices of deleted entries.
-    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_chunked_envelope_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 }
 

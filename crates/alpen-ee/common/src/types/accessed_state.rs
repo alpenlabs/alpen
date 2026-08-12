@@ -12,7 +12,7 @@
 //! the pre/post state multiproofs to assemble the batch witness. With this
 //! cache in place, the extractor no longer has to re-execute blocks.
 
-// TODO(trey): consider splitting AccessedAccount apart because it contains both key-like and
+// TODO(STR-4239): consider splitting AccessedAccount apart because it contains both key-like and
 // value-like data
 
 use serde::{Deserialize, Serialize};

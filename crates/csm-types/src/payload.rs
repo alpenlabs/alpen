@@ -153,7 +153,7 @@ impl<'a> Arbitrary<'a> for L1Payload {
 /// Intent produced when the sequencer wants to publish a payload to L1.
 ///
 /// These are never stored on-chain.
-// TODO(db-refactor-part-5): serde here is a stopgap so `IntentEntry` can be CBOR-encoded;
+// TODO(STR-4236): serde here is a stopgap so `IntentEntry` can be CBOR-encoded;
 // the intent record wants restructuring into separate data and status parts.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, Serialize, Deserialize)]
 pub struct PayloadIntent {

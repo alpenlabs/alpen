@@ -26,7 +26,7 @@ pub(crate) struct DBExecBlockRecord {
     ol_block_id: [u8; 32],
 
     /// ExecBlockPackage serialized using SSZ, stored as opaque bytes.
-    // TODO(db-refactor-part-1): store the SSZ value directly via a SerdeSsz wrapper
+    // TODO(STR-4232): store the SSZ value directly via a SerdeSsz wrapper
     #[serde(with = "serde_bytes")]
     package_ssz: Vec<u8>,
     account_state: DBEeAccountState,

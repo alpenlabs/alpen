@@ -1,6 +1,6 @@
 //! Client state database interface.
 
-// TODO(trey): streamline this, replace with versionable serde wrapper
+// TODO(STR-4220): streamline this, replace with versionable serde wrapper
 
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 #[cfg(feature = "proxies")]

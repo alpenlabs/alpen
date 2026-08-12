@@ -1,6 +1,6 @@
 //! L1 broadcast database interface and its transaction-entry record types.
 
-// TODO(trey): split apart L1TxEntry into two database fields so we aren't overwriting the serialized tx whenever we update the status
+// TODO(STR-4237): split apart L1TxEntry into two database fields so we aren't overwriting the serialized tx whenever we update the status
 
 use std::fmt;
 
@@ -68,7 +68,7 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Confirmed {
         confirmations: u64,
-        // TODO(trey): use L1BlockCommitment with #[serde(flatten)] maybe
+        // TODO(STR-4237): use L1BlockCommitment with #[serde(flatten)] maybe
         block_hash: Buf32,
         block_height: L1Height,
     },
@@ -78,7 +78,7 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Finalized {
         confirmations: u64,
-        // TODO(trey): use L1BlockCommitment with #[serde(flatten)] maybe
+        // TODO(STR-4237): use L1BlockCommitment with #[serde(flatten)] maybe
         block_hash: Buf32,
         block_height: L1Height,
     },
@@ -133,14 +133,12 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// Delete a specific tx entry by its ID.
     ///
     /// Returns true if the tx entry existed and was deleted, false otherwise.
-    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_tx_entry(&self, txid: Buf32) -> DbResult<bool>;
 
     /// Delete tx entries from the specified index onwards (inclusive).
     ///
     /// This method deletes all tx entries with index >= start_idx.
     /// Returns a vector of deleted tx indices.
-    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_tx_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 
     /// Fetch [`L1TxEntry`] from db

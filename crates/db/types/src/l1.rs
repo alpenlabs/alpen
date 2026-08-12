@@ -1,6 +1,6 @@
 //! L1 data database interface.
 
-// TODO(trey): wrap AsmManifest type in versionable container
+// TODO(STR-4220): wrap AsmManifest type in versionable container
 
 use strata_asm_common::AsmManifest;
 #[cfg(feature = "proxies")]
@@ -35,7 +35,6 @@ pub trait L1Database: Send + Sync + 'static {
     ) -> DbResult<()>;
 
     /// Prune earliest blocks till height
-    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn prune_to_height(&self, height: L1Height) -> DbResult<()>;
 
     // TODO(STR-2653): DA scraping storage

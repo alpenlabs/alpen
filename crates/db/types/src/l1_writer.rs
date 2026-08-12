@@ -1,6 +1,6 @@
 //! L1 writer database interface and its payload/intent record types.
 
-// TODO(trey): split apart IntentEntry and BundledPayloadEntry into separate data and status so we aren't overwriting the data whenever we change the status
+// TODO(STR-4236): split apart IntentEntry and BundledPayloadEntry into separate data and status so we aren't overwriting the data whenever we change the status
 
 use std::fmt;
 
@@ -188,7 +188,6 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
     /// Delete a specific payload entry by its index.
     ///
     /// Returns true if the payload existed and was deleted, false otherwise.
-    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_payload_entry(&self, idx: BundleIdx) -> DbResult<bool>;
 
     /// Delete payload entries from the specified index onwards (inclusive).
@@ -196,7 +195,6 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
     /// This method deletes all payload entries with index >= start_idx.
     ///
     /// Returns a vector of deleted payload indices.
-    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_payload_entries_from_idx(&self, start_idx: BundleIdx) -> DbResult<Vec<BundleIdx>>;
 
     /// Store the [`IntentEntry`].
@@ -230,7 +228,6 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
     ///
     /// This method deletes all intent entries with index >= start_idx.
     /// Returns a vector of deleted intent indices.
-    // TODO(D1): uncalled today; kept as the intended future rollback/pruning API.
     fn del_intent_entries_from_idx(&self, start_idx: IntentIdx) -> DbResult<Vec<u64>>;
 }
 

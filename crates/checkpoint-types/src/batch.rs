@@ -7,7 +7,7 @@ use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L2Blo
 ///
 /// It's possible in theory for more than one of these to validly exist for a
 /// single epoch, but not in the same chain.
-// TODO(trey): convert to SSZ def
+// TODO(STR-4220): convert to SSZ def
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Arbitrary, Deserialize, Serialize, Encode, Decode)]
 pub struct EpochSummary {
     /// The epoch number.

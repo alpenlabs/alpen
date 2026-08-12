@@ -7,7 +7,7 @@
 //! Consumer: the chunk-builder at chunk-seal time, replacing today's
 //! per-block re-execution loop inside `RangeWitnessExtractor`.
 
-// TODO(trey): switch to using ExecBlockCommitment here instead of Hash
+// TODO(STR-4242): switch to using ExecBlockCommitment here instead of Hash
 
 use async_trait::async_trait;
 use strata_acct_types::Hash;

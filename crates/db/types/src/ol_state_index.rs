@@ -8,7 +8,7 @@
 //! (e.g. `MessageEntry`) are stored in their raw SSZ byte form; callers convert
 //! at the boundaries.
 
-// TODO(trey): use serde shims for SSZ/Codec types to avoid manual code
+// TODO(STR-4232): use serde shims for SSZ/Codec types to avoid manual code
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;

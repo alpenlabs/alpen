@@ -139,7 +139,7 @@ pub enum DbError {
     Other(String),
 }
 
-// TODO(db-refactor-part-10): this conversion is inverted -- the ops layer should map into
+// TODO(STR-4241): this conversion is inverted -- the ops layer should map into
 // `DbError`, not the other way around. Part 10 owns the move.
 impl From<OpsError> for DbError {
     fn from(value: OpsError) -> Self {

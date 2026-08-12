@@ -250,7 +250,7 @@ impl From<DBBatchStatus> for BatchStatus {
 }
 
 /// Database representation of a Batch with its status, stored together.
-// TODO(trey): split apart batch data and status
+// TODO(STR-4239): split apart batch data and status
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBBatchWithStatus {
     batch: DBBatch,
@@ -399,7 +399,7 @@ impl From<DBChunkStatus> for ChunkStatus {
 }
 
 /// Database representation of a Chunk with its status, stored together.
-// TODO(trey): split apart chunk and status
+// TODO(STR-4239): split apart chunk and status
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBChunkWithStatus {
     chunk: DBChunk,
