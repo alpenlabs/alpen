@@ -15,11 +15,12 @@
 use std::collections::BTreeMap;
 
 use alloy_consensus::Header;
-use alloy_primitives::{keccak256, Bytes, B256};
+use alloy_primitives::{keccak256, Address, Bytes, B256};
 use reth_provider::{HeaderProvider, StateProofProvider};
-use reth_revm::{db::State, witness::ExecutionWitnessRecord, Database};
+use reth_revm::{db::State, state::Bytecode, witness::ExecutionWitnessRecord, Database};
 use reth_trie::TrieInput;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 /// Persisted per-block proof-witness, keyed by execution block hash.
 ///
@@ -72,7 +73,10 @@ impl BlockWitnessRecord {
 /// `codes`, BLOCKHASH range) via reth's [`ExecutionWitnessRecord`].
 /// `state_provider` must be the parent state (it serves the depth-0
 /// [`StateProofProvider::witness`] trie nodes), and `header_provider` must cover
-/// the BLOCKHASH ancestor range.
+/// the BLOCKHASH ancestor range. `authorization_targets` must contain every
+/// EIP-7702 target declared by the block's signed transactions, including
+/// invalid authorizations; content-addressed extras are safe, while omissions
+/// can make transient delegation code unavailable during guest replay.
 pub fn build_block_witness_from_executed_state<DB, SP, HP>(
     executed_state: &State<DB>,
     state_provider: &SP,
@@ -80,6 +84,7 @@ pub fn build_block_witness_from_executed_state<DB, SP, HP>(
     block_num: u64,
     block_rlp: Vec<u8>,
     parent_header: &Header,
+    authorization_targets: impl IntoIterator<Item = Address>,
 ) -> eyre::Result<BlockWitnessRecord>
 where
     DB: Database,
@@ -103,7 +108,14 @@ where
         .map(|node| node.to_vec())
         .collect();
 
-    let codes = collect_accessed_codes(executed_state, codes)?;
+    let (codes, authorization_bytecodes_added) =
+        collect_accessed_codes(executed_state, codes, authorization_targets)?;
+    debug!(
+        block_num,
+        authorization_bytecodes_added,
+        total_bytecodes = codes.len(),
+        "closed block witness over execution and EIP-7702 bytecode"
+    );
 
     // BLOCKHASH ancestor headers: the contiguous range from the lowest block
     // referenced (or just the parent) up to the parent.
@@ -142,14 +154,17 @@ where
 fn collect_accessed_codes<DB>(
     executed_state: &State<DB>,
     record_codes: Vec<Bytes>,
-) -> eyre::Result<Vec<Vec<u8>>>
+    authorization_targets: impl IntoIterator<Item = Address>,
+) -> eyre::Result<(Vec<Vec<u8>>, usize)>
 where
     DB: Database,
 {
-    let mut codes_by_hash: BTreeMap<B256, Bytes> = record_codes
-        .into_iter()
-        .map(|code| (keccak256(&code), code))
-        .collect();
+    let mut codes_by_hash = BTreeMap::new();
+
+    for code in record_codes {
+        let code_hash = keccak256(&code);
+        insert_code(&mut codes_by_hash, code_hash, code, "execution witness")?;
+    }
 
     for account in executed_state.cache.accounts.values() {
         let Some(plain) = &account.account else {
@@ -162,30 +177,74 @@ where
             continue;
         };
 
-        // The guest content-addresses code by `keccak256(bytes)`, so code stored
-        // under a hash that disagrees with its bytes would be unreachable there.
-        // Surface the inconsistency as a build failure now, not a guest panic.
-        let actual_hash = code.hash_slow();
-        if actual_hash != plain.info.code_hash {
-            eyre::bail!(
-                "accessed account bytecode hash mismatch: expected_code_hash={}, actual_hash={actual_hash}",
-                plain.info.code_hash,
-            );
-        }
-
-        codes_by_hash
-            .entry(plain.info.code_hash)
-            .or_insert_with(|| code.original_bytes());
+        insert_code(
+            &mut codes_by_hash,
+            plain.info.code_hash,
+            code.original_bytes(),
+            "accessed account",
+        )?;
     }
 
-    Ok(codes_by_hash
+    // Revm synthesizes an EIP-7702 delegation designation directly from each
+    // valid authorization target. A designation can then be replaced or
+    // cleared in the same block, so it may be absent from both the execution
+    // witness and the final account state even though guest replay still needs
+    // to resolve its code hash. Include every non-reset target from the signed
+    // transaction inputs. Invalid authorizations may add inert content-addressed
+    // bytes; duplicating revm's validity rules here would be a second consensus
+    // implementation and risks rejecting valid future inputs.
+    let mut authorization_bytecodes_added = 0;
+    for target in authorization_targets {
+        if target.is_zero() {
+            continue;
+        }
+
+        let designation = Bytecode::new_eip7702(target);
+        if insert_code(
+            &mut codes_by_hash,
+            designation.hash_slow(),
+            designation.original_bytes(),
+            "EIP-7702 authorization",
+        )? {
+            authorization_bytecodes_added += 1;
+        }
+    }
+
+    let codes = codes_by_hash
         .into_values()
         .map(|code| code.to_vec())
-        .collect())
+        .collect();
+    Ok((codes, authorization_bytecodes_added))
+}
+
+fn insert_code(
+    codes_by_hash: &mut BTreeMap<B256, Bytes>,
+    expected_hash: B256,
+    code: Bytes,
+    source: &'static str,
+) -> eyre::Result<bool> {
+    let actual_hash = keccak256(&code);
+    if actual_hash != expected_hash {
+        eyre::bail!(
+            "{source} bytecode hash mismatch: expected={expected_hash}, actual={actual_hash}"
+        );
+    }
+
+    if let Some(existing) = codes_by_hash.get(&expected_hash) {
+        if existing != &code {
+            eyre::bail!("conflicting {source} bytecode for hash {expected_hash}");
+        }
+        return Ok(false);
+    }
+
+    codes_by_hash.insert(expected_hash, code);
+    Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::iter::empty;
+
     use alloy_primitives::{Address, U256};
     use reth_revm::db::{states::cache_account::CacheAccount, EmptyDB, State};
     use revm::state::{AccountInfo, Bytecode};
@@ -217,12 +276,14 @@ mod tests {
 
         // `record_executed_state` produced no codes (dedup map was empty), the
         // exact condition that dropped the bytecode before the fix.
-        let codes = collect_accessed_codes(&state, Vec::new()).unwrap();
+        let (codes, authorization_bytecodes_added) =
+            collect_accessed_codes(&state, Vec::new(), empty()).unwrap();
 
         assert!(
             codes.iter().any(|c| keccak256(c) == code_hash),
             "accessed contract code must be captured even when only on info.code"
         );
+        assert_eq!(authorization_bytecodes_added, 0);
     }
 
     /// An empty-code (EOA) account must not contribute a bytecode entry.
@@ -239,9 +300,11 @@ mod tests {
             CacheAccount::new_loaded(info, Default::default()),
         );
 
-        assert!(collect_accessed_codes(&state, Vec::new())
-            .unwrap()
-            .is_empty());
+        let (codes, authorization_bytecodes_added) =
+            collect_accessed_codes(&state, Vec::new(), empty()).unwrap();
+
+        assert!(codes.is_empty());
+        assert_eq!(authorization_bytecodes_added, 0);
     }
 
     /// Locks the exact bug shape: reth's raw `ExecutionWitnessRecord` can miss
@@ -272,11 +335,13 @@ mod tests {
             "raw reth record should reproduce the missing-code condition"
         );
 
-        let codes = collect_accessed_codes(&state, record.codes).unwrap();
+        let (codes, authorization_bytecodes_added) =
+            collect_accessed_codes(&state, record.codes, empty()).unwrap();
         assert!(
             codes.iter().any(|code| keccak256(code) == code_hash),
             "block witness codes must include every accessed account info.code"
         );
+        assert_eq!(authorization_bytecodes_added, 0);
     }
 
     /// Account-attached bytecode must be content-addressed by the account's
@@ -297,7 +362,7 @@ mod tests {
             CacheAccount::new_loaded(info, Default::default()),
         );
 
-        let err = collect_accessed_codes(&state, Vec::new()).unwrap_err();
+        let err = collect_accessed_codes(&state, Vec::new(), empty()).unwrap_err();
         assert!(
             err.to_string().contains("bytecode hash mismatch"),
             "unexpected error: {err}"
@@ -325,9 +390,30 @@ mod tests {
         );
 
         // The same bytecode arrives via reth's record_codes and the account.
-        let codes = collect_accessed_codes(&state, vec![raw]).unwrap();
+        let (codes, authorization_bytecodes_added) =
+            collect_accessed_codes(&state, vec![raw], empty()).unwrap();
 
         assert_eq!(codes.len(), 1, "duplicate code must collapse to one entry");
         assert_eq!(keccak256(&codes[0]), code_hash);
+        assert_eq!(authorization_bytecodes_added, 0);
+    }
+
+    /// A designation synthesized and cleared during one block can be absent
+    /// from both reth's execution witness and every final account. The signed
+    /// authorization target must still make that transient code replayable.
+    #[test]
+    fn collects_transient_eip7702_designations_from_authorizations() {
+        let target = Address::repeat_byte(0x77);
+        let designation = Bytecode::new_eip7702(target);
+        let designation_hash = designation.hash_slow();
+        let state = State::builder().with_database(EmptyDB::default()).build();
+
+        let (codes, authorization_bytecodes_added) =
+            collect_accessed_codes(&state, Vec::new(), [target, Address::ZERO, target]).unwrap();
+
+        assert_eq!(authorization_bytecodes_added, 1);
+        assert_eq!(codes.len(), 1);
+        assert_eq!(keccak256(&codes[0]), designation_hash);
+        assert_eq!(codes[0], designation.original_bytes());
     }
 }
