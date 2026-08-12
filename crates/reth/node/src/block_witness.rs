@@ -16,8 +16,13 @@ use std::collections::BTreeMap;
 
 use alloy_consensus::Header;
 use alloy_primitives::{keccak256, Address, Bytes, B256};
-use reth_provider::{HeaderProvider, StateProofProvider};
-use reth_revm::{db::State, state::Bytecode, witness::ExecutionWitnessRecord, Database};
+use reth_provider::{BytecodeReader, HeaderProvider, StateProofProvider};
+use reth_revm::{
+    db::State,
+    state::{AccountInfo, Bytecode},
+    witness::ExecutionWitnessRecord,
+    Database,
+};
 use reth_trie::TrieInput;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -88,7 +93,7 @@ pub fn build_block_witness_from_executed_state<DB, SP, HP>(
 ) -> eyre::Result<BlockWitnessRecord>
 where
     DB: Database,
-    SP: StateProofProvider,
+    SP: StateProofProvider + BytecodeReader,
     HP: HeaderProvider<Header = Header>,
 {
     // Access set read straight out of the post-execution state — no re-run.
@@ -108,13 +113,24 @@ where
         .map(|node| node.to_vec())
         .collect();
 
-    let (codes, authorization_bytecodes_added) =
-        collect_accessed_codes(executed_state, codes, authorization_targets)?;
+    let (codes, authorization_bytecodes_added, parent_state_bytecodes_added) =
+        collect_accessed_codes(executed_state, codes, authorization_targets, |code_hash| {
+            state_provider
+                .bytecode_by_hash(code_hash)
+                .map(|code| code.map(|code| code.original_bytes()))
+                .map_err(|error| {
+                    eyre::eyre!(
+                        "read parent-state bytecode {code_hash} while closing block witness: \
+                             {error}"
+                    )
+                })
+        })?;
     debug!(
         block_num,
         authorization_bytecodes_added,
+        parent_state_bytecodes_added,
         total_bytecodes = codes.len(),
-        "closed block witness over execution and EIP-7702 bytecode"
+        "closed block witness over execution, parent-state, and EIP-7702 bytecode"
     );
 
     // BLOCKHASH ancestor headers: the contiguous range from the lowest block
@@ -148,41 +164,27 @@ where
 /// via its account's `info.code` — a warm load that never issued a by-hash
 /// fetch — is silently left out.
 ///
-/// This starts from reth's `record_codes` and adds the code of every accessed
-/// account that carries one, so the result is complete regardless of how each
-/// contract's code was loaded.
-fn collect_accessed_codes<DB>(
+/// This starts from reth's `record_codes`, adds every transient EIP-7702
+/// designation declared by the block, then closes both the live cache and the
+/// execution bundle over bytecode. Account entries are allowed to carry only a
+/// code hash; those hashes are resolved against the block's parent-state
+/// provider. The bundle's `original_info` is required for contracts replaced or
+/// cleared during the block, while its final `info` covers newly installed code.
+fn collect_accessed_codes<DB, F>(
     executed_state: &State<DB>,
     record_codes: Vec<Bytes>,
     authorization_targets: impl IntoIterator<Item = Address>,
-) -> eyre::Result<(Vec<Vec<u8>>, usize)>
+    mut parent_bytecode_by_hash: F,
+) -> eyre::Result<(Vec<Vec<u8>>, usize, usize)>
 where
     DB: Database,
+    F: FnMut(&B256) -> eyre::Result<Option<Bytes>>,
 {
     let mut codes_by_hash = BTreeMap::new();
 
     for code in record_codes {
         let code_hash = keccak256(&code);
         insert_code(&mut codes_by_hash, code_hash, code, "execution witness")?;
-    }
-
-    for account in executed_state.cache.accounts.values() {
-        let Some(plain) = &account.account else {
-            continue;
-        };
-        if plain.info.is_empty_code_hash() {
-            continue;
-        }
-        let Some(code) = &plain.info.code else {
-            continue;
-        };
-
-        insert_code(
-            &mut codes_by_hash,
-            plain.info.code_hash,
-            code.original_bytes(),
-            "accessed account",
-        )?;
     }
 
     // Revm synthesizes an EIP-7702 delegation designation directly from each
@@ -210,11 +212,92 @@ where
         }
     }
 
+    let mut parent_state_bytecodes_added = 0;
+    for (address, account) in &executed_state.cache.accounts {
+        let Some(plain) = &account.account else {
+            continue;
+        };
+
+        if collect_account_info_code(
+            &mut codes_by_hash,
+            *address,
+            &plain.info,
+            "execution cache account",
+            &mut parent_bytecode_by_hash,
+        )? {
+            parent_state_bytecodes_added += 1;
+        }
+    }
+
+    for (address, account) in &executed_state.bundle_state.state {
+        if let Some(original_info) = &account.original_info {
+            if collect_account_info_code(
+                &mut codes_by_hash,
+                *address,
+                original_info,
+                "execution bundle pre-state account",
+                &mut parent_bytecode_by_hash,
+            )? {
+                parent_state_bytecodes_added += 1;
+            }
+        }
+
+        if let Some(info) = &account.info {
+            if collect_account_info_code(
+                &mut codes_by_hash,
+                *address,
+                info,
+                "execution bundle post-state account",
+                &mut parent_bytecode_by_hash,
+            )? {
+                parent_state_bytecodes_added += 1;
+            }
+        }
+    }
+
     let codes = codes_by_hash
         .into_values()
         .map(|code| code.to_vec())
         .collect();
-    Ok((codes, authorization_bytecodes_added))
+    Ok((
+        codes,
+        authorization_bytecodes_added,
+        parent_state_bytecodes_added,
+    ))
+}
+
+fn collect_account_info_code<F>(
+    codes_by_hash: &mut BTreeMap<B256, Bytes>,
+    address: Address,
+    info: &AccountInfo,
+    source: &'static str,
+    parent_bytecode_by_hash: &mut F,
+) -> eyre::Result<bool>
+where
+    F: FnMut(&B256) -> eyre::Result<Option<Bytes>>,
+{
+    if info.is_empty_code_hash() {
+        return Ok(false);
+    }
+
+    if let Some(code) = &info.code {
+        insert_code(codes_by_hash, info.code_hash, code.original_bytes(), source)?;
+        return Ok(false);
+    }
+
+    if codes_by_hash.contains_key(&info.code_hash) {
+        return Ok(false);
+    }
+
+    let code = parent_bytecode_by_hash(&info.code_hash)?.ok_or_else(|| {
+        eyre::eyre!(
+            "{source} {address} references bytecode {} but the parent-state provider returned \
+             no bytes",
+            info.code_hash
+        )
+    })?;
+    insert_code(codes_by_hash, info.code_hash, code, source)?;
+    Ok(true)
 }
 
 fn insert_code(
@@ -246,10 +329,14 @@ mod tests {
     use std::iter::empty;
 
     use alloy_primitives::{Address, U256};
-    use reth_revm::db::{states::cache_account::CacheAccount, EmptyDB, State};
+    use reth_revm::db::{states::cache_account::CacheAccount, BundleState, EmptyDB, State};
     use revm::state::{AccountInfo, Bytecode};
 
     use super::*;
+
+    fn no_parent_bytecode(_: &B256) -> eyre::Result<Option<Bytes>> {
+        Ok(None)
+    }
 
     /// A contract whose code is attached to its account `info.code` but never
     /// entered `cache.contracts` (the in-memory bytecode store
@@ -276,14 +363,15 @@ mod tests {
 
         // `record_executed_state` produced no codes (dedup map was empty), the
         // exact condition that dropped the bytecode before the fix.
-        let (codes, authorization_bytecodes_added) =
-            collect_accessed_codes(&state, Vec::new(), empty()).unwrap();
+        let (codes, authorization_bytecodes_added, parent_state_bytecodes_added) =
+            collect_accessed_codes(&state, Vec::new(), empty(), no_parent_bytecode).unwrap();
 
         assert!(
             codes.iter().any(|c| keccak256(c) == code_hash),
             "accessed contract code must be captured even when only on info.code"
         );
         assert_eq!(authorization_bytecodes_added, 0);
+        assert_eq!(parent_state_bytecodes_added, 0);
     }
 
     /// An empty-code (EOA) account must not contribute a bytecode entry.
@@ -300,11 +388,12 @@ mod tests {
             CacheAccount::new_loaded(info, Default::default()),
         );
 
-        let (codes, authorization_bytecodes_added) =
-            collect_accessed_codes(&state, Vec::new(), empty()).unwrap();
+        let (codes, authorization_bytecodes_added, parent_state_bytecodes_added) =
+            collect_accessed_codes(&state, Vec::new(), empty(), no_parent_bytecode).unwrap();
 
         assert!(codes.is_empty());
         assert_eq!(authorization_bytecodes_added, 0);
+        assert_eq!(parent_state_bytecodes_added, 0);
     }
 
     /// Locks the exact bug shape: reth's raw `ExecutionWitnessRecord` can miss
@@ -335,13 +424,14 @@ mod tests {
             "raw reth record should reproduce the missing-code condition"
         );
 
-        let (codes, authorization_bytecodes_added) =
-            collect_accessed_codes(&state, record.codes, empty()).unwrap();
+        let (codes, authorization_bytecodes_added, parent_state_bytecodes_added) =
+            collect_accessed_codes(&state, record.codes, empty(), no_parent_bytecode).unwrap();
         assert!(
             codes.iter().any(|code| keccak256(code) == code_hash),
             "block witness codes must include every accessed account info.code"
         );
         assert_eq!(authorization_bytecodes_added, 0);
+        assert_eq!(parent_state_bytecodes_added, 0);
     }
 
     /// Account-attached bytecode must be content-addressed by the account's
@@ -362,7 +452,8 @@ mod tests {
             CacheAccount::new_loaded(info, Default::default()),
         );
 
-        let err = collect_accessed_codes(&state, Vec::new(), empty()).unwrap_err();
+        let err =
+            collect_accessed_codes(&state, Vec::new(), empty(), no_parent_bytecode).unwrap_err();
         assert!(
             err.to_string().contains("bytecode hash mismatch"),
             "unexpected error: {err}"
@@ -390,12 +481,13 @@ mod tests {
         );
 
         // The same bytecode arrives via reth's record_codes and the account.
-        let (codes, authorization_bytecodes_added) =
-            collect_accessed_codes(&state, vec![raw], empty()).unwrap();
+        let (codes, authorization_bytecodes_added, parent_state_bytecodes_added) =
+            collect_accessed_codes(&state, vec![raw], empty(), no_parent_bytecode).unwrap();
 
         assert_eq!(codes.len(), 1, "duplicate code must collapse to one entry");
         assert_eq!(keccak256(&codes[0]), code_hash);
         assert_eq!(authorization_bytecodes_added, 0);
+        assert_eq!(parent_state_bytecodes_added, 0);
     }
 
     /// A designation synthesized and cleared during one block can be absent
@@ -408,12 +500,122 @@ mod tests {
         let designation_hash = designation.hash_slow();
         let state = State::builder().with_database(EmptyDB::default()).build();
 
-        let (codes, authorization_bytecodes_added) =
-            collect_accessed_codes(&state, Vec::new(), [target, Address::ZERO, target]).unwrap();
+        let (codes, authorization_bytecodes_added, parent_state_bytecodes_added) =
+            collect_accessed_codes(
+                &state,
+                Vec::new(),
+                [target, Address::ZERO, target],
+                no_parent_bytecode,
+            )
+            .unwrap();
 
         assert_eq!(authorization_bytecodes_added, 1);
+        assert_eq!(parent_state_bytecodes_added, 0);
         assert_eq!(codes.len(), 1);
         assert_eq!(keccak256(&codes[0]), designation_hash);
         assert_eq!(codes[0], designation.original_bytes());
+    }
+
+    /// A loaded contract can carry only its code hash because revm expects a
+    /// later database lookup. Inline witness capture must perform that lookup
+    /// before the parent state disappears behind a chunk boundary.
+    #[test]
+    fn resolves_hash_only_accessed_account_from_parent_state() {
+        let address = Address::repeat_byte(0x61);
+        let raw = Bytes::from_static(&[0x60, 0x01, 0x56]);
+        let code_hash = keccak256(&raw);
+        let mut state = State::builder().with_database(EmptyDB::default()).build();
+        state.cache.accounts.insert(
+            address,
+            CacheAccount::new_loaded(
+                AccountInfo {
+                    balance: U256::ZERO,
+                    nonce: 1,
+                    code_hash,
+                    code: None,
+                },
+                Default::default(),
+            ),
+        );
+
+        let (codes, authorization_bytecodes_added, parent_state_bytecodes_added) =
+            collect_accessed_codes(&state, Vec::new(), empty(), |requested_hash| {
+                assert_eq!(*requested_hash, code_hash);
+                Ok(Some(raw.clone()))
+            })
+            .unwrap();
+
+        assert_eq!(codes, vec![raw.to_vec()]);
+        assert_eq!(authorization_bytecodes_added, 0);
+        assert_eq!(parent_state_bytecodes_added, 1);
+    }
+
+    /// Clearing or replacing a contract removes its old code from the final
+    /// account info. The bundle's original info still references that prestate
+    /// code and must keep it available for guest replay.
+    #[test]
+    fn resolves_hash_only_bundle_prestate_code_after_account_clearing() {
+        let address = Address::repeat_byte(0x62);
+        let raw = Bytes::from_static(&[0x60, 0x02, 0x60, 0x00, 0x52]);
+        let code_hash = keccak256(&raw);
+        let original_info = AccountInfo {
+            balance: U256::ZERO,
+            nonce: 1,
+            code_hash,
+            code: None,
+        };
+        let mut state = State::builder().with_database(EmptyDB::default()).build();
+        state.bundle_state = BundleState::builder(0..=0)
+            .state_original_account_info(address, original_info)
+            .build();
+
+        let (codes, authorization_bytecodes_added, parent_state_bytecodes_added) =
+            collect_accessed_codes(&state, Vec::new(), empty(), |requested_hash| {
+                assert_eq!(*requested_hash, code_hash);
+                Ok(Some(raw.clone()))
+            })
+            .unwrap();
+
+        assert_eq!(codes, vec![raw.to_vec()]);
+        assert_eq!(authorization_bytecodes_added, 0);
+        assert_eq!(parent_state_bytecodes_added, 1);
+    }
+
+    /// Missing parent code is rejected while building the payload instead of
+    /// surfacing later as an opaque prover panic.
+    #[test]
+    fn rejects_unresolved_hash_only_account_code() {
+        let address = Address::repeat_byte(0x63);
+        let code_hash = B256::repeat_byte(0xa5);
+        let mut state = State::builder().with_database(EmptyDB::default()).build();
+        state.cache.accounts.insert(
+            address,
+            CacheAccount::new_loaded(
+                AccountInfo {
+                    balance: U256::ZERO,
+                    nonce: 1,
+                    code_hash,
+                    code: None,
+                },
+                Default::default(),
+            ),
+        );
+
+        let error =
+            collect_accessed_codes(&state, Vec::new(), empty(), no_parent_bytecode).unwrap_err();
+
+        let message = error.to_string();
+        assert!(
+            message.contains(&address.to_string()),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains(&code_hash.to_string()),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains("parent-state provider returned no bytes"),
+            "unexpected error: {message}"
+        );
     }
 }
