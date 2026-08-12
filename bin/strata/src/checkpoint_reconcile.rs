@@ -194,10 +194,7 @@ fn cancel_writer_intent(db: &impl DatabaseBackend, intent: IntentEntry) -> Resul
     let mut payload = writer
         .get_payload_entry_by_idx(payload_idx)?
         .with_context(|| format!("missing checkpoint writer payload {payload_idx}"))?;
-    if matches!(
-        payload.status,
-        L1BundleStatus::Published | L1BundleStatus::Confirmed | L1BundleStatus::Finalized
-    ) {
+    if payload.status.has_reached_l1() {
         return Ok(false);
     }
     let broadcast = db.broadcast_db();
