@@ -15,7 +15,7 @@ use alloy_consensus::Header;
 use alloy_primitives::{
     keccak256,
     map::{B256Set, DefaultHashBuilder, HashMap},
-    Address, B256, U256,
+    Address, B256, KECCAK256_EMPTY, U256,
 };
 use alpen_ee_common::AccessedStateStore;
 use eyre::{eyre, Result};
@@ -296,11 +296,37 @@ where
         // a different key if legacy-analysis padding was materialized as input.
         // In revm, "legacy" is the normal non-EIP-7702 contract bytecode path.
         // https://github.com/bluealloy/revm/blob/main/crates/bytecode/src/legacy/analysis.rs#L42-L47
-        let bytecodes = accessed
+        let mut bytecodes: BTreeMap<B256, Bytecode> = accessed
             .bytecodes
             .iter()
             .map(|(hash, bytecode)| (*hash, bytecode.clone()))
             .collect();
+
+        // Close the initial sparse state over bytecode. The transition proof
+        // includes every touched account as it existed before the range, so a
+        // non-empty code hash in one of those account leaves must be resolvable
+        // by WitnessDB even when no individual block record observed a by-hash
+        // code fetch. This occurs when a chunk boundary falls between EIP-7702
+        // setup and the transaction that consumes or replaces the delegation.
+        let pre_state_accounts = pre_proofs.iter().filter_map(|(address, proof)| {
+            proof
+                .info
+                .as_ref()
+                .and_then(|account| account.bytecode_hash)
+                .map(|code_hash| (*address, code_hash))
+        });
+        let added =
+            supplement_pre_state_bytecodes(&mut bytecodes, pre_state_accounts, |code_hash| {
+                Ok(pre_state
+                    .bytecode_by_hash(&code_hash)?
+                    .map(|bytecode| bytecode.0))
+            })?;
+        debug!(
+            pre_state_bytecodes_added = added,
+            total_bytecodes = bytecodes.len(),
+            "closed range witness over pre-state account bytecode"
+        );
+
         Ok((state, bytecodes))
     }
 
@@ -329,9 +355,121 @@ where
     }
 }
 
+/// Adds bytecode referenced by accessed accounts in the range's initial state.
+///
+/// Per-block access records are necessary but not sufficient for a multi-block
+/// witness: they describe execution-time fetches, while the sparse pre-state
+/// independently contains account leaves with code hashes. Including the code
+/// behind every non-empty pre-state hash makes that witness self-contained.
+fn supplement_pre_state_bytecodes(
+    bytecodes: &mut BTreeMap<B256, Bytecode>,
+    accounts: impl IntoIterator<Item = (Address, B256)>,
+    mut bytecode_by_hash: impl FnMut(B256) -> Result<Option<Bytecode>>,
+) -> Result<usize> {
+    let mut added = 0;
+
+    for (address, code_hash) in accounts {
+        if code_hash == KECCAK256_EMPTY {
+            continue;
+        }
+
+        if let Some(existing) = bytecodes.get(&code_hash) {
+            validate_bytecode_hash(existing, code_hash, address)?;
+            continue;
+        }
+
+        let bytecode = bytecode_by_hash(code_hash)?.ok_or_else(|| {
+            eyre!("pre-state bytecode {code_hash} for accessed account {address} was not found")
+        })?;
+        validate_bytecode_hash(&bytecode, code_hash, address)?;
+        bytecodes.insert(code_hash, bytecode);
+        added += 1;
+    }
+
+    Ok(added)
+}
+
+fn validate_bytecode_hash(bytecode: &Bytecode, expected: B256, address: Address) -> Result<()> {
+    let actual = keccak256(bytecode.original_bytes());
+    if actual != expected {
+        return Err(eyre!(
+            "pre-state bytecode hash mismatch for accessed account {address}: \
+             expected={expected}, actual={actual}"
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Default)]
 struct AccumulatedState {
     accounts: HashMap<Address, HashSet<StorageKey>>,
     bytecodes: HashMap<B256, Bytecode>,
     block_idxs: HashSet<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::iter::once;
+
+    use alloy_primitives::Bytes;
+
+    use super::*;
+
+    #[test]
+    fn supplements_delegation_code_referenced_only_by_pre_state_account() {
+        let account = Address::repeat_byte(0x42);
+        let bytecode = Bytecode::new_eip7702(Address::repeat_byte(0x24));
+        let code_hash = bytecode.hash_slow();
+        let mut bytecodes = BTreeMap::new();
+
+        let added = supplement_pre_state_bytecodes(
+            &mut bytecodes,
+            once((account, code_hash)),
+            |requested| {
+                assert_eq!(requested, code_hash);
+                Ok(Some(bytecode.clone()))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(added, 1);
+        assert_eq!(bytecodes.get(&code_hash), Some(&bytecode));
+    }
+
+    #[test]
+    fn does_not_refetch_bytecode_already_captured_by_block_record() {
+        let account = Address::repeat_byte(0x42);
+        let bytecode = Bytecode::new_raw(Bytes::from_static(&[0x60, 0x2a, 0x00]));
+        let code_hash = bytecode.hash_slow();
+        let mut bytecodes = BTreeMap::from([(code_hash, bytecode)]);
+
+        let added = supplement_pre_state_bytecodes(
+            &mut bytecodes,
+            once((account, code_hash)),
+            |_| -> Result<Option<Bytecode>> {
+                panic!("existing bytecode must not be fetched again")
+            },
+        )
+        .unwrap();
+
+        assert_eq!(added, 0);
+        assert_eq!(bytecodes.len(), 1);
+    }
+
+    #[test]
+    fn reports_missing_pre_state_bytecode_before_guest_execution() {
+        let account = Address::repeat_byte(0x42);
+        let code_hash = B256::repeat_byte(0x57);
+        let mut bytecodes = BTreeMap::new();
+
+        let err =
+            supplement_pre_state_bytecodes(&mut bytecodes, once((account, code_hash)), |_| {
+                Ok(None)
+            })
+            .unwrap_err();
+
+        assert!(err.to_string().contains("pre-state bytecode"));
+        assert!(err.to_string().contains(&code_hash.to_string()));
+        assert!(err.to_string().contains(&account.to_string()));
+    }
 }
