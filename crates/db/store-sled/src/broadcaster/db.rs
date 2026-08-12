@@ -110,11 +110,11 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                             {
                                 Ok(None)
                             } else {
-                                Err(error::ConflictableTransactionError::Abort(
-                                    error::Error::abort(DbError::Other(
+                                Err(ConflictableTransactionError::Abort(TSledError::abort(
+                                    DbError::Other(
                                         "commit/reveal pair conflicts with existing entries".into(),
-                                    )),
-                                ))
+                                    ),
+                                )))
                             };
                         }
                         let Some((commit_idx, reveal_idx)) = existing_indices else {
