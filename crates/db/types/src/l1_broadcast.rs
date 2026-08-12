@@ -174,11 +174,6 @@ impl L1TxStatus {
         !matches!(self, Self::InvalidInputs | Self::Abandoned)
     }
 
-    /// Returns whether publication has not produced a definitive outcome.
-    pub fn submission_pending(&self) -> bool {
-        matches!(self, Self::Queued | Self::Unpublished | Self::Submitting)
-    }
-
     /// Returns whether the transaction was submitted to or observed on L1.
     pub fn has_reached_l1(&self) -> bool {
         matches!(

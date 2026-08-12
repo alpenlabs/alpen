@@ -31,7 +31,6 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
         &'a self,
         idx: u64,
         tx: &'a Transaction,
-        context: PublishContext,
     ) -> impl Future<Output = PublishDecision> + Send + 'a;
 
     /// Returns the next write index in broadcaster database.
@@ -91,19 +90,10 @@ pub enum PublishDecision {
     Invalidate,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum PublishContext {
-    /// The transaction has not crossed the Bitcoin RPC boundary.
-    #[default]
-    Initial,
-    /// A previous submission may have crossed the Bitcoin RPC boundary.
-    Recovery,
-}
-
 /// Decides whether a broadcaster entry may cross the Bitcoin RPC boundary.
 #[async_trait::async_trait]
 pub trait PublishPolicy: Send + Sync + 'static {
-    async fn decide(&self, idx: u64, tx: &Transaction, context: PublishContext) -> PublishDecision;
+    async fn decide(&self, idx: u64, tx: &Transaction) -> PublishDecision;
 }
 
 #[derive(Debug)]
@@ -111,7 +101,7 @@ pub struct AllowAllPublishPolicy;
 
 #[async_trait::async_trait]
 impl PublishPolicy for AllowAllPublishPolicy {
-    async fn decide(&self, _: u64, _: &Transaction, _: PublishContext) -> PublishDecision {
+    async fn decide(&self, _: u64, _: &Transaction) -> PublishDecision {
         PublishDecision::Publish
     }
 }
@@ -279,13 +269,8 @@ impl<T> BroadcasterIoContext for BroadcasterIo<T>
 where
     T: Broadcaster + WalletTxLookup,
 {
-    async fn publish_decision(
-        &self,
-        idx: u64,
-        tx: &Transaction,
-        context: PublishContext,
-    ) -> PublishDecision {
-        self.policy.decide(idx, tx, context).await
+    async fn publish_decision(&self, idx: u64, tx: &Transaction) -> PublishDecision {
+        self.policy.decide(idx, tx).await
     }
 
     async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
