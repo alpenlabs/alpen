@@ -24,7 +24,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use alloy_eips::BlockNumHash;
-use alloy_primitives::{keccak256, B256};
+use alloy_primitives::{keccak256, B256, KECCAK256_EMPTY};
 use alpen_ee_common::{AccessedAccount, AccessedStateRecord, AccessedStateStore};
 use alpen_reth_witness::CacheDBProvider;
 use futures_util::TryStreamExt;
@@ -38,7 +38,7 @@ use reth_primitives::{Block, EthPrimitives};
 use reth_primitives_traits::Block as _;
 use reth_provider::{BlockReader, Chain, StateProviderFactory};
 use reth_revm::{
-    db::{BundleState, CacheDB},
+    db::{BundleState, CacheDB, CacheState},
     state::Bytecode,
 };
 use strata_acct_types::Hash;
@@ -233,8 +233,9 @@ where
     let cache_provider = CacheDBProvider::new(history);
     let cache_db = CacheDB::new(&cache_provider);
 
-    let executor = BasicBlockExecutor::new(evm_config, cache_db);
-    let output = executor.execute(&recovered)?;
+    let mut executor = BasicBlockExecutor::new(evm_config, cache_db);
+    executor.execute_one(&recovered)?;
+    let execution_state = executor.into_state();
 
     let accessed = cache_provider.get_accessed_state();
 
@@ -253,8 +254,11 @@ where
         .collect();
     accounts.sort_by_key(|a| a.address);
 
-    let collected_bytecodes =
-        collect_block_bytecodes(accessed.accessed_contracts(), &output.state)?;
+    let collected_bytecodes = collect_block_bytecodes(
+        accessed.accessed_contracts(),
+        &execution_state.cache,
+        &execution_state.bundle_state,
+    )?;
     let bytecode_hashes = collected_bytecodes.iter().map(|(hash, _)| hash.0).collect();
 
     let mut ancestor_block_numbers: Vec<u64> =
@@ -280,16 +284,38 @@ where
 /// The access-tracking database records code fetched from the parent state, but
 /// revm can satisfy code loads from its in-memory execution state without
 /// consulting that database. This happens notably for code installed by an
-/// earlier transaction and for EIP-7702 delegation designations. The execution
-/// bundle is therefore a second required source of witness bytecode.
+/// earlier transaction and for EIP-7702 delegation designations. Both the live
+/// execution cache and the merged execution bundle are therefore required
+/// sources of witness bytecode.
 fn collect_block_bytecodes<'a>(
     accessed_contracts: impl IntoIterator<Item = (&'a B256, &'a Bytecode)>,
+    execution_cache: &CacheState,
     bundle: &BundleState,
 ) -> eyre::Result<Vec<(B256, Vec<u8>)>> {
     let mut bytecodes = BTreeMap::new();
 
     for (hash, code) in accessed_contracts {
         insert_bytecode(&mut bytecodes, *hash, code, "access tracker")?;
+    }
+    for (hash, code) in &execution_cache.contracts {
+        insert_bytecode(&mut bytecodes, *hash, code, "execution cache")?;
+    }
+    for account in execution_cache.accounts.values() {
+        let Some(info) = account.account.as_ref().map(|account| &account.info) else {
+            continue;
+        };
+        let Some(code) = &info.code else {
+            continue;
+        };
+        if info.is_empty_code_hash() {
+            continue;
+        }
+        insert_bytecode(
+            &mut bytecodes,
+            info.code_hash,
+            code,
+            "execution cache account info",
+        )?;
     }
     for (hash, code) in &bundle.contracts {
         insert_bytecode(&mut bytecodes, *hash, code, "execution bundle")?;
@@ -324,6 +350,10 @@ fn insert_bytecode(
     source: &'static str,
 ) -> eyre::Result<()> {
     let bytes = code.original_bytes();
+    if bytes.is_empty() && (expected_hash.is_zero() || expected_hash == KECCAK256_EMPTY) {
+        return Ok(());
+    }
+
     let actual_hash = keccak256(&bytes);
     if actual_hash != expected_hash {
         eyre::bail!(
@@ -364,11 +394,46 @@ mod tests {
         let bytecode = Bytecode::new_raw(runtime.clone());
         let code_hash = bytecode.hash_slow();
 
-        let entries =
-            collect_block_bytecodes(once((&code_hash, &bytecode)), &BundleState::default())
-                .unwrap();
+        let entries = collect_block_bytecodes(
+            once((&code_hash, &bytecode)),
+            &CacheState::default(),
+            &BundleState::default(),
+        )
+        .unwrap();
 
         assert_eq!(entries, vec![(code_hash, runtime.to_vec())]);
+    }
+
+    #[test]
+    fn captures_execution_cache_contract_missing_from_other_sources() {
+        let code = Bytecode::new_raw(Bytes::from_static(&[0x60, 0x2a, 0x60, 0x00, 0x52]));
+        let code_hash = code.hash_slow();
+        let mut execution_cache = CacheState::default();
+        execution_cache.contracts.insert(code_hash, code.clone());
+
+        let entries =
+            collect_block_bytecodes(empty(), &execution_cache, &BundleState::default()).unwrap();
+
+        assert_eq!(entries, vec![(code_hash, code.original_bytes().to_vec())]);
+    }
+
+    #[test]
+    fn captures_execution_cache_account_attached_code() {
+        let code = Bytecode::new_eip7702(Address::repeat_byte(0x33));
+        let code_hash = code.hash_slow();
+        let info = AccountInfo {
+            balance: U256::ZERO,
+            nonce: 1,
+            code_hash,
+            code: Some(code.clone()),
+        };
+        let mut execution_cache = CacheState::default();
+        execution_cache.insert_account(Address::repeat_byte(0x77), info);
+
+        let entries =
+            collect_block_bytecodes(empty(), &execution_cache, &BundleState::default()).unwrap();
+
+        assert_eq!(entries, vec![(code_hash, code.original_bytes().to_vec())]);
     }
 
     #[test]
@@ -388,7 +453,7 @@ mod tests {
             BundleAccount::new(None, Some(info), Default::default(), AccountStatus::Changed),
         );
 
-        let entries = collect_block_bytecodes(empty(), &bundle).unwrap();
+        let entries = collect_block_bytecodes(empty(), &CacheState::default(), &bundle).unwrap();
 
         assert_eq!(entries, vec![(code_hash, code.original_bytes().to_vec())]);
     }
@@ -400,7 +465,7 @@ mod tests {
         let mut bundle = BundleState::default();
         bundle.contracts.insert(code_hash, code.clone());
 
-        let entries = collect_block_bytecodes(empty(), &bundle).unwrap();
+        let entries = collect_block_bytecodes(empty(), &CacheState::default(), &bundle).unwrap();
 
         assert_eq!(entries, vec![(code_hash, code.original_bytes().to_vec())]);
     }
@@ -420,8 +485,25 @@ mod tests {
             BundleAccount::new(None, Some(info), Default::default(), AccountStatus::Changed),
         );
 
-        let err = collect_block_bytecodes(empty(), &bundle).unwrap_err();
+        let err = collect_block_bytecodes(empty(), &CacheState::default(), &bundle).unwrap_err();
 
         assert!(err.to_string().contains("bytecode hash mismatch"));
+    }
+
+    #[test]
+    fn ignores_empty_bytecode_sentinels() {
+        let empty_code = Bytecode::default();
+        let mut execution_cache = CacheState::default();
+        execution_cache
+            .contracts
+            .insert(B256::ZERO, empty_code.clone());
+        execution_cache
+            .contracts
+            .insert(KECCAK256_EMPTY, empty_code);
+
+        let entries =
+            collect_block_bytecodes(empty(), &execution_cache, &BundleState::default()).unwrap();
+
+        assert!(entries.is_empty());
     }
 }
