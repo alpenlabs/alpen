@@ -490,7 +490,7 @@ fn ensure_client_state_genesis(
         None => {
             // Create and insert init client state into db.
             let init_state = ClientState::default();
-            let l1blk = ol_params.last_l1_block;
+            let l1blk = ol_params.genesis_l1_block();
             let update = ClientUpdateOutput::new_state(init_state.clone());
             csman.put_update_blocking(&l1blk, update.clone())?;
             Ok((l1blk, update.state().clone()))

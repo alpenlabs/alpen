@@ -9653,6 +9653,8 @@ dependencies = [
  "arbitrary",
  "serde",
  "serde_json",
+ "ssz",
+ "ssz_derive",
  "strata-bridge-params",
  "strata-btc-types",
  "strata-identifiers",

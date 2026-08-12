@@ -736,7 +736,7 @@ pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
     if has_client_state {
         let l1_anchor_check = ctx.executor().handle().block_on(verify_l1_anchor_block(
             ctx.bitcoin_client().as_ref(),
-            ctx.ol_params().last_l1_block,
+            ctx.ol_params().genesis_l1_block(),
         ))?;
         if let StartupBitcoinCheck::Deferred { reason } = l1_anchor_check {
             warn!(%reason, "startup: deferring L1 anchor block check");

@@ -23,7 +23,7 @@ impl OLStateV1 {
         // sentinel value does not matter for correctness — no real proof
         // references an L1 block at or before genesis — as long as the OL
         // state and the DB-side ASM MMR agree on it.
-        let prefill_count = params.last_l1_block.height() as u64 + 1;
+        let prefill_count = params.genesis_l1_block().height() as u64 + 1;
         let l1_block_refs_mmr =
             <Mmr64 as Mmr<StrataHasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF, prefill_count);
 
@@ -31,7 +31,7 @@ impl OLStateV1 {
         let mut ledger = TsnlLedgerAccountsTableV1::new_empty();
 
         // Create initial snark accounts.
-        for (id, acct_params) in &params.accounts {
+        for (id, acct_params) in &params.genesis.accounts {
             // Claim the serial.
             let serial = next_serial;
             next_serial = next_serial.incr();
@@ -53,11 +53,11 @@ impl OLStateV1 {
 
         let total_ledger_funds = ledger.calculate_total_funds()?;
 
-        let global = GlobalStateV1::new(params.header.slot, next_serial);
+        let global = GlobalStateV1::new(params.genesis.header.slot, next_serial);
         let epoch = EpochalStateV1::new(
             total_ledger_funds,
-            params.header.epoch,
-            params.last_l1_block,
+            params.genesis.header.epoch,
+            params.genesis_l1_block(),
             checkpointed_epoch,
             l1_block_refs_mmr,
         );

@@ -608,10 +608,8 @@ fn make_block_with_gam_tx(
 }
 
 fn genesis_ol_state() -> OLStateV1 {
-    let params = OLParams {
-        last_l1_block: test_l1_commitment(),
-        ..Default::default()
-    };
+    let mut params = OLParams::default();
+    params.genesis.last_l1_block = test_l1_commitment();
     OLStateV1::from_genesis_params(&params).expect("genesis state")
 }
 

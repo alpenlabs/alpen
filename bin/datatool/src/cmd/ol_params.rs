@@ -33,7 +33,9 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
     let mut ol_params = OLParams::new_empty(anchor.block, bridge_params);
 
     if let Some(path) = cmd.genesis_accounts.as_deref() {
-        ol_params.accounts.extend(read_genesis_accounts(path)?);
+        for (account_id, account) in read_genesis_accounts(path)? {
+            ol_params.insert_genesis_account(account_id, account);
+        }
     }
 
     let params_buf = serde_json::to_string_pretty(&ol_params)?;

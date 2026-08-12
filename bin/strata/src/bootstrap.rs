@@ -297,10 +297,8 @@ mod tests {
             )
             .expect("create test storage");
             let genesis_l1 = l1_commitment(0);
-            let genesis_params = OLParams {
-                last_l1_block: genesis_l1,
-                ..Default::default()
-            };
+            let mut genesis_params = OLParams::default();
+            genesis_params.genesis.last_l1_block = genesis_l1;
             let genesis =
                 init_ol_genesis(&genesis_params, &storage).expect("initialize OL genesis");
             let genesis_block = storage

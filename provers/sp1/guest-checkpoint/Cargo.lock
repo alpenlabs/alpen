@@ -2074,6 +2074,8 @@ name = "strata-ol-params"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "ssz",
+ "ssz_derive",
  "strata-bridge-params",
  "strata-btc-types",
  "strata-identifiers",
