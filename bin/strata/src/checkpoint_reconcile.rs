@@ -182,7 +182,7 @@ fn cancel_queued_checkpoint(db: &impl DatabaseBackend, intents: &[IntentEntry]) 
 /// Abandons one writer intent only when no associated transaction may be live on L1.
 ///
 /// Unbundled intents are terminalized directly. Bundled intents are preserved if
-/// either broadcaster entry is pending or has reached Bitcoin.
+/// publication has started for either broadcaster entry.
 fn cancel_writer_intent(db: &impl DatabaseBackend, intent: IntentEntry) -> Result<bool> {
     let writer = db.writer_db();
     let IntentStatus::Bundled(payload_idx) = intent.status else {
@@ -209,7 +209,7 @@ fn cancel_writer_intent(db: &impl DatabaseBackend, intent: IntentEntry) -> Resul
     if entries
         .iter()
         .filter_map(|(_, entry)| entry.as_ref())
-        .any(|entry| entry.status.may_be_live())
+        .any(|entry| entry.status.submission_started())
     {
         return Ok(false);
     }
@@ -294,7 +294,7 @@ mod tests {
     use super::{cancel_queued_checkpoint, checkpoint_intents_by_commitment};
 
     #[test]
-    fn queued_checkpoint_without_signing_marker_is_reconciled_safely() {
+    fn queued_unsubmitted_checkpoint_is_cancelled() {
         let db = get_test_sled_backend();
         let checkpoint = create_test_checkpoint_payload(14);
         let commitment = EpochCommitment::from_terminal(
@@ -336,26 +336,26 @@ mod tests {
             .unwrap()
             .unwrap();
         let matching = intents.get(&commitment).unwrap();
+
+        let mut submitting = db
+            .broadcast_db()
+            .get_tx_entry_by_id(Buf32(commit_txid.0))
+            .unwrap()
+            .unwrap();
+        submitting.status = L1TxStatus::Submitting;
+        db.broadcast_db()
+            .put_tx_entry(Buf32(commit_txid.0), submitting.clone())
+            .unwrap();
         assert!(!cancel_queued_checkpoint(db.as_ref(), matching).unwrap());
-        assert_eq!(
-            db.writer_db()
-                .get_payload_entry_by_idx(0)
-                .unwrap()
-                .unwrap()
-                .status,
-            L1BundleStatus::Unpublished
-        );
-        for txid in [commit_txid, reveal_txid] {
-            assert_eq!(
-                db.broadcast_db()
-                    .get_tx_entry_by_id(Buf32(txid.0))
-                    .unwrap()
-                    .unwrap()
-                    .status,
-                L1TxStatus::Unpublished
-            );
-            db.broadcast_db().del_tx_entry(Buf32(txid.0)).unwrap();
-        }
+        submitting.status = L1TxStatus::Unpublished;
+        db.broadcast_db()
+            .put_tx_entry(Buf32(commit_txid.0), submitting.clone())
+            .unwrap();
+        assert!(!cancel_queued_checkpoint(db.as_ref(), matching).unwrap());
+        submitting.status = L1TxStatus::Queued;
+        db.broadcast_db()
+            .put_tx_entry(Buf32(commit_txid.0), submitting)
+            .unwrap();
 
         assert!(cancel_queued_checkpoint(db.as_ref(), matching).unwrap());
         assert_eq!(
@@ -366,5 +366,15 @@ mod tests {
                 .status,
             L1BundleStatus::Abandoned
         );
+        for txid in [commit_txid, reveal_txid] {
+            assert_eq!(
+                db.broadcast_db()
+                    .get_tx_entry_by_id(Buf32(txid.0))
+                    .unwrap()
+                    .unwrap()
+                    .status,
+                L1TxStatus::Abandoned
+            );
+        }
     }
 }

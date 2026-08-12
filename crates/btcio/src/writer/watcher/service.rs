@@ -960,7 +960,6 @@ pub(crate) fn determine_payload_next_status(
     reveal_status: &L1TxStatus,
 ) -> L1BundleStatus {
     match (&commit_status, &reveal_status) {
-        (_, L1TxStatus::Abandoned) | (L1TxStatus::Abandoned, _) => L1BundleStatus::Abandoned,
         // If reveal is finalized, both are finalized
         (_, L1TxStatus::Finalized { .. }) => L1BundleStatus::Finalized,
         // If reveal is confirmed, both are confirmed
@@ -972,12 +971,17 @@ pub(crate) fn determine_payload_next_status(
         (L1TxStatus::Replaced { .. }, _) | (_, L1TxStatus::Replaced { .. }) => {
             L1BundleStatus::Published
         }
-        // if commit has invalid inputs, needs resign
+        // Invalidating the commit explicitly requests a rebuild.
         (L1TxStatus::InvalidInputs, _) => L1BundleStatus::NeedsResign,
+        (L1TxStatus::Abandoned, _) | (_, L1TxStatus::Abandoned) => L1BundleStatus::Abandoned,
         // If commit is unpublished, both are upublished
-        (L1TxStatus::Unpublished, _) => L1BundleStatus::Unpublished,
+        (L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting, _) => {
+            L1BundleStatus::Unpublished
+        }
         // If commit is published but not reveal, the payload is unpublished
-        (_, L1TxStatus::Unpublished) => L1BundleStatus::Unpublished,
+        (_, L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting) => {
+            L1BundleStatus::Unpublished
+        }
         // If reveal has invalid inputs, these need resign because we can do nothing with just
         // commit tx confirmed. This should not occur in practice
         (_, L1TxStatus::InvalidInputs) => L1BundleStatus::NeedsResign,
@@ -1021,8 +1025,7 @@ mod tests {
             builder::{EnvelopeData, EnvelopeError},
             replacement::build::build_pending_single_reveal_replacement,
             signer::{complete_pending_reveal_replacement, complete_reveal_and_broadcast},
-            test_utils::get_broadcast_handle,
-            test_utils::get_envelope_ops,
+            test_utils::{get_broadcast_handle, get_envelope_ops},
         },
     };
 

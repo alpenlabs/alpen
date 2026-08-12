@@ -60,7 +60,9 @@ pub(crate) fn get_broadcaster_summary(
         {
             total_tx_entries += 1;
             match tx_entry.status {
-                L1TxStatus::Unpublished => unpublished_count += 1,
+                L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting => {
+                    unpublished_count += 1
+                }
                 L1TxStatus::Published => published_count += 1,
                 L1TxStatus::Confirmed { .. } => confirmed_count += 1,
                 L1TxStatus::Finalized { .. } => finalized_count += 1,

@@ -207,7 +207,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
             .filter_map(|item| match item {
                 Ok((commitment, _)) if commitment.epoch() >= start_epoch => Some(Ok(commitment)),
                 Ok(_) => None,
-                Err(err) => Some(Err(err.into())),
+                Err(err) => Some(Err(conv_sled_err(err))),
             })
             .collect()
     }

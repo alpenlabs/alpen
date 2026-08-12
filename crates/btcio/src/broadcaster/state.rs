@@ -1,5 +1,5 @@
 use bitcoin::hashes::Hash;
-use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
+use strata_db_types::l1_broadcast::L1TxEntry;
 use strata_primitives::{buf::Buf32, indexed::Indexed};
 use strata_service::{ServiceState, TickMsg};
 use tracing::*;
@@ -327,7 +327,7 @@ mod test {
         assert_eq!(
             statuses,
             vec![
-                entries[0].1.status.clone(),
+                L1TxStatus::Unpublished,
                 entries[1].1.status.clone(),
                 entries[3].1.status.clone(),
             ],

@@ -100,16 +100,33 @@ pub fn test_put_tx_entry_pair(db: &impl L1BroadcastDatabase) {
         entry.status = L1TxStatus::Abandoned;
         db.put_tx_entry_by_idx(idx, entry).unwrap();
     }
-    assert!(db
-        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
-        .unwrap()
-        .is_none());
+    assert_eq!(
+        db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[1])).unwrap(),
+        Some((commit_idx, reveal_idx))
+    );
     assert!([commit_idx, reveal_idx].into_iter().all(|idx| db
         .get_tx_entry(idx)
         .unwrap()
         .unwrap()
         .status
-        == L1TxStatus::Abandoned));
+        == L1TxStatus::Queued));
+
+    let mut invalid = db.get_tx_entry(commit_idx).unwrap().unwrap();
+    invalid.status = L1TxStatus::InvalidInputs;
+    db.put_tx_entry_by_idx(commit_idx, invalid.clone()).unwrap();
+    assert!(db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .is_none());
+    assert_eq!(db.get_tx_entry(commit_idx).unwrap(), Some(invalid));
+
+    let mut invalid_reveal = db.get_tx_entry(reveal_idx).unwrap().unwrap();
+    invalid_reveal.status = L1TxStatus::InvalidInputs;
+    db.put_tx_entry_by_idx(reveal_idx, invalid_reveal).unwrap();
+    assert_eq!(
+        db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[1])).unwrap(),
+        Some((commit_idx, reveal_idx))
+    );
     assert_eq!(db.get_next_tx_idx().unwrap(), 2);
 }
 

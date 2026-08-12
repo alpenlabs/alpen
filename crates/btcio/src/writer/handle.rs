@@ -80,7 +80,10 @@ impl EnvelopeHandle {
         // Check if it is duplicate
         if let Some(entry) = self.ops.get_intent_by_id_async(id).await? {
             warn!(commitment = %id, "Received duplicate intent");
-            if let IntentStatus::Bundled(payload_idx) = entry.status {
+            if let IntentStatus::Bundled {
+                bundle_idx: payload_idx,
+            } = entry.status
+            {
                 if self
                     .ops
                     .get_payload_entry_by_idx_async(payload_idx)
@@ -283,5 +286,14 @@ mod test {
         let (commit_status, reveal_status) = (conf.clone(), L1TxStatus::InvalidInputs);
         let next = determine_payload_next_status(&commit_status, &reveal_status);
         assert_eq!(next, L1BundleStatus::NeedsResign);
+
+        // An invalidated commit marks a still-needed pair for rebuilding, even if its reveal was
+        // previously abandoned. An abandoned commit terminalizes an obsolete pair.
+        let next =
+            determine_payload_next_status(&L1TxStatus::InvalidInputs, &L1TxStatus::Abandoned);
+        assert_eq!(next, L1BundleStatus::NeedsResign);
+        let next =
+            determine_payload_next_status(&L1TxStatus::Abandoned, &L1TxStatus::InvalidInputs);
+        assert_eq!(next, L1BundleStatus::Abandoned);
     }
 }

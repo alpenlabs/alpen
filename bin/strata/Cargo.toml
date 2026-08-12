@@ -12,6 +12,7 @@ sequencer = [
   "dep:strata-codec-utils",
   "dep:strata-crypto",
   "dep:strata-l1-envelope-fmt",
+  "dep:strata-l1-txfmt",
   "dep:strata-ol-block-assembly",
   "dep:strata-ol-sequencer",
   "dep:strata-ol-state-provider",
@@ -66,6 +67,7 @@ strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-envelope-fmt = { workspace = true, optional = true }
+strata-l1-txfmt = { workspace = true, optional = true }
 strata-logging.workspace = true
 strata-metrics.workspace = true
 strata-node-context.workspace = true
@@ -122,7 +124,6 @@ strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
 strata-asm-proto-txs-test-utils.workspace = true
 strata-btc-verification.workspace = true
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
-strata-l1-txfmt.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
