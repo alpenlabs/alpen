@@ -73,6 +73,8 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         idx: u64,
     ) -> impl Future<Output = anyhow::Result<Option<BundledPayloadEntry>>> + Send;
 
+    fn get_next_payload_idx(&self) -> impl Future<Output = anyhow::Result<u64>> + Send;
+
     fn put_payload_entry(
         &self,
         idx: u64,
@@ -199,6 +201,13 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
     async fn get_payload_entry(&self, idx: u64) -> anyhow::Result<Option<BundledPayloadEntry>> {
         self.ops
             .get_payload_entry_by_idx_async(idx)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_next_payload_idx(&self) -> anyhow::Result<u64> {
+        self.ops
+            .get_next_payload_idx_async()
             .await
             .map_err(Into::into)
     }
@@ -399,8 +408,22 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 }
             }
         } else {
-            // No payload exists, just continue the loop to wait for payload's presence in db
-            debug!("Waiting for payloadentry to be present in db");
+            let next_idx = state.ctx.get_next_payload_idx().await?;
+            while state.curr_payloadidx < next_idx {
+                state.curr_payloadidx += 1;
+                if state.curr_payloadidx == next_idx
+                    || state
+                        .ctx
+                        .get_payload_entry(state.curr_payloadidx)
+                        .await?
+                        .is_some()
+                {
+                    break;
+                }
+            }
+            if state.curr_payloadidx == next_idx {
+                debug!("Waiting for payloadentry to be present in db");
+            }
         }
 
         Ok(Response::Continue)
@@ -1214,6 +1237,16 @@ mod tests {
             Ok(self.stored.lock().unwrap().get(&idx).cloned())
         }
 
+        async fn get_next_payload_idx(&self) -> anyhow::Result<u64> {
+            Ok(self
+                .stored
+                .lock()
+                .unwrap()
+                .keys()
+                .max()
+                .map_or(0, |idx| idx + 1))
+        }
+
         async fn put_payload_entry(
             &self,
             idx: u64,
@@ -1338,6 +1371,25 @@ mod tests {
         let tag = TagData::new(1, 1, vec![]).unwrap();
         let payload = L1Payload::new(vec![vec![1; 150]; 1], tag).unwrap();
         BundledPayloadEntry::new_unsigned(payload)
+    }
+
+    #[tokio::test]
+    async fn watcher_advances_across_payload_gaps() {
+        let ctx = MockWatcherContext::new(false);
+        let mut terminal = test_unsigned_entry();
+        terminal.status = L1BundleStatus::Abandoned;
+        ctx.stored.lock().unwrap().insert(0, terminal);
+        ctx.stored.lock().unwrap().insert(2, test_unsigned_entry());
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+
+        assert_eq!(state.curr_payloadidx, 2);
     }
 
     #[tokio::test]
