@@ -21,10 +21,10 @@
 //! are content-addressed and never deleted — same contract referenced by
 //! many chunks shares one stored copy.
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use alloy_eips::BlockNumHash;
-use alloy_primitives::B256;
+use alloy_primitives::{keccak256, B256};
 use alpen_ee_common::{AccessedAccount, AccessedStateRecord, AccessedStateStore};
 use alpen_reth_witness::CacheDBProvider;
 use futures_util::TryStreamExt;
@@ -37,7 +37,10 @@ use reth_node_api::{FullNodeComponents, NodeTypes};
 use reth_primitives::{Block, EthPrimitives};
 use reth_primitives_traits::Block as _;
 use reth_provider::{BlockReader, Chain, StateProviderFactory};
-use reth_revm::{db::CacheDB, state::Bytecode};
+use reth_revm::{
+    db::{BundleState, CacheDB},
+    state::Bytecode,
+};
 use strata_acct_types::Hash;
 use tokio::task;
 use tracing::{debug, error, warn};
@@ -231,7 +234,7 @@ where
     let cache_db = CacheDB::new(&cache_provider);
 
     let executor = BasicBlockExecutor::new(evm_config, cache_db);
-    let _output = executor.execute(&recovered)?;
+    let output = executor.execute(&recovered)?;
 
     let accessed = cache_provider.get_accessed_state();
 
@@ -250,12 +253,9 @@ where
         .collect();
     accounts.sort_by_key(|a| a.address);
 
-    let mut bytecode_hashes: Vec<[u8; 32]> = accessed
-        .accessed_contracts()
-        .keys()
-        .map(|hash| hash.0)
-        .collect();
-    bytecode_hashes.sort();
+    let collected_bytecodes =
+        collect_block_bytecodes(accessed.accessed_contracts(), &output.state)?;
+    let bytecode_hashes = collected_bytecodes.iter().map(|(hash, _)| hash.0).collect();
 
     let mut ancestor_block_numbers: Vec<u64> =
         accessed.accessed_block_idxs().iter().copied().collect();
@@ -267,17 +267,79 @@ where
         ancestor_block_numbers,
     };
 
-    let bytecodes = bytecode_entries_from_accessed_contracts(accessed.accessed_contracts().iter());
+    let bytecodes = collected_bytecodes
+        .into_iter()
+        .map(|(hash, code)| (hash_from_b256(hash), code))
+        .collect();
 
     Ok((record, bytecodes))
 }
 
-fn bytecode_entries_from_accessed_contracts<'a>(
-    bytecodes: impl Iterator<Item = (&'a B256, &'a Bytecode)>,
-) -> Vec<BytecodeEntry> {
-    bytecodes
-        .map(|(hash, code)| (hash_from_b256(*hash), code.original_bytes().to_vec()))
-        .collect()
+/// Collects every bytecode that may be required to replay a block.
+///
+/// The access-tracking database records code fetched from the parent state, but
+/// revm can satisfy code loads from its in-memory execution state without
+/// consulting that database. This happens notably for code installed by an
+/// earlier transaction and for EIP-7702 delegation designations. The execution
+/// bundle is therefore a second required source of witness bytecode.
+fn collect_block_bytecodes<'a>(
+    accessed_contracts: impl IntoIterator<Item = (&'a B256, &'a Bytecode)>,
+    bundle: &BundleState,
+) -> eyre::Result<Vec<(B256, Vec<u8>)>> {
+    let mut bytecodes = BTreeMap::new();
+
+    for (hash, code) in accessed_contracts {
+        insert_bytecode(&mut bytecodes, *hash, code, "access tracker")?;
+    }
+    for (hash, code) in &bundle.contracts {
+        insert_bytecode(&mut bytecodes, *hash, code, "execution bundle")?;
+    }
+    for account in bundle.state.values() {
+        for info in [account.original_info.as_ref(), account.info.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            let Some(code) = &info.code else {
+                continue;
+            };
+            if info.is_empty_code_hash() {
+                continue;
+            }
+            insert_bytecode(
+                &mut bytecodes,
+                info.code_hash,
+                code,
+                "execution account info",
+            )?;
+        }
+    }
+
+    Ok(bytecodes.into_iter().collect())
+}
+
+fn insert_bytecode(
+    bytecodes: &mut BTreeMap<B256, Vec<u8>>,
+    expected_hash: B256,
+    code: &Bytecode,
+    source: &'static str,
+) -> eyre::Result<()> {
+    let bytes = code.original_bytes();
+    let actual_hash = keccak256(&bytes);
+    if actual_hash != expected_hash {
+        eyre::bail!(
+            "{source} bytecode hash mismatch: expected={expected_hash}, actual={actual_hash}"
+        );
+    }
+
+    if let Some(existing) = bytecodes.get(&expected_hash) {
+        if existing.as_slice() != bytes.as_ref() {
+            eyre::bail!("conflicting bytecodes for hash {expected_hash}: source={source}");
+        }
+        return Ok(());
+    }
+
+    bytecodes.insert(expected_hash, bytes.to_vec());
+    Ok(())
 }
 
 fn hash_from_b256(hash: B256) -> Hash {
@@ -286,23 +348,80 @@ fn hash_from_b256(hash: B256) -> Hash {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::once;
+    use std::iter::{empty, once};
 
-    use alloy_primitives::Bytes;
+    use alloy_primitives::{Address, Bytes, U256};
+    use reth_revm::{
+        db::{AccountStatus, BundleAccount},
+        state::AccountInfo,
+    };
 
     use super::*;
 
     #[test]
     fn bytecode_entries_preserve_original_runtime_bytes() {
-        let code_hash = B256::from([0x12; 32]);
         let runtime = Bytes::from_static(&[0x60, 0x01, 0x5f, 0x55]);
         let bytecode = Bytecode::new_raw(runtime.clone());
+        let code_hash = bytecode.hash_slow();
 
-        assert_eq!(bytecode.original_bytes(), runtime);
-        assert_ne!(bytecode.bytes(), runtime);
+        let entries =
+            collect_block_bytecodes(once((&code_hash, &bytecode)), &BundleState::default())
+                .unwrap();
 
-        let entries = bytecode_entries_from_accessed_contracts(once((&code_hash, &bytecode)));
+        assert_eq!(entries, vec![(code_hash, runtime.to_vec())]);
+    }
 
-        assert_eq!(entries, vec![(hash_from_b256(code_hash), runtime.to_vec())]);
+    #[test]
+    fn captures_account_attached_code_missing_from_contract_maps() {
+        let address = Address::repeat_byte(0x42);
+        let code = Bytecode::new_eip7702(Address::repeat_byte(0x24));
+        let code_hash = code.hash_slow();
+        let info = AccountInfo {
+            balance: U256::ZERO,
+            nonce: 1,
+            code_hash,
+            code: Some(code.clone()),
+        };
+        let mut bundle = BundleState::default();
+        bundle.state.insert(
+            address,
+            BundleAccount::new(None, Some(info), Default::default(), AccountStatus::Changed),
+        );
+
+        let entries = collect_block_bytecodes(empty(), &bundle).unwrap();
+
+        assert_eq!(entries, vec![(code_hash, code.original_bytes().to_vec())]);
+    }
+
+    #[test]
+    fn captures_execution_bundle_contract_missing_from_tracker() {
+        let code = Bytecode::new_raw(Bytes::from_static(&[0x60, 0x2a, 0x60, 0x00, 0x52]));
+        let code_hash = code.hash_slow();
+        let mut bundle = BundleState::default();
+        bundle.contracts.insert(code_hash, code.clone());
+
+        let entries = collect_block_bytecodes(empty(), &bundle).unwrap();
+
+        assert_eq!(entries, vec![(code_hash, code.original_bytes().to_vec())]);
+    }
+
+    #[test]
+    fn rejects_account_attached_code_with_wrong_hash() {
+        let code = Bytecode::new_raw(Bytes::from_static(&[0x60, 0x00, 0x56]));
+        let info = AccountInfo {
+            balance: U256::ZERO,
+            nonce: 1,
+            code_hash: B256::repeat_byte(0x11),
+            code: Some(code),
+        };
+        let mut bundle = BundleState::default();
+        bundle.state.insert(
+            Address::repeat_byte(0x55),
+            BundleAccount::new(None, Some(info), Default::default(), AccountStatus::Changed),
+        );
+
+        let err = collect_block_bytecodes(empty(), &bundle).unwrap_err();
+
+        assert!(err.to_string().contains("bytecode hash mismatch"));
     }
 }
