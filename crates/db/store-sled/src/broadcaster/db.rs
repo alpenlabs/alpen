@@ -103,12 +103,19 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                         txs.insert(&reveal.0, &reveal.1)?;
                         Ok(Some((commit_idx, reveal_idx)))
                     }
-                    (Some(old_commit), Some(old_reveal))
-                        if old_commit.tx_raw() == commit.1.tx_raw()
-                            && old_reveal.tx_raw() == reveal.1.tx_raw() =>
-                    {
+                    (Some(old_commit), Some(old_reveal)) => {
                         if old_commit.status.may_be_live() || old_reveal.status.may_be_live() {
-                            return Ok(None);
+                            return if old_commit.tx_raw() == commit.1.tx_raw()
+                                && old_reveal.tx_raw() == reveal.1.tx_raw()
+                            {
+                                Ok(None)
+                            } else {
+                                Err(error::ConflictableTransactionError::Abort(
+                                    error::Error::abort(DbError::Other(
+                                        "commit/reveal pair conflicts with existing entries".into(),
+                                    )),
+                                ))
+                            };
                         }
                         let Some((commit_idx, reveal_idx)) = existing_indices else {
                             return Err(ConflictableTransactionError::Abort(TSledError::abort(
