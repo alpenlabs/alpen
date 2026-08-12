@@ -1,9 +1,9 @@
 //! Multi-block sequence tests for dependent snark account updates.
 
 use strata_acct_types::{BitcoinAmount, Hash};
-use strata_bridge_params::BridgeParams;
 use strata_ol_chain_types_v1::OLBlockHeaderV1;
 use strata_ol_state_types::ISnarkAccountState;
+use strata_ol_params::OLRuntimeParams;
 
 use crate::test_utils::*;
 use crate::verify_block;
@@ -58,7 +58,7 @@ fn test_dependent_snark_updates_advance_across_blocks() {
             block.header(),
             Some(&parent_header),
             block.body(),
-            BridgeParams::default(),
+            OLRuntimeParams::default(),
         )
         .expect("dependent snark update block should verify");
 

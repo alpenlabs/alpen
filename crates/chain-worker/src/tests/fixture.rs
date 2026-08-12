@@ -13,7 +13,6 @@ use strata_asm_checkpoint_types::{
     TerminalHeaderComplement,
 };
 use strata_asm_common::AsmManifest;
-use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
@@ -21,6 +20,7 @@ use strata_identifiers::{
 };
 use strata_ol_chain_types_v1::{MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_da_types_v1::OLDaPayloadV1;
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
 };
@@ -399,7 +399,7 @@ fn run_block_sync(
             block.header(),
             Some(&prev_header),
             block.body(),
-            BridgeParams::default(),
+            OLRuntimeParams::default(),
         )
         .expect("block-sync verify_block");
         logs.extend(block_logs);
@@ -434,7 +434,7 @@ fn rebuild_da_and_logs(
 ) -> (Vec<u8>, Vec<CheckpointOLLog>) {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
     let logs =
-        execute_block_batch_predrain(&mut da, blocks, genesis_header, BridgeParams::default())
+        execute_block_batch_predrain(&mut da, blocks, genesis_header, OLRuntimeParams::default())
             .expect("execute_block_batch_predrain");
     let blob = da
         .take_completed_epoch_da_blob()

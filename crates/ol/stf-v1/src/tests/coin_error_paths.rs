@@ -77,8 +77,8 @@ fn limbo_overflow_returns_clean_error() {
 /// defuses the payload on the `emit_typed_log` error instead of dropping it live.
 #[test]
 fn bridge_withdrawal_log_overflow_returns_clean_error() {
-    use strata_bridge_params::BridgeParams;
     use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, OLLog};
+    use strata_ol_params::OLRuntimeParams;
 
     let mut state = make_genesis_state();
     let sender = make_account_id(TEST_SNARK_ACCOUNT_ID);
@@ -103,7 +103,7 @@ fn bridge_withdrawal_log_overflow_returns_clean_error() {
 
     let block_info = BlockInfo::new(1, 1, 1);
     let context =
-        BasicExecContext::new(block_info, &outputs).with_bridge_params(BridgeParams::default());
+        BasicExecContext::new(block_info, &outputs).with_runtime_params(OLRuntimeParams::default());
 
     let err = account_processing::process_message(
         &mut state,

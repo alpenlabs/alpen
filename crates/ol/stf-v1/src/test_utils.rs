@@ -84,7 +84,7 @@ use strata_ol_msg_types::{
     DEFAULT_OPERATOR_FEE, DEPOSIT_MSG_TYPE_ID, DepositMsgData, WITHDRAWAL_MSG_TYPE_ID,
     WithdrawalMsgData,
 };
-use strata_ol_params::{BridgeParams, OLParams};
+use strata_ol_params::{OLParams, OLRuntimeParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::{
@@ -484,7 +484,7 @@ pub fn execute_block(
     components: BlockComponents,
 ) -> ExecResult<CompletedBlock> {
     let block_context = BlockContext::new(block_info, parent_header);
-    execute_and_complete_block(state, block_context, components, BridgeParams::default())
+    execute_and_complete_block(state, block_context, components, OLRuntimeParams::default())
 }
 
 /// Executes a block and returns the construct output, which includes both the completed block and
@@ -496,7 +496,7 @@ pub fn execute_block_with_outputs(
     components: BlockComponents,
 ) -> ExecResult<ConstructBlockOutput> {
     let block_context = BlockContext::new(block_info, parent_header);
-    construct_block(state, block_context, components, BridgeParams::default())
+    construct_block(state, block_context, components, OLRuntimeParams::default())
 }
 
 /// Executes a transaction in a non-genesis block.
@@ -585,7 +585,7 @@ pub fn assert_verification_succeeds<S: IStateAccessorMut>(
         header,
         parent_header.as_ref(),
         body,
-        BridgeParams::default(),
+        OLRuntimeParams::default(),
     );
     assert!(
         result.is_ok(),
@@ -607,7 +607,7 @@ pub fn assert_verification_fails_with(
         header,
         parent_header.as_ref(),
         body,
-        BridgeParams::default(),
+        OLRuntimeParams::default(),
     );
     assert!(
         result.is_err(),

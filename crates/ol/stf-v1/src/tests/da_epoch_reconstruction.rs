@@ -6,11 +6,11 @@
 //! with empty filler blocks around the meaningful ones.
 
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
-use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{Buf32, OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::{IAccountState, IStateAccessor};
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
@@ -337,8 +337,13 @@ fn reconstruct_epoch(
     blocks: &[OLBlockV1],
 ) -> Buf32 {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
-    execute_block_batch_predrain(&mut da, blocks, genesis.header(), BridgeParams::default())
-        .expect("execute_block_batch_predrain");
+    execute_block_batch_predrain(
+        &mut da,
+        blocks,
+        genesis.header(),
+        OLRuntimeParams::default(),
+    )
+    .expect("execute_block_batch_predrain");
     let da_blob = da
         .take_completed_epoch_da_blob()
         .expect("finalize DA")
