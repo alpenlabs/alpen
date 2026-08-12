@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, OLLog};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
 use strata_ol_state_types::{IAccountStateMut, IStateAccessorMut};
 use strata_ol_stf_v1::execute_block_batch_predrain;
@@ -122,7 +122,7 @@ pub(crate) struct EpochBlocks {
 pub(crate) async fn rebuild_epoch_resource_state_upto<C: BlockAssemblyAnchorContext>(
     blkid: OLBlockCommitment,
     epoch: Epoch,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
     ctx: &C,
 ) -> Result<EpochResourceState, BlockAssemblyError>
 where
@@ -139,7 +139,7 @@ where
         &mut da_state,
         &epoch_blocks.blocks,
         &epoch_blocks.epoch_parent,
-        bridge_params,
+        runtime_params,
     )
     .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
 
@@ -387,7 +387,7 @@ mod tests {
         let err = rebuild_epoch_resource_state_upto(
             target_commitment,
             2,
-            BridgeParams::default(),
+            OLRuntimeParams::default(),
             env.ctx(),
         )
         .await

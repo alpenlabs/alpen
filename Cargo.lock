@@ -9500,6 +9500,7 @@ dependencies = [
  "strata-identifiers",
  "strata-node-context",
  "strata-ol-chain-types-v1",
+ "strata-ol-params",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",

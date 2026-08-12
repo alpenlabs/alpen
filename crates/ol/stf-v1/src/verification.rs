@@ -4,7 +4,6 @@
 //! assembly as they perform all of the block validation checks including
 //! outputs (corresponding with headers/checkpoints/etc).
 
-use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_v1::{
@@ -12,6 +11,7 @@ use strata_ol_chain_types_v1::{
     OLLog, OLTxSegmentV1,
 };
 use strata_ol_da_common::DaScheme;
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types::*;
 use tracing::error;
 
@@ -113,11 +113,11 @@ pub fn verify_block<S: IStateAccessorMut>(
     header: &OLBlockHeaderV1,
     parent_header: Option<&OLBlockHeaderV1>,
     body: &OLBlockBodyV1,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
 
-    let mut logs = verify_block_predrain(state, header, parent_header, body, bridge_params)?;
+    let mut logs = verify_block_predrain(state, header, parent_header, body, runtime_params)?;
     logs.extend(apply_epoch_terminal(state, header, body)?);
 
     // Verify logs size.
@@ -157,7 +157,7 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
     header: &OLBlockHeaderV1,
     parent_header: Option<&OLBlockHeaderV1>,
     body: &OLBlockBodyV1,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     // 0. Do preliminary sanity checks.
     verify_header_continuity(header, parent_header)?;
@@ -180,7 +180,7 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
     // 3. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
     let basic_ctx =
-        BasicExecContext::new(block_info, &output_buffer).with_bridge_params(bridge_params);
+        BasicExecContext::new(block_info, &output_buffer).with_runtime_params(runtime_params);
     let tx_ctx = TxExecContext::new(&basic_ctx, parent_header);
     if let Some(tx_segment) = body.tx_segment() {
         transaction_processing::process_block_tx_segment(state, tx_segment, &tx_ctx)?;

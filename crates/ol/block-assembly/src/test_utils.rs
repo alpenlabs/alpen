@@ -47,7 +47,7 @@ use strata_ol_chain_types_v1::{
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
-use strata_ol_params::{BridgeParams, OLParams};
+use strata_ol_params::{OLParams, OLRuntimeParams};
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::*;
@@ -163,7 +163,13 @@ pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) ->
 /// Uses unit types for mempool and state provider since
 /// proof generation only requires storage access.
 pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyContext<(), ()> {
-    BlockAssemblyContext::new(storage, (), (), TEST_L1_REORG_SAFE_DEPTH)
+    BlockAssemblyContext::new(
+        storage,
+        (),
+        (),
+        TEST_L1_REORG_SAFE_DEPTH,
+        OLRuntimeParams::default(),
+    )
 }
 
 /// Default `l1_reorg_safe_depth` used in block-assembly tests that don't exercise
@@ -657,7 +663,7 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_v1::OLBlockHe
         &mut temp_state,
         genesis_context,
         genesis_components,
-        BridgeParams::default(),
+        OLRuntimeParams::default(),
     )
     .unwrap();
     genesis_output.completed_block().header().clone()
@@ -1067,7 +1073,6 @@ impl TestEnv {
             self.sequencer_config(),
             config,
             resource_state_before_block,
-            BridgeParams::default(),
         )
         .await
     }
@@ -1378,7 +1383,7 @@ impl TestStorageFixtureBuilder {
                     &mut state,
                     block_context,
                     components,
-                    BridgeParams::default(),
+                    OLRuntimeParams::default(),
                 )
                 .expect("Genesis block execution should succeed");
 
@@ -1549,6 +1554,7 @@ pub(crate) fn create_test_block_assembly_context(
         mempool_provider.clone(),
         state_provider,
         l1_reorg_safe_depth,
+        OLRuntimeParams::default(),
     );
     (ctx, mempool_provider)
 }
@@ -1636,7 +1642,6 @@ pub(crate) async fn assemble_block_with_txs(
         block_epoch,
         txs,
         resource_state_before_block,
-        BridgeParams::default(),
     )
     .await
 }

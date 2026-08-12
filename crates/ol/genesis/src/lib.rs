@@ -63,7 +63,7 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     let mut ol_state = MemoryStateBaseLayer::new(ol_state_raw);
 
     // Create genesis block info.
-    let genesis_ts = params.header.timestamp;
+    let genesis_ts = params.genesis.header.timestamp;
     let genesis_info = BlockInfo::new_genesis(genesis_ts);
 
     // Do not include the genesis manifest in OL state's ASM manifest accumulator.
@@ -82,7 +82,7 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
         &mut ol_state,
         block_context,
         genesis_components,
-        *params.bridge_params(),
+        params.runtime_params(),
     )?;
     let ol_state = ol_state.into_inner();
 
@@ -96,7 +96,7 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
         0,
         commitment,
         OLBlockCommitment::null(),
-        params.last_l1_block,
+        params.genesis_l1_block(),
         *genesis_block.header().state_root(),
     );
 
