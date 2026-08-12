@@ -25,6 +25,11 @@ CANONICAL_BLOCK_RE = re.compile(
     r"Block added to canonical chain number=(?P<number>\d+) hash=(?P<hash>0x[0-9a-fA-F]+)"
 )
 
+# tracing writes ANSI colour codes to stdout, including between a field name and
+# its value (`chain \x1b[3mnumber\x1b[0m\x1b[2m=\x1b[0m16`), so strip them before
+# matching or the pattern above can never match a captured service log.
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
 
 def wait_for_canonical_block_log(
     service,
@@ -46,7 +51,7 @@ def wait_for_canonical_block_log(
 
         with log_path.open("r", encoding="utf-8", errors="ignore") as log_file:
             for line in log_file:
-                match = CANONICAL_BLOCK_RE.search(line)
+                match = CANONICAL_BLOCK_RE.search(ANSI_ESCAPE_RE.sub("", line))
                 if not match:
                     continue
 
