@@ -43,6 +43,7 @@ pub struct OLGenesisParams {
 /// These fields affect OL STF execution and therefore must be bound to proof
 /// artifacts when the STF runs inside a zkVM guest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[cfg_attr(any(test, feature = "test-defaults"), derive(Default))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLRuntimeParams {
     /// Withdrawal denomination and optional cap.
@@ -60,6 +61,7 @@ impl OLRuntimeParams {
 /// This type separates genesis-only inputs from runtime parameters that are
 /// needed when executing the OL STF.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature = "test-defaults"), derive(Default))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLParams {
     /// Params used to construct OL genesis state.
@@ -125,31 +127,6 @@ impl OLParams {
             self.genesis.header.slot,
             self.genesis.header.parent_blkid,
         )
-    }
-}
-
-#[cfg(any(test, feature = "test-defaults"))]
-#[expect(
-    clippy::derivable_impls,
-    reason = "OLParams defaults are only available in test builds and depend on gated bridge params defaults"
-)]
-impl Default for OLParams {
-    fn default() -> Self {
-        Self::from_parts(
-            OLGenesisParams::default(),
-            OLRuntimeParams {
-                bridge_params: BridgeParams::default(),
-            },
-        )
-    }
-}
-
-#[cfg(any(test, feature = "test-defaults"))]
-impl Default for OLRuntimeParams {
-    fn default() -> Self {
-        Self {
-            bridge_params: BridgeParams::default(),
-        }
     }
 }
 

@@ -4,12 +4,12 @@
 
 use strata_acct_types::BitcoinAmount;
 use strata_asm_common::AsmManifest;
-use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{OLBlockCommitment, SubjectId};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types::{OLBlock, OLBlockHeader};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 
 use crate::{
@@ -168,7 +168,7 @@ fn rebuild_da_blob(
         &mut da,
         blocks,
         prev_terminal_header,
-        BridgeParams::default(),
+        OLRuntimeParams::default(),
     )
     .expect("execute_block_batch_predrain");
     da.take_completed_epoch_da_blob()

@@ -12,13 +12,13 @@ use std::{collections::HashMap, sync::Mutex};
 use strata_acct_types::BitcoinAmount;
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
-use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
     Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId, SubjectId,
 };
 use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_ol_stf::test_utils::{
     EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, epoch_runner_run_genesis as run_genesis,
@@ -219,7 +219,7 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         merged_epochs: Mutex::new(Vec::new()),
     };
 
-    exec_block(&ctx, BridgeParams::default(), &terminal_commitment)
+    exec_block(&ctx, OLRuntimeParams::default(), &terminal_commitment)
         .expect("single-block epoch executes");
 
     let summaries = ctx.stored_summaries.lock().unwrap();

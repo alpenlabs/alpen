@@ -12,7 +12,6 @@ use strata_acct_types::{
 };
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
-use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,

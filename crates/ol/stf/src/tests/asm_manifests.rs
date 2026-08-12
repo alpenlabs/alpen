@@ -4,7 +4,6 @@ use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_asm_checkpoint_types::CheckpointTip;
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
-use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
     Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId,
@@ -13,6 +12,7 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::MAX_TYPE;
 use strata_ol_chain_types::MAX_SEALING_MANIFEST_COUNT;
 use strata_ol_da::OLDaPayloadV1;
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::DaAccumulatingState;
 
 use crate::{
@@ -221,7 +221,7 @@ fn test_deposit_terminal_drain_has_no_logs_or_predrain_effects() {
         &mut predrain_state,
         &[to_ol_block(output.completed_block())],
         &parent_header,
-        BridgeParams::default(),
+        OLRuntimeParams::default(),
     )
     .expect("pre-drain checkpoint replay should succeed");
     assert_eq!(
