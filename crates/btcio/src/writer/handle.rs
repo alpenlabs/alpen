@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use anyhow::Context;
 use strata_csm_types::{PayloadDest, PayloadIntent};
 use strata_db_types::l1_writer::{BundledPayloadEntry, IntentEntry, IntentStatus, L1BundleStatus};
 use strata_primitives::buf::Buf32;
@@ -139,9 +138,9 @@ impl EnvelopeHandle {
 pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow::Result<u64> {
     let next_idx = insc_ops.get_next_payload_idx_blocking()?;
     for idx in 0..next_idx {
-        let payload = insc_ops
-            .get_payload_entry_by_idx_blocking(idx)?
-            .with_context(|| format!("inconsistent L1 writer DB: missing payload idx {idx}"))?;
+        let Some(payload) = insc_ops.get_payload_entry_by_idx_blocking(idx)? else {
+            continue;
+        };
         if !payload.status.is_terminal() {
             return Ok(idx);
         }
