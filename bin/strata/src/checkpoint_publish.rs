@@ -58,7 +58,7 @@ impl CheckpointPublishPolicy {
             warn!(%err, "checkpoint safe epoch is unavailable");
             None
         });
-        checkpoint_decision(checkpoint.new_tip().epoch, latest_epoch, safe_epoch)
+        accepted_checkpoint_decision(checkpoint.new_tip().epoch, safe_epoch)
     }
 
     /// Returns the final epoch from the latest client state when its L1 anchor is canonical.
@@ -234,17 +234,13 @@ fn is_envelope_reveal(tx: &Transaction) -> bool {
         .is_some_and(|leaf| parse_envelope_payload(&leaf.script.into()).is_ok())
 }
 
-/// Publishes checkpoints ahead of ASM, abandons reorg-safe checkpoints, and
-/// defers those accepted by canonical ASM but not yet safe.
-fn checkpoint_decision(
+/// Abandons reorg-safe checkpoints and defers accepted checkpoints that are not yet safe.
+fn accepted_checkpoint_decision(
     checkpoint_epoch: Epoch,
-    latest_epoch: Epoch,
     safe_epoch: Option<Epoch>,
 ) -> PublishDecision {
     if safe_epoch.is_some_and(|epoch| checkpoint_epoch <= epoch) {
         PublishDecision::Abandon
-    } else if checkpoint_epoch > latest_epoch {
-        PublishDecision::Publish
     } else {
         PublishDecision::Defer
     }
@@ -419,19 +415,11 @@ mod tests {
     fn checkpoint_and_pair_decisions_cover_safe_publication_states() {
         let epoch = Epoch::from(14u32);
         assert_eq!(
-            checkpoint_decision(epoch, Epoch::from(13u32), None),
-            PublishDecision::Publish
-        );
-        assert_eq!(
-            checkpoint_decision(epoch, epoch, None),
+            accepted_checkpoint_decision(epoch, None),
             PublishDecision::Defer
         );
         assert_eq!(
-            checkpoint_decision(epoch, epoch, Some(epoch)),
-            PublishDecision::Abandon
-        );
-        assert_eq!(
-            checkpoint_decision(epoch, Epoch::from(13u32), Some(epoch)),
+            accepted_checkpoint_decision(epoch, Some(epoch)),
             PublishDecision::Abandon
         );
 
