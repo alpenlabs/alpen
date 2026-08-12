@@ -97,7 +97,10 @@ impl L1WriterDatabase for L1WriterDBSled {
                 let Some(mut intent) = it.get(&intent_id)? else {
                     return Ok(None);
                 };
-                if intent.status != IntentStatus::Bundled(abandoned_payload_idx)
+                if intent.status
+                    != (IntentStatus::Bundled {
+                        bundle_idx: abandoned_payload_idx,
+                    })
                     || pt.get(&abandoned_payload_idx)?.map(|p| p.status)
                         != Some(L1BundleStatus::Abandoned)
                 {
@@ -105,7 +108,7 @@ impl L1WriterDatabase for L1WriterDBSled {
                 }
                 let idx = find_next_available_id(&pt, next_idx)?;
                 pt.insert(&idx, &payload_entry)?;
-                intent.status = IntentStatus::Bundled(idx);
+                intent.status = IntentStatus::Bundled { bundle_idx: idx };
                 it.insert(&intent_id, &intent)?;
                 Ok(Some(idx))
             })

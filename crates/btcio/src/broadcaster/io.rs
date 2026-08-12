@@ -27,7 +27,12 @@ pub(crate) fn is_benign_minus25_message(msg: &str) -> bool {
 
 /// IO context abstraction for broadcaster service internals.
 pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
-    fn publish_decision(&self, tx: &Transaction) -> PublishDecision;
+    fn publish_decision<'a>(
+        &'a self,
+        idx: u64,
+        tx: &'a Transaction,
+        context: PublishContext,
+    ) -> impl Future<Output = PublishDecision> + Send + 'a;
 
     /// Returns the next write index in broadcaster database.
     fn get_next_tx_idx(&self) -> impl Future<Output = BroadcasterResult<u64>> + Send;
@@ -82,17 +87,31 @@ pub enum PublishDecision {
     Publish,
     Defer,
     Abandon,
+    /// Marks an unusable transaction so its owner can rebuild it.
+    Invalidate,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PublishContext {
+    /// The transaction has not crossed the Bitcoin RPC boundary.
+    #[default]
+    Initial,
+    /// A previous submission may have crossed the Bitcoin RPC boundary.
+    Recovery,
+}
+
+/// Decides whether a broadcaster entry may cross the Bitcoin RPC boundary.
+#[async_trait::async_trait]
 pub trait PublishPolicy: Send + Sync + 'static {
-    fn decide(&self, tx: &Transaction) -> PublishDecision;
+    async fn decide(&self, idx: u64, tx: &Transaction, context: PublishContext) -> PublishDecision;
 }
 
 #[derive(Debug)]
 pub struct AllowAllPublishPolicy;
 
+#[async_trait::async_trait]
 impl PublishPolicy for AllowAllPublishPolicy {
-    fn decide(&self, _: &Transaction) -> PublishDecision {
+    async fn decide(&self, _: u64, _: &Transaction, _: PublishContext) -> PublishDecision {
         PublishDecision::Publish
     }
 }
@@ -260,8 +279,13 @@ impl<T> BroadcasterIoContext for BroadcasterIo<T>
 where
     T: Broadcaster + WalletTxLookup,
 {
-    fn publish_decision(&self, tx: &Transaction) -> PublishDecision {
-        self.policy.decide(tx)
+    async fn publish_decision(
+        &self,
+        idx: u64,
+        tx: &Transaction,
+        context: PublishContext,
+    ) -> PublishDecision {
+        self.policy.decide(idx, tx, context).await
     }
 
     async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {

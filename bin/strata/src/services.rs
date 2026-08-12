@@ -95,7 +95,10 @@ mod sequencer_services {
             nodectx.asm_params(),
             nodectx.config().btcio.l1_reorg_safe_depth,
         );
-        let policy = Arc::new(CheckpointPublishPolicy::new(nodectx.storage().clone()));
+        let policy = Arc::new(CheckpointPublishPolicy::new(
+            nodectx.storage().clone(),
+            btcio_params.magic_bytes(),
+        ));
 
         nodectx.task_manager().handle().block_on(async {
             BroadcasterBuilder::new(

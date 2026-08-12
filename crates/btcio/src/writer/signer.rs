@@ -411,32 +411,6 @@ async fn replacement_swap_already_applied(
         .is_some())
 }
 
-async fn put_tx_entry_if_missing(
-    broadcast_handle: &L1BroadcastHandle,
-    txid: L1TxId,
-    tx: &Transaction,
-    fee: Amount,
-    envelope: &EnvelopeData,
-) -> Result<(), EnvelopeError> {
-    if broadcast_handle
-        .get_tx_entry_by_id_async(to_raw_buf32(txid))
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?
-        .is_some()
-    {
-        return Ok(());
-    }
-
-    broadcast_handle
-        .put_tx_entry(
-            to_raw_buf32(txid),
-            L1TxEntry::from_tx_with_fee(tx, envelope.fee_rate, fee),
-        )
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
-    Ok(())
-}
-
 async fn put_tx_node(
     broadcast_handle: &L1BroadcastHandle,
     kind: TxNodeKind,

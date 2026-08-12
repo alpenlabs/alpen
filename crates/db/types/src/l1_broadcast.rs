@@ -44,7 +44,7 @@ impl L1TxEntry {
     pub fn new_unpublished(tx_raw: Vec<u8>) -> Self {
         Self {
             tx_raw,
-            status: L1TxStatus::Unpublished,
+            status: L1TxStatus::Queued,
             rbf: None,
         }
     }
@@ -120,7 +120,7 @@ pub struct L1TxRbfInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum L1TxStatus {
-    /// The transaction is waiting to be published
+    /// Legacy transaction whose submission state predates durable tracking.
     Unpublished,
 
     /// The transaction is published
@@ -157,6 +157,15 @@ pub enum L1TxStatus {
 
     /// The transaction was deliberately excluded from publication.
     Abandoned,
+
+    /// Publication started, but Bitcoin acceptance has not been durably observed.
+    ///
+    /// This state survives a crash between `sendrawtransaction` and recording its
+    /// response, so recovery can distinguish it from a never-submitted transaction.
+    Submitting,
+
+    /// The transaction is durably queued and has never been submitted.
+    Queued,
 }
 
 impl L1TxStatus {
@@ -165,9 +174,9 @@ impl L1TxStatus {
         !matches!(self, Self::InvalidInputs | Self::Abandoned)
     }
 
-    /// Returns whether the transaction has not been submitted to L1.
-    pub fn is_unpublished(&self) -> bool {
-        matches!(self, Self::Unpublished)
+    /// Returns whether publication has not produced a definitive outcome.
+    pub fn submission_pending(&self) -> bool {
+        matches!(self, Self::Queued | Self::Unpublished | Self::Submitting)
     }
 
     /// Returns whether the transaction was submitted to or observed on L1.
@@ -176,6 +185,11 @@ impl L1TxStatus {
             self,
             Self::Published | Self::Confirmed { .. } | Self::Finalized { .. }
         )
+    }
+
+    /// Returns whether publication started or the transaction was observed on L1.
+    pub fn submission_started(&self) -> bool {
+        matches!(self, Self::Unpublished | Self::Submitting) || self.has_reached_l1()
     }
 }
 
@@ -207,6 +221,8 @@ impl fmt::Display for L1TxStatus {
             Self::InvalidInputs => f.write_str("invalid_inputs"),
             Self::Replaced { by } => write!(f, "replaced_by({by})"),
             Self::Abandoned => f.write_str("abandoned"),
+            Self::Submitting => f.write_str("submitting"),
+            Self::Queued => f.write_str("queued"),
         }
     }
 }
@@ -378,6 +394,8 @@ mod tests {
                 r#"{"status":"replaced","by":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
             ),
             (L1TxStatus::Abandoned, r#"{"status":"abandoned"}"#),
+            (L1TxStatus::Submitting, r#"{"status":"submitting"}"#),
+            (L1TxStatus::Queued, r#"{"status":"queued"}"#),
         ];
 
         // check serialization and deserialization
@@ -399,5 +417,12 @@ mod tests {
         };
 
         assert_eq!(status.to_string(), "confirmed@42/000000..000000 (12 confs)");
+    }
+
+    #[test]
+    fn submitting_is_append_only_in_borsh_encoding() {
+        assert_eq!(borsh::to_vec(&L1TxStatus::Abandoned).unwrap()[0], 5);
+        assert_eq!(borsh::to_vec(&L1TxStatus::Submitting).unwrap()[0], 6);
+        assert_eq!(borsh::to_vec(&L1TxStatus::Queued).unwrap()[0], 7);
     }
 }
