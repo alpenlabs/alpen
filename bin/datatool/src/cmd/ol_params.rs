@@ -55,7 +55,7 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
         balance,
     };
     let account_id = ee_params.account_id();
-    ol_params.accounts.insert(account_id, alpen_ee_account);
+    ol_params.insert_genesis_account(account_id, alpen_ee_account);
 
     let params_buf = serde_json::to_string_pretty(&ol_params)?;
 
