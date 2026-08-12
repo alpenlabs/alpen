@@ -662,6 +662,8 @@ dependencies = [
 name = "guest-sp1-checkpoint"
 version = "0.1.0"
 dependencies = [
+ "ssz",
+ "strata-ol-params",
  "strata-proofimpl-checkpoint",
  "zkaleido-sp1-guest-env",
 ]
@@ -2212,6 +2214,7 @@ dependencies = [
  "strata-crypto",
  "strata-ol-chain-types-v1",
  "strata-ol-da-types-v1",
+ "strata-ol-params",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",

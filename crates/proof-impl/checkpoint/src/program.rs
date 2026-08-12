@@ -1,8 +1,8 @@
 use k256::schnorr::SigningKey;
 use ssz::{Decode, Encode};
 use strata_asm_checkpoint_types::CheckpointClaim;
-use strata_bridge_params::BridgeParams;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types_v1::OLStateV1;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use zkaleido::{PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
@@ -20,7 +20,6 @@ pub struct CheckpointProverInput {
     pub blocks: Vec<OLBlockV1>,
     pub parent: OLBlockHeaderV1,
     pub da_state_diff_bytes: Vec<u8>,
-    pub bridge_params: BridgeParams,
 }
 
 #[derive(Debug)]
@@ -47,7 +46,6 @@ impl ZkVmProgram for CheckpointProgram {
         input_builder.write_buf(&input.blocks.as_ssz_bytes())?;
         input_builder.write_buf(&input.parent.as_ssz_bytes())?;
         input_builder.write_buf(&input.da_state_diff_bytes)?;
-        input_builder.write_buf(&input.bridge_params.as_ssz_bytes())?;
         input_builder.build()
     }
 
@@ -61,8 +59,10 @@ impl ZkVmProgram for CheckpointProgram {
 }
 
 impl CheckpointProgram {
-    pub fn native_host() -> NativeHost {
-        NativeHost::new(test_signing_key(), process_ol_stf)
+    pub fn native_host(runtime_params: OLRuntimeParams) -> NativeHost {
+        NativeHost::new(test_signing_key(), move |zkvm| {
+            process_ol_stf(zkvm, runtime_params)
+        })
     }
 
     /// Predicate key matching the signing key the native host uses, for wiring into
@@ -73,12 +73,13 @@ impl CheckpointProgram {
             .expect("predicate condition must fit within the maximum length")
     }
 
-    /// Executes the checkpoint program using the native host for testing.
+    /// Executes the checkpoint program using the native host.
     pub fn execute(
         input: &<Self as ZkVmProgram>::Input,
+        runtime_params: OLRuntimeParams,
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {
         // Get the native host and delegate to the trait's execute method
-        let host = Self::native_host();
+        let host = Self::native_host(runtime_params);
         let summary = <Self as ZkVmProgram>::execute(input, &host)?;
         <Self as ZkVmProgram>::process_output::<NativeHost>(summary.public_values())
     }
@@ -89,13 +90,13 @@ mod tests {
     use std::panic::catch_unwind;
 
     use strata_asm_checkpoint_types::TerminalHeaderComplement;
-    use strata_bridge_params::BridgeParams;
     use strata_codec::encode_to_vec;
     use strata_crypto::hash;
     use strata_da_framework::DaCounter;
     use strata_identifiers::Buf64;
     use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
     use strata_ol_da_types_v1::{GlobalStateDiffV1, LedgerDiffV1, OLDaPayloadV1, OLStateDiffV1};
+    use strata_ol_params::OLRuntimeParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::IStateAccessor;
     use strata_ol_stf_v1::test_utils::{build_empty_chain, make_genesis_state};
@@ -142,7 +143,6 @@ mod tests {
             blocks,
             parent,
             da_state_diff_bytes,
-            bridge_params: BridgeParams::default(),
         }
     }
 
@@ -150,7 +150,7 @@ mod tests {
     fn test_statements_success() {
         let input = prepare_input();
 
-        let claim = CheckpointProgram::execute(&input).unwrap();
+        let claim = CheckpointProgram::execute(&input, OLRuntimeParams::default()).unwrap();
 
         assert_eq!(
             *claim.l2_range().start().blkid(),
@@ -184,7 +184,8 @@ mod tests {
         let mut input = prepare_input();
         input.da_state_diff_bytes = vec![1, 2, 3, 4];
 
-        let panic_res = catch_unwind(|| CheckpointProgram::execute(&input));
+        let panic_res =
+            catch_unwind(|| CheckpointProgram::execute(&input, OLRuntimeParams::default()));
         assert!(
             panic_res.is_err(),
             "invalid DA payload encoding must panic in statement verification"
@@ -209,7 +210,8 @@ mod tests {
         input.da_state_diff_bytes =
             encode_to_vec(&OLDaPayloadV1::new(bad_da_diff)).expect("encode bad DA payload");
 
-        let panic_res = catch_unwind(|| CheckpointProgram::execute(&input));
+        let panic_res =
+            catch_unwind(|| CheckpointProgram::execute(&input, OLRuntimeParams::default()));
         assert!(
             panic_res.is_err(),
             "mismatched DA witness must panic in statement verification"

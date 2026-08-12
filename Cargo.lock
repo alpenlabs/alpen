@@ -9945,6 +9945,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-chain-types-v1",
  "strata-ol-da-types-v1",
+ "strata-ol-params",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
@@ -10144,10 +10145,13 @@ dependencies = [
  "cfg-if",
  "hex",
  "once_cell",
+ "serde_json",
  "sha2",
  "sp1-helper",
  "sp1-sdk",
  "sp1-verifier",
+ "ssz",
+ "strata-ol-params",
  "zkaleido-sp1-groth16-verifier",
 ]
 
