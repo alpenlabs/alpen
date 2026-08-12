@@ -919,10 +919,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     .put_payload_entry(self.curr_payloadidx, updated_entry)
                     .await?;
 
-                if matches!(
-                    new_status,
-                    L1BundleStatus::Finalized | L1BundleStatus::Abandoned
-                ) {
+                if new_status.is_terminal() {
                     self.curr_payloadidx += 1;
                 }
             }
@@ -947,10 +944,7 @@ async fn update_l1_status(
 ) {
     // Update L1 status. Since we are processing one payloadentry at a time, if the entry is
     // finalized/confirmed, then it means it is published as well
-    if *new_status == L1BundleStatus::Published
-        || *new_status == L1BundleStatus::Confirmed
-        || *new_status == L1BundleStatus::Finalized
-    {
+    if new_status.has_reached_l1() {
         let status_updates = [
             L1StatusUpdate::LastPublishedTxid(to_raw_buf32(payloadentry.reveal_txid).to_txid()),
             L1StatusUpdate::IncrementPublishedRevealCount,

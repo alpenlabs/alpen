@@ -172,6 +172,18 @@ pub enum L1BundleStatus {
     Abandoned,
 }
 
+impl L1BundleStatus {
+    /// Returns whether the bundle status records publication on L1.
+    pub fn has_reached_l1(&self) -> bool {
+        matches!(self, Self::Published | Self::Confirmed | Self::Finalized)
+    }
+
+    /// Returns whether the writer has no more work for this bundle.
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Finalized | Self::Abandoned)
+    }
+}
+
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
 /// database and to fetch [`BundledPayloadEntry`] and indices from the database
 #[cfg_attr(

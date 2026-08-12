@@ -139,10 +139,7 @@ pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow
         let payload = insc_ops
             .get_payload_entry_by_idx_blocking(idx)?
             .with_context(|| format!("inconsistent L1 writer DB: missing payload idx {idx}"))?;
-        if !matches!(
-            payload.status,
-            L1BundleStatus::Finalized | L1BundleStatus::Abandoned
-        ) {
+        if !payload.status.is_terminal() {
             return Ok(idx);
         }
     }
