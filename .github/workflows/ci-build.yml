@@ -237,7 +237,7 @@ jobs:
 
           ls -la artifacts/ artifacts/elfs/sp1/
 
-          # Echo VKs for cross-validation against ci-genparams workflow
+          # Echo VKs for human-readable build output.
           CHECKPOINT_VK=$(./target/release/strata-datatool gen-checkpoint-predicate)
           echo "Checkpoint VK (ci-build): ${CHECKPOINT_VK}"
 
@@ -422,7 +422,7 @@ jobs:
 
       # --- Publish strata-datatool as its own image ---------------------------
       # Reuses the binary already staged at docker/strata/artifacts/ for the
-      # strata image. Consumers (generate-params.yml, other pipelines) can
+      # strata image. Consumers can
       # `docker run` this image directly instead of extracting the binary
       # from the larger strata image.
       - name: Build and push strata-datatool image
