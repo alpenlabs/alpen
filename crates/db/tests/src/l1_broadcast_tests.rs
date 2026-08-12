@@ -123,9 +123,17 @@ pub fn test_put_tx_entry_pair(db: &impl L1BroadcastDatabase) {
     let mut invalid_reveal = db.get_tx_entry(reveal_idx).unwrap().unwrap();
     invalid_reveal.status = L1TxStatus::InvalidInputs;
     db.put_tx_entry_by_idx(reveal_idx, invalid_reveal).unwrap();
+    let mut resigned = [txs[0].clone(), txs[1].clone()];
+    resigned[0].input[0].witness.push([1]);
+    resigned[1].input[0].witness.push([2]);
     assert_eq!(
-        db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[1])).unwrap(),
+        db.put_tx_entry_pair(pair(&resigned[0]), pair(&resigned[1]))
+            .unwrap(),
         Some((commit_idx, reveal_idx))
+    );
+    assert_eq!(
+        db.get_tx_entry(commit_idx).unwrap(),
+        Some(L1TxEntry::from_tx(&resigned[0]))
     );
     assert_eq!(db.get_next_tx_idx().unwrap(), 2);
 }
