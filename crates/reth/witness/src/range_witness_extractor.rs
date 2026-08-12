@@ -11,7 +11,7 @@ use std::{
     sync::Arc,
 };
 
-use alloy_consensus::Header;
+use alloy_consensus::{Header, Transaction};
 use alloy_primitives::{
     keccak256,
     map::{B256Set, DefaultHashBuilder, HashMap},
@@ -230,6 +230,24 @@ where
             acc.block_idxs
                 .extend(record.ancestor_block_numbers.iter().copied());
 
+            // EIP-7702 delegation designations are synthesized from transaction
+            // inputs. A designation can be installed and replaced or cleared in
+            // the same block, so neither the parent state nor the final execution
+            // state is guaranteed to retain its bytecode. The guest still needs
+            // that transient code when replaying transactions in order.
+            let designation_targets = block
+                .body
+                .transactions()
+                .flat_map(|tx| tx.authorization_list().into_iter().flatten())
+                .map(|authorization| *authorization.address());
+            let added =
+                supplement_authorization_bytecodes(&mut acc.bytecodes, designation_targets)?;
+            debug!(
+                block_num = blk_num,
+                authorization_bytecodes_added = added,
+                "closed range witness over EIP-7702 transaction bytecode"
+            );
+
             blocks.push(block);
         }
 
@@ -355,6 +373,43 @@ where
     }
 }
 
+/// Adds every non-reset EIP-7702 delegation designation declared by transactions.
+///
+/// Authorization validity is deliberately not re-evaluated here. Including an
+/// invalid authorization's content-addressed designation is harmless, while
+/// trying to duplicate execution's chain-id, signature, nonce, and account-code
+/// checks would create a second consensus implementation in the witness builder.
+fn supplement_authorization_bytecodes(
+    bytecodes: &mut HashMap<B256, Bytecode>,
+    targets: impl IntoIterator<Item = Address>,
+) -> Result<usize> {
+    let mut added = 0;
+
+    for target in targets {
+        // A zero target clears delegation code and does not install a
+        // designation (EIP-7702 step 8 special case).
+        if target.is_zero() {
+            continue;
+        }
+
+        let bytecode = Bytecode::new_eip7702(target);
+        let code_hash = bytecode.hash_slow();
+        if let Some(existing) = bytecodes.get(&code_hash) {
+            if existing.original_bytes() != bytecode.original_bytes() {
+                return Err(eyre!(
+                    "conflicting EIP-7702 designation bytecode for hash {code_hash}: target={target}"
+                ));
+            }
+            continue;
+        }
+
+        bytecodes.insert(code_hash, bytecode);
+        added += 1;
+    }
+
+    Ok(added)
+}
+
 /// Adds bytecode referenced by accessed accounts in the range's initial state.
 ///
 /// Per-block access records are necessary but not sufficient for a multi-block
@@ -409,11 +464,53 @@ struct AccumulatedState {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::once;
+    use std::iter::{empty, once};
 
     use alloy_primitives::Bytes;
 
     use super::*;
+
+    #[test]
+    fn supplements_transient_eip7702_authorization_bytecode() {
+        let target = Address::repeat_byte(0x24);
+        let expected = Bytecode::new_eip7702(target);
+        let code_hash = expected.hash_slow();
+        let mut bytecodes = HashMap::default();
+
+        let added =
+            supplement_authorization_bytecodes(&mut bytecodes, [target, Address::ZERO, target])
+                .unwrap();
+
+        assert_eq!(added, 1);
+        assert_eq!(bytecodes.len(), 1);
+        assert_eq!(bytecodes.get(&code_hash), Some(&expected));
+    }
+
+    #[test]
+    fn rejects_conflicting_authorization_bytecode() {
+        let target = Address::repeat_byte(0x24);
+        let code_hash = Bytecode::new_eip7702(target).hash_slow();
+        let mut bytecodes = HashMap::from_iter([(
+            code_hash,
+            Bytecode::new_raw(Bytes::from_static(&[0x60, 0x00])),
+        )]);
+
+        let err = supplement_authorization_bytecodes(&mut bytecodes, once(target)).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("conflicting EIP-7702 designation bytecode"));
+    }
+
+    #[test]
+    fn empty_authorization_targets_do_not_change_bytecodes() {
+        let mut bytecodes = HashMap::default();
+
+        let added = supplement_authorization_bytecodes(&mut bytecodes, empty()).unwrap();
+
+        assert_eq!(added, 0);
+        assert!(bytecodes.is_empty());
+    }
 
     #[test]
     fn supplements_delegation_code_referenced_only_by_pre_state_account() {
