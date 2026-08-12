@@ -1047,6 +1047,32 @@ mod tests {
     }
 
     #[test]
+    fn test_reconstruct_code_clearing_matches_canonical_oracle() {
+        let address = addr(0x17);
+        let old_hash = hash(0x29);
+        let pre_state =
+            CanonicalState::new().with_account(address, state_account(500, 8, old_hash));
+        let expected_state =
+            CanonicalState::new().with_account(address, state_account(500, 8, KECCAK_EMPTY));
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            Some(snapshot(500, 8, old_hash)),
+            Some(snapshot(500, 8, KECCAK_EMPTY)),
+        );
+
+        let diff = roundtrip_batch_diff(&[block]);
+        let mut reconstructor =
+            TestStateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage)
+                .unwrap();
+        reconstructor.apply_diff(&diff).unwrap();
+
+        assert_reconstruction_matches(&reconstructor, &expected_state, &[], &[], &diff);
+    }
+
+    #[test]
     fn test_reconstruct_selfdestruct_recreate_matches_canonical_oracle() {
         let address = addr(0x16);
         let old_hash = hash(0x27);

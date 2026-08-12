@@ -17,7 +17,7 @@ use crate::{
 ///
 /// - `balance`: Counter (signed U256 delta, trimmed encoding)
 /// - `nonce`: Counter (signed delta, varint-encoded)
-/// - `code_hash`: Register (only changes on contract creation)
+/// - `code_hash`: Register (changes on creation or whenever account code changes)
 ///
 /// # Delta vs Full Value Replacement
 ///
@@ -43,7 +43,7 @@ pub struct AccountDiff {
     pub balance: DaCounter<CtrU256BySignedU256>,
     /// Nonce delta (signed, supports both increments and decrements).
     pub nonce: DaCounter<CtrU64BySignedVarInt>,
-    /// Code hash change (only on contract creation).
+    /// Code hash change, including explicit transitions to [`KECCAK_EMPTY`].
     pub code_hash: DaRegister<CodecB256>,
 }
 
@@ -123,11 +123,12 @@ impl AccountDiff {
         let nonce_delta = (current.nonce as i64) - (orig_nonce as i64);
         let nonce = nonce_delta_to_counter(nonce_delta);
 
-        let code_hash = match orig_code_hash {
-            Some(oc) if oc == current.code_hash => DaRegister::new_unset(),
-            _ if current.code_hash == KECCAK_EMPTY => DaRegister::new_unset(),
-            _ => DaRegister::new_set(CodecB256(current.code_hash)),
-        };
+        // A missing account starts with the canonical empty-code hash. An unset
+        // register means "do not write", so existing code must be explicitly
+        // overwritten when EIP-7702 clears a delegation designation.
+        let original_code_hash = CodecB256(orig_code_hash.unwrap_or(KECCAK_EMPTY));
+        let current_code_hash = CodecB256(current.code_hash);
+        let code_hash = DaRegister::compare(&original_code_hash, &current_code_hash);
 
         let diff = Self {
             balance,
@@ -376,5 +377,47 @@ mod tests {
         ContextlessDaWrite::apply(&decoded, &mut snapshot).unwrap();
         assert_eq!(snapshot.balance, U256::from(999_000));
         assert_eq!(snapshot.nonce, 6);
+    }
+
+    #[test]
+    fn test_account_diff_explicitly_clears_existing_code_hash() {
+        let original = AccountSnapshot {
+            balance: U256::from(1000),
+            nonce: 5,
+            code_hash: B256::from([0x11u8; 32]),
+        };
+        let current = AccountSnapshot {
+            code_hash: KECCAK_EMPTY,
+            ..original.clone()
+        };
+
+        let diff =
+            AccountDiff::from_account_snapshot(&current, Some(&original), Address::ZERO).unwrap();
+        assert_eq!(
+            diff.code_hash.new_value().map(|hash| hash.0),
+            Some(KECCAK_EMPTY)
+        );
+
+        let encoded = encode_to_vec(&diff).unwrap();
+        let decoded: AccountDiff = decode_buf_exact(&encoded).unwrap();
+        let mut reconstructed = original;
+        ContextlessDaWrite::apply(&decoded, &mut reconstructed).unwrap();
+        assert_eq!(reconstructed, current);
+    }
+
+    #[test]
+    fn test_account_diff_elides_default_code_hash_for_new_account() {
+        let current = AccountSnapshot {
+            balance: U256::from(1000),
+            nonce: 1,
+            code_hash: KECCAK_EMPTY,
+        };
+
+        let diff = AccountDiff::from_account_snapshot(&current, None, Address::ZERO).unwrap();
+        assert!(diff.code_hash.new_value().is_none());
+
+        let mut reconstructed = AccountSnapshot::default();
+        ContextlessDaWrite::apply(&diff, &mut reconstructed).unwrap();
+        assert_eq!(reconstructed, current);
     }
 }
