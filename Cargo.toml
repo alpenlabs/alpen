@@ -256,7 +256,7 @@ hex-literal = "0.4"
 http = "1.0.0"
 hyper = "1.9.0"
 int-enum = "1.2"
-itertools = "0.14"
+itertools = "0.15"
 jsonrpsee = { version = "0.26.0" }
 jsonrpsee-http-client = { version = "0.26.0" }
 jsonrpsee-types = { version = "0.26.0" }
