@@ -82,9 +82,13 @@ class OLParams:
 
     def as_json_string(self) -> str:
         d = {
-            "accounts": {k: asdict(v) for k, v in self.accounts.items()},
-            "last_l1_block": asdict(self.last_l1_block),
-            "bridge_params": asdict(self.bridge_params),
+            "genesis": {
+                "accounts": {k: asdict(v) for k, v in self.accounts.items()},
+                "last_l1_block": asdict(self.last_l1_block),
+            },
+            "runtime": {
+                "bridge_params": asdict(self.bridge_params),
+            },
         }
         return json.dumps(d, indent=2)
 
