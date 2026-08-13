@@ -3,7 +3,7 @@
 import flexitest
 
 from common.base_test import BaseTest
-from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
+from envconfigs.checkpoint_sync import CheckpointSyncEnv
 from tests.strata.checkpoint_promotion import (
     assert_fresh_checkpoint_recovery,
     assert_sequencing_resumed,
@@ -19,12 +19,11 @@ class TestPromoteCheckpointNodeToSequencer(BaseTest):
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
-            EeOLCheckpointSyncEnv(
+            CheckpointSyncEnv(
                 pre_generate_blocks=110,
                 seal_epoch_slots=4,
                 ol_block_time_ms=750,
                 l1_reorg_safe_depth=4,
-                batch_sealing_block_count=3,
                 provision_promotion=True,
                 provision_recovery_node=True,
             )

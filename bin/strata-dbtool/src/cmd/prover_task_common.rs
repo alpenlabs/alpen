@@ -1,10 +1,11 @@
 //! Shared helpers for prover-task admin commands.
 //!
-//! Both the OL ([`super::prover_task`]) and EE ([`super::ee_prover_task`])
-//! task-store surfaces accept the same status filters, hex-key encoding,
-//! `--confirm` guard, and abandon-reason string. Keeping these in one
-//! place ensures the two surfaces stay in lockstep — operator workflows
-//! migrate between them with no surprises.
+//! These cover the status filters, hex-key encoding, `--confirm` guard, and
+//! abandon-reason string used by the OL task-store surface in
+//! [`super::prover_task`]. They live here rather than inline because the EE
+//! surface used to share them; that half now lives in the alpen-ee repo, and
+//! keeping the shape stable means the two stay recognisable to operators
+//! moving between them.
 
 use std::{fmt, str::FromStr};
 

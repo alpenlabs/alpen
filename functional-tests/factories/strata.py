@@ -26,7 +26,6 @@ from common.config import (
 )
 from common.datatool import (
     generate_asm_params,
-    generate_ee_params,
     generate_ol_params,
     generate_sequencer_artifacts,
 )
@@ -36,7 +35,6 @@ from common.services import StrataProps, StrataService
 class StrataNodeParams(NamedTuple):
     """Generated parameter files for a Strata node."""
 
-    ee_params: Path
     ol_params: Path
     asm_params: Path
 
@@ -187,24 +185,19 @@ class StrataFactory(flexitest.Factory):
 
         seq_key_path: Path | None = None
         if shared_params is not None:
-            ee_params_path = datadir / "ee-params.json"
             ol_params_path = datadir / "ol-params.json"
             asm_params_path = datadir / "asm-params.json"
             for source, destination in (
-                (shared_params.ee_params, ee_params_path),
                 (shared_params.ol_params, ol_params_path),
                 (shared_params.asm_params, asm_params_path),
             ):
                 if source.resolve() != destination.resolve():
                     shutil.copyfile(source, destination)
         elif existing_datadir is not None:
-            ee_params_path = datadir / "ee-params.json"
             ol_params_path = datadir / "ol-params.json"
             asm_params_path = datadir / "asm-params.json"
             missing_params = [
-                path
-                for path in (ee_params_path, ol_params_path, asm_params_path)
-                if not path.is_file()
+                path for path in (ol_params_path, asm_params_path) if not path.is_file()
             ]
             if missing_params:
                 raise ValueError(
@@ -214,7 +207,6 @@ class StrataFactory(flexitest.Factory):
         else:
             # Generate the sequencer key + operator pubkeys consumed when building ASM params.
             seq_artifacts = generate_sequencer_artifacts(datadir, use_unchecked_cred_rule)
-            ee_params_path = generate_ee_params(datadir)
 
             # Generate or write OL params.
             if ol_params is not None:
@@ -225,7 +217,6 @@ class StrataFactory(flexitest.Factory):
                     datadir,
                     bconfig,
                     genesis_l1_height,
-                    ee_params_path=ee_params_path,
                 )
 
             # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
@@ -242,7 +233,6 @@ class StrataFactory(flexitest.Factory):
                 seq_key_path = seq_artifacts.sequencer_key_path
 
         node_params = StrataNodeParams(
-            ee_params=ee_params_path,
             ol_params=ol_params_path,
             asm_params=asm_params_path,
         )

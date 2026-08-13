@@ -1,11 +1,11 @@
 """Environment configurations for functional tests."""
 
-from envconfigs.alpen_client import AlpenClientEnv
+from envconfigs.checkpoint_sync import CheckpointSyncEnv
 from envconfigs.strata import StrataEnvConfig
 from envconfigs.strata_unchecked import StrataUncheckedEnvConfig
 
 __all__ = [
-    "AlpenClientEnv",
+    "CheckpointSyncEnv",
     "StrataEnvConfig",
     "StrataUncheckedEnvConfig",
 ]

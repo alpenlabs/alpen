@@ -1,12 +1,11 @@
-//! Alpen OpenRPC specification assembly.
+//! OL OpenRPC specification assembly.
 
-use alpen_ee_rpc_api::AlpenEeRpcOpenRpc;
 use strata_ol_rpc_api::{
     OLClientRpcOpenRpc, OLFullNodeRpcOpenRpc, OLSequencerRpcOpenRpc, OLSubmitRpcOpenRpc,
 };
 use strata_open_rpc::Project;
 
-/// Builds the combined OpenRPC document for Alpen binary RPC methods.
+/// Builds the OpenRPC document for the OL binary's RPC methods.
 pub fn alpen_rpc_project() -> Project {
     let mut project = Project::new(
         "0.1.0",
@@ -23,12 +22,11 @@ pub fn alpen_rpc_project() -> Project {
     project.add_module(OLClientRpcOpenRpc::module_doc());
     project.add_module(OLSequencerRpcOpenRpc::module_doc());
     project.add_module(OLSubmitRpcOpenRpc::module_doc());
-    project.add_module(AlpenEeRpcOpenRpc::module_doc());
 
     project
 }
 
-/// Serializes the combined Alpen OpenRPC document.
+/// Serializes the OL OpenRPC document.
 pub fn serialize_alpen_rpc_project(compact: bool) -> Result<String, serde_json::Error> {
     let project = alpen_rpc_project();
 
@@ -46,7 +44,7 @@ mod tests {
     use super::alpen_rpc_project;
 
     #[test]
-    fn includes_ol_and_alpen_ee_methods() {
+    fn includes_ol_methods() {
         let project = alpen_rpc_project();
         let json = serde_json::to_value(project).expect("serialization should not fail");
         let methods = json
@@ -60,15 +58,9 @@ mod tests {
             .filter_map(Value::as_str)
             .collect::<Vec<_>>();
 
-        for expected_method in [
-            "strata_submitTransaction",
-            "alpen_getBlockStatus",
-            "alpen_getChunkProofCoverage",
-        ] {
-            assert!(
-                method_names.contains(&expected_method),
-                "expected OpenRPC spec to include {expected_method}"
-            );
-        }
+        assert!(
+            method_names.contains(&"strata_submitTransaction"),
+            "expected OpenRPC spec to include strata_submitTransaction"
+        );
     }
 }

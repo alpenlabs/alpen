@@ -6,7 +6,7 @@ import flexitest
 
 from common.base_test import BaseTest
 from common.wait import wait_until_with_value
-from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
+from envconfigs.checkpoint_sync import CheckpointSyncEnv
 from tests.strata.checkpoint_promotion import (
     finalize_active_checkpoint,
     finalize_promoted_epoch,
@@ -22,12 +22,11 @@ class TestPromotedSequencerMidEpochRestart(BaseTest):
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
-            EeOLCheckpointSyncEnv(
+            CheckpointSyncEnv(
                 pre_generate_blocks=110,
                 seal_epoch_slots=4,
                 ol_block_time_ms=1_000,
                 l1_reorg_safe_depth=4,
-                batch_sealing_block_count=3,
                 provision_promotion=True,
             )
         )

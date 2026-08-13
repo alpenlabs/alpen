@@ -30,22 +30,19 @@ struct VkHashes {
 
 // Guest program names
 const CHECKPOINT: &str = "guest-checkpoint";
-const ALPEN_CHUNK: &str = "guest-alpen-chunk";
-const ALPEN_ACCT: &str = "guest-alpen-acct";
 
 /// Returns a map of program dependencies.
 ///
-/// The account proof guest depends on the chunk proof guest's VK hash
-/// to construct the chunk predicate key.
+/// The checkpoint guest is standalone, so this is empty. The machinery stays
+/// because guests that verify other guests' proofs need their VK hashes
+/// code-generated first.
 fn get_program_dependencies() -> HashMap<&'static str, Vec<&'static str>> {
-    let mut deps = HashMap::new();
-    deps.insert(ALPEN_ACCT, vec![ALPEN_CHUNK]);
-    deps
+    HashMap::new()
 }
 
 fn main() {
     // List of guest programs to build
-    let guest_programs = [CHECKPOINT, ALPEN_CHUNK, ALPEN_ACCT];
+    let guest_programs = [CHECKPOINT];
 
     // HashSet to keep track of programs that have been built
     let mut built_programs = HashSet::new();

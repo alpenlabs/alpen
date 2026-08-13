@@ -43,15 +43,15 @@
           ];
         };
         rust-toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-        alpen-cli-toml = builtins.fromTOML (builtins.readFile ./bin/alpen-cli/Cargo.toml);
+        strata-toml = builtins.fromTOML (builtins.readFile ./bin/strata/Cargo.toml);
       in
       rec {
         packages = {
-          default = packages.alpen-cli;
+          default = packages.strata;
 
-          alpen-cli = pkgs.rustPlatform.buildRustPackage {
-            pname = alpen-cli-toml.package.name;
-            version = alpen-cli-toml.package.version;
+          strata = pkgs.rustPlatform.buildRustPackage {
+            pname = strata-toml.package.name;
+            version = strata-toml.package.version;
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;
@@ -61,9 +61,9 @@
             doCheck = false;
             cargoBuildFlags = [
               "--package"
-              "alpen-cli"
+              "strata"
               "--bin"
-              "alpen"
+              "strata"
             ];
             nativeBuildInputs = with pkgs; [
               pkg-config
@@ -73,7 +73,7 @@
               openssl
             ];
             meta = {
-              mainProgram = "alpen";
+              mainProgram = "strata";
             };
           };
         };

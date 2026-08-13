@@ -7,6 +7,13 @@ from common.config.config import BitcoindConfig
 
 DEFAULT_OL_BLOCK_TIME_MS = 5_000
 
+# The Alpen EE genesis account, generated in the alpen-ee repo and committed
+# here. Its inner state root and predicate cannot be derived without the EE
+# chain spec and the EE account guest, neither of which lives in this repo.
+GENESIS_ACCOUNTS_FIXTURE = (
+    Path(__file__).resolve().parents[2] / ".github" / "fixtures" / "alpen-ee-genesis.dev.json"
+)
+
 
 def run_datatool(
     args: list[str], bconfig: BitcoindConfig | None = None
@@ -151,52 +158,31 @@ def generate_ol_params(
     datadir: Path,
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
-    ee_params_path: Path | None = None,
+    genesis_accounts_path: Path = GENESIS_ACCOUNTS_FIXTURE,
+    bridge_denomination: int = 100_000_000,
+    max_withdrawal_amount: int | None = 1_000_000_000,
+    max_withdrawal_descriptor_len: int = 81,
 ) -> Path:
     """Generates OL params via ``strata-datatool gen-ol-params``."""
     params_path = datadir / "ol-params.json"
 
     args = [
         "gen-ol-params",
-        "--alpen-predicate",
-        "bip340-schnorr-test",
+        "--genesis-accounts",
+        str(genesis_accounts_path),
+        "--bridge-denomination-sats",
+        str(bridge_denomination),
+        "--max-withdrawal-descriptor-len",
+        str(max_withdrawal_descriptor_len),
         "--genesis-l1-height",
         str(genesis_l1_height),
         "-o",
         str(params_path),
     ]
-    if ee_params_path is not None:
-        args.extend(["--ee-params", str(ee_params_path)])
-
-    run_datatool(args, bconfig)
-    return params_path
-
-
-def generate_ee_params(
-    datadir: Path,
-    alpen_chain_config: str | None = None,
-    bridge_denomination: int = 100_000_000,
-    max_withdrawal_amount: int | None = 1_000_000_000,
-    max_withdrawal_descriptor_len: int = 81,
-) -> Path:
-    """Generates EE params via ``strata-datatool gen-ee-params``."""
-    params_path = datadir / "ee-params.json"
-
-    args = [
-        "gen-ee-params",
-        "-o",
-        str(params_path),
-        "--bridge-denomination-sats",
-        str(bridge_denomination),
-        "--max-withdrawal-descriptor-len",
-        str(max_withdrawal_descriptor_len),
-    ]
     if max_withdrawal_amount is not None:
         args.extend(["--max-withdrawal-amount-sats", str(max_withdrawal_amount)])
-    if alpen_chain_config is not None:
-        args.extend(["--alpen-chain-config", alpen_chain_config])
 
-    run_datatool(args)
+    run_datatool(args, bconfig)
     return params_path
 
 

@@ -37,20 +37,6 @@ updates:
       rust-dependencies:
         patterns:
           - "*"
-        exclude-patterns:
-          # Keep reth updates separate due to version pinning requirements
-          - "reth*"
-          - "alloy-*"
-          - "revm*"
-        update-types:
-          - "minor"
-          - "patch"
-      # Keep major framework dependencies separate for careful review
-      reth-ecosystem:
-        patterns:
-          - "reth*"
-          - "alloy-*"
-          - "revm*"
         update-types:
           - "minor"
           - "patch"

@@ -63,7 +63,6 @@ class ServiceType(str, Enum):
         bitcoin = self.get_service(ServiceType.Bitcoin)
     """
 
-    AlpenClient = "alpen_client"
     Bitcoin = "bitcoin"
     Strata = "strata"
     StrataFullnode = "strata_fullnode"
@@ -71,8 +70,6 @@ class ServiceType(str, Enum):
     StrataPromotedSequencer = "strata_promoted_sequencer"
     StrataPromotedSigner = "strata_promoted_signer"
     StrataRecoveryCheckpointNode = "strata_recovery_ckpt_node"
-    AlpenSequencer = "alpen_sequencer"
-    AlpenFullNode = "alpen_fullnode"
     StrataSigner = "strata_signer"
 
     def __str__(self) -> str:

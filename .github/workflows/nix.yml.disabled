@@ -41,7 +41,7 @@ jobs:
           - macos-latest
         package:
           # TODO: add more packages
-          - alpen-cli
+          - strata
         include:
           - os: ubuntu-latest
             os-name: "Linux"

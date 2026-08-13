@@ -14,7 +14,7 @@ from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
-from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
+from envconfigs.checkpoint_sync import CheckpointSyncEnv
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class TestCheckpointSyncNodeColdStart(BaseTest):
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
-            EeOLCheckpointSyncEnv(
+            CheckpointSyncEnv(
                 pre_generate_blocks=110,
                 provision_recovery_node=True,
             )

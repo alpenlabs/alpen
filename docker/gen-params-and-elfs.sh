@@ -103,6 +103,5 @@ wait_for_bitcoin
 validate_params
 
 export OUTPUT_DIR
-export ENV_FILE="${OUTPUT_DIR}/.env.alpen"
 
 "${SCRIPT_DIR}/init-network.sh" --sequencer "${DATATOOL_BIN}"

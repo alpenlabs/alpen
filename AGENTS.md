@@ -94,12 +94,19 @@ The OL manages L2 state, accounts, and epoch processing. It produces checkpoints
 
 #### EE Layer (Execution Environment)
 
-The EE provides EVM execution, decoupled from OL. Currently implemented via Alpen Reth.
+The EE provides EVM execution, decoupled from OL. It is implemented via Alpen
+Reth and lives in a separate repo, [alpenlabs/alpen-ee](https://github.com/alpenlabs/alpen-ee).
+This repo carries no reth, alloy or revm dependency.
 
 - **Alpen Reth**: Custom Reth node with rollup-specific precompiles
 - **EE Chain**: Execution chain state management
 - **OL Tracker**: Tracks finalized OL state from EE perspective
 - **Package Chain**: Off-chain interface between OL and EE
+
+The EE consumes this repo's crates as git dependencies, and builds the `strata`,
+`strata-signer`, `strata-datatool` and `strata-test-cli` binaries from a pinned
+rev of it for its functional tests. Changes to those binaries' CLI surfaces are
+breaking changes for that repo.
 
 ## Workspace Crates
 
@@ -111,8 +118,6 @@ Crate tables list repository paths. Package names usually carry a `strata-*` or 
 |------|---------------|-------------|
 | `bin/strata` | `strata` | OL (Strata) client, sequencer, RPC, and prover entrypoint |
 | `bin/strata-signer` | `strata-signer` | Detached signer for OL sequencer duties |
-| `bin/alpen-client` | `alpen-client` | EE client with OL tracking and payload building, embedding Alpen Reth |
-| `bin/alpen-cli` | `alpen` | End-user wallet CLI for deposits, withdrawals, L2 transactions, and bridge tooling |
 | `bin/strata-dbtool` | `strata-dbtool` | Database inspection and debugging utility |
 | `bin/strata-test-cli` | `strata-test-cli` | Bridge, ASM, and transaction testing utility |
 | `bin/datatool` | `strata-datatool` | Development utility for test data and key generation |
@@ -151,32 +156,6 @@ Orchestration Layer implementation.
 | `ledger-types` | Ledger entry and account ledger types |
 | `checkpoint-types` | Checkpoint and batch types |
 
-### EE Domain (`crates/alpen-ee/`, `crates/evm-ee/`, `crates/ee-*`, `crates/simple-ee/`)
-
-Execution Environment implementation.
-
-| Crate | Description |
-|-------|-------------|
-| `alpen-ee/engine` | EE sync and control logic |
-| `alpen-ee/exec-chain` | Execution chain state and orphan tracking |
-| `alpen-ee/ol-tracker` | OL state tracking from EE perspective |
-| `alpen-ee/sequencer` | EE block building and OL chain tracking |
-| `alpen-ee/database` | EE-specific storage (SledDB) |
-| `alpen-ee/common` | Shared EE types and traits |
-| `alpen-ee/config` | EE configuration |
-| `alpen-ee/da` | EE data availability payload and inclusion helpers |
-| `alpen-ee/genesis` | EE genesis state |
-| `alpen-ee/block-assembly` | EE block and package assembly |
-| `alpen-ee/rpc/api` | Alpen EE RPC API traits |
-| `alpen-ee/rpc/server` | Alpen EE RPC server implementation |
-| `alpen-ee/rpc/types` | Alpen EE RPC wire types |
-| `evm-ee` | EVM execution environment integration |
-| `ee-acct-types` | EE account types (SSZ) |
-| `ee-acct-runtime` | EE account runtime |
-| `ee-chain-types` | EE chain types (SSZ) |
-| `ee-chunk-runtime` | EE chunk proof runtime |
-| `simple-ee` | Minimal EE implementation for tests and tooling |
-
 ### DA Framework (`crates/da-framework/`)
 
 Data Availability primitives for state diff encoding.
@@ -201,7 +180,6 @@ Fundamental types and shared utilities.
 | `common` | Shared helpers, traits, and utilities |
 | `codec-utils` | Helpers for `strata-codec` encoding/decoding |
 | `key-derivation` | Key derivation primitives and helpers |
-| `mpt` | Merkle-Patricia Trie implementation |
 | `status` | Shared status types for services and APIs |
 | `cli-common` | Shared CLI argument and output helpers |
 | `paas` | Prover-as-a-Service task orchestration framework |
@@ -243,33 +221,13 @@ Zero-knowledge proof generation.
 | Crate | Description |
 |-------|-------------|
 | `proof-impl/checkpoint` | Checkpoint proof implementation |
-| `proof-impl/evm-ee-stf` | EE Layer STF proof |
-| `proof-impl/alpen-chunk` | Alpen chunk proof implementation |
-| `proof-impl/alpen-acct` | Alpen account proof implementation |
+| `proof-impl/predicate-keys` | Predicate-key providers for proof programs |
 | `prover-core` | Shared prover coordination primitives |
 | `zkvm/hosts` | ZKVM host implementations (SP1, RISC0, Native) |
 | `provers/sp1` | SP1 guest builder support |
 | `provers/sp1/guest-checkpoint` | SP1 checkpoint proof guest |
-| `provers/sp1/guest-alpen-chunk` | SP1 Alpen chunk proof guest |
-| `provers/sp1/guest-alpen-acct` | SP1 Alpen account proof guest |
 
 The SP1 guest packages are local manifests used by the guest builder, but they are not root workspace members.
-
-### Reth Integration (`crates/reth/`)
-
-Custom Reth node components.
-
-| Crate | Description |
-|-------|-------------|
-| `reth/node` | Alpen Reth node implementation |
-| `reth/evm` | Custom EVM with Alpen precompiles |
-| `reth/exex` | Execution extensions |
-| `reth/rpc` | Custom RPC endpoints |
-| `reth/chainspec` | Chain specification |
-| `reth/statediff` | State diff generation |
-| `reth/db` | Reth database glue |
-| `reth/primitives` | Reth primitive type bindings |
-| `reth/witness` | Witness and tracing helpers |
 
 ### RPC (`crates/rpc/`, `crates/ol/rpc/`)
 
@@ -302,7 +260,6 @@ Worker patterns and service infrastructure.
 |-------|-------------|
 | `test-utils` | Shared test helpers |
 | `test-utils/btcio` | Bitcoin I/O test utilities |
-| `test-utils/evm-ee` | EVM EE test utilities |
 | `test-utils/l2` | L2 integration test utilities |
 | `test-utils/ssz` | SSZ test utilities |
 | `db/tests` | Database-focused test fixtures and helpers |
@@ -603,8 +560,6 @@ The datadir will be the outputted by the test framework and will be named after 
 
 | Dependency | Purpose |
 |------------|---------|
-| Reth | Base Ethereum execution client |
-| Alloy | Ethereum types and RPC |
 | SP1 | Zero-knowledge proof system |
 | Bitcoin | Bitcoin protocol implementation |
 | SSZ | Serialization |
@@ -641,6 +596,5 @@ If you have the Notion MCP/connector enabled, access it by searching the team wo
 
 - **Security**: Never commit secrets or keys to the repository
 - **Performance**: Proof generation is computationally intensive
-- **Dependencies**: Keep Alloy/Revm versions aligned with Reth
 - **Just**: Prefer `just` recipes over direct `cargo` commands
 - **Linting and Formatting**: Use `just lint-check-ws` and `just fmt-ws` to lint and format code after making changes

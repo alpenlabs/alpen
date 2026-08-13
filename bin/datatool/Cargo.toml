@@ -11,15 +11,12 @@ name = "strata-datatool"
 path = "src/main.rs"
 
 [dependencies]
-alpen-chainspec.workspace = true
-alpen-ee-config.workspace = true
 strata-asm-admin-types.workspace = true
 strata-asm-bridge-types.workspace = true
 strata-asm-params.workspace = true
 strata-btc-types.workspace = true
 strata-btc-verification.workspace = true
 strata-crypto.workspace = true
-strata-ee-acct-types.workspace = true
 strata-identifiers.workspace = true
 strata-key-derivation.workspace = true
 strata-l1-txfmt.workspace = true
@@ -27,14 +24,11 @@ strata-ol-genesis.workspace = true
 strata-ol-params.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
-strata-proofimpl-alpen-acct.workspace = true
 strata-proofimpl-checkpoint.workspace = true
 strata-proofimpl-predicate-keys = { workspace = true, optional = true }
-strata-snark-acct-runtime.workspace = true
 
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
 
-alloy-primitives.workspace = true
 anyhow.workspace = true
 argh.workspace = true
 bitcoin = { workspace = true, features = ["std"] }

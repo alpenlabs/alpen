@@ -11,16 +11,6 @@ use crate::cmd::{
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
     checkpoint_proof::{DeleteCheckpointProofArgs, GetCheckpointProofArgs},
     client_state::GetClientStateUpdateArgs,
-    ee_da::EeDaInspectArgs,
-    ee_prover_task::{
-        EeAbandonProverTaskArgs, EeAbandonProverTasksArgs, EeBackfillProverTaskRawArgs,
-        EeDeleteProverTaskArgs, EeGetProverTaskArgs, EeGetProverTasksSummaryArgs,
-        EeResetProverTaskArgs,
-    },
-    ee_receipts::{
-        EeDeleteAcctProofArgs, EeDeleteChunkReceiptArgs, EeGetAcctProofArgs, EeGetChunkReceiptArgs,
-    },
-    ee_revert::EeRevertBatchesArgs,
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
     mmr::{GetMmrLeafArgs, GetMmrSummaryArgs},
     ol::{DeleteOLBlockArgs, GetOLBlockArgs, GetOLBlocksAtSlotArgs, GetOLSummaryArgs},
@@ -84,20 +74,6 @@ pub(crate) enum Command {
     DeleteCheckpointProof(DeleteCheckpointProofArgs),
     BackfillCheckpointProofTask(BackfillCheckpointProofTaskArgs),
     BackfillProverTaskRaw(BackfillProverTaskRawArgs),
-    EeGetProverTask(EeGetProverTaskArgs),
-    EeGetProverTasksSummary(EeGetProverTasksSummaryArgs),
-    EeAbandonProverTask(EeAbandonProverTaskArgs),
-    EeAbandonProverTasks(EeAbandonProverTasksArgs),
-    EeResetProverTask(EeResetProverTaskArgs),
-    EeDeleteProverTask(EeDeleteProverTaskArgs),
-    EeBackfillProverTaskRaw(EeBackfillProverTaskRawArgs),
-    /// Inspect EE DA blobs and replay their state diffs from local sled data.
-    EeDaInspect(EeDaInspectArgs),
-    EeGetChunkReceipt(EeGetChunkReceiptArgs),
-    EeDeleteChunkReceipt(EeDeleteChunkReceiptArgs),
-    EeGetAcctProof(EeGetAcctProofArgs),
-    EeDeleteAcctProof(EeDeleteAcctProofArgs),
-    EeRevertBatches(EeRevertBatchesArgs),
 }
 
 /// Output format

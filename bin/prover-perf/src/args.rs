@@ -22,8 +22,7 @@ pub struct EvalArgs {
     pub commit_hash: String,
 
     /// programs to run (comma-delimited and/or repeated),
-    /// e.g. `--programs alpen-chunk,checkpoint` or `--programs alpen-chunk
-    /// --programs checkpoint`
+    /// e.g. `--programs checkpoint`
     #[argh(option)]
     pub programs: Vec<String>,
 }
@@ -31,8 +30,8 @@ pub struct EvalArgs {
 /// Parses program strings into [`GuestProgram`] variants.
 ///
 /// Supports both comma-separated values and repeated options:
-/// - `--programs alpen-chunk,checkpoint`
-/// - `--programs alpen-chunk --programs checkpoint`
+/// - `--programs checkpoint`
+/// - `--programs checkpoint --programs checkpoint`
 pub fn parse_programs(raw: &[String]) -> Result<Vec<GuestProgram>, String> {
     raw.iter()
         .flat_map(|s| s.split(','))

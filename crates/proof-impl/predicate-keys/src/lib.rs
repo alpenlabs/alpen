@@ -1,8 +1,6 @@
 //! Predicate-key providers for Alpen proof programs.
 
 use strata_predicate::PredicateKey;
-use strata_proofimpl_alpen_acct::EeAcctProgram;
-use strata_proofimpl_alpen_chunk::EeChunkProgram;
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 
 /// Errors returned while deriving or validating predicate keys.
@@ -81,26 +79,6 @@ pub struct NativeCheckpointPredicateKey;
 impl PredicateKeyProvider for NativeCheckpointPredicateKey {
     fn predicate_key(&self) -> Result<PredicateKey, PredicateKeyError> {
         Ok(CheckpointProgram::test_predicate_key())
-    }
-}
-
-/// Native Alpen EE chunk predicate provider used by functional-test setups.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct NativeAlpenChunkPredicateKey;
-
-impl PredicateKeyProvider for NativeAlpenChunkPredicateKey {
-    fn predicate_key(&self) -> Result<PredicateKey, PredicateKeyError> {
-        Ok(EeChunkProgram::test_predicate_key())
-    }
-}
-
-/// Native Alpen EE account predicate provider used by functional-test setups.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct NativeAlpenAcctPredicateKey;
-
-impl PredicateKeyProvider for NativeAlpenAcctPredicateKey {
-    fn predicate_key(&self) -> Result<PredicateKey, PredicateKeyError> {
-        Ok(EeAcctProgram::test_predicate_key())
     }
 }
 
