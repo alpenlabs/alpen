@@ -15,8 +15,8 @@ strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-l1-txfmt.workspace = true
-strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
-strata-ol-state-types = { workspace = true, features = ["test-utils"] }
+strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
+strata-ol-state-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-paas.workspace = true
 strata-primitives.workspace = true
 strata-test-utils.workspace = true

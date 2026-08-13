@@ -1,145 +1,193 @@
-use strata_acct_types::*;
-use strata_identifiers::AccountSerial;
-use strata_ledger_types::*;
+use strata_acct_types::{AccountSerial, AccountTypeId, BitcoinAmount, Hash, MessageEntry, Mmr64};
+use strata_predicate::PredicateKey;
+use strata_snark_acct_types::Seqno;
 
-use crate::ssz_generated::ssz::state::{OLAccountState, OLAccountTypeState, OLSnarkAccountState};
+use crate::{coin::Coin, errors::StateResult};
 
-impl OLAccountState {
-    /// Creates a new account state.
-    pub fn new(serial: AccountSerial, balance: BitcoinAmount, state: OLAccountTypeState) -> Self {
+/// Abstract account state.
+pub trait IAccountState: Clone + Sized {
+    /// Type representing snark account state.
+    type SnarkAccountState: ISnarkAccountState;
+
+    // Constructor.
+
+    /// Creates a new account state with the given serial, balance, and type state.
+    ///
+    /// This is just a dumb piece of data, it does not insert it into any state
+    /// tree or anything.
+    fn new_with_serial(new_acct_data: NewAccountData, serial: AccountSerial) -> Self;
+
+    // Accessors.
+
+    /// Gets the account serial.
+    fn serial(&self) -> AccountSerial;
+
+    /// Gets the account's balance.
+    fn balance(&self) -> BitcoinAmount;
+
+    /// Gets the account type ID.
+    fn ty(&self) -> AccountTypeId;
+
+    /// Gets the type state borrowed.
+    fn type_state(&self) -> AccountTypeStateRef<'_, Self>;
+
+    /// If we are a snark account, gets a ref to the type state.
+    fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState>;
+}
+
+/// Abstract mutable account state.
+pub trait IAccountStateMut: IAccountState {
+    /// Mutable snark account state data.
+    type SnarkAccountStateMut: ISnarkAccountStateMut;
+
+    /// Adds a coin to this account's balance.
+    fn add_balance(&mut self, coin: Coin);
+
+    /// Takes a coin from this account's balance, if funds are available.
+    fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin>;
+
+    /// If we are a snark, gets a mut ref to the type state.
+    fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut>;
+}
+
+/// Type-specific initialization state for new accounts.
+#[derive(Clone, Debug)]
+pub enum NewAccountTypeState {
+    /// Empty account with no type state.
+    Empty,
+
+    /// Snark account with initial snark parameters.
+    Snark {
+        /// Update verification key.
+        update_vk: PredicateKey,
+        /// Initial inner state root.
+        initial_state_root: Hash,
+    },
+}
+
+/// Account state for a newly-created account, which hasn't been assigned a
+/// serial yet.
+#[derive(Clone, Debug)]
+pub struct NewAccountData {
+    initial_balance: BitcoinAmount,
+    type_state: NewAccountTypeState,
+}
+
+impl NewAccountData {
+    pub fn new(initial_balance: BitcoinAmount, type_state: NewAccountTypeState) -> Self {
         Self {
-            serial,
-            balance,
-            state,
+            initial_balance,
+            type_state,
         }
     }
 
-    /// Returns the account serial.
-    pub fn serial(&self) -> AccountSerial {
-        self.serial
+    pub fn new_empty(type_state: NewAccountTypeState) -> Self {
+        Self::new(BitcoinAmount::default(), type_state)
     }
-}
 
-impl IAccountState for OLAccountState {
-    type SnarkAccountState = OLSnarkAccountState;
-
-    fn new_with_serial(new_acct_data: NewAccountData, serial: AccountSerial) -> Self {
-        let balance = new_acct_data.initial_balance();
-        let type_state = match new_acct_data.into_type_state() {
-            NewAccountTypeState::Empty => OLAccountTypeState::Empty,
+    /// Creates a new snark account with the given balance, verification key, and initial state
+    /// root.
+    pub fn new_snark(
+        initial_balance: BitcoinAmount,
+        update_vk: PredicateKey,
+        initial_state_root: Hash,
+    ) -> Self {
+        Self::new(
+            initial_balance,
             NewAccountTypeState::Snark {
                 update_vk,
                 initial_state_root,
-            } => OLAccountTypeState::Snark(OLSnarkAccountState::new_fresh(
-                update_vk,
-                initial_state_root,
-            )),
-        };
-        Self::new(serial, balance, type_state)
-    }
-
-    fn serial(&self) -> AccountSerial {
-        self.serial
-    }
-
-    fn balance(&self) -> BitcoinAmount {
-        self.balance
-    }
-
-    fn ty(&self) -> AccountTypeId {
-        match &self.state {
-            OLAccountTypeState::Empty => AccountTypeId::Empty,
-            OLAccountTypeState::Snark(_) => AccountTypeId::Snark,
-        }
-    }
-
-    fn type_state(&self) -> AccountTypeStateRef<'_, Self> {
-        match &self.state {
-            OLAccountTypeState::Empty => AccountTypeStateRef::Empty,
-            OLAccountTypeState::Snark(state) => AccountTypeStateRef::Snark(state),
-        }
-    }
-
-    fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
-        match &self.state {
-            OLAccountTypeState::Snark(state) => Ok(state),
-            _ => Err(StateError::MismatchedAcctType {
-                got: self.ty(),
-                expected: AccountTypeId::Snark,
-            }),
-        }
-    }
-}
-
-impl IAccountStateMut for OLAccountState {
-    type SnarkAccountStateMut = OLSnarkAccountState;
-
-    fn add_balance(&mut self, coin: Coin) {
-        let balance_sats = self
-            .balance
-            .to_sat()
-            .checked_add(coin.amt().to_sat())
-            .expect("ledger: overflow balance");
-        self.balance =
-            BitcoinAmount::try_from(balance_sats).expect("ledger: balance exceeds money supply");
-        coin.safely_consume_unchecked();
-    }
-
-    fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
-        let balance_sats = self.balance.to_sat().checked_sub(amt.to_sat()).ok_or(
-            StateError::InsufficientBalance {
-                need: amt,
-                have: self.balance,
             },
-        )?;
-        self.balance = BitcoinAmount::try_from(balance_sats)
-            .expect("subtracting from a valid balance must remain valid");
-        Ok(Coin::new_unchecked(amt))
+        )
     }
 
-    fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut> {
-        let ty = self.ty();
-        match &mut self.state {
-            OLAccountTypeState::Snark(state) => Ok(state),
-            _ => Err(StateError::MismatchedAcctType {
-                got: ty,
-                expected: AccountTypeId::Snark,
-            }),
-        }
+    pub fn initial_balance(&self) -> BitcoinAmount {
+        self.initial_balance
+    }
+
+    pub fn type_state(&self) -> &NewAccountTypeState {
+        &self.type_state
+    }
+
+    pub fn into_type_state(self) -> NewAccountTypeState {
+        self.type_state
     }
 }
 
-impl OLAccountTypeState {
-    /// Returns the account type ID for this state.
-    pub fn ty(&self) -> AccountTypeId {
+/// Account type state enum.
+#[derive(Debug)]
+pub enum AccountTypeState<T: IAccountState> {
+    /// Empty accounts with no state.
+    Empty,
+
+    /// Snark account with snark account state.
+    Snark(T::SnarkAccountState),
+}
+
+impl<T: IAccountState> Clone for AccountTypeState<T> {
+    fn clone(&self) -> Self {
         match self {
-            OLAccountTypeState::Empty => AccountTypeId::Empty,
-            OLAccountTypeState::Snark(_) => AccountTypeId::Snark,
+            Self::Empty => Self::Empty,
+            Self::Snark(s) => Self::Snark(s.clone()),
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use strata_test_utils_ssz::ssz_proptest;
+/// Borrowed account type state.
+#[derive(Copy, Clone, Debug)]
+pub enum AccountTypeStateRef<'a, T: IAccountState> {
+    Empty,
+    Snark(&'a T::SnarkAccountState),
+}
 
-    use super::*;
-    use crate::test_utils::{
-        ol_account_state_strategy, ol_account_type_state_strategy, ol_snark_account_state_strategy,
-    };
+/// Mutably borrowed account type state.
+#[derive(Debug)]
+pub enum AccountTypeStateMut<'a, T: IAccountState> {
+    Empty,
+    Snark(&'a mut T::SnarkAccountState),
+}
 
-    mod ol_account_state {
-        use super::*;
-        ssz_proptest!(OLAccountState, ol_account_state_strategy());
-    }
+/// Abstract snark account state.
+pub trait ISnarkAccountState: Clone + Sized {
+    // Constructor.
 
-    mod ol_account_type_state {
-        use super::*;
-        ssz_proptest!(OLAccountTypeState, ol_account_type_state_strategy());
-    }
+    /// Builds a fresh snark state from the update predicate key and initial root.
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self;
 
-    mod ol_snark_account_state {
-        use super::*;
-        ssz_proptest!(OLSnarkAccountState, ol_snark_account_state_strategy());
-    }
+    // Proof state accessors
+
+    /// Gets the verification key for this snark account.
+    fn update_vk(&self) -> &PredicateKey;
+
+    /// Gets the update seqno.
+    fn seqno(&self) -> Seqno;
+
+    /// Gets the inner state root hash.
+    fn inner_state_root(&self) -> Hash;
+
+    /// Gets the index of the next message to be read/processed by this account.
+    fn next_inbox_msg_idx(&self) -> u64;
+
+    // Inbox accessors
+
+    /// Gets current the inbox MMR state, which we can use to check proofs
+    /// against the state.
+    fn inbox_mmr(&self) -> &Mmr64;
+}
+
+/// Mutable accessor to snark account state.
+pub trait ISnarkAccountStateMut: ISnarkAccountState {
+    /// Sets the inner state root unconditionally.
+    fn set_proof_state(&mut self, inner_state: Hash, next_read_idx: u64, seqno: Seqno);
+
+    /// Inserts message data into the inbox.  Performs no other operations.
+    ///
+    /// This is exposed like this so that we can expose the message entry in DA.
+    fn insert_inbox_message(&mut self, entry: MessageEntry) -> StateResult<()>;
+
+    /// Replaces the predicate key (verification key) used to verify future
+    /// updates to this snark account.
+    ///
+    /// Does not touch proof state, seqno, or inbox.
+    fn set_update_vk(&mut self, new_vk: PredicateKey);
 }

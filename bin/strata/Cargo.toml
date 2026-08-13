@@ -24,7 +24,7 @@ debug-utils = [
 ]
 prover = [
   "dep:strata-ol-state-support-types",
-  "dep:strata-ol-stf",
+  "dep:strata-ol-stf-v1",
   "dep:strata-paas",
   "dep:strata-proofimpl-checkpoint",
   "dep:strata-proofimpl-predicate-keys",
@@ -62,12 +62,11 @@ strata-csm-worker.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
-strata-ledger-types.workspace = true
 strata-logging.workspace = true
 strata-metrics.workspace = true
 strata-node-context.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }
-strata-ol-chain-types.workspace = true
+strata-ol-chain-types-v1.workspace = true
 strata-ol-checkpoint.workspace = true
 strata-ol-genesis.workspace = true
 strata-ol-mempool.workspace = true
@@ -78,7 +77,8 @@ strata-ol-sequencer = { workspace = true, optional = true }
 strata-ol-state-provider = { workspace = true, optional = true }
 strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
-strata-ol-stf = { workspace = true, optional = true }
+strata-ol-state-types-v1.workspace = true
+strata-ol-stf-v1 = { workspace = true, optional = true }
 strata-paas = { workspace = true, optional = true }
 strata-predicate.workspace = true
 strata-primitives.workspace = true
@@ -117,10 +117,10 @@ strata-btc-verification.workspace = true
 strata-l1-txfmt.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
-strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
+strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-state-support-types.workspace = true
-strata-ol-state-types = { workspace = true, features = ["test-utils"] }
+strata-ol-state-types-v1 = { workspace = true, features = ["test-utils"] }
 
 [lints]
 workspace = true

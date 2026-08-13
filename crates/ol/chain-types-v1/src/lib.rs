@@ -4,8 +4,6 @@ mod block;
 mod block_flags;
 mod error;
 mod log;
-mod proofs;
-mod transaction;
 mod validation;
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -36,5 +34,5 @@ pub use block_flags::*;
 // Re-export the OL log types (canonically defined in `strata-ol-logs`).
 pub use log::*;
 // Re-export generated SSZ types with their canonical names
-pub use ssz_generated::ssz::{block::*, proofs::*, transaction::*};
+pub use ssz_generated::ssz::block::*;
 pub use validation::*;

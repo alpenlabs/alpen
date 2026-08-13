@@ -1,5 +1,5 @@
 [package]
-name = "strata-ol-chain-types"
+name = "strata-ol-chain-types-v1"
 version = "0.1.0"
 edition = "2024"
 
@@ -13,11 +13,11 @@ strata-asm-common.workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-ol-logs.workspace = true
+strata-ol-tx-types-v1.workspace = true
 strata-predicate.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
-int-enum.workspace = true
 proptest = { optional = true, workspace = true }
 rand = { optional = true, workspace = true }
 secp256k1 = { optional = true, workspace = true }
@@ -28,6 +28,7 @@ proptest.workspace = true
 rand.workspace = true
 secp256k1.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
+strata-ol-tx-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-test-utils-ssz.workspace = true
 
 [build-dependencies]
@@ -39,6 +40,7 @@ test-utils = [
   "dep:rand",
   "dep:secp256k1",
   "strata-identifiers/test-utils",
+  "strata-ol-tx-types-v1/test-utils",
 ]
 
 [lints]

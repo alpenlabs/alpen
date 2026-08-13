@@ -6,13 +6,11 @@ fn main() {
     let out_dir = var("OUT_DIR").expect("OUT_DIR not set by cargo");
     let output_path = Path::new(&out_dir).join("generated.rs");
 
-    let entry_points = ["transaction.ssz", "block.ssz", "proofs.ssz"];
+    let entry_points = ["transaction.ssz", "proofs.ssz"];
     let base_dir = "ssz";
     let crates = [
         "strata_identifiers",
         "strata_acct_types",
-        "strata_snark_acct_types",
-        "strata_asm_common",
         "strata_predicate",
     ];
 

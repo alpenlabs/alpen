@@ -1,7 +1,6 @@
 import strata_acct_types
 import strata_identifiers
 import strata_predicate
-import strata_snark_acct_types
 
 import proofs
 

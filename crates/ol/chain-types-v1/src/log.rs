@@ -5,8 +5,8 @@
 //! re-exports them. The OL-STF-specific bridge from [`SauTxUpdateData`] lives on
 //! [`SauTxUpdateData::get_log_data`].
 //!
-//! [`SauTxUpdateData`]: crate::SauTxUpdateData
-//! [`SauTxUpdateData::get_log_data`]: crate::SauTxUpdateData::get_log_data
+//! [`SauTxUpdateData`]: strata_ol_tx_types_v1::SauTxUpdateData
+//! [`SauTxUpdateData::get_log_data`]: strata_ol_tx_types_v1::SauTxUpdateData::get_log_data
 
 pub use strata_ol_logs::{
     DestinationBufVec, ExtraDataBufVec, LogDecodeError, MAX_LOG_PAYLOAD_LEN, OLLog, OLLogRef,

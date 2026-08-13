@@ -9,7 +9,7 @@ workspace = true
 [dependencies]
 strata-asm-checkpoint-types.workspace = true
 strata-identifiers.workspace = true
-strata-ol-chain-types.workspace = true
+strata-ol-chain-types-v1.workspace = true
 
 arbitrary.workspace = true
 serde.workspace = true

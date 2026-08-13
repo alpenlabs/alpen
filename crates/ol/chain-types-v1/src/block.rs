@@ -5,16 +5,14 @@ use ssz_types::VariableList;
 use strata_asm_common::AsmManifest;
 use strata_crypto::hash;
 use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockCommitment, OLBlockId, Slot};
+use strata_ol_tx_types_v1::OLTransaction;
 
 use crate::{
     block_flags::BlockFlags,
     error::ChainTypesError,
-    ssz_generated::ssz::{
-        block::{
-            MAX_SEALING_MANIFEST_COUNT, MAX_TXS_PER_BLOCK, OLAsmManifestContainer, OLBlock,
-            OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
-        },
-        transaction::OLTransaction,
+    ssz_generated::ssz::block::{
+        MAX_SEALING_MANIFEST_COUNT, MAX_TXS_PER_BLOCK, OLAsmManifestContainer, OLBlock,
+        OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     },
 };
 

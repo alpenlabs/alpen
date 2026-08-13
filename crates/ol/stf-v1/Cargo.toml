@@ -1,5 +1,5 @@
 [package]
-name = "strata-ol-stf"
+name = "strata-ol-stf-v1"
 version = "0.1.0"
 edition = "2024"
 
@@ -13,16 +13,16 @@ strata-asm-logs.workspace = true
 strata-bridge-params.workspace = true
 strata-codec.workspace = true
 strata-identifiers.workspace = true
-strata-ledger-types.workspace = true
 strata-merkle.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-bridge-types.workspace = true
-strata-ol-chain-types.workspace = true
+strata-ol-chain-types-v1.workspace = true
 strata-ol-da.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-params = { workspace = true, optional = true }
 strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
+strata-ol-state-types-v1.workspace = true
 strata-predicate.workspace = true
 strata-snark-acct-sys.workspace = true
 strata-snark-acct-types.workspace = true
