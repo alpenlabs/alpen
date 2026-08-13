@@ -6139,9 +6139,9 @@ dependencies = [
 
 [[package]]
 name = "rkyv_impl"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4807f9916a57301b1992146d1d120808f1b0d5f5994a3b7319dbe5178333422e"
+checksum = "c0dd2b1a039abca502ce9c2a227c0778a4f5fdf766cfbf55686837fbab00869c"
 dependencies = [
  "proc-macro2",
  "quote",
