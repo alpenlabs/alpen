@@ -3,7 +3,7 @@
 //! This module provides the core ExecutionEnvironment implementation for EVM blocks,
 //! using RSP's sparse state and Reth's EVM execution engine.
 
-use std::sync::Arc;
+use std::{mem, sync::Arc};
 
 use alloy_consensus::Block as AlloyBlock;
 use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
@@ -70,6 +70,23 @@ fn convert_withdrawal_intents_to_messages(
         let message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload);
         outputs.add_message(message);
     }
+}
+
+/// Converts one block's execution state into the writes carried to the next block.
+///
+/// Contract code is separate from the hashed account/storage state in reth's
+/// execution output. Moving it into the write batch is therefore required for
+/// a later block in the same proof chunk to execute code deployed by this one.
+fn into_write_batch(
+    mut execution_output: BlockExecutionOutput<EthereumReceipt>,
+    block_number: u64,
+) -> EvmWriteBatch {
+    let deployed_bytecodes = mem::take(&mut execution_output.state.contracts)
+        .into_iter()
+        .collect();
+    let hashed_post_state = compute_hashed_post_state(execution_output, block_number);
+
+    EvmWriteBatch::new(hashed_post_state, deployed_bytecodes)
 }
 
 impl EvmExecutionEnvironment {
@@ -147,14 +164,12 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 6: Convert execution outcome to HashedPostState.
+        // Step 6: Convert execution state and newly deployed code into the
+        // writes carried to subsequent blocks in this proof chunk.
         let block_number = header_intrinsics.number();
-        let hashed_post_state = compute_hashed_post_state(execution_output, block_number);
+        let write_batch = into_write_batch(execution_output, block_number);
 
-        // Step 7: Split state writes from execution-derived header commitments.
-        let write_batch = EvmWriteBatch::new(hashed_post_state);
-
-        // Step 8: Create ExecOutputs with withdrawal intent messages.
+        // Step 7: Create ExecOutputs with withdrawal intent messages.
         let mut outputs = ExecOutputs::new_empty();
         convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
 
@@ -209,8 +224,8 @@ mod tests {
 
     use alloy_consensus::Sealable;
     use reth_primitives_traits::Block as RethBlockTrait;
-    use revm::{DatabaseRef, state::Bytecode};
-    use revm_primitives::{B256, alloy_primitives::Bloom};
+    use revm::{DatabaseRef, database::BundleState, state::Bytecode};
+    use revm_primitives::{B256, Bytes, alloy_primitives::Bloom};
     use rsp_client_executor::io::EthClientExecutorInput;
     use serde::Deserialize;
     use strata_ee_acct_types::{ExecBlock, ExecHeader};
@@ -230,6 +245,22 @@ mod tests {
             .into_iter()
             .map(|bytecode| (bytecode.hash_slow(), bytecode))
             .collect()
+    }
+
+    #[test]
+    fn write_batch_preserves_contracts_created_by_execution() {
+        let bytecode = Bytecode::new_raw(Bytes::from_static(&[0x60, 0x2a, 0x5f, 0x52]));
+        let code_hash = bytecode.hash_slow();
+        let mut state = BundleState::default();
+        state.contracts.insert(code_hash, bytecode.clone());
+        let execution_output = BlockExecutionOutput {
+            result: Default::default(),
+            state,
+        };
+
+        let write_batch = into_write_batch(execution_output, 1);
+
+        assert_eq!(write_batch.bytecodes().get(&code_hash), Some(&bytecode));
     }
 
     #[test]
