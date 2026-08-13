@@ -10,7 +10,7 @@ proc-macro = true
 workspace = true
 
 [dependencies]
-derive-syn-parse = "0.1"
+derive-syn-parse = "0.2"
 itertools.workspace = true
 proc-macro2 = "1"
 quote = "1"
