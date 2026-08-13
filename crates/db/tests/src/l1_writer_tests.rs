@@ -221,7 +221,12 @@ pub fn test_bundle_intent_payload(db: &impl L1WriterDatabase) {
         .get_intent_by_id(intent_id)
         .expect("test: get intent")
         .expect("test: stored intent");
-    assert_eq!(stored_intent.status, IntentStatus::Bundled(payload_idx));
+    assert_eq!(
+        stored_intent.status,
+        IntentStatus::Bundled {
+            bundle_idx: payload_idx
+        }
+    );
     assert_eq!(stored_intent.intent, intent.intent);
     assert_eq!(
         db.get_intent_by_idx(intent_idx)

@@ -7,6 +7,8 @@ use strata_identifiers::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 
 use crate::{BlockNumHash, ProofId};
 
+// TODO(STR-4242): switch to ExecBlockId/ExecBlockCommitment instead of Hash
+
 /// Unique, deterministic identifier for a batch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Codec)]
 pub struct BatchId {

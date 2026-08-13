@@ -5,10 +5,7 @@ use strata_db_types::ol_state_index::{
 };
 use strata_identifiers::{AccountId, Epoch};
 
-use crate::{
-    define_table_with_default_codec, define_table_without_codec, impl_cbor_value_codec,
-    impl_codec_key_codec,
-};
+use crate::{define_table_without_codec, impl_cbor_value_codec, impl_codec_key_codec};
 
 define_table_without_codec!(
     /// Maps [`Epoch`] to the epoch's common indexing data.
@@ -30,7 +27,9 @@ define_table_without_codec!(
 impl_codec_key_codec!(OLAccountInboxEntrySchema, AccountEpochKey);
 impl_cbor_value_codec!(OLAccountInboxEntrySchema, Vec<InboxMessageRecord>);
 
-define_table_with_default_codec!(
+define_table_without_codec!(
     /// Maps [`AccountId`] to the epoch in which it was created.
     (OLAccountCreationEpochSchema) AccountId => Epoch
 );
+impl_codec_key_codec!(OLAccountCreationEpochSchema, AccountId);
+impl_cbor_value_codec!(OLAccountCreationEpochSchema, Epoch);

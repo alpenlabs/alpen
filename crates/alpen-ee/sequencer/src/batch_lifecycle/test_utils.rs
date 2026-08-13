@@ -139,9 +139,7 @@ pub(crate) async fn fill_storage(
 pub(crate) fn read_batch_statuses(storage: impl AsRef<InMemoryStorage>) -> Vec<TestBatchStatus> {
     storage
         .as_ref()
-        .batches
-        .read()
-        .unwrap()
+        .batches()
         .iter()
         .filter_map(|(_, (_, batch_status))| match batch_status {
             BatchStatus::Genesis => None,

@@ -9,7 +9,7 @@ use super::{
     io::BroadcasterIoContext,
     processor::{fetch_unfinalized_entries, process_unfinalized_entries, update_state},
 };
-use crate::BtcioParams;
+use crate::{tx_entry::L1TxEntryExt, BtcioParams};
 
 /// Transaction entry coupled with its broadcast DB index.
 pub(crate) type IndexedEntry = Indexed<L1TxEntry, u64>;

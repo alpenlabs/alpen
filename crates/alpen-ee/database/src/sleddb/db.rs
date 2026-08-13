@@ -19,7 +19,7 @@ use crate::{
     },
     sleddb::{
         BatchByIdxSchema, BatchChunksSchema, BatchIdToIdxSchema, BlockAccessedStateSchema,
-        BlockWitnessSchema, BytecodeSchema, ChunkByIdxSchema, ChunkIdToIdxSchema,
+        BytecodeSchema, ChunkByIdxSchema, ChunkIdToIdxSchema, EeBlockWitnessSchema,
         ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema,
         ExecBlocksAtHeightSchema,
     },
@@ -89,7 +89,7 @@ pub(crate) struct EeNodeDBSled {
     batch_chunks_tree: SledTree<BatchChunksSchema>,
     block_accessed_state_tree: SledTree<BlockAccessedStateSchema>,
     bytecode_tree: SledTree<BytecodeSchema>,
-    block_witness_tree: SledTree<BlockWitnessSchema>,
+    block_witness_tree: SledTree<EeBlockWitnessSchema>,
     config: SledDbConfig,
 }
 
@@ -256,7 +256,7 @@ impl EeNodeDb for EeNodeDBSled {
         // NOTE: sled currently does not allow to check for db empty or last item inside
         // transaction. There is a potential race condition where this check can be bypassed.
 
-        let blockid = (*ol_epoch.last_blkid()).into();
+        let blockid = *ol_epoch.last_blkid();
         let account_state = DBAccountStateAtEpoch::from_parts(
             epoch,
             ol_epoch.last_slot(),
@@ -329,23 +329,21 @@ impl EeNodeDb for EeNodeDBSled {
     }
 
     fn get_ol_blockid(&self, epoch: u32) -> DbResult<Option<OLBlockId>> {
-        let block_id = self.ol_blockid_tree.get(&epoch)?;
-        Ok(block_id.map(Into::into))
+        Ok(self.ol_blockid_tree.get(&epoch)?)
     }
 
     fn ee_account_state(&self, block_id: OLBlockId) -> DbResult<Option<EeAccountStateAtEpoch>> {
-        let block_id = block_id.into();
         let Some(account_state) = self.account_state_tree.get(&block_id)? else {
             return Ok(None);
         };
 
         let (epoch, slot, account_state) = account_state.into_parts();
 
-        let ol_epoch = EpochCommitment::new(epoch, slot, block_id.into());
+        let ol_epoch = EpochCommitment::new(epoch, slot, block_id);
 
         Ok(Some(EeAccountStateAtEpoch::new(
             ol_epoch,
-            account_state.into(),
+            account_state.try_into()?,
         )))
     }
 
@@ -355,16 +353,16 @@ impl EeNodeDb for EeNodeDBSled {
         };
 
         let Some(account_state) = self.account_state_tree.get(&block_id)? else {
-            return Err(DbError::MissingAccountState(block_id.into()));
+            return Err(DbError::MissingAccountState(block_id));
         };
 
         let (epoch, slot, account_state) = account_state.into_parts();
 
-        let ol_epoch = EpochCommitment::new(epoch, slot, block_id.into());
+        let ol_epoch = EpochCommitment::new(epoch, slot, block_id);
 
         Ok(Some(EeAccountStateAtEpoch::new(
             ol_epoch,
-            account_state.into(),
+            account_state.try_into()?,
         )))
     }
 
@@ -586,11 +584,7 @@ impl EeNodeDb for EeNodeDBSled {
             return Ok(None);
         };
 
-        let block = db_block
-            .try_into()
-            .map_err(|err| DbError::Other(format!("Failed to decode block: {err:?}")))?;
-
-        Ok(Some(block))
+        Ok(Some(db_block.try_into()?))
     }
 
     fn get_block_payload(&self, hash: Hash) -> DbResult<Option<Vec<u8>>> {
@@ -733,7 +727,7 @@ impl EeNodeDb for EeNodeDBSled {
                     abort(DbError::BatchNotFound(batch_id))?
                 };
 
-                let parts_result: Result<(Batch, BatchStatus), _> = current.into_parts();
+                let parts_result: Result<(Batch, BatchStatus), _> = current.into_parts(idx);
                 let (batch, _old_status) = parts_result
                     .map_err(|e| TSledError::abort(DbError::BatchDeserialize(e.to_string())))?;
 
@@ -768,7 +762,7 @@ impl EeNodeDb for EeNodeDBSled {
         let mut batch_ids_to_remove = Vec::new();
         for idx in (to_idx + 1)..=max_idx {
             if let Some(db_batch) = self.batch_by_idx_tree.get(&idx)? {
-                let parts_result: Result<(Batch, BatchStatus), _> = db_batch.into_parts();
+                let parts_result: Result<(Batch, BatchStatus), _> = db_batch.into_parts(idx);
                 if let Ok((batch, _)) = parts_result {
                     batch_ids_to_remove.push((idx, DBBatchId::from(batch.id())));
                 }
@@ -811,7 +805,7 @@ impl EeNodeDb for EeNodeDBSled {
             return Ok(None);
         };
 
-        let parts_result: Result<(Batch, BatchStatus), _> = db_batch.into_parts();
+        let parts_result: Result<(Batch, BatchStatus), _> = db_batch.into_parts(idx);
         let (batch, status) = parts_result.map_err(|e| DbError::BatchDeserialize(e.to_string()))?;
 
         Ok(Some((batch, status)))
@@ -863,7 +857,7 @@ impl EeNodeDb for EeNodeDBSled {
                     abort(DbError::ChunkNotFound(chunk_id))?
                 };
 
-                let (chunk, _old_status) = current.into_parts();
+                let (chunk, _old_status) = current.into_parts(idx);
 
                 // Verify we're updating the correct chunk (guards against reorg race)
                 if chunk.id() != chunk_id {
@@ -896,7 +890,7 @@ impl EeNodeDb for EeNodeDBSled {
         let mut chunk_ids_to_remove = Vec::new();
         for idx in from_idx..=max_idx {
             if let Some(db_chunk) = self.chunk_by_idx_tree.get(&idx)? {
-                let parts: (Chunk, ChunkStatus) = db_chunk.into_parts();
+                let parts: (Chunk, ChunkStatus) = db_chunk.into_parts(idx);
                 let (chunk, _) = parts;
                 chunk_ids_to_remove.push((idx, DBChunkId::from(chunk.id())));
             }
@@ -932,7 +926,7 @@ impl EeNodeDb for EeNodeDBSled {
             return Ok(None);
         };
 
-        let parts: (Chunk, ChunkStatus) = db_chunk.into_parts();
+        let parts: (Chunk, ChunkStatus) = db_chunk.into_parts(idx);
         let (chunk, status) = parts;
 
         Ok(Some((chunk, status)))

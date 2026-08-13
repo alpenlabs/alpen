@@ -2,8 +2,10 @@
 
 use std::fmt;
 
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::Serialize;
+// TODO(STR-4238): split ChunkedEnvelopeEntry into different parts for the different types of enveloped and the different stages of processing
+
+use serde::{Deserialize, Serialize};
+use serde_bytes::ByteBuf;
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_l1_txfmt::MagicBytes;
@@ -20,10 +22,14 @@ use crate::DbResult;
 /// (`magic + version`); each subsequent P2TR output funds a
 /// reveal whose tapscript carries one chunk under `<sequencer_pk> OP_CHECKSIG`.
 /// Reveals do NOT reference each other; entries are independent across batches.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+// FIXME(STR-4238): this merges information from different stages into a single entry, which creates issues where multiple services are writing to the same database object
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ChunkedEnvelopeEntry {
     /// Raw chunk payloads, ordered by commit-output index.
-    pub chunk_data: Vec<Vec<u8>>,
+    ///
+    /// Wrapped so that serde encodes each chunk as a byte string rather than a sequence of
+    /// integers; read it through [`ChunkedEnvelopeEntry::chunk_data`].
+    chunk_data: Vec<ByteBuf>,
     /// OP_RETURN magic bytes (4) used in the commit tx.
     pub magic_bytes: MagicBytes,
     /// DA blob version carried in the commit OP_RETURN.
@@ -49,7 +55,7 @@ impl ChunkedEnvelopeEntry {
         da_blob_version: u32,
     ) -> Self {
         Self {
-            chunk_data,
+            chunk_data: chunk_data.into_iter().map(ByteBuf::from).collect(),
             magic_bytes,
             da_blob_version,
             commit_txid: L1TxId::zero(),
@@ -57,6 +63,16 @@ impl ChunkedEnvelopeEntry {
             reveals: Vec::new(),
             status: ChunkedEnvelopeStatus::Unsigned,
         }
+    }
+
+    /// Returns the raw chunk payloads, ordered by commit-output index.
+    pub fn chunk_data(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.chunk_data.iter().map(|chunk| chunk.as_slice())
+    }
+
+    /// Returns the number of chunks in this envelope.
+    pub fn chunk_count(&self) -> usize {
+        self.chunk_data.len()
     }
 }
 
@@ -66,7 +82,7 @@ impl fmt::Display for ChunkedEnvelopeEntry {
             f,
             "ChunkedEnvelopeEntry(status={}, chunk_count={}, commit_txid={:?}, reveals=[",
             self.status,
-            self.chunk_data.len(),
+            self.chunk_count(),
             self.commit_txid
         )?;
 
@@ -82,7 +98,8 @@ impl fmt::Display for ChunkedEnvelopeEntry {
 }
 
 /// Metadata for a single reveal transaction within a chunked envelope.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+// FIXME(STR-4238): this "meta" type contains non-meta data, the serialized transaction
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct RevealTxMeta {
     /// Output index in the commit tx that this reveal spends.
     pub vout_index: u32,
@@ -92,6 +109,7 @@ pub struct RevealTxMeta {
     pub wtxid: L1WtxId,
     /// Raw signed reveal transaction bytes (consensus-encoded).
     /// Stored here until the commit is published, then added to broadcast DB.
+    #[serde(with = "serde_bytes")]
     pub tx_bytes: Vec<u8>,
 }
 
@@ -112,7 +130,8 @@ impl fmt::Display for RevealTxMeta {
 ///                 ↓              ↓
 ///            NeedsResign    NeedsResign
 /// ```
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ChunkedEnvelopeStatus {
     /// Chunk data prepared, transactions not yet created.
     Unsigned,
@@ -213,7 +232,7 @@ mod tests {
         let reveal_bytes = bytes_from_start(0x41);
         let reveal_witness_bytes = bytes_from_start(0x61);
         let entry = ChunkedEnvelopeEntry {
-            chunk_data: vec![vec![1], vec![2]],
+            chunk_data: vec![ByteBuf::from(vec![1]), ByteBuf::from(vec![2])],
             magic_bytes: MagicBytes::new([0; 4]),
             da_blob_version: 1,
             commit_txid: L1TxId::from(commit_bytes),

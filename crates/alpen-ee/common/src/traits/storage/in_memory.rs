@@ -2,7 +2,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::RwLock,
+    sync::{RwLock, RwLockReadGuard},
 };
 
 use async_trait::async_trait;
@@ -16,20 +16,27 @@ use crate::{
 /// In-memory storage for batches and chunks.
 #[derive(Debug, Default)]
 pub struct InMemoryStorage {
-    pub batches: RwLock<BTreeMap<u64, (Batch, BatchStatus)>>,
-    pub batch_id_to_idx: RwLock<HashMap<BatchId, u64>>,
-    pub chunks: RwLock<BTreeMap<u64, (Chunk, ChunkStatus)>>,
-    pub chunk_id_to_idx: RwLock<HashMap<ChunkId, u64>>,
-    pub batch_chunks: RwLock<HashMap<BatchId, Vec<ChunkId>>>,
-    pub block_accessed_state: RwLock<HashMap<Hash, AccessedStateRecord>>,
-    pub bytecodes: RwLock<HashMap<Hash, Vec<u8>>>,
-    pub block_witnesses: RwLock<HashMap<Hash, Vec<u8>>>,
+    batches: RwLock<BTreeMap<u64, (Batch, BatchStatus)>>,
+    batch_id_to_idx: RwLock<HashMap<BatchId, u64>>,
+    chunks: RwLock<BTreeMap<u64, (Chunk, ChunkStatus)>>,
+    chunk_id_to_idx: RwLock<HashMap<ChunkId, u64>>,
+    batch_chunks: RwLock<HashMap<BatchId, Vec<ChunkId>>>,
+    block_accessed_state: RwLock<HashMap<Hash, AccessedStateRecord>>,
+    bytecodes: RwLock<HashMap<Hash, Vec<u8>>>,
+    block_witnesses: RwLock<HashMap<Hash, Vec<u8>>>,
 }
 
 impl InMemoryStorage {
     /// Create a new empty in-memory storage.
     pub fn new_empty() -> Self {
         Self::default()
+    }
+
+    /// Returns a read guard over the stored batches, keyed by index.
+    ///
+    /// Read-only view for test assertions; mutation goes through the storage traits.
+    pub fn batches(&self) -> RwLockReadGuard<'_, BTreeMap<u64, (Batch, BatchStatus)>> {
+        self.batches.read().expect("batches lock poisoned")
     }
 
     /// Create storage pre-populated with a genesis batch.

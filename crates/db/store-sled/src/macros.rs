@@ -27,96 +27,10 @@ macro_rules! define_table_without_codec {
     };
 }
 
-#[macro_export]
-macro_rules! define_table_with_default_codec {
-    ($(#[$docs:meta])+ ($table_name:ident) $key:ty => $value:ty) => {
-        $crate::define_table_without_codec!($(#[$docs])+ ( $table_name ) $key => $value);
-
-        impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
-            fn encode_key(&self) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                ::borsh::to_vec(self).map_err(Into::into)
-            }
-
-            fn decode_key(data: &[u8]) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                ::borsh::BorshDeserialize::deserialize_reader(&mut &data[..]).map_err(Into::into)
-            }
-        }
-
-        $crate::impl_borsh_value_codec!($table_name, $value);
-    };
-}
-
-/// Variation of [`define_table_with_default_codec`].
+/// Big-endian key codec built on [`bincode`].
 ///
-/// It is generally used for schemas with integer keys. [`typed_sled::codec::KeyCodec`] is
-/// implemented for all the integer types and this macro leverages that.
-#[macro_export]
-macro_rules! define_table_with_integer_key {
-    ($(#[$docs:meta])+ ($table_name:ident) $key:ty => $value:ty) => {
-        $crate::define_table_without_codec!($(#[$docs])+ ( $table_name ) $key => $value);
-
-        $crate::impl_borsh_value_codec!($table_name, $value);
-    };
-}
-
-/// Variation of [`define_table_with_default_codec`].
-///
-/// It shall be used when your key type should be serialized lexicographically.
-///
-/// Borsh serializes integers as little-endian, but lexicographic
-/// ordering requires big-endian for proper sorting, so we use [`bincode`]
-/// with the big-endian option here. This ensures consistent key ordering
-/// for range queries and seeks.
-#[macro_export]
-macro_rules! define_table_with_seek_key_codec {
-    ($(#[$docs:meta])+ ($table_name:ident) $key:ty => $value:ty) => {
-        $crate::define_table_without_codec!($(#[$docs])+ ( $table_name ) $key => $value);
-
-        impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
-            fn encode_key(&self) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                use ::anyhow::Context as _;
-                use ::bincode::Options as _;
-
-                let bincode_options = ::bincode::options()
-                    .with_fixint_encoding()
-                    .with_big_endian();
-
-                bincode_options.serialize(self).context("Failed to serialize key").map_err(|err| {
-                    ::typed_sled::codec::CodecError::SerializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
-            }
-
-            fn decode_key(data: &[u8]) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                use ::anyhow::Context as _;
-                use ::bincode::Options as _;
-
-                let bincode_options = ::bincode::options()
-                    .with_fixint_encoding()
-                    .with_big_endian();
-
-                bincode_options.deserialize_from(&mut &data[..]).context("Failed to deserialize key").map_err(|err| {
-                    ::typed_sled::codec::CodecError::SerializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
-            }
-        }
-
-        $crate::impl_borsh_value_codec!($table_name, $value);
-    };
-}
-
-/// Variation of [`define_table_with_default_codec`].
-///
-/// It shall be used when your key type should be serialized lexicographically.
-///
-/// Borsh serializes integers as little-endian, but RocksDB uses lexicographic
-/// ordering which is only compatible with big-endian, so we use [`bincode`]
-/// with the big-endian option here.
+/// Used where a key type needs to sort lexicographically but has no `strata-codec` impl.
+/// Lexicographic ordering requires big-endian, hence the fixint/big-endian bincode options.
 #[macro_export]
 macro_rules! impl_bincode_key_codec {
     ($table_name:ident, $key:ty) => {
@@ -153,98 +67,6 @@ macro_rules! impl_bincode_key_codec {
                         schema: $table_name::tree_name(),
                         source: err.into(),
                     })
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! impl_borsh_key_codec {
-    ($table_name:ident, $key:ty) => {
-        impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
-            fn encode_key(
-                &self,
-            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                ::borsh::to_vec(self).map_err(|err| {
-                    ::typed_sled::codec::CodecError::SerializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
-            }
-
-            fn decode_key(
-                data: &[u8],
-            ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                ::borsh::BorshDeserialize::deserialize_reader(&mut &data[..]).map_err(|err| {
-                    ::typed_sled::codec::CodecError::SerializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! impl_borsh_value_codec {
-    ($table_name:ident, $value:ty) => {
-        impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
-            type Decoded = Self;
-
-            fn encode_value(
-                &self,
-            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                ::borsh::to_vec(self).map_err(|err| {
-                    ::typed_sled::codec::CodecError::SerializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
-            }
-
-            fn decode_value(
-                data: ::sled::IVec,
-            ) -> ::std::result::Result<Self::Decoded, ::typed_sled::codec::CodecError> {
-                ::borsh::BorshDeserialize::deserialize_reader(&mut data.as_ref()).map_err(|err| {
-                    ::typed_sled::codec::CodecError::DeserializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
-            }
-        }
-    };
-}
-
-/// SSZ value codec macro.
-///
-/// For values whose canonical encoding is SSZ, which is the only encoding some
-/// consensus types (e.g. `AnchorState`) implement.
-#[macro_export]
-macro_rules! impl_ssz_value_codec {
-    ($table_name:ident, $value:ty) => {
-        impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
-            type Decoded = Self;
-
-            fn encode_value(
-                &self,
-            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                Ok(::ssz::Encode::as_ssz_bytes(self))
-            }
-
-            fn decode_value(
-                data: ::sled::IVec,
-            ) -> ::std::result::Result<Self::Decoded, ::typed_sled::codec::CodecError> {
-                <Self as ::ssz::Decode>::from_ssz_bytes(data.as_ref()).map_err(|err| {
-                    ::typed_sled::codec::CodecError::DeserializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: ::std::boxed::Box::new(::std::io::Error::other(::std::format!(
-                            "{err:?}"
-                        ))),
-                    }
-                })
             }
         }
     };
@@ -319,6 +141,85 @@ macro_rules! impl_cbor_value_codec {
                         source: ::std::boxed::Box::new(err),
                     }
                 })
+            }
+        }
+    };
+}
+
+/// SSZ value codec macro.
+///
+/// For values whose canonical encoding is SSZ. Stores the SSZ bytes verbatim, with no framing.
+#[macro_export]
+macro_rules! impl_ssz_value_codec {
+    ($table_name:ident, $value:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
+            type Decoded = Self;
+
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(::ssz::Encode::as_ssz_bytes(self))
+            }
+
+            fn decode_value(
+                data: ::sled::IVec,
+            ) -> ::std::result::Result<Self::Decoded, ::typed_sled::codec::CodecError> {
+                <Self as ::ssz::Decode>::from_ssz_bytes(data.as_ref()).map_err(|err| {
+                    ::typed_sled::codec::CodecError::DeserializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: ::std::convert::From::from(::std::format!(
+                            "SSZ decode error: {err:?}"
+                        )),
+                    }
+                })
+            }
+        }
+    };
+}
+
+/// Identity value codec macro, for payloads the database stores without interpreting.
+///
+/// Requires the value to expose its bytes via [`AsRef<[u8]>`] and to be rebuildable from a
+/// `Vec<u8>`. Adds no length prefix or framing of its own.
+#[macro_export]
+macro_rules! impl_opaque_value_codec {
+    ($table_name:ident, $value:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
+            type Decoded = Self;
+
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(::std::convert::AsRef::<[u8]>::as_ref(self).to_vec())
+            }
+
+            fn decode_value(
+                data: ::sled::IVec,
+            ) -> ::std::result::Result<Self::Decoded, ::typed_sled::codec::CodecError> {
+                Ok(::std::convert::From::from(data.to_vec()))
+            }
+        }
+    };
+}
+
+/// Identity key codec macro, for keys that are already raw bytes.
+///
+/// Stores the key bytes verbatim so any documented prefix scheme sorts as written -- a length
+/// prefix would defeat prefix seeks.
+#[macro_export]
+macro_rules! impl_raw_bytes_key_codec {
+    ($table_name:ident, $key:ty) => {
+        impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
+            fn encode_key(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(::std::convert::AsRef::<[u8]>::as_ref(self).to_vec())
+            }
+
+            fn decode_key(
+                data: &[u8],
+            ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
+                Ok(::std::convert::From::from(data.to_vec()))
             }
         }
     };
@@ -424,7 +325,7 @@ macro_rules! define_sled_database {
             pub fn new(db: std::sync::Arc<typed_sled::SledDb>, config: $crate::SledDbConfig) -> strata_db_types::DbResult<Self> {
                 Ok(Self {
                     $(
-                        $field: db.get_tree()?,
+                        $field: db.get_tree().map_err($crate::utils::conv_sled_err)?,
                     )*
                     config,
                 })

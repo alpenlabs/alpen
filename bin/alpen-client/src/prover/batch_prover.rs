@@ -92,7 +92,11 @@ impl BatchProver for PaasBatchProver {
     async fn check_proof_status(&self, batch_id: BatchId) -> eyre::Result<ProofGenerationStatus> {
         // Source of truth: the typed batch proof DB (the acct hook writes
         // there). Present ⇒ Ready.
-        if self.batch_proofs.has_proof(batch_id) {
+        if self
+            .batch_proofs
+            .has_proof(batch_id)
+            .map_err(|e| eyre::eyre!("has_proof({batch_id}): {e}"))?
+        {
             return Ok(ProofGenerationStatus::Ready {
                 proof_id: EeBatchProofDbManager::proof_id_for(batch_id),
             });
@@ -125,6 +129,8 @@ impl BatchProver for PaasBatchProver {
     }
 
     async fn get_proof(&self, proof_id: ProofId) -> eyre::Result<Option<Proof>> {
-        Ok(self.batch_proofs.get_proof_by_id(proof_id))
+        self.batch_proofs
+            .get_proof_by_id(proof_id)
+            .map_err(|e| eyre::eyre!("get_proof_by_id({proof_id:?}): {e}"))
     }
 }

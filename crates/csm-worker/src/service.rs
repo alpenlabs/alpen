@@ -86,10 +86,10 @@ mod tests {
     use strata_asm_worker::AsmWorkerStatus;
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::asm::AsmExecOutput;
     use strata_identifiers::{Buf32, L1BlockId, OLBlockId};
     use strata_primitives::prelude::*;
     use strata_service::{Response, SyncService};
-    use strata_state::asm_state::AsmState;
     use strata_status::StatusChannel;
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
@@ -120,7 +120,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &last,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed client state");
 
@@ -152,12 +152,15 @@ mod tests {
         (state, storage, last)
     }
 
-    /// Builds an `AsmWorkerStatus` for `block` alongside the `AsmState` carrying
-    /// a single checkpoint-tip log. The status only carries the anchor state, so
-    /// the caller must register the `AsmState` with the context for the worker to
-    /// see the log. With `with_l1_fetch_failure`, that log triggers the failure
-    /// path in `process_asm_block`.
-    fn status_with_tip_log(block: L1BlockCommitment, epoch: u32) -> (AsmWorkerStatus, AsmState) {
+    /// Builds an `AsmWorkerStatus` for `block` alongside the `AsmExecOutput`
+    /// carrying a single checkpoint-tip log. The status only carries the anchor
+    /// state, so the caller must register the `AsmExecOutput` with the context for
+    /// the worker to see the log. With `with_l1_fetch_failure`, that log triggers
+    /// the failure path in `process_asm_block`.
+    fn status_with_tip_log(
+        block: L1BlockCommitment,
+        epoch: u32,
+    ) -> (AsmWorkerStatus, AsmExecOutput) {
         let l2_commitment = OLBlockCommitment::new(
             epoch as u64 * 10,
             OLBlockId::from(Buf32::from([epoch as u8; 32])),
@@ -170,7 +173,7 @@ mod tests {
         let log = strata_asm_common::AsmLogEntry::from_log(&CheckpointTipUpdate::new(tip))
             .expect("tip log");
         let anchor = make_anchor();
-        let asm_state = AsmState::new(anchor.clone(), vec![log]);
+        let asm_state = AsmExecOutput::new(anchor.clone(), vec![log]);
         let status = AsmWorkerStatus {
             is_initialized: true,
             cur_block: Some(block),
@@ -222,7 +225,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &last,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed client state");
 

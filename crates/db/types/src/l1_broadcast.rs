@@ -1,11 +1,10 @@
 //! L1 broadcast database interface and its transaction-entry record types.
 
+// TODO(STR-4237): split apart L1TxEntry into two database fields so we aren't overwriting the serialized tx whenever we update the status
+
 use std::fmt;
 
 use arbitrary::Arbitrary;
-use bitcoin::consensus::{self, deserialize, serialize};
-use bitcoin::Transaction;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
@@ -18,11 +17,10 @@ use crate::DbResult;
 
 /// This is the entry that gets saved to the database corresponding to a bitcoin transaction that
 /// the broadcaster will publish and watches for until finalization
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Deserialize, Serialize)]
 pub struct L1TxEntry {
     /// Raw serialized transaction. This is basically `consensus::serialize()` of [`Transaction`]
+    #[serde(with = "serde_bytes")]
     tx_raw: Vec<u8>,
 
     /// The status of the transaction in bitcoin
@@ -30,27 +28,20 @@ pub struct L1TxEntry {
 }
 
 impl L1TxEntry {
-    /// Create a new [`L1TxEntry`] from a [`Transaction`].
-    pub fn from_tx(tx: &Transaction) -> Self {
+    /// Creates an unpublished entry wrapping an already-serialized transaction.
+    ///
+    /// The database layer treats `tx_raw` as opaque; Bitcoin encoding lives with the callers
+    /// that own a `Transaction` (see `strata_btcio::tx_entry::L1TxEntryExt`).
+    pub fn new_unpublished(tx_raw: Vec<u8>) -> Self {
         Self {
-            tx_raw: serialize(tx),
+            tx_raw,
             status: L1TxStatus::Unpublished,
         }
     }
 
     /// Returns the raw serialized transaction.
-    ///
-    /// # Note
-    ///
-    /// Whenever possible use [`try_to_tx()`](L1TxEntry::try_to_tx) to deserialize the transaction.
-    /// This imposes more strict type checks.
     pub fn tx_raw(&self) -> &[u8] {
         &self.tx_raw
-    }
-
-    /// Deserializes the raw transaction into a [`Transaction`].
-    pub fn try_to_tx(&self) -> Result<Transaction, consensus::encode::Error> {
-        deserialize(&self.tx_raw)
     }
 
     pub fn is_valid(&self) -> bool {
@@ -63,10 +54,8 @@ impl L1TxEntry {
 }
 
 /// The possible statuses of a publishable transaction
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
-#[serde(tag = "status")]
+#[derive(Debug, Clone, PartialEq, Eq, Arbitrary, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
 pub enum L1TxStatus {
     /// The transaction is waiting to be published
     Unpublished,
@@ -79,6 +68,7 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Confirmed {
         confirmations: u64,
+        // TODO(STR-4237): use L1BlockCommitment with #[serde(flatten)] maybe
         block_hash: Buf32,
         block_height: L1Height,
     },
@@ -88,6 +78,7 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Finalized {
         confirmations: u64,
+        // TODO(STR-4237): use L1BlockCommitment with #[serde(flatten)] maybe
         block_hash: Buf32,
         block_height: L1Height,
     },
@@ -175,15 +166,15 @@ mod tests {
     #[test]
     fn check_serde_of_l1txstatus() {
         let test_cases: Vec<(L1TxStatus, &str)> = vec![
-            (L1TxStatus::Unpublished, r#"{"status":"Unpublished"}"#),
-            (L1TxStatus::Published, r#"{"status":"Published"}"#),
+            (L1TxStatus::Unpublished, r#"{"status":"unpublished"}"#),
+            (L1TxStatus::Published, r#"{"status":"published"}"#),
             (
                 L1TxStatus::Confirmed {
                     confirmations: 10,
                     block_hash: Buf32::zero(),
                     block_height: 42,
                 },
-                r#"{"status":"Confirmed","confirmations":10,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
+                r#"{"status":"confirmed","confirmations":10,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
             ),
             (
                 L1TxStatus::Finalized {
@@ -191,9 +182,9 @@ mod tests {
                     block_hash: Buf32::zero(),
                     block_height: 42,
                 },
-                r#"{"status":"Finalized","confirmations":100,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
+                r#"{"status":"finalized","confirmations":100,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
             ),
-            (L1TxStatus::InvalidInputs, r#"{"status":"InvalidInputs"}"#),
+            (L1TxStatus::InvalidInputs, r#"{"status":"invalidinputs"}"#),
         ];
 
         // check serialization and deserialization

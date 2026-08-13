@@ -1,6 +1,7 @@
 use std::iter;
 
 use strata_acct_types::Hash;
+use strata_codec::Codec;
 
 use crate::ProofId;
 
@@ -16,7 +17,7 @@ pub enum ChunkStatus {
 }
 
 /// Unique, deterministic identifier for a chunk.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Codec)]
 pub struct ChunkId {
     prev_block: Hash,
     last_block: Hash,

@@ -116,7 +116,6 @@ strata-asm-checkpoint-types.workspace = true
 strata-btc-verification.workspace = true
 strata-l1-txfmt.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
-strata-state.workspace = true
 strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
 strata-ol-params = { workspace = true, features = ["test-defaults"] }

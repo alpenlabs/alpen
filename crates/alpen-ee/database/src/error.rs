@@ -16,9 +16,11 @@ pub enum DbError {
     #[error("null OL block should not be persisted")]
     NullOLBlock,
 
-    /// OL slot was skipped in sequential persistence.
-    #[error("OL entries must be persisted sequentially but provided nonsequentially (exp next {expected}, got {got})")]
-    SkippedOLSlot { expected: u64, got: u64 },
+    /// OL epoch was skipped in sequential persistence.
+    ///
+    /// `last` is the highest epoch already stored, so the next acceptable one is `last + 1`.
+    #[error("OL entries must be persisted sequentially (expected {}, got {got})", .last + 1)]
+    SkippedOLSlot { last: u64, got: u64 },
 
     /// Transaction conflict: slot is already filled.
     #[error("likely db txn conflict, OL slot {0} already filled")]
@@ -31,6 +33,19 @@ pub enum DbError {
     /// Account state is missing for the given block.
     #[error("account state missing (at blkid {0})")]
     MissingAccountState(OLBlockId),
+
+    /// A stored account state holds more list entries than the SSZ type can represent.
+    ///
+    /// Only reachable from a corrupt or hand-written row, since anything written through this
+    /// crate came from a valid `EeAccountState`.
+    #[error(
+        "stored account state {list} list is over capacity (expected at most {max}, got {got})"
+    )]
+    AccountStateListOverCapacity {
+        list: &'static str,
+        max: usize,
+        got: usize,
+    },
 
     /// Finalized chain is empty.
     #[error("finalized exec block expected to be present")]
@@ -93,6 +108,14 @@ pub enum DbError {
     #[error("Failed to deserialize batch: {0}")]
     BatchDeserialize(String),
 
+    /// Exec block deserialization error.
+    #[error("failed to deserialize exec block: {0}")]
+    ExecBlockDeserialize(String),
+
+    /// A stored message payload is longer than the SSZ type can represent.
+    #[error("stored message payload is over capacity ({0} bytes)")]
+    MessagePayloadOverCapacity(usize),
+
     /// Database operation error.
     #[error("db ops: {0}")]
     DbOpsError(#[from] OpsError),
@@ -116,8 +139,8 @@ pub enum DbError {
 }
 
 impl DbError {
-    pub(crate) fn skipped_ol_slot(expected: u64, got: u64) -> DbError {
-        DbError::SkippedOLSlot { expected, got }
+    pub(crate) fn skipped_ol_slot(last: u64, got: u64) -> DbError {
+        DbError::SkippedOLSlot { last, got }
     }
 }
 
@@ -148,9 +171,9 @@ impl From<TransactionError<SledError>> for DbError {
 impl From<DbError> for StorageError {
     fn from(err: DbError) -> Self {
         match err {
-            DbError::SkippedOLSlot { expected, got } => StorageError::MissingSlot {
+            DbError::SkippedOLSlot { last, got } => StorageError::MissingSlot {
                 attempted_slot: got,
-                last_slot: expected,
+                last_slot: last,
             },
             DbError::CannotDeleteFinalizedBlock(hash) => {
                 StorageError::CannotDeleteFinalizedBlock(format!("{:?}", hash))

@@ -7,13 +7,24 @@
 
 use std::sync::Arc;
 
-use strata_db_types::checkpoint_proof::CheckpointProofDatabase;
-use strata_db_types::DbResult;
+use strata_db_types::checkpoint_proof::{CheckpointProofDatabase, ProofReceiptEntry};
+use strata_db_types::{DbError, DbResult};
 use strata_identifiers::EpochCommitment;
 use tokio::runtime::Handle;
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::ops::checkpoint_proof::CheckpointProofDbOps;
+
+/// Encodes a receipt into the opaque payload the database stores.
+fn encode_receipt(receipt: &ProofReceiptWithMetadata) -> ProofReceiptEntry {
+    ProofReceiptEntry::new(receipt.encode())
+}
+
+/// Decodes an opaque database payload back into a receipt.
+fn decode_receipt(entry: &ProofReceiptEntry) -> DbResult<ProofReceiptWithMetadata> {
+    ProofReceiptWithMetadata::decode(entry.as_bytes())
+        .map_err(|err| DbError::CodecError(format!("proof receipt (inner error: {err})")))
+}
 
 #[expect(
     missing_debug_implementations,
@@ -34,11 +45,15 @@ impl CheckpointProofDbManager {
         epoch: EpochCommitment,
         proof: ProofReceiptWithMetadata,
     ) -> DbResult<()> {
-        self.ops.put_proof_blocking(epoch, proof)
+        self.ops.put_proof_blocking(epoch, encode_receipt(&proof))
     }
 
     pub fn get_proof(&self, epoch: &EpochCommitment) -> DbResult<Option<ProofReceiptWithMetadata>> {
-        self.ops.get_proof_blocking(*epoch)
+        self.ops
+            .get_proof_blocking(*epoch)?
+            .as_ref()
+            .map(decode_receipt)
+            .transpose()
     }
 
     pub fn del_proof(&self, epoch: EpochCommitment) -> DbResult<bool> {

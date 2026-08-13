@@ -9,6 +9,8 @@
 //! The stored value is the encoded per-block witness record (kept as opaque
 //! bytes here so this crate stays free of the EE-specific witness type).
 
+// TODO(STR-4242): switch to ExecBlockId instead of Hash
+
 use async_trait::async_trait;
 use strata_acct_types::Hash;
 

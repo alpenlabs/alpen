@@ -39,7 +39,10 @@ use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
 use strata_l1_envelope_fmt::builder::build_envelope_script;
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
-use crate::writer::builder::{build_reveal_transaction, EnvelopeError};
+use crate::{
+    tx_entry::L1TxEntryExt,
+    writer::builder::{build_reveal_transaction, EnvelopeError},
+};
 
 /// A test implementation of a Bitcoin client.
 #[derive(Debug, Clone)]
@@ -570,7 +573,7 @@ pub fn create_checkpoint_envelope_tx(address: &str, l1_payload: L1Payload) -> Tr
         }],
     };
     // Concatenate all payload chunks into a single payload
-    let concatenated_payload: Vec<u8> = l1_payload.data().iter().flatten().copied().collect();
+    let concatenated_payload: Vec<u8> = l1_payload.data().flatten().copied().collect();
     let reveal_script = build_envelope_script(&concatenated_payload).unwrap();
 
     let td = TagDataRef::new(1, 1, &[]).unwrap();

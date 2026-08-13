@@ -1,11 +1,7 @@
-use strata_db_types::checkpoint_proof::CheckpointProofDatabase;
+use strata_db_types::checkpoint_proof::{CheckpointProofDatabase, ProofReceiptEntry};
 use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_identifiers::EpochCommitment;
 use strata_paas::{TaskRecordData, TaskStatus};
-use zkaleido::{
-    ProgramId, Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, ProofType,
-    PublicValues, ZkVm,
-};
 
 pub fn test_insert_new_proof(db: &impl CheckpointProofDatabase) {
     let (epoch, proof) = generate_proof();
@@ -13,7 +9,7 @@ pub fn test_insert_new_proof(db: &impl CheckpointProofDatabase) {
     let result = db.put_proof(epoch, proof.clone());
     assert!(
         result.is_ok(),
-        "ProofReceiptWithMetadata should be inserted successfully"
+        "proof receipt should be inserted successfully"
     );
 
     let stored_proof = db.get_proof(epoch).unwrap();
@@ -65,32 +61,20 @@ pub fn test_delete_task_roundtrip(db: &impl ProverTaskDatabase) {
 }
 
 // Helper functions
-fn generate_proof() -> (EpochCommitment, ProofReceiptWithMetadata) {
-    let epoch = EpochCommitment::null();
-    let proof = Proof::default();
-    let public_values = PublicValues::default();
-    let receipt = ProofReceipt::new(proof, public_values);
-    let metadata = ProofMetadata::new(
-        ZkVm::Native,
-        ProgramId([0u8; 32]),
-        "0.1".to_string(),
-        ProofType::Groth16,
-    );
-    let proof_receipt = ProofReceiptWithMetadata::new(receipt, metadata);
-    (epoch, proof_receipt)
+//
+// Receipts are opaque to the database, so these fixtures are plain byte payloads -- the
+// storage layer must round-trip them without interpreting their contents.
+fn generate_proof() -> (EpochCommitment, ProofReceiptEntry) {
+    (
+        EpochCommitment::null(),
+        ProofReceiptEntry::new(vec![0xA5; 24]),
+    )
 }
 
-/// Distinct receipt with a different `ProgramId` so equality comparisons
-/// can prove the upsert actually replaced the row rather than being a no-op.
-fn distinct_proof() -> ProofReceiptWithMetadata {
-    let receipt = ProofReceipt::new(Proof::default(), PublicValues::default());
-    let metadata = ProofMetadata::new(
-        ZkVm::Native,
-        ProgramId([1u8; 32]),
-        "0.2".to_string(),
-        ProofType::Groth16,
-    );
-    ProofReceiptWithMetadata::new(receipt, metadata)
+/// Distinct payload so equality comparisons can prove the upsert actually replaced the row
+/// rather than being a no-op.
+fn distinct_proof() -> ProofReceiptEntry {
+    ProofReceiptEntry::new(vec![0x5A; 32])
 }
 
 #[macro_export]

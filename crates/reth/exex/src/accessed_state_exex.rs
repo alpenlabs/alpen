@@ -242,13 +242,10 @@ where
             let mut storage_slots: Vec<[u8; 32]> =
                 slots.iter().map(|slot| slot.to_be_bytes::<32>()).collect();
             storage_slots.sort();
-            AccessedAccount {
-                address: addr.into_array(),
-                storage_slots,
-            }
+            AccessedAccount::new(addr.into_array(), storage_slots)
         })
         .collect();
-    accounts.sort_by_key(|a| a.address);
+    accounts.sort_by_key(|a| a.address());
 
     let mut bytecode_hashes: Vec<[u8; 32]> = accessed
         .accessed_contracts()
@@ -261,11 +258,7 @@ where
         accessed.accessed_block_idxs().iter().copied().collect();
     ancestor_block_numbers.sort();
 
-    let record = AccessedStateRecord {
-        accounts,
-        bytecode_hashes,
-        ancestor_block_numbers,
-    };
+    let record = AccessedStateRecord::new(accounts, bytecode_hashes, ancestor_block_numbers);
 
     let bytecodes = bytecode_entries_from_accessed_contracts(accessed.accessed_contracts().iter());
 

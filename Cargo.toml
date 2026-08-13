@@ -80,7 +80,6 @@ members = [
   "crates/snark-acct-runtime",
   "crates/snark-acct-sys",
   "crates/snark-acct-types",
-  "crates/state",
   "crates/status",
   "crates/storage",
   "crates/storage-common",
@@ -209,7 +208,6 @@ strata-simple-ee = { path = "crates/simple-ee" }
 strata-snark-acct-runtime = { path = "crates/snark-acct-runtime" }
 strata-snark-acct-sys = { path = "crates/snark-acct-sys" }
 strata-snark-acct-types = { path = "crates/snark-acct-types" }
-strata-state = { path = "crates/state" }
 strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }
 strata-storage-common = { path = "crates/storage-common" }
@@ -409,7 +407,6 @@ bitcoind-async-client = { version = "0.10.8", default-features = false, features
   "raw_rpc",
 ] }
 bitvec = { version = "1.0.1", features = ["serde"] }
-borsh = { version = "1.6.1", features = ["derive"] }
 bytes = "1.11.1"
 cfg-if = "1.0.0"
 chrono = "0.4.44"
@@ -461,6 +458,7 @@ rlp = "0.6.1"
 schemars = "1"
 secp256k1 = { version = "0.29.1", features = ["global-context", "std"] }
 serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11.15"
 serde_json = "1.0.94"
 serde_with = "3.18.0"
 sha2 = "0.10.8"

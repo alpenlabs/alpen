@@ -10,7 +10,6 @@ pub mod errors;
 pub mod l1;
 pub mod l1_broadcast;
 pub mod l1_writer;
-pub mod legacy;
 pub mod mempool;
 pub mod mmr_index;
 pub mod ol_block;
@@ -24,7 +23,7 @@ pub type DbResult<T> = anyhow::Result<T, errors::DbError>;
 
 pub use errors::DbError;
 pub use mmr_index::{
-    num_leaves_to_mmr_size, BatchWrite, LeafPos, MmrBatchWrite, MmrId, MmrIndexPrecondition,
-    MmrNodePos, MmrNodeTable, NodePos, NodeTable, RawMmrId,
+    num_leaves_to_mmr_size, LeafPos, MmrBatchWrite, MmrId, MmrIndexPrecondition, MmrNodePos,
+    MmrNodeTable, NodePos, NodeTable, RawMmrId,
 };
 pub use ol_state_index::*;

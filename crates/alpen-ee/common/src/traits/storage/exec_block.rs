@@ -1,3 +1,5 @@
+// TODO(STR-4242): use ExecBlockId/ExecBlockCommitment instead of Hash
+
 use async_trait::async_trait;
 use strata_acct_types::Hash;
 

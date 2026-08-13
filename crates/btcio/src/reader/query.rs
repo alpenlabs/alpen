@@ -10,8 +10,8 @@ use bitcoind_async_client::{corepc_types::model::GetBlockchainInfo, traits::Read
 use strata_btc_types::{BlockHashExt, L1BlockIdBitcoinExt};
 use strata_config::btcio::ReaderConfig;
 use strata_db_types::DbResult;
+use strata_node_context::BlockSubmitter;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId, L1Height};
-use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use thiserror::Error;

@@ -7,9 +7,9 @@ use strata_asm_common::{AsmLogEntry, SectionStateExt, Subprotocol, VerifiedAuxDa
 use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
+use strata_db_types::asm::AsmExecOutput;
 use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
-use strata_state::asm_state::AsmState;
 use tracing::*;
 
 use crate::{
@@ -401,8 +401,8 @@ fn parent_commitment(
     Ok(L1BlockCommitment::new(parent_height, parent_blkid))
 }
 
-/// Extracts the checkpoint subprotocol's typed state from a parent `AsmState`.
-fn decode_checkpoint_section(asm_state: &AsmState) -> CsmWorkerResult<CheckpointState> {
+/// Extracts the checkpoint subprotocol's typed state from a parent `AsmExecOutput`.
+fn decode_checkpoint_section(asm_state: &AsmExecOutput) -> CsmWorkerResult<CheckpointState> {
     asm_state
         .state()
         .find_section(CheckpointSubprotocol::ID)
@@ -427,10 +427,10 @@ mod tests {
     use strata_checkpoint_types::EpochSummary;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::asm::AsmExecOutput;
     use strata_identifiers::RBuf32;
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::prelude::*;
-    use strata_state::asm_state::AsmState;
     use strata_status::StatusChannel;
     use strata_storage::{NodeStorage, create_node_storage};
     use strata_test_utils::ArbitraryGenerator;
@@ -441,9 +441,9 @@ mod tests {
     /// carries no reorg depth (that lives in the node config at runtime).
     const TEST_L1_REORG_SAFE_DEPTH: u32 = 3;
 
-    /// Builds a minimal `AsmState` carrying `logs`. The anchor state itself is
-    /// inert — gap-fill only reads `AsmState::logs()`.
-    fn make_asm_state(logs: Vec<AsmLogEntry>) -> AsmState {
+    /// Builds a minimal `AsmExecOutput` carrying `logs`. The anchor state itself is
+    /// inert — gap-fill only reads `AsmExecOutput::logs()`.
+    fn make_asm_state(logs: Vec<AsmLogEntry>) -> AsmExecOutput {
         let anchor = L1Anchor {
             block: L1BlockCommitment::default(),
             next_target: 0,
@@ -458,7 +458,7 @@ mod tests {
             },
             sections: Default::default(),
         };
-        AsmState::new(anchor_state, logs)
+        AsmExecOutput::new(anchor_state, logs)
     }
 
     /// A canonical L1 block id deterministically derived from a height, so
@@ -475,7 +475,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 block,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed client state row");
     }
@@ -496,10 +496,7 @@ mod tests {
         let initial_block = L1BlockCommitment::new(0, L1BlockId::default());
         storage
             .client_state()
-            .put_update_blocking(
-                &initial_block,
-                ClientUpdateOutput::new(initial_state, vec![]),
-            )
+            .put_update_blocking(&initial_block, ClientUpdateOutput::new_state(initial_state))
             .expect("Failed to initialize client state");
 
         let mut arbgen = ArbitraryGenerator::new();
@@ -1150,7 +1147,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &anchor,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed fork row");
 
@@ -1236,7 +1233,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &tip,
-                ClientUpdateOutput::new(ClientState::new(None, None), vec![]),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("seed client state at tip");
 

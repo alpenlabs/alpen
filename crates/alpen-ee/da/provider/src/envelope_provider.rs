@@ -11,6 +11,8 @@ use bitcoind_async_client::{traits::Reader, Client as BtcClient};
 use eyre::{bail, ensure};
 use strata_btc_types::{BlockHashExt, Buf32BitcoinExt};
 use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
+#[cfg(test)]
+use strata_btcio::L1TxEntryExt;
 use strata_db_types::{
     chunked_envelope::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus},
     common::{L1TxId, L1WtxId},
@@ -137,7 +139,7 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
         ensure!(!chunks.is_empty(), "prepare_da_chunks returned empty");
 
         let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, self.magic_bytes, DA_BLOB_VERSION);
-        let chunk_count = entry.chunk_data.len();
+        let chunk_count = entry.chunk_count();
 
         let idx = self
             .envelope_handle

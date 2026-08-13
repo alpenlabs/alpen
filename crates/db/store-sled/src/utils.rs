@@ -1,4 +1,4 @@
-use std::{fmt, ops};
+use std::ops;
 
 use strata_db_types::errors::DbError;
 use typed_sled::error::Error;
@@ -13,13 +13,18 @@ pub fn first<A, B>((a, _): (A, B)) -> A {
     a
 }
 
-/// Converts any error that implements Display and Debug into a DbError::Other.
+/// Converts a typed-sled [`Error`] into a [`DbError`].
 ///
-/// Note: a typed-sled [`Error`] should generally go through `From<Error>` to
-/// preserve aborted `DbError` variants; this helper is for non-typed-sled
-/// error sources.
-pub fn to_db_error<E: fmt::Display + fmt::Debug>(e: E) -> DbError {
-    DbError::Other(e.to_string())
+/// If the error wraps an aborted `DbError`, the original variant is recovered so callers can match
+/// on it rather than on a stringified payload.
+///
+/// This is a free function rather than a `From` impl because both [`Error`] and [`DbError`] are
+/// foreign to this crate, so the orphan rule forbids the impl here.
+pub fn conv_sled_err(err: Error) -> DbError {
+    match err.downcast_abort::<DbError>() {
+        Ok(db_err) => db_err,
+        Err(other) => DbError::Other(format!("sled error: {other:?}")),
+    }
 }
 
 /// Find next available ID starting from the given ID, checking for conflicts within a transaction

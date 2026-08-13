@@ -1,14 +1,25 @@
 //! Stores contexts that can be passed for initializing and running various strata services
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
 use strata_config::{BlockAssemblyConfig, Config};
 use strata_ol_params::OLParams;
+use strata_primitives::l1::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::{TaskExecutor, TaskManager};
 use tokio::runtime::Handle;
+
+/// Interface to submit blocks to CSM in blocking or async fashion.
+#[async_trait]
+pub trait BlockSubmitter: Send + Sync {
+    /// Submit block blocking
+    fn submit_block_blocking(&self, block: L1BlockCommitment) -> anyhow::Result<()>;
+    /// Submit block async
+    async fn submit_block(&self, block: L1BlockCommitment) -> anyhow::Result<()>;
+}
 
 /// Contains resources needed to run node services.
 #[expect(

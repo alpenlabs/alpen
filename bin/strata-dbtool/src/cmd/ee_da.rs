@@ -124,20 +124,20 @@ fn load_decoded_envelopes(
                 ));
             }
 
-            let blob = reassemble_da_blob(&entry.chunk_data).map_err(|e| {
+            let blob = reassemble_da_blob(entry.chunk_data()).map_err(|e| {
                 DisplayedError::UserError(
                     format!("Failed to decode DA blob from chunked envelope {idx}"),
                     Box::new(e),
                 )
             })?;
-            let local_blob = entry.chunk_data.concat();
+            let local_blob: Vec<u8> = entry.chunk_data().flatten().copied().collect();
             let last_block_num = blob.evm_header.block_num;
             decoded.push(DecodedEnvelope {
                 envelope_idx: idx,
                 update_seq_no: blob.update_seq_no,
                 last_block_num,
                 local_blob,
-                chunk_count: entry.chunk_data.len(),
+                chunk_count: entry.chunk_count(),
                 state_diff: blob.state_diff,
             });
 

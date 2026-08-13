@@ -68,7 +68,6 @@ jobs:
       fail-fast: false
       matrix:
         crate:
-          - strata-state
           # - strata-primitives # unsupported due to `secp256k1` FFI dependency
           # - strata-dbtool # unsupported due to `rkyv` dependency
           # - alpen-client # unsupported due to `rkyv` dependency

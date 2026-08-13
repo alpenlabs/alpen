@@ -24,7 +24,9 @@ use std::sync::Arc;
 
 use alpen_ee_common::{BatchId, Proof, ProofId};
 use alpen_ee_database::EeProverDbSled;
-use strata_db_types::{errors::DbError, prover_task::ProverTaskDatabase};
+use strata_db_types::{
+    checkpoint_proof::ProofReceiptEntry, errors::DbError, prover_task::ProverTaskDatabase,
+};
 use strata_paas::{
     ProverError, ProverResult, ReceiptStore, TaskRecord, TaskRecordData, TaskStatus, TaskStore,
 };
@@ -35,6 +37,20 @@ fn db_err(e: DbError) -> ProverError {
         DbError::EntryAlreadyExists => ProverError::TaskAlreadyExists(String::new()),
         other => ProverError::Storage(other.to_string()),
     }
+}
+
+/// Encodes a receipt into the opaque payload the database stores.
+///
+/// The database layer keeps receipts opaque; the proving-system encoding lives here, with the
+/// prover-side consumers.
+fn encode_receipt(receipt: &ProofReceiptWithMetadata) -> ProofReceiptEntry {
+    ProofReceiptEntry::new(receipt.encode())
+}
+
+/// Decodes an opaque database payload back into a receipt.
+fn decode_receipt(entry: &ProofReceiptEntry) -> ProverResult<ProofReceiptWithMetadata> {
+    ProofReceiptWithMetadata::decode(entry.as_bytes())
+        .map_err(|err| ProverError::Storage(format!("malformed stored proof receipt: {err}")))
 }
 
 /// Sled-backed shared prover task store.
@@ -137,12 +153,17 @@ impl EeChunkReceiptStore {
 impl ReceiptStore for EeChunkReceiptStore {
     fn put(&self, key: &[u8], receipt: &ProofReceiptWithMetadata) -> ProverResult<()> {
         self.db
-            .put_chunk_receipt(key.to_vec(), receipt.clone())
+            .put_chunk_receipt(key.to_vec(), encode_receipt(receipt))
             .map_err(db_err)
     }
 
     fn get(&self, key: &[u8]) -> ProverResult<Option<ProofReceiptWithMetadata>> {
-        self.db.get_chunk_receipt(key).map_err(db_err)
+        self.db
+            .get_chunk_receipt(key)
+            .map_err(db_err)?
+            .as_ref()
+            .map(decode_receipt)
+            .transpose()
     }
 }
 
@@ -173,19 +194,27 @@ impl EeBatchProofDbManager {
         batch_id: BatchId,
         receipt: ProofReceiptWithMetadata,
     ) -> ProverResult<()> {
-        self.db.put_acct_proof(batch_id, receipt).map_err(db_err)
+        self.db
+            .put_acct_proof(batch_id, encode_receipt(&receipt))
+            .map_err(db_err)
     }
 
-    pub(crate) fn has_proof(&self, batch_id: BatchId) -> bool {
-        // sled errors surface as "not found"; callers treat this as a
-        // storage-level concern and log separately.
-        self.db.has_acct_proof(batch_id).unwrap_or(false)
+    pub(crate) fn has_proof(&self, batch_id: BatchId) -> ProverResult<bool> {
+        self.db.has_acct_proof(batch_id).map_err(db_err)
     }
 
-    pub(crate) fn get_proof_by_id(&self, proof_id: ProofId) -> Option<Proof> {
-        let receipt = self.db.get_acct_proof_by_id(proof_id).ok().flatten()?;
-        Some(Proof::from_vec(
+    /// Loads a stored proof.
+    ///
+    /// `Ok(None)` means no row; a row that fails to decode is an error rather than an
+    /// absence, so it cannot masquerade as "not yet proven" to a caller that already saw
+    /// [`Self::has_proof`] return `true`.
+    pub(crate) fn get_proof_by_id(&self, proof_id: ProofId) -> ProverResult<Option<Proof>> {
+        let Some(entry) = self.db.get_acct_proof_by_id(proof_id).map_err(db_err)? else {
+            return Ok(None);
+        };
+        let receipt = decode_receipt(&entry)?;
+        Ok(Some(Proof::from_vec(
             receipt.receipt().proof().as_bytes().to_vec(),
-        ))
+        )))
     }
 }

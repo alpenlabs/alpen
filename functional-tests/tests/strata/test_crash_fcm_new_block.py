@@ -43,7 +43,7 @@ class TestCrashFcmNewBlock(CrashTest):
         def inspect_crashed_block(pre_status: dict) -> None:
             slot = int(pre_status["tip"]["slot"]) + 1
             block_id = get_single_block_at_slot(datadir, slot)
-            block = assert_ol_block_status(datadir, block_id, "Unchecked")
+            block = assert_ol_block_status(datadir, block_id, "unchecked")
             assert int(block["header_slot"]) == slot
 
             crashed_block["slot"] = slot
@@ -67,6 +67,6 @@ class TestCrashFcmNewBlock(CrashTest):
         strata.stop()
 
         assert_single_block_at_slot(datadir, slot, block_id)
-        assert_ol_block_status(datadir, block_id, "Valid")
+        assert_ol_block_status(datadir, block_id, "valid")
         logger.info("Recovered crashed block is valid and unique at slot=%s", slot)
         return True

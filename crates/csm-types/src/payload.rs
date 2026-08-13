@@ -12,11 +12,9 @@
 // TODO(STR-3838): drop the upstream `L1Payload`/`PayloadIntent` once every
 // consumer uses these local types.
 
-use std::io::{self, Read, Write};
-
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
+use serde_bytes::ByteBuf;
 use strata_identifiers::Buf32;
 use strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE;
 use strata_l1_txfmt::TagData;
@@ -26,21 +24,7 @@ use strata_l1_txfmt::TagData;
 ///
 /// Defined locally since `strata-btc-types` dropped its payload types in
 /// v0.3.0; only the L1 settlement destination is currently supported.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    BorshDeserialize,
-    BorshSerialize,
-    Serialize,
-    Deserialize,
-)]
-#[borsh(use_discriminant = true)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum PayloadDest {
     /// If we expect the DA to be on the L1 chain that we settle to. This is
@@ -53,78 +37,6 @@ pub enum PayloadDest {
 impl<'a> Arbitrary<'a> for PayloadDest {
     fn arbitrary(_u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(Self::L1)
-    }
-}
-
-/// Summary of a DA blob expected on a DA layer. Specifies the target and a
-/// commitment to the payload.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Hash,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Serialize,
-    Deserialize,
-)]
-pub struct BlobSpec {
-    /// Target settlement layer we're expecting the DA on.
-    dest: PayloadDest,
-
-    /// Commitment to the payload (probably just a hash or a merkle root) that we
-    /// expect to see committed to DA.
-    commitment: Buf32,
-}
-
-impl BlobSpec {
-    /// The target we expect the DA payload to be stored on.
-    pub fn dest(&self) -> PayloadDest {
-        self.dest
-    }
-
-    /// Commitment to the payload.
-    pub fn commitment(&self) -> &Buf32 {
-        &self.commitment
-    }
-}
-
-/// Summary of a DA payload to be included on a DA layer. Specifies the target
-/// and a commitment to the payload.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Hash,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Serialize,
-    Deserialize,
-)]
-pub struct PayloadSpec {
-    /// Target settlement layer we're expecting the DA on.
-    dest: PayloadDest,
-
-    /// Commitment to the payload (probably just a hash or a merkle root) that we
-    /// expect to see committed to DA.
-    commitment: Buf32,
-}
-
-impl PayloadSpec {
-    /// The target we expect the DA payload to be stored on.
-    pub fn dest(&self) -> PayloadDest {
-        self.dest
-    }
-
-    /// Commitment to the payload.
-    pub fn commitment(&self) -> &Buf32 {
-        &self.commitment
     }
 }
 
@@ -147,13 +59,37 @@ pub enum L1PayloadError {
 ///
 /// The serde representation flattens the [`TagData`] fields alongside the
 /// payload (`{payload, subproto_id, tx_type, aux_data}`).
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct L1Payload {
+    /// Wrapped so that serde encodes each chunk as a byte string rather than a sequence of
+    /// integers; read it through [`L1Payload::data`].
     #[serde(rename = "payload")]
-    data: Vec<Vec<u8>>,
+    data: Vec<ByteBuf>,
 
     #[serde(flatten)]
     tag: TagData,
+}
+
+impl<'de> Deserialize<'de> for L1Payload {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Route reconstruction through `L1Payload::new` so that deserialized values are
+        // validated against `MAX_ENVELOPE_PAYLOAD_SIZE` instead of trusting the input
+        // verbatim. `TagData` validates itself the same way upstream.
+        //
+        // The helper is unavoidable: `#[serde(flatten)]` forces the buffered `Content` path,
+        // so field attributes on the real struct cannot be reused here.
+        #[derive(Deserialize)]
+        struct Helper {
+            #[serde(rename = "payload")]
+            data: Vec<ByteBuf>,
+            #[serde(flatten)]
+            tag: TagData,
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        let data = helper.data.into_iter().map(ByteBuf::into_vec).collect();
+        L1Payload::new(data, helper.tag).map_err(de::Error::custom)
+    }
 }
 
 impl L1Payload {
@@ -168,46 +104,18 @@ impl L1Payload {
         if total > MAX_ENVELOPE_PAYLOAD_SIZE {
             return Err(L1PayloadError::PayloadTooLarge { total });
         }
-        Ok(Self { data: payload, tag })
+        let data = payload.into_iter().map(ByteBuf::from).collect();
+        Ok(Self { data, tag })
     }
 
     /// Returns the data payload chunks.
-    pub fn data(&self) -> &[Vec<u8>] {
-        &self.data
+    pub fn data(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.data.iter().map(|chunk| chunk.as_slice())
     }
 
     /// Returns the tag metadata.
     pub fn tag(&self) -> &TagData {
         &self.tag
-    }
-}
-
-// Borsh is hand-rolled rather than derived for two reasons: `TagData` does not
-// implement borsh, and the upstream `L1Payload` only gets borsh via
-// `impl_borsh_via_ssz!`, which routes through the SSZ encoding that enforces the
-// 520-byte per-chunk cap this type exists to avoid. So encode the payload chunks
-// and the decomposed tag fields directly, routing decode through `TagData::new`
-// and `L1Payload::new` to preserve their invariants.
-impl BorshSerialize for L1Payload {
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        BorshSerialize::serialize(&self.data, writer)?;
-        BorshSerialize::serialize(&self.tag.subproto_id(), writer)?;
-        BorshSerialize::serialize(&self.tag.tx_type(), writer)?;
-        BorshSerialize::serialize(&self.tag.aux_data().to_vec(), writer)?;
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for L1Payload {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let data: Vec<Vec<u8>> = BorshDeserialize::deserialize_reader(reader)?;
-        let subproto_id = u8::deserialize_reader(reader)?;
-        let tx_type = u8::deserialize_reader(reader)?;
-        let aux_data: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
-        let tag = TagData::new(subproto_id, tx_type, aux_data)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
-        Self::new(data, tag)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))
     }
 }
 
@@ -238,14 +146,16 @@ impl<'a> Arbitrary<'a> for L1Payload {
         let tag = TagData::new(subproto_id, tx_type, aux_data)
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
 
-        Ok(Self { data, tag })
+        Self::new(data, tag).map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
 
 /// Intent produced when the sequencer wants to publish a payload to L1.
 ///
 /// These are never stored on-chain.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize)]
+// TODO(STR-4236): serde here is a stopgap so `IntentEntry` can be CBOR-encoded;
+// the intent record wants restructuring into separate data and status parts.
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, Serialize, Deserialize)]
 pub struct PayloadIntent {
     /// The destination for this payload.
     dest: PayloadDest,
@@ -310,18 +220,6 @@ mod tests {
     }
 
     #[test]
-    fn borsh_roundtrip() {
-        let payload = L1Payload::new(
-            vec![vec![1, 2, 3], vec![4; 600]],
-            TagData::new(5, 9, vec![0xAA, 0xBB]).unwrap(),
-        )
-        .unwrap();
-        let buf = borsh::to_vec(&payload).unwrap();
-        let decoded: L1Payload = borsh::from_slice(&buf).unwrap();
-        assert_eq!(decoded, payload);
-    }
-
-    #[test]
     fn serde_flat_shape_roundtrip() {
         let payload = L1Payload::new(
             vec![vec![1, 2, 3]],
@@ -340,6 +238,46 @@ mod tests {
         );
 
         let decoded: L1Payload = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded, payload);
+    }
+
+    /// Decoding must enforce the same size bound as [`L1Payload::new`]; a stored row is not
+    /// trusted just because it is already in the database.
+    #[test]
+    fn deserialize_rejects_oversized_payload() {
+        let oversized = serde_json::json!({
+            "payload": [vec![0u8; MAX_ENVELOPE_PAYLOAD_SIZE + 1]],
+            "subproto_id": 5,
+            "tx_type": 9,
+            "aux_data": [],
+        });
+
+        let err = serde_json::from_value::<L1Payload>(oversized)
+            .expect_err("oversized payload must not decode");
+        assert!(
+            err.to_string().contains("exceeds maximum"),
+            "unexpected error {err}"
+        );
+    }
+
+    /// Chunks must reach CBOR as byte strings, not sequences of integers, which would cost
+    /// roughly two bytes per payload byte.
+    #[test]
+    fn cbor_encodes_chunks_as_byte_strings() {
+        let chunk_len = 1024;
+        let payload = L1Payload::new(vec![vec![0xAB; chunk_len]], tag()).unwrap();
+
+        let mut encoded = Vec::new();
+        ciborium::into_writer(&payload, &mut encoded).unwrap();
+
+        assert!(
+            encoded.len() < chunk_len + 64,
+            "expected a compact byte-string encoding, got {} bytes for {chunk_len} bytes of \
+             payload",
+            encoded.len()
+        );
+
+        let decoded: L1Payload = ciborium::from_reader(encoded.as_slice()).unwrap();
         assert_eq!(decoded, payload);
     }
 }

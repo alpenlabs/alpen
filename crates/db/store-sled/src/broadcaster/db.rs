@@ -5,7 +5,7 @@ use strata_primitives::buf::Buf32;
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
 use crate::define_sled_database;
-use crate::utils::{find_next_available_id, first, second};
+use crate::utils::{conv_sled_err, find_next_available_id, first, second};
 
 define_sled_database!(
     pub struct L1BroadcastDBSled {
@@ -16,7 +16,7 @@ define_sled_database!(
 
 impl L1BroadcastDBSled {
     fn get_next_idx(&self) -> DbResult<u64> {
-        match self.tx_id_tree.last()? {
+        match self.tx_id_tree.last().map_err(conv_sled_err)? {
             Some((idx, _)) => Ok(idx + 1),
             None => Ok(0),
         }
@@ -43,16 +43,22 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
     }
 
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()> {
-        if let Some(txid) = self.tx_id_tree.get(&idx)? {
-            let existing = self.tx_tree.get(&txid)?.ok_or_else(|| {
-                DbError::Other(format!("Entry does not exist for txid at idx {idx:?}"))
-            })?;
+        if let Some(txid) = self.tx_id_tree.get(&idx).map_err(conv_sled_err)? {
+            let existing = self
+                .tx_tree
+                .get(&txid)
+                .map_err(conv_sled_err)?
+                .ok_or_else(|| {
+                    DbError::Other(format!("Entry does not exist for txid at idx {idx:?}"))
+                })?;
             if existing.tx_raw() != txentry.tx_raw() {
                 return Err(DbError::Other(format!(
                     "tx entry at idx {idx:?} cannot be updated with a different transaction"
                 )));
             }
-            self.tx_tree.insert(&txid, &txentry)?;
+            self.tx_tree
+                .insert(&txid, &txentry)
+                .map_err(conv_sled_err)?;
             Ok(())
         } else {
             Err(DbError::Other(format!(
@@ -62,16 +68,18 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
     }
 
     fn del_tx_entry(&self, txid: Buf32) -> DbResult<bool> {
-        let old_item = self.tx_tree.get(&txid)?;
+        let old_item = self.tx_tree.get(&txid).map_err(conv_sled_err)?;
         let exists = old_item.is_some();
         if exists {
-            self.tx_tree.compare_and_swap(txid, old_item, None)?;
+            self.tx_tree
+                .compare_and_swap(txid, old_item, None)
+                .map_err(conv_sled_err)?;
         }
         Ok(exists)
     }
 
     fn del_tx_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
-        let last_idx = self.tx_id_tree.last()?.map(first);
+        let last_idx = self.tx_id_tree.last().map_err(conv_sled_err)?.map(first);
         let Some(last_idx) = last_idx else {
             return Ok(Vec::new());
         };
@@ -97,7 +105,7 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
     }
 
     fn get_tx_entry_by_id(&self, txid: Buf32) -> DbResult<Option<L1TxEntry>> {
-        Ok(self.tx_tree.get(&txid)?)
+        self.tx_tree.get(&txid).map_err(conv_sled_err)
     }
 
     fn get_next_tx_idx(&self) -> DbResult<u64> {
@@ -105,12 +113,12 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
     }
 
     fn get_txid(&self, idx: u64) -> DbResult<Option<Buf32>> {
-        Ok(self.tx_id_tree.get(&idx)?)
+        self.tx_id_tree.get(&idx).map_err(conv_sled_err)
     }
 
     fn get_tx_entry(&self, idx: u64) -> DbResult<Option<L1TxEntry>> {
         if let Some(txid) = self.get_txid(idx)? {
-            Ok(self.tx_tree.get(&txid)?)
+            self.tx_tree.get(&txid).map_err(conv_sled_err)
         } else {
             Err(DbError::Other(format!(
                 "Entry does not exist for idx {idx:?}"
@@ -119,7 +127,7 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
     }
 
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>> {
-        Ok(self.tx_tree.last()?.map(second))
+        Ok(self.tx_tree.last().map_err(conv_sled_err)?.map(second))
     }
 }
 

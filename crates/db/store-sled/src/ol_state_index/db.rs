@@ -18,6 +18,7 @@ use super::schemas::{
     OLEpochIndexingDataSchema,
 };
 use crate::define_sled_database;
+use crate::utils::conv_sled_err;
 
 define_sled_database!(
     pub struct OLStateIndexingDBSled {
@@ -133,12 +134,12 @@ fn collect_accounts_in_epoch(
     let lo = AccountEpochKey::new(epoch, AccountId::new([0u8; 32]));
     let hi = AccountEpochKey::new(epoch, AccountId::new([0xffu8; 32]));
     let mut out = BTreeSet::new();
-    for item in update_tree.range(lo..=hi)? {
-        let (key, _) = item?;
+    for item in update_tree.range(lo..=hi).map_err(conv_sled_err)? {
+        let (key, _) = item.map_err(conv_sled_err)?;
         out.insert(key.account_id());
     }
-    for item in inbox_tree.range(lo..=hi)? {
-        let (key, _) = item?;
+    for item in inbox_tree.range(lo..=hi).map_err(conv_sled_err)? {
+        let (key, _) = item.map_err(conv_sled_err)?;
         out.insert(key.account_id());
     }
     Ok(out)
@@ -291,8 +292,12 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
     fn rollback_to_epoch(&self, epoch: Epoch) -> DbResult<()> {
         // Enumerate epochs strictly greater than `epoch` to drop.
         let mut epochs_to_drop: Vec<Epoch> = Vec::new();
-        for item in self.epoch_data_tree.range((epoch + 1)..)? {
-            let (e, _) = item?;
+        for item in self
+            .epoch_data_tree
+            .range((epoch + 1)..)
+            .map_err(conv_sled_err)?
+        {
+            let (e, _) = item.map_err(conv_sled_err)?;
             epochs_to_drop.push(e);
         }
         // Per-epoch, collect affected accounts via update/inbox trees, since
@@ -349,7 +354,7 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
     }
 
     fn get_epoch_indexing_data(&self, epoch: Epoch) -> DbResult<Option<EpochIndexingData>> {
-        Ok(self.epoch_data_tree.get(&epoch)?)
+        self.epoch_data_tree.get(&epoch).map_err(conv_sled_err)
     }
 
     fn get_account_update_records(
@@ -357,9 +362,9 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
         epoch: Epoch,
         account: AccountId,
     ) -> DbResult<Option<Vec<AccountUpdateRecord>>> {
-        Ok(self
-            .account_update_tree
-            .get(&AccountEpochKey::new(epoch, account))?)
+        self.account_update_tree
+            .get(&AccountEpochKey::new(epoch, account))
+            .map_err(conv_sled_err)
     }
 
     fn get_account_inbox_records(
@@ -367,13 +372,13 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
         epoch: Epoch,
         account: AccountId,
     ) -> DbResult<Option<Vec<InboxMessageRecord>>> {
-        Ok(self
-            .account_inbox_tree
-            .get(&AccountEpochKey::new(epoch, account))?)
+        self.account_inbox_tree
+            .get(&AccountEpochKey::new(epoch, account))
+            .map_err(conv_sled_err)
     }
 
     fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>> {
-        Ok(self.creation_epoch_tree.get(&acct)?)
+        self.creation_epoch_tree.get(&acct).map_err(conv_sled_err)
     }
 }
 

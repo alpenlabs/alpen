@@ -1,17 +1,14 @@
 use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId, Slot};
 use strata_primitives::epoch::EpochCommitment;
-use strata_primitives::l1::L1BlockId;
-use strata_primitives::l2::L2BlockId;
 use strata_primitives::L1Height;
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 #[cfg(feature = "proxies")]
 use tokio::task::JoinError;
-use typed_sled::error::Error;
 
 use crate::mmr_index::{LeafPos, NodePos};
 
-#[derive(Debug, Error, Clone)]
+#[derive(Clone, Debug, Error)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
     NonExistentEntry,
@@ -22,75 +19,17 @@ pub enum DbError {
     #[error("tried to insert into {0} out-of-order index {1}")]
     OooInsert(&'static str, L1Height),
 
-    /// (type, missing, start, end)
-    #[error("missing {0} block {1} in range {2}..{3}")]
-    MissingBlockInRange(&'static str, u64, u64, u64),
-
-    #[error("missing L1 block body (id {0})")]
-    MissingL1BlockManifest(L1BlockId),
-
-    #[error("missing L1 block (height {0})")]
-    MissingL1Block(L1Height),
-
     #[error("L1 canonical chain is empty")]
     L1CanonicalChainEmpty,
-
-    #[error("OL canonical chain is empty")]
-    OLCanonicalChainEmpty,
 
     #[error("Revert height {0} above chain tip height {1}")]
     L1InvalidRevertHeight(L1Height, L1Height),
 
-    #[error("Block does not extend canonical chain tip")]
-    L1InvalidNextBlock(L1Height, L1BlockId),
-
-    #[error("missing L2 block (id {0})")]
-    MissingL2Block(L2BlockId),
-
-    #[error("missing L2 block (slot {0})")]
-    MissingL2BlockHeight(u64),
-
-    #[error("missing L2 state (slot {0})")]
-    MissingL2State(u64),
-
-    #[error("missing slot write batch (id {0})")]
-    MissingSlotWriteBatch(L2BlockId),
-
-    #[error("missing epoch write batch (id {0})")]
-    MissingEpochWriteBatch(L2BlockId),
-
     #[error("not yet bootstrapped")]
     NotBootstrapped,
 
-    #[error("tried to overwrite batch checkpoint at idx {0}")]
-    OverwriteCheckpoint(u64),
-
-    #[error("tried to overwrite consensus checkpoint at idx {0}")]
-    OverwriteConsensusCheckpoint(u64),
-
-    #[error("tried to overwrite state update at idx{0}. must purge in order to be replaced")]
-    OverwriteStateUpdate(u64),
-
-    #[error("tried to purge data more recently than allowed")]
-    PurgeTooRecent,
-
-    #[error("unknown state index {0}")]
-    UnknownIdx(u64),
-
     #[error("tried to overwrite epoch {0:?}")]
     OverwriteEpoch(EpochCommitment),
-
-    #[error("tried to revert to index {0} above current tip {1}")]
-    RevertAboveCurrent(u64, u64),
-
-    #[error("IO Error: {0}")]
-    IoError(String),
-
-    #[error("operation timed out")]
-    TimedOut,
-
-    #[error("operation aborted")]
-    Aborted,
 
     #[error("invalid argument")]
     InvalidArgument,
@@ -126,20 +65,8 @@ pub enum DbError {
     #[error("worker task failed to return a result: {0}")]
     WorkerFailedStrangely(String),
 
-    /// This happens in a cache when we were a second call to a database entry after a primary one
-    /// was started whose result we would use failed.  This is meant to be a transient error that
-    /// typically could be retried, but the specifics depend on the underlying database semantics.
-    #[error("failed to load a cache entry")]
-    CacheLoadFail,
-
     #[error("codec: {0}")]
     CodecError(String),
-
-    #[error("transaction: {0}")]
-    TransactionError(String),
-
-    #[error("not yet implemented")]
-    Unimplemented,
 
     /// MMR leaf not found at index
     #[error("MMR leaf not found at index {0}")]
@@ -212,24 +139,8 @@ pub enum DbError {
     Other(String),
 }
 
-impl From<anyhow::Error> for DbError {
-    fn from(value: anyhow::Error) -> Self {
-        Self::Other(value.to_string())
-    }
-}
-
-impl From<Error> for DbError {
-    fn from(value: Error) -> Self {
-        // If the typed-sled error wraps an aborted `DbError`, recover the
-        // original variant so downstream callers can match on it instead of
-        // dealing with a stringified payload.
-        match value.downcast_abort::<DbError>() {
-            Ok(db_err) => db_err,
-            Err(other) => Self::Other(format!("sled error: {other:?}")),
-        }
-    }
-}
-
+// TODO(STR-4241): this conversion is inverted -- the ops layer should map into
+// `DbError`, not the other way around. Part 10 owns the move.
 impl From<OpsError> for DbError {
     fn from(value: OpsError) -> Self {
         match value {

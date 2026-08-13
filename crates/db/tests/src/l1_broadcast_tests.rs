@@ -1,8 +1,16 @@
-use bitcoin::consensus::deserialize;
+use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hashes::Hash;
 use bitcoin::Transaction;
 use strata_db_types::l1_broadcast::{L1BroadcastDatabase, L1TxEntry, L1TxStatus};
 use strata_primitives::buf::Buf32;
+
+/// Builds an unpublished entry for a transaction.
+///
+/// `L1TxEntry` stores opaque bytes, so the Bitcoin encoding happens here rather than in the
+/// database crate.
+fn tx_entry(tx: &Transaction) -> L1TxEntry {
+    L1TxEntry::new_unpublished(serialize(tx))
+}
 
 pub fn test_get_last_tx_entry(db: &impl L1BroadcastDatabase) {
     for _ in 0..2 {
@@ -67,7 +75,7 @@ pub fn test_update_tx_entry(db: &impl L1BroadcastDatabase) {
 pub fn test_update_tx_entry_rejects_mismatched_tx(db: &impl L1BroadcastDatabase) {
     let (txid, txentry) = generate_l1_tx_entry();
     let txns = get_test_bitcoin_txs();
-    let other_txentry = L1TxEntry::from_tx(&txns[1]);
+    let other_txentry = tx_entry(&txns[1]);
 
     let idx = db.put_tx_entry(txid, txentry.clone()).unwrap().unwrap();
     let result = db.put_tx_entry_by_idx(idx, other_txentry);
@@ -142,10 +150,10 @@ pub fn test_del_tx_entries_from_idx(db: &impl L1BroadcastDatabase) {
     let txid3: Buf32 = txs[2].compute_txid().as_raw_hash().to_byte_array().into();
     let txid4: Buf32 = txs[3].compute_txid().as_raw_hash().to_byte_array().into();
 
-    let txentry1 = L1TxEntry::from_tx(&txs[0]);
-    let txentry2 = L1TxEntry::from_tx(&txs[1]);
-    let txentry3 = L1TxEntry::from_tx(&txs[2]);
-    let txentry4 = L1TxEntry::from_tx(&txs[3]);
+    let txentry1 = tx_entry(&txs[0]);
+    let txentry2 = tx_entry(&txs[1]);
+    let txentry3 = tx_entry(&txs[2]);
+    let txentry4 = tx_entry(&txs[3]);
 
     // Insert tx entries - they will get consecutive indices
     db.put_tx_entry(txid1, txentry1).expect("test: insert 1");
@@ -203,7 +211,7 @@ pub fn test_del_tx_entries_empty_database(db: &impl L1BroadcastDatabase) {
 fn generate_l1_tx_entry() -> (Buf32, L1TxEntry) {
     let txns = get_test_bitcoin_txs();
     let txid = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
-    let txentry = L1TxEntry::from_tx(&txns[0]);
+    let txentry = tx_entry(&txns[0]);
     (txid, txentry)
 }
 

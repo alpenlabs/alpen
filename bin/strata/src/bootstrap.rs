@@ -253,6 +253,7 @@ mod tests {
     use strata_checkpoint_types::{EpochSummary, reconstruct_terminal_header};
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::asm::AsmExecOutput;
     use strata_identifiers::{
         Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId, RBuf32,
     };
@@ -261,7 +262,6 @@ mod tests {
     use strata_ol_params::OLParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_predicate::PredicateKey;
-    use strata_state::asm_state::AsmState;
     use strata_storage::{NodeStorage, create_node_storage};
 
     use super::*;
@@ -386,10 +386,10 @@ mod tests {
                     .client_state()
                     .put_update_blocking(
                         &l1_tip,
-                        ClientUpdateOutput::new(
-                            ClientState::new(Some(checkpoint.clone()), Some(checkpoint)),
-                            Vec::new(),
-                        ),
+                        ClientUpdateOutput::new_state(ClientState::new(
+                            Some(checkpoint.clone()),
+                            Some(checkpoint),
+                        )),
                     )
                     .expect("insert client state");
             }
@@ -532,7 +532,7 @@ mod tests {
         };
         storage
             .asm()
-            .put_state_blocking(l1_block, AsmState::new(anchor_state, Vec::new()))
+            .put_state_blocking(l1_block, AsmExecOutput::new(anchor_state, Vec::new()))
             .expect("store ASM checkpoint state");
     }
 
@@ -574,10 +574,10 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &L1BlockCommitment::new(L1_TIP_HEIGHT + 1, l1_blkid(L1_TIP_HEIGHT + 1)),
-                ClientUpdateOutput::new(
-                    ClientState::new(Some(newer_checkpoint.clone()), Some(newer_checkpoint)),
-                    Vec::new(),
-                ),
+                ClientUpdateOutput::new_state(ClientState::new(
+                    Some(newer_checkpoint.clone()),
+                    Some(newer_checkpoint),
+                )),
             )
             .expect("insert newer client state");
 
@@ -607,7 +607,7 @@ mod tests {
             .client_state()
             .put_update_blocking(
                 &later,
-                ClientUpdateOutput::new(ClientState::new(None, None), Vec::new()),
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
             )
             .expect("overwrite latest client state");
         fixture.assert_failure("no declared final epoch");

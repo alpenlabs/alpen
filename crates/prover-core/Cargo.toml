@@ -11,9 +11,9 @@ workspace = true
 
 [dependencies]
 async-trait.workspace = true
-borsh.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
+serde_bytes.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread"] }
 tracing.workspace = true

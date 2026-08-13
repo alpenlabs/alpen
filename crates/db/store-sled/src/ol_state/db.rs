@@ -5,6 +5,7 @@ use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 
 use super::schemas::{OLStateSchema, OLWriteBatchSchema};
 use crate::define_sled_database;
+use crate::utils::conv_sled_err;
 
 define_sled_database!(
     pub struct OLStateDBSled {
@@ -24,17 +25,17 @@ impl OLStateDatabase for OLStateDBSled {
     }
 
     fn get_toplevel_ol_state(&self, commitment: OLBlockCommitment) -> DbResult<Option<OLState>> {
-        Ok(self.state_tree.get(&commitment)?)
+        self.state_tree.get(&commitment).map_err(conv_sled_err)
     }
 
     fn get_latest_toplevel_ol_state(&self) -> DbResult<Option<(OLBlockCommitment, OLState)>> {
         // Relying on the lexicographical order of OLBlockCommitment (slot + block ID).
         // The last entry should be the one with the highest slot.
-        Ok(self.state_tree.last()?)
+        self.state_tree.last().map_err(conv_sled_err)
     }
 
     fn del_toplevel_ol_state(&self, commitment: OLBlockCommitment) -> DbResult<()> {
-        self.state_tree.remove(&commitment)?;
+        self.state_tree.remove(&commitment).map_err(conv_sled_err)?;
         Ok(())
     }
 
@@ -55,11 +56,15 @@ impl OLStateDatabase for OLStateDBSled {
         &self,
         commitment: OLBlockCommitment,
     ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
-        Ok(self.write_batch_tree.get(&commitment)?)
+        self.write_batch_tree
+            .get(&commitment)
+            .map_err(conv_sled_err)
     }
 
     fn del_ol_write_batch(&self, commitment: OLBlockCommitment) -> DbResult<()> {
-        self.write_batch_tree.remove(&commitment)?;
+        self.write_batch_tree
+            .remove(&commitment)
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 }

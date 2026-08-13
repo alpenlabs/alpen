@@ -1,5 +1,8 @@
 //! Toplevel OL state database interface.
 
+// TODO(STR-4220): replace OLState with a versionable wrapper
+// TODO(STR-4220): make WriteBatch use its own concrete account type instead of being generic
+
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_identifiers::OLBlockCommitment;

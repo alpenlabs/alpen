@@ -10,7 +10,7 @@ use super::schemas::{
     OLCanonicalBlockSchema, OLHistoryBaseSchema, OLTerminalHeaderSchema,
 };
 use crate::define_sled_database;
-use crate::utils::{first, to_db_error};
+use crate::utils::{conv_sled_err, first};
 
 const OL_BLOCK_HIGH_WATERMARK_KEY: u8 = 0;
 const OL_HISTORY_BASE_KEY: u8 = 0;
@@ -32,34 +32,32 @@ impl OLBlockDatabase for OLBlockDBSled {
         let slot = block.header().slot();
         let block_id = block.header().compute_blkid();
 
-        self.config
-            .with_retry(
-                (&self.blk_tree, &self.blk_status_tree, &self.blk_height_tree),
-                |(bt, bst, bht)| {
-                    let mut blocks_at_slot = bht.get(&slot)?.unwrap_or(Vec::new());
-                    let is_new = !blocks_at_slot.contains(&block_id);
+        self.config.with_retry(
+            (&self.blk_tree, &self.blk_status_tree, &self.blk_height_tree),
+            |(bt, bst, bht)| {
+                let mut blocks_at_slot = bht.get(&slot)?.unwrap_or(Vec::new());
+                let is_new = !blocks_at_slot.contains(&block_id);
 
-                    if is_new {
-                        blocks_at_slot.push(block_id);
-                        bht.insert(&slot, &blocks_at_slot)?;
+                if is_new {
+                    blocks_at_slot.push(block_id);
+                    bht.insert(&slot, &blocks_at_slot)?;
 
-                        // Only set status to Unchecked for new blocks
-                        // This preserves Valid/Invalid status if block is re-inserted
-                        bst.insert(&block_id, &BlockStatus::Unchecked)?;
-                    }
+                    // Only set status to Unchecked for new blocks
+                    // This preserves Valid/Invalid status if block is re-inserted
+                    bst.insert(&block_id, &BlockStatus::Unchecked)?;
+                }
 
-                    bt.insert(&block_id, &block)?;
-                    Ok(())
-                },
-            )
-            .map_err(to_db_error)?;
+                bt.insert(&block_id, &block)?;
+                Ok(())
+            },
+        )?;
         Ok(())
     }
 
     fn get_block_high_watermark(&self) -> DbResult<Option<OLBlockCommitment>> {
-        Ok(self
-            .blk_high_watermark_tree
-            .get(&OL_BLOCK_HIGH_WATERMARK_KEY)?)
+        self.blk_high_watermark_tree
+            .get(&OL_BLOCK_HIGH_WATERMARK_KEY)
+            .map_err(conv_sled_err)
     }
 
     fn put_block_data_with_high_watermark(&self, block: OLBlock) -> DbResult<OLBlockCommitment> {
@@ -120,7 +118,6 @@ impl OLBlockDatabase for OLBlockDBSled {
                 hwt.remove(&OL_BLOCK_HIGH_WATERMARK_KEY)?;
                 Ok(true)
             })
-            .map_err(to_db_error)
     }
 
     fn rollback_block_high_watermark(&self, target: OLBlockCommitment) -> DbResult<bool> {
@@ -155,7 +152,7 @@ impl OLBlockDatabase for OLBlockDBSled {
     }
 
     fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
-        Ok(self.blk_tree.get(&id)?)
+        self.blk_tree.get(&id).map_err(conv_sled_err)
     }
 
     fn put_terminal_header(&self, id: OLBlockId, header: OLBlockHeader) -> DbResult<()> {
@@ -164,12 +161,14 @@ impl OLBlockDatabase for OLBlockDBSled {
             return Err(DbError::OLTerminalHeaderIdMismatch { key: id, computed });
         }
 
-        self.terminal_header_tree.insert(&id, &header)?;
+        self.terminal_header_tree
+            .insert(&id, &header)
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
     fn get_terminal_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
-        Ok(self.terminal_header_tree.get(&id)?)
+        self.terminal_header_tree.get(&id).map_err(conv_sled_err)
     }
 
     fn get_ol_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
@@ -181,7 +180,9 @@ impl OLBlockDatabase for OLBlockDBSled {
     }
 
     fn get_history_base(&self) -> DbResult<Option<EpochCommitment>> {
-        Ok(self.history_base_tree.get(&OL_HISTORY_BASE_KEY)?)
+        self.history_base_tree
+            .get(&OL_HISTORY_BASE_KEY)
+            .map_err(conv_sled_err)
     }
 
     fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability> {
@@ -210,8 +211,12 @@ impl OLBlockDatabase for OLBlockDBSled {
         // Collect the suffix slots before the transaction: sled's transactional tree has no range
         // scan.
         let mut slots_to_drop = Vec::new();
-        for item in self.blk_canonical_tree.range(anchor.last_slot()..)? {
-            let (slot, _) = item?;
+        for item in self
+            .blk_canonical_tree
+            .range(anchor.last_slot()..)
+            .map_err(conv_sled_err)?
+        {
+            let (slot, _) = item.map_err(conv_sled_err)?;
             slots_to_drop.push(slot);
         }
 
@@ -249,41 +254,43 @@ impl OLBlockDatabase for OLBlockDBSled {
         };
         let slot = block.header().slot();
         let mut canonical_slots_to_drop = Vec::new();
-        if self.blk_canonical_tree.get(&slot)? == Some(id) {
-            for item in self.blk_canonical_tree.range(slot..)? {
-                let (canonical_slot, _) = item?;
+        if self.blk_canonical_tree.get(&slot).map_err(conv_sled_err)? == Some(id) {
+            for item in self
+                .blk_canonical_tree
+                .range(slot..)
+                .map_err(conv_sled_err)?
+            {
+                let (canonical_slot, _) = item.map_err(conv_sled_err)?;
                 canonical_slots_to_drop.push(canonical_slot);
             }
         }
 
-        self.config
-            .with_retry(
-                (
-                    &self.blk_tree,
-                    &self.blk_status_tree,
-                    &self.blk_height_tree,
-                    &self.blk_canonical_tree,
-                ),
-                |(bt, bst, bht, ct)| {
-                    let mut blocks_at_slot = bht.get(&slot)?.unwrap_or(Vec::new());
-                    blocks_at_slot.retain(|&bid| bid != id);
+        self.config.with_retry(
+            (
+                &self.blk_tree,
+                &self.blk_status_tree,
+                &self.blk_height_tree,
+                &self.blk_canonical_tree,
+            ),
+            |(bt, bst, bht, ct)| {
+                let mut blocks_at_slot = bht.get(&slot)?.unwrap_or(Vec::new());
+                blocks_at_slot.retain(|&bid| bid != id);
 
-                    bt.remove(&id)?;
-                    bst.remove(&id)?;
-                    if blocks_at_slot.is_empty() {
-                        bht.remove(&slot)?;
-                    } else {
-                        bht.insert(&slot, &blocks_at_slot)?;
+                bt.remove(&id)?;
+                bst.remove(&id)?;
+                if blocks_at_slot.is_empty() {
+                    bht.remove(&slot)?;
+                } else {
+                    bht.insert(&slot, &blocks_at_slot)?;
+                }
+                if ct.get(&slot)? == Some(id) {
+                    for canonical_slot in &canonical_slots_to_drop {
+                        ct.remove(canonical_slot)?;
                     }
-                    if ct.get(&slot)? == Some(id) {
-                        for canonical_slot in &canonical_slots_to_drop {
-                            ct.remove(canonical_slot)?;
-                        }
-                    }
-                    Ok(true)
-                },
-            )
-            .map_err(to_db_error)
+                }
+                Ok(true)
+            },
+        )
     }
 
     fn set_block_status(&self, id: OLBlockId, status: BlockStatus) -> DbResult<bool> {
@@ -291,19 +298,25 @@ impl OLBlockDatabase for OLBlockDBSled {
         if self.get_block_data(id)?.is_none() {
             return Err(DbError::NonExistentEntry);
         }
-        self.blk_status_tree.insert(&id, &status)?;
+        self.blk_status_tree
+            .insert(&id, &status)
+            .map_err(conv_sled_err)?;
         Ok(true)
     }
 
     fn get_blocks_at_height(&self, slot: u64) -> DbResult<Vec<OLBlockId>> {
-        Ok(self.blk_height_tree.get(&slot)?.unwrap_or(Vec::new()))
+        Ok(self
+            .blk_height_tree
+            .get(&slot)
+            .map_err(conv_sled_err)?
+            .unwrap_or(Vec::new()))
     }
 
     fn get_highest_block_slot(&self) -> DbResult<Option<Slot>> {
         // Skip empty height rows: older datadirs may retain rows whose last
         // block was deleted before empty rows were removed on delete.
         for item in self.blk_height_tree.iter().rev() {
-            let (slot, ids) = item?;
+            let (slot, ids) = item.map_err(conv_sled_err)?;
             if !ids.is_empty() {
                 return Ok(Some(slot));
             }
@@ -312,18 +325,19 @@ impl OLBlockDatabase for OLBlockDBSled {
     }
 
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>> {
-        Ok(self.blk_status_tree.get(&id)?)
+        self.blk_status_tree.get(&id).map_err(conv_sled_err)
     }
 
     fn get_tip_slot(&self) -> DbResult<Slot> {
         self.blk_canonical_tree
-            .last()?
+            .last()
+            .map_err(conv_sled_err)?
             .map(first)
             .ok_or(DbError::NotBootstrapped)
     }
 
     fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>> {
-        Ok(self.blk_canonical_tree.get(&slot)?)
+        self.blk_canonical_tree.get(&slot).map_err(conv_sled_err)
     }
 
     fn replace_canonical_suffix_from(
@@ -351,8 +365,12 @@ impl OLBlockDatabase for OLBlockDBSled {
         // Collect the suffix slots before the transaction: sled's transactional tree has no range
         // scan.
         let mut slots_to_drop = Vec::new();
-        for item in self.blk_canonical_tree.range(start_slot..)? {
-            let (slot, _) = item?;
+        for item in self
+            .blk_canonical_tree
+            .range(start_slot..)
+            .map_err(conv_sled_err)?
+        {
+            let (slot, _) = item.map_err(conv_sled_err)?;
             slots_to_drop.push(slot);
         }
 
@@ -367,7 +385,6 @@ impl OLBlockDatabase for OLBlockDBSled {
                 }
                 Ok(())
             })
-            .map_err(to_db_error)
     }
 }
 

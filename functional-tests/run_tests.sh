@@ -3,6 +3,10 @@ set -e
 
 export RUST_BACKTRACE=1
 export RUST_LOG="debug,sled=warn,hyper=warn,h2=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
+# Service logs are stdout captures, and tracing colours stdout by default -- including
+# between a field name and its value. Tests that grep those logs then silently never
+# match. Keep the captured logs plain.
+export NO_COLOR=1
 
 # Sets up PATH for built binaries.
 setup_path() {

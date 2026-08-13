@@ -1,7 +1,5 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-
 /// Indexed item. Basically a wrapper around an item with an index.
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug)]
 pub struct Indexed<T, Idx = u32> {
     /// Index of the transaction in the block
     index: Idx,

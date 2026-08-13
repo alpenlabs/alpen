@@ -998,7 +998,6 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-primitives",
- "strata-state",
  "tempfile",
  "typed-sled",
 ]
@@ -1176,7 +1175,6 @@ dependencies = [
  "async-trait",
  "bincode",
  "bitcoin",
- "borsh",
  "eyre",
  "mockall",
  "reth-ethereum-engine-primitives",
@@ -1184,6 +1182,7 @@ dependencies = [
  "reth-node-builder",
  "reth-primitives-traits",
  "serde",
+ "serde_bytes",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-types",
@@ -1288,11 +1287,14 @@ dependencies = [
  "alpen-reth-db",
  "async-trait",
  "bitcoin",
- "borsh",
+ "ciborium",
  "eyre",
+ "serde",
+ "serde_bytes",
  "sled",
  "ssz",
  "strata-acct-types",
+ "strata-codec",
  "strata-db-macros",
  "strata-db-store-sled",
  "strata-db-types",
@@ -1306,7 +1308,6 @@ dependencies = [
  "tokio",
  "tracing",
  "typed-sled",
- "zkaleido",
 ]
 
 [[package]]
@@ -2950,7 +2951,6 @@ source = "git+https://github.com/alpenlabs/bitcoin-bosd?tag=v0.12.0#499fd5d8940a
 dependencies = [
  "arbitrary",
  "bitcoin",
- "borsh",
  "hex-conservative",
  "secp256k1 0.29.1",
  "serde",
@@ -13073,6 +13073,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_bytes"
+version = "0.11.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
+dependencies = [
+ "serde",
+ "serde_core",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14741,7 +14751,6 @@ dependencies = [
  "strata-proofimpl-predicate-keys",
  "strata-service",
  "strata-snark-acct-types",
- "strata-state",
  "strata-status",
  "strata-storage",
  "strata-tasks",
@@ -15232,9 +15241,9 @@ dependencies = [
  "strata-identifiers",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
+ "strata-node-context",
  "strata-primitives",
  "strata-service",
- "strata-state",
  "strata-status",
  "strata-storage",
  "strata-tasks",
@@ -15288,16 +15297,13 @@ name = "strata-checkpoint-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "borsh",
  "serde",
  "ssz",
  "ssz_derive",
  "strata-asm-checkpoint-types",
- "strata-crypto",
  "strata-identifiers",
  "strata-ol-chain-types",
  "thiserror 2.0.18",
- "zkaleido",
 ]
 
 [[package]]
@@ -15350,7 +15356,6 @@ dependencies = [
 name = "strata-codec-utils"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "ssz",
  "ssz_derive",
  "strata-codec",
@@ -15413,6 +15418,7 @@ dependencies = [
  "strata-btc-types",
  "strata-chain-worker",
  "strata-checkpoint-types",
+ "strata-codec",
  "strata-common",
  "strata-csm-types",
  "strata-csm-worker",
@@ -15431,7 +15437,6 @@ dependencies = [
  "strata-predicate",
  "strata-primitives",
  "strata-service",
- "strata-state",
  "strata-status",
  "strata-storage",
  "strata-tasks",
@@ -15472,17 +15477,16 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "borsh",
+ "ciborium",
  "serde",
+ "serde_bytes",
  "serde_json",
  "strata-asm-checkpoint-types",
  "strata-btc-types",
- "strata-checkpoint-types",
  "strata-identifiers",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-primitives",
- "strata-test-utils",
  "thiserror 2.0.18",
 ]
 
@@ -15517,7 +15521,6 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-primitives",
  "strata-service",
- "strata-state",
  "strata-status",
  "strata-storage",
  "strata-test-utils",
@@ -15594,7 +15597,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "borsh",
  "ciborium",
  "proptest",
  "rkyv",
@@ -15613,11 +15615,9 @@ dependencies = [
  "strata-ol-state-types",
  "strata-paas",
  "strata-primitives",
- "strata-state",
  "thiserror 2.0.18",
  "tracing",
  "typed-sled",
- "zkaleido",
 ]
 
 [[package]]
@@ -15639,9 +15639,7 @@ dependencies = [
  "strata-ol-state-types",
  "strata-paas",
  "strata-primitives",
- "strata-state",
  "strata-test-utils",
- "zkaleido",
 ]
 
 [[package]]
@@ -15650,10 +15648,9 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
  "arbitrary",
- "bitcoin",
- "borsh",
  "proptest",
  "serde",
+ "serde_bytes",
  "serde_json",
  "strata-asm-checkpoint-types",
  "strata-asm-common",
@@ -15663,19 +15660,15 @@ dependencies = [
  "strata-db-macros",
  "strata-identifiers",
  "strata-l1-txfmt",
- "strata-merkle",
  "strata-merkle-node-store",
  "strata-ol-chain-types",
  "strata-ol-state-types",
  "strata-paas",
  "strata-primitives",
- "strata-state",
  "strata-storage-common",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "typed-sled",
- "zkaleido",
 ]
 
 [[package]]
@@ -15992,10 +15985,13 @@ dependencies = [
 name = "strata-node-context"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "bitcoind-async-client",
  "strata-asm-params",
  "strata-config",
  "strata-ol-params",
+ "strata-primitives",
  "strata-status",
  "strata-storage",
  "strata-tasks",
@@ -16040,7 +16036,6 @@ dependencies = [
  "strata-primitives",
  "strata-service",
  "strata-snark-acct-types",
- "strata-state",
  "strata-storage",
  "strata-tasks",
  "thiserror 2.0.18",
@@ -16053,15 +16048,10 @@ name = "strata-ol-bridge-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "borsh",
  "proptest",
- "serde",
- "ssz",
- "ssz_derive",
  "strata-asm-bridge-types",
  "strata-codec",
  "strata-identifiers",
- "strata-primitives",
  "thiserror 2.0.18",
 ]
 
@@ -16472,14 +16462,12 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
  "bitcoin-bosd",
- "borsh",
  "hex",
  "schemars 1.2.1",
  "serde",
  "strata-btc-types",
  "strata-crypto",
  "strata-identifiers",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -16567,7 +16555,6 @@ dependencies = [
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "bincode",
- "borsh",
  "reth-chainspec",
  "reth-evm",
  "reth-evm-ethereum",
@@ -16580,11 +16567,6 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-bridge-params",
- "strata-ol-bridge-types",
- "strata-primitives",
- "strata-state",
- "zkaleido",
- "zkaleido-native-adapter",
 ]
 
 [[package]]
@@ -16606,9 +16588,9 @@ name = "strata-prover-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "borsh",
  "parking_lot 0.12.5",
  "serde",
+ "serde_bytes",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -16804,23 +16786,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-state"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "arbitrary",
- "async-trait",
- "borsh",
- "serde",
- "strata-asm-common",
- "strata-asm-stf",
- "strata-csm-types",
- "strata-identifiers",
- "strata-ol-bridge-types",
- "strata-primitives",
-]
-
-[[package]]
 name = "strata-status"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -16854,7 +16819,6 @@ dependencies = [
  "strata-ol-state-types",
  "strata-paas",
  "strata-primitives",
- "strata-state",
  "strata-storage-common",
  "tokio",
  "tracing",

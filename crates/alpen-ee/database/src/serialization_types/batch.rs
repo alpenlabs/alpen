@@ -4,16 +4,17 @@ use alpen_ee_common::{
     Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, L1DaBlockInfo, L1DaBlockRef, ProofId,
 };
 use bitcoin::{hashes::Hash as _, Txid, Wtxid};
-use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
+use serde_bytes::ByteArray;
 use strata_acct_types::Hash;
-use strata_identifiers::{Buf32, L1BlockCommitment, WtxidsRoot};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 
 /// Database representation of a (Txid, Wtxid) pair.
-///
-/// Uses named fields to avoid confusion between the two identically-typed 32-byte arrays.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBTxidPair {
+    #[serde(with = "serde_bytes")]
     txid: [u8; 32],
+    #[serde(with = "serde_bytes")]
     wtxid: [u8; 32],
 }
 
@@ -28,9 +29,14 @@ impl DBTxidPair {
 }
 
 /// Database representation of a BatchId.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+///
+/// As a table key this encodes as the raw 64-byte concatenation `prev_block ‖ last_block`
+/// (see the `KeyCodec` impls in `sleddb::schema`); as a value it goes through serde.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBBatchId {
+    #[serde(with = "serde_bytes")]
     prev_block: [u8; 32],
+    #[serde(with = "serde_bytes")]
     last_block: [u8; 32],
 }
 
@@ -49,46 +55,74 @@ impl From<DBBatchId> for BatchId {
     }
 }
 
+impl DBBatchId {
+    /// Builds an id from its two raw halves.
+    pub(crate) fn from_raw_parts(prev_block: [u8; 32], last_block: [u8; 32]) -> Self {
+        Self {
+            prev_block,
+            last_block,
+        }
+    }
+
+    /// Returns the raw halves, in key order.
+    pub(crate) fn raw_parts(&self) -> (&[u8; 32], &[u8; 32]) {
+        (&self.prev_block, &self.last_block)
+    }
+}
+
 /// Database representation of a Batch.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+///
+/// `idx` is not stored: it is the table key, so readers supply it when rebuilding the domain
+/// type via [`DBBatch::into_batch`].
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct DBBatch {
-    idx: u64,
+    #[serde(with = "serde_bytes")]
     prev_block: [u8; 32],
+    #[serde(with = "serde_bytes")]
     last_block: [u8; 32],
     last_blocknum: u64,
-    inner_blocks: Vec<[u8; 32]>,
+    inner_blocks: Vec<ByteArray<32>>,
 }
 
 impl From<Batch> for DBBatch {
     fn from(value: Batch) -> Self {
         Self {
-            idx: value.idx(),
             prev_block: value.prev_block().into(),
             last_block: value.last_block().into(),
             last_blocknum: value.last_blocknum(),
-            inner_blocks: value.inner_blocks().iter().map(|h| (*h).into()).collect(),
+            inner_blocks: value
+                .inner_blocks()
+                .iter()
+                .map(|h| ByteArray::new((*h).into()))
+                .collect(),
         }
     }
 }
 
-impl TryFrom<DBBatch> for Batch {
-    type Error = &'static str;
-
-    /// Converts a database batch into a domain batch.
+impl DBBatch {
+    /// Returns the inner block hashes as plain arrays.
     ///
-    /// Note: The return type is `Result` because `Batch::new` and `Batch::new_genesis_batch`
-    /// already return `Result<Batch, &'static str>`, which is propagated directly here.
-    fn try_from(value: DBBatch) -> Result<Self, Self::Error> {
-        let inner_blocks: Vec<Hash> = value.inner_blocks.into_iter().map(Hash::from).collect();
+    /// The stored field wraps each hash so that serde encodes it as a byte string; callers
+    /// should not have to know that.
+    fn inner_blocks(&self) -> impl Iterator<Item = [u8; 32]> + '_ {
+        self.inner_blocks.iter().map(|blkid| blkid.into_array())
+    }
 
-        if value.idx == 0 {
-            Batch::new_genesis_batch(Hash::from(value.last_block), value.last_blocknum)
+    /// Rebuilds the domain batch, taking `idx` from the table key.
+    ///
+    /// Returns `Err` because `Batch::new` and `Batch::new_genesis_batch` already return
+    /// `Result<Batch, &'static str>`, which is propagated directly here.
+    fn into_batch(self, idx: u64) -> Result<Batch, &'static str> {
+        let inner_blocks: Vec<Hash> = self.inner_blocks().map(Hash::from).collect();
+
+        if idx == 0 {
+            Batch::new_genesis_batch(Hash::from(self.last_block), self.last_blocknum)
         } else {
             Batch::new(
-                value.idx,
-                Hash::from(value.prev_block),
-                Hash::from(value.last_block),
-                value.last_blocknum,
+                idx,
+                Hash::from(self.prev_block),
+                Hash::from(self.last_block),
+                self.last_blocknum,
                 inner_blocks,
             )
         }
@@ -96,12 +130,19 @@ impl TryFrom<DBBatch> for Batch {
 }
 
 /// Database representation of L1DaBlockRef.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBL1DaBlockRef {
-    /// L1BlockCommitment serialized via its Borsh impl.
-    block: L1BlockCommitment,
+    /// Height of the L1 block.
+    block_height: L1Height,
+
+    /// Id of the L1 block.
+    #[serde(with = "serde_bytes")]
+    block_id: [u8; 32],
+
     /// Witness transaction Merkle root for the L1 block.
+    #[serde(with = "serde_bytes")]
     wtxids_root: [u8; 32],
+
     /// This batch's DA txs in this L1 block as raw `(txid, wtxid)` pairs.
     txns: Vec<DBTxidPair>,
 }
@@ -109,7 +150,8 @@ pub(crate) struct DBL1DaBlockRef {
 impl From<L1DaBlockRef> for DBL1DaBlockRef {
     fn from(value: L1DaBlockRef) -> Self {
         Self {
-            block: value.block.commitment,
+            block_height: value.block.commitment.height(),
+            block_id: Buf32::from(*value.block.commitment.blkid()).into(),
             wtxids_root: value.block.wtxids_root().as_ref().to_owned(),
             txns: value
                 .txns
@@ -124,7 +166,10 @@ impl From<DBL1DaBlockRef> for L1DaBlockRef {
     fn from(value: DBL1DaBlockRef) -> Self {
         Self {
             block: L1DaBlockInfo::new(
-                value.block,
+                L1BlockCommitment::new(
+                    value.block_height,
+                    L1BlockId::from(Buf32::from(value.block_id)),
+                ),
                 WtxidsRoot::from(Buf32::from(value.wtxids_root)),
             ),
             txns: value
@@ -143,7 +188,8 @@ impl From<DBL1DaBlockRef> for L1DaBlockRef {
 }
 
 /// Database representation of BatchStatus.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum DBBatchStatus {
     Genesis,
     Sealed,
@@ -158,6 +204,7 @@ pub(crate) enum DBBatchStatus {
     },
     ProofReady {
         da: Vec<DBL1DaBlockRef>,
+        #[serde(with = "serde_bytes")]
         proof: [u8; 32],
     },
 }
@@ -203,7 +250,8 @@ impl From<DBBatchStatus> for BatchStatus {
 }
 
 /// Database representation of a Batch with its status, stored together.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+// TODO(STR-4239): split apart batch data and status
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBBatchWithStatus {
     batch: DBBatch,
     status: DBBatchStatus,
@@ -217,17 +265,23 @@ impl DBBatchWithStatus {
         }
     }
 
-    pub(crate) fn into_parts(self) -> Result<(Batch, BatchStatus), &'static str> {
-        let batch = self.batch.try_into()?;
+    /// Rebuilds the domain batch and status, taking `idx` from the table key.
+    pub(crate) fn into_parts(self, idx: u64) -> Result<(Batch, BatchStatus), &'static str> {
+        let batch = self.batch.into_batch(idx)?;
         let status = self.status.into();
         Ok((batch, status))
     }
 }
 
 /// Database representation of a ChunkId.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+///
+/// As a table key this encodes as the raw 64-byte concatenation `prev_block ‖ last_block`
+/// (see the `KeyCodec` impls in `sleddb::schema`); as a value it goes through serde.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBChunkId {
+    #[serde(with = "serde_bytes")]
     prev_block: [u8; 32],
+    #[serde(with = "serde_bytes")]
     last_block: [u8; 32],
 }
 
@@ -246,50 +300,82 @@ impl From<DBChunkId> for ChunkId {
     }
 }
 
+impl DBChunkId {
+    /// Builds an id from its two raw halves.
+    pub(crate) fn from_raw_parts(prev_block: [u8; 32], last_block: [u8; 32]) -> Self {
+        Self {
+            prev_block,
+            last_block,
+        }
+    }
+
+    /// Returns the raw halves, in key order.
+    pub(crate) fn raw_parts(&self) -> (&[u8; 32], &[u8; 32]) {
+        (&self.prev_block, &self.last_block)
+    }
+}
+
 /// Database representation of a Chunk.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+///
+/// `idx` is not stored: it is the table key, so readers supply it when rebuilding the domain
+/// type via [`DBChunk::into_chunk`]. `batch_idx` is kept -- it is a real field, not the key.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBChunk {
-    idx: u64,
+    #[serde(with = "serde_bytes")]
     prev_block: [u8; 32],
+    #[serde(with = "serde_bytes")]
     last_block: [u8; 32],
     last_blocknum: u64,
     batch_idx: u64,
-    inner_blocks: Vec<[u8; 32]>,
+    inner_blocks: Vec<ByteArray<32>>,
 }
 
 impl From<Chunk> for DBChunk {
     fn from(value: Chunk) -> Self {
         Self {
-            idx: value.idx(),
             prev_block: value.prev_block().into(),
             last_block: value.last_block().into(),
             last_blocknum: value.last_blocknum(),
             batch_idx: value.batch_idx(),
-            inner_blocks: value.inner_blocks().iter().map(|h| (*h).into()).collect(),
+            inner_blocks: value
+                .inner_blocks()
+                .iter()
+                .map(|blkid| ByteArray::new((*blkid).into()))
+                .collect(),
         }
     }
 }
 
-impl From<DBChunk> for Chunk {
-    fn from(value: DBChunk) -> Self {
-        let inner_blocks: Vec<Hash> = value.inner_blocks.into_iter().map(Hash::from).collect();
+impl DBChunk {
+    /// Returns the inner block hashes as plain arrays.
+    ///
+    /// The stored field wraps each hash so that serde encodes it as a byte string; callers
+    /// should not have to know that.
+    fn inner_blocks(&self) -> impl Iterator<Item = [u8; 32]> + '_ {
+        self.inner_blocks.iter().map(|blkid| blkid.into_array())
+    }
+
+    /// Rebuilds the domain chunk, taking `idx` from the table key.
+    fn into_chunk(self, idx: u64) -> Chunk {
+        let inner_blocks: Vec<Hash> = self.inner_blocks().map(Hash::from).collect();
         Chunk::new(
-            value.idx,
-            Hash::from(value.prev_block),
-            Hash::from(value.last_block),
-            value.last_blocknum,
-            value.batch_idx,
+            idx,
+            Hash::from(self.prev_block),
+            Hash::from(self.last_block),
+            self.last_blocknum,
+            self.batch_idx,
             inner_blocks,
         )
     }
 }
 
 /// Database representation of ChunkStatus.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum DBChunkStatus {
     ProvingNotStarted,
     ProofPending(String),
-    ProofReady([u8; 32]),
+    ProofReady(#[serde(with = "serde_bytes")] [u8; 32]),
 }
 
 impl From<ChunkStatus> for DBChunkStatus {
@@ -313,7 +399,8 @@ impl From<DBChunkStatus> for ChunkStatus {
 }
 
 /// Database representation of a Chunk with its status, stored together.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+// TODO(STR-4239): split apart chunk and status
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DBChunkWithStatus {
     chunk: DBChunk,
     status: DBChunkStatus,
@@ -327,8 +414,9 @@ impl DBChunkWithStatus {
         }
     }
 
-    pub(crate) fn into_parts(self) -> (Chunk, ChunkStatus) {
-        let chunk = self.chunk.into();
+    /// Rebuilds the domain chunk and status, taking `idx` from the table key.
+    pub(crate) fn into_parts(self, idx: u64) -> (Chunk, ChunkStatus) {
+        let chunk = self.chunk.into_chunk(idx);
         let status = self.status.into();
         (chunk, status)
     }

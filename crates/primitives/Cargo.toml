@@ -15,14 +15,11 @@ bitcoin = { workspace = true, features = ["serde", "rand-std"] }
 bitcoin-bosd = { workspace = true, features = [
   "address",
   "serde",
-  "borsh",
   "arbitrary",
 ] }
-borsh.workspace = true
 hex.workspace = true
 schemars = { workspace = true, optional = true }
 serde.workspace = true
-thiserror.workspace = true
 
 [dev-dependencies]
 

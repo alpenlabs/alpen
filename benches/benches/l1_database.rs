@@ -23,12 +23,6 @@ use strata_db_types::l1::L1Database;
     reason = "used for benchmarking"
 )]
 use strata_primitives as _;
-#[allow(
-    unused_imports,
-    clippy::allow_attributes,
-    reason = "used for benchmarking"
-)]
-use strata_state as _;
 use tempfile::TempDir;
 // Feature-gated imports
 #[cfg(feature = "sled")]

@@ -1,13 +1,12 @@
 use bitcoin::Network;
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
 use strata_btc_verification::L1Anchor;
-use strata_db_types::asm::AsmDatabase;
+use strata_db_types::asm::{AsmDatabase, AsmExecOutput};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
-use strata_state::asm_state::AsmState;
 
 pub fn test_get_asm(db: &impl AsmDatabase) {
-    let state = AsmState::new(make_anchor_state(), vec![]);
+    let state = AsmExecOutput::new(make_anchor_state(), vec![]);
 
     db.put_asm_state(L1BlockCommitment::default(), state.clone())
         .expect("test insert");
@@ -60,12 +59,12 @@ pub fn test_get_anchor_state_without_logs(db: &impl AsmDatabase) {
         .get_asm_state(block)
         .expect("test: get asm state")
         .expect("test: asm state missing after logs");
-    assert_eq!(combined, AsmState::new(anchor, vec![]));
+    assert_eq!(combined, AsmExecOutput::new(anchor, vec![]));
 }
 
-/// Minimal [`AsmState`] for tests that only need a persistable value.
-pub fn make_test_asm_state() -> AsmState {
-    AsmState::new(make_anchor_state(), vec![])
+/// Minimal [`AsmExecOutput`] for tests that only need a persistable value.
+pub fn make_test_asm_state() -> AsmExecOutput {
+    AsmExecOutput::new(make_anchor_state(), vec![])
 }
 
 fn make_anchor_state() -> AnchorState {

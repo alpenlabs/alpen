@@ -91,7 +91,7 @@ mod tests {
     fn full_pipeline_roundtrip() {
         let blob = make_test_da_blob();
         let chunks = prepare_da_chunks(&blob).unwrap();
-        let reassembled = reassemble_da_blob(&chunks).unwrap();
+        let reassembled = reassemble_da_blob(chunks.iter().map(Vec::as_slice)).unwrap();
         assert_da_blob_eq(&blob, &reassembled);
     }
 

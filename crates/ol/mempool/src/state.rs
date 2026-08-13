@@ -191,25 +191,25 @@ impl<P: StateProvider> MempoolServiceState<P> {
         info!(%total_in_db, "loading mempool transactions from database");
 
         // Sort by `timestamp_micros` to validate transactions in order
-        all_txs.sort_by_key(|tx_data| tx_data.timestamp_micros);
+        all_txs.sort_by_key(|tx_data| tx_data.timestamp_micros());
 
         let mut loaded_count = 0;
         let mut skipped_count = 0;
 
         for tx_data in all_txs {
             // Parse transaction from bytes
-            let tx: OLTransaction = match Decode::from_ssz_bytes(&tx_data.tx_bytes) {
+            let tx: OLTransaction = match Decode::from_ssz_bytes(tx_data.tx_bytes()) {
                 Ok(tx) => tx,
                 Err(e) => {
                     // Skip malformed transaction and remove from DB
                     warn!(
-                        ?tx_data.txid,
+                        txid = ?tx_data.txid(),
                         ?e,
                         "Skipping malformed transaction from database"
                     );
-                    if let Err(del_err) = self.ctx.storage.mempool().del_tx(tx_data.txid) {
+                    if let Err(del_err) = self.ctx.storage.mempool().del_tx(tx_data.txid()) {
                         warn!(
-                            ?tx_data.txid,
+                            txid = ?tx_data.txid(),
                             error = %del_err,
                             "failed to delete malformed tx from mempool db; will retry on next reload"
                         );
@@ -219,7 +219,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
                 }
             };
 
-            let txid = tx_data.txid;
+            let txid = tx_data.txid();
 
             // Validate transaction
             // Note: this plays nice with sequence number validation because we don't allow gaps
@@ -230,13 +230,13 @@ impl<P: StateProvider> MempoolServiceState<P> {
             {
                 // Skip invalid transaction and remove from DB
                 warn!(
-                    ?tx_data.txid,
+                    txid = ?tx_data.txid(),
                     ?e,
                     "Skipping invalid transaction from database"
                 );
-                if let Err(del_err) = self.ctx.storage.mempool().del_tx(tx_data.txid) {
+                if let Err(del_err) = self.ctx.storage.mempool().del_tx(tx_data.txid()) {
                     warn!(
-                        ?tx_data.txid,
+                        txid = ?tx_data.txid(),
                         error = %del_err,
                         "failed to delete invalid tx from mempool db; will retry on next reload"
                     );
@@ -252,8 +252,8 @@ impl<P: StateProvider> MempoolServiceState<P> {
             }
 
             // Create entry using stored timestamp from database
-            let ordering_key = MempoolOrderingKey::for_transaction(&tx, tx_data.timestamp_micros);
-            let tx_size = tx_data.tx_bytes.len();
+            let ordering_key = MempoolOrderingKey::for_transaction(&tx, tx_data.timestamp_micros());
+            let tx_size = tx_data.tx_bytes().len();
             let entry = MempoolEntry::new(tx, ordering_key, tx_size);
 
             // Add to in-memory state (already in DB, so no write needed)

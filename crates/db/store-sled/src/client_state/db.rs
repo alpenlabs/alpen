@@ -5,6 +5,7 @@ use strata_primitives::l1::L1BlockCommitment;
 
 use super::schemas::ClientUpdateOutputSchema;
 use crate::define_sled_database;
+use crate::utils::conv_sled_err;
 
 define_sled_database!(
     pub struct ClientStateDBSled {
@@ -18,11 +19,13 @@ impl ClientStateDatabase for ClientStateDBSled {
         block: L1BlockCommitment,
         output: ClientUpdateOutput,
     ) -> DbResult<()> {
-        Ok(self.client_update_tree.insert(&block, &output)?)
+        self.client_update_tree
+            .insert(&block, &output)
+            .map_err(conv_sled_err)
     }
 
     fn get_client_update(&self, block: L1BlockCommitment) -> DbResult<Option<ClientUpdateOutput>> {
-        Ok(self.client_update_tree.get(&block)?)
+        self.client_update_tree.get(&block).map_err(conv_sled_err)
     }
 
     fn get_latest_client_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
@@ -30,11 +33,13 @@ impl ClientStateDatabase for ClientStateDBSled {
         // the highest block.
         let mut iter = self.client_update_tree.iter().rev();
         let res = iter.next().map(|r| r.map(|(k, v)| (k, v.into_state())));
-        Ok(res.transpose()?)
+        res.transpose().map_err(conv_sled_err)
     }
 
     fn del_client_update(&self, block: L1BlockCommitment) -> DbResult<()> {
-        self.client_update_tree.remove(&block)?;
+        self.client_update_tree
+            .remove(&block)
+            .map_err(conv_sled_err)?;
         Ok(())
     }
 
@@ -50,8 +55,12 @@ impl ClientStateDatabase for ClientStateDBSled {
         let mut result = Vec::new();
 
         // Iterate through all blocks and filter those >= from_block
-        for item in self.client_update_tree.range(from_block..=last_block)? {
-            let (block, update) = item?;
+        for item in self
+            .client_update_tree
+            .range(from_block..=last_block)
+            .map_err(conv_sled_err)?
+        {
+            let (block, update) = item.map_err(conv_sled_err)?;
             result.push((block, update));
 
             if result.len() >= max_count {
