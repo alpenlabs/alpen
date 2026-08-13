@@ -1,6 +1,7 @@
 //! Coin abstraction to ensure we don't accidentally create or destroy funds.
 
-use std::{mem, ops::Drop};
+use std::mem;
+use std::ops::Drop;
 
 use strata_acct_types::BitcoinAmount;
 

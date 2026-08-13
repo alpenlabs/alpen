@@ -3,10 +3,8 @@
 use strata_identifiers::EpochCommitment;
 use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
 
-use crate::{
-    context::{BlockContext, EpochInitialContext},
-    errors::{ExecError, ExecResult},
-};
+use crate::context::{BlockContext, EpochInitialContext};
+use crate::errors::{ExecError, ExecResult};
 
 /// Preliminary processing we do at the start of every epoch.
 ///

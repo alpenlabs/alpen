@@ -52,7 +52,8 @@ use strata_ol_state_types::{
 };
 use strata_snark_acct_types::Seqno;
 
-use crate::{memory_state_layer::MemoryStateBaseLayer, test_utils::*};
+use crate::memory_state_layer::MemoryStateBaseLayer;
+use crate::test_utils::*;
 
 /// Seed of the first account id that the [`Fixture`] guarantees is unused.
 ///

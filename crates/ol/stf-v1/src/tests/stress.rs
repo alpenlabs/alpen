@@ -6,7 +6,8 @@ use strata_acct_types::{BitcoinAmount, MessageEntry, MsgPayload};
 use strata_bridge_params::BridgeParams;
 use strata_ol_state_types::ISnarkAccountState;
 
-use crate::{SEQUENCER_ACCT_ID, test_utils::*, verify_block};
+use crate::test_utils::*;
+use crate::{SEQUENCER_ACCT_ID, verify_block};
 
 /// Representative large workload size for stress tests.
 const STRESS_BATCH_SIZE: usize = 1_000;

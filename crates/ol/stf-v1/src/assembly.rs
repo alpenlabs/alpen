@@ -9,16 +9,11 @@ use strata_ol_chain_types_v1::*;
 use strata_ol_state_types::IStateAccessorMut;
 use strata_ol_tx_types_v1::*;
 
-use crate::{
-    chain_processing,
-    context::{BasicExecContext, BlockContext, TxExecContext},
-    errors::ExecResult,
-    manifest_processing,
-    output::ExecOutputBuffer,
-    transaction_processing,
-    verification::{BlockExecInput, verify_block_predrain},
-    verify_block,
-};
+use crate::context::{BasicExecContext, BlockContext, TxExecContext};
+use crate::errors::ExecResult;
+use crate::output::ExecOutputBuffer;
+use crate::verification::{BlockExecInput, verify_block_predrain};
+use crate::{chain_processing, manifest_processing, transaction_processing, verify_block};
 
 /// Block execution outputs.
 ///

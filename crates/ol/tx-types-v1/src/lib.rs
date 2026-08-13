@@ -21,4 +21,5 @@ mod ssz_generated {
 }
 
 // Re-export generated SSZ types with their canonical names
-pub use ssz_generated::ssz::{proofs::*, transaction::*};
+pub use ssz_generated::ssz::proofs::*;
+pub use ssz_generated::ssz::transaction::*;

@@ -3,10 +3,10 @@
 use proptest::prelude::*;
 use ssz_types::VariableList;
 use strata_acct_types::BitcoinAmount;
-use strata_identifiers::{
-    EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId,
-    test_utils::{account_id_strategy, account_serial_strategy, buf32_strategy},
+use strata_identifiers::test_utils::{
+    account_id_strategy, account_serial_strategy, buf32_strategy,
 };
+use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId};
 use strata_merkle::Mmr64B32;
 use strata_ol_params::OLParams;
 use strata_predicate::PredicateKey;

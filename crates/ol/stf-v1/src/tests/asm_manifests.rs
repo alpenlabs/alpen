@@ -3,7 +3,8 @@
 use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_asm_checkpoint_types::CheckpointTip;
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{CheckpointTipUpdate, DepositLog, constants::AsmLogTypeId};
+use strata_asm_logs::constants::AsmLogTypeId;
+use strata_asm_logs::{CheckpointTipUpdate, DepositLog};
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
@@ -16,15 +17,12 @@ use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 
-use crate::{
-    assembly::BlockComponents,
-    context::{BasicExecContext, BlockInfo},
-    errors::ExecError,
-    execute_block_batch_predrain,
-    output::ExecOutputBuffer,
-    process_block_manifests, process_epoch_terminal,
-    test_utils::*,
-};
+use crate::assembly::BlockComponents;
+use crate::context::{BasicExecContext, BlockInfo};
+use crate::errors::ExecError;
+use crate::output::ExecOutputBuffer;
+use crate::test_utils::*;
+use crate::{execute_block_batch_predrain, process_block_manifests, process_epoch_terminal};
 
 const GENESIS_MANIFEST_SENTINEL_COUNT: u64 = 1;
 

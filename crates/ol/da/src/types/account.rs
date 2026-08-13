@@ -1,8 +1,7 @@
 //! Account diff types.
 
-use strata_da_framework::{
-    DaCounter, DaWrite, counter_schemes::CtrU64BySignedVarInt, make_compound_impl,
-};
+use strata_da_framework::counter_schemes::CtrU64BySignedVarInt;
+use strata_da_framework::{DaCounter, DaWrite, make_compound_impl};
 
 use super::snark::{SnarkAccountDiff, SnarkAccountTarget};
 

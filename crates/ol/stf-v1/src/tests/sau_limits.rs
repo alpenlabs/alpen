@@ -4,7 +4,8 @@ use strata_acct_types::{BitcoinAmount, MAX_MESSAGES, MAX_TRANSFERS};
 use strata_ol_state_types::ISnarkAccountState;
 use strata_ol_tx_types_v1::SAU_MAX_EXTRA_DATA_BYTES;
 
-use crate::{errors::ExecError, test_utils::*};
+use crate::errors::ExecError;
+use crate::test_utils::*;
 
 const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
 

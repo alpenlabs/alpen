@@ -12,15 +12,12 @@
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayloadData, TxEffects};
 use strata_ol_state_types::{Coin, IStateAccessorMut, StateError};
 
-use crate::{
-    account_processing,
-    context::{BasicExecContext, BlockInfo},
-    errors::ExecError,
-    msg_payload_coin::MsgPayloadCoin,
-    output::ExecOutputBuffer,
-    test_utils::*,
-    transaction_processing,
-};
+use crate::context::{BasicExecContext, BlockInfo};
+use crate::errors::ExecError;
+use crate::msg_payload_coin::MsgPayloadCoin;
+use crate::output::ExecOutputBuffer;
+use crate::test_utils::*;
+use crate::{account_processing, transaction_processing};
 
 const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
 

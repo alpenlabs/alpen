@@ -12,7 +12,9 @@ use strata_ol_state_types::{
     ISnarkAccountState, IStateAccessor, IStateAccessorMut, PendingAsmLog, StateError,
 };
 
-use crate::{errors::ExecError, process_block_manifests, test_utils::*};
+use crate::errors::ExecError;
+use crate::process_block_manifests;
+use crate::test_utils::*;
 
 /// A manifest in a non-terminal block buffers its logs (and eagerly advances
 /// the ASM MMR / `last_l1_height`) without applying the deposit effect; the

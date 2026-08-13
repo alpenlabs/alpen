@@ -15,14 +15,10 @@ use strata_ol_da::DaScheme;
 use strata_ol_state_types::*;
 use tracing::error;
 
-use crate::{
-    chain_processing,
-    context::*,
-    errors::{ExecError, ExecResult},
-    manifest_processing,
-    output::ExecOutputBuffer,
-    transaction_processing,
-};
+use crate::context::*;
+use crate::errors::{ExecError, ExecResult};
+use crate::output::ExecOutputBuffer;
+use crate::{chain_processing, manifest_processing, transaction_processing};
 
 /// Commitments that we are checking against a block.
 ///
@@ -448,10 +444,8 @@ mod tests {
     use strata_ol_state_support_types::MemoryStateBaseLayer;
 
     use super::*;
-    use crate::{
-        assembly::BlockExecOutputs,
-        test_utils::{FixtureAsmManifestBuilder, OLStfFixture, make_account_id},
-    };
+    use crate::assembly::BlockExecOutputs;
+    use crate::test_utils::{FixtureAsmManifestBuilder, OLStfFixture, make_account_id};
 
     const STATE_DIFF_EMPTY_ACCOUNT_ID: u32 = 77;
 

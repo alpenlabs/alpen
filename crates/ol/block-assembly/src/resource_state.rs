@@ -1,4 +1,5 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};

@@ -536,11 +536,9 @@ mod tests {
     use strata_snark_acct_types::Seqno;
 
     use super::*;
-    use crate::{
-        BatchDiffState, DaAccumulatingState, WriteTrackingState,
-        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
-        test_utils::*,
-    };
+    use crate::common_tests::{impl_mut_layer_tests, impl_read_layer_tests};
+    use crate::test_utils::*;
+    use crate::{BatchDiffState, DaAccumulatingState, WriteTrackingState};
 
     /// Builds an [`IndexerState`] over a [`WriteTrackingState`].
     macro_rules! build_indexer_over_wt {

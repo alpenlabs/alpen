@@ -5,7 +5,10 @@ use strata_identifiers::Buf32;
 use strata_ol_chain_types_v1::MAX_LOGS_PER_BLOCK;
 use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 
-use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
+use crate::assembly::BlockComponents;
+use crate::context::BlockInfo;
+use crate::errors::ExecError;
+use crate::test_utils::*;
 
 const WITHDRAWAL_LOG_AMOUNT: u64 = 100_000_000;
 

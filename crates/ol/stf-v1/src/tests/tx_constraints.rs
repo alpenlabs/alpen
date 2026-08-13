@@ -2,7 +2,8 @@
 
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxConstraintsV1, TxProofsV1};
 
-use crate::{errors::ExecError, test_utils::*};
+use crate::errors::ExecError;
+use crate::test_utils::*;
 
 fn fixture_with_gam_target() -> OLStfFixture {
     OLStfFixture::builder()

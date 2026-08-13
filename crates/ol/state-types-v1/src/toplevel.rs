@@ -5,10 +5,8 @@ use strata_merkle::Mmr;
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{IAccountState, NewAccountData, StateError, StateResult};
 
-use crate::{
-    MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeStateV1, OLSnarkAccountStateV1, WriteBatch,
-    ssz_generated::ssz::state::*,
-};
+use crate::ssz_generated::ssz::state::*;
+use crate::{MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeStateV1, OLSnarkAccountStateV1, WriteBatch};
 
 impl OLStateV1 {
     /// Creates initial OL state from genesis parameters.
@@ -334,9 +332,8 @@ mod tests {
     use strata_predicate::PredicateKey;
 
     use super::*;
-    use crate::{
-        OLAccountTypeStateV1, OLSnarkAccountStateV1, test_utils::create_test_genesis_state,
-    };
+    use crate::test_utils::create_test_genesis_state;
+    use crate::{OLAccountTypeStateV1, OLSnarkAccountStateV1};
 
     fn test_account_id(seed: u8) -> AccountId {
         let mut bytes = [0u8; 32];

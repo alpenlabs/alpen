@@ -12,10 +12,8 @@ use strata_bridge_params::BridgeParams;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_v1::{Epoch, OLBlockHeaderV1, OLLog, Slot};
 
-use crate::{
-    errors::ExecResult,
-    output::{ExecOutputBuffer, OutputCtx},
-};
+use crate::errors::ExecResult;
+use crate::output::{ExecOutputBuffer, OutputCtx};
 
 /// Simple information about a single block.
 ///

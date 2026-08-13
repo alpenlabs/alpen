@@ -11,7 +11,8 @@ use strata_ol_tx_types_v1::{
     OLTransactionV1, ProofSatisfierListV1, ProofSatisfierV1, RawMerkleProofListV1, TxProofsV1,
 };
 
-use crate::{errors::ExecError, test_utils::*};
+use crate::errors::ExecError;
+use crate::test_utils::*;
 
 // The test genesis state pre-fills manifest MMR index 0 with
 // `strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF`; real manifests start at 1.

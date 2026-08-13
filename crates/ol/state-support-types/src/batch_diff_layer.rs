@@ -262,10 +262,9 @@ mod tests {
     use strata_ol_state_types_v1::OLAccountStateV1;
 
     use super::*;
-    use crate::{
-        common_tests::impl_read_layer_tests, test_utils::*,
-        write_tracking_layer::WriteTrackingState,
-    };
+    use crate::common_tests::impl_read_layer_tests;
+    use crate::test_utils::*;
+    use crate::write_tracking_layer::WriteTrackingState;
 
     /// Builds a [`BatchDiffState`] with no pending batches — a pure read-only
     /// passthrough to the base.

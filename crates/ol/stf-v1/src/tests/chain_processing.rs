@@ -4,12 +4,10 @@ use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_v1::OLBlockHeaderV1;
 use strata_ol_state_types::IStateAccessor;
 
-use crate::{
-    context::{BlockContext, BlockInfo, EpochInitialContext},
-    errors::ExecError,
-    process_block_start, process_epoch_initial,
-    test_utils::{OLStfFixture, make_genesis_state, tamper_epoch, tamper_slot},
-};
+use crate::context::{BlockContext, BlockInfo, EpochInitialContext};
+use crate::errors::ExecError;
+use crate::test_utils::{OLStfFixture, make_genesis_state, tamper_epoch, tamper_slot};
+use crate::{process_block_start, process_epoch_initial};
 
 fn terminal_genesis_header() -> OLBlockHeaderV1 {
     OLStfFixture::builder()

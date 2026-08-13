@@ -1,18 +1,17 @@
 //! OL state accessor that accumulates DA-covered writes over an epoch.
 
-use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
-    fmt,
-    mem::take,
-};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fmt;
+use std::mem::take;
 
 use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, L1BlockRecord, Mmr64};
 use strata_asm_checkpoint_types::OL_DA_DIFF_MAX_SIZE;
+use strata_da_framework::counter_schemes::{
+    CtrU64BySignedVarInt, CtrU64ByU16, CtrU64ByUnsignedVarInt,
+};
 use strata_da_framework::{
     CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
-    LinearAccumulator,
-    counter_schemes::{CtrU64BySignedVarInt, CtrU64ByU16, CtrU64ByUnsignedVarInt},
-    encode_to_vec,
+    LinearAccumulator, encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ol_da::*;
@@ -20,7 +19,8 @@ use strata_ol_state_types::*;
 use strata_predicate::PredicateKey;
 use thiserror::Error;
 
-use crate::{index_types::IndexerWrites, indexer_layer::IndexerAccountStateMut};
+use crate::index_types::IndexerWrites;
+use crate::indexer_layer::IndexerAccountStateMut;
 
 /// Errors while building or encoding epoch DA payloads.
 #[derive(Debug, Error)]
@@ -922,10 +922,8 @@ fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
 // module only instantiates the shared trait-surface behavior suites.
 #[cfg(test)]
 mod tests {
-    use crate::{
-        DaAccumulatingState, IndexerState, WriteTrackingState,
-        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
-    };
+    use crate::common_tests::{impl_mut_layer_tests, impl_read_layer_tests};
+    use crate::{DaAccumulatingState, IndexerState, WriteTrackingState};
 
     /// Builds a [`DaAccumulatingState`] over a [`WriteTrackingState`].
     macro_rules! build_da_over_wt {

@@ -1,11 +1,9 @@
 //! Mempool service state management.
 
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    fmt::{Debug, Formatter},
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use metrics::{counter, gauge};
 use ssz::{Decode, Encode};
@@ -20,13 +18,11 @@ use strata_service::ServiceState;
 use strata_storage::NodeStorage;
 use tracing::{debug, info, instrument, warn};
 
-use crate::{
-    MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
-    types::{
-        MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
-    },
-    validation::validate_transaction,
+use crate::types::{
+    MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
 };
+use crate::validation::validate_transaction;
+use crate::{MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
 
 /// Per-account mempool state tracking.
 ///
@@ -883,18 +879,16 @@ mod tests {
     use strata_identifiers::Buf32;
 
     use super::*;
-    use crate::{
-        DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH,
-        test_utils::{
-            create_test_account_id_with, create_test_block_commitment,
-            create_test_constraints_with_slots, create_test_context,
-            create_test_generic_tx_for_account, create_test_generic_tx_with_size,
-            create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
-            create_test_snark_tx_with_seq_no_and_slots, create_test_state_provider,
-            create_test_tx_with_id, snark_seq_no, tx_target, with_max_slot,
-        },
-        types::OLMempoolConfig,
+    use crate::test_utils::{
+        create_test_account_id_with, create_test_block_commitment,
+        create_test_constraints_with_slots, create_test_context,
+        create_test_generic_tx_for_account, create_test_generic_tx_with_size,
+        create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
+        create_test_snark_tx_with_seq_no_and_slots, create_test_state_provider,
+        create_test_tx_with_id, snark_seq_no, tx_target, with_max_slot,
     };
+    use crate::types::OLMempoolConfig;
+    use crate::{DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH};
 
     #[tokio::test]
     async fn test_add_transaction() {

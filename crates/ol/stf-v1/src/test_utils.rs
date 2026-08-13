@@ -58,14 +58,16 @@
 
 #![allow(unreachable_pub, reason = "test util module")]
 
-use std::{any::type_name, collections::BTreeMap, mem};
+use std::any::type_name;
+use std::collections::BTreeMap;
+use std::mem;
 
 use ssz_primitives::FixedBytes;
 use ssz_types::VariableList;
+use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
 use strata_acct_types::{
     AccountId, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash, MessageEntry, Mmr64,
     MsgPayload, RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
-    tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
@@ -92,16 +94,14 @@ use strata_ol_tx_types_v1::*;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
-use crate::{
-    ExecResult,
-    assembly::{
-        BlockComponents, CompletedBlock, ConstructBlockOutput, construct_block,
-        execute_and_complete_block,
-    },
-    context::{BlockContext, BlockInfo},
-    errors::ExecError,
-    verification::verify_block,
+use crate::ExecResult;
+use crate::assembly::{
+    BlockComponents, CompletedBlock, ConstructBlockOutput, construct_block,
+    execute_and_complete_block,
 };
+use crate::context::{BlockContext, BlockInfo};
+use crate::errors::ExecError;
+use crate::verification::verify_block;
 
 /// Genesis block timestamp used by the shared epoch runner.
 pub const EPOCH_RUNNER_GENESIS_TIMESTAMP: u64 = 1_000_000;

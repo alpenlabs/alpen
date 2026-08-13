@@ -5,10 +5,10 @@ use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_service::ServiceMonitor;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{
-    MempoolCommand, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
-    command::create_completion, service::MempoolServiceStatus, types::OLMempoolStats,
-};
+use crate::command::create_completion;
+use crate::service::MempoolServiceStatus;
+use crate::types::OLMempoolStats;
+use crate::{MempoolCommand, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
 
 /// Handle for interacting with the mempool service.
 #[derive(Debug, Clone)]
@@ -111,15 +111,13 @@ mod tests {
     use tokio::runtime::Handle;
 
     use super::*;
-    use crate::{
-        MempoolBuilder,
-        test_utils::{
-            create_test_block_commitment, create_test_generic_tx_for_account,
-            create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
-            create_test_snark_tx_with_seq_no_and_slots,
-        },
-        types::OLMempoolConfig,
+    use crate::MempoolBuilder;
+    use crate::test_utils::{
+        create_test_block_commitment, create_test_generic_tx_for_account,
+        create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
+        create_test_snark_tx_with_seq_no_and_slots,
     };
+    use crate::types::OLMempoolConfig;
 
     /// Helper to set up mempool handle with storage for tests.
     /// Returns (handle, storage, status_channel) for triggering chain updates.

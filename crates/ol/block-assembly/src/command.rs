@@ -5,10 +5,8 @@ use strata_ol_chain_types_v1::OLBlockV1;
 use strata_service::CommandCompletionSender;
 use tokio::sync::oneshot;
 
-use crate::{
-    error::BlockAssemblyError,
-    types::{BlockCompletionData, BlockGenerationConfig, FullBlockTemplate},
-};
+use crate::error::BlockAssemblyError;
+use crate::types::{BlockCompletionData, BlockGenerationConfig, FullBlockTemplate};
 
 /// Type alias for block template generation result.
 type GenerateBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>;

@@ -6,7 +6,9 @@ use strata_acct_types::{
 };
 use strata_ol_state_types::ISnarkAccountState;
 
-use crate::{SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
+use crate::SEQUENCER_ACCT_ID;
+use crate::errors::ExecError;
+use crate::test_utils::*;
 
 fn msg_payload_from_bytes(data: Vec<u8>) -> MsgPayload {
     MsgPayload::from_bytes(

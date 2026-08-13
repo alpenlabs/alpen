@@ -13,14 +13,14 @@ use strata_ol_state_support_types::{
 };
 use strata_ol_stf_v1::execute_block_batch_predrain;
 
-use crate::{
-    context::BlockAssemblyAnchorContext,
-    resource_state::{AccumulatedDaData, EpochResourceState, rebuild_epoch_resource_state_upto},
-    test_utils::{
-        DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
-        TestStorageFixtureBuilder, block_and_post_state_from_output, generate_message_entries,
-        included_txids, test_account_id,
-    },
+use crate::context::BlockAssemblyAnchorContext;
+use crate::resource_state::{
+    AccumulatedDaData, EpochResourceState, rebuild_epoch_resource_state_upto,
+};
+use crate::test_utils::{
+    DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
+    TestStorageFixtureBuilder, block_and_post_state_from_output, generate_message_entries,
+    included_txids, test_account_id,
 };
 
 /// Finalizes an accumulator against the given state and returns the encoded DA blob bytes.

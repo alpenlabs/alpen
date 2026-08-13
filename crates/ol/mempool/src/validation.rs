@@ -10,7 +10,8 @@ use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::Seqno;
 use tracing::error;
 
-use crate::{OLMempoolError, OLMempoolResult, state::AccountMempoolState};
+use crate::state::AccountMempoolState;
+use crate::{OLMempoolError, OLMempoolResult};
 
 /// Checks sequence number against a range and returns appropriate error.
 /// - `tx_seq_no < min_expected` → `UsedSequenceNumber`

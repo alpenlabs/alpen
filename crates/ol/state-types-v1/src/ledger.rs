@@ -133,10 +133,8 @@ mod tests {
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
-    use crate::{
-        ssz_generated::ssz::state::OLAccountTypeStateV1,
-        test_utils::{tsnl_account_entry_strategy, tsnl_ledger_accounts_table_strategy},
-    };
+    use crate::ssz_generated::ssz::state::OLAccountTypeStateV1;
+    use crate::test_utils::{tsnl_account_entry_strategy, tsnl_ledger_accounts_table_strategy};
 
     // Helper function to create an Empty account state
     fn create_empty_account_state(

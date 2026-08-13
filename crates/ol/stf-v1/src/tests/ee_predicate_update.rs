@@ -7,9 +7,9 @@ use strata_identifiers::AccountSerial;
 use strata_ol_state_types::{IAccountState, ISnarkAccountState};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
-use crate::{
-    errors::ExecError, manifest_processing::build_predicate_update_payload, test_utils::*,
-};
+use crate::errors::ExecError;
+use crate::manifest_processing::build_predicate_update_payload;
+use crate::test_utils::*;
 
 /// Builds a non-trivial predicate key with a unique condition payload, used to
 /// distinguish "before" and "after" states in tests.

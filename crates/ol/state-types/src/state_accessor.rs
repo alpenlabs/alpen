@@ -1,11 +1,9 @@
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
-use crate::{
-    Coin, PendingAsmLog,
-    account::{IAccountState, IAccountStateMut, NewAccountData},
-    errors::StateResult,
-};
+use crate::account::{IAccountState, IAccountStateMut, NewAccountData};
+use crate::errors::StateResult;
+use crate::{Coin, PendingAsmLog};
 
 /// Opaque interface for accessing the chainstate, for all of the parts directly
 /// under the toplevel state.

@@ -1,4 +1,5 @@
-use std::{env::var, path::Path};
+use std::env::var;
+use std::path::Path;
 
 use ssz_codegen::{ModuleGeneration, build_ssz_files};
 

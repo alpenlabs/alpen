@@ -2,9 +2,9 @@
 
 use strata_acct_types::Hash;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_da_framework::counter_schemes::{CtrU64ByU16, CtrU64ByUnsignedVarInt};
 use strata_da_framework::{
     BitSeqReader, BitSeqWriter, CompoundMember, DaCounter, DaLinacc, DaRegister, DaWrite,
-    counter_schemes::{CtrU64ByU16, CtrU64ByUnsignedVarInt},
     make_compound_impl,
 };
 use strata_snark_acct_types::ProofState;
@@ -173,7 +173,8 @@ impl CompoundMember for DaProofStateDiff {
     }
 }
 
-use super::{encoding::U16LenBytes, inbox::InboxBuffer};
+use super::encoding::U16LenBytes;
+use super::inbox::InboxBuffer;
 
 /// Diff for snark account state.
 ///

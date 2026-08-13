@@ -16,19 +16,16 @@ use strata_ol_state_types::{IAccountState, IStateAccessor};
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
-use crate::{
-    BlockInfo, EpochInfo, apply_da_epoch,
-    assembly::{BlockComponents, CompletedBlock},
-    execute_block_batch_predrain,
-    test_utils::{
-        EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
-        TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
-        epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
-        epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
-        make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state,
-        make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload, snark_inbox_msg,
-    },
+use crate::assembly::{BlockComponents, CompletedBlock};
+use crate::test_utils::{
+    EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
+    TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
+    epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
+    epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
+    make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state,
+    make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload, snark_inbox_msg,
 };
+use crate::{BlockInfo, EpochInfo, apply_da_epoch, execute_block_batch_predrain};
 
 #[test]
 fn test_apply_da_epoch_deposit_manifest_only() {

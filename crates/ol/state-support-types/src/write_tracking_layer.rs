@@ -392,12 +392,10 @@ mod tests {
     use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1};
 
     use super::*;
-    use crate::{
-        batch_diff_layer::BatchDiffState,
-        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
-        memory_state_layer::MemoryStateBaseLayer,
-        test_utils::*,
-    };
+    use crate::batch_diff_layer::BatchDiffState;
+    use crate::common_tests::{impl_mut_layer_tests, impl_read_layer_tests};
+    use crate::memory_state_layer::MemoryStateBaseLayer;
+    use crate::test_utils::*;
 
     /// Builds a [`WriteTrackingState`] directly over the base.
     macro_rules! build_wt_over_base {

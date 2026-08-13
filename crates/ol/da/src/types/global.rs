@@ -1,10 +1,7 @@
 //! Global state diff types.
 
-use strata_da_framework::{
-    DaCounter,
-    counter_schemes::{CtrU64BySignedVarInt, CtrU64ByU16},
-    make_compound_impl,
-};
+use strata_da_framework::counter_schemes::{CtrU64BySignedVarInt, CtrU64ByU16};
+use strata_da_framework::{DaCounter, make_compound_impl};
 
 /// Diff of global state fields covered by DA.
 #[derive(Debug)]

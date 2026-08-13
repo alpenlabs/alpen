@@ -9,7 +9,8 @@ use proptest::prelude::*;
 use strata_acct_types::{
     AccountId, AccumulatorClaim, BitcoinAmount, MessageEntry, MsgPayload, TxEffects,
 };
-use strata_identifiers::{Buf32, test_utils::buf32_strategy};
+use strata_identifiers::Buf32;
+use strata_identifiers::test_utils::buf32_strategy;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::*;

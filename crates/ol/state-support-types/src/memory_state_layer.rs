@@ -2,10 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use strata_acct_types::{
-    AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64,
-    tree_hash::{Sha256Hasher, TreeHash},
-};
+use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1, OLStateV1, WriteBatch};
@@ -276,10 +274,8 @@ mod tests {
     use strata_ol_state_types_v1::{IStateBatchApplicable, WriteBatch};
 
     use super::*;
-    use crate::{
-        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
-        test_utils::*,
-    };
+    use crate::common_tests::{impl_mut_layer_tests, impl_read_layer_tests};
+    use crate::test_utils::*;
 
     /// Builds the layer under test as a clone of the fixture base.
     ///

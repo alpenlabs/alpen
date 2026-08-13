@@ -1,9 +1,7 @@
 //! Block assembly service builder for initialization and launch.
 
-use std::{
-    fmt::{Debug, Display, Formatter},
-    sync::Arc,
-};
+use std::fmt::{Debug, Display, Formatter};
+use std::sync::Arc;
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_ol_params::OLParams;
@@ -14,10 +12,10 @@ use strata_service::ServiceBuilder;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
 
-use crate::{
-    BlockAssemblyStateAccess, BlockasmHandle, EpochSealingPolicy, MempoolProvider,
-    context::BlockAssemblyContext, service::BlockasmService, state::BlockasmServiceState,
-};
+use crate::context::BlockAssemblyContext;
+use crate::service::BlockasmService;
+use crate::state::BlockasmServiceState;
+use crate::{BlockAssemblyStateAccess, BlockasmHandle, EpochSealingPolicy, MempoolProvider};
 
 /// Builder for creating and launching block assembly service.
 ///

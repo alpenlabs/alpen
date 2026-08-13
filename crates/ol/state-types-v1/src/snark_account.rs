@@ -1,7 +1,5 @@
-use strata_acct_types::{
-    Hash, MessageEntry, Mmr64, StrataHasher,
-    tree_hash::{Sha256Hasher, TreeHash},
-};
+use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
+use strata_acct_types::{Hash, MessageEntry, Mmr64, StrataHasher};
 use strata_merkle::{CompactMmr64, Mmr, Mmr64B32};
 use strata_ol_state_types::*;
 use strata_predicate::PredicateKey;

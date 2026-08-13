@@ -1,6 +1,7 @@
 //! Output tracking structures.
 
-use std::{cell::RefCell, iter};
+use std::cell::RefCell;
+use std::iter;
 
 use strata_acct_types::AccountSerial;
 use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, OLLog, OLLogType};

@@ -12,13 +12,10 @@ use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::IStateAccessor;
 
-use crate::{
-    BlockInfo, EpochInfo,
-    assembly::{BlockComponents, CompletedBlock},
-    execute_block_batch_predrain,
-    test_utils::*,
-    verification::{EpochExecExpectations, verify_epoch_with_diff},
-};
+use crate::assembly::{BlockComponents, CompletedBlock};
+use crate::test_utils::*;
+use crate::verification::{EpochExecExpectations, verify_epoch_with_diff};
+use crate::{BlockInfo, EpochInfo, execute_block_batch_predrain};
 
 const SLOTS_PER_EPOCH: u64 = 10;
 const GENESIS_TIMESTAMP: u64 = 1_000_000;

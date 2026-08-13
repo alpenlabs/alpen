@@ -2,7 +2,9 @@
 
 use strata_ol_state_types::IStateAccessor;
 
-use crate::{assembly::BlockComponents, context::BlockInfo, test_utils::*};
+use crate::assembly::BlockComponents;
+use crate::context::BlockInfo;
+use crate::test_utils::*;
 
 #[test]
 fn test_genesis_block_processing() {

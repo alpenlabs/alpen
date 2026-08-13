@@ -3,7 +3,8 @@
 use strata_acct_types::{AcctError, BitcoinAmount};
 use strata_ol_state_types::{IAccountState, ISnarkAccountState};
 
-use crate::{errors::ExecError, test_utils::*};
+use crate::errors::ExecError;
+use crate::test_utils::*;
 
 const NON_SNARK_TARGET_ACCOUNT_ID: u32 = TEST_RECIPIENT_ID + 100;
 

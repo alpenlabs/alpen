@@ -1,17 +1,13 @@
 //! Test utilities for mempool tests.
 
-use std::{
-    collections::HashMap,
-    future::Future,
-    sync::{Arc, RwLock},
-};
+use std::collections::HashMap;
+use std::future::Future;
+use std::sync::{Arc, RwLock};
 
-use proptest::{
-    arbitrary,
-    prelude::*,
-    strategy::{Strategy, ValueTree},
-    test_runner::TestRunner,
-};
+use proptest::arbitrary;
+use proptest::prelude::*;
+use proptest::strategy::{Strategy, ValueTree};
+use proptest::test_runner::TestRunner;
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_identifiers::{Buf32, Hash, OLBlockCommitment, OLBlockId, Slot};
@@ -31,7 +27,8 @@ use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
 use strata_storage::create_node_storage;
 
-use crate::{state::MempoolContext, types::OLMempoolConfig};
+use crate::state::MempoolContext;
+use crate::types::OLMempoolConfig;
 
 /// Create a test account ID using proptest strategy.
 pub(crate) fn create_test_account_id() -> AccountId {

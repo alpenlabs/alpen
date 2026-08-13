@@ -1,6 +1,7 @@
 //! Top-level DA payload types.
 
-use std::{collections::BTreeSet, marker::PhantomData};
+use std::collections::BTreeSet;
+use std::marker::PhantomData;
 
 use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry};
 use strata_codec::{Codec, CodecError, decode_buf_exact};
@@ -354,10 +355,8 @@ mod tests {
     use strata_ol_stf_v1::test_utils::make_genesis_state;
     use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 
-    use super::{
-        super::{MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES},
-        *,
-    };
+    use super::super::{MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES};
+    use super::*;
     use crate::{
         AccountDiffEntry, DaMessageEntry, DaProofStateDiff, DaScheme, NewAccountEntry,
         OLDaSchemeV1, SnarkAccountInit, U16LenBytes, U16LenList,

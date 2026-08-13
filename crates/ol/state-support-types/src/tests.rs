@@ -17,9 +17,9 @@ use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLSnarkAccountStateV1, Writ
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::Seqno;
 
+use crate::test_utils::*;
 use crate::{
     BatchDiffState, DaAccumulatingState, DaAccumulationError, IndexerState, WriteTrackingState,
-    test_utils::*,
 };
 
 // =============================================================================

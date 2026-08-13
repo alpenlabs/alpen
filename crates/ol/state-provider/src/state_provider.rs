@@ -6,7 +6,10 @@
 //! - Fast in-memory testing without database infrastructure
 //! - Easy mocking for edge cases and error scenarios
 
-use std::{error::Error, fmt::Debug, future::Future, sync::Arc};
+use std::error::Error;
+use std::fmt::Debug;
+use std::future::Future;
+use std::sync::Arc;
 
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_types::IStateAccessorMut;

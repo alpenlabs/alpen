@@ -3,10 +3,11 @@
 use strata_identifiers::Buf32;
 use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1, OLBlockId};
 
-use crate::{
-    assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*,
-    verify_header_continuity,
-};
+use crate::assembly::BlockComponents;
+use crate::context::BlockInfo;
+use crate::errors::ExecError;
+use crate::test_utils::*;
+use crate::verify_header_continuity;
 
 #[test]
 fn test_verify_header_continuity_happy_path() {

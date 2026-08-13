@@ -4,11 +4,9 @@ use strata_acct_types::{AccountId, BitcoinAmount, Hash};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_identifiers::{AccountSerial, AccountTypeId};
 
-use super::{
-    MAX_VK_BYTES,
-    account::AccountDiff,
-    encoding::{U16LenBytes, U16LenList},
-};
+use super::MAX_VK_BYTES;
+use super::account::AccountDiff;
+use super::encoding::{U16LenBytes, U16LenList};
 
 /// Diff of ledger state (new accounts + account diffs).
 #[derive(Debug, Codec)]

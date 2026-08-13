@@ -10,17 +10,16 @@ use strata_acct_types::MessageEntry;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{
-    ol_block::BlockAvailability,
-    ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
-    DbResult,
-};
+use strata_db_types::ol_block::BlockAvailability;
+use strata_db_types::ol_state_index::{AccountUpdateRecord, InboxMessageRecord};
+use strata_db_types::DbResult;
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_mempool::OLMempoolResult;
 use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
 use strata_ol_tx_types_v1::OLTransactionV1;
-use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment};
+use strata_primitives::epoch::EpochCommitment;
+use strata_primitives::OLBlockCommitment;
 use strata_status::OLSyncStatus;
 
 /// Provides all data access needed by the OL RPC server.

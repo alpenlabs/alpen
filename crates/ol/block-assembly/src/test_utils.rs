@@ -7,24 +7,23 @@
     )
 )]
 
-use std::{
-    future::Future,
-    iter,
-    ops::RangeInclusive,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
-    time::Duration,
-};
+use std::future::Future;
+use std::iter;
+use std::ops::RangeInclusive;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bitcoin::Network;
-use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
+use proptest::arbitrary;
+use proptest::prelude::*;
+use proptest::strategy::ValueTree;
+use proptest::test_runner::TestRunner;
+use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
 use strata_acct_types::{
     AccountId, AccountSerial, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash,
     L1BlockRecord, MessageEntry, MsgPayload, l1_block_record_leaf_hash,
-    tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
@@ -34,7 +33,8 @@ use strata_btc_verification::L1Anchor;
 use strata_codec::encode_to_vec;
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_db_types::{DbError, MmrId, asm::AsmExecOutput};
+use strata_db_types::asm::AsmExecOutput;
+use strata_db_types::{DbError, MmrId};
 use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
     WtxidsRoot,
@@ -71,16 +71,14 @@ pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
     MemoryStateBaseLayer::new(state)
 }
 
-use crate::{
-    BlockAssemblyResult, FixedSlotSealing, LimitAwareSealing, MempoolProvider,
-    block_assembly::{
-        ConstructBlockOutput, calculate_block_slot_and_epoch, construct_block,
-        generate_block_template_inner,
-    },
-    context::{BlockAssemblyAnchorContext, BlockAssemblyContext},
-    resource_state::{AccumulatedDaData, EpochResourceState},
-    types::{BlockGenerationConfig, BlockTemplateResult, FullBlockTemplate},
+use crate::block_assembly::{
+    ConstructBlockOutput, calculate_block_slot_and_epoch, construct_block,
+    generate_block_template_inner,
 };
+use crate::context::{BlockAssemblyAnchorContext, BlockAssemblyContext};
+use crate::resource_state::{AccumulatedDaData, EpochResourceState};
+use crate::types::{BlockGenerationConfig, BlockTemplateResult, FullBlockTemplate};
+use crate::{BlockAssemblyResult, FixedSlotSealing, LimitAwareSealing, MempoolProvider};
 
 type TestEpochSealingPolicy = LimitAwareSealing<FixedSlotSealing>;
 

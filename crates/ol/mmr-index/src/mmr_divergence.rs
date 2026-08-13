@@ -1,4 +1,5 @@
-use std::{cmp::Ordering, collections::HashSet};
+use std::cmp::Ordering;
+use std::collections::HashSet;
 
 use strata_acct_types::Mmr64;
 use strata_db_types::MmrId;

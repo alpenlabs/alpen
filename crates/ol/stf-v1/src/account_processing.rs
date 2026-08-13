@@ -11,10 +11,10 @@ use strata_ol_state_types::*;
 use strata_snark_acct_sys as snark_sys;
 use tracing::*;
 
-use crate::{
-    context::BasicExecContext, errors::ExecResult, msg_payload_coin::MsgPayloadCoin,
-    output::OutputCtx,
-};
+use crate::context::BasicExecContext;
+use crate::errors::ExecResult;
+use crate::msg_payload_coin::MsgPayloadCoin;
+use crate::output::OutputCtx;
 
 /// Credits `coin` to `target`'s balance and runs `post` for any additional
 /// account-specific processing, within a single [`IStateAccessorMut::update_account`]

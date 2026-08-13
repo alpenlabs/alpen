@@ -3,7 +3,9 @@
 //! After the signer extraction, this service is a pure template-generation
 //! worker.  All signing is handled externally by `strata-signer` via RPC.
 
-use std::{marker::PhantomData, sync::Arc, time::Instant};
+use std::marker::PhantomData;
+use std::sync::Arc;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use metrics::{counter, histogram};
@@ -135,10 +137,8 @@ async fn process_generation_tick<C: SequencerContext>(state: &mut SequencerServi
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::VecDeque,
-        sync::{Arc, Mutex},
-    };
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex};
 
     use strata_primitives::{Buf32, OLBlockId};
 

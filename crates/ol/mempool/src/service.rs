@@ -8,9 +8,10 @@ use strata_ol_state_provider::StateProvider;
 use strata_service::{AsyncService, Response, Service};
 use tracing::{debug, info};
 
-use crate::{
-    MempoolCommand, builder::MempoolInputMessage, state::MempoolServiceState, types::OLMempoolStats,
-};
+use crate::MempoolCommand;
+use crate::builder::MempoolInputMessage;
+use crate::state::MempoolServiceState;
+use crate::types::OLMempoolStats;
 
 /// Service status for mempool.
 #[derive(Debug, Clone, Serialize)]
@@ -86,17 +87,16 @@ mod tests {
 
     use strata_identifiers::OLTxId;
     use strata_service::CommandCompletionSender;
-    use tokio::{runtime::Runtime, sync::oneshot};
+    use tokio::runtime::Runtime;
+    use tokio::sync::oneshot;
 
     use super::*;
-    use crate::{
-        MempoolTxInvalidReason, OLMempoolResult, OLTransactionV1,
-        test_utils::{
-            create_test_block_commitment, create_test_context, create_test_snark_tx_with_seq_no,
-            create_test_state_provider,
-        },
-        types::OLMempoolConfig,
+    use crate::test_utils::{
+        create_test_block_commitment, create_test_context, create_test_snark_tx_with_seq_no,
+        create_test_state_provider,
     };
+    use crate::types::OLMempoolConfig;
+    use crate::{MempoolTxInvalidReason, OLMempoolResult, OLTransactionV1};
 
     #[tokio::test]
     async fn test_service_submit_transaction() {

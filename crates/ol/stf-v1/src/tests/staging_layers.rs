@@ -15,14 +15,12 @@ use strata_ol_state_types::{
 };
 use strata_ol_state_types_v1::IStateBatchApplicable;
 
-use crate::{
-    context::{BasicExecContext, BlockInfo, TxExecContext},
-    errors::ExecError,
-    output::ExecOutputBuffer,
-    test_utils::*,
-    transaction_processing::{process_block_tx_segment, process_single_tx},
-    verification::verify_block,
-};
+use crate::context::{BasicExecContext, BlockInfo, TxExecContext};
+use crate::errors::ExecError;
+use crate::output::ExecOutputBuffer;
+use crate::test_utils::*;
+use crate::transaction_processing::{process_block_tx_segment, process_single_tx};
+use crate::verification::verify_block;
 
 const STAGED_NEW_ACCOUNT_ID: u32 = TEST_RECIPIENT_ID + 100;
 const SECOND_RECIPIENT_ID: u32 = TEST_RECIPIENT_ID + 1;

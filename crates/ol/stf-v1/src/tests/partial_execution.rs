@@ -10,9 +10,11 @@ use strata_ol_tx_types_v1::{
     GamTxPayloadV1, OLTransactionDataV1, OLTransactionV1, TransactionPayloadV1, TxProofsV1,
 };
 
-use crate::{
-    assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*, verify_block,
-};
+use crate::assembly::BlockComponents;
+use crate::context::BlockInfo;
+use crate::errors::ExecError;
+use crate::test_utils::*;
+use crate::verify_block;
 
 fn assert_mid_block_failure_state(
     state: &MemoryStateBaseLayer,

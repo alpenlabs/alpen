@@ -9,14 +9,14 @@ use proptest::prelude::*;
 use rand::RngCore;
 use secp256k1::{Keypair, SECP256K1};
 use strata_acct_types::AccountSerial;
-use strata_identifiers::{
-    Buf32, Epoch, Slot,
-    test_utils::{buf32_strategy, buf64_strategy, ol_block_id_strategy},
-};
+use strata_identifiers::test_utils::{buf32_strategy, buf64_strategy, ol_block_id_strategy};
+use strata_identifiers::{Buf32, Epoch, Slot};
 use strata_ol_tx_types_v1::test_utils::ol_transaction_strategy;
 pub use strata_ol_tx_types_v1::test_utils::schnorr_predicate;
 
-use crate::{block_flags::BlockFlagsV1, ssz_generated::ssz::block::*, *};
+use crate::block_flags::BlockFlagsV1;
+use crate::ssz_generated::ssz::block::*;
+use crate::*;
 
 /// Generates a random, valid BIP-340 Schnorr keypair as `(secret_key, x_only_pubkey)` for tests.
 ///

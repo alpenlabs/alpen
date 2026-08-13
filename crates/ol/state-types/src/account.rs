@@ -2,7 +2,8 @@ use strata_acct_types::{AccountSerial, AccountTypeId, BitcoinAmount, Hash, Messa
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
-use crate::{coin::Coin, errors::StateResult};
+use crate::coin::Coin;
+use crate::errors::StateResult;
 
 /// Abstract account state.
 pub trait IAccountState: Clone + Sized {

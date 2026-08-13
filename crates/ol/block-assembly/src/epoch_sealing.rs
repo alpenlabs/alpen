@@ -4,7 +4,8 @@
 //! create a terminal block. This is a batch production concern, not an STF
 //! concern.
 
-use std::{cmp::Ordering, fmt::Debug};
+use std::cmp::Ordering;
+use std::fmt::Debug;
 
 use strata_identifiers::Slot;
 use strata_ol_chain_types_v1::MAX_SEALING_MANIFEST_COUNT;

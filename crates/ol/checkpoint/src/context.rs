@@ -1,9 +1,7 @@
 //! Context trait for checkpoint worker dependencies.
 
-use std::{
-    sync::{Arc, Condvar, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_bridge_params::BridgeParams;

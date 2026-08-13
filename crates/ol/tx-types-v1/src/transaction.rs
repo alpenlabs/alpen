@@ -10,7 +10,8 @@ use strata_ol_logs::SnarkAccountUpdateLogData;
 use strata_predicate::PredicateKey;
 use tree_hash::{Sha256Hasher, TreeHash};
 
-use crate::ssz_generated::ssz::{proofs::*, transaction::*};
+use crate::ssz_generated::ssz::proofs::*;
+use crate::ssz_generated::ssz::transaction::*;
 
 impl OLTransactionV1 {
     pub fn new(data: OLTransactionDataV1, proofs: TxProofsV1) -> Self {
@@ -411,13 +412,11 @@ mod tests {
     use strata_predicate::PredicateKey;
     use strata_test_utils_ssz::ssz_proptest;
 
-    use crate::{
-        test_utils::{
-            gam_tx_payload_strategy, ol_transaction_strategy, transaction_payload_strategy,
-            tx_constraints_strategy,
-        },
-        *,
+    use crate::test_utils::{
+        gam_tx_payload_strategy, ol_transaction_strategy, transaction_payload_strategy,
+        tx_constraints_strategy,
     };
+    use crate::*;
 
     mod tx_constraints {
         use super::*;

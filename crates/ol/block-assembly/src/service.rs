@@ -1,6 +1,7 @@
 //! OL block assembly service implementation.
 
-use std::{fmt::Display, marker::PhantomData};
+use std::fmt::Display;
+use std::marker::PhantomData;
 
 use strata_identifiers::{Buf32, OLBlockId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, verify_sequencer_predicate_signature};
@@ -10,14 +11,12 @@ use strata_predicate::PredicateKey;
 use strata_service::{AsyncService, Response, Service};
 use tracing::debug;
 
-use crate::{
-    BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate, MempoolProvider,
-    block_assembly::generate_block_template_inner,
-    command::BlockasmCommand,
-    error::BlockAssemblyError,
-    state::{BlockTemplateStatus, BlockasmServiceState},
-    types::{BlockCompletionData, BlockGenerationConfig},
-};
+use crate::block_assembly::generate_block_template_inner;
+use crate::command::BlockasmCommand;
+use crate::error::BlockAssemblyError;
+use crate::state::{BlockTemplateStatus, BlockasmServiceState};
+use crate::types::{BlockCompletionData, BlockGenerationConfig};
+use crate::{BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate, MempoolProvider};
 
 /// OL block assembly service that processes commands.
 #[derive(Debug)]
@@ -270,7 +269,8 @@ pub(crate) struct BlockasmServiceStatus;
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Instant};
+    use std::sync::Arc;
+    use std::time::Instant;
 
     use strata_config::BlockAssemblyConfig;
     use strata_crypto::sign_schnorr_sig;
@@ -282,19 +282,16 @@ mod tests {
     use strata_predicate::PredicateKey;
 
     use super::*;
-    use crate::{
-        command::create_completion,
-        epoch_sealing::{FixedSlotSealing, LimitAwareSealing},
-        resource_state::EpochResourceState,
-        state::BlockasmServiceState,
-        test_utils::{
-            MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider,
-            TEST_BLOCK_TEMPLATE_TTL, TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv,
-            TestStorageFixtureBuilder, create_test_template, create_test_template_with_parent,
-            test_account_id,
-        },
-        types::BlockCompletionData,
+    use crate::command::create_completion;
+    use crate::epoch_sealing::{FixedSlotSealing, LimitAwareSealing};
+    use crate::resource_state::EpochResourceState;
+    use crate::state::BlockasmServiceState;
+    use crate::test_utils::{
+        MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider, TEST_BLOCK_TEMPLATE_TTL,
+        TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv, TestStorageFixtureBuilder,
+        create_test_template, create_test_template_with_parent, test_account_id,
     };
+    use crate::types::BlockCompletionData;
 
     type TestServiceState = BlockasmServiceState<
         Arc<MockMempoolProvider>,

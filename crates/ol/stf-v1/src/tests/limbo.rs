@@ -23,14 +23,12 @@ use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_state_types::{Coin, IAccountState, IStateAccessor};
 
-use crate::{
-    account_processing,
-    assembly::BlockComponents,
-    context::{BasicExecContext, BlockInfo},
-    msg_payload_coin::MsgPayloadCoin,
-    output::ExecOutputBuffer,
-    test_utils::*,
-};
+use crate::account_processing;
+use crate::assembly::BlockComponents;
+use crate::context::{BasicExecContext, BlockInfo};
+use crate::msg_payload_coin::MsgPayloadCoin;
+use crate::output::ExecOutputBuffer;
+use crate::test_utils::*;
 
 /// Site A: `process_message` to a non-existent ledger account.
 ///

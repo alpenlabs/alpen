@@ -1,6 +1,7 @@
 //! Core mempool types.
 
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 use strata_acct_types::AccountId;
 pub use strata_ol_tx_types_v1::OLTransactionV1;
@@ -401,11 +402,9 @@ impl OLMempoolRejectCounts {
 #[cfg(test)]
 mod tests {
     use ::ssz::{Decode, Encode};
-    use proptest::{
-        prelude::*,
-        strategy::{Strategy, ValueTree},
-        test_runner::TestRunner,
-    };
+    use proptest::prelude::*;
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::TestRunner;
     use strata_acct_types::AccountId;
     use strata_ol_tx_types_v1::{
         OLTransactionDataV1, OLTransactionV1, TransactionPayloadV1, TxProofsV1, test_utils,

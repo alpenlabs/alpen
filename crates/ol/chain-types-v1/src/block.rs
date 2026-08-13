@@ -7,13 +7,11 @@ use strata_crypto::hash;
 use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_tx_types_v1::OLTransactionV1;
 
-use crate::{
-    block_flags::BlockFlagsV1,
-    error::ChainTypesError,
-    ssz_generated::ssz::block::{
-        MAX_SEALING_MANIFEST_COUNT, MAX_TXS_PER_BLOCK, OLAsmManifestContainerV1, OLBlockBodyV1,
-        OLBlockCredentialV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
-    },
+use crate::block_flags::BlockFlagsV1;
+use crate::error::ChainTypesError;
+use crate::ssz_generated::ssz::block::{
+    MAX_SEALING_MANIFEST_COUNT, MAX_TXS_PER_BLOCK, OLAsmManifestContainerV1, OLBlockBodyV1,
+    OLBlockCredentialV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
 };
 
 impl OLBlockV1 {
@@ -226,16 +224,14 @@ mod tests {
     use strata_identifiers::{Buf32, Buf64, OLBlockId};
     use strata_test_utils_ssz::ssz_proptest;
 
-    use crate::{
-        block_flags::BlockFlagsV1,
-        ssz_generated::ssz::block::{
-            OLAsmManifestContainerV1, OLBlockBodyV1, OLBlockCredentialV1, OLBlockHeaderV1,
-            OLBlockV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
-        },
-        test_utils::{
-            ol_block_body_strategy, ol_block_header_strategy, ol_block_strategy,
-            ol_tx_segment_strategy, signed_ol_block_header_strategy,
-        },
+    use crate::block_flags::BlockFlagsV1;
+    use crate::ssz_generated::ssz::block::{
+        OLAsmManifestContainerV1, OLBlockBodyV1, OLBlockCredentialV1, OLBlockHeaderV1, OLBlockV1,
+        OLTxSegmentV1, SignedOLBlockHeaderV1,
+    };
+    use crate::test_utils::{
+        ol_block_body_strategy, ol_block_header_strategy, ol_block_strategy,
+        ol_tx_segment_strategy, signed_ol_block_header_strategy,
     };
 
     mod ol_tx_segment {

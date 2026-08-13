@@ -6,15 +6,12 @@ use strata_ol_state_types::*;
 use strata_ol_tx_types_v1::*;
 use tracing::{info, trace};
 
-use crate::{
-    OutputCtx, account_processing,
-    constants::SEQUENCER_ACCT_ID,
-    context::{BasicExecContext, TxExecContext},
-    errors::{ExecError, ExecResult},
-    msg_payload_coin::MsgPayloadCoin,
-    proof_verification::{TxProofVerificationContext, TxProofVerifierImpl, TxProofsTracker},
-    sau_processing,
-};
+use crate::constants::SEQUENCER_ACCT_ID;
+use crate::context::{BasicExecContext, TxExecContext};
+use crate::errors::{ExecError, ExecResult};
+use crate::msg_payload_coin::MsgPayloadCoin;
+use crate::proof_verification::{TxProofVerificationContext, TxProofVerifierImpl, TxProofsTracker};
+use crate::{OutputCtx, account_processing, sau_processing};
 
 /// Process a block's transaction segment.
 ///

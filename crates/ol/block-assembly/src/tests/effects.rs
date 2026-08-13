@@ -6,13 +6,11 @@ use strata_ol_chain_types_v1::OLLog;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::EpochDaAccumulator;
 
-use crate::{
-    resource_state::AccumulatedDaData,
-    test_utils::{
-        DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
-        TestStorageFixtureBuilder, account_balance, extract_withdrawal_intents, included_txids,
-        make_p2wpkh_bosd_descriptor, test_account_id,
-    },
+use crate::resource_state::AccumulatedDaData;
+use crate::test_utils::{
+    DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
+    TestStorageFixtureBuilder, account_balance, extract_withdrawal_intents, included_txids,
+    make_p2wpkh_bosd_descriptor, test_account_id,
 };
 
 async fn build_effects_env(accounts: impl IntoIterator<Item = TestAccount>) -> TestEnv {

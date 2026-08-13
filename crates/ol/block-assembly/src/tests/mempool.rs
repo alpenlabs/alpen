@@ -7,18 +7,16 @@ use strata_config::SequencerConfig;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 
-use crate::{
-    BlockAssemblyError, FixedSlotSealing, LimitAwareSealing,
-    block_assembly::generate_block_template_inner,
-    context::BlockAssemblyContext,
-    resource_state::EpochResourceState,
-    test_utils::{
-        FailingStateProvider, MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider,
-        TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv, TestStorageFixtureBuilder, create_test_storage,
-        included_txids, test_account_id,
-    },
-    types::BlockGenerationConfig,
+use crate::block_assembly::generate_block_template_inner;
+use crate::context::BlockAssemblyContext;
+use crate::resource_state::EpochResourceState;
+use crate::test_utils::{
+    FailingStateProvider, MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider,
+    TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv, TestStorageFixtureBuilder, create_test_storage,
+    included_txids, test_account_id,
 };
+use crate::types::BlockGenerationConfig;
+use crate::{BlockAssemblyError, FixedSlotSealing, LimitAwareSealing};
 
 async fn build_mempool_env(accounts: impl IntoIterator<Item = TestAccount>) -> TestEnv {
     let fixture_builder = TestStorageFixtureBuilder::new()

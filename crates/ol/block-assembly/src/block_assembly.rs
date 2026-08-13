@@ -1,10 +1,8 @@
 //! Block assembly logic.
 
-use std::{
-    slice,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::slice;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use strata_bridge_params::BridgeParams;
 use strata_config::SequencerConfig;
@@ -22,17 +20,19 @@ use strata_ol_tx_types_v1::*;
 use strata_snark_acct_types as _;
 use tracing::{debug, error, warn};
 
+use crate::checkpoint_size::LogMetrics;
+use crate::context::BlockAssemblyAnchorContext;
+use crate::epoch_sealing::{
+    EpochSealingLimitAction, EpochSealingLimitVerdict, EpochSealingPolicy,
+    EpochSealingResourceStats,
+};
+use crate::error::BlockAssemblyError;
+use crate::resource_state::{AccumulatedDaData, EpochResourceState};
+use crate::types::{
+    BlockGenerationConfig, BlockTemplateResult, FailedMempoolTx, FullBlockTemplate,
+};
 use crate::{
     AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, MempoolProvider,
-    checkpoint_size::LogMetrics,
-    context::BlockAssemblyAnchorContext,
-    epoch_sealing::{
-        EpochSealingLimitAction, EpochSealingLimitVerdict, EpochSealingPolicy,
-        EpochSealingResourceStats,
-    },
-    error::BlockAssemblyError,
-    resource_state::{AccumulatedDaData, EpochResourceState},
-    types::{BlockGenerationConfig, BlockTemplateResult, FailedMempoolTx, FullBlockTemplate},
 };
 
 /// Output from processing transactions during block assembly.
@@ -1015,7 +1015,8 @@ mod tests {
     use strata_ol_state_support_types::MemoryStateBaseLayer;
 
     use super::*;
-    use crate::{FixedSlotSealing, LimitAwareSealing, test_utils::*};
+    use crate::test_utils::*;
+    use crate::{FixedSlotSealing, LimitAwareSealing};
 
     type OlWriteBatch = WriteBatch<<MemoryStateBaseLayer as IStateAccessor>::AccountState>;
 

@@ -5,9 +5,8 @@ use strata_acct_types::{
     MessageEntry, MsgPayload, MsgPayloadData,
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
-use strata_asm_logs::{
-    CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate, constants::AsmLogTypeId,
-};
+use strata_asm_logs::constants::AsmLogTypeId;
+use strata_asm_logs::{CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate};
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
 use strata_msg_fmt::{Msg, OwnedMsg};
@@ -19,12 +18,10 @@ use strata_ol_state_types::*;
 use strata_predicate::PredicateKey;
 use tracing::{debug, info, trace, warn};
 
-use crate::{
-    account_processing::{self, handle_misplaced_funds},
-    context::BasicExecContext,
-    errors::{ExecError, ExecResult},
-    msg_payload_coin::MsgPayloadCoin,
-};
+use crate::account_processing::{self, handle_misplaced_funds};
+use crate::context::BasicExecContext;
+use crate::errors::{ExecError, ExecResult};
+use crate::msg_payload_coin::MsgPayloadCoin;
 
 /// Buffers the ASM logs carried by a sequence of manifests into the intraepoch
 /// state for later processing at the epoch terminal.

@@ -7,13 +7,11 @@ use strata_ol_chain_types_v1::OLBlockV1;
 use strata_service::{CommandHandle, ServiceMonitor};
 use tokio::sync::oneshot;
 
-use crate::{
-    BlockAssemblyResult,
-    command::{BlockasmCommand, create_completion},
-    error::BlockAssemblyError,
-    service::BlockasmServiceStatus,
-    types::{BlockCompletionData, BlockGenerationConfig, FullBlockTemplate},
-};
+use crate::BlockAssemblyResult;
+use crate::command::{BlockasmCommand, create_completion};
+use crate::error::BlockAssemblyError;
+use crate::service::BlockasmServiceStatus;
+use crate::types::{BlockCompletionData, BlockGenerationConfig, FullBlockTemplate};
 
 /// Handle for interacting with the OL block assembly service.
 #[derive(Debug)]

@@ -3,7 +3,8 @@
 use strata_acct_types::{AcctError, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount};
 use strata_ol_state_types::ISnarkAccountState;
 
-use crate::{errors::ExecError, test_utils::*};
+use crate::errors::ExecError;
+use crate::test_utils::*;
 
 #[test]
 fn test_snark_update_success_with_transfer() {
