@@ -548,7 +548,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -559,7 +559,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2951,7 +2951,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3661,7 +3661,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -4610,7 +4610,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5676,7 +5676,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.31",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -5714,7 +5714,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -6274,7 +6274,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7454,7 +7454,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8158,12 +8158,12 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-checkpoint-types",
  "strata-asm-common",
- "strata-asm-params",
+ "strata-asm-params 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.3.0)",
  "strata-asm-proto-checkpoint",
  "strata-asm-proto-checkpoint-txs",
  "strata-asm-worker",
  "strata-btc-types",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-btcio",
  "strata-chain-worker",
  "strata-checkpoint-types",
@@ -8305,7 +8305,7 @@ dependencies = [
  "strata-asm-manifest-types",
  "strata-asm-state",
  "strata-btc-types",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-merkle",
@@ -8354,13 +8354,30 @@ dependencies = [
 [[package]]
 name = "strata-asm-params"
 version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.3.0#c96738b7f15a78d73b6fcc922a9f0cd580e6e345"
+dependencies = [
+ "serde",
+ "ssz",
+ "ssz_derive",
+ "strata-asm-proto-bridge-v1-types",
+ "strata-btc-types",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.3.0)",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "strata-predicate",
+]
+
+[[package]]
+name = "strata-asm-params"
+version = "0.1.0"
 source = "git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1#482939382eefd02ef449f041e4569c48164834f6"
 dependencies = [
  "serde",
  "strata-asm-admin-types",
  "strata-asm-bridge-types",
  "strata-asm-checkpoint-types",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-l1-txfmt",
 ]
 
@@ -8491,6 +8508,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-proto-bridge-v1-types"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.3.0#c96738b7f15a78d73b6fcc922a9f0cd580e6e345"
+dependencies = [
+ "arbitrary",
+ "bitcoin-bosd",
+ "bitvec",
+ "borsh",
+ "serde",
+ "ssz",
+ "ssz_derive",
+ "strata-btc-types",
+ "strata-identifiers",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1#482939382eefd02ef449f041e4569c48164834f6"
@@ -8553,7 +8587,7 @@ version = "0.1.0"
 source = "git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1#482939382eefd02ef449f041e4569c48164834f6"
 dependencies = [
  "strata-asm-common",
- "strata-asm-params",
+ "strata-asm-params 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-asm-proto-admin",
  "strata-asm-proto-bridge",
  "strata-asm-proto-checkpoint",
@@ -8571,7 +8605,7 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "strata-asm-manifest-types",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-merkle",
@@ -8587,7 +8621,7 @@ dependencies = [
  "bitcoin",
  "ssz_types",
  "strata-asm-common",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-identifiers",
  "strata-l1-txfmt",
 ]
@@ -8604,7 +8638,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-stf",
  "strata-btc-types",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-identifiers",
  "strata-merkle",
  "strata-service",
@@ -8646,6 +8680,23 @@ dependencies = [
  "thiserror 2.0.18",
  "tree_hash",
  "tree_hash_derive",
+]
+
+[[package]]
+name = "strata-btc-verification"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.3.0#c96738b7f15a78d73b6fcc922a9f0cd580e6e345"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "borsh",
+ "serde",
+ "ssz",
+ "ssz_derive",
+ "strata-btc-types",
+ "strata-crypto",
+ "strata-identifiers",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -8864,7 +8915,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-checkpoint-types",
  "strata-asm-common",
- "strata-asm-params",
+ "strata-asm-params 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.3.0)",
  "strata-asm-spec",
  "strata-asm-worker",
  "strata-btc-types",
@@ -8954,12 +9005,12 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-manifest-types",
- "strata-asm-params",
+ "strata-asm-params 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.3.0)",
  "strata-asm-proto-checkpoint",
  "strata-asm-proto-checkpoint-txs",
  "strata-asm-proto-txs-test-utils",
  "strata-asm-worker",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-checkpoint-types",
  "strata-checkpoint-verification",
  "strata-codec",
@@ -9007,9 +9058,9 @@ dependencies = [
  "serde_json",
  "strata-asm-admin-types",
  "strata-asm-bridge-types",
- "strata-asm-params",
+ "strata-asm-params 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.3.0)",
  "strata-btc-types",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-crypto",
  "strata-identifiers",
  "strata-key-derivation",
@@ -9075,7 +9126,7 @@ dependencies = [
  "proptest",
  "strata-asm-checkpoint-types",
  "strata-asm-common",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-checkpoint-types",
  "strata-csm-types",
  "strata-db-types",
@@ -9296,7 +9347,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bitcoind-async-client",
- "strata-asm-params",
+ "strata-asm-params 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.3.0)",
  "strata-config",
  "strata-ol-params",
  "strata-primitives",
@@ -9321,7 +9372,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-manifest-types",
  "strata-bridge-params",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-codec",
  "strata-common",
  "strata-config",
@@ -10170,9 +10221,9 @@ dependencies = [
  "ssz",
  "strata-asm-checkpoint-types",
  "strata-asm-common",
- "strata-asm-params",
+ "strata-asm-params 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.3.0)",
  "strata-asm-proto-checkpoint-txs",
- "strata-btc-verification",
+ "strata-btc-verification 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.1)",
  "strata-crypto",
  "strata-identifiers",
  "strata-merkle",
@@ -10402,7 +10453,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11494,7 +11545,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
