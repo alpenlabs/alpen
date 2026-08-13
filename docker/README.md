@@ -19,7 +19,7 @@ The primary local stack is split into two compose files:
 | `compose-signet.yml` | Local signet `bitcoind` miner or fullnode |
 | `compose-ol-seq.yml` | OL sequencer and external `strata-signer` |
 
-Bitcoin is decoupled from the OL stack. `just docker-seq-up` starts signet, runs `gen-params-and-elfs.sh`, then starts the sequencer stack. Generated keys, params, and env files live under `configs/generated/` and are ignored by git.
+Bitcoin is decoupled from the OL stack. `just docker-seq-up` starts signet, runs `gen-params-and-elfs.sh`, then starts the sequencer stack. Generated keys and params live under `configs/generated/` and are ignored by git.
 
 The EE node (`alpen-client`) and its compose files live in the [alpen-ee](https://github.com/alpenlabs/alpen-ee) repo.
 
