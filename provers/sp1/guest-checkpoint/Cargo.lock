@@ -106,7 +106,6 @@ source = "git+https://github.com/alpenlabs/bitcoin-bosd?tag=v0.12.0#499fd5d8940a
 dependencies = [
  "arbitrary",
  "bitcoin",
- "borsh",
  "hex-conservative",
  "secp256k1",
  "serde",
@@ -1845,7 +1844,6 @@ dependencies = [
 name = "strata-codec-utils"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "ssz",
  "ssz_derive",
  "strata-codec",
@@ -1983,14 +1981,9 @@ name = "strata-ol-bridge-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "borsh",
- "serde",
- "ssz",
- "ssz_derive",
  "strata-asm-bridge-types",
  "strata-codec",
  "strata-identifiers",
- "strata-primitives",
  "thiserror",
 ]
 
@@ -2154,21 +2147,6 @@ dependencies = [
  "tree_hash",
  "tree_hash_derive",
  "zkaleido-sp1-groth16-verifier",
-]
-
-[[package]]
-name = "strata-primitives"
-version = "0.3.0-alpha.1"
-dependencies = [
- "bitcoin",
- "bitcoin-bosd",
- "borsh",
- "hex",
- "serde",
- "strata-btc-types",
- "strata-crypto",
- "strata-identifiers",
- "thiserror",
 ]
 
 [[package]]
