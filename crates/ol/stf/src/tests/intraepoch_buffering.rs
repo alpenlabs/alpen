@@ -21,14 +21,18 @@ use crate::{errors::ExecError, process_block_manifests, test_utils::*};
 fn manifest_in_non_terminal_block_buffers_then_drains_at_terminal() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let dest_subject = SubjectId::from([42u8; 32]);
-    let deposit_amount = BitcoinAmount::from_sat(150_000_000);
+    let deposit_amount = BitcoinAmount::try_from(150_000_000)
+        .expect("amount must not exceed the Bitcoin money supply");
 
     let fixture_builder = OLStfFixture::builder();
     let snark_acct_serial = fixture_builder.next_account_serial();
     let mut fixture = fixture_builder
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
-                .with_state_root(make_state_root(1))
+            acct.with_balance(
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
+            .with_state_root(make_state_root(1))
         })
         .execute_genesis();
 
@@ -53,7 +57,7 @@ fn manifest_in_non_terminal_block_buffers_then_drains_at_terminal() {
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         "deposit effect must not be applied before the terminal"
     );
     assert_eq!(
@@ -114,14 +118,18 @@ fn manifest_in_non_terminal_block_buffers_then_drains_at_terminal() {
 fn multi_block_epoch_manifests_spread_across_blocks() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let dest_subject = SubjectId::from([7u8; 32]);
-    let amount = BitcoinAmount::from_sat(50_000_000);
+    let amount = BitcoinAmount::try_from(50_000_000)
+        .expect("amount must not exceed the Bitcoin money supply");
 
     let fixture_builder = OLStfFixture::builder();
     let serial = fixture_builder.next_account_serial();
     let mut fixture = fixture_builder
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
-                .with_state_root(make_state_root(1))
+            acct.with_balance(
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
+            .with_state_root(make_state_root(1))
         })
         .execute_genesis();
 
@@ -153,7 +161,7 @@ fn multi_block_epoch_manifests_spread_across_blocks() {
     assert_eq!(fixture.state().pending_asm_logs_len(), 2);
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(0)
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
     );
     assert_eq!(fixture.state().last_l1_height(), 2);
 
@@ -173,7 +181,8 @@ fn multi_block_epoch_manifests_spread_across_blocks() {
     assert_eq!(fixture.state().pending_asm_logs_len(), 0);
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(150_000_000),
+        BitcoinAmount::try_from(150_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "all three buffered deposits applied at the terminal"
     );
     assert_eq!(

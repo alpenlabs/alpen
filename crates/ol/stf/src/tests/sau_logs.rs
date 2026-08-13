@@ -13,7 +13,10 @@ fn test_snark_update_emits_log() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -45,7 +48,10 @@ fn test_snark_update_emits_log_with_processed_message() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 

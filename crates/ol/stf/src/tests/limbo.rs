@@ -47,7 +47,8 @@ fn limbo_message_to_nonexistent_account() {
     let outputs = ExecOutputBuffer::new_empty();
     let context = BasicExecContext::new(block_info, &outputs);
 
-    let value = BitcoinAmount::from_sat(2_500_000);
+    let value = BitcoinAmount::try_from(2_500_000)
+        .expect("amount must not exceed the Bitcoin money supply");
     let payload = MsgPayloadCoin::new(Coin::new_unchecked(value), MsgPayloadData::default());
 
     account_processing::process_message(
@@ -82,7 +83,8 @@ fn limbo_transfer_to_nonexistent_account() {
     let outputs = ExecOutputBuffer::new_empty();
     let context = BasicExecContext::new(block_info, &outputs);
 
-    let value = BitcoinAmount::from_sat(4_000_000);
+    let value = BitcoinAmount::try_from(4_000_000)
+        .expect("amount must not exceed the Bitcoin money supply");
     account_processing::process_transfer(
         &mut state,
         sender_acct_id,
@@ -233,7 +235,8 @@ fn limbo_bad_withdrawal_amount_to_bridge_gateway() {
 fn limbo_deposit_with_malformed_descriptor() {
     let mut state = make_genesis_state();
     let limbo_before = state.limbo_funds();
-    let deposit_amount = BitcoinAmount::from_sat(75_000_000);
+    let deposit_amount = BitcoinAmount::try_from(75_000_000)
+        .expect("amount must not exceed the Bitcoin money supply");
 
     // Empty destination: `DepositDescriptor::decode_from_slice` returns
     // `EmptyDescriptor` for this.
@@ -249,7 +252,8 @@ fn limbo_deposit_with_malformed_descriptor() {
 
     let limbo_after = state.limbo_funds();
     assert_eq!(
-        BitcoinAmount::from_sat(limbo_after.to_sat() - limbo_before.to_sat()),
+        BitcoinAmount::try_from(limbo_after.to_sat() - limbo_before.to_sat())
+            .expect("amount must not exceed the Bitcoin money supply"),
         deposit_amount,
         "Deposit with malformed descriptor should sweep amount into limbo"
     );
@@ -261,7 +265,8 @@ fn limbo_deposit_with_malformed_descriptor() {
 fn limbo_deposit_to_unknown_account_serial() {
     let mut state = make_genesis_state();
     let limbo_before = state.limbo_funds();
-    let deposit_amount = BitcoinAmount::from_sat(50_000_000);
+    let deposit_amount = BitcoinAmount::try_from(50_000_000)
+        .expect("amount must not exceed the Bitcoin money supply");
 
     // No accounts have been created, so any non-reserved serial is unknown.
     let unknown_serial = AccountSerial::new(12345);
@@ -283,7 +288,8 @@ fn limbo_deposit_to_unknown_account_serial() {
 
     let limbo_after = state.limbo_funds();
     assert_eq!(
-        BitcoinAmount::from_sat(limbo_after.to_sat() - limbo_before.to_sat()),
+        BitcoinAmount::try_from(limbo_after.to_sat() - limbo_before.to_sat())
+            .expect("amount must not exceed the Bitcoin money supply"),
         deposit_amount,
         "Deposit for unknown account serial should sweep amount into limbo"
     );

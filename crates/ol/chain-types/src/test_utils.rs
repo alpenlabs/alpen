@@ -19,9 +19,12 @@ use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{block_flags::BlockFlags, ssz_generated::ssz::block::*, *};
 
+const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
 /// Creates a [`PredicateKey`] for a BIP-340 Schnorr sequencer pubkey.
 pub fn schnorr_predicate(pubkey: &Buf32) -> PredicateKey {
-    PredicateKey::new(PredicateTypeId::Bip340Schnorr, pubkey.as_slice().to_vec())
+    PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, pubkey.as_slice().to_vec())
+        .expect("BIP-340 public key must fit in a predicate condition")
 }
 
 /// Generates a random, valid BIP-340 Schnorr keypair as `(secret_key, x_only_pubkey)` for tests.
@@ -128,14 +131,15 @@ pub fn message_entry_strategy() -> impl Strategy<Value = MessageEntry> {
     (
         any::<[u8; 32]>(),
         any::<u32>(),
-        any::<u64>(),
+        0..=MAX_BITCOIN_MONEY_SATS,
         prop::collection::vec(any::<u8>(), 0..256),
     )
         .prop_map(|(source_bytes, incl_epoch, value, data)| MessageEntry {
             source: AccountId::from(source_bytes),
             incl_epoch,
             payload: MsgPayload {
-                value: BitcoinAmount::from_sat(value),
+                value: BitcoinAmount::try_from(value)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 data: data
                     .try_into()
                     .expect("message payload bytes must fit within SSZ max length"),

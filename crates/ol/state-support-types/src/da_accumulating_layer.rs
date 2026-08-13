@@ -116,7 +116,13 @@ impl SnarkDelta {
         let base_seq_no = *state.seqno().inner();
         let base_proof_state =
             DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
-        let base_update_vk = U16LenBytes::new(state.update_vk().as_buf_ref().to_bytes());
+        let base_update_vk = U16LenBytes::new(
+            state
+                .update_vk()
+                .try_as_buf_ref()
+                .expect("stored predicate key must be valid")
+                .to_bytes(),
+        );
         Self {
             base_seq_no,
             final_seq_no: base_seq_no,
@@ -132,7 +138,13 @@ impl SnarkDelta {
         self.final_seq_no = *state.seqno().inner();
         self.final_proof_state =
             DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
-        self.final_update_vk = U16LenBytes::new(state.update_vk().as_buf_ref().to_bytes());
+        self.final_update_vk = U16LenBytes::new(
+            state
+                .update_vk()
+                .try_as_buf_ref()
+                .expect("stored predicate key must be valid")
+                .to_bytes(),
+        );
     }
 
     fn build_diff(&self) -> Result<SnarkAccountDiff, DaAccumulationError> {
@@ -511,8 +523,8 @@ impl EpochDaAccumulator {
             // CtrU64BySignedVarInt::compare is total over (u64, u64) — every pair
             // produces a valid signed delta, so this never returns None.
             let balance = {
-                let a: u64 = *delta.base_balance;
-                let b: u64 = *delta.final_balance;
+                let a = delta.base_balance.to_sat();
+                let b = delta.final_balance.to_sat();
                 let delta = CtrU64BySignedVarInt::compare(a, b)
                     .expect("CtrU64BySignedVarInt covers all u64 pairs");
                 DaCounter::new_changed(delta)
@@ -894,7 +906,11 @@ fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
         AccountTypeStateRef::Snark(snark_state) => {
             let init = SnarkAccountInit::new(
                 snark_state.inner_state_root(),
-                snark_state.update_vk().as_buf_ref().to_bytes(),
+                snark_state
+                    .update_vk()
+                    .try_as_buf_ref()
+                    .expect("stored predicate key must be valid")
+                    .to_bytes(),
             );
             AccountInit::new(balance, AccountTypeInit::Snark(init))
         }

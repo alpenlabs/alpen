@@ -485,7 +485,8 @@ mod tests {
 
     #[test]
     fn test_sau_conversion_with_new_predicate() {
-        let key = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![3u8; 32]);
+        let key = PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![3u8; 32])
+            .expect("predicate condition must fit within the maximum length");
         let outputs = UpdateOutputs::new_empty().with_new_predicate(key.clone());
         let tx = convert(make_rpc_sau_update(outputs));
         assert_eq!(tx_new_predicate(&tx), Some(key));

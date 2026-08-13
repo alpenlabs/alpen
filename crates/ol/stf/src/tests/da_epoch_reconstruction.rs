@@ -50,7 +50,8 @@ fn test_apply_da_epoch_deposit_manifest_only() {
             1,
             snark_serial,
             SubjectId::from([42u8; 32]),
-            BitcoinAmount::from_sat(150_000_000),
+            BitcoinAmount::try_from(150_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
         ),
     );
 
@@ -95,7 +96,8 @@ fn test_apply_da_epoch_snark_update_with_rotation() {
     );
 
     let (_, snark_state) = get_snark_state_expect(&state, snark_id);
-    let new_vk = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0x42u8; 32]);
+    let new_vk = PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0x42u8; 32])
+        .expect("predicate condition must fit within the maximum length");
     let update_tx = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
         .with_new_predicate(new_vk)
         .build(snark_id, make_state_root(2), vec![0u8; 32]);
@@ -129,7 +131,8 @@ fn test_apply_da_epoch_snark_update_and_deposit() {
             1,
             snark_serial,
             SubjectId::from([42u8; 32]),
-            BitcoinAmount::from_sat(150_000_000),
+            BitcoinAmount::try_from(150_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
         ),
     );
 
@@ -166,7 +169,7 @@ fn test_apply_da_epoch_withdrawal() {
         .balance();
     assert_eq!(
         snark_balance,
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         "withdrawal must debit the full seeded balance"
     );
 
@@ -197,7 +200,8 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
                 1,
                 snark_serial,
                 SubjectId::from([42u8; 32]),
-                BitcoinAmount::from_sat(150_000_000),
+                BitcoinAmount::try_from(150_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
             ),
         );
         reconstruct_epoch(&pre_epoch_state, &genesis, &terminal, &blocks)
@@ -233,7 +237,8 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
                 1,
                 snark_serial,
                 SubjectId::from([42u8; 32]),
-                BitcoinAmount::from_sat(150_000_000),
+                BitcoinAmount::try_from(150_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
             ),
         );
         reconstruct_epoch(&pre_epoch_state, &genesis, &terminal, &blocks)

@@ -55,12 +55,14 @@ async fn test_transfer_balances_update() {
 
     assert_eq!(
         account_balance(&output.post_state, sender),
-        BitcoinAmount::from_sat(DEFAULT_ACCOUNT_BALANCE - transfer_sats),
+        BitcoinAmount::try_from(DEFAULT_ACCOUNT_BALANCE - transfer_sats)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "sender balance should be debited by transfer amount"
     );
     assert_eq!(
         account_balance(&output.post_state, receiver),
-        BitcoinAmount::from_sat(transfer_sats),
+        BitcoinAmount::try_from(transfer_sats)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "receiver balance should be credited by transfer amount"
     );
 }
@@ -151,12 +153,14 @@ async fn test_rollback_preserves_first_tx_effects() {
 
     assert_eq!(
         account_balance(&output.post_state, sender),
-        BitcoinAmount::from_sat(DEFAULT_ACCOUNT_BALANCE - first_transfer_sats),
+        BitcoinAmount::try_from(DEFAULT_ACCOUNT_BALANCE - first_transfer_sats)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "sender should reflect only first tx debit"
     );
     assert_eq!(
         account_balance(&output.post_state, receiver),
-        BitcoinAmount::from_sat(first_transfer_sats),
+        BitcoinAmount::try_from(first_transfer_sats)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "receiver should reflect only first tx credit"
     );
 }
@@ -267,17 +271,19 @@ async fn test_rollback_on_insufficient_balance_preserves_prior_effects() {
 
     assert_eq!(
         account_balance(&output.post_state, rich),
-        BitcoinAmount::from_sat(DEFAULT_ACCOUNT_BALANCE - tx1_amount),
+        BitcoinAmount::try_from(DEFAULT_ACCOUNT_BALANCE - tx1_amount)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "rich account should reflect only tx1 debit"
     );
     assert_eq!(
         account_balance(&output.post_state, receiver),
-        BitcoinAmount::from_sat(tx1_amount),
+        BitcoinAmount::try_from(tx1_amount)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "receiver should reflect only tx1 credit"
     );
     assert_eq!(
         account_balance(&output.post_state, poor),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         "failing tx2 should not mutate poor account balance"
     );
 }

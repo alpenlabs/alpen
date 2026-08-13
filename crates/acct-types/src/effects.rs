@@ -27,7 +27,10 @@ impl TxEffects {
     /// Constructs a [`SentTransfer`] internally and appends it.  Returns false
     /// if the transfer list is full.
     pub fn push_transfer(&mut self, dest: AccountId, sats: u64) -> bool {
-        self.add_transfer(SentTransfer::new(dest, BitcoinAmount::from_sat(sats)))
+        self.add_transfer(SentTransfer::new(
+            dest,
+            BitcoinAmount::try_from(sats).expect("amount must not exceed the Bitcoin money supply"),
+        ))
     }
 
     /// Returns an iterator over the transfers.
@@ -65,7 +68,10 @@ impl TxEffects {
         sats: u64,
         data: Vec<u8>,
     ) -> Result<bool, MsgPayloadError> {
-        let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(sats), data)?;
+        let payload = MsgPayload::from_bytes(
+            BitcoinAmount::try_from(sats).expect("amount must not exceed the Bitcoin money supply"),
+            data,
+        )?;
         Ok(self.add_message(SentMessage::new(dest, payload)))
     }
 
@@ -84,6 +90,7 @@ impl TxEffects {
         self.transfers_iter()
             .map(|t| t.value())
             .chain(self.messages_iter().map(|m| m.payload().value()))
-            .try_fold(BitcoinAmount::zero(), |acc, e| acc.checked_add(e))
+            .try_fold(0u64, |acc, amount| acc.checked_add(amount.to_sat()))
+            .and_then(|sats| BitcoinAmount::try_from(sats).ok())
     }
 }

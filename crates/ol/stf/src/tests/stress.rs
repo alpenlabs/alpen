@@ -16,8 +16,11 @@ fn indexed_payload(index: usize) -> Vec<u8> {
 }
 
 fn msg_payload_from_bytes(data: Vec<u8>) -> MsgPayload {
-    MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data)
-        .expect("message payload bytes must fit within SSZ max length")
+    MsgPayload::from_bytes(
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
+        data,
+    )
+    .expect("message payload bytes must fit within SSZ max length")
 }
 
 #[test]
@@ -25,7 +28,10 @@ fn test_stress_inserts_large_inbox_message_batch() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -49,7 +55,10 @@ fn test_stress_executes_large_tx_batch() {
     let target_acct_id = make_account_id(TEST_RECIPIENT_ID);
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(target_acct_id)
         .execute_genesis();
@@ -72,7 +81,7 @@ fn test_stress_executes_large_tx_batch() {
     );
     assert_eq!(
         fixture.account_balance(target_acct_id),
-        BitcoinAmount::from_sat(0)
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
     );
 }
 
@@ -81,7 +90,10 @@ fn test_stress_processes_large_inbox_proof_batch() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -131,7 +143,8 @@ fn test_stress_processes_large_inbox_proof_batch() {
     let account_state = fixture.expect_snark_account(snark_acct_id);
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(100_000_000)
+        BitcoinAmount::try_from(100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
     assert_eq!(*account_state.seqno().inner(), 1);
     assert_eq!(account_state.next_inbox_msg_idx(), STRESS_BATCH_SIZE as u64);

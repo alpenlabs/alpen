@@ -357,7 +357,11 @@ impl TryFrom<RpcMsgPayload> for MsgPayload {
     type Error = MsgPayloadError;
 
     fn try_from(rpc: RpcMsgPayload) -> Result<Self, Self::Error> {
-        MsgPayload::from_bytes(BitcoinAmount::from_sat(rpc.value), rpc.data.into())
+        MsgPayload::from_bytes(
+            BitcoinAmount::try_from(rpc.value)
+                .expect("amount must not exceed the Bitcoin money supply"),
+            rpc.data.into(),
+        )
     }
 }
 

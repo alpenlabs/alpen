@@ -167,11 +167,13 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     let bridge = BridgeInitConfig {
         operators,
-        denomination: BitcoinAmount::from_sat(deposit_sats),
+        denomination: BitcoinAmount::try_from(deposit_sats)
+            .expect("amount must not exceed the Bitcoin money supply"),
         assignment_duration: cmd
             .assignment_duration
             .unwrap_or(DEFAULT_ASSIGNMENT_DURATION),
-        operator_fee: BitcoinAmount::from_sat(cmd.operator_fee.unwrap_or(DEFAULT_OPERATOR_FEE)),
+        operator_fee: BitcoinAmount::try_from(cmd.operator_fee.unwrap_or(DEFAULT_OPERATOR_FEE))
+            .expect("amount must not exceed the Bitcoin money supply"),
         recovery_delay: cmd.recovery_delay.unwrap_or(DEFAULT_RECOVERY_DELAY),
         safe_harbour_address,
     };
@@ -369,10 +371,10 @@ fn resolve_sequencer_predicate(seq_pk: Option<&str>) -> anyhow::Result<Predicate
     };
 
     let xonly = XOnlyPublicKey::from_str(pk_hex)?;
-    Ok(PredicateKey::new(
+    Ok(PredicateKey::try_new(
         PredicateTypeId::Bip340Schnorr,
         xonly.serialize().to_vec(),
-    ))
+    )?)
 }
 
 fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarbourAddress> {

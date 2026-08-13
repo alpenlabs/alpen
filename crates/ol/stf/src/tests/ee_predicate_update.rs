@@ -14,7 +14,8 @@ use crate::{
 /// Builds a non-trivial predicate key with a unique condition payload, used to
 /// distinguish "before" and "after" states in tests.
 fn make_marker_predicate(marker: &[u8]) -> PredicateKey {
-    PredicateKey::new(PredicateTypeId::AlwaysAccept, marker.to_vec())
+    PredicateKey::try_new(PredicateTypeId::AlwaysAccept, marker.to_vec())
+        .expect("predicate condition must fit within the maximum length")
 }
 
 /// Builds a predicate key with a type id outside the registry (only 0, 1, 10,

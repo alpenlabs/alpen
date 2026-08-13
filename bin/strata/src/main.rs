@@ -10,7 +10,7 @@ use argh::from_env;
 use strata_common::healthz::{HealthCheckState, start_health_check_server};
 use strata_db_types as _;
 use strata_logging::{
-    LoggingInitConfig, format_service_name, init_logging_from_config_with_layers,
+    LoggingInitConfigRef, format_service_name, init_logging_from_config_with_layers,
 };
 use strata_metrics::{MetricsConfig, MetricsInitConfig, MetricsLayer};
 #[cfg(test)]
@@ -160,7 +160,7 @@ fn init_logging(rt: &Handle, config: &strata_config::Config) -> Result<()> {
     }
 
     init_logging_from_config_with_layers(
-        LoggingInitConfig {
+        LoggingInitConfigRef {
             service_base_name: "strata-client",
             service_label: config.logging.service_label.as_deref(),
             otlp_url: config.logging.otlp_url.as_deref(),

@@ -75,21 +75,25 @@ impl IAccountStateMut for OLAccountState {
     type SnarkAccountStateMut = OLSnarkAccountState;
 
     fn add_balance(&mut self, coin: Coin) {
-        self.balance = self
+        let balance_sats = self
             .balance
-            .checked_add(coin.amt())
+            .to_sat()
+            .checked_add(coin.amt().to_sat())
             .expect("ledger: overflow balance");
+        self.balance =
+            BitcoinAmount::try_from(balance_sats).expect("ledger: balance exceeds money supply");
         coin.safely_consume_unchecked();
     }
 
     fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
-        self.balance = self
-            .balance
-            .checked_sub(amt)
-            .ok_or(StateError::InsufficientBalance {
+        let balance_sats = self.balance.to_sat().checked_sub(amt.to_sat()).ok_or(
+            StateError::InsufficientBalance {
                 need: amt,
                 have: self.balance,
-            })?;
+            },
+        )?;
+        self.balance = BitcoinAmount::try_from(balance_sats)
+            .expect("subtracting from a valid balance must remain valid");
         Ok(Coin::new_unchecked(amt))
     }
 

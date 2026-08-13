@@ -13,6 +13,8 @@ use strata_predicate::PredicateKey;
 
 use crate::ssz_generated::ssz::state::*;
 
+const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
 /// Creates a genesis OLState using minimal empty parameters.
 pub fn create_test_genesis_state() -> OLState {
     let params = OLParams::default();
@@ -20,7 +22,9 @@ pub fn create_test_genesis_state() -> OLState {
 }
 
 pub fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
-    any::<u64>().prop_map(BitcoinAmount::from_sat)
+    (0..=MAX_BITCOIN_MONEY_SATS).prop_map(|sats| {
+        BitcoinAmount::try_from(sats).expect("strategy only generates valid Bitcoin amounts")
+    })
 }
 
 pub fn global_state_strategy() -> impl Strategy<Value = GlobalState> {

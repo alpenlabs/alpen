@@ -163,7 +163,8 @@ fn test_manifest_processing_skips_unknown_serial_deposit() {
     let deposit_log = make_deposit_log_for_account(
         AccountSerial::new(9_999),
         SubjectId::from([42u8; 32]),
-        BitcoinAmount::from_sat(100_000_000),
+        BitcoinAmount::try_from(100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
     );
     let asm_manifest = FixtureAsmManifestBuilder::new_at_height(1)
         .with_log(deposit_log)
@@ -171,26 +172,37 @@ fn test_manifest_processing_skips_unknown_serial_deposit() {
 
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_manifest(asm_manifest)
         .execute_genesis();
     let state = fixture.state();
 
     let (ol_account_state, account_state) = state.expect_snark_account_state(snark_acct_id);
-    assert_eq!(ol_account_state.balance(), BitcoinAmount::from_sat(0));
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+    );
     assert_eq!(account_state.inbox_mmr().num_entries(), 0);
-    assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(100_000_000));
+    assert_eq!(
+        state.limbo_funds(),
+        BitcoinAmount::try_from(100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
+    );
     assert_eq!(state.last_l1_height(), 1);
 }
 
 #[test]
 fn test_deposit_terminal_drain_has_no_logs_or_predrain_effects() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let deposit_amount = BitcoinAmount::from_sat(100_000_000);
+    let deposit_amount = BitcoinAmount::try_from(100_000_000)
+        .expect("amount must not exceed the Bitcoin money supply");
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::zero())
+            acct.with_balance(BitcoinAmount::default())
         })
         .execute_genesis();
     let snark_serial = fixture.account_serial(snark_acct_id);
@@ -260,7 +272,7 @@ fn test_deposit_terminal_drain_has_no_logs_or_predrain_effects() {
         .expect("snark account should exist");
     assert_eq!(
         predrain_account.balance(),
-        BitcoinAmount::zero(),
+        BitcoinAmount::default(),
         "checkpoint pre-drain replay must not apply ASM drain state effects"
     );
     let predrain_snark_account = predrain_account
@@ -314,5 +326,5 @@ fn test_manifest_processing_skips_malformed_deposit_log() {
         state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT + 1
     );
-    assert_eq!(state.limbo_funds(), BitcoinAmount::zero());
+    assert_eq!(state.limbo_funds(), BitcoinAmount::default());
 }

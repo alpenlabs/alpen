@@ -13,7 +13,8 @@ use crate::test_utils::*;
 #[test]
 fn test_snark_account_deposit_and_withdrawal() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let deposit_amount = BitcoinAmount::from_sat(150_000_000); // 1.5 BTC; enough to cover withdrawal.
+    let deposit_amount = BitcoinAmount::try_from(150_000_000)
+        .expect("amount must not exceed the Bitcoin money supply"); // 1.5 BTC; enough to cover withdrawal.
     let dest_subject = SubjectId::from([42u8; 32]);
 
     let fixture_builder = OLStfFixture::builder();
@@ -50,7 +51,8 @@ fn test_snark_account_deposit_and_withdrawal() {
     let deposit_msg = make_deposit_message_entry(0, dest_subject, deposit_amount);
     let deposit_msg_proof = inbox_tracker.add_message(&deposit_msg);
 
-    let withdrawal_amount = BitcoinAmount::from_sat(100_000_000); // Withdraw exactly 1 BTC.
+    let withdrawal_amount = BitcoinAmount::try_from(100_000_000)
+        .expect("amount must not exceed the Bitcoin money supply"); // Withdraw exactly 1 BTC.
     let withdrawal_dest_desc = make_p2wpkh_bosd_descriptor(0x14);
     let withdrawal_payload = make_withdrawal_payload(withdrawal_dest_desc.clone());
 
@@ -70,7 +72,8 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(50_000_000),
+        BitcoinAmount::try_from(50_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "Account balance should be reduced by withdrawal amount"
     );
 
@@ -99,7 +102,10 @@ fn test_bridge_gateway_direct_transfer_is_silently_dropped() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -108,20 +114,26 @@ fn test_bridge_gateway_direct_transfer_is_silently_dropped() {
         .child_block()
         .with_sau(snark_acct_id, |sau| {
             // Pins the current footgun: funds are deducted from sender but never delivered.
-            sau.transfer(BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount::from_sat(10_000_000))
-                .with_state_root(make_state_root(2))
+            sau.transfer(
+                BRIDGE_GATEWAY_ACCT_ID,
+                BitcoinAmount::try_from(10_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
+            .with_state_root(make_state_root(2))
         })
         .execute_with_outputs();
 
     assert_no_bridge_gateway_logs(&output);
     assert_eq!(
         fixture.state().limbo_funds(),
-        BitcoinAmount::from_sat(limbo_before.to_sat() + 10_000_000),
+        BitcoinAmount::try_from(limbo_before.to_sat() + 10_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "direct bridge-gateway transfer should sweep value into limbo"
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(90_000_000)
+        BitcoinAmount::try_from(90_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
     assert_eq!(
         *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
@@ -135,7 +147,10 @@ fn test_bridge_gateway_non_denomination_withdrawal_is_silently_dropped() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -146,7 +161,8 @@ fn test_bridge_gateway_non_denomination_withdrawal_is_silently_dropped() {
             // Pins the current footgun: funds are deducted from sender but never delivered.
             sau.output_message(
                 BRIDGE_GATEWAY_ACCT_ID,
-                BitcoinAmount::from_sat(50_000_000),
+                BitcoinAmount::try_from(50_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 make_withdrawal_payload(b"bc1qnondenomination".to_vec()),
             )
             .with_state_root(make_state_root(2))
@@ -156,12 +172,14 @@ fn test_bridge_gateway_non_denomination_withdrawal_is_silently_dropped() {
     assert_no_bridge_gateway_logs(&output);
     assert_eq!(
         fixture.state().limbo_funds(),
-        BitcoinAmount::from_sat(limbo_before.to_sat() + 50_000_000),
+        BitcoinAmount::try_from(limbo_before.to_sat() + 50_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "non-denomination withdrawal should sweep value into limbo"
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(50_000_000)
+        BitcoinAmount::try_from(50_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
     assert_eq!(
         *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
@@ -175,7 +193,10 @@ fn test_bridge_gateway_oversized_withdrawal_descriptor_is_silently_dropped() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -188,7 +209,8 @@ fn test_bridge_gateway_oversized_withdrawal_descriptor_is_silently_dropped() {
         .with_sau(snark_acct_id, |sau| {
             sau.output_message(
                 BRIDGE_GATEWAY_ACCT_ID,
-                BitcoinAmount::from_sat(100_000_000),
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 make_withdrawal_payload(oversized_descriptor),
             )
             .with_state_root(make_state_root(2))
@@ -198,12 +220,13 @@ fn test_bridge_gateway_oversized_withdrawal_descriptor_is_silently_dropped() {
     assert_no_bridge_gateway_logs(&output);
     assert_eq!(
         fixture.state().limbo_funds(),
-        BitcoinAmount::from_sat(limbo_before.to_sat() + 100_000_000),
+        BitcoinAmount::try_from(limbo_before.to_sat() + 100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "oversized withdrawal descriptor should sweep value into limbo"
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::zero()
+        BitcoinAmount::default()
     );
     assert_eq!(
         *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
@@ -217,7 +240,10 @@ fn test_bridge_gateway_malformed_withdrawal_descriptor_is_silently_dropped() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -227,7 +253,8 @@ fn test_bridge_gateway_malformed_withdrawal_descriptor_is_silently_dropped() {
         .with_sau(snark_acct_id, |sau| {
             sau.output_message(
                 BRIDGE_GATEWAY_ACCT_ID,
-                BitcoinAmount::from_sat(100_000_000),
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 make_withdrawal_payload(vec![0x03, 0x01, 0x02, 0x03]),
             )
             .with_state_root(make_state_root(2))
@@ -237,12 +264,13 @@ fn test_bridge_gateway_malformed_withdrawal_descriptor_is_silently_dropped() {
     assert_no_bridge_gateway_logs(&output);
     assert_eq!(
         fixture.state().limbo_funds(),
-        BitcoinAmount::from_sat(limbo_before.to_sat() + 100_000_000),
+        BitcoinAmount::try_from(limbo_before.to_sat() + 100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "malformed withdrawal descriptor should sweep value into limbo"
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::zero()
+        BitcoinAmount::default()
     );
     assert_eq!(
         *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
@@ -256,7 +284,10 @@ fn test_bridge_gateway_zero_amount_withdrawal_is_silently_dropped() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -266,7 +297,8 @@ fn test_bridge_gateway_zero_amount_withdrawal_is_silently_dropped() {
         .with_sau(snark_acct_id, |sau| {
             sau.output_message(
                 BRIDGE_GATEWAY_ACCT_ID,
-                BitcoinAmount::from_sat(0),
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 make_withdrawal_payload(b"bc1qzeroamount".to_vec()),
             )
             .with_state_root(make_state_root(2))
@@ -281,7 +313,8 @@ fn test_bridge_gateway_zero_amount_withdrawal_is_silently_dropped() {
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(100_000_000)
+        BitcoinAmount::try_from(100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
     assert_eq!(
         *fixture.expect_snark_account(snark_acct_id).seqno().inner(),

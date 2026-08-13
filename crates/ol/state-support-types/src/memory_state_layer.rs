@@ -151,7 +151,11 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
     fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
         let cur = self.state.global.limbo_funds();
         let amt = coin.amt();
-        if cur.checked_add(amt).is_none() {
+        let new_limbo_funds = cur
+            .to_sat()
+            .checked_add(amt.to_sat())
+            .and_then(|sats| BitcoinAmount::try_from(sats).ok());
+        if new_limbo_funds.is_none() {
             // Defuse the coin before returning: the whole STF is discarded on
             // this error, so no value is actually lost, and dropping a live coin
             // would panic in `Coin::drop`.
@@ -305,7 +309,11 @@ mod tests {
         let serial = layer.next_account_serial();
 
         let snark_state = test_snark_account_state(7);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1_234));
+        let new_acct = test_new_snark_account_data(
+            &snark_state,
+            BitcoinAmount::try_from(1_234)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        );
 
         let mut batch = WriteBatch::default();
         batch

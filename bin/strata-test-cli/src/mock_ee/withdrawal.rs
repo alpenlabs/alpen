@@ -44,8 +44,11 @@ pub(crate) fn build_snark_withdrawal_json(
     let owned_msg =
         OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_body).context("failed to create OwnedMsg")?;
 
-    let msg_payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(amount), owned_msg.to_vec())
-        .expect("withdrawal message payload bytes must fit within SSZ max length");
+    let msg_payload = MsgPayload::from_bytes(
+        BitcoinAmount::try_from(amount).expect("amount must not exceed the Bitcoin money supply"),
+        owned_msg.to_vec(),
+    )
+    .expect("withdrawal message payload bytes must fit within SSZ max length");
 
     let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
     let outputs = UpdateOutputs::new_empty().with_messages(vec![output_message]);
@@ -215,7 +218,8 @@ mod tests {
         assert_eq!(output_msg.dest(), BRIDGE_GATEWAY_ACCT_ID);
         assert_eq!(
             output_msg.payload().value(),
-            BitcoinAmount::from_sat(100_000_000)
+            BitcoinAmount::try_from(100_000_000)
+                .expect("amount must not exceed the Bitcoin money supply")
         );
     }
 
@@ -317,9 +321,12 @@ mod tests {
                 .unwrap();
         let encoded_body = strata_codec::encode_to_vec(&withdrawal_msg_data).unwrap();
         let owned_msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_body).unwrap();
-        let msg_payload =
-            MsgPayload::from_bytes(BitcoinAmount::from_sat(100_000_000), owned_msg.to_vec())
-                .expect("withdrawal message payload bytes must fit within SSZ max length");
+        let msg_payload = MsgPayload::from_bytes(
+            BitcoinAmount::try_from(100_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+            owned_msg.to_vec(),
+        )
+        .expect("withdrawal message payload bytes must fit within SSZ max length");
         let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
         let outputs = UpdateOutputs::new_empty().with_messages(vec![output_message]);
         let claim_ssz = sign_claim_ssz(Seqno::new(seq_no), &proof_state, &proof_state, &outputs);

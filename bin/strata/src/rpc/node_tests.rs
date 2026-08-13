@@ -638,7 +638,7 @@ fn ol_state_with_snark_account_and_inbox_entries(
     let mut state = MemoryStateBaseLayer::new(base);
     state.set_cur_slot(slot);
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from(0),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         NewAccountTypeState::Snark {
             update_vk: PredicateKey::always_accept(),
             initial_state_root: Hash::zero(),
@@ -661,7 +661,10 @@ fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLState {
     let base = genesis_ol_state();
     let mut state = MemoryStateBaseLayer::new(base);
     state.set_cur_slot(slot);
-    let new_acct = NewAccountData::new(BitcoinAmount::from(0), NewAccountTypeState::Empty);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
+        NewAccountTypeState::Empty,
+    );
     state.create_new_account(account_id, new_acct).unwrap();
     state.into_inner()
 }
@@ -669,7 +672,8 @@ fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLState {
 fn empty_account_state(serial: u32, balance_sats: u64) -> OLAccountState {
     OLAccountState::new(
         AccountSerial::from(serial),
-        BitcoinAmount::from_sat(balance_sats),
+        BitcoinAmount::try_from(balance_sats)
+            .expect("amount must not exceed the Bitcoin money supply"),
         OLAccountTypeState::Empty,
     )
 }
@@ -713,8 +717,12 @@ fn make_message_entry(
     payload_value_sat: u64,
     payload_buf: Vec<u8>,
 ) -> MessageEntry {
-    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(payload_value_sat), payload_buf)
-        .expect("message payload bytes must fit within SSZ max length");
+    let payload = MsgPayload::from_bytes(
+        BitcoinAmount::try_from(payload_value_sat)
+            .expect("amount must not exceed the Bitcoin money supply"),
+        payload_buf,
+    )
+    .expect("message payload bytes must fit within SSZ max length");
     MessageEntry::new(source, incl_epoch, payload)
 }
 
@@ -1937,7 +1945,10 @@ async fn blocks_summaries_snark_vs_non_snark() {
 
     let snark_state = ol_state_with_snark_account(snark_id, 0, 42, DEFAULT_NEXT_INBOX_MSG_IDX);
     let mut state = MemoryStateBaseLayer::new(snark_state);
-    let empty_acct = NewAccountData::new(BitcoinAmount::from(0), NewAccountTypeState::Empty);
+    let empty_acct = NewAccountData::new(
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
+        NewAccountTypeState::Empty,
+    );
     state.create_new_account(empty_id, empty_acct).unwrap();
     let state = state.into_inner();
 

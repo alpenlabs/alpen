@@ -30,7 +30,8 @@ fn assert_mid_block_failure_state(
     );
     assert_eq!(
         ledger_account_state.balance(),
-        BitcoinAmount::from_sat(90_000_000),
+        BitcoinAmount::try_from(90_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "first tx should have deducted sender balance"
     );
 
@@ -40,7 +41,8 @@ fn assert_mid_block_failure_state(
         .expect("recipient_ok should exist");
     assert_eq!(
         recipient_ok_state.balance(),
-        BitcoinAmount::from_sat(10_000_000),
+        BitcoinAmount::try_from(10_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "first tx recipient should receive funds"
     );
 
@@ -50,7 +52,7 @@ fn assert_mid_block_failure_state(
         .expect("recipient_not_executed should exist");
     assert_eq!(
         recipient_not_executed_state.balance(),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         "third tx should not execute after mid-block failure"
     );
 }
@@ -78,7 +80,10 @@ fn test_execute_block_mid_failure_keeps_prior_mutations() {
 
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(recipient_ok)
         .with_genesis_empty_account(recipient_not_executed)
@@ -133,7 +138,10 @@ fn test_verify_block_mid_failure_returns_txexec() {
 
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(recipient_ok)
         .with_genesis_empty_account(recipient_not_executed)

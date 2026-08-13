@@ -84,7 +84,7 @@ fn verify_gam_tx(gam: &GamTxPayload, fx: &TxEffects) -> ExecResult<()> {
     // 2. Extract the message we want to send.
     let mut msgs_iter = fx.messages_iter();
     let msg = match (msgs_iter.next(), msgs_iter.next()) {
-        (Some(m), None) if m.payload().value().is_zero() => m,
+        (Some(m), None) if m.payload().value() == BitcoinAmount::default() => m,
         _ => {
             return Err(ExecError::TxStructureCheckFailed(
                 "multiple messages or nonzero value",
@@ -258,7 +258,7 @@ fn debit_source<S: IStateAccessorMut>(
     source: AccountId,
     total_sent: BitcoinAmount,
 ) -> ExecResult<Coin> {
-    if total_sent.is_zero() {
+    if total_sent == BitcoinAmount::default() {
         return Ok(Coin::zero());
     }
 
@@ -310,7 +310,7 @@ pub fn verify_effects_safe<S: IStateAccessorMut>(
     state: &S,
     acct: &S::AccountState,
 ) -> ExecResult<()> {
-    let mut total_sent = BitcoinAmount::zero();
+    let mut total_sent_sats = 0u64;
 
     // We're actually making the same checks in both places, so we can chain the
     // iterators like this.
@@ -324,10 +324,13 @@ pub fn verify_effects_safe<S: IStateAccessorMut>(
             return Err(ExecError::UnknownAccount(dest));
         }
 
-        total_sent = total_sent
-            .checked_add(amt)
+        total_sent_sats = total_sent_sats
+            .checked_add(amt.to_sat())
             .ok_or(ExecError::AmountOverflow)?;
     }
+
+    let total_sent =
+        BitcoinAmount::try_from(total_sent_sats).map_err(|_| ExecError::AmountOverflow)?;
 
     if total_sent > acct.balance() {
         return Err(ExecError::BalanceUnderflow);

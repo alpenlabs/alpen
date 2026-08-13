@@ -111,9 +111,10 @@ impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAcc
     fn limbo_funds(&self) -> BitcoinAmount {
         self.resolve(
             |b| {
-                b.global_writes()
-                    .limbo_funds_sats
-                    .map(BitcoinAmount::from_sat)
+                b.global_writes().limbo_funds_sats.map(|sats| {
+                    BitcoinAmount::try_from(sats)
+                        .expect("limbo funds must not exceed the Bitcoin money supply")
+                })
             },
             || self.base.limbo_funds(),
         )
@@ -325,7 +326,10 @@ mod tests {
         // Create a batch with an account
         let mut batch = WriteBatch::default();
         let snark_state = test_snark_account_state(1);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
+        let new_acct = test_new_snark_account_data(
+            &snark_state,
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial = base_layer.next_account_serial();
         batch
             .ledger_mut()
@@ -337,7 +341,10 @@ mod tests {
         // Should read from batch
         let account = diff_state.get_account_state(account_id).unwrap().unwrap();
         assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+        assert_eq!(
+            account.balance(),
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply")
+        );
     }
 
     #[test]
@@ -347,7 +354,10 @@ mod tests {
 
         let mut batch = WriteBatch::default();
         let snark_state = test_snark_account_state(1);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
+        let new_acct = test_new_snark_account_data(
+            &snark_state,
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial = base_layer.next_account_serial();
         batch
             .ledger_mut()
@@ -386,7 +396,10 @@ mod tests {
         // First batch: account with 1000 sats
         let mut batch1 = WriteBatch::default();
         let snark_state1 = test_snark_account_state(1);
-        let new_acct1 = test_new_snark_account_data(&snark_state1, BitcoinAmount::from_sat(1000));
+        let new_acct1 = test_new_snark_account_data(
+            &snark_state1,
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial1 = base_layer.next_account_serial();
         batch1
             .ledger_mut()
@@ -396,7 +409,10 @@ mod tests {
         // This batch shadows the first, so uses a different serial
         let mut batch2 = WriteBatch::default();
         let snark_state2 = test_snark_account_state(2);
-        let new_acct2 = test_new_snark_account_data(&snark_state2, BitcoinAmount::from_sat(5000));
+        let new_acct2 = test_new_snark_account_data(
+            &snark_state2,
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial2 = AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1);
         batch2
             .ledger_mut()
@@ -407,7 +423,10 @@ mod tests {
         let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         let account = diff_state.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+        assert_eq!(
+            account.balance(),
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply")
+        );
     }
 
     #[test]
@@ -419,7 +438,10 @@ mod tests {
         // First batch: account 1
         let mut batch1 = WriteBatch::default();
         let snark_state1 = test_snark_account_state(1);
-        let new_acct1 = test_new_snark_account_data(&snark_state1, BitcoinAmount::from_sat(1000));
+        let new_acct1 = test_new_snark_account_data(
+            &snark_state1,
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial1 = base_layer.next_account_serial();
         batch1
             .ledger_mut()
@@ -428,7 +450,10 @@ mod tests {
         // Second batch: account 2 only
         let mut batch2 = WriteBatch::default();
         let snark_state2 = test_snark_account_state(2);
-        let new_acct2 = test_new_snark_account_data(&snark_state2, BitcoinAmount::from_sat(2000));
+        let new_acct2 = test_new_snark_account_data(
+            &snark_state2,
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial2 = AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1);
         batch2
             .ledger_mut()
@@ -439,23 +464,35 @@ mod tests {
 
         // Account 1 should be found in batch1 (falls through from batch2)
         let account1 = diff_state.get_account_state(account_id_1).unwrap().unwrap();
-        assert_eq!(account1.balance(), BitcoinAmount::from_sat(1000));
+        assert_eq!(
+            account1.balance(),
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply")
+        );
 
         // Account 2 should be found in batch2
         let account2 = diff_state.get_account_state(account_id_2).unwrap().unwrap();
-        assert_eq!(account2.balance(), BitcoinAmount::from_sat(2000));
+        assert_eq!(
+            account2.balance(),
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply")
+        );
     }
 
     #[test]
     fn test_read_falls_through_to_base() {
         let account_id_base = test_account_id(1);
         let account_id_batch = test_account_id(2);
-        let (base_layer, _) =
-            setup_layer_with_snark_account(account_id_base, 1, BitcoinAmount::from_sat(1000));
+        let (base_layer, _) = setup_layer_with_snark_account(
+            account_id_base,
+            1,
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+        );
 
         let mut batch = WriteBatch::default();
         let snark_state = test_snark_account_state(2);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(2000));
+        let new_acct = test_new_snark_account_data(
+            &snark_state,
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial = base_layer.next_account_serial();
         batch
             .ledger_mut()
@@ -469,14 +506,20 @@ mod tests {
             .get_account_state(account_id_base)
             .unwrap()
             .unwrap();
-        assert_eq!(base_account.balance(), BitcoinAmount::from_sat(1000));
+        assert_eq!(
+            base_account.balance(),
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply")
+        );
 
         // Account in batch should also be found
         let batch_account = diff_state
             .get_account_state(account_id_batch)
             .unwrap()
             .unwrap();
-        assert_eq!(batch_account.balance(), BitcoinAmount::from_sat(2000));
+        assert_eq!(
+            batch_account.balance(),
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply")
+        );
     }
 
     #[test]
@@ -486,7 +529,10 @@ mod tests {
 
         let mut batch = WriteBatch::default();
         let snark_state = test_snark_account_state(1);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1000));
+        let new_acct = test_new_snark_account_data(
+            &snark_state,
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial = base_layer.next_account_serial();
         batch
             .ledger_mut()
@@ -508,14 +554,18 @@ mod tests {
         let base_layer = create_test_base_layer();
 
         let mut batch = WriteBatch::default();
-        batch.epochal_writes_mut().total_ledger_balance = Some(BitcoinAmount::from_sat(1_000_000));
+        batch.epochal_writes_mut().total_ledger_balance = Some(
+            BitcoinAmount::try_from(1_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        );
 
         let batches = vec![batch];
         let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         assert_eq!(
             diff_state.total_ledger_balance(),
-            BitcoinAmount::from_sat(1_000_000)
+            BitcoinAmount::try_from(1_000_000)
+                .expect("amount must not exceed the Bitcoin money supply")
         );
     }
 
@@ -534,7 +584,9 @@ mod tests {
         batch1.epochal_writes_mut().last_l1_blkid = Some(older_blkid);
 
         let mut batch2 = WriteBatch::default();
-        batch2.epochal_writes_mut().total_ledger_balance = Some(BitcoinAmount::from_sat(42));
+        batch2.epochal_writes_mut().total_ledger_balance = Some(
+            BitcoinAmount::try_from(42).expect("amount must not exceed the Bitcoin money supply"),
+        );
 
         let batches = vec![batch1, batch2];
         let diff_state = BatchDiffState::new(&base_layer, &batches);
@@ -544,7 +596,7 @@ mod tests {
         assert_eq!(*diff_state.last_l1_blkid(), older_blkid);
         assert_eq!(
             diff_state.total_ledger_balance(),
-            BitcoinAmount::from_sat(42)
+            BitcoinAmount::try_from(42).expect("amount must not exceed the Bitcoin money supply")
         );
     }
 
@@ -557,7 +609,10 @@ mod tests {
 
         let mut batch = WriteBatch::default();
         let snark_state = test_snark_account_state(1);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
+        let new_acct = test_new_snark_account_data(
+            &snark_state,
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial = base_layer.next_account_serial();
         batch
             .ledger_mut()
@@ -584,7 +639,10 @@ mod tests {
         // Inner layer adds account 1.
         let mut batch1 = WriteBatch::default();
         let snark_state1 = test_snark_account_state(1);
-        let new_acct1 = test_new_snark_account_data(&snark_state1, BitcoinAmount::from_sat(1000));
+        let new_acct1 = test_new_snark_account_data(
+            &snark_state1,
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial1 = base_layer.next_account_serial();
         batch1
             .ledger_mut()
@@ -596,7 +654,10 @@ mod tests {
         // Outer layer stacks another batch adding account 2 on top of `inner`.
         let mut batch2 = WriteBatch::default();
         let snark_state2 = test_snark_account_state(2);
-        let new_acct2 = test_new_snark_account_data(&snark_state2, BitcoinAmount::from_sat(2000));
+        let new_acct2 = test_new_snark_account_data(
+            &snark_state2,
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let serial2 = inner.next_account_serial();
         batch2
             .ledger_mut()
@@ -607,9 +668,15 @@ mod tests {
 
         // Both accounts are visible through the outer layer.
         let acct1 = outer.get_account_state(account_id_1).unwrap().unwrap();
-        assert_eq!(acct1.balance(), BitcoinAmount::from_sat(1000));
+        assert_eq!(
+            acct1.balance(),
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply")
+        );
         let acct2 = outer.get_account_state(account_id_2).unwrap().unwrap();
-        assert_eq!(acct2.balance(), BitcoinAmount::from_sat(2000));
+        assert_eq!(
+            acct2.balance(),
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply")
+        );
 
         // Serial lookups resolve through both layers.
         assert_eq!(
@@ -646,8 +713,11 @@ mod tests {
             .map(|(i, id)| {
                 let mut batch = WriteBatch::default();
                 let snark_state = test_snark_account_state(i as u8 + 1);
-                let new_acct =
-                    test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1000));
+                let new_acct = test_new_snark_account_data(
+                    &snark_state,
+                    BitcoinAmount::try_from(1000)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                );
                 let serial = AccountSerial::from(base_serial + i as u32);
                 batch
                     .ledger_mut()

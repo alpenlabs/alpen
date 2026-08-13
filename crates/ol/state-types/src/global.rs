@@ -41,15 +41,19 @@ impl GlobalState {
 
     /// Gets the amount of funds in limbo.
     pub fn limbo_funds(&self) -> BitcoinAmount {
-        BitcoinAmount::from_sat(self.limbo_funds_sats)
+        BitcoinAmount::try_from(self.limbo_funds_sats)
+            .expect("amount must not exceed the Bitcoin money supply")
     }
 
     /// Attempts to add limbo funds.
     pub fn add_limbo_funds(&mut self, amt: BitcoinAmount) -> bool {
-        let Some(new_lf) = self.limbo_funds().checked_add(amt) else {
+        let Some(new_lf_sats) = self.limbo_funds_sats.checked_add(amt.to_sat()) else {
             return false;
         };
-        self.limbo_funds_sats = new_lf.to_sat();
+        if BitcoinAmount::try_from(new_lf_sats).is_err() {
+            return false;
+        }
+        self.limbo_funds_sats = new_lf_sats;
         true
     }
 
@@ -70,12 +74,14 @@ impl GlobalState {
     pub fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> Option<Coin> {
         let lf = self.limbo_funds();
 
-        let new_lf = lf.checked_sub(amt)?;
+        let new_lf_sats = lf.to_sat().checked_sub(amt.to_sat())?;
+        let new_lf = BitcoinAmount::try_from(new_lf_sats)
+            .expect("subtracting from valid limbo funds must remain valid");
 
         // This sanity check should be optimized out.
         assert_eq!(
-            new_lf.checked_add(amt),
-            Some(lf),
+            new_lf.to_sat().checked_add(amt.to_sat()),
+            Some(lf.to_sat()),
             "ol/state: inconsistent limbo funds change"
         );
 

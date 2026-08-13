@@ -480,7 +480,11 @@ mod tests {
         let new_empty_acct_id = make_account_id(STATE_DIFF_EMPTY_ACCOUNT_ID);
         let new_account = NewAccountEntry::new(
             new_empty_acct_id,
-            AccountInit::new(BitcoinAmount::from_sat(1), AccountTypeInit::Empty),
+            AccountInit::new(
+                BitcoinAmount::try_from(1)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                AccountTypeInit::Empty,
+            ),
         );
         StateDiff::new(
             GlobalStateDiff::default(),
