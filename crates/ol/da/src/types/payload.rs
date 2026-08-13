@@ -137,8 +137,9 @@ impl<S: IStateAccessorMut> DaWrite for OLStateDiff<S> {
         target.set_cur_slot(cur_slot);
 
         if let Some(d) = self.diff.global.limbo_funds_sats.diff() {
-            let amt = BitcoinAmount::try_from(d.magnitude())
-                .expect("amount must not exceed the Bitcoin money supply");
+            let amt = BitcoinAmount::try_from(d.magnitude()).map_err(|_| {
+                DaError::InvalidStateDiff("limbo funds delta exceeds the Bitcoin money supply")
+            })?;
             if d.is_positive() {
                 let coin = Coin::new_unchecked(amt);
                 target
@@ -282,14 +283,21 @@ fn apply_balance_delta<T: IAccountStateMut>(
     acct: &mut T,
     incr: &SignedVarInt,
 ) -> Result<(), DaError> {
+    let delta = BitcoinAmount::try_from(incr.magnitude())
+        .map_err(|_| DaError::InvalidStateDiff("balance delta exceeds the Bitcoin money supply"))?;
     if incr.is_positive() {
-        let delta = BitcoinAmount::try_from(incr.magnitude())
-            .expect("amount must not exceed the Bitcoin money supply");
+        // `add_balance` panics past the money-supply cap, so check the post-add
+        // amount first and reject the diff cleanly.
+        acct.balance()
+            .to_sat()
+            .checked_add(delta.to_sat())
+            .and_then(|sats| BitcoinAmount::try_from(sats).ok())
+            .ok_or(DaError::InvalidStateDiff(
+                "account balance after delta exceeds the Bitcoin money supply",
+            ))?;
         let coin = Coin::new_unchecked(delta);
         acct.add_balance(coin);
     } else {
-        let delta = BitcoinAmount::try_from(incr.magnitude())
-            .expect("amount must not exceed the Bitcoin money supply");
         let coin = acct
             .take_balance(delta)
             .map_err(|_| DaError::InvalidStateDiff("insufficient balance for diff"))?;
@@ -737,6 +745,76 @@ mod tests {
         );
     }
 
+    /// A balance delta above the Bitcoin money supply must be rejected with a `DaError`,
+    /// not panic on the amount conversion.
+    #[test]
+    fn test_ol_state_diff_apply_rejects_oversized_balance_delta() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(32);
+        let serial = seed_empty_account(&mut state, account_id, 500);
+
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::positive(u64::MAX)),
+                )],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "balance delta exceeds the Bitcoin money supply"
+            ))
+        ));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    /// A positive balance delta that is itself valid but pushes the account past
+    /// the Bitcoin money supply must be rejected with a `DaError`, not panic in
+    /// `add_balance`.
+    #[test]
+    fn test_ol_state_diff_apply_rejects_balance_delta_past_cap() {
+        const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(33);
+        let serial = seed_empty_account(&mut state, account_id, MAX_BITCOIN_MONEY_SATS - 1);
+
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::positive(2)),
+                )],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "account balance after delta exceeds the Bitcoin money supply"
+            ))
+        ));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::try_from(MAX_BITCOIN_MONEY_SATS - 1)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
     #[test]
     fn test_ol_state_diff_apply_updates_limbo_funds() {
         let mut state = make_genesis_state();
@@ -788,6 +866,30 @@ mod tests {
             result,
             Err(DaError::InvalidStateDiff(
                 "insufficient limbo funds for diff"
+            ))
+        ));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    /// A limbo funds delta above the Bitcoin money supply must be rejected with a `DaError`,
+    /// not panic on the amount conversion.
+    #[test]
+    fn test_ol_state_diff_apply_rejects_oversized_limbo_funds_delta() {
+        let mut state = make_genesis_state();
+
+        let diff = StateDiff::new(
+            build::global_diff(0, Some(SignedVarInt::positive(u64::MAX))),
+            LedgerDiff::default(),
+        );
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "limbo funds delta exceeds the Bitcoin money supply"
             ))
         ));
         assert_eq!(
