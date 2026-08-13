@@ -9415,7 +9415,6 @@ dependencies = [
  "strata-asm-checkpoint-types",
  "strata-asm-common",
  "strata-asm-manifest-types",
- "strata-bridge-params",
  "strata-btc-verification",
  "strata-codec",
  "strata-common",
