@@ -254,6 +254,7 @@ seq_key.bin
 
 # the proof verification key generated at build time
 provers/**/vks.rs
+provers/**/runtime_params.rs
 
 # Prover generated files
 provers/**/cache/

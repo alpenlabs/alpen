@@ -134,10 +134,10 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let ol_params: OLParams = serde_json::from_str(&ol_params_str)
         .map_err(|e| anyhow::anyhow!("failed to parse OL params: {e}"))?;
 
-    if ol_params.last_l1_block != anchor.block {
+    if ol_params.genesis_l1_block() != anchor.block {
         anyhow::bail!(
             "OL params and ASM params have different genesis L1 block: OL={:?}, ASM={:?}",
-            ol_params.last_l1_block,
+            ol_params.genesis_l1_block(),
             anchor.block
         );
     }

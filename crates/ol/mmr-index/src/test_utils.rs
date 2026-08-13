@@ -39,7 +39,7 @@ pub(crate) fn build_target_state_with_snark_account(account_id: AccountId) -> OL
         L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero())),
         BridgeParams::default(),
     );
-    params.accounts.insert(
+    params.insert_genesis_account(
         account_id,
         GenesisSnarkAccountData {
             predicate: PredicateKey::always_accept(),

@@ -12,7 +12,6 @@ use strata_acct_types::{
 };
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
-use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
@@ -25,7 +24,7 @@ use strata_ol_chain_types::{
     OLBlock, OLBlockHeader, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
     SnarkAccountUpdateLogData,
 };
-use strata_ol_params::OLParams;
+use strata_ol_params::{OLParams, OLRuntimeParams};
 use strata_ol_state_support_types::SnarkAcctStateUpdate;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
@@ -83,8 +82,8 @@ pub struct ChainWorkerContextImpl {
     /// seeded from `OLParams.last_l1_block.height()` at OL genesis).
     ol_params: Arc<OLParams>,
 
-    /// Withdrawal denomination and cap.
-    bridge_params: BridgeParams,
+    /// Runtime parameters for OL STF execution.
+    runtime_params: OLRuntimeParams,
 
     /// Runtime handle
     handle: Handle,
@@ -104,7 +103,7 @@ impl ChainWorkerContextImpl {
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             ol_params: nodectx.ol_params().clone(),
-            bridge_params: *nodectx.ol_params().bridge_params(),
+            runtime_params: nodectx.ol_params().runtime_params(),
             handle: nodectx.executor().handle().clone(),
         }
     }
@@ -117,8 +116,8 @@ impl ChainWorkerContextImpl {
         &self.status_channel
     }
 
-    pub fn bridge_params(&self) -> BridgeParams {
-        self.bridge_params
+    pub fn runtime_params(&self) -> OLRuntimeParams {
+        self.runtime_params
     }
 
     pub fn handle(&self) -> &Handle {
@@ -313,7 +312,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     fn prefill_l1_block_refs_mmr(&self) -> WorkerResult<()> {
         // Same source as the in-state MMR's genesis prefill so the two MMRs
         // stay byte-identical from leaf 0.
-        let genesis_l1_height = self.ol_params.last_l1_block.height() as u64;
+        let genesis_l1_height = self.ol_params.genesis_l1_block().height() as u64;
         prefill_l1_block_refs_mmr_blocking(&self.mmr_index_mgr, genesis_l1_height)?;
         Ok(())
     }

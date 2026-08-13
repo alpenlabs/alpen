@@ -9,7 +9,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub(crate) use strata_checkpoint_types::CheckpointProofTask as CheckpointTask;
 use strata_identifiers::{Epoch, EpochCommitment};
-use strata_ol_params::BridgeParams;
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_stf::execute_block_batch_predrain;
 use strata_paas::{InputResolution, ProofSpec, ProverError as PaasError, ProverResult};
@@ -24,14 +24,14 @@ use super::errors::ProverError;
 #[derive(Clone)]
 pub(crate) struct CheckpointSpec {
     storage: Arc<NodeStorage>,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 }
 
 impl CheckpointSpec {
-    pub(crate) fn new(storage: Arc<NodeStorage>, bridge_params: BridgeParams) -> Self {
+    pub(crate) fn new(storage: Arc<NodeStorage>, runtime_params: OLRuntimeParams) -> Self {
         Self {
             storage,
-            bridge_params,
+            runtime_params,
         }
     }
 }
@@ -48,14 +48,14 @@ impl ProofSpec for CheckpointSpec {
         let commitment = task.0;
         debug!(epoch = %commitment.epoch, "fetching checkpoint proof input");
         let storage = Arc::clone(&self.storage);
-        let bridge_params = self.bridge_params;
+        let runtime_params = self.runtime_params;
         // All storage access is blocking; hop to a blocking thread so we
         // don't stall the async runtime while reading blocks and state. A join
         // error is an infra fault (Err → retried); the inner classification
         // (epoch-not-ready → Blocked, DB → Err, else → Rejected) is bridged by
         // `InputResolution::from_result`.
         let assembled =
-            spawn_blocking(move || fetch_input_blocking(storage, commitment, bridge_params))
+            spawn_blocking(move || fetch_input_blocking(storage, commitment, runtime_params))
                 .await
                 .map_err(|e| PaasError::Storage(format!("input fetch join: {e}")))?
                 .map_err(PaasError::from);
@@ -66,7 +66,7 @@ impl ProofSpec for CheckpointSpec {
 fn fetch_input_blocking(
     storage: Arc<NodeStorage>,
     task_commitment: EpochCommitment,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
 ) -> Result<CheckpointProverInput, ProverError> {
     let epoch: Epoch = task_commitment.epoch;
     let epoch_index = u64::from(epoch);
@@ -161,7 +161,7 @@ fn fetch_input_blocking(
     let da_state_diff_bytes = {
         let mut da_state =
             DaAccumulatingState::new(MemoryStateBaseLayer::new((*start_state).clone()));
-        execute_block_batch_predrain(&mut da_state, &blocks, &parent, bridge_params)
+        execute_block_batch_predrain(&mut da_state, &blocks, &parent, runtime_params)
             .map_err(|e| ProverError::DaComputation(e.to_string()))?;
         da_state
             .take_completed_epoch_da_blob()
@@ -183,6 +183,5 @@ fn fetch_input_blocking(
         blocks,
         parent,
         da_state_diff_bytes,
-        bridge_params,
     })
 }

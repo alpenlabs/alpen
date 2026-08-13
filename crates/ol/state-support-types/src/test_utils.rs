@@ -22,8 +22,8 @@ pub(crate) fn create_test_genesis_state() -> OLState {
 /// epoch and slot.
 pub(crate) fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
     let mut params = OLParams::default();
-    params.header.slot = slot;
-    params.header.epoch = epoch;
+    params.genesis.header.slot = slot;
+    params.genesis.header.epoch = epoch;
     let state = OLState::from_genesis_params(&params)
         .expect("failed to create OLState from genesis params");
     MemoryStateBaseLayer::new(state)

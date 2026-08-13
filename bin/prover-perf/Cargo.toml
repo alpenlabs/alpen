@@ -55,6 +55,7 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-ol-params.workspace = true
 strata-predicate.workspace = true
 
 [features]

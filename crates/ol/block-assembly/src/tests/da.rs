@@ -5,9 +5,9 @@
 
 use std::sync::Arc;
 
-use strata_bridge_params::BridgeParams;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{
     DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer,
 };
@@ -120,7 +120,7 @@ async fn test_da_incremental_matches_replay() {
         &mut replay_da_state,
         &owned_blocks,
         parent_header,
-        BridgeParams::default(),
+        OLRuntimeParams::default(),
     )
     .expect("replay should succeed");
 
@@ -294,7 +294,7 @@ async fn test_rebuild_da_matches_incremental() {
     let rebuilt_state = rebuild_epoch_resource_state_upto(
         final_commitment,
         epoch,
-        BridgeParams::default(),
+        OLRuntimeParams::default(),
         env.ctx(),
     )
     .await

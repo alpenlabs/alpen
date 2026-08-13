@@ -15,6 +15,7 @@ strata-checkpoint-types.workspace = true
 strata-identifiers.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types.workspace = true
+strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
@@ -34,9 +35,7 @@ proptest.workspace = true
 strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-db-store-sled.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
-strata-asm-checkpoint-types = { workspace = true, features = [
-  "test-utils",
-] }
+strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
 strata-storage = { workspace = true, features = ["test-utils"] }
 strata-acct-types.workspace = true
 strata-ledger-types.workspace = true
