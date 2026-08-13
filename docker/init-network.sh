@@ -60,6 +60,8 @@ while [ $# -gt 0 ]; do
             echo "  BITCOIND_RPC_USER      Bitcoin RPC username"
             echo "  BITCOIND_RPC_PASSWORD  Bitcoin RPC password"
             echo "  ALPEN_CHAIN_CONFIG     optional path to EVM chain config JSON"
+            echo "  ALPEN_PREDICATE_FILE   path to OL Alpen account predicate metadata"
+            echo "  CHECKPOINT_PREDICATE_FILE path to ASM checkpoint predicate metadata"
             echo "  BRIDGE_DENOMINATION_SATS           bridge denomination in satoshis"
             echo "  MAX_WITHDRAWAL_AMOUNT_SATS         optional maximum withdrawal amount in satoshis"
             echo "  MAX_WITHDRAWAL_DESCRIPTOR_LEN      maximum withdrawal BOSD descriptor length"
@@ -260,19 +262,21 @@ GEOF
 
     OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
     if [ ! -f "${OL_PARAMS}" ]; then
+        : "${ALPEN_PREDICATE_FILE:?ALPEN_PREDICATE_FILE is required when generating ol-params.json}"
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
             gen-ol-params \
             -o "${OL_PARAMS}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --l1-anchor-file "${L1_ANCHOR}" \
             --ee-params "${EE_PARAMS}" \
-            ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"} \
+            --alpen-predicate-file "${ALPEN_PREDICATE_FILE}" \
             ${ALPEN_CHAIN_CONFIG:+--alpen-chain-config "$ALPEN_CHAIN_CONFIG"}
         echo "generated ${OL_PARAMS}"
     fi
 
     ASM_PARAMS="${OUTPUT_DIR}/asm-params.json"
     if [ ! -f "${ASM_PARAMS}" ]; then
+        : "${CHECKPOINT_PREDICATE_FILE:?CHECKPOINT_PREDICATE_FILE is required when generating asm-params.json}"
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
             gen-asm-params \
             -o "${ASM_PARAMS}" \
@@ -283,7 +287,7 @@ GEOF
             --l1-anchor-file "${L1_ANCHOR}" \
             --ol-params "${OL_PARAMS}" \
             --safe-harbour-address "${SAFE_HARBOUR_ADDRESS}" \
-            ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"}
+            --checkpoint-predicate-file "${CHECKPOINT_PREDICATE_FILE}"
         echo "generated ${ASM_PARAMS}"
     fi
 

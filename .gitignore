@@ -256,14 +256,8 @@ seq_key.bin
 provers/**/vks.rs
 
 # Prover generated files
-provers/**/*.elf
-provers/**/*.pk
-provers/**/*.vk
-provers/**/*.id
+provers/**/cache/
 provers/**/*.proof
-
-proving_keys/
-provers/sp1/proofs/
 
 *.trace
 *.*_proof

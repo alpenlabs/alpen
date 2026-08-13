@@ -7,6 +7,7 @@ use std::{
 };
 
 use bitcoin::{bip32::Xpriv, Network};
+use strata_predicate::PredicateKey;
 
 /// Bitcoin network environment variable.
 const BITCOIN_NETWORK_ENVVAR: &str = "BITCOIN_NETWORK";
@@ -78,6 +79,17 @@ pub(crate) fn parse_abbr_amt(s: &str) -> anyhow::Result<u64> {
     Ok(s.parse::<u64>()?)
 }
 
+/// Reads a serialized [`PredicateKey`] from a metadata file.
+pub(crate) fn read_predicate_key(path: &Path, label: &str) -> anyhow::Result<PredicateKey> {
+    let serialized = fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("failed to read {label} predicate file {path:?}: {e}"))?;
+    let serialized = serialized.trim();
+    let predicate: PredicateKey =
+        serde_json::from_value(serde_json::Value::String(serialized.to_owned()))
+            .map_err(|e| anyhow::anyhow!("failed to parse {label} predicate file {path:?}: {e}"))?;
+    Ok(predicate)
+}
+
 /// Resolves an [`Xpriv`] from the file path (if provided) or environment variable (if
 /// `--key-from-env` set). Only one source should be specified.
 ///
@@ -117,4 +129,58 @@ fn parse_xpriv_from_env(env: &'static str) -> anyhow::Result<Xpriv> {
     };
 
     Ok(xpriv)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use strata_predicate::{PredicateKey, PredicateTypeId};
+
+    use super::read_predicate_key;
+
+    #[test]
+    fn reads_predicate_key_from_metadata_file() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join("guest.predicate");
+        fs::write(&path, "AlwaysAccept:\n").unwrap();
+
+        let predicate = read_predicate_key(&path, "test").unwrap();
+
+        assert_eq!(predicate, PredicateKey::always_accept());
+    }
+
+    #[test]
+    fn reads_always_accept_shorthand() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join("guest.predicate");
+        fs::write(&path, "AlwaysAccept\n").unwrap();
+
+        let predicate = read_predicate_key(&path, "test").unwrap();
+
+        assert_eq!(predicate, PredicateKey::always_accept());
+    }
+
+    #[test]
+    fn rejects_invalid_predicate_metadata_file() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join("guest.predicate");
+        fs::write(&path, "not-a-predicate\n").unwrap();
+
+        let err = read_predicate_key(&path, "test").unwrap_err();
+
+        assert!(err.to_string().contains("failed to parse test predicate"));
+    }
+
+    #[test]
+    fn preserves_predicate_condition_bytes() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join("guest.predicate");
+        fs::write(&path, "Bip340Schnorr:010203\n").unwrap();
+
+        let predicate = read_predicate_key(&path, "test").unwrap();
+
+        assert_eq!(predicate.id(), PredicateTypeId::Bip340Schnorr.as_u8());
+        assert_eq!(predicate.condition(), &[1, 2, 3]);
+    }
 }

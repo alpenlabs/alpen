@@ -6,6 +6,9 @@ from pathlib import Path
 from common.config.config import BitcoindConfig
 
 DEFAULT_OL_BLOCK_TIME_MS = 5_000
+PREDICATE_FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "predicates"
+CHECKPOINT_TEST_PREDICATE_FILE = PREDICATE_FIXTURES_DIR / "checkpoint-bip340-schnorr-test.predicate"
+ALPEN_TEST_PREDICATE_FILE = PREDICATE_FIXTURES_DIR / "alpen-acct-bip340-schnorr-test.predicate"
 
 
 def run_datatool(
@@ -158,8 +161,8 @@ def generate_ol_params(
 
     args = [
         "gen-ol-params",
-        "--alpen-predicate",
-        "bip340-schnorr-test",
+        "--alpen-predicate-file",
+        str(ALPEN_TEST_PREDICATE_FILE),
         "--genesis-l1-height",
         str(genesis_l1_height),
         "-o",
@@ -215,8 +218,8 @@ def generate_asm_params(
 
     args = [
         "gen-asm-params",
-        "--checkpoint-predicate",
-        "bip340-schnorr-test",
+        "--checkpoint-predicate-file",
+        str(CHECKPOINT_TEST_PREDICATE_FILE),
         "--name",
         "ALPN",
         "--genesis-l1-height",

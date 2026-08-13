@@ -12,9 +12,9 @@ use strata_primitives::Buf32;
 use strata_snark_acct_runtime::IInnerState;
 
 use crate::{
-    acct_predicate::resolve_acct_predicate,
     args::{CmdContext, SubcOlParams},
     cmd::{ee_params::read_chain_config, genesis_info::retrieve_l1_anchor},
+    util::read_predicate_key,
 };
 
 /// Executes the `gen-ol-params` subcommand.
@@ -42,7 +42,7 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
     let ee_params = read_ee_params(ee_params_path)?;
     let mut ol_params = OLParams::new_empty(anchor.block, *ee_params.bridge_params());
 
-    let acct_predicate = resolve_acct_predicate(cmd.alpen_predicate)?;
+    let acct_predicate = read_predicate_key(&cmd.alpen_predicate_file, "Alpen account")?;
     let balance = BitcoinAmount::from_sat(cmd.alpen_balance.unwrap_or(0));
     let inner_state = resolve_inner_state(
         cmd.alpen_inner_state.as_deref(),
