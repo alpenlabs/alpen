@@ -300,7 +300,7 @@ terrors = "0.3.0"
 thiserror = "2.0.11"
 tokio = { version = "1.52", features = ["full"] }
 tokio-stream = "0.1.17"
-toml = "0.5"
+toml = "1.1"
 tower = "0.5"
 tower-http = { version = "0.7", default-features = false, features = ["cors"] }
 tracing = "0.1"

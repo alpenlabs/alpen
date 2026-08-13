@@ -8209,7 +8209,7 @@ dependencies = [
  "strata-zkvm-hosts",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.5.11",
+ "toml 1.1.2+spec-1.1.0",
  "tower 0.5.3",
  "tower-http 0.7.0",
  "tracing",
@@ -8845,7 +8845,7 @@ dependencies = [
  "bitcoin",
  "proptest",
  "serde",
- "toml 0.5.11",
+ "toml 1.1.2+spec-1.1.0",
  "zeroize",
 ]
 
@@ -9023,7 +9023,7 @@ dependencies = [
  "strata-sp1-guest-builder",
  "tempfile",
  "tokio",
- "toml 0.5.11",
+ "toml 1.1.2+spec-1.1.0",
  "zeroize",
 ]
 
@@ -9920,7 +9920,7 @@ dependencies = [
  "strata-signer",
  "strata-tasks",
  "tokio",
- "toml 0.5.11",
+ "toml 1.1.2+spec-1.1.0",
  "tracing",
  "zeroize",
 ]
