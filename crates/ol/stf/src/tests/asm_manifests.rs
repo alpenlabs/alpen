@@ -3,20 +3,26 @@
 use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_asm_checkpoint_types::CheckpointTip;
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
+use strata_asm_logs::{CheckpointTipUpdate, DepositLog, constants::AsmLogTypeId};
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
-    Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId,
+    Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId, SubjectIdBytes,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::MAX_TYPE;
+use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types::MAX_SEALING_MANIFEST_COUNT;
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::DaAccumulatingState;
 
 use crate::{
-    assembly::BlockComponents, context::BlockInfo, errors::ExecError, execute_block_batch_predrain,
+    assembly::BlockComponents,
+    context::{BasicExecContext, BlockInfo},
+    errors::ExecError,
+    execute_block_batch_predrain,
+    output::ExecOutputBuffer,
+    process_block_manifests, process_epoch_terminal,
     test_utils::*,
 };
 
@@ -327,4 +333,38 @@ fn test_manifest_processing_skips_malformed_deposit_log() {
         GENESIS_MANIFEST_SENTINEL_COUNT + 1
     );
     assert_eq!(state.limbo_funds(), BitcoinAmount::default());
+}
+
+/// A decoded deposit log whose raw amount exceeds the Bitcoin money supply must
+/// surface a clean [`ExecError`] at the epoch terminal drain, not panic on the
+/// amount conversion.
+#[test]
+fn test_oversized_deposit_amount_returns_clean_error() {
+    let mut state = make_genesis_state();
+
+    // A well-formed descriptor so processing reaches the amount conversion.
+    let dest_subject_bytes = SubjectIdBytes::try_new(SubjectId::from([42u8; 32]).inner().to_vec())
+        .expect("valid subject bytes");
+    let descriptor = DepositDescriptor::new(AccountSerial::new(9_999), dest_subject_bytes)
+        .expect("valid deposit descriptor");
+    let deposit = DepositLog::new(descriptor.encode_to_varvec(), u64::MAX);
+    let deposit_log = AsmLogEntry::from_log(&deposit).expect("deposit log should encode");
+
+    let manifest = FixtureAsmManifestBuilder::new_at_height(1)
+        .with_log(deposit_log)
+        .build();
+    process_block_manifests(&mut state, &[manifest])
+        .expect("buffering the manifest should succeed");
+
+    let outputs = ExecOutputBuffer::new_empty();
+    let block_info = BlockInfo::new(1, 1, 1);
+    let context = BasicExecContext::new(block_info, &outputs);
+
+    let err = process_epoch_terminal(&mut state, &context)
+        .expect_err("an oversized deposit amount should error, not panic");
+
+    assert!(
+        matches!(err.into_base(), ExecError::AmountOverflow),
+        "expected AmountOverflow"
+    );
 }

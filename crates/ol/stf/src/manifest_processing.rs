@@ -241,8 +241,7 @@ fn process_deposit_log<S: IStateAccessorMut>(
     deposit: &DepositLog,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    let amt_btc = BitcoinAmount::try_from(deposit.amount)
-        .expect("amount must not exceed the Bitcoin money supply");
+    let amt_btc = BitcoinAmount::try_from(deposit.amount).map_err(|_| ExecError::AmountOverflow)?;
 
     // Resolve the destination before minting any value.  All the fallible steps
     // run here so their errors propagate cleanly; only once we know whether the
