@@ -9727,7 +9727,7 @@ dependencies = [
  "itertools 0.14.0",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 3.0.3",
  "unescape",
 ]
 
