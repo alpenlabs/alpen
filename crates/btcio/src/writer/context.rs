@@ -108,4 +108,12 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
     pub fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
         self.signing_mode_provider.signing_mode()
     }
+
+    /// Returns the provider backing the envelope signing mode.
+    ///
+    /// Callers that outlive a single resolution should hold the provider and re-resolve, since the
+    /// mode tracks canonical state and changes when the sequencer predicate rotates.
+    pub fn signing_mode_provider(&self) -> Arc<dyn EnvelopeSigningModeProvider> {
+        self.signing_mode_provider.clone()
+    }
 }

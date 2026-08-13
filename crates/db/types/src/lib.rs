@@ -7,6 +7,7 @@ pub mod chunked_envelope;
 pub mod client_state;
 pub mod common;
 pub mod errors;
+pub mod fee_bump;
 pub mod l1;
 pub mod l1_broadcast;
 pub mod l1_writer;

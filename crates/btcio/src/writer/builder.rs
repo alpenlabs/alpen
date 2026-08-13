@@ -25,6 +25,7 @@ use bitcoind_async_client::{
     traits::{Reader, Signer, Wallet},
 };
 use rand::{rngs::OsRng, RngCore};
+use strata_config::btcio::FeeBumpingConfig;
 use strata_csm_types::L1Payload;
 use strata_l1_envelope_fmt::{builder::EnvelopeScriptBuilder, errors::EnvelopeBuildError};
 use strata_l1_txfmt::{self, MagicBytes, ParseConfig, TxFmtError};
@@ -45,7 +46,8 @@ pub struct EnvelopeConfig {
     pub sequencer_address: Address,
     /// Amount to send to reveal address.
     ///
-    /// NOTE: must be higher than the dust limit.
+    /// Every production caller passes the Bitcoin dust limit, so this only varies in tests. It is
+    /// not validated: a value below the dust limit would produce a non-standard reveal output.
     //
     // TODO(STR-3690): Make this and all other bitcoin related values to Amount
     pub reveal_amount: u64,
@@ -53,6 +55,8 @@ pub struct EnvelopeConfig {
     pub network: Network,
     /// Bitcoin fee rate.
     pub fee_rate: FeeRate,
+    /// Fee-bumping policy used to derive reveal fee headroom.
+    pub fee_bumping: FeeBumpingConfig,
     /// Sequencer public key for the taproot envelope script (SPS-51).
     ///
     /// Used as the `<pubkey>` in `<pubkey> CHECKSIG` of the envelope script.
@@ -70,6 +74,7 @@ impl EnvelopeConfig {
         network: Network,
         fee_rate: FeeRate,
         reveal_amount: u64,
+        fee_bumping: FeeBumpingConfig,
         envelope_pubkey: Option<XOnlyPublicKey>,
     ) -> Self {
         Self {
@@ -77,6 +82,7 @@ impl EnvelopeConfig {
             sequencer_address,
             reveal_amount,
             fee_rate,
+            fee_bumping,
             network,
             envelope_pubkey,
         }
@@ -142,9 +148,19 @@ pub struct EnvelopeData {
     pub taproot_spend_info: TaprootSpendInfo,
     /// The x-only public key committed to by the envelope reveal script.
     pub envelope_pubkey: XOnlyPublicKey,
+    /// Fee rate the envelope transactions were built at.
+    pub fee_rate: FeeRate,
+    /// Absolute fee paid by the commit transaction.
+    pub commit_fee: Amount,
+    /// Absolute fee paid by the reveal transaction.
+    pub reveal_fee: Amount,
 }
 
 impl EnvelopeData {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "EnvelopeData is a plain construction bundle for transaction metadata"
+    )]
     pub fn new(
         commit_tx: Transaction,
         reveal_tx: Transaction,
@@ -152,6 +168,9 @@ impl EnvelopeData {
         reveal_script: ScriptBuf,
         taproot_spend_info: TaprootSpendInfo,
         envelope_pubkey: XOnlyPublicKey,
+        fee_rate: FeeRate,
+        commit_fee: Amount,
+        reveal_fee: Amount,
     ) -> Self {
         Self {
             commit_tx,
@@ -160,6 +179,9 @@ impl EnvelopeData {
             reveal_script,
             taproot_spend_info,
             envelope_pubkey,
+            fee_rate,
+            commit_fee,
+            reveal_fee,
         }
     }
 }
@@ -182,9 +204,11 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         network,
         fee_rate,
         BITCOIN_DUST_LIMIT,
+        ctx.config.fee_bumping,
         Some(envelope_pubkey),
     );
-    create_envelope_transactions(&env_config, payload, utxos)
+    let envelope = create_envelope_transactions(&env_config, payload, utxos)?;
+    Ok(envelope)
 }
 
 /// Builds envelope transactions using a temporary keypair and signs both commit and reveal
@@ -206,6 +230,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
         network,
         fee_rate,
         BITCOIN_DUST_LIMIT,
+        ctx.config.fee_bumping,
         Some(pubkey),
     );
     let mut envelope = create_envelope_transactions(&env_config, payload, utxos)?;
@@ -287,16 +312,32 @@ pub fn create_envelope_transactions(
         &reveal_script,
         &tag_script,
         &taproot_spend_info,
+        &env_config.fee_bumping,
     )?;
 
+    let reveal_vsize = single_reveal_vsize(
+        &env_config.sequencer_address,
+        env_config.reveal_amount,
+        &reveal_script,
+        &tag_script,
+        &taproot_spend_info,
+    );
+    let reveal_vsize = u64::try_from(reveal_vsize).map_err(|_| EnvelopeError::FeeOverflow)?;
+    let headroom = reveal_fee_headroom(env_config.fee_rate, reveal_vsize, &env_config.fee_bumping)?;
+    let reveal_output_value = env_config
+        .reveal_amount
+        .checked_add(headroom)
+        .ok_or(EnvelopeError::FeeOverflow)?;
+
     // Build commit tx
-    let (commit_tx, _) = build_commit_transaction(
+    let (commit_tx, consumed_utxos) = build_commit_transaction(
         utxos,
         reveal_address,
         env_config.sequencer_address.clone(),
         commit_value,
         env_config.fee_rate,
     )?;
+    let commit_fee_sats = calculate_transaction_fee_from_utxos(&commit_tx, &consumed_utxos);
 
     let output_to_reveal = commit_tx.output[0].clone();
 
@@ -304,7 +345,7 @@ pub fn create_envelope_transactions(
     let reveal_tx = build_reveal_transaction(
         commit_tx.clone(),
         env_config.sequencer_address.clone(),
-        env_config.reveal_amount,
+        reveal_output_value,
         env_config.fee_rate,
         &reveal_script,
         tag_script,
@@ -312,6 +353,13 @@ pub fn create_envelope_transactions(
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
             .ok_or(anyhow!("Cannot create control block".to_string()))?,
     )?;
+    let reveal_fee_sats = commit_value.saturating_sub(
+        reveal_tx
+            .output
+            .iter()
+            .map(|output| output.value.to_sat())
+            .sum(),
+    );
 
     // Compute sighash for the reveal tx
     let sighash = compute_reveal_sighash(&reveal_tx, &output_to_reveal, &reveal_script)?;
@@ -323,7 +371,20 @@ pub fn create_envelope_transactions(
         reveal_script,
         taproot_spend_info,
         public_key,
+        env_config.fee_rate,
+        Amount::from_sat(commit_fee_sats),
+        Amount::from_sat(reveal_fee_sats),
     ))
+}
+
+fn calculate_transaction_fee_from_utxos(tx: &Transaction, utxos: &[ListUnspentItem]) -> u64 {
+    let input_total = utxos.iter().map(|utxo| utxo.amount.to_sat()).sum::<u64>();
+    let output_total = tx
+        .output
+        .iter()
+        .map(|output| output.value.to_sat())
+        .sum::<u64>();
+    input_total.saturating_sub(output_total)
 }
 
 /// Computes the taproot script-spend sighash for the reveal transaction.
@@ -588,8 +649,35 @@ pub(crate) fn calculate_commit_output_value(
     reveal_script: &script::ScriptBuf,
     tag_script: &script::ScriptBuf,
     taproot_spend_info: &TaprootSpendInfo,
+    fee_bumping: &FeeBumpingConfig,
 ) -> Result<u64, EnvelopeError> {
-    let reveal_vsize = get_size(
+    let reveal_vsize = single_reveal_vsize(
+        recipient,
+        reveal_value,
+        reveal_script,
+        tag_script,
+        taproot_spend_info,
+    );
+    let reveal_vsize = u64::try_from(reveal_vsize).map_err(|_| EnvelopeError::FeeOverflow)?;
+    let fee = fee_rate
+        .fee_vb(reveal_vsize)
+        .ok_or(EnvelopeError::FeeOverflow)?
+        .to_sat();
+    let headroom = reveal_fee_headroom(fee_rate, reveal_vsize, fee_bumping)?;
+    reveal_value
+        .checked_add(headroom)
+        .and_then(|value| value.checked_add(fee))
+        .ok_or(EnvelopeError::FeeOverflow)
+}
+
+fn single_reveal_vsize(
+    recipient: &Address,
+    reveal_value: u64,
+    reveal_script: &script::ScriptBuf,
+    tag_script: &script::ScriptBuf,
+    taproot_spend_info: &TaprootSpendInfo,
+) -> usize {
+    get_size(
         &default_txin(),
         &[
             TxOut {
@@ -607,11 +695,41 @@ pub(crate) fn calculate_commit_output_value(
                 .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
                 .expect("Cannot create control block"),
         ),
-    );
-    let fee = fee_sats_for_vsize(reveal_vsize, fee_rate)?;
-    reveal_value
-        .checked_add(fee)
-        .ok_or(EnvelopeError::FeeOverflow)
+    )
+}
+
+/// Derives the absolute fee headroom needed to fund the configured reveal replacement schedule.
+pub(crate) fn reveal_fee_headroom(
+    build_rate: FeeRate,
+    reveal_vsize: u64,
+    config: &FeeBumpingConfig,
+) -> Result<u64, EnvelopeError> {
+    let mut rate = build_rate.to_sat_per_vb_ceil();
+    let max_rate = config.max_fee_rate_sat_vb.get();
+
+    for _ in 0..config.max_attempts.get().saturating_sub(1) {
+        let additive = rate.saturating_add(config.min_fee_rate_delta_sat_vb.get());
+        let multiplicative = u128::from(rate)
+            .saturating_mul(u128::from(config.multiplier_bps))
+            .div_ceil(10_000);
+        let multiplicative = u64::try_from(multiplicative).unwrap_or(u64::MAX);
+        rate = additive.max(multiplicative).min(max_rate);
+        if rate >= max_rate {
+            break;
+        }
+    }
+
+    let top_fee = FeeRate::from_sat_per_vb(rate)
+        .and_then(|fee_rate| fee_rate.fee_vb(reveal_vsize))
+        .ok_or(EnvelopeError::FeeOverflow)?;
+    let base_fee = build_rate
+        .fee_vb(reveal_vsize)
+        .ok_or(EnvelopeError::FeeOverflow)?;
+
+    Ok(top_fee
+        .to_sat()
+        .saturating_sub(base_fee.to_sat())
+        .min(config.max_reveal_fee_headroom().to_sat()))
 }
 
 pub(crate) fn fee_sats_for_vsize(vsize: usize, fee_rate: FeeRate) -> Result<u64, EnvelopeError> {
@@ -685,7 +803,10 @@ pub fn attach_reveal_signature(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{
+        num::{NonZeroU32, NonZeroU64},
+        sync::Arc,
+    };
 
     use bitcoin::{
         absolute::LockTime,
@@ -794,6 +915,7 @@ mod tests {
             Network::Regtest,
             FeeRate::from_sat_per_vb_u32(1_000),
             546,
+            FeeBumpingConfig::default(),
             envelope_pubkey,
         )
     }
@@ -860,6 +982,15 @@ mod tests {
         }
     }
 
+    fn assert_all_inputs_opt_into_rbf(tx: &Transaction) {
+        assert!(
+            tx.input
+                .iter()
+                .all(|input| input.sequence == Sequence::ENABLE_RBF_NO_LOCKTIME),
+            "all writer-built transaction inputs must opt into RBF"
+        );
+    }
+
     #[test]
     fn test_build_reveal_transaction() {
         let (ctx, _, _, utxos) = get_mock_data();
@@ -878,12 +1009,35 @@ mod tests {
         ])
         .unwrap(); // should be 33 bytes
 
+        let fee_rate = FeeRate::from_sat_per_vb_u32(8);
+        let reveal_vsize = get_size(
+            &default_txin(),
+            &[
+                TxOut {
+                    value: Amount::ZERO,
+                    script_pubkey: tag_script.clone(),
+                },
+                TxOut {
+                    value: Amount::from_sat(ctx.config.reveal_amount),
+                    script_pubkey: ctx.sequencer_address.script_pubkey(),
+                },
+            ],
+            Some(&_reveal_script),
+            Some(&control_block),
+        );
+        let headroom = reveal_fee_headroom(
+            fee_rate,
+            u64::try_from(reveal_vsize).unwrap(),
+            &ctx.config.fee_bumping,
+        )
+        .unwrap();
+        let reveal_output_value = ctx.config.reveal_amount.checked_add(headroom).unwrap();
         let inp_txn = get_txn_from_utxo(utxo, &ctx.sequencer_address);
         let mut tx = super::build_reveal_transaction(
             inp_txn,
             ctx.sequencer_address.clone(),
-            ctx.config.reveal_amount,
-            FeeRate::from_sat_per_vb_u32(8),
+            reveal_output_value,
+            fee_rate,
             &_reveal_script,
             tag_script.clone(),
             &control_block,
@@ -895,10 +1049,14 @@ mod tests {
         tx.input[0].witness.push(control_block.serialize());
 
         assert_eq!(tx.input.len(), 1);
+        assert_all_inputs_opt_into_rbf(&tx);
         assert_eq!(tx.input[0].previous_output.vout, utxo.vout);
 
         assert_eq!(tx.output.len(), 2);
-        assert_eq!(tx.output[1].value.to_sat(), ctx.config.reveal_amount);
+        assert_eq!(
+            tx.output[1].value.to_sat(),
+            ctx.config.reveal_amount + headroom
+        );
         assert_eq!(
             tx.output[1].script_pubkey,
             ctx.sequencer_address.script_pubkey()
@@ -1032,6 +1190,7 @@ mod tests {
             unsigned.commit_tx.input[0].previous_output.vout, utxos[2].vout,
             "utxo should be chosen correctly"
         );
+        assert_all_inputs_opt_into_rbf(&unsigned.commit_tx);
 
         assert_eq!(
             unsigned.reveal_tx.input[0].previous_output.txid,
@@ -1042,6 +1201,7 @@ mod tests {
             unsigned.reveal_tx.input[0].previous_output.vout, 0,
             "reveal should use commit as input"
         );
+        assert_all_inputs_opt_into_rbf(&unsigned.reveal_tx);
 
         assert_eq!(
             unsigned.reveal_tx.output[1].script_pubkey,
@@ -1051,6 +1211,96 @@ mod tests {
 
         // Sighash should be non-zero
         assert_ne!(unsigned.sighash, Buf32::zero());
+    }
+
+    #[test]
+    fn single_envelope_funds_headroom_without_burning_it() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let env_config = EnvelopeConfig {
+            fee_rate: FeeRate::from_sat_per_vb(1).unwrap(),
+            ..test_envelope_config(&ctx, Some(test_envelope_pubkey()))
+        };
+        let envelope = create_envelope_transactions(&env_config, &test_payload(), utxos).unwrap();
+        let tag_script = ParseConfig::new(env_config.magic_bytes)
+            .encode_script_buf(&test_payload().tag().as_ref())
+            .unwrap();
+        let reveal_vsize = single_reveal_vsize(
+            &env_config.sequencer_address,
+            env_config.reveal_amount,
+            &envelope.reveal_script,
+            &tag_script,
+            &envelope.taproot_spend_info,
+        );
+        let reveal_vsize = u64::try_from(reveal_vsize).unwrap();
+        let base_fee = env_config.fee_rate.fee_vb(reveal_vsize).unwrap();
+        let headroom =
+            reveal_fee_headroom(env_config.fee_rate, reveal_vsize, &env_config.fee_bumping)
+                .unwrap();
+
+        assert!(headroom > 0);
+        assert_eq!(
+            envelope.commit_tx.output[0].value.to_sat(),
+            env_config.reveal_amount + base_fee.to_sat() + headroom
+        );
+        assert_eq!(
+            envelope.reveal_tx.output[1].value.to_sat(),
+            env_config.reveal_amount + headroom
+        );
+        assert_eq!(envelope.reveal_fee, base_fee);
+    }
+
+    #[test]
+    fn zero_derived_headroom_preserves_legacy_single_envelope_values() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let env_config = EnvelopeConfig {
+            fee_rate: FeeRate::from_sat_per_vb(1).unwrap(),
+            fee_bumping: FeeBumpingConfig {
+                max_attempts: NonZeroU32::new(1).unwrap(),
+                ..FeeBumpingConfig::default()
+            },
+            ..test_envelope_config(&ctx, Some(test_envelope_pubkey()))
+        };
+        let envelope = create_envelope_transactions(&env_config, &test_payload(), utxos).unwrap();
+        let base_fee = envelope.reveal_fee.to_sat();
+
+        assert_eq!(
+            envelope.commit_tx.output[0].value.to_sat(),
+            env_config.reveal_amount + base_fee
+        );
+        assert_eq!(
+            envelope.reveal_tx.output[1].value.to_sat(),
+            env_config.reveal_amount
+        );
+    }
+
+    #[test]
+    fn reveal_headroom_cap_binds_in_isolation() {
+        let fee_bumping = FeeBumpingConfig {
+            max_reveal_fee_headroom_sats: NonZeroU64::new(7).unwrap(),
+            ..FeeBumpingConfig::default()
+        };
+
+        assert_eq!(
+            reveal_fee_headroom(FeeRate::from_sat_per_vb(1).unwrap(), 200, &fee_bumping,).unwrap(),
+            7
+        );
+    }
+
+    #[test]
+    fn build_rate_at_or_above_max_rate_has_no_headroom() {
+        let fee_bumping = FeeBumpingConfig::default();
+
+        for build_rate in [1_000, 1_001] {
+            assert_eq!(
+                reveal_fee_headroom(
+                    FeeRate::from_sat_per_vb(build_rate).unwrap(),
+                    200,
+                    &fee_bumping,
+                )
+                .unwrap(),
+                0
+            );
+        }
     }
 
     #[test]

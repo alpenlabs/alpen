@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, str::FromStr};
+use std::{
+    collections::BTreeMap,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 
 use bitcoin::{
     absolute::{Height, LockTime},
@@ -55,6 +59,14 @@ pub struct TestBitcoinClient {
     pub send_raw_transaction_mode: SendRawTransactionMode,
     /// Value returned by the mock wallet UTXO.
     pub utxo_amount_sats: u64,
+    /// Fee estimate, in sat/vB, returned from `estimate_smart_fee`.
+    pub estimate_smart_fee_result: u32,
+    /// Confirmation targets received by `estimate_smart_fee`.
+    pub estimate_smart_fee_targets: Arc<Mutex<Vec<u16>>>,
+    /// Result returned from `wallet_process_psbt`.
+    pub wallet_process_psbt_result: Arc<Mutex<WalletProcessPsbt>>,
+    /// PSBT strings received by `wallet_process_psbt`.
+    pub wallet_process_psbt_calls: Arc<Mutex<Vec<String>>>,
 }
 
 /// Configures how [`TestBitcoinClient`] responds to `send_raw_transaction`.
@@ -78,6 +90,10 @@ impl TestBitcoinClient {
             included_height: 100,
             send_raw_transaction_mode: SendRawTransactionMode::Success,
             utxo_amount_sats: 10_000_000_000,
+            estimate_smart_fee_result: 3,
+            estimate_smart_fee_targets: Arc::new(Mutex::new(Vec::new())),
+            wallet_process_psbt_result: Arc::new(Mutex::new(default_wallet_process_psbt_result())),
+            wallet_process_psbt_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -89,6 +105,31 @@ impl TestBitcoinClient {
     pub fn with_utxo_amount_sats(mut self, sats: u64) -> Self {
         self.utxo_amount_sats = sats;
         self
+    }
+
+    pub fn with_estimate_smart_fee_result(mut self, fee_rate_sat_vb: u32) -> Self {
+        self.estimate_smart_fee_result = fee_rate_sat_vb;
+        self
+    }
+
+    pub fn estimate_smart_fee_targets(&self) -> Vec<u16> {
+        self.estimate_smart_fee_targets
+            .lock()
+            .expect("test: estimate_smart_fee_targets lock")
+            .clone()
+    }
+
+    pub fn with_wallet_process_psbt_result(self, complete: bool, hex: Option<Transaction>) -> Self {
+        *self.wallet_process_psbt_result.lock().unwrap() = WalletProcessPsbt {
+            psbt: test_psbt(),
+            complete,
+            hex,
+        };
+        self
+    }
+
+    pub fn wallet_process_psbt_calls(&self) -> Vec<String> {
+        self.wallet_process_psbt_calls.lock().unwrap().clone()
     }
 }
 
@@ -102,6 +143,24 @@ const TEST_BLOCKSTR: &str = "000000207d862a78fcb02ab24ebd154a20b9992af6d2f0c94d3
 /// [`rust-bitcoin` test](https://docs.rs/bitcoin/0.32.1/src/bitcoin/blockdata/transaction.rs.html#1638).
 pub const SOME_TX: &str = "0100000001a15d57094aa7a21a28cb20b59aab8fc7d1149a3bdbcddba9c622e4f5f6a99ece010000006c493046022100f93bb0e7d8db7bd46e40132d1f8242026e045f03a0efe71bbb8e3f475e970d790221009337cd7f1f929f00cc6ff01f03729b069a7c21b59b1736ddfee5db5946c5da8c0121033b9b137ee87d5a812d6f506efdd37f0affa7ffc310711c06c7f3e097c9447c52ffffffff0100e1f505000000001976a9140389035a9225b3839e2bbf32d826a1e222031fd888ac00000000";
 
+fn default_wallet_process_psbt_result() -> WalletProcessPsbt {
+    WalletProcessPsbt {
+        psbt: test_psbt(),
+        complete: true,
+        hex: Some(consensus::encode::deserialize_hex(SOME_TX).unwrap()),
+    }
+}
+
+fn test_psbt() -> Psbt {
+    Psbt::from_unsigned_tx(Transaction {
+        version: Version(2),
+        lock_time: LockTime::ZERO,
+        input: Vec::new(),
+        output: Vec::new(),
+    })
+    .expect("test unsigned transaction must convert to PSBT")
+}
+
 /// Generates a [`L1TxEntry`] with the provided status from [`SOME_TX`].
 pub fn gen_l1_tx_entry_with_status(status: L1TxStatus) -> L1TxEntry {
     let tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
@@ -110,20 +169,14 @@ pub fn gen_l1_tx_entry_with_status(status: L1TxStatus) -> L1TxEntry {
     entry
 }
 
-fn empty_test_psbt() -> Psbt {
-    Psbt::from_unsigned_tx(Transaction {
-        version: Version(2),
-        lock_time: LockTime::ZERO,
-        input: vec![],
-        output: vec![],
-    })
-    .unwrap()
-}
-
 impl Reader for TestBitcoinClient {
-    async fn estimate_smart_fee(&self, _conf_target: u16) -> ClientResult<EstimateSmartFee> {
+    async fn estimate_smart_fee(&self, conf_target: u16) -> ClientResult<EstimateSmartFee> {
+        self.estimate_smart_fee_targets
+            .lock()
+            .expect("test: estimate_smart_fee_targets lock")
+            .push(conf_target);
         Ok(EstimateSmartFee {
-            fee_rate: Some(bitcoin::FeeRate::from_sat_per_vb_u32(3)),
+            fee_rate: Some(FeeRate::from_sat_per_vb_u32(self.estimate_smart_fee_result)),
             errors: None,
             blocks: 1,
         })
@@ -439,7 +492,7 @@ impl Wallet for TestBitcoinClient {
         _bip32_derivs: Option<bool>,
     ) -> ClientResult<WalletCreateFundedPsbt> {
         Ok(WalletCreateFundedPsbt {
-            psbt: empty_test_psbt(),
+            psbt: test_psbt(),
             fee: SignedAmount::from_btc(0.001).unwrap(),
             change_position: 0,
         })
@@ -510,16 +563,16 @@ impl Signer for TestBitcoinClient {
 
     async fn wallet_process_psbt(
         &self,
-        _psbt: &str,
+        psbt: &str,
         _sign: Option<bool>,
         _sighashtype: Option<SighashType>,
         _bip32_derivs: Option<bool>,
     ) -> ClientResult<WalletProcessPsbt> {
-        Ok(WalletProcessPsbt {
-            psbt: empty_test_psbt(),
-            complete: true,
-            hex: None,
-        })
+        self.wallet_process_psbt_calls
+            .lock()
+            .unwrap()
+            .push(psbt.to_string());
+        Ok(self.wallet_process_psbt_result.lock().unwrap().clone())
     }
 
     async fn psbt_bump_fee(
@@ -528,7 +581,7 @@ impl Signer for TestBitcoinClient {
         _options: Option<PsbtBumpFeeOptions>,
     ) -> ClientResult<PsbtBumpFee> {
         Ok(PsbtBumpFee {
-            psbt: empty_test_psbt(),
+            psbt: test_psbt(),
             original_fee: Amount::from_btc(0.001).unwrap(),
             fee: Amount::from_btc(0.01).unwrap(),
             errors: vec![],
@@ -616,7 +669,7 @@ pub(crate) mod test_context {
     use std::sync::Arc;
 
     use bitcoin::{secp256k1::SecretKey, Address, Network};
-    use strata_config::btcio::{FeePolicy, L1FeePolicyConfig, WriterConfig};
+    use strata_config::btcio::{FeeBumpingConfig, FeePolicy, L1FeePolicyConfig, WriterConfig};
     use strata_l1_txfmt::MagicBytes;
     use strata_status::StatusChannel;
     use strata_test_utils::ArbitraryGenerator;
@@ -657,5 +710,34 @@ pub(crate) mod test_context {
     pub(crate) fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
         let client = Arc::new(TestBitcoinClient::new(1));
         get_writer_context_with_client(client)
+    }
+
+    /// Builds a writer context with RBF fee bumping enabled.
+    pub(crate) fn get_fee_bumping_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
+        get_fee_bumping_writer_context_with_client(Arc::new(TestBitcoinClient::new(1)))
+    }
+
+    /// Builds a writer context with RBF fee bumping enabled around `client`.
+    pub(crate) fn get_fee_bumping_writer_context_with_client(
+        client: Arc<TestBitcoinClient>,
+    ) -> Arc<WriterContext<TestBitcoinClient>> {
+        let base = get_writer_context_with_client(client.clone());
+        let config = Arc::new(WriterConfig {
+            fee_bumping: FeeBumpingConfig {
+                ..FeeBumpingConfig::default()
+            },
+            ..(*base.config).clone()
+        });
+        let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
+        let (pubkey, _) = sk.x_only_public_key(super::SECP256K1);
+        let ctx = WriterContext::new(
+            base.btcio_params,
+            config,
+            base.sequencer_address.clone(),
+            client,
+            base.status_channel.clone(),
+        )
+        .with_envelope_pubkey(&pubkey.serialize());
+        Arc::new(ctx)
     }
 }
