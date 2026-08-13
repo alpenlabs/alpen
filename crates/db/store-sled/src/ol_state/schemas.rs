@@ -1,7 +1,7 @@
 use sled::IVec;
 use ssz::{Decode, Encode};
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
 use typed_sled::codec::{CodecError, ValueCodec};
 
 use crate::{define_table_without_codec, impl_codec_key_codec, impl_codec_value_codec};

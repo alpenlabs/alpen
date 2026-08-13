@@ -30,6 +30,7 @@ strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
 strata-ol-stf-v1.workspace = true
+strata-ol-tx-types-v1.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
@@ -63,6 +64,7 @@ test-utils = [
   "strata-db-store-sled/test_utils",
   "strata-bridge-params/test-defaults",
   "strata-ol-chain-types-v1/test-utils",
+  "strata-ol-tx-types-v1/test-utils",
   "strata-ol-params/test-defaults",
   "strata-storage/test-utils",
 ]
@@ -80,6 +82,7 @@ strata-db-store-sled.workspace = true
 strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
+strata-ol-tx-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-msg-types.workspace = true
 strata-predicate.workspace = true

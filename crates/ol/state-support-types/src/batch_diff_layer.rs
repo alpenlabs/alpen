@@ -8,8 +8,8 @@ use std::fmt;
 
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::{IStateAccessor, PendingAsmLog, StateResult};
-use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
+use strata_ol_state_types::{IStateAccessor, PendingAsmLog, StateResult};
+use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, WriteBatch};
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
 
@@ -258,8 +258,8 @@ impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrite
 mod tests {
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
     use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
-    use strata_ledger_types::{IAccountState, IStateAccessor, IStateAccessorMut};
-    use strata_ol_state_types::OLAccountState;
+    use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
+    use strata_ol_state_types_v1::OLAccountState;
 
     use super::*;
     use crate::{

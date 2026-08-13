@@ -13,12 +13,13 @@ use strata_acct_types::{
 use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
-use strata_ledger_types::{IAccountState, IAccountStateMut, IStateAccessor, IStateAccessorMut};
-use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLTransaction};
+use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::IComputeStateRootWithWrites;
-use strata_ol_state_types::IStateBatchApplicable;
+use strata_ol_state_types::{IAccountState, IAccountStateMut, IStateAccessor, IStateAccessorMut};
+use strata_ol_state_types_v1::IStateBatchApplicable;
+use strata_ol_tx_types_v1::OLTransaction;
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
 use tracing::debug;

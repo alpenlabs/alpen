@@ -9,12 +9,12 @@ use strata_codec::decode_buf_exact;
 use strata_identifiers::{
     Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId, SubjectIdBytes,
 };
-use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::MAX_TYPE;
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_chain_types::MAX_SEALING_MANIFEST_COUNT;
+use strata_ol_chain_types_v1::MAX_SEALING_MANIFEST_COUNT;
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::DaAccumulatingState;
+use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 
 use crate::{
     assembly::BlockComponents,

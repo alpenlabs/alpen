@@ -1,9 +1,9 @@
 //! Toplevel state.
 
 use strata_acct_types::{AccountId, AccountSerial, Mmr64, SYSTEM_RESERVED_ACCTS, StrataHasher};
-use strata_ledger_types::{IAccountState, NewAccountData, StateError, StateResult};
 use strata_merkle::Mmr;
 use strata_ol_params::OLParams;
+use strata_ol_state_types::{IAccountState, NewAccountData, StateError, StateResult};
 
 use crate::{
     MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeState, OLSnarkAccountState, WriteBatch,
@@ -330,7 +330,7 @@ fn ensure_pending_asm_logs_fit(current: u64, adding: u64) -> StateResult<()> {
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
-    use strata_ledger_types::{IAccountState, NewAccountData};
+    use strata_ol_state_types::{IAccountState, NewAccountData};
     use strata_predicate::PredicateKey;
 
     use super::*;

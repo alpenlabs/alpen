@@ -4,7 +4,7 @@ use strata_acct_types::{ADMIN_MSG_ACCT_ID, MessageEntry};
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::EePredicateKeyUpdate;
 use strata_identifiers::AccountSerial;
-use strata_ledger_types::{IAccountState, ISnarkAccountState};
+use strata_ol_state_types::{IAccountState, ISnarkAccountState};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{

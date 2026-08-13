@@ -371,11 +371,11 @@ mod tests {
         MmrId,
     };
     use strata_identifiers::{Buf32, Buf64, Hash, OLBlockId};
-    use strata_ol_chain_types::{
+    use strata_ol_chain_types_v1::{
         BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
     use strata_ol_params::OLParams;
-    use strata_ol_state_types::{OLState, MMR_SENTINEL_DUMMY_LEAF_HASH};
+    use strata_ol_state_types_v1::{OLState, MMR_SENTINEL_DUMMY_LEAF_HASH};
     use strata_storage::MmrIndexManager;
     use tokio::runtime::Runtime;
 

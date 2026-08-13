@@ -4,7 +4,7 @@
 
 use ssz_types::VariableList;
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
-use strata_ledger_types::{IAccountState, NewAccountData, StateError, StateResult};
+use strata_ol_state_types::{IAccountState, NewAccountData, StateError, StateResult};
 
 use crate::ssz_generated::ssz::state::{OLAccountState, TsnlAccountEntry, TsnlLedgerAccountsTable};
 
@@ -123,7 +123,7 @@ impl TsnlAccountEntry {
 mod tests {
     use ssz::{Decode, Encode};
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
-    use strata_ledger_types::IAccountState;
+    use strata_ol_state_types::IAccountState;
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;

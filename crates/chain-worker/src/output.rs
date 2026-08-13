@@ -1,9 +1,9 @@
 //! Output types for block execution.
 
 use strata_identifiers::Buf32;
-use strata_ol_chain_types::OLLog;
+use strata_ol_chain_types_v1::OLLog;
 use strata_ol_state_support_types::IndexerWrites;
-use strata_ol_state_types::{OLAccountState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountState, WriteBatch};
 
 /// Output from executing a block with the OL STF.
 ///

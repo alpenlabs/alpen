@@ -46,7 +46,7 @@ use std::iter;
 
 use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, L1BlockRecord};
 use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height, OLBlockId};
-use strata_ledger_types::{
+use strata_ol_state_types::{
     Coin, IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut,
     IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState, StateError,
 };

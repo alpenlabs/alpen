@@ -1,7 +1,7 @@
 //! In-flight message payload carrying linear-typed value.
 
 use strata_acct_types::{BitcoinAmount, MsgPayload, MsgPayloadData};
-use strata_ledger_types::Coin;
+use strata_ol_state_types::Coin;
 
 /// A message payload whose value is carried as a linear [`Coin`] rather than a
 /// plain [`BitcoinAmount`].

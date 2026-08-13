@@ -10,10 +10,10 @@ use strata_acct_types::{
 };
 use strata_da_framework::decode_buf_exact;
 use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
-use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, OLSnarkAccountState, WriteBatch};
+use strata_ol_state_types::*;
+use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLSnarkAccountState, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::Seqno;
 

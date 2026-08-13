@@ -9,10 +9,11 @@ use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{Buf32, OLBlockCommitment, SubjectId};
-use strata_ledger_types::{IAccountState, IStateAccessor};
-use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLTransaction, OLTransactionData, TxProofs};
+use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
+use strata_ol_state_types::{IAccountState, IStateAccessor};
+use strata_ol_tx_types_v1::{OLTransaction, OLTransactionData, TxProofs};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{

@@ -6,7 +6,7 @@
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
 
 #[cfg(feature = "proxies")]
 use crate::DbError;

@@ -3,8 +3,8 @@
 use argh::FromArgs;
 use strata_checkpoint_types::reconstruct_terminal_header;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_ledger_types::IStateAccessor;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
+use strata_ol_state_types::IStateAccessor;
 use strata_storage::NodeStorage;
 
 use crate::{
@@ -168,9 +168,9 @@ mod tests {
     use strata_identifiers::{
         Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
     };
-    use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
     use strata_ol_params::OLParams;
-    use strata_ol_state_types::OLState;
+    use strata_ol_state_types_v1::OLState;
     use strata_storage::create_node_storage;
     use tokio::runtime::{Handle, Runtime};
 

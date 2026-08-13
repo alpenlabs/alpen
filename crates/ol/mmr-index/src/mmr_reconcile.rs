@@ -1,7 +1,7 @@
 use strata_acct_types::Mmr64;
 use strata_db_types::MmrId;
 use strata_identifiers::AccountId;
-use strata_ledger_types::IStateAccessor;
+use strata_ol_state_types::IStateAccessor;
 
 use crate::{
     MmrIndexEntry, OLMmrIndexAhead, OLMmrIndexDivergence, OLMmrIndexError,

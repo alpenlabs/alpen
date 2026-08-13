@@ -1,6 +1,6 @@
 use strata_asm_checkpoint_types::{CheckpointTip, TerminalHeaderComplement};
 use strata_identifiers::{Buf32, Epoch, OLBlockId};
-use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
+use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
 use thiserror::Error;
 
 /// Errors produced while reconstructing a checkpoint terminal header.
@@ -61,7 +61,7 @@ pub fn reconstruct_terminal_header(
 mod tests {
     use strata_asm_checkpoint_types::{CheckpointTip, TerminalHeaderComplement};
     use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-    use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
 
     use super::{reconstruct_terminal_header, TerminalHeaderReconstructionError};
 

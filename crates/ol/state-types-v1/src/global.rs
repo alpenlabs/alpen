@@ -2,7 +2,7 @@
 
 use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_identifiers::Slot;
-use strata_ledger_types::Coin;
+use strata_ol_state_types::Coin;
 
 use crate::ssz_generated::ssz::state::GlobalState;
 

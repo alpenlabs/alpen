@@ -5,12 +5,12 @@ use std::result::Result as StdResult;
 use strata_acct_types::AcctError;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Buf64, OLBlockCommitment};
-use strata_ledger_types::StateError;
-use strata_ol_chain_types::{OLBlock, SignedOLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlock, SignedOLBlockHeader};
 use strata_ol_params::OLParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::OLState;
-use strata_ol_stf::{
+use strata_ol_state_types::StateError;
+use strata_ol_state_types_v1::OLState;
+use strata_ol_stf_v1::{
     BlockComponents, BlockContext, BlockInfo, ExecError, execute_and_complete_block,
 };
 use thiserror::Error;

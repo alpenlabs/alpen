@@ -9,9 +9,9 @@ use std::{
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
 use strata_ol_params::OLParams;
 use strata_ol_state_provider::StateProvider;
+use strata_ol_state_types::{IAccountStateMut, IStateAccessorMut};
 use strata_predicate::PredicateKey;
 use strata_service::ServiceState;
 use tracing::warn;
@@ -421,7 +421,7 @@ mod tests {
 
     use strata_config::BlockAssemblyConfig;
     use strata_identifiers::{AccountSerial, Buf32, Buf64};
-    use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLLog, SignedOLBlockHeader};
+    use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader, OLLog, SignedOLBlockHeader};
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_ol_state_support_types::EpochDaAccumulator;
     use strata_predicate::PredicateKey;

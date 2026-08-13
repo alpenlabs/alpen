@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use strata_identifiers::{Epoch, OLBlockCommitment};
-use strata_ol_state_types::OLState;
+use strata_ol_state_types_v1::OLState;
 
 /// Reconciliation target for OL-owned MMR indexes and related indexing rows.
 #[derive(Clone, Debug)]

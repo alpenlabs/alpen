@@ -10,7 +10,7 @@ use strata_db_types::{DbError, DbResult, MmrId, RawMmrId};
 use strata_identifiers::{Epoch, Hash, OLBlockCommitment};
 use strata_ol_mmr_index::OLMmrIndexError;
 use strata_ol_params::{BridgeParams, OLParams};
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch, MMR_SENTINEL_DUMMY_LEAF_HASH};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch, MMR_SENTINEL_DUMMY_LEAF_HASH};
 use strata_storage::{test_runtime_handle, MmrIndexManager};
 
 use super::{

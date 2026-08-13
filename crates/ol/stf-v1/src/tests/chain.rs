@@ -1,6 +1,6 @@
 //! Tests for chain lifecycle behavior (genesis, progression, and epoch transitions).
 
-use strata_ledger_types::IStateAccessor;
+use strata_ol_state_types::IStateAccessor;
 
 use crate::{assembly::BlockComponents, context::BlockInfo, test_utils::*};
 

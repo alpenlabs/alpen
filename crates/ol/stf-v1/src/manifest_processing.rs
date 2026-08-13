@@ -10,12 +10,12 @@ use strata_asm_logs::{
 };
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
-use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_msg_types::{
     DEPOSIT_MSG_TYPE_ID, DepositMsgData, PREDICATE_UPDATE_MSG_TYPE_ID, PredicateUpdateMsgData,
 };
+use strata_ol_state_types::*;
 use strata_predicate::PredicateKey;
 use tracing::{debug, info, trace, warn};
 
@@ -36,7 +36,7 @@ use crate::{
 /// ASM-log *effects* are deferred to [`process_epoch_terminal`].
 ///
 /// Accepts a plain slice rather than the per-block
-/// [`OLAsmManifestContainer`](strata_ol_chain_types::OLAsmManifestContainer)
+/// [`OLAsmManifestContainer`](strata_ol_chain_types_v1::OLAsmManifestContainer)
 /// so callers replaying a whole epoch (e.g. checkpoint proving) are not bound
 /// by the per-block `MAX_SEALING_MANIFEST_COUNT` limit.
 ///

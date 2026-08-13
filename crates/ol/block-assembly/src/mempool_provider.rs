@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use strata_identifiers::OLTxId;
-use strata_ol_chain_types::OLTransaction;
 use strata_ol_mempool::{MempoolHandle, MempoolTxInvalidReason};
+use strata_ol_tx_types_v1::OLTransaction;
 
 use crate::{BlockAssemblyError, BlockAssemblyResult};
 

@@ -1,6 +1,6 @@
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
 
 use crate::{
     define_table_without_codec, impl_cbor_value_codec, impl_codec_key_codec,

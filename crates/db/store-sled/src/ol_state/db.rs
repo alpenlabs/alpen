@@ -1,7 +1,7 @@
 use strata_db_types::DbResult;
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
 
 use super::schemas::{OLStateSchema, OLWriteBatchSchema};
 use crate::define_sled_database;

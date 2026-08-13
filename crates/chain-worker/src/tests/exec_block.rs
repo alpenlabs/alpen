@@ -18,9 +18,9 @@ use strata_db_types::errors::DbError;
 use strata_identifiers::{
     Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId, SubjectId,
 };
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::test_utils::{
+use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
+use strata_ol_stf_v1::test_utils::{
     EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, epoch_runner_run_genesis as run_genesis,
     epoch_runner_run_terminal as run_terminal, epoch_runner_seed_accounts as seed_accounts,
     make_deposit_manifest_for_account, make_genesis_state,

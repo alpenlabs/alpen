@@ -8,7 +8,7 @@ use std::fmt;
 
 use strata_acct_types::*;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::*;
+use strata_ol_state_types::*;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 

@@ -3,11 +3,11 @@
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_asm_manifest_types::AsmLogEntry;
 use strata_identifiers::{AccountSerial, Epoch, L1Height, Slot};
-use strata_ledger_types::{
+use strata_ol_params::OLParams;
+use strata_ol_state_types::{
     ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState, PendingAsmLog,
 };
-use strata_ol_params::OLParams;
-use strata_ol_state_types::{OLSnarkAccountState, OLState};
+use strata_ol_state_types_v1::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 
 use crate::memory_state_layer::MemoryStateBaseLayer;

@@ -1,8 +1,8 @@
 //! Snark account update processing.
 
 use strata_acct_types::{AccountId, TxEffects};
-use strata_ledger_types::{IAccountState, TxProofVerifier};
-use strata_ol_chain_types::*;
+use strata_ol_state_types::{IAccountState, TxProofVerifier};
+use strata_ol_tx_types_v1::*;
 use strata_snark_acct_sys::SnarkAccountUpdateData;
 use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno};
 

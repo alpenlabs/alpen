@@ -6,7 +6,7 @@ use strata_db_types::{
     ol_state::OLStateDatabase,
 };
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_chain_types::OLBlock;
+use strata_ol_chain_types_v1::OLBlock;
 use strata_primitives::l1::L1BlockId;
 
 use crate::{
@@ -417,11 +417,11 @@ mod tests {
     use strata_db_store_sled::{test_utils::get_test_sled_backend, SledBackend};
     use strata_db_types::{ol_block::OLBlockDatabase, ol_state::OLStateDatabase};
     use strata_identifiers::{Buf32, Buf64};
-    use strata_ol_chain_types::{
+    use strata_ol_chain_types_v1::{
         BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
     use strata_ol_params::OLParams;
-    use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+    use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
 
     use super::*;
 

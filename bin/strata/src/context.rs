@@ -558,7 +558,7 @@ mod tests {
     use strata_config::{Config, SequencerConfig};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, Buf64, OLBlockId};
-    use strata_ol_chain_types::{
+    use strata_ol_chain_types_v1::{
         BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
     use strata_ol_params::OLParams;

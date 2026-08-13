@@ -3,7 +3,7 @@
 use ssz_types::VariableList;
 use strata_asm_manifest_types::AsmLogEntry;
 use strata_identifiers::L1Height;
-use strata_ledger_types::{PendingAsmLog, StateError};
+use strata_ol_state_types::{PendingAsmLog, StateError};
 
 use crate::ssz_generated::ssz::state::*;
 

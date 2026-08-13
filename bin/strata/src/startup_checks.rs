@@ -10,7 +10,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -791,10 +791,10 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{MmrId, ol_block::BlockStatus};
     use strata_identifiers::{Buf32, L1BlockId};
-    use strata_ledger_types::IStateAccessorMut;
     use strata_ol_params::OLParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
+    use strata_ol_state_types::IStateAccessorMut;
+    use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use strata_storage::{NodeStorage, create_node_storage};
 
     use super::*;

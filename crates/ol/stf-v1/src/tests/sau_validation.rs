@@ -1,7 +1,7 @@
 //! Tests for snark account update validation errors.
 
 use strata_acct_types::{AcctError, BitcoinAmount};
-use strata_ledger_types::{IAccountState, ISnarkAccountState};
+use strata_ol_state_types::{IAccountState, ISnarkAccountState};
 
 use crate::{errors::ExecError, test_utils::*};
 

@@ -30,12 +30,12 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{
+use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog as ChainOLLog,
 };
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::OLState;
 
 use super::fixture::{BlockPlan, BuiltEpoch, EpochPlan, UpdateEffect, build_epoch};
 use crate::{
@@ -124,7 +124,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
         &self,
         _commitment: OLBlockCommitment,
     ) -> WorkerResult<
-        Option<strata_ol_state_types::WriteBatch<strata_ol_state_types::OLAccountState>>,
+        Option<strata_ol_state_types_v1::WriteBatch<strata_ol_state_types_v1::OLAccountState>>,
     > {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
@@ -836,8 +836,8 @@ mod db_idempotency {
         ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
     };
     use strata_identifiers::{AccountId, Hash};
-    use strata_ledger_types::IStateAccessor;
     use strata_ol_state_support_types::{L1BlockRecordWrite, MemoryStateBaseLayer};
+    use strata_ol_state_types::IStateAccessor;
     use strata_storage::{
         MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
         OLStateManager,

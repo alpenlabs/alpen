@@ -1,7 +1,7 @@
 //! General bookkeeping to ensure that the chain evolves correctly.
 
 use strata_identifiers::EpochCommitment;
-use strata_ledger_types::{IStateAccessor, IStateAccessorMut};
+use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
 
 use crate::{
     context::{BlockContext, EpochInitialContext},

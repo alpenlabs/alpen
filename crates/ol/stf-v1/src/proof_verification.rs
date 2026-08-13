@@ -2,12 +2,12 @@
 #![expect(missing_debug_implementations, reason = "opaque hash types")]
 
 use strata_acct_types::{AccumulatorClaim, Mmr64, RawMerkleProof};
-use strata_ledger_types::{
+use strata_merkle::Mmr64B32;
+use strata_ol_state_types::{
     AccountTypeStateRef, IAccountState, ISnarkAccountState, IStateAccessor, ProofVerifyError,
     TxProofVerifier,
 };
-use strata_merkle::Mmr64B32;
-use strata_ol_chain_types::{ProofSatisfierList, RawMerkleProofList, TxProofs};
+use strata_ol_tx_types_v1::{ProofSatisfierList, RawMerkleProofList, TxProofs};
 use strata_predicate::PredicateKey;
 use tracing::warn;
 
@@ -216,7 +216,7 @@ impl TxProofVerifier for TxProofVerifierImpl<'_> {
 #[cfg(test)]
 mod tests {
     use strata_acct_types::RawMerkleProof;
-    use strata_ol_chain_types::{ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs};
+    use strata_ol_tx_types_v1::{ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs};
     use strata_predicate::{PredicateError, PredicateKey, PredicateTypeId};
 
     use super::*;

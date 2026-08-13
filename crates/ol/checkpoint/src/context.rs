@@ -9,10 +9,10 @@ use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
-use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
+use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_ol_state_types::OLState;
-use strata_ol_stf::execute_block_batch_predrain;
+use strata_ol_state_types_v1::OLState;
+use strata_ol_stf_v1::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
@@ -450,7 +450,7 @@ mod tests {
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, OLBlockId};
-    use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
     use strata_storage::create_node_storage;
 
     use super::{CheckpointWorkerContext, CheckpointWorkerContextImpl};

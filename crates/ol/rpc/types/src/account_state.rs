@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{AccountId, OLBlockId};
-use strata_ledger_types::{IAccountState, ISnarkAccountState};
+use strata_ol_state_types::{IAccountState, ISnarkAccountState};
 use strata_predicate::PredicateKey;
 use strata_primitives::HexBytes32;
 

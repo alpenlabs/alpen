@@ -7,7 +7,7 @@ use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_utils::CodecSsz;
 use strata_identifiers::{EpochCommitment, L1BlockId, L1Height, Slot};
-use strata_ledger_types::{IAccountState, NewAccountData, PendingAsmLog};
+use strata_ol_state_types::{IAccountState, NewAccountData, PendingAsmLog};
 
 use crate::SerialMap;
 

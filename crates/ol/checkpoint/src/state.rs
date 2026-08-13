@@ -220,15 +220,14 @@ mod tests {
         AccountSerial, Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment,
         test_utils::{buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy},
     };
-    use strata_ledger_types::{IAccountState, IStateAccessor};
-    use strata_ol_chain_types::{
-        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLBlockId, OLLog, OLTransaction,
-        OLTransactionData, OLTxSegment, SignedOLBlockHeader, SimpleWithdrawalIntentLogData,
-        TxProofs,
+    use strata_ol_chain_types_v1::{
+        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLBlockId, OLLog, OLTxSegment,
+        SignedOLBlockHeader, SimpleWithdrawalIntentLogData,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::OLState;
-    use strata_ol_stf::{
+    use strata_ol_state_types::{IAccountState, IStateAccessor};
+    use strata_ol_state_types_v1::OLState;
+    use strata_ol_stf_v1::{
         BlockComponents,
         test_utils::{
             EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker,
@@ -239,6 +238,7 @@ mod tests {
             make_withdrawal_payload, snark_inbox_msg, to_ol_block,
         },
     };
+    use strata_ol_tx_types_v1::{OLTransaction, OLTransactionData, TxProofs};
     use strata_primitives::epoch::EpochCommitment;
     use strata_storage::create_node_storage;
 

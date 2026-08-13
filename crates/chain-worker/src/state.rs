@@ -22,11 +22,8 @@ use strata_checkpoint_types::{
 use strata_common::{BAIL_CHAIN_WORKER_AFTER_MMR_INDEX, check_bail_trigger};
 use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment};
-use strata_ledger_types::{
-    IAccountState, ISnarkAccountState, IStateAccessor, StateError, StateResult,
-};
 use strata_msg_fmt::{Msg, MsgRef};
-use strata_ol_chain_types::{
+use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLLogType,
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
@@ -34,8 +31,11 @@ use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate, WriteTrackingState,
 };
-use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
+use strata_ol_state_types::{
+    IAccountState, ISnarkAccountState, IStateAccessor, StateError, StateResult,
+};
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
+use strata_ol_stf_v1::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_snark_acct_types::Seqno;
@@ -954,9 +954,9 @@ fn build_epoch_summary(
 mod tests {
     use strata_acct_types::Hash;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
-    use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
     use strata_ol_state_support_types::IndexerWrites;
-    use strata_ol_state_types::{
+    use strata_ol_state_types_v1::{
         OLAccountState, WriteBatch, test_utils::create_test_genesis_state,
     };
 
@@ -1025,8 +1025,8 @@ mod tests {
     #[test]
     fn rebuild_snark_records_stamps_terminal_root_only() {
         use strata_acct_types::BitcoinAmount;
-        use strata_ledger_types::{IStateAccessorMut, NewAccountData, NewAccountTypeState};
         use strata_ol_state_support_types::MemoryStateBaseLayer;
+        use strata_ol_state_types::{IStateAccessorMut, NewAccountData, NewAccountTypeState};
         use strata_predicate::PredicateKey;
 
         let account_id = AccountId::from([7u8; 32]);

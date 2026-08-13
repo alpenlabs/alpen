@@ -22,14 +22,15 @@ use strata_db_types::{
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::*;
-use strata_ledger_types::*;
-use strata_ol_chain_types::*;
+use strata_ol_chain_types_v1::*;
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::*;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::{OLAccountState, OLAccountTypeState, OLState, WriteBatch};
+use strata_ol_state_types::*;
+use strata_ol_state_types_v1::{OLAccountState, OLAccountTypeState, OLState, WriteBatch};
+use strata_ol_tx_types_v1::*;
 use strata_predicate::PredicateKey;
 use strata_primitives::{
     HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,

@@ -1,5 +1,5 @@
 use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry, MsgPayload};
-use strata_ledger_types::{ExecResult, ISnarkAccountStateMut};
+use strata_ol_state_types::{ExecResult, ISnarkAccountStateMut};
 
 /// Does any extra steps after a snark message is received. Note that this function should be called
 /// after updating the balance.

@@ -15,8 +15,7 @@ use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId, RBuf32,
 };
-use strata_ledger_types::{IAccountState, ISnarkAccountState};
-use strata_ol_chain_types::{OLBlock, OLTransaction, TransactionPayload};
+use strata_ol_chain_types_v1::OLBlock;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
     OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
@@ -26,7 +25,9 @@ use strata_ol_rpc_types::{
     RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState,
     RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
 };
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::{IAccountState, ISnarkAccountState};
+use strata_ol_state_types_v1::OLState;
+use strata_ol_tx_types_v1::{OLTransaction, TransactionPayload};
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 use tracing::{error, info};

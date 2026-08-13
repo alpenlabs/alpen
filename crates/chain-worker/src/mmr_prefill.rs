@@ -1,7 +1,7 @@
 //! Shared helpers for DB-side OL MMR index prefill.
 
 use strata_db_types::{DbError, DbResult};
-use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
+use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
 use strata_storage::{MmrId, MmrIndexManager};
 use tokio::task::spawn_blocking;
 

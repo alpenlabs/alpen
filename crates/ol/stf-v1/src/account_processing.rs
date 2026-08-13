@@ -4,10 +4,10 @@ use bitcoin_bosd::Descriptor;
 use strata_acct_types::{
     AccountId, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, MsgPayload,
 };
-use strata_ledger_types::*;
 use strata_msg_fmt::MsgRef;
-use strata_ol_chain_types::SimpleWithdrawalIntentLogData;
+use strata_ol_chain_types_v1::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::OLMessageExt;
+use strata_ol_state_types::*;
 use strata_snark_acct_sys as snark_sys;
 use tracing::*;
 

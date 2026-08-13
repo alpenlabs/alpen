@@ -19,17 +19,14 @@ use strata_codec::decode_buf_exact;
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
 };
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{
-    MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLTransaction, OLTransactionData,
-    TxProofs,
-};
+use strata_ol_chain_types_v1::{MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog};
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
 };
-use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::{
+use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
+use strata_ol_stf_v1::{
     BlockComponents, execute_block_batch_predrain,
     test_utils::{
         EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
@@ -41,6 +38,7 @@ use strata_ol_stf::{
     },
     verify_block,
 };
+use strata_ol_tx_types_v1::{OLTransaction, OLTransactionData, TxProofs};
 
 /// An ordered epoch layout with one explicit terminal block.
 #[derive(Debug, Default)]

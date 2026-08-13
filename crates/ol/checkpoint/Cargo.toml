@@ -39,3 +39,4 @@ strata-storage = { workspace = true, features = ["test-utils"] }
 strata-acct-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
+strata-ol-tx-types-v1.workspace = true

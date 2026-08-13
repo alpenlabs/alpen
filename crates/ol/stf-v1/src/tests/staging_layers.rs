@@ -7,13 +7,13 @@ use std::collections::BTreeSet;
 
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload};
 use strata_bridge_params::BridgeParams;
-use strata_ledger_types::{
+use strata_ol_chain_types_v1::OLTxSegment;
+use strata_ol_state_support_types::{IndexerState, MemoryStateBaseLayer, WriteTrackingState};
+use strata_ol_state_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, IStateAccessorMut, NewAccountData,
     NewAccountTypeState,
 };
-use strata_ol_chain_types::OLTxSegment;
-use strata_ol_state_support_types::{IndexerState, MemoryStateBaseLayer, WriteTrackingState};
-use strata_ol_state_types::IStateBatchApplicable;
+use strata_ol_state_types_v1::IStateBatchApplicable;
 
 use crate::{
     context::{BasicExecContext, BlockInfo, TxExecContext},

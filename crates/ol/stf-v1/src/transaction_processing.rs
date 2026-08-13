@@ -1,8 +1,9 @@
 //! Block transactional processing.
 
 use strata_acct_types::*;
-use strata_ledger_types::*;
-use strata_ol_chain_types::*;
+use strata_ol_chain_types_v1::OLTxSegment;
+use strata_ol_state_types::*;
+use strata_ol_tx_types_v1::*;
 use tracing::{info, trace};
 
 use crate::{

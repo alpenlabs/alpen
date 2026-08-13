@@ -40,22 +40,25 @@ use strata_identifiers::{
     WtxidsRoot,
 };
 use strata_l1_txfmt::MagicBytes;
-use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
-use strata_ol_chain_types::{
-    ClaimList, LogDecodeError, OLBlock, OLBlockBody, OLLog, OLLogType, OLTransaction,
-    OLTransactionData, OLTxSegment, ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData,
-    SauTxPayload, SauTxProofState, SauTxUpdateData, SignedOLBlockHeader,
-    SimpleWithdrawalIntentLogData, TransactionPayload, TxProofs, test_utils as ol_test_utils,
+use strata_ol_chain_types_v1::{
+    LogDecodeError, OLBlock, OLBlockBody, OLLog, OLLogType, OLTxSegment, SignedOLBlockHeader,
+    SimpleWithdrawalIntentLogData, test_utils as ol_test_utils,
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
-use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLState};
-use strata_ol_stf::{
+use strata_ol_state_types::*;
+use strata_ol_state_types_v1::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLState};
+use strata_ol_stf_v1::{
     BlockComponents, BlockContext, BlockInfo, construct_block as stf_construct_block,
+};
+use strata_ol_tx_types_v1::{
+    ClaimList, OLTransaction, OLTransactionData, ProofSatisfierList, SauTxLedgerRefs,
+    SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
+    TxProofs, test_utils as ol_tx_test_utils,
 };
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;
@@ -143,7 +146,7 @@ pub(crate) fn snark_account_inbox_len(state: &impl IStateAccessor, account_id: A
 pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) -> MessageEntry {
     let source = test_account_id(source_id);
     let mut runner = TestRunner::default();
-    let sampled_message = ol_test_utils::message_entry_strategy()
+    let sampled_message = ol_tx_test_utils::message_entry_strategy()
         .new_tree(&mut runner)
         .unwrap()
         .current();
@@ -535,7 +538,7 @@ impl MempoolSnarkTxBuilder {
     pub(crate) fn build(self) -> OLTransaction {
         // Use a random inner state from proptest
         let mut runner = TestRunner::default();
-        let sau_payload = ol_test_utils::sau_tx_payload_strategy()
+        let sau_payload = ol_tx_test_utils::sau_tx_payload_strategy()
             .new_tree(&mut runner)
             .unwrap()
             .current();
@@ -641,7 +644,7 @@ pub(crate) fn insert_inbox_messages_into_state(
 }
 
 /// Create test parent header by executing genesis block.
-pub(crate) fn create_test_parent_header() -> strata_ol_chain_types::OLBlockHeader {
+pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_v1::OLBlockHeader {
     let mut runner = TestRunner::default();
     let timestamp = (1000000u64..2000000u64)
         .new_tree(&mut runner)

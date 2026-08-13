@@ -14,10 +14,11 @@ use strata_db_types::{
     ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
-use strata_ol_chain_types::{OLBlock, OLTransaction};
+use strata_ol_chain_types_v1::OLBlock;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::OLRpcProvider;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
+use strata_ol_tx_types_v1::OLTransaction;
 use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment};
 use strata_status::{OLSyncStatus, StatusChannel};
 use strata_storage::NodeStorage;

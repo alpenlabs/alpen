@@ -1,6 +1,6 @@
 use ssz::Encode as _;
 use strata_acct_types::{AccountId, AcctError, MessageEntry};
-use strata_ledger_types::{ExecResult, ISnarkAccountState, TxProofVerifier};
+use strata_ol_state_types::{ExecResult, ISnarkAccountState, TxProofVerifier};
 use strata_snark_acct_types::*;
 use tracing::warn;
 

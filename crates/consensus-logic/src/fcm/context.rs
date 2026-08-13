@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use strata_db_types::{ol_block::BlockStatus, DbResult};
 use strata_identifiers::{Epoch, Slot};
-use strata_ol_state_types::OLState;
+use strata_ol_state_types_v1::OLState;
 use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_status::OLSyncStatus;
 

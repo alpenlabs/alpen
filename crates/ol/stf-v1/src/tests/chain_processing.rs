@@ -1,8 +1,8 @@
 //! Direct tests for chain-processing error branches.
 
 use strata_identifiers::OLBlockCommitment;
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::OLBlockHeader;
+use strata_ol_chain_types_v1::OLBlockHeader;
+use strata_ol_state_types::IStateAccessor;
 
 use crate::{
     context::{BlockContext, BlockInfo, EpochInitialContext},

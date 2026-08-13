@@ -1,7 +1,7 @@
 //! Tests for SAU transfer behavior.
 
 use strata_acct_types::{AcctError, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount};
-use strata_ledger_types::ISnarkAccountState;
+use strata_ol_state_types::ISnarkAccountState;
 
 use crate::{errors::ExecError, test_utils::*};
 

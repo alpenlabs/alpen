@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use strata_db_types::{ol_block::BlockStatus, DbResult};
 use strata_identifiers::Slot;
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
 use strata_primitives::OLBlockId;
 use strata_storage::OLBlockManager;
 use tracing::{debug, error, warn};
@@ -129,7 +129,7 @@ mod tests {
 
     use async_trait::async_trait;
     use strata_db_types::{ol_block::BlockStatus, DbResult};
-    use strata_ol_chain_types::{
+    use strata_ol_chain_types_v1::{
         BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
     use strata_primitives::{Buf32, Buf64, EpochCommitment, OLBlockId};

@@ -4,9 +4,10 @@ use strata_acct_types::TxEffects;
 use strata_asm_common::AsmManifest;
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
-use strata_ledger_types::IStateAccessorMut;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
-use strata_ol_chain_types::*;
+use strata_ol_chain_types_v1::*;
+use strata_ol_state_types::IStateAccessorMut;
+use strata_ol_tx_types_v1::*;
 
 use crate::{
     chain_processing,

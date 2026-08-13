@@ -6,9 +6,9 @@ use std::{
 };
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
-use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
 use strata_ol_params::OLParams;
 use strata_ol_state_provider::StateProvider;
+use strata_ol_state_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
 use strata_predicate::PredicateKey;
 use strata_service::ServiceBuilder;
 use strata_storage::NodeStorage;

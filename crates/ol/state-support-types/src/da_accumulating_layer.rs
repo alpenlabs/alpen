@@ -15,8 +15,8 @@ use strata_da_framework::{
     encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::*;
 use strata_ol_da::*;
+use strata_ol_state_types::*;
 use strata_predicate::PredicateKey;
 use thiserror::Error;
 

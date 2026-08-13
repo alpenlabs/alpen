@@ -1,6 +1,6 @@
 //! Trait for states that can have write batches applied.
 
-use strata_ledger_types::{IStateAccessor, StateResult};
+use strata_ol_state_types::{IStateAccessor, StateResult};
 
 use crate::WriteBatch;
 

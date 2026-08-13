@@ -3,10 +3,10 @@ use strata_identifiers::L1Height;
 
 /// A pending ASM log entry buffered in the intraepoch state.
 ///
-/// Mirrors `PendingAsmLogEntry` from `strata-ol-state-types`, but lives in
-/// `ledger-types` to keep the accessor trait surface free of dependencies on
-/// the state crate. The state crate provides conversions to/from the SSZ
-/// container form.
+/// Mirrors `PendingAsmLogEntry` from the concrete `state-types-v1`, but lives
+/// here to keep the accessor trait surface free of dependencies on the concrete
+/// state crate. `state-types-v1` provides conversions to/from the SSZ container
+/// form.
 #[derive(Clone, Debug)]
 pub struct PendingAsmLog {
     height: L1Height,

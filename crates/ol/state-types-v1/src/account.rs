@@ -1,6 +1,6 @@
 use strata_acct_types::*;
 use strata_identifiers::AccountSerial;
-use strata_ledger_types::*;
+use strata_ol_state_types::*;
 
 use crate::ssz_generated::ssz::state::{OLAccountState, OLAccountTypeState, OLSnarkAccountState};
 

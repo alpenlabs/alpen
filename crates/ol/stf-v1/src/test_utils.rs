@@ -74,20 +74,21 @@ use strata_identifiers::{
     AccountSerial, Buf32, Buf64, Epoch, L1BlockId, L1Height, Slot, SubjectId, SubjectIdBytes,
     WtxidsRoot,
 };
-use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_chain_types::*;
+use strata_ol_chain_types_v1::*;
 use strata_ol_msg_types::{
     DEFAULT_OPERATOR_FEE, DEPOSIT_MSG_TYPE_ID, DepositMsgData, WITHDRAWAL_MSG_TYPE_ID,
     WithdrawalMsgData,
 };
 use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::{
+use strata_ol_state_types::*;
+use strata_ol_state_types_v1::{
     MMR_SENTINEL_DUMMY_LEAF, OLAccountState, OLSnarkAccountState, OLState,
 };
+use strata_ol_tx_types_v1::*;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
@@ -577,7 +578,7 @@ pub fn assert_verification_succeeds<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
-    body: &strata_ol_chain_types::OLBlockBody,
+    body: &strata_ol_chain_types_v1::OLBlockBody,
 ) {
     let result = verify_block(
         state,
@@ -598,7 +599,7 @@ pub fn assert_verification_fails_with(
     state: &mut impl IStateAccessorMut,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
-    body: &strata_ol_chain_types::OLBlockBody,
+    body: &strata_ol_chain_types_v1::OLBlockBody,
     error_matcher: impl Fn(&ExecError) -> bool,
 ) {
     let result = verify_block(
@@ -620,7 +621,7 @@ pub fn assert_verification_fails_with(
 /// Returns a block header with a different parent block ID.
 pub fn tamper_parent_blkid(
     header: &OLBlockHeader,
-    new_parent: strata_ol_chain_types::OLBlockId,
+    new_parent: strata_ol_chain_types_v1::OLBlockId,
 ) -> OLBlockHeader {
     OLBlockHeader::new(
         header.timestamp(),

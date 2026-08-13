@@ -9,7 +9,7 @@
 use std::{error::Error, fmt::Debug, future::Future, sync::Arc};
 
 use strata_identifiers::OLBlockCommitment;
-use strata_ledger_types::IStateAccessorMut;
+use strata_ol_state_types::IStateAccessorMut;
 
 /// Provider trait for retrieving state at specific chain tips.
 ///
@@ -31,7 +31,7 @@ use strata_ledger_types::IStateAccessorMut;
 /// ```rust,ignore
 /// use std::{collections::HashMap, sync::Arc};
 /// use strata_identifiers::OLBlockCommitment;
-/// use strata_ol_state_types::OLState;
+/// use strata_ol_state_types_v1::OLState;
 /// use strata_ol_state_support_types::StateProvider;
 ///
 /// #[derive(Debug, thiserror::Error)]

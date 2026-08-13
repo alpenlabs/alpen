@@ -7,8 +7,8 @@ use strata_acct_types::{
     tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::*;
-use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types::*;
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
 
@@ -273,7 +273,7 @@ impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
 #[cfg(test)]
 mod tests {
     use strata_acct_types::BitcoinAmount;
-    use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
+    use strata_ol_state_types_v1::{IStateBatchApplicable, WriteBatch};
 
     use super::*;
     use crate::{

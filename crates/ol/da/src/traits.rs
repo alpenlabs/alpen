@@ -1,7 +1,7 @@
 //! DA traits.
 
 use strata_codec::Codec;
-use strata_ledger_types::IStateAccessor;
+use strata_ol_state_types::IStateAccessor;
 
 use crate::errors::DaResult;
 

@@ -1,11 +1,11 @@
 use strata_acct_types::{BitcoinAmount, MessageEntry, Mmr64, MsgPayload, StrataHasher};
 use strata_db_types::MmrId;
 use strata_identifiers::{AccountId, Buf32, Hash, L1BlockCommitment, L1BlockId};
-use strata_ledger_types::{IAccountStateMut, ISnarkAccountStateMut};
 use strata_merkle::{Mmr, MmrState};
 use strata_ol_params::{BridgeParams, GenesisSnarkAccountData, OLParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types::{IAccountStateMut, ISnarkAccountStateMut};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
 use strata_predicate::PredicateKey;
 
 use crate::{MmrIndexEntry, resolve_ol_mmr_target};

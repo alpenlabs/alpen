@@ -2,7 +2,7 @@
 
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
 
 // =============================================================================
 // Proptest-based test functions
@@ -109,7 +109,7 @@ macro_rules! ol_state_db_tests {
             #[test]
             fn proptest_put_and_get_toplevel_ol_state(
                 commitment in strata_identifiers::test_utils::ol_block_commitment_strategy(),
-                state in strata_ol_state_types::test_utils::ol_state_strategy(),
+                state in strata_ol_state_types_v1::test_utils::ol_state_strategy(),
             ) {
                 let db = $setup_expr;
                 $crate::ol_state_tests::proptest_put_and_get_toplevel_ol_state(&db, commitment, state);
@@ -119,7 +119,7 @@ macro_rules! ol_state_db_tests {
             fn proptest_get_latest_toplevel_ol_state(
                 commitment1 in strata_identifiers::test_utils::ol_block_commitment_strategy(),
                 commitment2 in strata_identifiers::test_utils::ol_block_commitment_strategy(),
-                state in strata_ol_state_types::test_utils::ol_state_strategy(),
+                state in strata_ol_state_types_v1::test_utils::ol_state_strategy(),
             ) {
                 let db = $setup_expr;
                 $crate::ol_state_tests::proptest_get_latest_toplevel_ol_state(&db, commitment1, commitment2, state);
@@ -128,7 +128,7 @@ macro_rules! ol_state_db_tests {
             #[test]
             fn proptest_delete_toplevel_ol_state(
                 commitment in strata_identifiers::test_utils::ol_block_commitment_strategy(),
-                state in strata_ol_state_types::test_utils::ol_state_strategy(),
+                state in strata_ol_state_types_v1::test_utils::ol_state_strategy(),
             ) {
                 let db = $setup_expr;
                 $crate::ol_state_tests::proptest_delete_toplevel_ol_state(&db, commitment, state);

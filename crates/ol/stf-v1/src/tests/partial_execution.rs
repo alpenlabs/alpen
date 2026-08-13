@@ -3,12 +3,12 @@
 use strata_acct_types::{AccountId, BitcoinAmount, TxEffects};
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
-use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types::{
-    BlockFlags, GamTxPayload, OLBlockBody, OLBlockHeader, OLTransaction, OLTransactionData,
-    OLTxSegment, TransactionPayload, TxProofs,
-};
+use strata_ol_chain_types_v1::{BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
+use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ol_tx_types_v1::{
+    GamTxPayload, OLTransaction, OLTransactionData, TransactionPayload, TxProofs,
+};
 
 use crate::{
     assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*, verify_block,

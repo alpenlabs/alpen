@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use ssz::Decode;
 use strata_acct_types::{AccountId, SentMessage, SentTransfer, TxEffects};
 use strata_identifiers::OLTxId;
-use strata_ol_chain_types::{
+use strata_ol_tx_types_v1::{
     ClaimList, OLTransaction, OLTransactionData, ProofSatisfierList, SauTxLedgerRefs,
     SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
     TxConstraints, TxProofs,

@@ -6,15 +6,15 @@ use strata_acct_types::{
     l1_block_record_leaf_hash,
 };
 use strata_asm_common::AsmManifest;
-use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types::{
+use strata_ol_state_types::{ISnarkAccountState, IStateAccessor};
+use strata_ol_tx_types_v1::{
     OLTransaction, ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
 };
 
 use crate::{errors::ExecError, test_utils::*};
 
 // The test genesis state pre-fills manifest MMR index 0 with
-// `strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF`; real manifests start at 1.
+// `strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF`; real manifests start at 1.
 const FIRST_REAL_MANIFEST_INDEX: u64 = 1;
 
 fn execute_manifest_block_with_tracker(

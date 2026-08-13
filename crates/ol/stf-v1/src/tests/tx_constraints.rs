@@ -1,6 +1,6 @@
 //! Tests for transaction slot constraints.
 
-use strata_ol_chain_types::{OLTransaction, OLTransactionData, TxConstraints, TxProofs};
+use strata_ol_tx_types_v1::{OLTransaction, OLTransactionData, TxConstraints, TxProofs};
 
 use crate::{errors::ExecError, test_utils::*};
 

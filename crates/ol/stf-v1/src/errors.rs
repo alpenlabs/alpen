@@ -1,2 +1,2 @@
 // re-export
-pub use strata_ledger_types::{ErrorKind, ExecError, ExecResult};
+pub use strata_ol_state_types::{ErrorKind, ExecError, ExecResult};

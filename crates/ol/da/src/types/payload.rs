@@ -6,7 +6,7 @@ use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry};
 use strata_codec::{Codec, CodecError, decode_buf_exact};
 use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
 use strata_identifiers::AccountSerial;
-use strata_ledger_types::*;
+use strata_ol_state_types::*;
 use strata_predicate::{MAX_CONDITION_LEN, PredicateError, PredicateKey, PredicateKeyBuf};
 use strata_snark_acct_types::Seqno;
 
@@ -349,9 +349,9 @@ mod tests {
         DaCounter, DaLinacc, DaRegister, DaWrite, SignedVarInt, UnsignedVarInt, counter_schemes,
     };
     use strata_identifiers::AccountSerial;
-    use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_stf::test_utils::make_genesis_state;
+    use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
+    use strata_ol_stf_v1::test_utils::make_genesis_state;
     use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 
     use super::{

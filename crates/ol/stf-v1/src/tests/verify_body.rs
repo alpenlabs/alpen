@@ -2,8 +2,8 @@
 
 use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MAX_MESSAGES};
 use strata_identifiers::Buf32;
-use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types::MAX_LOGS_PER_BLOCK;
+use strata_ol_chain_types_v1::MAX_LOGS_PER_BLOCK;
+use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 
 use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
 

@@ -10,7 +10,7 @@
 //! abort with `coin: accidentally destroyed value` rather than fail an assert.
 
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayloadData, TxEffects};
-use strata_ledger_types::{Coin, IStateAccessorMut, StateError};
+use strata_ol_state_types::{Coin, IStateAccessorMut, StateError};
 
 use crate::{
     account_processing,
@@ -81,7 +81,7 @@ fn limbo_overflow_returns_clean_error() {
 #[test]
 fn bridge_withdrawal_log_overflow_returns_clean_error() {
     use strata_bridge_params::BridgeParams;
-    use strata_ol_chain_types::{MAX_LOGS_PER_BLOCK, OLLog};
+    use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, OLLog};
 
     let mut state = make_genesis_state();
     let sender = make_account_id(TEST_SNARK_ACCOUNT_ID);

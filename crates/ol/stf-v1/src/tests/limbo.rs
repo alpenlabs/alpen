@@ -19,9 +19,9 @@ use strata_acct_types::{
 };
 use strata_codec::encode_to_vec;
 use strata_identifiers::{AccountSerial, SubjectId};
-use strata_ledger_types::{Coin, IAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
+use strata_ol_state_types::{Coin, IAccountState, IStateAccessor};
 
 use crate::{
     account_processing,

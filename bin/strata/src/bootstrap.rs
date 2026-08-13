@@ -258,9 +258,9 @@ mod tests {
         Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId, RBuf32,
     };
     use strata_l1_txfmt::MagicBytes;
-    use strata_ledger_types::{IStateAccessor, IStateAccessorMut};
     use strata_ol_params::OLParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
     use strata_predicate::PredicateKey;
     use strata_storage::{NodeStorage, create_node_storage};
 
@@ -275,7 +275,7 @@ mod tests {
         storage: NodeStorage,
         genesis: OLBlockCommitment,
         anchor: EpochCommitment,
-        header: strata_ol_chain_types::OLBlockHeader,
+        header: strata_ol_chain_types_v1::OLBlockHeader,
         summary: EpochSummary,
         payload: CheckpointPayload,
         l1_ref: CheckpointL1Ref,

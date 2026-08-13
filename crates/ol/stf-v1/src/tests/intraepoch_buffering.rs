@@ -8,7 +8,7 @@
 use strata_acct_types::BitcoinAmount;
 use strata_asm_common::AsmLogEntry;
 use strata_identifiers::SubjectId;
-use strata_ledger_types::{
+use strata_ol_state_types::{
     ISnarkAccountState, IStateAccessor, IStateAccessorMut, PendingAsmLog, StateError,
 };
 

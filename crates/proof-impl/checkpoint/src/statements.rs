@@ -9,12 +9,12 @@ use strata_asm_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalHeaderC
 use strata_asm_manifest_types::{AsmManifestRangeHash, compute_asm_manifests_hash};
 use strata_bridge_params::BridgeParams;
 use strata_crypto::hash;
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{AsmManifest, OLBlock, OLBlockHeader, OLLog, OLTxSegment};
+use strata_ol_chain_types_v1::{AsmManifest, OLBlock, OLBlockHeader, OLLog, OLTxSegment};
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::OLState;
-use strata_ol_stf::{
+use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::OLState;
+use strata_ol_stf_v1::{
     BlockComponents, BlockContext, BlockInfo, EpochExecExpectations, EpochInfo, construct_block,
     verify_epoch_with_diff,
 };
@@ -236,7 +236,7 @@ struct EpochExecTrace {
     /// hashing.
     ///
     /// Held as an unbounded sequence rather than an
-    /// [`OLAsmManifestContainer`](strata_ol_chain_types::OLAsmManifestContainer)
+    /// [`OLAsmManifestContainer`](strata_ol_chain_types_v1::OLAsmManifestContainer)
     /// because an epoch may span several blocks that each independently satisfy
     /// the per-block `MAX_SEALING_MANIFEST_COUNT` limit, so the epoch total can
     /// legitimately exceed that per-block cap.

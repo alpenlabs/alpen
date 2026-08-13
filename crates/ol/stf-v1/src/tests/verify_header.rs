@@ -1,7 +1,7 @@
 //! Header continuity tamper tests.
 
 use strata_identifiers::Buf32;
-use strata_ol_chain_types::{BlockFlags, OLBlockHeader, OLBlockId};
+use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader, OLBlockId};
 
 use crate::{
     assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*,

@@ -1,6 +1,6 @@
 //! Strata orchestration layer block execution and validation library.
 
-use strata_ol_state_types as _;
+use strata_ol_state_types_v1 as _;
 
 mod account_processing;
 mod assembly;

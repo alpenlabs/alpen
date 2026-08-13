@@ -4,8 +4,8 @@ use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 
 use crate::{OLBlockExecutionOutput, WorkerResult};

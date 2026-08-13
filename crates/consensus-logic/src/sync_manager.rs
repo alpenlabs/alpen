@@ -10,7 +10,7 @@ use strata_asm_spec::StrataAsmSpec;
 use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_node_context::NodeContext;
-use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
+use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_status::StatusChannel;

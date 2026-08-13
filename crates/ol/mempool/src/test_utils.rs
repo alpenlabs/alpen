@@ -15,18 +15,18 @@ use proptest::{
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_identifiers::{Buf32, Hash, OLBlockCommitment, OLBlockId, Slot};
-use strata_ledger_types::{
+use strata_ol_params::OLParams;
+use strata_ol_state_provider::StateProvider;
+use strata_ol_state_support_types::MemoryStateBaseLayer;
+use strata_ol_state_types::{
     IAccountStateMut, ISnarkAccountStateMut, IStateAccessorMut, NewAccountData, NewAccountTypeState,
 };
-use strata_ol_chain_types::{
+use strata_ol_state_types_v1::OLState;
+use strata_ol_tx_types_v1::{
     ClaimList, OLTransaction, OLTransactionData, ProofSatisfierList, SauTxLedgerRefs,
     SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
     TxConstraints, TxProofs, test_utils as ol_test_utils,
 };
-use strata_ol_params::OLParams;
-use strata_ol_state_provider::StateProvider;
-use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
 use strata_storage::create_node_storage;

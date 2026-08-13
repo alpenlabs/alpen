@@ -1,7 +1,7 @@
 //! DA scheme implementations for OL state.
 
 use strata_da_framework::DaWrite;
-use strata_ledger_types::*;
+use strata_ol_state_types::*;
 
 use crate::{DaResult, DaScheme, OLDaPayloadV1, OLStateDiff};
 
@@ -32,8 +32,8 @@ impl<S: IStateAccessorMut> DaScheme<S> for OLDaSchemeV1 {
 #[cfg(test)]
 mod tests {
     use strata_da_framework::DaCounter;
-    use strata_ledger_types::IStateAccessor;
-    use strata_ol_stf::test_utils::make_genesis_state;
+    use strata_ol_state_types::IStateAccessor;
+    use strata_ol_stf_v1::test_utils::make_genesis_state;
 
     use super::*;
     use crate::{GlobalStateDiff, LedgerDiff, StateDiff};

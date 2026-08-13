@@ -21,13 +21,13 @@ use strata_db_types::{
 use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types::{
+use strata_ol_chain_types_v1::{
     OLBlock, OLBlockHeader, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
     SnarkAccountUpdateLogData,
 };
 use strata_ol_params::OLParams;
 use strata_ol_state_support_types::SnarkAcctStateUpdate;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
@@ -366,7 +366,7 @@ mod header_tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::backend::DatabaseBackend;
     use strata_identifiers::{Buf32, OLBlockId};
-    use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
     use strata_storage::OLBlockManager;
 
     use super::fetch_header_from_manager;
@@ -670,7 +670,7 @@ mod tests {
     use strata_ol_state_support_types::{
         InboxMessageWrite, IndexerWrites, L1BlockRecordWrite, SnarkAcctStateUpdate,
     };
-    use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
+    use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use strata_snark_acct_types::Seqno;
 
     use super::*;

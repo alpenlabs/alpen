@@ -7,11 +7,11 @@ use std::sync::Arc;
 
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{
     DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer,
 };
-use strata_ol_stf::execute_block_batch_predrain;
+use strata_ol_stf_v1::execute_block_batch_predrain;
 
 use crate::{
     context::BlockAssemblyAnchorContext,

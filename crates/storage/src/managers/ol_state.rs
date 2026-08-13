@@ -7,7 +7,7 @@ use futures::TryFutureExt;
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_db_types::DbResult;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
 use tokio::runtime::Handle;
 
 use crate::cache::CacheTable;
@@ -198,8 +198,8 @@ mod tests {
     use strata_db_types::backend::DatabaseBackend;
     use strata_identifiers::test_utils::ol_block_commitment_strategy;
     use strata_identifiers::OLBlockCommitment;
-    use strata_ol_state_types::test_utils::ol_state_strategy;
-    use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+    use strata_ol_state_types_v1::test_utils::ol_state_strategy;
+    use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
     use tokio::runtime::Runtime;
 
     use super::*;

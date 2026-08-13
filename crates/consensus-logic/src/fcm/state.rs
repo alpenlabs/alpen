@@ -7,7 +7,7 @@ use std::{
 
 use metrics::{counter, gauge};
 use strata_identifiers::{Epoch, Slot};
-use strata_ol_state_types::OLState;
+use strata_ol_state_types_v1::OLState;
 use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;

@@ -4,7 +4,7 @@
 
 use strata_acct_types::{BitcoinAmount, MessageEntry, MsgPayload};
 use strata_bridge_params::BridgeParams;
-use strata_ledger_types::ISnarkAccountState;
+use strata_ol_state_types::ISnarkAccountState;
 
 use crate::{SEQUENCER_ACCT_ID, test_utils::*, verify_block};
 
