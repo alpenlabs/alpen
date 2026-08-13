@@ -6,9 +6,11 @@ use ssz_types::VariableList;
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
 use strata_ol_state_types::{IAccountState, NewAccountData, StateError, StateResult};
 
-use crate::ssz_generated::ssz::state::{OLAccountState, TsnlAccountEntry, TsnlLedgerAccountsTable};
+use crate::ssz_generated::ssz::state::{
+    OLAccountStateV1, TsnlAccountEntryV1, TsnlLedgerAccountsTableV1,
+};
 
-impl TsnlLedgerAccountsTable {
+impl TsnlLedgerAccountsTableV1 {
     /// Creates a new empty table.
     ///
     /// This reserves serials for system accounts with 0 values.
@@ -22,26 +24,26 @@ impl TsnlLedgerAccountsTable {
         self.accounts.binary_search_by_key(id, |e| e.id).ok()
     }
 
-    fn get_acct_entry(&self, id: &AccountId) -> Option<&TsnlAccountEntry> {
+    fn get_acct_entry(&self, id: &AccountId) -> Option<&TsnlAccountEntryV1> {
         let idx = self.get_acct_entry_idx(id)?;
         self.accounts.get(idx)
     }
 
-    fn get_acct_entry_mut(&mut self, id: &AccountId) -> Option<&mut TsnlAccountEntry> {
+    fn get_acct_entry_mut(&mut self, id: &AccountId) -> Option<&mut TsnlAccountEntryV1> {
         let idx = self.get_acct_entry_idx(id)?;
         self.accounts.get_mut(idx)
     }
 
-    pub fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountState> {
+    pub fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountStateV1> {
         self.get_acct_entry(id).map(|e| &e.state)
     }
 
-    pub fn get_account_state_mut(&mut self, id: &AccountId) -> Option<&mut OLAccountState> {
+    pub fn get_account_state_mut(&mut self, id: &AccountId) -> Option<&mut OLAccountStateV1> {
         self.get_acct_entry_mut(id).map(|e| &mut e.state)
     }
 
     /// Iterates over all ledger account states in account-id order.
-    pub fn iter_account_states(&self) -> impl Iterator<Item = (AccountId, &OLAccountState)> + '_ {
+    pub fn iter_account_states(&self) -> impl Iterator<Item = (AccountId, &OLAccountStateV1)> + '_ {
         self.accounts
             .iter()
             .map(|entry| (entry.id(), entry.state()))
@@ -50,7 +52,11 @@ impl TsnlLedgerAccountsTable {
     /// Creates a new account.
     ///
     /// This does not check serial uniqueness/ordering.
-    pub fn create_account(&mut self, id: AccountId, acct_state: OLAccountState) -> StateResult<()> {
+    pub fn create_account(
+        &mut self,
+        id: AccountId,
+        acct_state: OLAccountStateV1,
+    ) -> StateResult<()> {
         // Figure out where we're supposed to put it.
         let insert_idx = match self.accounts.binary_search_by_key(&id, |e| e.id) {
             Ok(_) => return Err(StateError::AccountExists(id)),
@@ -60,7 +66,7 @@ impl TsnlLedgerAccountsTable {
         // Actually insert the entry.
         // VariableList doesn't have insert, but it has push.
         // Since we need to maintain sorted order, we collect to Vec, insert, and convert back.
-        let entry = TsnlAccountEntry::new(id, acct_state);
+        let entry = TsnlAccountEntryV1::new(id, acct_state);
         let mut accounts_vec: Vec<_> = self.accounts.iter().cloned().collect();
         accounts_vec.insert(insert_idx, entry);
         self.accounts = accounts_vec.try_into().expect("accounts should fit");
@@ -83,7 +89,7 @@ impl TsnlLedgerAccountsTable {
         serial: AccountSerial,
         new_acct_data: NewAccountData,
     ) -> StateResult<()> {
-        let acct = OLAccountState::new_with_serial(new_acct_data, serial);
+        let acct = OLAccountStateV1::new_with_serial(new_acct_data, serial);
         self.create_account(id, acct)?;
         Ok(())
     }
@@ -103,8 +109,8 @@ impl TsnlLedgerAccountsTable {
     }
 }
 
-impl TsnlAccountEntry {
-    fn new(id: AccountId, state: OLAccountState) -> Self {
+impl TsnlAccountEntryV1 {
+    fn new(id: AccountId, state: OLAccountStateV1) -> Self {
         Self { id, state }
     }
 
@@ -114,7 +120,7 @@ impl TsnlAccountEntry {
     }
 
     /// Returns the account state.
-    pub fn state(&self) -> &OLAccountState {
+    pub fn state(&self) -> &OLAccountStateV1 {
         &self.state
     }
 }
@@ -128,13 +134,16 @@ mod tests {
 
     use super::*;
     use crate::{
-        ssz_generated::ssz::state::OLAccountTypeState,
+        ssz_generated::ssz::state::OLAccountTypeStateV1,
         test_utils::{tsnl_account_entry_strategy, tsnl_ledger_accounts_table_strategy},
     };
 
     // Helper function to create an Empty account state
-    fn create_empty_account_state(serial: AccountSerial, balance: BitcoinAmount) -> OLAccountState {
-        OLAccountState::new(serial, balance, OLAccountTypeState::Empty)
+    fn create_empty_account_state(
+        serial: AccountSerial,
+        balance: BitcoinAmount,
+    ) -> OLAccountStateV1 {
+        OLAccountStateV1::new(serial, balance, OLAccountTypeStateV1::Empty)
     }
 
     // Helper function to create test account IDs
@@ -146,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_create_single_account() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut table = TsnlLedgerAccountsTableV1::new_empty();
 
         // Create an account
         let account_id = test_account_id(1);
@@ -171,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_create_multiple_accounts_sorted_order() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut table = TsnlLedgerAccountsTableV1::new_empty();
 
         // Create accounts in non-sorted order
         let account_ids = vec![
@@ -215,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_duplicate_account_id_rejected() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut table = TsnlLedgerAccountsTableV1::new_empty();
 
         // Create first account
         let account_id = test_account_id(1);
@@ -249,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_get_account_state_mut() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut table = TsnlLedgerAccountsTableV1::new_empty();
 
         // Create an account
         let account_id = test_account_id(1);
@@ -279,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_get_nonexistent_account() {
-        let table = TsnlLedgerAccountsTable::new_empty();
+        let table = TsnlLedgerAccountsTableV1::new_empty();
 
         // Try to get a non-existent account
         let account_id = test_account_id(1);
@@ -289,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_calculate_total_funds_sums_balances() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut table = TsnlLedgerAccountsTableV1::new_empty();
         let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
 
         for i in 1..=3u8 {
@@ -317,7 +326,7 @@ mod tests {
     fn test_calculate_total_funds_rejects_oversized_total() {
         const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
 
-        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut table = TsnlLedgerAccountsTableV1::new_empty();
         let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
 
         // Two individually valid max-money balances whose sum is above the cap.
@@ -341,14 +350,14 @@ mod tests {
 
     #[test]
     fn test_ssz_roundtrip_empty_table() {
-        let table = TsnlLedgerAccountsTable::new_empty();
+        let table = TsnlLedgerAccountsTableV1::new_empty();
 
         // Encode using SSZ
         let encoded = table.as_ssz_bytes();
 
         // Decode using SSZ
         let decoded =
-            TsnlLedgerAccountsTable::from_ssz_bytes(&encoded).expect("Failed to decode table");
+            TsnlLedgerAccountsTableV1::from_ssz_bytes(&encoded).expect("Failed to decode table");
 
         // Verify they match
         assert_eq!(decoded.accounts.len(), table.accounts.len());
@@ -356,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_ssz_roundtrip_with_accounts() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut table = TsnlLedgerAccountsTableV1::new_empty();
 
         // Add several accounts
         let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
@@ -376,7 +385,7 @@ mod tests {
 
         // Decode using SSZ
         let decoded =
-            TsnlLedgerAccountsTable::from_ssz_bytes(&encoded).expect("Failed to decode table");
+            TsnlLedgerAccountsTableV1::from_ssz_bytes(&encoded).expect("Failed to decode table");
 
         // Verify accounts match
         assert_eq!(decoded.accounts.len(), table.accounts.len());
@@ -396,14 +405,14 @@ mod tests {
     mod tsnl_account_entry {
         use super::*;
 
-        ssz_proptest!(TsnlAccountEntry, tsnl_account_entry_strategy());
+        ssz_proptest!(TsnlAccountEntryV1, tsnl_account_entry_strategy());
     }
 
     mod tsnl_ledger_accounts_table {
         use super::*;
 
         ssz_proptest!(
-            TsnlLedgerAccountsTable,
+            TsnlLedgerAccountsTableV1,
             tsnl_ledger_accounts_table_strategy()
         );
     }

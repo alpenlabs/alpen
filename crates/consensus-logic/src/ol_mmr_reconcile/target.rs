@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use strata_identifiers::{Epoch, OLBlockCommitment};
-use strata_ol_state_types_v1::OLState;
+use strata_ol_state_types_v1::OLStateV1;
 
 /// Reconciliation target for OL-owned MMR indexes and related indexing rows.
 #[derive(Clone, Debug)]
@@ -13,7 +13,7 @@ pub struct OLMmrReconcileTarget {
     pub epoch: Epoch,
 
     /// Target OL state that the MMR index must match.
-    pub state: Arc<OLState>,
+    pub state: Arc<OLStateV1>,
 
     /// Blocks in [`Self::epoch`] whose indexing this target rejects.
     pub rejected_indexing_blocks: BTreeSet<OLBlockCommitment>,
@@ -24,7 +24,7 @@ impl OLMmrReconcileTarget {
     pub fn new(
         block: OLBlockCommitment,
         epoch: Epoch,
-        state: Arc<OLState>,
+        state: Arc<OLStateV1>,
         rejected_indexing_blocks: BTreeSet<OLBlockCommitment>,
     ) -> Self {
         Self {

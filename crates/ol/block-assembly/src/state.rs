@@ -421,7 +421,7 @@ mod tests {
 
     use strata_config::BlockAssemblyConfig;
     use strata_identifiers::{AccountSerial, Buf32, Buf64};
-    use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader, OLLog, SignedOLBlockHeader};
+    use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, OLLog, SignedOLBlockHeaderV1};
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_ol_state_support_types::EpochDaAccumulator;
     use strata_predicate::PredicateKey;
@@ -461,7 +461,7 @@ mod tests {
     ) -> FullBlockTemplate {
         let template = create_test_template_with_parent(parent);
         let header = template.header();
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             header.timestamp(),
             header.flags(),
             slot,
@@ -935,8 +935,8 @@ mod tests {
             child_template.header().compute_blkid(),
         );
         let signed_header =
-            SignedOLBlockHeader::new(child_template.header().clone(), Buf64::zero());
-        let child_block = OLBlock::new(signed_header, child_template.body().clone());
+            SignedOLBlockHeaderV1::new(child_template.header().clone(), Buf64::zero());
+        let child_block = OLBlockV1::new(signed_header, child_template.body().clone());
         env.put_block(child_block).await;
 
         let resource_state = state

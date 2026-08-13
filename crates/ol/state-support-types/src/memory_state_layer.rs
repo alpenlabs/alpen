@@ -1,4 +1,4 @@
-//! Base state layer for [`OLState`].
+//! Base state layer for [`OLStateV1`].
 
 use std::collections::BTreeMap;
 
@@ -8,17 +8,17 @@ use strata_acct_types::{
 };
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ol_state_types::*;
-use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1, OLStateV1, WriteBatch};
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
 
-/// Base layer wrapping [`OLState`].
+/// Base layer wrapping [`OLStateV1`].
 #[derive(Clone, Debug)]
 pub struct MemoryStateBaseLayer {
     /// The fully-materialized state in memory.
     ///
     /// This includes the transitional embedded accounts table.
-    state: OLState,
+    state: OLStateV1,
 
     /// Stored lookup table of account serials to account IDs so we don't have
     /// to traverse the accounts list.
@@ -31,7 +31,7 @@ impl MemoryStateBaseLayer {
     /// # Panics
     ///
     /// If the state's accounts have duplicated serials.
-    pub fn new(state: OLState) -> Self {
+    pub fn new(state: OLStateV1) -> Self {
         let serials: BTreeMap<_, _> = state
             .ledger
             .accounts
@@ -48,21 +48,21 @@ impl MemoryStateBaseLayer {
         Self { state, serials }
     }
 
-    pub fn state(&self) -> &OLState {
+    pub fn state(&self) -> &OLStateV1 {
         &self.state
     }
 
-    pub fn state_mut(&mut self) -> &mut OLState {
+    pub fn state_mut(&mut self) -> &mut OLStateV1 {
         &mut self.state
     }
 
-    pub fn into_inner(self) -> OLState {
+    pub fn into_inner(self) -> OLStateV1 {
         self.state
     }
 }
 
 impl IStateAccessor for MemoryStateBaseLayer {
-    type AccountState = OLAccountState;
+    type AccountState = OLAccountStateV1;
 
     // ===== Global state methods =====
 
@@ -142,7 +142,7 @@ impl IStateAccessor for MemoryStateBaseLayer {
 }
 
 impl IStateAccessorMut for MemoryStateBaseLayer {
-    type AccountStateMut = OLAccountState;
+    type AccountStateMut = OLAccountStateV1;
 
     fn set_cur_slot(&mut self, slot: u64) {
         self.state.global.set_cur_slot(slot);
@@ -257,7 +257,7 @@ impl IStateBatchApplicable for MemoryStateBaseLayer {
 impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
     fn compute_state_root_with_writes<'b>(
         &self,
-        writes: impl Iterator<Item = &'b WriteBatch<OLAccountState>>,
+        writes: impl Iterator<Item = &'b WriteBatch<OLAccountStateV1>>,
     ) -> StateResult<Buf32> {
         let mut state = self.state.clone();
 

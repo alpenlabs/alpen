@@ -1,7 +1,7 @@
 use strata_db_types::DbResult;
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
 
 use super::schemas::{OLStateSchema, OLWriteBatchSchema};
 use crate::define_sled_database;
@@ -15,7 +15,11 @@ define_sled_database!(
 );
 
 impl OLStateDatabase for OLStateDBSled {
-    fn put_toplevel_ol_state(&self, commitment: OLBlockCommitment, state: OLState) -> DbResult<()> {
+    fn put_toplevel_ol_state(
+        &self,
+        commitment: OLBlockCommitment,
+        state: OLStateV1,
+    ) -> DbResult<()> {
         self.config
             .with_retry((&self.state_tree,), |(state_tree,)| {
                 state_tree.insert(&commitment, &state)?;
@@ -24,11 +28,11 @@ impl OLStateDatabase for OLStateDBSled {
         Ok(())
     }
 
-    fn get_toplevel_ol_state(&self, commitment: OLBlockCommitment) -> DbResult<Option<OLState>> {
+    fn get_toplevel_ol_state(&self, commitment: OLBlockCommitment) -> DbResult<Option<OLStateV1>> {
         self.state_tree.get(&commitment).map_err(conv_sled_err)
     }
 
-    fn get_latest_toplevel_ol_state(&self) -> DbResult<Option<(OLBlockCommitment, OLState)>> {
+    fn get_latest_toplevel_ol_state(&self) -> DbResult<Option<(OLBlockCommitment, OLStateV1)>> {
         // Relying on the lexicographical order of OLBlockCommitment (slot + block ID).
         // The last entry should be the one with the highest slot.
         self.state_tree.last().map_err(conv_sled_err)
@@ -42,7 +46,7 @@ impl OLStateDatabase for OLStateDBSled {
     fn put_ol_write_batch(
         &self,
         commitment: OLBlockCommitment,
-        wb: WriteBatch<OLAccountState>,
+        wb: WriteBatch<OLAccountStateV1>,
     ) -> DbResult<()> {
         self.config
             .with_retry((&self.write_batch_tree,), |(wb_tree,)| {
@@ -55,7 +59,7 @@ impl OLStateDatabase for OLStateDBSled {
     fn get_ol_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
+    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
         self.write_batch_tree
             .get(&commitment)
             .map_err(conv_sled_err)

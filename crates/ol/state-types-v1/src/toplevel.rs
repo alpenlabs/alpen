@@ -6,11 +6,11 @@ use strata_ol_params::OLParams;
 use strata_ol_state_types::{IAccountState, NewAccountData, StateError, StateResult};
 
 use crate::{
-    MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeState, OLSnarkAccountState, WriteBatch,
+    MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeStateV1, OLSnarkAccountStateV1, WriteBatch,
     ssz_generated::ssz::state::*,
 };
 
-impl OLState {
+impl OLStateV1 {
     /// Creates initial OL state from genesis parameters.
     pub fn from_genesis_params(params: &OLParams) -> StateResult<Self> {
         let checkpointed_epoch = params.checkpointed_epoch();
@@ -30,7 +30,7 @@ impl OLState {
             <Mmr64 as Mmr<StrataHasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF, prefill_count);
 
         let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
-        let mut ledger = TsnlLedgerAccountsTable::new_empty();
+        let mut ledger = TsnlLedgerAccountsTableV1::new_empty();
 
         // Create initial snark accounts.
         for (id, acct_params) in &params.accounts {
@@ -39,15 +39,15 @@ impl OLState {
             next_serial = next_serial.incr();
 
             // Then just assemble the rest of the account data.
-            let snark_state = OLSnarkAccountState::new_fresh(
+            let snark_state = OLSnarkAccountStateV1::new_fresh(
                 acct_params.predicate.clone(),
                 acct_params.inner_state,
             );
 
-            let state = OLAccountState::new(
+            let state = OLAccountStateV1::new(
                 serial,
                 acct_params.balance,
-                OLAccountTypeState::Snark(snark_state),
+                OLAccountTypeStateV1::Snark(snark_state),
             );
 
             ledger.create_account(*id, state)?;
@@ -55,15 +55,15 @@ impl OLState {
 
         let total_ledger_funds = ledger.calculate_total_funds()?;
 
-        let global = GlobalState::new(params.header.slot, next_serial);
-        let epoch = EpochalState::new(
+        let global = GlobalStateV1::new(params.header.slot, next_serial);
+        let epoch = EpochalStateV1::new(
             total_ledger_funds,
             params.header.epoch,
             params.last_l1_block,
             checkpointed_epoch,
             l1_block_refs_mmr,
         );
-        let intraepoch = IntraepochState::default();
+        let intraepoch = IntraepochStateV1::default();
 
         Ok(Self {
             epoch,
@@ -73,19 +73,19 @@ impl OLState {
         })
     }
 
-    pub fn global_state(&self) -> &GlobalState {
+    pub fn global_state(&self) -> &GlobalStateV1 {
         &self.global
     }
 
-    pub fn epoch_state(&self) -> &EpochalState {
+    pub fn epoch_state(&self) -> &EpochalStateV1 {
         &self.epoch
     }
 
-    pub fn intraepoch_state(&self) -> &IntraepochState {
+    pub fn intraepoch_state(&self) -> &IntraepochStateV1 {
         &self.intraepoch
     }
 
-    pub fn intraepoch_state_mut(&mut self) -> &mut IntraepochState {
+    pub fn intraepoch_state_mut(&mut self) -> &mut IntraepochStateV1 {
         &mut self.intraepoch
     }
 
@@ -106,7 +106,7 @@ impl OLState {
     /// This function failing probably indicates the write batch was not
     /// intended for the state we're trying to apply it to, or some bug with how
     /// we're constructing write batches.
-    pub fn check_write_batch_safe(&self, batch: &WriteBatch<OLAccountState>) -> StateResult<()> {
+    pub fn check_write_batch_safe(&self, batch: &WriteBatch<OLAccountStateV1>) -> StateResult<()> {
         // Check serial ordering.
         let mut next_serial = self.global.get_next_avail_serial();
         for (serial, id) in batch.ledger().iter_new_accounts() {
@@ -178,7 +178,7 @@ impl OLState {
     /// with the modifications from the batch.
     ///
     /// If this returns an error then the state is left unmodified.
-    pub fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountState>) -> StateResult<()> {
+    pub fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountStateV1>) -> StateResult<()> {
         // Safety check first so we can use `.expect`.
         self.check_write_batch_safe(&batch)?;
         let (global_writes, epochal_writes, intraepoch_writes, ledger) = batch.into_parts();
@@ -297,12 +297,12 @@ impl OLState {
         self.next_account_serial()
     }
 
-    pub fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountState> {
+    pub fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountStateV1> {
         self.ledger.get_account_state(id)
     }
 
     /// Iterates over all ledger account states in account-id order.
-    pub fn iter_account_states(&self) -> impl Iterator<Item = (AccountId, &OLAccountState)> + '_ {
+    pub fn iter_account_states(&self) -> impl Iterator<Item = (AccountId, &OLAccountStateV1)> + '_ {
         self.ledger.iter_account_states()
     }
 
@@ -334,7 +334,9 @@ mod tests {
     use strata_predicate::PredicateKey;
 
     use super::*;
-    use crate::{OLAccountTypeState, OLSnarkAccountState, test_utils::create_test_genesis_state};
+    use crate::{
+        OLAccountTypeStateV1, OLSnarkAccountStateV1, test_utils::create_test_genesis_state,
+    };
 
     fn test_account_id(seed: u8) -> AccountId {
         let mut bytes = [0u8; 32];
@@ -419,11 +421,11 @@ mod tests {
         // Create a batch that updates the account.
         let mut batch = WriteBatch::default();
         let snark_state_updated =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
-        let updated_account = OLAccountState::new(
+            OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
+        let updated_account = OLAccountStateV1::new(
             serial,
             BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply"),
-            OLAccountTypeState::Snark(snark_state_updated),
+            OLAccountTypeStateV1::Snark(snark_state_updated),
         );
         batch
             .ledger_mut()
@@ -538,11 +540,11 @@ mod tests {
 
         // Update the existing account.
         let updated_snark =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
-        let updated_account = OLAccountState::new(
+            OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
+        let updated_account = OLAccountStateV1::new(
             existing_serial,
             BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply"),
-            OLAccountTypeState::Snark(updated_snark),
+            OLAccountTypeStateV1::Snark(updated_snark),
         );
         batch
             .ledger_mut()
@@ -585,6 +587,6 @@ mod tests {
         use super::*;
         use crate::test_utils::ol_state_strategy;
 
-        ssz_proptest!(OLState, ol_state_strategy());
+        ssz_proptest!(OLStateV1, ol_state_strategy());
     }
 }

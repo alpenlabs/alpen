@@ -12,24 +12,24 @@ use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::ssz_generated::ssz::{proofs::*, transaction::*};
 
-impl OLTransaction {
-    pub fn new(data: OLTransactionData, proofs: TxProofs) -> Self {
+impl OLTransactionV1 {
+    pub fn new(data: OLTransactionDataV1, proofs: TxProofsV1) -> Self {
         Self { data, proofs }
     }
 
-    pub fn data(&self) -> &OLTransactionData {
+    pub fn data(&self) -> &OLTransactionDataV1 {
         &self.data
     }
 
-    pub fn proofs(&self) -> &TxProofs {
+    pub fn proofs(&self) -> &TxProofsV1 {
         &self.proofs
     }
 
-    pub fn constraints(&self) -> &TxConstraints {
+    pub fn constraints(&self) -> &TxConstraintsV1 {
         &self.data.constraints
     }
 
-    pub fn payload(&self) -> &TransactionPayload {
+    pub fn payload(&self) -> &TransactionPayloadV1 {
         &self.data.payload
     }
 
@@ -48,30 +48,30 @@ impl OLTransaction {
     /// Returns a new transaction with only accumulator proofs updated.
     pub fn with_accumulator_proofs(
         mut self,
-        accumulator_proofs: Option<RawMerkleProofList>,
+        accumulator_proofs: Option<RawMerkleProofListV1>,
     ) -> Self {
         self.proofs = self.proofs.with_accumulator_proofs(accumulator_proofs);
         self
     }
 }
 
-impl TransactionPayload {
+impl TransactionPayloadV1 {
     pub fn target(&self) -> Option<AccountId> {
         match self {
-            TransactionPayload::GenericAccountMessage(msg) => Some(msg.target),
-            TransactionPayload::SnarkAccountUpdate(update) => Some(update.target),
+            TransactionPayloadV1::GenericAccountMessage(msg) => Some(msg.target),
+            TransactionPayloadV1::SnarkAccountUpdate(update) => Some(update.target),
         }
     }
 
     pub fn type_id(&self) -> TxTypeId {
         match self {
-            TransactionPayload::GenericAccountMessage(_) => TxTypeId::GenericAccountMessage,
-            TransactionPayload::SnarkAccountUpdate(_) => TxTypeId::SnarkAccountUpdate,
+            TransactionPayloadV1::GenericAccountMessage(_) => TxTypeId::GenericAccountMessage,
+            TransactionPayloadV1::SnarkAccountUpdate(_) => TxTypeId::SnarkAccountUpdate,
         }
     }
 }
 
-impl TxConstraints {
+impl TxConstraintsV1 {
     pub fn new(min_slot: Option<Slot>, max_slot: Option<Slot>) -> Self {
         Self {
             min_slot: min_slot.into(),
@@ -123,7 +123,7 @@ impl fmt::Display for TxTypeId {
     }
 }
 
-impl GamTxPayload {
+impl GamTxPayloadV1 {
     pub fn new(target: AccountId) -> Result<Self, &'static str> {
         Ok(Self { target })
     }
@@ -133,9 +133,9 @@ impl GamTxPayload {
     }
 }
 
-impl SauTxPayload {
+impl SauTxPayloadV1 {
     /// Creates a new snark account update transaction payload.
-    pub fn new(target: AccountId, operation_data: SauTxOperationData) -> Self {
+    pub fn new(target: AccountId, operation_data: SauTxOperationDataV1) -> Self {
         Self {
             target,
             operation_data,
@@ -146,17 +146,17 @@ impl SauTxPayload {
         &self.target
     }
 
-    pub fn operation(&self) -> &SauTxOperationData {
+    pub fn operation(&self) -> &SauTxOperationDataV1 {
         &self.operation_data
     }
 }
 
-impl SauTxOperationData {
+impl SauTxOperationDataV1 {
     /// Creates a new operation data.
     pub fn new(
-        update_data: SauTxUpdateData,
+        update_data: SauTxUpdateDataV1,
         messages: Vec<MessageEntry>,
-        ledger_refs: SauTxLedgerRefs,
+        ledger_refs: SauTxLedgerRefsV1,
     ) -> Self {
         Self {
             update_data,
@@ -167,7 +167,7 @@ impl SauTxOperationData {
         }
     }
 
-    pub fn update(&self) -> &SauTxUpdateData {
+    pub fn update(&self) -> &SauTxUpdateDataV1 {
         &self.update_data
     }
 
@@ -175,12 +175,12 @@ impl SauTxOperationData {
         self.messages.iter()
     }
 
-    pub fn ledger_refs(&self) -> &SauTxLedgerRefs {
+    pub fn ledger_refs(&self) -> &SauTxLedgerRefsV1 {
         &self.ledger_refs
     }
 }
 
-impl SauTxLedgerRefs {
+impl SauTxLedgerRefsV1 {
     /// Creates empty ledger refs.
     pub fn new_empty() -> Self {
         Self {
@@ -189,17 +189,17 @@ impl SauTxLedgerRefs {
     }
 
     /// Creates ledger refs with the given claims.
-    pub fn new_with_claims(claims: ClaimList) -> Self {
+    pub fn new_with_claims(claims: ClaimListV1) -> Self {
         Self {
             l1_block_ref_claims: ssz_types::Optional::Some(claims),
         }
     }
 
-    pub fn set_l1_block_ref_claims(&mut self, claims: ClaimList) {
+    pub fn set_l1_block_ref_claims(&mut self, claims: ClaimListV1) {
         self.l1_block_ref_claims = ssz_types::Optional::Some(claims);
     }
 
-    pub fn l1_block_ref_claims(&self) -> Option<&ClaimList> {
+    pub fn l1_block_ref_claims(&self) -> Option<&ClaimListV1> {
         match self.l1_block_ref_claims.as_ref() {
             ssz_types::Optional::None => None,
             ssz_types::Optional::Some(l) => Some(l),
@@ -207,7 +207,7 @@ impl SauTxLedgerRefs {
     }
 }
 
-impl SauTxNewPredicate {
+impl SauTxNewPredicateV1 {
     /// Creates an empty declaration (no predicate rotation).
     pub fn new_empty() -> Self {
         Self {
@@ -230,7 +230,7 @@ impl SauTxNewPredicate {
     }
 }
 
-impl From<Option<PredicateKey>> for SauTxNewPredicate {
+impl From<Option<PredicateKey>> for SauTxNewPredicateV1 {
     fn from(key: Option<PredicateKey>) -> Self {
         Self {
             predicate: key.into(),
@@ -238,11 +238,11 @@ impl From<Option<PredicateKey>> for SauTxNewPredicate {
     }
 }
 
-impl SauTxUpdateData {
+impl SauTxUpdateDataV1 {
     /// Creates a new update data.
     pub fn new(
         seq_no: u64,
-        proof_state: SauTxProofState,
+        proof_state: SauTxProofStateV1,
         extra_data: Vec<u8>,
         new_predicate: Option<PredicateKey>,
     ) -> Self {
@@ -260,7 +260,7 @@ impl SauTxUpdateData {
         self.seq_no
     }
 
-    pub fn proof_state(&self) -> &SauTxProofState {
+    pub fn proof_state(&self) -> &SauTxProofStateV1 {
         &self.proof_state
     }
 
@@ -285,7 +285,7 @@ impl SauTxUpdateData {
     }
 }
 
-impl SauTxProofState {
+impl SauTxProofStateV1 {
     /// Creates a new proof state.
     pub fn new(new_next_msg_idx: u64, inner_state_root: Buf32) -> Self {
         Self {
@@ -303,12 +303,12 @@ impl SauTxProofState {
     }
 }
 
-impl OLTransactionData {
+impl OLTransactionDataV1 {
     /// Creates a new transaction data with the given payload and effects, and default constraints.
-    pub fn new(payload: TransactionPayload, effects: TxEffects) -> Self {
+    pub fn new(payload: TransactionPayloadV1, effects: TxEffects) -> Self {
         Self {
             payload,
-            constraints: TxConstraints::default(),
+            constraints: TxConstraintsV1::default(),
             effects,
         }
     }
@@ -316,7 +316,7 @@ impl OLTransactionData {
     /// Creates a GAM transaction data targeting the given account with a zero-value message
     /// containing the provided payload data.
     pub fn new_gam(dest: AccountId, data: MsgPayloadData) -> Self {
-        let payload = TransactionPayload::GenericAccountMessage(GamTxPayload { target: dest });
+        let payload = TransactionPayloadV1::GenericAccountMessage(GamTxPayloadV1 { target: dest });
         let mut effects = TxEffects::default();
         effects.add_message(SentMessage::new(
             dest,
@@ -324,7 +324,7 @@ impl OLTransactionData {
         ));
         Self {
             payload,
-            constraints: TxConstraints::default(),
+            constraints: TxConstraintsV1::default(),
             effects,
         }
     }
@@ -336,16 +336,16 @@ impl OLTransactionData {
     }
 
     /// Sets the constraints on this transaction data, consuming and returning self.
-    pub fn with_constraints(mut self, constraints: TxConstraints) -> Self {
+    pub fn with_constraints(mut self, constraints: TxConstraintsV1) -> Self {
         self.constraints = constraints;
         self
     }
 
-    pub fn payload(&self) -> &TransactionPayload {
+    pub fn payload(&self) -> &TransactionPayloadV1 {
         &self.payload
     }
 
-    pub fn constraints(&self) -> &TxConstraints {
+    pub fn constraints(&self) -> &TxConstraintsV1 {
         &self.constraints
     }
 
@@ -360,8 +360,8 @@ impl OLTransactionData {
     }
 }
 
-impl TxProofs {
-    /// Creates an empty TxProofs with no satisfiers or accumulator proofs.
+impl TxProofsV1 {
+    /// Creates an empty TxProofsV1 with no satisfiers or accumulator proofs.
     pub fn new_empty() -> Self {
         Self {
             predicate_satisfiers: ssz_types::Optional::None,
@@ -369,10 +369,10 @@ impl TxProofs {
         }
     }
 
-    /// Creates TxProofs with the given satisfiers and accumulator proofs.
+    /// Creates TxProofsV1 with the given satisfiers and accumulator proofs.
     pub fn new(
-        predicate_satisfiers: Option<ProofSatisfierList>,
-        accumulator_proofs: Option<RawMerkleProofList>,
+        predicate_satisfiers: Option<ProofSatisfierListV1>,
+        accumulator_proofs: Option<RawMerkleProofListV1>,
     ) -> Self {
         Self {
             predicate_satisfiers: predicate_satisfiers.into(),
@@ -380,24 +380,24 @@ impl TxProofs {
         }
     }
 
-    pub fn predicate_satisfiers(&self) -> Option<&ProofSatisfierList> {
+    pub fn predicate_satisfiers(&self) -> Option<&ProofSatisfierListV1> {
         match &self.predicate_satisfiers {
             ssz_types::Optional::Some(s) => Some(s),
             ssz_types::Optional::None => None,
         }
     }
 
-    pub fn accumulator_proofs(&self) -> Option<&RawMerkleProofList> {
+    pub fn accumulator_proofs(&self) -> Option<&RawMerkleProofListV1> {
         match &self.accumulator_proofs {
             ssz_types::Optional::Some(p) => Some(p),
             ssz_types::Optional::None => None,
         }
     }
 
-    /// Returns a new [`TxProofs`] with only accumulator proofs updated.
+    /// Returns a new [`TxProofsV1`] with only accumulator proofs updated.
     pub fn with_accumulator_proofs(
         mut self,
-        accumulator_proofs: Option<RawMerkleProofList>,
+        accumulator_proofs: Option<RawMerkleProofListV1>,
     ) -> Self {
         self.accumulator_proofs = accumulator_proofs.into();
         self
@@ -422,16 +422,16 @@ mod tests {
     mod tx_constraints {
         use super::*;
 
-        ssz_proptest!(TxConstraints, tx_constraints_strategy());
+        ssz_proptest!(TxConstraintsV1, tx_constraints_strategy());
 
         #[test]
         fn test_none_values() {
-            let attachment = TxConstraints {
+            let attachment = TxConstraintsV1 {
                 min_slot: ssz_types::Optional::None,
                 max_slot: ssz_types::Optional::None,
             };
             let encoded = attachment.as_ssz_bytes();
-            let decoded = TxConstraints::from_ssz_bytes(&encoded).unwrap();
+            let decoded = TxConstraintsV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(attachment, decoded);
         }
     }
@@ -439,15 +439,15 @@ mod tests {
     mod gam_tx_payload {
         use super::*;
 
-        ssz_proptest!(GamTxPayload, gam_tx_payload_strategy());
+        ssz_proptest!(GamTxPayloadV1, gam_tx_payload_strategy());
 
         #[test]
         fn test_roundtrip() {
-            let msg = GamTxPayload {
+            let msg = GamTxPayloadV1 {
                 target: AccountId::from([0u8; 32]),
             };
             let encoded = msg.as_ssz_bytes();
-            let decoded = GamTxPayload::from_ssz_bytes(&encoded).unwrap();
+            let decoded = GamTxPayloadV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(msg, decoded);
         }
     }
@@ -455,44 +455,44 @@ mod tests {
     mod transaction_payload {
         use super::*;
 
-        ssz_proptest!(TransactionPayload, transaction_payload_strategy());
+        ssz_proptest!(TransactionPayloadV1, transaction_payload_strategy());
 
         #[test]
         fn test_gam_tx_payload_variant() {
-            let payload = TransactionPayload::GenericAccountMessage(GamTxPayload {
+            let payload = TransactionPayloadV1::GenericAccountMessage(GamTxPayloadV1 {
                 target: AccountId::from([0u8; 32]),
             });
             let encoded = payload.as_ssz_bytes();
-            let decoded = TransactionPayload::from_ssz_bytes(&encoded).unwrap();
+            let decoded = TransactionPayloadV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(payload, decoded);
         }
 
         #[test]
         fn test_snark_account_update_tx_payload_variant() {
-            let payload = TransactionPayload::SnarkAccountUpdate(SauTxPayload {
+            let payload = TransactionPayloadV1::SnarkAccountUpdate(SauTxPayloadV1 {
                 target: AccountId::from([0u8; 32]),
-                operation_data: SauTxOperationData {
-                    update_data: SauTxUpdateData {
+                operation_data: SauTxOperationDataV1 {
+                    update_data: SauTxUpdateDataV1 {
                         seq_no: 1,
-                        proof_state: SauTxProofState {
+                        proof_state: SauTxProofStateV1 {
                             new_next_msg_idx: 0,
                             inner_state_root: [0u8; 32].into(),
                         },
                         extra_data: Vec::new()
                             .try_into()
                             .expect("extra data must fit within SSZ max length"),
-                        new_predicate: SauTxNewPredicate::new_empty(),
+                        new_predicate: SauTxNewPredicateV1::new_empty(),
                     },
                     messages: Vec::new()
                         .try_into()
                         .expect("messages must fit within SSZ max length"),
-                    ledger_refs: SauTxLedgerRefs {
+                    ledger_refs: SauTxLedgerRefsV1 {
                         l1_block_ref_claims: ssz_types::Optional::None,
                     },
                 },
             });
             let encoded = payload.as_ssz_bytes();
-            let decoded = TransactionPayload::from_ssz_bytes(&encoded).unwrap();
+            let decoded = TransactionPayloadV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(payload, decoded);
         }
     }
@@ -502,69 +502,69 @@ mod tests {
 
         use super::*;
 
-        ssz_proptest!(OLTransaction, ol_transaction_strategy());
+        ssz_proptest!(OLTransactionV1, ol_transaction_strategy());
 
         #[test]
         fn test_generic_message() {
-            let tx = OLTransaction {
-                data: OLTransactionData {
-                    payload: TransactionPayload::GenericAccountMessage(GamTxPayload {
+            let tx = OLTransactionV1 {
+                data: OLTransactionDataV1 {
+                    payload: TransactionPayloadV1::GenericAccountMessage(GamTxPayloadV1 {
                         target: AccountId::from([0u8; 32]),
                     }),
-                    constraints: TxConstraints::default(),
+                    constraints: TxConstraintsV1::default(),
                     effects: TxEffects::default(),
                 },
-                proofs: TxProofs {
+                proofs: TxProofsV1 {
                     predicate_satisfiers: ssz_types::Optional::None,
                     accumulator_proofs: ssz_types::Optional::None,
                 },
             };
             let encoded = tx.as_ssz_bytes();
-            let decoded = OLTransaction::from_ssz_bytes(&encoded).unwrap();
+            let decoded = OLTransactionV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(tx, decoded);
         }
 
         #[test]
         fn test_snark_account_update() {
-            let tx = OLTransaction {
-                data: OLTransactionData {
-                    payload: TransactionPayload::SnarkAccountUpdate(SauTxPayload {
+            let tx = OLTransactionV1 {
+                data: OLTransactionDataV1 {
+                    payload: TransactionPayloadV1::SnarkAccountUpdate(SauTxPayloadV1 {
                         target: AccountId::from([1u8; 32]),
-                        operation_data: SauTxOperationData {
-                            update_data: SauTxUpdateData {
+                        operation_data: SauTxOperationDataV1 {
+                            update_data: SauTxUpdateDataV1 {
                                 seq_no: 42,
-                                proof_state: SauTxProofState {
+                                proof_state: SauTxProofStateV1 {
                                     new_next_msg_idx: 10,
                                     inner_state_root: [5u8; 32].into(),
                                 },
                                 extra_data: Vec::new()
                                     .try_into()
                                     .expect("extra data must fit within SSZ max length"),
-                                new_predicate: SauTxNewPredicate::new_with_key(
+                                new_predicate: SauTxNewPredicateV1::new_with_key(
                                     PredicateKey::always_accept(),
                                 ),
                             },
                             messages: Vec::new()
                                 .try_into()
                                 .expect("messages must fit within SSZ max length"),
-                            ledger_refs: SauTxLedgerRefs {
+                            ledger_refs: SauTxLedgerRefsV1 {
                                 l1_block_ref_claims: ssz_types::Optional::None,
                             },
                         },
                     }),
-                    constraints: TxConstraints {
+                    constraints: TxConstraintsV1 {
                         min_slot: ssz_types::Optional::Some(100),
                         max_slot: ssz_types::Optional::Some(200),
                     },
                     effects: TxEffects::default(),
                 },
-                proofs: TxProofs {
+                proofs: TxProofsV1 {
                     predicate_satisfiers: ssz_types::Optional::None,
                     accumulator_proofs: ssz_types::Optional::None,
                 },
             };
             let encoded = tx.as_ssz_bytes();
-            let decoded = OLTransaction::from_ssz_bytes(&encoded).unwrap();
+            let decoded = OLTransactionV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(tx, decoded);
         }
     }

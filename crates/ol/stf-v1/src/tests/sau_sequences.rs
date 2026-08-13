@@ -2,12 +2,12 @@
 
 use strata_acct_types::{BitcoinAmount, Hash};
 use strata_bridge_params::BridgeParams;
-use strata_ol_chain_types_v1::OLBlockHeader;
+use strata_ol_chain_types_v1::OLBlockHeaderV1;
 use strata_ol_state_types::ISnarkAccountState;
 
 use crate::{test_utils::*, verify_block};
 
-fn inner_state_root_from_header(header: &OLBlockHeader) -> Hash {
+fn inner_state_root_from_header(header: &OLBlockHeaderV1) -> Hash {
     Hash::from(header.state_root().0)
 }
 

@@ -99,7 +99,7 @@ pub fn execute_block_start<S: IStateAccessorMut>(
 /// Executes the transaction segment for a block.
 pub fn execute_block_tx_segment<S: IStateAccessorMut>(
     state: &mut S,
-    tx_segment: &OLTxSegment,
+    tx_segment: &OLTxSegmentV1,
     tx_ctx: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     transaction_processing::process_block_tx_segment(state, tx_segment, tx_ctx)
@@ -185,15 +185,15 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
 /// presence of manifests, since manifests may appear in any block.
 #[derive(Clone, Debug)]
 pub struct BlockComponents {
-    tx_segment: OLTxSegment,
-    manifest_container: Option<OLAsmManifestContainer>,
+    tx_segment: OLTxSegmentV1,
+    manifest_container: Option<OLAsmManifestContainerV1>,
     is_terminal: bool,
 }
 
 impl BlockComponents {
     pub fn new(
-        tx_segment: OLTxSegment,
-        manifest_container: Option<OLAsmManifestContainer>,
+        tx_segment: OLTxSegmentV1,
+        manifest_container: Option<OLAsmManifestContainerV1>,
         is_terminal: bool,
     ) -> Self {
         Self {
@@ -206,16 +206,16 @@ impl BlockComponents {
     /// Create new empty (non-terminal) block components.
     pub fn new_empty() -> Self {
         Self {
-            tx_segment: OLTxSegment::new(Vec::new()).expect("empty tx segment should succeed"),
+            tx_segment: OLTxSegmentV1::new(Vec::new()).expect("empty tx segment should succeed"),
             manifest_container: None,
             is_terminal: false,
         }
     }
 
-    /// Create non-terminal block components from full OLTransaction objects.
-    pub fn new_txs_from_ol_transactions(txs: Vec<OLTransaction>) -> Self {
+    /// Create non-terminal block components from full OLTransactionV1 objects.
+    pub fn new_txs_from_ol_transactions(txs: Vec<OLTransactionV1>) -> Self {
         Self {
-            tx_segment: OLTxSegment::new(txs).expect("tx segment should be within limits"),
+            tx_segment: OLTxSegmentV1::new(txs).expect("tx segment should be within limits"),
             manifest_container: None,
             is_terminal: false,
         }
@@ -225,27 +225,27 @@ impl BlockComponents {
     ///
     /// Each payload gets default constraints and empty proofs. GAM payloads
     /// automatically get a zero-value message effect matching their target.
-    pub fn new_txs(payloads: Vec<TransactionPayload>) -> Self {
+    pub fn new_txs(payloads: Vec<TransactionPayloadV1>) -> Self {
         let txs = payloads
             .into_iter()
             .map(|p| {
                 let mut effects = TxEffects::default();
-                if let TransactionPayload::GenericAccountMessage(ref gam) = p {
+                if let TransactionPayloadV1::GenericAccountMessage(ref gam) = p {
                     effects
                         .push_message(*gam.target(), 0, vec![])
                         .expect("message payload bytes must fit within SSZ max length");
                 }
-                let data = OLTransactionData {
+                let data = OLTransactionDataV1 {
                     payload: p,
-                    constraints: TxConstraints::default(),
+                    constraints: TxConstraintsV1::default(),
                     effects,
                 };
-                let proofs = TxProofs::new_empty();
-                OLTransaction::new(data, proofs)
+                let proofs = TxProofsV1::new_empty();
+                OLTransactionV1::new(data, proofs)
             })
             .collect();
         Self {
-            tx_segment: OLTxSegment::new(txs).expect("tx segment should be within limits"),
+            tx_segment: OLTxSegmentV1::new(txs).expect("tx segment should be within limits"),
             manifest_container: None,
             is_terminal: false,
         }
@@ -258,9 +258,10 @@ impl BlockComponents {
     /// block as the epoch terminal.
     pub fn new_manifests(manifests: Vec<AsmManifest>) -> Self {
         Self {
-            tx_segment: OLTxSegment::new(Vec::new()).expect("empty tx segment should succeed"),
+            tx_segment: OLTxSegmentV1::new(Vec::new()).expect("empty tx segment should succeed"),
             manifest_container: Some(
-                OLAsmManifestContainer::new(manifests).expect("manifests should be within limits"),
+                OLAsmManifestContainerV1::new(manifests)
+                    .expect("manifests should be within limits"),
             ),
             is_terminal: false,
         }
@@ -281,9 +282,9 @@ impl BlockComponents {
     /// Extracts block components from a signed block, handling absent tx segments.
     ///
     /// Terminality is read from the authoritative `IS_TERMINAL` header flag.
-    pub fn from_block(block: &OLBlock) -> Self {
-        let empty =
-            OLTxSegment::new(vec![]).expect("empty transaction segment construction is infallible");
+    pub fn from_block(block: &OLBlockV1) -> Self {
+        let empty = OLTxSegmentV1::new(vec![])
+            .expect("empty transaction segment construction is infallible");
         let tx_segment = block.body().tx_segment().unwrap_or(&empty).clone();
         let manifest_container = block.body().manifests().cloned();
         Self {
@@ -293,11 +294,11 @@ impl BlockComponents {
         }
     }
 
-    pub fn tx_segment(&self) -> &OLTxSegment {
+    pub fn tx_segment(&self) -> &OLTxSegmentV1 {
         &self.tx_segment
     }
 
-    pub fn manifest_container(&self) -> Option<&OLAsmManifestContainer> {
+    pub fn manifest_container(&self) -> Option<&OLAsmManifestContainerV1> {
         self.manifest_container.as_ref()
     }
 
@@ -343,24 +344,24 @@ impl ConstructBlockOutput {
 /// A block that has a completed header and body, but does not have a signature.
 #[derive(Clone, Debug)]
 pub struct CompletedBlock {
-    header: OLBlockHeader,
-    body: OLBlockBody,
+    header: OLBlockHeaderV1,
+    body: OLBlockBodyV1,
 }
 
 impl CompletedBlock {
-    fn new(header: OLBlockHeader, body: OLBlockBody) -> Self {
+    fn new(header: OLBlockHeaderV1, body: OLBlockBodyV1) -> Self {
         Self { header, body }
     }
 
-    pub fn header(&self) -> &OLBlockHeader {
+    pub fn header(&self) -> &OLBlockHeaderV1 {
         &self.header
     }
 
-    pub fn into_header(self) -> OLBlockHeader {
+    pub fn into_header(self) -> OLBlockHeaderV1 {
         self.header
     }
 
-    pub fn body(&self) -> &OLBlockBody {
+    pub fn body(&self) -> &OLBlockBodyV1 {
         &self.body
     }
 }
@@ -400,7 +401,7 @@ pub fn construct_block<S: IStateAccessorMut>(
     let parent_blkid = block_context.compute_parent_blkid();
 
     // Construct the block body, attaching any manifests this block carries.
-    let mut body = OLBlockBody::new_common(block_components.tx_segment);
+    let mut body = OLBlockBodyV1::new_common(block_components.tx_segment);
     if let Some(manifest_container) = block_components.manifest_container {
         body.set_manifests(manifest_container);
     }
@@ -408,11 +409,11 @@ pub fn construct_block<S: IStateAccessorMut>(
     // Compute the body root using the hash commitment method. Terminality is
     // set from explicit caller intent, not derived from manifest presence.
     let body_root = body.compute_hash_commitment();
-    let mut flags = BlockFlags::zero();
+    let mut flags = BlockFlagsV1::zero();
     flags.set_is_terminal(is_terminal);
 
     // 3. Assemble the final completed block.
-    let header = OLBlockHeader::new(
+    let header = OLBlockHeaderV1::new(
         block_context.timestamp(),
         flags,
         block_context.slot(),
@@ -442,14 +443,14 @@ pub fn execute_and_complete_block<S: IStateAccessorMut>(
 /// Executes a batch of blocks end-to-end, verifying each. Returns the
 /// concatenated OL logs.
 ///
-/// Generic over `S` so callers may pass `OLState` directly or a wrapper
-/// (e.g. `DaAccumulatingState<OLState>`). Use
+/// Generic over `S` so callers may pass `OLStateV1` directly or a wrapper
+/// (e.g. `DaAccumulatingState<OLStateV1>`). Use
 /// [`execute_block_batch_predrain`] instead when building a DA blob that
 /// excludes the epoch-terminal drain effects.
 pub fn execute_block_batch<S: IStateAccessorMut>(
     state: &mut S,
-    blocks: &[OLBlock],
-    initial_parent: &OLBlockHeader,
+    blocks: &[OLBlockV1],
+    initial_parent: &OLBlockHeaderV1,
     bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let mut parent = initial_parent.clone();
@@ -481,8 +482,8 @@ pub fn execute_block_batch<S: IStateAccessorMut>(
 /// are replayed on top of the diff during rebuild.
 pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
     state: &mut S,
-    blocks: &[OLBlock],
-    initial_parent: &OLBlockHeader,
+    blocks: &[OLBlockV1],
+    initial_parent: &OLBlockHeaderV1,
     bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let mut parent = initial_parent.clone();

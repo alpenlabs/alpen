@@ -4,8 +4,8 @@ use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
-use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
+use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 
 use crate::{OLBlockExecutionOutput, WorkerResult};
@@ -21,13 +21,13 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     // =========================================================================
 
     /// Fetches a whole block by its ID.
-    fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlock>>;
+    fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>>;
 
     /// Fetches block IDs at a given slot.
     fn fetch_blocks_at_slot(&self, slot: u64) -> WorkerResult<Vec<OLBlockId>>;
 
     /// Fetches a block's header by its ID.
-    fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeader>>;
+    fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeaderV1>>;
 
     /// Fetches the current chain tip from the database.
     ///
@@ -39,13 +39,13 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     // =========================================================================
 
     /// Fetches the OL state at a given block commitment.
-    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLState>>;
+    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLStateV1>>;
 
     /// Fetches the write batch for a given block commitment.
     fn fetch_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> WorkerResult<Option<WriteBatch<OLAccountState>>>;
+    ) -> WorkerResult<Option<WriteBatch<OLAccountStateV1>>>;
 
     // =========================================================================
     // Output storage
@@ -55,7 +55,7 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// (creation epochs, per-account update records, inbox writes).
     fn store_block_output(
         &self,
-        block: &OLBlock,
+        block: &OLBlockV1,
         commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()>;
@@ -64,11 +64,11 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     fn store_toplevel_state(
         &self,
         commitment: OLBlockCommitment,
-        state: OLState,
+        state: OLStateV1,
     ) -> WorkerResult<()>;
 
-    /// Stores an unsigned checkpoint terminal [`OLBlockHeader`].
-    fn store_terminal_header(&self, id: OLBlockId, header: OLBlockHeader) -> WorkerResult<()>;
+    /// Stores an unsigned checkpoint terminal [`OLBlockHeaderV1`].
+    fn store_terminal_header(&self, id: OLBlockId, header: OLBlockHeaderV1) -> WorkerResult<()>;
 
     // =========================================================================
     // Epoch management

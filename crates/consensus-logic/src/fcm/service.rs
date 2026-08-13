@@ -7,7 +7,7 @@ use strata_csm_types::CheckpointState;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::Slot;
 use strata_ol_chain_types_v1::{
-    sequencer_predicate_requires_signature, verify_sequencer_predicate_signature, OLBlock,
+    sequencer_predicate_requires_signature, verify_sequencer_predicate_signature, OLBlockV1,
 };
 use strata_predicate::PredicateKey;
 use strata_primitives::{Buf32, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId};
@@ -205,7 +205,7 @@ async fn process_fc_message<C: FcmContext>(
 
 async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
     fcm_state: &FcmServiceState<C>,
-    bundle: &OLBlock,
+    bundle: &OLBlockV1,
     block: OLBlockCommitment,
     status: BlockStatus,
 ) -> anyhow::Result<bool> {
@@ -418,7 +418,7 @@ async fn publish_sync_status<C: FcmContext>(fcm_state: &FcmServiceState<C>) -> a
 
 async fn handle_new_block<C: FcmContext>(
     fcm_state: &mut FcmServiceState<C>,
-    bundle: &OLBlock,
+    bundle: &OLBlockV1,
 ) -> anyhow::Result<bool> {
     let slot = bundle.header().slot();
     let blkid = &bundle.header().compute_blkid();
@@ -550,7 +550,7 @@ async fn handle_epoch_finalization<C: FcmContext>(
 /// Slot-0 (genesis) blocks are not expected as proposals — genesis is fixed at node init.
 pub fn check_ol_block_proposal_valid(
     blkid: &OLBlockId,
-    block: &OLBlock,
+    block: &OLBlockV1,
     sequencer_predicate: &PredicateKey,
 ) -> Result<(), Error> {
     if block.header().slot() == 0 {
@@ -608,7 +608,7 @@ where
 async fn apply_tip_update<C: FcmContext>(
     update: TipUpdate,
     fcm_state: &mut FcmServiceState<C>,
-    bundle: &OLBlock,
+    bundle: &OLBlockV1,
 ) -> anyhow::Result<()> {
     match update {
         // Easy case.
@@ -810,11 +810,11 @@ mod tests {
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
     use strata_ol_chain_types_v1::{
         test_utils::{schnorr_predicate, test_schnorr_keypair},
-        BlockFlags, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment,
-        SignedOLBlockHeader,
+        BlockFlagsV1, OLBlockBodyV1, OLBlockCredentialV1, OLBlockHeaderV1, OLBlockV1,
+        OLTxSegmentV1, SignedOLBlockHeaderV1,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
+    use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
     use strata_ol_stf_v1::{
         test_utils::{execute_block, make_genesis_state},
         BlockComponents, BlockInfo, CompletedBlock,
@@ -840,14 +840,14 @@ mod tests {
 
     #[derive(Default)]
     struct StubFcmStorageInner {
-        blocks: HashMap<OLBlockId, OLBlock>,
-        headers: HashMap<OLBlockId, OLBlockHeader>,
+        blocks: HashMap<OLBlockId, OLBlockV1>,
+        headers: HashMap<OLBlockId, OLBlockHeaderV1>,
         statuses: HashMap<OLBlockId, BlockStatus>,
         blocks_by_slot: BTreeMap<Slot, Vec<OLBlockId>>,
         canonical_blocks: HashMap<Slot, OLBlockCommitment>,
         block_high_watermark: Option<OLBlockCommitment>,
         history_base: Option<EpochCommitment>,
-        states: HashMap<OLBlockCommitment, Arc<OLState>>,
+        states: HashMap<OLBlockCommitment, Arc<OLStateV1>>,
         canonical_epochs: HashMap<Epoch, EpochCommitment>,
         indexing_rollbacks: Vec<(Epoch, OLBlockCommitment)>,
         epoch_summary_deletes: Vec<EpochCommitment>,
@@ -858,11 +858,11 @@ mod tests {
             Self::default()
         }
 
-        fn put_ol_block(&self, block: OLBlock) -> OLBlockCommitment {
+        fn put_ol_block(&self, block: OLBlockV1) -> OLBlockCommitment {
             self.put_block_parts(block, None, None)
         }
 
-        fn put_ol_header(&self, header: OLBlockHeader) -> OLBlockCommitment {
+        fn put_ol_header(&self, header: OLBlockHeaderV1) -> OLBlockCommitment {
             let blkid = header.compute_blkid();
             let commitment = OLBlockCommitment::new(header.slot(), blkid);
             self.inner.lock().unwrap().headers.insert(blkid, header);
@@ -871,8 +871,8 @@ mod tests {
 
         fn put_executed_block(
             &self,
-            block: OLBlock,
-            state: OLState,
+            block: OLBlockV1,
+            state: OLStateV1,
             status: BlockStatus,
         ) -> OLBlockCommitment {
             self.put_block_parts(block, Some(state), Some(status))
@@ -880,8 +880,8 @@ mod tests {
 
         fn put_block_parts(
             &self,
-            block: OLBlock,
-            state: Option<OLState>,
+            block: OLBlockV1,
+            state: Option<OLStateV1>,
             status: Option<BlockStatus>,
         ) -> OLBlockCommitment {
             let blkid = block.header().compute_blkid();
@@ -904,7 +904,7 @@ mod tests {
             commitment
         }
 
-        fn put_toplevel_ol_state(&self, block: OLBlockCommitment, state: OLState) {
+        fn put_toplevel_ol_state(&self, block: OLBlockCommitment, state: OLStateV1) {
             let mut inner = self.inner.lock().unwrap();
             assert!(
                 inner.blocks.contains_key(block.blkid())
@@ -1023,11 +1023,11 @@ mod tests {
             Ok(self.inner.lock().unwrap().statuses.get(&blkid).copied())
         }
 
-        async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
+        async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockV1>> {
             Ok(self.inner.lock().unwrap().blocks.get(&blkid).cloned())
         }
 
-        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
             let inner = self.inner.lock().unwrap();
             Ok(inner
                 .blocks
@@ -1087,7 +1087,7 @@ mod tests {
         async fn get_toplevel_ol_state(
             &self,
             commitment: OLBlockCommitment,
-        ) -> DbResult<Option<Arc<OLState>>> {
+        ) -> DbResult<Option<Arc<OLStateV1>>> {
             Ok(self.inner.lock().unwrap().states.get(&commitment).cloned())
         }
 
@@ -1181,11 +1181,11 @@ mod tests {
             self.storage.get_block_status(blkid).await
         }
 
-        async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
+        async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockV1>> {
             self.storage.get_ol_block(blkid).await
         }
 
-        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
             self.storage.get_ol_header(blkid).await
         }
     }
@@ -1225,7 +1225,7 @@ mod tests {
         async fn get_toplevel_ol_state(
             &self,
             commitment: OLBlockCommitment,
-        ) -> DbResult<Option<Arc<OLState>>> {
+        ) -> DbResult<Option<Arc<OLStateV1>>> {
             self.storage.get_toplevel_ol_state(commitment).await
         }
 
@@ -1273,15 +1273,16 @@ mod tests {
 
     #[derive(Clone)]
     struct ExecutedBlock {
-        block: OLBlock,
-        state: OLState,
+        block: OLBlockV1,
+        state: OLStateV1,
     }
 
     impl ExecutedBlock {
         fn new(completed: CompletedBlock, state: &MemoryStateBaseLayer) -> Self {
-            let signed_header = SignedOLBlockHeader::new(completed.header().clone(), Buf64::zero());
+            let signed_header =
+                SignedOLBlockHeaderV1::new(completed.header().clone(), Buf64::zero());
             Self {
-                block: OLBlock::new(signed_header, completed.body().clone()),
+                block: OLBlockV1::new(signed_header, completed.body().clone()),
                 state: state.state().clone(),
             }
         }
@@ -1354,7 +1355,7 @@ mod tests {
 
     fn execute_test_block(
         state: &mut MemoryStateBaseLayer,
-        parent: &OLBlock,
+        parent: &OLBlockV1,
         timestamp: u64,
         slot: u64,
     ) -> ExecutedBlock {
@@ -1363,7 +1364,7 @@ mod tests {
 
     fn execute_test_block_in_epoch(
         state: &mut MemoryStateBaseLayer,
-        parent: &OLBlock,
+        parent: &OLBlockV1,
         timestamp: u64,
         slot: u64,
         epoch: Epoch,
@@ -1380,7 +1381,7 @@ mod tests {
 
     fn execute_terminal_test_block_in_epoch(
         state: &mut MemoryStateBaseLayer,
-        parent: &OLBlock,
+        parent: &OLBlockV1,
         timestamp: u64,
         slot: u64,
         epoch: Epoch,
@@ -1397,7 +1398,7 @@ mod tests {
 
     fn execute_test_block_with_components(
         state: &mut MemoryStateBaseLayer,
-        parent: &OLBlock,
+        parent: &OLBlockV1,
         timestamp: u64,
         slot: u64,
         epoch: Epoch,
@@ -1657,7 +1658,7 @@ mod tests {
         ctx.storage().put_canonical_epoch_commitment(pending_epoch);
         let tracker = tracker_with_blocks(&chain.genesis, &[&chain.x1, &chain.x2]);
         let mut finalizable_state = chain.x2.state.clone();
-        let mut epoch_update = WriteBatch::<OLAccountState>::default();
+        let mut epoch_update = WriteBatch::<OLAccountStateV1>::default();
         epoch_update.epochal_writes_mut().cur_epoch = Some(2);
         finalizable_state
             .apply_write_batch(epoch_update)
@@ -2094,11 +2095,11 @@ mod tests {
         Ok(())
     }
 
-    fn make_block(slot: u64, signature: Option<Buf64>) -> OLBlock {
-        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
-        let header = OLBlockHeader::new(
+    fn make_block(slot: u64, signature: Option<Buf64>) -> OLBlockV1 {
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeaderV1::new(
             1_000 + slot,
-            BlockFlags::from(0),
+            BlockFlagsV1::from(0),
             slot,
             0,
             OLBlockId::from(Buf32::zero()),
@@ -2107,23 +2108,23 @@ mod tests {
             Buf32::zero(),
         );
         let signed_header = match signature {
-            Some(signature) => SignedOLBlockHeader::new(header, signature),
-            None => SignedOLBlockHeader {
+            Some(signature) => SignedOLBlockHeaderV1::new(header, signature),
+            None => SignedOLBlockHeaderV1 {
                 header,
-                credential: OLBlockCredential {
+                credential: OLBlockCredentialV1 {
                     schnorr_sig: None::<Buf64>.into(),
                 },
             },
         };
 
-        OLBlock::new(signed_header, body)
+        OLBlockV1::new(signed_header, body)
     }
 
-    fn make_storage_block(slot: Slot, parent: OLBlockId) -> OLBlock {
-        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
-        let header = OLBlockHeader::new(
+    fn make_storage_block(slot: Slot, parent: OLBlockId) -> OLBlockV1 {
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeaderV1::new(
             1_000 + slot,
-            BlockFlags::from(0),
+            BlockFlagsV1::from(0),
             slot,
             0,
             parent,
@@ -2131,14 +2132,14 @@ mod tests {
             Buf32::zero(),
             Buf32::zero(),
         );
-        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+        OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body)
     }
 
-    fn make_terminal_storage_block(slot: Slot, parent: OLBlockId) -> OLBlock {
-        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
-        let mut flags = BlockFlags::from(0);
+    fn make_terminal_storage_block(slot: Slot, parent: OLBlockId) -> OLBlockV1 {
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
+        let mut flags = BlockFlagsV1::from(0);
         flags.set_is_terminal(true);
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             1_000 + slot,
             flags,
             slot,
@@ -2148,10 +2149,10 @@ mod tests {
             Buf32::zero(),
             Buf32::zero(),
         );
-        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+        OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body)
     }
 
-    fn sign_block(block: &OLBlock, signing_key: &Buf32) -> Buf64 {
+    fn sign_block(block: &OLBlockV1, signing_key: &Buf32) -> Buf64 {
         let msg: Buf32 = block.header().compute_blkid().into();
         sign_schnorr_sig(&msg, signing_key)
     }

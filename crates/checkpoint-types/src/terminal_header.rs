@@ -1,6 +1,6 @@
 use strata_asm_checkpoint_types::{CheckpointTip, TerminalHeaderComplement};
 use strata_identifiers::{Buf32, Epoch, OLBlockId};
-use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
+use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
 use thiserror::Error;
 
 /// Errors produced while reconstructing a checkpoint terminal header.
@@ -20,7 +20,7 @@ pub enum TerminalHeaderReconstructionError {
     },
 }
 
-/// Reconstructs the unsigned terminal [`OLBlockHeader`] committed by a checkpoint.
+/// Reconstructs the unsigned terminal [`OLBlockHeaderV1`] committed by a checkpoint.
 ///
 /// The checkpoint tip supplies the terminal slot, epoch, and expected block ID. The complement
 /// supplies fields that cannot be derived from state reconstruction, while `state_root` is the
@@ -29,12 +29,12 @@ pub fn reconstruct_terminal_header(
     tip: &CheckpointTip,
     complement: &TerminalHeaderComplement,
     state_root: Buf32,
-) -> Result<OLBlockHeader, TerminalHeaderReconstructionError> {
+) -> Result<OLBlockHeaderV1, TerminalHeaderReconstructionError> {
     let terminal = tip.l2_commitment();
-    let mut flags = BlockFlags::zero();
+    let mut flags = BlockFlagsV1::zero();
     flags.set_is_terminal(true);
 
-    let header = OLBlockHeader::new(
+    let header = OLBlockHeaderV1::new(
         complement.timestamp(),
         flags,
         terminal.slot(),
@@ -61,7 +61,7 @@ pub fn reconstruct_terminal_header(
 mod tests {
     use strata_asm_checkpoint_types::{CheckpointTip, TerminalHeaderComplement};
     use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-    use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
 
     use super::{reconstruct_terminal_header, TerminalHeaderReconstructionError};
 
@@ -69,7 +69,7 @@ mod tests {
         CheckpointTip,
         TerminalHeaderComplement,
         Buf32,
-        OLBlockHeader,
+        OLBlockHeaderV1,
     ) {
         let epoch = 7;
         let slot = 42;
@@ -80,9 +80,9 @@ mod tests {
             Buf32::from([2; 32]),
             Buf32::from([3; 32]),
         );
-        let mut flags = BlockFlags::zero();
+        let mut flags = BlockFlagsV1::zero();
         flags.set_is_terminal(true);
-        let expected_header = OLBlockHeader::new(
+        let expected_header = OLBlockHeaderV1::new(
             complement.timestamp(),
             flags,
             slot,

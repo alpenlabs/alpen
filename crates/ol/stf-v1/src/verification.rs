@@ -8,8 +8,8 @@ use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_v1::{
-    AsmManifest, MAX_LOGS_PER_BLOCK, OLAsmManifestContainer, OLBlockBody, OLBlockHeader, OLLog,
-    OLTxSegment,
+    AsmManifest, MAX_LOGS_PER_BLOCK, OLAsmManifestContainerV1, OLBlockBodyV1, OLBlockHeaderV1,
+    OLLog, OLTxSegmentV1,
 };
 use strata_ol_da::DaScheme;
 use strata_ol_state_types::*;
@@ -41,7 +41,7 @@ impl BlockExecExpectations {
         }
     }
 
-    pub(crate) fn from_block_parts(header: &OLBlockHeader, _body: &OLBlockBody) -> Self {
+    pub(crate) fn from_block_parts(header: &OLBlockHeaderV1, _body: &OLBlockBodyV1) -> Self {
         Self::new(*header.state_root(), *header.logs_root())
     }
 
@@ -54,16 +54,16 @@ impl BlockExecExpectations {
 /// Inputs to block execution, derived from the header and body.
 #[derive(Copy, Clone, Debug)]
 pub struct BlockExecInput<'b> {
-    tx_segment: &'b OLTxSegment,
-    manifest_container: Option<&'b OLAsmManifestContainer>,
+    tx_segment: &'b OLTxSegmentV1,
+    manifest_container: Option<&'b OLAsmManifestContainerV1>,
     is_terminal: bool,
 }
 
 impl<'b> BlockExecInput<'b> {
     /// Constructs a new instance.
     pub fn new(
-        tx_segment: &'b OLTxSegment,
-        manifest_container: Option<&'b OLAsmManifestContainer>,
+        tx_segment: &'b OLTxSegmentV1,
+        manifest_container: Option<&'b OLAsmManifestContainerV1>,
         is_terminal: bool,
     ) -> Self {
         Self {
@@ -76,7 +76,7 @@ impl<'b> BlockExecInput<'b> {
     /// Constructs a new instance from a block's header and body.
     ///
     /// Terminality is read from the authoritative `IS_TERMINAL` header flag.
-    pub fn from_block_parts(header: &OLBlockHeader, body: &'b OLBlockBody) -> Self {
+    pub fn from_block_parts(header: &OLBlockHeaderV1, body: &'b OLBlockBodyV1) -> Self {
         // tx_segment is optional in the body, but BlockExecInput requires it.
         // Blocks without transactions should have an empty tx_segment, not None.
         let tx_segment = body
@@ -86,12 +86,12 @@ impl<'b> BlockExecInput<'b> {
     }
 
     /// Returns the transaction segment.
-    pub fn tx_segment(&self) -> &'b OLTxSegment {
+    pub fn tx_segment(&self) -> &'b OLTxSegmentV1 {
         self.tx_segment
     }
 
     /// Returns the manifest container if present.
-    pub fn manifest_container(&self) -> Option<&'b OLAsmManifestContainer> {
+    pub fn manifest_container(&self) -> Option<&'b OLAsmManifestContainerV1> {
         self.manifest_container
     }
 
@@ -114,9 +114,9 @@ impl<'b> BlockExecInput<'b> {
 )]
 pub fn verify_block<S: IStateAccessorMut>(
     state: &mut S,
-    header: &OLBlockHeader,
-    parent_header: Option<&OLBlockHeader>,
-    body: &OLBlockBody,
+    header: &OLBlockHeaderV1,
+    parent_header: Option<&OLBlockHeaderV1>,
+    body: &OLBlockBodyV1,
     bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
@@ -158,9 +158,9 @@ pub fn verify_block<S: IStateAccessorMut>(
 )]
 pub fn verify_block_predrain<S: IStateAccessorMut>(
     state: &mut S,
-    header: &OLBlockHeader,
-    parent_header: Option<&OLBlockHeader>,
-    body: &OLBlockBody,
+    header: &OLBlockHeaderV1,
+    parent_header: Option<&OLBlockHeaderV1>,
+    body: &OLBlockBodyV1,
     bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     // 0. Do preliminary sanity checks.
@@ -222,8 +222,8 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
 /// This is a no-op for non-terminal blocks.
 pub fn apply_epoch_terminal<S: IStateAccessorMut>(
     state: &mut S,
-    header: &OLBlockHeader,
-    body: &OLBlockBody,
+    header: &OLBlockHeaderV1,
+    body: &OLBlockBodyV1,
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
     let block_info = BlockInfo::from_header(header);
@@ -256,8 +256,8 @@ pub fn apply_epoch_terminal<S: IStateAccessorMut>(
 /// Checks that headers are properly continuous and that their fields are
 /// logically consistent with each other.
 pub fn verify_header_continuity(
-    header: &OLBlockHeader,
-    parent: Option<&OLBlockHeader>,
+    header: &OLBlockHeaderV1,
+    parent: Option<&OLBlockHeaderV1>,
 ) -> ExecResult<()> {
     // Check parent linkages.
     if let Some(ph) = parent {
@@ -310,7 +310,7 @@ pub fn verify_header_continuity(
 }
 
 /// Checks that the block's structure is internally consistent.
-pub fn verify_block_structure(header: &OLBlockHeader, body: &OLBlockBody) -> ExecResult<()> {
+pub fn verify_block_structure(header: &OLBlockHeaderV1, body: &OLBlockBodyV1) -> ExecResult<()> {
     // Check that the body matches the field.
     let body_root = body.compute_hash_commitment();
     if body_root != *header.body_root() {
@@ -439,7 +439,7 @@ mod tests {
     use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_identifiers::AccountSerial;
     use strata_ol_chain_types_v1::{
-        BlockFlags, OLAsmManifestContainer, OLBlockId, OLLog, OLTxSegment,
+        BlockFlagsV1, OLAsmManifestContainerV1, OLBlockId, OLLog, OLTxSegmentV1,
     };
     use strata_ol_da::{
         AccountInit, AccountTypeInit, GlobalStateDiff, LedgerDiff, NewAccountEntry, OLDaPayloadV1,
@@ -504,7 +504,7 @@ mod tests {
         state: &MemoryStateBaseLayer,
         epoch_info: &EpochInfo,
         state_diff: StateDiff,
-        manifests: &OLAsmManifestContainer,
+        manifests: &OLAsmManifestContainerV1,
     ) -> Buf32 {
         let mut expected_state = state.clone();
         let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
@@ -526,17 +526,17 @@ mod tests {
     #[test]
     fn test_verify_block_structure_happy_path() {
         // Create a body and compute its root
-        let tx_segment = OLTxSegment::new(vec![]);
-        let body = OLBlockBody::new(
+        let tx_segment = OLTxSegmentV1::new(vec![]);
+        let body = OLBlockBodyV1::new(
             tx_segment.expect("tx segment should be within limits"),
             None,
         );
         let body_root = body.compute_hash_commitment();
 
         // Create header with matching body root
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             1000000,
-            BlockFlags::zero(),
+            BlockFlagsV1::zero(),
             0,
             0,
             OLBlockId::null(),
@@ -551,16 +551,16 @@ mod tests {
     #[test]
     fn test_verify_block_structure_mismatch() {
         // Create a body
-        let tx_segment = OLTxSegment::new(vec![]);
-        let body = OLBlockBody::new(
+        let tx_segment = OLTxSegmentV1::new(vec![]);
+        let body = OLBlockBodyV1::new(
             tx_segment.expect("tx segment should be within limits"),
             None,
         );
 
         // Create header with wrong body root
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             1000000,
-            BlockFlags::zero(),
+            BlockFlagsV1::zero(),
             0,
             0,
             OLBlockId::null(),
@@ -581,13 +581,13 @@ mod tests {
         // Terminality is now signalled by the header flag and is independent of
         // manifest presence, so a terminal block carrying no manifests is
         // structurally valid.
-        let tx_segment = OLTxSegment::new(vec![]).expect("tx segment should be within limits");
-        let body = OLBlockBody::new(tx_segment, None);
+        let tx_segment = OLTxSegmentV1::new(vec![]).expect("tx segment should be within limits");
+        let body = OLBlockBodyV1::new(tx_segment, None);
         let body_root = body.compute_hash_commitment();
 
-        let mut flags = BlockFlags::zero();
+        let mut flags = BlockFlagsV1::zero();
         flags.set_is_terminal(true);
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             1000000,
             flags,
             0,
@@ -604,14 +604,14 @@ mod tests {
     #[test]
     fn test_verify_block_structure_accepts_nonterminal_header_with_manifests() {
         // Manifests may be included in any block, including non-terminal ones.
-        let tx_segment = OLTxSegment::new(vec![]).expect("tx segment should be within limits");
-        let manifests = OLAsmManifestContainer::new(vec![]).expect("empty manifests should fit");
-        let body = OLBlockBody::new(tx_segment, Some(manifests));
+        let tx_segment = OLTxSegmentV1::new(vec![]).expect("tx segment should be within limits");
+        let manifests = OLAsmManifestContainerV1::new(vec![]).expect("empty manifests should fit");
+        let body = OLBlockBodyV1::new(tx_segment, Some(manifests));
         let body_root = body.compute_hash_commitment();
 
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             1000000,
-            BlockFlags::zero(),
+            BlockFlagsV1::zero(),
             0,
             0,
             OLBlockId::null(),
@@ -627,7 +627,7 @@ mod tests {
     fn test_verify_epoch_with_diff_final_root_mismatch() {
         let (mut state, epoch_info) = setup_epoch1_diff_state();
         let diff = OLDaPayloadV1::new(state_changing_epoch_diff());
-        let manifests = OLAsmManifestContainer::new(vec![]).expect("empty manifests");
+        let manifests = OLAsmManifestContainerV1::new(vec![]).expect("empty manifests");
         let exp = EpochExecExpectations {
             epoch_post_state_root: Buf32::from([9u8; 32]),
         };
@@ -656,7 +656,7 @@ mod tests {
         let next_manifest = FixtureAsmManifestBuilder::new_at_height(state.last_l1_height() + 1)
             .with_variant(2)
             .build();
-        let manifests = OLAsmManifestContainer::new(vec![next_manifest])
+        let manifests = OLAsmManifestContainerV1::new(vec![next_manifest])
             .expect("manifest container should fit");
 
         let expected_post_root = compute_post_epoch_root_after_diff(

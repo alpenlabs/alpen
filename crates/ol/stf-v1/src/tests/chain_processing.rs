@@ -1,7 +1,7 @@
 //! Direct tests for chain-processing error branches.
 
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_chain_types_v1::OLBlockHeader;
+use strata_ol_chain_types_v1::OLBlockHeaderV1;
 use strata_ol_state_types::IStateAccessor;
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
     test_utils::{OLStfFixture, make_genesis_state, tamper_epoch, tamper_slot},
 };
 
-fn terminal_genesis_header() -> OLBlockHeader {
+fn terminal_genesis_header() -> OLBlockHeaderV1 {
     OLStfFixture::builder()
         .execute_genesis()
         .last_completed_block()

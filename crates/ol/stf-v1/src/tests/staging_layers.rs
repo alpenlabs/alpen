@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload};
 use strata_bridge_params::BridgeParams;
-use strata_ol_chain_types_v1::OLTxSegment;
+use strata_ol_chain_types_v1::OLTxSegmentV1;
 use strata_ol_state_support_types::{IndexerState, MemoryStateBaseLayer, WriteTrackingState};
 use strata_ol_state_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, IStateAccessorMut, NewAccountData,
@@ -386,7 +386,7 @@ fn test_process_tx_segment_reads_staged_writes_between_txs() {
     let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
-    let tx_segment = OLTxSegment::new(vec![tx1, tx2]).expect("tx segment should fit");
+    let tx_segment = OLTxSegmentV1::new(vec![tx1, tx2]).expect("tx segment should fit");
 
     process_block_tx_segment(&mut tracking, &tx_segment, &tx_context)
         .expect("tx segment should read staged writes between txs");
@@ -727,7 +727,7 @@ fn test_verify_block_tracks_snark_inbox_writes() {
 #[test]
 fn test_verify_block_through_write_tracking_stack() {
     // This test mimics chain-worker's verification path:
-    // IndexerState<WriteTrackingState<&OLState>> with verify_block
+    // IndexerState<WriteTrackingState<&OLStateV1>> with verify_block
     let mut fixture = OLStfFixture::builder().execute_genesis();
     let genesis = fixture.last_completed_block().clone();
     let block1 = fixture.child_block().execute().completed_block().clone();

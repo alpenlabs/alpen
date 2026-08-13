@@ -14,11 +14,11 @@ use strata_db_types::{
     ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
-use strata_ol_chain_types_v1::OLBlock;
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::OLRpcProvider;
-use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
-use strata_ol_tx_types_v1::OLTransaction;
+use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment};
 use strata_status::{OLSyncStatus, StatusChannel};
 use strata_storage::NodeStorage;
@@ -76,7 +76,7 @@ impl OLRpcProvider for NodeRpcProvider {
             .await
     }
 
-    async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
+    async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>> {
         self.storage.ol_block().get_block_data_async(id).await
     }
 
@@ -91,7 +91,7 @@ impl OLRpcProvider for NodeRpcProvider {
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLState>>> {
+    ) -> DbResult<Option<Arc<OLStateV1>>> {
         self.storage
             .ol_state()
             .get_toplevel_ol_state_async(commitment)
@@ -101,7 +101,7 @@ impl OLRpcProvider for NodeRpcProvider {
     async fn get_ol_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
+    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
         self.storage
             .ol_state()
             .get_write_batch_async(commitment)
@@ -210,7 +210,7 @@ impl OLRpcProvider for NodeRpcProvider {
             .map(|(commit, _)| commit.height()))
     }
 
-    async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
+    async fn submit_transaction(&self, tx: OLTransactionV1) -> OLMempoolResult<OLTxId> {
         let Some(mempool_handle) = self.mempool_handle.as_ref() else {
             return Err(OLMempoolError::NotAvailable);
         };

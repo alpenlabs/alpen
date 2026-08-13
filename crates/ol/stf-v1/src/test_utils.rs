@@ -86,7 +86,7 @@ use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::{
-    MMR_SENTINEL_DUMMY_LEAF, OLAccountState, OLSnarkAccountState, OLState,
+    MMR_SENTINEL_DUMMY_LEAF, OLAccountStateV1, OLSnarkAccountStateV1, OLStateV1,
 };
 use strata_ol_tx_types_v1::*;
 use strata_predicate::PredicateKey;
@@ -140,23 +140,23 @@ pub fn make_proof(variant: u8) -> Vec<u8> {
 /// Builds a genesis state layer using minimal empty parameters.
 pub fn make_genesis_state() -> MemoryStateBaseLayer {
     let params = OLParams::default();
-    let state = OLState::from_genesis_params(&params).expect("valid params");
+    let state = OLStateV1::from_genesis_params(&params).expect("valid params");
     MemoryStateBaseLayer::new(state)
 }
 
 /// Builds a GAM transaction targeting the given account with empty payload data.
-pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
-    OLTransaction::new(
-        OLTransactionData::from_gam_bytes(dest, vec![])
+pub fn make_gam_tx(dest: AccountId) -> OLTransactionV1 {
+    OLTransactionV1::new(
+        OLTransactionDataV1::from_gam_bytes(dest, vec![])
             .expect("message payload bytes must fit within SSZ max length"),
-        TxProofs::new_empty(),
+        TxProofsV1::new_empty(),
     )
 }
 
-/// Wraps a [`CompletedBlock`] into an [`OLBlock`] with a zero signature.
-pub fn to_ol_block(cb: &CompletedBlock) -> OLBlock {
-    OLBlock::new(
-        SignedOLBlockHeader::new(cb.header().clone(), Buf64::zero()),
+/// Wraps a [`CompletedBlock`] into an [`OLBlockV1`] with a zero signature.
+pub fn to_ol_block(cb: &CompletedBlock) -> OLBlockV1 {
+    OLBlockV1::new(
+        SignedOLBlockHeaderV1::new(cb.header().clone(), Buf64::zero()),
         cb.body().clone(),
     )
 }
@@ -263,11 +263,11 @@ pub fn build_terminal_block_components(next_l1_height: L1Height) -> BlockCompone
 }
 
 /// Builds terminal genesis components with transactions and one empty manifest at L1 height 1.
-pub fn build_terminal_tx_components(txs: Vec<OLTransaction>) -> BlockComponents {
+pub fn build_terminal_tx_components(txs: Vec<OLTransactionV1>) -> BlockComponents {
     BlockComponents::new(
-        OLTxSegment::new(txs).expect("tx segment should be within limits"),
+        OLTxSegmentV1::new(txs).expect("tx segment should be within limits"),
         Some(
-            OLAsmManifestContainer::new(vec![make_empty_manifest(1, 0)])
+            OLAsmManifestContainerV1::new(vec![make_empty_manifest(1, 0)])
                 .expect("single manifest should succeed"),
         ),
         true,
@@ -342,7 +342,7 @@ pub fn build_empty_chain_headers(
     state: &mut MemoryStateBaseLayer,
     num_blocks: usize,
     slots_per_epoch: u64,
-) -> ExecResult<Vec<OLBlockHeader>> {
+) -> ExecResult<Vec<OLBlockHeaderV1>> {
     Ok(build_empty_chain(state, num_blocks, slots_per_epoch)?
         .into_iter()
         .map(|b| b.into_header())
@@ -412,10 +412,10 @@ pub fn build_chain_with_transactions(
             )
             .expect("dummy manifest should be valid");
             BlockComponents::new(
-                OLTxSegment::new(vec![make_gam_tx(gam_target)])
+                OLTxSegmentV1::new(vec![make_gam_tx(gam_target)])
                     .expect("tx segment should be within limits"),
                 Some(
-                    OLAsmManifestContainer::new(vec![dummy_manifest])
+                    OLAsmManifestContainerV1::new(vec![dummy_manifest])
                         .expect("single manifest should succeed"),
                 ),
                 true,
@@ -438,10 +438,10 @@ pub fn build_chain_with_transactions(
             pending_msgs.push(msg_entry);
             pending_proofs.push(proof);
 
-            let gam_tx = OLTransaction::new(
-                OLTransactionData::from_gam_bytes(snark_acct_id, msg_data)
+            let gam_tx = OLTransactionV1::new(
+                OLTransactionDataV1::from_gam_bytes(snark_acct_id, msg_data)
                     .expect("message payload bytes must fit within SSZ max length"),
-                TxProofs::new_empty(),
+                TxProofsV1::new_empty(),
             );
             BlockComponents::new_txs_from_ol_transactions(vec![gam_tx])
         } else if i % 4 == 3 && !pending_msgs.is_empty() {
@@ -458,10 +458,10 @@ pub fn build_chain_with_transactions(
             BlockComponents::new_txs_from_ol_transactions(vec![tx])
         } else if i % 4 == 2 {
             // GAM to regular target account
-            let gam_tx = OLTransaction::new(
-                OLTransactionData::from_gam_bytes(gam_target, vec![])
+            let gam_tx = OLTransactionV1::new(
+                OLTransactionDataV1::from_gam_bytes(gam_target, vec![])
                     .expect("message payload bytes must fit within SSZ max length"),
-                TxProofs::new_empty(),
+                TxProofsV1::new_empty(),
             );
             BlockComponents::new_txs_from_ol_transactions(vec![gam_tx])
         } else {
@@ -480,7 +480,7 @@ pub fn build_chain_with_transactions(
 pub fn execute_block(
     state: &mut impl IStateAccessorMut,
     block_info: &BlockInfo,
-    parent_header: Option<&OLBlockHeader>,
+    parent_header: Option<&OLBlockHeaderV1>,
     components: BlockComponents,
 ) -> ExecResult<CompletedBlock> {
     let block_context = BlockContext::new(block_info, parent_header);
@@ -492,7 +492,7 @@ pub fn execute_block(
 pub fn execute_block_with_outputs(
     state: &mut impl IStateAccessorMut,
     block_info: &BlockInfo,
-    parent_header: Option<&OLBlockHeader>,
+    parent_header: Option<&OLBlockHeaderV1>,
     components: BlockComponents,
 ) -> ExecResult<ConstructBlockOutput> {
     let block_context = BlockContext::new(block_info, parent_header);
@@ -501,11 +501,11 @@ pub fn execute_block_with_outputs(
 
 /// Executes a transaction in a non-genesis block.
 ///
-/// Accepts an `OLTransaction` directly.
+/// Accepts an `OLTransactionV1` directly.
 pub fn execute_tx_in_block(
     state: &mut impl IStateAccessorMut,
-    parent_header: &OLBlockHeader,
-    tx: OLTransaction,
+    parent_header: &OLBlockHeaderV1,
+    tx: OLTransactionV1,
     slot: Slot,
     epoch: Epoch,
 ) -> ExecResult<CompletedBlock> {
@@ -540,7 +540,7 @@ pub trait StateTestExt: IStateAccessor {
 impl<S: IStateAccessor> StateTestExt for S {}
 
 /// Asserts that a block header has the expected epoch and slot.
-pub fn assert_header_position(header: &OLBlockHeader, expected_epoch: u64, expected_slot: u64) {
+pub fn assert_header_position(header: &OLBlockHeaderV1, expected_epoch: u64, expected_slot: u64) {
     assert_eq!(
         header.epoch() as u64,
         expected_epoch,
@@ -576,9 +576,9 @@ pub fn assert_state_position(
 /// Asserts that block verification succeeds.
 pub fn assert_verification_succeeds<S: IStateAccessorMut>(
     state: &mut S,
-    header: &OLBlockHeader,
-    parent_header: Option<OLBlockHeader>,
-    body: &strata_ol_chain_types_v1::OLBlockBody,
+    header: &OLBlockHeaderV1,
+    parent_header: Option<OLBlockHeaderV1>,
+    body: &strata_ol_chain_types_v1::OLBlockBodyV1,
 ) {
     let result = verify_block(
         state,
@@ -597,9 +597,9 @@ pub fn assert_verification_succeeds<S: IStateAccessorMut>(
 /// Asserts that block verification fails with a specific error.
 pub fn assert_verification_fails_with(
     state: &mut impl IStateAccessorMut,
-    header: &OLBlockHeader,
-    parent_header: Option<OLBlockHeader>,
-    body: &strata_ol_chain_types_v1::OLBlockBody,
+    header: &OLBlockHeaderV1,
+    parent_header: Option<OLBlockHeaderV1>,
+    body: &strata_ol_chain_types_v1::OLBlockBodyV1,
     error_matcher: impl Fn(&ExecError) -> bool,
 ) {
     let result = verify_block(
@@ -620,10 +620,10 @@ pub fn assert_verification_fails_with(
 
 /// Returns a block header with a different parent block ID.
 pub fn tamper_parent_blkid(
-    header: &OLBlockHeader,
+    header: &OLBlockHeaderV1,
     new_parent: strata_ol_chain_types_v1::OLBlockId,
-) -> OLBlockHeader {
-    OLBlockHeader::new(
+) -> OLBlockHeaderV1 {
+    OLBlockHeaderV1::new(
         header.timestamp(),
         header.flags(),
         header.slot(),
@@ -636,8 +636,8 @@ pub fn tamper_parent_blkid(
 }
 
 /// Returns a block header with a different state root.
-pub fn tamper_state_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeader {
-    OLBlockHeader::new(
+pub fn tamper_state_root(header: &OLBlockHeaderV1, new_root: Buf32) -> OLBlockHeaderV1 {
+    OLBlockHeaderV1::new(
         header.timestamp(),
         header.flags(),
         header.slot(),
@@ -650,8 +650,8 @@ pub fn tamper_state_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHead
 }
 
 /// Returns a block header with a different logs root.
-pub fn tamper_logs_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeader {
-    OLBlockHeader::new(
+pub fn tamper_logs_root(header: &OLBlockHeaderV1, new_root: Buf32) -> OLBlockHeaderV1 {
+    OLBlockHeaderV1::new(
         header.timestamp(),
         header.flags(),
         header.slot(),
@@ -664,8 +664,8 @@ pub fn tamper_logs_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeade
 }
 
 /// Returns a block header with a different body root.
-pub fn tamper_body_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeader {
-    OLBlockHeader::new(
+pub fn tamper_body_root(header: &OLBlockHeaderV1, new_root: Buf32) -> OLBlockHeaderV1 {
+    OLBlockHeaderV1::new(
         header.timestamp(),
         header.flags(),
         header.slot(),
@@ -678,8 +678,8 @@ pub fn tamper_body_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeade
 }
 
 /// Returns a block header with a different slot.
-pub fn tamper_slot(header: &OLBlockHeader, new_slot: u64) -> OLBlockHeader {
-    OLBlockHeader::new(
+pub fn tamper_slot(header: &OLBlockHeaderV1, new_slot: u64) -> OLBlockHeaderV1 {
+    OLBlockHeaderV1::new(
         header.timestamp(),
         header.flags(),
         new_slot,
@@ -692,8 +692,8 @@ pub fn tamper_slot(header: &OLBlockHeader, new_slot: u64) -> OLBlockHeader {
 }
 
 /// Returns a block header with a different epoch.
-pub fn tamper_epoch(header: &OLBlockHeader, new_epoch: u32) -> OLBlockHeader {
-    OLBlockHeader::new(
+pub fn tamper_epoch(header: &OLBlockHeaderV1, new_epoch: u32) -> OLBlockHeaderV1 {
+    OLBlockHeaderV1::new(
         header.timestamp(),
         header.flags(),
         header.slot(),
@@ -962,7 +962,7 @@ impl OLStfFixture {
     }
 
     /// Returns the current parent header.
-    pub fn parent_header(&self) -> &OLBlockHeader {
+    pub fn parent_header(&self) -> &OLBlockHeaderV1 {
         self.last_block.header()
     }
 
@@ -997,7 +997,7 @@ impl OLStfFixture {
         &self,
         sender: AccountId,
         build: impl FnOnce(FixtureSauBuilder) -> FixtureSauBuilder,
-    ) -> OLTransaction {
+    ) -> OLTransactionV1 {
         let account_state = self.expect_snark_account(sender).clone();
         let seqno = *account_state.seqno().inner();
         build(FixtureSauBuilder::new(sender, account_state, seqno))
@@ -1010,12 +1010,12 @@ impl OLStfFixture {
         &self,
         target: AccountId,
         build: impl FnOnce(FixtureGamBuilder) -> FixtureGamBuilder,
-    ) -> OLTransaction {
+    ) -> OLTransactionV1 {
         build(FixtureGamBuilder::new(target)).build_tx()
     }
 
     /// Returns the current account state.
-    pub fn expect_account(&self, account_id: AccountId) -> &OLAccountState {
+    pub fn expect_account(&self, account_id: AccountId) -> &OLAccountStateV1 {
         self.state
             .get_account_state(account_id)
             .expect("account lookup should succeed")
@@ -1023,7 +1023,7 @@ impl OLStfFixture {
     }
 
     /// Returns the current snark account state.
-    pub fn expect_snark_account(&self, account_id: AccountId) -> &OLSnarkAccountState {
+    pub fn expect_snark_account(&self, account_id: AccountId) -> &OLSnarkAccountStateV1 {
         let account = self
             .state
             .get_account_state(account_id)
@@ -1058,13 +1058,13 @@ impl OLStfFixture {
 /// Structural snapshot of selected fixture accounts.
 #[derive(Debug, Clone)]
 pub struct StateSnapshot {
-    accounts: BTreeMap<AccountId, Option<OLAccountState>>,
+    accounts: BTreeMap<AccountId, Option<OLAccountStateV1>>,
 }
 
 impl StateSnapshot {
     /// Asserts that every snapshotted account is structurally unchanged.
     ///
-    /// [`OLAccountState`] equality is structural over the SSZ fields: account
+    /// [`OLAccountStateV1`] equality is structural over the SSZ fields: account
     /// serial, balance, account type, and for snark accounts the update key,
     /// sequence number, proof state, and inbox MMR.
     pub fn assert_unchanged(&self, fixture: &OLStfFixture) {
@@ -1136,7 +1136,7 @@ impl FixtureSnarkAccountBuilder {
 #[derive(Debug)]
 pub struct FixtureBlockBuilder<'a> {
     fixture: &'a mut OLStfFixture,
-    txs: Vec<OLTransaction>,
+    txs: Vec<OLTransactionV1>,
     manifests: Vec<AsmManifest>,
     pending_seqnos: BTreeMap<AccountId, u64>,
     slot: Option<Slot>,
@@ -1161,7 +1161,7 @@ impl<'a> FixtureBlockBuilder<'a> {
     }
 
     /// Adds a caller-built transaction.
-    pub fn with_tx(mut self, tx: OLTransaction) -> Self {
+    pub fn with_tx(mut self, tx: OLTransactionV1) -> Self {
         self.txs.push(tx);
         self
     }
@@ -1319,17 +1319,20 @@ impl<'a> FixtureBlockBuilder<'a> {
     }
 
     fn components_from(
-        txs: Vec<OLTransaction>,
+        txs: Vec<OLTransactionV1>,
         manifests: Vec<AsmManifest>,
         terminal: bool,
     ) -> BlockComponents {
         let manifest_container = if manifests.is_empty() {
             None
         } else {
-            Some(OLAsmManifestContainer::new(manifests).expect("manifests should be within limits"))
+            Some(
+                OLAsmManifestContainerV1::new(manifests)
+                    .expect("manifests should be within limits"),
+            )
         };
         BlockComponents::new(
-            OLTxSegment::new(txs).expect("tx segment should be within limits"),
+            OLTxSegmentV1::new(txs).expect("tx segment should be within limits"),
             manifest_container,
             terminal,
         )
@@ -1356,7 +1359,7 @@ pub struct FixtureSauBuilder {
 }
 
 impl FixtureSauBuilder {
-    fn new(sender: AccountId, account_state: OLSnarkAccountState, seqno: u64) -> Self {
+    fn new(sender: AccountId, account_state: OLSnarkAccountStateV1, seqno: u64) -> Self {
         let builder = SnarkUpdateBuilder::from_snark_state(account_state).with_seq_no(seqno);
         Self {
             sender,
@@ -1463,7 +1466,7 @@ impl FixtureSauBuilder {
         self
     }
 
-    fn build_tx_with_seqno(self) -> (OLTransaction, Option<u64>) {
+    fn build_tx_with_seqno(self) -> (OLTransactionV1, Option<u64>) {
         let seqno = self.builder.seq_no();
         (
             self.builder.build(self.sender, self.state_root, self.proof),
@@ -1493,11 +1496,11 @@ impl FixtureGamBuilder {
         self
     }
 
-    fn build_tx(self) -> OLTransaction {
-        OLTransaction::new(
-            OLTransactionData::from_gam_bytes(self.target, self.payload)
+    fn build_tx(self) -> OLTransactionV1 {
+        OLTransactionV1::new(
+            OLTransactionDataV1::from_gam_bytes(self.target, self.payload)
                 .expect("fixture GAM payload should fit within SSZ max length"),
-            TxProofs::new_empty(),
+            TxProofsV1::new_empty(),
         )
     }
 }
@@ -1878,7 +1881,7 @@ pub struct SnarkUpdateBuilder {
 
 impl SnarkUpdateBuilder {
     /// Constructs a builder from the current snark account state.
-    pub fn from_snark_state(account_state: OLSnarkAccountState) -> Self {
+    pub fn from_snark_state(account_state: OLSnarkAccountStateV1) -> Self {
         Self {
             seq_no: *account_state.seqno().inner(),
             old_msg_idx: account_state.next_inbox_msg_idx(),
@@ -1995,19 +1998,24 @@ impl SnarkUpdateBuilder {
         self
     }
 
-    /// Build the full OLTransaction with the resulting state root.
-    pub fn build(self, acct_id: AccountId, new_state_root: Hash, proof: Vec<u8>) -> OLTransaction {
+    /// Build the full OLTransactionV1 with the resulting state root.
+    pub fn build(
+        self,
+        acct_id: AccountId,
+        new_state_root: Hash,
+        proof: Vec<u8>,
+    ) -> OLTransactionV1 {
         // Calculate new message index based on messages processed
         let new_msg_idx = self
             .next_msg_idx_override
             .unwrap_or(self.old_msg_idx + self.processed_messages.len() as u64);
 
-        // Build SauTxPayload
-        let proof_state = SauTxProofState {
+        // Build SauTxPayloadV1
+        let proof_state = SauTxProofStateV1 {
             new_next_msg_idx: new_msg_idx,
             inner_state_root: <[u8; 32]>::from(new_state_root).into(),
         };
-        let update_data = SauTxUpdateData {
+        let update_data = SauTxUpdateDataV1 {
             seq_no: self.seq_no,
             proof_state,
             extra_data: self.extra_data,
@@ -2016,14 +2024,14 @@ impl SnarkUpdateBuilder {
 
         // Build ledger refs
         let ledger_refs = if self.ledger_ref_claims.is_empty() {
-            SauTxLedgerRefs::new_empty()
+            SauTxLedgerRefsV1::new_empty()
         } else {
             let claim_list =
-                ClaimList::new(self.ledger_ref_claims).expect("test: too many ledger ref claims");
-            SauTxLedgerRefs::new_with_claims(claim_list)
+                ClaimListV1::new(self.ledger_ref_claims).expect("test: too many ledger ref claims");
+            SauTxLedgerRefsV1::new_with_claims(claim_list)
         };
 
-        let operation_data = SauTxOperationData {
+        let operation_data = SauTxOperationDataV1 {
             update_data,
             messages: self
                 .processed_messages
@@ -2032,13 +2040,13 @@ impl SnarkUpdateBuilder {
             ledger_refs,
         };
 
-        let sau_payload = SauTxPayload {
+        let sau_payload = SauTxPayloadV1 {
             target: acct_id,
             operation_data,
         };
-        let payload = TransactionPayload::SnarkAccountUpdate(sau_payload);
+        let payload = TransactionPayloadV1::SnarkAccountUpdate(sau_payload);
 
-        // Build TxProofs
+        // Build TxProofsV1
         let mut all_accumulator_proofs = Vec::new();
         // Inbox proofs come first, then ledger ref proofs
         all_accumulator_proofs.extend(self.inbox_proofs);
@@ -2047,7 +2055,7 @@ impl SnarkUpdateBuilder {
         let accumulator_proofs = if all_accumulator_proofs.is_empty() {
             None
         } else {
-            Some(RawMerkleProofList {
+            Some(RawMerkleProofListV1 {
                 proofs: all_accumulator_proofs
                     .try_into()
                     .expect("test: too many accumulator proofs"),
@@ -2057,35 +2065,35 @@ impl SnarkUpdateBuilder {
         let predicate_satisfiers = if proof.is_empty() {
             None
         } else {
-            Some(ProofSatisfierList {
-                proofs: vec![ProofSatisfier {
+            Some(ProofSatisfierListV1 {
+                proofs: vec![ProofSatisfierV1 {
                     proof: proof
                         .try_into()
-                        .expect("test: proof should fit in ProofSatisfier"),
+                        .expect("test: proof should fit in ProofSatisfierV1"),
                 }]
                 .try_into()
                 .expect("test: too many predicate proofs"),
             })
         };
 
-        let tx_proofs = TxProofs::new(predicate_satisfiers, accumulator_proofs);
+        let tx_proofs = TxProofsV1::new(predicate_satisfiers, accumulator_proofs);
 
-        let data = OLTransactionData {
+        let data = OLTransactionDataV1 {
             payload,
-            constraints: TxConstraints::default(),
+            constraints: TxConstraintsV1::default(),
             effects: self.effects,
         };
 
-        OLTransaction::new(data, tx_proofs)
+        OLTransactionV1::new(data, tx_proofs)
     }
 }
 
-/// Returns the (`OLAccountState`, `OLSnarkAccountState`) for `snark_id`,
+/// Returns the (`OLAccountStateV1`, `OLSnarkAccountStateV1`) for `snark_id`,
 /// panicking if not found or not a snark account.
 pub fn get_snark_state_expect(
     state: &MemoryStateBaseLayer,
     snark_id: AccountId,
-) -> (&OLAccountState, &OLSnarkAccountState) {
+) -> (&OLAccountStateV1, &OLSnarkAccountStateV1) {
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
     (snark_account, snark_account.as_snark_account().unwrap())
 }
@@ -2146,10 +2154,10 @@ pub fn epoch_runner_run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBl
 /// `components`, appends it to `blocks`, and returns its header.
 pub fn epoch_runner_run_block(
     state: &mut MemoryStateBaseLayer,
-    blocks: &mut Vec<OLBlock>,
-    parent: &OLBlockHeader,
+    blocks: &mut Vec<OLBlockV1>,
+    parent: &OLBlockHeaderV1,
     components: BlockComponents,
-) -> OLBlockHeader {
+) -> OLBlockHeaderV1 {
     let slot = parent.slot() + 1;
     let cb = execute_block(
         state,
@@ -2171,8 +2179,8 @@ pub fn epoch_runner_run_block(
 /// checkpoint payload assembler does).
 pub fn epoch_runner_run_terminal(
     state: &mut MemoryStateBaseLayer,
-    blocks: &mut Vec<OLBlock>,
-    parent: &OLBlockHeader,
+    blocks: &mut Vec<OLBlockV1>,
+    parent: &OLBlockHeaderV1,
     manifest: AsmManifest,
 ) -> CompletedBlock {
     let slot = parent.slot() + 1;

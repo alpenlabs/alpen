@@ -9,23 +9,23 @@ const IS_TERMINAL: RawBlockFlags = 0x0001;
 
 /// Flags in the block header that we use for various signalling purposes.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Encode, Decode)]
-pub struct BlockFlags(RawBlockFlags);
+pub struct BlockFlagsV1(RawBlockFlags);
 
-impl_ssz_transparent_wrapper!(BlockFlags, u16);
+impl_ssz_transparent_wrapper!(BlockFlagsV1, u16);
 
-impl From<u16> for BlockFlags {
+impl From<u16> for BlockFlagsV1 {
     fn from(value: u16) -> Self {
         Self(value)
     }
 }
 
-impl From<BlockFlags> for u16 {
-    fn from(value: BlockFlags) -> Self {
+impl From<BlockFlagsV1> for u16 {
+    fn from(value: BlockFlagsV1) -> Self {
         value.0
     }
 }
 
-impl BlockFlags {
+impl BlockFlagsV1 {
     /// Constructs a zero flag.
     pub fn zero() -> Self {
         Self(0)

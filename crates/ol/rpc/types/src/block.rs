@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ssz::Encode;
 use strata_identifiers::{Epoch, Slot};
-use strata_ol_chain_types_v1::{OLAsmManifestContainer, OLBlock};
+use strata_ol_chain_types_v1::{OLAsmManifestContainerV1, OLBlockV1};
 use strata_primitives::{HexBytes, HexBytes32, HexBytes64, OLBlockId};
 
 /// Rpc version of OL block entry in a slot range.
@@ -32,8 +32,8 @@ impl RpcBlockEntry {
     }
 }
 
-impl From<&OLBlock> for RpcBlockEntry {
-    fn from(block: &OLBlock) -> Self {
+impl From<&OLBlockV1> for RpcBlockEntry {
+    fn from(block: &OLBlockV1) -> Self {
         Self {
             slot: block.header().slot(),
             epoch: block.header().epoch(),
@@ -96,8 +96,8 @@ impl RpcBlockHeaderEntry {
     }
 }
 
-impl From<&OLBlock> for RpcBlockHeaderEntry {
-    fn from(block: &OLBlock) -> Self {
+impl From<&OLBlockV1> for RpcBlockHeaderEntry {
+    fn from(block: &OLBlockV1) -> Self {
         let header = block.header();
         Self {
             slot: header.slot(),
@@ -151,8 +151,8 @@ impl RpcOLBlockSummary {
     }
 }
 
-impl From<&OLBlock> for RpcOLBlockSummary {
-    fn from(block: &OLBlock) -> Self {
+impl From<&OLBlockV1> for RpcOLBlockSummary {
+    fn from(block: &OLBlockV1) -> Self {
         let header = block.header();
         let tx_count = block
             .body()
@@ -206,8 +206,8 @@ impl RpcOLBlockDetail {
     }
 }
 
-impl From<&OLBlock> for RpcOLBlockDetail {
-    fn from(block: &OLBlock) -> Self {
+impl From<&OLBlockV1> for RpcOLBlockDetail {
+    fn from(block: &OLBlockV1) -> Self {
         let header = RpcBlockHeaderEntry::from(block);
         let signature = block
             .signed_header()
@@ -242,8 +242,8 @@ impl RpcOLManifestsSummary {
     }
 }
 
-impl From<&OLAsmManifestContainer> for RpcOLManifestsSummary {
-    fn from(container: &OLAsmManifestContainer) -> Self {
+impl From<&OLAsmManifestContainerV1> for RpcOLManifestsSummary {
+    fn from(container: &OLAsmManifestContainerV1) -> Self {
         Self {
             manifest_count: container.manifests().len() as u32,
         }

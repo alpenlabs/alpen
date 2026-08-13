@@ -6,7 +6,7 @@ use strata_db_types::{
     ol_state::OLStateDatabase,
 };
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_chain_types_v1::OLBlock;
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_primitives::l1::L1BlockId;
 
 use crate::{
@@ -404,7 +404,7 @@ pub(crate) fn get_ol_block_slot_and_epoch(
 fn get_ol_block_data(
     db: &impl DatabaseBackend,
     block_id: OLBlockId,
-) -> Result<Option<OLBlock>, DisplayedError> {
+) -> Result<Option<OLBlockV1>, DisplayedError> {
     db.ol_block_db()
         .get_block_data(block_id)
         .internal_error("Failed to read OL block data")
@@ -418,14 +418,14 @@ mod tests {
     use strata_db_types::{ol_block::OLBlockDatabase, ol_state::OLStateDatabase};
     use strata_identifiers::{Buf32, Buf64};
     use strata_ol_chain_types_v1::{
-        BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+        BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
     };
     use strata_ol_params::OLParams;
-    use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
+    use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
 
     use super::*;
 
-    fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlock {
+    fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlockV1 {
         make_block_with_timestamp(slot, epoch, parent_blkid, 0)
     }
 
@@ -434,11 +434,11 @@ mod tests {
         epoch: u32,
         parent_blkid: OLBlockId,
         timestamp: u64,
-    ) -> OLBlock {
-        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
-        let header = OLBlockHeader::new(
+    ) -> OLBlockV1 {
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeaderV1::new(
             timestamp,
-            BlockFlags::zero(),
+            BlockFlagsV1::zero(),
             slot,
             epoch,
             parent_blkid,
@@ -447,14 +447,14 @@ mod tests {
             Buf32::zero(),
         );
 
-        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+        OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body)
     }
 
-    fn genesis_state() -> OLState {
-        OLState::from_genesis_params(&OLParams::default()).expect("valid genesis params")
+    fn genesis_state() -> OLStateV1 {
+        OLStateV1::from_genesis_params(&OLParams::default()).expect("valid genesis params")
     }
 
-    fn seed_sibling_blocks() -> (Arc<SledBackend>, OLBlock, OLBlock) {
+    fn seed_sibling_blocks() -> (Arc<SledBackend>, OLBlockV1, OLBlockV1) {
         let db = get_test_sled_backend();
         let parent_id = OLBlockId::from(Buf32::from([0x01; 32]));
         let block_to_delete = make_block_with_timestamp(1, 0, parent_id, 1);
@@ -509,7 +509,7 @@ mod tests {
         let block_to_delete_id = block_to_delete.header().compute_blkid();
         let commitment = OLBlockCommitment::new(1, block_to_delete_id);
         db.ol_state_db()
-            .put_ol_write_batch(commitment, WriteBatch::<OLAccountState>::default())
+            .put_ol_write_batch(commitment, WriteBatch::<OLAccountStateV1>::default())
             .expect("seed write batch");
 
         let err = delete_ol_block(db.as_ref(), delete_args(block_to_delete_id))

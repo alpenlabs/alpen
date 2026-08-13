@@ -18,7 +18,7 @@ use crate::errors::*;
 pub fn verify_snark_acct_update_proofs(
     target: AccountId,
     account_state: &impl IAccountState,
-    sau_op: &SauTxOperationData,
+    sau_op: &SauTxOperationDataV1,
     effects: &TxEffects,
     proof_verifier: &mut impl TxProofVerifier,
 ) -> ExecResult<()> {
@@ -42,7 +42,7 @@ pub fn verify_snark_acct_update_proofs(
 }
 
 fn build_snark_acct_update_data(
-    op: &SauTxOperationData,
+    op: &SauTxOperationDataV1,
     effects: &TxEffects,
 ) -> SnarkAccountUpdateData {
     let upd = op.update();
@@ -64,7 +64,7 @@ fn build_snark_acct_update_data(
     )
 }
 
-fn convert_sau_ledger_refs(sau_refs: &SauTxLedgerRefs) -> LedgerRefs {
+fn convert_sau_ledger_refs(sau_refs: &SauTxLedgerRefsV1) -> LedgerRefs {
     match sau_refs.l1_block_ref_claims() {
         Some(claim_list) => LedgerRefs::new(claim_list.claims().to_vec()),
         None => LedgerRefs::new_empty(),

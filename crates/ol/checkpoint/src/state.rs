@@ -221,12 +221,12 @@ mod tests {
         test_utils::{buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy},
     };
     use strata_ol_chain_types_v1::{
-        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLBlockId, OLLog, OLTxSegment,
-        SignedOLBlockHeader, SimpleWithdrawalIntentLogData,
+        BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog, OLTxSegmentV1,
+        SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IAccountState, IStateAccessor};
-    use strata_ol_state_types_v1::OLState;
+    use strata_ol_state_types_v1::OLStateV1;
     use strata_ol_stf_v1::{
         BlockComponents,
         test_utils::{
@@ -238,7 +238,7 @@ mod tests {
             make_withdrawal_payload, snark_inbox_msg, to_ol_block,
         },
     };
-    use strata_ol_tx_types_v1::{OLTransaction, OLTransactionData, TxProofs};
+    use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
     use strata_primitives::epoch::EpochCommitment;
     use strata_storage::create_node_storage;
 
@@ -332,15 +332,18 @@ mod tests {
         fn get_block_header(
             &self,
             blkid: &OLBlockCommitment,
-        ) -> anyhow::Result<Option<OLBlockHeader>> {
+        ) -> anyhow::Result<Option<OLBlockHeaderV1>> {
             self.inner.get_block_header(blkid)
         }
 
-        fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlock>> {
+        fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlockV1>> {
             self.inner.get_block(id)
         }
 
-        fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLState>> {
+        fn get_ol_state(
+            &self,
+            commitment: &OLBlockCommitment,
+        ) -> anyhow::Result<Option<OLStateV1>> {
             self.inner.get_ol_state(commitment)
         }
 
@@ -574,9 +577,9 @@ mod tests {
             let epoch: Epoch = 1;
             let prev_terminal: OLBlockCommitment = prev_terminal;
             let terminal_slot = prev_terminal.slot().saturating_add(slot_offset);
-            let terminal_header = OLBlockHeader::new(
+            let terminal_header = OLBlockHeaderV1::new(
                 1_700_000_000,
-                BlockFlags::zero(),
+                BlockFlagsV1::zero(),
                 terminal_slot,
                 epoch,
                 *prev_terminal.blkid(),
@@ -585,10 +588,10 @@ mod tests {
                 logs_root,
             );
 
-            let terminal_block = OLBlock::new(
-                SignedOLBlockHeader::new(terminal_header.clone(), Buf64::zero()),
-                OLBlockBody::new_common(
-                    OLTxSegment::new(vec![])
+            let terminal_block = OLBlockV1::new(
+                SignedOLBlockHeaderV1::new(terminal_header.clone(), Buf64::zero()),
+                OLBlockBodyV1::new_common(
+                    OLTxSegmentV1::new(vec![])
                         .expect("empty tx segment construction is infallible"),
                 ),
             );
@@ -640,10 +643,10 @@ mod tests {
 
         let mut blocks = Vec::new();
         let inbox_msg = snark_inbox_msg();
-        let gam = OLTransaction::new(
-            OLTransactionData::from_gam_bytes(snark_id, inbox_msg.payload().data().to_vec())
+        let gam = OLTransactionV1::new(
+            OLTransactionDataV1::from_gam_bytes(snark_id, inbox_msg.payload().data().to_vec())
                 .expect("gam payload"),
-            TxProofs::new_empty(),
+            TxProofsV1::new_empty(),
         );
         let prev = run_block(
             &mut sim_state,

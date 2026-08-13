@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use strata_db_types::{ol_block::BlockStatus, DbResult};
 use strata_identifiers::Slot;
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_primitives::OLBlockId;
 use strata_storage::OLBlockManager;
 use tracing::{debug, error, warn};
@@ -15,9 +15,9 @@ pub trait UnfinalizedOLBlockSource: Send + Sync {
 
     async fn get_block_status(&self, blkid: OLBlockId) -> DbResult<Option<BlockStatus>>;
 
-    async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>>;
+    async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockV1>>;
 
-    async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>>;
+    async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>>;
 }
 
 #[async_trait]
@@ -30,11 +30,11 @@ impl UnfinalizedOLBlockSource for OLBlockManager {
         self.get_block_status_async(blkid).await
     }
 
-    async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
+    async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockV1>> {
         self.get_block_data_async(blkid).await
     }
 
-    async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+    async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
         self.get_ol_header_async(blkid).await
     }
 }
@@ -130,7 +130,8 @@ mod tests {
     use async_trait::async_trait;
     use strata_db_types::{ol_block::BlockStatus, DbResult};
     use strata_ol_chain_types_v1::{
-        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+        BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1,
+        SignedOLBlockHeaderV1,
     };
     use strata_primitives::{Buf32, Buf64, EpochCommitment, OLBlockId};
 
@@ -140,11 +141,11 @@ mod tests {
     struct TestBlockSource {
         blocks_by_slot: BTreeMap<u64, Vec<OLBlockId>>,
         statuses: HashMap<OLBlockId, BlockStatus>,
-        blocks: HashMap<OLBlockId, OLBlock>,
+        blocks: HashMap<OLBlockId, OLBlockV1>,
     }
 
     impl TestBlockSource {
-        fn insert_block(&mut self, block: OLBlock, status: Option<BlockStatus>) -> OLBlockId {
+        fn insert_block(&mut self, block: OLBlockV1, status: Option<BlockStatus>) -> OLBlockId {
             let blkid = block.header().compute_blkid();
             self.blocks_by_slot
                 .entry(block.header().slot())
@@ -175,20 +176,20 @@ mod tests {
             Ok(self.statuses.get(&blkid).copied())
         }
 
-        async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
+        async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockV1>> {
             Ok(self.blocks.get(&blkid).cloned())
         }
 
-        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+        async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
             Ok(self.blocks.get(&blkid).map(|block| block.header().clone()))
         }
     }
 
-    fn make_block(slot: u64, parent: OLBlockId, salt: u8) -> OLBlock {
-        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
-        let header = OLBlockHeader::new(
+    fn make_block(slot: u64, parent: OLBlockId, salt: u8) -> OLBlockV1 {
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeaderV1::new(
             1_000 + slot,
-            BlockFlags::from(0),
+            BlockFlagsV1::from(0),
             slot,
             0,
             parent,
@@ -196,7 +197,7 @@ mod tests {
             Buf32::from([salt; 32]),
             Buf32::zero(),
         );
-        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+        OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body)
     }
 
     #[tokio::test]

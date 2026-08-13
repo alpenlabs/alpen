@@ -5,7 +5,7 @@ use std::sync::Arc;
 use strata_db_types::ol_block::{BlockAvailability, BlockStatus, OLBlockDatabase};
 use strata_db_types::DbResult;
 use strata_identifiers::{EpochCommitment, OLBlockId, Slot};
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_primitives::OLBlockCommitment;
 use tokio::runtime::Handle;
 
@@ -18,7 +18,7 @@ use crate::{cache, ops};
 )]
 pub struct OLBlockManager {
     ops: ops::ol::OLBlockOps,
-    block_cache: cache::CacheTable<OLBlockId, Option<OLBlock>>,
+    block_cache: cache::CacheTable<OLBlockId, Option<OLBlockV1>>,
 }
 
 impl OLBlockManager {
@@ -29,7 +29,7 @@ impl OLBlockManager {
     }
 
     /// Puts a block in the database, purging cache entry.
-    pub async fn put_block_data_async(&self, block: OLBlock) -> DbResult<()> {
+    pub async fn put_block_data_async(&self, block: OLBlockV1) -> DbResult<()> {
         let block_id = block.header().compute_blkid();
         self.ops.put_block_data_async(block).await?;
         self.block_cache.purge_async(&block_id).await;
@@ -37,7 +37,7 @@ impl OLBlockManager {
     }
 
     /// Puts a block in the database, purging cache entry.
-    pub fn put_block_data_blocking(&self, block: OLBlock) -> DbResult<()> {
+    pub fn put_block_data_blocking(&self, block: OLBlockV1) -> DbResult<()> {
         let block_id = block.header().compute_blkid();
         self.ops.put_block_data_blocking(block)?;
         self.block_cache.purge_blocking(&block_id);
@@ -63,7 +63,7 @@ impl OLBlockManager {
     /// This uses the guarded high-watermark path; plain block writes do not update it.
     pub async fn put_block_data_with_high_watermark_async(
         &self,
-        block: OLBlock,
+        block: OLBlockV1,
     ) -> DbResult<OLBlockCommitment> {
         let block_id = block.header().compute_blkid();
         let commitment = self
@@ -79,7 +79,7 @@ impl OLBlockManager {
     /// This uses the guarded high-watermark path; plain block writes do not update it.
     pub fn put_block_data_with_high_watermark_blocking(
         &self,
-        block: OLBlock,
+        block: OLBlockV1,
     ) -> DbResult<OLBlockCommitment> {
         let block_id = block.header().compute_blkid();
         let commitment = self
@@ -132,51 +132,51 @@ impl OLBlockManager {
     }
 
     /// Gets a block either in the cache or from the underlying database.
-    pub async fn get_block_data_async(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
+    pub async fn get_block_data_async(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>> {
         self.block_cache
             .get_or_fetch(&id, || self.ops.get_block_data_fut(id).recv())
             .await
     }
 
     /// Gets a block either in the cache or from the underlying database.
-    pub fn get_block_data_blocking(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
+    pub fn get_block_data_blocking(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>> {
         self.block_cache
             .get_or_fetch_blocking(&id, || self.ops.get_block_data_blocking(id))
     }
 
-    /// Stores an unsigned checkpoint terminal [`OLBlockHeader`].
+    /// Stores an unsigned checkpoint terminal [`OLBlockHeaderV1`].
     pub async fn put_terminal_header_async(
         &self,
         id: OLBlockId,
-        header: OLBlockHeader,
+        header: OLBlockHeaderV1,
     ) -> DbResult<()> {
         self.ops.put_terminal_header_async(id, header).await
     }
 
-    /// Stores an unsigned checkpoint terminal [`OLBlockHeader`].
+    /// Stores an unsigned checkpoint terminal [`OLBlockHeaderV1`].
     pub fn put_terminal_header_blocking(
         &self,
         id: OLBlockId,
-        header: OLBlockHeader,
+        header: OLBlockHeaderV1,
     ) -> DbResult<()> {
         self.ops.put_terminal_header_blocking(id, header)
     }
 
-    /// Retrieves an unsigned checkpoint terminal [`OLBlockHeader`].
+    /// Retrieves an unsigned checkpoint terminal [`OLBlockHeaderV1`].
     pub async fn get_terminal_header_async(
         &self,
         id: OLBlockId,
-    ) -> DbResult<Option<OLBlockHeader>> {
+    ) -> DbResult<Option<OLBlockHeaderV1>> {
         self.ops.get_terminal_header_async(id).await
     }
 
-    /// Retrieves an unsigned checkpoint terminal [`OLBlockHeader`].
-    pub fn get_terminal_header_blocking(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+    /// Retrieves an unsigned checkpoint terminal [`OLBlockHeaderV1`].
+    pub fn get_terminal_header_blocking(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
         self.ops.get_terminal_header_blocking(id)
     }
 
-    /// Retrieves an [`OLBlockHeader`] from a full block before consulting terminal headers.
-    pub async fn get_ol_header_async(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+    /// Retrieves an [`OLBlockHeaderV1`] from a full block before consulting terminal headers.
+    pub async fn get_ol_header_async(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
         if let Some(block) = self.get_block_data_async(id).await? {
             return Ok(Some(block.header().clone()));
         }
@@ -184,8 +184,8 @@ impl OLBlockManager {
         self.get_terminal_header_async(id).await
     }
 
-    /// Retrieves an [`OLBlockHeader`] from a full block before consulting terminal headers.
-    pub fn get_ol_header_blocking(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+    /// Retrieves an [`OLBlockHeaderV1`] from a full block before consulting terminal headers.
+    pub fn get_ol_header_blocking(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
         if let Some(block) = self.get_block_data_blocking(id)? {
             return Ok(Some(block.header().clone()));
         }

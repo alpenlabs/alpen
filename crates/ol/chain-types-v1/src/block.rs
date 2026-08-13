@@ -5,51 +5,51 @@ use ssz_types::VariableList;
 use strata_asm_common::AsmManifest;
 use strata_crypto::hash;
 use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_tx_types_v1::OLTransaction;
+use strata_ol_tx_types_v1::OLTransactionV1;
 
 use crate::{
-    block_flags::BlockFlags,
+    block_flags::BlockFlagsV1,
     error::ChainTypesError,
     ssz_generated::ssz::block::{
-        MAX_SEALING_MANIFEST_COUNT, MAX_TXS_PER_BLOCK, OLAsmManifestContainer, OLBlock,
-        OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+        MAX_SEALING_MANIFEST_COUNT, MAX_TXS_PER_BLOCK, OLAsmManifestContainerV1, OLBlockBodyV1,
+        OLBlockCredentialV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
     },
 };
 
-impl OLBlock {
-    pub fn new(signed_header: SignedOLBlockHeader, body: OLBlockBody) -> Self {
+impl OLBlockV1 {
+    pub fn new(signed_header: SignedOLBlockHeaderV1, body: OLBlockBodyV1) -> Self {
         Self {
             signed_header,
             body,
         }
     }
 
-    pub fn signed_header(&self) -> &SignedOLBlockHeader {
+    pub fn signed_header(&self) -> &SignedOLBlockHeaderV1 {
         &self.signed_header
     }
 
     /// Returns the executionally-relevant block header inside the signed header
     /// structure.
-    pub fn header(&self) -> &OLBlockHeader {
+    pub fn header(&self) -> &OLBlockHeaderV1 {
         &self.signed_header.header
     }
 
-    pub fn body(&self) -> &OLBlockBody {
+    pub fn body(&self) -> &OLBlockBodyV1 {
         &self.body
     }
 }
 
-impl SignedOLBlockHeader {
-    pub fn new(header: OLBlockHeader, signature: Buf64) -> Self {
+impl SignedOLBlockHeaderV1 {
+    pub fn new(header: OLBlockHeaderV1, signature: Buf64) -> Self {
         Self {
             header,
-            credential: OLBlockCredential {
+            credential: OLBlockCredentialV1 {
                 schnorr_sig: Some(signature).into(),
             },
         }
     }
 
-    pub fn header(&self) -> &OLBlockHeader {
+    pub fn header(&self) -> &OLBlockHeaderV1 {
         &self.header
     }
 
@@ -64,11 +64,11 @@ impl SignedOLBlockHeader {
     }
 }
 
-impl OLBlockHeader {
+impl OLBlockHeaderV1 {
     #[expect(clippy::too_many_arguments, reason = "headers are complicated")]
     pub fn new(
         timestamp: u64,
-        flags: BlockFlags,
+        flags: BlockFlagsV1,
         slot: Slot,
         epoch: Epoch,
         parent_blkid: OLBlockId,
@@ -92,7 +92,7 @@ impl OLBlockHeader {
         self.timestamp
     }
 
-    pub fn flags(&self) -> BlockFlags {
+    pub fn flags(&self) -> BlockFlagsV1 {
         self.flags
     }
 
@@ -142,8 +142,8 @@ impl OLBlockHeader {
     }
 }
 
-impl OLBlockBody {
-    pub fn new(tx_segment: OLTxSegment, manifests: Option<OLAsmManifestContainer>) -> Self {
+impl OLBlockBodyV1 {
+    pub fn new(tx_segment: OLTxSegmentV1, manifests: Option<OLAsmManifestContainerV1>) -> Self {
         Self {
             tx_segment: Some(tx_segment).into(),
             manifests: manifests.into(),
@@ -151,16 +151,16 @@ impl OLBlockBody {
     }
 
     /// Constructs a new instance for a common block with just a tx segment.
-    pub fn new_common(tx_segment: OLTxSegment) -> Self {
+    pub fn new_common(tx_segment: OLTxSegmentV1) -> Self {
         Self::new(tx_segment, None)
     }
 
     // TODO(STR-3677): convert to builder?
-    pub fn set_manifests(&mut self, manifests: OLAsmManifestContainer) {
+    pub fn set_manifests(&mut self, manifests: OLAsmManifestContainerV1) {
         self.manifests = Some(manifests).into();
     }
 
-    pub fn tx_segment(&self) -> Option<&OLTxSegment> {
+    pub fn tx_segment(&self) -> Option<&OLTxSegmentV1> {
         match &self.tx_segment {
             ssz_types::Optional::Some(tx) => Some(tx),
             ssz_types::Optional::None => None,
@@ -171,7 +171,7 @@ impl OLBlockBody {
     ///
     /// Manifests may appear in any block within an epoch; their presence does
     /// not imply the block is an epoch terminal.
-    pub fn manifests(&self) -> Option<&OLAsmManifestContainer> {
+    pub fn manifests(&self) -> Option<&OLAsmManifestContainerV1> {
         match &self.manifests {
             ssz_types::Optional::Some(manifests) => Some(manifests),
             ssz_types::Optional::None => None,
@@ -185,8 +185,8 @@ impl OLBlockBody {
     }
 }
 
-impl OLTxSegment {
-    pub fn new(txs: Vec<OLTransaction>) -> Result<Self, ChainTypesError> {
+impl OLTxSegmentV1 {
+    pub fn new(txs: Vec<OLTransactionV1>) -> Result<Self, ChainTypesError> {
         let provided = txs.len();
         Ok(Self {
             txs: VariableList::new(txs).map_err(|_| ChainTypesError::TooManyTransactions {
@@ -196,12 +196,12 @@ impl OLTxSegment {
         })
     }
 
-    pub fn txs(&self) -> &[OLTransaction] {
+    pub fn txs(&self) -> &[OLTransactionV1] {
         &self.txs
     }
 }
 
-impl OLAsmManifestContainer {
+impl OLAsmManifestContainerV1 {
     pub fn new(manifests: Vec<AsmManifest>) -> Result<Self, ChainTypesError> {
         let provided = manifests.len();
         Ok(Self {
@@ -227,10 +227,10 @@ mod tests {
     use strata_test_utils_ssz::ssz_proptest;
 
     use crate::{
-        block_flags::BlockFlags,
+        block_flags::BlockFlagsV1,
         ssz_generated::ssz::block::{
-            OLAsmManifestContainer, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader,
-            OLTxSegment, SignedOLBlockHeader,
+            OLAsmManifestContainerV1, OLBlockBodyV1, OLBlockCredentialV1, OLBlockHeaderV1,
+            OLBlockV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
         },
         test_utils::{
             ol_block_body_strategy, ol_block_header_strategy, ol_block_strategy,
@@ -241,17 +241,17 @@ mod tests {
     mod ol_tx_segment {
         use super::*;
 
-        ssz_proptest!(OLTxSegment, ol_tx_segment_strategy());
+        ssz_proptest!(OLTxSegmentV1, ol_tx_segment_strategy());
 
         #[test]
         fn test_empty_segment() {
-            let segment = OLTxSegment {
+            let segment = OLTxSegmentV1 {
                 txs: Vec::new()
                     .try_into()
                     .expect("transactions must fit within SSZ max length"),
             };
             let encoded = segment.as_ssz_bytes();
-            let decoded = OLTxSegment::from_ssz_bytes(&encoded).unwrap();
+            let decoded = OLTxSegmentV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(segment, decoded);
         }
     }
@@ -259,18 +259,18 @@ mod tests {
     mod ol_manifest_container {
         use super::*;
 
-        fn manifest_container_strategy() -> impl Strategy<Value = OLAsmManifestContainer> {
-            Just(OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed"))
+        fn manifest_container_strategy() -> impl Strategy<Value = OLAsmManifestContainerV1> {
+            Just(OLAsmManifestContainerV1::new(vec![]).expect("empty manifest should succeed"))
         }
 
-        ssz_proptest!(OLAsmManifestContainer, manifest_container_strategy());
+        ssz_proptest!(OLAsmManifestContainerV1, manifest_container_strategy());
 
         #[test]
         fn test_empty_container() {
             let container =
-                OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed");
+                OLAsmManifestContainerV1::new(vec![]).expect("empty manifest should succeed");
             let encoded = container.as_ssz_bytes();
-            let decoded = OLAsmManifestContainer::from_ssz_bytes(&encoded).unwrap();
+            let decoded = OLAsmManifestContainerV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(container, decoded);
         }
     }
@@ -278,13 +278,13 @@ mod tests {
     mod ol_block_header {
         use super::*;
 
-        ssz_proptest!(OLBlockHeader, ol_block_header_strategy());
+        ssz_proptest!(OLBlockHeaderV1, ol_block_header_strategy());
 
         #[test]
         fn test_genesis_header() {
-            let header = OLBlockHeader {
+            let header = OLBlockHeaderV1 {
                 timestamp: 0,
-                flags: BlockFlags::from(0),
+                flags: BlockFlagsV1::from(0),
                 slot: 0,
                 epoch: 0,
                 parent_blkid: OLBlockId::from(Buf32::zero()),
@@ -293,7 +293,7 @@ mod tests {
                 logs_root: Buf32::zero(),
             };
             let encoded = header.as_ssz_bytes();
-            let decoded = OLBlockHeader::from_ssz_bytes(&encoded).unwrap();
+            let decoded = OLBlockHeaderV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(header, decoded);
         }
     }
@@ -301,30 +301,30 @@ mod tests {
     mod signed_ol_block_header {
         use super::*;
 
-        ssz_proptest!(SignedOLBlockHeader, signed_ol_block_header_strategy());
+        ssz_proptest!(SignedOLBlockHeaderV1, signed_ol_block_header_strategy());
     }
 
     mod ol_block_body {
         use super::*;
 
-        ssz_proptest!(OLBlockBody, ol_block_body_strategy());
+        ssz_proptest!(OLBlockBodyV1, ol_block_body_strategy());
 
         #[test]
         fn test_empty_body() {
-            let body = OLBlockBody {
-                tx_segment: Some(OLTxSegment {
+            let body = OLBlockBodyV1 {
+                tx_segment: Some(OLTxSegmentV1 {
                     txs: Vec::new()
                         .try_into()
                         .expect("transactions must fit within SSZ max length"),
                 })
                 .into(),
                 manifests: Some(
-                    OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed"),
+                    OLAsmManifestContainerV1::new(vec![]).expect("empty manifest should succeed"),
                 )
                 .into(),
             };
             let encoded = body.as_ssz_bytes();
-            let decoded = OLBlockBody::from_ssz_bytes(&encoded).unwrap();
+            let decoded = OLBlockBodyV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(body, decoded);
         }
     }
@@ -332,15 +332,15 @@ mod tests {
     mod ol_block {
         use super::*;
 
-        ssz_proptest!(OLBlock, ol_block_strategy());
+        ssz_proptest!(OLBlockV1, ol_block_strategy());
 
         #[test]
         fn test_minimal_block() {
-            let block = OLBlock {
-                signed_header: SignedOLBlockHeader {
-                    header: OLBlockHeader {
+            let block = OLBlockV1 {
+                signed_header: SignedOLBlockHeaderV1 {
+                    header: OLBlockHeaderV1 {
                         timestamp: 0,
-                        flags: BlockFlags::from(0),
+                        flags: BlockFlagsV1::from(0),
                         slot: 0,
                         epoch: 0,
                         parent_blkid: OLBlockId::from(Buf32::zero()),
@@ -348,25 +348,26 @@ mod tests {
                         state_root: Buf32::zero(),
                         logs_root: Buf32::zero(),
                     },
-                    credential: OLBlockCredential {
+                    credential: OLBlockCredentialV1 {
                         schnorr_sig: Some(Buf64::zero()).into(),
                     },
                 },
-                body: OLBlockBody {
-                    tx_segment: Some(OLTxSegment {
+                body: OLBlockBodyV1 {
+                    tx_segment: Some(OLTxSegmentV1 {
                         txs: Vec::new()
                             .try_into()
                             .expect("transactions must fit within SSZ max length"),
                     })
                     .into(),
                     manifests: Some(
-                        OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed"),
+                        OLAsmManifestContainerV1::new(vec![])
+                            .expect("empty manifest should succeed"),
                     )
                     .into(),
                 },
             };
             let encoded = block.as_ssz_bytes();
-            let decoded = OLBlock::from_ssz_bytes(&encoded).unwrap();
+            let decoded = OLBlockV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(block, decoded);
         }
     }

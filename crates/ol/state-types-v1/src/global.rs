@@ -4,9 +4,9 @@ use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_identifiers::Slot;
 use strata_ol_state_types::Coin;
 
-use crate::ssz_generated::ssz::state::GlobalState;
+use crate::ssz_generated::ssz::state::GlobalStateV1;
 
-impl GlobalState {
+impl GlobalStateV1 {
     /// Create a new global state.
     pub fn new(cur_slot: Slot, next_avail_serial: AccountSerial) -> Self {
         Self {
@@ -98,5 +98,5 @@ mod tests {
     use super::*;
     use crate::test_utils::global_state_strategy;
 
-    ssz_proptest!(GlobalState, global_state_strategy());
+    ssz_proptest!(GlobalStateV1, global_state_strategy());
 }

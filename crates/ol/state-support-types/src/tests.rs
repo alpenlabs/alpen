@@ -13,7 +13,7 @@ use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Hei
 use strata_merkle::CompactMmr64;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
 use strata_ol_state_types::*;
-use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLSnarkAccountState, WriteBatch};
+use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLSnarkAccountStateV1, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::Seqno;
 
@@ -935,7 +935,7 @@ fn test_new_account_post_state_encoded() {
 fn test_new_account_vk_persisted_from_ol_state() {
     let mut da_state = DaAccumulatingState::new(create_test_base_layer());
     let account_id = test_account_id(10);
-    let snark_state = OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), test_hash(4));
+    let snark_state = OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), test_hash(4));
     let new_acct = NewAccountData::new(
         BitcoinAmount::try_from(100).expect("amount must not exceed the Bitcoin money supply"),
         NewAccountTypeState::Snark {

@@ -17,7 +17,7 @@ SAU_MAX_EXTRA_DATA_BYTES = 1024
 # ====================
 
 ### Generic account message payload.
-class GamTxPayload(Container):
+class GamTxPayloadV1(Container):
     ### Target account ID.
     target: strata_acct_types.AccountId
 
@@ -26,7 +26,7 @@ class GamTxPayload(Container):
 # ====================
 
 ### The new state of the snark account.
-class SauTxProofState(Container):
+class SauTxProofStateV1(Container):
     new_next_msg_idx: uint64
     inner_state_root: Bytes32
 
@@ -43,41 +43,41 @@ class SauTxProofState(Container):
 ### future optional fields slot in without changing the encoding of
 ### existing data.
 #~# derive: std::default::Default
-class SauTxNewPredicate(StableContainer[8]):
+class SauTxNewPredicateV1(StableContainer[8]):
     #~# external_kind: container
     predicate: Optional[strata_predicate.PredicateKey]
 
 ### Description of the precise "update" being made to the account.
-class SauTxUpdateData(Container):
+class SauTxUpdateDataV1(Container):
     seq_no: uint64
-    proof_state: SauTxProofState
+    proof_state: SauTxProofStateV1
     extra_data: List[uint8, SAU_MAX_EXTRA_DATA_BYTES]
 
     ### New update predicate declared by this update, if it rotates the key.
-    new_predicate: SauTxNewPredicate
+    new_predicate: SauTxNewPredicateV1
 
 ### References to other accessible ledger accumulators.
-class SauTxLedgerRefs(StableContainer[16]):
+class SauTxLedgerRefsV1(StableContainer[16]):
     #~# external_kind: container
-    l1_block_ref_claims: Optional[proofs.ClaimList]
+    l1_block_ref_claims: Optional[proofs.ClaimListV1]
 
 ### Description of a snark account changes and other constraint checks we need
 ### to check.
-class SauTxOperationData(Container):
-    update_data: SauTxUpdateData
+class SauTxOperationDataV1(Container):
+    update_data: SauTxUpdateDataV1
 
     #~# external_kind: container
     messages: List[strata_acct_types.MessageEntry, SAU_MAX_PROCESSED_MESSAGES]
 
-    ledger_refs: SauTxLedgerRefs
+    ledger_refs: SauTxLedgerRefsV1
 
 ### Snark account update payload.
-class SauTxPayload(Container):
+class SauTxPayloadV1(Container):
     ### Target account ID.
     target: strata_acct_types.AccountId
 
     ### Snark account update data.
-    operation_data: SauTxOperationData
+    operation_data: SauTxOperationDataV1
 
 # ====================
 # General tx structural types
@@ -85,7 +85,7 @@ class SauTxPayload(Container):
 
 ### Additional constraints that we can place on a transaction.
 #~# derive: std::default::Default
-class TxConstraints(StableContainer[8]):
+class TxConstraintsV1(StableContainer[8]):
     ### Minimum slot for inclusion
     min_slot: Optional[strata_identifiers.Slot]
 
@@ -93,19 +93,19 @@ class TxConstraints(StableContainer[8]):
     max_slot: Optional[strata_identifiers.Slot]
 
 ### Transaction payload union.
-class TransactionPayload(Union):
-    GenericAccountMessage: GamTxPayload
-    SnarkAccountUpdate: SauTxPayload
+class TransactionPayloadV1(Union):
+    GenericAccountMessage: GamTxPayloadV1
+    SnarkAccountUpdate: SauTxPayloadV1
 
 ### Data within the transaction.
 ###
 ### This is what we compute the txid from.
-class OLTransactionData(Container):
+class OLTransactionDataV1(Container):
     ### Transaction payload (enum variant)
-    payload: TransactionPayload
+    payload: TransactionPayloadV1
 
     ### Additional transaction validity conditions.
-    constraints: TxConstraints
+    constraints: TxConstraintsV1
 
     ### External effects of the transaction.
     #~# external_kind: container
@@ -114,21 +114,21 @@ class OLTransactionData(Container):
 ### Proof data we provide alongside the tx.
 ###
 ### This does not impact the txid since it's at partially malleable by design.
-class TxProofs(StableContainer[8]):
+class TxProofsV1(StableContainer[8]):
     ### Satisfiers for predicate checks.
-    predicate_satisfiers: Optional[proofs.ProofSatisfierList]
+    predicate_satisfiers: Optional[proofs.ProofSatisfierListV1]
 
     ### Proofs for all accumulators queried by the transactions.
     ###
     ### The order is dependent on the tx.
-    accumulator_proofs: Optional[proofs.RawMerkleProofList]
+    accumulator_proofs: Optional[proofs.RawMerkleProofListV1]
 
 ### Transaction container.
 ###
 ### This is what we compute the wtxid from.
-class OLTransaction(Container):
+class OLTransactionV1(Container):
     ### Transaction data itself.  Used to compute txid.
-    data: OLTransactionData
+    data: OLTransactionDataV1
 
     ### Various proofs which might be modified.
-    proofs: TxProofs
+    proofs: TxProofsV1

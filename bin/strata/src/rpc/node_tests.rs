@@ -29,7 +29,7 @@ use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServe
 use strata_ol_rpc_types::*;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::*;
-use strata_ol_state_types_v1::{OLAccountState, OLAccountTypeState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountStateV1, OLAccountTypeStateV1, OLStateV1, WriteBatch};
 use strata_ol_tx_types_v1::*;
 use strata_predicate::PredicateKey;
 use strata_primitives::{
@@ -47,7 +47,7 @@ use crate::rpc::errors::{
 
 // -- Mock provider --
 
-type SubmitFn = Box<dyn Fn(OLTransaction) -> OLMempoolResult<OLTxId> + Send + Sync>;
+type SubmitFn = Box<dyn Fn(OLTransactionV1) -> OLMempoolResult<OLTxId> + Send + Sync>;
 type InboxFetchFn = Box<dyn Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync>;
 type UpdateRecordsFetchFn =
     Box<dyn Fn(Epoch, AccountId) -> DbResult<Option<Vec<AccountUpdateRecord>>> + Send + Sync>;
@@ -78,11 +78,11 @@ fn update_record_with_prev(
 }
 
 struct MockProvider {
-    blocks: HashMap<OLBlockId, OLBlock>,
+    blocks: HashMap<OLBlockId, OLBlockV1>,
     canonical_slots: HashMap<Slot, OLBlockCommitment>,
     history_base: Option<EpochCommitment>,
-    states: HashMap<OLBlockCommitment, Arc<OLState>>,
-    write_batches: HashMap<OLBlockCommitment, WriteBatch<OLAccountState>>,
+    states: HashMap<OLBlockCommitment, Arc<OLStateV1>>,
+    write_batches: HashMap<OLBlockCommitment, WriteBatch<OLAccountStateV1>>,
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
@@ -125,7 +125,7 @@ impl MockProvider {
         self
     }
 
-    fn with_block_and_state(mut self, block: &OLBlock, state: OLState) -> Self {
+    fn with_block_and_state(mut self, block: &OLBlockV1, state: OLStateV1) -> Self {
         let blkid = block.header().compute_blkid();
         let slot = block.header().slot();
         let commitment = OLBlockCommitment::new(slot, blkid);
@@ -175,7 +175,7 @@ impl MockProvider {
         self
     }
 
-    fn with_state_at(mut self, commitment: OLBlockCommitment, state: OLState) -> Self {
+    fn with_state_at(mut self, commitment: OLBlockCommitment, state: OLStateV1) -> Self {
         self.states.insert(commitment, Arc::new(state));
         self
     }
@@ -183,7 +183,7 @@ impl MockProvider {
     fn with_write_batch(
         mut self,
         commitment: OLBlockCommitment,
-        write_batch: WriteBatch<OLAccountState>,
+        write_batch: WriteBatch<OLAccountStateV1>,
     ) -> Self {
         self.write_batches.insert(commitment, write_batch);
         self
@@ -332,7 +332,7 @@ impl MockProvider {
 
     fn with_submit_fn(
         mut self,
-        f: impl Fn(OLTransaction) -> OLMempoolResult<OLTxId> + Send + Sync + 'static,
+        f: impl Fn(OLTransactionV1) -> OLMempoolResult<OLTxId> + Send + Sync + 'static,
     ) -> Self {
         self.submit_fn = Box::new(f);
         self
@@ -364,7 +364,7 @@ impl OLRpcProvider for MockProvider {
         Ok(self.canonical_slots.get(&height).copied())
     }
 
-    async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
+    async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>> {
         Ok(self.blocks.get(&id).cloned())
     }
 
@@ -386,14 +386,14 @@ impl OLRpcProvider for MockProvider {
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLState>>> {
+    ) -> DbResult<Option<Arc<OLStateV1>>> {
         Ok(self.states.get(&commitment).cloned())
     }
 
     async fn get_ol_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
+    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
         Ok(self.write_batches.get(&commitment).cloned())
     }
 
@@ -474,7 +474,7 @@ impl OLRpcProvider for MockProvider {
         Ok(self.l1_tip_height)
     }
 
-    async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
+    async fn submit_transaction(&self, tx: OLTransactionV1) -> OLMempoolResult<OLTxId> {
         (self.submit_fn)(tx)
     }
 }
@@ -528,11 +528,11 @@ fn make_sync_status(
     )
 }
 
-fn make_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlock {
+fn make_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlockV1 {
     make_block_with_terminal_flag(slot, epoch, parent, false)
 }
 
-fn make_terminal_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlock {
+fn make_terminal_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlockV1 {
     make_block_with_terminal_flag(slot, epoch, parent, true)
 }
 
@@ -541,10 +541,10 @@ fn make_block_with_terminal_flag(
     epoch: Epoch,
     parent: OLBlockId,
     is_terminal: bool,
-) -> OLBlock {
-    let mut flags = BlockFlags::zero();
+) -> OLBlockV1 {
+    let mut flags = BlockFlagsV1::zero();
     flags.set_is_terminal(is_terminal);
-    let header = OLBlockHeader::new(
+    let header = OLBlockHeaderV1::new(
         0,
         flags,
         slot,
@@ -554,16 +554,16 @@ fn make_block_with_terminal_flag(
         Buf32::zero(),
         Buf32::zero(),
     );
-    let signed = SignedOLBlockHeader::new(header, Buf64::zero());
-    let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty segment"));
-    OLBlock::new(signed, body)
+    let signed = SignedOLBlockHeaderV1::new(header, Buf64::zero());
+    let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty segment"));
+    OLBlockV1::new(signed, body)
 }
 
 fn make_epoch_blocks(
     prev_terminal: L2BlockCommitment,
     epoch: Epoch,
     terminal_slot: Slot,
-) -> Vec<OLBlock> {
+) -> Vec<OLBlockV1> {
     let mut blocks = Vec::new();
     let mut parent = *prev_terminal.blkid();
     for slot in prev_terminal.slot().saturating_add(1)..=terminal_slot {
@@ -578,7 +578,7 @@ fn make_epoch_blocks(
     blocks
 }
 
-fn with_blocks(mut provider: MockProvider, blocks: &[OLBlock]) -> MockProvider {
+fn with_blocks(mut provider: MockProvider, blocks: &[OLBlockV1]) -> MockProvider {
     for block in blocks {
         provider = provider.with_block_and_state(block, genesis_ol_state());
     }
@@ -591,8 +591,8 @@ fn make_block_with_gam_tx(
     parent: OLBlockId,
     tx_target: AccountId,
     tx_data: Vec<u8>,
-) -> OLBlock {
-    let header = OLBlockHeader::new(
+) -> OLBlockV1 {
+    let header = OLBlockHeaderV1::new(
         0,
         0.into(),
         slot,
@@ -602,21 +602,21 @@ fn make_block_with_gam_tx(
         Buf32::zero(),
         Buf32::zero(),
     );
-    let signed = SignedOLBlockHeader::new(header, Buf64::zero());
-    let tx_data_inner = OLTransactionData::from_gam_bytes(tx_target, tx_data)
+    let signed = SignedOLBlockHeaderV1::new(header, Buf64::zero());
+    let tx_data_inner = OLTransactionDataV1::from_gam_bytes(tx_target, tx_data)
         .expect("test payload should fit in GAM transaction");
-    let tx = OLTransaction::new(tx_data_inner, TxProofs::new_empty());
-    let segment = OLTxSegment::new(vec![tx]).expect("segment with one tx");
-    let body = OLBlockBody::new_common(segment);
-    OLBlock::new(signed, body)
+    let tx = OLTransactionV1::new(tx_data_inner, TxProofsV1::new_empty());
+    let segment = OLTxSegmentV1::new(vec![tx]).expect("segment with one tx");
+    let body = OLBlockBodyV1::new_common(segment);
+    OLBlockV1::new(signed, body)
 }
 
-fn genesis_ol_state() -> OLState {
+fn genesis_ol_state() -> OLStateV1 {
     let params = OLParams {
         last_l1_block: test_l1_commitment(),
         ..Default::default()
     };
-    OLState::from_genesis_params(&params).expect("genesis state")
+    OLStateV1::from_genesis_params(&params).expect("genesis state")
 }
 
 fn ol_state_with_snark_account(
@@ -624,7 +624,7 @@ fn ol_state_with_snark_account(
     slot: Slot,
     seq_no: u64,
     next_inbox_msg_idx: u64,
-) -> OLState {
+) -> OLStateV1 {
     ol_state_with_snark_account_and_inbox_entries(account_id, slot, seq_no, next_inbox_msg_idx, &[])
 }
 
@@ -634,7 +634,7 @@ fn ol_state_with_snark_account_and_inbox_entries(
     seq_no: u64,
     next_inbox_msg_idx: u64,
     inbox_messages: &[MessageEntry],
-) -> OLState {
+) -> OLStateV1 {
     let base = genesis_ol_state();
     let mut state = MemoryStateBaseLayer::new(base);
     state.set_cur_slot(slot);
@@ -658,7 +658,7 @@ fn ol_state_with_snark_account_and_inbox_entries(
     state.into_inner()
 }
 
-fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLState {
+fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLStateV1 {
     let base = genesis_ol_state();
     let mut state = MemoryStateBaseLayer::new(base);
     state.set_cur_slot(slot);
@@ -670,12 +670,12 @@ fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLState {
     state.into_inner()
 }
 
-fn empty_account_state(serial: u32, balance_sats: u64) -> OLAccountState {
-    OLAccountState::new(
+fn empty_account_state(serial: u32, balance_sats: u64) -> OLAccountStateV1 {
+    OLAccountStateV1::new(
         AccountSerial::from(serial),
         BitcoinAmount::try_from(balance_sats)
             .expect("amount must not exceed the Bitcoin money supply"),
-        OLAccountTypeState::Empty,
+        OLAccountTypeStateV1::Empty,
     )
 }
 
@@ -2441,7 +2441,7 @@ async fn blocks_summaries_account_appears_midway_through_range() {
     // Range covers epochs 1..=5. Account doesn't exist at epoch 0, has no
     // records in epochs 1 and 2, first appears at epoch 3, then has no records
     // again in epochs 4 and 5. Only the indexed update in epoch 3 should emit.
-    let blocks: Vec<OLBlock> = {
+    let blocks: Vec<OLBlockV1> = {
         let mut acc = Vec::with_capacity(NUM_EPOCHS as usize);
         let mut parent = genesis_blkid;
         for epoch in 1..=NUM_EPOCHS {
@@ -4523,8 +4523,8 @@ async fn get_block_transactions_reports_pruned_history_at_base() {
 
 #[tokio::test]
 async fn get_block_transactions_decodes_gam_tx() {
-    // Exercises the From<&OLTransaction> conversion path with a real,
-    // non-empty block. `OLTransactionData::new_gam` pushes the data into
+    // Exercises the From<&OLTransactionV1> conversion path with a real,
+    // non-empty block. `OLTransactionDataV1::new_gam` pushes the data into
     // tx effects as a message, so we can assert both the kind and the
     // effects round-trip correctly.
     let target = test_account_id(0xab);

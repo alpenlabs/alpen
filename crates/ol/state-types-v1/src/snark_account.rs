@@ -7,14 +7,14 @@ use strata_ol_state_types::*;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
-use crate::ssz_generated::ssz::state::{OLSnarkAccountState, ProofState};
+use crate::ssz_generated::ssz::state::{OLSnarkAccountStateV1, ProofStateV1};
 
-impl OLSnarkAccountState {
+impl OLSnarkAccountStateV1 {
     /// Creates an account instance with specific values.
     pub(crate) fn new(
         update_vk: PredicateKey,
         seqno: Seqno,
-        proof_state: ProofState,
+        proof_state: ProofStateV1,
         inbox_mmr: Mmr64,
     ) -> Self {
         Self {
@@ -28,14 +28,14 @@ impl OLSnarkAccountState {
     /// Creates a new fresh instance with a particular initial state, but other
     /// bookkeeping set to 0.
     pub fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
-        let ps = ProofState::new(initial_state_root, 0);
+        let ps = ProofStateV1::new(initial_state_root, 0);
         let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
         let mmr64 = Mmr64::from_generic(&generic_mmr);
         Self::new(update_vk, Seqno::zero(), ps, mmr64)
     }
 }
 
-impl ISnarkAccountState for OLSnarkAccountState {
+impl ISnarkAccountState for OLSnarkAccountStateV1 {
     fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
         Self::new_fresh(update_vk, initial_state_root)
     }
@@ -61,9 +61,9 @@ impl ISnarkAccountState for OLSnarkAccountState {
     }
 }
 
-impl ISnarkAccountStateMut for OLSnarkAccountState {
+impl ISnarkAccountStateMut for OLSnarkAccountStateV1 {
     fn set_proof_state(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
-        self.proof_state = ProofState::new(state, next_read_idx);
+        self.proof_state = ProofStateV1::new(state, next_read_idx);
         self.seqno = seqno;
     }
 
@@ -79,7 +79,7 @@ impl ISnarkAccountStateMut for OLSnarkAccountState {
     }
 }
 
-impl ProofState {
+impl ProofStateV1 {
     pub fn new(inner_state_root: Hash, next_msg_read_idx: u64) -> Self {
         // Convert Hash (Buf32) to [u8; 32] then to FixedBytes<32>
         let hash_bytes: [u8; 32] = inner_state_root.into();
@@ -113,15 +113,15 @@ mod tests {
     mod proof_state {
         use super::*;
 
-        ssz_proptest!(ProofState, proof_state_strategy());
+        ssz_proptest!(ProofStateV1, proof_state_strategy());
 
         #[test]
         fn test_proof_state_basic() {
-            let state = ProofState::new(Buf32::zero(), 42);
+            let state = ProofStateV1::new(Buf32::zero(), 42);
             assert_eq!(state.next_msg_read_idx(), 42);
 
             let encoded = state.as_ssz_bytes();
-            let decoded = ProofState::from_ssz_bytes(&encoded).unwrap();
+            let decoded = ProofStateV1::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(state, decoded);
         }
     }

@@ -193,7 +193,7 @@ where
 
 /// Account-type discriminator for [`RpcAccountState`].
 ///
-/// Mirrors the on-chain `OLAccountTypeState` and carries snark-specific
+/// Mirrors the on-chain `OLAccountTypeStateV1` and carries snark-specific
 /// summary data inline so the wire format is self-describing.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]

@@ -90,7 +90,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        MempoolTxInvalidReason, OLMempoolResult, OLTransaction,
+        MempoolTxInvalidReason, OLMempoolResult, OLTransactionV1,
         test_utils::{
             create_test_block_commitment, create_test_context, create_test_snark_tx_with_seq_no,
             create_test_state_provider,
@@ -167,7 +167,7 @@ mod tests {
                     .await
                     .expect("Should process command");
 
-                let result: OLMempoolResult<Vec<(OLTxId, OLTransaction)>> =
+                let result: OLMempoolResult<Vec<(OLTxId, OLTransactionV1)>> =
                     rx.await.expect("Should receive result");
                 assert!(result.is_ok());
                 let txs = result.unwrap();

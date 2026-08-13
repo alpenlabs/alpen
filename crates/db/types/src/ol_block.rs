@@ -1,12 +1,12 @@
 //! OL block database interface and its block-status type.
 
-// TODO(STR-4220): replace OLBlock to a versionable wrapper
+// TODO(STR-4220): replace OLBlockV1 to a versionable wrapper
 
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 
 #[cfg(feature = "proxies")]
 use crate::DbError;
@@ -31,7 +31,7 @@ pub enum BlockStatus {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BlockAvailability {
     /// The full OL block is locally available.
-    Available(Box<OLBlock>),
+    Available(Box<OLBlockV1>),
 
     /// The body is not retained locally because the commitment is at or below the history base
     /// (pruned or bootstrapped history).
@@ -52,7 +52,7 @@ pub enum BlockAvailability {
 pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Stores an OL block. The slot is extracted from the block header. Also sets the block's
     /// status to "unchecked" if this is a new block.
-    fn put_block_data(&self, block: OLBlock) -> DbResult<()>;
+    fn put_block_data(&self, block: OLBlockV1) -> DbResult<()>;
 
     /// Returns the latest OL block committed through the high-watermark path, if any.
     ///
@@ -65,7 +65,7 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Block persistence semantics match [`Self::put_block_data`]. If the block's slot is not
     /// strictly greater than the current high-watermark slot, this writes nothing and returns
     /// `DbError::BlockHighWatermarkConflict`.
-    fn put_block_data_with_high_watermark(&self, block: OLBlock) -> DbResult<OLBlockCommitment>;
+    fn put_block_data_with_high_watermark(&self, block: OLBlockV1) -> DbResult<OLBlockCommitment>;
 
     /// Clears the block high-watermark if it currently equals `expected`.
     ///
@@ -81,18 +81,18 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     fn rollback_block_high_watermark(&self, target: OLBlockCommitment) -> DbResult<bool>;
 
     /// Retrieves an OL block for a given block ID.
-    fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>>;
+    fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>>;
 
-    /// Stores an unsigned checkpoint terminal [`OLBlockHeader`].
+    /// Stores an unsigned checkpoint terminal [`OLBlockHeaderV1`].
     ///
     /// Returns [`DbError::OLTerminalHeaderIdMismatch`] when the header does not compute to `id`.
-    fn put_terminal_header(&self, id: OLBlockId, header: OLBlockHeader) -> DbResult<()>;
+    fn put_terminal_header(&self, id: OLBlockId, header: OLBlockHeaderV1) -> DbResult<()>;
 
-    /// Retrieves an unsigned checkpoint terminal [`OLBlockHeader`].
-    fn get_terminal_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>>;
+    /// Retrieves an unsigned checkpoint terminal [`OLBlockHeaderV1`].
+    fn get_terminal_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>>;
 
-    /// Retrieves an [`OLBlockHeader`] from a full block before consulting terminal headers.
-    fn get_ol_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>>;
+    /// Retrieves an [`OLBlockHeaderV1`] from a full block before consulting terminal headers.
+    fn get_ol_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>>;
 
     /// Returns the immutable base of locally available full OL block history.
     ///

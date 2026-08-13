@@ -10,19 +10,19 @@ MAX_SATISFIER_COUNT = 255
 MAX_ACC_PROOF_COUNT = 4096
 
 ### A list of claims into some accumulator.
-class ClaimList(Container):
+class ClaimListV1(Container):
     #~# external_kind: container
     claims: List[strata_acct_types.AccumulatorClaim, MAX_ACC_PROOF_COUNT]
 
 ### A list of raw merkle proofs into accumulators.
-class RawMerkleProofList(Container):
+class RawMerkleProofListV1(Container):
     #~# external_kind: container
     proofs: List[strata_acct_types.RawMerkleProof, MAX_ACC_PROOF_COUNT]
 
 ### Opaque satisfier for a proof.
-class ProofSatisfier(Container):
+class ProofSatisfierV1(Container):
     proof: List[uint8, MAX_SATISFIER_LEN]
 
 ### Opaque list of proof satisfiers.
-class ProofSatisfierList(Container):
-    proofs: List[ProofSatisfier, MAX_SATISFIER_COUNT]
+class ProofSatisfierListV1(Container):
+    proofs: List[ProofSatisfierV1, MAX_SATISFIER_COUNT]

@@ -275,7 +275,7 @@ mod tests {
         storage: NodeStorage,
         genesis: OLBlockCommitment,
         anchor: EpochCommitment,
-        header: strata_ol_chain_types_v1::OLBlockHeader,
+        header: strata_ol_chain_types_v1::OLBlockHeaderV1,
         summary: EpochSummary,
         payload: CheckpointPayload,
         l1_ref: CheckpointL1Ref,

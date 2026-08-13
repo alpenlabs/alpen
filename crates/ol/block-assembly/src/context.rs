@@ -13,13 +13,13 @@ use strata_acct_types::{
 use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::IComputeStateRootWithWrites;
 use strata_ol_state_types::{IAccountState, IAccountStateMut, IStateAccessor, IStateAccessorMut};
 use strata_ol_state_types_v1::IStateBatchApplicable;
-use strata_ol_tx_types_v1::OLTransaction;
+use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
 use tracing::debug;
@@ -66,10 +66,10 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
     type State: BlockAssemblyStateAccess;
 
     /// Fetch an OL block by ID.
-    async fn fetch_ol_block(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlock>>;
+    async fn fetch_ol_block(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlockV1>>;
 
     /// Fetch an OL block header by ID.
-    async fn fetch_ol_header(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlockHeader>>;
+    async fn fetch_ol_header(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlockHeaderV1>>;
 
     /// Fetch the state snapshot for `tip`.
     async fn fetch_state_for_tip(
@@ -166,7 +166,7 @@ where
 {
     type State = <S as StateProvider>::State;
 
-    async fn fetch_ol_block(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlock>> {
+    async fn fetch_ol_block(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlockV1>> {
         self.storage
             .ol_block()
             .get_block_data_async(id)
@@ -174,7 +174,7 @@ where
             .map_err(BlockAssemblyError::Db)
     }
 
-    async fn fetch_ol_header(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlockHeader>> {
+    async fn fetch_ol_header(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlockHeaderV1>> {
         self.storage
             .ol_block()
             .get_ol_header_async(id)
@@ -258,7 +258,7 @@ where
     async fn get_transactions(
         &self,
         limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransaction)>> {
+    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransactionV1)>> {
         MempoolProvider::get_transactions(&self.mempool_provider, limit).await
     }
 

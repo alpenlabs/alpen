@@ -9,11 +9,11 @@ use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{Buf32, OLBlockCommitment, SubjectId};
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::{IAccountState, IStateAccessor};
-use strata_ol_tx_types_v1::{OLTransaction, OLTransactionData, TxProofs};
+use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{
@@ -254,18 +254,18 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
 /// Returns the header of the last block, for the terminal to build on.
 fn run_snark_update_blocks(
     state: &mut MemoryStateBaseLayer,
-    blocks: &mut Vec<OLBlock>,
-    genesis_header: &OLBlockHeader,
-) -> OLBlockHeader {
+    blocks: &mut Vec<OLBlockV1>,
+    genesis_header: &OLBlockHeaderV1,
+) -> OLBlockHeaderV1 {
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let inbox_msg = snark_inbox_msg();
 
     let mut prev = run_block(state, blocks, genesis_header, BlockComponents::new_empty());
 
-    let gam_tx = OLTransaction::new(
-        OLTransactionData::from_gam_bytes(snark_id, inbox_msg.payload().data().to_vec())
+    let gam_tx = OLTransactionV1::new(
+        OLTransactionDataV1::from_gam_bytes(snark_id, inbox_msg.payload().data().to_vec())
             .expect("gam payload"),
-        TxProofs::new_empty(),
+        TxProofsV1::new_empty(),
     );
     prev = run_block(state, blocks, &prev, txs_components(gam_tx));
 
@@ -280,18 +280,18 @@ fn run_snark_update_blocks(
 /// bridge withdrawal instead of a transfer.
 fn run_withdrawal_update_blocks(
     state: &mut MemoryStateBaseLayer,
-    blocks: &mut Vec<OLBlock>,
-    genesis_header: &OLBlockHeader,
-) -> OLBlockHeader {
+    blocks: &mut Vec<OLBlockV1>,
+    genesis_header: &OLBlockHeaderV1,
+) -> OLBlockHeaderV1 {
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let inbox_msg = snark_inbox_msg();
 
     let mut prev = run_block(state, blocks, genesis_header, BlockComponents::new_empty());
 
-    let gam_tx = OLTransaction::new(
-        OLTransactionData::from_gam_bytes(snark_id, inbox_msg.payload().data().to_vec())
+    let gam_tx = OLTransactionV1::new(
+        OLTransactionDataV1::from_gam_bytes(snark_id, inbox_msg.payload().data().to_vec())
             .expect("gam payload"),
-        TxProofs::new_empty(),
+        TxProofsV1::new_empty(),
     );
     prev = run_block(state, blocks, &prev, txs_components(gam_tx));
 
@@ -316,7 +316,7 @@ fn run_withdrawal_update_blocks(
 
 /// Builds a snark account update tx consuming the single inbox message from
 /// `state`'s live snark account.
-fn build_snark_update(state: &MemoryStateBaseLayer, inbox_msg: &MessageEntry) -> OLTransaction {
+fn build_snark_update(state: &MemoryStateBaseLayer, inbox_msg: &MessageEntry) -> OLTransactionV1 {
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
 
     // A one-message MMR yields the proof for the message delivered by the GAM;
@@ -337,7 +337,7 @@ fn reconstruct_epoch(
     pre_epoch_state: &MemoryStateBaseLayer,
     genesis: &CompletedBlock,
     terminal: &CompletedBlock,
-    blocks: &[OLBlock],
+    blocks: &[OLBlockV1],
 ) -> Buf32 {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
     execute_block_batch_predrain(&mut da, blocks, genesis.header(), BridgeParams::default())
@@ -371,7 +371,7 @@ fn assert_reconstruction_matches(
     pre_epoch_state: &MemoryStateBaseLayer,
     genesis: &CompletedBlock,
     terminal: &CompletedBlock,
-    blocks: &[OLBlock],
+    blocks: &[OLBlockV1],
 ) {
     let direct_root = state.compute_state_root().unwrap();
     assert_eq!(
@@ -382,6 +382,6 @@ fn assert_reconstruction_matches(
 }
 
 /// Wraps a single transaction into block components.
-fn txs_components(tx: OLTransaction) -> BlockComponents {
+fn txs_components(tx: OLTransactionV1) -> BlockComponents {
     BlockComponents::new_txs_from_ol_transactions(vec![tx])
 }

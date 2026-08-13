@@ -31,7 +31,7 @@ use strata_ol_state_types::IStateAccessorMut;
 /// ```rust,ignore
 /// use std::{collections::HashMap, sync::Arc};
 /// use strata_identifiers::OLBlockCommitment;
-/// use strata_ol_state_types_v1::OLState;
+/// use strata_ol_state_types_v1::OLStateV1;
 /// use strata_ol_state_support_types::StateProvider;
 ///
 /// #[derive(Debug, thiserror::Error)]
@@ -41,11 +41,11 @@ use strata_ol_state_types::IStateAccessorMut;
 /// }
 ///
 /// struct MyStateProvider {
-///     states: HashMap<OLBlockCommitment, Arc<OLState>>,
+///     states: HashMap<OLBlockCommitment, Arc<OLStateV1>>,
 /// }
 ///
 /// impl StateProvider for MyStateProvider {
-///     type State = OLState;
+///     type State = OLStateV1;
 ///     type Error = MyError;
 ///
 ///     async fn get_state_for_tip_async(

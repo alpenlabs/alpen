@@ -22,12 +22,12 @@ use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{
-    OLBlock, OLBlockHeader, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
+    OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
     SnarkAccountUpdateLogData,
 };
 use strata_ol_params::OLParams;
 use strata_ol_state_support_types::SnarkAcctStateUpdate;
-use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
@@ -127,7 +127,7 @@ impl ChainWorkerContextImpl {
 }
 
 impl ChainWorkerContext for ChainWorkerContextImpl {
-    fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlock>> {
+    fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
         Ok(self.ol_block_mgr.get_block_data_blocking(*blkid)?)
     }
 
@@ -135,7 +135,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(self.ol_block_mgr.get_blocks_at_height_blocking(slot)?)
     }
 
-    fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeader>> {
+    fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeaderV1>> {
         fetch_header_from_manager(&self.ol_block_mgr, blkid)
     }
 
@@ -147,7 +147,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         }
     }
 
-    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLState>> {
+    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLStateV1>> {
         let state_opt = self
             .ol_state_mgr
             .get_toplevel_ol_state_blocking(commitment)?;
@@ -157,14 +157,14 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     fn fetch_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> WorkerResult<Option<WriteBatch<OLAccountState>>> {
+    ) -> WorkerResult<Option<WriteBatch<OLAccountStateV1>>> {
         Ok(self.ol_state_mgr.get_write_batch_blocking(commitment)?)
     }
 
     /// Stores write batchees as well as indexing data.
     fn store_block_output(
         &self,
-        block: &OLBlock,
+        block: &OLBlockV1,
         commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
@@ -199,14 +199,14 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     fn store_toplevel_state(
         &self,
         commitment: OLBlockCommitment,
-        state: OLState,
+        state: OLStateV1,
     ) -> WorkerResult<()> {
         self.ol_state_mgr
             .put_toplevel_ol_state_blocking(commitment, state)?;
         Ok(())
     }
 
-    fn store_terminal_header(&self, id: OLBlockId, header: OLBlockHeader) -> WorkerResult<()> {
+    fn store_terminal_header(&self, id: OLBlockId, header: OLBlockHeaderV1) -> WorkerResult<()> {
         self.ol_block_mgr.put_terminal_header_blocking(id, header)?;
         Ok(())
     }
@@ -355,7 +355,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 fn fetch_header_from_manager(
     ol_block_mgr: &OLBlockManager,
     blkid: &OLBlockId,
-) -> WorkerResult<Option<OLBlockHeader>> {
+) -> WorkerResult<Option<OLBlockHeaderV1>> {
     Ok(ol_block_mgr.get_ol_header_blocking(*blkid)?)
 }
 
@@ -366,7 +366,7 @@ mod header_tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::backend::DatabaseBackend;
     use strata_identifiers::{Buf32, OLBlockId};
-    use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
     use strata_storage::OLBlockManager;
 
     use super::fetch_header_from_manager;
@@ -376,9 +376,9 @@ mod header_tests {
         let backend = Arc::new(get_test_sled_backend());
         let manager =
             OLBlockManager::new(strata_storage::test_runtime_handle(), backend.ol_block_db());
-        let mut flags = BlockFlags::zero();
+        let mut flags = BlockFlagsV1::zero();
         flags.set_is_terminal(true);
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             1_000,
             flags,
             7,

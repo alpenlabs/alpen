@@ -2,11 +2,13 @@ use strata_acct_types::*;
 use strata_identifiers::AccountSerial;
 use strata_ol_state_types::*;
 
-use crate::ssz_generated::ssz::state::{OLAccountState, OLAccountTypeState, OLSnarkAccountState};
+use crate::ssz_generated::ssz::state::{
+    OLAccountStateV1, OLAccountTypeStateV1, OLSnarkAccountStateV1,
+};
 
-impl OLAccountState {
+impl OLAccountStateV1 {
     /// Creates a new account state.
-    pub fn new(serial: AccountSerial, balance: BitcoinAmount, state: OLAccountTypeState) -> Self {
+    pub fn new(serial: AccountSerial, balance: BitcoinAmount, state: OLAccountTypeStateV1) -> Self {
         Self {
             serial,
             balance,
@@ -20,17 +22,17 @@ impl OLAccountState {
     }
 }
 
-impl IAccountState for OLAccountState {
-    type SnarkAccountState = OLSnarkAccountState;
+impl IAccountState for OLAccountStateV1 {
+    type SnarkAccountState = OLSnarkAccountStateV1;
 
     fn new_with_serial(new_acct_data: NewAccountData, serial: AccountSerial) -> Self {
         let balance = new_acct_data.initial_balance();
         let type_state = match new_acct_data.into_type_state() {
-            NewAccountTypeState::Empty => OLAccountTypeState::Empty,
+            NewAccountTypeState::Empty => OLAccountTypeStateV1::Empty,
             NewAccountTypeState::Snark {
                 update_vk,
                 initial_state_root,
-            } => OLAccountTypeState::Snark(OLSnarkAccountState::new_fresh(
+            } => OLAccountTypeStateV1::Snark(OLSnarkAccountStateV1::new_fresh(
                 update_vk,
                 initial_state_root,
             )),
@@ -48,21 +50,21 @@ impl IAccountState for OLAccountState {
 
     fn ty(&self) -> AccountTypeId {
         match &self.state {
-            OLAccountTypeState::Empty => AccountTypeId::Empty,
-            OLAccountTypeState::Snark(_) => AccountTypeId::Snark,
+            OLAccountTypeStateV1::Empty => AccountTypeId::Empty,
+            OLAccountTypeStateV1::Snark(_) => AccountTypeId::Snark,
         }
     }
 
     fn type_state(&self) -> AccountTypeStateRef<'_, Self> {
         match &self.state {
-            OLAccountTypeState::Empty => AccountTypeStateRef::Empty,
-            OLAccountTypeState::Snark(state) => AccountTypeStateRef::Snark(state),
+            OLAccountTypeStateV1::Empty => AccountTypeStateRef::Empty,
+            OLAccountTypeStateV1::Snark(state) => AccountTypeStateRef::Snark(state),
         }
     }
 
     fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
         match &self.state {
-            OLAccountTypeState::Snark(state) => Ok(state),
+            OLAccountTypeStateV1::Snark(state) => Ok(state),
             _ => Err(StateError::MismatchedAcctType {
                 got: self.ty(),
                 expected: AccountTypeId::Snark,
@@ -71,8 +73,8 @@ impl IAccountState for OLAccountState {
     }
 }
 
-impl IAccountStateMut for OLAccountState {
-    type SnarkAccountStateMut = OLSnarkAccountState;
+impl IAccountStateMut for OLAccountStateV1 {
+    type SnarkAccountStateMut = OLSnarkAccountStateV1;
 
     fn add_balance(&mut self, coin: Coin) {
         let balance_sats = self
@@ -100,7 +102,7 @@ impl IAccountStateMut for OLAccountState {
     fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut> {
         let ty = self.ty();
         match &mut self.state {
-            OLAccountTypeState::Snark(state) => Ok(state),
+            OLAccountTypeStateV1::Snark(state) => Ok(state),
             _ => Err(StateError::MismatchedAcctType {
                 got: ty,
                 expected: AccountTypeId::Snark,
@@ -109,12 +111,12 @@ impl IAccountStateMut for OLAccountState {
     }
 }
 
-impl OLAccountTypeState {
+impl OLAccountTypeStateV1 {
     /// Returns the account type ID for this state.
     pub fn ty(&self) -> AccountTypeId {
         match self {
-            OLAccountTypeState::Empty => AccountTypeId::Empty,
-            OLAccountTypeState::Snark(_) => AccountTypeId::Snark,
+            OLAccountTypeStateV1::Empty => AccountTypeId::Empty,
+            OLAccountTypeStateV1::Snark(_) => AccountTypeId::Snark,
         }
     }
 }
@@ -130,16 +132,16 @@ mod tests {
 
     mod ol_account_state {
         use super::*;
-        ssz_proptest!(OLAccountState, ol_account_state_strategy());
+        ssz_proptest!(OLAccountStateV1, ol_account_state_strategy());
     }
 
     mod ol_account_type_state {
         use super::*;
-        ssz_proptest!(OLAccountTypeState, ol_account_type_state_strategy());
+        ssz_proptest!(OLAccountTypeStateV1, ol_account_type_state_strategy());
     }
 
     mod ol_snark_account_state {
         use super::*;
-        ssz_proptest!(OLSnarkAccountState, ol_snark_account_state_strategy());
+        ssz_proptest!(OLSnarkAccountStateV1, ol_snark_account_state_strategy());
     }
 }

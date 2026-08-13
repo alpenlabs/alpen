@@ -10,7 +10,7 @@
 
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_v1::{Epoch, OLBlockHeader, OLLog, Slot};
+use strata_ol_chain_types_v1::{Epoch, OLBlockHeaderV1, OLLog, Slot};
 
 use crate::{
     errors::ExecResult,
@@ -41,7 +41,7 @@ impl BlockInfo {
         Self::new(timestamp, 0, 0)
     }
 
-    pub fn from_header(bh: &OLBlockHeader) -> Self {
+    pub fn from_header(bh: &OLBlockHeaderV1) -> Self {
         Self::new(bh.timestamp(), bh.slot(), bh.epoch())
     }
 
@@ -89,7 +89,7 @@ impl EpochInfo {
 #[derive(Copy, Clone, Debug)]
 pub struct BlockContext<'b> {
     block_info: &'b BlockInfo,
-    parent_header: Option<&'b OLBlockHeader>,
+    parent_header: Option<&'b OLBlockHeaderV1>,
 }
 
 impl<'b> BlockContext<'b> {
@@ -99,7 +99,7 @@ impl<'b> BlockContext<'b> {
     ///
     /// If there is no parent block but the epoch/slot is nonzero, as that can
     /// only be valid if we're the genesis block.
-    pub fn new(block_info: &'b BlockInfo, parent_header: Option<&'b OLBlockHeader>) -> Self {
+    pub fn new(block_info: &'b BlockInfo, parent_header: Option<&'b OLBlockHeaderV1>) -> Self {
         // Sanity check genesis context.
         if parent_header.is_none() && (block_info.slot != 0 || block_info.epoch != 0) {
             panic!("stf/context: tried to verify non-genesis with genesis-like context");
@@ -114,7 +114,7 @@ impl<'b> BlockContext<'b> {
     #[cfg(test)]
     pub(crate) fn new_unchecked(
         block_info: &'b BlockInfo,
-        parent_header: Option<&'b OLBlockHeader>,
+        parent_header: Option<&'b OLBlockHeaderV1>,
     ) -> Self {
         Self {
             block_info,
@@ -126,7 +126,7 @@ impl<'b> BlockContext<'b> {
         self.block_info
     }
 
-    pub fn parent_header(&self) -> Option<&OLBlockHeader> {
+    pub fn parent_header(&self) -> Option<&OLBlockHeaderV1> {
         self.parent_header
     }
 
@@ -264,13 +264,13 @@ impl<'b> OutputCtx for BasicExecContext<'b> {
 #[derive(Clone, Debug)]
 pub struct TxExecContext<'b> {
     basic_context: &'b BasicExecContext<'b>,
-    parent_header: Option<&'b OLBlockHeader>,
+    parent_header: Option<&'b OLBlockHeaderV1>,
 }
 
 impl<'b> TxExecContext<'b> {
     pub fn new(
         basic_context: &'b BasicExecContext<'b>,
-        parent_header: Option<&'b OLBlockHeader>,
+        parent_header: Option<&'b OLBlockHeaderV1>,
     ) -> Self {
         Self {
             basic_context,

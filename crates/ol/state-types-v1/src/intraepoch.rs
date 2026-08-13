@@ -7,13 +7,13 @@ use strata_ol_state_types::{PendingAsmLog, StateError};
 
 use crate::ssz_generated::ssz::state::*;
 
-impl IntraepochState {
+impl IntraepochStateV1 {
     /// Creates a new empty instance.
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn pending_asm_logs(&self) -> &[PendingAsmLogEntry] {
+    pub fn pending_asm_logs(&self) -> &[PendingAsmLogEntryV1] {
         &self.pending_asm_logs
     }
 
@@ -22,7 +22,7 @@ impl IntraepochState {
     /// # Errors
     ///
     /// If the buffer is already full.
-    pub fn try_append_pending_log(&mut self, ent: PendingAsmLogEntry) -> Result<(), StateError> {
+    pub fn try_append_pending_log(&mut self, ent: PendingAsmLogEntryV1) -> Result<(), StateError> {
         self.pending_asm_logs
             .push(ent)
             .map_err(|_| StateError::PendingAsmLogsFull)
@@ -39,20 +39,20 @@ impl IntraepochState {
     }
 }
 
-impl From<&PendingAsmLogEntry> for PendingAsmLog {
-    fn from(ent: &PendingAsmLogEntry) -> Self {
+impl From<&PendingAsmLogEntryV1> for PendingAsmLog {
+    fn from(ent: &PendingAsmLogEntryV1) -> Self {
         PendingAsmLog::new(ent.height, ent.log.clone())
     }
 }
 
-impl From<PendingAsmLog> for PendingAsmLogEntry {
+impl From<PendingAsmLog> for PendingAsmLogEntryV1 {
     fn from(ent: PendingAsmLog) -> Self {
         let (height, log) = ent.into_parts();
-        PendingAsmLogEntry::new(height, log)
+        PendingAsmLogEntryV1::new(height, log)
     }
 }
 
-impl Default for IntraepochState {
+impl Default for IntraepochStateV1 {
     fn default() -> Self {
         Self {
             pending_asm_logs: VariableList::empty(),
@@ -60,7 +60,7 @@ impl Default for IntraepochState {
     }
 }
 
-impl PendingAsmLogEntry {
+impl PendingAsmLogEntryV1 {
     pub fn new(height: L1Height, log: AsmLogEntry) -> Self {
         Self { height, log }
     }

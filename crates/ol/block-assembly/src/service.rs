@@ -3,7 +3,7 @@
 use std::{fmt::Display, marker::PhantomData};
 
 use strata_identifiers::{Buf32, OLBlockId};
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader, verify_sequencer_predicate_signature};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, verify_sequencer_predicate_signature};
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
 use strata_predicate::PredicateKey;
@@ -225,7 +225,7 @@ fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
     state: &mut BlockasmServiceState<M, E, S>,
     template_id: OLBlockId,
     completion_data: BlockCompletionData,
-) -> Result<OLBlock, BlockAssemblyError> {
+) -> Result<OLBlockV1, BlockAssemblyError> {
     let template_ref = state.state_mut().get_pending_block_template(template_id)?;
 
     // Verify the signature before returning a completed block. Failed signatures keep the
@@ -256,7 +256,7 @@ fn record_persisted_block<M: MempoolProvider, E: EpochSealingPolicy, S>(
 /// Checks whether the sequencer signature matches the template header.
 fn check_completion_data(
     sequencer_predicate: &PredicateKey,
-    header: &OLBlockHeader,
+    header: &OLBlockHeaderV1,
     completion: &BlockCompletionData,
 ) -> bool {
     let msg: Buf32 = header.compute_blkid().into();

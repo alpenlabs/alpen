@@ -16,7 +16,7 @@ use strata_identifiers::{
 use strata_ol_tx_types_v1::test_utils::ol_transaction_strategy;
 pub use strata_ol_tx_types_v1::test_utils::schnorr_predicate;
 
-use crate::{block_flags::BlockFlags, ssz_generated::ssz::block::*, *};
+use crate::{block_flags::BlockFlagsV1, ssz_generated::ssz::block::*, *};
 
 /// Generates a random, valid BIP-340 Schnorr keypair as `(secret_key, x_only_pubkey)` for tests.
 ///
@@ -48,24 +48,24 @@ pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
         .prop_map(|(account_serial, payload)| OLLog::new(account_serial, payload))
 }
 
-pub fn ol_tx_segment_strategy() -> impl Strategy<Value = OLTxSegment> {
-    prop::collection::vec(ol_transaction_strategy(), 0..10).prop_map(|txs| OLTxSegment {
+pub fn ol_tx_segment_strategy() -> impl Strategy<Value = OLTxSegmentV1> {
+    prop::collection::vec(ol_transaction_strategy(), 0..10).prop_map(|txs| OLTxSegmentV1 {
         txs: txs
             .try_into()
             .expect("transactions must fit within SSZ max length"),
     })
 }
 
-pub fn manifests_strategy() -> impl Strategy<Value = Option<OLAsmManifestContainer>> {
+pub fn manifests_strategy() -> impl Strategy<Value = Option<OLAsmManifestContainerV1>> {
     prop::option::of(Just(
-        OLAsmManifestContainer::new(vec![]).expect("empty manifest should succeed"),
+        OLAsmManifestContainerV1::new(vec![]).expect("empty manifest should succeed"),
     ))
 }
 
-pub fn ol_block_header_strategy() -> impl Strategy<Value = OLBlockHeader> {
+pub fn ol_block_header_strategy() -> impl Strategy<Value = OLBlockHeaderV1> {
     (
         any::<u64>(),
-        any::<u16>().prop_map(BlockFlags::from),
+        any::<u16>().prop_map(BlockFlagsV1::from),
         any::<Slot>(),
         any::<Epoch>(),
         ol_block_id_strategy(),
@@ -75,7 +75,7 @@ pub fn ol_block_header_strategy() -> impl Strategy<Value = OLBlockHeader> {
     )
         .prop_map(
             |(timestamp, flags, slot, epoch, parent_blkid, body_root, state_root, logs_root)| {
-                OLBlockHeader {
+                OLBlockHeaderV1 {
                     timestamp,
                     flags,
                     slot,
@@ -89,29 +89,29 @@ pub fn ol_block_header_strategy() -> impl Strategy<Value = OLBlockHeader> {
         )
 }
 
-pub fn signed_ol_block_header_strategy() -> impl Strategy<Value = SignedOLBlockHeader> {
+pub fn signed_ol_block_header_strategy() -> impl Strategy<Value = SignedOLBlockHeaderV1> {
     (ol_block_header_strategy(), buf64_strategy()).prop_map(|(header, signature)| {
-        SignedOLBlockHeader {
+        SignedOLBlockHeaderV1 {
             header,
-            credential: OLBlockCredential {
+            credential: OLBlockCredentialV1 {
                 schnorr_sig: Some(signature).into(),
             },
         }
     })
 }
 
-pub fn ol_block_body_strategy() -> impl Strategy<Value = OLBlockBody> {
+pub fn ol_block_body_strategy() -> impl Strategy<Value = OLBlockBodyV1> {
     (ol_tx_segment_strategy(), manifests_strategy()).prop_map(|(tx_segment, manifests)| {
-        OLBlockBody {
+        OLBlockBodyV1 {
             tx_segment: Some(tx_segment).into(),
             manifests: manifests.into(),
         }
     })
 }
 
-pub fn ol_block_strategy() -> impl Strategy<Value = OLBlock> {
+pub fn ol_block_strategy() -> impl Strategy<Value = OLBlockV1> {
     (signed_ol_block_header_strategy(), ol_block_body_strategy()).prop_map(
-        |(signed_header, body)| OLBlock {
+        |(signed_header, body)| OLBlockV1 {
             signed_header,
             body,
         },

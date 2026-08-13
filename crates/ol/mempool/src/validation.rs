@@ -5,7 +5,7 @@ use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
 use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
 use strata_ol_stf_v1::{ExecError, ExecResult, check_tx_constraints};
-use strata_ol_tx_types_v1::{OLTransaction, TransactionPayload};
+use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::Seqno;
 use tracing::error;
@@ -115,7 +115,7 @@ fn validate_snark_account_update_tx_seq_no(
 ///   [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) transactions)
 pub(crate) fn validate_transaction(
     txid: OLTxId,
-    tx: &OLTransaction,
+    tx: &OLTransactionV1,
     state_accessor: &impl IStateAccessorMut,
     account_state: &HashMap<AccountId, AccountMempoolState>,
 ) -> OLMempoolResult<()> {
@@ -151,7 +151,7 @@ pub(crate) fn validate_transaction(
     })?;
 
     // 3. Sequence number in proper range (for SnarkAccountUpdate transactions).
-    if let TransactionPayload::SnarkAccountUpdate(payload) = tx.payload() {
+    if let TransactionPayloadV1::SnarkAccountUpdate(payload) = tx.payload() {
         let tx_seq_no = payload.operation().update().seq_no();
 
         // Check if there are SnarkAccountUpdate transactions in mempool for this account

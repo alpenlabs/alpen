@@ -3,11 +3,11 @@
 use strata_acct_types::{AccountId, BitcoinAmount, TxEffects};
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
-use strata_ol_chain_types_v1::{BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment};
+use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLTxSegmentV1};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_tx_types_v1::{
-    GamTxPayload, OLTransaction, OLTransactionData, TransactionPayload, TxProofs,
+    GamTxPayloadV1, OLTransactionDataV1, OLTransactionV1, TransactionPayloadV1, TxProofsV1,
 };
 
 use crate::{
@@ -57,20 +57,20 @@ fn assert_mid_block_failure_state(
     );
 }
 
-fn make_invalid_gam_with_transfer(target: AccountId, transfer_dest: AccountId) -> OLTransaction {
+fn make_invalid_gam_with_transfer(target: AccountId, transfer_dest: AccountId) -> OLTransactionV1 {
     let mut effects = TxEffects::default();
     effects
         .push_transfer(transfer_dest, 1)
         .expect("test transfer amount should be within the money supply");
 
-    OLTransaction::new(
-        OLTransactionData::new(
-            TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(target).expect("test GAM target should be valid"),
+    OLTransactionV1::new(
+        OLTransactionDataV1::new(
+            TransactionPayloadV1::GenericAccountMessage(
+                GamTxPayloadV1::new(target).expect("test GAM target should be valid"),
             ),
             effects,
         ),
-        TxProofs::new_empty(),
+        TxProofsV1::new_empty(),
     )
 }
 
@@ -175,12 +175,12 @@ fn test_verify_block_mid_failure_returns_txexec() {
         .with_transfer(recipient_not_executed, 5_000_000)
         .build(snark_acct_id, make_state_root(4), make_proof(3));
 
-    let body = OLBlockBody::new_common(
-        OLTxSegment::new(vec![tx0, tx1, tx2]).expect("tx segment should be within limits"),
+    let body = OLBlockBodyV1::new_common(
+        OLTxSegmentV1::new(vec![tx0, tx1, tx2]).expect("tx segment should be within limits"),
     );
-    let header = OLBlockHeader::new(
+    let header = OLBlockHeaderV1::new(
         1_001_000,
-        BlockFlags::zero(),
+        BlockFlagsV1::zero(),
         parent_block.header().slot() + 1,
         parent_block.header().epoch() + u32::from(parent_block.header().is_terminal()),
         parent_block.header().compute_blkid(),

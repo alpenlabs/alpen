@@ -7,7 +7,7 @@ use strata_ol_state_types::{
     AccountTypeStateRef, IAccountState, ISnarkAccountState, IStateAccessor, ProofVerifyError,
     TxProofVerifier,
 };
-use strata_ol_tx_types_v1::{ProofSatisfierList, RawMerkleProofList, TxProofs};
+use strata_ol_tx_types_v1::{ProofSatisfierListV1, RawMerkleProofListV1, TxProofsV1};
 use strata_predicate::PredicateKey;
 use tracing::warn;
 
@@ -43,14 +43,14 @@ impl<'a> TxProofVerificationContext<'a> {
 
 /// Tracks context for verifying the various proofs from a tx.
 pub(crate) struct TxProofsTracker<'a> {
-    accumulator_proofs: Option<&'a RawMerkleProofList>,
+    accumulator_proofs: Option<&'a RawMerkleProofListV1>,
     next_acc_proof_idx: usize,
-    predicate_satisfiers: Option<&'a ProofSatisfierList>,
+    predicate_satisfiers: Option<&'a ProofSatisfierListV1>,
     next_pred_proof_idx: usize,
 }
 
 impl<'a> TxProofsTracker<'a> {
-    pub(crate) fn from_txproofs(tx_proofs: &'a TxProofs) -> Self {
+    pub(crate) fn from_txproofs(tx_proofs: &'a TxProofsV1) -> Self {
         Self {
             predicate_satisfiers: tx_proofs.predicate_satisfiers(),
             accumulator_proofs: tx_proofs.accumulator_proofs(),
@@ -216,16 +216,18 @@ impl TxProofVerifier for TxProofVerifierImpl<'_> {
 #[cfg(test)]
 mod tests {
     use strata_acct_types::RawMerkleProof;
-    use strata_ol_tx_types_v1::{ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs};
+    use strata_ol_tx_types_v1::{
+        ProofSatisfierListV1, ProofSatisfierV1, RawMerkleProofListV1, TxProofsV1,
+    };
     use strata_predicate::{PredicateError, PredicateKey, PredicateTypeId};
 
     use super::*;
 
-    fn make_acc_proofs(n: usize) -> TxProofs {
+    fn make_acc_proofs(n: usize) -> TxProofsV1 {
         let proofs: Vec<RawMerkleProof> = (0..n).map(|_| RawMerkleProof::new_zero()).collect();
-        TxProofs::new(
+        TxProofsV1::new(
             None,
-            Some(RawMerkleProofList {
+            Some(RawMerkleProofListV1 {
                 proofs: proofs
                     .try_into()
                     .expect("proofs should not exceed capacity"),
@@ -233,16 +235,16 @@ mod tests {
         )
     }
 
-    fn make_pred_proofs(n: usize) -> TxProofs {
-        let proofs: Vec<ProofSatisfier> = (0..n)
-            .map(|i| ProofSatisfier {
+    fn make_pred_proofs(n: usize) -> TxProofsV1 {
+        let proofs: Vec<ProofSatisfierV1> = (0..n)
+            .map(|i| ProofSatisfierV1 {
                 proof: vec![i as u8]
                     .try_into()
                     .expect("proof should not exceed capacity"),
             })
             .collect();
-        TxProofs::new(
-            Some(ProofSatisfierList {
+        TxProofsV1::new(
+            Some(ProofSatisfierListV1 {
                 proofs: proofs
                     .try_into()
                     .expect("proofs should not exceed capacity"),
@@ -322,21 +324,21 @@ mod tests {
     #[test]
     fn test_is_all_done_requires_consuming_all_proofs() {
         let acc_proofs: Vec<RawMerkleProof> = (0..2).map(|_| RawMerkleProof::new_zero()).collect();
-        let pred_proofs: Vec<ProofSatisfier> = (0..2)
-            .map(|i| ProofSatisfier {
+        let pred_proofs: Vec<ProofSatisfierV1> = (0..2)
+            .map(|i| ProofSatisfierV1 {
                 proof: vec![i as u8]
                     .try_into()
                     .expect("proof should not exceed capacity"),
             })
             .collect();
 
-        let tx_proofs = TxProofs::new(
-            Some(ProofSatisfierList {
+        let tx_proofs = TxProofsV1::new(
+            Some(ProofSatisfierListV1 {
                 proofs: pred_proofs
                     .try_into()
                     .expect("proofs should not exceed capacity"),
             }),
-            Some(RawMerkleProofList {
+            Some(RawMerkleProofListV1 {
                 proofs: acc_proofs
                     .try_into()
                     .expect("proofs should not exceed capacity"),

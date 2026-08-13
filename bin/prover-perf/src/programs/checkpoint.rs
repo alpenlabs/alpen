@@ -4,10 +4,10 @@
 //! full `OLDaPayloadV1` for a transaction-rich chain needs a `StateDiff` that encodes
 //! every account balance delta, snark seqno/proof-state change, and inbox message
 //! appended during the epoch. The proper fix is to either:
-//!   1. Diff two `OLState` snapshots (before/after) and extract inbox messages from block bodies,
+//!   1. Diff two `OLStateV1` snapshots (before/after) and extract inbox messages from block bodies,
 //!      or
 //!   2. Route execution through `DaAccumulatingState` (requires the STF to be generic over
-//!      `IStateAccessor` instead of concrete `OLState`).
+//!      `IStateAccessor` instead of concrete `OLStateV1`).
 //!
 //! Until then, empty blocks with a slot-delta-only DA payload keep the proof correct.
 
@@ -15,7 +15,7 @@ use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_da_framework::DaCounter;
 use strata_identifiers::Buf64;
-use strata_ol_chain_types_v1::{OLBlock, SignedOLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
 use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
 use strata_ol_state_types::IStateAccessor;
 use strata_ol_stf_v1::test_utils::{build_empty_chain, make_genesis_state};
@@ -39,11 +39,11 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
     let _ = build_empty_chain(&mut start_state, 1, SLOTS_PER_EPOCH)
         .expect("build_empty_chain should succeed");
 
-    let blocks: Vec<OLBlock> = blocks
+    let blocks: Vec<OLBlockV1> = blocks
         .into_iter()
         .map(|b| {
-            OLBlock::new(
-                SignedOLBlockHeader::new(b.header().clone(), Buf64::zero()),
+            OLBlockV1::new(
+                SignedOLBlockHeaderV1::new(b.header().clone(), Buf64::zero()),
                 b.body().clone(),
             )
         })

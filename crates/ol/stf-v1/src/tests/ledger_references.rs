@@ -8,7 +8,7 @@ use strata_acct_types::{
 use strata_asm_common::AsmManifest;
 use strata_ol_state_types::{ISnarkAccountState, IStateAccessor};
 use strata_ol_tx_types_v1::{
-    OLTransaction, ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
+    OLTransactionV1, ProofSatisfierListV1, ProofSatisfierV1, RawMerkleProofListV1, TxProofsV1,
 };
 
 use crate::{errors::ExecError, test_utils::*};
@@ -319,7 +319,7 @@ fn test_snark_update_rejects_accumulator_proof_without_ledger_refs() {
         SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(snark_acct_id).clone())
             .build(snark_acct_id, make_state_root(2), vec![0u8; 32])
             .with_accumulator_proofs(Some(
-                RawMerkleProofList::from_vec_nonempty(vec![RawMerkleProof::new_zero()])
+                RawMerkleProofListV1::from_vec_nonempty(vec![RawMerkleProof::new_zero()])
                     .expect("non-empty proof list should be valid"),
             ));
 
@@ -343,13 +343,13 @@ fn test_snark_update_rejects_extra_predicate_satisfier() {
     let base_tx =
         SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(snark_acct_id).clone())
             .build(snark_acct_id, make_state_root(3), make_proof(1));
-    let pred1 = ProofSatisfier::from_vec(make_proof(1)).expect("predicate proof should fit");
-    let pred2 = ProofSatisfier::from_vec(make_proof(2)).expect("predicate proof should fit");
-    let predicate_satisfiers = ProofSatisfierList::from_proofs(vec![pred1, pred2])
+    let pred1 = ProofSatisfierV1::from_vec(make_proof(1)).expect("predicate proof should fit");
+    let pred2 = ProofSatisfierV1::from_vec(make_proof(2)).expect("predicate proof should fit");
+    let predicate_satisfiers = ProofSatisfierListV1::from_proofs(vec![pred1, pred2])
         .expect("predicate satisfier list should fit");
-    let tx = OLTransaction::new(
+    let tx = OLTransactionV1::new(
         base_tx.data().clone(),
-        TxProofs::new(
+        TxProofsV1::new(
             Some(predicate_satisfiers),
             base_tx.proofs().accumulator_proofs().cloned(),
         ),

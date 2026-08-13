@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use ssz::{Decode, Encode};
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_ol_block_assembly::FullBlockTemplate;
-use strata_ol_chain_types_v1::{OLBlockBody, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockBodyV1, OLBlockHeaderV1};
 use strata_ol_sequencer::{BlockSigningDuty, CheckpointSigningDuty, Duty, RevealTxSigningDuty};
 use strata_primitives::{Buf32, HexBytes32};
 use thiserror::Error;
@@ -88,10 +88,10 @@ impl TryFrom<RpcDuty> for Duty {
     fn try_from(rpc_duty: RpcDuty) -> Result<Self, Self::Error> {
         match rpc_duty {
             RpcDuty::SignBlock(rpc_block_duty) => {
-                let header = OLBlockHeader::from_ssz_bytes(&rpc_block_duty.template.header)
+                let header = OLBlockHeaderV1::from_ssz_bytes(&rpc_block_duty.template.header)
                     .map_err(|e| RpcDutyConversionError::HeaderDecodeError(e.to_string()))?;
 
-                let body = OLBlockBody::from_ssz_bytes(&rpc_block_duty.template.body)
+                let body = OLBlockBodyV1::from_ssz_bytes(&rpc_block_duty.template.body)
                     .map_err(|e| RpcDutyConversionError::BodyDecodeError(e.to_string()))?;
 
                 let template = FullBlockTemplate::new(header, body);

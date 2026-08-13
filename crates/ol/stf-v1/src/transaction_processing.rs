@@ -1,7 +1,7 @@
 //! Block transactional processing.
 
 use strata_acct_types::*;
-use strata_ol_chain_types_v1::OLTxSegment;
+use strata_ol_chain_types_v1::OLTxSegmentV1;
 use strata_ol_state_types::*;
 use strata_ol_tx_types_v1::*;
 use tracing::{info, trace};
@@ -22,7 +22,7 @@ use crate::{
 #[tracing::instrument(skip_all, fields(tx_count = tx_seg.txs().len()))]
 pub fn process_block_tx_segment<S: IStateAccessorMut>(
     state: &mut S,
-    tx_seg: &OLTxSegment,
+    tx_seg: &OLTxSegmentV1,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     for (i, tx) in tx_seg.txs().iter().enumerate() {
@@ -40,7 +40,7 @@ pub fn process_block_tx_segment<S: IStateAccessorMut>(
 /// apply a tx into a block.
 pub fn process_single_tx<S: IStateAccessorMut>(
     state: &mut S,
-    tx: &OLTransaction,
+    tx: &OLTransactionV1,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     // 1. Check the transaction's constraints.
@@ -48,12 +48,12 @@ pub fn process_single_tx<S: IStateAccessorMut>(
 
     // 2. Depending on its payload type, we handle it different ways.
     let sender_acct = match tx.payload() {
-        TransactionPayload::GenericAccountMessage(gam_payload) => {
+        TransactionPayloadV1::GenericAccountMessage(gam_payload) => {
             verify_gam_tx(gam_payload, tx.data().effects())?;
             SEQUENCER_ACCT_ID
         }
 
-        TransactionPayload::SnarkAccountUpdate(sau_payload) => {
+        TransactionPayloadV1::SnarkAccountUpdate(sau_payload) => {
             let target = *sau_payload.target();
             let effects = tx.data().effects();
             let tx_proofs = tx.proofs();
@@ -76,7 +76,7 @@ pub fn process_single_tx<S: IStateAccessorMut>(
     Ok(())
 }
 
-fn verify_gam_tx(gam: &GamTxPayload, fx: &TxEffects) -> ExecResult<()> {
+fn verify_gam_tx(gam: &GamTxPayloadV1, fx: &TxEffects) -> ExecResult<()> {
     // 1. Check that we're not sending any value via transfers.
     if fx.transfers_iter().count() != 0 {
         return Err(ExecError::TxStructureCheckFailed("nonzero transfers"));
@@ -103,9 +103,9 @@ fn verify_gam_tx(gam: &GamTxPayload, fx: &TxEffects) -> ExecResult<()> {
 
 fn process_update_tx<S: IStateAccessorMut>(
     state: &mut S,
-    sau_payload: &SauTxPayload,
+    sau_payload: &SauTxPayloadV1,
     effects: &TxEffects,
-    tx_proofs: &TxProofs,
+    tx_proofs: &TxProofsV1,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     // 1. Read account state and verify effects are safe to apply.
@@ -281,7 +281,7 @@ fn split_effect_value(remaining: &mut Coin, value: BitcoinAmount) -> Coin {
 
 /// Checks that a tx's constraints are valid for the current slot in state.
 pub fn check_tx_constraints<S: IStateAccessorMut>(
-    constraints: &TxConstraints,
+    constraints: &TxConstraintsV1,
     state: &S,
 ) -> ExecResult<()> {
     let current_slot = state.cur_slot();
@@ -345,8 +345,8 @@ mod tests {
     use super::*;
     use crate::test_utils::make_account_id;
 
-    fn make_gam_payload(target_acct_id: AccountId) -> GamTxPayload {
-        GamTxPayload::new(target_acct_id).expect("test target_acct_id should be valid")
+    fn make_gam_payload(target_acct_id: AccountId) -> GamTxPayloadV1 {
+        GamTxPayloadV1::new(target_acct_id).expect("test target_acct_id should be valid")
     }
 
     fn push_test_message(

@@ -389,7 +389,7 @@ fn ensure_pending_asm_log_slot_available(current_len: usize) -> StateResult<()> 
 #[cfg(test)]
 mod tests {
     use strata_identifiers::L1Height;
-    use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountState};
+    use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1};
 
     use super::*;
     use crate::{
@@ -464,7 +464,7 @@ mod tests {
 
         // Modify account
         tracking
-            .update_account(account_id, |acct: &mut OLAccountState| {
+            .update_account(account_id, |acct: &mut OLAccountStateV1| {
                 let coin = Coin::new_unchecked(
                     BitcoinAmount::try_from(500)
                         .expect("amount must not exceed the Bitcoin money supply"),
@@ -603,7 +603,7 @@ mod tests {
         // Make some modifications
         tracking.set_cur_slot(100);
         tracking
-            .update_account(account_id, |acct: &mut OLAccountState| {
+            .update_account(account_id, |acct: &mut OLAccountStateV1| {
                 let coin = Coin::new_unchecked(
                     BitcoinAmount::try_from(500)
                         .expect("amount must not exceed the Bitcoin money supply"),

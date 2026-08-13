@@ -5,7 +5,7 @@ use strata_acct_types::{AccumulatorClaim, RawMerkleProof};
 
 use crate::ssz_generated::ssz::proofs::*;
 
-impl ClaimList {
+impl ClaimListV1 {
     /// Creates a new claim list from the given claims.
     ///
     /// Returns `None` if the number of claims exceeds the SSZ list maximum.
@@ -20,7 +20,7 @@ impl ClaimList {
     }
 }
 
-impl RawMerkleProofList {
+impl RawMerkleProofListV1 {
     /// Constructs a new instance if the vec is in bounds.
     pub fn from_vec(buf: Vec<RawMerkleProof>) -> Option<Self> {
         VariableList::new(buf).ok().map(|proofs| Self { proofs })
@@ -40,7 +40,7 @@ impl RawMerkleProofList {
     }
 }
 
-impl ProofSatisfier {
+impl ProofSatisfierV1 {
     /// Constructs a new instance if the vec is in bounds.
     pub fn from_vec(buf: Vec<u8>) -> Option<Self> {
         VariableList::new(buf).ok().map(|proof| Self { proof })
@@ -51,19 +51,19 @@ impl ProofSatisfier {
     }
 }
 
-impl ProofSatisfierList {
+impl ProofSatisfierListV1 {
     /// Constructs a new instance if the vec is in bounds.
-    pub fn from_proofs(buf: Vec<ProofSatisfier>) -> Option<Self> {
+    pub fn from_proofs(buf: Vec<ProofSatisfierV1>) -> Option<Self> {
         VariableList::new(buf).ok().map(|proofs| Self { proofs })
     }
 
     /// Wraps a single proof satisfier into a list.
     pub fn single(proof_bytes: Vec<u8>) -> Option<Self> {
-        let satisfier = ProofSatisfier::from_vec(proof_bytes)?;
+        let satisfier = ProofSatisfierV1::from_vec(proof_bytes)?;
         Self::from_proofs(vec![satisfier])
     }
 
-    pub fn proofs(&self) -> &[ProofSatisfier] {
+    pub fn proofs(&self) -> &[ProofSatisfierV1] {
         &self.proofs
     }
 }
@@ -77,8 +77,8 @@ mod tests {
     use super::*;
     use crate::test_utils::accumulator_claim_strategy;
 
-    fn claim_list_strategy() -> impl Strategy<Value = ClaimList> {
-        prop::collection::vec(accumulator_claim_strategy(), 0..10).prop_map(|claims| ClaimList {
+    fn claim_list_strategy() -> impl Strategy<Value = ClaimListV1> {
+        prop::collection::vec(accumulator_claim_strategy(), 0..10).prop_map(|claims| ClaimListV1 {
             claims: claims
                 .try_into()
                 .expect("claims must fit within SSZ max length"),
@@ -96,9 +96,9 @@ mod tests {
         })
     }
 
-    fn raw_merkle_proof_list_strategy() -> impl Strategy<Value = RawMerkleProofList> {
+    fn raw_merkle_proof_list_strategy() -> impl Strategy<Value = RawMerkleProofListV1> {
         prop::collection::vec(raw_merkle_proof_strategy(), 0..10).prop_map(|proofs| {
-            RawMerkleProofList {
+            RawMerkleProofListV1 {
                 proofs: proofs
                     .try_into()
                     .expect("proofs must fit within SSZ max length"),
@@ -106,17 +106,17 @@ mod tests {
         })
     }
 
-    fn proof_satisfier_strategy() -> impl Strategy<Value = ProofSatisfier> {
-        prop::collection::vec(any::<u8>(), 0..256).prop_map(|proof| ProofSatisfier {
+    fn proof_satisfier_strategy() -> impl Strategy<Value = ProofSatisfierV1> {
+        prop::collection::vec(any::<u8>(), 0..256).prop_map(|proof| ProofSatisfierV1 {
             proof: proof
                 .try_into()
                 .expect("proof bytes must fit within SSZ max length"),
         })
     }
 
-    fn proof_satisfier_list_strategy() -> impl Strategy<Value = ProofSatisfierList> {
+    fn proof_satisfier_list_strategy() -> impl Strategy<Value = ProofSatisfierListV1> {
         prop::collection::vec(proof_satisfier_strategy(), 0..10).prop_map(|proofs| {
-            ProofSatisfierList {
+            ProofSatisfierListV1 {
                 proofs: proofs
                     .try_into()
                     .expect("proof satisfiers must fit within SSZ max length"),
@@ -127,24 +127,24 @@ mod tests {
     mod claim_list {
         use super::*;
 
-        ssz_proptest!(ClaimList, claim_list_strategy());
+        ssz_proptest!(ClaimListV1, claim_list_strategy());
     }
 
     mod raw_merkle_proof_list {
         use super::*;
 
-        ssz_proptest!(RawMerkleProofList, raw_merkle_proof_list_strategy());
+        ssz_proptest!(RawMerkleProofListV1, raw_merkle_proof_list_strategy());
     }
 
     mod proof_satisfier {
         use super::*;
 
-        ssz_proptest!(ProofSatisfier, proof_satisfier_strategy());
+        ssz_proptest!(ProofSatisfierV1, proof_satisfier_strategy());
     }
 
     mod proof_satisfier_list {
         use super::*;
 
-        ssz_proptest!(ProofSatisfierList, proof_satisfier_list_strategy());
+        ssz_proptest!(ProofSatisfierListV1, proof_satisfier_list_strategy());
     }
 }

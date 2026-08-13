@@ -12,36 +12,36 @@ MAX_ACCOUNT_SERIALS = 1 << 24
 MAX_PENDING_ASM_LOGS = 1 << 18
 
 ### Top-level OL state
-class OLState(Container):
+class OLStateV1(Container):
     ### Epochal state
-    epoch: EpochalState
+    epoch: EpochalStateV1
 
     ### Global state
-    global: GlobalState
+    global: GlobalStateV1
 
     ### Transient state that exists within an epoch.
     ###
     ### Reset at the end.
-    intraepoch: IntraepochState
+    intraepoch: IntraepochStateV1
 
     ### Ledger accounts table
-    ledger: TsnlLedgerAccountsTable
+    ledger: TsnlLedgerAccountsTableV1
 
 ### Ledger accounts table
-class TsnlLedgerAccountsTable(Container):
+class TsnlLedgerAccountsTableV1(Container):
     ### Sorted list of account entries
-    accounts: List[TsnlAccountEntry, MAX_LEDGER_ACCOUNTS]
+    accounts: List[TsnlAccountEntryV1, MAX_LEDGER_ACCOUNTS]
 
 ### Ledger account entry
-class TsnlAccountEntry(Container):
+class TsnlAccountEntryV1(Container):
     ### Account ID
     id: strata_acct_types.AccountId
 
     ### Account state
-    state: OLAccountState
+    state: OLAccountStateV1
 
 ### Account state
-class OLAccountState(Container):
+class OLAccountStateV1(Container):
     ### Account serial number
     serial: strata_identifiers.AccountSerial
 
@@ -49,18 +49,18 @@ class OLAccountState(Container):
     balance: strata_acct_types.BitcoinAmount
 
     ### Account type-specific state
-    state: OLAccountTypeState
+    state: OLAccountTypeStateV1
 
 ### Account type state as union
-class OLAccountTypeState(Union):
+class OLAccountTypeStateV1(Union):
     ### Empty account
     Empty
 
     ### Snark account
-    Snark: OLSnarkAccountState
+    Snark: OLSnarkAccountStateV1
 
 ### Snark account state
-class OLSnarkAccountState(Container):
+class OLSnarkAccountStateV1(Container):
     ### Verifying Key used to verify updates
     #~# external_kind: container
     update_vk: strata_predicate.PredicateKey
@@ -69,7 +69,7 @@ class OLSnarkAccountState(Container):
     seqno: strata_snark_acct_types.Seqno
 
     ### Proof state
-    proof_state: ProofState
+    proof_state: ProofStateV1
 
     ### Inbox MMR
     #~# external_kind: container
@@ -77,7 +77,7 @@ class OLSnarkAccountState(Container):
 
 
 ### Proof state for snark accounts
-class ProofState(Container):
+class ProofStateV1(Container):
     ### Inner state root commitment
     inner_state_root: Bytes32
 
@@ -85,19 +85,19 @@ class ProofState(Container):
     next_msg_read_idx: uint64
 
 
-class IntraepochState(Container):
+class IntraepochStateV1(Container):
     #~# external_kind: container
-    pending_asm_logs: List[PendingAsmLogEntry, MAX_PENDING_ASM_LOGS]
+    pending_asm_logs: List[PendingAsmLogEntryV1, MAX_PENDING_ASM_LOGS]
 
 
-class PendingAsmLogEntry(Container):
+class PendingAsmLogEntryV1(Container):
     height: uint32
     #~# external_kind: container
     log: strata_asm_manifest_types.AsmLogEntry
 
 
 ### Epoch-level state
-class EpochalState(Container):
+class EpochalStateV1(Container):
     ### Total funds in the ledger
     total_ledger_funds: strata_acct_types.BitcoinAmount
 
@@ -122,7 +122,7 @@ class EpochalState(Container):
     l1_block_refs_mmr: strata_acct_types.Mmr64
 
 ### Global state tracking current slot
-class GlobalState(Container):
+class GlobalStateV1(Container):
     ### Current slot number
     cur_slot: strata_identifiers.Slot
 

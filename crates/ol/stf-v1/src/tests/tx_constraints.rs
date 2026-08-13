@@ -1,6 +1,6 @@
 //! Tests for transaction slot constraints.
 
-use strata_ol_tx_types_v1::{OLTransaction, OLTransactionData, TxConstraints, TxProofs};
+use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxConstraintsV1, TxProofsV1};
 
 use crate::{errors::ExecError, test_utils::*};
 
@@ -10,13 +10,13 @@ fn fixture_with_gam_target() -> OLStfFixture {
         .execute_genesis()
 }
 
-fn constrained_gam_tx(min_slot: Option<u64>, max_slot: Option<u64>) -> OLTransaction {
+fn constrained_gam_tx(min_slot: Option<u64>, max_slot: Option<u64>) -> OLTransactionV1 {
     let target_acct_id = make_account_id(TEST_RECIPIENT_ID);
-    OLTransaction::new(
-        OLTransactionData::from_gam_bytes(target_acct_id, vec![])
+    OLTransactionV1::new(
+        OLTransactionDataV1::from_gam_bytes(target_acct_id, vec![])
             .expect("message payload bytes must fit within SSZ max length")
-            .with_constraints(TxConstraints::new(min_slot, max_slot)),
-        TxProofs::new_empty(),
+            .with_constraints(TxConstraintsV1::new(min_slot, max_slot)),
+        TxProofsV1::new_empty(),
     )
 }
 

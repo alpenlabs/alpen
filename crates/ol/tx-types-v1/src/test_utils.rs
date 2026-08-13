@@ -49,15 +49,15 @@ pub fn accumulator_claim_strategy() -> impl Strategy<Value = AccumulatorClaim> {
     })
 }
 
-pub fn tx_constraints_strategy() -> impl Strategy<Value = TxConstraints> {
-    (any::<Option<u64>>(), any::<Option<u64>>()).prop_map(|(min_slot, max_slot)| TxConstraints {
+pub fn tx_constraints_strategy() -> impl Strategy<Value = TxConstraintsV1> {
+    (any::<Option<u64>>(), any::<Option<u64>>()).prop_map(|(min_slot, max_slot)| TxConstraintsV1 {
         min_slot: min_slot.into(),
         max_slot: max_slot.into(),
     })
 }
 
-pub fn gam_tx_payload_strategy() -> impl Strategy<Value = GamTxPayload> {
-    any::<[u8; 32]>().prop_map(|target_bytes| GamTxPayload {
+pub fn gam_tx_payload_strategy() -> impl Strategy<Value = GamTxPayloadV1> {
+    any::<[u8; 32]>().prop_map(|target_bytes| GamTxPayloadV1 {
         target: AccountId::from(target_bytes),
     })
 }
@@ -70,7 +70,7 @@ pub fn new_predicate_strategy() -> impl Strategy<Value = Option<PredicateKey>> {
     ])
 }
 
-pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
+pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayloadV1> {
     (
         any::<[u8; 32]>(),
         any::<[u8; 32]>(),
@@ -81,12 +81,12 @@ pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
     )
         .prop_map(
             |(target_bytes, state_bytes, seq_no, messages, extra_data, new_predicate)| {
-                SauTxPayload {
+                SauTxPayloadV1 {
                     target: AccountId::from(target_bytes),
-                    operation_data: SauTxOperationData {
-                        update_data: SauTxUpdateData {
+                    operation_data: SauTxOperationDataV1 {
+                        update_data: SauTxUpdateDataV1 {
                             seq_no,
-                            proof_state: SauTxProofState {
+                            proof_state: SauTxProofStateV1 {
                                 new_next_msg_idx: 0,
                                 inner_state_root: state_bytes.into(),
                             },
@@ -98,7 +98,7 @@ pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
                         messages: messages
                             .try_into()
                             .expect("messages must fit within SSZ max length"),
-                        ledger_refs: SauTxLedgerRefs {
+                        ledger_refs: SauTxLedgerRefsV1 {
                             l1_block_ref_claims: ssz_types::Optional::None,
                         },
                     },
@@ -107,22 +107,22 @@ pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
         )
 }
 
-pub fn transaction_payload_strategy() -> impl Strategy<Value = TransactionPayload> {
+pub fn transaction_payload_strategy() -> impl Strategy<Value = TransactionPayloadV1> {
     prop_oneof![
-        gam_tx_payload_strategy().prop_map(TransactionPayload::GenericAccountMessage),
-        sau_tx_payload_strategy().prop_map(TransactionPayload::SnarkAccountUpdate),
+        gam_tx_payload_strategy().prop_map(TransactionPayloadV1::GenericAccountMessage),
+        sau_tx_payload_strategy().prop_map(TransactionPayloadV1::SnarkAccountUpdate),
     ]
 }
 
-pub fn ol_transaction_strategy() -> impl Strategy<Value = OLTransaction> {
+pub fn ol_transaction_strategy() -> impl Strategy<Value = OLTransactionV1> {
     (transaction_payload_strategy(), tx_constraints_strategy()).prop_map(
-        |(payload, constraints)| OLTransaction {
-            data: OLTransactionData {
+        |(payload, constraints)| OLTransactionV1 {
+            data: OLTransactionDataV1 {
                 payload,
                 constraints,
                 effects: TxEffects::default(),
             },
-            proofs: TxProofs {
+            proofs: TxProofsV1 {
                 predicate_satisfiers: ssz_types::Optional::None,
                 accumulator_proofs: ssz_types::Optional::None,
             },

@@ -5,9 +5,9 @@
 use strata_acct_types::{BitcoinAmount, L1BlockRecord, Mmr64, append_l1_block_rec_to_mmr};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 
-use crate::ssz_generated::ssz::state::EpochalState;
+use crate::ssz_generated::ssz::state::EpochalStateV1;
 
-impl EpochalState {
+impl EpochalStateV1 {
     /// Create a new epochal state for testing.
     pub fn new(
         total_ledger_funds: BitcoinAmount,
@@ -107,5 +107,5 @@ mod tests {
     use super::*;
     use crate::test_utils::epochal_state_strategy;
 
-    ssz_proptest!(EpochalState, epochal_state_strategy());
+    ssz_proptest!(EpochalStateV1, epochal_state_strategy());
 }

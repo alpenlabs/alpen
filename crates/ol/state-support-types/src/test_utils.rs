@@ -7,15 +7,15 @@ use strata_ol_params::OLParams;
 use strata_ol_state_types::{
     ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState, PendingAsmLog,
 };
-use strata_ol_state_types_v1::{OLSnarkAccountState, OLState};
+use strata_ol_state_types_v1::{OLSnarkAccountStateV1, OLStateV1};
 use strata_predicate::PredicateKey;
 
 use crate::memory_state_layer::MemoryStateBaseLayer;
 
-/// Creates a genesis OLState using minimal empty parameters.
-pub(crate) fn create_test_genesis_state() -> OLState {
+/// Creates a genesis OLStateV1 using minimal empty parameters.
+pub(crate) fn create_test_genesis_state() -> OLStateV1 {
     let params = OLParams::default();
-    OLState::from_genesis_params(&params).expect("valid params")
+    OLStateV1::from_genesis_params(&params).expect("valid params")
 }
 
 /// Creates a [`MemoryStateBaseLayer`] whose genesis header is at the given
@@ -24,8 +24,8 @@ pub(crate) fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
     let mut params = OLParams::default();
     params.header.slot = slot;
     params.header.epoch = epoch;
-    let state = OLState::from_genesis_params(&params)
-        .expect("failed to create OLState from genesis params");
+    let state = OLStateV1::from_genesis_params(&params)
+        .expect("failed to create OLStateV1 from genesis params");
     MemoryStateBaseLayer::new(state)
 }
 
@@ -49,8 +49,8 @@ pub(crate) fn test_hash(seed: u8) -> Hash {
 }
 
 /// Create a fresh snark account state for testing.
-pub(crate) fn test_snark_account_state(state_root_seed: u8) -> OLSnarkAccountState {
-    OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), test_hash(state_root_seed))
+pub(crate) fn test_snark_account_state(state_root_seed: u8) -> OLSnarkAccountStateV1 {
+    OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), test_hash(state_root_seed))
 }
 
 /// Create a test message entry for inbox testing.
@@ -66,7 +66,7 @@ pub(crate) fn test_message_entry(source_seed: u8, epoch: u32, value_sats: u64) -
 
 /// Creates [`NewAccountData`] for a snark account from a test snark state and balance.
 pub(crate) fn test_new_snark_account_data(
-    snark_state: &OLSnarkAccountState,
+    snark_state: &OLSnarkAccountStateV1,
     balance: BitcoinAmount,
 ) -> NewAccountData {
     NewAccountData::new(

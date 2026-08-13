@@ -10,7 +10,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -443,7 +443,7 @@ fn resolve_tip_ol_block(storage: &NodeStorage) -> Result<OLBlockCommitment> {
 fn verify_tip_ol_block(
     storage: &NodeStorage,
     tip_commitment: OLBlockCommitment,
-) -> Result<OLBlock> {
+) -> Result<OLBlockV1> {
     storage
         .ol_block()
         .get_block_data_blocking(*tip_commitment.blkid())
@@ -454,7 +454,7 @@ fn verify_tip_ol_block(
 /// Verifies that the tip's parent block exists unless the tip is genesis.
 fn verify_tip_parent(
     storage: &NodeStorage,
-    tip_block: &OLBlock,
+    tip_block: &OLBlockV1,
     tip_commitment: OLBlockCommitment,
 ) -> Result<()> {
     if tip_commitment.slot() == 0 {
@@ -481,7 +481,7 @@ fn verify_tip_parent(
 /// Verifies that the tip's parent header exists unless the tip is genesis.
 fn verify_tip_parent_header(
     storage: &NodeStorage,
-    tip_block: &OLBlock,
+    tip_block: &OLBlockV1,
     tip_commitment: OLBlockCommitment,
 ) -> Result<()> {
     if tip_commitment.slot() == 0 {
@@ -521,13 +521,16 @@ fn verify_tip_ol_state(storage: &NodeStorage, tip_commitment: OLBlockCommitment)
 }
 
 /// Verifies that epoch summary exists for tip epoch - 1 when tip is post-genesis.
-fn verify_previous_epoch_summary_for_tip(storage: &NodeStorage, tip_block: &OLBlock) -> Result<()> {
+fn verify_previous_epoch_summary_for_tip(
+    storage: &NodeStorage,
+    tip_block: &OLBlockV1,
+) -> Result<()> {
     verify_previous_epoch_summary_for_tip_header(storage, tip_block.header())
 }
 
 fn verify_previous_epoch_summary_for_tip_header(
     storage: &NodeStorage,
-    tip_header: &OLBlockHeader,
+    tip_header: &OLBlockHeaderV1,
 ) -> Result<()> {
     let tip_epoch = tip_header.epoch();
     if tip_epoch == 0 {
@@ -556,7 +559,7 @@ fn verify_previous_epoch_summary_for_tip_header(
 
 pub(crate) fn verify_anchor_header_summary(
     history_base: EpochCommitment,
-    header: &OLBlockHeader,
+    header: &OLBlockHeaderV1,
     summary: &EpochSummary,
 ) -> Result<()> {
     if header.slot() != summary.terminal().slot() {
@@ -604,7 +607,7 @@ pub(crate) fn verify_anchor_header_summary(
 pub(crate) fn verify_anchor_summary_and_state(
     storage: &NodeStorage,
     history_base: EpochCommitment,
-    header: &OLBlockHeader,
+    header: &OLBlockHeaderV1,
     summary: &EpochSummary,
 ) -> Result<()> {
     if !header.is_terminal() {
@@ -658,7 +661,7 @@ pub(crate) fn verify_anchor_summary_and_state(
 pub(crate) fn verify_history_anchor(
     storage: &NodeStorage,
     history_base: EpochCommitment,
-) -> Result<OLBlockHeader> {
+) -> Result<OLBlockHeaderV1> {
     let anchor_commitment = history_base.to_block_commitment();
     let header = storage
         .ol_block()
@@ -1104,7 +1107,7 @@ mod tests {
         storage: NodeStorage,
         genesis_commitment: OLBlockCommitment,
         history_base: EpochCommitment,
-        header: OLBlockHeader,
+        header: OLBlockHeaderV1,
         summary: EpochSummary,
     }
 

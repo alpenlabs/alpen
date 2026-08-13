@@ -205,24 +205,24 @@ impl CheckpointSigningDuty {
 #[cfg(test)]
 mod tests {
     use strata_asm_checkpoint_types::test_utils::create_test_checkpoint_payload;
-    use strata_ol_chain_types_v1::{BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment};
+    use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLTxSegmentV1};
 
     use super::*;
 
     fn create_test_template(timestamp: u64, slot: u64, epoch: u32) -> FullBlockTemplate {
-        let header = OLBlockHeader {
+        let header = OLBlockHeaderV1 {
             parent_blkid: OLBlockId::from(Buf32([1u8; 32])),
             timestamp,
             slot,
             epoch,
-            flags: BlockFlags::from(0),
+            flags: BlockFlagsV1::from(0),
             body_root: [0u8; 32].into(),
             state_root: [0u8; 32].into(),
             logs_root: [0u8; 32].into(),
         };
 
-        let body = OLBlockBody {
-            tx_segment: Some(OLTxSegment {
+        let body = OLBlockBodyV1 {
+            tx_segment: Some(OLTxSegmentV1 {
                 txs: vec![].try_into().unwrap(),
             })
             .into(),

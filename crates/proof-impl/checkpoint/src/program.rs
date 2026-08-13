@@ -2,8 +2,8 @@ use k256::schnorr::SigningKey;
 use ssz::{Decode, Encode};
 use strata_asm_checkpoint_types::CheckpointClaim;
 use strata_bridge_params::BridgeParams;
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
-use strata_ol_state_types_v1::OLState;
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
+use strata_ol_state_types_v1::OLStateV1;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use zkaleido::{PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
 use zkaleido_native_adapter::NativeHost;
@@ -16,9 +16,9 @@ fn test_signing_key() -> SigningKey {
 
 #[derive(Debug)]
 pub struct CheckpointProverInput {
-    pub start_state: OLState,
-    pub blocks: Vec<OLBlock>,
-    pub parent: OLBlockHeader,
+    pub start_state: OLStateV1,
+    pub blocks: Vec<OLBlockV1>,
+    pub parent: OLBlockHeaderV1,
     pub da_state_diff_bytes: Vec<u8>,
     pub bridge_params: BridgeParams,
 }
@@ -94,7 +94,7 @@ mod tests {
     use strata_crypto::hash;
     use strata_da_framework::DaCounter;
     use strata_identifiers::Buf64;
-    use strata_ol_chain_types_v1::{OLBlock, SignedOLBlockHeader};
+    use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
     use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::IStateAccessor;
@@ -113,11 +113,11 @@ mod tests {
         let mut start_state = make_genesis_state();
         let _ = build_empty_chain(&mut start_state, 1, SLOTS_PER_EPOCH).unwrap();
 
-        let blocks: Vec<OLBlock> = blocks
+        let blocks: Vec<OLBlockV1> = blocks
             .into_iter()
             .map(|b| {
-                OLBlock::new(
-                    SignedOLBlockHeader::new(b.header().clone(), Buf64::zero()),
+                OLBlockV1::new(
+                    SignedOLBlockHeaderV1::new(b.header().clone(), Buf64::zero()),
                     b.body().clone(),
                 )
             })

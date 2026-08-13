@@ -38,7 +38,7 @@ use crate::{
 /// Output from processing transactions during block assembly.
 struct ProcessTransactionsOutput<S: IStateAccessor> {
     /// Transactions that passed validation and execution
-    successful_txs: Vec<OLTransaction>,
+    successful_txs: Vec<OLTransactionV1>,
     /// Transactions that failed during block assembly.
     failed_txs: Vec<FailedMempoolTx>,
     /// Accumulated write batch after processing all transactions.
@@ -53,15 +53,15 @@ struct ProcessTransactionsOutput<S: IStateAccessor> {
 struct BuildBlockTemplateInput<A> {
     accumulated_batch: WriteBatch<A>,
     output_buffer: ExecOutputBuffer,
-    successful_txs: Vec<OLTransaction>,
+    successful_txs: Vec<OLTransactionV1>,
     is_terminal: bool,
-    manifest_container: Option<OLAsmManifestContainer>,
+    manifest_container: Option<OLAsmManifestContainerV1>,
 }
 
 /// ASM manifests selected for the candidate OL block.
 ///
 /// The selected manifests are still raw manifests; the caller wraps them in an
-/// [`OLAsmManifestContainer`] when the sequence is non-empty.
+/// [`OLAsmManifestContainerV1`] when the sequence is non-empty.
 struct SelectedAsmManifests {
     manifests: Vec<AsmManifest>,
     sealing_limit_verdict: EpochSealingLimitVerdict,
@@ -286,7 +286,7 @@ pub(crate) async fn construct_block<C, E>(
     parent_state: Arc<C::State>,
     block_slot: Slot,
     block_epoch: Epoch,
-    mempool_txs: Vec<(OLTxId, OLTransaction)>,
+    mempool_txs: Vec<(OLTxId, OLTransactionV1)>,
     resource_state_before_block: EpochResourceState,
     bridge_params: BridgeParams,
 ) -> BlockAssemblyResult<ConstructBlockOutput<C::State>>
@@ -363,7 +363,7 @@ where
     let manifest_container = if selected_asm_manifests.is_empty() {
         None
     } else {
-        Some(OLAsmManifestContainer::new(selected_asm_manifests)?)
+        Some(OLAsmManifestContainerV1::new(selected_asm_manifests)?)
     };
 
     // Phase 4: Ask the sealing policy whether this block should be terminal.
@@ -604,7 +604,7 @@ fn process_transactions<P, E, S>(
     output_buffer: &ExecOutputBuffer,
     parent_state: &S,
     accumulated_batch: WriteBatch<S::AccountState>,
-    mempool_txs: Vec<(OLTxId, OLTransaction)>,
+    mempool_txs: Vec<(OLTxId, OLTransactionV1)>,
     accumulated_da: AccumulatedDaData,
     epoch_cumulative_manifest_count: u32,
     bridge_params: BridgeParams,
@@ -861,8 +861,8 @@ where
     let parent_blkid = block_context.compute_parent_blkid();
 
     // Build tx segment and body, attaching any manifests this block carries.
-    let tx_segment = OLTxSegment::new(successful_txs)?;
-    let mut body = OLBlockBody::new_common(tx_segment);
+    let tx_segment = OLTxSegmentV1::new(successful_txs)?;
+    let mut body = OLBlockBodyV1::new_common(tx_segment);
     if let Some(mc) = manifest_container {
         body.set_manifests(mc);
     }
@@ -870,7 +870,7 @@ where
 
     // Terminality is the explicit assembly decision, independent of whether the
     // block happens to carry manifests.
-    let mut flags = BlockFlags::zero();
+    let mut flags = BlockFlagsV1::zero();
     flags.set_is_terminal(is_terminal);
 
     // Use timestamp from config if provided, otherwise compute from system time.
@@ -883,7 +883,7 @@ where
     });
 
     // Build header
-    let header = OLBlockHeader::new(
+    let header = OLBlockHeaderV1::new(
         timestamp,
         flags,
         block_slot,
@@ -909,12 +909,12 @@ struct SauSummary {
 }
 
 impl SauSummary {
-    /// Returns a [`SauSummary`] for [`TransactionPayload::SnarkAccountUpdate`]
+    /// Returns a [`SauSummary`] for [`TransactionPayloadV1::SnarkAccountUpdate`]
     /// payloads, or `None` for payloads without an SAU update (e.g. plain
     /// account messages).
-    fn from_tx_payload(payload: &TransactionPayload) -> Option<Self> {
+    fn from_tx_payload(payload: &TransactionPayloadV1) -> Option<Self> {
         match payload {
-            TransactionPayload::SnarkAccountUpdate(p) => {
+            TransactionPayloadV1::SnarkAccountUpdate(p) => {
                 let operation = p.operation();
                 Some(SauSummary {
                     seq_no: operation.update().seq_no(),
@@ -922,14 +922,14 @@ impl SauSummary {
                     processed_message_count: operation.messages_iter().count(),
                 })
             }
-            TransactionPayload::GenericAccountMessage(_) => None,
+            TransactionPayloadV1::GenericAccountMessage(_) => None,
         }
     }
 }
 
-/// Adds accumulator proofs for [`TransactionPayload::SnarkAccountUpdate`] transactions.
+/// Adds accumulator proofs for [`TransactionPayloadV1::SnarkAccountUpdate`] transactions.
 ///
-/// [`TransactionPayload::GenericAccountMessage`] transactions do not require
+/// [`TransactionPayloadV1::GenericAccountMessage`] transactions do not require
 /// accumulator proofs and are returned unchanged.
 ///
 /// Uses [`TxProofIndexer`] with [`verify_snark_acct_update_proofs`] to discover
@@ -938,11 +938,11 @@ impl SauSummary {
 fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
     proof_gen: &P,
     state: &S,
-    mempool_tx: OLTransaction,
-) -> BlockAssemblyResult<OLTransaction> {
+    mempool_tx: OLTransactionV1,
+) -> BlockAssemblyResult<OLTransactionV1> {
     let sau_payload = match mempool_tx.payload() {
-        TransactionPayload::SnarkAccountUpdate(payload) => payload,
-        TransactionPayload::GenericAccountMessage(_) => return Ok(mempool_tx),
+        TransactionPayloadV1::SnarkAccountUpdate(payload) => payload,
+        TransactionPayloadV1::GenericAccountMessage(_) => return Ok(mempool_tx),
     };
     let target = *sau_payload.target();
     let effects = mempool_tx.data().effects();
@@ -999,7 +999,7 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
         "generated proofs for snark update via indexer"
     );
 
-    let acc_proofs = RawMerkleProofList::from_vec_nonempty(all_acc_proofs);
+    let acc_proofs = RawMerkleProofListV1::from_vec_nonempty(all_acc_proofs);
     Ok(mempool_tx.with_accumulator_proofs(acc_proofs))
 }
 
@@ -1112,7 +1112,7 @@ mod tests {
 
         let tx = result.unwrap();
         match tx.payload() {
-            TransactionPayload::SnarkAccountUpdate(sau) => {
+            TransactionPayloadV1::SnarkAccountUpdate(sau) => {
                 // Verify the payload was constructed with the correct target
                 assert_eq!(sau.target(), &account_id);
             }
@@ -1156,7 +1156,7 @@ mod tests {
 
         let tx = result.unwrap();
         match tx.payload() {
-            TransactionPayload::SnarkAccountUpdate(sau) => {
+            TransactionPayloadV1::SnarkAccountUpdate(sau) => {
                 // Verify the payload was constructed with correct target and messages
                 assert_eq!(sau.target(), &account_id);
                 let msg_count = sau.operation().messages_iter().count();
@@ -1229,7 +1229,7 @@ mod tests {
         assert!(
             matches!(
                 out_tx.payload(),
-                TransactionPayload::GenericAccountMessage(_)
+                TransactionPayloadV1::GenericAccountMessage(_)
             ),
             "GAM tx payload should remain GenericAccountMessage"
         );
@@ -1590,14 +1590,14 @@ mod tests {
         );
     }
 
-    /// Verifies that `ProofSatisfierList::single` constructs a valid single-element
+    /// Verifies that `ProofSatisfierListV1::single` constructs a valid single-element
     /// list even when proof bytes are empty (e.g. from a NoopProver).
     #[test]
     fn test_proof_satisfier_list_accepts_empty_bytes() {
-        use strata_ol_tx_types_v1::ProofSatisfierList;
+        use strata_ol_tx_types_v1::ProofSatisfierListV1;
 
         // Empty bytes should still produce a valid single-element list
-        let result = ProofSatisfierList::single(vec![]);
+        let result = ProofSatisfierListV1::single(vec![]);
         assert!(
             result.is_some(),
             "Empty proof bytes should still produce a valid satisfier list"
@@ -1606,7 +1606,7 @@ mod tests {
         assert_eq!(list.proofs().len(), 1);
 
         // Non-empty bytes should also work
-        let result = ProofSatisfierList::single(vec![0u8]);
+        let result = ProofSatisfierListV1::single(vec![0u8]);
         assert!(
             result.is_some(),
             "Non-empty proof bytes should produce Some"
@@ -2215,8 +2215,9 @@ mod tests {
     #[test]
     fn test_block_template_result_into_parts() {
         let header = create_test_parent_header();
-        let body =
-            OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("Failed to create tx segment"));
+        let body = OLBlockBodyV1::new_common(
+            OLTxSegmentV1::new(vec![]).expect("Failed to create tx segment"),
+        );
         let template = FullBlockTemplate::new(header, body);
 
         let failed_txs = vec![(
@@ -2792,7 +2793,7 @@ mod tests {
         slot_offset: u64,
     ) -> (
         Arc<MemoryStateBaseLayer>,
-        OLBlockHeader,
+        OLBlockHeaderV1,
         BlockInfo,
         OlWriteBatch,
         ExecOutputBuffer,
@@ -2982,7 +2983,7 @@ mod tests {
     async fn run_process_transactions_with_seeded_checkpoint_logs(
         account_id: AccountId,
         seeded_log_count: usize,
-        mempool_txs: Vec<(OLTxId, OLTransaction)>,
+        mempool_txs: Vec<(OLTxId, OLTransactionV1)>,
     ) -> ProcessTransactionsOutput<MemoryStateBaseLayer> {
         const CHECKPOINT_TEST_TIMESTAMP: u64 = 1_000_003;
         const CHECKPOINT_TEST_SLOT_OFFSET: u64 = 3;
@@ -3086,7 +3087,7 @@ mod tests {
             control
                 .successful_txs
                 .iter()
-                .map(OLTransaction::compute_txid)
+                .map(OLTransactionV1::compute_txid)
                 .collect::<Vec<_>>(),
             vec![tx1_id],
             "tx1 should be accepted just below the hard threshold"

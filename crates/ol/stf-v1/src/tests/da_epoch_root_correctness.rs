@@ -7,7 +7,7 @@ use strata_asm_common::AsmManifest;
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{OLBlockCommitment, SubjectId};
-use strata_ol_chain_types_v1::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::IStateAccessor;
@@ -81,7 +81,7 @@ fn test_epoch_root_round_trip_with_limbo_deposit_manifest() {
 fn assert_epoch_root_round_trip(
     pre_epoch_state: &MemoryStateBaseLayer,
     genesis: &CompletedBlock,
-    epoch_blocks: &[OLBlock],
+    epoch_blocks: &[OLBlockV1],
     terminal: &CompletedBlock,
 ) {
     // The terminal header commits the single final epoch state root.
@@ -123,7 +123,7 @@ fn assert_epoch_root_round_trip(
 fn build_non_terminal_blocks(
     state: &mut MemoryStateBaseLayer,
     genesis: &CompletedBlock,
-) -> (Vec<OLBlock>, OLBlockHeader) {
+) -> (Vec<OLBlockV1>, OLBlockHeaderV1) {
     let mut prev_header = genesis.header().clone();
     let mut blocks = Vec::with_capacity(SLOTS_PER_EPOCH as usize);
 
@@ -144,7 +144,7 @@ fn build_non_terminal_blocks(
 
 fn execute_terminal(
     state: &mut MemoryStateBaseLayer,
-    parent_header: &OLBlockHeader,
+    parent_header: &OLBlockHeaderV1,
     manifest: AsmManifest,
 ) -> CompletedBlock {
     execute_block(
@@ -162,8 +162,8 @@ fn execute_terminal(
 
 fn rebuild_da_blob(
     pre_epoch_state: &MemoryStateBaseLayer,
-    blocks: &[OLBlock],
-    prev_terminal_header: &OLBlockHeader,
+    blocks: &[OLBlockV1],
+    prev_terminal_header: &OLBlockHeaderV1,
 ) -> Vec<u8> {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
     execute_block_batch_predrain(

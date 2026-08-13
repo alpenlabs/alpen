@@ -372,24 +372,25 @@ mod tests {
     };
     use strata_identifiers::{Buf32, Buf64, Hash, OLBlockId};
     use strata_ol_chain_types_v1::{
-        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+        BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1,
+        SignedOLBlockHeaderV1,
     };
     use strata_ol_params::OLParams;
-    use strata_ol_state_types_v1::{OLState, MMR_SENTINEL_DUMMY_LEAF_HASH};
+    use strata_ol_state_types_v1::{OLStateV1, MMR_SENTINEL_DUMMY_LEAF_HASH};
     use strata_storage::MmrIndexManager;
     use tokio::runtime::Runtime;
 
     use super::*;
 
-    fn genesis_target_state() -> OLState {
-        OLState::from_genesis_params(&OLParams::default()).expect("valid genesis params")
+    fn genesis_target_state() -> OLStateV1 {
+        OLStateV1::from_genesis_params(&OLParams::default()).expect("valid genesis params")
     }
 
-    fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlock {
-        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
-        let header = OLBlockHeader::new(
+    fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlockV1 {
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeaderV1::new(
             0,
-            BlockFlags::zero(),
+            BlockFlagsV1::zero(),
             slot,
             epoch,
             parent_blkid,
@@ -398,7 +399,7 @@ mod tests {
             Buf32::zero(),
         );
 
-        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+        OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body)
     }
 
     #[test]

@@ -24,7 +24,7 @@ use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_v1::{
-    MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLLogType,
+    MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType,
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
@@ -34,7 +34,7 @@ use strata_ol_state_support_types::{
 use strata_ol_state_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, StateError, StateResult,
 };
-use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1, OLStateV1, WriteBatch};
 use strata_ol_stf_v1::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
@@ -296,7 +296,7 @@ pub(crate) fn exec_block(
 fn fetch_block_with_parent(
     ctx: &impl ChainWorkerContext,
     block_commitment: &OLBlockCommitment,
-) -> WorkerResult<(OLBlock, Option<OLBlockHeader>, OLBlockCommitment)> {
+) -> WorkerResult<(OLBlockV1, Option<OLBlockHeaderV1>, OLBlockCommitment)> {
     let blkid = block_commitment.blkid();
 
     let block = ctx
@@ -341,10 +341,10 @@ fn fetch_block_with_parent(
 fn execute_stf(
     ctx: &impl ChainWorkerContext,
     bridge_params: BridgeParams,
-    block: &OLBlock,
-    parent_header: Option<&OLBlockHeader>,
+    block: &OLBlockV1,
+    parent_header: Option<&OLBlockHeaderV1>,
     parent_commitment: OLBlockCommitment,
-) -> WorkerResult<(OLBlockExecutionOutput, OLState)> {
+) -> WorkerResult<(OLBlockExecutionOutput, OLStateV1)> {
     // Fetch parent state and wrap in MemoryStateBaseLayer for IStateAccessor
     let parent_state_raw = ctx
         .fetch_ol_state(parent_commitment)?
@@ -381,10 +381,10 @@ fn execute_stf(
 /// gracefully.
 fn persist_execution_output(
     ctx: &impl ChainWorkerContext,
-    block: &OLBlock,
+    block: &OLBlockV1,
     block_commitment: OLBlockCommitment,
     output: &OLBlockExecutionOutput,
-    new_state: OLState,
+    new_state: OLStateV1,
 ) -> WorkerResult<()> {
     match ctx.store_block_output(block, block_commitment, output) {
         Ok(()) => {}
@@ -423,9 +423,9 @@ fn persist_execution_output(
 /// block that may then be rejected.
 fn handle_terminal_block_exec_post_ops(
     ctx: &impl ChainWorkerContext,
-    block: &OLBlock,
+    block: &OLBlockV1,
     last_block_output: &OLBlockExecutionOutput,
-    new_state: &OLState,
+    new_state: &OLStateV1,
 ) -> WorkerResult<()> {
     let completed_epoch = block.header().epoch();
 
@@ -541,7 +541,7 @@ pub(crate) fn apply_checkpoint_epoch(
         .collect();
 
     let (tracking_state, mut indexer_writes) = indexer_state.into_parts();
-    let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
+    let write_batch: WriteBatch<OLAccountStateV1> = tracking_state.into_batch();
 
     // Apply the batch onto the base state to get the reconstructed state.
     let mut new_state = base_state;
@@ -597,7 +597,7 @@ pub(crate) fn apply_checkpoint_epoch(
 /// used to drive [`apply_da_epoch`].
 ///
 /// The manifests cover the whole epoch, so this intentionally uses a [`Vec`]
-/// instead of the per-block `OLAsmManifestContainer`. The range is still capped
+/// instead of the per-block `OLAsmManifestContainerV1`. The range is still capped
 /// by the epoch manifest limit before any manifests are fetched.
 fn assemble_da_inputs(
     ctx: &impl ChainWorkerContext,
@@ -653,7 +653,7 @@ fn verify_reconstruction(
     sidecar: &CheckpointSidecar,
     indexer_state_root: Buf32,
     final_state_root: Buf32,
-) -> WorkerResult<OLBlockHeader> {
+) -> WorkerResult<OLBlockHeaderV1> {
     if final_state_root != indexer_state_root {
         error!(
             %epoch, %indexer_state_root, %final_state_root,
@@ -858,9 +858,9 @@ fn acct_read_err(stage: &'static str) -> impl FnOnce(StateError) -> WorkerError 
 #[derive(Debug)]
 pub(crate) struct AppliedEpochArtifacts {
     /// Reconstructed post-epoch toplevel state.
-    pub(crate) new_state: OLState,
+    pub(crate) new_state: OLStateV1,
     /// Unsigned terminal block header reconstructed from checkpoint data.
-    pub(crate) terminal_header: OLBlockHeader,
+    pub(crate) terminal_header: OLBlockHeaderV1,
     /// Epoch summary built from the reconstructed state.
     pub(crate) summary: EpochSummary,
     /// Execution output (state root, write batch, indexer writes).
@@ -895,10 +895,10 @@ impl ServiceState for ChainWorkerServiceState {
 )]
 fn run_stf_verification(
     parent_state: &MemoryStateBaseLayer,
-    block: &OLBlock,
-    parent_header: Option<&OLBlockHeader>,
+    block: &OLBlockV1,
+    parent_header: Option<&OLBlockHeaderV1>,
     bridge_params: BridgeParams,
-) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites, Vec<OLLog>)> {
+) -> WorkerResult<(WriteBatch<OLAccountStateV1>, IndexerWrites, Vec<OLLog>)> {
     // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
     let tracking_state = WriteTrackingState::new_empty(parent_state);
     let mut indexer_state = IndexerState::new(tracking_state);
@@ -913,7 +913,7 @@ fn run_stf_verification(
 
     // Extract outputs
     let (tracking_state, indexer_writes) = indexer_state.into_parts();
-    let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
+    let write_batch: WriteBatch<OLAccountStateV1> = tracking_state.into_batch();
 
     Ok((write_batch, indexer_writes, logs))
 }
@@ -925,9 +925,9 @@ fn run_stf_verification(
 /// write batch, since the batch only carries diffs and may not contain a
 /// `last_l1_*` update if the terminal block introduced no new manifests.
 fn build_epoch_summary(
-    block_header: &OLBlockHeader,
+    block_header: &OLBlockHeaderV1,
     last_block_output: &OLBlockExecutionOutput,
-    new_state: &OLState,
+    new_state: &OLStateV1,
     prev_terminal: OLBlockCommitment,
 ) -> EpochSummary {
     let completed_epoch = block_header.epoch();
@@ -954,10 +954,10 @@ fn build_epoch_summary(
 mod tests {
     use strata_acct_types::Hash;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
-    use strata_ol_chain_types_v1::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
     use strata_ol_state_support_types::IndexerWrites;
     use strata_ol_state_types_v1::{
-        OLAccountState, WriteBatch, test_utils::create_test_genesis_state,
+        OLAccountStateV1, WriteBatch, test_utils::create_test_genesis_state,
     };
 
     use super::*;
@@ -977,7 +977,7 @@ mod tests {
         let mut new_state = create_test_genesis_state();
         let expected_height = L1Height::from(1234u32);
         let expected_blkid = L1BlockId::from(Buf32::from([7u8; 32]));
-        let mut setup_batch: WriteBatch<OLAccountState> = WriteBatch::default();
+        let mut setup_batch: WriteBatch<OLAccountStateV1> = WriteBatch::default();
         setup_batch.epochal_writes_mut().last_l1_height = Some(expected_height);
         setup_batch.epochal_writes_mut().last_l1_blkid = Some(expected_blkid);
         new_state
@@ -986,7 +986,7 @@ mod tests {
 
         // Terminal block's write batch carries no `last_l1_*` update — this is
         // the case that previously panicked.
-        let terminal_batch: WriteBatch<OLAccountState> = WriteBatch::default();
+        let terminal_batch: WriteBatch<OLAccountStateV1> = WriteBatch::default();
         assert!(terminal_batch.epochal_writes().last_l1_height.is_none());
         assert!(terminal_batch.epochal_writes().last_l1_blkid.is_none());
 
@@ -994,9 +994,9 @@ mod tests {
         let output =
             OLBlockExecutionOutput::new(state_root, terminal_batch, IndexerWrites::new(), vec![]);
 
-        let mut flags = BlockFlags::zero();
+        let mut flags = BlockFlagsV1::zero();
         flags.set_is_terminal(true);
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             0,
             flags,
             10,

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_v1::OLBlock;
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_service::{CommandHandle, ServiceMonitor};
 use tokio::sync::oneshot;
 
@@ -83,7 +83,7 @@ impl BlockasmHandle {
         &self,
         template_id: OLBlockId,
         data: BlockCompletionData,
-    ) -> BlockAssemblyResult<OLBlock> {
+    ) -> BlockAssemblyResult<OLBlockV1> {
         let (completion, rx) = create_completion();
         let command = BlockasmCommand::CompleteBlockTemplate {
             template_id,

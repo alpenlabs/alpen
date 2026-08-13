@@ -1,28 +1,28 @@
 use sled::IVec;
 use ssz::{Decode, Encode};
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types_v1::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
 use typed_sled::codec::{CodecError, ValueCodec};
 
 use crate::{define_table_without_codec, impl_codec_key_codec, impl_codec_value_codec};
 
-// OLState is SSZ-generated, WriteBatch uses Codec
+// OLStateV1 is SSZ-generated, WriteBatch uses Codec
 define_table_without_codec!(
-    /// Table to store OLState snapshots keyed by OLBlockCommitment.
-    (OLStateSchema) OLBlockCommitment => OLState
+    /// Table to store OLStateV1 snapshots keyed by OLBlockCommitment.
+    (OLStateSchema) OLBlockCommitment => OLStateV1
 );
 
 define_table_without_codec!(
     /// Table to store OL state write batches keyed by OLBlockCommitment.
-    (OLWriteBatchSchema) OLBlockCommitment => WriteBatch<OLAccountState>
+    (OLWriteBatchSchema) OLBlockCommitment => WriteBatch<OLAccountStateV1>
 );
 
 // OLBlockCommitment uses Codec for key encoding (big-endian for proper linear scans)
 impl_codec_key_codec!(OLStateSchema, OLBlockCommitment);
 impl_codec_key_codec!(OLWriteBatchSchema, OLBlockCommitment);
 
-// OLState is SSZ-generated, use SSZ serialization directly
-impl ValueCodec<OLStateSchema> for OLState {
+// OLStateV1 is SSZ-generated, use SSZ serialization directly
+impl ValueCodec<OLStateSchema> for OLStateV1 {
     type Decoded = Self;
 
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
@@ -38,4 +38,4 @@ impl ValueCodec<OLStateSchema> for OLState {
 }
 
 // WriteBatch uses Codec trait (contains non-SSZ types like BTreeMap, SerialMap)
-impl_codec_value_codec!(OLWriteBatchSchema, WriteBatch<OLAccountState>);
+impl_codec_value_codec!(OLWriteBatchSchema, WriteBatch<OLAccountStateV1>);

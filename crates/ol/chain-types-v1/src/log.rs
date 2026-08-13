@@ -2,11 +2,11 @@
 //!
 //! The log container ([`OLLog`]), the typed payloads, and their envelope codec are now defined
 //! canonically in [`strata_ol_logs`] (shared with the ASM checkpoint subprotocol); this module
-//! re-exports them. The OL-STF-specific bridge from [`SauTxUpdateData`] lives on
-//! [`SauTxUpdateData::get_log_data`].
+//! re-exports them. The OL-STF-specific bridge from [`SauTxUpdateDataV1`] lives on
+//! [`SauTxUpdateDataV1::get_log_data`].
 //!
-//! [`SauTxUpdateData`]: strata_ol_tx_types_v1::SauTxUpdateData
-//! [`SauTxUpdateData::get_log_data`]: strata_ol_tx_types_v1::SauTxUpdateData::get_log_data
+//! [`SauTxUpdateDataV1`]: strata_ol_tx_types_v1::SauTxUpdateDataV1
+//! [`SauTxUpdateDataV1::get_log_data`]: strata_ol_tx_types_v1::SauTxUpdateDataV1::get_log_data
 
 pub use strata_ol_logs::{
     DestinationBufVec, ExtraDataBufVec, LogDecodeError, MAX_LOG_PAYLOAD_LEN, OLLog, OLLogRef,
