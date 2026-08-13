@@ -12,8 +12,8 @@ debug-utils = ["dep:strata-common", "strata-common/debug-utils"]
 
 [dependencies]
 strata-acct-types.workspace = true
-strata-asm-common.workspace = true
 strata-asm-checkpoint-types.workspace = true
+strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-common = { workspace = true, optional = true }
