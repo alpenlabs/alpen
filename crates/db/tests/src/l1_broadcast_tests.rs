@@ -31,7 +31,7 @@ fn attempt_parts(tx: &Transaction, fee_rate: FeeRate, fee: Amount) -> TxAttemptP
 fn tx_entry_with_fee(tx: &Transaction, fee_rate: FeeRate, fee: Amount) -> L1TxEntry {
     L1TxEntry::from_raw_parts(
         serialize(tx),
-        L1TxStatus::Unpublished,
+        L1TxStatus::Queued,
         Some(L1TxRbfInfo {
             fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
             fee_sats: fee.to_sat(),
@@ -81,7 +81,7 @@ pub fn test_put_tx_entry_pair(db: &impl L1BroadcastDatabase) {
     let pair = |tx: &Transaction| {
         (
             tx.compute_txid().as_raw_hash().to_byte_array().into(),
-            L1TxEntry::from_tx(tx),
+            tx_entry(tx),
         )
     };
     let (commit_idx, reveal_idx) = db
@@ -133,7 +133,7 @@ pub fn test_put_tx_entry_pair(db: &impl L1BroadcastDatabase) {
     );
     assert_eq!(
         db.get_tx_entry(commit_idx).unwrap(),
-        Some(L1TxEntry::from_tx(&resigned[0]))
+        Some(tx_entry(&resigned[0]))
     );
     assert_eq!(db.get_next_tx_idx().unwrap(), 2);
 }
@@ -570,7 +570,7 @@ pub fn test_adopt_confirmed_ancestor_refuses_an_unlinked_pair(db: &impl L1Broadc
     );
     assert_eq!(
         db.get_tx_entry_by_id(loser_txid).unwrap().unwrap().status,
-        L1TxStatus::Unpublished
+        L1TxStatus::Queued
     );
 }
 

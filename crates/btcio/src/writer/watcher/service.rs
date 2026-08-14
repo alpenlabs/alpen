@@ -1352,6 +1352,31 @@ mod tests {
         BundledPayloadEntry::new_unsigned(payload)
     }
 
+    async fn complete_test_envelope(
+        payload_idx: u64,
+        envelope: &EnvelopeData,
+        signature: &[u8; 64],
+        bcast_handle: &L1BroadcastHandle,
+    ) -> L1TxId {
+        let ops = get_envelope_ops();
+        let entry = test_unsigned_entry();
+        complete_reveal_and_broadcast(
+            payload_idx,
+            &entry,
+            envelope,
+            signature,
+            ops.as_ref(),
+            bcast_handle,
+        )
+        .await
+        .unwrap();
+        ops.get_payload_entry_by_idx_async(payload_idx)
+            .await
+            .unwrap()
+            .expect("writer linkage must be persisted")
+            .reveal_txid
+    }
+
     #[tokio::test]
     async fn watcher_advances_across_payload_gaps() {
         let ctx = MockWatcherContext::new(false);
@@ -1635,8 +1660,8 @@ mod tests {
 
         let stored = state.ctx.get_stored(0).unwrap();
         assert_eq!(stored.status, L1BundleStatus::Unpublished);
-        assert_eq!(Buf32(stored.commit_txid.0), commit_txid);
-        assert_eq!(Buf32(stored.reveal_txid.0), reveal_txid);
+        assert_eq!(stored.commit_txid, commit_txid);
+        assert_eq!(stored.reveal_txid, reveal_txid);
         // Cache entry consumed
         assert!(!state.envelope_cache.contains_key(&0));
         // Both txs stored in broadcaster DB
@@ -1712,9 +1737,7 @@ mod tests {
         let bcast_handle = ctx.broadcast_handle.clone();
         let original_signature = [1u8; 64];
         let original_reveal_txid =
-            complete_reveal_and_broadcast(0, &envelope, &original_signature, &bcast_handle)
-                .await
-                .unwrap();
+            complete_test_envelope(0, &envelope, &original_signature, &bcast_handle).await;
         let original_reveal_entry = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
             .await
@@ -1850,9 +1873,7 @@ mod tests {
         let ctx = MockWatcherContext::new(true);
         let bcast_handle = ctx.broadcast_handle.clone();
         let original_reveal_txid =
-            complete_reveal_and_broadcast(0, &envelope, &[1u8; 64], &bcast_handle)
-                .await
-                .unwrap();
+            complete_test_envelope(0, &envelope, &[1u8; 64], &bcast_handle).await;
         let original_reveal_tx = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
             .await
@@ -1929,7 +1950,7 @@ mod tests {
                 .unwrap()
                 .expect("original reveal entry exists")
                 .status,
-            L1TxStatus::Unpublished,
+            L1TxStatus::Queued,
             "the original must not be superseded"
         );
 
@@ -2077,9 +2098,7 @@ mod tests {
         let envelope = minimal_envelope_data();
         let ctx = MockWatcherContext::new(true);
         let bcast_handle = ctx.broadcast_handle.clone();
-        let reveal_txid = complete_reveal_and_broadcast(0, &envelope, &[1u8; 64], &bcast_handle)
-            .await
-            .unwrap();
+        let reveal_txid = complete_test_envelope(0, &envelope, &[1u8; 64], &bcast_handle).await;
 
         let mut entry = test_unsigned_entry();
         entry.commit_txid = to_l1_txid(envelope.commit_tx.compute_txid());
@@ -2103,9 +2122,7 @@ mod tests {
         let bcast_handle = ctx.broadcast_handle.clone();
         let original_signature = [1u8; 64];
         let original_reveal_txid =
-            complete_reveal_and_broadcast(0, &envelope, &original_signature, &bcast_handle)
-                .await
-                .unwrap();
+            complete_test_envelope(0, &envelope, &original_signature, &bcast_handle).await;
         let mut original_reveal_entry = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
             .await

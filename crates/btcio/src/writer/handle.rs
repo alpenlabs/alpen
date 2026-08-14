@@ -228,7 +228,7 @@ mod test {
                 .unwrap()
                 .unwrap()
                 .status,
-            IntentStatus::Bundled(1)
+            IntentStatus::Bundled { bundle_idx: 1 }
         );
         assert_eq!(
             ops.get_payload_entry_by_idx_async(1)

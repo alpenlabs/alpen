@@ -37,17 +37,22 @@ fn to_raw_buf32(txid: L1TxId) -> Buf32 {
     Buf32(txid.0)
 }
 
+#[derive(Clone, Copy)]
+enum RevealFeeBumping {
+    Disabled,
+    Enabled,
+}
+
 async fn persist_envelope_pair(
     payload_idx: u64,
     payload: &BundledPayloadEntry,
-    commit: &Transaction,
+    envelope: &EnvelopeData,
     reveal: &Transaction,
-    fee_rate: FeeRate,
-    commit_fee: Amount,
-    reveal_fee: Amount,
+    reveal_fee_bumping: RevealFeeBumping,
     ops: &EnvelopeDataOps,
     broadcaster: &L1BroadcastHandle,
 ) -> Result<(), EnvelopeError> {
+    let commit = &envelope.commit_tx;
     let cid = to_l1_txid(commit.compute_txid());
     let rid = to_l1_txid(reveal.compute_txid());
     let mut linked = payload.clone();
@@ -64,27 +69,29 @@ async fn persist_envelope_pair(
         broadcaster,
         TxNodeKind::SingleEnvelopeCommit { payload_idx },
         commit,
-        fee_rate,
-        commit_fee,
+        envelope.fee_rate,
+        envelope.commit_fee,
     )
     .await?;
-    put_tx_node(
-        broadcaster,
-        TxNodeKind::SingleEnvelopeReveal { payload_idx },
-        reveal,
-        fee_rate,
-        reveal_fee,
-    )
-    .await?;
+    if matches!(reveal_fee_bumping, RevealFeeBumping::Enabled) {
+        put_tx_node(
+            broadcaster,
+            TxNodeKind::SingleEnvelopeReveal { payload_idx },
+            reveal,
+            envelope.fee_rate,
+            envelope.reveal_fee,
+        )
+        .await?;
+    }
     broadcaster
         .put_tx_entry_pair(
             (
                 to_raw_buf32(cid),
-                L1TxEntry::from_tx_with_fee(commit, fee_rate, commit_fee),
+                L1TxEntry::from_tx_with_fee(commit, envelope.fee_rate, envelope.commit_fee),
             ),
             (
                 to_raw_buf32(rid),
-                L1TxEntry::from_tx_with_fee(reveal, fee_rate, reveal_fee),
+                L1TxEntry::from_tx_with_fee(reveal, envelope.fee_rate, envelope.reveal_fee),
             ),
         )
         .await
@@ -157,11 +164,9 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
         persist_envelope_pair(
             payload_idx,
             payloadentry,
-            &envelope.commit_tx,
+            &envelope,
             &envelope.reveal_tx,
-            envelope.fee_rate,
-            envelope.commit_fee,
-            envelope.reveal_fee,
+            RevealFeeBumping::Disabled,
             ops,
             broadcast_handle,
         )
@@ -206,11 +211,9 @@ pub(crate) async fn complete_reveal_and_broadcast(
         persist_envelope_pair(
             payload_idx,
             payloadentry,
-            &envelope.commit_tx,
+            envelope,
             &reveal_tx,
-            envelope.fee_rate,
-            envelope.commit_fee,
-            envelope.reveal_fee,
+            RevealFeeBumping::Enabled,
             ops,
             broadcast_handle,
         )
@@ -488,6 +491,31 @@ mod test {
         BundledPayloadEntry::new_unsigned(payload)
     }
 
+    async fn complete_test_envelope(
+        payload_idx: u64,
+        entry: &BundledPayloadEntry,
+        envelope: &EnvelopeData,
+        signature: &[u8; 64],
+        bcast_handle: &L1BroadcastHandle,
+    ) -> L1TxId {
+        let ops = get_envelope_ops();
+        complete_reveal_and_broadcast(
+            payload_idx,
+            entry,
+            envelope,
+            signature,
+            ops.as_ref(),
+            bcast_handle,
+        )
+        .await
+        .unwrap();
+        ops.get_payload_entry_by_idx_async(payload_idx)
+            .await
+            .unwrap()
+            .expect("writer linkage must be persisted")
+            .reveal_txid
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_payload_envelopes() {
         let iops = get_envelope_ops();
@@ -598,12 +626,19 @@ mod test {
     async fn test_sign_and_broadcast_payload_envelopes_persists_rbf_metadata() {
         let bcast_handle = get_broadcast_handle();
         let ctx = get_fee_bumping_writer_context();
+        let ops = get_envelope_ops();
 
         let entry = unsigned_test_entry();
 
-        let (cid, rid) = sign_and_broadcast_payload_envelopes(7, &entry, ctx, &bcast_handle)
+        sign_and_broadcast_payload_envelopes(7, &entry, ctx, ops.as_ref(), &bcast_handle)
             .await
             .unwrap();
+        let linked = ops
+            .get_payload_entry_by_idx_async(7)
+            .await
+            .unwrap()
+            .expect("writer linkage must be persisted");
+        let (cid, rid) = (linked.commit_txid, linked.reveal_txid);
 
         let commit_entry = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(cid))
@@ -645,9 +680,7 @@ mod test {
             .unwrap();
         let signature = [1u8; 64];
 
-        complete_reveal_and_broadcast(7, &envelope, &signature, &bcast_handle)
-            .await
-            .unwrap();
+        complete_test_envelope(7, &entry, &envelope, &signature, &bcast_handle).await;
 
         assert!(bcast_handle
             .get_tx_node(TxNodeId::from_kind(&TxNodeKind::SingleEnvelopeReveal {
@@ -668,14 +701,13 @@ mod test {
         let bcast_handle = get_broadcast_handle();
         let ctx = get_fee_bumping_writer_context();
         let pubkey = external_signing_pubkey(&ctx);
-        let envelope = create_payload_envelopes(7, &unsigned_test_entry(), ctx, pubkey)
+        let entry = unsigned_test_entry();
+        let envelope = create_payload_envelopes(7, &entry, ctx, pubkey)
             .await
             .unwrap();
         let signature = [1u8; 64];
         let original_reveal_txid =
-            complete_reveal_and_broadcast(7, &envelope, &signature, &bcast_handle)
-                .await
-                .unwrap();
+            complete_test_envelope(7, &entry, &envelope, &signature, &bcast_handle).await;
         let original_reveal_tx = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
             .await
@@ -747,14 +779,13 @@ mod test {
         let bcast_handle = get_broadcast_handle();
         let ctx = get_fee_bumping_writer_context();
         let pubkey = external_signing_pubkey(&ctx);
-        let envelope = create_payload_envelopes(7, &unsigned_test_entry(), ctx, pubkey)
+        let entry = unsigned_test_entry();
+        let envelope = create_payload_envelopes(7, &entry, ctx, pubkey)
             .await
             .unwrap();
         let signature = [1u8; 64];
         let original_reveal_txid =
-            complete_reveal_and_broadcast(7, &envelope, &signature, &bcast_handle)
-                .await
-                .unwrap();
+            complete_test_envelope(7, &entry, &envelope, &signature, &bcast_handle).await;
         let original_reveal_tx = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
             .await

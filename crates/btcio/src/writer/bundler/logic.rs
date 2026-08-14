@@ -167,7 +167,7 @@ mod tests {
                 .expect("test: get second intent")
                 .expect("test: second intent exists")
                 .status,
-            IntentStatus::Bundled(0)
+            IntentStatus::Bundled { bundle_idx: 0 }
         );
     }
 

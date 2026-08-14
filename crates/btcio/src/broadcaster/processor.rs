@@ -1595,6 +1595,7 @@ mod test {
                 MockTxLookupResult::Found(confirmation_info(1, 400, Buf32::new([9u8; 32]))),
             );
 
+        let loser = enter_missing_published_recovery(&io, loser, &loser_txid, &btcio_params).await;
         let status = process_status(&io, &loser, &loser_txid, &btcio_params).await;
 
         assert_eq!(

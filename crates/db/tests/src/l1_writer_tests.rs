@@ -250,7 +250,9 @@ pub fn test_bundle_intent_payload(db: &impl L1WriterDatabase) {
     assert_eq!(replacement_idx, payload_idx + 1);
     assert_eq!(
         db.get_intent_by_id(intent_id).unwrap().unwrap().status,
-        IntentStatus::Bundled(replacement_idx)
+        IntentStatus::Bundled {
+            bundle_idx: replacement_idx,
+        }
     );
     assert_eq!(
         db.get_payload_entry_by_idx(replacement_idx).unwrap(),
