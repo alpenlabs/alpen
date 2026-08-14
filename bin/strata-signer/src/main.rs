@@ -26,7 +26,7 @@ use strata_common::{
     ws_client::{ManagedWsClient, WsClientConfig},
 };
 use strata_logging::{
-    format_service_name, init_logging_from_config_with_layers, LoggingInitConfig,
+    format_service_name, init_logging_from_config_with_layers, LoggingInitConfigRef,
 };
 use strata_metrics::{MetricsConfig, MetricsInitConfig, MetricsLayer};
 use strata_signer::SignerBuilder;
@@ -77,7 +77,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     init_logging_from_config_with_layers(
-        LoggingInitConfig {
+        LoggingInitConfigRef {
             service_base_name: "strata-signer",
             service_label: config.logging.service_label.as_deref(),
             otlp_url: config.logging.otlp_url.as_deref(),

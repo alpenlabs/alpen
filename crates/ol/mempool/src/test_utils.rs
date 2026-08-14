@@ -201,7 +201,10 @@ pub(crate) fn create_test_ol_state_with_account(
     let mut layer = MemoryStateBaseLayer::new(state);
     layer.set_cur_slot(slot);
     // Create an empty account so it exists for validation
-    let new_acct = NewAccountData::new(BitcoinAmount::from(0), NewAccountTypeState::Empty);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
+        NewAccountTypeState::Empty,
+    );
     layer.create_new_account(account_id, new_acct).unwrap();
     layer
 }
@@ -225,7 +228,7 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     layer.set_cur_slot(slot);
     // Create a fresh snark account, then update its sequence number
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from(0),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         NewAccountTypeState::Snark {
             update_vk: PredicateKey::always_accept(),
             initial_state_root: Hash::zero(),
@@ -396,7 +399,7 @@ pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
     for id_byte in 0..=255u8 {
         let account_id = create_test_account_id_with(id_byte);
         let new_acct = NewAccountData::new(
-            BitcoinAmount::from(0),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
             NewAccountTypeState::Snark {
                 update_vk: PredicateKey::always_accept(),
                 initial_state_root: Hash::zero(),

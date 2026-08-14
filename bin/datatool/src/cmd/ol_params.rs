@@ -86,7 +86,8 @@ mod tests {
         let account = accounts.values().next().unwrap();
         assert_eq!(
             account.predicate,
-            PredicateKey::new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef])
+            PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![0xde, 0xad, 0xbe, 0xef])
+                .expect("predicate condition must fit within the maximum length")
         );
         assert_eq!(account.inner_state, INNER_STATE.parse().unwrap());
         assert_eq!(account.balance.to_sat(), 7);

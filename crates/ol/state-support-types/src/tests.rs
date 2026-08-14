@@ -30,8 +30,11 @@ use crate::{
 #[test]
 fn test_indexer_over_write_tracking_basic() {
     let account_id = test_account_id(1);
-    let (base_layer, _serial) =
-        setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let (base_layer, _serial) = setup_layer_with_snark_account(
+        account_id,
+        1,
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
 
     // Create the layer stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
     let tracking = WriteTrackingState::new_empty(&base_layer);
@@ -39,15 +42,21 @@ fn test_indexer_over_write_tracking_basic() {
 
     // Verify we can read through both layers
     let account = indexer.get_account_state(account_id).unwrap().unwrap();
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(1_000));
+    assert_eq!(
+        account.balance(),
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply")
+    );
 }
 
 /// Test inbox message tracking through both layers.
 #[test]
 fn test_combined_inbox_message_tracking() {
     let account_id = test_account_id(1);
-    let (base_layer, _serial) =
-        setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let (base_layer, _serial) = setup_layer_with_snark_account(
+        account_id,
+        1,
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
 
     let tracking = WriteTrackingState::new_empty(&base_layer);
     let mut indexer = IndexerState::new(tracking);
@@ -110,8 +119,11 @@ fn test_combined_manifest_tracking() {
 #[test]
 fn test_combined_balance_modification() {
     let account_id = test_account_id(1);
-    let (base_layer, _serial) =
-        setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let (base_layer, _serial) = setup_layer_with_snark_account(
+        account_id,
+        1,
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
 
     let tracking = WriteTrackingState::new_empty(&base_layer);
     let mut indexer = IndexerState::new(tracking);
@@ -119,7 +131,10 @@ fn test_combined_balance_modification() {
     // Modify balance through the combined stack
     indexer
         .update_account(account_id, |acct| {
-            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+            let coin = Coin::new_unchecked(
+                BitcoinAmount::try_from(500)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            );
             acct.add_balance(coin);
         })
         .unwrap();
@@ -130,11 +145,17 @@ fn test_combined_balance_modification() {
 
     // Verify the account is in the batch with updated balance
     let batch_account = batch.ledger().get_account(&account_id).unwrap();
-    assert_eq!(batch_account.balance(), BitcoinAmount::from_sat(1_500));
+    assert_eq!(
+        batch_account.balance(),
+        BitcoinAmount::try_from(1_500).expect("amount must not exceed the Bitcoin money supply")
+    );
 
     // Verify base state is unchanged
     let base_account = base_layer.get_account_state(account_id).unwrap().unwrap();
-    assert_eq!(base_account.balance(), BitcoinAmount::from_sat(1_000));
+    assert_eq!(
+        base_account.balance(),
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply")
+    );
 }
 
 /// Test account creation through combined layers.
@@ -146,8 +167,10 @@ fn test_combined_account_creation() {
 
     // Create a new account through the combined stack
     let account_id = test_account_id(1);
-    let new_acct =
-        test_new_snark_account_data(&test_snark_account_state(1), BitcoinAmount::from_sat(5_000));
+    let new_acct = test_new_snark_account_data(
+        &test_snark_account_state(1),
+        BitcoinAmount::try_from(5_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
 
     let serial = indexer.create_new_account(account_id, new_acct).unwrap();
 
@@ -155,7 +178,10 @@ fn test_combined_account_creation() {
     assert!(indexer.check_account_exists(account_id).unwrap());
     let account = indexer.get_account_state(account_id).unwrap().unwrap();
     assert_eq!(account.serial(), serial);
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(5_000));
+    assert_eq!(
+        account.balance(),
+        BitcoinAmount::try_from(5_000).expect("amount must not exceed the Bitcoin money supply")
+    );
 
     // Extract and verify it's in the batch
     let (tracking, _) = indexer.into_parts();
@@ -193,15 +219,20 @@ fn test_combined_multiple_operations() {
     let account_id_2 = test_account_id(2);
 
     // Setup base layer with one account
-    let (base_layer, _) =
-        setup_layer_with_snark_account(account_id_1, 1, BitcoinAmount::from_sat(1_000));
+    let (base_layer, _) = setup_layer_with_snark_account(
+        account_id_1,
+        1,
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
 
     let tracking = WriteTrackingState::new_empty(&base_layer);
     let mut indexer = IndexerState::new(tracking);
 
     // Create a new account
-    let new_acct =
-        test_new_snark_account_data(&test_snark_account_state(2), BitcoinAmount::from_sat(2_000));
+    let new_acct = test_new_snark_account_data(
+        &test_snark_account_state(2),
+        BitcoinAmount::try_from(2_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     indexer.create_new_account(account_id_2, new_acct).unwrap();
 
     // Insert messages to both accounts
@@ -261,8 +292,10 @@ fn test_write_tracking_over_batch_diff_reads_from_pending_batch() {
 
     let account_id_in_batch = test_account_id(1);
     let mut pending_batch = WriteBatch::default();
-    let new_acct =
-        test_new_snark_account_data(&test_snark_account_state(1), BitcoinAmount::from_sat(3000));
+    let new_acct = test_new_snark_account_data(
+        &test_snark_account_state(1),
+        BitcoinAmount::try_from(3000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     let serial = base_layer.next_account_serial();
     pending_batch
         .ledger_mut()
@@ -280,7 +313,10 @@ fn test_write_tracking_over_batch_diff_reads_from_pending_batch() {
         .get_account_state(account_id_in_batch)
         .unwrap()
         .unwrap();
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(3000));
+    assert_eq!(
+        account.balance(),
+        BitcoinAmount::try_from(3000).expect("amount must not exceed the Bitcoin money supply")
+    );
 
     // Global and epochal reads resolve to the pending batch, not the base.
     assert_eq!(tracking.cur_slot(), 50);
@@ -321,8 +357,10 @@ fn test_write_tracking_over_batch_diff_update_account_from_pending_batch() {
 
     let account_id = test_account_id(1);
     let mut pending_batch = WriteBatch::default();
-    let new_acct =
-        test_new_snark_account_data(&test_snark_account_state(1), BitcoinAmount::from_sat(3000));
+    let new_acct = test_new_snark_account_data(
+        &test_snark_account_state(1),
+        BitcoinAmount::try_from(3000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     let serial = base_layer.next_account_serial();
     pending_batch
         .ledger_mut()
@@ -335,19 +373,25 @@ fn test_write_tracking_over_batch_diff_update_account_from_pending_batch() {
     // Copy-on-write from the pending batch into this layer's write batch.
     tracking
         .update_account(account_id, |acct| {
-            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+            let coin = Coin::new_unchecked(
+                BitcoinAmount::try_from(500)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            );
             acct.add_balance(coin);
         })
         .unwrap();
 
     let account = tracking.get_account_state(account_id).unwrap().unwrap();
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(3500));
+    assert_eq!(
+        account.balance(),
+        BitcoinAmount::try_from(3500).expect("amount must not exceed the Bitcoin money supply")
+    );
 
     let batch = tracking.into_batch();
     assert!(batch.ledger().contains_account(&account_id));
     assert_eq!(
         batch.ledger().get_account(&account_id).unwrap().balance(),
-        BitcoinAmount::from_sat(3500)
+        BitcoinAmount::try_from(3500).expect("amount must not exceed the Bitcoin money supply")
     );
 }
 
@@ -357,13 +401,20 @@ fn test_write_tracking_over_batch_diff_update_account_from_pending_batch() {
 
 fn build_simple_blob() -> Vec<u8> {
     let account_id = test_account_id(1);
-    let (mut layer, _) =
-        setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let (mut layer, _) = setup_layer_with_snark_account(
+        account_id,
+        1,
+        BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     let source_account_id = test_account_id(7);
     layer
         .create_new_account(
             source_account_id,
-            test_new_snark_account_data(&test_snark_account_state(2), BitcoinAmount::from_sat(0)),
+            test_new_snark_account_data(
+                &test_snark_account_state(2),
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ),
         )
         .unwrap();
     let mut da_state = DaAccumulatingState::new(layer);
@@ -373,7 +424,10 @@ fn build_simple_blob() -> Vec<u8> {
     let msg = test_message_entry(7, 0, 2000);
     da_state
         .update_account(account_id, |acct| {
-            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+            let coin = Coin::new_unchecked(
+                BitcoinAmount::try_from(500)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            );
             acct.add_balance(coin);
             acct.as_snark_account_mut()
                 .unwrap()
@@ -400,7 +454,8 @@ impl TestSnarkState {
     fn new(update_vk: Vec<u8>) -> Self {
         let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
         let inbox_mmr = Mmr64::from_generic(&generic_mmr);
-        let update_vk = PredicateKey::new(PredicateTypeId::AlwaysAccept, update_vk);
+        let update_vk = PredicateKey::try_new(PredicateTypeId::AlwaysAccept, update_vk)
+            .expect("predicate condition must fit within the maximum length");
         Self {
             update_vk,
             inner_state_root: Hash::from([0u8; 32]),
@@ -521,7 +576,8 @@ impl IAccountStateMut for TestAccountState {
 
     fn add_balance(&mut self, coin: Coin) {
         let new_balance = self.balance.to_sat() + coin.amt().to_sat();
-        self.balance = BitcoinAmount::from_sat(new_balance);
+        self.balance = BitcoinAmount::try_from(new_balance)
+            .expect("amount must not exceed the Bitcoin money supply");
         coin.safely_consume_unchecked();
     }
 
@@ -559,12 +615,12 @@ impl TestState {
             next_serial: AccountSerial::one(),
             serial_overrides: VecDeque::from(serials),
             cur_slot: 0,
-            limbo_funds: BitcoinAmount::ZERO,
+            limbo_funds: BitcoinAmount::default(),
             cur_epoch: 0,
             last_l1_blkid: L1BlockId::from(Buf32::zero()),
             last_l1_height: L1Height::from(0u32),
             asm_recorded_epoch: EpochCommitment::null(),
-            total_ledger_balance: BitcoinAmount::ZERO,
+            total_ledger_balance: BitcoinAmount::default(),
             pending_asm_logs: Vec::new(),
         }
     }
@@ -650,7 +706,12 @@ impl IStateAccessorMut for TestState {
 
     fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
         let amt = coin.amt();
-        let Some(new) = self.limbo_funds.checked_add(amt) else {
+        let new = self
+            .limbo_funds
+            .to_sat()
+            .checked_add(amt.to_sat())
+            .and_then(|sats| BitcoinAmount::try_from(sats).ok());
+        let Some(new) = new else {
             // Defuse the coin before returning so the mock upholds the same
             // consume-always contract as the real layers (dropping it panics).
             coin.safely_consume_unchecked();
@@ -665,14 +726,14 @@ impl IStateAccessorMut for TestState {
     }
 
     fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
-        let new = self
-            .limbo_funds
-            .checked_sub(amt)
-            .ok_or(StateError::InsufficientLimboFunds {
+        let new_sats = self.limbo_funds.to_sat().checked_sub(amt.to_sat()).ok_or(
+            StateError::InsufficientLimboFunds {
                 need: amt,
                 have: self.limbo_funds,
-            })?;
-        self.limbo_funds = new;
+            },
+        )?;
+        self.limbo_funds = BitcoinAmount::try_from(new_sats)
+            .expect("subtracting from valid limbo funds must remain valid");
         Ok(Coin::new_unchecked(amt))
     }
 
@@ -754,7 +815,8 @@ fn test_account_diffs_ordered_by_serial() {
             account_id_1,
             test_new_snark_account_data(
                 &test_snark_account_state(1),
-                BitcoinAmount::from_sat(1000),
+                BitcoinAmount::try_from(1000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
             ),
         )
         .unwrap();
@@ -763,7 +825,8 @@ fn test_account_diffs_ordered_by_serial() {
             account_id_2,
             test_new_snark_account_data(
                 &test_snark_account_state(2),
-                BitcoinAmount::from_sat(2000),
+                BitcoinAmount::try_from(2000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
             ),
         )
         .unwrap();
@@ -773,13 +836,19 @@ fn test_account_diffs_ordered_by_serial() {
     // Update higher serial first, then lower serial.
     da_state
         .update_account(account_id_2, |acct| {
-            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(50));
+            let coin = Coin::new_unchecked(
+                BitcoinAmount::try_from(50)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            );
             acct.add_balance(coin);
         })
         .unwrap();
     da_state
         .update_account(account_id_1, |acct| {
-            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(75));
+            let coin = Coin::new_unchecked(
+                BitcoinAmount::try_from(75)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            );
             acct.add_balance(coin);
         })
         .unwrap();
@@ -805,7 +874,7 @@ fn test_new_account_post_state_encoded() {
     let update_vk = vec![7u8; 4];
     let snark_state = TestSnarkState::new(update_vk.clone());
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from_sat(100),
+        BitcoinAmount::try_from(100).expect("amount must not exceed the Bitcoin money supply"),
         NewAccountTypeState::Snark {
             update_vk: snark_state.update_vk.clone(),
             initial_state_root: snark_state.inner_state_root,
@@ -815,7 +884,10 @@ fn test_new_account_post_state_encoded() {
 
     da_state
         .update_account(account_id, |acct| {
-            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(50));
+            let coin = Coin::new_unchecked(
+                BitcoinAmount::try_from(50)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            );
             acct.add_balance(coin);
             acct.as_snark_account_mut()
                 .unwrap()
@@ -833,16 +905,24 @@ fn test_new_account_post_state_encoded() {
     assert_eq!(new_accounts.len(), 1);
     let entry = &new_accounts[0];
     assert_eq!(entry.account_id, account_id);
-    assert_eq!(entry.init.balance, BitcoinAmount::from_sat(150));
+    assert_eq!(
+        entry.init.balance,
+        BitcoinAmount::try_from(150).expect("amount must not exceed the Bitcoin money supply")
+    );
     match &entry.init.type_state {
         AccountTypeInit::Snark(init) => {
             assert_eq!(init.initial_state_root, test_hash(9));
             // The VK is stored with the predicate type ID prefix, so we need to compare
             // with the full predicate key bytes (type ID + raw VK bytes)
-            let expected_vk = PredicateKey::new(PredicateTypeId::AlwaysAccept, update_vk.clone());
+            let expected_vk =
+                PredicateKey::try_new(PredicateTypeId::AlwaysAccept, update_vk.clone())
+                    .expect("predicate condition must fit within the maximum length");
             assert_eq!(
                 init.update_vk.as_slice(),
-                expected_vk.as_buf_ref().to_bytes()
+                expected_vk
+                    .try_as_buf_ref()
+                    .expect("predicate key must be valid")
+                    .to_bytes()
             );
         }
         _ => panic!("expected snark account init"),
@@ -857,7 +937,7 @@ fn test_new_account_vk_persisted_from_ol_state() {
     let account_id = test_account_id(10);
     let snark_state = OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), test_hash(4));
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from_sat(100),
+        BitcoinAmount::try_from(100).expect("amount must not exceed the Bitcoin money supply"),
         NewAccountTypeState::Snark {
             update_vk: snark_state.update_vk().clone(),
             initial_state_root: snark_state.inner_state_root(),
@@ -877,7 +957,11 @@ fn test_new_account_vk_persisted_from_ol_state() {
         AccountTypeInit::Snark(init) => {
             assert_eq!(
                 init.update_vk.as_slice(),
-                snark_state.update_vk().as_buf_ref().to_bytes()
+                snark_state
+                    .update_vk()
+                    .try_as_buf_ref()
+                    .expect("predicate key must be valid")
+                    .to_bytes()
             );
         }
         _ => panic!("expected snark account init"),
@@ -887,13 +971,20 @@ fn test_new_account_vk_persisted_from_ol_state() {
 #[test]
 fn test_take_resets_accumulator() {
     let account_id = test_account_id(1);
-    let (layer, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let (layer, _) = setup_layer_with_snark_account(
+        account_id,
+        1,
+        BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     let mut da_state = DaAccumulatingState::new(layer);
 
     // Finalize once after making changes.
     da_state
         .update_account(account_id, |acct| {
-            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(123));
+            let coin = Coin::new_unchecked(
+                BitcoinAmount::try_from(123)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            );
             acct.add_balance(coin);
         })
         .unwrap();
@@ -919,13 +1010,21 @@ fn test_limbo_funds_encoded_in_blob() {
     // Drive the limbo funds up then partially back down; the net change is what
     // the accumulator's limbo `DaCounter` should encode.
     da_state
-        .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from_sat(1_000)))
+        .add_limbo_funds_coin(Coin::new_unchecked(
+            BitcoinAmount::try_from(1_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        ))
         .unwrap();
     let taken = da_state
-        .take_limbo_funds_coin(BitcoinAmount::from_sat(400))
+        .take_limbo_funds_coin(
+            BitcoinAmount::try_from(400).expect("amount must not exceed the Bitcoin money supply"),
+        )
         .unwrap();
     taken.safely_consume_unchecked();
-    assert_eq!(da_state.limbo_funds(), BitcoinAmount::from_sat(600));
+    assert_eq!(
+        da_state.limbo_funds(),
+        BitcoinAmount::try_from(600).expect("amount must not exceed the Bitcoin money supply")
+    );
 
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
@@ -959,7 +1058,7 @@ fn test_da_blob_size_limit() {
         let account_id = test_account_id(i);
         let snark_state = TestSnarkState::new(vk_data.clone());
         let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(0),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
             NewAccountTypeState::Snark {
                 update_vk: snark_state.update_vk.clone(),
                 initial_state_root: snark_state.inner_state_root,
@@ -985,7 +1084,7 @@ fn test_vk_size_at_predicate_limit_roundtrips() {
     let vk_len = MAX_CONDITION_LEN as usize;
     let snark_state = TestSnarkState::new(vec![0u8; vk_len]);
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         NewAccountTypeState::Snark {
             update_vk: snark_state.update_vk.clone(),
             initial_state_root: snark_state.inner_state_root,
@@ -1016,7 +1115,7 @@ fn test_estimated_encoded_size_scales_with_new_account_vk_len() {
         let account_id = test_account_id(1);
         let snark_state = TestSnarkState::new(vec![0u8; vk_len]);
         let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(0),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
             NewAccountTypeState::Snark {
                 update_vk: snark_state.update_vk.clone(),
                 initial_state_root: snark_state.inner_state_root,
@@ -1037,20 +1136,28 @@ fn test_estimated_encoded_size_scales_with_new_account_vk_len() {
 }
 
 #[test]
-#[should_panic(expected = "valid length")]
-fn test_oversized_predicate_key_panics() {
+fn test_oversized_predicate_key_is_rejected() {
     let oversized_vk_len = MAX_CONDITION_LEN as usize + 1;
-    let _ = PredicateKey::new(PredicateTypeId::AlwaysAccept, vec![0u8; oversized_vk_len]);
+    assert!(
+        PredicateKey::try_new(PredicateTypeId::AlwaysAccept, vec![0u8; oversized_vk_len]).is_err()
+    );
 }
 
 #[test]
 fn test_message_source_missing_is_rejected() {
     let account_id = test_account_id(1);
-    let (layer, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let (layer, _) = setup_layer_with_snark_account(
+        account_id,
+        1,
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     let mut da_state = DaAccumulatingState::new(layer);
 
-    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![0u8; 4])
-        .expect("message payload bytes must fit within SSZ max length");
+    let payload = MsgPayload::from_bytes(
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
+        vec![0u8; 4],
+    )
+    .expect("message payload bytes must fit within SSZ max length");
     let missing_source = test_account_id(99);
     let msg = MessageEntry::new(missing_source, 0, payload);
     da_state
@@ -1072,11 +1179,18 @@ fn test_message_source_missing_is_rejected() {
 #[test]
 fn test_special_message_source_is_encoded() {
     let account_id = test_account_id(1);
-    let (layer, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let (layer, _) = setup_layer_with_snark_account(
+        account_id,
+        1,
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     let mut da_state = DaAccumulatingState::new(layer);
 
-    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![0u8; 4])
-        .expect("message payload bytes must fit within SSZ max length");
+    let payload = MsgPayload::from_bytes(
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
+        vec![0u8; 4],
+    )
+    .expect("message payload bytes must fit within SSZ max length");
     let special_source = AccountId::special(0x10);
     let msg = MessageEntry::new(special_source, 0, payload);
     da_state
@@ -1103,11 +1217,15 @@ fn test_special_message_source_is_encoded() {
 #[test]
 fn test_message_payload_size_limit() {
     let account_id = test_account_id(1);
-    let (layer, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let (layer, _) = setup_layer_with_snark_account(
+        account_id,
+        1,
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     let mut da_state = DaAccumulatingState::new(layer);
 
     let payload = MsgPayload::from_bytes(
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
     )
     .expect("message payload bytes must fit within SSZ max length");
@@ -1172,7 +1290,8 @@ fn test_expected_first_serial_mismatch() {
 #[test]
 fn test_combined_layers_preserve_base_state() {
     let account_id = test_account_id(1);
-    let initial_balance = BitcoinAmount::from_sat(1000);
+    let initial_balance =
+        BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply");
     let (base_layer, _) = setup_layer_with_snark_account(account_id, 1, initial_balance);
 
     // Save original values
@@ -1195,7 +1314,10 @@ fn test_combined_layers_preserve_base_state() {
     indexer.set_cur_epoch(99);
     indexer
         .update_account(account_id, |acct| {
-            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+            let coin = Coin::new_unchecked(
+                BitcoinAmount::try_from(500)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            );
             acct.add_balance(coin);
             acct.as_snark_account_mut()
                 .unwrap()

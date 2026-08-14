@@ -102,7 +102,8 @@ mod tests {
             GenesisSnarkAccountData {
                 predicate: PredicateKey::always_accept(),
                 inner_state: Buf32::zero(),
-                balance: BitcoinAmount::from_sat(1000),
+                balance: BitcoinAmount::try_from(1000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
             },
         );
 
@@ -111,7 +112,7 @@ mod tests {
             GenesisSnarkAccountData {
                 predicate: PredicateKey::always_accept(),
                 inner_state: Buf32::from([0xab; 32]),
-                balance: BitcoinAmount::ZERO,
+                balance: BitcoinAmount::default(),
             },
         );
 
@@ -169,8 +170,11 @@ mod tests {
         let id1 = AccountId::from([1u8; 32]);
         let id2 = AccountId::from([2u8; 32]);
 
-        assert_eq!(params.accounts[&id1].balance, BitcoinAmount::from_sat(500));
-        assert_eq!(params.accounts[&id2].balance, BitcoinAmount::ZERO);
+        assert_eq!(
+            params.accounts[&id1].balance,
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply")
+        );
+        assert_eq!(params.accounts[&id2].balance, BitcoinAmount::default());
     }
 
     #[test]

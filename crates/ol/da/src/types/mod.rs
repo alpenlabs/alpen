@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn test_da_message_entry_decode_rejects_oversize_payload() {
         let payload = MsgPayload::from_bytes(
-            BitcoinAmount::from_sat(0),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
             vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
         )
         .expect("message payload bytes must fit within SSZ max length");

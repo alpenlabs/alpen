@@ -3,20 +3,26 @@
 use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_asm_checkpoint_types::CheckpointTip;
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
+use strata_asm_logs::{CheckpointTipUpdate, DepositLog, constants::AsmLogTypeId};
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
-    Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId,
+    Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId, SubjectIdBytes,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::MAX_TYPE;
+use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types::MAX_SEALING_MANIFEST_COUNT;
 use strata_ol_da::OLDaPayloadV1;
 use strata_ol_state_support_types::DaAccumulatingState;
 
 use crate::{
-    assembly::BlockComponents, context::BlockInfo, errors::ExecError, execute_block_batch_predrain,
+    assembly::BlockComponents,
+    context::{BasicExecContext, BlockInfo},
+    errors::ExecError,
+    execute_block_batch_predrain,
+    output::ExecOutputBuffer,
+    process_block_manifests, process_epoch_terminal,
     test_utils::*,
 };
 
@@ -163,7 +169,8 @@ fn test_manifest_processing_skips_unknown_serial_deposit() {
     let deposit_log = make_deposit_log_for_account(
         AccountSerial::new(9_999),
         SubjectId::from([42u8; 32]),
-        BitcoinAmount::from_sat(100_000_000),
+        BitcoinAmount::try_from(100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
     );
     let asm_manifest = FixtureAsmManifestBuilder::new_at_height(1)
         .with_log(deposit_log)
@@ -171,26 +178,37 @@ fn test_manifest_processing_skips_unknown_serial_deposit() {
 
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_manifest(asm_manifest)
         .execute_genesis();
     let state = fixture.state();
 
     let (ol_account_state, account_state) = state.expect_snark_account_state(snark_acct_id);
-    assert_eq!(ol_account_state.balance(), BitcoinAmount::from_sat(0));
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+    );
     assert_eq!(account_state.inbox_mmr().num_entries(), 0);
-    assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(100_000_000));
+    assert_eq!(
+        state.limbo_funds(),
+        BitcoinAmount::try_from(100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
+    );
     assert_eq!(state.last_l1_height(), 1);
 }
 
 #[test]
 fn test_deposit_terminal_drain_has_no_logs_or_predrain_effects() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let deposit_amount = BitcoinAmount::from_sat(100_000_000);
+    let deposit_amount = BitcoinAmount::try_from(100_000_000)
+        .expect("amount must not exceed the Bitcoin money supply");
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::zero())
+            acct.with_balance(BitcoinAmount::default())
         })
         .execute_genesis();
     let snark_serial = fixture.account_serial(snark_acct_id);
@@ -260,7 +278,7 @@ fn test_deposit_terminal_drain_has_no_logs_or_predrain_effects() {
         .expect("snark account should exist");
     assert_eq!(
         predrain_account.balance(),
-        BitcoinAmount::zero(),
+        BitcoinAmount::default(),
         "checkpoint pre-drain replay must not apply ASM drain state effects"
     );
     let predrain_snark_account = predrain_account
@@ -314,5 +332,39 @@ fn test_manifest_processing_skips_malformed_deposit_log() {
         state.l1_block_refs_mmr().num_entries(),
         GENESIS_MANIFEST_SENTINEL_COUNT + 1
     );
-    assert_eq!(state.limbo_funds(), BitcoinAmount::zero());
+    assert_eq!(state.limbo_funds(), BitcoinAmount::default());
+}
+
+/// A decoded deposit log whose raw amount exceeds the Bitcoin money supply must
+/// surface a clean [`ExecError`] at the epoch terminal drain, not panic on the
+/// amount conversion.
+#[test]
+fn test_oversized_deposit_amount_returns_clean_error() {
+    let mut state = make_genesis_state();
+
+    // A well-formed descriptor so processing reaches the amount conversion.
+    let dest_subject_bytes = SubjectIdBytes::try_new(SubjectId::from([42u8; 32]).inner().to_vec())
+        .expect("valid subject bytes");
+    let descriptor = DepositDescriptor::new(AccountSerial::new(9_999), dest_subject_bytes)
+        .expect("valid deposit descriptor");
+    let deposit = DepositLog::new(descriptor.encode_to_varvec(), u64::MAX);
+    let deposit_log = AsmLogEntry::from_log(&deposit).expect("deposit log should encode");
+
+    let manifest = FixtureAsmManifestBuilder::new_at_height(1)
+        .with_log(deposit_log)
+        .build();
+    process_block_manifests(&mut state, &[manifest])
+        .expect("buffering the manifest should succeed");
+
+    let outputs = ExecOutputBuffer::new_empty();
+    let block_info = BlockInfo::new(1, 1, 1);
+    let context = BasicExecContext::new(block_info, &outputs);
+
+    let err = process_epoch_terminal(&mut state, &context)
+        .expect_err("an oversized deposit amount should error, not panic");
+
+    assert!(
+        matches!(err.into_base(), ExecError::AmountOverflow),
+        "expected AmountOverflow"
+    );
 }

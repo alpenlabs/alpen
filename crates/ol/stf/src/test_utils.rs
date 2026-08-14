@@ -30,7 +30,7 @@
 //! let recipient_id = make_account_id(TEST_RECIPIENT_ID);
 //! let mut fixture = OLStfFixture::builder()
 //!     .with_genesis_snark_account(snark_acct_id, |acct| {
-//!         acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+//!         acct.with_balance(BitcoinAmount::try_from(100_000_000).expect("amount must not exceed the Bitcoin money supply"))
 //!     })
 //!     .with_genesis_empty_account(recipient_id)
 //!     .execute_genesis();
@@ -38,11 +38,11 @@
 //! fixture
 //!     .child_block()
 //!     .with_sau(snark_acct_id, |sau| {
-//!         sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+//!         sau.transfer(recipient_id, BitcoinAmount::try_from(10_000_000).expect("amount must not exceed the Bitcoin money supply"))
 //!     })
 //!     .execute();
 //!
-//! assert_eq!(fixture.account_balance(recipient_id), BitcoinAmount::from_sat(10_000_000));
+//! assert_eq!(fixture.account_balance(recipient_id), BitcoinAmount::try_from(10_000_000).expect("amount must not exceed the Bitcoin money supply"));
 //! ```
 //!
 //! For failure-path tests, use `execute_err()`, inspect `err.into_base()`, and
@@ -426,8 +426,12 @@ pub fn build_chain_with_transactions(
             let msg_entry = MessageEntry::new(
                 crate::SEQUENCER_ACCT_ID,
                 epoch,
-                MsgPayload::from_bytes(BitcoinAmount::from_sat(0), msg_data.clone())
-                    .expect("message payload bytes must fit within SSZ max length"),
+                MsgPayload::from_bytes(
+                    BitcoinAmount::try_from(0)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    msg_data.clone(),
+                )
+                .expect("message payload bytes must fit within SSZ max length"),
             );
             let proof = inbox_tracker.add_message(&msg_entry);
             pending_msgs.push(msg_entry);
@@ -1092,7 +1096,7 @@ pub struct FixtureSnarkAccountBuilder {
 impl FixtureSnarkAccountBuilder {
     fn new() -> Self {
         Self {
-            balance: BitcoinAmount::zero(),
+            balance: BitcoinAmount::default(),
             update_vk: PredicateKey::always_accept(),
             initial_state_root: make_state_root(1),
         }
@@ -1801,8 +1805,10 @@ pub fn setup_genesis_with_snark_accounts(
         insert_snark_account_with_settings(
             state,
             account_id,
-            FixtureSnarkAccountBuilder::new()
-                .with_balance(BitcoinAmount::from_sat(initial_balance)),
+            FixtureSnarkAccountBuilder::new().with_balance(
+                BitcoinAmount::try_from(initial_balance)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ),
         );
     }
 
@@ -1816,7 +1822,10 @@ fn insert_fixture_snark_account(state: &mut impl IStateAccessorMut) {
     insert_snark_account_with_settings(
         state,
         make_account_id(TEST_SNARK_ACCOUNT_ID),
-        FixtureSnarkAccountBuilder::new().with_balance(BitcoinAmount::from_sat(100_000_000)),
+        FixtureSnarkAccountBuilder::new().with_balance(
+            BitcoinAmount::try_from(100_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        ),
     );
 }
 
@@ -1948,9 +1957,11 @@ impl SnarkUpdateBuilder {
 
     /// Add a single transfer effect
     pub fn with_transfer(mut self, dest: AccountId, amount: u64) -> Self {
-        let added = self
-            .effects
-            .add_transfer(SentTransfer::new(dest, BitcoinAmount::from_sat(amount)));
+        let added = self.effects.add_transfer(SentTransfer::new(
+            dest,
+            BitcoinAmount::try_from(amount)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        ));
         // This builder only constructs test fixtures; fail fast instead of silently dropping
         // an effect that exceeds the protocol list capacity.
         assert!(added, "test: too many transfer effects");
@@ -1959,8 +1970,12 @@ impl SnarkUpdateBuilder {
 
     /// Add a single message effect
     pub fn with_output_message(mut self, dest: AccountId, amount: u64, data: Vec<u8>) -> Self {
-        let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(amount), data)
-            .expect("message payload bytes must fit within SSZ max length");
+        let payload = MsgPayload::from_bytes(
+            BitcoinAmount::try_from(amount)
+                .expect("amount must not exceed the Bitcoin money supply"),
+            data,
+        )
+        .expect("message payload bytes must fit within SSZ max length");
         let added = self.effects.add_message(SentMessage::new(dest, payload));
         // This builder only constructs test fixtures; fail fast instead of silently dropping
         // an effect that exceeds the protocol list capacity.
@@ -2085,8 +2100,11 @@ pub fn snark_inbox_msg_with_data(data: &[u8]) -> MessageEntry {
     MessageEntry::new(
         crate::SEQUENCER_ACCT_ID,
         1,
-        MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data.to_vec())
-            .expect("inbox msg payload"),
+        MsgPayload::from_bytes(
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
+            data.to_vec(),
+        )
+        .expect("inbox msg payload"),
     )
 }
 
@@ -2101,7 +2119,8 @@ pub fn epoch_runner_seed_accounts(state: &mut MemoryStateBaseLayer) -> AccountSe
         .create_new_account(
             make_account_id(TEST_SNARK_ACCOUNT_ID),
             NewAccountData::new(
-                BitcoinAmount::from_sat(100_000_000),
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 NewAccountTypeState::Snark {
                     update_vk: PredicateKey::always_accept(),
                     initial_state_root: make_state_root(1),

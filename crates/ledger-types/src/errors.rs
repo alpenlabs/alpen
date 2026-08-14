@@ -53,6 +53,9 @@ pub enum StateError {
         add: BitcoinAmount,
     },
 
+    #[error("total ledger funds exceed the Bitcoin money supply")]
+    TotalFundsOverflow,
+
     #[error("out-of-order seqno change (cur {cur:?}, new {new:?})")]
     OooSeqnoChange { cur: Seqno, new: Seqno },
 

@@ -3169,7 +3169,8 @@ mod tests {
         for account_id in &account_ids {
             assert_eq!(
                 account_balance(&output.post_state, *account_id),
-                BitcoinAmount::from_sat(INITIAL_BALANCE),
+                BitcoinAmount::try_from(INITIAL_BALANCE)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 "cyclic transfers should preserve per-account net balance for every account"
             );
         }

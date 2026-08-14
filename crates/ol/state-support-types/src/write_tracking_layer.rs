@@ -97,7 +97,10 @@ where
         self.batch
             .global_writes()
             .limbo_funds_sats
-            .map(BitcoinAmount::from_sat)
+            .map(|sats| {
+                BitcoinAmount::try_from(sats)
+                    .expect("limbo funds must not exceed the Bitcoin money supply")
+            })
             .unwrap_or_else(|| self.base.limbo_funds())
     }
 
@@ -258,27 +261,32 @@ where
     fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
         let cur = self.limbo_funds();
         let amt = coin.amt();
-        let Some(new) = cur.checked_add(amt) else {
+        let Some(new_sats) = cur.to_sat().checked_add(amt.to_sat()) else {
             // Defuse the coin before returning: the whole STF is discarded on
             // this error, so no value is actually lost, and dropping a live coin
             // would panic in `Coin::drop`.
             coin.safely_consume_unchecked();
             return Err(StateError::LimboFundsOverflow { cur, add: amt });
         };
-        self.batch.global_writes_mut().limbo_funds_sats = Some(new.to_sat());
+        if BitcoinAmount::try_from(new_sats).is_err() {
+            coin.safely_consume_unchecked();
+            return Err(StateError::LimboFundsOverflow { cur, add: amt });
+        }
+        self.batch.global_writes_mut().limbo_funds_sats = Some(new_sats);
         coin.safely_consume_unchecked();
         Ok(())
     }
 
     fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
         let cur = self.limbo_funds();
-        let new = cur
-            .checked_sub(amt)
-            .ok_or(StateError::InsufficientLimboFunds {
-                need: amt,
-                have: cur,
-            })?;
-        self.batch.global_writes_mut().limbo_funds_sats = Some(new.to_sat());
+        let new_sats =
+            cur.to_sat()
+                .checked_sub(amt.to_sat())
+                .ok_or(StateError::InsufficientLimboFunds {
+                    need: amt,
+                    have: cur,
+                })?;
+        self.batch.global_writes_mut().limbo_funds_sats = Some(new_sats);
         Ok(Coin::new_unchecked(amt))
     }
 
@@ -441,8 +449,11 @@ mod tests {
     #[test]
     fn test_write_copies_to_batch() {
         let account_id = test_account_id(1);
-        let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let (base_layer, _) = setup_layer_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let original_balance = base_layer
             .get_account_state(account_id)
             .unwrap()
@@ -454,7 +465,10 @@ mod tests {
         // Modify account
         tracking
             .update_account(account_id, |acct: &mut OLAccountState| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                let coin = Coin::new_unchecked(
+                    BitcoinAmount::try_from(500)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                );
                 acct.add_balance(coin);
             })
             .unwrap();
@@ -464,7 +478,10 @@ mod tests {
 
         // Verify the modified balance through tracking state
         let modified_account = tracking.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(modified_account.balance(), BitcoinAmount::from_sat(1500));
+        assert_eq!(
+            modified_account.balance(),
+            BitcoinAmount::try_from(1500).expect("amount must not exceed the Bitcoin money supply")
+        );
 
         // Verify base state is unchanged
         let base_account = base_layer.get_account_state(account_id).unwrap().unwrap();
@@ -483,7 +500,10 @@ mod tests {
 
         let account_id = test_account_id(1);
         let snark_state = test_snark_account_state(1);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
+        let new_acct = test_new_snark_account_data(
+            &snark_state,
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply"),
+        );
 
         let serial = tracking.create_new_account(account_id, new_acct).unwrap();
 
@@ -493,7 +513,10 @@ mod tests {
         // Verify we can retrieve it
         let account = tracking.get_account_state(account_id).unwrap().unwrap();
         assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+        assert_eq!(
+            account.balance(),
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply")
+        );
 
         // Verify base is unchanged
         assert!(!base_layer.check_account_exists(account_id).unwrap());
@@ -569,8 +592,11 @@ mod tests {
     #[test]
     fn test_into_batch_returns_modifications() {
         let account_id = test_account_id(1);
-        let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let (base_layer, _) = setup_layer_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let diff = BatchDiffState::new(&base_layer, &[]);
         let mut tracking = WriteTrackingState::new_empty(&diff);
 
@@ -578,7 +604,10 @@ mod tests {
         tracking.set_cur_slot(100);
         tracking
             .update_account(account_id, |acct: &mut OLAccountState| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                let coin = Coin::new_unchecked(
+                    BitcoinAmount::try_from(500)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                );
                 acct.add_balance(coin);
             })
             .unwrap();
@@ -591,7 +620,10 @@ mod tests {
         assert!(batch.ledger().contains_account(&account_id));
 
         let account = batch.ledger().get_account(&account_id).unwrap();
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1500));
+        assert_eq!(
+            account.balance(),
+            BitcoinAmount::try_from(1500).expect("amount must not exceed the Bitcoin money supply")
+        );
     }
 
     #[test]

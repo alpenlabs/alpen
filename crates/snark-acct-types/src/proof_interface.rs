@@ -72,6 +72,8 @@ mod tests {
     use super::*;
     use crate::{AccumulatorClaim, OutputMessage, OutputTransfer, Seqno};
 
+    const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
     fn proof_state_strategy() -> impl Strategy<Value = ProofState> {
         (any::<[u8; 32]>(), any::<u64>()).prop_map(|(inner_state, next_idx)| ProofState {
             inner_state: inner_state.into(),
@@ -84,14 +86,17 @@ mod tests {
     }
 
     fn msg_payload_strategy() -> impl Strategy<Value = MsgPayload> {
-        (any::<u64>(), prop::collection::vec(any::<u8>(), 0..32)).prop_map(|(value, data)| {
-            MsgPayload {
-                value: BitcoinAmount::from_sat(value),
+        (
+            0..=MAX_BITCOIN_MONEY_SATS,
+            prop::collection::vec(any::<u8>(), 0..32),
+        )
+            .prop_map(|(value, data)| MsgPayload {
+                value: BitcoinAmount::try_from(value)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 data: data
                     .try_into()
                     .expect("message payload bytes must fit within SSZ max length"),
-            }
-        })
+            })
     }
 
     fn message_entry_strategy() -> impl Strategy<Value = MessageEntry> {
@@ -125,16 +130,21 @@ mod tests {
     }
 
     fn output_transfer_strategy() -> impl Strategy<Value = OutputTransfer> {
-        (account_id_strategy(), any::<u64>()).prop_map(|(dest, value)| OutputTransfer {
-            dest,
-            value: BitcoinAmount::from_sat(value),
+        (account_id_strategy(), 0..=MAX_BITCOIN_MONEY_SATS).prop_map(|(dest, value)| {
+            OutputTransfer {
+                dest,
+                value: BitcoinAmount::try_from(value)
+                    .expect("strategy only generates valid Bitcoin amounts"),
+            }
         })
     }
 
     fn new_predicate_strategy() -> impl Strategy<Value = Option<PredicateKey>> {
         prop::option::of(
-            prop::collection::vec(any::<u8>(), 0..32)
-                .prop_map(|condition| PredicateKey::new(PredicateTypeId::AlwaysAccept, condition)),
+            prop::collection::vec(any::<u8>(), 0..32).prop_map(|condition| {
+                PredicateKey::try_new(PredicateTypeId::AlwaysAccept, condition)
+                    .expect("strategy only generates valid predicate conditions")
+            }),
         )
     }
 

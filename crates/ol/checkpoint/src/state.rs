@@ -772,7 +772,7 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .balance(),
-            BitcoinAmount::from_sat(0),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
             "withdrawal must debit the full seeded balance"
         );
     }

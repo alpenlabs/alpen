@@ -1037,7 +1037,7 @@ mod tests {
             .create_new_account(
                 account_id,
                 NewAccountData::new(
-                    BitcoinAmount::zero(),
+                    BitcoinAmount::default(),
                     NewAccountTypeState::Snark {
                         update_vk: PredicateKey::always_accept(),
                         initial_state_root: final_root,

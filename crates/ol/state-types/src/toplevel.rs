@@ -53,7 +53,7 @@ impl OLState {
             ledger.create_account(*id, state)?;
         }
 
-        let total_ledger_funds = ledger.calculate_total_funds();
+        let total_ledger_funds = ledger.calculate_total_funds()?;
 
         let global = GlobalState::new(params.header.slot, next_serial);
         let epoch = EpochalState::new(
@@ -376,7 +376,7 @@ mod tests {
 
         // Create a new account in the batch.
         let new_acct = NewAccountData::new_snark(
-            BitcoinAmount::from_sat(1000),
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
             PredicateKey::always_accept(),
             [0u8; 32].into(),
         );
@@ -392,7 +392,10 @@ mod tests {
         // Verify account exists and has correct balance.
         assert!(state.get_account_state(&account_id).is_some());
         let account = state.get_account_state(&account_id).unwrap();
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
+        assert_eq!(
+            account.balance(),
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply")
+        );
         assert_eq!(account.serial(), serial);
     }
 
@@ -404,7 +407,7 @@ mod tests {
 
         // Create an account directly in state.
         let new_acct = NewAccountData::new_snark(
-            BitcoinAmount::from_sat(1000),
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
             PredicateKey::always_accept(),
             [0u8; 32].into(),
         );
@@ -419,7 +422,7 @@ mod tests {
             OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
         let updated_account = OLAccountState::new(
             serial,
-            BitcoinAmount::from_sat(2000),
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply"),
             OLAccountTypeState::Snark(snark_state_updated),
         );
         batch
@@ -431,7 +434,10 @@ mod tests {
 
         // Verify account was updated.
         let account = state.get_account_state(&account_id).unwrap();
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(2000));
+        assert_eq!(
+            account.balance(),
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply")
+        );
     }
 
     #[test]
@@ -450,7 +456,7 @@ mod tests {
 
         // Create two new accounts.
         let new_acct_1 = NewAccountData::new_snark(
-            BitcoinAmount::from_sat(1000),
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
             PredicateKey::always_accept(),
             [0u8; 32].into(),
         );
@@ -460,7 +466,7 @@ mod tests {
             .create_account_from_data(account_id_1, new_acct_1, serial_1);
 
         let new_acct_2 = NewAccountData::new_snark(
-            BitcoinAmount::from_sat(2000),
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply"),
             PredicateKey::always_accept(),
             [1u8; 32].into(),
         );
@@ -479,10 +485,16 @@ mod tests {
         assert!(state.get_account_state(&account_id_2).is_some());
 
         let account_1 = state.get_account_state(&account_id_1).unwrap();
-        assert_eq!(account_1.balance(), BitcoinAmount::from_sat(1000));
+        assert_eq!(
+            account_1.balance(),
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply")
+        );
 
         let account_2 = state.get_account_state(&account_id_2).unwrap();
-        assert_eq!(account_2.balance(), BitcoinAmount::from_sat(2000));
+        assert_eq!(
+            account_2.balance(),
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply")
+        );
     }
 
     #[test]
@@ -512,7 +524,7 @@ mod tests {
 
         // Create an existing account in state first.
         let new_acct = NewAccountData::new_snark(
-            BitcoinAmount::from_sat(1000),
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
             PredicateKey::always_accept(),
             [0u8; 32].into(),
         );
@@ -529,7 +541,7 @@ mod tests {
             OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
         let updated_account = OLAccountState::new(
             existing_serial,
-            BitcoinAmount::from_sat(5000),
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply"),
             OLAccountTypeState::Snark(updated_snark),
         );
         batch
@@ -538,7 +550,7 @@ mod tests {
 
         // Create a new account.
         let new_acct_data = NewAccountData::new_snark(
-            BitcoinAmount::from_sat(3000),
+            BitcoinAmount::try_from(3000).expect("amount must not exceed the Bitcoin money supply"),
             PredicateKey::always_accept(),
             [2u8; 32].into(),
         );
@@ -552,12 +564,18 @@ mod tests {
 
         // Verify existing account was updated.
         let existing_account = state.get_account_state(&existing_id).unwrap();
-        assert_eq!(existing_account.balance(), BitcoinAmount::from_sat(5000));
+        assert_eq!(
+            existing_account.balance(),
+            BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply")
+        );
         assert_eq!(existing_account.serial(), existing_serial);
 
         // Verify new account was created.
         let new_account = state.get_account_state(&new_id).unwrap();
-        assert_eq!(new_account.balance(), BitcoinAmount::from_sat(3000));
+        assert_eq!(
+            new_account.balance(),
+            BitcoinAmount::try_from(3000).expect("amount must not exceed the Bitcoin money supply")
+        );
         assert_eq!(new_account.serial(), new_serial);
     }
 

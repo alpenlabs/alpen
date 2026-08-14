@@ -289,7 +289,8 @@ fn make_feature_manifest(
             0,
             snark_serial,
             SubjectId::from([42u8; 32]),
-            BitcoinAmount::from_sat(150_000_000),
+            BitcoinAmount::try_from(150_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
         ),
         ManifestPlan::Empty => make_empty_manifest(height, height as u8),
     }

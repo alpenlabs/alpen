@@ -70,7 +70,7 @@ impl AccountIntrinsicState {
 
     /// Creates a new empty account with no balance.
     pub fn new_empty(serial: AccountSerial) -> Self {
-        Self::new(AccountTypeId::Empty, serial, 0.into())
+        Self::new(AccountTypeId::Empty, serial, BitcoinAmount::default())
     }
 
     pub fn raw_ty(&self) -> RawAccountTypeId {
@@ -115,18 +115,23 @@ mod tests {
 
     use super::*;
 
+    const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
     mod account_intrinsic_state {
         use super::*;
 
         ssz_proptest!(
             AccountIntrinsicState,
-            (any::<u16>(), any::<u32>(), any::<u64>()).prop_map(|(raw_ty, serial, sats)| {
-                AccountIntrinsicState {
-                    raw_ty,
-                    serial: AccountSerial::new(serial),
-                    balance: BitcoinAmount::from_sat(sats),
+            (any::<u16>(), any::<u32>(), 0..=MAX_BITCOIN_MONEY_SATS).prop_map(
+                |(raw_ty, serial, sats)| {
+                    AccountIntrinsicState {
+                        raw_ty,
+                        serial: AccountSerial::new(serial),
+                        balance: BitcoinAmount::try_from(sats)
+                            .expect("amount must not exceed the Bitcoin money supply"),
+                    }
                 }
-            })
+            )
         );
 
         #[test]
@@ -148,7 +153,7 @@ mod tests {
             (
                 any::<u16>(),
                 any::<u32>(),
-                any::<u64>(),
+                0..=MAX_BITCOIN_MONEY_SATS,
                 prop::collection::vec(any::<u8>(), 0..100)
             )
                 .prop_map(|(raw_ty, serial, sats, encoded)| {
@@ -156,7 +161,8 @@ mod tests {
                         intrinsics: AccountIntrinsicState {
                             raw_ty,
                             serial: AccountSerial::new(serial),
-                            balance: BitcoinAmount::from_sat(sats),
+                            balance: BitcoinAmount::try_from(sats)
+                                .expect("amount must not exceed the Bitcoin money supply"),
                         },
                         encoded_state: encoded
                             .try_into()
@@ -185,18 +191,23 @@ mod tests {
 
         ssz_proptest!(
             AcctStateSummary,
-            (any::<u16>(), any::<u32>(), any::<u64>(), any::<[u8; 32]>()).prop_map(
-                |(raw_ty, serial, sats, root)| {
+            (
+                any::<u16>(),
+                any::<u32>(),
+                0..=MAX_BITCOIN_MONEY_SATS,
+                any::<[u8; 32]>()
+            )
+                .prop_map(|(raw_ty, serial, sats, root)| {
                     AcctStateSummary {
                         intrinsics: AccountIntrinsicState {
                             raw_ty,
                             serial: AccountSerial::new(serial),
-                            balance: BitcoinAmount::from_sat(sats),
+                            balance: BitcoinAmount::try_from(sats)
+                                .expect("amount must not exceed the Bitcoin money supply"),
                         },
                         typed_state_root: root.into(),
                     }
-                }
-            )
+                })
         );
 
         #[test]

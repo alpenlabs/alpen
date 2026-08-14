@@ -1215,8 +1215,11 @@ mod tests {
         let mmr_id = MmrId::SnarkMsgInbox(account_id);
         let raw_mmr_id = mmr_id.to_bytes();
         let leaf_pos = LeafPos::new(0);
-        let payload =
-            MsgPayload::from_bytes(BitcoinAmount::from_sat(42), vec![0xaa, 0xbb]).expect("payload");
+        let payload = MsgPayload::from_bytes(
+            BitcoinAmount::try_from(42).expect("amount must not exceed the Bitcoin money supply"),
+            vec![0xaa, 0xbb],
+        )
+        .expect("payload");
         let message = MessageEntry::new(source, 12, payload);
         let leaf_hash = message.compute_msg_commitment();
         let preimage = message.as_ssz_bytes();

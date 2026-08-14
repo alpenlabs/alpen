@@ -357,7 +357,9 @@ impl TryFrom<RpcMsgPayload> for MsgPayload {
     type Error = MsgPayloadError;
 
     fn try_from(rpc: RpcMsgPayload) -> Result<Self, Self::Error> {
-        MsgPayload::from_bytes(BitcoinAmount::from_sat(rpc.value), rpc.data.into())
+        let value = BitcoinAmount::try_from(rpc.value)
+            .map_err(|_| MsgPayloadError::ValueTooLarge { sats: rpc.value })?;
+        MsgPayload::from_bytes(value, rpc.data.into())
     }
 }
 
@@ -395,5 +397,38 @@ impl RpcProofState {
 impl From<RpcProofState> for ProofState {
     fn from(rpc: RpcProofState) -> Self {
         ProofState::new(rpc.inner_state.0.into(), rpc.next_inbox_msg_idx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
+    #[test]
+    fn rpc_msg_payload_accepts_max_money_value() {
+        let rpc = RpcMsgPayload {
+            value: MAX_BITCOIN_MONEY_SATS,
+            data: vec![1, 2, 3].into(),
+        };
+
+        let payload = MsgPayload::try_from(rpc).expect("max-money value must convert");
+
+        assert_eq!(payload.value().to_sat(), MAX_BITCOIN_MONEY_SATS);
+        assert_eq!(payload.data(), &[1, 2, 3]);
+    }
+
+    #[test]
+    fn rpc_msg_payload_rejects_oversized_value() {
+        let sats = MAX_BITCOIN_MONEY_SATS + 1;
+        let rpc = RpcMsgPayload {
+            value: sats,
+            data: vec![].into(),
+        };
+
+        let err = MsgPayload::try_from(rpc).expect_err("oversized value must fail");
+
+        assert_eq!(err, MsgPayloadError::ValueTooLarge { sats });
     }
 }

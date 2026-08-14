@@ -241,7 +241,7 @@ fn process_deposit_log<S: IStateAccessorMut>(
     deposit: &DepositLog,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    let amt_btc = BitcoinAmount::from_sat(deposit.amount);
+    let amt_btc = BitcoinAmount::try_from(deposit.amount).map_err(|_| ExecError::AmountOverflow)?;
 
     // Resolve the destination before minting any value.  All the fallible steps
     // run here so their errors propagate cleanly; only once we know whether the
@@ -422,8 +422,13 @@ fn process_ee_predicate_key_update<S: IStateAccessorMut>(
 /// wrapped in the standard SPS-52 message format under
 /// [`PREDICATE_UPDATE_MSG_TYPE_ID`].
 pub(crate) fn build_predicate_update_payload(new_vk: &PredicateKey) -> MsgPayload {
-    let msg_data = PredicateUpdateMsgData::new(new_vk.as_buf_ref().to_bytes())
-        .expect("predicate key fits in message data");
+    let msg_data = PredicateUpdateMsgData::new(
+        new_vk
+            .try_as_buf_ref()
+            .expect("predicate update key must be valid")
+            .to_bytes(),
+    )
+    .expect("predicate key fits in message data");
     let body = encode_to_vec(&msg_data).expect("predicate update message data should encode");
     let msg = OwnedMsg::new(PREDICATE_UPDATE_MSG_TYPE_ID, body)
         .expect("predicate update message body must fit into msg-fmt envelope");

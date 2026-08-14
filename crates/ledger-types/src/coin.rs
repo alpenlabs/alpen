@@ -34,7 +34,7 @@ impl Coin {
     ///
     /// This is always safe since it creates no value.
     pub fn zero() -> Self {
-        Self(BitcoinAmount::zero())
+        Self(BitcoinAmount::default())
     }
 
     /// Gets the amount of value this coin represents.
@@ -49,14 +49,15 @@ impl Coin {
     /// together hold exactly what `self` did before.  Returns an error, leaving
     /// `self` untouched, if `amt` exceeds this coin's value.
     pub fn split_out(&mut self, amt: BitcoinAmount) -> Result<Self, CoinError> {
-        let Some(remainder) = self.0.checked_sub(amt) else {
+        let Some(remainder_sats) = self.0.to_sat().checked_sub(amt.to_sat()) else {
             return Err(CoinError::InsufficientValue {
                 have: self.0.to_sat(),
                 want: amt.to_sat(),
             });
         };
 
-        self.0 = remainder;
+        self.0 = BitcoinAmount::try_from(remainder_sats)
+            .expect("subtracting from a valid amount must remain valid");
         Ok(Self(amt))
     }
 
@@ -82,7 +83,7 @@ impl Coin {
         let amt = self.0;
         self.safely_consume_unchecked();
         assert!(
-            amt.is_zero(),
+            amt == BitcoinAmount::default(),
             "coin: consumed nonzero coin as zero ({} sats)",
             amt.to_sat()
         );
@@ -104,41 +105,57 @@ mod tests {
 
     #[test]
     fn test_coin_create_destroy() {
-        let coin = Coin::new_unchecked(123.into());
+        let coin = Coin::new_unchecked(BitcoinAmount::try_from(123).expect("valid test amount"));
         coin.safely_consume_unchecked();
     }
 
     #[test]
     #[should_panic]
     fn test_coin_create_panic() {
-        let _coin = Coin::new_unchecked(123.into());
+        let _coin = Coin::new_unchecked(BitcoinAmount::try_from(123).expect("valid test amount"));
         // should panic
     }
 
     #[test]
     fn test_coin_zero_consume_zero() {
         let coin = Coin::zero();
-        assert!(coin.amt().is_zero());
+        assert_eq!(coin.amt(), BitcoinAmount::default());
         coin.consume_zero();
     }
 
     #[test]
     fn test_coin_split_out_preserves_total() {
-        let mut coin = Coin::new_unchecked(BitcoinAmount::from_sat(100));
+        let mut coin = Coin::new_unchecked(
+            BitcoinAmount::try_from(100).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let taken = coin
-            .split_out(BitcoinAmount::from_sat(30))
+            .split_out(
+                BitcoinAmount::try_from(30)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
             .expect("split within value");
-        assert_eq!(taken.amt(), BitcoinAmount::from_sat(30));
-        assert_eq!(coin.amt(), BitcoinAmount::from_sat(70));
+        assert_eq!(
+            taken.amt(),
+            BitcoinAmount::try_from(30).expect("amount must not exceed the Bitcoin money supply")
+        );
+        assert_eq!(
+            coin.amt(),
+            BitcoinAmount::try_from(70).expect("amount must not exceed the Bitcoin money supply")
+        );
         taken.safely_consume_unchecked();
         coin.safely_consume_unchecked();
     }
 
     #[test]
     fn test_coin_split_out_exact_leaves_zero() {
-        let mut coin = Coin::new_unchecked(BitcoinAmount::from_sat(42));
+        let mut coin = Coin::new_unchecked(
+            BitcoinAmount::try_from(42).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let taken = coin
-            .split_out(BitcoinAmount::from_sat(42))
+            .split_out(
+                BitcoinAmount::try_from(42)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
             .expect("split within value");
         taken.safely_consume_unchecked();
         coin.consume_zero();
@@ -146,20 +163,30 @@ mod tests {
 
     #[test]
     fn test_coin_split_out_insufficient_errors() {
-        let mut coin = Coin::new_unchecked(BitcoinAmount::from_sat(10));
+        let mut coin = Coin::new_unchecked(
+            BitcoinAmount::try_from(10).expect("amount must not exceed the Bitcoin money supply"),
+        );
         let err = coin
-            .split_out(BitcoinAmount::from_sat(11))
+            .split_out(
+                BitcoinAmount::try_from(11)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
             .expect_err("split beyond value must fail");
         assert_eq!(err, CoinError::InsufficientValue { have: 10, want: 11 });
         // `coin` is untouched by the failed split, so it still must be consumed.
-        assert_eq!(coin.amt(), BitcoinAmount::from_sat(10));
+        assert_eq!(
+            coin.amt(),
+            BitcoinAmount::try_from(10).expect("amount must not exceed the Bitcoin money supply")
+        );
         coin.safely_consume_unchecked();
     }
 
     #[test]
     #[should_panic]
     fn test_coin_consume_zero_nonzero_panics() {
-        let coin = Coin::new_unchecked(BitcoinAmount::from_sat(1));
+        let coin = Coin::new_unchecked(
+            BitcoinAmount::try_from(1).expect("amount must not exceed the Bitcoin money supply"),
+        );
         coin.consume_zero();
     }
 }

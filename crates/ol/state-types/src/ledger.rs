@@ -89,13 +89,17 @@ impl TsnlLedgerAccountsTable {
     }
 
     /// Calculates the total funds across all accounts in the ledger.
-    pub(crate) fn calculate_total_funds(&self) -> BitcoinAmount {
-        self.accounts
+    ///
+    /// Errors if the total exceeds the Bitcoin money supply.
+    pub(crate) fn calculate_total_funds(&self) -> StateResult<BitcoinAmount> {
+        let total_sats = self
+            .accounts
             .iter()
-            .fold(BitcoinAmount::ZERO, |acc, entry| {
-                acc.checked_add(entry.state.balance)
-                    .expect("ol/state: total funds overflow")
+            .try_fold(0u64, |acc, entry| {
+                acc.checked_add(entry.state.balance.to_sat())
             })
+            .ok_or(StateError::TotalFundsOverflow)?;
+        BitcoinAmount::try_from(total_sats).map_err(|_| StateError::TotalFundsOverflow)
     }
 }
 
@@ -147,7 +151,8 @@ mod tests {
         // Create an account
         let account_id = test_account_id(1);
         let serial = AccountSerial::zero();
-        let balance = BitcoinAmount::from_sat(1000);
+        let balance =
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply");
         let account_state = create_empty_account_state(serial, balance);
 
         // Add the account
@@ -182,7 +187,8 @@ mod tests {
         for (i, account_id) in account_ids.iter().enumerate() {
             let serial = next_serial;
             next_serial = serial.incr();
-            let balance = BitcoinAmount::from_sat((i as u64 + 1) * 100);
+            let balance = BitcoinAmount::try_from((i as u64 + 1) * 100)
+                .expect("amount must not exceed the Bitcoin money supply");
             let account_state = create_empty_account_state(serial, balance);
 
             let result = table.create_account(*account_id, account_state);
@@ -214,14 +220,20 @@ mod tests {
         // Create first account
         let account_id = test_account_id(1);
         let serial1 = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
-        let account_state1 = create_empty_account_state(serial1, BitcoinAmount::from_sat(1000));
+        let account_state1 = create_empty_account_state(
+            serial1,
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply"),
+        );
 
         let result1 = table.create_account(account_id, account_state1);
         assert!(result1.is_ok());
 
         // Try to create account with same ID
         let serial2 = serial1.incr();
-        let account_state2 = create_empty_account_state(serial2, BitcoinAmount::from_sat(2000));
+        let account_state2 = create_empty_account_state(
+            serial2,
+            BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply"),
+        );
 
         let result2 = table.create_account(account_id, account_state2);
         assert!(result2.is_err());
@@ -242,7 +254,8 @@ mod tests {
         // Create an account
         let account_id = test_account_id(1);
         let serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
-        let initial_balance = BitcoinAmount::from_sat(1000);
+        let initial_balance =
+            BitcoinAmount::try_from(1000).expect("amount must not exceed the Bitcoin money supply");
         let account_state = create_empty_account_state(serial, initial_balance);
 
         table.create_account(account_id, account_state).unwrap();
@@ -275,6 +288,58 @@ mod tests {
     }
 
     #[test]
+    fn test_calculate_total_funds_sums_balances() {
+        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
+
+        for i in 1..=3u8 {
+            let serial = next_serial;
+            next_serial = serial.incr();
+            let balance = BitcoinAmount::try_from(i as u64 * 100)
+                .expect("amount must not exceed the Bitcoin money supply");
+            let account_state = create_empty_account_state(serial, balance);
+
+            table
+                .create_account(test_account_id(i), account_state)
+                .unwrap();
+        }
+
+        let total = table
+            .calculate_total_funds()
+            .expect("total within the money supply must succeed");
+        assert_eq!(
+            total,
+            BitcoinAmount::try_from(600).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    #[test]
+    fn test_calculate_total_funds_rejects_oversized_total() {
+        const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
+        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
+
+        // Two individually valid max-money balances whose sum is above the cap.
+        for i in 1..=2u8 {
+            let serial = next_serial;
+            next_serial = serial.incr();
+            let balance = BitcoinAmount::try_from(MAX_BITCOIN_MONEY_SATS)
+                .expect("amount must not exceed the Bitcoin money supply");
+            let account_state = create_empty_account_state(serial, balance);
+
+            table
+                .create_account(test_account_id(i), account_state)
+                .unwrap();
+        }
+
+        let err = table
+            .calculate_total_funds()
+            .expect_err("total above the money supply must fail");
+        assert!(matches!(err, StateError::TotalFundsOverflow));
+    }
+
+    #[test]
     fn test_ssz_roundtrip_empty_table() {
         let table = TsnlLedgerAccountsTable::new_empty();
 
@@ -299,7 +364,8 @@ mod tests {
             let account_id = test_account_id(i);
             let serial = next_serial;
             next_serial = serial.incr();
-            let balance = BitcoinAmount::from_sat((i as u64) * 1000);
+            let balance = BitcoinAmount::try_from((i as u64) * 1000)
+                .expect("amount must not exceed the Bitcoin money supply");
             let account_state = create_empty_account_state(serial, balance);
 
             table.create_account(account_id, account_state).unwrap();

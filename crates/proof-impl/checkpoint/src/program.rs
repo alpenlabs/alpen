@@ -69,7 +69,8 @@ impl CheckpointProgram {
     /// functional-test params so the resulting witness verifies under `Bip340Schnorr`.
     pub fn test_predicate_key() -> PredicateKey {
         let pk = test_signing_key().verifying_key().to_bytes().to_vec();
-        PredicateKey::new(PredicateTypeId::Bip340Schnorr, pk)
+        PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, pk)
+            .expect("predicate condition must fit within the maximum length")
     }
 
     /// Executes the checkpoint program using the native host for testing.

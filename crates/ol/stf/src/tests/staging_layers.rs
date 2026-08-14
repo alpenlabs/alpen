@@ -34,7 +34,10 @@ fn test_process_single_tx_stages_sau_writes() {
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -42,7 +45,11 @@ fn test_process_single_tx_stages_sau_writes() {
     let base_root = fixture.compute_state_root();
 
     let tx = fixture.sau_tx(snark_acct_id, |sau| {
-        sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+        sau.transfer(
+            recipient_id,
+            BitcoinAmount::try_from(10_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        )
     });
 
     let output = ExecOutputBuffer::new_empty();
@@ -59,7 +66,11 @@ fn test_process_single_tx_stages_sau_writes() {
     let staged_sender_account_state = staged_sender
         .as_snark_account()
         .expect("sender should be snark");
-    assert_eq!(staged_sender.balance(), BitcoinAmount::from_sat(90_000_000));
+    assert_eq!(
+        staged_sender.balance(),
+        BitcoinAmount::try_from(90_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
+    );
     assert_eq!(*staged_sender_account_state.seqno().inner(), 1);
     assert_eq!(
         staged_sender_account_state.inner_state_root(),
@@ -72,14 +83,19 @@ fn test_process_single_tx_stages_sau_writes() {
         .expect("recipient should exist");
     assert_eq!(
         staged_recipient.balance(),
-        BitcoinAmount::from_sat(10_000_000)
+        BitcoinAmount::try_from(10_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
 
     let base_sender = base_state
         .get_account_state(snark_acct_id)
         .expect("sender lookup should succeed")
         .expect("sender should exist");
-    assert_eq!(base_sender.balance(), BitcoinAmount::from_sat(100_000_000));
+    assert_eq!(
+        base_sender.balance(),
+        BitcoinAmount::try_from(100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
+    );
     assert_eq!(
         base_state
             .compute_state_root()
@@ -97,7 +113,8 @@ fn test_process_single_tx_stages_sau_writes() {
             .expect("sender lookup should succeed")
             .expect("sender should exist")
             .balance(),
-        BitcoinAmount::from_sat(90_000_000)
+        BitcoinAmount::try_from(90_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
 }
 
@@ -115,7 +132,8 @@ fn assert_transfer_staged(
         .expect("sender should exist");
     assert_eq!(
         staged_sender.balance(),
-        BitcoinAmount::from_sat(expected_sender_balance)
+        BitcoinAmount::try_from(expected_sender_balance)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
     assert_eq!(
         *staged_sender
@@ -131,7 +149,8 @@ fn assert_transfer_staged(
             .expect("recipient lookup should succeed")
             .expect("recipient should exist")
             .balance(),
-        BitcoinAmount::from_sat(expected_recipient_balance)
+        BitcoinAmount::try_from(expected_recipient_balance)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
 }
 
@@ -141,14 +160,21 @@ fn test_process_single_tx_reads_prior_staged_writes() {
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
     let base_state = fixture.state().clone();
 
     let tx1 = fixture.sau_tx(snark_acct_id, |sau| {
-        sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+        sau.transfer(
+            recipient_id,
+            BitcoinAmount::try_from(10_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        )
     });
 
     let output = ExecOutputBuffer::new_empty();
@@ -217,7 +243,8 @@ fn test_process_single_tx_reads_prior_staged_writes() {
             .expect("sender lookup should succeed")
             .expect("sender should exist")
             .balance(),
-        BitcoinAmount::from_sat(100_000_000)
+        BitcoinAmount::try_from(100_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
 }
 
@@ -227,14 +254,21 @@ fn test_process_single_tx_loop_can_restore_failed_tx_batch() {
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
     let base_state = fixture.state().clone();
 
     let tx1 = fixture.sau_tx(snark_acct_id, |sau| {
-        sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+        sau.transfer(
+            recipient_id,
+            BitcoinAmount::try_from(10_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        )
     });
 
     let output = ExecOutputBuffer::new_empty();
@@ -317,14 +351,21 @@ fn test_process_tx_segment_reads_staged_writes_between_txs() {
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
     let base_state = fixture.state().clone();
 
     let tx1 = fixture.sau_tx(snark_acct_id, |sau| {
-        sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+        sau.transfer(
+            recipient_id,
+            BitcoinAmount::try_from(10_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        )
     });
 
     let mut expected_after_tx1 = base_state.clone();
@@ -381,7 +422,8 @@ fn test_process_tx_segment_reads_staged_writes_between_txs() {
             .expect("recipient lookup should succeed")
             .expect("recipient should exist")
             .balance(),
-        BitcoinAmount::from_sat(15_000_000)
+        BitcoinAmount::try_from(15_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
 }
 
@@ -420,7 +462,7 @@ fn test_write_tracking_stages_account_creation_before_apply() {
         .expect("staged lookup should succeed")
         .expect("staged account should be readable");
     assert_eq!(staged_account.serial(), expected_serial);
-    assert_eq!(staged_account.balance(), BitcoinAmount::zero());
+    assert_eq!(staged_account.balance(), BitcoinAmount::default());
 
     let mut applied_state = base_state.clone();
     applied_state
@@ -441,7 +483,10 @@ fn test_multi_effect_sau_coalesces_staged_account_writes() {
     let message_recipient_id = make_account_id(MESSAGE_RECIPIENT_ACCOUNT_ID);
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(sender_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(recipient1_id)
         .with_genesis_empty_account(recipient2_id)
@@ -450,18 +495,26 @@ fn test_multi_effect_sau_coalesces_staged_account_writes() {
     let base_state = fixture.state().clone();
 
     let tx = fixture.sau_tx(sender_acct_id, |sau| {
-        sau.transfer(recipient1_id, BitcoinAmount::from_sat(10_000_000))
-            .transfer(recipient2_id, BitcoinAmount::from_sat(20_000_000))
-            .output_message(
-                message_recipient_id,
-                BitcoinAmount::from_sat(1),
-                b"first".to_vec(),
-            )
-            .output_message(
-                message_recipient_id,
-                BitcoinAmount::from_sat(2),
-                b"second".to_vec(),
-            )
+        sau.transfer(
+            recipient1_id,
+            BitcoinAmount::try_from(10_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        )
+        .transfer(
+            recipient2_id,
+            BitcoinAmount::try_from(20_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        )
+        .output_message(
+            message_recipient_id,
+            BitcoinAmount::try_from(1).expect("amount must not exceed the Bitcoin money supply"),
+            b"first".to_vec(),
+        )
+        .output_message(
+            message_recipient_id,
+            BitcoinAmount::try_from(2).expect("amount must not exceed the Bitcoin money supply"),
+            b"second".to_vec(),
+        )
     });
 
     let output = ExecOutputBuffer::new_empty();
@@ -491,7 +544,11 @@ fn test_multi_effect_sau_coalesces_staged_account_writes() {
         .get_account_state(sender_acct_id)
         .expect("sender lookup should succeed")
         .expect("sender should exist");
-    assert_eq!(staged_sender.balance(), BitcoinAmount::from_sat(69_999_997));
+    assert_eq!(
+        staged_sender.balance(),
+        BitcoinAmount::try_from(69_999_997)
+            .expect("amount must not exceed the Bitcoin money supply")
+    );
     let staged_sender_account_state = staged_sender
         .as_snark_account()
         .expect("sender should be snark");
@@ -507,7 +564,8 @@ fn test_multi_effect_sau_coalesces_staged_account_writes() {
             .expect("recipient lookup should succeed")
             .expect("recipient should exist")
             .balance(),
-        BitcoinAmount::from_sat(10_000_000)
+        BitcoinAmount::try_from(10_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
     assert_eq!(
         tracking
@@ -515,13 +573,17 @@ fn test_multi_effect_sau_coalesces_staged_account_writes() {
             .expect("recipient lookup should succeed")
             .expect("recipient should exist")
             .balance(),
-        BitcoinAmount::from_sat(20_000_000)
+        BitcoinAmount::try_from(20_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
     let message_recipient = tracking
         .get_account_state(message_recipient_id)
         .expect("message recipient lookup should succeed")
         .expect("message recipient should exist");
-    assert_eq!(message_recipient.balance(), BitcoinAmount::from_sat(3));
+    assert_eq!(
+        message_recipient.balance(),
+        BitcoinAmount::try_from(3).expect("amount must not exceed the Bitcoin money supply")
+    );
     assert_eq!(
         message_recipient
             .as_snark_account()
@@ -538,7 +600,10 @@ fn test_assembly_and_verify_write_tracking_reach_same_state() {
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -549,7 +614,11 @@ fn test_assembly_and_verify_write_tracking_reach_same_state() {
         gam.with_payload(b"assembly verify equivalence".to_vec())
     });
     let sau_tx = fixture.sau_tx(snark_acct_id, |sau| {
-        sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+        sau.transfer(
+            recipient_id,
+            BitcoinAmount::try_from(10_000_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        )
     });
     let block = fixture
         .child_block()
@@ -606,7 +675,10 @@ fn test_assembly_and_verify_write_tracking_reach_same_state() {
 fn test_verify_block_tracks_snark_inbox_writes() {
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(make_account_id(TEST_SNARK_ACCOUNT_ID), |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
@@ -639,7 +711,7 @@ fn test_verify_block_tracks_snark_inbox_writes() {
     assert_eq!(inbox_write.account_id(), snark_acct_id);
     assert_eq!(inbox_write.index(), 0);
     assert_eq!(inbox_write.entry().incl_epoch(), 1);
-    let expected_payload = MsgPayload::from_bytes(BitcoinAmount::zero(), payload)
+    let expected_payload = MsgPayload::from_bytes(BitcoinAmount::default(), payload)
         .expect("message payload bytes must fit within SSZ max length");
     assert_eq!(inbox_write.entry().payload(), &expected_payload);
 

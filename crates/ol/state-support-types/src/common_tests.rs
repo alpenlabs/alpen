@@ -81,17 +81,23 @@ impl Fixture {
     /// Slot the base is seeded at.
     pub(crate) const SLOT: u64 = 100;
 
-    /// Balance of the snark account that already exists in the base.
-    pub(crate) const ACCOUNT_BALANCE: BitcoinAmount = BitcoinAmount::from_sat(1_000);
+    /// Returns the balance of the snark account that already exists in the base.
+    pub(crate) fn account_balance() -> BitcoinAmount {
+        BitcoinAmount::try_from(1_000).expect("fixture amount must be valid")
+    }
 
     /// Inner state root seed of the account that already exists in the base.
     pub(crate) const ACCOUNT_STATE_SEED: u8 = 1;
 
-    /// Limbo funds seeded on the base.
-    pub(crate) const LIMBO_FUNDS: BitcoinAmount = BitcoinAmount::from_sat(2_000);
+    /// Returns the limbo funds seeded on the base.
+    pub(crate) fn limbo_funds() -> BitcoinAmount {
+        BitcoinAmount::try_from(2_000).expect("fixture amount must be valid")
+    }
 
-    /// Total ledger balance seeded on the base.
-    pub(crate) const TOTAL_LEDGER_BALANCE: BitcoinAmount = BitcoinAmount::from_sat(9_000);
+    /// Returns the total ledger balance seeded on the base.
+    pub(crate) fn total_ledger_balance() -> BitcoinAmount {
+        BitcoinAmount::try_from(9_000).expect("fixture amount must be valid")
+    }
 
     /// Number of pending ASM logs buffered on the base.
     pub(crate) const PENDING_LOGS: usize = 3;
@@ -106,14 +112,14 @@ impl Fixture {
                 account_id,
                 test_new_snark_account_data(
                     &test_snark_account_state(Self::ACCOUNT_STATE_SEED),
-                    Self::ACCOUNT_BALANCE,
+                    Self::account_balance(),
                 ),
             )
             .expect("fixture: create account");
 
-        base.add_limbo_funds_coin(Coin::new_unchecked(Self::LIMBO_FUNDS))
+        base.add_limbo_funds_coin(Coin::new_unchecked(Self::limbo_funds()))
             .expect("fixture: add limbo funds");
-        base.set_total_ledger_balance(Self::TOTAL_LEDGER_BALANCE);
+        base.set_total_ledger_balance(Self::total_ledger_balance());
         base.set_asm_recorded_epoch(Self::asm_recorded_epoch());
 
         // Indices into the L1 block refs MMR are L1 heights, so the record has
@@ -168,12 +174,14 @@ impl Fixture {
 
 /// Returns `amt` increased by `sats`.
 fn plus_sats(amt: BitcoinAmount, sats: u64) -> BitcoinAmount {
-    BitcoinAmount::from_sat(amt.to_sat() + sats)
+    BitcoinAmount::try_from(amt.to_sat() + sats)
+        .expect("amount must not exceed the Bitcoin money supply")
 }
 
 /// Returns `amt` decreased by `sats`.
 fn minus_sats(amt: BitcoinAmount, sats: u64) -> BitcoinAmount {
-    BitcoinAmount::from_sat(amt.to_sat() - sats)
+    BitcoinAmount::try_from(amt.to_sat() - sats)
+        .expect("amount must not exceed the Bitcoin money supply")
 }
 
 // =============================================================================
@@ -184,7 +192,7 @@ fn minus_sats(amt: BitcoinAmount, sats: u64) -> BitcoinAmount {
 pub(crate) fn read_falls_back_to_base<S: IStateAccessor>(fx: &Fixture, layer: &S) {
     let account = layer.get_account_state(fx.account_id()).unwrap().unwrap();
     assert_eq!(account.serial(), fx.serial());
-    assert_eq!(account.balance(), Fixture::ACCOUNT_BALANCE);
+    assert_eq!(account.balance(), Fixture::account_balance());
 }
 
 /// `check_account_exists` reflects presence in the base.
@@ -231,8 +239,11 @@ pub(crate) fn reads_all_fields_from_base<S: IStateAccessor>(fx: &Fixture, layer:
     // comparisons above are meaningful rather than trivially true.
     assert_eq!(layer.cur_epoch(), Fixture::EPOCH);
     assert_eq!(layer.cur_slot(), Fixture::SLOT);
-    assert_eq!(layer.limbo_funds(), Fixture::LIMBO_FUNDS);
-    assert_eq!(layer.total_ledger_balance(), Fixture::TOTAL_LEDGER_BALANCE);
+    assert_eq!(layer.limbo_funds(), Fixture::limbo_funds());
+    assert_eq!(
+        layer.total_ledger_balance(),
+        Fixture::total_ledger_balance()
+    );
     assert_eq!(*layer.asm_recorded_epoch(), Fixture::asm_recorded_epoch());
     assert_eq!(layer.pending_asm_logs_len(), Fixture::PENDING_LOGS);
     assert!(!layer.pending_asm_logs_full());
@@ -283,12 +294,18 @@ pub(crate) fn find_serial_returns_none_for_unknown<S: IStateAccessor>(_fx: &Fixt
 pub(crate) fn update_account_isolated_from_base<S: IStateAccessorMut>(fx: &Fixture, layer: &mut S) {
     layer
         .update_account(fx.account_id(), |acct| {
-            acct.add_balance(Coin::new_unchecked(BitcoinAmount::from_sat(500)));
+            acct.add_balance(Coin::new_unchecked(
+                BitcoinAmount::try_from(500)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ));
         })
         .unwrap();
 
     let account = layer.get_account_state(fx.account_id()).unwrap().unwrap();
-    assert_eq!(account.balance(), plus_sats(Fixture::ACCOUNT_BALANCE, 500));
+    assert_eq!(
+        account.balance(),
+        plus_sats(Fixture::account_balance(), 500)
+    );
 
     // Base is untouched.
     let base_account = fx
@@ -296,24 +313,33 @@ pub(crate) fn update_account_isolated_from_base<S: IStateAccessorMut>(fx: &Fixtu
         .get_account_state(fx.account_id())
         .unwrap()
         .unwrap();
-    assert_eq!(base_account.balance(), Fixture::ACCOUNT_BALANCE);
+    assert_eq!(base_account.balance(), Fixture::account_balance());
 }
 
 /// Repeated updates to the same account accumulate on the layer's copy.
 pub(crate) fn repeated_update_accumulates<S: IStateAccessorMut>(fx: &Fixture, layer: &mut S) {
     layer
         .update_account(fx.account_id(), |acct| {
-            acct.add_balance(Coin::new_unchecked(BitcoinAmount::from_sat(500)));
+            acct.add_balance(Coin::new_unchecked(
+                BitcoinAmount::try_from(500)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ));
         })
         .unwrap();
     layer
         .update_account(fx.account_id(), |acct| {
-            acct.add_balance(Coin::new_unchecked(BitcoinAmount::from_sat(100)));
+            acct.add_balance(Coin::new_unchecked(
+                BitcoinAmount::try_from(100)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ));
         })
         .unwrap();
 
     let account = layer.get_account_state(fx.account_id()).unwrap().unwrap();
-    assert_eq!(account.balance(), plus_sats(Fixture::ACCOUNT_BALANCE, 600));
+    assert_eq!(
+        account.balance(),
+        plus_sats(Fixture::account_balance(), 600)
+    );
 }
 
 /// Taking balance from an account debits it and yields a [`Coin`] of the taken
@@ -321,14 +347,20 @@ pub(crate) fn repeated_update_accumulates<S: IStateAccessorMut>(fx: &Fixture, la
 pub(crate) fn take_balance_reads_back<S: IStateAccessorMut>(fx: &Fixture, layer: &mut S) {
     let coin = layer
         .update_account(fx.account_id(), |acct| {
-            acct.take_balance(BitcoinAmount::from_sat(300))
+            acct.take_balance(
+                BitcoinAmount::try_from(300)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .unwrap()
         .unwrap();
     coin.safely_consume_unchecked();
 
     let account = layer.get_account_state(fx.account_id()).unwrap().unwrap();
-    assert_eq!(account.balance(), minus_sats(Fixture::ACCOUNT_BALANCE, 300));
+    assert_eq!(
+        account.balance(),
+        minus_sats(Fixture::account_balance(), 300)
+    );
 }
 
 /// Taking an account's entire balance leaves it at zero rather than erroring.
@@ -338,15 +370,15 @@ pub(crate) fn take_balance_exact_empties_account<S: IStateAccessorMut>(
 ) {
     let coin = layer
         .update_account(fx.account_id(), |acct| {
-            acct.take_balance(Fixture::ACCOUNT_BALANCE)
+            acct.take_balance(Fixture::account_balance())
         })
         .unwrap()
         .unwrap();
-    assert_eq!(coin.amt(), Fixture::ACCOUNT_BALANCE);
+    assert_eq!(coin.amt(), Fixture::account_balance());
     coin.safely_consume_unchecked();
 
     let account = layer.get_account_state(fx.account_id()).unwrap().unwrap();
-    assert_eq!(account.balance(), BitcoinAmount::ZERO);
+    assert_eq!(account.balance(), BitcoinAmount::default());
 }
 
 /// Taking more balance than an account holds errors with
@@ -354,7 +386,7 @@ pub(crate) fn take_balance_exact_empties_account<S: IStateAccessorMut>(
 pub(crate) fn take_balance_insufficient_errors<S: IStateAccessorMut>(fx: &Fixture, layer: &mut S) {
     let result = layer
         .update_account(fx.account_id(), |acct| {
-            acct.take_balance(plus_sats(Fixture::ACCOUNT_BALANCE, 1))
+            acct.take_balance(plus_sats(Fixture::account_balance(), 1))
         })
         .unwrap();
     assert!(matches!(
@@ -363,21 +395,26 @@ pub(crate) fn take_balance_insufficient_errors<S: IStateAccessorMut>(fx: &Fixtur
     ));
 
     let account = layer.get_account_state(fx.account_id()).unwrap().unwrap();
-    assert_eq!(account.balance(), Fixture::ACCOUNT_BALANCE);
+    assert_eq!(account.balance(), Fixture::account_balance());
 }
 
 /// A freshly created account is visible through the layer and resolvable by
 /// serial.
 pub(crate) fn create_account_visible<S: IStateAccessorMut>(_fx: &Fixture, layer: &mut S) {
     let account_id = Fixture::unused_account_id(0);
-    let new_acct =
-        test_new_snark_account_data(&test_snark_account_state(2), BitcoinAmount::from_sat(5000));
+    let new_acct = test_new_snark_account_data(
+        &test_snark_account_state(2),
+        BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     let serial = layer.create_new_account(account_id, new_acct).unwrap();
 
     assert!(layer.check_account_exists(account_id).unwrap());
     let account = layer.get_account_state(account_id).unwrap().unwrap();
     assert_eq!(account.serial(), serial);
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+    assert_eq!(
+        account.balance(),
+        BitcoinAmount::try_from(5000).expect("amount must not exceed the Bitcoin money supply")
+    );
     assert_eq!(
         layer.find_account_id_by_serial(serial).unwrap(),
         Some(account_id)
@@ -388,12 +425,18 @@ pub(crate) fn create_account_visible<S: IStateAccessorMut>(_fx: &Fixture, layer:
 /// asking for its snark state errors with [`StateError::MismatchedAcctType`].
 pub(crate) fn create_empty_account<S: IStateAccessorMut>(_fx: &Fixture, layer: &mut S) {
     let account_id = Fixture::unused_account_id(0);
-    let new_acct = NewAccountData::new(BitcoinAmount::from_sat(42), NewAccountTypeState::Empty);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::try_from(42).expect("amount must not exceed the Bitcoin money supply"),
+        NewAccountTypeState::Empty,
+    );
     layer.create_new_account(account_id, new_acct).unwrap();
 
     let account = layer.get_account_state(account_id).unwrap().unwrap();
     assert_eq!(account.ty(), AccountTypeId::Empty);
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(42));
+    assert_eq!(
+        account.balance(),
+        BitcoinAmount::try_from(42).expect("amount must not exceed the Bitcoin money supply")
+    );
     assert!(matches!(
         account.as_snark_account(),
         Err(StateError::MismatchedAcctType { .. })
@@ -405,17 +448,26 @@ pub(crate) fn create_empty_account<S: IStateAccessorMut>(_fx: &Fixture, layer: &
 pub(crate) fn create_then_update_account<S: IStateAccessorMut>(_fx: &Fixture, layer: &mut S) {
     let account_id = Fixture::unused_account_id(0);
     let snark_state = test_snark_account_state(2);
-    let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1_000));
+    let new_acct = test_new_snark_account_data(
+        &snark_state,
+        BitcoinAmount::try_from(1_000).expect("amount must not exceed the Bitcoin money supply"),
+    );
     layer.create_new_account(account_id, new_acct).unwrap();
 
     layer
         .update_account(account_id, |acct| {
-            acct.add_balance(Coin::new_unchecked(BitcoinAmount::from_sat(250)));
+            acct.add_balance(Coin::new_unchecked(
+                BitcoinAmount::try_from(250)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ));
         })
         .unwrap();
 
     let account = layer.get_account_state(account_id).unwrap().unwrap();
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(1_250));
+    assert_eq!(
+        account.balance(),
+        BitcoinAmount::try_from(1_250).expect("amount must not exceed the Bitcoin money supply")
+    );
     assert_eq!(
         account.as_snark_account().unwrap().inner_state_root(),
         snark_state.inner_state_root()
@@ -435,14 +487,22 @@ pub(crate) fn next_serial_advances_across_creates<S: IStateAccessorMut>(
     let serial_a: u32 = layer
         .create_new_account(
             acct_a,
-            test_new_snark_account_data(&test_snark_account_state(2), BitcoinAmount::from_sat(1)),
+            test_new_snark_account_data(
+                &test_snark_account_state(2),
+                BitcoinAmount::try_from(1)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ),
         )
         .unwrap()
         .into();
     let serial_b: u32 = layer
         .create_new_account(
             acct_b,
-            test_new_snark_account_data(&test_snark_account_state(3), BitcoinAmount::from_sat(2)),
+            test_new_snark_account_data(
+                &test_snark_account_state(3),
+                BitcoinAmount::try_from(2)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ),
         )
         .unwrap()
         .into();
@@ -475,13 +535,20 @@ pub(crate) fn create_duplicate_account_errors<S: IStateAccessorMut>(_fx: &Fixtur
     layer
         .create_new_account(
             account_id,
-            test_new_snark_account_data(&test_snark_account_state(2), BitcoinAmount::from_sat(100)),
+            test_new_snark_account_data(
+                &test_snark_account_state(2),
+                BitcoinAmount::try_from(100)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ),
         )
         .unwrap();
 
     let result = layer.create_new_account(
         account_id,
-        test_new_snark_account_data(&test_snark_account_state(3), BitcoinAmount::from_sat(200)),
+        test_new_snark_account_data(
+            &test_snark_account_state(3),
+            BitcoinAmount::try_from(200).expect("amount must not exceed the Bitcoin money supply"),
+        ),
     );
     assert!(matches!(result, Err(StateError::AccountExists(_))));
 }
@@ -499,14 +566,17 @@ pub(crate) fn create_duplicate_of_base_account_errors<S: IStateAccessorMut>(
 
     let result = layer.create_new_account(
         fx.account_id(),
-        test_new_snark_account_data(&test_snark_account_state(2), BitcoinAmount::from_sat(999)),
+        test_new_snark_account_data(
+            &test_snark_account_state(2),
+            BitcoinAmount::try_from(999).expect("amount must not exceed the Bitcoin money supply"),
+        ),
     );
     assert!(matches!(result, Err(StateError::AccountExists(_))));
 
     assert_eq!(layer.next_account_serial(), serial_before);
     let account = layer.get_account_state(fx.account_id()).unwrap().unwrap();
     assert_eq!(account.serial(), fx.serial());
-    assert_eq!(account.balance(), Fixture::ACCOUNT_BALANCE);
+    assert_eq!(account.balance(), Fixture::account_balance());
     assert_eq!(
         account.as_snark_account().unwrap().inner_state_root(),
         test_hash(Fixture::ACCOUNT_STATE_SEED)
@@ -561,18 +631,26 @@ pub(crate) fn roundtrip_cur_epoch<S: IStateAccessorMut>(_fx: &Fixture, layer: &m
 /// [`take_limbo_funds_coin`](IStateAccessorMut::take_limbo_funds_coin) read back
 /// via [`limbo_funds`](IStateAccessor::limbo_funds).
 pub(crate) fn roundtrip_limbo_funds<S: IStateAccessorMut>(_fx: &Fixture, layer: &mut S) {
-    assert_eq!(layer.limbo_funds(), Fixture::LIMBO_FUNDS);
+    assert_eq!(layer.limbo_funds(), Fixture::limbo_funds());
 
     layer
-        .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from_sat(1_000)))
+        .add_limbo_funds_coin(Coin::new_unchecked(
+            BitcoinAmount::try_from(1_000)
+                .expect("amount must not exceed the Bitcoin money supply"),
+        ))
         .unwrap();
-    assert_eq!(layer.limbo_funds(), plus_sats(Fixture::LIMBO_FUNDS, 1_000));
+    assert_eq!(
+        layer.limbo_funds(),
+        plus_sats(Fixture::limbo_funds(), 1_000)
+    );
 
     let taken = layer
-        .take_limbo_funds_coin(BitcoinAmount::from_sat(400))
+        .take_limbo_funds_coin(
+            BitcoinAmount::try_from(400).expect("amount must not exceed the Bitcoin money supply"),
+        )
         .unwrap();
     taken.safely_consume_unchecked();
-    assert_eq!(layer.limbo_funds(), plus_sats(Fixture::LIMBO_FUNDS, 600));
+    assert_eq!(layer.limbo_funds(), plus_sats(Fixture::limbo_funds(), 600));
 }
 
 /// Taking more limbo funds than are available errors with
@@ -581,31 +659,40 @@ pub(crate) fn take_limbo_funds_insufficient_errors<S: IStateAccessorMut>(
     _fx: &Fixture,
     layer: &mut S,
 ) {
-    let result = layer.take_limbo_funds_coin(plus_sats(Fixture::LIMBO_FUNDS, 1));
+    let result = layer.take_limbo_funds_coin(plus_sats(Fixture::limbo_funds(), 1));
     assert!(matches!(
         result,
         Err(StateError::InsufficientLimboFunds { .. })
     ));
-    assert_eq!(layer.limbo_funds(), Fixture::LIMBO_FUNDS);
+    assert_eq!(layer.limbo_funds(), Fixture::limbo_funds());
 }
 
 /// Adding limbo funds that would overflow the accumulator errors with
 /// [`StateError::LimboFundsOverflow`], consumes the rejected [`Coin`] rather
 /// than panicking on drop, and leaves the balance unchanged.
 pub(crate) fn add_limbo_funds_overflow_errors<S: IStateAccessorMut>(_fx: &Fixture, layer: &mut S) {
-    let result = layer.add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::MAX));
+    let max_money = BitcoinAmount::try_from(21_000_000 * 100_000_000)
+        .expect("maximum Bitcoin money supply must be valid");
+    let result = layer.add_limbo_funds_coin(Coin::new_unchecked(max_money));
     assert!(matches!(result, Err(StateError::LimboFundsOverflow { .. })));
-    assert_eq!(layer.limbo_funds(), Fixture::LIMBO_FUNDS);
+    assert_eq!(layer.limbo_funds(), Fixture::limbo_funds());
 }
 
 /// [`set_total_ledger_balance`](IStateAccessorMut::set_total_ledger_balance)
 /// reads back via [`total_ledger_balance`](IStateAccessor::total_ledger_balance).
 pub(crate) fn roundtrip_total_ledger_balance<S: IStateAccessorMut>(_fx: &Fixture, layer: &mut S) {
-    assert_eq!(layer.total_ledger_balance(), Fixture::TOTAL_LEDGER_BALANCE);
-    layer.set_total_ledger_balance(BitcoinAmount::from_sat(1_000_000));
     assert_eq!(
         layer.total_ledger_balance(),
-        BitcoinAmount::from_sat(1_000_000)
+        Fixture::total_ledger_balance()
+    );
+    layer.set_total_ledger_balance(
+        BitcoinAmount::try_from(1_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
+    );
+    assert_eq!(
+        layer.total_ledger_balance(),
+        BitcoinAmount::try_from(1_000_000)
+            .expect("amount must not exceed the Bitcoin money supply")
     );
 }
 

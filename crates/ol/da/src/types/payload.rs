@@ -137,7 +137,9 @@ impl<S: IStateAccessorMut> DaWrite for OLStateDiff<S> {
         target.set_cur_slot(cur_slot);
 
         if let Some(d) = self.diff.global.limbo_funds_sats.diff() {
-            let amt = BitcoinAmount::from_sat(d.magnitude());
+            let amt = BitcoinAmount::try_from(d.magnitude()).map_err(|_| {
+                DaError::InvalidStateDiff("limbo funds delta exceeds the Bitcoin money supply")
+            })?;
             if d.is_positive() {
                 let coin = Coin::new_unchecked(amt);
                 target
@@ -281,12 +283,21 @@ fn apply_balance_delta<T: IAccountStateMut>(
     acct: &mut T,
     incr: &SignedVarInt,
 ) -> Result<(), DaError> {
+    let delta = BitcoinAmount::try_from(incr.magnitude())
+        .map_err(|_| DaError::InvalidStateDiff("balance delta exceeds the Bitcoin money supply"))?;
     if incr.is_positive() {
-        let delta = BitcoinAmount::from_sat(incr.magnitude());
+        // `add_balance` panics past the money-supply cap, so check the post-add
+        // amount first and reject the diff cleanly.
+        acct.balance()
+            .to_sat()
+            .checked_add(delta.to_sat())
+            .and_then(|sats| BitcoinAmount::try_from(sats).ok())
+            .ok_or(DaError::InvalidStateDiff(
+                "account balance after delta exceeds the Bitcoin money supply",
+            ))?;
         let coin = Coin::new_unchecked(delta);
         acct.add_balance(coin);
     } else {
-        let delta = BitcoinAmount::from_sat(incr.magnitude());
         let coin = acct
             .take_balance(delta)
             .map_err(|_| DaError::InvalidStateDiff("insufficient balance for diff"))?;
@@ -365,7 +376,11 @@ mod tests {
         state
             .create_new_account(
                 id,
-                NewAccountData::new(BitcoinAmount::from_sat(sats), NewAccountTypeState::Empty),
+                NewAccountData::new(
+                    BitcoinAmount::try_from(sats)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    NewAccountTypeState::Empty,
+                ),
             )
             .expect("create empty account")
     }
@@ -404,7 +419,8 @@ mod tests {
         /// Empty new-account init with the given balance.
         pub(super) fn empty_init(balance_sats: u64) -> AccountInit {
             AccountInit::new(
-                BitcoinAmount::from_sat(balance_sats),
+                BitcoinAmount::try_from(balance_sats)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 AccountTypeInit::Empty,
             )
         }
@@ -412,7 +428,8 @@ mod tests {
         /// Snark new-account init with the given balance, state root, and VK bytes.
         pub(super) fn snark_init(balance_sats: u64, root: Hash, vk: Vec<u8>) -> AccountInit {
             AccountInit::new(
-                BitcoinAmount::from_sat(balance_sats),
+                BitcoinAmount::try_from(balance_sats)
+                    .expect("amount must not exceed the Bitcoin money supply"),
                 AccountTypeInit::Snark(SnarkAccountInit::new(root, vk)),
             )
         }
@@ -463,8 +480,12 @@ mod tests {
             len: usize,
             byte: u8,
         ) -> DaMessageEntry {
-            let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![byte; len])
-                .expect("message payload bytes must fit SSZ max length");
+            let payload = MsgPayload::from_bytes(
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                vec![byte; len],
+            )
+            .expect("message payload bytes must fit SSZ max length");
             DaMessageEntry::new(source, incl_epoch, payload)
         }
 
@@ -502,7 +523,10 @@ mod tests {
         let snark_acct = build::snark_init(
             500,
             Hash::from([0x11u8; 32]),
-            PredicateKey::always_accept().as_buf_ref().to_bytes(),
+            PredicateKey::always_accept()
+                .try_as_buf_ref()
+                .expect("predicate key must be valid")
+                .to_bytes(),
         );
         let new_accounts = vec![
             NewAccountEntry::new(test_account_id(0xA1), build::empty_init(1_000)),
@@ -661,7 +685,8 @@ mod tests {
 
         assert_eq!(
             account_balance(&state, account_id),
-            BitcoinAmount::from_sat(2_000)
+            BitcoinAmount::try_from(2_000)
+                .expect("amount must not exceed the Bitcoin money supply")
         );
     }
 
@@ -686,7 +711,8 @@ mod tests {
 
         assert_eq!(
             account_balance(&state, account_id),
-            BitcoinAmount::from_sat(1_250)
+            BitcoinAmount::try_from(1_250)
+                .expect("amount must not exceed the Bitcoin money supply")
         );
     }
 
@@ -715,14 +741,87 @@ mod tests {
         ));
         assert_eq!(
             account_balance(&state, account_id),
-            BitcoinAmount::from_sat(500)
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    /// A balance delta above the Bitcoin money supply must be rejected with a `DaError`,
+    /// not panic on the amount conversion.
+    #[test]
+    fn test_ol_state_diff_apply_rejects_oversized_balance_delta() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(32);
+        let serial = seed_empty_account(&mut state, account_id, 500);
+
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::positive(u64::MAX)),
+                )],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "balance delta exceeds the Bitcoin money supply"
+            ))
+        ));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    /// A positive balance delta that is itself valid but pushes the account past
+    /// the Bitcoin money supply must be rejected with a `DaError`, not panic in
+    /// `add_balance`.
+    #[test]
+    fn test_ol_state_diff_apply_rejects_balance_delta_past_cap() {
+        const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(33);
+        let serial = seed_empty_account(&mut state, account_id, MAX_BITCOIN_MONEY_SATS - 1);
+
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntry::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::positive(2)),
+                )],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "account balance after delta exceeds the Bitcoin money supply"
+            ))
+        ));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::try_from(MAX_BITCOIN_MONEY_SATS - 1)
+                .expect("amount must not exceed the Bitcoin money supply")
         );
     }
 
     #[test]
     fn test_ol_state_diff_apply_updates_limbo_funds() {
         let mut state = make_genesis_state();
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+        );
 
         let diff = StateDiff::new(
             build::global_diff(0, Some(SignedVarInt::positive(1_500))),
@@ -730,7 +829,11 @@ mod tests {
         );
         apply_ol_state_diff(&mut state, diff).expect("apply limbo add diff");
 
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(1_500));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(1_500)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
 
         let diff = StateDiff::new(
             build::global_diff(0, Some(SignedVarInt::negative(400))),
@@ -738,13 +841,20 @@ mod tests {
         );
         apply_ol_state_diff(&mut state, diff).expect("apply limbo take diff");
 
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(1_100));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(1_100)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
     }
 
     #[test]
     fn test_ol_state_diff_apply_rejects_insufficient_limbo_funds() {
         let mut state = make_genesis_state();
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+        );
 
         let diff = StateDiff::new(
             build::global_diff(0, Some(SignedVarInt::negative(1))),
@@ -758,7 +868,34 @@ mod tests {
                 "insufficient limbo funds for diff"
             ))
         ));
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    /// A limbo funds delta above the Bitcoin money supply must be rejected with a `DaError`,
+    /// not panic on the amount conversion.
+    #[test]
+    fn test_ol_state_diff_apply_rejects_oversized_limbo_funds_delta() {
+        let mut state = make_genesis_state();
+
+        let diff = StateDiff::new(
+            build::global_diff(0, Some(SignedVarInt::positive(u64::MAX))),
+            LedgerDiff::default(),
+        );
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "limbo funds delta exceeds the Bitcoin money supply"
+            ))
+        ));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+        );
     }
 
     #[test]
@@ -766,7 +903,7 @@ mod tests {
         let mut state = make_genesis_state();
         let account_id = test_account_id(4);
         let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(500),
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply"),
             NewAccountTypeState::Snark {
                 update_vk: PredicateKey::always_accept(),
                 initial_state_root: Hash::from([0x11u8; 32]),
@@ -806,7 +943,7 @@ mod tests {
         let mut state = make_genesis_state();
         let account_id = test_account_id(5);
         let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(500),
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply"),
             NewAccountTypeState::Snark {
                 update_vk: PredicateKey::always_accept(),
                 initial_state_root: Hash::from([0x11u8; 32]),
@@ -816,9 +953,20 @@ mod tests {
             .create_new_account(account_id, new_acct)
             .expect("create snark account");
 
-        let new_vk = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0x42u8; 32]);
-        let snark_diff =
-            build::snark_diff(1, None, 0, Vec::new(), Some(new_vk.as_buf_ref().to_bytes()));
+        let new_vk = PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0x42u8; 32])
+            .expect("predicate condition must fit within the maximum length");
+        let snark_diff = build::snark_diff(
+            1,
+            None,
+            0,
+            Vec::new(),
+            Some(
+                new_vk
+                    .try_as_buf_ref()
+                    .expect("predicate key must be valid")
+                    .to_bytes(),
+            ),
+        );
         let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
@@ -849,7 +997,7 @@ mod tests {
         let mut state = make_genesis_state();
         let account_id = test_account_id(5);
         let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(500),
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply"),
             NewAccountTypeState::Snark {
                 update_vk: PredicateKey::always_accept(),
                 initial_state_root: Hash::from([0x11u8; 32]),
@@ -896,14 +1044,19 @@ mod tests {
         let empty_serial = state
             .create_new_account(
                 empty_id,
-                NewAccountData::new(BitcoinAmount::from_sat(1_000), NewAccountTypeState::Empty),
+                NewAccountData::new(
+                    BitcoinAmount::try_from(1_000)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    NewAccountTypeState::Empty,
+                ),
             )
             .expect("create empty account");
         let snark_serial = state
             .create_new_account(
                 snark_id,
                 NewAccountData::new(
-                    BitcoinAmount::from_sat(500),
+                    BitcoinAmount::try_from(500)
+                        .expect("amount must not exceed the Bitcoin money supply"),
                     NewAccountTypeState::Snark {
                         update_vk: PredicateKey::always_accept(),
                         initial_state_root: Hash::from([0x11u8; 32]),
@@ -964,17 +1117,27 @@ mod tests {
         let mut expected = pre_accounts.state.clone();
         expected.set_cur_slot(expected.cur_slot() + 4);
         expected
-            .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from_sat(800)))
+            .add_limbo_funds_coin(Coin::new_unchecked(
+                BitcoinAmount::try_from(800)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ))
             .expect("add limbo");
         expected
             .create_new_account(
                 new_id,
-                NewAccountData::new(BitcoinAmount::from_sat(2_000), NewAccountTypeState::Empty),
+                NewAccountData::new(
+                    BitcoinAmount::try_from(2_000)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    NewAccountTypeState::Empty,
+                ),
             )
             .expect("create new account");
         expected
             .update_account(pre_accounts.empty.id, |acct| {
-                acct.add_balance(Coin::new_unchecked(BitcoinAmount::from_sat(250)));
+                acct.add_balance(Coin::new_unchecked(
+                    BitcoinAmount::try_from(250)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                ));
                 Ok::<(), DaError>(())
             })
             .expect("update empty")
@@ -1077,13 +1240,20 @@ mod tests {
             .expect("apply rich diff");
 
         assert_eq!(state.cur_slot(), pre_slot + 5);
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(900));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(900).expect("amount must not exceed the Bitcoin money supply")
+        );
 
         let empty = state
             .get_account_state(pre_accounts.empty.id)
             .unwrap()
             .expect("empty account");
-        assert_eq!(empty.balance(), BitcoinAmount::from_sat(1_250));
+        assert_eq!(
+            empty.balance(),
+            BitcoinAmount::try_from(1_250)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
 
         let snark = state
             .get_account_state(pre_accounts.snark.id)
@@ -1107,11 +1277,12 @@ mod tests {
         );
         assert_eq!(
             account_balance(&state, new_id_a),
-            BitcoinAmount::from_sat(1_000)
+            BitcoinAmount::try_from(1_000)
+                .expect("amount must not exceed the Bitcoin money supply")
         );
         assert_eq!(
             account_balance(&state, new_id_b),
-            BitcoinAmount::from_sat(500)
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply")
         );
     }
 
@@ -1285,7 +1456,7 @@ mod tests {
     #[test]
     fn test_da_message_entry_round_trips_at_max_payload() {
         let payload = MsgPayload::from_bytes(
-            BitcoinAmount::from_sat(0),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
             vec![0x5Au8; MAX_MSG_PAYLOAD_BYTES],
         )
         .expect("payload at boundary fits SSZ max");

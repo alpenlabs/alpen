@@ -45,7 +45,8 @@ fn test_epoch_root_round_trip_with_deposit_manifest() {
         1,
         snark_acct_serial,
         SubjectId::from([42u8; 32]),
-        BitcoinAmount::from_sat(150_000_000),
+        BitcoinAmount::try_from(150_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
     );
     let terminal = execute_terminal(&mut state, &last_pre_terminal_header, terminal_manifest);
     epoch_blocks.push(to_ol_block(&terminal));
@@ -68,7 +69,8 @@ fn test_epoch_root_round_trip_with_limbo_deposit_manifest() {
         state.last_l1_height() + 1,
         1,
         Vec::new(),
-        BitcoinAmount::from_sat(75_000_000),
+        BitcoinAmount::try_from(75_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
     );
     let terminal = execute_terminal(&mut state, &last_pre_terminal_header, terminal_manifest);
     epoch_blocks.push(to_ol_block(&terminal));

@@ -336,7 +336,7 @@ mod tests {
 
     fn make_msg_entry(delta: u64) -> MessageEntry {
         let data = strata_codec::encode_to_vec(&TestMsg { delta }).unwrap();
-        let payload = MsgPayload::from_bytes(BitcoinAmount::ZERO, data)
+        let payload = MsgPayload::from_bytes(BitcoinAmount::default(), data)
             .expect("message payload bytes must fit within SSZ max length");
         MessageEntry::new(AccountId::zero(), 0, payload)
     }
@@ -446,7 +446,7 @@ mod tests {
         let mut state = TestState { value: 0 };
 
         // Create a message entry with garbage payload data to trigger Unknown
-        let unknown_payload = MsgPayload::from_bytes(BitcoinAmount::ZERO, vec![0xff])
+        let unknown_payload = MsgPayload::from_bytes(BitcoinAmount::default(), vec![0xff])
             .expect("message payload bytes must fit within SSZ max length");
         let unknown_entry = MessageEntry::new(AccountId::zero(), 0, unknown_payload);
 

@@ -80,7 +80,10 @@ fn test_snark_update_with_valid_ledger_reference() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -91,16 +94,21 @@ fn test_snark_update_with_valid_ledger_reference() {
     fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
-                .with_ledger_refs(vec![claim], vec![proof])
-                .with_state_root(make_state_root(2))
-                .with_proof(vec![0u8; 32])
+            sau.transfer(
+                recipient_id,
+                BitcoinAmount::try_from(10_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
+            .with_ledger_refs(vec![claim], vec![proof])
+            .with_state_root(make_state_root(2))
+            .with_proof(vec![0u8; 32])
         })
         .execute();
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(90_000_000),
+        BitcoinAmount::try_from(90_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "Sender balance should be reduced"
     );
     assert_eq!(
@@ -110,7 +118,8 @@ fn test_snark_update_with_valid_ledger_reference() {
     );
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(10_000_000),
+        BitcoinAmount::try_from(10_000_000)
+            .expect("amount must not exceed the Bitcoin money supply"),
         "Recipient should receive transfer"
     );
 }
@@ -121,7 +130,10 @@ fn test_snark_update_with_invalid_ledger_reference() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -158,7 +170,10 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -192,7 +207,10 @@ fn test_snark_update_rejects_proof_for_wrong_ledger_reference_claim() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
     let mut manifest_tracker = ManifestMmrTracker::new();
@@ -264,7 +282,10 @@ fn test_snark_update_rejects_extra_ledger_reference_proof() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -287,7 +308,10 @@ fn test_snark_update_rejects_accumulator_proof_without_ledger_refs() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 
@@ -309,7 +333,10 @@ fn test_snark_update_rejects_extra_predicate_satisfier() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
         })
         .execute_genesis();
 

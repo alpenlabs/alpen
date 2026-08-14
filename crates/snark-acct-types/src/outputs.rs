@@ -176,14 +176,14 @@ impl UpdateOutputs {
     /// Computes the total value across all transfers and messages.
     /// Returns None if overflow occurs.
     pub fn compute_total_value(&self) -> Option<BitcoinAmount> {
-        let mut total = BitcoinAmount::zero();
+        let mut total_sats = 0u64;
         for transfer in self.transfers() {
-            total = total.checked_add(transfer.value())?;
+            total_sats = total_sats.checked_add(transfer.value().to_sat())?;
         }
         for msg in self.messages() {
-            total = total.checked_add(msg.payload().value())?;
+            total_sats = total_sats.checked_add(msg.payload().value().to_sat())?;
         }
-        Some(total)
+        BitcoinAmount::try_from(total_sats).ok()
     }
 }
 

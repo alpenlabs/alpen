@@ -30,7 +30,11 @@ pub(crate) fn build_target_state_with_empty_l1_block_refs_mmr() -> OLState {
 }
 
 pub(crate) fn build_snark_inbox_message(seed: u8) -> MessageEntry {
-    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(1), vec![seed]).expect("payload");
+    let payload = MsgPayload::from_bytes(
+        BitcoinAmount::try_from(1).expect("amount must not exceed the Bitcoin money supply"),
+        vec![seed],
+    )
+    .expect("payload");
     MessageEntry::new(AccountId::new([seed; 32]), 0, payload)
 }
 
@@ -44,7 +48,7 @@ pub(crate) fn build_target_state_with_snark_account(account_id: AccountId) -> OL
         GenesisSnarkAccountData {
             predicate: PredicateKey::always_accept(),
             inner_state: Hash::zero(),
-            balance: BitcoinAmount::ZERO,
+            balance: BitcoinAmount::default(),
         },
     );
 

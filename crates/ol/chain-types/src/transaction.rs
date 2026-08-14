@@ -320,7 +320,7 @@ impl OLTransactionData {
         let mut effects = TxEffects::default();
         effects.add_message(SentMessage::new(
             dest,
-            MsgPayload::new(BitcoinAmount::zero(), data),
+            MsgPayload::new(BitcoinAmount::default(), data),
         ));
         Self {
             payload,

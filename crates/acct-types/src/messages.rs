@@ -15,12 +15,16 @@ use crate::{
 /// SSZ-bounded message payload data.
 pub type MsgPayloadData = VariableList<u8, { MAX_MSG_PAYLOAD_DATA_BYTES as usize }>;
 
-/// Error constructing a [`MsgPayload`] from raw bytes.
+/// Error constructing a [`MsgPayload`] or effect value from raw inputs.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MsgPayloadError {
     /// Raw message data exceeds the SSZ maximum length.
     #[error("message payload data too large (len {len} > max {max})")]
     DataTooLarge { len: usize, max: usize },
+
+    /// Raw satoshi value exceeds the Bitcoin money supply.
+    #[error("value exceeds the Bitcoin money supply ({sats} sats)")]
+    ValueTooLarge { sats: u64 },
 }
 
 impl SentMessage {
@@ -36,7 +40,7 @@ impl SentMessage {
 
     /// Creates a new instance with empty data and 0 value.
     pub fn new_empty(dest: AccountId) -> Self {
-        Self::new_dataless(dest, BitcoinAmount::zero())
+        Self::new_dataless(dest, BitcoinAmount::default())
     }
 
     /// Returns the destination account ID.
@@ -60,7 +64,7 @@ impl SentTransfer {
     ///
     /// This shouldn't normally happen but it's a convenience.
     pub fn zero(dest: AccountId) -> Self {
-        Self::new(dest, BitcoinAmount::zero())
+        Self::new(dest, BitcoinAmount::default())
     }
 
     /// Returns the destination account ID.
@@ -87,7 +91,7 @@ impl ReceivedMessage {
 
     /// Creates a new instance with empty data and 0 value.
     pub fn new_empty(dest: AccountId) -> Self {
-        Self::new_dataless(dest, BitcoinAmount::zero())
+        Self::new_dataless(dest, BitcoinAmount::default())
     }
 
     /// Returns the source account ID.
@@ -127,17 +131,17 @@ impl MsgPayload {
 
     /// Creates a new instance with some data and 0 value.
     pub fn new_valueless(data: MsgPayloadData) -> Self {
-        Self::new(BitcoinAmount::zero(), data)
+        Self::new(BitcoinAmount::default(), data)
     }
 
     /// Creates a new instance from raw data and 0 value.
     pub fn from_bytes_valueless(data: Vec<u8>) -> Result<Self, MsgPayloadError> {
-        Self::from_bytes(BitcoinAmount::zero(), data)
+        Self::from_bytes(BitcoinAmount::default(), data)
     }
 
     /// Creates a new instance with empty data and 0 value.
     pub fn new_empty() -> Self {
-        Self::new_dataless(BitcoinAmount::zero())
+        Self::new_dataless(BitcoinAmount::default())
     }
 
     pub fn value(&self) -> BitcoinAmount {
@@ -237,25 +241,36 @@ mod tests {
 
     use super::*;
 
+    const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
     mod msg_payload {
         use super::*;
 
         ssz_proptest!(
             MsgPayload,
-            (any::<u64>(), prop::collection::vec(any::<u8>(), 0..100)).prop_map(|(sats, data)| {
-                MsgPayload {
-                    value: BitcoinAmount::from_sat(sats),
-                    data: data
-                        .try_into()
-                        .expect("message payload bytes must fit within SSZ max length"),
-                }
-            })
+            (
+                0..=MAX_BITCOIN_MONEY_SATS,
+                prop::collection::vec(any::<u8>(), 0..100)
+            )
+                .prop_map(|(sats, data)| {
+                    MsgPayload {
+                        value: BitcoinAmount::try_from(sats)
+                            .expect("amount must not exceed the Bitcoin money supply"),
+                        data: data
+                            .try_into()
+                            .expect("message payload bytes must fit within SSZ max length"),
+                    }
+                })
         );
 
         #[test]
         fn test_zero_ssz() {
-            let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![])
-                .expect("message payload bytes must fit within SSZ max length");
+            let payload = MsgPayload::from_bytes(
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                vec![],
+            )
+            .expect("message payload bytes must fit within SSZ max length");
             let encoded = payload.as_ssz_bytes();
             let decoded = MsgPayload::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(payload.value(), decoded.value());
@@ -265,8 +280,12 @@ mod tests {
         #[test]
         fn accepts_max_size_payload() {
             let data = vec![0u8; MAX_MSG_PAYLOAD_DATA_BYTES as usize];
-            let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data)
-                .expect("max size message payload bytes must fit within SSZ max length");
+            let payload = MsgPayload::from_bytes(
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                data,
+            )
+            .expect("max size message payload bytes must fit within SSZ max length");
 
             assert_eq!(payload.data().len(), MAX_MSG_PAYLOAD_DATA_BYTES as usize);
         }
@@ -274,8 +293,12 @@ mod tests {
         #[test]
         fn rejects_oversized_payload() {
             let max = MAX_MSG_PAYLOAD_DATA_BYTES as usize;
-            let err = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![0u8; max + 1])
-                .expect_err("oversized message payload bytes must fail");
+            let err = MsgPayload::from_bytes(
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                vec![0u8; max + 1],
+            )
+            .expect_err("oversized message payload bytes must fail");
 
             assert_eq!(err, MsgPayloadError::DataTooLarge { len: max + 1, max });
         }
@@ -283,9 +306,17 @@ mod tests {
         #[test]
         fn new_accepts_prebuilt_payload_data() {
             let data = MsgPayloadData::default();
-            let payload = MsgPayload::new(BitcoinAmount::from_sat(42), data);
+            let payload = MsgPayload::new(
+                BitcoinAmount::try_from(42)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                data,
+            );
 
-            assert_eq!(payload.value(), BitcoinAmount::from_sat(42));
+            assert_eq!(
+                payload.value(),
+                BitcoinAmount::try_from(42)
+                    .expect("amount must not exceed the Bitcoin money supply")
+            );
             assert!(payload.data().is_empty());
         }
     }
@@ -297,14 +328,15 @@ mod tests {
             SentMessage,
             (
                 any::<[u8; 32]>(),
-                any::<u64>(),
+                0..=MAX_BITCOIN_MONEY_SATS,
                 prop::collection::vec(any::<u8>(), 0..100)
             )
                 .prop_map(|(id, sats, data)| {
                     SentMessage {
                         dest: AccountId::new(id),
                         payload: MsgPayload {
-                            value: BitcoinAmount::from_sat(sats),
+                            value: BitcoinAmount::try_from(sats)
+                                .expect("amount must not exceed the Bitcoin money supply"),
                             data: data
                                 .try_into()
                                 .expect("message payload bytes must fit within SSZ max length"),
@@ -317,8 +349,12 @@ mod tests {
         fn test_zero_ssz() {
             let msg = SentMessage::new(
                 AccountId::new([0u8; 32]),
-                MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![])
-                    .expect("message payload bytes must fit within SSZ max length"),
+                MsgPayload::from_bytes(
+                    BitcoinAmount::try_from(0)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    vec![],
+                )
+                .expect("message payload bytes must fit within SSZ max length"),
             );
             let encoded = msg.as_ssz_bytes();
             let decoded = SentMessage::from_ssz_bytes(&encoded).unwrap();
@@ -333,14 +369,15 @@ mod tests {
             ReceivedMessage,
             (
                 any::<[u8; 32]>(),
-                any::<u64>(),
+                0..=MAX_BITCOIN_MONEY_SATS,
                 prop::collection::vec(any::<u8>(), 0..100)
             )
                 .prop_map(|(id, sats, data)| {
                     ReceivedMessage {
                         source: AccountId::new(id),
                         payload: MsgPayload {
-                            value: BitcoinAmount::from_sat(sats),
+                            value: BitcoinAmount::try_from(sats)
+                                .expect("amount must not exceed the Bitcoin money supply"),
                             data: data
                                 .try_into()
                                 .expect("message payload bytes must fit within SSZ max length"),
@@ -353,8 +390,12 @@ mod tests {
         fn test_zero_ssz() {
             let msg = ReceivedMessage::new(
                 AccountId::new([0u8; 32]),
-                MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![])
-                    .expect("message payload bytes must fit within SSZ max length"),
+                MsgPayload::from_bytes(
+                    BitcoinAmount::try_from(0)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    vec![],
+                )
+                .expect("message payload bytes must fit within SSZ max length"),
             );
             let encoded = msg.as_ssz_bytes();
             let decoded = ReceivedMessage::from_ssz_bytes(&encoded).unwrap();
