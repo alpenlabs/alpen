@@ -89,13 +89,17 @@ impl TsnlLedgerAccountsTable {
     }
 
     /// Calculates the total funds across all accounts in the ledger.
-    pub(crate) fn calculate_total_funds(&self) -> BitcoinAmount {
-        let total_sats = self.accounts.iter().fold(0u64, |acc, entry| {
-            acc.checked_add(entry.state.balance.to_sat())
-                .expect("ol/state: total funds overflow")
-        });
-        BitcoinAmount::try_from(total_sats)
-            .expect("ol/state: total funds exceed the Bitcoin money supply")
+    ///
+    /// Errors if the total exceeds the Bitcoin money supply.
+    pub(crate) fn calculate_total_funds(&self) -> StateResult<BitcoinAmount> {
+        let total_sats = self
+            .accounts
+            .iter()
+            .try_fold(0u64, |acc, entry| {
+                acc.checked_add(entry.state.balance.to_sat())
+            })
+            .ok_or(StateError::TotalFundsOverflow)?;
+        BitcoinAmount::try_from(total_sats).map_err(|_| StateError::TotalFundsOverflow)
     }
 }
 
@@ -281,6 +285,58 @@ mod tests {
         let account_id = test_account_id(1);
         let state = table.get_account_state(&account_id);
         assert!(state.is_none());
+    }
+
+    #[test]
+    fn test_calculate_total_funds_sums_balances() {
+        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
+
+        for i in 1..=3u8 {
+            let serial = next_serial;
+            next_serial = serial.incr();
+            let balance = BitcoinAmount::try_from(i as u64 * 100)
+                .expect("amount must not exceed the Bitcoin money supply");
+            let account_state = create_empty_account_state(serial, balance);
+
+            table
+                .create_account(test_account_id(i), account_state)
+                .unwrap();
+        }
+
+        let total = table
+            .calculate_total_funds()
+            .expect("total within the money supply must succeed");
+        assert_eq!(
+            total,
+            BitcoinAmount::try_from(600).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    #[test]
+    fn test_calculate_total_funds_rejects_oversized_total() {
+        const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
+        let mut table = TsnlLedgerAccountsTable::new_empty();
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
+
+        // Two individually valid max-money balances whose sum is above the cap.
+        for i in 1..=2u8 {
+            let serial = next_serial;
+            next_serial = serial.incr();
+            let balance = BitcoinAmount::try_from(MAX_BITCOIN_MONEY_SATS)
+                .expect("amount must not exceed the Bitcoin money supply");
+            let account_state = create_empty_account_state(serial, balance);
+
+            table
+                .create_account(test_account_id(i), account_state)
+                .unwrap();
+        }
+
+        let err = table
+            .calculate_total_funds()
+            .expect_err("total above the money supply must fail");
+        assert!(matches!(err, StateError::TotalFundsOverflow));
     }
 
     #[test]

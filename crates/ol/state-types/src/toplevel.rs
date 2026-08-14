@@ -53,7 +53,7 @@ impl OLState {
             ledger.create_account(*id, state)?;
         }
 
-        let total_ledger_funds = ledger.calculate_total_funds();
+        let total_ledger_funds = ledger.calculate_total_funds()?;
 
         let global = GlobalState::new(params.header.slot, next_serial);
         let epoch = EpochalState::new(
