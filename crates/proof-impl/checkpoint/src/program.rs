@@ -95,7 +95,7 @@ mod tests {
     use strata_da_framework::DaCounter;
     use strata_identifiers::Buf64;
     use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
-    use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
+    use strata_ol_da_types_v1::{GlobalStateDiffV1, LedgerDiffV1, OLDaPayloadV1, OLStateDiffV1};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::IStateAccessor;
     use strata_ol_stf_v1::test_utils::{build_empty_chain, make_genesis_state};
@@ -127,12 +127,12 @@ mod tests {
         let slot_delta = terminal_header.slot() - start_state.cur_slot();
         let slot_delta_u16 =
             u16::try_from(slot_delta).expect("slot delta exceeds u16::MAX; epoch too long");
-        let da_diff = StateDiff::new(
-            GlobalStateDiff::new(
+        let da_diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::new(
                 DaCounter::new_changed(slot_delta_u16),
                 DaCounter::new_unchanged(),
             ),
-            LedgerDiff::default(),
+            LedgerDiffV1::default(),
         );
         let da_state_diff_bytes =
             encode_to_vec(&OLDaPayloadV1::new(da_diff)).expect("encode DA payload");
@@ -199,12 +199,12 @@ mod tests {
         let slot_delta = terminal_header.slot() - start_state_layer.cur_slot();
         let bad_delta = u16::try_from(slot_delta.saturating_sub(1))
             .expect("slot delta exceeds u16::MAX; epoch too long");
-        let bad_da_diff = StateDiff::new(
-            GlobalStateDiff::new(
+        let bad_da_diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::new(
                 DaCounter::new_changed(bad_delta),
                 DaCounter::new_unchanged(),
             ),
-            LedgerDiff::default(),
+            LedgerDiffV1::default(),
         );
         input.da_state_diff_bytes =
             encode_to_vec(&OLDaPayloadV1::new(bad_da_diff)).expect("encode bad DA payload");

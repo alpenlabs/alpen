@@ -17,7 +17,7 @@ strata-merkle.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-bridge-types.workspace = true
 strata-ol-chain-types-v1.workspace = true
-strata-ol-da.workspace = true
+strata-ol-da-common.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-params = { workspace = true, optional = true }
 strata-ol-state-support-types = { workspace = true, optional = true }
@@ -35,6 +35,7 @@ ssz_primitives.workspace = true
 ssz_types.workspace = true
 strata-asm-checkpoint-types.workspace = true
 strata-bridge-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-da-types-v1.workspace = true
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-state-support-types.workspace = true
 strata-predicate.workspace = true

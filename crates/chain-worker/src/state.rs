@@ -27,7 +27,7 @@ use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType,
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
-use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
+use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate, WriteTrackingState,
 };

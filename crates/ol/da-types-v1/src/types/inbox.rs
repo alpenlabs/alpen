@@ -8,7 +8,7 @@ use super::MAX_MSG_PAYLOAD_BYTES;
 
 /// DA-encoded snark inbox message entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DaMessageEntry {
+pub struct DaMessageEntryV1 {
     /// Account ID of the source account for the message.
     pub source: AccountId,
 
@@ -19,7 +19,7 @@ pub struct DaMessageEntry {
     pub payload: MsgPayload,
 }
 
-impl DaMessageEntry {
+impl DaMessageEntryV1 {
     pub fn new(source: AccountId, incl_epoch: u32, payload: MsgPayload) -> Self {
         Self {
             source,
@@ -29,7 +29,7 @@ impl DaMessageEntry {
     }
 }
 
-impl Codec for DaMessageEntry {
+impl Codec for DaMessageEntryV1 {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.source.encode(enc)?;
         self.incl_epoch.encode(enc)?;
@@ -54,20 +54,20 @@ impl Codec for DaMessageEntry {
 
 /// Buffer of DA-encoded inbox messages for insertion into the real accumulator.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct InboxBuffer {
+pub struct InboxBufferV1 {
     /// Inbox entries appended during the epoch.
-    entries: Vec<DaMessageEntry>,
+    entries: Vec<DaMessageEntryV1>,
 }
 
-impl InboxBuffer {
-    pub fn entries(&self) -> &[DaMessageEntry] {
+impl InboxBufferV1 {
+    pub fn entries(&self) -> &[DaMessageEntryV1] {
         &self.entries
     }
 }
 
-impl LinearAccumulator for InboxBuffer {
+impl LinearAccumulator for InboxBufferV1 {
     type InsertCnt = u16;
-    type EntryData = DaMessageEntry;
+    type EntryData = DaMessageEntryV1;
     const MAX_INSERT: Self::InsertCnt = u16::MAX;
 
     fn insert(&mut self, entry: &Self::EntryData) {

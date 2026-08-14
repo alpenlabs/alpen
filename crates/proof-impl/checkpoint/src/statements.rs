@@ -10,7 +10,7 @@ use strata_asm_manifest_types::{AsmManifestRangeHash, compute_asm_manifests_hash
 use strata_bridge_params::BridgeParams;
 use strata_crypto::hash;
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockV1, OLLog, OLTxSegmentV1};
-use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
+use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::IStateAccessor;
 use strata_ol_state_types_v1::OLStateV1;
@@ -30,7 +30,7 @@ use zkaleido::ZkVmEnv;
 /// - Initial OL state (SSZ-encoded [`OLStateV1`])
 /// - Block batch (SSZ-encoded `Vec<OLBlockV1>`)
 /// - Parent block header (SSZ-encoded [`OLBlockHeaderV1`])
-/// - DA state diff bytes (strata-codec encoded [`strata_ol_da::OLDaPayloadV1`])
+/// - DA state diff bytes (strata-codec encoded [`strata_ol_da_types_v1::OLDaPayloadV1`])
 ///
 /// # Outputs (committed to zkVM)
 ///

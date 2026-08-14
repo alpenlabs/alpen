@@ -10,7 +10,7 @@ use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{Buf32, OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
-use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
+use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::{IAccountState, IStateAccessor};
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};

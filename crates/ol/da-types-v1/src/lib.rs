@@ -1,13 +1,11 @@
-//! DA scheme implementation types.
+//! V1 OL DA payload types and scheme implementation.
 
 mod errors;
 mod extractor;
 mod scheme;
-mod traits;
 mod types;
 
 pub use errors::*;
 pub use extractor::*;
 pub use scheme::*;
-pub use traits::*;
 pub use types::*;

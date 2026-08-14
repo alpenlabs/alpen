@@ -20,7 +20,7 @@ use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
 };
 use strata_ol_chain_types_v1::{MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog};
-use strata_ol_da::OLDaPayloadV1;
+use strata_ol_da_types_v1::OLDaPayloadV1;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
 };

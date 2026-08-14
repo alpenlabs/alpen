@@ -1,9 +1,10 @@
 //! DA scheme implementations for OL state.
 
 use strata_da_framework::DaWrite;
+use strata_ol_da_common::{DaResult, DaScheme};
 use strata_ol_state_types::*;
 
-use crate::{DaResult, DaScheme, OLDaPayloadV1, OLStateDiff};
+use crate::{OLDaPayloadV1, OLStateDiffWriterV1};
 
 /// DA scheme v1 for applying OL checkpoint state diffs to an OL state by way of
 /// a [`IStateAccessorMut`].
@@ -15,15 +16,15 @@ impl<S: IStateAccessorMut> DaScheme<S> for OLDaSchemeV1 {
 
     /// Applies an [`OLDaPayloadV1`] to the OL state accumulator.
     ///
-    /// Converts the payload's raw [`StateDiff`](crate::StateDiff) into a
-    /// typed [`OLStateDiff`], then runs the two-phase DA write protocol:
+    /// Converts the payload's raw [`OLStateDiffV1`](crate::OLStateDiffV1) into a
+    /// typed [`OLStateDiffWriterV1`], then runs the two-phase DA write protocol:
     ///
     /// 1. poll_context() — validates diff entries against current state (e.g. account serial
     ///    ordering, ledger invariants).
     /// 2. apply() — mutates the accumulator (`acc`) with the validated diff (global fields, ledger
     ///    entries, snark accounts).
     fn apply_to_state(diff: Self::Diff, acc: &mut S) -> DaResult<()> {
-        let state_diff = OLStateDiff::<S>::new(diff.state_diff);
+        let state_diff = OLStateDiffWriterV1::<S>::new(diff.state_diff);
         DaWrite::poll_context(&state_diff, acc, &())?;
         DaWrite::apply(&state_diff, acc, &())
     }
@@ -36,16 +37,16 @@ mod tests {
     use strata_ol_stf_v1::test_utils::make_genesis_state;
 
     use super::*;
-    use crate::{GlobalStateDiff, LedgerDiff, StateDiff};
+    use crate::{GlobalStateDiffV1, LedgerDiffV1, OLStateDiffV1};
 
     #[test]
     fn test_ol_da_scheme_v1_apply_updates_global_slot() {
         let mut state = make_genesis_state();
         let start_slot = state.cur_slot();
 
-        let diff = StateDiff::new(
-            GlobalStateDiff::new(DaCounter::new_changed(1u16), DaCounter::new_unchanged()),
-            LedgerDiff::default(),
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::new(DaCounter::new_changed(1u16), DaCounter::new_unchanged()),
+            LedgerDiffV1::default(),
         );
         let payload = OLDaPayloadV1::new(diff);
 

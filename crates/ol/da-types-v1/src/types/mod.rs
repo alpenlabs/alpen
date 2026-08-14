@@ -1,16 +1,14 @@
 //! OL DA payload and state diff types.
 //!
 //! This module is organized into sub-modules for different concerns:
-//! - [`encoding`]: Common encoding types (U16LenBytes, U16LenList)
-//! - [`payload`]: Top-level DA payload types (OLDaPayloadV1, StateDiff, OLStateDiff)
-//! - [`global`]: Global state diff types (GlobalStateDiff)
-//! - [`ledger`]: Ledger diff types (LedgerDiff, NewAccountEntry, AccountInit)
-//! - [`account`]: Account diff types (AccountDiff)
-//! - [`snark`]: Snark account diff types (SnarkAccountDiff)
-//! - [`inbox`]: Inbox message buffer types (DaMessageEntry, InboxBuffer)
+//! - [`payload`]: Top-level DA payload types (OLDaPayloadV1, OLStateDiffV1, OLStateDiffWriterV1)
+//! - [`global`]: Global state diff types (GlobalStateDiffV1)
+//! - [`ledger`]: Ledger diff types (LedgerDiffV1, NewAccountEntryV1, AccountInitV1)
+//! - [`account`]: Account diff types (AccountDiffV1)
+//! - [`snark`]: Snark account diff types (SnarkAccountDiffV1)
+//! - [`inbox`]: Inbox message buffer types (DaMessageEntryV1, InboxBufferV1)
 
 mod account;
-mod encoding;
 mod global;
 mod inbox;
 mod ledger;
@@ -18,15 +16,15 @@ mod payload;
 mod snark;
 
 // Re-export all public types for API stability
-pub use account::{AccountDiff, AccountDiffTarget};
-pub use encoding::{U16LenBytes, U16LenList};
-pub use global::{GlobalStateDiff, GlobalStateTarget};
-pub use inbox::{DaMessageEntry, InboxBuffer};
+pub use account::{AccountDiffTargetV1, AccountDiffV1};
+pub use global::{GlobalStateDiffV1, GlobalStateTargetV1};
+pub use inbox::{DaMessageEntryV1, InboxBufferV1};
 pub use ledger::{
-    AccountDiffEntry, AccountInit, AccountTypeInit, LedgerDiff, NewAccountEntry, SnarkAccountInit,
+    AccountDiffEntryV1, AccountInitV1, AccountTypeInitV1, LedgerDiffV1, NewAccountEntryV1,
+    SnarkAccountInitV1,
 };
-pub use payload::{OLDaPayloadV1, OLStateDiff, StateDiff, decode_ol_da_payload_bytes};
-pub use snark::{DaProofState, DaProofStateDiff, SnarkAccountDiff, SnarkAccountTarget};
+pub use payload::{OLDaPayloadV1, OLStateDiffV1, OLStateDiffWriterV1, decode_ol_da_payload_bytes};
+pub use snark::{DaProofStateDiffV1, DaProofStateV1, SnarkAccountDiffV1, SnarkAccountTargetV1};
 
 /// Maximum size for snark account update VK in DA payloads.
 ///
@@ -51,10 +49,10 @@ mod tests {
             vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
         )
         .expect("message payload bytes must fit within SSZ max length");
-        let entry = DaMessageEntry::new(AccountId::from([0u8; 32]), 0, payload);
+        let entry = DaMessageEntryV1::new(AccountId::from([0u8; 32]), 0, payload);
 
         let encoded = encode_to_vec(&entry).expect("encode da message entry");
-        let decoded: Result<DaMessageEntry, _> = decode_buf_exact(&encoded);
+        let decoded: Result<DaMessageEntryV1, _> = decode_buf_exact(&encoded);
         assert!(decoded.is_err());
     }
 }

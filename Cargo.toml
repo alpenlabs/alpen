@@ -22,7 +22,8 @@ members = [
   "crates/ol/block-assembly",
   "crates/ol/chain-types-v1",
   "crates/ol/checkpoint",
-  "crates/ol/da",
+  "crates/ol/da-common",
+  "crates/ol/da-types-v1",
   "crates/ol/mempool",
   "crates/ol/mmr-index",
   "crates/ol/msg-types",
@@ -115,7 +116,8 @@ strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-bridge-types = { path = "crates/bridge-types" }
 strata-ol-chain-types-v1 = { path = "crates/ol/chain-types-v1" }
 strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
-strata-ol-da = { path = "crates/ol/da" }
+strata-ol-da-common = { path = "crates/ol/da-common" }
+strata-ol-da-types-v1 = { path = "crates/ol/da-types-v1" }
 strata-ol-genesis = { path = "crates/ol/genesis" }
 strata-ol-mempool = { path = "crates/ol/mempool" }
 strata-ol-mmr-index = { path = "crates/ol/mmr-index" }

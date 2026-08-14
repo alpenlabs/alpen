@@ -143,7 +143,8 @@ Orchestration Layer implementation.
 | `ol/chain-types-v1` | OL block and log types (SSZ) |
 | `ol/tx-types-v1` | OL transaction and tx proof types (SSZ) |
 | `ol/msg-types` | Deposit and withdrawal message types |
-| `ol/da` | OL data availability traits |
+| `ol/da-common` | Version-independent OL data availability traits and encoding helpers |
+| `ol/da-types-v1` | Concrete V1 OL DA payload types, scheme, and checkpoint-tx extractor |
 | `ol/block-assembly` | OL block construction |
 | `ol/mempool` | Transaction mempool |
 | `ol/state-support-types` | State access layers (batch diff, indexer, write tracking) |

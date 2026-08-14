@@ -8,7 +8,7 @@ use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
-use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
+use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::IStateAccessor;
 

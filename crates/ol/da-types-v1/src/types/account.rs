@@ -2,34 +2,35 @@
 
 use strata_da_framework::counter_schemes::CtrU64BySignedVarInt;
 use strata_da_framework::{DaCounter, DaWrite, make_compound_impl};
+use strata_ol_da_common::DaError;
 
-use super::snark::{SnarkAccountDiff, SnarkAccountTarget};
+use super::snark::{SnarkAccountDiffV1, SnarkAccountTargetV1};
 
 /// Per-account diff keyed by account type.
 ///
 /// The account type is implied by pre-state; the snark field is only populated
 /// for snark accounts.
 #[derive(Debug)]
-pub struct AccountDiff {
+pub struct AccountDiffV1 {
     /// Balance counter diff (signed delta in satoshis).
     pub balance: DaCounter<CtrU64BySignedVarInt>,
 
     /// Snark state diff.
-    pub snark: SnarkAccountDiff,
+    pub snark: SnarkAccountDiffV1,
 }
 
-impl Default for AccountDiff {
+impl Default for AccountDiffV1 {
     fn default() -> Self {
         Self {
             balance: DaCounter::new_unchanged(),
-            snark: SnarkAccountDiff::default(),
+            snark: SnarkAccountDiffV1::default(),
         }
     }
 }
 
-impl AccountDiff {
+impl AccountDiffV1 {
     /// Creates a new account diff.
-    pub fn new(balance: DaCounter<CtrU64BySignedVarInt>, snark: SnarkAccountDiff) -> Self {
+    pub fn new(balance: DaCounter<CtrU64BySignedVarInt>, snark: SnarkAccountDiffV1) -> Self {
         Self { balance, snark }
     }
 
@@ -44,14 +45,14 @@ impl AccountDiff {
 }
 
 make_compound_impl! {
-    AccountDiff < (), crate::DaError > u8 => AccountDiffTarget {
+    AccountDiffV1 < (), DaError > u8 => AccountDiffTargetV1 {
         balance: counter (CtrU64BySignedVarInt),
-        snark: compound (SnarkAccountDiff),
+        snark: compound (SnarkAccountDiffV1),
     }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct AccountDiffTarget {
+pub struct AccountDiffTargetV1 {
     pub balance: u64,
-    pub snark: SnarkAccountTarget,
+    pub snark: SnarkAccountTargetV1,
 }

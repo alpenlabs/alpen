@@ -2,10 +2,11 @@
 
 use strata_da_framework::counter_schemes::{CtrU64BySignedVarInt, CtrU64ByU16};
 use strata_da_framework::{DaCounter, make_compound_impl};
+use strata_ol_da_common::DaError;
 
 /// Diff of global state fields covered by DA.
 #[derive(Debug)]
-pub struct GlobalStateDiff {
+pub struct GlobalStateDiffV1 {
     /// Slot counter diff.
     pub cur_slot: DaCounter<CtrU64ByU16>,
 
@@ -13,7 +14,7 @@ pub struct GlobalStateDiff {
     pub limbo_funds_sats: DaCounter<CtrU64BySignedVarInt>,
 }
 
-impl Default for GlobalStateDiff {
+impl Default for GlobalStateDiffV1 {
     fn default() -> Self {
         Self {
             cur_slot: DaCounter::new_unchanged(),
@@ -22,8 +23,8 @@ impl Default for GlobalStateDiff {
     }
 }
 
-impl GlobalStateDiff {
-    /// Creates a new [`GlobalStateDiff`] from a slot counter.
+impl GlobalStateDiffV1 {
+    /// Creates a new [`GlobalStateDiffV1`] from a slot counter.
     pub fn new(
         cur_slot: DaCounter<CtrU64ByU16>,
         limbo_funds_sats: DaCounter<CtrU64BySignedVarInt>,
@@ -36,7 +37,7 @@ impl GlobalStateDiff {
 }
 
 make_compound_impl! {
-    GlobalStateDiff < (), crate::DaError > u8 => GlobalStateTarget {
+    GlobalStateDiffV1 < (), DaError > u8 => GlobalStateTargetV1 {
         cur_slot: counter (CtrU64ByU16),
         limbo_funds_sats: counter (CtrU64BySignedVarInt)
     }
@@ -44,7 +45,7 @@ make_compound_impl! {
 
 /// Target for applying a global state diff.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct GlobalStateTarget {
+pub struct GlobalStateTargetV1 {
     /// Current slot value.
     pub cur_slot: u64,
 

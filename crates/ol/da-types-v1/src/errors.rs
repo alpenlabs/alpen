@@ -1,34 +1,8 @@
 use bitcoin::consensus::encode;
-use strata_acct_types::AccountSerial;
 use strata_asm_proto_checkpoint_txs::CheckpointTxError;
 use strata_codec::CodecError;
-use strata_da_framework::DaError as FrameworkDaError;
 use strata_l1_txfmt::TxFmtError;
-use strata_predicate::PredicateError;
 use thiserror::Error;
-
-pub type DaResult<T> = Result<T, DaError>;
-
-#[derive(Debug, Error)]
-pub enum DaError {
-    #[error("DA framework failure: {0}")]
-    FrameworkError(#[from] FrameworkDaError),
-
-    #[error("invalid predicate key: {0}")]
-    InvalidPredicateKey(#[from] PredicateError),
-
-    #[error("invalid state diff: {0}")]
-    InvalidStateDiff(&'static str),
-
-    #[error("invalid ledger diff: {0}")]
-    InvalidLedgerDiff(&'static str),
-
-    #[error("unknown serial {0:?}")]
-    UnknownSerial(AccountSerial),
-
-    #[error("{0}")]
-    Other(&'static str),
-}
 
 pub type DaExtractorResult<T> = Result<T, DaExtractorError>;
 

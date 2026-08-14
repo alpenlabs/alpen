@@ -8727,7 +8727,7 @@ dependencies = [
  "strata-msg-fmt",
  "strata-node-context",
  "strata-ol-chain-types-v1",
- "strata-ol-da",
+ "strata-ol-da-types-v1",
  "strata-ol-params",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
@@ -9409,7 +9409,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-ol-da"
+name = "strata-ol-da-common"
+version = "0.1.0"
+dependencies = [
+ "strata-codec",
+ "strata-da-framework",
+ "strata-identifiers",
+ "strata-ol-state-types",
+ "strata-predicate",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-ol-da-types-v1"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
@@ -9424,6 +9436,7 @@ dependencies = [
  "strata-identifiers",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
+ "strata-ol-da-common",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf-v1",
@@ -9639,7 +9652,8 @@ dependencies = [
  "strata-da-framework",
  "strata-identifiers",
  "strata-merkle",
- "strata-ol-da",
+ "strata-ol-da-common",
+ "strata-ol-da-types-v1",
  "strata-ol-params",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
@@ -9704,7 +9718,8 @@ dependencies = [
  "strata-msg-fmt",
  "strata-ol-bridge-types",
  "strata-ol-chain-types-v1",
- "strata-ol-da",
+ "strata-ol-da-common",
+ "strata-ol-da-types-v1",
  "strata-ol-msg-types",
  "strata-ol-params",
  "strata-ol-state-support-types",
@@ -9820,7 +9835,7 @@ dependencies = [
  "strata-da-framework",
  "strata-identifiers",
  "strata-ol-chain-types-v1",
- "strata-ol-da",
+ "strata-ol-da-types-v1",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
@@ -9871,7 +9886,7 @@ dependencies = [
  "strata-da-framework",
  "strata-identifiers",
  "strata-ol-chain-types-v1",
- "strata-ol-da",
+ "strata-ol-da-types-v1",
  "strata-ol-state-types",
  "strata-ol-stf-v1",
  "strata-proofimpl-checkpoint",

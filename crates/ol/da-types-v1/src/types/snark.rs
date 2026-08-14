@@ -7,15 +7,18 @@ use strata_da_framework::{
     BitSeqReader, BitSeqWriter, CompoundMember, DaCounter, DaLinacc, DaRegister, DaWrite,
     make_compound_impl,
 };
+use strata_ol_da_common::{DaError, U16LenBytes};
 use strata_snark_acct_types::ProofState;
+
+use super::inbox::InboxBufferV1;
 
 /// DA-encoded proof state (inner state root + next inbox read index).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DaProofState {
+pub struct DaProofStateV1 {
     inner: ProofState,
 }
 
-impl DaProofState {
+impl DaProofStateV1 {
     pub fn new(inner_state_root: Hash, next_msg_read_idx: u64) -> Self {
         Self {
             inner: ProofState::new(inner_state_root, next_msg_read_idx),
@@ -31,25 +34,25 @@ impl DaProofState {
     }
 }
 
-impl Default for DaProofState {
+impl Default for DaProofStateV1 {
     fn default() -> Self {
         Self::new([0u8; 32].into(), 0)
     }
 }
 
-impl From<ProofState> for DaProofState {
+impl From<ProofState> for DaProofStateV1 {
     fn from(inner: ProofState) -> Self {
         Self { inner }
     }
 }
 
-impl From<DaProofState> for ProofState {
-    fn from(value: DaProofState) -> Self {
+impl From<DaProofStateV1> for ProofState {
+    fn from(value: DaProofStateV1) -> Self {
         value.inner
     }
 }
 
-impl Codec for DaProofState {
+impl Codec for DaProofStateV1 {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.inner.inner_state().encode(enc)?;
         self.inner.next_inbox_msg_idx().encode(enc)?;
@@ -65,12 +68,12 @@ impl Codec for DaProofState {
 
 /// Diff for proof state (inner state root + next inbox read index).
 #[derive(Clone, Debug)]
-pub struct DaProofStateDiff {
+pub struct DaProofStateDiffV1 {
     pub inner_state: DaRegister<Hash>,
     pub next_inbox_msg_idx: DaCounter<CtrU64ByUnsignedVarInt>,
 }
 
-impl DaProofStateDiff {
+impl DaProofStateDiffV1 {
     pub fn new(
         inner_state: DaRegister<Hash>,
         next_inbox_msg_idx: DaCounter<CtrU64ByUnsignedVarInt>,
@@ -82,7 +85,7 @@ impl DaProofStateDiff {
     }
 }
 
-impl Default for DaProofStateDiff {
+impl Default for DaProofStateDiffV1 {
     fn default() -> Self {
         Self {
             inner_state: DaRegister::new_unset(),
@@ -91,7 +94,7 @@ impl Default for DaProofStateDiff {
     }
 }
 
-impl Codec for DaProofStateDiff {
+impl Codec for DaProofStateDiffV1 {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let mask = u8::decode(dec)?;
         let mut bitr = BitSeqReader::from_mask(mask);
@@ -124,10 +127,10 @@ impl Codec for DaProofStateDiff {
     }
 }
 
-impl DaWrite for DaProofStateDiff {
-    type Target = DaProofState;
+impl DaWrite for DaProofStateDiffV1 {
+    type Target = DaProofStateV1;
     type Context = ();
-    type Error = crate::DaError;
+    type Error = DaError;
 
     fn is_default(&self) -> bool {
         DaWrite::is_default(&self.inner_state) && DaWrite::is_default(&self.next_inbox_msg_idx)
@@ -147,14 +150,14 @@ impl DaWrite for DaProofStateDiff {
         self.next_inbox_msg_idx
             .apply(&mut next_inbox_msg_idx, &())?;
 
-        *target = DaProofState::new(inner_state, next_inbox_msg_idx);
+        *target = DaProofStateV1::new(inner_state, next_inbox_msg_idx);
         Ok(())
     }
 }
 
-impl CompoundMember for DaProofStateDiff {
+impl CompoundMember for DaProofStateDiffV1 {
     fn default() -> Self {
-        <DaProofStateDiff as Default>::default()
+        <DaProofStateDiffV1 as Default>::default()
     }
 
     fn is_default(&self) -> bool {
@@ -173,48 +176,45 @@ impl CompoundMember for DaProofStateDiff {
     }
 }
 
-use super::encoding::U16LenBytes;
-use super::inbox::InboxBuffer;
-
 /// Diff for snark account state.
 ///
 /// Field order mirrors `SnarkAccountState` for consistency.
 #[derive(Debug)]
-pub struct SnarkAccountDiff {
+pub struct SnarkAccountDiffV1 {
     /// Update predicate key (VK) register, set when an update declares a
     /// rotation. Carries the serialized key bytes, as in
-    /// [`SnarkAccountInit`](super::ledger::SnarkAccountInit).
+    /// [`SnarkAccountInitV1`](super::ledger::SnarkAccountInitV1).
     pub update_vk: DaRegister<U16LenBytes>,
 
     /// Proof state diff.
-    pub proof_state: DaProofStateDiff,
+    pub proof_state: DaProofStateDiffV1,
 
     /// Sequence number counter diff.
     pub seq_no: DaCounter<CtrU64ByU16>,
 
     /// Inbox append-only diff.
-    pub inbox: DaLinacc<InboxBuffer>,
+    pub inbox: DaLinacc<InboxBufferV1>,
 }
 
-impl Default for SnarkAccountDiff {
+impl Default for SnarkAccountDiffV1 {
     fn default() -> Self {
         Self {
             update_vk: DaRegister::new_unset(),
-            proof_state: <DaProofStateDiff as Default>::default(),
+            proof_state: <DaProofStateDiffV1 as Default>::default(),
             seq_no: DaCounter::new_unchanged(),
             inbox: DaLinacc::new(),
         }
     }
 }
 
-impl SnarkAccountDiff {
-    /// Creates a new [`SnarkAccountDiff`] from an update VK register, proof
+impl SnarkAccountDiffV1 {
+    /// Creates a new [`SnarkAccountDiffV1`] from an update VK register, proof
     /// state, sequence number, and inbox diff.
     pub fn new(
         update_vk: DaRegister<U16LenBytes>,
-        proof_state: DaProofStateDiff,
+        proof_state: DaProofStateDiffV1,
         seq_no: DaCounter<CtrU64ByU16>,
-        inbox: DaLinacc<InboxBuffer>,
+        inbox: DaLinacc<InboxBufferV1>,
     ) -> Self {
         Self {
             update_vk,
@@ -226,29 +226,29 @@ impl SnarkAccountDiff {
 }
 
 make_compound_impl! {
-    SnarkAccountDiff < (), crate::DaError > u8 => SnarkAccountTarget {
+    SnarkAccountDiffV1 < (), DaError > u8 => SnarkAccountTargetV1 {
         update_vk: register (U16LenBytes),
-        proof_state: compound (DaProofStateDiff),
+        proof_state: compound (DaProofStateDiffV1),
         seq_no: counter (CtrU64ByU16),
-        inbox: compound (DaLinacc<InboxBuffer>),
+        inbox: compound (DaLinacc<InboxBufferV1>),
     }
 }
 
-/// Target state for applying a [`SnarkAccountDiff`].
+/// Target state for applying a [`SnarkAccountDiffV1`].
 ///
 /// This struct is the `DaWrite::Target` for snark diffs and is used by
 /// higher-level account diff targets during DA application.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct SnarkAccountTarget {
+pub struct SnarkAccountTargetV1 {
     pub update_vk: U16LenBytes,
-    pub proof_state: DaProofState,
+    pub proof_state: DaProofStateV1,
     pub seq_no: u64,
-    pub inbox: InboxBuffer,
+    pub inbox: InboxBufferV1,
 }
 
-impl CompoundMember for SnarkAccountDiff {
+impl CompoundMember for SnarkAccountDiffV1 {
     fn default() -> Self {
-        <SnarkAccountDiff as Default>::default()
+        <SnarkAccountDiffV1 as Default>::default()
     }
 
     fn is_default(&self) -> bool {

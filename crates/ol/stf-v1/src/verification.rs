@@ -11,7 +11,7 @@ use strata_ol_chain_types_v1::{
     AsmManifest, MAX_LOGS_PER_BLOCK, OLAsmManifestContainerV1, OLBlockBodyV1, OLBlockHeaderV1,
     OLLog, OLTxSegmentV1,
 };
-use strata_ol_da::DaScheme;
+use strata_ol_da_common::DaScheme;
 use strata_ol_state_types::*;
 use tracing::error;
 
@@ -437,9 +437,10 @@ mod tests {
     use strata_ol_chain_types_v1::{
         BlockFlagsV1, OLAsmManifestContainerV1, OLBlockId, OLLog, OLTxSegmentV1,
     };
-    use strata_ol_da::{
-        AccountInit, AccountTypeInit, GlobalStateDiff, LedgerDiff, NewAccountEntry, OLDaPayloadV1,
-        OLDaSchemeV1, StateDiff, U16LenList,
+    use strata_ol_da_common::U16LenList;
+    use strata_ol_da_types_v1::{
+        AccountInitV1, AccountTypeInitV1, GlobalStateDiffV1, LedgerDiffV1, NewAccountEntryV1,
+        OLDaPayloadV1, OLDaSchemeV1, OLStateDiffV1,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
 
@@ -470,26 +471,26 @@ mod tests {
         (state, epoch_info)
     }
 
-    fn state_changing_epoch_diff() -> StateDiff {
+    fn state_changing_epoch_diff() -> OLStateDiffV1 {
         let new_empty_acct_id = make_account_id(STATE_DIFF_EMPTY_ACCOUNT_ID);
-        let new_account = NewAccountEntry::new(
+        let new_account = NewAccountEntryV1::new(
             new_empty_acct_id,
-            AccountInit::new(
+            AccountInitV1::new(
                 BitcoinAmount::try_from(1)
                     .expect("amount must not exceed the Bitcoin money supply"),
-                AccountTypeInit::Empty,
+                AccountTypeInitV1::Empty,
             ),
         );
-        StateDiff::new(
-            GlobalStateDiff::default(),
-            LedgerDiff::new(
+        OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            LedgerDiffV1::new(
                 U16LenList::new(vec![new_account]),
                 U16LenList::new(Vec::new()),
             ),
         )
     }
 
-    fn duplicate_epoch_diff(state_diff: &StateDiff) -> StateDiff {
+    fn duplicate_epoch_diff(state_diff: &OLStateDiffV1) -> OLStateDiffV1 {
         let encoded = encode_to_vec(state_diff).expect("state diff should encode");
         decode_buf_exact(&encoded).expect("state diff should decode")
     }
@@ -497,7 +498,7 @@ mod tests {
     fn compute_post_epoch_root_after_diff(
         state: &MemoryStateBaseLayer,
         epoch_info: &EpochInfo,
-        state_diff: StateDiff,
+        state_diff: OLStateDiffV1,
         manifests: &OLAsmManifestContainerV1,
     ) -> Buf32 {
         let mut expected_state = state.clone();
