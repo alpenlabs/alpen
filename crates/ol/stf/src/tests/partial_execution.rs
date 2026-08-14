@@ -59,7 +59,9 @@ fn assert_mid_block_failure_state(
 
 fn make_invalid_gam_with_transfer(target: AccountId, transfer_dest: AccountId) -> OLTransaction {
     let mut effects = TxEffects::default();
-    effects.push_transfer(transfer_dest, 1);
+    effects
+        .push_transfer(transfer_dest, 1)
+        .expect("test transfer amount should be within the money supply");
 
     OLTransaction::new(
         OLTransactionData::new(

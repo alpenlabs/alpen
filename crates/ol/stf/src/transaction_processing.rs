@@ -391,7 +391,11 @@ mod tests {
     fn test_verify_gam_tx_rejects_transfer_effects() {
         let target_acct_id = make_account_id(1);
         let mut effects = TxEffects::default();
-        assert!(effects.push_transfer(target_acct_id, 1));
+        assert!(
+            effects
+                .push_transfer(target_acct_id, 1)
+                .expect("test transfer amount should be within the money supply")
+        );
         assert!(push_test_message(&mut effects, target_acct_id, 0, vec![]));
 
         assert_gam_structure_error(target_acct_id, &effects, "nonzero transfers");

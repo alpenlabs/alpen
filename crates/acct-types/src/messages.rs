@@ -15,12 +15,16 @@ use crate::{
 /// SSZ-bounded message payload data.
 pub type MsgPayloadData = VariableList<u8, { MAX_MSG_PAYLOAD_DATA_BYTES as usize }>;
 
-/// Error constructing a [`MsgPayload`] from raw bytes.
+/// Error constructing a [`MsgPayload`] or effect value from raw inputs.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MsgPayloadError {
     /// Raw message data exceeds the SSZ maximum length.
     #[error("message payload data too large (len {len} > max {max})")]
     DataTooLarge { len: usize, max: usize },
+
+    /// Raw satoshi value exceeds the Bitcoin money supply.
+    #[error("value exceeds the Bitcoin money supply ({sats} sats)")]
+    ValueTooLarge { sats: u64 },
 }
 
 impl SentMessage {

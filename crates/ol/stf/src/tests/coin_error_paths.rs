@@ -141,8 +141,16 @@ fn apply_tx_effects_defuses_remaining_on_midloop_error() {
     // overflows, so the loop errors while `remaining` still holds the second
     // effect's value.
     let mut effects = TxEffects::default();
-    assert!(effects.push_transfer(nonexistent, 200));
-    assert!(effects.push_transfer(nonexistent, 50));
+    assert!(
+        effects
+            .push_transfer(nonexistent, 200)
+            .expect("test transfer amount should be within the money supply")
+    );
+    assert!(
+        effects
+            .push_transfer(nonexistent, 50)
+            .expect("test transfer amount should be within the money supply")
+    );
 
     let outputs = ExecOutputBuffer::new_empty();
     let context = BasicExecContext::new(BlockInfo::new(1, 0, 0), &outputs);
