@@ -256,10 +256,7 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                 let Some(mut original) = txtree.get(&original_txid)? else {
                     return Ok(None);
                 };
-                if !matches!(
-                    original.status,
-                    L1TxStatus::Unpublished | L1TxStatus::Published
-                ) {
+                if !original.status.is_replaceable() {
                     return Ok(None);
                 }
 
@@ -305,11 +302,8 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                 // out of the chain while it stays indexed and broadcastable, so the chain head
                 // would report the older ancestor while a live transaction spent the same
                 // inputs. `put_replacement_tx_entry` and `try_mark_tx_entry_replaced` gate on
-                // the same two states.
-                if !matches!(
-                    loser.status,
-                    L1TxStatus::Unpublished | L1TxStatus::Published
-                ) {
+                // the same predicate.
+                if !loser.status.is_replaceable() {
                     return Ok(false);
                 }
 
@@ -336,10 +330,7 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                 let Some(mut entry) = txtree.get(&txid)? else {
                     return Ok(false);
                 };
-                if !matches!(
-                    entry.status,
-                    L1TxStatus::Unpublished | L1TxStatus::Published
-                ) {
+                if !entry.status.is_replaceable() {
                     return Ok(false);
                 }
                 entry.status = L1TxStatus::Replaced {

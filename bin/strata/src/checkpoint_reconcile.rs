@@ -185,7 +185,10 @@ fn cancel_queued_checkpoint(db: &impl DatabaseBackend, intents: &[IntentEntry]) 
 /// publication has started for either broadcaster entry.
 fn cancel_writer_intent(db: &impl DatabaseBackend, intent: IntentEntry) -> Result<bool> {
     let writer = db.writer_db();
-    let IntentStatus::Bundled(payload_idx) = intent.status else {
+    let IntentStatus::Bundled {
+        bundle_idx: payload_idx,
+    } = intent.status
+    else {
         let mut payload = BundledPayloadEntry::new_unsigned(intent.payload().clone());
         payload.status = L1BundleStatus::Abandoned;
         writer.bundle_intent_payload(*intent.intent.commitment(), intent, payload)?;
@@ -279,6 +282,7 @@ mod tests {
     use bitcoin::{Transaction, absolute, transaction};
     use strata_asm_checkpoint_types::test_utils::create_test_checkpoint_payload;
     use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
+    use strata_btcio::L1TxEntryExt;
     use strata_codec::encode_to_vec;
     use strata_codec_utils::CodecSsz;
     use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};

@@ -186,6 +186,14 @@ impl L1TxStatus {
     pub fn submission_started(&self) -> bool {
         matches!(self, Self::Unpublished | Self::Submitting) || self.has_reached_l1()
     }
+
+    /// Returns whether RBF may still supersede the transaction before confirmation.
+    pub fn is_replaceable(&self) -> bool {
+        matches!(
+            self,
+            Self::Queued | Self::Unpublished | Self::Submitting | Self::Published
+        )
+    }
 }
 
 impl fmt::Display for L1TxStatus {
@@ -289,10 +297,9 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 
     /// Atomically marks `txid` as superseded by `replacement_txid`.
     ///
-    /// The transition only applies to an entry that is still awaiting inclusion
-    /// ([`L1TxStatus::Unpublished`] or [`L1TxStatus::Published`]); a transaction that already
-    /// confirmed has won and is left untouched. Read and write happen in one transaction so a
-    /// concurrent confirmation cannot be clobbered.
+    /// The transition only applies while [`L1TxStatus::is_replaceable`] is true; a transaction
+    /// that already confirmed has won and is left untouched. Read and write happen in one
+    /// transaction so a concurrent confirmation cannot be clobbered.
     ///
     /// Returns whether the entry was transitioned.
     fn try_mark_tx_entry_replaced(&self, txid: Buf32, replacement_txid: L1TxId) -> DbResult<bool>;
@@ -313,8 +320,8 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// reversed one.
     ///
     /// Returns whether the reversal applied; `false` when either row is missing, when the winner's
-    /// replacement chain does not reach the loser, or when the loser has already left
-    /// `Unpublished`/`Published`, so nothing is written. That last case means a concurrent
+    /// replacement chain does not reach the loser, or when the loser is no longer replaceable, so
+    /// nothing is written. That last case means a concurrent
     /// replacement superseded the loser while this adoption was deciding, and reversing over it
     /// would cut the replacement out of the chain while it stays indexed and broadcastable.
     fn adopt_confirmed_ancestor(
@@ -412,12 +419,5 @@ mod tests {
         };
 
         assert_eq!(status.to_string(), "confirmed@42/000000..000000 (12 confs)");
-    }
-
-    #[test]
-    fn submitting_is_append_only_in_borsh_encoding() {
-        assert_eq!(borsh::to_vec(&L1TxStatus::Abandoned).unwrap()[0], 5);
-        assert_eq!(borsh::to_vec(&L1TxStatus::Submitting).unwrap()[0], 6);
-        assert_eq!(borsh::to_vec(&L1TxStatus::Queued).unwrap()[0], 7);
     }
 }

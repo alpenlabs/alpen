@@ -8,7 +8,10 @@ use strata_asm_common::{SectionStateExt, Subprotocol, TxInputRef};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_asm_proto_checkpoint_txs::{OL_STF_CHECKPOINT_TX_TAG, extract_checkpoint_from_envelope};
 use strata_btc_types::TxidExt;
-use strata_btcio::broadcaster::{PublishDecision, PublishPolicy};
+use strata_btcio::{
+    L1TxEntryExt,
+    broadcaster::{PublishDecision, PublishPolicy},
+};
 use strata_codec::decode_buf_exact;
 use strata_codec_utils::CodecSsz;
 use strata_csm_types::L1Payload;
@@ -123,7 +126,8 @@ pub(crate) fn checkpoint_from_payload(
     {
         return Ok(None);
     }
-    decode_buf_exact::<CodecSsz<CheckpointPayload>>(&payload.data().concat())
+    let data = payload.data().flatten().copied().collect::<Vec<_>>();
+    decode_buf_exact::<CodecSsz<CheckpointPayload>>(&data)
         .map(CodecSsz::into_inner)
         .map(Some)
         .map_err(|_| ())
