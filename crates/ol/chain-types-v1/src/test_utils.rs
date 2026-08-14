@@ -8,9 +8,8 @@
 use proptest::prelude::*;
 use rand::RngCore;
 use secp256k1::{Keypair, SECP256K1};
-use strata_acct_types::AccountSerial;
 use strata_identifiers::test_utils::{buf32_strategy, buf64_strategy, ol_block_id_strategy};
-use strata_identifiers::{Buf32, Epoch, Slot};
+use strata_identifiers::{AccountSerial, Buf32, Epoch, Slot};
 use strata_ol_tx_types_v1::test_utils::ol_transaction_strategy;
 pub use strata_ol_tx_types_v1::test_utils::schnorr_predicate;
 
