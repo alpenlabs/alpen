@@ -63,19 +63,19 @@ use std::{any::type_name, collections::BTreeMap, mem};
 use ssz_primitives::FixedBytes;
 use ssz_types::VariableList;
 use strata_acct_types::{
-    AccountId, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash, MessageEntry, Mmr64,
-    MsgPayload, RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
+    AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
+    RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
     tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
 use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
-    AccountSerial, Buf32, Buf64, Epoch, L1BlockId, L1Height, Slot, SubjectId, SubjectIdBytes,
-    WtxidsRoot,
+    AccountSerial, BRIDGE_GATEWAY_ACCT_ID, Buf32, Buf64, Epoch, L1BlockId, L1Height, Slot,
+    SubjectId, SubjectIdBytes, WtxidsRoot,
 };
 use strata_ledger_types::*;
-use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
+use strata_merkle::{CompactMmr64, L1_HEIGHT_MMR_PREFILL_LEAF, MerkleProof, Mmr};
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types::*;
@@ -85,9 +85,7 @@ use strata_ol_msg_types::{
 };
 use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::{
-    MMR_SENTINEL_DUMMY_LEAF, OLAccountState, OLSnarkAccountState, OLState,
-};
+use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
@@ -1732,7 +1730,7 @@ impl ManifestMmrTracker {
     pub fn with_genesis_l1_height(genesis_l1_height: u32) -> Self {
         let prefill_count = genesis_l1_height as u64 + 1;
         let mmr = <Mmr64 as strata_merkle::Mmr<StrataHasher>>::new_repeated(
-            MMR_SENTINEL_DUMMY_LEAF,
+            L1_HEIGHT_MMR_PREFILL_LEAF,
             prefill_count,
         );
         Self {

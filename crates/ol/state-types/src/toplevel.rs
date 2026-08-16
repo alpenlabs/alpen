@@ -2,13 +2,10 @@
 
 use strata_acct_types::{AccountId, AccountSerial, Mmr64, SYSTEM_RESERVED_ACCTS, StrataHasher};
 use strata_ledger_types::{IAccountState, NewAccountData, StateError, StateResult};
-use strata_merkle::Mmr;
+use strata_merkle::{L1_HEIGHT_MMR_PREFILL_LEAF, Mmr};
 use strata_ol_params::OLParams;
 
-use crate::{
-    MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeState, OLSnarkAccountState, WriteBatch,
-    ssz_generated::ssz::state::*,
-};
+use crate::{OLAccountTypeState, OLSnarkAccountState, WriteBatch, ssz_generated::ssz::state::*};
 
 impl OLState {
     /// Creates initial OL state from genesis parameters.
@@ -27,7 +24,7 @@ impl OLState {
         // state and the DB-side ASM MMR agree on it.
         let prefill_count = params.last_l1_block.height() as u64 + 1;
         let l1_block_refs_mmr =
-            <Mmr64 as Mmr<StrataHasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF, prefill_count);
+            <Mmr64 as Mmr<StrataHasher>>::new_repeated(L1_HEIGHT_MMR_PREFILL_LEAF, prefill_count);
 
         let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         let mut ledger = TsnlLedgerAccountsTable::new_empty();

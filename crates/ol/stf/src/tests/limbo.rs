@@ -14,11 +14,11 @@
 //! existing tests in `tests/multi_operations.rs`, which now also assert the
 //! limbo balance grew.
 
-use strata_acct_types::{
-    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount, MsgPayloadData,
-};
+use strata_acct_types::{BitcoinAmount, MsgPayloadData};
 use strata_codec::encode_to_vec;
-use strata_identifiers::{AccountSerial, SubjectId};
+use strata_identifiers::{
+    AccountSerial, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, SubjectId,
+};
 use strata_ledger_types::{Coin, IAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};

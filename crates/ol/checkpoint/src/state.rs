@@ -208,7 +208,7 @@ mod tests {
     use std::sync::Arc;
 
     use proptest::prelude::*;
-    use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount};
+    use strata_acct_types::BitcoinAmount;
     use strata_asm_checkpoint_types::{
         CheckpointPayload, CheckpointTip,
         test_utils::{checkpoint_sidecar_strategy, create_test_checkpoint_payload},
@@ -217,7 +217,8 @@ mod tests {
     use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{
-        AccountSerial, Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment,
+        AccountSerial, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, Buf32, Buf64, Epoch,
+        L1BlockCommitment, L1BlockId, OLBlockCommitment,
         test_utils::{buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy},
     };
     use strata_ledger_types::{IAccountState, IStateAccessor};

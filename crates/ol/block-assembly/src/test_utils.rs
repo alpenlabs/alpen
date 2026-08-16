@@ -22,8 +22,8 @@ use async_trait::async_trait;
 use bitcoin::Network;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
 use strata_acct_types::{
-    AccountId, AccountSerial, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash,
-    L1BlockRecord, MessageEntry, MsgPayload, l1_block_record_leaf_hash,
+    AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, Hash, L1BlockRecord, MessageEntry,
+    MsgPayload, l1_block_record_leaf_hash,
     tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{
@@ -36,8 +36,8 @@ use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{DbError, MmrId, asm::AsmExecOutput};
 use strata_identifiers::{
-    Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
-    WtxidsRoot,
+    BRIDGE_GATEWAY_ACCT_ID, Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height,
+    OLBlockCommitment, OLBlockId, OLTxId, WtxidsRoot,
 };
 use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::*;
