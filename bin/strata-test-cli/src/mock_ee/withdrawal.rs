@@ -6,9 +6,8 @@
 use anyhow::Context;
 use k256::schnorr::{signature::Signer, Signature, SigningKey};
 use ssz::Encode;
-use strata_acct_types::{
-    AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload, BRIDGE_GATEWAY_ACCT_ID,
-};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
+use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
 use strata_snark_acct_types::{

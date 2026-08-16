@@ -1,8 +1,8 @@
 //! Deposit-withdraw tests for end-to-end workflows.
 
-use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BitcoinAmount};
+use strata_acct_types::BitcoinAmount;
 use strata_bridge_params::DEFAULT_MAX_WITHDRAWAL_DESCRIPTOR_LEN;
-use strata_identifiers::SubjectId;
+use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, SubjectId};
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types::SimpleWithdrawalIntentLogData;

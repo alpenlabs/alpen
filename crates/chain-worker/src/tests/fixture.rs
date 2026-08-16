@@ -7,7 +7,7 @@
 
 #![allow(unreachable_pub, reason = "test fixture module")]
 
-use strata_acct_types::{AccountSerial, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
+use strata_acct_types::{AccountSerial, BitcoinAmount, MessageEntry};
 use strata_asm_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
     TerminalHeaderComplement,
@@ -17,7 +17,8 @@ use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
-    Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
+    BRIDGE_GATEWAY_ACCT_ID, Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment,
+    SubjectId,
 };
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types::{

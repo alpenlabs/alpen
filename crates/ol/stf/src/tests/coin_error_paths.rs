@@ -9,7 +9,8 @@
 //! implicitly proves no coin was lost: if the fix regressed, the test would
 //! abort with `coin: accidentally destroyed value` rather than fail an assert.
 
-use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayloadData, TxEffects};
+use strata_acct_types::{BitcoinAmount, MsgPayloadData, TxEffects};
+use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
 use strata_ledger_types::{Coin, IStateAccessorMut, StateError};
 
 use crate::{

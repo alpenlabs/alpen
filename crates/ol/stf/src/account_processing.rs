@@ -1,9 +1,8 @@
 //! Account-specific interaction handling, such as messages.
 
 use bitcoin_bosd::Descriptor;
-use strata_acct_types::{
-    AccountId, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, MsgPayload,
-};
+use strata_acct_types::{AccountId, MsgPayload};
+use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL};
 use strata_ledger_types::*;
 use strata_msg_fmt::MsgRef;
 use strata_ol_chain_types::SimpleWithdrawalIntentLogData;

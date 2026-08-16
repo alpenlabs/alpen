@@ -1,6 +1,7 @@
 //! Tests for SAU output message behavior.
 
-use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount};
+use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 
 use crate::test_utils::*;

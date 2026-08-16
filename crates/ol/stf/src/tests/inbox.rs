@@ -1,9 +1,8 @@
 //! Tests for inbox operations including message insertion, processing, and validation
 
 use ssz_primitives::FixedBytes;
-use strata_acct_types::{
-    AcctError, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof,
-};
+use strata_acct_types::{AcctError, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof};
+use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
 use strata_ledger_types::ISnarkAccountState;
 
 use crate::{SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
