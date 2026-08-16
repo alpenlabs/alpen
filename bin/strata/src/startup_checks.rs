@@ -793,11 +793,10 @@ mod tests {
     use bitcoind_async_client::corepc_types::model::GetBlockchainInfo;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{MmrId, ol_block::BlockStatus};
-    use strata_identifiers::{Buf32, L1BlockId};
+    use strata_identifiers::{Buf32, Hash, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockId};
     use strata_ol_params::OLParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::IStateAccessorMut;
-    use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use strata_storage::{NodeStorage, create_node_storage};
 
     use super::*;
@@ -1753,7 +1752,7 @@ mod tests {
         );
         assert_eq!(
             handle.get_leaf_blocking(0).expect("test: get leaf"),
-            Some(MMR_SENTINEL_DUMMY_LEAF_HASH)
+            Some(Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF))
         );
     }
 

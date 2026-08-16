@@ -1,14 +1,14 @@
 //! ASM manifest processing.
 
 use strata_acct_types::{
-    ADMIN_MSG_ACCT_ID, AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, L1BlockRecord,
-    MessageEntry, MsgPayload, MsgPayloadData,
+    ADMIN_MSG_ACCT_ID, AccountId, BitcoinAmount, L1BlockRecord, MessageEntry, MsgPayload,
+    MsgPayloadData,
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::constants::AsmLogTypeId;
 use strata_asm_logs::{CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate};
 use strata_codec::encode_to_vec;
-use strata_identifiers::{EpochCommitment, L1Height};
+use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, EpochCommitment, L1Height};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_msg_types::{

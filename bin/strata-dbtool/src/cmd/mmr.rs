@@ -12,13 +12,13 @@ use strata_db_types::{
     backend::DatabaseBackend, mmr_index::MmrIndexDatabase, num_leaves_to_mmr_size, LeafPos, MmrId,
     RawMmrId,
 };
-use strata_identifiers::{AccountId, Hash};
+use strata_identifiers::{AccountId, Hash, L1_HEIGHT_MMR_PREFILL_LEAF};
 use strata_ol_mmr_index::{
     build_mmr_index_reconcile_plan, MmrIndexEntry, MmrIndexReconcilePlan, MmrIndexTruncation,
     OLMmrIndexError,
 };
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types_v1::{OLStateV1, MMR_SENTINEL_DUMMY_LEAF_HASH};
+use strata_ol_state_types_v1::OLStateV1;
 use strata_storage::MmrIndexManager;
 use tokio::runtime::Runtime;
 
@@ -152,7 +152,7 @@ impl MmrNamespace {
 
     fn is_sentinel_dummy_leaf(&self, leaf_hash: &Hash) -> bool {
         matches!(&self.mmr_id, MmrId::Asm | MmrId::L1BlockRefs)
-            && *leaf_hash == MMR_SENTINEL_DUMMY_LEAF_HASH
+            && *leaf_hash == Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF)
     }
 
     fn decode_preimage(&self, leaf_index: u64, preimage: &[u8]) -> Result<DecodedPreimage, String> {
@@ -671,12 +671,14 @@ mod tests {
     use strata_acct_types::{append_l1_block_rec_to_mmr, BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::MmrBatchWrite;
-    use strata_identifiers::AccountId;
+    use strata_identifiers::{AccountId, Hash, L1_HEIGHT_MMR_PREFILL_LEAF};
     use strata_merkle::MmrState;
     use strata_ol_params::OLParams;
     use strata_ol_state_types_v1::{OLAccountStateV1, WriteBatch};
     use strata_storage::{MmrIndexHandle, MmrIndexManager};
     use tokio::runtime::Runtime;
+
+    const L1_BLOCK_REFS_MMR_PREFILL_HASH: Hash = Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF);
 
     use super::*;
 
@@ -705,7 +707,7 @@ mod tests {
 
     fn seed_l1_block_refs_index(handle: &MmrIndexHandle, records: &[L1BlockRecord]) {
         handle
-            .append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)
+            .append_leaf_blocking(L1_BLOCK_REFS_MMR_PREFILL_HASH)
             .expect("append L1 sentinel");
         for record in records {
             handle
@@ -881,7 +883,7 @@ mod tests {
         let manager = MmrIndexManager::new(runtime.handle().clone(), db.mmr_index_db());
         let l1_handle = manager.get_handle(MmrId::L1BlockRefs);
         l1_handle
-            .append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)
+            .append_leaf_blocking(L1_BLOCK_REFS_MMR_PREFILL_HASH)
             .expect("append L1 sentinel");
         l1_handle
             .append_leaf_blocking(Hash::from([0x11; 32]))
@@ -1383,14 +1385,14 @@ mod tests {
             raw_mmr_id: mmr_id.to_bytes(),
             leaf_index: 0,
             leaf_count: 1,
-            leaf_hash: MMR_SENTINEL_DUMMY_LEAF_HASH,
+            leaf_hash: L1_BLOCK_REFS_MMR_PREFILL_HASH,
             preimage: None,
         };
 
         let namespace = MmrNamespace::new(mmr_id);
         let leaf = build_mmr_leaf_info(&namespace, leaf_data).expect("build MMR leaf info");
 
-        assert_eq!(leaf.leaf_hash, hash_to_hex(&MMR_SENTINEL_DUMMY_LEAF_HASH));
+        assert_eq!(leaf.leaf_hash, hash_to_hex(&L1_BLOCK_REFS_MMR_PREFILL_HASH));
         assert!(leaf.sentinel_dummy_leaf);
         assert_eq!(leaf.preimage_matches_hash, None);
         assert_eq!(leaf.preimage_decoded, None);

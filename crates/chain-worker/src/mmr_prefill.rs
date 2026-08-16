@@ -1,7 +1,7 @@
 //! Shared helpers for DB-side OL MMR index prefill.
 
 use strata_db_types::{DbError, DbResult};
-use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
+use strata_identifiers::{Hash, L1_HEIGHT_MMR_PREFILL_LEAF};
 use strata_storage::{MmrId, MmrIndexManager};
 use tokio::task::spawn_blocking;
 
@@ -35,7 +35,7 @@ pub fn prefill_l1_block_refs_mmr_blocking(
     let leaf_count = handle.get_leaf_count_blocking()?;
 
     for expected_idx in leaf_count..=genesis_l1_height {
-        let appended_idx = handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
+        let appended_idx = handle.append_leaf_blocking(Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF))?;
         assert_eq!(
             appended_idx, expected_idx,
             "L1 block refs MMR index prefill mismatch: expected {expected_idx}, got {appended_idx}"
