@@ -66,15 +66,15 @@ use ssz_primitives::FixedBytes;
 use ssz_types::VariableList;
 use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
 use strata_acct_types::{
-    AccountId, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash, MessageEntry, Mmr64,
-    MsgPayload, RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
+    AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
+    RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
 use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
-    AccountSerial, Buf32, Buf64, Epoch, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockId, L1Height, Slot,
-    SubjectId, SubjectIdBytes, WtxidsRoot,
+    AccountSerial, BRIDGE_GATEWAY_ACCT_ID, Buf32, Buf64, Epoch, L1_HEIGHT_MMR_PREFILL_LEAF,
+    L1BlockId, L1Height, Slot, SubjectId, SubjectIdBytes, WtxidsRoot,
 };
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};

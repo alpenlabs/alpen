@@ -955,12 +955,14 @@ mod tests {
     use sled::Config;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_store_sled::{SledBackend, SledDbConfig};
+    use strata_identifiers::L1_HEIGHT_MMR_PREFILL_LEAF;
     use strata_merkle::{Mmr, Mmr64B32, MmrState};
-    use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use tempfile::tempdir;
     use typed_sled::SledDb;
 
     use super::*;
+
+    const MMR_SENTINEL_DUMMY_LEAF_HASH: Hash = Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF);
 
     fn setup_handle() -> MmrIndexHandle {
         setup_manager().get_handle(MmrId::Asm)
