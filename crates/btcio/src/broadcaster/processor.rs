@@ -35,14 +35,11 @@ pub(super) struct ProcessingPassResult {
 }
 
 /// Processes unfinalized entries and returns the indexed entries whose status changed.
-pub(super) async fn process_unfinalized_entries<C>(
+pub(super) async fn process_unfinalized_entries(
     unfinalized_entries: impl Iterator<Item = &IndexedEntry>,
-    io: &C,
+    io: &impl BroadcasterIoContext,
     params: &BtcioParams,
-) -> BroadcasterResult<ProcessingPassResult>
-where
-    C: BroadcasterIoContext,
-{
+) -> BroadcasterResult<ProcessingPassResult> {
     let mut processed = ProcessingPassResult::default();
 
     for entry in unfinalized_entries {
@@ -76,16 +73,13 @@ where
     fields(component = "btcio_broadcaster", %txid),
     name = "process_txentry"
 )]
-pub(super) async fn process_tx_entry<C>(
-    io: &C,
+pub(super) async fn process_tx_entry(
+    io: &impl BroadcasterIoContext,
     idx: u64,
     txentry: &L1TxEntry,
     txid: &Txid,
     params: &BtcioParams,
-) -> BroadcasterResult<Option<L1TxStatus>>
-where
-    C: BroadcasterIoContext,
-{
+) -> BroadcasterResult<Option<L1TxStatus>> {
     let result = match txentry.status {
         L1TxStatus::Queued => publish_queued(io, idx, txentry, params).await.map(Some),
         L1TxStatus::Unpublished | L1TxStatus::Submitting => {

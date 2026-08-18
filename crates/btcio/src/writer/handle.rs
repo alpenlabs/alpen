@@ -141,7 +141,7 @@ pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow
         let Some(payload) = insc_ops.get_payload_entry_by_idx_blocking(idx)? else {
             continue;
         };
-        if !payload.status.is_terminal() {
+        if !payload.status.is_finished() {
             return Ok(idx);
         }
     }

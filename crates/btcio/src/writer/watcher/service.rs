@@ -942,7 +942,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     .put_payload_entry(self.curr_payloadidx, updated_entry)
                     .await?;
 
-                if new_status.is_terminal() {
+                if new_status.is_finished() {
                     self.curr_payloadidx += 1;
                 }
             }

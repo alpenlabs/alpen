@@ -179,7 +179,7 @@ impl L1BundleStatus {
     }
 
     /// Returns whether the writer has no more work for this bundle.
-    pub fn is_terminal(&self) -> bool {
+    pub fn is_finished(&self) -> bool {
         matches!(self, Self::Finalized | Self::Abandoned)
     }
 }
