@@ -7,7 +7,7 @@ use std::{
 use cfg_if::cfg_if;
 
 cfg_if! {
-    if #[cfg(all(feature = "sp1-dev", not(debug_assertions)))] {
+    if #[cfg(all(feature = "build-elf", not(debug_assertions)))] {
         use bincode::{deserialize, serialize};
         use cargo_metadata::MetadataCommand;
         use sha2::{Digest, Sha256};
@@ -180,7 +180,7 @@ fn get_output_dir() -> PathBuf {
 }
 
 /// Checks if the cache is valid by comparing the expected ID with the saved ID.
-#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+#[cfg(all(feature = "build-elf", not(debug_assertions)))]
 fn is_cache_valid(expected_id: &[u8; 32], paths: &[PathBuf; 3]) -> bool {
     // Check if any required files are missing
     if paths.iter().any(|path| !path.exists()) {
@@ -197,7 +197,7 @@ fn is_cache_valid(expected_id: &[u8; 32], paths: &[PathBuf; 3]) -> bool {
 }
 
 /// Ensures the cache is valid and returns the ELF contents and SP1 Verifying Key.
-#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+#[cfg(all(feature = "build-elf", not(debug_assertions)))]
 fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
     let cache_dir = format!("{}/cache", program);
     let paths =
@@ -237,7 +237,7 @@ fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
 ///
 /// Returns `(hash_u32, bytes32_hex, program_id)` where `program_id` is the
 /// BN254-based bytes needed by `SP1Groth16Verifier::load`.
-#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+#[cfg(all(feature = "build-elf", not(debug_assertions)))]
 fn generate_elf_contents_and_vk_hash(program: &str) -> ([u32; 8], String, [u8; 32]) {
     // Check if the Clippy linter is enabled by examining the "RUSTC_WORKSPACE_WRAPPER" environment
     // variable. If it contains "clippy-driver", Clippy is active; in that case, return mock ELF
@@ -291,7 +291,10 @@ fn generate_elf_contents_and_vk_hash(program: &str) -> ([u32; 8], String, [u8; 3
     // Now, ensure cache validity
     let vk = ensure_cache_validity(program)
         .expect("Failed to ensure cache validity after building program");
-    (vk.hash_u32(), vk.bytes32(), vk_program_id(&vk))
+    let vk_hash_str = vk.bytes32();
+    let program_id = vk_program_id(&vk);
+    write_guest_predicate_metadata(program, &vk_hash_str, &program_id);
+    (vk.hash_u32(), vk_hash_str, program_id)
 }
 
 /// Computes the BN254 program ID (`[u8; 32]`) for a verifying key.
@@ -305,7 +308,7 @@ fn generate_elf_contents_and_vk_hash(program: &str) -> ([u32; 8], String, [u8; 3
 /// to whatever digest a given guest ELF happens to produce.
 ///
 /// N.B. The upstream fix: https://github.com/succinctlabs/sp1/pull/2508
-#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+#[cfg(all(feature = "build-elf", not(debug_assertions)))]
 fn vk_program_id(vk: &SP1VerifyingKey) -> [u8; 32] {
     let bytes32 = vk.bytes32();
     let hex = bytes32.strip_prefix("0x").unwrap_or(&bytes32);
@@ -331,13 +334,41 @@ fn get_mock_elf_contents_and_vk_hash() -> ([u32; 8], String, [u8; 32]) {
     )
 }
 
+/// Writes artifact metadata derived from a built guest's verifying key.
+///
+/// The datatool currently reads equivalent VK hashes from generated Rust
+/// constants. These files give future params-generation flows an explicit
+/// artifact boundary without changing current datatool behavior.
+#[cfg(all(feature = "build-elf", not(debug_assertions)))]
+fn write_guest_predicate_metadata(program: &str, vk_hash_str: &str, program_id: &[u8; 32]) {
+    let cache_dir = Path::new(program).join("cache");
+    fs::create_dir_all(&cache_dir)
+        .unwrap_or_else(|e| panic!("failed to create cache dir for {program}: {e}"));
+
+    let vk_hash_path = cache_dir.join(format!("{program}.vk-hash"));
+    fs::write(&vk_hash_path, format!("{vk_hash_str}\n"))
+        .unwrap_or_else(|e| panic!("failed to write {}: {e}", vk_hash_path.display()));
+
+    let predicate = sp1_groth16_predicate_string(program_id);
+    let predicate_path = cache_dir.join(format!("{program}.predicate"));
+    fs::write(&predicate_path, format!("{predicate}\n"))
+        .unwrap_or_else(|e| panic!("failed to write {}: {e}", predicate_path.display()));
+}
+
+/// Renders the human-readable predicate key string for an SP1 Groth16 program ID.
+#[cfg(all(feature = "build-elf", not(debug_assertions)))]
+fn sp1_groth16_predicate_string(program_id: &[u8; 32]) -> String {
+    let condition = compute_groth16_condition(program_id);
+    format!("Sp1Groth16:{}", hex::encode(condition))
+}
+
 /// Computes the Groth16 verifying key condition bytes for the given BN254
 /// program ID. The output is the canonical uncompressed encoding of an
 /// [`SP1Groth16Verifier`] that the runtime `Sp1Groth16` predicate verifier in
 /// `strata-predicate` decodes via `SP1Groth16Verifier::parse`. The verifier
 /// object embeds the SP1 circuit VK merged with the program-specific ID and the
 /// VK root.
-#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+#[cfg(all(feature = "build-elf", not(debug_assertions)))]
 fn compute_groth16_condition(program_id: &[u8; 32]) -> Vec<u8> {
     let sp1_verifier = SP1Groth16Verifier::load(
         &sp1_verifier::GROTH16_VK_BYTES,
@@ -357,7 +388,7 @@ fn compute_groth16_condition(_program_id: &[u8; 32]) -> Vec<u8> {
 }
 
 /// Copies the compiled ELF file of the specified program to its cache directory.
-#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+#[cfg(all(feature = "build-elf", not(debug_assertions)))]
 fn migrate_elf(program: &str) {
     // Get the build directory from the environment
     let sp1_build_dir =
