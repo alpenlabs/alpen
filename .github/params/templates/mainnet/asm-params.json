@@ -42,7 +42,7 @@
           "alpen_admin_multisig_update": 12,
           "strata_security_council_multisig_update": 12,
           "operator_update": 12,
-          "sequencer_update": 12,
+          "sequencer_update": 0,
           "ol_stf_vk_update": 12,
           "asm_stf_vk_update": 12,
           "ee_stf_vk_update": 12,
