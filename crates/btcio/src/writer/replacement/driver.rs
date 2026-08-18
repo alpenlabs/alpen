@@ -217,36 +217,18 @@ where
     Ok(())
 }
 
-/// Reports whether the row that owns a logical transaction still names its active attempt.
+/// Reports whether a missing broadcast entry can be safely restored from its tx-node.
 ///
-/// Used to gate re-inserting a broadcast entry the node has but the broadcaster does not. That
-/// state has two causes with opposite remedies: a stop between the two writes, where re-inserting
-/// is the recovery, and a writer rebuild that has already moved the row to a fresh transaction,
-/// where re-inserting resurrects an envelope the writer abandoned.
-///
-/// Fails closed. Without the owning row, or the storage handle to read it, there is no way to tell
-/// the two apart, and re-inserting is the destructive guess.
-async fn active_attempt_is_still_owned(
+/// Single-envelope pairs enter the broadcaster atomically, so a missing member proves neither was
+/// exposed and the writer must rebuild the pair. Chunked envelopes persist incrementally and may
+/// restore an entry only while their authoritative row still names the same transaction.
+async fn missing_entry_can_be_reinserted(
     context: &ReplacementContext,
     record: &TxNodeRecord,
 ) -> anyhow::Result<bool> {
     match record.kind {
-        TxNodeKind::SingleEnvelopeCommit { payload_idx }
-        | TxNodeKind::SingleEnvelopeReveal { payload_idx } => {
-            let Some(envelope_ops) = context.envelope_ops.as_ref() else {
-                return Ok(false);
-            };
-            let Some(entry) = envelope_ops
-                .get_payload_entry_by_idx_async(payload_idx)
-                .await?
-            else {
-                return Ok(false);
-            };
-            let owned_txid = match record.kind {
-                TxNodeKind::SingleEnvelopeCommit { .. } => entry.commit_txid,
-                _ => entry.reveal_txid,
-            };
-            Ok(owned_txid == record.active_txid)
+        TxNodeKind::SingleEnvelopeCommit { .. } | TxNodeKind::SingleEnvelopeReveal { .. } => {
+            Ok(false)
         }
         TxNodeKind::ChunkedEnvelopeCommit { envelope_idx } => {
             let Some(chunked_ops) = context.chunked_ops.as_ref() else {
@@ -455,17 +437,11 @@ where
             trace!(node_id = ?record.node_id, active_txid = ?record.active_txid, "tx-node is waiting for external signature");
             return Ok(());
         }
-        // A crash between persisting the tx-node record and inserting its broadcast entry
-        // leaves the record pointing at a transaction the broadcaster never saw. The record
-        // holds the raw tx, so re-insert it rather than stalling the chain forever.
-        //
-        // Only while the owning row still names this transaction, though. The writer reacts to the
-        // same missing entry by rebuilding the whole envelope, and a re-insert racing that rebuild
-        // hands the broadcaster a second, complete envelope for one payload: the original commit
-        // entry was written before the node, so both would publish and the payload would land on
-        // L1 twice.
-        if !active_attempt_is_still_owned(context, &record).await? {
-            debug!(node_id = ?record.node_id, active_txid = ?record.active_txid, "not re-inserting a broadcast entry the owning row has moved past");
+        // Chunked envelopes expose entries incrementally, so a crash can leave a valid tx-node
+        // without its broadcast entry. Single-envelope pairs are atomic and must rebuild instead;
+        // restoring one member would create the half-pair that atomic insertion prevents.
+        if !missing_entry_can_be_reinserted(context, &record).await? {
+            debug!(node_id = ?record.node_id, active_txid = ?record.active_txid, "not re-inserting a missing broadcast entry");
             return Ok(());
         }
         let Some(active_attempt) = record.active_attempt() else {
@@ -2180,91 +2156,16 @@ mod tests {
         assert_eq!(unchanged.reveals[0].txid, original_entry.reveals[0].txid);
     }
 
-    /// Builds a payload row naming `reveal_txid`, and the reveal node for the same payload.
-    async fn payload_row_and_reveal_node(
-        reveal_tx: &Transaction,
-    ) -> (ReplacementContext, TxNodeRecord) {
-        let envelope_ops = get_envelope_ops();
-        let tag = TagData::new(1, 1, vec![]).expect("test: valid tag");
-        let payload = L1Payload::new(vec![vec![1u8; 8]], tag).expect("test: valid payload");
-        let mut payload_entry = BundledPayloadEntry::new_unsigned(payload);
-        payload_entry.reveal_txid = L1TxId::from(reveal_tx.compute_txid().to_byte_array());
-        payload_entry.status = L1BundleStatus::PendingRevealTxSign(Buf32::zero());
-        envelope_ops
-            .put_payload_entry_async(PAYLOAD_IDX, payload_entry)
-            .await
-            .expect("test: payload row persists");
-
-        let record = TxNodeRecord::new(
-            TxNodeKind::SingleEnvelopeReveal {
-                payload_idx: PAYLOAD_IDX,
-            },
-            TxAttempt::active(
-                attempt_parts(reveal_tx, fee_rate(), Amount::from_sat(100)),
-                0,
-            ),
-        );
-        (
-            ReplacementContext {
-                envelope_ops: Some(envelope_ops),
-                ..ReplacementContext::default()
-            },
-            record,
-        )
-    }
-
-    /// The re-insert recovery only applies while the payload row still names the node's
-    /// transaction, which is the case when the process simply stopped between the two writes.
+    /// A single-envelope tx-node may be durable before its atomic broadcaster pair. Re-inserting
+    /// that one member would expose a half-pair and race the writer's safe rebuild.
     #[tokio::test(flavor = "multi_thread")]
-    async fn missing_entry_is_re_inserted_while_the_payload_still_owns_it() {
-        let reveal_tx = tx_with_output(900);
-        let (context, record) = payload_row_and_reveal_node(&reveal_tx).await;
-
-        assert!(active_attempt_is_still_owned(&context, &record)
-            .await
-            .expect("test: ownership check runs"));
-    }
-
-    /// Regression: the writer reacts to a missing reveal entry by rebuilding the whole envelope.
-    /// Re-inserting the abandoned reveal then hands the broadcaster a second complete envelope for
-    /// one payload, since the original commit entry was written before the node, and the payload
-    /// lands on L1 twice.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn missing_entry_is_not_re_inserted_after_the_payload_was_rebuilt() {
-        let reveal_tx = tx_with_output(900);
-        let (context, record) = payload_row_and_reveal_node(&reveal_tx).await;
-
-        // The writer rebuilt the envelope: the row now names a different reveal.
-        let envelope_ops = context
-            .envelope_ops
-            .as_ref()
-            .expect("test: envelope ops configured");
-        let mut rebuilt = envelope_ops
-            .get_payload_entry_by_idx_async(PAYLOAD_IDX)
-            .await
-            .expect("test: payload row is readable")
-            .expect("test: payload row exists");
-        rebuilt.reveal_txid = L1TxId::from(tx_with_output(800).compute_txid().to_byte_array());
-        envelope_ops
-            .put_payload_entry_async(PAYLOAD_IDX, rebuilt)
-            .await
-            .expect("test: rebuilt row persists");
-
-        assert!(!active_attempt_is_still_owned(&context, &record)
-            .await
-            .expect("test: ownership check runs"));
-    }
-
-    /// Without the owning row there is no way to tell a stopped write from an abandoned envelope,
-    /// and re-inserting is the destructive guess.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn missing_entry_is_not_re_inserted_without_the_owning_row() {
+    async fn missing_single_envelope_entry_is_not_reinserted() {
         let record = single_reveal_record();
 
         assert!(
-            !active_attempt_is_still_owned(&ReplacementContext::default(), &record)
+            !missing_entry_can_be_reinserted(&ReplacementContext::default(), &record)
                 .await
-                .expect("test: ownership check runs")
+                .expect("test: recovery check runs")
         );
     }
 

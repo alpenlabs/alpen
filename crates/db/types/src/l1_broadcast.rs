@@ -44,7 +44,7 @@ impl L1TxEntry {
     pub fn new_unpublished(tx_raw: Vec<u8>) -> Self {
         Self {
             tx_raw,
-            status: L1TxStatus::Unpublished,
+            status: L1TxStatus::Queued,
             rbf: None,
         }
     }
@@ -80,10 +80,7 @@ impl L1TxEntry {
     /// includes anyway is recovered by `adopt_live_ancestor`, which reverses the link and
     /// re-admits the winner.
     pub fn is_trackable(&self) -> bool {
-        !matches!(
-            self.status,
-            L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. }
-        )
+        self.status.may_be_live() && !matches!(self.status, L1TxStatus::Replaced { .. })
     }
 
     pub fn is_finalized(&self) -> bool {
@@ -123,7 +120,7 @@ pub struct L1TxRbfInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum L1TxStatus {
-    /// The transaction is waiting to be published
+    /// Legacy transaction whose submission state predates durable tracking.
     Unpublished,
 
     /// The transaction is published
@@ -157,6 +154,46 @@ pub enum L1TxStatus {
         /// Replacement transaction id.
         by: L1TxId,
     },
+
+    /// The transaction was deliberately excluded from publication.
+    Abandoned,
+
+    /// Publication started, but Bitcoin acceptance has not been durably observed.
+    ///
+    /// This state survives a crash between `sendrawtransaction` and recording its
+    /// response, so recovery can distinguish it from a never-submitted transaction.
+    Submitting,
+
+    /// The transaction is durably queued and has never been submitted.
+    Queued,
+}
+
+impl L1TxStatus {
+    /// Returns whether the transaction may still be pending or present on L1.
+    pub fn may_be_live(&self) -> bool {
+        !matches!(self, Self::InvalidInputs | Self::Abandoned)
+    }
+
+    /// Returns whether the transaction was submitted to or observed on L1.
+    pub fn has_reached_l1(&self) -> bool {
+        matches!(
+            self,
+            Self::Published | Self::Confirmed { .. } | Self::Finalized { .. }
+        )
+    }
+
+    /// Returns whether publication started or the transaction was observed on L1.
+    pub fn submission_started(&self) -> bool {
+        matches!(self, Self::Unpublished | Self::Submitting) || self.has_reached_l1()
+    }
+
+    /// Returns whether RBF may still supersede the transaction before confirmation.
+    pub fn is_replaceable(&self) -> bool {
+        matches!(
+            self,
+            Self::Queued | Self::Unpublished | Self::Submitting | Self::Published
+        )
+    }
 }
 
 impl fmt::Display for L1TxStatus {
@@ -186,6 +223,9 @@ impl fmt::Display for L1TxStatus {
             }
             Self::InvalidInputs => f.write_str("invalid_inputs"),
             Self::Replaced { by } => write!(f, "replaced_by({by})"),
+            Self::Abandoned => f.write_str("abandoned"),
+            Self::Submitting => f.write_str("submitting"),
+            Self::Queued => f.write_str("queued"),
         }
     }
 }
@@ -199,6 +239,15 @@ impl fmt::Display for L1TxStatus {
 pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// Updates/Inserts a txentry to database. Returns Some(idx) if newly inserted else None
     fn put_tx_entry(&self, txid: Buf32, txentry: L1TxEntry) -> DbResult<Option<u64>>;
+
+    /// Atomically inserts a new commit/reveal pair at consecutive indices.
+    ///
+    /// Returns the assigned indices, or `None` when the same pair already exists.
+    fn put_tx_entry_pair(
+        &self,
+        commit: (Buf32, L1TxEntry),
+        reveal: (Buf32, L1TxEntry),
+    ) -> DbResult<Option<(u64, u64)>>;
 
     /// Updates an existing txentry
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()>;
@@ -248,10 +297,9 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 
     /// Atomically marks `txid` as superseded by `replacement_txid`.
     ///
-    /// The transition only applies to an entry that is still awaiting inclusion
-    /// ([`L1TxStatus::Unpublished`] or [`L1TxStatus::Published`]); a transaction that already
-    /// confirmed has won and is left untouched. Read and write happen in one transaction so a
-    /// concurrent confirmation cannot be clobbered.
+    /// The transition only applies while [`L1TxStatus::is_replaceable`] is true; a transaction
+    /// that already confirmed has won and is left untouched. Read and write happen in one
+    /// transaction so a concurrent confirmation cannot be clobbered.
     ///
     /// Returns whether the entry was transitioned.
     fn try_mark_tx_entry_replaced(&self, txid: Buf32, replacement_txid: L1TxId) -> DbResult<bool>;
@@ -272,8 +320,8 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// reversed one.
     ///
     /// Returns whether the reversal applied; `false` when either row is missing, when the winner's
-    /// replacement chain does not reach the loser, or when the loser has already left
-    /// `Unpublished`/`Published`, so nothing is written. That last case means a concurrent
+    /// replacement chain does not reach the loser, or when the loser is no longer replaceable, so
+    /// nothing is written. That last case means a concurrent
     /// replacement superseded the loser while this adoption was deciding, and reversing over it
     /// would cut the replacement out of the chain while it stays indexed and broadcastable.
     fn adopt_confirmed_ancestor(
@@ -347,6 +395,9 @@ mod tests {
                 L1TxStatus::Replaced { by: L1TxId::zero() },
                 r#"{"status":"replaced","by":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
             ),
+            (L1TxStatus::Abandoned, r#"{"status":"abandoned"}"#),
+            (L1TxStatus::Submitting, r#"{"status":"submitting"}"#),
+            (L1TxStatus::Queued, r#"{"status":"queued"}"#),
         ];
 
         // check serialization and deserialization

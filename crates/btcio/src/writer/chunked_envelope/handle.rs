@@ -215,7 +215,12 @@ impl ChunkedEnvelopeWatcherState {
     fn from_entries(next_db_idx: u64, entries: &[(u64, ChunkedEnvelopeEntry)]) -> Self {
         let active_envelopes = entries
             .iter()
-            .filter(|(_, entry)| entry.status != ChunkedEnvelopeStatus::Finalized)
+            .filter(|(_, entry)| {
+                !matches!(
+                    entry.status,
+                    ChunkedEnvelopeStatus::Finalized | ChunkedEnvelopeStatus::Abandoned
+                )
+            })
             .map(|(idx, _)| *idx)
             .collect();
         let forward_frontier = entries
@@ -251,7 +256,10 @@ impl ChunkedEnvelopeWatcherState {
 
         let entries = load_entries_range_async(ops, self.next_db_idx, observed_next_idx).await?;
         for (idx, entry) in entries {
-            if entry.status != ChunkedEnvelopeStatus::Finalized {
+            if !matches!(
+                entry.status,
+                ChunkedEnvelopeStatus::Finalized | ChunkedEnvelopeStatus::Abandoned
+            ) {
                 self.active_envelopes.insert(idx);
             }
         }
@@ -270,10 +278,13 @@ fn format_reveal_refs(entry: &ChunkedEnvelopeEntry) -> Vec<String> {
 
 fn format_tx_status(txid: L1TxId, status: &L1TxStatus) -> String {
     match status {
+        L1TxStatus::Queued => format!("{txid:?}:queued"),
         L1TxStatus::Unpublished => format!("{txid:?}:unpublished"),
+        L1TxStatus::Submitting => format!("{txid:?}:submitting"),
         L1TxStatus::Published => format!("{txid:?}:published"),
         L1TxStatus::InvalidInputs => format!("{txid:?}:invalid_inputs"),
         L1TxStatus::Replaced { by } => format!("{txid:?}:replaced_by({by:?})"),
+        L1TxStatus::Abandoned => format!("{txid:?}:abandoned"),
         L1TxStatus::Confirmed {
             confirmations,
             block_hash,
@@ -385,6 +396,7 @@ fn entry_unlocks_successor(entry: &ChunkedEnvelopeEntry) -> bool {
             | ChunkedEnvelopeStatus::Published
             | ChunkedEnvelopeStatus::Confirmed
             | ChunkedEnvelopeStatus::Finalized
+            | ChunkedEnvelopeStatus::Abandoned
     )
 }
 
@@ -477,7 +489,7 @@ async fn reconcile_active_entries(
         };
 
         let new_status = match entry.status {
-            ChunkedEnvelopeStatus::Finalized => {
+            ChunkedEnvelopeStatus::Finalized | ChunkedEnvelopeStatus::Abandoned => {
                 state.active_envelopes.remove(&idx);
                 continue;
             }
@@ -670,7 +682,7 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
             return Err(invalid_gap_error(idx).into());
         };
 
-        if entry.status == ChunkedEnvelopeStatus::Finalized || entry_unlocks_successor(&entry) {
+        if entry_unlocks_successor(&entry) {
             state.forward_frontier += 1;
             continue;
         }
@@ -766,7 +778,8 @@ async fn check_commit_and_enqueue_reveals(
             );
             return Ok(ChunkedEnvelopeStatus::NeedsResign);
         }
-        L1TxStatus::Unpublished => {
+        L1TxStatus::Abandoned => return Ok(ChunkedEnvelopeStatus::Abandoned),
+        L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting => {
             debug!(
                 envelope_idx,
                 commit_txid = ?entry.commit_txid,
@@ -797,9 +810,12 @@ fn reveal_enqueue_is_policy_safe(
     commit: &L1TxEntry,
 ) -> anyhow::Result<bool> {
     match commit.status {
-        L1TxStatus::InvalidInputs | L1TxStatus::Unpublished | L1TxStatus::Replaced { .. } => {
-            Ok(false)
-        }
+        L1TxStatus::InvalidInputs
+        | L1TxStatus::Abandoned
+        | L1TxStatus::Queued
+        | L1TxStatus::Unpublished
+        | L1TxStatus::Submitting
+        | L1TxStatus::Replaced { .. } => Ok(false),
         L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => Ok(true),
         L1TxStatus::Published => {
             let [reveal] = entry.reveals.as_slice() else {
@@ -1055,8 +1071,10 @@ async fn check_full_broadcast_status(
             .into(),
         );
     };
-    if commit.status == L1TxStatus::InvalidInputs {
-        return Ok(ChunkedEnvelopeStatus::NeedsResign);
+    match commit.status {
+        L1TxStatus::InvalidInputs => return Ok(ChunkedEnvelopeStatus::NeedsResign),
+        L1TxStatus::Abandoned => return Ok(ChunkedEnvelopeStatus::Abandoned),
+        _ => {}
     }
 
     // Same rule as the normal enqueue path: reveals recorded against a superseded commit must not
@@ -1106,6 +1124,9 @@ async fn check_full_broadcast_status(
             reveal_l1_statuses.push(format_tx_status(reveal.txid, &min_progress));
             continue;
         };
+        if rtx.status == L1TxStatus::Abandoned {
+            return Ok(ChunkedEnvelopeStatus::Abandoned);
+        }
         if rtx.status == L1TxStatus::InvalidInputs {
             // This shouldn't happen if we waited for commit to be published first,
             // but handle it gracefully by re-signing.
@@ -1150,7 +1171,7 @@ async fn check_full_broadcast_status(
 /// `InvalidInputs` is excluded because the caller handles it via early return.
 fn progress_ordinal(s: &L1TxStatus) -> u8 {
     match s {
-        L1TxStatus::Unpublished => 0,
+        L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting => 0,
         L1TxStatus::Published => 1,
         L1TxStatus::Confirmed { .. } => 2,
         L1TxStatus::Finalized { .. } => 3,
@@ -1158,6 +1179,7 @@ fn progress_ordinal(s: &L1TxStatus) -> u8 {
         L1TxStatus::InvalidInputs => {
             unreachable!("InvalidInputs is handled before aggregation")
         }
+        L1TxStatus::Abandoned => unreachable!("Abandoned is handled before aggregation"),
     }
 }
 
@@ -1177,7 +1199,9 @@ fn to_envelope_status(s: &L1TxStatus) -> ChunkedEnvelopeStatus {
     match s {
         // Reveals may still be unpublished even though they're in broadcast DB.
         // Stay at CommitPublished until all are Published.
-        L1TxStatus::Unpublished => ChunkedEnvelopeStatus::CommitPublished,
+        L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting => {
+            ChunkedEnvelopeStatus::CommitPublished
+        }
         L1TxStatus::Published => ChunkedEnvelopeStatus::Published,
         L1TxStatus::Confirmed { .. } => ChunkedEnvelopeStatus::Confirmed,
         L1TxStatus::Finalized { .. } => ChunkedEnvelopeStatus::Finalized,
@@ -1185,6 +1209,7 @@ fn to_envelope_status(s: &L1TxStatus) -> ChunkedEnvelopeStatus {
         L1TxStatus::InvalidInputs => {
             unreachable!("InvalidInputs is handled before aggregation")
         }
+        L1TxStatus::Abandoned => ChunkedEnvelopeStatus::Abandoned,
     }
 }
 
@@ -1271,7 +1296,7 @@ mod tests {
 
         ops.put_chunked_envelope_entry_blocking(
             0,
-            make_recovery_entry(ChunkedEnvelopeStatus::Finalized, 0x01, true),
+            make_recovery_entry(ChunkedEnvelopeStatus::Abandoned, 0x01, true),
         )
         .unwrap();
         ops.put_chunked_envelope_entry_blocking(
@@ -1578,7 +1603,7 @@ mod tests {
             "should enqueue reveals and transition to CommitPublished"
         );
 
-        // Reveals enter the broadcaster as Unpublished so its retry loop owns sendrawtransaction.
+        // Reveals enter the broadcaster as Queued so its retry loop owns sendrawtransaction.
         for reveal in &entry.reveals {
             let rtx = bcast
                 .get_tx_entry_by_id_async(to_raw_buf32(reveal.txid))
@@ -1587,7 +1612,7 @@ mod tests {
                 .expect("reveal should be in broadcast DB");
             assert_eq!(
                 rtx.status,
-                L1TxStatus::Unpublished,
+                L1TxStatus::Queued,
                 "reveal should be queued for broadcaster retry"
             );
         }
@@ -1615,7 +1640,7 @@ mod tests {
             .await
             .unwrap()
             .expect("single reveal should be queued under the descendant-size limit");
-        assert_eq!(rtx.status, L1TxStatus::Unpublished);
+        assert_eq!(rtx.status, L1TxStatus::Queued);
     }
 
     #[tokio::test]
@@ -1793,7 +1818,7 @@ mod tests {
             .await
             .unwrap()
             .expect("missing reveal should be restored in broadcast DB");
-        assert_eq!(restored.status, L1TxStatus::Unpublished);
+        assert_eq!(restored.status, L1TxStatus::Queued);
     }
 
     #[tokio::test]

@@ -27,6 +27,12 @@ pub(crate) fn is_benign_minus25_message(msg: &str) -> bool {
 
 /// IO context abstraction for broadcaster service internals.
 pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
+    fn publish_decision<'a>(
+        &'a self,
+        idx: u64,
+        tx: &'a Transaction,
+    ) -> impl Future<Output = PublishDecision> + Send + 'a;
+
     /// Returns the next write index in broadcaster database.
     fn get_next_tx_idx(&self) -> impl Future<Output = BroadcasterResult<u64>> + Send;
 
@@ -72,6 +78,32 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
         &'a self,
         tx: &'a Transaction,
     ) -> impl Future<Output = BroadcasterResult<PublishTxOutcome>> + Send + 'a;
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PublishDecision {
+    #[default]
+    Publish,
+    Defer,
+    Abandon,
+    /// Marks an unusable transaction so its owner can rebuild it.
+    Invalidate,
+}
+
+/// Decides whether a broadcaster entry may cross the Bitcoin RPC boundary.
+#[async_trait::async_trait]
+pub trait PublishPolicy: Send + Sync + 'static {
+    async fn decide(&self, idx: u64, tx: &Transaction) -> PublishDecision;
+}
+
+#[derive(Debug)]
+pub struct AllowAllPublishPolicy;
+
+#[async_trait::async_trait]
+impl PublishPolicy for AllowAllPublishPolicy {
+    async fn decide(&self, _: u64, _: &Transaction) -> PublishDecision {
+        PublishDecision::Publish
+    }
 }
 
 /// Minimal transaction view needed by broadcaster confirmation logic.
@@ -215,12 +247,21 @@ pub(crate) enum PublishTxOutcome {
 pub(crate) struct BroadcasterIo<T> {
     rpc_client: Arc<T>,
     ops: Arc<BroadcastDbOps>,
+    policy: Arc<dyn PublishPolicy>,
 }
 
 impl<T> BroadcasterIo<T> {
     /// Creates a production IO adapter from RPC client and broadcast DB ops.
-    pub(crate) fn new(rpc_client: Arc<T>, ops: Arc<BroadcastDbOps>) -> Self {
-        Self { rpc_client, ops }
+    pub(crate) fn new(
+        rpc_client: Arc<T>,
+        ops: Arc<BroadcastDbOps>,
+        policy: Arc<dyn PublishPolicy>,
+    ) -> Self {
+        Self {
+            rpc_client,
+            ops,
+            policy,
+        }
     }
 }
 
@@ -228,6 +269,10 @@ impl<T> BroadcasterIoContext for BroadcasterIo<T>
 where
     T: Broadcaster + WalletTxLookup,
 {
+    async fn publish_decision(&self, idx: u64, tx: &Transaction) -> PublishDecision {
+        self.policy.decide(idx, tx).await
+    }
+
     async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
         Ok(self.ops.get_next_tx_idx_async().await?)
     }

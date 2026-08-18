@@ -30,6 +30,22 @@ impl L1BroadcastDBSled {
             None => Ok(0),
         }
     }
+
+    fn pair_indices(&self, commit_txid: Buf32, reveal_txid: Buf32) -> DbResult<Option<(u64, u64)>> {
+        let (mut commit_idx, mut reveal_idx) = (None, None);
+        for item in self.tx_id_tree.iter() {
+            let (idx, txid) = item.map_err(conv_sled_err)?;
+            if txid == commit_txid {
+                commit_idx = Some(idx);
+            } else if txid == reveal_txid {
+                reveal_idx = Some(idx);
+            }
+            if commit_idx.is_some() && reveal_idx.is_some() {
+                break;
+            }
+        }
+        Ok(commit_idx.zip(reveal_idx))
+    }
 }
 
 impl L1BroadcastDatabase for L1BroadcastDBSled {
@@ -49,6 +65,82 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                     Ok(idx)
                 })?;
         Ok(idx)
+    }
+
+    fn put_tx_entry_pair(
+        &self,
+        commit: (Buf32, L1TxEntry),
+        reveal: (Buf32, L1TxEntry),
+    ) -> DbResult<Option<(u64, u64)>> {
+        if commit.0 == reveal.0 {
+            return Err(DbError::Other("commit and reveal txids must differ".into()));
+        }
+        let next = self.get_next_idx()?;
+        let existing_indices = if self
+            .tx_tree
+            .get(&commit.0)
+            .map_err(conv_sled_err)?
+            .is_some()
+            && self
+                .tx_tree
+                .get(&reveal.0)
+                .map_err(conv_sled_err)?
+                .is_some()
+        {
+            self.pair_indices(commit.0, reveal.0)?
+        } else {
+            None
+        };
+        self.config
+            .with_retry((&self.tx_tree, &self.tx_id_tree), |(txs, ids)| {
+                match (txs.get(&commit.0)?, txs.get(&reveal.0)?) {
+                    (None, None) => {
+                        let commit_idx = find_next_available_id(&ids, next)?;
+                        let reveal_idx = find_next_available_id(&ids, commit_idx + 1)?;
+                        ids.insert(&commit_idx, &commit.0)?;
+                        ids.insert(&reveal_idx, &reveal.0)?;
+                        txs.insert(&commit.0, &commit.1)?;
+                        txs.insert(&reveal.0, &reveal.1)?;
+                        Ok(Some((commit_idx, reveal_idx)))
+                    }
+                    (Some(old_commit), Some(old_reveal)) => {
+                        if old_commit.status.may_be_live() || old_reveal.status.may_be_live() {
+                            return if old_commit.tx_raw() == commit.1.tx_raw()
+                                && old_reveal.tx_raw() == reveal.1.tx_raw()
+                            {
+                                Ok(None)
+                            } else {
+                                Err(ConflictableTransactionError::Abort(TSledError::abort(
+                                    DbError::Other(
+                                        "commit/reveal pair conflicts with existing entries".into(),
+                                    ),
+                                )))
+                            };
+                        }
+                        let Some((commit_idx, reveal_idx)) = existing_indices else {
+                            return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                                DbError::Other(
+                                    "existing commit/reveal pair is missing broadcast indices"
+                                        .into(),
+                                ),
+                            )));
+                        };
+                        if ids.get(&commit_idx)? != Some(commit.0)
+                            || ids.get(&reveal_idx)? != Some(reveal.0)
+                        {
+                            return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                                DbError::Other("commit/reveal broadcast indices changed".into()),
+                            )));
+                        }
+                        txs.insert(&commit.0, &commit.1)?;
+                        txs.insert(&reveal.0, &reveal.1)?;
+                        Ok(Some((commit_idx, reveal_idx)))
+                    }
+                    _ => Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::Other("commit/reveal pair conflicts with existing entries".into()),
+                    ))),
+                }
+            })
     }
 
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()> {
@@ -164,10 +256,7 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                 let Some(mut original) = txtree.get(&original_txid)? else {
                     return Ok(None);
                 };
-                if !matches!(
-                    original.status,
-                    L1TxStatus::Unpublished | L1TxStatus::Published
-                ) {
+                if !original.status.is_replaceable() {
                     return Ok(None);
                 }
 
@@ -213,11 +302,8 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                 // out of the chain while it stays indexed and broadcastable, so the chain head
                 // would report the older ancestor while a live transaction spent the same
                 // inputs. `put_replacement_tx_entry` and `try_mark_tx_entry_replaced` gate on
-                // the same two states.
-                if !matches!(
-                    loser.status,
-                    L1TxStatus::Unpublished | L1TxStatus::Published
-                ) {
+                // the same predicate.
+                if !loser.status.is_replaceable() {
                     return Ok(false);
                 }
 
@@ -244,10 +330,7 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                 let Some(mut entry) = txtree.get(&txid)? else {
                     return Ok(false);
                 };
-                if !matches!(
-                    entry.status,
-                    L1TxStatus::Unpublished | L1TxStatus::Published
-                ) {
+                if !entry.status.is_replaceable() {
                     return Ok(false);
                 }
                 entry.status = L1TxStatus::Replaced {

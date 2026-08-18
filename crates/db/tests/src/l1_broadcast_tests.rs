@@ -31,7 +31,7 @@ fn attempt_parts(tx: &Transaction, fee_rate: FeeRate, fee: Amount) -> TxAttemptP
 fn tx_entry_with_fee(tx: &Transaction, fee_rate: FeeRate, fee: Amount) -> L1TxEntry {
     L1TxEntry::from_raw_parts(
         serialize(tx),
-        L1TxStatus::Unpublished,
+        L1TxStatus::Queued,
         Some(L1TxRbfInfo {
             fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
             fee_sats: fee.to_sat(),
@@ -74,6 +74,68 @@ pub fn test_put_tx_existing_entry(db: &impl L1BroadcastDatabase) {
     assert_eq!(result.unwrap(), None);
     assert_eq!(db.get_next_tx_idx().unwrap(), idx + 1);
     assert_eq!(db.get_tx_entry(idx).unwrap(), Some(txentry));
+}
+
+pub fn test_put_tx_entry_pair(db: &impl L1BroadcastDatabase) {
+    let txs = get_test_bitcoin_txs();
+    let pair = |tx: &Transaction| {
+        (
+            tx.compute_txid().as_raw_hash().to_byte_array().into(),
+            tx_entry(tx),
+        )
+    };
+    let (commit_idx, reveal_idx) = db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!((commit_idx, reveal_idx), (0, 1));
+    assert!(db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .is_none());
+    assert!(db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[2])).is_err());
+    for idx in [commit_idx, reveal_idx] {
+        let mut entry = db.get_tx_entry(idx).unwrap().unwrap();
+        entry.status = L1TxStatus::Abandoned;
+        db.put_tx_entry_by_idx(idx, entry).unwrap();
+    }
+    assert_eq!(
+        db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[1])).unwrap(),
+        Some((commit_idx, reveal_idx))
+    );
+    assert!([commit_idx, reveal_idx].into_iter().all(|idx| db
+        .get_tx_entry(idx)
+        .unwrap()
+        .unwrap()
+        .status
+        == L1TxStatus::Queued));
+
+    let mut invalid = db.get_tx_entry(commit_idx).unwrap().unwrap();
+    invalid.status = L1TxStatus::InvalidInputs;
+    db.put_tx_entry_by_idx(commit_idx, invalid.clone()).unwrap();
+    assert!(db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .is_none());
+    assert_eq!(db.get_tx_entry(commit_idx).unwrap(), Some(invalid));
+
+    let mut invalid_reveal = db.get_tx_entry(reveal_idx).unwrap().unwrap();
+    invalid_reveal.status = L1TxStatus::InvalidInputs;
+    db.put_tx_entry_by_idx(reveal_idx, invalid_reveal).unwrap();
+    let mut resigned = [txs[0].clone(), txs[1].clone()];
+    resigned[0].input[0].witness.push([1]);
+    resigned[1].input[0].witness.push([2]);
+    assert_eq!(
+        db.put_tx_entry_pair(pair(&resigned[0]), pair(&resigned[1]))
+            .unwrap(),
+        Some((commit_idx, reveal_idx))
+    );
+    assert_eq!(
+        db.get_tx_entry(commit_idx).unwrap(),
+        Some(tx_entry(&resigned[0]))
+    );
+    assert_eq!(db.get_next_tx_idx().unwrap(), 2);
 }
 
 pub fn test_update_tx_entry(db: &impl L1BroadcastDatabase) {
@@ -508,7 +570,7 @@ pub fn test_adopt_confirmed_ancestor_refuses_an_unlinked_pair(db: &impl L1Broadc
     );
     assert_eq!(
         db.get_tx_entry_by_id(loser_txid).unwrap().unwrap().status,
-        L1TxStatus::Unpublished
+        L1TxStatus::Queued
     );
 }
 
@@ -768,6 +830,12 @@ macro_rules! l1_broadcast_db_tests {
         fn test_put_tx_existing_entry() {
             let db = $setup_expr;
             $crate::l1_broadcast_tests::test_put_tx_existing_entry(&db);
+        }
+
+        #[test]
+        fn test_put_tx_entry_pair() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_tx_entry_pair(&db);
         }
 
         #[test]

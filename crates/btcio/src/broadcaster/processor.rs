@@ -9,7 +9,10 @@ use tracing::*;
 use super::{
     error::{BroadcasterError, BroadcasterResult},
     handle::MAX_REPLACEMENT_CHAIN_HOPS,
-    io::{BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo, TxLookupOutcome},
+    io::{
+        BroadcasterIoContext, PublishDecision, PublishTxOutcome, TxConfirmationInfo,
+        TxLookupOutcome,
+    },
     state::{BroadcasterState, IndexedEntry},
 };
 use crate::{tx_entry::L1TxEntryExt, BtcioParams};
@@ -32,14 +35,11 @@ pub(super) struct ProcessingPassResult {
 }
 
 /// Processes unfinalized entries and returns the indexed entries whose status changed.
-pub(super) async fn process_unfinalized_entries<C>(
+pub(super) async fn process_unfinalized_entries(
     unfinalized_entries: impl Iterator<Item = &IndexedEntry>,
-    io: &C,
+    io: &impl BroadcasterIoContext,
     params: &BtcioParams,
-) -> BroadcasterResult<ProcessingPassResult>
-where
-    C: BroadcasterIoContext,
-{
+) -> BroadcasterResult<ProcessingPassResult> {
     let mut processed = ProcessingPassResult::default();
 
     for entry in unfinalized_entries {
@@ -47,7 +47,7 @@ where
         let txentry = entry.item();
         let txid = txentry.try_to_tx()?.compute_txid();
 
-        let updated_status = process_tx_entry(io, txentry, &txid, params).await?;
+        let updated_status = process_tx_entry(io, idx, txentry, &txid, params).await?;
 
         if let Some(status) = updated_status {
             // Adoption is the only path that turns a tracked entry into `Replaced`: the fee
@@ -58,6 +58,7 @@ where
             }
             let mut new_txentry = txentry.clone();
             new_txentry.status = status;
+            io.put_tx_entry_by_idx(idx, new_txentry.clone()).await?;
             processed.updated.push(IndexedEntry::new(idx, new_txentry));
         }
     }
@@ -72,17 +73,20 @@ where
     fields(component = "btcio_broadcaster", %txid),
     name = "process_txentry"
 )]
-pub(super) async fn process_tx_entry<C>(
-    io: &C,
+pub(super) async fn process_tx_entry(
+    io: &impl BroadcasterIoContext,
+    idx: u64,
     txentry: &L1TxEntry,
     txid: &Txid,
     params: &BtcioParams,
-) -> BroadcasterResult<Option<L1TxStatus>>
-where
-    C: BroadcasterIoContext,
-{
+) -> BroadcasterResult<Option<L1TxStatus>> {
     let result = match txentry.status {
-        L1TxStatus::Unpublished => publish_tx(io, params, txentry).await.map(Some),
+        L1TxStatus::Queued => publish_queued(io, idx, txentry, params).await.map(Some),
+        L1TxStatus::Unpublished | L1TxStatus::Submitting => {
+            probe_ambiguous_entry(io, idx, txentry, txid, params)
+                .await
+                .map(Some)
+        }
         L1TxStatus::Published => probe_published_entry(io, txentry, txid, params)
             .await
             .map(Some),
@@ -90,7 +94,7 @@ where
             .await
             .map(Some),
         L1TxStatus::Finalized { .. } => Ok(None),
-        L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. } => Ok(None),
+        L1TxStatus::InvalidInputs | L1TxStatus::Abandoned | L1TxStatus::Replaced { .. } => Ok(None),
     };
     if let Ok(ref updated_status) = result {
         debug!(?updated_status);
@@ -106,11 +110,8 @@ where
 /// 1. `Some(info)` with `confirmations >= 1`: tx mined, derive Confirmed/Finalized.
 /// 2. `Some(info)` with `confirmations == 0`: tx alive in mempool. Hold at Published. Re-publishing
 ///    here would only spam bitcoind and the logs every poll for the entire pre-confirmation window.
-/// 3. `Ok(None)`: not found at all. Could be a transient wallet-syncer miss for a freshly broadcast
-///    tx, or a genuinely dropped tx (mempool eviction, RBF). Re-publish to disambiguate: benign
-///    mempool messages fold back to Published, a rejection routes to InvalidInputs so the watcher
-///    rebuilds the envelope, unless an ancestor of this entry's own replacement chain is still
-///    live.
+/// 3. `Ok(None)`: not found at all. Could be a transient wallet-syncer miss or a genuinely dropped
+///    tx. Mark it as ambiguously submitted so recovery applies policy before any re-publication.
 async fn probe_published_entry<C>(
     io: &C,
     txentry: &L1TxEntry,
@@ -151,13 +152,7 @@ where
             }
             Ok(confirmation_status(&info, reorg_safe_depth))
         }
-        // A rejected re-publish resolves the same way a first publish does, including the
-        // ancestor check, so a `Replaced` verdict must reach the caller rather than fold into
-        // `Published`.
-        TxLookupOutcome::Missing => match publish_tx(io, params, txentry).await? {
-            status @ (L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. }) => Ok(status),
-            _ => Ok(L1TxStatus::Published),
-        },
+        TxLookupOutcome::Missing => Ok(L1TxStatus::Submitting),
         TxLookupOutcome::RetryLater { reason } => {
             warn!(%reason, "transaction lookup should be retried on next poll");
             Ok(L1TxStatus::Published)
@@ -325,6 +320,41 @@ where
     Ok(None)
 }
 
+/// Recovers a transaction whose submission may have crossed a crash boundary.
+async fn probe_ambiguous_entry<C>(
+    io: &C,
+    idx: u64,
+    txentry: &L1TxEntry,
+    txid: &Txid,
+    params: &BtcioParams,
+) -> BroadcasterResult<L1TxStatus>
+where
+    C: BroadcasterIoContext,
+{
+    let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
+    match io.get_transaction(txid).await? {
+        TxLookupOutcome::Found(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
+        TxLookupOutcome::Missing => {
+            let tx = txentry.try_to_tx().expect("could not deserialize tx");
+            match io.publish_decision(idx, &tx).await {
+                PublishDecision::Publish => {
+                    let mut submitting = txentry.clone();
+                    submitting.status = L1TxStatus::Submitting;
+                    io.put_tx_entry_by_idx(idx, submitting).await?;
+                    submit_tx(io, params, txentry, L1TxStatus::Submitting).await
+                }
+                PublishDecision::Defer => Ok(txentry.status.clone()),
+                PublishDecision::Abandon => Ok(L1TxStatus::Abandoned),
+                PublishDecision::Invalidate => Ok(L1TxStatus::InvalidInputs),
+            }
+        }
+        TxLookupOutcome::RetryLater { reason } => {
+            warn!(%reason, "transaction lookup should be retried on next poll");
+            Ok(txentry.status.clone())
+        }
+    }
+}
+
 /// Maps `TxConfirmationInfo` to the natural confirmation-derived status.
 ///
 /// `confirmations <= 0` means the tx is visible to bitcoind but not anchored
@@ -358,7 +388,7 @@ fn confirmation_status(info: &TxConfirmationInfo, reorg_safe_depth: i64) -> L1Tx
 
 /// Resolves a `Confirmed` entry to its next confirmation-derived status. A
 /// confirmed tx that disappears or drops to 0 confirmations regresses to
-/// `Unpublished` so the broadcaster re-publishes (typical reorg recovery).
+/// `Published`, whose recovery path probes it again before consulting policy.
 ///
 /// Callers in `Published` state must use `probe_published_entry` instead; that
 /// path holds 0-conf and not-found differently to avoid publish/revert
@@ -378,9 +408,9 @@ where
         let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
 
         match txinfo_res? {
-            TxLookupOutcome::Found(info) if info.confirmations == 0 => Ok(L1TxStatus::Unpublished),
+            TxLookupOutcome::Found(info) if info.confirmations == 0 => Ok(L1TxStatus::Published),
             TxLookupOutcome::Found(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
-            TxLookupOutcome::Missing => Ok(L1TxStatus::Unpublished),
+            TxLookupOutcome::Missing => Ok(L1TxStatus::Published),
             TxLookupOutcome::RetryLater { reason } => {
                 warn!(%reason, "transaction lookup should be retried on next poll");
                 Ok(txentry.status.clone())
@@ -396,21 +426,40 @@ where
     .await
 }
 
-/// Attempts to broadcast an unpublished entry and maps publication outcomes to statuses.
-///
-/// A rejected broadcast is settled against the replacement chain before it becomes
-/// [`L1TxStatus::InvalidInputs`]. Two distinct situations reach here as a rejection, and neither
-/// one means the chain is dead:
-///
-/// - An original mined between the replacement being persisted and broadcast takes the inputs out
-///   from under it, and the replacement is rejected on its very first send, without ever reaching
-///   `Published` where the negative-confirmation path would have caught the same conflict.
-/// - Bitcoind refuses the replacement on fee policy or script grounds and keeps the original in its
-///   mempool, where it can still confirm.
-async fn publish_tx<C>(
+/// Applies policy and durably records that submission started before calling Bitcoin.
+async fn publish_queued<C>(
+    io: &C,
+    idx: u64,
+    txentry: &L1TxEntry,
+    params: &BtcioParams,
+) -> BroadcasterResult<L1TxStatus>
+where
+    C: BroadcasterIoContext,
+{
+    let tx = txentry.try_to_tx().expect("could not deserialize tx");
+    match io.publish_decision(idx, &tx).await {
+        PublishDecision::Publish => {}
+        PublishDecision::Defer => return Ok(L1TxStatus::Queued),
+        PublishDecision::Abandon => return Ok(L1TxStatus::Abandoned),
+        PublishDecision::Invalidate => return Ok(L1TxStatus::InvalidInputs),
+    }
+    if tx.input.is_empty() {
+        error!("tx has no inputs, excluding from broadcast");
+        return Ok(L1TxStatus::InvalidInputs);
+    }
+
+    let mut submitting = txentry.clone();
+    submitting.status = L1TxStatus::Submitting;
+    io.put_tx_entry_by_idx(idx, submitting).await?;
+    submit_tx(io, params, txentry, L1TxStatus::Submitting).await
+}
+
+/// Sends a transaction without consulting policy and settles RBF conflicts against its ancestors.
+async fn submit_tx<C>(
     io: &C,
     params: &BtcioParams,
     txentry: &L1TxEntry,
+    retry_status: L1TxStatus,
 ) -> BroadcasterResult<L1TxStatus>
 where
     C: BroadcasterIoContext,
@@ -421,15 +470,11 @@ where
     let output_count = tx.output.len();
 
     async {
-        if tx.input.is_empty() {
-            error!("tx has no inputs, excluding from broadcast");
-            return Ok(L1TxStatus::InvalidInputs);
-        }
-
         debug!("publishing tx");
         match io.send_raw_transaction(&tx).await {
-            Ok(PublishTxOutcome::Published) => Ok(L1TxStatus::Published),
-            Ok(PublishTxOutcome::AlreadyInMempool) => Ok(L1TxStatus::Published),
+            Ok(PublishTxOutcome::Published | PublishTxOutcome::AlreadyInMempool) => {
+                Ok(L1TxStatus::Published)
+            }
             Ok(PublishTxOutcome::InvalidInputs) => {
                 warn!("tx rejected on broadcast");
                 resolve_invalid_inputs(
@@ -443,7 +488,7 @@ where
             }
             Ok(PublishTxOutcome::RetryLater { reason }) => {
                 warn!(%reason, "broadcast should be retried on next poll");
-                Ok(L1TxStatus::Unpublished)
+                Ok(retry_status)
             }
             Err(err) => {
                 warn!(%err, "errored while broadcasting");
@@ -561,7 +606,8 @@ mod test {
     use super::*;
     use crate::{
         broadcaster::io::{
-            BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo, TxLookupOutcome,
+            BroadcasterIoContext, PublishDecision, PublishTxOutcome, TxConfirmationInfo,
+            TxLookupOutcome,
         },
         test_utils::gen_l1_tx_entry_with_status,
     };
@@ -593,6 +639,9 @@ mod test {
         entries_by_id: BTreeMap<Buf32, L1TxEntry>,
         adoptions: Arc<Mutex<Vec<(Buf32, Buf32, L1TxStatus)>>>,
         adoption_applies: bool,
+        publish_decision: PublishDecision,
+        persisted_statuses: Arc<Mutex<Vec<L1TxStatus>>>,
+        require_submitting_before_send: bool,
     }
 
     impl MockIoContext {
@@ -619,9 +668,23 @@ mod test {
         fn adoptions(&self) -> Vec<(Buf32, Buf32, L1TxStatus)> {
             self.adoptions.lock().unwrap().clone()
         }
+
+        fn with_publish_decision(mut self, decision: PublishDecision) -> Self {
+            self.publish_decision = decision;
+            self
+        }
+
+        fn require_submitting_before_send(mut self) -> Self {
+            self.require_submitting_before_send = true;
+            self
+        }
     }
 
     impl BroadcasterIoContext for MockIoContext {
+        async fn publish_decision(&self, _: u64, _: &Transaction) -> PublishDecision {
+            self.publish_decision
+        }
+
         async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
             Ok(self.next_idx)
         }
@@ -630,7 +693,8 @@ mod test {
             Ok(self.entries.get(&idx).cloned())
         }
 
-        async fn put_tx_entry_by_idx(&self, _idx: u64, _entry: L1TxEntry) -> BroadcasterResult<()> {
+        async fn put_tx_entry_by_idx(&self, _idx: u64, entry: L1TxEntry) -> BroadcasterResult<()> {
+            self.persisted_statuses.lock().unwrap().push(entry.status);
             Ok(())
         }
 
@@ -674,6 +738,12 @@ mod test {
             &'a self,
             tx: &'a Transaction,
         ) -> BroadcasterResult<PublishTxOutcome> {
+            if self.require_submitting_before_send {
+                assert_eq!(
+                    self.persisted_statuses.lock().unwrap().last(),
+                    Some(&L1TxStatus::Submitting)
+                );
+            }
             let txid = tx.compute_txid();
             let result = self
                 .broadcast_results
@@ -784,7 +854,18 @@ mod test {
         txid: &Txid,
         params: &BtcioParams,
     ) -> Option<L1TxStatus> {
-        process_tx_entry(io, entry, txid, params).await.unwrap()
+        process_tx_entry(io, 0, entry, txid, params).await.unwrap()
+    }
+
+    async fn enter_missing_published_recovery(
+        io: &MockIoContext,
+        mut entry: L1TxEntry,
+        txid: &Txid,
+        params: &BtcioParams,
+    ) -> L1TxEntry {
+        entry.status = process_status(io, &entry, txid, params).await.unwrap();
+        assert_eq!(entry.status, L1TxStatus::Submitting);
+        entry
     }
 
     fn run_async_test<F>(future: F)
@@ -811,17 +892,37 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_handle_unpublished_entry_status_500_keeps_unpublished() {
+    async fn abandoned_pair_is_not_submitted_to_bitcoin() {
+        let (commit, commit_txid) = entry_with_txid(L1TxStatus::Queued);
+        let (reveal, reveal_txid) = entry_with_txid(L1TxStatus::Queued);
+        let io = MockIoContext::default().with_publish_decision(PublishDecision::Abandon);
+        let params = get_test_btcio_params();
+
+        for (entry, txid) in [(commit, commit_txid), (reveal, reveal_txid)] {
+            assert_eq!(
+                process_status(&io, &entry, &txid, &params).await,
+                Some(L1TxStatus::Abandoned)
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_unpublished_entry_status_500_keeps_submitting() {
         let (e, txid) = entry_with_txid(L1TxStatus::Unpublished);
         let btcio_params = get_test_btcio_params();
-        let io =
-            MockIoContext::default().with_broadcast_result(txid, MockBroadcastResult::RetryLater);
+        let io = MockIoContext::default()
+            .with_broadcast_result(txid, MockBroadcastResult::RetryLater)
+            .require_submitting_before_send();
 
         let res = process_status(&io, &e, &txid, &btcio_params).await;
         assert_eq!(
             res,
-            Some(L1TxStatus::Unpublished),
-            "HTTP 500 send_raw_transaction errors should keep tx unpublished for retry"
+            Some(L1TxStatus::Submitting),
+            "retryable send errors must preserve that submission started"
+        );
+        assert_eq!(
+            *io.persisted_statuses.lock().unwrap(),
+            [L1TxStatus::Submitting]
         );
     }
 
@@ -932,8 +1033,8 @@ mod test {
                 let res = process_status(&io, &e, &txid, &btcio_params).await;
                 assert_eq!(
                     res,
-                    Some(L1TxStatus::Unpublished),
-                    "Status should revert to unpublished if confirmed tx now has 0 confirmations"
+                    Some(L1TxStatus::Published),
+                    "A reorged confirmed tx should return to publication recovery"
                 );
 
                 let io = MockIoContext::default().with_tx_lookup(
@@ -974,21 +1075,17 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_handle_published_entry_missing_tx_holds_published() {
-        // Bitcoind's `gettransaction` can briefly report a freshly broadcast
-        // tx as missing before the wallet's chain syncer catches up. A
-        // `Published` entry must not regress to `Unpublished` on that
-        // transient miss; otherwise the broadcaster oscillates and the
-        // watcher's curr_payloadidx never advances past it.
+    async fn missing_published_entry_uses_recovery_policy() {
         let (e, txid) = entry_with_txid(L1TxStatus::Published);
         let btcio_params = get_test_btcio_params();
 
-        let io = MockIoContext::default().with_tx_lookup(txid, MockTxLookupResult::Missing);
-        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        let io = MockIoContext::default()
+            .with_tx_lookup(txid, MockTxLookupResult::Missing)
+            .with_publish_decision(PublishDecision::Abandon);
+        let e = enter_missing_published_recovery(&io, e, &txid, &btcio_params).await;
         assert_eq!(
-            res,
-            Some(L1TxStatus::Published),
-            "Published entry must hold its status when get_transaction returns NotFound"
+            process_status(&io, &e, &txid, &btcio_params).await,
+            Some(L1TxStatus::Abandoned)
         );
     }
 
@@ -1008,6 +1105,7 @@ mod test {
         let io = MockIoContext::default()
             .with_tx_lookup(txid, MockTxLookupResult::Missing)
             .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
+        let e = enter_missing_published_recovery(&io, e, &txid, &btcio_params).await;
         let res = process_status(&io, &e, &txid, &btcio_params).await;
         assert_eq!(
             res,
@@ -1028,6 +1126,7 @@ mod test {
         let io = MockIoContext::default()
             .with_tx_lookup(txid, MockTxLookupResult::Missing)
             .with_broadcast_result(txid, MockBroadcastResult::AlreadyInMempool);
+        let e = enter_missing_published_recovery(&io, e, &txid, &btcio_params).await;
         let res = process_status(&io, &e, &txid, &btcio_params).await;
         assert_eq!(
             res,
@@ -1079,19 +1178,25 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_handle_confirmed_entry_missing_tx_regresses_to_unpublished() {
-        // Confirmed entries that go missing on lookup should still regress to
-        // Unpublished so the broadcaster re-publishes (e.g. after a reorg
-        // dropped them from the wallet view).
-        let (e, txid) = entry_with_txid(confirmed_status(1, 1, Buf32::zero()));
+    async fn missing_confirmed_entry_is_republished_after_reorg() {
+        let (mut entry, txid) = entry_with_txid(confirmed_status(1, 1, Buf32::zero()));
         let btcio_params = get_test_btcio_params();
 
-        let io = MockIoContext::default().with_tx_lookup(txid, MockTxLookupResult::Missing);
-        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        let io = MockIoContext::default()
+            .with_tx_lookup(txid, MockTxLookupResult::Missing)
+            .with_broadcast_result(txid, MockBroadcastResult::Published);
+        let res = process_status(&io, &entry, &txid, &btcio_params).await;
         assert_eq!(
             res,
-            Some(L1TxStatus::Unpublished),
-            "Confirmed entry that disappears should regress to Unpublished"
+            Some(L1TxStatus::Published),
+            "A missing confirmed tx should return to publication recovery"
+        );
+        entry.status = res.unwrap();
+        entry = enter_missing_published_recovery(&io, entry, &txid, &btcio_params).await;
+        assert_eq!(
+            process_status(&io, &entry, &txid, &btcio_params).await,
+            Some(L1TxStatus::Published),
+            "publication recovery must re-submit after applying policy"
         );
     }
 
@@ -1143,7 +1248,7 @@ mod test {
                 let btcio_params = get_test_btcio_params();
                 let reorg_depth = btcio_params.l1_reorg_safe_depth() as u64;
 
-                let (e1, txid1) = entry_with_txid(L1TxStatus::Unpublished);
+                let (e1, txid1) = entry_with_txid(L1TxStatus::Queued);
                 let i1 = seed_idx;
 
                 let e2 = gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs);
@@ -1484,6 +1589,7 @@ mod test {
                 MockTxLookupResult::Found(confirmation_info(1, 400, Buf32::new([9u8; 32]))),
             );
 
+        let loser = enter_missing_published_recovery(&io, loser, &loser_txid, &btcio_params).await;
         let status = process_status(&io, &loser, &loser_txid, &btcio_params).await;
 
         assert_eq!(

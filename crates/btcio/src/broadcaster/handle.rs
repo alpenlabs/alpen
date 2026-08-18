@@ -106,6 +106,32 @@ impl L1BroadcastHandle {
         Ok(idx)
     }
 
+    /// Atomically persists a commit/reveal pair before notifying the broadcaster.
+    pub async fn put_tx_entry_pair(
+        &self,
+        commit: (Buf32, L1TxEntry),
+        reveal: (Buf32, L1TxEntry),
+    ) -> BroadcasterResult<()> {
+        let Some((commit_idx, reveal_idx)) = self
+            .ops
+            .put_tx_entry_pair_async(commit.clone(), reveal.clone())
+            .await?
+        else {
+            return Ok(());
+        };
+        for (idx, (_, txentry)) in [(commit_idx, commit), (reveal_idx, reveal)] {
+            if self
+                .sender
+                .send(BroadcasterInputMessage::NotifyNewEntry { idx, txentry })
+                .await
+                .is_err()
+            {
+                warn!("L1 broadcaster service is unavailable");
+            }
+        }
+        Ok(())
+    }
+
     pub async fn get_tx_entry_by_id_async(
         &self,
         txid: Buf32,

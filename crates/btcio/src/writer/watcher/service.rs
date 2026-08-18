@@ -73,6 +73,8 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         idx: u64,
     ) -> impl Future<Output = anyhow::Result<Option<BundledPayloadEntry>>> + Send;
 
+    fn get_next_payload_idx(&self) -> impl Future<Output = anyhow::Result<u64>> + Send;
+
     fn put_payload_entry(
         &self,
         idx: u64,
@@ -93,13 +95,14 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
-    ) -> impl Future<Output = Result<(L1TxId, L1TxId), EnvelopeError>> + Send;
+    ) -> impl Future<Output = Result<(), EnvelopeError>> + Send;
     fn complete_reveal_and_broadcast(
         &self,
         idx: u64,
+        entry: &BundledPayloadEntry,
         envelope: &EnvelopeData,
         sig: &[u8; 64],
-    ) -> impl Future<Output = anyhow::Result<L1TxId>> + Send;
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
     /// Attaches an external signature to this payload's pending fee-bump reveal replacement.
     ///
@@ -202,6 +205,13 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
             .map_err(Into::into)
     }
 
+    async fn get_next_payload_idx(&self) -> anyhow::Result<u64> {
+        self.ops
+            .get_next_payload_idx_async()
+            .await
+            .map_err(Into::into)
+    }
+
     async fn put_payload_entry(&self, idx: u64, entry: BundledPayloadEntry) -> anyhow::Result<()> {
         self.ops
             .put_payload_entry_async(idx, entry)
@@ -226,11 +236,12 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
-    ) -> Result<(L1TxId, L1TxId), EnvelopeError> {
+    ) -> Result<(), EnvelopeError> {
         sign_and_broadcast_payload_envelopes(
             idx,
             entry,
             self.context.clone(),
+            self.ops.as_ref(),
             &self.broadcast_handle,
         )
         .await
@@ -239,12 +250,20 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
     async fn complete_reveal_and_broadcast(
         &self,
         idx: u64,
+        entry: &BundledPayloadEntry,
         envelope: &EnvelopeData,
         sig: &[u8; 64],
-    ) -> anyhow::Result<L1TxId> {
-        complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
-            .await
-            .map_err(Into::into)
+    ) -> anyhow::Result<()> {
+        complete_reveal_and_broadcast(
+            idx,
+            entry,
+            envelope,
+            sig,
+            self.ops.as_ref(),
+            &self.broadcast_handle,
+        )
+        .await
+        .map_err(Into::into)
     }
 
     async fn complete_pending_reveal_replacement(
@@ -377,7 +396,7 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 }
 
                 // If finalized, nothing to do, move on to process next entry
-                L1BundleStatus::Finalized => {
+                L1BundleStatus::Finalized | L1BundleStatus::Abandoned => {
                     state.curr_payloadidx += 1;
                 }
 
@@ -389,8 +408,22 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 }
             }
         } else {
-            // No payload exists, just continue the loop to wait for payload's presence in db
-            debug!("Waiting for payloadentry to be present in db");
+            let next_idx = state.ctx.get_next_payload_idx().await?;
+            while state.curr_payloadidx < next_idx {
+                state.curr_payloadidx += 1;
+                if state.curr_payloadidx == next_idx
+                    || state
+                        .ctx
+                        .get_payload_entry(state.curr_payloadidx)
+                        .await?
+                        .is_some()
+                {
+                    break;
+                }
+            }
+            if state.curr_payloadidx == next_idx {
+                debug!("Waiting for payloadentry to be present in db");
+            }
         }
 
         Ok(Response::Continue)
@@ -472,17 +505,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 .sign_and_broadcast(self.curr_payloadidx, &payloadentry)
                 .await
             {
-                Ok((cid, rid)) => {
-                    let mut updated_entry = payloadentry.clone();
-                    updated_entry.commit_txid = cid;
-                    updated_entry.reveal_txid = rid;
-                    updated_entry.status = L1BundleStatus::Unpublished;
-                    self.ctx
-                        .put_payload_entry(self.curr_payloadidx, updated_entry)
-                        .await?;
-
-                    debug!(?cid, reveal_txid = ?rid, "envelope signed and queued for broadcast");
-                }
+                Ok(()) => debug!("envelope signed and queued for broadcast"),
                 Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
                     warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
                 }
@@ -731,17 +754,15 @@ impl<C: WatcherServiceContext> WatcherState<C> {
 
         match self
             .ctx
-            .complete_reveal_and_broadcast(self.curr_payloadidx, &envelope, sig.as_ref())
+            .complete_reveal_and_broadcast(
+                self.curr_payloadidx,
+                &payloadentry,
+                &envelope,
+                sig.as_ref(),
+            )
             .await
         {
-            Ok(_rid) => {
-                let mut updated_entry = payloadentry.clone();
-                updated_entry.status = L1BundleStatus::Unpublished;
-                self.ctx
-                    .put_payload_entry(self.curr_payloadidx, updated_entry)
-                    .await?;
-                debug!("reveal signed and stored for broadcast");
-            }
+            Ok(()) => debug!("reveal signed and stored for broadcast"),
             Err(e) => {
                 error!(%e, "failed to attach reveal signature");
             }
@@ -915,7 +936,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     .put_payload_entry(self.curr_payloadidx, updated_entry)
                     .await?;
 
-                if new_status == L1BundleStatus::Finalized {
+                if new_status.is_finished() {
                     self.curr_payloadidx += 1;
                 }
             }
@@ -940,10 +961,7 @@ async fn update_l1_status(
 ) {
     // Update L1 status. Since we are processing one payloadentry at a time, if the entry is
     // finalized/confirmed, then it means it is published as well
-    if *new_status == L1BundleStatus::Published
-        || *new_status == L1BundleStatus::Confirmed
-        || *new_status == L1BundleStatus::Finalized
-    {
+    if new_status.has_reached_l1() {
         let status_updates = [
             L1StatusUpdate::LastPublishedTxid(to_raw_buf32(payloadentry.reveal_txid).to_txid()),
             L1StatusUpdate::IncrementPublishedRevealCount,
@@ -970,12 +988,17 @@ pub(crate) fn determine_payload_next_status(
         (L1TxStatus::Replaced { .. }, _) | (_, L1TxStatus::Replaced { .. }) => {
             L1BundleStatus::Published
         }
-        // if commit has invalid inputs, needs resign
+        // Invalidating the commit explicitly requests a rebuild.
         (L1TxStatus::InvalidInputs, _) => L1BundleStatus::NeedsResign,
+        (L1TxStatus::Abandoned, _) | (_, L1TxStatus::Abandoned) => L1BundleStatus::Abandoned,
         // If commit is unpublished, both are upublished
-        (L1TxStatus::Unpublished, _) => L1BundleStatus::Unpublished,
+        (L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting, _) => {
+            L1BundleStatus::Unpublished
+        }
         // If commit is published but not reveal, the payload is unpublished
-        (_, L1TxStatus::Unpublished) => L1BundleStatus::Unpublished,
+        (_, L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting) => {
+            L1BundleStatus::Unpublished
+        }
         // If reveal has invalid inputs, these need resign because we can do nothing with just
         // commit tx confirmed. This should not occur in practice
         (_, L1TxStatus::InvalidInputs) => L1BundleStatus::NeedsResign,
@@ -1019,7 +1042,7 @@ mod tests {
             builder::{EnvelopeData, EnvelopeError},
             replacement::build::build_pending_single_reveal_replacement,
             signer::{complete_pending_reveal_replacement, complete_reveal_and_broadcast},
-            test_utils::get_broadcast_handle,
+            test_utils::{get_broadcast_handle, get_envelope_ops},
         },
     };
 
@@ -1193,6 +1216,16 @@ mod tests {
             Ok(self.stored.lock().unwrap().get(&idx).cloned())
         }
 
+        async fn get_next_payload_idx(&self) -> anyhow::Result<u64> {
+            Ok(self
+                .stored
+                .lock()
+                .unwrap()
+                .keys()
+                .max()
+                .map_or(0, |idx| idx + 1))
+        }
+
         async fn put_payload_entry(
             &self,
             idx: u64,
@@ -1223,24 +1256,44 @@ mod tests {
 
         async fn sign_and_broadcast(
             &self,
-            _idx: u64,
-            _entry: &BundledPayloadEntry,
-        ) -> Result<(L1TxId, L1TxId), EnvelopeError> {
+            idx: u64,
+            entry: &BundledPayloadEntry,
+        ) -> Result<(), EnvelopeError> {
             if let Some(failure) = self.sign_failure {
                 return Err(failure.into_error());
             }
-            Ok((L1TxId::from([1u8; 32]), L1TxId::from([2u8; 32])))
+            let mut linked = entry.clone();
+            linked.commit_txid = L1TxId::from([1u8; 32]);
+            linked.reveal_txid = L1TxId::from([2u8; 32]);
+            linked.status = L1BundleStatus::Unpublished;
+            self.stored.lock().unwrap().insert(idx, linked);
+            Ok(())
         }
 
         async fn complete_reveal_and_broadcast(
             &self,
             idx: u64,
+            entry: &BundledPayloadEntry,
             envelope: &EnvelopeData,
             sig: &[u8; 64],
-        ) -> anyhow::Result<L1TxId> {
-            complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
-                .await
-                .map_err(Into::into)
+        ) -> anyhow::Result<()> {
+            let ops = get_envelope_ops();
+            complete_reveal_and_broadcast(
+                idx,
+                entry,
+                envelope,
+                sig,
+                ops.as_ref(),
+                &self.broadcast_handle,
+            )
+            .await
+            .map_err(anyhow::Error::from)?;
+            let linked = ops
+                .get_payload_entry_by_idx_async(idx)
+                .await?
+                .expect("successful persistence stores writer linkage");
+            self.stored.lock().unwrap().insert(idx, linked);
+            Ok(())
         }
 
         async fn complete_pending_reveal_replacement(
@@ -1297,6 +1350,50 @@ mod tests {
         let tag = TagData::new(1, 1, vec![]).unwrap();
         let payload = L1Payload::new(vec![vec![1; 150]; 1], tag).unwrap();
         BundledPayloadEntry::new_unsigned(payload)
+    }
+
+    async fn complete_test_envelope(
+        payload_idx: u64,
+        envelope: &EnvelopeData,
+        signature: &[u8; 64],
+        bcast_handle: &L1BroadcastHandle,
+    ) -> L1TxId {
+        let ops = get_envelope_ops();
+        let entry = test_unsigned_entry();
+        complete_reveal_and_broadcast(
+            payload_idx,
+            &entry,
+            envelope,
+            signature,
+            ops.as_ref(),
+            bcast_handle,
+        )
+        .await
+        .unwrap();
+        ops.get_payload_entry_by_idx_async(payload_idx)
+            .await
+            .unwrap()
+            .expect("writer linkage must be persisted")
+            .reveal_txid
+    }
+
+    #[tokio::test]
+    async fn watcher_advances_across_payload_gaps() {
+        let ctx = MockWatcherContext::new(false);
+        let mut terminal = test_unsigned_entry();
+        terminal.status = L1BundleStatus::Abandoned;
+        ctx.stored.lock().unwrap().insert(0, terminal);
+        ctx.stored.lock().unwrap().insert(2, test_unsigned_entry());
+
+        let mut state = WatcherState::new(ctx, 0);
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+        WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+
+        assert_eq!(state.curr_payloadidx, 2);
     }
 
     #[tokio::test]
@@ -1563,6 +1660,8 @@ mod tests {
 
         let stored = state.ctx.get_stored(0).unwrap();
         assert_eq!(stored.status, L1BundleStatus::Unpublished);
+        assert_eq!(stored.commit_txid, commit_txid);
+        assert_eq!(stored.reveal_txid, reveal_txid);
         // Cache entry consumed
         assert!(!state.envelope_cache.contains_key(&0));
         // Both txs stored in broadcaster DB
@@ -1638,9 +1737,7 @@ mod tests {
         let bcast_handle = ctx.broadcast_handle.clone();
         let original_signature = [1u8; 64];
         let original_reveal_txid =
-            complete_reveal_and_broadcast(0, &envelope, &original_signature, &bcast_handle)
-                .await
-                .unwrap();
+            complete_test_envelope(0, &envelope, &original_signature, &bcast_handle).await;
         let original_reveal_entry = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
             .await
@@ -1776,9 +1873,7 @@ mod tests {
         let ctx = MockWatcherContext::new(true);
         let bcast_handle = ctx.broadcast_handle.clone();
         let original_reveal_txid =
-            complete_reveal_and_broadcast(0, &envelope, &[1u8; 64], &bcast_handle)
-                .await
-                .unwrap();
+            complete_test_envelope(0, &envelope, &[1u8; 64], &bcast_handle).await;
         let original_reveal_tx = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
             .await
@@ -1855,7 +1950,7 @@ mod tests {
                 .unwrap()
                 .expect("original reveal entry exists")
                 .status,
-            L1TxStatus::Unpublished,
+            L1TxStatus::Queued,
             "the original must not be superseded"
         );
 
@@ -2003,9 +2098,7 @@ mod tests {
         let envelope = minimal_envelope_data();
         let ctx = MockWatcherContext::new(true);
         let bcast_handle = ctx.broadcast_handle.clone();
-        let reveal_txid = complete_reveal_and_broadcast(0, &envelope, &[1u8; 64], &bcast_handle)
-            .await
-            .unwrap();
+        let reveal_txid = complete_test_envelope(0, &envelope, &[1u8; 64], &bcast_handle).await;
 
         let mut entry = test_unsigned_entry();
         entry.commit_txid = to_l1_txid(envelope.commit_tx.compute_txid());
@@ -2029,9 +2122,7 @@ mod tests {
         let bcast_handle = ctx.broadcast_handle.clone();
         let original_signature = [1u8; 64];
         let original_reveal_txid =
-            complete_reveal_and_broadcast(0, &envelope, &original_signature, &bcast_handle)
-                .await
-                .unwrap();
+            complete_test_envelope(0, &envelope, &original_signature, &bcast_handle).await;
         let mut original_reveal_entry = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
             .await
