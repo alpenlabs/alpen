@@ -1,14 +1,12 @@
 //! Command types for OL block assembly service.
 
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types::OLBlock;
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_service::CommandCompletionSender;
 use tokio::sync::oneshot;
 
-use crate::{
-    error::BlockAssemblyError,
-    types::{BlockCompletionData, BlockGenerationConfig, FullBlockTemplate},
-};
+use crate::error::BlockAssemblyError;
+use crate::types::{BlockCompletionData, BlockGenerationConfig, FullBlockTemplate};
 
 /// Type alias for block template generation result.
 type GenerateBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>;
@@ -17,7 +15,7 @@ type GenerateBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>
 type GetBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>;
 
 /// Type alias for block template completion result.
-type CompleteBlockTemplateResult = Result<OLBlock, BlockAssemblyError>;
+type CompleteBlockTemplateResult = Result<OLBlockV1, BlockAssemblyError>;
 
 /// Type alias for completed-template status release result.
 type ReleaseCompletedTemplateStatusResult = bool;

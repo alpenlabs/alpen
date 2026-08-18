@@ -6,7 +6,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types::OLBlock;
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_sequencer::{SequencerBuilder, SequencerServiceStatus};
 use strata_service::ServiceMonitor;
 use strata_storage::NodeStorage;
@@ -192,7 +192,7 @@ enum HighWatermarkBlockAction {
 
 fn decide_startup_high_watermark_block_action(
     high_watermark: OLBlockCommitment,
-    block: Option<&OLBlock>,
+    block: Option<&OLBlockV1>,
     status: Option<BlockStatus>,
 ) -> Result<HighWatermarkBlockAction> {
     let block_id = *high_watermark.blkid();
@@ -221,16 +221,16 @@ fn decide_startup_high_watermark_block_action(
 #[cfg(test)]
 mod tests {
     use strata_identifiers::{Buf32, Buf64};
-    use strata_ol_chain_types::{
-        BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    use strata_ol_chain_types_v1::{
+        BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
     };
 
     use super::*;
 
-    fn block_at_slot(slot: u64) -> OLBlock {
-        let header = OLBlockHeader::new(
+    fn block_at_slot(slot: u64) -> OLBlockV1 {
+        let header = OLBlockHeaderV1::new(
             0,
-            BlockFlags::from(0),
+            BlockFlagsV1::from(0),
             slot,
             0,
             OLBlockId::from(Buf32::from([0x11; 32])),
@@ -238,12 +238,12 @@ mod tests {
             Buf32::zero(),
             Buf32::zero(),
         );
-        let signed_header = SignedOLBlockHeader::new(header, Buf64::zero());
-        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
-        OLBlock::new(signed_header, body)
+        let signed_header = SignedOLBlockHeaderV1::new(header, Buf64::zero());
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
+        OLBlockV1::new(signed_header, body)
     }
 
-    fn commitment_for(block: &OLBlock) -> OLBlockCommitment {
+    fn commitment_for(block: &OLBlockV1) -> OLBlockCommitment {
         OLBlockCommitment::new(block.header().slot(), block.header().compute_blkid())
     }
 

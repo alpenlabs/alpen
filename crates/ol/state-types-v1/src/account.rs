@@ -1,0 +1,147 @@
+use strata_acct_types::*;
+use strata_identifiers::AccountSerial;
+use strata_ol_state_types::*;
+
+use crate::ssz_generated::ssz::state::{
+    OLAccountStateV1, OLAccountTypeStateV1, OLSnarkAccountStateV1,
+};
+
+impl OLAccountStateV1 {
+    /// Creates a new account state.
+    pub fn new(serial: AccountSerial, balance: BitcoinAmount, state: OLAccountTypeStateV1) -> Self {
+        Self {
+            serial,
+            balance,
+            state,
+        }
+    }
+
+    /// Returns the account serial.
+    pub fn serial(&self) -> AccountSerial {
+        self.serial
+    }
+}
+
+impl IAccountState for OLAccountStateV1 {
+    type SnarkAccountState = OLSnarkAccountStateV1;
+
+    fn new_with_serial(new_acct_data: NewAccountData, serial: AccountSerial) -> Self {
+        let balance = new_acct_data.initial_balance();
+        let type_state = match new_acct_data.into_type_state() {
+            NewAccountTypeState::Empty => OLAccountTypeStateV1::Empty,
+            NewAccountTypeState::Snark {
+                update_vk,
+                initial_state_root,
+            } => OLAccountTypeStateV1::Snark(OLSnarkAccountStateV1::new_fresh(
+                update_vk,
+                initial_state_root,
+            )),
+        };
+        Self::new(serial, balance, type_state)
+    }
+
+    fn serial(&self) -> AccountSerial {
+        self.serial
+    }
+
+    fn balance(&self) -> BitcoinAmount {
+        self.balance
+    }
+
+    fn ty(&self) -> AccountTypeId {
+        match &self.state {
+            OLAccountTypeStateV1::Empty => AccountTypeId::Empty,
+            OLAccountTypeStateV1::Snark(_) => AccountTypeId::Snark,
+        }
+    }
+
+    fn type_state(&self) -> AccountTypeStateRef<'_, Self> {
+        match &self.state {
+            OLAccountTypeStateV1::Empty => AccountTypeStateRef::Empty,
+            OLAccountTypeStateV1::Snark(state) => AccountTypeStateRef::Snark(state),
+        }
+    }
+
+    fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
+        match &self.state {
+            OLAccountTypeStateV1::Snark(state) => Ok(state),
+            _ => Err(StateError::MismatchedAcctType {
+                got: self.ty(),
+                expected: AccountTypeId::Snark,
+            }),
+        }
+    }
+}
+
+impl IAccountStateMut for OLAccountStateV1 {
+    type SnarkAccountStateMut = OLSnarkAccountStateV1;
+
+    fn add_balance(&mut self, coin: Coin) {
+        let balance_sats = self
+            .balance
+            .to_sat()
+            .checked_add(coin.amt().to_sat())
+            .expect("ledger: overflow balance");
+        self.balance =
+            BitcoinAmount::try_from(balance_sats).expect("ledger: balance exceeds money supply");
+        coin.safely_consume_unchecked();
+    }
+
+    fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
+        let balance_sats = self.balance.to_sat().checked_sub(amt.to_sat()).ok_or(
+            StateError::InsufficientBalance {
+                need: amt,
+                have: self.balance,
+            },
+        )?;
+        self.balance = BitcoinAmount::try_from(balance_sats)
+            .expect("subtracting from a valid balance must remain valid");
+        Ok(Coin::new_unchecked(amt))
+    }
+
+    fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut> {
+        let ty = self.ty();
+        match &mut self.state {
+            OLAccountTypeStateV1::Snark(state) => Ok(state),
+            _ => Err(StateError::MismatchedAcctType {
+                got: ty,
+                expected: AccountTypeId::Snark,
+            }),
+        }
+    }
+}
+
+impl OLAccountTypeStateV1 {
+    /// Returns the account type ID for this state.
+    pub fn ty(&self) -> AccountTypeId {
+        match self {
+            OLAccountTypeStateV1::Empty => AccountTypeId::Empty,
+            OLAccountTypeStateV1::Snark(_) => AccountTypeId::Snark,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use super::*;
+    use crate::test_utils::{
+        ol_account_state_strategy, ol_account_type_state_strategy, ol_snark_account_state_strategy,
+    };
+
+    mod ol_account_state {
+        use super::*;
+        ssz_proptest!(OLAccountStateV1, ol_account_state_strategy());
+    }
+
+    mod ol_account_type_state {
+        use super::*;
+        ssz_proptest!(OLAccountTypeStateV1, ol_account_type_state_strategy());
+    }
+
+    mod ol_snark_account_state {
+        use super::*;
+        ssz_proptest!(OLSnarkAccountStateV1, ol_snark_account_state_strategy());
+    }
+}

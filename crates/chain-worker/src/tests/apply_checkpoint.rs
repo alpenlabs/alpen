@@ -30,12 +30,12 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{
-    MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog as ChainOLLog,
+use strata_ol_chain_types_v1::{
+    MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog as ChainOLLog,
 };
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::OLStateV1;
 
 use super::fixture::{BlockPlan, BuiltEpoch, EpochPlan, UpdateEffect, build_epoch};
 use crate::{
@@ -53,7 +53,7 @@ struct MockChainWorkerContext {
     /// Epoch summaries keyed by epoch index.
     epoch_summaries: HashMap<Epoch, Vec<EpochSummary>>,
     /// OL states keyed by block commitment.
-    ol_states: HashMap<OLBlockCommitment, OLState>,
+    ol_states: HashMap<OLBlockCommitment, OLStateV1>,
     /// ASM manifests keyed by L1 height.
     manifests: HashMap<u32, AsmManifest>,
 }
@@ -85,7 +85,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
             .cloned())
     }
 
-    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLState>> {
+    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLStateV1>> {
         Ok(self.ol_states.get(&commitment).cloned())
     }
 
@@ -104,7 +104,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
 
     // Methods below are not exercised by checkpoint-sync reconstruction.
 
-    fn fetch_block(&self, _blkid: &OLBlockId) -> WorkerResult<Option<OLBlock>> {
+    fn fetch_block(&self, _blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
@@ -112,7 +112,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
-    fn fetch_header(&self, _blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeader>> {
+    fn fetch_header(&self, _blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeaderV1>> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
@@ -124,14 +124,14 @@ impl ChainWorkerContext for MockChainWorkerContext {
         &self,
         _commitment: OLBlockCommitment,
     ) -> WorkerResult<
-        Option<strata_ol_state_types::WriteBatch<strata_ol_state_types::OLAccountState>>,
+        Option<strata_ol_state_types_v1::WriteBatch<strata_ol_state_types_v1::OLAccountStateV1>>,
     > {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
     fn store_block_output(
         &self,
-        _block: &OLBlock,
+        _block: &OLBlockV1,
         _commitment: OLBlockCommitment,
         _output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
@@ -141,12 +141,12 @@ impl ChainWorkerContext for MockChainWorkerContext {
     fn store_toplevel_state(
         &self,
         _commitment: OLBlockCommitment,
-        _state: OLState,
+        _state: OLStateV1,
     ) -> WorkerResult<()> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
-    fn store_terminal_header(&self, _id: OLBlockId, _header: OLBlockHeader) -> WorkerResult<()> {
+    fn store_terminal_header(&self, _id: OLBlockId, _header: OLBlockHeaderV1) -> WorkerResult<()> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
@@ -836,8 +836,8 @@ mod db_idempotency {
         ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
     };
     use strata_identifiers::{AccountId, Hash};
-    use strata_ledger_types::IStateAccessor;
     use strata_ol_state_support_types::{L1BlockRecordWrite, MemoryStateBaseLayer};
+    use strata_ol_state_types::IStateAccessor;
     use strata_storage::{
         MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
         OLStateManager,
@@ -855,7 +855,7 @@ mod db_idempotency {
     #[derive(Debug, PartialEq)]
     struct DbSnapshot {
         toplevel_state_root: Option<strata_identifiers::Buf32>,
-        terminal_header: Option<super::OLBlockHeader>,
+        terminal_header: Option<super::OLBlockHeaderV1>,
         summary: Option<strata_checkpoint_types::EpochSummary>,
         canonical_epoch_commitment: Option<EpochCommitment>,
         per_account: Vec<(

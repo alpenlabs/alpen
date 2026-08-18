@@ -558,8 +558,9 @@ mod tests {
     use strata_config::{Config, SequencerConfig};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, Buf64, OLBlockId};
-    use strata_ol_chain_types::{
-        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    use strata_ol_chain_types_v1::{
+        BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1,
+        SignedOLBlockHeaderV1,
     };
     use strata_ol_params::OLParams;
     #[cfg(feature = "prover")]
@@ -629,10 +630,10 @@ mod tests {
     fn ensure_ol_genesis_reads_header_only_tip() {
         let storage = create_node_storage(get_test_sled_backend(), test_runtime_handle())
             .expect("create test storage");
-        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
-        let mut flags = BlockFlags::zero();
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
+        let mut flags = BlockFlagsV1::zero();
         flags.set_is_terminal(true);
-        let genesis_header = OLBlockHeader::new(
+        let genesis_header = OLBlockHeaderV1::new(
             1_000,
             flags,
             0,
@@ -645,8 +646,8 @@ mod tests {
         let genesis_id = genesis_header.compute_blkid();
         storage
             .ol_block()
-            .put_block_data_blocking(OLBlock::new(
-                SignedOLBlockHeader::new(genesis_header, Buf64::zero()),
+            .put_block_data_blocking(OLBlockV1::new(
+                SignedOLBlockHeaderV1::new(genesis_header, Buf64::zero()),
                 body,
             ))
             .expect("store genesis block");
@@ -655,7 +656,7 @@ mod tests {
             .replace_canonical_suffix_from_blocking(0, vec![genesis_id])
             .expect("store canonical genesis");
 
-        let tip_header = OLBlockHeader::new(
+        let tip_header = OLBlockHeaderV1::new(
             2_000,
             flags,
             1,

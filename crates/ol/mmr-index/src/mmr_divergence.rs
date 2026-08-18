@@ -1,10 +1,11 @@
-use std::{cmp::Ordering, collections::HashSet};
+use std::cmp::Ordering;
+use std::collections::HashSet;
 
 use strata_acct_types::Mmr64;
 use strata_db_types::MmrId;
 use strata_identifiers::AccountId;
-use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_merkle::MmrState;
+use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 
 use crate::OLMmrIndexError;
 

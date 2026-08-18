@@ -1,10 +1,11 @@
 //! Core mempool types.
 
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 use strata_acct_types::AccountId;
-pub use strata_ol_chain_types::OLTransaction;
-use strata_ol_chain_types::TransactionPayload;
+pub use strata_ol_tx_types_v1::OLTransactionV1;
+use strata_ol_tx_types_v1::TransactionPayloadV1;
 
 use crate::error::OLMempoolError;
 
@@ -91,14 +92,14 @@ pub enum MempoolOrderingKey {
 
 impl MempoolOrderingKey {
     /// Create ordering key for a transaction with the given timestamp_micros.
-    pub(crate) fn for_transaction(tx: &OLTransaction, timestamp_micros: u64) -> Self {
+    pub(crate) fn for_transaction(tx: &OLTransactionV1, timestamp_micros: u64) -> Self {
         match tx.payload() {
-            TransactionPayload::SnarkAccountUpdate(payload) => Self::Snark {
+            TransactionPayloadV1::SnarkAccountUpdate(payload) => Self::Snark {
                 account_id: *payload.target(),
                 seq_no: payload.operation().update().seq_no(),
                 timestamp_micros,
             },
-            TransactionPayload::GenericAccountMessage(_) => Self::Gam { timestamp_micros },
+            TransactionPayloadV1::GenericAccountMessage(_) => Self::Gam { timestamp_micros },
         }
     }
 
@@ -178,7 +179,7 @@ impl Ord for MempoolOrderingKey {
 #[derive(Clone, Debug)]
 pub(crate) struct MempoolEntry {
     /// The transaction data.
-    pub(crate) tx: OLTransaction,
+    pub(crate) tx: OLTransactionV1,
 
     /// Ordering key.
     pub(crate) ordering_key: MempoolOrderingKey,
@@ -190,7 +191,7 @@ pub(crate) struct MempoolEntry {
 impl MempoolEntry {
     /// Create a new mempool entry.
     pub(crate) fn new(
-        tx: OLTransaction,
+        tx: OLTransactionV1,
         ordering_key: MempoolOrderingKey,
         size_bytes: usize,
     ) -> Self {
@@ -401,14 +402,12 @@ impl OLMempoolRejectCounts {
 #[cfg(test)]
 mod tests {
     use ::ssz::{Decode, Encode};
-    use proptest::{
-        prelude::*,
-        strategy::{Strategy, ValueTree},
-        test_runner::TestRunner,
-    };
+    use proptest::prelude::*;
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::TestRunner;
     use strata_acct_types::AccountId;
-    use strata_ol_chain_types::{
-        OLTransaction, OLTransactionData, TransactionPayload, TxProofs, test_utils,
+    use strata_ol_tx_types_v1::{
+        OLTransactionDataV1, OLTransactionV1, TransactionPayloadV1, TxProofsV1, test_utils,
     };
 
     use super::*;
@@ -432,18 +431,18 @@ mod tests {
         let constraints = create_test_constraints();
         let payload = create_test_message_payload();
 
-        let tx = OLTransaction::new(
-            OLTransactionData::from_gam_bytes(target, payload)
+        let tx = OLTransactionV1::new(
+            OLTransactionDataV1::from_gam_bytes(target, payload)
                 .expect("message payload bytes must fit within SSZ max length")
                 .with_constraints(constraints.clone()),
-            TxProofs::new_empty(),
+            TxProofsV1::new_empty(),
         );
 
         assert_eq!(tx.target(), Some(target));
         assert_eq!(tx.constraints(), &constraints);
         assert!(matches!(
             tx.payload(),
-            TransactionPayload::GenericAccountMessage(_)
+            TransactionPayloadV1::GenericAccountMessage(_)
         ));
     }
 
@@ -458,7 +457,7 @@ mod tests {
         assert_eq!(tx.target(), Some(target));
         assert_eq!(tx.constraints(), &constraints);
         match tx.payload() {
-            TransactionPayload::SnarkAccountUpdate(payload) => {
+            TransactionPayloadV1::SnarkAccountUpdate(payload) => {
                 assert_eq!(payload.target(), &target);
                 assert_eq!(
                     payload.operation().update().seq_no(),
@@ -473,23 +472,23 @@ mod tests {
     fn test_compute_txid_generic_message() {
         let target = create_test_account_id();
         let payload = create_test_message_payload();
-        let tx1 = OLTransaction::new(
-            OLTransactionData::from_gam_bytes(target, payload.clone())
+        let tx1 = OLTransactionV1::new(
+            OLTransactionDataV1::from_gam_bytes(target, payload.clone())
                 .expect("message payload bytes must fit within SSZ max length"),
-            TxProofs::new_empty(),
+            TxProofsV1::new_empty(),
         );
-        let tx2 = OLTransaction::new(
-            OLTransactionData::from_gam_bytes(target, payload)
+        let tx2 = OLTransactionV1::new(
+            OLTransactionDataV1::from_gam_bytes(target, payload)
                 .expect("message payload bytes must fit within SSZ max length"),
-            TxProofs::new_empty(),
+            TxProofsV1::new_empty(),
         );
         assert_eq!(tx1.compute_txid(), tx2.compute_txid());
 
         let different_target = create_test_account_id();
-        let tx3 = OLTransaction::new(
-            OLTransactionData::from_gam_bytes(different_target, create_test_message_payload())
+        let tx3 = OLTransactionV1::new(
+            OLTransactionDataV1::from_gam_bytes(different_target, create_test_message_payload())
                 .expect("message payload bytes must fit within SSZ max length"),
-            TxProofs::new_empty(),
+            TxProofsV1::new_empty(),
         );
         assert_ne!(tx1.compute_txid(), tx3.compute_txid());
     }
@@ -508,7 +507,7 @@ mod tests {
     fn test_ssz_roundtrip_generic_message() {
         let tx = create_test_generic_tx();
         let encoded = Encode::as_ssz_bytes(&tx);
-        let decoded = OLTransaction::from_ssz_bytes(&encoded).expect("Should decode");
+        let decoded = OLTransactionV1::from_ssz_bytes(&encoded).expect("Should decode");
         assert_eq!(tx, decoded);
     }
 
@@ -516,7 +515,7 @@ mod tests {
     fn test_ssz_roundtrip_snark_update() {
         let tx = create_test_snark_tx();
         let encoded = Encode::as_ssz_bytes(&tx);
-        let decoded = OLTransaction::from_ssz_bytes(&encoded).expect("Should decode");
+        let decoded = OLTransactionV1::from_ssz_bytes(&encoded).expect("Should decode");
         assert_eq!(tx, decoded);
     }
 
@@ -524,7 +523,7 @@ mod tests {
         #[test]
         fn test_mempool_tx_ssz_roundtrip(tx in test_utils::ol_transaction_strategy()) {
             let encoded = Encode::as_ssz_bytes(&tx);
-            let decoded = OLTransaction::from_ssz_bytes(&encoded).expect("Should decode transaction");
+            let decoded = OLTransactionV1::from_ssz_bytes(&encoded).expect("Should decode transaction");
             prop_assert_eq!(tx, decoded);
         }
 

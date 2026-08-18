@@ -9,12 +9,12 @@ use strata_asm_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalHeaderC
 use strata_asm_manifest_types::{AsmManifestRangeHash, compute_asm_manifests_hash};
 use strata_bridge_params::BridgeParams;
 use strata_crypto::hash;
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{AsmManifest, OLBlock, OLBlockHeader, OLLog, OLTxSegment};
-use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
+use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockV1, OLLog, OLTxSegmentV1};
+use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::OLState;
-use strata_ol_stf::{
+use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_stf_v1::{
     BlockComponents, BlockContext, BlockInfo, EpochExecExpectations, EpochInfo, construct_block,
     verify_epoch_with_diff,
 };
@@ -27,10 +27,10 @@ use zkaleido::ZkVmEnv;
 ///
 /// # Inputs (read from zkVM)
 ///
-/// - Initial OL state (SSZ-encoded [`OLState`])
-/// - Block batch (SSZ-encoded `Vec<OLBlock>`)
-/// - Parent block header (SSZ-encoded [`OLBlockHeader`])
-/// - DA state diff bytes (strata-codec encoded [`strata_ol_da::OLDaPayloadV1`])
+/// - Initial OL state (SSZ-encoded [`OLStateV1`])
+/// - Block batch (SSZ-encoded `Vec<OLBlockV1>`)
+/// - Parent block header (SSZ-encoded [`OLBlockHeaderV1`])
+/// - DA state diff bytes (strata-codec encoded [`strata_ol_da_types_v1::OLDaPayloadV1`])
 ///
 /// # Outputs (committed to zkVM)
 ///
@@ -43,18 +43,18 @@ use zkaleido::ZkVmEnv;
 pub fn process_ol_stf(zkvm: &impl ZkVmEnv) {
     // Read and deserialize the initial OL state from zkVM input
     let initial_state_ssz_bytes = zkvm.read_buf();
-    let state = OLState::from_ssz_bytes(&initial_state_ssz_bytes)
+    let state = OLStateV1::from_ssz_bytes(&initial_state_ssz_bytes)
         .expect("failed to deserialize initial OL state from SSZ bytes");
 
     // Read and deserialize the batch of blocks to process from zkVM input
     let blocks_ssz_bytes = zkvm.read_buf();
-    let blocks: Vec<OLBlock> = Vec::<OLBlock>::from_ssz_bytes(&blocks_ssz_bytes)
+    let blocks: Vec<OLBlockV1> = Vec::<OLBlockV1>::from_ssz_bytes(&blocks_ssz_bytes)
         .expect("failed to deserialize block batch from SSZ bytes");
 
     // Read and deserialize the parent block header from zkVM input
     // This header's state root must match the initial state's root
     let parent_ssz_bytes = zkvm.read_buf();
-    let parent = OLBlockHeader::from_ssz_bytes(&parent_ssz_bytes)
+    let parent = OLBlockHeaderV1::from_ssz_bytes(&parent_ssz_bytes)
         .expect("failed to deserialize parent block header from SSZ bytes");
 
     // Read DA diff witness bytes from zkVM input
@@ -92,13 +92,13 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv) {
 /// - Any block execution fails
 /// - The computed block header doesn't match the input block header
 pub fn process_ol_stf_core(
-    state: OLState,
-    blocks: Vec<OLBlock>,
-    parent: OLBlockHeader,
+    state: OLStateV1,
+    blocks: Vec<OLBlockV1>,
+    parent: OLBlockHeaderV1,
     da_state_diff_bytes: Vec<u8>,
     bridge_params: BridgeParams,
 ) -> CheckpointClaim {
-    // Wrap OLState in MemoryStateBaseLayer to satisfy IStateAccessor requirements.
+    // Wrap OLStateV1 in MemoryStateBaseLayer to satisfy IStateAccessor requirements.
     let mut state = MemoryStateBaseLayer::new(state);
 
     // Verify that the parent block's state root matches the initial state's computed root.
@@ -230,13 +230,13 @@ struct EpochExecTrace {
     asm_manifests_hash: AsmManifestRangeHash,
 
     /// The proven terminal block header (last block in the batch).
-    terminal_header: OLBlockHeader,
+    terminal_header: OLBlockHeaderV1,
 
     /// All ASM manifests in the epoch, in order, for DA-witness replay and
     /// hashing.
     ///
     /// Held as an unbounded sequence rather than an
-    /// [`OLAsmManifestContainer`](strata_ol_chain_types::OLAsmManifestContainer)
+    /// [`OLAsmManifestContainerV1`](strata_ol_chain_types_v1::OLAsmManifestContainerV1)
     /// because an epoch may span several blocks that each independently satisfy
     /// the per-block `MAX_SEALING_MANIFEST_COUNT` limit, so the epoch total can
     /// legitimately exceed that per-block cap.
@@ -261,8 +261,8 @@ struct EpochExecTrace {
 /// - The computed block header doesn't match the input block header
 fn execute_block_batch(
     state: &mut MemoryStateBaseLayer,
-    blocks: &[OLBlock],
-    initial_parent: &OLBlockHeader,
+    blocks: &[OLBlockV1],
+    initial_parent: &OLBlockHeaderV1,
     bridge_params: BridgeParams,
 ) -> EpochExecTrace {
     let mut parent = initial_parent.clone();
@@ -279,8 +279,8 @@ fn execute_block_batch(
 
         // Extract the transaction segment from the block body.
         // If the block has no transactions, use an empty segment.
-        let empty_tx_segment =
-            OLTxSegment::new(vec![]).expect("empty transaction segment construction is infallible");
+        let empty_tx_segment = OLTxSegmentV1::new(vec![])
+            .expect("empty transaction segment construction is infallible");
         let tx_segment = block
             .body()
             .tx_segment()

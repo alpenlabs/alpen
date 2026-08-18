@@ -1,0 +1,15 @@
+//! OL log types.
+//!
+//! The log container ([`OLLog`]), the typed payloads, and their envelope codec are now defined
+//! canonically in [`strata_ol_logs`] (shared with the ASM checkpoint subprotocol); this module
+//! re-exports them. The OL-STF-specific bridge from [`SauTxUpdateDataV1`] lives on
+//! [`SauTxUpdateDataV1::get_log_data`].
+//!
+//! [`SauTxUpdateDataV1`]: strata_ol_tx_types_v1::SauTxUpdateDataV1
+//! [`SauTxUpdateDataV1::get_log_data`]: strata_ol_tx_types_v1::SauTxUpdateDataV1::get_log_data
+
+pub use strata_ol_logs::{
+    DestinationBufVec, ExtraDataBufVec, LogDecodeError, MAX_LOG_PAYLOAD_LEN, OLLog, OLLogRef,
+    OLLogType, SIMPLE_WITHDRAWAL_INTENT_LOG_TYPE_ID, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
+    SimpleWithdrawalIntentLogData, SnarkAccountUpdateLogData, decode_typed_logs,
+};

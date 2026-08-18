@@ -1,7 +1,5 @@
-use std::{
-    fmt::{self, Debug, Display},
-    str::FromStr,
-};
+use std::fmt::{self, Debug, Display};
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 /// Identifies a CSS-safe OL state point by tag.

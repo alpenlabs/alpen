@@ -7,24 +7,23 @@
     )
 )]
 
-use std::{
-    future::Future,
-    iter,
-    ops::RangeInclusive,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
-    time::Duration,
-};
+use std::future::Future;
+use std::iter;
+use std::ops::RangeInclusive;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bitcoin::Network;
-use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
+use proptest::arbitrary;
+use proptest::prelude::*;
+use proptest::strategy::ValueTree;
+use proptest::test_runner::TestRunner;
+use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
 use strata_acct_types::{
     AccountId, AccountSerial, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash,
     L1BlockRecord, MessageEntry, MsgPayload, l1_block_record_leaf_hash,
-    tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
@@ -34,50 +33,52 @@ use strata_btc_verification::L1Anchor;
 use strata_codec::encode_to_vec;
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_db_types::{DbError, MmrId, asm::AsmExecOutput};
+use strata_db_types::asm::AsmExecOutput;
+use strata_db_types::{DbError, MmrId};
 use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
     WtxidsRoot,
 };
 use strata_l1_txfmt::MagicBytes;
-use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
-use strata_ol_chain_types::{
-    ClaimList, LogDecodeError, OLBlock, OLBlockBody, OLLog, OLLogType, OLTransaction,
-    OLTransactionData, OLTxSegment, ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData,
-    SauTxPayload, SauTxProofState, SauTxUpdateData, SignedOLBlockHeader,
-    SimpleWithdrawalIntentLogData, TransactionPayload, TxProofs, test_utils as ol_test_utils,
+use strata_ol_chain_types_v1::{
+    LogDecodeError, OLBlockBodyV1, OLBlockV1, OLLog, OLLogType, OLTxSegmentV1,
+    SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData, test_utils as ol_test_utils,
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
-use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLState};
-use strata_ol_stf::{
+use strata_ol_state_types::*;
+use strata_ol_state_types_v1::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLStateV1};
+use strata_ol_stf_v1::{
     BlockComponents, BlockContext, BlockInfo, construct_block as stf_construct_block,
+};
+use strata_ol_tx_types_v1::{
+    ClaimListV1, OLTransactionDataV1, OLTransactionV1, ProofSatisfierListV1, SauTxLedgerRefsV1,
+    SauTxOperationDataV1, SauTxPayloadV1, SauTxProofStateV1, SauTxUpdateDataV1,
+    TransactionPayloadV1, TxProofsV1, test_utils as ol_tx_test_utils,
 };
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;
 use strata_storage::{NodeStorage, create_node_storage};
 
-/// Creates a genesis OLState using minimal empty parameters.
+/// Creates a genesis OLStateV1 using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
     let params = OLParams::default();
-    let state = OLState::from_genesis_params(&params).expect("valid params");
+    let state = OLStateV1::from_genesis_params(&params).expect("valid params");
     MemoryStateBaseLayer::new(state)
 }
 
-use crate::{
-    BlockAssemblyResult, FixedSlotSealing, LimitAwareSealing, MempoolProvider,
-    block_assembly::{
-        ConstructBlockOutput, calculate_block_slot_and_epoch, construct_block,
-        generate_block_template_inner,
-    },
-    context::{BlockAssemblyAnchorContext, BlockAssemblyContext},
-    resource_state::{AccumulatedDaData, EpochResourceState},
-    types::{BlockGenerationConfig, BlockTemplateResult, FullBlockTemplate},
+use crate::block_assembly::{
+    ConstructBlockOutput, calculate_block_slot_and_epoch, construct_block,
+    generate_block_template_inner,
 };
+use crate::context::{BlockAssemblyAnchorContext, BlockAssemblyContext};
+use crate::resource_state::{AccumulatedDaData, EpochResourceState};
+use crate::types::{BlockGenerationConfig, BlockTemplateResult, FullBlockTemplate};
+use crate::{BlockAssemblyResult, FixedSlotSealing, LimitAwareSealing, MempoolProvider};
 
 type TestEpochSealingPolicy = LimitAwareSealing<FixedSlotSealing>;
 
@@ -143,7 +144,7 @@ pub(crate) fn snark_account_inbox_len(state: &impl IStateAccessor, account_id: A
 pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) -> MessageEntry {
     let source = test_account_id(source_id);
     let mut runner = TestRunner::default();
-    let sampled_message = ol_test_utils::message_entry_strategy()
+    let sampled_message = ol_tx_test_utils::message_entry_strategy()
         .new_tree(&mut runner)
         .unwrap()
         .current();
@@ -173,7 +174,7 @@ pub(crate) const TEST_L1_REORG_SAFE_DEPTH: u32 = 0;
 /// Mock mempool provider for tests that stores transactions in memory.
 #[derive(Debug)]
 pub struct MockMempoolProvider {
-    transactions: Mutex<Vec<(OLTxId, OLTransaction)>>,
+    transactions: Mutex<Vec<(OLTxId, OLTransactionV1)>>,
     report_call_count: AtomicUsize,
     last_reported_invalid_txs: Mutex<Vec<(OLTxId, MempoolTxInvalidReason)>>,
     fail_mode: Mutex<MockMempoolFailMode>,
@@ -200,7 +201,7 @@ impl MockMempoolProvider {
     }
 
     /// Add a transaction to the mock mempool.
-    pub(crate) fn add_transaction(&self, txid: OLTxId, tx: OLTransaction) {
+    pub(crate) fn add_transaction(&self, txid: OLTxId, tx: OLTransactionV1) {
         self.transactions.lock().unwrap().push((txid, tx));
     }
 
@@ -231,7 +232,7 @@ impl MempoolProvider for MockMempoolProvider {
     async fn get_transactions(
         &self,
         limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransaction)>> {
+    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransactionV1)>> {
         if *self.fail_mode.lock().unwrap() == MockMempoolFailMode::GetTransactions {
             return Err(crate::BlockAssemblyError::Mempool(
                 OLMempoolError::ServiceClosed(
@@ -272,7 +273,7 @@ impl MempoolProvider for Arc<MockMempoolProvider> {
     async fn get_transactions(
         &self,
         limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransaction)>> {
+    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransactionV1)>> {
         MempoolProvider::get_transactions(self.as_ref(), limit).await
     }
 
@@ -429,11 +430,11 @@ impl MempoolGamTxBuilder {
     }
 
     /// Builds the mempool transaction.
-    pub(crate) fn build(self) -> OLTransaction {
-        OLTransaction::new(
-            OLTransactionData::from_gam_bytes(self.target, self.data)
+    pub(crate) fn build(self) -> OLTransactionV1 {
+        OLTransactionV1::new(
+            OLTransactionDataV1::from_gam_bytes(self.target, self.data)
                 .expect("message payload bytes must fit within SSZ max length"),
-            TxProofs::new_empty(),
+            TxProofsV1::new_empty(),
         )
     }
 }
@@ -532,10 +533,10 @@ impl MempoolSnarkTxBuilder {
     }
 
     /// Builds the mempool transaction.
-    pub(crate) fn build(self) -> OLTransaction {
+    pub(crate) fn build(self) -> OLTransactionV1 {
         // Use a random inner state from proptest
         let mut runner = TestRunner::default();
-        let sau_payload = ol_test_utils::sau_tx_payload_strategy()
+        let sau_payload = ol_tx_test_utils::sau_tx_payload_strategy()
             .new_tree(&mut runner)
             .unwrap()
             .current();
@@ -545,20 +546,20 @@ impl MempoolSnarkTxBuilder {
             .update()
             .proof_state()
             .inner_state_root();
-        let proof_state = SauTxProofState::new(self.new_msg_idx, inner_state);
-        let update_data = SauTxUpdateData::new(self.seq_no, proof_state, vec![], None);
+        let proof_state = SauTxProofStateV1::new(self.new_msg_idx, inner_state);
+        let update_data = SauTxUpdateDataV1::new(self.seq_no, proof_state, vec![], None);
 
         let ledger_refs = if self.l1_block_ref_claims.is_empty() {
-            SauTxLedgerRefs::new_empty()
+            SauTxLedgerRefsV1::new_empty()
         } else {
-            let claim_list = ClaimList::new(self.l1_block_ref_claims)
+            let claim_list = ClaimListV1::new(self.l1_block_ref_claims)
                 .expect("snark update has too many L1 block ref claims");
-            SauTxLedgerRefs::new_with_claims(claim_list)
+            SauTxLedgerRefsV1::new_with_claims(claim_list)
         };
 
         let operation_data =
-            SauTxOperationData::new(update_data, self.processed_messages, ledger_refs);
-        let payload = TransactionPayload::SnarkAccountUpdate(SauTxPayload::new(
+            SauTxOperationDataV1::new(update_data, self.processed_messages, ledger_refs);
+        let payload = TransactionPayloadV1::SnarkAccountUpdate(SauTxPayloadV1::new(
             self.account_id,
             operation_data,
         ));
@@ -595,13 +596,13 @@ impl MempoolSnarkTxBuilder {
                 .expect("message payload bytes must fit within SSZ max length");
         }
 
-        let data = OLTransactionData::new(payload, effects);
+        let data = OLTransactionDataV1::new(payload, effects);
         let update_proof = prop::collection::vec(any::<u8>(), 0..64)
             .new_tree(&mut runner)
             .unwrap()
             .current();
-        let proofs = TxProofs::new(ProofSatisfierList::single(update_proof), None);
-        OLTransaction::new(data, proofs)
+        let proofs = TxProofsV1::new(ProofSatisfierListV1::single(update_proof), None);
+        OLTransactionV1::new(data, proofs)
     }
 }
 
@@ -641,7 +642,7 @@ pub(crate) fn insert_inbox_messages_into_state(
 }
 
 /// Create test parent header by executing genesis block.
-pub(crate) fn create_test_parent_header() -> strata_ol_chain_types::OLBlockHeader {
+pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_v1::OLBlockHeaderV1 {
     let mut runner = TestRunner::default();
     let timestamp = (1000000u64..2000000u64)
         .new_tree(&mut runner)
@@ -1075,7 +1076,7 @@ impl TestEnv {
     /// epoch resource state.
     pub(crate) async fn construct_block(
         &self,
-        txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
+        txs: impl IntoIterator<Item = (OLTxId, OLTransactionV1)>,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         self.construct_block_with_resource_state(txs, EpochResourceState::new_empty())
             .await
@@ -1085,7 +1086,7 @@ impl TestEnv {
     pub(crate) async fn construct_empty_block(
         &self,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
-        self.construct_block(iter::empty::<(OLTxId, OLTransaction)>())
+        self.construct_block(iter::empty::<(OLTxId, OLTransactionV1)>())
             .await
     }
 
@@ -1106,7 +1107,7 @@ impl TestEnv {
     /// current parent commitment.
     pub(crate) async fn construct_block_with_da(
         &self,
-        txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
+        txs: impl IntoIterator<Item = (OLTxId, OLTransactionV1)>,
         epoch_cumulative_da: AccumulatedDaData,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         self.construct_block_with_resource_state(
@@ -1123,7 +1124,7 @@ impl TestEnv {
         resource_state_before_block: EpochResourceState,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         self.construct_block_with_resource_state(
-            iter::empty::<(OLTxId, OLTransaction)>(),
+            iter::empty::<(OLTxId, OLTransactionV1)>(),
             resource_state_before_block,
         )
         .await
@@ -1133,7 +1134,7 @@ impl TestEnv {
     /// candidate block.
     pub(crate) async fn construct_block_with_resource_state(
         &self,
-        txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
+        txs: impl IntoIterator<Item = (OLTxId, OLTransactionV1)>,
         resource_state_before_block: EpochResourceState,
     ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         let config = self.parent_config();
@@ -1175,7 +1176,7 @@ impl TestEnv {
     ///
     /// Use this for tests that need runtime block injection without reaching into
     /// raw storage plumbing from test bodies.
-    pub(crate) async fn put_block(&self, block: OLBlock) {
+    pub(crate) async fn put_block(&self, block: OLBlockV1) {
         self.storage()
             .ol_block()
             .put_block_data_async(block)
@@ -1184,13 +1185,13 @@ impl TestEnv {
     }
 }
 
-/// Converts assembled output into persisted artifacts: `(OLBlock, post_state)`.
+/// Converts assembled output into persisted artifacts: `(OLBlockV1, post_state)`.
 pub(crate) fn block_and_post_state_from_output(
     output: &ConstructBlockOutput<MemoryStateBaseLayer>,
-) -> (OLBlock, MemoryStateBaseLayer) {
+) -> (OLBlockV1, MemoryStateBaseLayer) {
     let header = output.template.header().clone();
-    let signed_header = SignedOLBlockHeader::new(header, Buf64::zero());
-    let block = OLBlock::new(signed_header, output.template.body().clone());
+    let signed_header = SignedOLBlockHeaderV1::new(header, Buf64::zero());
+    let block = OLBlockV1::new(signed_header, output.template.body().clone());
     (block, output.post_state.clone())
 }
 
@@ -1353,8 +1354,8 @@ impl TestStorageFixtureBuilder {
 
         let parent_commitment = if let Some(slot) = self.parent_slot {
             let temp_header = create_test_parent_header();
-            let temp_body = OLBlockBody::new_common(
-                OLTxSegment::new(vec![]).expect("Failed to create tx segment"),
+            let temp_body = OLBlockBodyV1::new_common(
+                OLTxSegmentV1::new(vec![]).expect("Failed to create tx segment"),
             );
 
             let (parent_state, parent_header, parent_block_body) = if slot == 0 {
@@ -1393,8 +1394,8 @@ impl TestStorageFixtureBuilder {
             let commitment =
                 OLBlockCommitment::new(parent_header.slot(), parent_header.compute_blkid());
             let parent_signed_header =
-                SignedOLBlockHeader::new(parent_header.clone(), Buf64::zero());
-            let parent_block = OLBlock::new(parent_signed_header, parent_block_body);
+                SignedOLBlockHeaderV1::new(parent_header.clone(), Buf64::zero());
+            let parent_block = OLBlockV1::new(parent_signed_header, parent_block_body);
 
             fixture
                 .storage()
@@ -1562,7 +1563,7 @@ pub(crate) fn included_txids(template: &FullBlockTemplate) -> Vec<OLTxId> {
         .expect("tx segment")
         .txs()
         .iter()
-        .map(OLTransaction::compute_txid)
+        .map(OLTransactionV1::compute_txid)
         .collect()
 }
 
@@ -1615,7 +1616,7 @@ pub(crate) async fn assemble_block_with_txs(
     ctx: &BlockAssemblyContextImpl,
     epoch_sealing_policy: &TestEpochSealingPolicy,
     config: &BlockGenerationConfig,
-    txs: Vec<(OLTxId, OLTransaction)>,
+    txs: Vec<(OLTxId, OLTransactionV1)>,
     resource_state_before_block: EpochResourceState,
 ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
     let parent_state = ctx

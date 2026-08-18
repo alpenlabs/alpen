@@ -7,20 +7,20 @@ use std::sync::Arc;
 
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_state_support_types::{
     DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer,
 };
-use strata_ol_stf::execute_block_batch_predrain;
+use strata_ol_stf_v1::execute_block_batch_predrain;
 
-use crate::{
-    context::BlockAssemblyAnchorContext,
-    resource_state::{AccumulatedDaData, EpochResourceState, rebuild_epoch_resource_state_upto},
-    test_utils::{
-        DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
-        TestStorageFixtureBuilder, block_and_post_state_from_output, generate_message_entries,
-        included_txids, test_account_id,
-    },
+use crate::context::BlockAssemblyAnchorContext;
+use crate::resource_state::{
+    AccumulatedDaData, EpochResourceState, rebuild_epoch_resource_state_upto,
+};
+use crate::test_utils::{
+    DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
+    TestStorageFixtureBuilder, block_and_post_state_from_output, generate_message_entries,
+    included_txids, test_account_id,
 };
 
 /// Finalizes an accumulator against the given state and returns the encoded DA blob bytes.
@@ -42,7 +42,7 @@ async fn build_blocks_with_resource_state_and_artifacts(
 ) -> (
     OLBlockCommitment,
     EpochResourceState,
-    Vec<(OLBlock, MemoryStateBaseLayer)>,
+    Vec<(OLBlockV1, MemoryStateBaseLayer)>,
 ) {
     let mut current_commitment = env.parent_commitment();
     let mut resource_state = EpochResourceState::new_empty();
@@ -101,7 +101,7 @@ async fn test_da_incremental_matches_replay() {
         .unwrap()
         .unwrap();
 
-    let blocks: Vec<&OLBlock> = artifacts.iter().map(|(block, _)| block).collect();
+    let blocks: Vec<&OLBlockV1> = artifacts.iter().map(|(block, _)| block).collect();
     let first_parent_header = artifacts[0].0.header();
 
     // Get the parent header (genesis header) from storage.
@@ -112,9 +112,9 @@ async fn test_da_incremental_matches_replay() {
         .await
         .unwrap()
         .unwrap();
-    let parent_header: &OLBlockHeader = parent_block.header();
+    let parent_header: &OLBlockHeaderV1 = parent_block.header();
 
-    let owned_blocks: Vec<OLBlock> = blocks.into_iter().cloned().collect();
+    let owned_blocks: Vec<OLBlockV1> = blocks.into_iter().cloned().collect();
     let mut replay_da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(genesis_state));
     let replay_logs = execute_block_batch_predrain(
         &mut replay_da_state,

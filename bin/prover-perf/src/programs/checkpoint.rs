@@ -1,13 +1,13 @@
 //! TODO(STR-2349) Replace `build_empty_chain` with `build_chain_with_transactions` to
 //! restore realistic cycle-count benchmarks. This was downgraded because the checkpoint
 //! proof now requires a correct `da_state_diff_bytes` (DA witness), and computing the
-//! full `OLDaPayloadV1` for a transaction-rich chain needs a `StateDiff` that encodes
+//! full `OLDaPayloadV1` for a transaction-rich chain needs an `OLStateDiffV1` that encodes
 //! every account balance delta, snark seqno/proof-state change, and inbox message
 //! appended during the epoch. The proper fix is to either:
-//!   1. Diff two `OLState` snapshots (before/after) and extract inbox messages from block bodies,
+//!   1. Diff two `OLStateV1` snapshots (before/after) and extract inbox messages from block bodies,
 //!      or
 //!   2. Route execution through `DaAccumulatingState` (requires the STF to be generic over
-//!      `IStateAccessor` instead of concrete `OLState`).
+//!      `IStateAccessor` instead of concrete `OLStateV1`).
 //!
 //! Until then, empty blocks with a slot-delta-only DA payload keep the proof correct.
 
@@ -15,10 +15,10 @@ use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_da_framework::DaCounter;
 use strata_identifiers::Buf64;
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{OLBlock, SignedOLBlockHeader};
-use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
-use strata_ol_stf::test_utils::{build_empty_chain, make_genesis_state};
+use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
+use strata_ol_da_types_v1::{GlobalStateDiffV1, LedgerDiffV1, OLDaPayloadV1, OLStateDiffV1};
+use strata_ol_state_types::IStateAccessor;
+use strata_ol_stf_v1::test_utils::{build_empty_chain, make_genesis_state};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use tracing::info;
 use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
@@ -39,11 +39,11 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
     let _ = build_empty_chain(&mut start_state, 1, SLOTS_PER_EPOCH)
         .expect("build_empty_chain should succeed");
 
-    let blocks: Vec<OLBlock> = blocks
+    let blocks: Vec<OLBlockV1> = blocks
         .into_iter()
         .map(|b| {
-            OLBlock::new(
-                SignedOLBlockHeader::new(b.header().clone(), Buf64::zero()),
+            OLBlockV1::new(
+                SignedOLBlockHeaderV1::new(b.header().clone(), Buf64::zero()),
                 b.body().clone(),
             )
         })
@@ -54,12 +54,12 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
     let slot_delta = terminal_header.slot() - start_state.cur_slot();
     let slot_delta_u16 =
         u16::try_from(slot_delta).expect("slot delta exceeds u16::MAX; epoch too long");
-    let da_diff = StateDiff::new(
-        GlobalStateDiff::new(
+    let da_diff = OLStateDiffV1::new(
+        GlobalStateDiffV1::new(
             DaCounter::new_changed(slot_delta_u16),
             DaCounter::new_unchanged(),
         ),
-        LedgerDiff::default(),
+        LedgerDiffV1::default(),
     );
     let da_state_diff_bytes =
         encode_to_vec(&OLDaPayloadV1::new(da_diff)).expect("encode DA payload");

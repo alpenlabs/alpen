@@ -1,0 +1,88 @@
+import strata_identifiers
+import strata_asm_common
+import strata_ol_tx_types_v1
+import block_flags
+
+MAX_TXS_PER_BLOCK = 1 << 16
+MAX_LOGS_PER_BLOCK = 1 << 12
+MAX_SEALING_MANIFEST_COUNT = 2048
+
+### OL Block header without signature.
+###
+### This should not be directly used itself during execution, it has hash fields
+### that are computed from execution, so this is what we use as an input to
+### validation.
+class OLBlockHeaderV1(Container):
+    ### The timestamp the block was created at.
+    timestamp: uint64
+
+    ### Flags used for better signalling.
+    ###
+    ### This was added so that we can look at a header and know if it a terminal
+    ### without having to examine the body to see if the body had an L1 update
+    ### or not.  I suggested this a while ago but we dismissed it as probably
+    ### unnecessary, but it really does help simplifying a lot of checks, so I'm
+    ### adding it now.
+    flags: block_flags.BlockFlagsV1
+
+    ### Slot the block was created for.
+    slot: strata_identifiers.Slot
+
+    ### Epoch the block was created in.
+    epoch: strata_identifiers.Epoch
+
+    ### Parent block id.
+    parent_blkid: strata_identifiers.OLBlockId
+
+    ### Root of the block body.
+    body_root: strata_identifiers.Buf32
+
+    ### The state root resulting after the block execution.
+    state_root: strata_identifiers.Buf32
+
+    ### Root of the block logs.
+    logs_root: strata_identifiers.Buf32
+
+### Credential for OL block (upgradable signature schemes).
+class OLBlockCredentialV1(StableContainer[8]):
+    ### Schnorr signature (64 bytes)
+    schnorr_sig: Optional[strata_identifiers.Buf64]
+
+### OL Block header with signature.
+class SignedOLBlockHeaderV1(Container):
+    ### Block header
+    header: OLBlockHeaderV1
+
+    ### Block credential (signature)
+    credential: OLBlockCredentialV1
+
+### Transaction segment containing transactions included in a block.
+class OLTxSegmentV1(Container):
+    ### Transactions in the segment
+    #~# external_kind: container
+    txs: List[strata_ol_tx_types_v1.OLTransactionV1, MAX_TXS_PER_BLOCK]
+
+### Container for manifests building on top of previous l1 height to the new l1 height.
+class OLAsmManifestContainerV1(Container):
+    ### Manifests building on top of previous l1 height to the new l1 height.
+    #~# external_kind: container
+    manifests: List[strata_asm_common.AsmManifest, MAX_SEALING_MANIFEST_COUNT]
+
+### OL block body containing transactions and optional ASM manifests.
+class OLBlockBodyV1(StableContainer[16]):
+    ### The transactions contained in an OL block.
+    tx_segment: Optional[OLTxSegmentV1]
+
+    ### ASM manifests included in this block.
+    ###
+    ### Manifests may be included in any block within an epoch; their inclusion
+    ### is independent of whether the block is an epoch terminal (which is
+    ### signalled authoritatively by the `IS_TERMINAL` header flag). The logs
+    ### carried by these manifests are buffered into intraepoch state and
+    ### processed at the epoch terminal.
+    manifests: Optional[OLAsmManifestContainerV1]
+
+### Complete OL block with signed header and body.
+class OLBlockV1(Container):
+    signed_header: SignedOLBlockHeaderV1
+    body: OLBlockBodyV1

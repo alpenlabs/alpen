@@ -15,8 +15,7 @@ use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId, RBuf32,
 };
-use strata_ledger_types::{IAccountState, ISnarkAccountState};
-use strata_ol_chain_types::{OLBlock, OLTransaction, TransactionPayload};
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
     OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
@@ -26,7 +25,9 @@ use strata_ol_rpc_types::{
     RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState,
     RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
 };
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::{IAccountState, ISnarkAccountState};
+use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 use tracing::{error, info};
@@ -161,7 +162,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .map_err(db_error)
     }
 
-    async fn get_block(&self, blkid: OLBlockId) -> RpcResult<OLBlock> {
+    async fn get_block(&self, blkid: OLBlockId) -> RpcResult<OLBlockV1> {
         let blk = self
             .provider
             .get_block_data(blkid)
@@ -171,7 +172,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         Ok(blk)
     }
 
-    async fn get_block_at(&self, commitment: OLBlockCommitment) -> RpcResult<OLBlock> {
+    async fn get_block_at(&self, commitment: OLBlockCommitment) -> RpcResult<OLBlockV1> {
         match self
             .provider
             .get_block_at(commitment)
@@ -614,7 +615,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     async fn get_toplevel_ol_state_for_epoch(
         &self,
         epoch: Epoch,
-    ) -> RpcResult<(EpochCommitment, Arc<OLState>)> {
+    ) -> RpcResult<(EpochCommitment, Arc<OLStateV1>)> {
         let Some(epoch_commitment) = self
             .provider
             .get_canonical_epoch_commitment_at(epoch)
@@ -1165,21 +1166,21 @@ const MAX_RAW_BLOCKS_RANGE: usize = 5000;
 impl<P: OLRpcProvider> OLSubmitRpcServer for OLRpcServer<P> {
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {
         // Convert RPC transaction to mempool transaction
-        let mempool_tx: OLTransaction = tx
+        let mempool_tx: OLTransactionV1 = tx
             .try_into()
             .map_err(|e| invalid_params_error(format!("Invalid transaction: {e}")))?;
         let target = mempool_tx
             .target()
             .expect("all OL payload variants must have a target");
         let next_inbox_msg_idx = match mempool_tx.payload() {
-            TransactionPayload::SnarkAccountUpdate(payload) => Some(
+            TransactionPayloadV1::SnarkAccountUpdate(payload) => Some(
                 payload
                     .operation()
                     .update()
                     .proof_state()
                     .new_next_msg_idx(),
             ),
-            TransactionPayload::GenericAccountMessage(_) => None,
+            TransactionPayloadV1::GenericAccountMessage(_) => None,
         };
 
         // Submit to mempool

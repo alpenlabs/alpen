@@ -1,26 +1,27 @@
 //! OL state accessor that accumulates DA-covered writes over an epoch.
 
-use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
-    fmt,
-    mem::take,
-};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fmt;
+use std::mem::take;
 
 use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, L1BlockRecord, Mmr64};
 use strata_asm_checkpoint_types::OL_DA_DIFF_MAX_SIZE;
+use strata_da_framework::counter_schemes::{
+    CtrU64BySignedVarInt, CtrU64ByU16, CtrU64ByUnsignedVarInt,
+};
 use strata_da_framework::{
     CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
-    LinearAccumulator,
-    counter_schemes::{CtrU64BySignedVarInt, CtrU64ByU16, CtrU64ByUnsignedVarInt},
-    encode_to_vec,
+    LinearAccumulator, encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::*;
-use strata_ol_da::*;
+use strata_ol_da_common::*;
+use strata_ol_da_types_v1::*;
+use strata_ol_state_types::*;
 use strata_predicate::PredicateKey;
 use thiserror::Error;
 
-use crate::{index_types::IndexerWrites, indexer_layer::IndexerAccountStateMut};
+use crate::index_types::IndexerWrites;
+use crate::indexer_layer::IndexerAccountStateMut;
 
 /// Errors while building or encoding epoch DA payloads.
 #[derive(Debug, Error)]
@@ -104,9 +105,9 @@ pub enum DaAccumulationError {
 struct SnarkDelta {
     base_seq_no: u64,
     final_seq_no: u64,
-    base_proof_state: DaProofState,
-    final_proof_state: DaProofState,
-    inbox: DaLinacc<InboxBuffer>,
+    base_proof_state: DaProofStateV1,
+    final_proof_state: DaProofStateV1,
+    inbox: DaLinacc<InboxBufferV1>,
     base_update_vk: U16LenBytes,
     final_update_vk: U16LenBytes,
 }
@@ -115,7 +116,7 @@ impl SnarkDelta {
     fn from_state<T: ISnarkAccountState>(state: &T) -> Self {
         let base_seq_no = *state.seqno().inner();
         let base_proof_state =
-            DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
+            DaProofStateV1::new(state.inner_state_root(), state.next_inbox_msg_idx());
         let base_update_vk = U16LenBytes::new(
             state
                 .update_vk()
@@ -137,7 +138,7 @@ impl SnarkDelta {
     fn update_from_state<T: ISnarkAccountState>(&mut self, state: &T) {
         self.final_seq_no = *state.seqno().inner();
         self.final_proof_state =
-            DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
+            DaProofStateV1::new(state.inner_state_root(), state.next_inbox_msg_idx());
         self.final_update_vk = U16LenBytes::new(
             state
                 .update_vk()
@@ -147,7 +148,7 @@ impl SnarkDelta {
         );
     }
 
-    fn build_diff(&self) -> Result<SnarkAccountDiff, DaAccumulationError> {
+    fn build_diff(&self) -> Result<SnarkAccountDiffV1, DaAccumulationError> {
         let mut seq_builder = DaCounterBuilder::<CtrU64ByU16>::from_source(self.base_seq_no);
         seq_builder.set(self.final_seq_no)?;
         let seq_no = seq_builder.into_write()?;
@@ -160,9 +161,9 @@ impl SnarkDelta {
         );
         next_idx_builder.set(self.final_proof_state.inner().next_inbox_msg_idx())?;
         let next_inbox_msg_idx = next_idx_builder.into_write()?;
-        let proof_state = DaProofStateDiff::new(inner_state, next_inbox_msg_idx);
+        let proof_state = DaProofStateDiffV1::new(inner_state, next_inbox_msg_idx);
         let update_vk = DaRegister::compare(&self.base_update_vk, &self.final_update_vk);
-        Ok(SnarkAccountDiff::new(
+        Ok(SnarkAccountDiffV1::new(
             update_vk,
             proof_state,
             seq_no,
@@ -337,11 +338,12 @@ impl EpochDaAccumulator {
                 }
             }
 
-            let entry = DaMessageEntry::new(source_id, entry.incl_epoch(), entry.payload().clone());
+            let entry =
+                DaMessageEntryV1::new(source_id, entry.incl_epoch(), entry.payload().clone());
             if !snark_delta.inbox.append_entry(entry) {
                 return Err(DaAccumulationError::InboxBufferFull {
                     account_id,
-                    max: InboxBuffer::MAX_INSERT,
+                    max: InboxBufferV1::MAX_INSERT,
                 });
             }
         }
@@ -436,14 +438,17 @@ impl EpochDaAccumulator {
     }
 
     /// Finalizes the epoch by building the state diff.
-    fn finalize<S: IStateAccessor>(&mut self, state: &S) -> Result<StateDiff, DaAccumulationError> {
+    fn finalize<S: IStateAccessor>(
+        &mut self,
+        state: &S,
+    ) -> Result<OLStateDiffV1, DaAccumulationError> {
         let global_diff = self.build_global_diff()?;
         let ledger_diff = self.build_ledger_diff(state)?;
-        Ok(StateDiff::new(global_diff, ledger_diff))
+        Ok(OLStateDiffV1::new(global_diff, ledger_diff))
     }
 
     /// Builds the global state diff for the epoch.
-    fn build_global_diff(&mut self) -> Result<GlobalStateDiff, DaAccumulationError> {
+    fn build_global_diff(&mut self) -> Result<GlobalStateDiffV1, DaAccumulationError> {
         let cur_slot = if let Some(builder) = self.slot_builder.take() {
             builder.into_write()?
         } else {
@@ -456,14 +461,14 @@ impl EpochDaAccumulator {
             DaCounter::new_unchanged()
         };
 
-        Ok(GlobalStateDiff::new(cur_slot, limbo_funds_sats))
+        Ok(GlobalStateDiffV1::new(cur_slot, limbo_funds_sats))
     }
 
     /// Builds the ledger diff for the epoch.
     fn build_ledger_diff<S: IStateAccessor>(
         &self,
         state: &S,
-    ) -> Result<LedgerDiff, DaAccumulationError> {
+    ) -> Result<LedgerDiffV1, DaAccumulationError> {
         let mut new_records = self.new_account_records.clone();
         new_records.sort_by_key(|entry| entry.serial);
 
@@ -500,7 +505,7 @@ impl EpochDaAccumulator {
                 .map_err(|_| DaAccumulationError::MissingAccountState(entry.account_id))?
                 .ok_or(DaAccumulationError::MissingAccountState(entry.account_id))?;
             let init = account_init_from_state(state_ref);
-            if let AccountTypeInit::Snark(init) = &init.type_state {
+            if let AccountTypeInitV1::Snark(init) = &init.type_state {
                 let vk_len = init.update_vk.as_slice().len();
                 if vk_len > MAX_VK_BYTES {
                     return Err(DaAccumulationError::VkTooLarge {
@@ -509,7 +514,7 @@ impl EpochDaAccumulator {
                     });
                 }
             }
-            new_accounts.push(NewAccountEntry::new(entry.account_id, init));
+            new_accounts.push(NewAccountEntryV1::new(entry.account_id, init));
         }
 
         let mut account_diffs = Vec::new();
@@ -530,7 +535,7 @@ impl EpochDaAccumulator {
                 DaCounter::new_changed(delta)
             };
             let snark_state = match delta.ty {
-                AccountTypeId::Empty => SnarkAccountDiff::default(),
+                AccountTypeId::Empty => SnarkAccountDiffV1::default(),
                 AccountTypeId::Snark => {
                     let snark = delta
                         .snark
@@ -539,7 +544,7 @@ impl EpochDaAccumulator {
                     snark.build_diff()?
                 }
             };
-            let diff = AccountDiff::new(balance, snark_state);
+            let diff = AccountDiffV1::new(balance, snark_state);
 
             if diff.is_default() {
                 continue;
@@ -550,12 +555,12 @@ impl EpochDaAccumulator {
                 return Err(DaAccumulationError::DuplicateAccountSerial(serial));
             }
 
-            account_diffs.push(AccountDiffEntry::new(serial, diff));
+            account_diffs.push(AccountDiffEntryV1::new(serial, diff));
         }
 
         account_diffs.sort_by_key(|entry| entry.account_serial);
 
-        Ok(LedgerDiff::new(
+        Ok(LedgerDiffV1::new(
             U16LenList::new(new_accounts),
             U16LenList::new(account_diffs),
         ))
@@ -576,7 +581,7 @@ pub struct DaAccumulatingState<S: IStateAccessor> {
     epoch_acc: EpochDaAccumulator,
 
     /// Pending state diffs waiting for output logs.
-    pending_epoch_diffs: VecDeque<StateDiff>,
+    pending_epoch_diffs: VecDeque<OLStateDiffV1>,
 
     /// Completed epoch blobs waiting to be drained.
     pending_epoch_blobs: VecDeque<Vec<u8>>,
@@ -884,7 +889,7 @@ where
     }
 }
 
-fn encode_payload(state_diff: StateDiff) -> Result<Vec<u8>, DaAccumulationError> {
+fn encode_payload(state_diff: OLStateDiffV1) -> Result<Vec<u8>, DaAccumulationError> {
     let blob = OLDaPayloadV1::new(state_diff);
     let encoded = encode_to_vec(&blob)?;
 
@@ -899,12 +904,12 @@ fn encode_payload(state_diff: StateDiff) -> Result<Vec<u8>, DaAccumulationError>
 }
 
 /// Converts account state into DA init data for encoding.
-fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
+fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInitV1 {
     let balance = state.balance();
     match state.type_state() {
-        AccountTypeStateRef::Empty => AccountInit::new(balance, AccountTypeInit::Empty),
+        AccountTypeStateRef::Empty => AccountInitV1::new(balance, AccountTypeInitV1::Empty),
         AccountTypeStateRef::Snark(snark_state) => {
-            let init = SnarkAccountInit::new(
+            let init = SnarkAccountInitV1::new(
                 snark_state.inner_state_root(),
                 snark_state
                     .update_vk()
@@ -912,7 +917,7 @@ fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
                     .expect("stored predicate key must be valid")
                     .to_bytes(),
             );
-            AccountInit::new(balance, AccountTypeInit::Snark(init))
+            AccountInitV1::new(balance, AccountTypeInitV1::Snark(init))
         }
     }
 }
@@ -922,10 +927,8 @@ fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
 // module only instantiates the shared trait-surface behavior suites.
 #[cfg(test)]
 mod tests {
-    use crate::{
-        DaAccumulatingState, IndexerState, WriteTrackingState,
-        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
-    };
+    use crate::common_tests::{impl_mut_layer_tests, impl_read_layer_tests};
+    use crate::{DaAccumulatingState, IndexerState, WriteTrackingState};
 
     /// Builds a [`DaAccumulatingState`] over a [`WriteTrackingState`].
     macro_rules! build_da_over_wt {

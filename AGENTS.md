@@ -137,11 +137,14 @@ Orchestration Layer implementation.
 
 | Crate | Description |
 |-------|-------------|
-| `ol/stf` | OL state transition function (block, epoch, manifest processing) |
-| `ol/state-types` | State structures (toplevel, global, epochal, ledger, snark account) |
-| `ol/chain-types` | New OL block/transaction/log types (SSZ) |
+| `ol/stf-v1` | OL state transition function (block, epoch, manifest processing) |
+| `ol/state-types` | Version-independent state traits and ledger entry types |
+| `ol/state-types-v1` | Concrete state structures (toplevel, global, epochal, ledger, snark account) |
+| `ol/chain-types-v1` | OL block and log types (SSZ) |
+| `ol/tx-types-v1` | OL transaction and tx proof types (SSZ) |
 | `ol/msg-types` | Deposit and withdrawal message types |
-| `ol/da` | OL data availability traits |
+| `ol/da-common` | Version-independent OL data availability traits and encoding helpers |
+| `ol/da-types-v1` | Concrete V1 OL DA payload types, scheme, and checkpoint-tx extractor |
 | `ol/block-assembly` | OL block construction |
 | `ol/mempool` | Transaction mempool |
 | `ol/state-support-types` | State access layers (batch diff, indexer, write tracking) |
@@ -153,7 +156,6 @@ Orchestration Layer implementation.
 | `ol/rpc/api` | OL JSON-RPC API traits and client/server glue |
 | `ol/rpc/types` | OL RPC request and response types |
 | `bridge-types` | Bridge operation and message types shared with OL/EE |
-| `ledger-types` | Ledger entry and account ledger types |
 | `checkpoint-types` | Checkpoint and batch types |
 
 ### DA Framework (`crates/da-framework/`)

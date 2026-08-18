@@ -10,16 +10,16 @@ use strata_acct_types::{
 };
 use strata_da_framework::decode_buf_exact;
 use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
-use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
-use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, OLSnarkAccountState, WriteBatch};
+use strata_ol_da_types_v1::{AccountTypeInitV1, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
+use strata_ol_state_types::*;
+use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLSnarkAccountStateV1, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::Seqno;
 
+use crate::test_utils::*;
 use crate::{
     BatchDiffState, DaAccumulatingState, DaAccumulationError, IndexerState, WriteTrackingState,
-    test_utils::*,
 };
 
 // =============================================================================
@@ -910,7 +910,7 @@ fn test_new_account_post_state_encoded() {
         BitcoinAmount::try_from(150).expect("amount must not exceed the Bitcoin money supply")
     );
     match &entry.init.type_state {
-        AccountTypeInit::Snark(init) => {
+        AccountTypeInitV1::Snark(init) => {
             assert_eq!(init.initial_state_root, test_hash(9));
             // The VK is stored with the predicate type ID prefix, so we need to compare
             // with the full predicate key bytes (type ID + raw VK bytes)
@@ -935,7 +935,7 @@ fn test_new_account_post_state_encoded() {
 fn test_new_account_vk_persisted_from_ol_state() {
     let mut da_state = DaAccumulatingState::new(create_test_base_layer());
     let account_id = test_account_id(10);
-    let snark_state = OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), test_hash(4));
+    let snark_state = OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), test_hash(4));
     let new_acct = NewAccountData::new(
         BitcoinAmount::try_from(100).expect("amount must not exceed the Bitcoin money supply"),
         NewAccountTypeState::Snark {
@@ -954,7 +954,7 @@ fn test_new_account_vk_persisted_from_ol_state() {
     let new_accounts = blob.state_diff.ledger.new_accounts.entries();
     assert_eq!(new_accounts.len(), 1);
     match &new_accounts[0].init.type_state {
-        AccountTypeInit::Snark(init) => {
+        AccountTypeInitV1::Snark(init) => {
             assert_eq!(
                 init.update_vk.as_slice(),
                 snark_state
@@ -1101,7 +1101,7 @@ fn test_vk_size_at_predicate_limit_roundtrips() {
     let new_accounts = blob.state_diff.ledger.new_accounts.entries();
     assert_eq!(new_accounts.len(), 1);
     match &new_accounts[0].init.type_state {
-        AccountTypeInit::Snark(init) => {
+        AccountTypeInitV1::Snark(init) => {
             assert_eq!(init.update_vk.as_slice().len(), vk_len + 1);
         }
         _ => panic!("expected snark account init"),

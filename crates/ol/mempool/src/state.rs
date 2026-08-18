@@ -1,31 +1,28 @@
 //! Mempool service state management.
 
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    fmt::{Debug, Formatter},
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use metrics::{counter, gauge};
 use ssz::{Decode, Encode};
 use strata_acct_types::AccountId;
 use strata_db_types::mempool::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{OLBlock, OLTransaction, TransactionPayload};
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
+use strata_ol_state_types::IStateAccessor;
+use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_service::ServiceState;
 use strata_storage::NodeStorage;
 use tracing::{debug, info, instrument, warn};
 
-use crate::{
-    MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
-    types::{
-        MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
-    },
-    validation::validate_transaction,
+use crate::types::{
+    MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
 };
+use crate::validation::validate_transaction;
+use crate::{MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
 
 /// Per-account mempool state tracking.
 ///
@@ -198,7 +195,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         for tx_data in all_txs {
             // Parse transaction from bytes
-            let tx: OLTransaction = match Decode::from_ssz_bytes(tx_data.tx_bytes()) {
+            let tx: OLTransactionV1 = match Decode::from_ssz_bytes(tx_data.tx_bytes()) {
                 Ok(tx) => tx,
                 Err(e) => {
                     // Skip malformed transaction and remove from DB
@@ -276,7 +273,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     #[instrument(skip(self, tx), fields(component = "ol_mempool"))]
     pub(crate) async fn handle_submit_transaction(
         &mut self,
-        tx: Box<OLTransaction>,
+        tx: Box<OLTransactionV1>,
     ) -> OLMempoolResult<OLTxId> {
         // Add to mempool
         let txid = self.add_transaction(*tx).await?;
@@ -287,10 +284,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
     pub(crate) async fn handle_get_transactions(
         &mut self,
         limit: usize,
-    ) -> OLMempoolResult<Vec<(OLTxId, OLTransaction)>> {
+    ) -> OLMempoolResult<Vec<(OLTxId, OLTransactionV1)>> {
         // Gap checking at submission ensures no gaps exist.
         // Simply return transactions in priority order.
-        let result: Vec<(OLTxId, OLTransaction)> = self
+        let result: Vec<(OLTxId, OLTransactionV1)> = self
             .ordering_index
             .values()
             .take(limit)
@@ -353,13 +350,13 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Returns txid if this is a
     /// [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) with a sequence number
     /// that already exists in the mempool for the target account. Returns None otherwise.
-    fn find_account_tx_with_same_seqno(&self, tx: &OLTransaction) -> Option<OLTxId> {
+    fn find_account_tx_with_same_seqno(&self, tx: &OLTransactionV1) -> Option<OLTxId> {
         let target_account = tx.target()?;
         let tx_seq_no = match tx.payload() {
-            TransactionPayload::SnarkAccountUpdate(payload) => {
+            TransactionPayloadV1::SnarkAccountUpdate(payload) => {
                 payload.operation().update().seq_no()
             }
-            TransactionPayload::GenericAccountMessage(_) => return None,
+            TransactionPayloadV1::GenericAccountMessage(_) => return None,
         };
 
         // Get account state and check if seq_no exists
@@ -373,7 +370,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Find txid with this seq_no in the account's transactions
         for txid in &acct_state.txids {
             if let Some(entry) = self.entries.get(txid) {
-                if let TransactionPayload::SnarkAccountUpdate(payload) = entry.tx.payload()
+                if let TransactionPayloadV1::SnarkAccountUpdate(payload) = entry.tx.payload()
                     && payload.operation().update().seq_no() == tx_seq_no
                 {
                     return Some(*txid);
@@ -394,7 +391,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     ///
     /// Returns the transaction ID. Idempotent - returns existing txid if duplicate.
     #[instrument(skip(self, tx), fields(component = "ol_mempool"))]
-    pub(crate) async fn add_transaction(&mut self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
+    pub(crate) async fn add_transaction(&mut self, tx: OLTransactionV1) -> OLMempoolResult<OLTxId> {
         let txid = tx.compute_txid();
 
         // Idempotent check - if already present, return success
@@ -505,7 +502,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
         acct_state.txids.insert(txid);
 
         // Add seq_no if this is a SnarkAccountUpdate
-        if let TransactionPayload::SnarkAccountUpdate(payload) = entry.tx.payload() {
+        if let TransactionPayloadV1::SnarkAccountUpdate(payload) = entry.tx.payload() {
             acct_state
                 .seq_nos
                 .insert(payload.operation().update().seq_no());
@@ -543,7 +540,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             acct_state.txids.remove(&txid);
 
             // Remove seq_no if this is a SnarkAccountUpdate
-            if let TransactionPayload::SnarkAccountUpdate(payload) = entry.tx.payload() {
+            if let TransactionPayloadV1::SnarkAccountUpdate(payload) = entry.tx.payload() {
                 acct_state
                     .seq_nos
                     .remove(&payload.operation().update().seq_no());
@@ -601,7 +598,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
                 self.remove_single_tx(*txid, &entry)?;
 
                 // Track minimum seq_no for account (for cascade removal)
-                if let TransactionPayload::SnarkAccountUpdate(payload) = entry.tx.payload() {
+                if let TransactionPayloadV1::SnarkAccountUpdate(payload) = entry.tx.payload() {
                     let seq_no = payload.operation().update().seq_no();
                     account_min_seq
                         .entry(account)
@@ -641,11 +638,11 @@ impl<P: StateProvider> MempoolServiceState<P> {
             .filter_map(|&txid| {
                 let entry = self.entries.get(&txid)?;
                 match entry.tx.payload() {
-                    TransactionPayload::SnarkAccountUpdate(payload) => {
+                    TransactionPayloadV1::SnarkAccountUpdate(payload) => {
                         let seq_no = payload.operation().update().seq_no();
                         (seq_no >= min_failed_seq).then_some(txid)
                     }
-                    TransactionPayload::GenericAccountMessage(_) => None,
+                    TransactionPayloadV1::GenericAccountMessage(_) => None,
                 }
             })
             .collect();
@@ -856,7 +853,7 @@ impl<P: StateProvider> ServiceState for MempoolServiceState<P> {
 ///
 /// Converts block transactions to mempool format (without accumulator proofs)
 /// and computes txids that match the original mempool entries.
-fn extract_account_txs_from_block(block: &OLBlock) -> HashMap<AccountId, Vec<OLTxId>> {
+fn extract_account_txs_from_block(block: &OLBlockV1) -> HashMap<AccountId, Vec<OLTxId>> {
     let mut by_account: HashMap<AccountId, Vec<OLTxId>> = HashMap::new();
 
     if let Some(tx_segment) = block.body().tx_segment() {
@@ -882,18 +879,16 @@ mod tests {
     use strata_identifiers::Buf32;
 
     use super::*;
-    use crate::{
-        DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH,
-        test_utils::{
-            create_test_account_id_with, create_test_block_commitment,
-            create_test_constraints_with_slots, create_test_context,
-            create_test_generic_tx_for_account, create_test_generic_tx_with_size,
-            create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
-            create_test_snark_tx_with_seq_no_and_slots, create_test_state_provider,
-            create_test_tx_with_id, snark_seq_no, tx_target, with_max_slot,
-        },
-        types::OLMempoolConfig,
+    use crate::test_utils::{
+        create_test_account_id_with, create_test_block_commitment,
+        create_test_constraints_with_slots, create_test_context,
+        create_test_generic_tx_for_account, create_test_generic_tx_with_size,
+        create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
+        create_test_snark_tx_with_seq_no_and_slots, create_test_state_provider,
+        create_test_tx_with_id, snark_seq_no, tx_target, with_max_slot,
     };
+    use crate::types::OLMempoolConfig;
+    use crate::{DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH};
 
     #[tokio::test]
     async fn test_add_transaction() {
@@ -1330,7 +1325,7 @@ mod tests {
         // Verify ordering: tx1 (id=0), tx2 (id=1), tx3 (id=2), tx4 (id=3)
         let txs = state.handle_get_transactions(10).await.unwrap();
         assert_eq!(txs.len(), 4);
-        // handle_get_transactions returns Vec<(OLTxId, OLTransaction)>
+        // handle_get_transactions returns Vec<(OLTxId, OLTransactionV1)>
         let (tx1_id_result, _) = &txs[0];
         let (tx2_id_result, _) = &txs[1];
         let (tx3_id_result, _) = &txs[2];

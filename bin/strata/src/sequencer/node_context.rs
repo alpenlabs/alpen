@@ -234,7 +234,7 @@ mod tests {
         BlockCompletionData, BlockasmBuilder, FixedSlotSealing, LimitAwareSealing,
         test_utils::{MockMempoolProvider, TestStorageFixtureBuilder},
     };
-    use strata_ol_chain_types::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
+    use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, SignedOLBlockHeaderV1};
     use strata_ol_params::OLParams;
     use strata_ol_sequencer::SequencerBuilder;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
@@ -326,7 +326,7 @@ mod tests {
             .expect("test: parent state exists");
 
         let parent_header = parent_block.header();
-        let recent_header = OLBlockHeader::new(
+        let recent_header = OLBlockHeaderV1::new(
             now_ms(),
             parent_header.flags(),
             parent_header.slot(),
@@ -338,8 +338,8 @@ mod tests {
         );
         let recent_commitment =
             OLBlockCommitment::new(recent_header.slot(), recent_header.compute_blkid());
-        let recent_parent_block = OLBlock::new(
-            SignedOLBlockHeader::new(recent_header.clone(), Buf64::zero()),
+        let recent_parent_block = OLBlockV1::new(
+            SignedOLBlockHeaderV1::new(recent_header.clone(), Buf64::zero()),
             parent_block.body().clone(),
         );
 

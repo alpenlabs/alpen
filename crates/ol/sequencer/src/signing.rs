@@ -3,11 +3,11 @@
 use ssz::Encode;
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_crypto::{hash, sign_schnorr_sig};
-use strata_ol_chain_types::OLBlockHeader;
+use strata_ol_chain_types_v1::OLBlockHeaderV1;
 use strata_primitives::buf::{Buf32, Buf64};
 
-/// Signs a [`OLBlockHeader`] and returns the signature.
-pub fn sign_header(header: &OLBlockHeader, sk: &Buf32) -> Buf64 {
+/// Signs a [`OLBlockHeaderV1`] and returns the signature.
+pub fn sign_header(header: &OLBlockHeaderV1, sk: &Buf32) -> Buf64 {
     let encoded = header.as_ssz_bytes();
     let msg = hash::raw(&encoded);
     sign_schnorr_sig(&msg, sk)

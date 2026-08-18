@@ -9,8 +9,8 @@ use strata_acct_types::{
     AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64, append_l1_block_rec_to_mmr,
 };
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::*;
-use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
+use strata_ol_state_types::*;
+use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, WriteBatch};
 
 /// Helper trait for computing the state root after hypothetically applying a
 /// write batch, without requiring `Clone` on the state itself.
@@ -389,15 +389,13 @@ fn ensure_pending_asm_log_slot_available(current_len: usize) -> StateResult<()> 
 #[cfg(test)]
 mod tests {
     use strata_identifiers::L1Height;
-    use strata_ol_state_types::{IStateBatchApplicable, OLAccountState};
+    use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1};
 
     use super::*;
-    use crate::{
-        batch_diff_layer::BatchDiffState,
-        common_tests::{impl_mut_layer_tests, impl_read_layer_tests},
-        memory_state_layer::MemoryStateBaseLayer,
-        test_utils::*,
-    };
+    use crate::batch_diff_layer::BatchDiffState;
+    use crate::common_tests::{impl_mut_layer_tests, impl_read_layer_tests};
+    use crate::memory_state_layer::MemoryStateBaseLayer;
+    use crate::test_utils::*;
 
     /// Builds a [`WriteTrackingState`] directly over the base.
     macro_rules! build_wt_over_base {
@@ -464,7 +462,7 @@ mod tests {
 
         // Modify account
         tracking
-            .update_account(account_id, |acct: &mut OLAccountState| {
+            .update_account(account_id, |acct: &mut OLAccountStateV1| {
                 let coin = Coin::new_unchecked(
                     BitcoinAmount::try_from(500)
                         .expect("amount must not exceed the Bitcoin money supply"),
@@ -603,7 +601,7 @@ mod tests {
         // Make some modifications
         tracking.set_cur_slot(100);
         tracking
-            .update_account(account_id, |acct: &mut OLAccountState| {
+            .update_account(account_id, |acct: &mut OLAccountStateV1| {
                 let coin = Coin::new_unchecked(
                     BitcoinAmount::try_from(500)
                         .expect("amount must not exceed the Bitcoin money supply"),
@@ -669,7 +667,7 @@ mod tests {
 
     #[test]
     fn test_append_returns_full_at_capacity() {
-        use strata_ol_state_types::MAX_PENDING_ASM_LOGS;
+        use strata_ol_state_types_v1::MAX_PENDING_ASM_LOGS;
 
         ensure_pending_asm_log_slot_available(MAX_PENDING_ASM_LOGS as usize - 1)
             .expect("one slot remains");

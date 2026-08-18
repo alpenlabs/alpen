@@ -16,8 +16,8 @@ strata-db-types = { workspace = true, features = ["proxies"] }
 strata-identifiers.workspace = true
 strata-merkle = { workspace = true, features = ["ssz"] }
 strata-merkle-node-store.workspace = true
-strata-ol-chain-types = { workspace = true, features = ["test-utils"] }
-strata-ol-state-types.workspace = true
+strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
+strata-ol-state-types-v1.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
 strata-storage-common.workspace = true
@@ -40,5 +40,5 @@ strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
 strata-db-store-sled.workspace = true
 strata-db-tests.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
-strata-ol-state-types = { workspace = true, features = ["test-utils"] }
+strata-ol-state-types-v1 = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

@@ -10,16 +10,16 @@ use strata_acct_types::MessageEntry;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{
-    ol_block::BlockAvailability,
-    ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
-    DbResult,
-};
+use strata_db_types::ol_block::BlockAvailability;
+use strata_db_types::ol_state_index::{AccountUpdateRecord, InboxMessageRecord};
+use strata_db_types::DbResult;
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
-use strata_ol_chain_types::{OLBlock, OLTransaction};
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_mempool::OLMempoolResult;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
-use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment};
+use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_tx_types_v1::OLTransactionV1;
+use strata_primitives::epoch::EpochCommitment;
+use strata_primitives::OLBlockCommitment;
 use strata_status::OLSyncStatus;
 
 /// Provides all data access needed by the OL RPC server.
@@ -29,7 +29,7 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     async fn get_canonical_block_at(&self, height: u64) -> DbResult<Option<OLBlockCommitment>>;
 
     /// Get block data by block ID.
-    async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>>;
+    async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>>;
 
     /// Classify full-block availability at a slot-aware block commitment.
     async fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability>;
@@ -41,13 +41,13 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLState>>>;
+    ) -> DbResult<Option<Arc<OLStateV1>>>;
 
     /// Get the OL state writes produced by a block.
     async fn get_ol_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountState>>>;
+    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>>;
 
     /// Get the canonical epoch commitment for the given epoch.
     async fn get_canonical_epoch_commitment_at(
@@ -104,5 +104,5 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     async fn get_l1_tip_height(&self) -> DbResult<Option<L1Height>>;
 
     /// Submit a transaction to the mempool.
-    async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId>;
+    async fn submit_transaction(&self, tx: OLTransactionV1) -> OLMempoolResult<OLTxId>;
 }

@@ -1,13 +1,14 @@
 //! Builder for launching the sequencer service.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use strata_service::{ServiceBuilder, ServiceMonitor};
 use strata_tasks::TaskExecutor;
 
-use crate::{
-    input::SequencerTimerInput,
-    service::{SequencerContext, SequencerService, SequencerServiceState, SequencerServiceStatus},
+use crate::input::SequencerTimerInput;
+use crate::service::{
+    SequencerContext, SequencerService, SequencerServiceState, SequencerServiceStatus,
 };
 
 /// Builder for the sequencer service, generic over the context implementation.

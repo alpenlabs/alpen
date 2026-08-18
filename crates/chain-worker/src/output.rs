@@ -1,9 +1,9 @@
 //! Output types for block execution.
 
 use strata_identifiers::Buf32;
-use strata_ol_chain_types::OLLog;
+use strata_ol_chain_types_v1::OLLog;
 use strata_ol_state_support_types::IndexerWrites;
-use strata_ol_state_types::{OLAccountState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountStateV1, WriteBatch};
 
 /// Output from executing a block with the OL STF.
 ///
@@ -15,7 +15,7 @@ pub struct OLBlockExecutionOutput {
     computed_state_root: Buf32,
 
     /// State changes to persist (the diff).
-    write_batch: WriteBatch<OLAccountState>,
+    write_batch: WriteBatch<OLAccountStateV1>,
 
     /// Auxiliary data for indexing (inbox messages, manifests).
     indexer_writes: IndexerWrites,
@@ -31,7 +31,7 @@ impl OLBlockExecutionOutput {
     /// Creates a new execution output.
     pub fn new(
         computed_state_root: Buf32,
-        write_batch: WriteBatch<OLAccountState>,
+        write_batch: WriteBatch<OLAccountStateV1>,
         indexer_writes: IndexerWrites,
         logs: Vec<OLLog>,
     ) -> Self {
@@ -49,7 +49,7 @@ impl OLBlockExecutionOutput {
     }
 
     /// Returns the state changes (write batch).
-    pub fn write_batch(&self) -> &WriteBatch<OLAccountState> {
+    pub fn write_batch(&self) -> &WriteBatch<OLAccountStateV1> {
         &self.write_batch
     }
 
@@ -64,7 +64,14 @@ impl OLBlockExecutionOutput {
     }
 
     /// Consumes self and returns the inner components.
-    pub fn into_parts(self) -> (Buf32, WriteBatch<OLAccountState>, IndexerWrites, Vec<OLLog>) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        Buf32,
+        WriteBatch<OLAccountStateV1>,
+        IndexerWrites,
+        Vec<OLLog>,
+    ) {
         (
             self.computed_state_root,
             self.write_batch,

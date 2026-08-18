@@ -1,6 +1,6 @@
 use strata_db_types::MmrId;
 use strata_identifiers::AccountId;
-use strata_ledger_types::StateError;
+use strata_ol_state_types::StateError;
 use thiserror::Error;
 
 /// Validation failures for an OL MMR index reconciliation plan.

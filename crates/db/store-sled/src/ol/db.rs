@@ -2,7 +2,7 @@ use sled::transaction::ConflictableTransactionError;
 use strata_db_types::ol_block::{BlockAvailability, BlockStatus, OLBlockDatabase};
 use strata_db_types::{DbError, DbResult};
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use typed_sled::error::Error as TSledError;
 
 use super::schemas::{
@@ -28,7 +28,7 @@ define_sled_database!(
 );
 
 impl OLBlockDatabase for OLBlockDBSled {
-    fn put_block_data(&self, block: OLBlock) -> DbResult<()> {
+    fn put_block_data(&self, block: OLBlockV1) -> DbResult<()> {
         let slot = block.header().slot();
         let block_id = block.header().compute_blkid();
 
@@ -60,7 +60,7 @@ impl OLBlockDatabase for OLBlockDBSled {
             .map_err(conv_sled_err)
     }
 
-    fn put_block_data_with_high_watermark(&self, block: OLBlock) -> DbResult<OLBlockCommitment> {
+    fn put_block_data_with_high_watermark(&self, block: OLBlockV1) -> DbResult<OLBlockCommitment> {
         let slot = block.header().slot();
         let block_id = block.header().compute_blkid();
         let commitment = OLBlockCommitment::new(slot, block_id);
@@ -151,11 +151,11 @@ impl OLBlockDatabase for OLBlockDBSled {
         )
     }
 
-    fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>> {
+    fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>> {
         self.blk_tree.get(&id).map_err(conv_sled_err)
     }
 
-    fn put_terminal_header(&self, id: OLBlockId, header: OLBlockHeader) -> DbResult<()> {
+    fn put_terminal_header(&self, id: OLBlockId, header: OLBlockHeaderV1) -> DbResult<()> {
         let computed = header.compute_blkid();
         if computed != id {
             return Err(DbError::OLTerminalHeaderIdMismatch { key: id, computed });
@@ -167,11 +167,11 @@ impl OLBlockDatabase for OLBlockDBSled {
         Ok(())
     }
 
-    fn get_terminal_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+    fn get_terminal_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
         self.terminal_header_tree.get(&id).map_err(conv_sled_err)
     }
 
-    fn get_ol_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+    fn get_ol_header(&self, id: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
         if let Some(block) = self.get_block_data(id)? {
             return Ok(Some(block.header().clone()));
         }
@@ -392,7 +392,7 @@ impl OLBlockDatabase for OLBlockDBSled {
 #[cfg(test)]
 mod tests {
     use strata_db_tests::ol_block_db_tests;
-    use strata_ol_chain_types::test_utils as ol_test_utils;
+    use strata_ol_chain_types_v1::test_utils as ol_test_utils;
 
     use super::*;
     use crate::sled_db_test_setup;

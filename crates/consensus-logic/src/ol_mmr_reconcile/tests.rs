@@ -10,7 +10,9 @@ use strata_db_types::{DbError, DbResult, MmrId, RawMmrId};
 use strata_identifiers::{Epoch, Hash, OLBlockCommitment};
 use strata_ol_mmr_index::OLMmrIndexError;
 use strata_ol_params::{BridgeParams, OLParams};
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch, MMR_SENTINEL_DUMMY_LEAF_HASH};
+use strata_ol_state_types_v1::{
+    OLAccountStateV1, OLStateV1, WriteBatch, MMR_SENTINEL_DUMMY_LEAF_HASH,
+};
 use strata_storage::{test_runtime_handle, MmrIndexManager};
 
 use super::{
@@ -251,8 +253,8 @@ fn make_l1_block_record(seed: u8) -> L1BlockRecord {
     L1BlockRecord::new([seed; 32], [seed.wrapping_add(0x80); 32])
 }
 
-fn make_target_state_with_l1_records(records: &[L1BlockRecord]) -> OLState {
-    let mut state = OLState::from_genesis_params(&OLParams::new_empty(
+fn make_target_state_with_l1_records(records: &[L1BlockRecord]) -> OLStateV1 {
+    let mut state = OLStateV1::from_genesis_params(&OLParams::new_empty(
         make_l1_block_commitment(0, 0),
         BridgeParams::new_with_descriptor_limit(100_000_000, Some(1_000_000_000), 81)
             .expect("valid bridge params"),
@@ -263,7 +265,7 @@ fn make_target_state_with_l1_records(records: &[L1BlockRecord]) -> OLState {
         append_l1_block_rec_to_mmr(&mut l1_block_refs_mmr, record);
     }
 
-    let mut batch = WriteBatch::<OLAccountState>::default();
+    let mut batch = WriteBatch::<OLAccountStateV1>::default();
     batch.epochal_writes_mut().l1_block_refs_mmr = Some(l1_block_refs_mmr);
     state
         .apply_write_batch(batch)
@@ -271,7 +273,7 @@ fn make_target_state_with_l1_records(records: &[L1BlockRecord]) -> OLState {
     state
 }
 
-fn get_l1_target_mmr(state: &OLState) -> Mmr64 {
+fn get_l1_target_mmr(state: &OLStateV1) -> Mmr64 {
     state.epoch_state().l1_block_refs_mmr().clone()
 }
 
@@ -282,7 +284,7 @@ fn make_target_commitment(slot: u64) -> OLBlockCommitment {
 fn make_reconcile_target(
     block: OLBlockCommitment,
     epoch: Epoch,
-    state: Arc<OLState>,
+    state: Arc<OLStateV1>,
 ) -> OLMmrReconcileTarget {
     OLMmrReconcileTarget::new(block, epoch, state, BTreeSet::new())
 }

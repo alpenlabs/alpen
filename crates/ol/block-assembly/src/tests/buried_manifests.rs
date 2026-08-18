@@ -4,12 +4,10 @@
 //! The filter prevents L1 reorgs from cascading into OL by only sourcing manifests
 //! with at least `l1_reorg_safe_depth` L1 confirmations.
 
-use crate::{
-    context::BlockAssemblyAnchorContext,
-    test_utils::{
-        BlockAssemblyContextImpl, create_test_block_assembly_context, create_test_storage,
-        setup_asm_state_with_l1_manifests,
-    },
+use crate::context::BlockAssemblyAnchorContext;
+use crate::test_utils::{
+    BlockAssemblyContextImpl, create_test_block_assembly_context, create_test_storage,
+    setup_asm_state_with_l1_manifests,
 };
 
 const MAX_COUNT: u32 = 100;

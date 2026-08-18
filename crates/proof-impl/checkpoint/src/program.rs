@@ -2,8 +2,8 @@ use k256::schnorr::SigningKey;
 use ssz::{Decode, Encode};
 use strata_asm_checkpoint_types::CheckpointClaim;
 use strata_bridge_params::BridgeParams;
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
-use strata_ol_state_types::OLState;
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
+use strata_ol_state_types_v1::OLStateV1;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use zkaleido::{PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
 use zkaleido_native_adapter::NativeHost;
@@ -16,9 +16,9 @@ fn test_signing_key() -> SigningKey {
 
 #[derive(Debug)]
 pub struct CheckpointProverInput {
-    pub start_state: OLState,
-    pub blocks: Vec<OLBlock>,
-    pub parent: OLBlockHeader,
+    pub start_state: OLStateV1,
+    pub blocks: Vec<OLBlockV1>,
+    pub parent: OLBlockHeaderV1,
     pub da_state_diff_bytes: Vec<u8>,
     pub bridge_params: BridgeParams,
 }
@@ -94,11 +94,11 @@ mod tests {
     use strata_crypto::hash;
     use strata_da_framework::DaCounter;
     use strata_identifiers::Buf64;
-    use strata_ledger_types::IStateAccessor;
-    use strata_ol_chain_types::{OLBlock, SignedOLBlockHeader};
-    use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
+    use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
+    use strata_ol_da_types_v1::{GlobalStateDiffV1, LedgerDiffV1, OLDaPayloadV1, OLStateDiffV1};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_stf::test_utils::{build_empty_chain, make_genesis_state};
+    use strata_ol_state_types::IStateAccessor;
+    use strata_ol_stf_v1::test_utils::{build_empty_chain, make_genesis_state};
 
     use crate::program::{CheckpointProgram, CheckpointProverInput};
 
@@ -113,11 +113,11 @@ mod tests {
         let mut start_state = make_genesis_state();
         let _ = build_empty_chain(&mut start_state, 1, SLOTS_PER_EPOCH).unwrap();
 
-        let blocks: Vec<OLBlock> = blocks
+        let blocks: Vec<OLBlockV1> = blocks
             .into_iter()
             .map(|b| {
-                OLBlock::new(
-                    SignedOLBlockHeader::new(b.header().clone(), Buf64::zero()),
+                OLBlockV1::new(
+                    SignedOLBlockHeaderV1::new(b.header().clone(), Buf64::zero()),
                     b.body().clone(),
                 )
             })
@@ -127,12 +127,12 @@ mod tests {
         let slot_delta = terminal_header.slot() - start_state.cur_slot();
         let slot_delta_u16 =
             u16::try_from(slot_delta).expect("slot delta exceeds u16::MAX; epoch too long");
-        let da_diff = StateDiff::new(
-            GlobalStateDiff::new(
+        let da_diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::new(
                 DaCounter::new_changed(slot_delta_u16),
                 DaCounter::new_unchanged(),
             ),
-            LedgerDiff::default(),
+            LedgerDiffV1::default(),
         );
         let da_state_diff_bytes =
             encode_to_vec(&OLDaPayloadV1::new(da_diff)).expect("encode DA payload");
@@ -199,12 +199,12 @@ mod tests {
         let slot_delta = terminal_header.slot() - start_state_layer.cur_slot();
         let bad_delta = u16::try_from(slot_delta.saturating_sub(1))
             .expect("slot delta exceeds u16::MAX; epoch too long");
-        let bad_da_diff = StateDiff::new(
-            GlobalStateDiff::new(
+        let bad_da_diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::new(
                 DaCounter::new_changed(bad_delta),
                 DaCounter::new_unchanged(),
             ),
-            LedgerDiff::default(),
+            LedgerDiffV1::default(),
         );
         input.da_state_diff_bytes =
             encode_to_vec(&OLDaPayloadV1::new(bad_da_diff)).expect("encode bad DA payload");

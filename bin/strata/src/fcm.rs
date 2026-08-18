@@ -18,9 +18,9 @@ use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::{DbResult, ol_block::BlockStatus};
 use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLParams;
-use strata_ol_state_types::OLState;
+use strata_ol_state_types_v1::OLStateV1;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
@@ -95,11 +95,11 @@ impl UnfinalizedOLBlockSource for StrataFcmContext {
         self.storage.ol_block().get_block_status_async(blkid).await
     }
 
-    async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
+    async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockV1>> {
         self.storage.ol_block().get_block_data_async(blkid).await
     }
 
-    async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeader>> {
+    async fn get_ol_header(&self, blkid: OLBlockId) -> DbResult<Option<OLBlockHeaderV1>> {
         self.storage.ol_block().get_ol_header_async(blkid).await
     }
 }
@@ -152,7 +152,7 @@ impl FcmStorage for StrataFcmContext {
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLState>>> {
+    ) -> DbResult<Option<Arc<OLStateV1>>> {
         self.storage
             .ol_state()
             .get_toplevel_ol_state_async(commitment)

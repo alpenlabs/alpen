@@ -257,7 +257,7 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, L1BlockId};
     use strata_ol_params::{BridgeParams, OLParams};
-    use strata_ol_state_types::WriteBatch;
+    use strata_ol_state_types_v1::WriteBatch;
     use strata_primitives::{L1BlockCommitment, OLBlockId};
     use strata_storage::create_node_storage;
 

@@ -4,7 +4,7 @@
 //! write batching and write tracking for efficient state updates.
 
 // Re-export from state-types for convenience
-pub use strata_ol_state_types::{
+pub use strata_ol_state_types_v1::{
     EpochalStateWrites, GlobalStateWrites, LedgerWriteBatch, SerialMap, WriteBatch,
 };
 pub use write_tracking_layer::{IComputeStateRootWithWrites, WriteTrackingState};

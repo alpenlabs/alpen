@@ -7,7 +7,7 @@ use futures::TryFutureExt;
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_db_types::DbResult;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
 use tokio::runtime::Handle;
 
 use crate::cache::CacheTable;
@@ -22,8 +22,8 @@ const DEFAULT_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(64).expect("64 is
 )]
 pub struct OLStateManager {
     ops: OLStateOps,
-    state_cache: CacheTable<OLBlockCommitment, Option<Arc<OLState>>>,
-    wb_cache: CacheTable<OLBlockCommitment, Option<WriteBatch<OLAccountState>>>,
+    state_cache: CacheTable<OLBlockCommitment, Option<Arc<OLStateV1>>>,
+    wb_cache: CacheTable<OLBlockCommitment, Option<WriteBatch<OLAccountStateV1>>>,
 }
 
 impl OLStateManager {
@@ -38,11 +38,11 @@ impl OLStateManager {
         }
     }
 
-    /// Stores a toplevel OLState snapshot for a given block commitment.
+    /// Stores a toplevel OLStateV1 snapshot for a given block commitment.
     pub async fn put_toplevel_ol_state_async(
         &self,
         commitment: OLBlockCommitment,
-        state: OLState,
+        state: OLStateV1,
     ) -> DbResult<()> {
         self.ops
             .put_toplevel_ol_state_async(commitment, state.clone())
@@ -53,11 +53,11 @@ impl OLStateManager {
         Ok(())
     }
 
-    /// Stores a toplevel OLState snapshot for a given block commitment.
+    /// Stores a toplevel OLStateV1 snapshot for a given block commitment.
     pub fn put_toplevel_ol_state_blocking(
         &self,
         commitment: OLBlockCommitment,
-        state: OLState,
+        state: OLStateV1,
     ) -> DbResult<()> {
         self.ops
             .put_toplevel_ol_state_blocking(commitment, state.clone())?;
@@ -66,11 +66,11 @@ impl OLStateManager {
         Ok(())
     }
 
-    /// Retrieves a toplevel OLState snapshot for a given block commitment.
+    /// Retrieves a toplevel OLStateV1 snapshot for a given block commitment.
     pub async fn get_toplevel_ol_state_async(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLState>>> {
+    ) -> DbResult<Option<Arc<OLStateV1>>> {
         self.state_cache
             .get_or_fetch(&commitment, || async move {
                 self.ops
@@ -82,11 +82,11 @@ impl OLStateManager {
             .await
     }
 
-    /// Retrieves a toplevel OLState snapshot for a given block commitment.
+    /// Retrieves a toplevel OLStateV1 snapshot for a given block commitment.
     pub fn get_toplevel_ol_state_blocking(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLState>>> {
+    ) -> DbResult<Option<Arc<OLStateV1>>> {
         self.state_cache.get_or_fetch_blocking(&commitment, || {
             self.ops
                 .get_toplevel_ol_state_blocking(commitment)
@@ -94,33 +94,33 @@ impl OLStateManager {
         })
     }
 
-    /// Gets the latest toplevel OLState (highest slot).
+    /// Gets the latest toplevel OLStateV1 (highest slot).
     pub async fn get_latest_toplevel_ol_state_async(
         &self,
-    ) -> DbResult<Option<(OLBlockCommitment, Arc<OLState>)>> {
+    ) -> DbResult<Option<(OLBlockCommitment, Arc<OLStateV1>)>> {
         self.ops
             .get_latest_toplevel_ol_state_async()
             .map_ok(|opt| opt.map(|(c, s)| (c, Arc::new(s))))
             .await
     }
 
-    /// Gets the latest toplevel OLState (highest slot).
+    /// Gets the latest toplevel OLStateV1 (highest slot).
     pub fn get_latest_toplevel_ol_state_blocking(
         &self,
-    ) -> DbResult<Option<(OLBlockCommitment, Arc<OLState>)>> {
+    ) -> DbResult<Option<(OLBlockCommitment, Arc<OLStateV1>)>> {
         self.ops
             .get_latest_toplevel_ol_state_blocking()
             .map(|opt| opt.map(|(c, s)| (c, Arc::new(s))))
     }
 
-    /// Deletes a toplevel OLState snapshot for a given block commitment.
+    /// Deletes a toplevel OLStateV1 snapshot for a given block commitment.
     pub async fn del_toplevel_ol_state_async(&self, commitment: OLBlockCommitment) -> DbResult<()> {
         self.ops.del_toplevel_ol_state_async(commitment).await?;
         self.state_cache.purge_async(&commitment).await;
         Ok(())
     }
 
-    /// Deletes a toplevel OLState snapshot for a given block commitment.
+    /// Deletes a toplevel OLStateV1 snapshot for a given block commitment.
     pub fn del_toplevel_ol_state_blocking(&self, commitment: OLBlockCommitment) -> DbResult<()> {
         self.ops.del_toplevel_ol_state_blocking(commitment)?;
         self.state_cache.purge_blocking(&commitment);
@@ -131,7 +131,7 @@ impl OLStateManager {
     pub async fn put_write_batch_async(
         &self,
         commitment: OLBlockCommitment,
-        wb: WriteBatch<OLAccountState>,
+        wb: WriteBatch<OLAccountStateV1>,
     ) -> DbResult<()> {
         self.ops
             .put_ol_write_batch_async(commitment, wb.clone())
@@ -144,7 +144,7 @@ impl OLStateManager {
     pub fn put_write_batch_blocking(
         &self,
         commitment: OLBlockCommitment,
-        wb: WriteBatch<OLAccountState>,
+        wb: WriteBatch<OLAccountStateV1>,
     ) -> DbResult<()> {
         self.ops
             .put_ol_write_batch_blocking(commitment, wb.clone())?;
@@ -156,7 +156,7 @@ impl OLStateManager {
     pub async fn get_write_batch_async(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
+    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
         self.wb_cache
             .get_or_fetch(&commitment, || {
                 self.ops.get_ol_write_batch_fut(commitment).recv()
@@ -168,7 +168,7 @@ impl OLStateManager {
     pub fn get_write_batch_blocking(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
+    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
         self.wb_cache.get_or_fetch_blocking(&commitment, || {
             self.ops.get_ol_write_batch_blocking(commitment)
         })
@@ -198,8 +198,8 @@ mod tests {
     use strata_db_types::backend::DatabaseBackend;
     use strata_identifiers::test_utils::ol_block_commitment_strategy;
     use strata_identifiers::OLBlockCommitment;
-    use strata_ol_state_types::test_utils::ol_state_strategy;
-    use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+    use strata_ol_state_types_v1::test_utils::ol_state_strategy;
+    use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
     use tokio::runtime::Runtime;
 
     use super::*;
@@ -215,7 +215,7 @@ mod tests {
     // Proptest helper functions (blocking)
     // =============================================================================
 
-    fn proptest_put_and_get_toplevel_blocking(commitment: OLBlockCommitment, state: OLState) {
+    fn proptest_put_and_get_toplevel_blocking(commitment: OLBlockCommitment, state: OLStateV1) {
         let manager = setup_manager();
         manager
             .put_toplevel_ol_state_blocking(commitment, state.clone())
@@ -233,7 +233,7 @@ mod tests {
     fn proptest_get_latest_toplevel_blocking(
         commitment1: OLBlockCommitment,
         commitment2: OLBlockCommitment,
-        state: OLState,
+        state: OLStateV1,
     ) {
         let manager = setup_manager();
         let (lower, higher) = if commitment1.slot() < commitment2.slot() {
@@ -262,7 +262,7 @@ mod tests {
         );
     }
 
-    fn proptest_delete_toplevel_blocking(commitment: OLBlockCommitment, state: OLState) {
+    fn proptest_delete_toplevel_blocking(commitment: OLBlockCommitment, state: OLStateV1) {
         let manager = setup_manager();
         manager
             .put_toplevel_ol_state_blocking(commitment, state)
@@ -278,7 +278,7 @@ mod tests {
 
     fn proptest_put_and_get_write_batch_blocking(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountState>::default();
+        let wb = WriteBatch::<OLAccountStateV1>::default();
         manager
             .put_write_batch_blocking(commitment, wb)
             .expect("test: put");
@@ -290,7 +290,7 @@ mod tests {
 
     fn proptest_delete_write_batch_blocking(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountState>::default();
+        let wb = WriteBatch::<OLAccountStateV1>::default();
         manager
             .put_write_batch_blocking(commitment, wb)
             .expect("test: put");
@@ -307,7 +307,7 @@ mod tests {
     // Proptest helper functions (async)
     // =============================================================================
 
-    async fn proptest_put_and_get_toplevel_async(commitment: OLBlockCommitment, state: OLState) {
+    async fn proptest_put_and_get_toplevel_async(commitment: OLBlockCommitment, state: OLStateV1) {
         let manager = setup_manager();
         manager
             .put_toplevel_ol_state_async(commitment, state.clone())
@@ -327,7 +327,7 @@ mod tests {
     async fn proptest_get_latest_toplevel_async(
         commitment1: OLBlockCommitment,
         commitment2: OLBlockCommitment,
-        state: OLState,
+        state: OLStateV1,
     ) {
         let manager = setup_manager();
         let (lower, higher) = if commitment1.slot() < commitment2.slot() {
@@ -359,7 +359,7 @@ mod tests {
         );
     }
 
-    async fn proptest_delete_toplevel_async(commitment: OLBlockCommitment, state: OLState) {
+    async fn proptest_delete_toplevel_async(commitment: OLBlockCommitment, state: OLStateV1) {
         let manager = setup_manager();
         manager
             .put_toplevel_ol_state_async(commitment, state)
@@ -378,7 +378,7 @@ mod tests {
 
     async fn proptest_put_and_get_write_batch_async(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountState>::default();
+        let wb = WriteBatch::<OLAccountStateV1>::default();
         manager
             .put_write_batch_async(commitment, wb)
             .await
@@ -392,7 +392,7 @@ mod tests {
 
     async fn proptest_delete_write_batch_async(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountState>::default();
+        let wb = WriteBatch::<OLAccountStateV1>::default();
         manager
             .put_write_batch_async(commitment, wb)
             .await

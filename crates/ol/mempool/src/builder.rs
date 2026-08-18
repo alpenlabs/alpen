@@ -1,10 +1,8 @@
 //! Mempool service builder for initialization and launch.
 
-use std::{
-    fmt::{Debug, Formatter},
-    future::Future,
-    sync::Arc,
-};
+use std::fmt::{Debug, Formatter};
+use std::future::Future;
+use std::sync::Arc;
 
 use strata_identifiers::OLBlockCommitment;
 use strata_service::{AsyncServiceInput, ServiceBuilder, ServiceInput};
@@ -14,12 +12,10 @@ use strata_tasks::TaskExecutor;
 use tokio::sync::{mpsc, watch};
 use tracing::info;
 
-use crate::{
-    MempoolCommand, MempoolHandle,
-    service::MempoolService,
-    state::{MempoolContext, MempoolServiceState},
-    types::OLMempoolConfig,
-};
+use crate::service::MempoolService;
+use crate::state::{MempoolContext, MempoolServiceState};
+use crate::types::OLMempoolConfig;
+use crate::{MempoolCommand, MempoolHandle};
 
 /// Builder for creating and launching mempool service.
 ///

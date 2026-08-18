@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 use ssz::Decode;
 use strata_acct_types::{AccountId, SentMessage, SentTransfer, TxEffects};
 use strata_identifiers::OLTxId;
-use strata_ol_chain_types::{
-    ClaimList, OLTransaction, OLTransactionData, ProofSatisfierList, SauTxLedgerRefs,
-    SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
-    TxConstraints, TxProofs,
+use strata_ol_tx_types_v1::{
+    ClaimListV1, OLTransactionDataV1, OLTransactionV1, ProofSatisfierListV1, SauTxLedgerRefsV1,
+    SauTxOperationDataV1, SauTxPayloadV1, SauTxProofStateV1, SauTxUpdateDataV1,
+    TransactionPayloadV1, TxConstraintsV1, TxProofsV1,
 };
 use strata_predicate::PredicateKey;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -127,8 +127,8 @@ impl RpcTxConstraints {
     }
 }
 
-impl From<TxConstraints> for RpcTxConstraints {
-    fn from(constraints: TxConstraints) -> Self {
+impl From<TxConstraintsV1> for RpcTxConstraints {
+    fn from(constraints: TxConstraintsV1) -> Self {
         Self {
             min_slot: constraints.min_slot(),
             max_slot: constraints.max_slot(),
@@ -136,9 +136,9 @@ impl From<TxConstraints> for RpcTxConstraints {
     }
 }
 
-impl From<RpcTxConstraints> for TxConstraints {
+impl From<RpcTxConstraints> for TxConstraintsV1 {
     fn from(rpc: RpcTxConstraints) -> Self {
-        TxConstraints::new(rpc.min_slot, rpc.max_slot)
+        TxConstraintsV1::new(rpc.min_slot, rpc.max_slot)
     }
 }
 
@@ -166,7 +166,7 @@ pub enum RpcTxConversionError {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcOLTxDetail {
-    /// Computed transaction ID (tree hash of `OLTransactionData`).
+    /// Computed transaction ID (tree hash of `OLTransactionDataV1`).
     txid: OLTxId,
     /// Target account, or `None` if this transaction type carries no target.
     target: Option<HexBytes32>,
@@ -201,13 +201,15 @@ impl RpcOLTxDetail {
     }
 }
 
-impl From<&OLTransaction> for RpcOLTxDetail {
-    fn from(tx: &OLTransaction) -> Self {
+impl From<&OLTransactionV1> for RpcOLTxDetail {
+    fn from(tx: &OLTransactionV1) -> Self {
         let txid = tx.compute_txid();
         let data = tx.data();
         let type_data = match data.payload() {
-            TransactionPayload::GenericAccountMessage(_) => RpcOLTxTypeData::GenericAccountMessage,
-            TransactionPayload::SnarkAccountUpdate(sau_payload) => {
+            TransactionPayloadV1::GenericAccountMessage(_) => {
+                RpcOLTxTypeData::GenericAccountMessage
+            }
+            TransactionPayloadV1::SnarkAccountUpdate(sau_payload) => {
                 RpcOLTxTypeData::SnarkAccountUpdate(RpcSauTxSummary::from(sau_payload))
             }
         };
@@ -226,7 +228,7 @@ impl From<&OLTransaction> for RpcOLTxDetail {
 
 /// Payload-type discriminator for [`RpcOLTxDetail`].
 ///
-/// Mirrors the on-chain [`TransactionPayload`] enum and carries any
+/// Mirrors the on-chain [`TransactionPayloadV1`] enum and carries any
 /// type-specific summary data inline, so the wire format is self-describing.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
@@ -360,8 +362,8 @@ impl RpcSauTxSummary {
     }
 }
 
-impl From<&SauTxPayload> for RpcSauTxSummary {
-    fn from(payload: &SauTxPayload) -> Self {
+impl From<&SauTxPayloadV1> for RpcSauTxSummary {
+    fn from(payload: &SauTxPayloadV1) -> Self {
         let update = payload.operation().update();
         let proof_state = update.proof_state();
         Self {
@@ -373,18 +375,18 @@ impl From<&SauTxPayload> for RpcSauTxSummary {
     }
 }
 
-impl TryFrom<RpcOLTransaction> for OLTransaction {
+impl TryFrom<RpcOLTransaction> for OLTransactionV1 {
     type Error = RpcTxConversionError;
 
     fn try_from(rpc_tx: RpcOLTransaction) -> Result<Self, Self::Error> {
-        let constraints: TxConstraints = rpc_tx.constraints.into();
+        let constraints: TxConstraintsV1 = rpc_tx.constraints.into();
 
         match rpc_tx.payload {
             RpcTransactionPayload::GenericAccountMessage(gam) => {
                 let target = AccountId::new(gam.target.0);
-                let tx_data = OLTransactionData::from_gam_bytes(target, gam.payload.0)?
+                let tx_data = OLTransactionDataV1::from_gam_bytes(target, gam.payload.0)?
                     .with_constraints(constraints);
-                Ok(OLTransaction::new(tx_data, TxProofs::new_empty()))
+                Ok(OLTransactionV1::new(tx_data, TxProofsV1::new_empty()))
             }
             RpcTransactionPayload::SnarkAccountUpdate(sau) => {
                 let target = AccountId::new(sau.target().0);
@@ -396,13 +398,13 @@ impl TryFrom<RpcOLTransaction> for OLTransaction {
 
                 let operation = base_update.operation();
                 let proof_state = operation.new_proof_state();
-                let sau_proof_state = SauTxProofState::new(
+                let sau_proof_state = SauTxProofStateV1::new(
                     proof_state.next_inbox_msg_idx(),
                     proof_state.inner_state(),
                 );
                 // The declared predicate rotation rides in the update's proven
                 // outputs; lift it into the tx update data the txid commits to.
-                let sau_update_data = SauTxUpdateData::new(
+                let sau_update_data = SauTxUpdateDataV1::new(
                     operation.seq_no(),
                     sau_proof_state,
                     operation.extra_data().to_vec(),
@@ -411,28 +413,28 @@ impl TryFrom<RpcOLTransaction> for OLTransaction {
 
                 let l1_block_refs = operation.ledger_refs().l1_block_refs();
                 let sau_ledger_refs = if l1_block_refs.is_empty() {
-                    SauTxLedgerRefs::new_empty()
+                    SauTxLedgerRefsV1::new_empty()
                 } else {
-                    let claim_list = ClaimList::new(l1_block_refs.to_vec())
+                    let claim_list = ClaimListV1::new(l1_block_refs.to_vec())
                         .ok_or(RpcTxConversionError::TooManyL1BlockRefClaims)?;
-                    SauTxLedgerRefs::new_with_claims(claim_list)
+                    SauTxLedgerRefsV1::new_with_claims(claim_list)
                 };
 
                 let messages = operation.processed_messages().to_vec();
                 let sau_operation_data =
-                    SauTxOperationData::new(sau_update_data, messages, sau_ledger_refs);
-                let payload = TransactionPayload::SnarkAccountUpdate(SauTxPayload::new(
+                    SauTxOperationDataV1::new(sau_update_data, messages, sau_ledger_refs);
+                let payload = TransactionPayloadV1::SnarkAccountUpdate(SauTxPayloadV1::new(
                     target,
                     sau_operation_data,
                 ));
                 let effects = operation.outputs().to_tx_effects();
                 let tx_data =
-                    OLTransactionData::new(payload, effects).with_constraints(constraints);
-                let tx_proofs = TxProofs::new(
-                    ProofSatisfierList::single(base_update.update_proof().to_vec()),
+                    OLTransactionDataV1::new(payload, effects).with_constraints(constraints);
+                let tx_proofs = TxProofsV1::new(
+                    ProofSatisfierListV1::single(base_update.update_proof().to_vec()),
                     None,
                 );
-                Ok(OLTransaction::new(tx_data, tx_proofs))
+                Ok(OLTransactionV1::new(tx_data, tx_proofs))
             }
         }
     }
@@ -463,14 +465,14 @@ mod tests {
         )
     }
 
-    fn convert(update: RpcSnarkAccountUpdate) -> OLTransaction {
-        OLTransaction::try_from(RpcOLTransaction::new_snark_acct_update(update))
+    fn convert(update: RpcSnarkAccountUpdate) -> OLTransactionV1 {
+        OLTransactionV1::try_from(RpcOLTransaction::new_snark_acct_update(update))
             .expect("test: conversion should succeed")
     }
 
-    fn tx_new_predicate(tx: &OLTransaction) -> Option<PredicateKey> {
+    fn tx_new_predicate(tx: &OLTransactionV1) -> Option<PredicateKey> {
         match tx.payload() {
-            TransactionPayload::SnarkAccountUpdate(sau) => {
+            TransactionPayloadV1::SnarkAccountUpdate(sau) => {
                 sau.operation().update().new_predicate().cloned()
             }
             _ => panic!("test: expected SAU payload"),

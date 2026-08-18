@@ -5,12 +5,12 @@ use std::result::Result as StdResult;
 use strata_acct_types::AcctError;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Buf64, OLBlockCommitment};
-use strata_ledger_types::StateError;
-use strata_ol_chain_types::{OLBlock, SignedOLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
 use strata_ol_params::OLParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::OLState;
-use strata_ol_stf::{
+use strata_ol_state_types::StateError;
+use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_stf_v1::{
     BlockComponents, BlockContext, BlockInfo, ExecError, execute_and_complete_block,
 };
 use thiserror::Error;
@@ -20,10 +20,10 @@ use tracing::{info, instrument};
 #[derive(Debug)]
 pub struct GenesisArtifacts {
     /// The initial OL state.
-    pub ol_state: OLState,
+    pub ol_state: OLStateV1,
 
     /// The genesis OL block.
-    pub ol_block: OLBlock,
+    pub ol_block: OLBlockV1,
 
     /// The commitment to the genesis OL block.
     pub commitment: OLBlockCommitment,
@@ -59,7 +59,7 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
 
     // Create initial OL state (uses genesis params).
-    let ol_state_raw = OLState::from_genesis_params(params)?;
+    let ol_state_raw = OLStateV1::from_genesis_params(params)?;
     let mut ol_state = MemoryStateBaseLayer::new(ol_state_raw);
 
     // Create genesis block info.
@@ -87,8 +87,8 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     let ol_state = ol_state.into_inner();
 
     // Create signed header (genesis uses zero signature).
-    let signed_header = SignedOLBlockHeader::new(genesis_block.header().clone(), Buf64::zero());
-    let ol_block = OLBlock::new(signed_header, genesis_block.body().clone());
+    let signed_header = SignedOLBlockHeaderV1::new(genesis_block.header().clone(), Buf64::zero());
+    let ol_block = OLBlockV1::new(signed_header, genesis_block.body().clone());
     let genesis_blkid = genesis_block.header().compute_blkid();
     let commitment = OLBlockCommitment::new(0, genesis_blkid);
 

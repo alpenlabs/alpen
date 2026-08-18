@@ -1,6 +1,6 @@
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 
 use crate::{
     define_table_without_codec, impl_cbor_value_codec, impl_codec_key_codec,
@@ -9,19 +9,19 @@ use crate::{
 
 define_table_without_codec!(
     /// A table to store OL Block data. Maps block ID to Block
-    (OLBlockSchema) OLBlockId => OLBlock
+    (OLBlockSchema) OLBlockId => OLBlockV1
 );
 impl_codec_key_codec!(OLBlockSchema, OLBlockId);
-impl_ssz_value_codec!(OLBlockSchema, OLBlock);
+impl_ssz_value_codec!(OLBlockSchema, OLBlockV1);
 
 define_table_without_codec!(
     /// Stores reconstructed unsigned headers for checkpoint terminal blocks.
-    (OLTerminalHeaderSchema) OLBlockId => OLBlockHeader
+    (OLTerminalHeaderSchema) OLBlockId => OLBlockHeaderV1
 );
 // Shares the full-block schema's key codec: `get_ol_header` looks the same id up
 // in both trees, so the two encodings must agree.
 impl_codec_key_codec!(OLTerminalHeaderSchema, OLBlockId);
-impl_ssz_value_codec!(OLTerminalHeaderSchema, OLBlockHeader);
+impl_ssz_value_codec!(OLTerminalHeaderSchema, OLBlockHeaderV1);
 
 define_table_without_codec!(
     /// A table to store OL Block status. Maps block ID to BlockStatus

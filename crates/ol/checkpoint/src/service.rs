@@ -8,9 +8,9 @@ use strata_primitives::epoch::EpochCommitment;
 use strata_service::{Response, Service, SyncService};
 use tracing::{error, warn};
 
-use crate::{
-    context::CheckpointWorkerContext, errors::CheckpointNotReady, state::OLCheckpointServiceState,
-};
+use crate::context::CheckpointWorkerContext;
+use crate::errors::CheckpointNotReady;
+use crate::state::OLCheckpointServiceState;
 
 /// OL checkpoint builder service implementation.
 ///

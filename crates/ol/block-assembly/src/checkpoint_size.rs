@@ -11,7 +11,7 @@
 //! and seal the epoch).
 
 use strata_asm_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
-use strata_ol_chain_types::OLLog;
+use strata_ol_chain_types_v1::OLLog;
 
 /// L1 envelope limit for the full `CheckpointPayload` (single envelope, not chunked).
 pub(crate) const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;

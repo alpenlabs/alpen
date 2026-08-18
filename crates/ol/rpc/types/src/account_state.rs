@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{AccountId, OLBlockId};
-use strata_ledger_types::{IAccountState, ISnarkAccountState};
+use strata_ol_state_types::{IAccountState, ISnarkAccountState};
 use strata_predicate::PredicateKey;
 use strata_primitives::HexBytes32;
 
@@ -193,7 +193,7 @@ where
 
 /// Account-type discriminator for [`RpcAccountState`].
 ///
-/// Mirrors the on-chain `OLAccountTypeState` and carries snark-specific
+/// Mirrors the on-chain `OLAccountTypeStateV1` and carries snark-specific
 /// summary data inline so the wire format is self-describing.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]

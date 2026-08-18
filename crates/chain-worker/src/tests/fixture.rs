@@ -19,17 +19,14 @@ use strata_codec::decode_buf_exact;
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
 };
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types::{
-    MAX_SEALING_MANIFEST_COUNT, OLBlock, OLBlockHeader, OLLog, OLTransaction, OLTransactionData,
-    TxProofs,
-};
-use strata_ol_da::OLDaPayloadV1;
+use strata_ol_chain_types_v1::{MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog};
+use strata_ol_da_types_v1::OLDaPayloadV1;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
 };
-use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::{
+use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_stf_v1::{
     BlockComponents, execute_block_batch_predrain,
     test_utils::{
         EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
@@ -41,6 +38,7 @@ use strata_ol_stf::{
     },
     verify_block,
 };
+use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 
 /// An ordered epoch layout with one explicit terminal block.
 #[derive(Debug, Default)]
@@ -130,7 +128,7 @@ pub struct BuiltEpoch {
     /// Terminal block commitment of the previous (genesis) epoch.
     pub prev_terminal: OLBlockCommitment,
     /// Toplevel state at the start of the epoch (post-genesis).
-    pub pre_epoch_state: OLState,
+    pub pre_epoch_state: OLStateV1,
     /// Number of ASM logs buffered immediately before the epoch terminal executes.
     pub pre_terminal_pending_asm_logs: usize,
     /// ASM manifests of the epoch keyed by their L1 height.
@@ -170,7 +168,7 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
 
     // Build ordinary blocks first. Manifests may appear in any block; the
     // explicit terminal below is what applies their buffered L1 logs.
-    let mut blocks: Vec<OLBlock> = Vec::new();
+    let mut blocks: Vec<OLBlockV1> = Vec::new();
     let mut prev = genesis.header().clone();
     let mut manifests_by_height = Vec::new();
     let pre_terminal_pending_asm_logs = {
@@ -299,7 +297,7 @@ fn make_feature_manifest(
 /// Mutable context used while materializing an [`EpochPlan`].
 struct PlannedBlockExecutor<'a> {
     state: &'a mut MemoryStateBaseLayer,
-    blocks: &'a mut Vec<OLBlock>,
+    blocks: &'a mut Vec<OLBlockV1>,
     snark_serial: AccountSerial,
     inbox_tracker: InboxMmrTracker,
     next_manifest_height: u32,
@@ -311,10 +309,10 @@ impl PlannedBlockExecutor<'_> {
     /// terminal, the number of logs buffered before the terminal drains them.
     fn execute(
         &mut self,
-        parent: &OLBlockHeader,
+        parent: &OLBlockHeaderV1,
         block: BlockPlan,
         is_terminal: bool,
-    ) -> (OLBlockHeader, Option<usize>) {
+    ) -> (OLBlockHeaderV1, Option<usize>) {
         let mut prev = parent.clone();
         if !block.update_effects.is_empty() {
             prev = run_snark_update_blocks(
@@ -359,7 +357,7 @@ impl PlannedBlockExecutor<'_> {
 fn assemble_checkpoint_payload(
     da_blob: Vec<u8>,
     ol_logs: Vec<CheckpointOLLog>,
-    terminal_header: &OLBlockHeader,
+    terminal_header: &OLBlockHeaderV1,
     terminal_commitment: OLBlockCommitment,
     tip_l1_height: u32,
 ) -> CheckpointPayload {
@@ -377,7 +375,7 @@ fn assemble_checkpoint_payload(
 
 /// Reference values captured from a block-sync run of an epoch.
 struct BlockSyncResult {
-    state: OLState,
+    state: OLStateV1,
     state_root: Buf32,
     indexer_writes: IndexerWrites,
     logs: Vec<OLLog>,
@@ -387,8 +385,8 @@ struct BlockSyncResult {
 /// batch, indexer writes, and emitted logs across all blocks into a single pass.
 fn run_block_sync(
     pre_epoch_state: &MemoryStateBaseLayer,
-    blocks: &[OLBlock],
-    genesis_header: &OLBlockHeader,
+    blocks: &[OLBlockV1],
+    genesis_header: &OLBlockHeaderV1,
 ) -> BlockSyncResult {
     let tracking_state = WriteTrackingState::new_empty(pre_epoch_state);
     let mut indexer_state = IndexerState::new(tracking_state);
@@ -409,7 +407,7 @@ fn run_block_sync(
     }
 
     let (tracking_state, indexer_writes) = indexer_state.into_parts();
-    let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
+    let write_batch: WriteBatch<OLAccountStateV1> = tracking_state.into_batch();
 
     let mut new_state = pre_epoch_state.clone();
     new_state
@@ -431,8 +429,8 @@ fn run_block_sync(
 /// preseal path.
 fn rebuild_da_and_logs(
     pre_epoch_state: &MemoryStateBaseLayer,
-    blocks: &[OLBlock],
-    genesis_header: &OLBlockHeader,
+    blocks: &[OLBlockV1],
+    genesis_header: &OLBlockHeaderV1,
 ) -> (Vec<u8>, Vec<CheckpointOLLog>) {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
     let logs =
@@ -467,11 +465,11 @@ pub enum UpdateEffect {
 /// accepted, so proofs remain valid across multiple planned update blocks.
 fn run_snark_update_blocks(
     state: &mut MemoryStateBaseLayer,
-    blocks: &mut Vec<OLBlock>,
-    genesis_header: &OLBlockHeader,
+    blocks: &mut Vec<OLBlockV1>,
+    genesis_header: &OLBlockHeaderV1,
     effects: &[UpdateEffect],
     tracker: &mut InboxMmrTracker,
-) -> OLBlockHeader {
+) -> OLBlockHeaderV1 {
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let msgs: Vec<MessageEntry> = (0..effects.len())
         .map(|i| snark_inbox_msg_with_data(format!("msg-{i}").as_bytes()))
@@ -479,10 +477,10 @@ fn run_snark_update_blocks(
 
     let mut prev = genesis_header.clone();
     for msg in &msgs {
-        let gam = OLTransaction::new(
-            OLTransactionData::from_gam_bytes(snark_id, msg.payload().data().to_vec())
+        let gam = OLTransactionV1::new(
+            OLTransactionDataV1::from_gam_bytes(snark_id, msg.payload().data().to_vec())
                 .expect("gam payload"),
-            TxProofs::new_empty(),
+            TxProofsV1::new_empty(),
         );
         prev = run_block(
             state,

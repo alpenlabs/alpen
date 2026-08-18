@@ -1,18 +1,16 @@
 //! Context trait for checkpoint worker dependencies.
 
-use std::{
-    sync::{Arc, Condvar, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
-use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_ol_state_types::OLState;
-use strata_ol_stf::execute_block_batch_predrain;
+use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_stf_v1::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
@@ -62,13 +60,16 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
     fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>>;
 
     /// Gets the OL block header for the given block id.
-    fn get_block_header(&self, blkid: &OLBlockCommitment) -> anyhow::Result<Option<OLBlockHeader>>;
+    fn get_block_header(
+        &self,
+        blkid: &OLBlockCommitment,
+    ) -> anyhow::Result<Option<OLBlockHeaderV1>>;
 
     /// Gets an OL block by its block ID.
-    fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlock>>;
+    fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlockV1>>;
 
     /// Gets the OL state snapshot at a given block commitment.
-    fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLState>>;
+    fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLStateV1>>;
 
     /// Fetches da data for epoch. Returns state diff and OL logs.
     fn fetch_da_for_epoch(
@@ -296,21 +297,21 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
     fn get_block_header(
         &self,
         terminal: &OLBlockCommitment,
-    ) -> anyhow::Result<Option<OLBlockHeader>> {
+    ) -> anyhow::Result<Option<OLBlockHeaderV1>> {
         self.storage
             .ol_block()
             .get_ol_header_blocking(*terminal.blkid())
             .map_err(Into::into)
     }
 
-    fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlock>> {
+    fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlockV1>> {
         self.storage
             .ol_block()
             .get_block_data_blocking(*id)
             .map_err(Into::into)
     }
 
-    fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLState>> {
+    fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLStateV1>> {
         let state = self
             .storage
             .ol_state()
@@ -330,7 +331,7 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
 }
 
 fn assert_terminal_commitment_matches(
-    terminal_header: &OLBlockHeader,
+    terminal_header: &OLBlockHeaderV1,
     expected_terminal: &OLBlockCommitment,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
@@ -359,7 +360,7 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     ctx: &C,
     summary: &EpochSummary,
     bridge_params: BridgeParams,
-) -> anyhow::Result<(Vec<u8>, Vec<OLLog>, OLBlockHeader)> {
+) -> anyhow::Result<(Vec<u8>, Vec<OLLog>, OLBlockHeaderV1)> {
     let epoch_blocks = collect_epoch_blocks(summary, ctx)?;
 
     let prev_terminal = summary.prev_terminal();
@@ -399,7 +400,7 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
 fn collect_epoch_blocks<C: CheckpointWorkerContext>(
     summary: &EpochSummary,
     ctx: &C,
-) -> anyhow::Result<NonEmptyVec<OLBlock>> {
+) -> anyhow::Result<NonEmptyVec<OLBlockV1>> {
     let terminal_blkid = summary.terminal().blkid();
     let prev_terminal_blkid = summary.prev_terminal().blkid();
     let prev_terminal_slot = summary.prev_terminal().slot();
@@ -450,7 +451,7 @@ mod tests {
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, OLBlockId};
-    use strata_ol_chain_types::{BlockFlags, OLBlockHeader};
+    use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
     use strata_storage::create_node_storage;
 
     use super::{CheckpointWorkerContext, CheckpointWorkerContextImpl};
@@ -464,9 +465,9 @@ mod tests {
             )
             .expect("create test storage"),
         );
-        let mut flags = BlockFlags::zero();
+        let mut flags = BlockFlagsV1::zero();
         flags.set_is_terminal(true);
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             1_000,
             flags,
             9,

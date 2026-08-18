@@ -11,10 +11,11 @@ use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
 use tokio::sync::watch;
 
-use crate::{
-    ProverConfig, context::CheckpointWorkerContextImpl, handle::OLCheckpointWorkerHandle,
-    service::OLCheckpointService, state::OLCheckpointServiceState,
-};
+use crate::ProverConfig;
+use crate::context::CheckpointWorkerContextImpl;
+use crate::handle::OLCheckpointWorkerHandle;
+use crate::service::OLCheckpointService;
+use crate::state::OLCheckpointServiceState;
 
 #[expect(
     missing_debug_implementations,

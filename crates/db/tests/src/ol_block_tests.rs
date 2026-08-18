@@ -1,7 +1,7 @@
 use strata_db_types::ol_block::{BlockAvailability, BlockStatus, OLBlockDatabase};
 use strata_db_types::DbError;
 use strata_identifiers::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types::OLBlock;
+use strata_ol_chain_types_v1::OLBlockV1;
 
 pub fn test_get_nonexistent_block(db: &impl OLBlockDatabase) {
     let nonexistent_id = OLBlockId::from(Buf32::from([0xffu8; 32]));
@@ -255,7 +255,7 @@ pub fn test_promote_to_history_anchor_refuses_different_marker(db: &impl OLBlock
 
 pub fn test_delete_canonical_block_clears_canonical_index(
     db: &impl OLBlockDatabase,
-    mut block: OLBlock,
+    mut block: OLBlockV1,
 ) {
     block.signed_header.header.slot = 11;
     let block_id = block.header().compute_blkid();
@@ -281,9 +281,9 @@ pub fn test_delete_canonical_block_clears_canonical_index(
 
 pub fn test_delete_canonical_block_truncates_canonical_suffix(
     db: &impl OLBlockDatabase,
-    mut block1: OLBlock,
-    mut block2: OLBlock,
-    mut block3: OLBlock,
+    mut block1: OLBlockV1,
+    mut block2: OLBlockV1,
+    mut block3: OLBlockV1,
 ) {
     block1.signed_header.header.slot = 10;
     block2.signed_header.header.slot = 11;
@@ -321,8 +321,8 @@ pub fn test_delete_canonical_block_truncates_canonical_suffix(
 
 pub fn test_delete_noncanonical_block_preserves_canonical_index(
     db: &impl OLBlockDatabase,
-    mut canonical: OLBlock,
-    mut noncanonical: OLBlock,
+    mut canonical: OLBlockV1,
+    mut noncanonical: OLBlockV1,
 ) {
     canonical.signed_header.header.slot = 7;
     noncanonical.signed_header.header.slot = 7;
@@ -348,7 +348,7 @@ pub fn test_delete_noncanonical_block_preserves_canonical_index(
 }
 
 // Proptest-based tests for random block data
-pub fn proptest_put_and_get_random_block(db: &impl OLBlockDatabase, block: OLBlock) {
+pub fn proptest_put_and_get_random_block(db: &impl OLBlockDatabase, block: OLBlockV1) {
     let block_id = block.header().compute_blkid();
 
     db.put_block_data(block.clone())
@@ -367,7 +367,7 @@ pub fn proptest_put_and_get_random_block(db: &impl OLBlockDatabase, block: OLBlo
 
 pub fn proptest_del_last_block_at_slot_clears_highest_block_slot(
     db: &impl OLBlockDatabase,
-    block: OLBlock,
+    block: OLBlockV1,
 ) {
     let blkid = block.header().compute_blkid();
     let slot = block.header().slot();
@@ -387,7 +387,7 @@ pub fn proptest_del_last_block_at_slot_clears_highest_block_slot(
     );
 }
 
-pub fn proptest_put_twice_idempotent(db: &impl OLBlockDatabase, block: OLBlock) {
+pub fn proptest_put_twice_idempotent(db: &impl OLBlockDatabase, block: OLBlockV1) {
     let block_id = block.header().compute_blkid();
     let slot = block.header().slot();
 
@@ -403,7 +403,10 @@ pub fn proptest_put_twice_idempotent(db: &impl OLBlockDatabase, block: OLBlock) 
     assert!(blocks.contains(&block_id));
 }
 
-pub fn proptest_terminal_header_roundtrip_and_mismatch(db: &impl OLBlockDatabase, block: OLBlock) {
+pub fn proptest_terminal_header_roundtrip_and_mismatch(
+    db: &impl OLBlockDatabase,
+    block: OLBlockV1,
+) {
     let header = block.header().clone();
     let block_id = header.compute_blkid();
 
@@ -435,7 +438,7 @@ pub fn proptest_terminal_header_roundtrip_and_mismatch(db: &impl OLBlockDatabase
         .is_none());
 }
 
-pub fn proptest_block_availability_with_history_base(db: &impl OLBlockDatabase, block: OLBlock) {
+pub fn proptest_block_availability_with_history_base(db: &impl OLBlockDatabase, block: OLBlockV1) {
     let mut above = block.clone();
     above.signed_header.header.slot = 11;
     above.signed_header.header.timestamp = 11;
@@ -499,7 +502,10 @@ pub fn proptest_block_availability_with_history_base(db: &impl OLBlockDatabase, 
     ));
 }
 
-pub fn proptest_block_availability_without_history_base(db: &impl OLBlockDatabase, block: OLBlock) {
+pub fn proptest_block_availability_without_history_base(
+    db: &impl OLBlockDatabase,
+    block: OLBlockV1,
+) {
     let mut genesis = block.clone();
     genesis.signed_header.header.slot = 0;
     genesis.signed_header.header.timestamp = 0;
@@ -534,7 +540,7 @@ pub fn proptest_block_availability_without_history_base(db: &impl OLBlockDatabas
 
 pub fn proptest_put_block_data_does_not_advance_high_watermark(
     db: &impl OLBlockDatabase,
-    block: OLBlock,
+    block: OLBlockV1,
 ) {
     db.put_block_data(block)
         .expect("test: put block without high-watermark");
@@ -547,8 +553,8 @@ pub fn proptest_put_block_data_does_not_advance_high_watermark(
 
 pub fn proptest_put_block_data_with_high_watermark(
     db: &impl OLBlockDatabase,
-    mut block1: OLBlock,
-    mut block2: OLBlock,
+    mut block1: OLBlockV1,
+    mut block2: OLBlockV1,
 ) {
     let slot = 10u64;
     block1.signed_header.header.slot = slot;
@@ -614,8 +620,8 @@ pub fn proptest_put_block_data_with_high_watermark(
 
 pub fn proptest_clear_block_high_watermark(
     db: &impl OLBlockDatabase,
-    mut block1: OLBlock,
-    mut block2: OLBlock,
+    mut block1: OLBlockV1,
+    mut block2: OLBlockV1,
 ) {
     let slot = 10u64;
     block1.signed_header.header.slot = slot;
@@ -689,7 +695,7 @@ pub fn proptest_clear_block_high_watermark(
 
 pub fn proptest_high_watermark_monotonic_under_mixed_puts(
     db: &impl OLBlockDatabase,
-    ops: Vec<(u8, OLBlock)>,
+    ops: Vec<(u8, OLBlockV1)>,
 ) {
     let mut expected_high_watermark: Option<OLBlockCommitment> = None;
 
@@ -737,8 +743,8 @@ pub fn proptest_high_watermark_monotonic_under_mixed_puts(
 
 pub fn proptest_rollback_block_high_watermark(
     db: &impl OLBlockDatabase,
-    mut block1: OLBlock,
-    mut block2: OLBlock,
+    mut block1: OLBlockV1,
+    mut block2: OLBlockV1,
 ) {
     block1.signed_header.header.slot = 10;
     block2.signed_header.header.slot = 11;
@@ -773,7 +779,7 @@ pub fn proptest_rollback_block_high_watermark(
 
 pub fn proptest_rollback_block_high_watermark_missing_target(
     db: &impl OLBlockDatabase,
-    mut block: OLBlock,
+    mut block: OLBlockV1,
 ) {
     block.signed_header.header.slot = 10;
     db.put_block_data_with_high_watermark(block)
@@ -786,7 +792,7 @@ pub fn proptest_rollback_block_high_watermark_missing_target(
     assert!(matches!(err, DbError::NonExistentEntry));
 }
 
-pub fn proptest_delete_random_block(db: &impl OLBlockDatabase, block: OLBlock) {
+pub fn proptest_delete_random_block(db: &impl OLBlockDatabase, block: OLBlockV1) {
     let block_id = block.header().compute_blkid();
 
     db.put_block_data(block.clone())
@@ -801,7 +807,7 @@ pub fn proptest_delete_random_block(db: &impl OLBlockDatabase, block: OLBlock) {
     assert!(deleted.is_none());
 }
 
-pub fn proptest_status_transitions(db: &impl OLBlockDatabase, block: OLBlock) {
+pub fn proptest_status_transitions(db: &impl OLBlockDatabase, block: OLBlockV1) {
     let block_id = block.header().compute_blkid();
 
     db.put_block_data(block.clone())
@@ -835,8 +841,8 @@ pub fn proptest_status_transitions(db: &impl OLBlockDatabase, block: OLBlock) {
 
 pub fn proptest_get_blocks_at_height(
     db: &impl OLBlockDatabase,
-    mut block1: OLBlock,
-    mut block2: OLBlock,
+    mut block1: OLBlockV1,
+    mut block2: OLBlockV1,
 ) {
     let slot = 10u64;
 
@@ -860,7 +866,11 @@ pub fn proptest_get_blocks_at_height(
     assert!(block_ids.contains(&block_id2));
 }
 
-pub fn proptest_get_tip_slot(db: &impl OLBlockDatabase, mut block1: OLBlock, mut block2: OLBlock) {
+pub fn proptest_get_tip_slot(
+    db: &impl OLBlockDatabase,
+    mut block1: OLBlockV1,
+    mut block2: OLBlockV1,
+) {
     // Override to different slots
     block1.signed_header.header.slot = 5u64;
     block2.signed_header.header.slot = 10u64;

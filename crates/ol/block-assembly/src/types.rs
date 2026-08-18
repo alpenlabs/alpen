@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{Buf64, OLBlockCommitment, OLBlockId, OLTxId};
-use strata_ol_chain_types::{OLBlock, OLBlockBody, OLBlockHeader, SignedOLBlockHeader};
+use strata_ol_chain_types_v1::{OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, SignedOLBlockHeaderV1};
 use strata_ol_mempool::MempoolTxInvalidReason;
 
 use crate::resource_state::EpochResourceState;
@@ -11,16 +11,16 @@ use crate::resource_state::EpochResourceState;
 ///
 /// A full block template is an intermediate representation of a block that hasn't been
 /// finalized/signed yet. It contains all the components needed to create a complete
-/// [`OLBlock`] once signing is complete.
+/// [`OLBlockV1`] once signing is complete.
 #[derive(Debug, Clone)]
 pub struct FullBlockTemplate {
-    header: OLBlockHeader,
-    body: OLBlockBody,
+    header: OLBlockHeaderV1,
+    body: OLBlockBodyV1,
 }
 
 impl FullBlockTemplate {
     /// Creates a new full block template from its components.
-    pub fn new(header: OLBlockHeader, body: OLBlockBody) -> Self {
+    pub fn new(header: OLBlockHeaderV1, body: OLBlockBodyV1) -> Self {
         Self { header, body }
     }
 
@@ -30,34 +30,34 @@ impl FullBlockTemplate {
     }
 
     /// Returns a reference to the block header.
-    pub fn header(&self) -> &OLBlockHeader {
+    pub fn header(&self) -> &OLBlockHeaderV1 {
         &self.header
     }
 
     /// Returns a reference to the block body.
-    pub fn body(&self) -> &OLBlockBody {
+    pub fn body(&self) -> &OLBlockBodyV1 {
         &self.body
     }
 
-    /// Accepts signature and finalizes the template into a signed [`OLBlock`].
-    pub fn complete_block_template(self, completion: BlockCompletionData) -> OLBlock {
+    /// Accepts signature and finalizes the template into a signed [`OLBlockV1`].
+    pub fn complete_block_template(self, completion: BlockCompletionData) -> OLBlockV1 {
         #[cfg(feature = "debug-utils")]
         strata_common::check_bail_trigger(strata_common::BAIL_DUTY_SIGN_BLOCK);
         let FullBlockTemplate { header, body } = self;
         let BlockCompletionData { signature } = completion;
-        let signed_header = SignedOLBlockHeader::new(header, signature);
+        let signed_header = SignedOLBlockHeaderV1::new(header, signature);
 
-        OLBlock::new(signed_header, body)
+        OLBlockV1::new(signed_header, body)
     }
 }
 
 /// Block template with only sufficient info to be passed for signing.
 ///
-/// Note: `OLBlockHeader` is SSZ-generated and doesn't implement `Serialize`/`Deserialize`.
+/// Note: `OLBlockHeaderV1` is SSZ-generated and doesn't implement `Serialize`/`Deserialize`.
 /// If serialization is needed for RPC, use SSZ encoding instead.
 #[derive(Debug, Clone)]
 pub struct BlockTemplate {
-    header: OLBlockHeader,
+    header: OLBlockHeaderV1,
 }
 
 impl BlockTemplate {
@@ -67,7 +67,7 @@ impl BlockTemplate {
     }
 
     /// Returns a reference to the OL block header.
-    pub fn header(&self) -> &OLBlockHeader {
+    pub fn header(&self) -> &OLBlockHeaderV1 {
         &self.header
     }
 
@@ -79,7 +79,7 @@ impl BlockTemplate {
     }
 }
 
-/// Sufficient data to complete a [`FullBlockTemplate`] and create a [`OLBlock`].
+/// Sufficient data to complete a [`FullBlockTemplate`] and create a [`OLBlockV1`].
 /// Currently consists of a valid signature for the block from sequencer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]

@@ -18,12 +18,12 @@ members = [
   "crates/db/store-sled",
   "crates/db/tests",
   "crates/key-derivation",
-  "crates/ledger-types",
   "crates/node-context",
   "crates/ol/block-assembly",
-  "crates/ol/chain-types",
+  "crates/ol/chain-types-v1",
   "crates/ol/checkpoint",
-  "crates/ol/da",
+  "crates/ol/da-common",
+  "crates/ol/da-types-v1",
   "crates/ol/mempool",
   "crates/ol/mmr-index",
   "crates/ol/msg-types",
@@ -34,7 +34,9 @@ members = [
   "crates/ol/state-provider",
   "crates/ol/state-support-types",
   "crates/ol/state-types",
-  "crates/ol/stf",
+  "crates/ol/state-types-v1",
+  "crates/ol/stf-v1",
+  "crates/ol/tx-types-v1",
   "crates/paas",
   "crates/prover-core",
   "crates/bridge-params",
@@ -109,13 +111,13 @@ strata-db-store-sled = { path = "crates/db/store-sled" }
 strata-db-tests = { path = "crates/db/tests" }
 strata-db-types = { path = "crates/db/types" }
 strata-key-derivation = { path = "crates/key-derivation" }
-strata-ledger-types = { path = "crates/ledger-types" }
 strata-node-context = { path = "crates/node-context" }
 strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-bridge-types = { path = "crates/bridge-types" }
-strata-ol-chain-types = { path = "crates/ol/chain-types" }
+strata-ol-chain-types-v1 = { path = "crates/ol/chain-types-v1" }
 strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
-strata-ol-da = { path = "crates/ol/da" }
+strata-ol-da-common = { path = "crates/ol/da-common" }
+strata-ol-da-types-v1 = { path = "crates/ol/da-types-v1" }
 strata-ol-genesis = { path = "crates/ol/genesis" }
 strata-ol-mempool = { path = "crates/ol/mempool" }
 strata-ol-mmr-index = { path = "crates/ol/mmr-index" }
@@ -127,7 +129,9 @@ strata-ol-sequencer = { path = "crates/ol/sequencer" }
 strata-ol-state-provider = { path = "crates/ol/state-provider" }
 strata-ol-state-support-types = { path = "crates/ol/state-support-types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
-strata-ol-stf = { path = "crates/ol/stf" }
+strata-ol-state-types-v1 = { path = "crates/ol/state-types-v1" }
+strata-ol-stf-v1 = { path = "crates/ol/stf-v1" }
+strata-ol-tx-types-v1 = { path = "crates/ol/tx-types-v1" }
 strata-open-rpc = { path = "crates/rpc/open-rpc" }
 strata-open-rpc-macros = { path = "crates/rpc/open-rpc-macros" }
 strata-paas = { path = "crates/paas" }

@@ -1,6 +1,7 @@
 //! OL RPC API definitions.
 
-use jsonrpsee::{core::RpcResult, proc_macros::rpc};
+use jsonrpsee::core::RpcResult;
+use jsonrpsee::proc_macros::rpc;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, L1Height, OLBlockId, OLTxId};
 use strata_ol_rpc_types::*;
 use strata_ol_sequencer::BlockCompletionData;
@@ -111,7 +112,7 @@ pub trait OLSubmitRpc {
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLFullNodeRpc {
-    /// Get blocks in range as raw bytes of serialized `Vec<OLBlock>`.
+    /// Get blocks in range as raw bytes of serialized `Vec<OLBlockV1>`.
     /// `start_height` and `end_height` are inclusive.
     #[method(name = "getRawBlocksRange")]
     async fn get_raw_blocks_range(

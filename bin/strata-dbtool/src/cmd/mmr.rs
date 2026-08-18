@@ -18,7 +18,7 @@ use strata_ol_mmr_index::{
     OLMmrIndexError,
 };
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::{OLState, MMR_SENTINEL_DUMMY_LEAF_HASH};
+use strata_ol_state_types_v1::{OLStateV1, MMR_SENTINEL_DUMMY_LEAF_HASH};
 use strata_storage::MmrIndexManager;
 use tokio::runtime::Runtime;
 
@@ -392,7 +392,7 @@ fn get_mmr_leaf_data(
 /// It performs only reads; mutation is a separate step.
 pub(crate) fn build_mmr_index_revert_plan(
     db: &impl DatabaseBackend,
-    target_state: &OLState,
+    target_state: &OLStateV1,
 ) -> Result<MmrIndexReconcilePlan, DisplayedError> {
     with_mmr_index_manager(db, |mmr_index_manager| {
         let target_state_accessor = MemoryStateBaseLayer::new(target_state.clone());
@@ -674,28 +674,28 @@ mod tests {
     use strata_identifiers::AccountId;
     use strata_merkle::MmrState;
     use strata_ol_params::OLParams;
-    use strata_ol_state_types::{OLAccountState, WriteBatch};
+    use strata_ol_state_types_v1::{OLAccountStateV1, WriteBatch};
     use strata_storage::{MmrIndexHandle, MmrIndexManager};
     use tokio::runtime::Runtime;
 
     use super::*;
 
-    fn genesis_target_state() -> OLState {
-        OLState::from_genesis_params(&OLParams::default()).expect("valid genesis params")
+    fn genesis_target_state() -> OLStateV1 {
+        OLStateV1::from_genesis_params(&OLParams::default()).expect("valid genesis params")
     }
 
     fn l1_block_record(seed: u8) -> L1BlockRecord {
         L1BlockRecord::new([seed; 32], [seed.wrapping_add(0x80); 32])
     }
 
-    fn target_state_with_l1_records(records: &[L1BlockRecord]) -> OLState {
+    fn target_state_with_l1_records(records: &[L1BlockRecord]) -> OLStateV1 {
         let mut state = genesis_target_state();
         let mut l1_block_refs_mmr = state.epoch_state().l1_block_refs_mmr().clone();
         for record in records {
             append_l1_block_rec_to_mmr(&mut l1_block_refs_mmr, record);
         }
 
-        let mut batch = WriteBatch::<OLAccountState>::default();
+        let mut batch = WriteBatch::<OLAccountStateV1>::default();
         batch.epochal_writes_mut().l1_block_refs_mmr = Some(l1_block_refs_mmr);
         state
             .apply_write_batch(batch)

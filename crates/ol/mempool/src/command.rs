@@ -1,7 +1,7 @@
 //! Command types for mempool service.
 
 use strata_identifiers::OLTxId;
-use strata_ol_chain_types::OLTransaction;
+use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_service::CommandCompletionSender;
 use tokio::sync::oneshot;
 
@@ -11,7 +11,7 @@ use crate::{MempoolTxInvalidReason, OLMempoolResult};
 type SubmitTransactionResult = OLMempoolResult<OLTxId>;
 
 /// Type alias for get transactions result.
-type GetTransactionsResult = OLMempoolResult<Vec<(OLTxId, OLTransaction)>>;
+type GetTransactionsResult = OLMempoolResult<Vec<(OLTxId, OLTransactionV1)>>;
 
 /// Commands that can be sent to the mempool service.
 #[derive(Debug)]
@@ -22,7 +22,7 @@ pub enum MempoolCommand {
     /// Returns the transaction ID on success.
     SubmitTransaction {
         /// Transaction to submit (boxed to reduce enum size).
-        tx: Box<OLTransaction>,
+        tx: Box<OLTransactionV1>,
         /// Completion sender for the transaction ID.
         completion: CommandCompletionSender<SubmitTransactionResult>,
     },

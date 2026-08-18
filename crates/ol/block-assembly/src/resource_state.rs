@@ -1,11 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use strata_bridge_params::BridgeParams;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
-use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
-use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLLog};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
-use strata_ol_stf::execute_block_batch_predrain;
+use strata_ol_state_types::{IAccountStateMut, IStateAccessorMut};
+use strata_ol_stf_v1::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 
 use crate::{BlockAssemblyAnchorContext, BlockAssemblyError, BlockAssemblyStateAccess};
@@ -112,8 +113,8 @@ impl EpochResourceTracker {
 
 #[derive(Clone, Debug)]
 pub(crate) struct EpochBlocks {
-    pub(crate) blocks: NonEmptyVec<OLBlock>,
-    pub(crate) epoch_parent: OLBlockHeader,
+    pub(crate) blocks: NonEmptyVec<OLBlockV1>,
+    pub(crate) epoch_parent: OLBlockHeaderV1,
 }
 
 /// Rebuilds epoch resource state for `target_blkid` by replaying all epoch
@@ -163,7 +164,7 @@ where
 }
 
 /// Validates that `header` is the terminal boundary immediately before `epoch`.
-fn ensure_epoch_boundary(header: &OLBlockHeader, epoch: Epoch) -> Result<(), BlockAssemblyError> {
+fn ensure_epoch_boundary(header: &OLBlockHeaderV1, epoch: Epoch) -> Result<(), BlockAssemblyError> {
     let expected_prev_epoch = epoch - 1;
     if !header.is_terminal() || header.epoch() != expected_prev_epoch {
         return Err(BlockAssemblyError::InvalidEpochBoundary {
@@ -234,7 +235,7 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
 
 /// Fetches the state for `blk_header`.
 async fn fetch_state<C: BlockAssemblyAnchorContext>(
-    blk_header: &OLBlockHeader,
+    blk_header: &OLBlockHeaderV1,
     ctx: &C,
 ) -> Result<Arc<C::State>, BlockAssemblyError> {
     let blkid = blk_header.compute_block_commitment();
@@ -248,8 +249,9 @@ async fn fetch_state<C: BlockAssemblyAnchorContext>(
 #[cfg(test)]
 mod tests {
     use strata_identifiers::{Buf32, Buf64, OLBlockId};
-    use strata_ol_chain_types::{
-        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    use strata_ol_chain_types_v1::{
+        BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1,
+        SignedOLBlockHeaderV1,
     };
 
     use super::*;
@@ -266,11 +268,11 @@ mod tests {
         is_terminal: bool,
         parent_blkid: OLBlockId,
         timestamp: u64,
-    ) -> OLBlock {
-        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
-        let mut flags = BlockFlags::zero();
+    ) -> OLBlockV1 {
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
+        let mut flags = BlockFlagsV1::zero();
         flags.set_is_terminal(is_terminal);
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             timestamp,
             flags,
             slot,
@@ -280,8 +282,8 @@ mod tests {
             Buf32::zero(),
             Buf32::zero(),
         );
-        let signed_header = SignedOLBlockHeader::new(header, Buf64::zero());
-        OLBlock::new(signed_header, body)
+        let signed_header = SignedOLBlockHeaderV1::new(header, Buf64::zero());
+        OLBlockV1::new(signed_header, body)
     }
 
     fn test_blkid(seed: u8) -> OLBlockId {

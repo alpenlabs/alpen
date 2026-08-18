@@ -4,7 +4,7 @@ use strata_acct_types::AccountSerial;
 use strata_codec::CodecError;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment, OLBlockId};
-use strata_ledger_types::StateError;
+use strata_ol_state_types::StateError;
 use strata_primitives::epoch::EpochCommitment;
 use strata_snark_acct_types::Seqno;
 use thiserror::Error;
@@ -141,7 +141,7 @@ pub enum WorkerError {
 
     /// STF execution error.
     #[error("STF execution failure: {0}")]
-    StfExecution(#[from] strata_ol_stf::ExecError),
+    StfExecution(#[from] strata_ol_stf_v1::ExecError),
 
     /// Write-batch application failed when committing executed-block state.
     #[error("apply_write_batch failed at {commitment:?}: {source}")]
@@ -161,7 +161,7 @@ pub enum WorkerError {
 
     /// A snark-account update log failed to decode while sourcing index `extra_data`.
     #[error("failed to decode snark-account update log: {0}")]
-    SnarkUpdateLogDecode(#[from] strata_ol_chain_types::LogDecodeError),
+    SnarkUpdateLogDecode(#[from] strata_ol_chain_types_v1::LogDecodeError),
 
     /// The emitted snark-account update logs could not be paired 1:1 with the tracked snark
     /// state updates when sourcing index `extra_data`.

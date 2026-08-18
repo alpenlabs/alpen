@@ -1,7 +1,7 @@
 use strata_acct_types::Mmr64;
 use strata_db_types::MmrId;
 use strata_identifiers::AccountId;
-use strata_ledger_types::IStateAccessor;
+use strata_ol_state_types::IStateAccessor;
 
 use crate::{
     MmrIndexEntry, OLMmrIndexAhead, OLMmrIndexDivergence, OLMmrIndexError,
@@ -186,14 +186,12 @@ mod tests {
     use strata_identifiers::{AccountId, Hash};
 
     use super::*;
-    use crate::{
-        MmrIndexEntry, OLMmrIndexError, resolve_ol_mmr_target,
-        test_utils::{
-            build_genesis_target_state, build_index_entry, build_repeated_leaf_mmr,
-            build_snark_inbox_message, build_target_index_entry, build_target_state_accessor,
-            build_target_state_with_empty_l1_block_refs_mmr, build_target_state_with_snark_inbox,
-        },
+    use crate::test_utils::{
+        build_genesis_target_state, build_index_entry, build_repeated_leaf_mmr,
+        build_snark_inbox_message, build_target_index_entry, build_target_state_accessor,
+        build_target_state_with_empty_l1_block_refs_mmr, build_target_state_with_snark_inbox,
     };
+    use crate::{MmrIndexEntry, OLMmrIndexError, resolve_ol_mmr_target};
 
     #[test]
     fn test_plan_counts_namespaces() {

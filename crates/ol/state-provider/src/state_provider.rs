@@ -6,10 +6,13 @@
 //! - Fast in-memory testing without database infrastructure
 //! - Easy mocking for edge cases and error scenarios
 
-use std::{error::Error, fmt::Debug, future::Future, sync::Arc};
+use std::error::Error;
+use std::fmt::Debug;
+use std::future::Future;
+use std::sync::Arc;
 
 use strata_identifiers::OLBlockCommitment;
-use strata_ledger_types::IStateAccessorMut;
+use strata_ol_state_types::IStateAccessorMut;
 
 /// Provider trait for retrieving state at specific chain tips.
 ///
@@ -31,7 +34,7 @@ use strata_ledger_types::IStateAccessorMut;
 /// ```rust,ignore
 /// use std::{collections::HashMap, sync::Arc};
 /// use strata_identifiers::OLBlockCommitment;
-/// use strata_ol_state_types::OLState;
+/// use strata_ol_state_types_v1::OLStateV1;
 /// use strata_ol_state_support_types::StateProvider;
 ///
 /// #[derive(Debug, thiserror::Error)]
@@ -41,11 +44,11 @@ use strata_ledger_types::IStateAccessorMut;
 /// }
 ///
 /// struct MyStateProvider {
-///     states: HashMap<OLBlockCommitment, Arc<OLState>>,
+///     states: HashMap<OLBlockCommitment, Arc<OLStateV1>>,
 /// }
 ///
 /// impl StateProvider for MyStateProvider {
-///     type State = OLState;
+///     type State = OLStateV1;
 ///     type Error = MyError;
 ///
 ///     async fn get_state_for_tip_async(

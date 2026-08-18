@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use strata_db_types::{ol_block::BlockStatus, DbResult};
 use strata_identifiers::{Epoch, Slot};
-use strata_ol_state_types::OLState;
+use strata_ol_state_types_v1::OLStateV1;
 use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_status::OLSyncStatus;
 
@@ -61,7 +61,7 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLState>>>;
+    ) -> DbResult<Option<Arc<OLStateV1>>>;
 
     async fn get_canonical_block_at(&self, slot: Slot) -> DbResult<Option<OLBlockCommitment>>;
 

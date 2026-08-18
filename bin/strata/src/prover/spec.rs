@@ -11,7 +11,7 @@ pub(crate) use strata_checkpoint_types::CheckpointProofTask as CheckpointTask;
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_params::BridgeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_ol_stf::execute_block_batch_predrain;
+use strata_ol_stf_v1::execute_block_batch_predrain;
 use strata_paas::{InputResolution, ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::NodeStorage;

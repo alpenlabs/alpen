@@ -1,27 +1,27 @@
 //! OL block assembly service state management.
 
-use std::{
-    collections::HashMap,
-    fmt::{Debug, Formatter},
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
 use strata_ol_params::OLParams;
 use strata_ol_state_provider::StateProvider;
+use strata_ol_state_types::{IAccountStateMut, IStateAccessorMut};
 use strata_predicate::PredicateKey;
 use strata_service::ServiceState;
 use tracing::warn;
 
+use crate::context::BlockAssemblyContext;
+use crate::error::BlockAssemblyError;
+use crate::resource_state::{
+    EpochResourceState, EpochResourceTracker, rebuild_epoch_resource_state_upto,
+};
+use crate::types::FullBlockTemplate;
 use crate::{
     BlockAssemblyAnchorContext, BlockAssemblyStateAccess, EpochSealingPolicy, MempoolProvider,
-    context::BlockAssemblyContext,
-    error::BlockAssemblyError,
-    resource_state::{EpochResourceState, EpochResourceTracker, rebuild_epoch_resource_state_upto},
-    types::FullBlockTemplate,
 };
 
 /// A cached template with its creation time for TTL expiration.
@@ -421,22 +421,20 @@ mod tests {
 
     use strata_config::BlockAssemblyConfig;
     use strata_identifiers::{AccountSerial, Buf32, Buf64};
-    use strata_ol_chain_types::{OLBlock, OLBlockHeader, OLLog, SignedOLBlockHeader};
+    use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, OLLog, SignedOLBlockHeaderV1};
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_ol_state_support_types::EpochDaAccumulator;
     use strata_predicate::PredicateKey;
 
     use super::*;
-    use crate::{
-        FixedSlotSealing, LimitAwareSealing,
-        block_assembly::generate_block_template_inner,
-        resource_state::{AccumulatedDaData, EpochResourceState},
-        test_utils::{
-            MockMempoolProvider, TEST_BLOCK_TEMPLATE_TTL, TEST_SLOTS_PER_EPOCH, TestEnv,
-            TestStorageFixtureBuilder, create_test_template, create_test_template_with_parent,
-        },
-        types::BlockGenerationConfig,
+    use crate::block_assembly::generate_block_template_inner;
+    use crate::resource_state::{AccumulatedDaData, EpochResourceState};
+    use crate::test_utils::{
+        MockMempoolProvider, TEST_BLOCK_TEMPLATE_TTL, TEST_SLOTS_PER_EPOCH, TestEnv,
+        TestStorageFixtureBuilder, create_test_template, create_test_template_with_parent,
     };
+    use crate::types::BlockGenerationConfig;
+    use crate::{FixedSlotSealing, LimitAwareSealing};
 
     type TestServiceState = BlockasmServiceState<
         Arc<MockMempoolProvider>,
@@ -461,7 +459,7 @@ mod tests {
     ) -> FullBlockTemplate {
         let template = create_test_template_with_parent(parent);
         let header = template.header();
-        let header = OLBlockHeader::new(
+        let header = OLBlockHeaderV1::new(
             header.timestamp(),
             header.flags(),
             slot,
@@ -935,8 +933,8 @@ mod tests {
             child_template.header().compute_blkid(),
         );
         let signed_header =
-            SignedOLBlockHeader::new(child_template.header().clone(), Buf64::zero());
-        let child_block = OLBlock::new(signed_header, child_template.body().clone());
+            SignedOLBlockHeaderV1::new(child_template.header().clone(), Buf64::zero());
+        let child_block = OLBlockV1::new(signed_header, child_template.body().clone());
         env.put_block(child_block).await;
 
         let resource_state = state

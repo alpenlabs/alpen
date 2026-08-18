@@ -1,0 +1,1604 @@
+//! Top-level DA payload types.
+
+use std::collections::BTreeSet;
+use std::marker::PhantomData;
+
+use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry};
+use strata_codec::{Codec, CodecError, decode_buf_exact};
+use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
+use strata_identifiers::AccountSerial;
+use strata_ol_da_common::DaError;
+use strata_ol_state_types::*;
+use strata_predicate::{MAX_CONDITION_LEN, PredicateError, PredicateKey, PredicateKeyBuf};
+use strata_snark_acct_types::Seqno;
+
+use super::{
+    AccountDiffV1, AccountInitV1, AccountTypeInitV1, DaProofStateV1, GlobalStateDiffV1,
+    LedgerDiffV1, SnarkAccountDiffV1,
+};
+
+/// Versioned OL DA payload containing the state diff.
+///
+/// Wire format is the `strata_codec` encoding of [`OLStateDiffV1`] (not SSZ).
+///
+/// # Compatibility window
+///
+/// V1 is the only format currently produced or consumed; there is no V2 and no in-band version
+/// byte. The byte layout is frozen by the golden fixture in this module's tests: any change to the
+/// encoding of [`OLStateDiffV1`] or its nested types breaks that test by design. Such a change is a
+/// wire-format break that requires a new payload version, not an edit to V1; on an intentional
+/// break, introduce the new version and regenerate the fixture rather than mutating V1 in place.
+#[derive(Debug, Codec)]
+pub struct OLDaPayloadV1 {
+    /// State diff for the epoch.
+    pub state_diff: OLStateDiffV1,
+}
+
+impl OLDaPayloadV1 {
+    /// Creates a new [`OLDaPayloadV1`] from a state diff.
+    pub fn new(state_diff: OLStateDiffV1) -> Self {
+        Self { state_diff }
+    }
+}
+
+/// Decodes [`OLDaPayloadV1`] from raw bytes using exact `strata_codec` decoding.
+pub fn decode_ol_da_payload_bytes(bytes: &[u8]) -> Result<OLDaPayloadV1, CodecError> {
+    decode_buf_exact(bytes)
+}
+
+/// Epoch OL state diff (global + ledger).
+#[derive(Debug, Default, Codec)]
+pub struct OLStateDiffV1 {
+    /// Global state diff.
+    pub global: GlobalStateDiffV1,
+
+    /// Ledger state diff.
+    pub ledger: LedgerDiffV1,
+}
+
+impl OLStateDiffV1 {
+    /// Creates a new [`OLStateDiffV1`] from a global state diff and ledger diff.
+    pub fn new(global: GlobalStateDiffV1, ledger: LedgerDiffV1) -> Self {
+        Self { global, ledger }
+    }
+}
+
+/// Adapter for applying a state diff to a concrete state accessor.
+#[derive(Debug)]
+pub struct OLStateDiffWriterV1<S: IStateAccessorMut> {
+    diff: OLStateDiffV1,
+    _target: PhantomData<S>,
+}
+
+impl<S: IStateAccessorMut> OLStateDiffWriterV1<S> {
+    pub fn new(diff: OLStateDiffV1) -> Self {
+        Self {
+            diff,
+            _target: PhantomData,
+        }
+    }
+
+    pub fn as_inner(&self) -> &OLStateDiffV1 {
+        &self.diff
+    }
+
+    pub fn into_inner(self) -> OLStateDiffV1 {
+        self.diff
+    }
+}
+
+impl<S: IStateAccessorMut> Default for OLStateDiffWriterV1<S> {
+    fn default() -> Self {
+        Self::new(OLStateDiffV1::default())
+    }
+}
+
+impl<S: IStateAccessorMut> DaWrite for OLStateDiffWriterV1<S> {
+    type Target = S;
+    type Context = ();
+    type Error = DaError;
+
+    fn is_default(&self) -> bool {
+        DaWrite::is_default(&self.diff.global) && self.diff.ledger.is_empty()
+    }
+
+    fn poll_context(
+        &self,
+        target: &Self::Target,
+        _context: &Self::Context,
+    ) -> Result<(), Self::Error> {
+        let pre_state_next_serial = target.next_account_serial();
+        validate_ledger_entries(pre_state_next_serial, &self.diff)?;
+        for entry in self.diff.ledger.new_accounts.entries() {
+            new_account_data_from_init(&entry.init)?;
+            let exists = target
+                .check_account_exists(entry.account_id)
+                .map_err(|_| FrameworkDaError::InsufficientContext)?;
+            if exists {
+                return Err(DaError::InvalidLedgerDiff("new account already exists"));
+            }
+        }
+
+        for diff in self.diff.ledger.account_diffs.entries() {
+            target
+                .find_account_id_by_serial(diff.account_serial)
+                .map_err(|_| FrameworkDaError::InsufficientContext)?
+                .ok_or(FrameworkDaError::InsufficientContext)?;
+        }
+        Ok(())
+    }
+
+    fn apply(
+        &self,
+        target: &mut Self::Target,
+        _context: &Self::Context,
+    ) -> Result<(), Self::Error> {
+        let mut cur_slot = target.cur_slot();
+        self.diff.global.cur_slot.apply(&mut cur_slot, &())?;
+        target.set_cur_slot(cur_slot);
+
+        if let Some(d) = self.diff.global.limbo_funds_sats.diff() {
+            let amt = BitcoinAmount::try_from(d.magnitude()).map_err(|_| {
+                DaError::InvalidStateDiff("limbo funds delta exceeds the Bitcoin money supply")
+            })?;
+            if d.is_positive() {
+                let coin = Coin::new_unchecked(amt);
+                target
+                    .add_limbo_funds_coin(coin)
+                    .map_err(|_| DaError::InvalidStateDiff("failed to apply limbo funds diff"))?;
+            } else {
+                let coin = target
+                    .take_limbo_funds_coin(amt)
+                    .map_err(|_| DaError::InvalidStateDiff("insufficient limbo funds for diff"))?;
+                coin.safely_consume_unchecked();
+            }
+        }
+
+        let pre_state_next_serial = target.next_account_serial();
+        // NOTE: `validate_ledger_entries` is intentionally not called here;
+        // it was already called in `poll_context` which runs before `apply`.
+        let mut expected_serial = pre_state_next_serial;
+        for entry in self.diff.ledger.new_accounts.entries() {
+            let exists = target
+                .check_account_exists(entry.account_id)
+                .map_err(|_| FrameworkDaError::InsufficientContext)?;
+            if exists {
+                return Err(DaError::InvalidLedgerDiff("new account already exists"));
+            }
+            let new_acct = new_account_data_from_init(&entry.init)?;
+            let serial = target
+                .create_new_account(entry.account_id, new_acct)
+                .map_err(|_| DaError::InvalidLedgerDiff("failed to create new account"))?;
+            if serial != expected_serial {
+                return Err(DaError::InvalidLedgerDiff("new account serial mismatch"));
+            }
+            expected_serial = expected_serial.incr();
+        }
+
+        for entry in self.diff.ledger.account_diffs.entries() {
+            let account_id = target
+                .find_account_id_by_serial(entry.account_serial)
+                .map_err(|_| FrameworkDaError::InsufficientContext)?
+                .ok_or(FrameworkDaError::InsufficientContext)?;
+            apply_account_diff(target, account_id, &entry.diff)?;
+        }
+        Ok(())
+    }
+}
+
+fn new_account_data_from_init(init: &AccountInitV1) -> Result<NewAccountData, DaError> {
+    let type_state = match &init.type_state {
+        AccountTypeInitV1::Empty => NewAccountTypeState::Empty,
+        AccountTypeInitV1::Snark(snark) => NewAccountTypeState::Snark {
+            update_vk: owned_predicate_key(snark.update_vk.as_slice())?,
+            initial_state_root: snark.initial_state_root,
+        },
+    };
+    Ok(NewAccountData::new(init.balance, type_state))
+}
+
+/// Parses a predicate key from its wire bytes, rejecting a condition that's too long to fit
+/// the predicate's SSZ bound instead of panicking on the owned conversion.
+fn owned_predicate_key(vk_bytes: &[u8]) -> Result<PredicateKey, DaError> {
+    let buf = PredicateKeyBuf::try_from(vk_bytes)?;
+    if buf.condition().len() > MAX_CONDITION_LEN as usize {
+        return Err(DaError::InvalidPredicateKey(
+            PredicateError::ConditionParsingFailed {
+                id: buf.id(),
+                reason: format!(
+                    "condition length {} exceeds max {MAX_CONDITION_LEN}",
+                    buf.condition().len()
+                ),
+            },
+        ));
+    }
+    Ok(buf.to_owned())
+}
+
+fn validate_ledger_entries(
+    pre_state_next_serial: AccountSerial,
+    diff: &OLStateDiffV1,
+) -> Result<(), DaError> {
+    let mut seen_new_ids = BTreeSet::new();
+    for entry in diff.ledger.new_accounts.entries() {
+        if !seen_new_ids.insert(entry.account_id) {
+            return Err(DaError::InvalidLedgerDiff("duplicate new account id"));
+        }
+    }
+
+    let pre_serial: u32 = pre_state_next_serial.into();
+    let new_count = diff.ledger.new_accounts.entries().len() as u32;
+    if new_count > 0 {
+        pre_serial
+            .checked_add(new_count - 1)
+            .ok_or(DaError::InvalidLedgerDiff(
+                "new account serial range overflows",
+            ))?;
+    }
+
+    let mut last_serial: Option<u32> = None;
+    for entry in diff.ledger.account_diffs.entries() {
+        let serial: u32 = entry.account_serial.into();
+        if serial >= pre_serial {
+            return Err(DaError::InvalidLedgerDiff(
+                "account diff serial out of range",
+            ));
+        }
+        if let Some(prev) = last_serial
+            && serial <= prev
+        {
+            return Err(DaError::InvalidLedgerDiff(
+                "account diff serials not strictly increasing",
+            ));
+        }
+        last_serial = Some(serial);
+    }
+    Ok(())
+}
+
+fn apply_account_diff<S: IStateAccessorMut>(
+    target: &mut S,
+    account_id: AccountId,
+    diff: &AccountDiffV1,
+) -> Result<(), DaError> {
+    target
+        .update_account(account_id, |acct| apply_account_diff_to_account(acct, diff))
+        .map_err(|_| DaError::InvalidStateDiff("failed to update account diff"))?
+}
+
+fn apply_account_diff_to_account<T: IAccountStateMut>(
+    acct: &mut T,
+    diff: &AccountDiffV1,
+) -> Result<(), DaError> {
+    if let Some(incr) = diff.balance.diff() {
+        apply_balance_delta(acct, incr)?;
+    }
+
+    if !DaWrite::is_default(&diff.snark) {
+        apply_snark_diff(acct, &diff.snark)?;
+    }
+    Ok(())
+}
+
+fn apply_balance_delta<T: IAccountStateMut>(
+    acct: &mut T,
+    incr: &SignedVarInt,
+) -> Result<(), DaError> {
+    let delta = BitcoinAmount::try_from(incr.magnitude())
+        .map_err(|_| DaError::InvalidStateDiff("balance delta exceeds the Bitcoin money supply"))?;
+    if incr.is_positive() {
+        // `add_balance` panics past the money-supply cap, so check the post-add
+        // amount first and reject the diff cleanly.
+        acct.balance()
+            .to_sat()
+            .checked_add(delta.to_sat())
+            .and_then(|sats| BitcoinAmount::try_from(sats).ok())
+            .ok_or(DaError::InvalidStateDiff(
+                "account balance after delta exceeds the Bitcoin money supply",
+            ))?;
+        let coin = Coin::new_unchecked(delta);
+        acct.add_balance(coin);
+    } else {
+        let coin = acct
+            .take_balance(delta)
+            .map_err(|_| DaError::InvalidStateDiff("insufficient balance for diff"))?;
+        coin.safely_consume_unchecked();
+    }
+    Ok(())
+}
+
+fn apply_snark_diff<T: IAccountStateMut>(
+    acct: &mut T,
+    diff: &SnarkAccountDiffV1,
+) -> Result<(), DaError> {
+    let snark = acct
+        .as_snark_account_mut()
+        .map_err(|_| DaError::InvalidStateDiff("snark diff applied to non-snark account"))?;
+
+    let mut seq_no = *snark.seqno().inner();
+    diff.seq_no.apply(&mut seq_no, &())?;
+    let next_seqno = Seqno::new(seq_no);
+
+    let mut next_proof_state =
+        DaProofStateV1::new(snark.inner_state_root(), snark.next_inbox_msg_idx());
+    diff.proof_state.apply(&mut next_proof_state, &())?;
+    snark.set_proof_state(
+        next_proof_state.inner().inner_state(),
+        next_proof_state.inner().next_inbox_msg_idx(),
+        next_seqno,
+    );
+
+    if let Some(vk_bytes) = diff.update_vk.new_value() {
+        snark.set_update_vk(owned_predicate_key(vk_bytes.as_slice())?);
+    }
+
+    for entry in diff.inbox.new_entries() {
+        let msg = MessageEntry::new(entry.source, entry.incl_epoch, entry.payload.clone());
+        snark
+            .insert_inbox_message(msg)
+            .map_err(|_| DaError::InvalidStateDiff("failed to insert inbox message"))?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_da_framework::{
+        DaCounter, DaLinacc, DaRegister, DaWrite, SignedVarInt, UnsignedVarInt, counter_schemes,
+    };
+    use strata_identifiers::AccountSerial;
+    use strata_ol_da_common::{DaScheme, U16LenBytes, U16LenList};
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
+    use strata_ol_stf_v1::test_utils::make_genesis_state;
+    use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
+
+    use super::super::{MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES};
+    use super::*;
+    use crate::{
+        AccountDiffEntryV1, DaMessageEntryV1, DaProofStateDiffV1, NewAccountEntryV1, OLDaSchemeV1,
+        SnarkAccountInitV1,
+    };
+
+    fn test_account_id(seed: u8) -> AccountId {
+        AccountId::from([seed; 32])
+    }
+
+    /// Creates an empty account with the given balance, returning its serial.
+    fn seed_empty_account(
+        state: &mut MemoryStateBaseLayer,
+        id: AccountId,
+        sats: u64,
+    ) -> AccountSerial {
+        state
+            .create_new_account(
+                id,
+                NewAccountData::new(
+                    BitcoinAmount::try_from(sats)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    NewAccountTypeState::Empty,
+                ),
+            )
+            .expect("create empty account")
+    }
+
+    /// Reads an existing account's balance.
+    fn account_balance(state: &MemoryStateBaseLayer, id: AccountId) -> BitcoinAmount {
+        state
+            .get_account_state(id)
+            .expect("read account")
+            .expect("account exists")
+            .balance()
+    }
+
+    /// Applies an [`OLStateDiffV1`] to the state via [`OLStateDiffWriterV1`] + [`DaWrite::apply`].
+    fn apply_ol_state_diff(
+        state: &mut MemoryStateBaseLayer,
+        diff: OLStateDiffV1,
+    ) -> Result<(), DaError> {
+        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer>::new(diff);
+        DaWrite::apply(&ol_diff, state, &())
+    }
+
+    /// Polls an [`OLStateDiffV1`] against the state via [`OLStateDiffWriterV1`] +
+    /// [`DaWrite::poll_context`].
+    fn poll_ol_state_diff(
+        state: &MemoryStateBaseLayer,
+        diff: OLStateDiffV1,
+    ) -> Result<(), DaError> {
+        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer>::new(diff);
+        DaWrite::poll_context(&ol_diff, state, &())
+    }
+
+    /// Builders for test OL DA diff trees.
+    ///
+    /// Builders produce encodable trees; they are not guaranteed to be apply-valid (e.g. serials
+    /// need not match any pre-state).
+    mod build {
+        use super::*;
+
+        /// Empty new-account init with the given balance.
+        pub(super) fn empty_init(balance_sats: u64) -> AccountInitV1 {
+            AccountInitV1::new(
+                BitcoinAmount::try_from(balance_sats)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                AccountTypeInitV1::Empty,
+            )
+        }
+
+        /// Snark new-account init with the given balance, state root, and VK bytes.
+        pub(super) fn snark_init(balance_sats: u64, root: Hash, vk: Vec<u8>) -> AccountInitV1 {
+            AccountInitV1::new(
+                BitcoinAmount::try_from(balance_sats)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                AccountTypeInitV1::Snark(SnarkAccountInitV1::new(root, vk)),
+            )
+        }
+
+        /// Balance-only account diff with a signed sats delta.
+        pub(super) fn balance_diff(delta: SignedVarInt) -> AccountDiffV1 {
+            AccountDiffV1::new(DaCounter::new_changed(delta), SnarkAccountDiffV1::default())
+        }
+
+        /// Snark diff with seqno, proof-state, inbox, and update-VK changes.
+        pub(super) fn snark_diff(
+            seqno_incr: u16,
+            new_root: Option<Hash>,
+            next_idx_incr: u64,
+            inbox_msgs: Vec<DaMessageEntryV1>,
+            new_vk: Option<Vec<u8>>,
+        ) -> SnarkAccountDiffV1 {
+            let inner_state = match new_root {
+                Some(r) => DaRegister::new_set(r),
+                None => DaRegister::new_unset(),
+            };
+            let next_idx = if next_idx_incr == 0 {
+                DaCounter::new_unchanged()
+            } else {
+                DaCounter::new_changed(UnsignedVarInt::new(next_idx_incr))
+            };
+            let proof_state = DaProofStateDiffV1::new(inner_state, next_idx);
+            let mut inbox = DaLinacc::new();
+            for m in inbox_msgs {
+                assert!(inbox.append_entry(m), "inbox write should accept entry");
+            }
+            let seq_no = if seqno_incr == 0 {
+                DaCounter::<counter_schemes::CtrU64ByU16>::new_unchanged()
+            } else {
+                DaCounter::new_changed(seqno_incr)
+            };
+            let update_vk = match new_vk {
+                Some(vk) => DaRegister::new_set(U16LenBytes::new(vk)),
+                None => DaRegister::new_unset(),
+            };
+            SnarkAccountDiffV1::new(update_vk, proof_state, seq_no, inbox)
+        }
+
+        /// Inbox message entry with a repeated-byte payload.
+        pub(super) fn inbox_msg(
+            source: AccountId,
+            incl_epoch: u32,
+            len: usize,
+            byte: u8,
+        ) -> DaMessageEntryV1 {
+            let payload = MsgPayload::from_bytes(
+                BitcoinAmount::try_from(0)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                vec![byte; len],
+            )
+            .expect("message payload bytes must fit SSZ max length");
+            DaMessageEntryV1::new(source, incl_epoch, payload)
+        }
+
+        /// Ledger diff from new accounts and account diffs.
+        pub(super) fn ledger_diff(
+            new_accounts: Vec<NewAccountEntryV1>,
+            account_diffs: Vec<AccountDiffEntryV1>,
+        ) -> LedgerDiffV1 {
+            LedgerDiffV1::new(
+                U16LenList::new(new_accounts),
+                U16LenList::new(account_diffs),
+            )
+        }
+
+        /// Global diff with optional slot and limbo deltas.
+        pub(super) fn global_diff(
+            slot_incr: u16,
+            limbo_delta: Option<SignedVarInt>,
+        ) -> GlobalStateDiffV1 {
+            let cur_slot = if slot_incr == 0 {
+                DaCounter::new_unchanged()
+            } else {
+                DaCounter::new_changed(slot_incr)
+            };
+            let limbo = match limbo_delta {
+                Some(d) => DaCounter::new_changed(d),
+                None => DaCounter::new_unchanged(),
+            };
+            GlobalStateDiffV1::new(cur_slot, limbo)
+        }
+    }
+
+    /// Shared non-trivial payload fixture for round-trip and golden tests.
+    fn populated_state_diff() -> OLStateDiffV1 {
+        let snark_acct = build::snark_init(
+            500,
+            Hash::from([0x11u8; 32]),
+            PredicateKey::always_accept()
+                .try_as_buf_ref()
+                .expect("predicate key must be valid")
+                .to_bytes(),
+        );
+        let new_accounts = vec![
+            NewAccountEntryV1::new(test_account_id(0xA1), build::empty_init(1_000)),
+            NewAccountEntryV1::new(test_account_id(0xA2), snark_acct),
+        ];
+
+        let inbox = vec![
+            build::inbox_msg(test_account_id(0xB1), 7, 4, 0xEE),
+            build::inbox_msg(test_account_id(0xB2), 8, 16, 0xCD),
+        ];
+        let account_diffs = vec![
+            AccountDiffEntryV1::new(
+                AccountSerial::from(0u32),
+                build::balance_diff(SignedVarInt::positive(250)),
+            ),
+            AccountDiffEntryV1::new(
+                AccountSerial::from(1u32),
+                AccountDiffV1::new(
+                    DaCounter::new_unchanged(),
+                    build::snark_diff(3, Some(Hash::from([0x22u8; 32])), 2, inbox, None),
+                ),
+            ),
+        ];
+
+        OLStateDiffV1::new(
+            build::global_diff(5, Some(SignedVarInt::positive(900))),
+            build::ledger_diff(new_accounts, account_diffs),
+        )
+    }
+
+    #[test]
+    fn test_populated_payload_round_trip() {
+        let payload = OLDaPayloadV1::new(populated_state_diff());
+        let encoded = encode_to_vec(&payload).expect("encode populated payload");
+
+        let decoded = decode_ol_da_payload_bytes(&encoded).expect("decode populated payload");
+        let reencoded = encode_to_vec(&decoded).expect("re-encode populated payload");
+
+        assert_eq!(encoded, reencoded);
+    }
+
+    #[test]
+    fn test_account_init_round_trip_empty_and_snark() {
+        for init in [
+            build::empty_init(42),
+            build::snark_init(7, Hash::from([0x33u8; 32]), vec![0xAB; 64]),
+        ] {
+            let encoded = encode_to_vec(&init).expect("encode account init");
+            let decoded: AccountInitV1 = decode_buf_exact(&encoded).expect("decode account init");
+            assert_eq!(decoded, init);
+        }
+    }
+
+    #[test]
+    fn test_snark_account_diff_round_trip() {
+        let inbox = vec![build::inbox_msg(test_account_id(9), 1, 8, 0x55)];
+        let diff = build::snark_diff(2, Some(Hash::from([0x44u8; 32])), 1, inbox, None);
+        let encoded = encode_to_vec(&diff).expect("encode snark diff");
+        let decoded: SnarkAccountDiffV1 = decode_buf_exact(&encoded).expect("decode snark diff");
+        let reencoded = encode_to_vec(&decoded).expect("re-encode snark diff");
+        assert_eq!(encoded, reencoded);
+    }
+
+    #[test]
+    fn test_payload_encodes_state_diff_only() {
+        let diff_bytes = encode_to_vec(&OLStateDiffV1::default()).expect("encode diff");
+        let payload = OLDaPayloadV1::new(OLStateDiffV1::default());
+        let payload_bytes = encode_to_vec(&payload).expect("encode payload");
+
+        assert_eq!(payload_bytes, diff_bytes);
+    }
+
+    #[test]
+    fn test_decode_ol_da_payload_bytes_roundtrip() {
+        let payload = OLDaPayloadV1::new(OLStateDiffV1::default());
+        let encoded = encode_to_vec(&payload).expect("encode payload");
+
+        let decoded = decode_ol_da_payload_bytes(&encoded).expect("decode payload");
+        let reencoded = encode_to_vec(&decoded).expect("re-encode payload");
+
+        assert_eq!(encoded, reencoded);
+    }
+
+    #[test]
+    fn test_decode_ol_da_payload_bytes_rejects_trailing_bytes() {
+        let payload = OLDaPayloadV1::new(OLStateDiffV1::default());
+        let mut encoded = encode_to_vec(&payload).expect("encode payload");
+        encoded.push(0u8);
+
+        let decoded = decode_ol_da_payload_bytes(&encoded);
+        assert!(decoded.is_err());
+    }
+
+    #[test]
+    fn test_validate_ledger_entries_rejects_duplicate_new_ids() {
+        let account_id = test_account_id(1);
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                vec![
+                    NewAccountEntryV1::new(account_id, build::empty_init(1)),
+                    NewAccountEntryV1::new(account_id, build::empty_init(1)),
+                ],
+                Vec::new(),
+            ),
+        );
+
+        let result = validate_ledger_entries(AccountSerial::from(1u32), &diff);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff("duplicate new account id"))
+        ));
+    }
+
+    #[test]
+    fn test_ol_state_diff_poll_context_rejects_existing_new_account() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(2);
+        seed_empty_account(&mut state, account_id, 10);
+
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                vec![NewAccountEntryV1::new(account_id, build::empty_init(1))],
+                Vec::new(),
+            ),
+        );
+
+        let result = poll_ol_state_diff(&state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff("new account already exists"))
+        ));
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_updates_balance() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(3);
+        let serial = seed_empty_account(&mut state, account_id, 1_000);
+
+        // Balance goes from 1_000 to 2_000, so the delta is +1_000
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntryV1::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::positive(1_000)),
+                )],
+            ),
+        );
+
+        apply_ol_state_diff(&mut state, diff).expect("apply diff");
+
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::try_from(2_000)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_decreases_balance() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(30);
+        let serial = seed_empty_account(&mut state, account_id, 2_000);
+
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntryV1::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::negative(750)),
+                )],
+            ),
+        );
+
+        apply_ol_state_diff(&mut state, diff).expect("apply diff");
+
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::try_from(1_250)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_rejects_insufficient_balance() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(31);
+        let serial = seed_empty_account(&mut state, account_id, 500);
+
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntryV1::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::negative(501)),
+                )],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff("insufficient balance for diff"))
+        ));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    /// A balance delta above the Bitcoin money supply must be rejected with a `DaError`,
+    /// not panic on the amount conversion.
+    #[test]
+    fn test_ol_state_diff_apply_rejects_oversized_balance_delta() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(32);
+        let serial = seed_empty_account(&mut state, account_id, 500);
+
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntryV1::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::positive(u64::MAX)),
+                )],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "balance delta exceeds the Bitcoin money supply"
+            ))
+        ));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    /// A positive balance delta that is itself valid but pushes the account past
+    /// the Bitcoin money supply must be rejected with a `DaError`, not panic in
+    /// `add_balance`.
+    #[test]
+    fn test_ol_state_diff_apply_rejects_balance_delta_past_cap() {
+        const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
+
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(33);
+        let serial = seed_empty_account(&mut state, account_id, MAX_BITCOIN_MONEY_SATS - 1);
+
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntryV1::new(
+                    serial,
+                    build::balance_diff(SignedVarInt::positive(2)),
+                )],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "account balance after delta exceeds the Bitcoin money supply"
+            ))
+        ));
+        assert_eq!(
+            account_balance(&state, account_id),
+            BitcoinAmount::try_from(MAX_BITCOIN_MONEY_SATS - 1)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_updates_limbo_funds() {
+        let mut state = make_genesis_state();
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+        );
+
+        let diff = OLStateDiffV1::new(
+            build::global_diff(0, Some(SignedVarInt::positive(1_500))),
+            LedgerDiffV1::default(),
+        );
+        apply_ol_state_diff(&mut state, diff).expect("apply limbo add diff");
+
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(1_500)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
+
+        let diff = OLStateDiffV1::new(
+            build::global_diff(0, Some(SignedVarInt::negative(400))),
+            LedgerDiffV1::default(),
+        );
+        apply_ol_state_diff(&mut state, diff).expect("apply limbo take diff");
+
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(1_100)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_rejects_insufficient_limbo_funds() {
+        let mut state = make_genesis_state();
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+        );
+
+        let diff = OLStateDiffV1::new(
+            build::global_diff(0, Some(SignedVarInt::negative(1))),
+            LedgerDiffV1::default(),
+        );
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "insufficient limbo funds for diff"
+            ))
+        ));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    /// A limbo funds delta above the Bitcoin money supply must be rejected with a `DaError`,
+    /// not panic on the amount conversion.
+    #[test]
+    fn test_ol_state_diff_apply_rejects_oversized_limbo_funds_delta() {
+        let mut state = make_genesis_state();
+
+        let diff = OLStateDiffV1::new(
+            build::global_diff(0, Some(SignedVarInt::positive(u64::MAX))),
+            LedgerDiffV1::default(),
+        );
+        let result = apply_ol_state_diff(&mut state, diff);
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "limbo funds delta exceeds the Bitcoin money supply"
+            ))
+        ));
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_snark_seqno() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(4);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply"),
+            NewAccountTypeState::Snark {
+                update_vk: PredicateKey::always_accept(),
+                initial_state_root: Hash::from([0x11u8; 32]),
+            },
+        );
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create snark account");
+
+        let snark_diff = SnarkAccountDiffV1::new(
+            DaRegister::new_unset(),
+            DaProofStateDiffV1::default(),
+            DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
+            DaLinacc::new(),
+        );
+        let account_diff = AccountDiffV1::new(DaCounter::new_unchanged(), snark_diff);
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntryV1::new(serial, account_diff)],
+            ),
+        );
+
+        apply_ol_state_diff(&mut state, diff).expect("apply snark diff");
+
+        let account = state
+            .get_account_state(account_id)
+            .expect("read account")
+            .expect("account exists");
+        let snark = account.as_snark_account().expect("snark account");
+        assert_eq!(*snark.seqno().inner(), 1);
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_snark_update_vk_rotation() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(5);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply"),
+            NewAccountTypeState::Snark {
+                update_vk: PredicateKey::always_accept(),
+                initial_state_root: Hash::from([0x11u8; 32]),
+            },
+        );
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create snark account");
+
+        let new_vk = PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0x42u8; 32])
+            .expect("predicate condition must fit within the maximum length");
+        let snark_diff = build::snark_diff(
+            1,
+            None,
+            0,
+            Vec::new(),
+            Some(
+                new_vk
+                    .try_as_buf_ref()
+                    .expect("predicate key must be valid")
+                    .to_bytes(),
+            ),
+        );
+        let account_diff = AccountDiffV1::new(DaCounter::new_unchanged(), snark_diff);
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntryV1::new(serial, account_diff)],
+            ),
+        );
+
+        apply_ol_state_diff(&mut state, diff).expect("apply snark diff");
+
+        let account = state
+            .get_account_state(account_id)
+            .expect("read account")
+            .expect("account exists");
+        let snark = account.as_snark_account().expect("snark account");
+        assert_eq!(
+            snark.update_vk(),
+            &new_vk,
+            "declared rotation must survive DA reconstruction"
+        );
+    }
+
+    /// A rotation to a valid predicate type with an oversized condition must be rejected
+    /// with a `DaError`, not panic on the owned conversion.
+    #[test]
+    fn test_ol_state_diff_apply_snark_update_vk_rotation_rejects_oversized_condition() {
+        let mut state = make_genesis_state();
+        let account_id = test_account_id(5);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply"),
+            NewAccountTypeState::Snark {
+                update_vk: PredicateKey::always_accept(),
+                initial_state_root: Hash::from([0x11u8; 32]),
+            },
+        );
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create snark account");
+
+        let mut oversized_vk = vec![PredicateTypeId::AlwaysAccept.as_u8()];
+        oversized_vk.extend(vec![0u8; MAX_CONDITION_LEN as usize + 1]);
+        let snark_diff = build::snark_diff(1, None, 0, Vec::new(), Some(oversized_vk));
+        let account_diff = AccountDiffV1::new(DaCounter::new_unchanged(), snark_diff);
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntryV1::new(serial, account_diff)],
+            ),
+        );
+
+        let result = apply_ol_state_diff(&mut state, diff);
+        assert!(matches!(result, Err(DaError::InvalidPredicateKey(_))));
+    }
+
+    #[derive(Clone, Copy)]
+    struct AcctRef {
+        id: AccountId,
+        serial: AccountSerial,
+    }
+
+    struct PreStateAccounts {
+        state: MemoryStateBaseLayer,
+        empty: AcctRef,
+        snark: AcctRef,
+    }
+
+    /// Returns genesis plus one empty account and one snark account, preserving created serials.
+    fn pre_state_with_accounts() -> PreStateAccounts {
+        let mut state = make_genesis_state();
+        let empty_id = test_account_id(0x10);
+        let snark_id = test_account_id(0x11);
+
+        let empty_serial = state
+            .create_new_account(
+                empty_id,
+                NewAccountData::new(
+                    BitcoinAmount::try_from(1_000)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    NewAccountTypeState::Empty,
+                ),
+            )
+            .expect("create empty account");
+        let snark_serial = state
+            .create_new_account(
+                snark_id,
+                NewAccountData::new(
+                    BitcoinAmount::try_from(500)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    NewAccountTypeState::Snark {
+                        update_vk: PredicateKey::always_accept(),
+                        initial_state_root: Hash::from([0x11u8; 32]),
+                    },
+                ),
+            )
+            .expect("create snark account");
+        PreStateAccounts {
+            state,
+            empty: AcctRef {
+                id: empty_id,
+                serial: empty_serial,
+            },
+            snark: AcctRef {
+                id: snark_id,
+                serial: snark_serial,
+            },
+        }
+    }
+
+    /// Compares DA apply with equivalent direct state mutations.
+    #[test]
+    fn test_apply_equivalence_global_and_accounts() {
+        let pre_accounts = pre_state_with_accounts();
+        let new_id = test_account_id(0x20);
+        let inbox_root = Hash::from([0x22u8; 32]);
+        let inbox_msg = build::inbox_msg(test_account_id(0x30), 9, 12, 0x7A);
+
+        let mut applied = pre_accounts.state.clone();
+        let diff = OLStateDiffV1::new(
+            build::global_diff(4, Some(SignedVarInt::positive(800))),
+            build::ledger_diff(
+                vec![NewAccountEntryV1::new(new_id, build::empty_init(2_000))],
+                vec![
+                    AccountDiffEntryV1::new(
+                        pre_accounts.empty.serial,
+                        build::balance_diff(SignedVarInt::positive(250)),
+                    ),
+                    AccountDiffEntryV1::new(
+                        pre_accounts.snark.serial,
+                        AccountDiffV1::new(
+                            DaCounter::new_unchanged(),
+                            build::snark_diff(
+                                2,
+                                Some(inbox_root),
+                                1,
+                                vec![inbox_msg.clone()],
+                                None,
+                            ),
+                        ),
+                    ),
+                ],
+            ),
+        );
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(diff), &mut applied)
+            .expect("apply diff via scheme");
+
+        let mut expected = pre_accounts.state.clone();
+        expected.set_cur_slot(expected.cur_slot() + 4);
+        expected
+            .add_limbo_funds_coin(Coin::new_unchecked(
+                BitcoinAmount::try_from(800)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            ))
+            .expect("add limbo");
+        expected
+            .create_new_account(
+                new_id,
+                NewAccountData::new(
+                    BitcoinAmount::try_from(2_000)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    NewAccountTypeState::Empty,
+                ),
+            )
+            .expect("create new account");
+        expected
+            .update_account(pre_accounts.empty.id, |acct| {
+                acct.add_balance(Coin::new_unchecked(
+                    BitcoinAmount::try_from(250)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                ));
+                Ok::<(), DaError>(())
+            })
+            .expect("update empty")
+            .expect("balance ok");
+        expected
+            .update_account(pre_accounts.snark.id, |acct| {
+                let snark = acct.as_snark_account_mut().expect("snark");
+                let next_seqno = Seqno::new(*snark.seqno().inner() + 2);
+                snark.set_proof_state(inbox_root, snark.next_inbox_msg_idx() + 1, next_seqno);
+                snark
+                    .insert_inbox_message(MessageEntry::new(
+                        inbox_msg.source,
+                        inbox_msg.incl_epoch,
+                        inbox_msg.payload.clone(),
+                    ))
+                    .expect("insert inbox");
+                Ok::<(), DaError>(())
+            })
+            .expect("update snark")
+            .expect("snark ok");
+
+        assert_eq!(
+            applied.compute_state_root().expect("applied root"),
+            expected.compute_state_root().expect("expected root"),
+        );
+
+        assert_eq!(applied.cur_slot(), expected.cur_slot());
+        assert_eq!(applied.limbo_funds(), expected.limbo_funds());
+        for id in [pre_accounts.empty.id, pre_accounts.snark.id, new_id] {
+            let a = applied
+                .get_account_state(id)
+                .unwrap()
+                .expect("applied acct");
+            let e = expected
+                .get_account_state(id)
+                .unwrap()
+                .expect("expected acct");
+            assert_eq!(a.balance(), e.balance(), "balance mismatch for {id:?}");
+        }
+        let a_snark = applied
+            .get_account_state(pre_accounts.snark.id)
+            .unwrap()
+            .unwrap()
+            .as_snark_account()
+            .expect("snark");
+        assert_eq!(*a_snark.seqno().inner(), 2);
+        assert_eq!(a_snark.inner_state_root(), inbox_root);
+        assert_eq!(a_snark.next_inbox_msg_idx(), 1);
+    }
+
+    /// Applies a rich diff (global + two new accounts + balance + snark sub-diff) through the real
+    /// apply path.
+    ///
+    /// Unlike the other apply tests, this creates two new accounts in one diff, exercising the
+    /// `expected_serial.incr()` loop and confirming both land at consecutive serials. The diff is
+    /// built inline against the pre-state's actual serials; the golden `populated_state_diff` is
+    /// codec-only (its account-diff serials are not seeded in any test pre-state).
+    #[test]
+    fn test_apply_rich_diff_with_multiple_new_accounts() {
+        let pre_accounts = pre_state_with_accounts();
+        let mut state = pre_accounts.state.clone();
+        let pre_slot = state.cur_slot();
+        let next_serial = state.next_account_serial();
+        let new_id_a = test_account_id(0xA1);
+        let new_id_b = test_account_id(0xA2);
+        let inbox_root = Hash::from([0x22u8; 32]);
+
+        let diff = OLStateDiffV1::new(
+            build::global_diff(5, Some(SignedVarInt::positive(900))),
+            build::ledger_diff(
+                vec![
+                    NewAccountEntryV1::new(new_id_a, build::empty_init(1_000)),
+                    NewAccountEntryV1::new(new_id_b, build::empty_init(500)),
+                ],
+                vec![
+                    AccountDiffEntryV1::new(
+                        pre_accounts.empty.serial,
+                        build::balance_diff(SignedVarInt::positive(250)),
+                    ),
+                    AccountDiffEntryV1::new(
+                        pre_accounts.snark.serial,
+                        AccountDiffV1::new(
+                            DaCounter::new_unchanged(),
+                            build::snark_diff(
+                                3,
+                                Some(inbox_root),
+                                2,
+                                vec![
+                                    build::inbox_msg(test_account_id(0xB1), 7, 4, 0xEE),
+                                    build::inbox_msg(test_account_id(0xB2), 8, 16, 0xCD),
+                                ],
+                                None,
+                            ),
+                        ),
+                    ),
+                ],
+            ),
+        );
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(diff), &mut state)
+            .expect("apply rich diff");
+
+        assert_eq!(state.cur_slot(), pre_slot + 5);
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(900).expect("amount must not exceed the Bitcoin money supply")
+        );
+
+        let empty = state
+            .get_account_state(pre_accounts.empty.id)
+            .unwrap()
+            .expect("empty account");
+        assert_eq!(
+            empty.balance(),
+            BitcoinAmount::try_from(1_250)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
+
+        let snark = state
+            .get_account_state(pre_accounts.snark.id)
+            .unwrap()
+            .expect("snark account")
+            .as_snark_account()
+            .expect("is snark");
+        assert_eq!(*snark.seqno().inner(), 3);
+        assert_eq!(snark.inner_state_root(), inbox_root);
+        assert_eq!(snark.next_inbox_msg_idx(), 2);
+        assert_eq!(snark.inbox_mmr().num_entries(), 2);
+
+        // Both new accounts land at consecutive serials, in declaration order.
+        assert_eq!(
+            state.find_account_id_by_serial(next_serial).unwrap(),
+            Some(new_id_a)
+        );
+        assert_eq!(
+            state.find_account_id_by_serial(next_serial.incr()).unwrap(),
+            Some(new_id_b)
+        );
+        assert_eq!(
+            account_balance(&state, new_id_a),
+            BitcoinAmount::try_from(1_000)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
+        assert_eq!(
+            account_balance(&state, new_id_b),
+            BitcoinAmount::try_from(500).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    #[test]
+    fn test_apply_empty_diff_is_noop() {
+        let pre_accounts = pre_state_with_accounts();
+        let before_root = pre_accounts
+            .state
+            .compute_state_root()
+            .expect("root before");
+
+        let mut state = pre_accounts.state.clone();
+        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer>::new(OLStateDiffV1::default());
+        assert!(DaWrite::is_default(&ol_diff));
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(OLStateDiffV1::default()), &mut state)
+            .expect("apply empty diff");
+
+        assert_eq!(state.compute_state_root().expect("root after"), before_root);
+    }
+
+    #[test]
+    fn test_validate_rejects_account_diff_serial_out_of_range() {
+        let diff = account_diffs_at(&[5]);
+        let result = validate_ledger_entries(AccountSerial::from(5u32), &diff);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff(
+                "account diff serial out of range"
+            ))
+        ));
+    }
+
+    /// Builds account diffs with exactly the given serials, in order.
+    fn account_diffs_at(serials: &[u32]) -> OLStateDiffV1 {
+        OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                serials
+                    .iter()
+                    .map(|s| {
+                        AccountDiffEntryV1::new(
+                            AccountSerial::from(*s),
+                            build::balance_diff(SignedVarInt::positive(1)),
+                        )
+                    })
+                    .collect(),
+            ),
+        )
+    }
+
+    #[test]
+    fn test_validate_rejects_duplicate_account_diff_serial() {
+        let diff = account_diffs_at(&[1, 1]);
+        let result = validate_ledger_entries(AccountSerial::from(5u32), &diff);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff(
+                "account diff serials not strictly increasing"
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_validate_rejects_decreasing_account_diff_serial() {
+        let diff = account_diffs_at(&[3, 2]);
+        let result = validate_ledger_entries(AccountSerial::from(5u32), &diff);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff(
+                "account diff serials not strictly increasing"
+            ))
+        ));
+    }
+
+    /// Account-diff serials need only be strictly increasing and in range.
+    #[test]
+    fn test_validate_accepts_gapped_account_diff_serials() {
+        let diff = account_diffs_at(&[1, 3]);
+        assert!(validate_ledger_entries(AccountSerial::from(5u32), &diff).is_ok());
+    }
+
+    /// Pins the in-range boundary: `pre_serial - 1` is the max accepted serial.
+    #[test]
+    fn test_validate_accepts_max_in_range_account_diff_serial() {
+        let pre_serial = 5u32;
+        let diff = account_diffs_at(&[pre_serial - 1]);
+        assert!(validate_ledger_entries(AccountSerial::from(pre_serial), &diff).is_ok());
+
+        let at_bound = account_diffs_at(&[pre_serial]);
+        assert!(matches!(
+            validate_ledger_entries(AccountSerial::from(pre_serial), &at_bound),
+            Err(DaError::InvalidLedgerDiff(
+                "account diff serial out of range"
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_apply_rejects_snark_diff_on_non_snark_account() {
+        let pre_accounts = pre_state_with_accounts();
+        let mut state = pre_accounts.state.clone();
+
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                Vec::new(),
+                vec![AccountDiffEntryV1::new(
+                    pre_accounts.empty.serial,
+                    AccountDiffV1::new(
+                        DaCounter::new_unchanged(),
+                        build::snark_diff(1, None, 0, Vec::new(), None),
+                    ),
+                )],
+            ),
+        );
+        let result = OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(diff), &mut state);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidStateDiff(
+                "snark diff applied to non-snark account"
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_poll_context_rejects_malformed_vk() {
+        let pre_accounts = pre_state_with_accounts();
+        let bad_vk = vec![0xFFu8; 3];
+        let init = build::snark_init(1, Hash::from([0u8; 32]), bad_vk);
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                vec![NewAccountEntryV1::new(test_account_id(0x40), init)],
+                Vec::new(),
+            ),
+        );
+        let result = poll_ol_state_diff(&pre_accounts.state, diff);
+        assert!(matches!(result, Err(DaError::InvalidPredicateKey(_))));
+    }
+
+    /// A valid predicate type with a condition longer than the SSZ bound must be rejected
+    /// with a `DaError`, not panic on the owned conversion.
+    #[test]
+    fn test_poll_context_rejects_oversized_vk_condition() {
+        let pre_accounts = pre_state_with_accounts();
+        let mut oversized_vk = vec![PredicateTypeId::AlwaysAccept.as_u8()];
+        oversized_vk.extend(vec![0u8; MAX_CONDITION_LEN as usize + 1]);
+        let init = build::snark_init(1, Hash::from([0u8; 32]), oversized_vk);
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::default(),
+            build::ledger_diff(
+                vec![NewAccountEntryV1::new(test_account_id(0x40), init)],
+                Vec::new(),
+            ),
+        );
+        let result = poll_ol_state_diff(&pre_accounts.state, diff);
+        assert!(matches!(result, Err(DaError::InvalidPredicateKey(_))));
+    }
+
+    #[test]
+    fn test_snark_init_vk_round_trips_at_max_len() {
+        // MAX_VK_BYTES is the largest value representable by the u16 length prefix.
+        let vk = vec![0xABu8; MAX_VK_BYTES];
+        let init = SnarkAccountInitV1::new(Hash::from([1u8; 32]), vk);
+        let encoded = encode_to_vec(&init).expect("encode max-len vk");
+        let decoded: SnarkAccountInitV1 = decode_buf_exact(&encoded).expect("decode max-len vk");
+        assert_eq!(decoded, init);
+    }
+
+    #[test]
+    fn test_da_message_entry_round_trips_at_max_payload() {
+        let payload = MsgPayload::from_bytes(
+            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
+            vec![0x5Au8; MAX_MSG_PAYLOAD_BYTES],
+        )
+        .expect("payload at boundary fits SSZ max");
+        let entry = DaMessageEntryV1::new(test_account_id(7), 3, payload);
+        let encoded = encode_to_vec(&entry).expect("encode boundary entry");
+        let decoded: DaMessageEntryV1 = decode_buf_exact(&encoded).expect("decode boundary entry");
+        assert_eq!(decoded, entry);
+    }
+
+    /// Frozen wire-format fixture for [`OLDaPayloadV1`].
+    ///
+    /// The hex was derived from the encoder and acts as a drift detector, not a hand-verified spec
+    /// oracle.
+    const GOLDEN_PAYLOAD_V1_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba0300000001020e0322222222222222222222222222222222222222222222222222222222222222220200030002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+
+    fn hex_to_bytes(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("valid hex"))
+            .collect()
+    }
+
+    #[test]
+    fn test_golden_payload_v1_wire_format_is_stable() {
+        let golden = hex_to_bytes(GOLDEN_PAYLOAD_V1_HEX);
+
+        let encoded = encode_to_vec(&OLDaPayloadV1::new(populated_state_diff()))
+            .expect("encode populated payload");
+        assert_eq!(
+            encoded, golden,
+            "wire format drifted from the golden fixture; if intentional, regenerate the constant \
+             and bump the compatibility note on OLDaPayloadV1"
+        );
+
+        let decoded = decode_ol_da_payload_bytes(&golden).expect("decode golden payload");
+        let reencoded = encode_to_vec(&decoded).expect("re-encode decoded golden");
+        assert_eq!(reencoded, golden);
+    }
+
+    /// Proptest strategies producing arbitrary, well-formed (encodable) [`OLStateDiffV1`] trees.
+    mod strategy {
+        use proptest::prelude::*;
+
+        use super::{build, *};
+
+        fn hash() -> impl Strategy<Value = Hash> {
+            any::<[u8; 32]>().prop_map(Hash::from)
+        }
+
+        fn account_id() -> impl Strategy<Value = AccountId> {
+            any::<[u8; 32]>().prop_map(AccountId::from)
+        }
+
+        fn signed_delta() -> impl Strategy<Value = SignedVarInt> {
+            (any::<bool>(), 1u64..1_000_000).prop_map(|(pos, mag)| {
+                if pos {
+                    SignedVarInt::positive(mag)
+                } else {
+                    SignedVarInt::negative(mag)
+                }
+            })
+        }
+
+        fn account_init() -> impl Strategy<Value = AccountInitV1> {
+            let empty = (0u64..1_000_000).prop_map(build::empty_init);
+            // VK length stays well under MAX_VK_BYTES; codec carries it as opaque bytes.
+            let snark = (
+                0u64..1_000_000,
+                hash(),
+                prop::collection::vec(any::<u8>(), 0..64),
+            )
+                .prop_map(|(bal, root, vk)| build::snark_init(bal, root, vk));
+            prop_oneof![empty, snark]
+        }
+
+        fn inbox_msg() -> impl Strategy<Value = DaMessageEntryV1> {
+            (account_id(), any::<u32>(), 0usize..256, any::<u8>())
+                .prop_map(|(src, epoch, len, byte)| build::inbox_msg(src, epoch, len, byte))
+        }
+
+        fn snark_diff() -> impl Strategy<Value = SnarkAccountDiffV1> {
+            (
+                any::<u16>(),
+                prop::option::of(hash()),
+                any::<u64>(),
+                prop::collection::vec(inbox_msg(), 0..4),
+                prop::option::of(prop::collection::vec(any::<u8>(), 0..64)),
+            )
+                .prop_map(|(seqno, root, idx, msgs, vk)| {
+                    build::snark_diff(seqno, root, idx, msgs, vk)
+                })
+        }
+
+        fn account_diff() -> impl Strategy<Value = AccountDiffV1> {
+            let balance_only = signed_delta().prop_map(build::balance_diff);
+            let snark_only =
+                snark_diff().prop_map(|s| AccountDiffV1::new(DaCounter::new_unchanged(), s));
+            // Both members set, exercising the compound mask.
+            let both = (signed_delta(), snark_diff())
+                .prop_map(|(d, s)| AccountDiffV1::new(DaCounter::new_changed(d), s));
+            prop_oneof![balance_only, snark_only, both]
+        }
+
+        fn global_diff() -> impl Strategy<Value = GlobalStateDiffV1> {
+            (any::<u16>(), prop::option::of(signed_delta()))
+                .prop_map(|(slot, limbo)| build::global_diff(slot, limbo))
+        }
+
+        /// Strategy for arbitrary encodable [`OLStateDiffV1`] trees, including empty/default shapes.
+        pub(super) fn state_diff() -> impl Strategy<Value = OLStateDiffV1> {
+            let new_accounts = prop::collection::vec(
+                (account_id(), account_init())
+                    .prop_map(|(id, init)| NewAccountEntryV1::new(id, init)),
+                0..4,
+            );
+            let account_diffs = prop::collection::vec(
+                (any::<u32>(), account_diff())
+                    .prop_map(|(s, d)| AccountDiffEntryV1::new(AccountSerial::from(s), d)),
+                0..4,
+            );
+            (global_diff(), new_accounts, account_diffs).prop_map(|(global, news, diffs)| {
+                OLStateDiffV1::new(global, build::ledger_diff(news, diffs))
+            })
+        }
+    }
+
+    proptest::proptest! {
+        /// Codec is a retraction: re-encoding a decoded payload reproduces the original bytes.
+        ///
+        /// This is structural, not semantic: it cannot detect lossy decode that re-encodes to the
+        /// same bytes. Value-level equality is blocked by missing `PartialEq` on `da-framework`
+        /// primitives.
+        #[test]
+        fn proptest_payload_codec_retraction(diff in strategy::state_diff()) {
+            let bytes = encode_to_vec(&OLDaPayloadV1::new(diff)).expect("encode payload");
+            let decoded = decode_ol_da_payload_bytes(&bytes).expect("decode payload");
+            let reencoded = encode_to_vec(&decoded).expect("re-encode payload");
+            proptest::prop_assert_eq!(reencoded, bytes);
+        }
+    }
+}
