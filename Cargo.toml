@@ -89,6 +89,9 @@ rust.unused_must_use = "deny"
 clippy.allow_attributes = "warn"
 clippy.allow_attributes_without_reason = "warn"
 clippy.absolute_paths = "warn"
+clippy.format_push_string = "warn"
+clippy.unused_self = "deny"
+clippy.new_ret_no_self = "warn"
 rustdoc.all = "warn"
 
 [workspace.dependencies]
