@@ -47,7 +47,7 @@ mod sequencer_services {
     use crate::{
         checkpoint_auth::CheckpointSequencerKeyProvider,
         checkpoint_publish::CheckpointPublishPolicy,
-        helpers::generate_sequencer_address,
+        helpers::{build_btcio_params, generate_sequencer_address},
         run_context::{SequencerServiceHandles, ServiceHandlesBuilder},
     };
 
@@ -91,7 +91,7 @@ mod sequencer_services {
             nodectx.storage().handle().clone(),
             broadcast_db,
         ));
-        let btcio_params = super::build_btcio_params(
+        let btcio_params = build_btcio_params(
             nodectx.asm_params(),
             nodectx.config().btcio.l1_reorg_safe_depth,
         );

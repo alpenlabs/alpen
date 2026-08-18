@@ -95,16 +95,11 @@ impl CheckpointPublishPolicy {
 impl PublishPolicy for CheckpointPublishPolicy {
     async fn decide(&self, idx: u64, tx: &Transaction) -> PublishDecision {
         match publication_for_tx(self.storage.db().as_ref(), idx, tx, &self.parser) {
-            Ok(Publication::Checkpoint {
-                checkpoint,
-                member,
-                commit_status,
-                reveal_status,
-            }) => pair_decision(
-                self.decide_checkpoint(&checkpoint).await,
-                member,
-                commit_status,
-                reveal_status,
+            Ok(Publication::Checkpoint(ckpt_pub)) => pair_decision(
+                self.decide_checkpoint(&ckpt_pub.checkpoint).await,
+                ckpt_pub.member,
+                ckpt_pub.commit_status,
+                ckpt_pub.reveal_status,
             ),
             Ok(Publication::Other) => PublishDecision::Publish,
             Ok(Publication::Unknown) => PublishDecision::Defer,
@@ -158,12 +153,9 @@ fn publication_for_tx(
                 .transpose()?
                 .flatten()
                 .map(|entry| entry.status);
-            return Ok(Publication::checkpoint(
-                checkpoint,
-                PairMember::Reveal,
-                commit_status,
-                current,
-            ));
+            let ckpt_pub =
+                CheckpointPublication::new(checkpoint, PairMember::Reveal, commit_status, current);
+            return Ok(Publication::Checkpoint(ckpt_pub));
         }
         Ok(RevealKind::Other) => return Ok(Publication::Other),
         Err(()) => {}
@@ -187,36 +179,40 @@ fn publication_for_tx(
         return Ok(Publication::Unknown);
     }
     Ok(match reveal_kind(&reveal, parser) {
-        Ok(RevealKind::Checkpoint(checkpoint)) => Publication::checkpoint(
-            checkpoint,
-            PairMember::Commit,
-            current,
-            Some(reveal_entry.status),
-        ),
+        Ok(RevealKind::Checkpoint(checkpoint)) => {
+            Publication::Checkpoint(CheckpointPublication::new(
+                checkpoint,
+                PairMember::Commit,
+                current,
+                Some(reveal_entry.status),
+            ))
+        }
         Ok(RevealKind::Other) => Publication::Other,
         Err(()) => Publication::Unknown,
     })
 }
 
 enum Publication {
-    Checkpoint {
-        checkpoint: Box<CheckpointPayload>,
-        member: PairMember,
-        commit_status: Option<L1TxStatus>,
-        reveal_status: Option<L1TxStatus>,
-    },
+    Checkpoint(CheckpointPublication),
     Other,
     Unknown,
 }
 
-impl Publication {
-    fn checkpoint(
+struct CheckpointPublication {
+    checkpoint: Box<CheckpointPayload>,
+    member: PairMember,
+    commit_status: Option<L1TxStatus>,
+    reveal_status: Option<L1TxStatus>,
+}
+
+impl CheckpointPublication {
+    fn new(
         checkpoint: Box<CheckpointPayload>,
         member: PairMember,
         commit_status: Option<L1TxStatus>,
         reveal_status: Option<L1TxStatus>,
     ) -> Self {
-        Self::Checkpoint {
+        Self {
             checkpoint,
             member,
             commit_status,
@@ -432,14 +428,14 @@ mod tests {
         decision: PublishDecision,
     ) -> PublishDecision {
         match publication_for_tx(db, idx, tx, &ParseConfig::new(TEST_MAGIC_BYTES)).unwrap() {
-            Publication::Checkpoint {
+            Publication::Other => PublishDecision::Publish,
+            Publication::Unknown => PublishDecision::Defer,
+            Publication::Checkpoint(CheckpointPublication {
                 member,
                 commit_status,
                 reveal_status,
                 ..
-            } => pair_decision(decision, member, commit_status, reveal_status),
-            Publication::Other => PublishDecision::Publish,
-            Publication::Unknown => PublishDecision::Defer,
+            }) => pair_decision(decision, member, commit_status, reveal_status),
         }
     }
 

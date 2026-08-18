@@ -136,11 +136,11 @@ fn checkpoint_commitments_from_epoch(
     Ok(commitments)
 }
 
-#[cfg(feature = "sequencer")]
 /// Groups checkpoint writer intents by commitment with one database scan.
 ///
 /// A malformed checkpoint payload returns `None`, conservatively disabling the
 /// cleanup because its relationship to the candidate artifacts is unknown.
+#[cfg(feature = "sequencer")]
 fn checkpoint_intents_by_commitment(
     db: &impl DatabaseBackend,
 ) -> Result<Option<HashMap<EpochCommitment, Vec<IntentEntry>>>> {
@@ -164,12 +164,12 @@ fn checkpoint_intents_by_commitment(
     Ok(Some(grouped))
 }
 
-#[cfg(feature = "sequencer")]
 /// Cancels every supplied writer intent before its checkpoint artifacts are deleted.
 ///
 /// Returns `true` only when every matching intent is safely terminalized. A
 /// `false` result preserves the checkpoint artifacts; independently safe intents
 /// may already have been terminalized.
+#[cfg(feature = "sequencer")]
 fn cancel_queued_checkpoint(db: &impl DatabaseBackend, intents: &[IntentEntry]) -> Result<bool> {
     let mut all_cancelled = true;
     for intent in intents {
@@ -178,11 +178,11 @@ fn cancel_queued_checkpoint(db: &impl DatabaseBackend, intents: &[IntentEntry]) 
     Ok(all_cancelled)
 }
 
-#[cfg(feature = "sequencer")]
 /// Abandons one writer intent only when no associated transaction may be live on L1.
 ///
 /// Unbundled intents are terminalized directly. Bundled intents are preserved if
 /// publication has started for either broadcaster entry.
+#[cfg(feature = "sequencer")]
 fn cancel_writer_intent(db: &impl DatabaseBackend, intent: IntentEntry) -> Result<bool> {
     let writer = db.writer_db();
     let IntentStatus::Bundled {
