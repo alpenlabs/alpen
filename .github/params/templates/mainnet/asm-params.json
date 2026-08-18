@@ -63,9 +63,9 @@
     {
       "Bridge": {
         "operators": [
-          "485e0cfb6a4923d4fdce551f43d323cabb0503a0fb144c281ab69fc332f15bc6",
-          "8178910b555a27bc8cd120b4005ca7cca78b41b8b16de6d54fb60acce9db3202",
-          "2f0dd8d32cb2c38daa67952060449b51b385d8c5e9d78b15e7c969ed6c3dc35f"
+          "02485e0cfb6a4923d4fdce551f43d323cabb0503a0fb144c281ab69fc332f15bc6",
+          "028178910b555a27bc8cd120b4005ca7cca78b41b8b16de6d54fb60acce9db3202",
+          "022f0dd8d32cb2c38daa67952060449b51b385d8c5e9d78b15e7c969ed6c3dc35f"
         ],
         "denomination": 200000000,
         "assignment_duration": 530,
