@@ -26,13 +26,19 @@ use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_storage::NodeStorage;
 use tracing::warn;
 
-pub(crate) struct CheckpointPublishPolicy {
+/// Applies checkpoint safety rules immediately before Bitcoin publication.
+#[expect(
+    missing_debug_implementations,
+    reason = "NodeStorage does not implement Debug"
+)]
+pub struct CheckpointPublishPolicy {
     storage: Arc<NodeStorage>,
     parser: ParseConfig,
 }
 
 impl CheckpointPublishPolicy {
-    pub(crate) fn new(storage: Arc<NodeStorage>, magic_bytes: MagicBytes) -> Self {
+    /// Creates a policy for the configured Bitcoin network.
+    pub fn new(storage: Arc<NodeStorage>, magic_bytes: MagicBytes) -> Self {
         Self {
             storage,
             parser: ParseConfig::new(magic_bytes),
@@ -64,7 +70,7 @@ impl CheckpointPublishPolicy {
             warn!(%err, "checkpoint safe epoch is unavailable");
             None
         });
-        accepted_checkpoint_decision(checkpoint.new_tip().epoch, safe_epoch)
+        decide_for_checkpoint_epoch(checkpoint.new_tip().epoch, safe_epoch)
     }
 
     /// Returns the final epoch from the latest client state when its L1 anchor is canonical.
@@ -95,7 +101,7 @@ impl CheckpointPublishPolicy {
 impl PublishPolicy for CheckpointPublishPolicy {
     async fn decide(&self, idx: u64, tx: &Transaction) -> PublishDecision {
         match publication_for_tx(self.storage.db().as_ref(), idx, tx, &self.parser) {
-            Ok(Publication::Checkpoint(ckpt_pub)) => pair_decision(
+            Ok(Publication::Checkpoint(ckpt_pub)) => decide_for_commit_reveal_pair(
                 self.decide_checkpoint(&ckpt_pub.checkpoint).await,
                 ckpt_pub.member,
                 ckpt_pub.commit_status,
@@ -111,7 +117,7 @@ impl PublishPolicy for CheckpointPublishPolicy {
     }
 }
 
-pub(crate) fn checkpoint_from_payload(
+pub(super) fn checkpoint_from_payload(
     payload: &L1Payload,
 ) -> Result<Option<CheckpointPayload>, ()> {
     let tag = OL_STF_CHECKPOINT_TX_TAG.as_ref();
@@ -143,7 +149,7 @@ fn publication_for_tx(
     let current = broadcast
         .get_tx_entry_by_id(txid)?
         .map(|entry| entry.status);
-    match reveal_kind(tx, parser) {
+    match classify_tx(tx, parser) {
         Ok(RevealKind::Checkpoint(checkpoint)) => {
             let commit_status = tx
                 .input
@@ -178,7 +184,7 @@ fn publication_for_tx(
     }) {
         return Ok(Publication::Unknown);
     }
-    Ok(match reveal_kind(&reveal, parser) {
+    Ok(match classify_tx(&reveal, parser) {
         Ok(RevealKind::Checkpoint(checkpoint)) => {
             Publication::Checkpoint(CheckpointPublication::new(
                 checkpoint,
@@ -226,7 +232,7 @@ enum RevealKind {
     Other,
 }
 
-fn reveal_kind(tx: &Transaction, parser: &ParseConfig) -> Result<RevealKind, ()> {
+fn classify_tx(tx: &Transaction, parser: &ParseConfig) -> Result<RevealKind, ()> {
     let tag = match parser.try_parse_tx(tx) {
         Ok(tag) => tag,
         Err(_) if is_envelope_reveal(tx) => return Ok(RevealKind::Other),
@@ -252,7 +258,7 @@ fn is_envelope_reveal(tx: &Transaction) -> bool {
 }
 
 /// Abandons reorg-safe checkpoints and defers accepted checkpoints that are not yet safe.
-fn accepted_checkpoint_decision(
+fn decide_for_checkpoint_epoch(
     checkpoint_epoch: Epoch,
     safe_epoch: Option<Epoch>,
 ) -> PublishDecision {
@@ -275,7 +281,7 @@ enum PairMember {
 /// Otherwise the commit is decided first and the reveal waits until that commit
 /// is observed, so recovery never rejects a reveal merely because its original
 /// commit is temporarily absent from the local Bitcoin node.
-fn pair_decision(
+fn decide_for_commit_reveal_pair(
     decision: PublishDecision,
     member: PairMember,
     commit_status: Option<L1TxStatus>,
@@ -435,7 +441,7 @@ mod tests {
                 commit_status,
                 reveal_status,
                 ..
-            }) => pair_decision(decision, member, commit_status, reveal_status),
+            }) => decide_for_commit_reveal_pair(decision, member, commit_status, reveal_status),
         }
     }
 
@@ -443,11 +449,11 @@ mod tests {
     fn checkpoint_and_pair_decisions_cover_safe_publication_states() {
         let epoch = Epoch::from(14u32);
         assert_eq!(
-            accepted_checkpoint_decision(epoch, None),
+            decide_for_checkpoint_epoch(epoch, None),
             PublishDecision::Defer
         );
         assert_eq!(
-            accepted_checkpoint_decision(epoch, Some(epoch)),
+            decide_for_checkpoint_epoch(epoch, Some(epoch)),
             PublishDecision::Abandon
         );
 
@@ -502,7 +508,10 @@ mod tests {
                 PublishDecision::Invalidate,
             ),
         ] {
-            assert_eq!(pair_decision(decision, member, commit, reveal), expected);
+            assert_eq!(
+                decide_for_commit_reveal_pair(decision, member, commit, reveal),
+                expected
+            );
         }
     }
 }
