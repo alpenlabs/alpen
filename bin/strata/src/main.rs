@@ -33,9 +33,6 @@ mod args;
 mod bootstrap;
 #[cfg(feature = "sequencer")]
 mod checkpoint_auth;
-#[cfg(feature = "sequencer")]
-mod checkpoint_publish;
-mod checkpoint_reconcile;
 mod config;
 mod context;
 mod css;

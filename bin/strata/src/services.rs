@@ -11,12 +11,11 @@ use strata_consensus_logic::{
 };
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::NodeContext;
-use strata_ol_checkpoint::OLCheckpointBuilder;
+use strata_ol_checkpoint::{OLCheckpointBuilder, reconcile_unaccepted_checkpoint_artifacts};
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_service::ServiceMonitor;
 
 use crate::{
-    checkpoint_reconcile::reconcile_unaccepted_checkpoint_artifacts,
     context::ensure_genesis,
     css, fcm,
     helpers::build_btcio_params,
@@ -38,6 +37,7 @@ mod sequencer_services {
     use strata_ol_block_assembly::{
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, LimitAwareSealing, MempoolProviderImpl,
     };
+    use strata_ol_checkpoint::CheckpointPublishPolicy;
     use strata_ol_mempool::MempoolHandle;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_service::DumbTickHandle;
@@ -46,7 +46,6 @@ mod sequencer_services {
 
     use crate::{
         checkpoint_auth::CheckpointSequencerKeyProvider,
-        checkpoint_publish::CheckpointPublishPolicy,
         helpers::{build_btcio_params, generate_sequencer_address},
         run_context::{SequencerServiceHandles, ServiceHandlesBuilder},
     };

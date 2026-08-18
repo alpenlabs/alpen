@@ -18,7 +18,7 @@ use strata_node_context::NodeContext;
 use tracing::{debug, info};
 
 #[cfg(feature = "sequencer")]
-use crate::checkpoint_publish::checkpoint_from_payload;
+use super::publication::checkpoint_from_payload;
 
 /// Reconciles local checkpoint artifacts after ASM's accepted checkpoint tip.
 ///
@@ -27,7 +27,7 @@ use crate::checkpoint_publish::checkpoint_from_payload;
 /// image from reusing stale pre-rotation proof artifacts. Artifacts are deleted
 /// only when every corresponding writer intent can be safely abandoned; live or
 /// ambiguous publication state preserves both halves for recovery.
-pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -> Result<()> {
+pub fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -> Result<()> {
     if nodectx.config().prover.is_none() {
         return Ok(());
     }
