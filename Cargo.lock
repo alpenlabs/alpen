@@ -8202,6 +8202,7 @@ dependencies = [
  "strata-primitives",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-predicate-keys",
+ "strata-rpc-tracing",
  "strata-service",
  "strata-snark-acct-types",
  "strata-status",
@@ -8835,6 +8836,7 @@ dependencies = [
  "http 1.5.0",
  "jsonrpsee",
  "serde",
+ "strata-rpc-tracing",
  "tokio",
  "tower 0.5.3",
  "tracing",
@@ -9905,6 +9907,19 @@ dependencies = [
  "serde_json",
  "strata-ol-rpc-api",
  "strata-open-rpc",
+]
+
+[[package]]
+name = "strata-rpc-tracing"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0-rc.2#4e9dedf044e84e78cb3d2c9fbce262777735de09"
+dependencies = [
+ "http 1.5.0",
+ "jsonrpsee",
+ "opentelemetry 0.31.0",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-opentelemetry",
 ]
 
 [[package]]
