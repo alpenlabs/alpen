@@ -28,14 +28,12 @@
 /crates/ol/ @delbonis @krsnapaudel @bewakes
 /crates/acct-types/ @delbonis @krsnapaudel @bewakes
 /crates/bridge-types/ @delbonis @krsnapaudel @bewakes
-/crates/ledger-types/ @delbonis @krsnapaudel @bewakes
 /crates/snark-*/ @delbonis @krsnapaudel @bewakes
 
 /crates/chain*/ @prajwolrg @delbonis @krsnapaudel
 /crates/consensus-logic/ @prajwolrg @delbonis @krsnapaudel
 /crates/csm-*/ @prajwolrg @krsnapaudel @bewakes
 /crates/node-context/ @prajwolrg @krsnapaudel @bewakes
-/crates/state/ @delbonis @krsnapaudel @bewakes
 
 /crates/db/ @krsnapaudel @bewakes @delbonis
 /crates/storage/ @krsnapaudel @bewakes @delbonis
@@ -48,7 +46,6 @@
 /provers/ @purusang @prajwolrg @evgenyzdanovich
 
 /crates/key-derivation/ @storopoli @prajwolrg @delbonis
-/crates/mpt/ @evgenyzdanovich @delbonis @krsnapaudel
 /crates/primitives/ @storopoli @prajwolrg @bewakes
 /crates/da-framework/ @storopoli @prajwolrg @delbonis @evgenyzdanovich
 /crates/test-utils/ @voidash @delbonis
