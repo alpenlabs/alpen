@@ -39,15 +39,16 @@
 /crates/storage/ @krsnapaudel @bewakes @delbonis
 /crates/storage-common/ @krsnapaudel @bewakes @delbonis
 
-/crates/rpc/ @prajwolrg @krsnapaudel @bewakes
+/crates/rpc/ @krsnapaudel @bewakes
 /crates/proof-impl/ @purusang @prajwolrg @evgenyzdanovich @irnb
 /crates/prover-core/ @prajwolrg @evgenyzdanovich @irnb
 /crates/zkvm/ @prajwolrg @evgenyzdanovich @irnb
+/crates/paas/ @prajwolrg @evgenyzdanovich @irnb
 /provers/ @purusang @prajwolrg @evgenyzdanovich
 
 /crates/key-derivation/ @storopoli @prajwolrg @delbonis
 /crates/primitives/ @storopoli @prajwolrg @bewakes
-/crates/da-framework/ @storopoli @prajwolrg @delbonis @evgenyzdanovich
+/crates/da-framework/ @storopoli @prajwolrg @delbonis @evgenyzdanovich @irnb
 /crates/test-utils/ @voidash @delbonis
 
 # Binaries
