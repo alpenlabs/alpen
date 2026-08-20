@@ -7,16 +7,16 @@
 # CI, local env, repo tooling
 /.github/workflows/ @storopoli @purusang @voidash @alexhui01
 /.github/actions/ @storopoli @purusang @voidash @alexhui01
-/.github/dependabot.yml @storopoli @prajwolrg @purusang
-/.config/ @storopoli @prajwolrg @voidash
-/.justfile @storopoli @prajwolrg @voidash
+/.github/dependabot.yml @storopoli @purusang
+/.config/ @storopoli @voidash
+/.justfile @storopoli @voidash
 /codecov.yml @storopoli @voidash
-/contrib/ @storopoli @prajwolrg @voidash
+/contrib/ @storopoli @voidash
 /flake.nix @storopoli
 /flake.lock @storopoli
-/.codespellrc @storopoli @prajwolrg @voidash
-/.editorconfig @storopoli @prajwolrg @voidash
-/.vscode/ @storopoli @prajwolrg @voidash
+/.codespellrc @storopoli @voidash
+/.editorconfig @storopoli @voidash
+/.vscode/ @storopoli @voidash
 
 # Containers
 **/Docker* @purusang @voidash @alexhui01
@@ -30,10 +30,10 @@
 /crates/bridge-types/ @delbonis @krsnapaudel @bewakes
 /crates/snark-*/ @delbonis @krsnapaudel @bewakes
 
-/crates/chain*/ @prajwolrg @delbonis @krsnapaudel
-/crates/consensus-logic/ @prajwolrg @delbonis @krsnapaudel
-/crates/csm-*/ @prajwolrg @krsnapaudel @bewakes
-/crates/node-context/ @prajwolrg @krsnapaudel @bewakes
+/crates/chain*/ @delbonis @krsnapaudel
+/crates/consensus-logic/ @delbonis @krsnapaudel
+/crates/csm-*/ @krsnapaudel @bewakes
+/crates/node-context/ @krsnapaudel @bewakes
 
 /crates/db/ @krsnapaudel @bewakes @delbonis
 /crates/storage/ @krsnapaudel @bewakes @delbonis
@@ -63,17 +63,17 @@
 /benches/ @storopoli @krsnapaudel
 
 # Dependency metadata overrides. Keep these after crate/bin rules.
-**/Cargo.toml @prajwolrg @storopoli
-**/Cargo.lock @prajwolrg @storopoli
+**/Cargo.toml @storopoli
+**/Cargo.lock @storopoli
 
 # Repo policy/admin surfaces
 # keep last to avoid being overridden by other rules
 /.github/CODEOWNERS @pramodkandel @barakshani
 /.github/ @storopoli @purusang @voidash @alexhui01
-/.gitignore @storopoli @prajwolrg
-/README.md @storopoli @prajwolrg @barakshani @john-light @pramodkandel
+/.gitignore @storopoli
+/README.md @storopoli @barakshani @john-light @pramodkandel
 /CONTRIBUTING.md @pramodkandel @barakshani
-/AGENTS.md @storopoli @prajwolrg
-/CLAUDE.md @storopoli @prajwolrg
+/AGENTS.md @storopoli
+/CLAUDE.md @storopoli
 /LICENSE-* @pramodkandel @barakshani
 
