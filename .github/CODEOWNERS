@@ -53,10 +53,10 @@
 
 # Binaries
 /bin/strata/ @storopoli @krsnapaudel @bewakes
-/bin/datatool/ @prajwolrg @krsnapaudel @voidash
+/bin/datatool/ @krsnapaudel @voidash
 /bin/strata-dbtool/ @krsnapaudel @delbonis
 /bin/strata-test-cli/ @krsnapaudel @voidash
-/bin/prover-perf/ @prajwolrg @purusang @evgenyzdanovich
+/bin/prover-perf/ @prajwolrg @purusang
 /bin/strata-signer/ @purusang @krsnapaudel
 
 # Tests and benchmarks
