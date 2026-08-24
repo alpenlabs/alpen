@@ -30,7 +30,7 @@
 /crates/bridge-types/ @delbonis @krsnapaudel @bewakes
 /crates/snark-*/ @delbonis @krsnapaudel @bewakes
 
-/crates/chain*/ @delbonis @krsnapaudel
+/crates/chain-worker/ @delbonis @krsnapaudel
 /crates/consensus-logic/ @delbonis @krsnapaudel
 /crates/csm-*/ @krsnapaudel @bewakes
 /crates/node-context/ @krsnapaudel @bewakes
