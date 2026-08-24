@@ -7,16 +7,16 @@
 # CI, local env, repo tooling
 /.github/workflows/ @storopoli @purusang @voidash @alexhui01
 /.github/actions/ @storopoli @purusang @voidash @alexhui01
-/.github/dependabot.yml @storopoli @prajwolrg @purusang
-/.config/ @storopoli @prajwolrg @voidash
-/.justfile @storopoli @prajwolrg @voidash
+/.github/dependabot.yml @storopoli @purusang
+/.config/ @storopoli @voidash
+/.justfile @storopoli @voidash
 /codecov.yml @storopoli @voidash
-/contrib/ @storopoli @prajwolrg @voidash
+/contrib/ @storopoli @voidash
 /flake.nix @storopoli
 /flake.lock @storopoli
-/.codespellrc @storopoli @prajwolrg @voidash
-/.editorconfig @storopoli @prajwolrg @voidash
-/.vscode/ @storopoli @prajwolrg @voidash
+/.codespellrc @storopoli @voidash
+/.editorconfig @storopoli @voidash
+/.vscode/ @storopoli @voidash
 
 # Containers
 **/Docker* @purusang @voidash @alexhui01
@@ -28,37 +28,35 @@
 /crates/ol/ @delbonis @krsnapaudel @bewakes
 /crates/acct-types/ @delbonis @krsnapaudel @bewakes
 /crates/bridge-types/ @delbonis @krsnapaudel @bewakes
-/crates/ledger-types/ @delbonis @krsnapaudel @bewakes
 /crates/snark-*/ @delbonis @krsnapaudel @bewakes
 
-/crates/chain*/ @prajwolrg @delbonis @krsnapaudel
-/crates/consensus-logic/ @prajwolrg @delbonis @krsnapaudel
-/crates/csm-*/ @prajwolrg @krsnapaudel @bewakes
-/crates/node-context/ @prajwolrg @krsnapaudel @bewakes
-/crates/state/ @delbonis @krsnapaudel @bewakes
+/crates/chain-worker/ @delbonis @krsnapaudel @storopoli
+/crates/consensus-logic/ @delbonis @krsnapaudel @storopoli
+/crates/csm-*/ @krsnapaudel @bewakes @storopoli
+/crates/node-context/ @krsnapaudel @bewakes @storopoli
 
 /crates/db/ @krsnapaudel @bewakes @delbonis
 /crates/storage/ @krsnapaudel @bewakes @delbonis
 /crates/storage-common/ @krsnapaudel @bewakes @delbonis
 
-/crates/rpc/ @prajwolrg @krsnapaudel @bewakes
+/crates/rpc/ @krsnapaudel @bewakes
 /crates/proof-impl/ @purusang @prajwolrg @evgenyzdanovich @irnb
 /crates/prover-core/ @prajwolrg @evgenyzdanovich @irnb
 /crates/zkvm/ @prajwolrg @evgenyzdanovich @irnb
+/crates/paas/ @prajwolrg @evgenyzdanovich @irnb
 /provers/ @purusang @prajwolrg @evgenyzdanovich
 
 /crates/key-derivation/ @storopoli @prajwolrg @delbonis
-/crates/mpt/ @evgenyzdanovich @delbonis @krsnapaudel
 /crates/primitives/ @storopoli @prajwolrg @bewakes
-/crates/da-framework/ @storopoli @prajwolrg @delbonis @evgenyzdanovich
+/crates/da-framework/ @storopoli @prajwolrg @delbonis @evgenyzdanovich @irnb
 /crates/test-utils/ @voidash @delbonis
 
 # Binaries
 /bin/strata/ @storopoli @krsnapaudel @bewakes
-/bin/datatool/ @prajwolrg @krsnapaudel @voidash
+/bin/datatool/ @krsnapaudel @voidash
 /bin/strata-dbtool/ @krsnapaudel @delbonis
 /bin/strata-test-cli/ @krsnapaudel @voidash
-/bin/prover-perf/ @prajwolrg @purusang @evgenyzdanovich
+/bin/prover-perf/ @prajwolrg @purusang
 /bin/strata-signer/ @purusang @krsnapaudel
 
 # Tests and benchmarks
@@ -66,17 +64,17 @@
 /benches/ @storopoli @krsnapaudel
 
 # Dependency metadata overrides. Keep these after crate/bin rules.
-**/Cargo.toml @prajwolrg @storopoli
-**/Cargo.lock @prajwolrg @storopoli
+**/Cargo.toml @storopoli
+**/Cargo.lock @storopoli
 
 # Repo policy/admin surfaces
 # keep last to avoid being overridden by other rules
 /.github/CODEOWNERS @pramodkandel @barakshani
 /.github/ @storopoli @purusang @voidash @alexhui01
-/.gitignore @storopoli @prajwolrg
-/README.md @storopoli @prajwolrg @barakshani @john-light @pramodkandel
+/.gitignore @storopoli
+/README.md @storopoli @barakshani @john-light @pramodkandel
 /CONTRIBUTING.md @pramodkandel @barakshani
-/AGENTS.md @storopoli @prajwolrg
-/CLAUDE.md @storopoli @prajwolrg
+/AGENTS.md @storopoli
+/CLAUDE.md @storopoli
 /LICENSE-* @pramodkandel @barakshani
 
