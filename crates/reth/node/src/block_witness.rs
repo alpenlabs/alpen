@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 
 use alloy_consensus::Header;
 use alloy_primitives::{keccak256, Bytes, B256};
-use reth_provider::{AccountReader, BytecodeReader, HeaderProvider, StateProofProvider};
+use reth_provider::{BytecodeReader, HeaderProvider, StateProofProvider};
 use reth_revm::{db::State, witness::ExecutionWitnessRecord, Database};
 use reth_trie::TrieInput;
 use revm_primitives::KECCAK_EMPTY;
@@ -73,8 +73,8 @@ impl BlockWitnessRecord {
 /// `codes`, BLOCKHASH range) via reth's [`ExecutionWitnessRecord`].
 /// `state_provider` must be the parent state (it serves the depth-0
 /// [`StateProofProvider::witness`] trie nodes and the pre-state code of
-/// accessed accounts), and `header_provider` must cover the BLOCKHASH
-/// ancestor range.
+/// accounts whose code changed in the block), and `header_provider` must cover
+/// the BLOCKHASH ancestor range.
 pub fn build_block_witness_from_executed_state<DB, SP, HP>(
     executed_state: &State<DB>,
     state_provider: &SP,
@@ -85,7 +85,7 @@ pub fn build_block_witness_from_executed_state<DB, SP, HP>(
 ) -> eyre::Result<BlockWitnessRecord>
 where
     DB: Database,
-    SP: StateProofProvider + AccountReader + BytecodeReader,
+    SP: StateProofProvider + BytecodeReader,
     HP: HeaderProvider<Header = Header>,
 {
     // Access set read straight out of the post-execution state — no re-run.
@@ -141,13 +141,19 @@ where
 /// This starts from reth's `record_codes` and supplements it twice:
 /// - the code of every accessed account that still carries one post-block (covers warm-attached
 ///   loads of unchanged code);
-/// - the **pre-state** code of every accessed account, fetched from the parent `state_provider`.
-///   This covers code that the block read and then replaced or cleared (today only EIP-7702
-///   re-delegation/clearing): the old code can arrive warm-attached (e.g. via the payload builder's
+/// - the pre-state code of accounts whose code *changed* within the block, fetched by its old hash
+///   from the parent `state_provider`. Today only EIP-7702 re-delegation or clearing changes code
+///   post-deploy: the old designator can arrive warm-attached (e.g. via the payload builder's
 ///   pre-warmed `CachedReads` from the parent block), so it never hits `code_by_hash`, and
-///   post-block the account carries only the new code — leaving the old one in neither store. A
-///   cold replay of the block still reads it during authorization validation, so the witness must
+///   post-block the account carries only the new code, leaving the old one in neither store. A cold
+///   replay of the block still reads it during authorization validation, so the witness must
 ///   include it.
+///
+/// The changed-code scan reads `bundle_state`, which holds only accounts with a state transition,
+/// not every accessed account. This is deliberate: an account the block merely reads without a code
+/// change (a `BALANCE`, which loads no code, or a plain call into unchanged code) needs no
+/// pre-state entry, so gating on the transition set keeps unrelated bytecode out of the witness and
+/// avoids a parent-state read per accessed account.
 fn collect_accessed_codes<DB, SP>(
     executed_state: &State<DB>,
     state_provider: &SP,
@@ -155,7 +161,7 @@ fn collect_accessed_codes<DB, SP>(
 ) -> eyre::Result<Vec<Vec<u8>>>
 where
     DB: Database,
-    SP: AccountReader + BytecodeReader,
+    SP: BytecodeReader,
 {
     let mut codes_by_hash: BTreeMap<B256, Bytes> = record_codes
         .into_iter()
@@ -189,17 +195,25 @@ where
             .or_insert_with(|| code.original_bytes());
     }
 
-    // Pre-state code of every accessed account. The post-block sweep above sees
-    // only the code an account ends the block with, so code replaced or cleared
-    // within the block is recoverable solely from the parent state.
-    for address in executed_state.cache.accounts.keys() {
-        let Some(pre_account) = state_provider.basic_account(address)? else {
+    // Pre-state code of accounts whose code changed in the block. The sweep
+    // above sees only the code an account ends the block with, so code replaced
+    // or cleared mid-block is recoverable solely from the parent state.
+    for (address, account) in &executed_state.bundle_state.state {
+        // Absent original info means the account is new this block, so it had no
+        // pre-state code to recover.
+        let Some(pre_info) = &account.original_info else {
             continue;
         };
-        let Some(pre_code_hash) = pre_account.bytecode_hash else {
-            continue;
-        };
-        if pre_code_hash == KECCAK_EMPTY || codes_by_hash.contains_key(&pre_code_hash) {
+        let pre_code_hash = pre_info.code_hash;
+
+        // `None` post-info means the account was destroyed. Skip only when the
+        // code is provably unchanged: if the block executed that code, it is
+        // already captured by `record_codes` or the sweep above.
+        let post_code_hash = account.info.as_ref().map(|info| info.code_hash);
+        if pre_code_hash == KECCAK_EMPTY
+            || post_code_hash == Some(pre_code_hash)
+            || codes_by_hash.contains_key(&pre_code_hash)
+        {
             continue;
         }
 
@@ -235,44 +249,33 @@ mod tests {
 
     use alloy_primitives::{Address, U256};
     use reth_errors::ProviderResult;
-    use reth_primitives_traits::{Account, Bytecode as RethBytecode};
-    use reth_revm::db::{states::cache_account::CacheAccount, EmptyDB, State};
+    use reth_primitives_traits::Bytecode as RethBytecode;
+    use reth_revm::db::{
+        states::cache_account::CacheAccount, AccountStatus, BundleAccount, EmptyDB, State,
+    };
     use revm::state::{AccountInfo, Bytecode};
 
     use super::*;
 
-    /// Parent-state stub serving only the two lookups the pre-state code fetch
-    /// needs.
+    /// Parent-state stub serving the pre-state bytecode lookup by hash.
     #[derive(Default)]
-    struct StubStateProvider {
-        accounts: HashMap<Address, Account>,
+    struct StubBytecodeProvider {
         codes: HashMap<B256, Bytecode>,
     }
 
-    impl StubStateProvider {
-        fn with_account_code(address: Address, code: Bytecode) -> Self {
-            let code_hash = code.hash_slow();
-            Self {
-                accounts: HashMap::from([(
-                    address,
-                    Account {
-                        nonce: 1,
-                        balance: U256::ZERO,
-                        bytecode_hash: Some(code_hash),
-                    },
-                )]),
-                codes: HashMap::from([(code_hash, code)]),
-            }
+    impl StubBytecodeProvider {
+        fn with_code(code: Bytecode) -> Self {
+            let mut provider = Self::default();
+            provider.insert(code);
+            provider
+        }
+
+        fn insert(&mut self, code: Bytecode) {
+            self.codes.insert(code.hash_slow(), code);
         }
     }
 
-    impl AccountReader for StubStateProvider {
-        fn basic_account(&self, address: &Address) -> ProviderResult<Option<Account>> {
-            Ok(self.accounts.get(address).copied())
-        }
-    }
-
-    impl BytecodeReader for StubStateProvider {
+    impl BytecodeReader for StubBytecodeProvider {
         fn bytecode_by_hash(&self, code_hash: &B256) -> ProviderResult<Option<RethBytecode>> {
             Ok(self.codes.get(code_hash).cloned().map(RethBytecode))
         }
@@ -283,6 +286,35 @@ mod tests {
         let mut raw = vec![0xef, 0x01, 0x00];
         raw.extend_from_slice(&[target; 20]);
         Bytecode::new_raw(Bytes::from(raw))
+    }
+
+    fn account_info_with_code_hash(code_hash: B256) -> AccountInfo {
+        AccountInfo {
+            balance: U256::ZERO,
+            nonce: 1,
+            code_hash,
+            code: None,
+        }
+    }
+
+    /// Records a block-level code transition on `address` in `bundle_state`:
+    /// `pre` is the account's code hash before the block, `post` after (`None`
+    /// = destroyed). This is the transition set the pre-state scan reads.
+    fn insert_code_transition(
+        state: &mut State<EmptyDB>,
+        address: Address,
+        pre: Option<B256>,
+        post: Option<B256>,
+    ) {
+        state.bundle_state.state.insert(
+            address,
+            BundleAccount::new(
+                pre.map(account_info_with_code_hash),
+                post.map(account_info_with_code_hash),
+                Default::default(),
+                AccountStatus::Changed,
+            ),
+        );
     }
 
     /// A contract whose code is attached to its account `info.code` but never
@@ -311,7 +343,7 @@ mod tests {
         // `record_executed_state` produced no codes (dedup map was empty), the
         // exact condition that dropped the bytecode before the fix.
         let codes =
-            collect_accessed_codes(&state, &StubStateProvider::default(), Vec::new()).unwrap();
+            collect_accessed_codes(&state, &StubBytecodeProvider::default(), Vec::new()).unwrap();
 
         assert!(
             codes.iter().any(|c| keccak256(c) == code_hash),
@@ -334,7 +366,7 @@ mod tests {
         );
 
         assert!(
-            collect_accessed_codes(&state, &StubStateProvider::default(), Vec::new())
+            collect_accessed_codes(&state, &StubBytecodeProvider::default(), Vec::new())
                 .unwrap()
                 .is_empty()
         );
@@ -369,7 +401,7 @@ mod tests {
         );
 
         let codes =
-            collect_accessed_codes(&state, &StubStateProvider::default(), record.codes).unwrap();
+            collect_accessed_codes(&state, &StubBytecodeProvider::default(), record.codes).unwrap();
         assert!(
             codes.iter().any(|code| keccak256(code) == code_hash),
             "block witness codes must include every accessed account info.code"
@@ -394,8 +426,8 @@ mod tests {
             CacheAccount::new_loaded(info, Default::default()),
         );
 
-        let err =
-            collect_accessed_codes(&state, &StubStateProvider::default(), Vec::new()).unwrap_err();
+        let err = collect_accessed_codes(&state, &StubBytecodeProvider::default(), Vec::new())
+            .unwrap_err();
         assert!(
             err.to_string().contains("bytecode hash mismatch"),
             "unexpected error: {err}"
@@ -424,7 +456,7 @@ mod tests {
 
         // The same bytecode arrives via reth's record_codes and the account.
         let codes =
-            collect_accessed_codes(&state, &StubStateProvider::default(), vec![raw]).unwrap();
+            collect_accessed_codes(&state, &StubBytecodeProvider::default(), vec![raw]).unwrap();
 
         assert_eq!(codes.len(), 1, "duplicate code must collapse to one entry");
         assert_eq!(keccak256(&codes[0]), code_hash);
@@ -441,19 +473,11 @@ mod tests {
         let address = Address::repeat_byte(0xaa);
         let old_designator = delegation_designator(0x77);
         let old_code_hash = old_designator.hash_slow();
-        let provider = StubStateProvider::with_account_code(address, old_designator);
+        let provider = StubBytecodeProvider::with_code(old_designator);
 
-        // Post-block state: delegation cleared, account holds no code.
+        // Block transition: delegation designator -> empty code (cleared).
         let mut state = State::builder().with_database(EmptyDB::default()).build();
-        let info = AccountInfo {
-            balance: U256::ZERO,
-            nonce: 2,
-            ..Default::default()
-        };
-        state
-            .cache
-            .accounts
-            .insert(address, CacheAccount::new_loaded(info, Default::default()));
+        insert_code_transition(&mut state, address, Some(old_code_hash), Some(KECCAK_EMPTY));
 
         // Nothing passed through code_by_hash during the build (warm attach).
         let codes = collect_accessed_codes(&state, &provider, Vec::new()).unwrap();
@@ -473,21 +497,30 @@ mod tests {
         let address = Address::repeat_byte(0xbb);
         let old_designator = delegation_designator(0x11);
         let old_code_hash = old_designator.hash_slow();
-        let provider = StubStateProvider::with_account_code(address, old_designator);
+        let provider = StubBytecodeProvider::with_code(old_designator);
 
         let new_designator = delegation_designator(0x22);
         let new_code_hash = new_designator.hash_slow();
+
+        let mut state = State::builder().with_database(EmptyDB::default()).build();
+        // Post-block the account carries the new designator (attached-code sweep
+        // captures it); the transition records the code change old -> new.
         let info = AccountInfo {
             balance: U256::ZERO,
             nonce: 2,
             code_hash: new_code_hash,
             code: Some(new_designator),
         };
-        let mut state = State::builder().with_database(EmptyDB::default()).build();
         state
             .cache
             .accounts
             .insert(address, CacheAccount::new_loaded(info, Default::default()));
+        insert_code_transition(
+            &mut state,
+            address,
+            Some(old_code_hash),
+            Some(new_code_hash),
+        );
 
         let codes = collect_accessed_codes(&state, &provider, Vec::new()).unwrap();
 
@@ -501,61 +534,101 @@ mod tests {
         );
     }
 
-    /// Pre-state code already captured by reth's record must not be re-fetched
-    /// or duplicated, and codeless pre-state accounts contribute nothing.
+    /// The efficiency guard behind reading `bundle_state` rather than every
+    /// accessed account: a contract whose code did not change (only its balance
+    /// moved) must not drag its bytecode into the witness, even when the block
+    /// touched it and the provider could serve the code. Reproduces the
+    /// `BALANCE`-sweep inflation vector.
     #[test]
-    fn prestate_fetch_dedupes_and_skips_codeless_accounts() {
-        let contract = Address::repeat_byte(0xcc);
-        let raw = Bytes::from_static(&[0x60, 0x2a]); // PUSH1 42
-        let code = Bytecode::new_raw(raw.clone());
+    fn skips_prestate_code_for_unchanged_accounts() {
+        let contract = Address::repeat_byte(0xc0);
+        let code = delegation_designator(0x99);
         let code_hash = code.hash_slow();
-        let mut provider = StubStateProvider::with_account_code(contract, code);
-
-        // An accessed EOA with no pre-state code.
-        let eoa = Address::repeat_byte(0xdd);
-        provider.accounts.insert(
-            eoa,
-            Account {
-                nonce: 3,
-                balance: U256::from(7u64),
-                bytecode_hash: None,
-            },
-        );
+        let provider = StubBytecodeProvider::with_code(code);
 
         let mut state = State::builder().with_database(EmptyDB::default()).build();
-        for address in [contract, eoa] {
-            state.cache.accounts.insert(
-                address,
-                CacheAccount::new_loaded(AccountInfo::default(), Default::default()),
-            );
-        }
+        // Balance changed, code hash identical pre/post: not a code change.
+        insert_code_transition(&mut state, contract, Some(code_hash), Some(code_hash));
 
-        // The contract's code already reached reth's record via code_by_hash.
-        let codes = collect_accessed_codes(&state, &provider, vec![raw]).unwrap();
+        let codes = collect_accessed_codes(&state, &provider, Vec::new()).unwrap();
 
-        assert_eq!(codes.len(), 1, "no duplicates, nothing for the EOA");
-        assert_eq!(keccak256(&codes[0]), code_hash);
+        assert!(
+            codes.is_empty(),
+            "unchanged-code account must not contribute pre-state bytecode"
+        );
     }
 
-    /// A pre-state code hash whose bytecode the provider cannot serve must fail
-    /// the build: the witness would be incomplete and the guest would panic
-    /// later at the by-hash lookup.
+    /// A changed-code account whose *old* code already arrived via reth's
+    /// record must not be re-fetched, and an account created this block (no
+    /// pre-state code) contributes nothing.
+    #[test]
+    fn prestate_fetch_dedupes_and_skips_new_accounts() {
+        // Re-delegated account whose old designator is already in record_codes.
+        let redelegated = Address::repeat_byte(0xcc);
+        let old = delegation_designator(0x01);
+        let old_hash = old.hash_slow();
+        let old_raw = old.original_bytes();
+        let new_hash = delegation_designator(0x02).hash_slow();
+
+        // Contract created this block: bundle records no pre-state code.
+        let created = Address::repeat_byte(0xdd);
+        let created_hash = delegation_designator(0x03).hash_slow();
+
+        // Provider could serve the old code, but the dedup must make that moot.
+        let provider = StubBytecodeProvider::with_code(old);
+
+        let mut state = State::builder().with_database(EmptyDB::default()).build();
+        insert_code_transition(&mut state, redelegated, Some(old_hash), Some(new_hash));
+        insert_code_transition(&mut state, created, None, Some(created_hash));
+
+        let codes = collect_accessed_codes(&state, &provider, vec![old_raw]).unwrap();
+
+        assert_eq!(
+            codes.len(),
+            1,
+            "old code counted once; created account adds nothing"
+        );
+        assert!(codes.iter().any(|c| keccak256(c) == old_hash));
+    }
+
+    /// A changed-code account whose old bytecode the provider cannot serve must
+    /// fail the build: the witness would be incomplete and the guest would
+    /// panic later at the by-hash lookup.
     #[test]
     fn bails_when_prestate_bytecode_is_missing_from_provider() {
         let address = Address::repeat_byte(0xee);
-        let mut provider =
-            StubStateProvider::with_account_code(address, delegation_designator(0x55));
-        provider.codes.clear();
+        let old_hash = delegation_designator(0x55).hash_slow();
+        let provider = StubBytecodeProvider::default();
 
         let mut state = State::builder().with_database(EmptyDB::default()).build();
-        state.cache.accounts.insert(
-            address,
-            CacheAccount::new_loaded(AccountInfo::default(), Default::default()),
-        );
+        insert_code_transition(&mut state, address, Some(old_hash), Some(KECCAK_EMPTY));
 
         let err = collect_accessed_codes(&state, &provider, Vec::new()).unwrap_err();
         assert!(
             err.to_string().contains("pre-state bytecode missing"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// A provider that serves bytecode not matching the requested hash must
+    /// fail the build rather than smuggle guest-unreachable code into the
+    /// witness.
+    #[test]
+    fn bails_when_prestate_bytecode_hash_mismatches() {
+        let address = Address::repeat_byte(0xef);
+        let claimed_hash = B256::repeat_byte(0x11);
+        let mut provider = StubBytecodeProvider::default();
+        // Store code under a hash that disagrees with its bytes.
+        provider
+            .codes
+            .insert(claimed_hash, delegation_designator(0x66));
+
+        let mut state = State::builder().with_database(EmptyDB::default()).build();
+        insert_code_transition(&mut state, address, Some(claimed_hash), Some(KECCAK_EMPTY));
+
+        let err = collect_accessed_codes(&state, &provider, Vec::new()).unwrap_err();
+        assert!(
+            err.to_string().contains("bytecode hash mismatch"),
             "unexpected error: {err}"
         );
     }
