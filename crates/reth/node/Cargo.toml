@@ -50,4 +50,5 @@ tracing.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+reth-primitives-traits.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
