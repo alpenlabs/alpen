@@ -70,6 +70,7 @@ class AlpenClientFactory(flexitest.Factory):
         ol_submit_token: str | None = None,
         da_config: EeDaConfig | None = None,
         batch_sealing_block_count: int = 100,
+        chunk_sealing_block_count: int | None = None,
         max_concurrent_proof_submissions: int = 2,
         dev_track_latest_epoch: bool = False,
         bridge_denomination: int = 100_000_000,
@@ -153,6 +154,9 @@ class AlpenClientFactory(flexitest.Factory):
             # the EE block builder consume inbox messages without
             # waiting on the L1 checkpoint round-trip.
             cmd.append("--dev-track-latest-epoch")
+        if chunk_sealing_block_count is not None:
+            # Omitted, the binary falls back to batch_sealing_block_count.
+            cmd.extend(["--chunk-sealing-block-count", str(chunk_sealing_block_count)])
         # fmt: on
 
         # Discovery mode configuration:
