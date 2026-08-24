@@ -60,7 +60,7 @@ impl L1BroadcastHandle {
     }
 
     /// Returns the per-transaction fee-rate ceiling used by this broadcaster.
-    pub fn max_fee_rate(&self) -> FeeRate {
+    pub(crate) fn max_fee_rate(&self) -> FeeRate {
         self.max_fee_rate
     }
 

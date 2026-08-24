@@ -49,6 +49,8 @@ bundle_interval_ms = 1000
 
 [btcio.broadcaster]
 poll_interval_ms = 1000
+# Final per-transaction guardrail; must cover the fee-bumping ceiling.
+max_fee_rate_sat_vb = 1000
 
 # Uncomment for real SP1 proving (requires strata built with prover,sp1 features)
 # [prover]

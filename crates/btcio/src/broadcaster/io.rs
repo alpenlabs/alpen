@@ -360,7 +360,31 @@ where
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::{absolute::LockTime, transaction::Version};
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::backend::DatabaseBackend;
+    use tokio::runtime::Handle;
+
     use super::*;
+    use crate::test_utils::{SendRawTransactionMode, TestBitcoinClient};
+
+    fn test_transaction() -> Transaction {
+        Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: Vec::new(),
+            output: Vec::new(),
+        }
+    }
+
+    fn test_broadcaster_io(
+        client: Arc<TestBitcoinClient>,
+        max_fee_rate: FeeRate,
+    ) -> BroadcasterIo<TestBitcoinClient> {
+        let db = get_test_sled_backend().broadcast_db();
+        let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
+        BroadcasterIo::new(client, ops, max_fee_rate)
+    }
 
     #[test]
     fn benign_minus25_strings_match() {
@@ -409,27 +433,12 @@ mod tests {
 
     #[tokio::test]
     async fn send_raw_transaction_passes_fee_guardrail() {
-        use bitcoin::{absolute::LockTime, transaction::Version};
-        use strata_db_store_sled::test_utils::get_test_sled_backend;
-        use strata_db_types::backend::DatabaseBackend;
-        use tokio::runtime::Handle;
-
-        use crate::test_utils::TestBitcoinClient;
-
         let client = Arc::new(TestBitcoinClient::new(0));
-        let db = get_test_sled_backend().broadcast_db();
-        let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
         let max_fee_rate = FeeRate::from_sat_per_vb(321).unwrap();
-        let io = BroadcasterIo::new(client.clone(), ops, max_fee_rate);
-        let tx = Transaction {
-            version: Version::TWO,
-            lock_time: LockTime::ZERO,
-            input: Vec::new(),
-            output: Vec::new(),
-        };
+        let io = test_broadcaster_io(client.clone(), max_fee_rate);
 
         assert_eq!(
-            io.send_raw_transaction(&tx).await.unwrap(),
+            io.send_raw_transaction(&test_transaction()).await.unwrap(),
             PublishTxOutcome::Published
         );
         let calls = client.send_raw_transaction_options();
@@ -439,28 +448,13 @@ mod tests {
 
     #[tokio::test]
     async fn max_fee_rate_rejection_is_retryable() {
-        use bitcoin::{absolute::LockTime, transaction::Version};
-        use strata_db_store_sled::test_utils::get_test_sled_backend;
-        use strata_db_types::backend::DatabaseBackend;
-        use tokio::runtime::Handle;
-
-        use crate::test_utils::{SendRawTransactionMode, TestBitcoinClient};
-
         let client = Arc::new(
             TestBitcoinClient::new(0)
                 .with_send_raw_transaction_mode(SendRawTransactionMode::MaxFeeRateExceeded),
         );
-        let db = get_test_sled_backend().broadcast_db();
-        let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
-        let io = BroadcasterIo::new(client, ops, FeeRate::from_sat_per_vb(1_000).unwrap());
-        let tx = Transaction {
-            version: Version::TWO,
-            lock_time: LockTime::ZERO,
-            input: Vec::new(),
-            output: Vec::new(),
-        };
+        let io = test_broadcaster_io(client, FeeRate::from_sat_per_vb(1_000).unwrap());
 
-        let outcome = io.send_raw_transaction(&tx).await.unwrap();
+        let outcome = io.send_raw_transaction(&test_transaction()).await.unwrap();
         assert!(matches!(
             outcome,
             PublishTxOutcome::RetryLater { reason }
