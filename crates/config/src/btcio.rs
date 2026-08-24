@@ -401,7 +401,7 @@ impl FeePolicy {
 }
 
 /// Configuration for btcio broadcaster.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BroadcasterConfig {
     /// How often to invoke the broadcaster, in ms.
     pub poll_interval_ms: u64,
@@ -409,28 +409,6 @@ pub struct BroadcasterConfig {
     /// Maximum fee rate Bitcoin Core may accept for any transaction broadcast by the service.
     #[serde(default = "default_broadcaster_max_fee_rate_sat_vb")]
     pub max_fee_rate_sat_vb: NonZeroU64,
-}
-
-#[derive(Deserialize)]
-struct BroadcasterConfigUnchecked {
-    poll_interval_ms: u64,
-    #[serde(default = "default_broadcaster_max_fee_rate_sat_vb")]
-    max_fee_rate_sat_vb: NonZeroU64,
-}
-
-impl<'de> Deserialize<'de> for BroadcasterConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let unchecked = BroadcasterConfigUnchecked::deserialize(deserializer)?;
-        let config = Self {
-            poll_interval_ms: unchecked.poll_interval_ms,
-            max_fee_rate_sat_vb: unchecked.max_fee_rate_sat_vb,
-        };
-        config.validate().map_err(DeError::custom)?;
-        Ok(config)
-    }
 }
 
 impl BroadcasterConfig {
@@ -611,15 +589,18 @@ mod tests {
     }
 
     #[test]
-    fn broadcaster_rejects_unrepresentable_max_fee_rate() {
+    fn btcio_rejects_unrepresentable_broadcast_max_fee_rate() {
         let unrepresentable = u64::MAX / 250 + 1;
-        let error = toml::from_str::<BroadcasterConfig>(&format!(
-            "poll_interval_ms = 200\nmax_fee_rate_sat_vb = {unrepresentable}"
-        ))
-        .expect_err("an unrepresentable maximum fee rate must be rejected")
-        .to_string();
+        let input = format!(
+            "{BTCIO_CONFIG_PREFIX}\n[broadcaster]\npoll_interval_ms = 200\nmax_fee_rate_sat_vb = {unrepresentable}"
+        );
+        let error = toml::from_str::<BtcioConfig>(&input)
+            .expect_err("an unrepresentable maximum fee rate must be rejected")
+            .to_string();
 
-        assert!(error.contains("max_fee_rate_sat_vb is too large to represent"));
+        assert!(error.contains(
+            "btcio.broadcaster.max_fee_rate_sat_vb is too large to represent as a Bitcoin fee rate"
+        ))
     }
 
     #[test]
