@@ -1,29 +1,72 @@
-use std::any::TypeId;
 use std::collections::*;
 use std::sync::Arc;
 
 use strata_gchain_types::*;
 
-/// Cached output from nodes that we've extracted and determined might be useful
-/// for later proc stages.
+/// Cached artifacts from links that we've extracted and determined might be
+/// useful for later proc stages.
+///
+/// Artifacts are keyed by the processor stage that produced them, since that's
+/// how processor stages name their dependencies (see [`ProcDeps`]).  Multiple
+/// stages may produce artifacts of the same concrete type.
 pub struct ArtifactCache<S: GChainSpec> {
-    nodes: HashMap<LinkRef<S>, BTreeMap<TypeId, Arc<dyn ProcArtifact>>>,
+    links: HashMap<LinkRef<S>, BTreeMap<ProcId, Arc<dyn DynProcArtifact>>>,
 }
 
 impl<S: GChainSpec> ArtifactCache<S> {
-    /// Gets the stored output from some processor for some node.
-    pub fn get_proc_artifact_arc<A: ProcArtifact>(
-        &self,
-        lref: &LinkRef<S>,
-    ) -> Option<&Arc<dyn ProcArtifact>> {
-        self.nodes
-            .get(lref)
-            .and_then(|atbl| atbl.get(&TypeId::of::<A>()))
+    /// Creates a new empty cache.
+    pub fn new() -> Self {
+        Self {
+            links: HashMap::new(),
+        }
     }
 
-    pub fn get_proc_artifact<A: ProcArtifact>(&self, _lref: &LinkRef<S>) -> Option<&A> {
-        // TODO(trey): need more complicated type hacks to make this work
-        unimplemented!()
+    /// Stores the artifact a processor stage produced for a link, replacing any
+    /// artifact that stage had already stored for it.
+    pub fn insert_artifact(
+        &mut self,
+        lref: LinkRef<S>,
+        proc_id: ProcId,
+        artifact: Arc<dyn DynProcArtifact>,
+    ) {
+        self.links
+            .entry(lref)
+            .or_default()
+            .insert(proc_id, artifact);
+    }
+
+    /// Gets the type-erased artifact some processor stage stored for a link.
+    pub fn get_artifact_dyn(
+        &self,
+        lref: &LinkRef<S>,
+        proc_id: ProcId,
+    ) -> Option<&Arc<dyn DynProcArtifact>> {
+        self.links.get(lref).and_then(|atbl| atbl.get(&proc_id))
+    }
+
+    /// Gets the artifact some processor stage stored for a link, downcast to its
+    /// concrete type.
+    ///
+    /// Returns `None` if the stage stored no artifact for the link, or if the
+    /// artifact it stored isn't of type `A`.
+    pub fn get_artifact<A: ProcArtifact>(
+        &self,
+        lref: &LinkRef<S>,
+        proc_id: ProcId,
+    ) -> Option<Arc<A>> {
+        let artifact = self.get_artifact_dyn(lref, proc_id)?;
+        Arc::clone(artifact).into_any_arc().downcast::<A>().ok()
+    }
+
+    /// Discards every artifact stored for a link.
+    pub fn remove_link(&mut self, lref: &LinkRef<S>) {
+        self.links.remove(lref);
+    }
+}
+
+impl<S: GChainSpec> Default for ArtifactCache<S> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

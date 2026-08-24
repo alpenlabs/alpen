@@ -21,7 +21,6 @@
 //! forwards up to the tip.
 
 use std::any::{Any, TypeId};
-use std::collections::*;
 use std::fmt::{self, Debug, Display};
 use std::str::{self, FromStr};
 use std::sync::Arc;
@@ -158,7 +157,7 @@ pub trait GChainProc: Sized + 'static {
 }
 
 /// Output from a processing stage on a link transition.
-pub trait ProcArtifact: Sync + Send + Sized + Any + 'static {
+pub trait ProcArtifact: Sync + Send + Sized + 'static {
     /// Attempts to decode a buf as the proc artifact.
     fn from_buf(buf: &[u8]) -> anyhow::Result<Self>;
 
@@ -171,6 +170,41 @@ pub trait ProcArtifact: Sync + Send + Sized + Any + 'static {
     /// actually be involved in node validation.
     fn is_link_valid(&self) -> bool {
         true
+    }
+}
+
+/// Dyn-compatible view of a [`ProcArtifact`].
+///
+/// The executor collects artifacts from every processor stage into shared
+/// storage without knowing their concrete types, so it manipulates them through
+/// this trait instead.  [`ProcArtifact`] itself can't serve this role because it
+/// is `Sized` and has a constructor returning `Self`.
+///
+/// This is blanket impl'd for every [`ProcArtifact`], so processor stages never
+/// implement it directly.
+pub trait DynProcArtifact: Sync + Send + 'static {
+    /// See [`ProcArtifact::is_link_valid`].
+    fn is_link_valid(&self) -> bool;
+
+    /// Returns the type ID of the underlying concrete artifact type.
+    fn artifact_type_id(&self) -> TypeId;
+
+    /// Converts to a handle that can be downcast back to the concrete artifact
+    /// type.
+    fn into_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+}
+
+impl<A: ProcArtifact> DynProcArtifact for A {
+    fn is_link_valid(&self) -> bool {
+        <A as ProcArtifact>::is_link_valid(self)
+    }
+
+    fn artifact_type_id(&self) -> TypeId {
+        TypeId::of::<A>()
+    }
+
+    fn into_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }
 
