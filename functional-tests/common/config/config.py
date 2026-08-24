@@ -51,6 +51,7 @@ class WriterConfig:
 @dataclass
 class BroadcasterConfig:
     poll_interval_ms: int = field(default=200)
+    max_fee_rate_sat_vb: int = field(default=1_000)
 
 
 @dataclass

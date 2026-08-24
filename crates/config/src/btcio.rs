@@ -7,7 +7,7 @@ use bitcoin::{Amount, FeeRate};
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Configuration for btcio tasks.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BtcioConfig {
     pub reader: ReaderConfig,
     pub writer: WriterConfig,
@@ -24,6 +24,32 @@ pub struct BtcioConfig {
     pub l1_reorg_safe_depth: u32,
 }
 
+#[derive(Deserialize)]
+struct BtcioConfigUnchecked {
+    reader: ReaderConfig,
+    writer: WriterConfig,
+    broadcaster: BroadcasterConfig,
+    #[serde(default = "default_l1_reorg_safe_depth")]
+    l1_reorg_safe_depth: u32,
+}
+
+impl<'de> Deserialize<'de> for BtcioConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let unchecked = BtcioConfigUnchecked::deserialize(deserializer)?;
+        let config = Self {
+            reader: unchecked.reader,
+            writer: unchecked.writer,
+            broadcaster: unchecked.broadcaster,
+            l1_reorg_safe_depth: unchecked.l1_reorg_safe_depth,
+        };
+        config.validate().map_err(DeError::custom)?;
+        Ok(config)
+    }
+}
+
 impl Default for BtcioConfig {
     fn default() -> Self {
         Self {
@@ -32,6 +58,23 @@ impl Default for BtcioConfig {
             broadcaster: BroadcasterConfig::default(),
             l1_reorg_safe_depth: default_l1_reorg_safe_depth(),
         }
+    }
+}
+
+impl BtcioConfig {
+    /// Validates relationships between Bitcoin IO policies.
+    pub fn validate(&self) -> Result<(), String> {
+        self.writer.fee_bumping.validate()?;
+        self.broadcaster.validate()?;
+
+        if self.writer.fee_bumping.max_fee_rate_sat_vb > self.broadcaster.max_fee_rate_sat_vb {
+            return Err(
+                "btcio.writer.fee_bumping.max_fee_rate_sat_vb must not exceed btcio.broadcaster.max_fee_rate_sat_vb"
+                    .to_string(),
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -358,10 +401,56 @@ impl FeePolicy {
 }
 
 /// Configuration for btcio broadcaster.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct BroadcasterConfig {
     /// How often to invoke the broadcaster, in ms.
     pub poll_interval_ms: u64,
+
+    /// Maximum fee rate Bitcoin Core may accept for any transaction broadcast by the service.
+    #[serde(default = "default_broadcaster_max_fee_rate_sat_vb")]
+    pub max_fee_rate_sat_vb: NonZeroU64,
+}
+
+#[derive(Deserialize)]
+struct BroadcasterConfigUnchecked {
+    poll_interval_ms: u64,
+    #[serde(default = "default_broadcaster_max_fee_rate_sat_vb")]
+    max_fee_rate_sat_vb: NonZeroU64,
+}
+
+impl<'de> Deserialize<'de> for BroadcasterConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let unchecked = BroadcasterConfigUnchecked::deserialize(deserializer)?;
+        let config = Self {
+            poll_interval_ms: unchecked.poll_interval_ms,
+            max_fee_rate_sat_vb: unchecked.max_fee_rate_sat_vb,
+        };
+        config.validate().map_err(DeError::custom)?;
+        Ok(config)
+    }
+}
+
+impl BroadcasterConfig {
+    /// Validates the broadcaster configuration.
+    pub fn validate(&self) -> Result<(), String> {
+        if FeeRate::from_sat_per_vb(self.max_fee_rate_sat_vb.get()).is_none() {
+            return Err(
+                "btcio.broadcaster.max_fee_rate_sat_vb is too large to represent as a Bitcoin fee rate"
+                    .to_string(),
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Returns the per-transaction broadcast fee-rate ceiling.
+    pub fn max_fee_rate(&self) -> FeeRate {
+        FeeRate::from_sat_per_vb(self.max_fee_rate_sat_vb.get())
+            .expect("config: max fee rate is bounded by validation")
+    }
 }
 
 impl Default for WriterConfig {
@@ -444,6 +533,10 @@ const fn default_fee_bumping_max_reveal_fee_headroom_sats() -> NonZeroU64 {
     nonzero_u64(10_000_000)
 }
 
+const fn default_broadcaster_max_fee_rate_sat_vb() -> NonZeroU64 {
+    nonzero_u64(1_000)
+}
+
 impl Default for ReaderConfig {
     fn default() -> Self {
         Self {
@@ -456,6 +549,7 @@ impl Default for BroadcasterConfig {
     fn default() -> Self {
         Self {
             poll_interval_ms: 5_000,
+            max_fee_rate_sat_vb: default_broadcaster_max_fee_rate_sat_vb(),
         }
     }
 }
@@ -465,6 +559,68 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+
+    const BTCIO_CONFIG_PREFIX: &str = r#"
+        [reader]
+        client_poll_dur_ms = 200
+
+        [writer]
+        write_poll_dur_ms = 200
+        fee_policy = "fixed"
+        fixed_fee_rate = 1.0
+        reveal_amount = 546
+        bundle_interval_ms = 200
+    "#;
+
+    #[test]
+    fn broadcaster_defaults_max_fee_rate() {
+        let config: BroadcasterConfig = toml::from_str("poll_interval_ms = 200")
+            .expect("broadcaster config should deserialize");
+
+        assert_eq!(config.max_fee_rate_sat_vb, nonzero_u64(1_000));
+        assert_eq!(
+            config.max_fee_rate(),
+            FeeRate::from_sat_per_vb(1_000).unwrap()
+        );
+    }
+
+    #[test]
+    fn btcio_rejects_fee_bumping_ceiling_above_broadcast_guardrail() {
+        let input = format!(
+            "{BTCIO_CONFIG_PREFIX}\n[writer.fee_bumping]\nmax_fee_rate_sat_vb = 501\n\n[broadcaster]\npoll_interval_ms = 200\nmax_fee_rate_sat_vb = 500"
+        );
+        let error = toml::from_str::<BtcioConfig>(&input)
+            .expect_err("fee bumping must stay within the broadcast guardrail")
+            .to_string();
+
+        assert!(error.contains(
+            "btcio.writer.fee_bumping.max_fee_rate_sat_vb must not exceed btcio.broadcaster.max_fee_rate_sat_vb"
+        ));
+    }
+
+    #[test]
+    fn btcio_accepts_fee_bumping_ceiling_at_broadcast_guardrail() {
+        let input = format!(
+            "{BTCIO_CONFIG_PREFIX}\n[writer.fee_bumping]\nmax_fee_rate_sat_vb = 500\n\n[broadcaster]\npoll_interval_ms = 200\nmax_fee_rate_sat_vb = 500"
+        );
+        let config = toml::from_str::<BtcioConfig>(&input)
+            .expect("matching fee ceilings should deserialize");
+
+        assert_eq!(config.writer.fee_bumping.max_fee_rate_sat_vb.get(), 500);
+        assert_eq!(config.broadcaster.max_fee_rate_sat_vb.get(), 500);
+    }
+
+    #[test]
+    fn broadcaster_rejects_unrepresentable_max_fee_rate() {
+        let unrepresentable = u64::MAX / 250 + 1;
+        let error = toml::from_str::<BroadcasterConfig>(&format!(
+            "poll_interval_ms = 200\nmax_fee_rate_sat_vb = {unrepresentable}"
+        ))
+        .expect_err("an unrepresentable maximum fee rate must be rejected")
+        .to_string();
+
+        assert!(error.contains("max_fee_rate_sat_vb is too large to represent"));
+    }
 
     #[test]
     fn fee_bumping_reveal_headroom_serde_default_and_roundtrip() {
