@@ -30,9 +30,9 @@ use bitcoind_async_client::{
     error::ClientError,
     traits::{Broadcaster, Reader, Signer, Wallet},
     types::{
-        CreateRawTransactionArguments, CreateRawTransactionInput, CreateRawTransactionOutput,
-        ImportDescriptorInput, ListUnspentQueryOptions, PreviousTransactionOutput,
-        PsbtBumpFeeOptions, SighashType, WalletCreateFundedPsbtOptions,
+        BroadcastOptions, CreateRawTransactionArguments, CreateRawTransactionInput,
+        CreateRawTransactionOutput, ImportDescriptorInput, ListUnspentQueryOptions,
+        PreviousTransactionOutput, PsbtBumpFeeOptions, SighashType, WalletCreateFundedPsbtOptions,
     },
     ClientResult,
 };
@@ -328,7 +328,11 @@ impl Reader for TestBitcoinClient {
 
 impl Broadcaster for TestBitcoinClient {
     // send_raw_transaction sends a raw transaction to the network
-    async fn send_raw_transaction(&self, _tx: &Transaction) -> ClientResult<Txid> {
+    async fn send_raw_transaction(
+        &self,
+        _tx: &Transaction,
+        _options: Option<BroadcastOptions>,
+    ) -> ClientResult<Txid> {
         match self.send_raw_transaction_mode {
             SendRawTransactionMode::Success => Ok(Txid::from_slice(&[1u8; 32]).unwrap()),
             SendRawTransactionMode::AlreadyInMempool => Err(ClientError::Server(
@@ -373,7 +377,11 @@ impl Broadcaster for TestBitcoinClient {
         })
     }
 
-    async fn submit_package(&self, _txs: &[Transaction]) -> ClientResult<SubmitPackage> {
+    async fn submit_package(
+        &self,
+        _txs: &[Transaction],
+        _options: Option<BroadcastOptions>,
+    ) -> ClientResult<SubmitPackage> {
         let some_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
         let wtxid = some_tx.compute_wtxid();
         let vsize = some_tx.vsize();
