@@ -1,8 +1,10 @@
 use std::{future::Future, sync::Arc};
 
 use anyhow::anyhow;
-use bitcoin::{BlockHash, Transaction, Txid};
-use bitcoind_async_client::{error::ClientError, traits::Broadcaster, Client};
+use bitcoin::{BlockHash, FeeRate, Transaction, Txid};
+use bitcoind_async_client::{
+    error::ClientError, traits::Broadcaster, types::BroadcastOptions, Client, ClientResult,
+};
 use serde::Deserialize;
 use strata_btc_types::BlockHashExt;
 use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
@@ -23,6 +25,24 @@ pub(crate) fn is_benign_minus25_message(msg: &str) -> bool {
     msg.contains("already-in-mempool")
         || msg.contains("already-known")
         || msg.contains("already-in-block-chain")
+}
+
+/// Reports whether Bitcoin Core rejected a transaction because its fee exceeded `maxfeerate`.
+pub(crate) fn is_max_fee_rate_exceeded_message(msg: &str) -> bool {
+    msg.contains("Fee exceeds maximum configured by user")
+}
+
+/// Broadcasts a transaction with the service's mandatory per-transaction fee ceiling.
+pub(crate) async fn send_raw_transaction_with_max_fee_rate(
+    client: &impl Broadcaster,
+    tx: &Transaction,
+    max_fee_rate: FeeRate,
+) -> ClientResult<Txid> {
+    let options = BroadcastOptions {
+        max_fee_rate: Some(max_fee_rate),
+        ..Default::default()
+    };
+    client.send_raw_transaction(tx, Some(options)).await
 }
 
 /// IO context abstraction for broadcaster service internals.
@@ -215,12 +235,17 @@ pub(crate) enum PublishTxOutcome {
 pub(crate) struct BroadcasterIo<T> {
     rpc_client: Arc<T>,
     ops: Arc<BroadcastDbOps>,
+    max_fee_rate: FeeRate,
 }
 
 impl<T> BroadcasterIo<T> {
     /// Creates a production IO adapter from RPC client and broadcast DB ops.
-    pub(crate) fn new(rpc_client: Arc<T>, ops: Arc<BroadcastDbOps>) -> Self {
-        Self { rpc_client, ops }
+    pub(crate) fn new(rpc_client: Arc<T>, ops: Arc<BroadcastDbOps>, max_fee_rate: FeeRate) -> Self {
+        Self {
+            rpc_client,
+            ops,
+            max_fee_rate,
+        }
     }
 }
 
@@ -266,10 +291,20 @@ where
         tx: &'a Transaction,
     ) -> BroadcasterResult<PublishTxOutcome> {
         let txid = tx.compute_txid();
-        match self.rpc_client.send_raw_transaction(tx, None).await {
+        match send_raw_transaction_with_max_fee_rate(
+            self.rpc_client.as_ref(),
+            tx,
+            self.max_fee_rate,
+        )
+        .await
+        {
             Ok(_) => {
                 info!(%txid, "sendrawtransaction accepted (Published)");
                 Ok(PublishTxOutcome::Published)
+            }
+            Err(ClientError::Server(-25, msg)) if is_max_fee_rate_exceeded_message(&msg) => {
+                warn!(%txid, %msg, max_fee_rate_sat_vb = self.max_fee_rate.to_sat_per_vb_ceil(), "sendrawtransaction blocked by fee guardrail");
+                Ok(PublishTxOutcome::RetryLater { reason: msg })
             }
             Err(ClientError::Server(-25, msg)) => {
                 // Bitcoind reuses code -25 for several distinct reject reasons.
@@ -360,6 +395,77 @@ mod tests {
         // AlreadyInMempool.
         assert!(!is_benign_minus25_message("already in mempool"));
         assert!(!is_benign_minus25_message("already known"));
+    }
+
+    #[test]
+    fn max_fee_rate_rejection_matches_bitcoin_core_message() {
+        assert!(is_max_fee_rate_exceeded_message(
+            "Fee exceeds maximum configured by user (e.g. -maxtxfee, maxfeerate)"
+        ));
+        assert!(!is_max_fee_rate_exceeded_message(
+            "bad-txns-inputs-missingorspent"
+        ));
+    }
+
+    #[tokio::test]
+    async fn send_raw_transaction_passes_fee_guardrail() {
+        use bitcoin::{absolute::LockTime, transaction::Version};
+        use strata_db_store_sled::test_utils::get_test_sled_backend;
+        use strata_db_types::backend::DatabaseBackend;
+        use tokio::runtime::Handle;
+
+        use crate::test_utils::TestBitcoinClient;
+
+        let client = Arc::new(TestBitcoinClient::new(0));
+        let db = get_test_sled_backend().broadcast_db();
+        let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
+        let max_fee_rate = FeeRate::from_sat_per_vb(321).unwrap();
+        let io = BroadcasterIo::new(client.clone(), ops, max_fee_rate);
+        let tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: Vec::new(),
+            output: Vec::new(),
+        };
+
+        assert_eq!(
+            io.send_raw_transaction(&tx).await.unwrap(),
+            PublishTxOutcome::Published
+        );
+        let calls = client.send_raw_transaction_options();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].as_ref().unwrap().max_fee_rate, Some(max_fee_rate));
+    }
+
+    #[tokio::test]
+    async fn max_fee_rate_rejection_is_retryable() {
+        use bitcoin::{absolute::LockTime, transaction::Version};
+        use strata_db_store_sled::test_utils::get_test_sled_backend;
+        use strata_db_types::backend::DatabaseBackend;
+        use tokio::runtime::Handle;
+
+        use crate::test_utils::{SendRawTransactionMode, TestBitcoinClient};
+
+        let client = Arc::new(
+            TestBitcoinClient::new(0)
+                .with_send_raw_transaction_mode(SendRawTransactionMode::MaxFeeRateExceeded),
+        );
+        let db = get_test_sled_backend().broadcast_db();
+        let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
+        let io = BroadcasterIo::new(client, ops, FeeRate::from_sat_per_vb(1_000).unwrap());
+        let tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: Vec::new(),
+            output: Vec::new(),
+        };
+
+        let outcome = io.send_raw_transaction(&tx).await.unwrap();
+        assert!(matches!(
+            outcome,
+            PublishTxOutcome::RetryLater { reason }
+                if is_max_fee_rate_exceeded_message(&reason)
+        ));
     }
 
     #[test]

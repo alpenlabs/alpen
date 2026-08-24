@@ -11,5 +11,8 @@ mod state;
 pub use builder::BroadcasterBuilder;
 pub use error::BroadcasterError;
 pub use handle::L1BroadcastHandle;
-pub(crate) use io::is_benign_minus25_message;
+pub(crate) use io::{
+    is_benign_minus25_message, is_max_fee_rate_exceeded_message,
+    send_raw_transaction_with_max_fee_rate,
+};
 pub use service::BroadcasterStatus;

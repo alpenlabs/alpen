@@ -1,5 +1,6 @@
 use std::{str, sync::Arc};
 
+use bitcoin::FeeRate;
 use hex::encode_to_slice;
 use strata_db_types::{
     common::L1TxId,
@@ -34,6 +35,7 @@ pub struct L1BroadcastHandle {
     ops: Arc<BroadcastDbOps>,
     sender: mpsc::Sender<BroadcasterInputMessage>,
     monitor: Option<ServiceMonitor<BroadcasterStatus>>,
+    max_fee_rate: FeeRate,
 }
 
 impl L1BroadcastHandle {
@@ -41,18 +43,25 @@ impl L1BroadcastHandle {
         sender: mpsc::Sender<BroadcasterInputMessage>,
         ops: Arc<BroadcastDbOps>,
         monitor: Option<ServiceMonitor<BroadcasterStatus>>,
+        max_fee_rate: FeeRate,
     ) -> Self {
         Self {
             ops,
             sender,
             monitor,
+            max_fee_rate,
         }
     }
 
     #[cfg(test)]
     pub(crate) fn new_for_test(ops: Arc<BroadcastDbOps>) -> Self {
         let (sender, _) = mpsc::channel::<BroadcasterInputMessage>(64);
-        Self::new(sender, ops, None)
+        Self::new(sender, ops, None, FeeRate::from_sat_per_vb(1_000).unwrap())
+    }
+
+    /// Returns the per-transaction fee-rate ceiling used by this broadcaster.
+    pub fn max_fee_rate(&self) -> FeeRate {
+        self.max_fee_rate
     }
 
     pub fn monitor(&self) -> Option<&ServiceMonitor<BroadcasterStatus>> {

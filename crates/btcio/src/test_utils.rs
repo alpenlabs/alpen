@@ -58,6 +58,8 @@ pub struct TestBitcoinClient {
     pub included_height: u64,
     /// Behavior for `send_raw_transaction`.
     pub send_raw_transaction_mode: SendRawTransactionMode,
+    /// Options received by `send_raw_transaction`.
+    pub send_raw_transaction_options: Arc<Mutex<Vec<Option<BroadcastOptions>>>>,
     /// Value returned by the mock wallet UTXO.
     pub utxo_amount_sats: u64,
     /// Fee estimate, in sat/vB, returned from `estimate_smart_fee`.
@@ -75,6 +77,7 @@ pub struct TestBitcoinClient {
 pub enum SendRawTransactionMode {
     Success,
     AlreadyInMempool,
+    MaxFeeRateExceeded,
     MissingOrInvalidInput,
     InvalidParameter,
     HttpInternalServerError,
@@ -90,6 +93,7 @@ impl TestBitcoinClient {
             // Use arbitrary value, make configurable as necessary
             included_height: 100,
             send_raw_transaction_mode: SendRawTransactionMode::Success,
+            send_raw_transaction_options: Arc::new(Mutex::new(Vec::new())),
             utxo_amount_sats: 10_000_000_000,
             estimate_smart_fee_result: 3,
             estimate_smart_fee_targets: Arc::new(Mutex::new(Vec::new())),
@@ -101,6 +105,10 @@ impl TestBitcoinClient {
     pub fn with_send_raw_transaction_mode(mut self, mode: SendRawTransactionMode) -> Self {
         self.send_raw_transaction_mode = mode;
         self
+    }
+
+    pub fn send_raw_transaction_options(&self) -> Vec<Option<BroadcastOptions>> {
+        self.send_raw_transaction_options.lock().unwrap().clone()
     }
 
     pub fn with_utxo_amount_sats(mut self, sats: u64) -> Self {
@@ -332,13 +340,21 @@ impl Broadcaster for TestBitcoinClient {
     async fn send_raw_transaction(
         &self,
         _tx: &Transaction,
-        _options: Option<BroadcastOptions>,
+        options: Option<BroadcastOptions>,
     ) -> ClientResult<Txid> {
+        self.send_raw_transaction_options
+            .lock()
+            .unwrap()
+            .push(options);
         match self.send_raw_transaction_mode {
             SendRawTransactionMode::Success => Ok(Txid::from_slice(&[1u8; 32]).unwrap()),
             SendRawTransactionMode::AlreadyInMempool => Err(ClientError::Server(
                 -25,
                 "txn-already-in-mempool".to_string(),
+            )),
+            SendRawTransactionMode::MaxFeeRateExceeded => Err(ClientError::Server(
+                -25,
+                "Fee exceeds maximum configured by user (e.g. -maxtxfee, maxfeerate)".to_string(),
             )),
             SendRawTransactionMode::MissingOrInvalidInput => Err(ClientError::Server(
                 -26,

@@ -21,6 +21,7 @@ pub(crate) enum BroadcasterInputMessage {
 mod tests {
     use std::sync::Arc;
 
+    use bitcoin::FeeRate;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{backend::DatabaseBackend, l1_broadcast::L1TxStatus};
     use strata_l1_txfmt::MagicBytes;
@@ -84,12 +85,20 @@ mod tests {
         let ops = Arc::new(BroadcastDbOps::new(Handle::current(), broadcast_db));
 
         let btcio_params = BtcioParams::new(6, MagicBytes::new(*b"ALPN"), 0);
-        let handle =
-            BroadcasterBuilder::new(Arc::new(TestBitcoinClient::new(0)), ops, btcio_params)
-                .with_broadcast_poll_interval_ms(1)
-                .launch(&executor)
-                .await
-                .expect("launch broadcaster service");
+        let handle = BroadcasterBuilder::new(
+            Arc::new(TestBitcoinClient::new(0)),
+            ops,
+            btcio_params,
+            FeeRate::from_sat_per_vb(1_000).unwrap(),
+        )
+        .with_broadcast_poll_interval_ms(1)
+        .launch(&executor)
+        .await
+        .expect("launch broadcaster service");
+        assert_eq!(
+            handle.max_fee_rate(),
+            FeeRate::from_sat_per_vb(1_000).unwrap()
+        );
 
         let monitor = handle
             .monitor()

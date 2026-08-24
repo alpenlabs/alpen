@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use bitcoin::FeeRate;
 use bitcoind_async_client::traits::Broadcaster;
 use strata_service::{AsyncExecutor, ServiceBuilder, TickingInput, TokioMpscInput};
 use strata_storage::BroadcastDbOps;
@@ -28,6 +29,7 @@ pub struct BroadcasterBuilder<T> {
     rpc_client: Arc<T>,
     ops: Arc<BroadcastDbOps>,
     config: BtcioParams,
+    max_fee_rate: FeeRate,
     broadcast_poll_interval_ms: u64,
 }
 
@@ -36,6 +38,7 @@ impl<T> Debug for BroadcasterBuilder<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BroadcasterBuilder")
             .field("config", &self.config)
+            .field("max_fee_rate", &self.max_fee_rate)
             .field(
                 "broadcast_poll_interval_ms",
                 &self.broadcast_poll_interval_ms,
@@ -49,11 +52,17 @@ where
     T: Broadcaster + WalletTxLookup,
 {
     /// Creates a broadcaster builder with required dependencies.
-    pub fn new(rpc_client: Arc<T>, ops: Arc<BroadcastDbOps>, config: BtcioParams) -> Self {
+    pub fn new(
+        rpc_client: Arc<T>,
+        ops: Arc<BroadcastDbOps>,
+        config: BtcioParams,
+        max_fee_rate: FeeRate,
+    ) -> Self {
         Self {
             rpc_client,
             ops,
             config,
+            max_fee_rate,
             broadcast_poll_interval_ms: DEFAULT_BROADCAST_POLL_INTERVAL_MS,
         }
     }
@@ -65,7 +74,7 @@ where
 
     /// Launches the broadcaster service and returns a broadcaster handle.
     pub async fn launch(self, executor: &impl AsyncExecutor) -> anyhow::Result<L1BroadcastHandle> {
-        let io = BroadcasterIo::new(self.rpc_client, self.ops.clone());
+        let io = BroadcasterIo::new(self.rpc_client, self.ops.clone(), self.max_fee_rate);
         let state = BroadcasterServiceState::try_new(io, self.config).await?;
 
         let (command_tx, command_rx) = mpsc::channel::<BroadcasterInputMessage>(64);
@@ -79,6 +88,11 @@ where
             .with_input(input)
             .launch_async("l1_broadcaster", executor)
             .await?;
-        Ok(L1BroadcastHandle::new(command_tx, self.ops, Some(monitor)))
+        Ok(L1BroadcastHandle::new(
+            command_tx,
+            self.ops,
+            Some(monitor),
+            self.max_fee_rate,
+        ))
     }
 }
