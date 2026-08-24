@@ -37,9 +37,16 @@ jobs:
 
         #  HACK: not denying warnings as we depend on `yaml-rust` via `format-serde-error` which is unmaintained
       - name: Check for audit warnings
-        run: cargo audit -D warnings --file audit.toml
+        run: cargo audit -D warnings
+        continue-on-error: true
+
+      - name: Check for audit warnings (SP1 checkpoint guest)
+        run: cargo audit --file provers/sp1/guest-checkpoint/Cargo.lock -D warnings
         continue-on-error: true
 
         # HACK: re-run without denying warnings so that we don't miss any vulnerabilities
       - name: Check for vulnerabilities
-        run: cargo audit --file audit.toml
+        run: cargo audit
+
+      - name: Check for vulnerabilities (SP1 checkpoint guest)
+        run: cargo audit --file provers/sp1/guest-checkpoint/Cargo.lock
