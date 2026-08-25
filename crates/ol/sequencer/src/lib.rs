@@ -4,6 +4,7 @@
 //! Block template caching is handled by the block-assembly service.
 
 mod builder;
+mod checkpoint;
 mod duty;
 mod error;
 mod extraction;
@@ -13,6 +14,10 @@ pub mod signing;
 mod types;
 
 pub use builder::SequencerBuilder;
+pub use checkpoint::{
+    reconcile_unaccepted_checkpoint_artifacts, CheckpointContextError, CheckpointContextResult,
+    CheckpointPublishContext, CheckpointPublishPolicy, CheckpointReconcileContext,
+};
 pub use duty::{BlockSigningDuty, CheckpointSigningDuty, Duty, Expiry, RevealTxSigningDuty};
 pub use error::Error;
 pub use extraction::extract_duties;

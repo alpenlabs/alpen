@@ -2,105 +2,72 @@
 
 use std::sync::Arc;
 
+use anyhow::Result;
 use bitcoin::Transaction;
 use strata_asm_checkpoint_types::CheckpointPayload;
-use strata_asm_common::{SectionStateExt, Subprotocol, TxInputRef};
-use strata_asm_proto_checkpoint::CheckpointSubprotocol;
-use strata_asm_proto_checkpoint_txs::{OL_STF_CHECKPOINT_TX_TAG, extract_checkpoint_from_envelope};
+use strata_asm_common::TxInputRef;
+use strata_asm_proto_checkpoint_txs::{extract_checkpoint_from_envelope, OL_STF_CHECKPOINT_TX_TAG};
 use strata_btc_types::TxidExt;
-use strata_btcio::{
-    L1TxEntryExt,
-    broadcaster::{PublishDecision, PublishPolicy},
-};
+use strata_btcio::broadcaster::{PublishDecision, PublishPolicy};
+use strata_btcio::L1TxEntryExt;
 use strata_codec::decode_buf_exact;
 use strata_codec_utils::CodecSsz;
 use strata_csm_types::L1Payload;
-use strata_db_types::{
-    DbResult,
-    backend::DatabaseBackend,
-    l1_broadcast::{L1BroadcastDatabase, L1TxStatus},
-};
+use strata_db_types::l1_broadcast::L1TxStatus;
 use strata_identifiers::Epoch;
 use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
-use strata_storage::NodeStorage;
 use tracing::warn;
 
+use super::context::CheckpointPublishContext;
+
 /// Applies checkpoint safety rules immediately before Bitcoin publication.
-#[expect(
-    missing_debug_implementations,
-    reason = "NodeStorage does not implement Debug"
-)]
-pub struct CheckpointPublishPolicy {
-    storage: Arc<NodeStorage>,
+#[derive(Debug)]
+pub struct CheckpointPublishPolicy<C> {
+    context: Arc<C>,
     parser: ParseConfig,
 }
 
-impl CheckpointPublishPolicy {
+impl<C> CheckpointPublishPolicy<C> {
     /// Creates a policy for the configured Bitcoin network.
-    pub fn new(storage: Arc<NodeStorage>, magic_bytes: MagicBytes) -> Self {
+    pub fn new(context: Arc<C>, magic_bytes: MagicBytes) -> Self {
         Self {
-            storage,
+            context,
             parser: ParseConfig::new(magic_bytes),
         }
     }
+}
 
+impl<C: CheckpointPublishContext> CheckpointPublishPolicy<C> {
     async fn decide_checkpoint(&self, checkpoint: &CheckpointPayload) -> PublishDecision {
-        let latest_state = match self.storage.fetch_canonical_asm_state_async().await {
-            Ok(Some((_, state))) => state,
+        let latest_epoch = match self.context.get_accepted_checkpoint_epoch().await {
+            Ok(Some(epoch)) => epoch,
             Ok(None) => return PublishDecision::Defer,
             Err(err) => {
                 warn!(%err, "deferring checkpoint while canonical ASM state is unavailable");
                 return PublishDecision::Defer;
             }
         };
-        let Some(latest_epoch) = latest_state
-            .state()
-            .find_section(<CheckpointSubprotocol as Subprotocol>::ID)
-            .and_then(|section| section.try_to_state::<CheckpointSubprotocol>().ok())
-            .map(|state| state.verified_tip().epoch)
-        else {
-            return PublishDecision::Defer;
-        };
         if checkpoint.new_tip().epoch > latest_epoch {
             return PublishDecision::Publish;
         }
 
-        let safe_epoch = self.safe_checkpoint_epoch().await.unwrap_or_else(|err| {
-            warn!(%err, "checkpoint safe epoch is unavailable");
-            None
-        });
+        let safe_epoch = self
+            .context
+            .get_safe_checkpoint_epoch()
+            .await
+            .unwrap_or_else(|err| {
+                warn!(%err, "checkpoint safe epoch is unavailable");
+                None
+            });
         decide_for_checkpoint_epoch(checkpoint.new_tip().epoch, safe_epoch)
-    }
-
-    /// Returns the final epoch from the latest client state when its L1 anchor is canonical.
-    async fn safe_checkpoint_epoch(&self) -> DbResult<Option<Epoch>> {
-        let Some((block, state)) = self
-            .storage
-            .client_state()
-            .fetch_most_recent_state_async()
-            .await?
-        else {
-            return Ok(None);
-        };
-        let canonical = self
-            .storage
-            .l1()
-            .get_canonical_blockid_at_height_async(block.height())
-            .await?;
-        if canonical != Some(*block.blkid()) {
-            return Ok(None);
-        }
-        Ok(state
-            .get_declared_final_epoch()
-            .map(|commitment| commitment.epoch()))
     }
 }
 
 #[async_trait::async_trait]
-impl PublishPolicy for CheckpointPublishPolicy {
+impl<C: CheckpointPublishContext> PublishPolicy for CheckpointPublishPolicy<C> {
     async fn decide(&self, idx: u64, tx: &Transaction) -> PublishDecision {
-        match publication_for_tx(self.storage.db().as_ref(), idx, tx, &self.parser) {
+        match publication_for_tx(self.context.as_ref(), idx, tx, &self.parser) {
             Ok(Publication::Checkpoint(ckpt_pub)) => decide_for_commit_reveal_pair(
                 self.decide_checkpoint(&ckpt_pub.checkpoint).await,
                 ckpt_pub.member,
@@ -139,15 +106,14 @@ pub(super) fn checkpoint_from_payload(
 /// New writer pairs are persisted atomically at consecutive broadcaster indices.
 /// Unknown legacy or partial entries are deferred rather than published blindly.
 fn publication_for_tx(
-    db: &impl DatabaseBackend,
+    context: &impl CheckpointPublishContext,
     idx: u64,
     tx: &Transaction,
     parser: &ParseConfig,
-) -> DbResult<Publication> {
-    let broadcast = db.broadcast_db();
+) -> Result<Publication> {
     let txid = tx.compute_txid().to_buf32();
-    let current = broadcast
-        .get_tx_entry_by_id(txid)?
+    let current = context
+        .get_broadcast_entry_by_id(txid)?
         .map(|entry| entry.status);
     match classify_tx(tx, parser) {
         Ok(RevealKind::Checkpoint(checkpoint)) => {
@@ -155,7 +121,9 @@ fn publication_for_tx(
                 .input
                 .first()
                 .filter(|input| input.previous_output.vout == 0)
-                .map(|input| broadcast.get_tx_entry_by_id(input.previous_output.txid.to_buf32()))
+                .map(|input| {
+                    context.get_broadcast_entry_by_id(input.previous_output.txid.to_buf32())
+                })
                 .transpose()?
                 .flatten()
                 .map(|entry| entry.status);
@@ -170,10 +138,10 @@ fn publication_for_tx(
     let Some(reveal_idx) = idx.checked_add(1) else {
         return Ok(Publication::Unknown);
     };
-    if reveal_idx >= broadcast.get_next_tx_idx()? {
+    if reveal_idx >= context.get_next_broadcast_idx()? {
         return Ok(Publication::Unknown);
     }
-    let Some(reveal_entry) = broadcast.get_tx_entry(reveal_idx)? else {
+    let Some(reveal_entry) = context.get_broadcast_entry(reveal_idx)? else {
         return Ok(Publication::Unknown);
     };
     let Ok(reveal) = reveal_entry.try_to_tx() else {
@@ -316,32 +284,90 @@ fn decide_for_commit_reveal_pair(
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::opcodes::all::OP_RETURN;
+    use bitcoin::script::PushBytesBuf;
     use bitcoin::{
-        Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute,
-        opcodes::all::OP_RETURN, script::PushBytesBuf, transaction,
+        absolute, transaction, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+        Witness,
     };
     use strata_asm_checkpoint_types::test_utils::create_test_checkpoint_payload;
-    use strata_asm_proto_txs_test_utils::{TEST_MAGIC_BYTES, create_reveal_transaction_stub};
+    use strata_asm_proto_txs_test_utils::{create_reveal_transaction_stub, TEST_MAGIC_BYTES};
     use strata_btc_types::TxidExt;
     use strata_codec::encode_to_vec;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{backend::DatabaseBackend, l1_broadcast::L1TxEntry};
-    use strata_storage::{create_node_storage, test_runtime_handle};
+    use strata_db_store_sled::SledBackend;
+    use strata_db_types::backend::DatabaseBackend;
+    use strata_db_types::l1_broadcast::{L1BroadcastDatabase, L1TxEntry};
+    use strata_identifiers::Buf32;
 
     use super::*;
+    use crate::checkpoint::CheckpointContextResult;
+
+    #[derive(Debug)]
+    struct TestPublishContext {
+        db: Arc<SledBackend>,
+        accepted_epoch: Option<Epoch>,
+        safe_epoch: Option<Epoch>,
+    }
+
+    impl TestPublishContext {
+        fn new(accepted_epoch: Option<Epoch>, safe_epoch: Option<Epoch>) -> Self {
+            Self {
+                db: get_test_sled_backend(),
+                accepted_epoch,
+                safe_epoch,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CheckpointPublishContext for TestPublishContext {
+        async fn get_accepted_checkpoint_epoch(&self) -> CheckpointContextResult<Option<Epoch>> {
+            Ok(self.accepted_epoch)
+        }
+
+        async fn get_safe_checkpoint_epoch(&self) -> CheckpointContextResult<Option<Epoch>> {
+            Ok(self.safe_epoch)
+        }
+
+        fn get_next_broadcast_idx(&self) -> CheckpointContextResult<u64> {
+            Ok(self.db.broadcast_db().get_next_tx_idx()?)
+        }
+
+        fn get_broadcast_entry(&self, idx: u64) -> CheckpointContextResult<Option<L1TxEntry>> {
+            Ok(self.db.broadcast_db().get_tx_entry(idx)?)
+        }
+
+        fn get_broadcast_entry_by_id(
+            &self,
+            txid: Buf32,
+        ) -> CheckpointContextResult<Option<L1TxEntry>> {
+            Ok(self.db.broadcast_db().get_tx_entry_by_id(txid)?)
+        }
+    }
 
     #[tokio::test]
-    async fn storage_backed_policy_is_safe_inside_tokio() {
-        let storage = create_node_storage(get_test_sled_backend(), test_runtime_handle())
-            .expect("test storage");
-        let policy = CheckpointPublishPolicy::new(Arc::new(storage), TEST_MAGIC_BYTES);
-
-        assert_eq!(policy.safe_checkpoint_epoch().await.unwrap(), None);
+    async fn policy_uses_accepted_and_safe_epochs_from_context() {
+        let checkpoint = create_test_checkpoint_payload(14);
+        for (accepted_epoch, safe_epoch, expected) in [
+            (None, None, PublishDecision::Defer),
+            (Some(Epoch::from(13u32)), None, PublishDecision::Publish),
+            (Some(Epoch::from(14u32)), None, PublishDecision::Defer),
+            (
+                Some(Epoch::from(14u32)),
+                Some(Epoch::from(14u32)),
+                PublishDecision::Abandon,
+            ),
+        ] {
+            let context = Arc::new(TestPublishContext::new(accepted_epoch, safe_epoch));
+            let policy = CheckpointPublishPolicy::new(context, TEST_MAGIC_BYTES);
+            assert_eq!(policy.decide_checkpoint(&checkpoint).await, expected);
+        }
     }
 
     #[test]
     fn unlinked_transaction_is_quarantined_but_envelope_transaction_is_known() {
-        let db = get_test_sled_backend();
+        let context = TestPublishContext::new(None, None);
         let unknown = Transaction {
             version: transaction::Version::TWO,
             lock_time: absolute::LockTime::ZERO,
@@ -350,14 +376,14 @@ mod tests {
         };
         let parser = ParseConfig::new(TEST_MAGIC_BYTES);
         assert!(matches!(
-            publication_for_tx(db.as_ref(), 0, &unknown, &parser).unwrap(),
+            publication_for_tx(&context, 0, &unknown, &parser).unwrap(),
             Publication::Unknown
         ));
 
         let mut envelope = create_reveal_transaction_stub(vec![1; 126], &OL_STF_CHECKPOINT_TX_TAG);
         envelope.output.clear();
         assert!(matches!(
-            publication_for_tx(db.as_ref(), 0, &envelope, &parser).unwrap(),
+            publication_for_tx(&context, 0, &envelope, &parser).unwrap(),
             Publication::Other
         ));
 
@@ -373,14 +399,15 @@ mod tests {
                 .into_script(),
         });
         assert!(matches!(
-            publication_for_tx(db.as_ref(), 0, &chunked_commit, &parser).unwrap(),
+            publication_for_tx(&context, 0, &chunked_commit, &parser).unwrap(),
             Publication::Other
         ));
     }
 
     #[test]
     fn ambiguous_pair_recovers_commit_before_reveal() {
-        let db = get_test_sled_backend();
+        let context = TestPublishContext::new(None, None);
+        let db = &context.db;
         let commit = Transaction {
             version: transaction::Version::ONE,
             lock_time: absolute::LockTime::ZERO,
@@ -408,11 +435,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            publication_decision(db.as_ref(), 0, &commit, PublishDecision::Publish),
+            publication_decision(&context, 0, &commit, PublishDecision::Publish),
             PublishDecision::Publish,
         );
         assert_eq!(
-            publication_decision(db.as_ref(), 1, &reveal, PublishDecision::Publish),
+            publication_decision(&context, 1, &reveal, PublishDecision::Publish),
             PublishDecision::Defer,
         );
 
@@ -422,18 +449,18 @@ mod tests {
             .put_tx_entry(commit.compute_txid().to_buf32(), published_commit)
             .unwrap();
         assert_eq!(
-            publication_decision(db.as_ref(), 1, &reveal, PublishDecision::Publish),
+            publication_decision(&context, 1, &reveal, PublishDecision::Publish),
             PublishDecision::Publish
         );
     }
 
     fn publication_decision(
-        db: &impl DatabaseBackend,
+        context: &impl CheckpointPublishContext,
         idx: u64,
         tx: &Transaction,
         decision: PublishDecision,
     ) -> PublishDecision {
-        match publication_for_tx(db, idx, tx, &ParseConfig::new(TEST_MAGIC_BYTES)).unwrap() {
+        match publication_for_tx(context, idx, tx, &ParseConfig::new(TEST_MAGIC_BYTES)).unwrap() {
             Publication::Other => PublishDecision::Publish,
             Publication::Unknown => PublishDecision::Defer,
             Publication::Checkpoint(CheckpointPublication {
