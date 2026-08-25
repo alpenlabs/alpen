@@ -14,7 +14,7 @@ use bitcoin::{
     taproot::{ControlBlock, LeafVersion, TaprootMerkleBranch},
     transaction::Version,
     Address, Amount, Block, BlockHash, FeeRate, Network, Psbt, ScriptBuf, SignedAmount,
-    TapNodeHash, Transaction, TxOut, Txid, Work, XOnlyPublicKey,
+    TapNodeHash, Transaction, TxOut, Txid, Witness, Work, XOnlyPublicKey,
 };
 use bitcoind_async_client::{
     corepc_types::{
@@ -70,6 +70,10 @@ pub struct TestBitcoinClient {
     pub wallet_process_psbt_result: Arc<Mutex<WalletProcessPsbt>>,
     /// PSBT strings received by `wallet_process_psbt`.
     pub wallet_process_psbt_calls: Arc<Mutex<Vec<String>>>,
+    /// Optional witness signature size used when echo-signing raw transactions.
+    pub sign_raw_transaction_witness_size: Option<usize>,
+    /// Transactions received by `sign_raw_transaction_with_wallet`.
+    pub sign_raw_transaction_calls: Arc<Mutex<Vec<Transaction>>>,
 }
 
 /// Configures how [`TestBitcoinClient`] responds to `send_raw_transaction`.
@@ -99,6 +103,8 @@ impl TestBitcoinClient {
             estimate_smart_fee_targets: Arc::new(Mutex::new(Vec::new())),
             wallet_process_psbt_result: Arc::new(Mutex::new(default_wallet_process_psbt_result())),
             wallet_process_psbt_calls: Arc::new(Mutex::new(Vec::new())),
+            sign_raw_transaction_witness_size: None,
+            sign_raw_transaction_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -139,6 +145,18 @@ impl TestBitcoinClient {
 
     pub fn wallet_process_psbt_calls(&self) -> Vec<String> {
         self.wallet_process_psbt_calls.lock().unwrap().clone()
+    }
+
+    pub fn with_sign_raw_transaction_witness_size(mut self, witness_size: usize) -> Self {
+        self.sign_raw_transaction_witness_size = Some(witness_size);
+        self
+    }
+
+    pub fn sign_raw_transaction_calls(&self) -> Vec<Transaction> {
+        self.sign_raw_transaction_calls
+            .lock()
+            .expect("test: sign_raw_transaction_calls lock")
+            .clone()
     }
 }
 
@@ -571,10 +589,24 @@ impl Wallet for TestBitcoinClient {
 impl Signer for TestBitcoinClient {
     async fn sign_raw_transaction_with_wallet(
         &self,
-        _tx: &Transaction,
+        tx: &Transaction,
         _prev_outputs: Option<Vec<PreviousTransactionOutput>>,
     ) -> ClientResult<SignRawTransaction> {
-        let signed_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
+        self.sign_raw_transaction_calls
+            .lock()
+            .expect("test: sign_raw_transaction_calls lock")
+            .push(tx.clone());
+        let signed_tx = if let Some(witness_size) = self.sign_raw_transaction_witness_size {
+            let mut signed_tx = tx.clone();
+            for input in &mut signed_tx.input {
+                input.witness = Witness::new();
+                input.witness.push(vec![0; witness_size]);
+                input.witness.push([0; 33]);
+            }
+            signed_tx
+        } else {
+            consensus::encode::deserialize_hex(SOME_TX).unwrap()
+        };
         Ok(SignRawTransaction {
             tx: signed_tx,
             complete: true,

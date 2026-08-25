@@ -20,13 +20,17 @@ use strata_db_types::{
 };
 use tracing::*;
 
-use super::{builder::build_chunked_envelope_txs, context::ChunkedWriterContext};
+use super::{
+    builder::{build_chunked_envelope_txs, rebuild_chunked_reveals},
+    context::ChunkedWriterContext,
+};
 use crate::{
     tx_entry::L1TxEntryExt,
     writer::{
         builder::{
             effective_fee_rate, ensure_built_fee_rate_within_max,
-            ensure_initial_fee_rate_within_max, EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT,
+            ensure_initial_fee_rate_within_max, sign_commit_at_requested_fee, EnvelopeConfig,
+            EnvelopeError, BITCOIN_DUST_LIMIT,
         },
         fees::resolve_fee_rate,
     },
@@ -130,10 +134,9 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             BITCOIN_DUST_LIMIT,
             ctx.config.fee_bumping,
             None,
-        )
-        .with_max_fee_rate(ctx.max_fee_rate);
+        );
 
-        let built = build_chunked_envelope_txs(
+        let mut built = build_chunked_envelope_txs(
             &env_config,
             entry.chunk_data(),
             &entry.magic_bytes,
@@ -143,12 +146,24 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         )?;
 
         // Sign commit via bitcoind wallet RPC.
-        let signed_commit = ctx
-            .client
-            .sign_raw_transaction_with_wallet(&built.commit_tx, None)
-            .await
-            .map_err(EnvelopeError::SignRawTransaction)?
-            .tx;
+        let unsigned_commit_txid = built.commit_tx.compute_txid();
+        let (signed_commit, commit_fee) = sign_commit_at_requested_fee(
+            ctx.client.as_ref(),
+            built.commit_tx,
+            built.commit_fee,
+            fee_rate,
+            ctx.max_fee_rate,
+        )
+        .await?;
+        built.commit_fee = commit_fee;
+        if signed_commit.compute_txid() != unsigned_commit_txid {
+            built.reveal_txs = rebuild_chunked_reveals(
+                &env_config,
+                entry.chunk_data(),
+                &ctx.sequencer_keypair,
+                &signed_commit,
+            )?;
+        }
         ensure_built_fee_rate_within_max(&signed_commit, built.commit_fee, ctx.max_fee_rate)?;
         let commit_fee_rate = effective_fee_rate(&signed_commit, built.commit_fee)?;
         for reveal_tx in &built.reveal_txs {

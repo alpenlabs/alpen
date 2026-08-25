@@ -15,7 +15,8 @@ use tracing::*;
 use super::{
     builder::{
         attach_reveal_signature, build_and_sign_envelope_txs, build_envelope_txs,
-        effective_fee_rate, ensure_built_fee_rate_within_max, EnvelopeData, EnvelopeError,
+        effective_fee_rate, ensure_built_fee_rate_within_max, rebind_single_reveal,
+        sign_commit_at_requested_fee, EnvelopeData, EnvelopeError,
     },
     context::{EnvelopeSigningMode, WriterContext},
 };
@@ -62,19 +63,26 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
 
         let commit_txid = envelope.commit_tx.compute_txid();
         debug!(%commit_txid, "Signing commit transaction with wallet");
-        let signed_commit = ctx
-            .client
-            .sign_raw_transaction_with_wallet(&envelope.commit_tx, None)
-            .await
-            .map_err(EnvelopeError::SignRawTransaction)?
-            .tx;
+        let (signed_commit, commit_fee) = sign_commit_at_requested_fee(
+            ctx.client.as_ref(),
+            envelope.commit_tx,
+            envelope.commit_fee,
+            envelope.fee_rate,
+            ctx.max_fee_rate,
+        )
+        .await?;
         envelope.commit_tx = signed_commit;
+        envelope.commit_fee = commit_fee;
+        if envelope.commit_tx.compute_txid() != commit_txid {
+            rebind_single_reveal(&mut envelope)?;
+        }
         ensure_built_fee_rate_within_max(
             &envelope.commit_tx,
             envelope.commit_fee,
             ctx.max_fee_rate,
         )?;
 
+        let commit_txid = envelope.commit_tx.compute_txid();
         info!(%commit_txid, sighash = %envelope.sighash, "envelope built, commit signed");
         Ok(envelope)
     }

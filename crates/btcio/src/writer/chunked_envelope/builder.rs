@@ -128,6 +128,18 @@ fn build_reveal_artifacts(
     Ok(artifacts)
 }
 
+/// Rebuilds chunk reveals after commit repricing changes their prevout txid or value.
+pub(super) fn rebuild_chunked_reveals<'a>(
+    config: &EnvelopeConfig,
+    chunks: impl IntoIterator<Item = &'a [u8]>,
+    sequencer_keypair: &Keypair,
+    commit_tx: &Transaction,
+) -> Result<Vec<Transaction>, EnvelopeError> {
+    let sequencer_xonly = XOnlyPublicKey::from_keypair(sequencer_keypair).0;
+    let artifacts = build_reveal_artifacts(chunks.into_iter().collect(), sequencer_xonly, config)?;
+    build_reveals_for_commit(config, &artifacts, sequencer_keypair, commit_tx)
+}
+
 fn build_reveals_for_commit(
     config: &EnvelopeConfig,
     artifacts: &[RevealArtifact],
@@ -282,7 +294,6 @@ fn build_multi_output_commit(
         config.sequencer_address.script_pubkey(),
         1,
         config.fee_rate,
-        config.max_fee_rate,
     )?;
 
     Ok((commit_tx, commit_fee))
@@ -376,7 +387,6 @@ mod tests {
             FeeBumpingConfig::default(),
             None,
         )
-        .with_max_fee_rate(FeeRate::from_sat_per_vb(1_000).unwrap())
     }
 
     #[test]
@@ -527,7 +537,7 @@ mod tests {
         utxos[0].amount = Amount::from_sat(input_total / 2);
         utxos[1].amount = Amount::from_sat(input_total - input_total / 2);
 
-        let result = build_chunked_envelope_txs(
+        let mut result = build_chunked_envelope_txs(
             &config,
             chunks.iter().map(Vec::as_slice),
             &magic,
@@ -550,6 +560,38 @@ mod tests {
         assert_eq!(
             reveal.output[0].value.to_sat(),
             baseline.reveal_txs[0].output[0].value.to_sat() + returned_dust
+        );
+
+        let refund = Amount::from_sat(2);
+        result.commit_tx.output.last_mut().unwrap().value += refund;
+        result.reveal_txs = rebuild_chunked_reveals(
+            &config,
+            chunks.iter().map(Vec::as_slice),
+            &keypair,
+            &result.commit_tx,
+        )
+        .unwrap();
+        let repriced_reveal = &result.reveal_txs[0];
+        let repriced_output_total: Amount = repriced_reveal
+            .output
+            .iter()
+            .map(|output| output.value)
+            .sum();
+
+        assert_eq!(
+            repriced_reveal.input[0].previous_output.txid,
+            result.commit_tx.compute_txid()
+        );
+        assert_eq!(
+            repriced_reveal.output[0].value.to_sat(),
+            baseline.reveal_txs[0].output[0].value.to_sat() + returned_dust + refund.to_sat()
+        );
+        assert_eq!(
+            result.commit_tx.output[1].value - repriced_output_total,
+            config
+                .fee_rate
+                .fee_vb(repriced_reveal.vsize() as u64)
+                .unwrap()
         );
     }
 
