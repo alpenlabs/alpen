@@ -40,18 +40,7 @@ impl<C> CheckpointPublishPolicy<C> {
 
 impl<C: CheckpointPublishContext> CheckpointPublishPolicy<C> {
     async fn decide_checkpoint(&self, checkpoint: &CheckpointPayload) -> PublishDecision {
-        let latest_epoch = match self.context.get_accepted_checkpoint_epoch().await {
-            Ok(Some(epoch)) => epoch,
-            Ok(None) => return PublishDecision::Defer,
-            Err(err) => {
-                warn!(%err, "deferring checkpoint while canonical ASM state is unavailable");
-                return PublishDecision::Defer;
-            }
-        };
-        if checkpoint.new_tip().epoch > latest_epoch {
-            return PublishDecision::Publish;
-        }
-
+        let checkpoint_epoch = checkpoint.new_tip().epoch;
         let safe_epoch = self
             .context
             .get_safe_checkpoint_epoch()
@@ -60,7 +49,24 @@ impl<C: CheckpointPublishContext> CheckpointPublishPolicy<C> {
                 warn!(%err, "checkpoint safe epoch is unavailable");
                 None
             });
-        decide_for_checkpoint_epoch(checkpoint.new_tip().epoch, safe_epoch)
+        let safe_decision = decide_for_checkpoint_epoch(checkpoint_epoch, safe_epoch);
+        if matches!(safe_decision, PublishDecision::Abandon) {
+            return safe_decision;
+        }
+
+        let latest_epoch = match self.context.get_accepted_checkpoint_epoch().await {
+            Ok(Some(epoch)) => epoch,
+            Ok(None) => return PublishDecision::Defer,
+            Err(err) => {
+                warn!(%err, "deferring checkpoint while canonical ASM state is unavailable");
+                return PublishDecision::Defer;
+            }
+        };
+        if checkpoint_epoch > latest_epoch {
+            return PublishDecision::Publish;
+        }
+
+        safe_decision
     }
 }
 
@@ -349,13 +355,31 @@ mod tests {
     #[tokio::test]
     async fn policy_uses_accepted_and_safe_epochs_from_context() {
         let checkpoint = create_test_checkpoint_payload(14);
+        let previous_epoch = Epoch::from(13u32);
+        let checkpoint_epoch = Epoch::from(14u32);
         for (accepted_epoch, safe_epoch, expected) in [
             (None, None, PublishDecision::Defer),
-            (Some(Epoch::from(13u32)), None, PublishDecision::Publish),
-            (Some(Epoch::from(14u32)), None, PublishDecision::Defer),
+            (None, Some(checkpoint_epoch), PublishDecision::Abandon),
+            (Some(previous_epoch), None, PublishDecision::Publish),
             (
-                Some(Epoch::from(14u32)),
-                Some(Epoch::from(14u32)),
+                Some(previous_epoch),
+                Some(previous_epoch),
+                PublishDecision::Publish,
+            ),
+            (
+                Some(previous_epoch),
+                Some(checkpoint_epoch),
+                PublishDecision::Abandon,
+            ),
+            (Some(checkpoint_epoch), None, PublishDecision::Defer),
+            (
+                Some(checkpoint_epoch),
+                Some(previous_epoch),
+                PublishDecision::Defer,
+            ),
+            (
+                Some(checkpoint_epoch),
+                Some(checkpoint_epoch),
                 PublishDecision::Abandon,
             ),
         ] {
