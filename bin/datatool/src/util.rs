@@ -20,6 +20,26 @@ const DEFAULT_NETWORK: Network = Network::Signet;
 /// Sequencer key environment variable.
 pub(crate) const SEQKEY_ENVVAR: &str = "STRATA_SEQ_KEY";
 
+/// Predicate metadata file label used in diagnostics.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PredicateFileLabel {
+    /// ASM checkpoint predicate metadata.
+    Checkpoint,
+    /// Test-only predicate metadata.
+    #[cfg(test)]
+    Test,
+}
+
+impl PredicateFileLabel {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Checkpoint => "checkpoint",
+            #[cfg(test)]
+            Self::Test => "test",
+        }
+    }
+}
+
 /// Resolves a [`Network`] from a string accepted by [`Network::from_str`].
 ///
 /// Priority:
@@ -80,7 +100,11 @@ pub(crate) fn parse_abbr_amt(s: &str) -> anyhow::Result<u64> {
 }
 
 /// Reads a serialized [`PredicateKey`] from a metadata file.
-pub(crate) fn read_predicate_key(path: &Path, label: &str) -> anyhow::Result<PredicateKey> {
+pub(crate) fn read_predicate_key(
+    path: &Path,
+    label: PredicateFileLabel,
+) -> anyhow::Result<PredicateKey> {
+    let label = label.as_str();
     let serialized = fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("failed to read {label} predicate file {path:?}: {e}"))?;
     let serialized = serialized.trim();
@@ -137,7 +161,7 @@ mod tests {
 
     use strata_predicate::{PredicateKey, PredicateTypeId};
 
-    use super::read_predicate_key;
+    use super::{read_predicate_key, PredicateFileLabel};
 
     #[test]
     fn reads_predicate_key_from_metadata_file() {
@@ -145,7 +169,7 @@ mod tests {
         let path = tempdir.path().join("guest.predicate");
         fs::write(&path, "AlwaysAccept:\n").unwrap();
 
-        let predicate = read_predicate_key(&path, "test").unwrap();
+        let predicate = read_predicate_key(&path, PredicateFileLabel::Test).unwrap();
 
         assert_eq!(predicate, PredicateKey::always_accept());
     }
@@ -156,7 +180,7 @@ mod tests {
         let path = tempdir.path().join("guest.predicate");
         fs::write(&path, "AlwaysAccept\n").unwrap();
 
-        let predicate = read_predicate_key(&path, "test").unwrap();
+        let predicate = read_predicate_key(&path, PredicateFileLabel::Test).unwrap();
 
         assert_eq!(predicate, PredicateKey::always_accept());
     }
@@ -167,7 +191,7 @@ mod tests {
         let path = tempdir.path().join("guest.predicate");
         fs::write(&path, "not-a-predicate\n").unwrap();
 
-        let err = read_predicate_key(&path, "test").unwrap_err();
+        let err = read_predicate_key(&path, PredicateFileLabel::Test).unwrap_err();
 
         assert!(err.to_string().contains("failed to parse test predicate"));
     }
@@ -178,7 +202,7 @@ mod tests {
         let path = tempdir.path().join("guest.predicate");
         fs::write(&path, "Bip340Schnorr:010203\n").unwrap();
 
-        let predicate = read_predicate_key(&path, "test").unwrap();
+        let predicate = read_predicate_key(&path, PredicateFileLabel::Test).unwrap();
 
         assert_eq!(predicate.id(), PredicateTypeId::Bip340Schnorr.as_u8());
         assert_eq!(predicate.condition(), &[1, 2, 3]);

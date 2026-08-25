@@ -29,7 +29,7 @@ use strata_primitives::bitcoin_bosd::{Descriptor, DescriptorType};
 
 use crate::{
     args::{CmdContext, SubcAsmParams},
-    util::{parse_abbr_amt, read_predicate_key},
+    util::{parse_abbr_amt, read_predicate_key, PredicateFileLabel},
 };
 
 /// The default assignment duration in blocks.
@@ -147,7 +147,10 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     // Build checkpoint config.
     let sequencer_predicate = resolve_sequencer_predicate(cmd.seq_pk.as_deref())?;
-    let checkpoint_predicate = read_predicate_key(&cmd.checkpoint_predicate_file, "checkpoint")?;
+    let checkpoint_predicate = read_predicate_key(
+        &cmd.checkpoint_predicate_file,
+        PredicateFileLabel::Checkpoint,
+    )?;
     let genesis_l1_height = anchor.block.height();
 
     let checkpoint = CheckpointInitConfig {
