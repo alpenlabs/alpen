@@ -82,7 +82,7 @@ struct MockProvider {
     canonical_slots: HashMap<Slot, OLBlockCommitment>,
     history_base: Option<EpochCommitment>,
     states: HashMap<OLBlockCommitment, Arc<OLStateV1>>,
-    write_batches: HashMap<OLBlockCommitment, WriteBatch<OLAccountStateV1>>,
+    write_batches: HashMap<OLBlockCommitment, WriteBatch>,
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
@@ -180,11 +180,7 @@ impl MockProvider {
         self
     }
 
-    fn with_write_batch(
-        mut self,
-        commitment: OLBlockCommitment,
-        write_batch: WriteBatch<OLAccountStateV1>,
-    ) -> Self {
+    fn with_write_batch(mut self, commitment: OLBlockCommitment, write_batch: WriteBatch) -> Self {
         self.write_batches.insert(commitment, write_batch);
         self
     }
@@ -393,7 +389,7 @@ impl OLRpcProvider for MockProvider {
     async fn get_ol_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
+    ) -> DbResult<Option<WriteBatch>> {
         Ok(self.write_batches.get(&commitment).cloned())
     }
 

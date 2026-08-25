@@ -674,7 +674,7 @@ mod tests {
     use strata_identifiers::AccountId;
     use strata_merkle::MmrState;
     use strata_ol_params::OLParams;
-    use strata_ol_state_types_v1::{OLAccountStateV1, WriteBatch};
+    use strata_ol_state_types_v1::WriteBatch;
     use strata_storage::{MmrIndexHandle, MmrIndexManager};
     use tokio::runtime::Runtime;
 
@@ -695,7 +695,7 @@ mod tests {
             append_l1_block_rec_to_mmr(&mut l1_block_refs_mmr, record);
         }
 
-        let mut batch = WriteBatch::<OLAccountStateV1>::default();
+        let mut batch = WriteBatch::default();
         batch.epochal_writes_mut().l1_block_refs_mmr = Some(l1_block_refs_mmr);
         state
             .apply_write_batch(batch)

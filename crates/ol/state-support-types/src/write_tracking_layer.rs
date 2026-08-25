@@ -21,7 +21,7 @@ pub trait IComputeStateRootWithWrites: IStateAccessor {
     /// current state.
     fn compute_state_root_with_writes<'b>(
         &'b self,
-        writes: impl Iterator<Item = &'b WriteBatch<OLAccountStateV1>>,
+        writes: impl Iterator<Item = &'b WriteBatch>,
     ) -> StateResult<Buf32>;
 }
 
@@ -31,7 +31,7 @@ pub trait IComputeStateRootWithWrites: IStateAccessor {
 /// All writes are recorded in the write batch.
 pub struct WriteTrackingState<'base, S: IStateAccessor> {
     base: &'base S,
-    batch: WriteBatch<OLAccountStateV1>,
+    batch: WriteBatch,
 }
 
 impl<S: IStateAccessor> fmt::Debug for WriteTrackingState<'_, S>
@@ -51,7 +51,7 @@ impl<'base, S: IStateAccessor> WriteTrackingState<'base, S> {
     ///
     /// The global and epochal state are cloned from the base into the write batch,
     /// since they're small and always modified during block execution.
-    pub fn new(base: &'base S, batch: WriteBatch<OLAccountStateV1>) -> Self {
+    pub fn new(base: &'base S, batch: WriteBatch) -> Self {
         Self { base, batch }
     }
 
@@ -64,12 +64,12 @@ impl<'base, S: IStateAccessor> WriteTrackingState<'base, S> {
     }
 
     /// Returns a reference to the underlying write batch.
-    pub fn batch(&self) -> &WriteBatch<OLAccountStateV1> {
+    pub fn batch(&self) -> &WriteBatch {
         &self.batch
     }
 
     /// Consumes this wrapper and returns the write batch.
-    pub fn into_batch(self) -> WriteBatch<OLAccountStateV1> {
+    pub fn into_batch(self) -> WriteBatch {
         self.batch
     }
 }
@@ -228,7 +228,7 @@ where
 {
     fn compute_state_root_with_writes<'b>(
         &'b self,
-        writes: impl Iterator<Item = &'b WriteBatch<OLAccountStateV1>>,
+        writes: impl Iterator<Item = &'b WriteBatch>,
     ) -> StateResult<Buf32> {
         // Our own batch is older than anything layered on top of us, so it goes
         // first.

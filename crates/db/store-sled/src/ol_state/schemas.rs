@@ -1,7 +1,7 @@
 use sled::IVec;
 use ssz::{Decode, Encode};
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use typed_sled::codec::{CodecError, ValueCodec};
 
 use crate::{define_table_without_codec, impl_codec_key_codec, impl_codec_value_codec};
@@ -14,7 +14,7 @@ define_table_without_codec!(
 
 define_table_without_codec!(
     /// Table to store OL state write batches keyed by OLBlockCommitment.
-    (OLWriteBatchSchema) OLBlockCommitment => WriteBatch<OLAccountStateV1>
+    (OLWriteBatchSchema) OLBlockCommitment => WriteBatch
 );
 
 // OLBlockCommitment uses Codec for key encoding (big-endian for proper linear scans)
@@ -38,4 +38,4 @@ impl ValueCodec<OLStateSchema> for OLStateV1 {
 }
 
 // WriteBatch uses Codec trait (contains non-SSZ types like BTreeMap, SerialMap)
-impl_codec_value_codec!(OLWriteBatchSchema, WriteBatch<OLAccountStateV1>);
+impl_codec_value_codec!(OLWriteBatchSchema, WriteBatch);

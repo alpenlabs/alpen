@@ -226,7 +226,7 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
 }
 
 impl IStateBatchApplicable for MemoryStateBaseLayer {
-    fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountStateV1>) -> StateResult<()> {
+    fn apply_write_batch(&mut self, batch: WriteBatch) -> StateResult<()> {
         // Validate serial bookkeeping before mutating any state so that an
         // error leaves both the inner state and the serials index untouched.
         let mut new_accounts: Vec<(AccountSerial, AccountId)> =
@@ -255,7 +255,7 @@ impl IStateBatchApplicable for MemoryStateBaseLayer {
 impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
     fn compute_state_root_with_writes<'b>(
         &self,
-        writes: impl Iterator<Item = &'b WriteBatch<OLAccountStateV1>>,
+        writes: impl Iterator<Item = &'b WriteBatch>,
     ) -> StateResult<Buf32> {
         let mut state = self.state.clone();
 

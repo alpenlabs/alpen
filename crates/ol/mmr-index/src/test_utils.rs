@@ -5,7 +5,7 @@ use strata_merkle::{Mmr, MmrState};
 use strata_ol_params::{BridgeParams, GenesisSnarkAccountData, OLParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{IAccountStateMut, ISnarkAccountStateMut};
-use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use strata_predicate::PredicateKey;
 
 use crate::{MmrIndexEntry, resolve_ol_mmr_target};
@@ -21,7 +21,7 @@ pub(crate) fn build_genesis_target_state() -> OLStateV1 {
 pub(crate) fn build_target_state_with_empty_l1_block_refs_mmr() -> OLStateV1 {
     let mut state = build_genesis_target_state();
 
-    let mut batch = WriteBatch::<OLAccountStateV1>::default();
+    let mut batch = WriteBatch::default();
     batch.epochal_writes_mut().l1_block_refs_mmr = Some(Mmr64::new_empty());
     state
         .apply_write_batch(batch)
@@ -73,7 +73,7 @@ pub(crate) fn build_target_state_with_snark_inbox(
             .expect("insert inbox message");
     }
 
-    let mut batch = WriteBatch::<OLAccountStateV1>::default();
+    let mut batch = WriteBatch::default();
     batch.ledger_mut().update_account(account_id, account);
     state
         .apply_write_batch(batch)

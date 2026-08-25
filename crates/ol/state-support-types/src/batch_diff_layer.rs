@@ -25,7 +25,7 @@ use crate::write_tracking_layer::IComputeStateRootWithWrites;
 #[derive(Clone)]
 pub struct BatchDiffState<'batches, 'base, S: IStateAccessor> {
     base: &'base S,
-    write_batches: &'batches [WriteBatch<OLAccountStateV1>],
+    write_batches: &'batches [WriteBatch],
 
     /// Helper field so that we only have to compute this once.
     new_accounts: usize,
@@ -50,7 +50,7 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     /// The batches are checked in reverse order (last = most recent) before falling
     /// back to the base state. An empty batch slice results in a pure read-only
     /// passthrough to the base.
-    pub fn new(base: &'base S, batches: &'batches [WriteBatch<OLAccountStateV1>]) -> Self {
+    pub fn new(base: &'base S, batches: &'batches [WriteBatch]) -> Self {
         let new_accounts = batches
             .iter()
             .map(|wb| wb.ledger().new_accounts().len())
@@ -69,7 +69,7 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     }
 
     /// Returns a reference to the batch slice.
-    pub fn write_batches(&self) -> &'batches [WriteBatch<OLAccountStateV1>] {
+    pub fn write_batches(&self) -> &'batches [WriteBatch] {
         self.write_batches
     }
 
@@ -84,7 +84,7 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     /// by `on_wb`, or if none match, returns the result of `on_base`.
     fn resolve<T>(
         &self,
-        on_wb: impl Fn(&'batches WriteBatch<OLAccountStateV1>) -> Option<T>,
+        on_wb: impl Fn(&'batches WriteBatch) -> Option<T>,
         on_base: impl FnOnce() -> T,
     ) -> T {
         for wb in self.write_batches.iter().rev() {
@@ -245,7 +245,7 @@ where
 {
     fn compute_state_root_with_writes<'b>(
         &'b self,
-        writes: impl Iterator<Item = &'b WriteBatch<OLAccountStateV1>>,
+        writes: impl Iterator<Item = &'b WriteBatch>,
     ) -> StateResult<Buf32> {
         self.base
             .compute_state_root_with_writes(self.write_batches.iter().chain(writes))
@@ -254,15 +254,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
-    use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
-    use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
-    use strata_ol_state_types_v1::OLAccountStateV1;
-
     use super::*;
     use crate::common_tests::impl_read_layer_tests;
     use crate::test_utils::*;
     use crate::write_tracking_layer::WriteTrackingState;
+    use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
+    use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
+    use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
 
     /// Builds a [`BatchDiffState`] with no pending batches — a pure read-only
     /// passthrough to the base.
@@ -622,7 +620,7 @@ mod tests {
         assert_ne!(base_root, diff_root);
 
         // An empty-batches diff should match the base root.
-        let empty_batches: Vec<WriteBatch<_>> = vec![];
+        let empty_batches: Vec<WriteBatch> = vec![];
         let passthrough = BatchDiffState::new(&base_layer, &empty_batches);
         assert_eq!(passthrough.compute_state_root().unwrap(), base_root);
     }
@@ -736,7 +734,7 @@ mod tests {
     #[test]
     fn test_last_l1_blkid_from_batch() {
         let base_layer = create_test_base_layer();
-        let batch: WriteBatch<_> = WriteBatch::default();
+        let batch: WriteBatch = WriteBatch::default();
 
         let batches = vec![batch];
         let diff_state = BatchDiffState::new(&base_layer, &batches);
@@ -756,8 +754,8 @@ mod tests {
         PendingAsmLog::new(strata_identifiers::L1Height::from(tag as u32), entry)
     }
 
-    fn batch_with_appends(tags: &[u8]) -> WriteBatch<OLAccountStateV1> {
-        let mut wb: WriteBatch<OLAccountStateV1> = WriteBatch::default();
+    fn batch_with_appends(tags: &[u8]) -> WriteBatch {
+        let mut wb = WriteBatch::default();
         for t in tags {
             wb.intraepoch_writes_mut()
                 .appended_pending_asm_logs
@@ -766,7 +764,7 @@ mod tests {
         wb
     }
 
-    fn batch_reset_then_appends(tags: &[u8]) -> WriteBatch<OLAccountStateV1> {
+    fn batch_reset_then_appends(tags: &[u8]) -> WriteBatch {
         let mut wb = batch_with_appends(tags);
         wb.intraepoch_writes_mut().reset = true;
         // reset+appends mean: clear, then append the tags above.

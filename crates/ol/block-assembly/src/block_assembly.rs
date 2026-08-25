@@ -12,7 +12,7 @@ use strata_ol_chain_types_v1::*;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
 use strata_ol_state_types::{AccProofCheck, ISnarkAccountState, IStateAccessor, TxProofIndexer, *};
-use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLAccountStateV1, WriteBatch};
+use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, WriteBatch};
 use strata_ol_stf_v1::*;
 use strata_ol_tx_types_v1::*;
 use strata_snark_acct_types as _;
@@ -40,7 +40,7 @@ struct ProcessTransactionsOutput {
     /// Transactions that failed during block assembly.
     failed_txs: Vec<FailedMempoolTx>,
     /// Accumulated write batch after processing all transactions.
-    accumulated_batch: WriteBatch<OLAccountStateV1>,
+    accumulated_batch: WriteBatch,
     /// Accumulated da data after processing all transactions.
     accumulated_da: AccumulatedDaData,
     /// Non-cadence limits requesting an epoch seal, if any.
@@ -49,7 +49,7 @@ struct ProcessTransactionsOutput {
 
 /// Inputs consumed while finalizing a block template.
 struct BuildBlockTemplateInput {
-    accumulated_batch: WriteBatch<OLAccountStateV1>,
+    accumulated_batch: WriteBatch,
     output_buffer: ExecOutputBuffer,
     successful_txs: Vec<OLTransactionV1>,
     is_terminal: bool,
@@ -556,7 +556,7 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
     parent_state: &S,
     block_context: &BlockContext<'_>,
     accumulated_da: AccumulatedDaData,
-) -> (WriteBatch<OLAccountStateV1>, AccumulatedDaData) {
+) -> (WriteBatch, AccumulatedDaData) {
     let (accumulator, logs) = accumulated_da.into_parts();
     let write_state = WriteTrackingState::new_empty(parent_state);
     let mut da_state = DaAccumulatingState::new_with_accumulator(write_state, accumulator);
@@ -596,7 +596,7 @@ fn process_transactions<P, E, S>(
     block_context: &BlockContext<'_>,
     output_buffer: &ExecOutputBuffer,
     parent_state: &S,
-    accumulated_batch: WriteBatch<OLAccountStateV1>,
+    accumulated_batch: WriteBatch,
     mempool_txs: Vec<(OLTxId, OLTransactionV1)>,
     accumulated_da: AccumulatedDaData,
     epoch_cumulative_manifest_count: u32,
@@ -1010,7 +1010,7 @@ mod tests {
     use crate::test_utils::*;
     use crate::{FixedSlotSealing, LimitAwareSealing};
 
-    type OlWriteBatch = WriteBatch<OLAccountStateV1>;
+    type OLWriteBatch = WriteBatch;
 
     const SEALING_MANIFEST_CAP: L1Height = MAX_SEALING_MANIFEST_COUNT as L1Height;
 
@@ -2788,7 +2788,7 @@ mod tests {
         Arc<MemoryStateBaseLayer>,
         OLBlockHeaderV1,
         BlockInfo,
-        OlWriteBatch,
+        OLWriteBatch,
         ExecOutputBuffer,
     ) {
         let parent_state = env

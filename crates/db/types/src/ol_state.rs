@@ -1,12 +1,10 @@
 //! Toplevel OL state database interface.
 
 // TODO(STR-4220): replace OLStateV1 with a versionable wrapper
-// TODO(STR-4220): make WriteBatch use its own concrete account type instead of being generic
-
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 
 #[cfg(feature = "proxies")]
 use crate::DbError;
@@ -40,17 +38,10 @@ pub trait OLStateDatabase: Send + Sync + 'static {
     /// Stores an OL write batch for a given block commitment.
     ///
     /// Write batches represent state changes that can be applied to a state.
-    fn put_ol_write_batch(
-        &self,
-        commitment: OLBlockCommitment,
-        wb: WriteBatch<OLAccountStateV1>,
-    ) -> DbResult<()>;
+    fn put_ol_write_batch(&self, commitment: OLBlockCommitment, wb: WriteBatch) -> DbResult<()>;
 
     /// Retrieves an OL write batch for a given block commitment.
-    fn get_ol_write_batch(
-        &self,
-        commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>>;
+    fn get_ol_write_batch(&self, commitment: OLBlockCommitment) -> DbResult<Option<WriteBatch>>;
 
     /// Deletes an OL write batch for a given block commitment.
     fn del_ol_write_batch(&self, commitment: OLBlockCommitment) -> DbResult<()>;

@@ -814,7 +814,7 @@ mod tests {
         OLTxSegmentV1, SignedOLBlockHeaderV1,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+    use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
     use strata_ol_stf_v1::{
         test_utils::{execute_block, make_genesis_state},
         BlockComponents, BlockInfo, CompletedBlock,
@@ -1658,7 +1658,7 @@ mod tests {
         ctx.storage().put_canonical_epoch_commitment(pending_epoch);
         let tracker = tracker_with_blocks(&chain.genesis, &[&chain.x1, &chain.x2]);
         let mut finalizable_state = chain.x2.state.clone();
-        let mut epoch_update = WriteBatch::<OLAccountStateV1>::default();
+        let mut epoch_update = WriteBatch::default();
         epoch_update.epochal_writes_mut().cur_epoch = Some(2);
         finalizable_state
             .apply_write_batch(epoch_update)

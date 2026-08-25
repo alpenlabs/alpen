@@ -2,7 +2,7 @@
 
 use strata_ol_state_types::{IStateAccessor, StateResult};
 
-use crate::{OLAccountStateV1, WriteBatch};
+use crate::WriteBatch;
 
 /// Trait for states that can have write batches applied.
 ///
@@ -17,5 +17,5 @@ pub trait IStateBatchApplicable: IStateAccessor {
     /// with the modifications from the batch.
     ///
     /// If this returns an error then the state is left unmodified.
-    fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountStateV1>) -> StateResult<()>;
+    fn apply_write_batch(&mut self, batch: WriteBatch) -> StateResult<()>;
 }
