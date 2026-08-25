@@ -282,6 +282,7 @@ fn build_multi_output_commit(
         config.sequencer_address.script_pubkey(),
         1,
         config.fee_rate,
+        config.max_fee_rate,
     )?;
 
     Ok((commit_tx, commit_fee))
@@ -375,6 +376,7 @@ mod tests {
             FeeBumpingConfig::default(),
             None,
         )
+        .with_max_fee_rate(FeeRate::from_sat_per_vb(1_000).unwrap())
     }
 
     #[test]

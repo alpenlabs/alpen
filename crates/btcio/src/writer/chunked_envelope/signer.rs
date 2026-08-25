@@ -130,7 +130,8 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             BITCOIN_DUST_LIMIT,
             ctx.config.fee_bumping,
             None,
-        );
+        )
+        .with_max_fee_rate(ctx.max_fee_rate);
 
         let built = build_chunked_envelope_txs(
             &env_config,
