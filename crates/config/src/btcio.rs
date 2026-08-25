@@ -6,6 +6,11 @@ use std::{
 use bitcoin::{Amount, FeeRate};
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 
+/// Largest `maxfeerate` value accepted by Bitcoin Core's `sendrawtransaction` RPC.
+///
+/// Bitcoin Core expresses the limit as 1 BTC/kvB, which is 100,000 sat/vB.
+const BITCOIN_CORE_MAX_BROADCAST_FEE_RATE_SAT_VB: u64 = 100_000;
+
 /// Configuration for btcio tasks.
 #[derive(Debug, Clone, Serialize)]
 pub struct BtcioConfig {
@@ -430,6 +435,12 @@ impl BroadcasterConfig {
             );
         }
 
+        if self.max_fee_rate_sat_vb.get() > BITCOIN_CORE_MAX_BROADCAST_FEE_RATE_SAT_VB {
+            return Err(format!(
+                "btcio.broadcaster.max_fee_rate_sat_vb must be at most {BITCOIN_CORE_MAX_BROADCAST_FEE_RATE_SAT_VB}, Bitcoin Core's 1 BTC/kvB sendrawtransaction limit"
+            ));
+        }
+
         Ok(())
     }
 
@@ -638,6 +649,38 @@ mod tests {
         assert!(error.contains(
             "btcio.broadcaster.max_fee_rate_sat_vb is too large to represent as a Bitcoin fee rate"
         ))
+    }
+
+    #[test]
+    fn btcio_accepts_bitcoin_core_max_broadcast_fee_rate() {
+        let input = format!(
+            "{BTCIO_CONFIG_PREFIX}\n[writer.fee_bumping]\nmax_fee_rate_sat_vb = 100000\n\
+             [broadcaster]\npoll_interval_ms = 200\nmax_fee_rate_sat_vb = 100000"
+        );
+
+        let config = toml::from_str::<BtcioConfig>(&input)
+            .expect("Bitcoin Core's maximum RPC fee rate should be accepted");
+
+        assert_eq!(
+            config.broadcaster.max_fee_rate_sat_vb.get(),
+            BITCOIN_CORE_MAX_BROADCAST_FEE_RATE_SAT_VB
+        );
+    }
+
+    #[test]
+    fn btcio_rejects_broadcast_fee_rate_above_bitcoin_core_limit() {
+        let above_bitcoin_core_limit = BITCOIN_CORE_MAX_BROADCAST_FEE_RATE_SAT_VB + 1;
+        let input = format!(
+            "{BTCIO_CONFIG_PREFIX}\n[writer.fee_bumping]\nmax_fee_rate_sat_vb = 100000\n\
+             [broadcaster]\npoll_interval_ms = 200\nmax_fee_rate_sat_vb = {above_bitcoin_core_limit}"
+        );
+        let error = toml::from_str::<BtcioConfig>(&input)
+            .expect_err("Bitcoin Core rejects maxfeerate values above 1 BTC/kvB")
+            .to_string();
+
+        assert!(error.contains(
+            "btcio.broadcaster.max_fee_rate_sat_vb must be at most 100000, Bitcoin Core's 1 BTC/kvB sendrawtransaction limit"
+        ));
     }
 
     #[test]
