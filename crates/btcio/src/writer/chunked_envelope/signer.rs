@@ -25,8 +25,8 @@ use crate::{
     tx_entry::L1TxEntryExt,
     writer::{
         builder::{
-            ensure_built_fee_rate_within_max, ensure_initial_fee_rate_within_max, EnvelopeConfig,
-            EnvelopeError, BITCOIN_DUST_LIMIT,
+            effective_fee_rate, ensure_built_fee_rate_within_max,
+            ensure_initial_fee_rate_within_max, EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT,
         },
         fees::resolve_fee_rate,
     },
@@ -149,6 +149,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .map_err(EnvelopeError::SignRawTransaction)?
             .tx;
         ensure_built_fee_rate_within_max(&signed_commit, built.commit_fee, ctx.max_fee_rate)?;
+        let commit_fee_rate = effective_fee_rate(&signed_commit, built.commit_fee)?;
         for reveal_tx in &built.reveal_txs {
             let commit_output =
                 &signed_commit.output[reveal_tx.input[0].previous_output.vout as usize];
@@ -191,7 +192,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         updated.reveals = reveals;
         updated.status = ChunkedEnvelopeStatus::Unpublished;
         let commit_tx_entry =
-            L1TxEntry::from_tx_with_fee(&signed_commit, fee_rate, built.commit_fee);
+            L1TxEntry::from_tx_with_fee(&signed_commit, commit_fee_rate, built.commit_fee);
 
         Ok(SignedChunkedEnvelope {
             entry: updated,

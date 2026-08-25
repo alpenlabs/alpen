@@ -303,14 +303,17 @@ mod tests {
     use bitcoin::{
         opcodes::all::OP_RETURN,
         secp256k1::{rand, Keypair, Secp256k1},
-        Network, ScriptBuf, Txid,
+        Network, Txid,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 
     use super::*;
     use crate::{
         test_utils::test_context::get_writer_context,
-        writer::chunked_envelope::commit_op_return::COMMIT_OP_RETURN_PAYLOAD_LEN,
+        writer::{
+            builder::signed_commit_vsize,
+            chunked_envelope::commit_op_return::COMMIT_OP_RETURN_PAYLOAD_LEN,
+        },
     };
 
     const TEST_DA_BLOB_VERSION: u32 = 1;
@@ -330,7 +333,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(100.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -347,7 +350,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(50.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -513,13 +516,7 @@ mod tests {
         let requested_fee = config
             .fee_rate
             .fee_vb(
-                u64::try_from(get_size(
-                    &no_change_commit.input,
-                    &no_change_commit.output,
-                    None,
-                    None,
-                ))
-                .unwrap(),
+                u64::try_from(signed_commit_vsize(&mock_utxos, &no_change_commit.output)).unwrap(),
             )
             .unwrap();
         let returned_dust = 100;
@@ -568,7 +565,7 @@ mod tests {
                 .unwrap(),
             vout: 0,
             address: address.as_unchecked().clone(),
-            script_pubkey: ScriptBuf::new(),
+            script_pubkey: address.script_pubkey(),
             amount: Amount::from_sat(1_000),
             confirmations: 100,
             spendable: true,

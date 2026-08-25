@@ -1,5 +1,5 @@
 use core::result::Result::Ok;
-use std::cmp::Reverse;
+use std::{cmp::Reverse, slice};
 
 use anyhow::anyhow;
 use bitcoin::{
@@ -36,6 +36,10 @@ use super::context::WriterContext;
 use crate::writer::fees::resolve_fee_rate;
 
 pub(crate) const BITCOIN_DUST_LIMIT: u64 = 546;
+
+/// Largest serialized ECDSA signature, including its sighash byte.
+const MAX_ECDSA_SIGNATURE_SIZE: usize = 73;
+const COMPRESSED_PUBLIC_KEY_SIZE: usize = 33;
 
 /// Config for creating envelope transactions.
 #[derive(Debug, Clone)]
@@ -315,18 +319,23 @@ pub(crate) fn ensure_initial_fee_rate_within_max(
     Ok(())
 }
 
+/// Returns a built transaction's effective fee rate, rounded up to whole sat/vB.
+pub(crate) fn effective_fee_rate(tx: &Transaction, fee: Amount) -> Result<FeeRate, EnvelopeError> {
+    let vsize = tx.vsize() as u64;
+    if vsize == 0 {
+        return Err(EnvelopeError::FeeOverflow);
+    }
+
+    FeeRate::from_sat_per_vb(fee.to_sat().div_ceil(vsize)).ok_or(EnvelopeError::FeeOverflow)
+}
+
 /// Ensures a built transaction's effective fee rate fits the broadcast ceiling.
 pub(crate) fn ensure_built_fee_rate_within_max(
     tx: &Transaction,
     fee: Amount,
     max_fee_rate: FeeRate,
 ) -> Result<(), EnvelopeError> {
-    let vsize = tx.vsize() as u64;
-    if vsize == 0 {
-        return Err(EnvelopeError::FeeOverflow);
-    }
-    let built_fee_rate =
-        FeeRate::from_sat_per_vb(fee.to_sat().div_ceil(vsize)).ok_or(EnvelopeError::FeeOverflow)?;
+    let built_fee_rate = effective_fee_rate(tx, fee)?;
     if built_fee_rate > max_fee_rate {
         return Err(EnvelopeError::BuiltFeeRateAboveMax {
             built_sat_vb: built_fee_rate.to_sat_per_vb_ceil(),
@@ -507,6 +516,57 @@ pub(crate) fn get_size(
     tx.vsize()
 }
 
+/// Returns whether signing this wallet output leaves the commit txid unchanged.
+///
+/// Reveals are built before the wallet signs the commit, so commit inputs must put their entire
+/// satisfaction in the witness. The sequencer wallet normally produces P2WPKH outputs; P2TR key
+/// spends are also safe and have a known witness shape.
+fn is_supported_commit_utxo(utxo: &ListUnspentItem) -> bool {
+    utxo.script_pubkey.is_p2wpkh() || utxo.script_pubkey.is_p2tr()
+}
+
+fn commit_inputs(utxos: &[ListUnspentItem]) -> Vec<TxIn> {
+    utxos
+        .iter()
+        .map(|utxo| TxIn {
+            previous_output: OutPoint {
+                txid: utxo.txid,
+                vout: utxo.vout,
+            },
+            script_sig: ScriptBuf::new(),
+            witness: Witness::new(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+        })
+        .collect()
+}
+
+/// Estimates the signed commit vsize from the selected wallet outputs.
+///
+/// P2WPKH uses Bitcoin Core's conservative high-R witness shape. The wallet normally grinds a
+/// low-R signature, so the final transaction can be up to one vbyte smaller; the signed
+/// transaction's effective rate is checked against the hard broadcast ceiling before persistence.
+pub(crate) fn signed_commit_vsize(utxos: &[ListUnspentItem], outputs: &[TxOut]) -> usize {
+    let mut inputs = commit_inputs(utxos);
+    for (input, utxo) in inputs.iter_mut().zip(utxos) {
+        if utxo.script_pubkey.is_p2wpkh() {
+            input.witness.push([0; MAX_ECDSA_SIGNATURE_SIZE]);
+            input.witness.push([0; COMPRESSED_PUBLIC_KEY_SIZE]);
+        } else if utxo.script_pubkey.is_p2tr() {
+            input.witness.push([0; SCHNORR_SIGNATURE_SIZE]);
+        } else {
+            unreachable!("commit coin selection only returns supported native SegWit outputs");
+        }
+    }
+
+    Transaction {
+        input: inputs,
+        output: outputs.to_vec(),
+        lock_time: LockTime::ZERO,
+        version: Version(2),
+    }
+    .vsize()
+}
+
 /// Choose utxos almost naively.
 pub(crate) fn choose_utxos(
     utxos: &[ListUnspentItem],
@@ -577,7 +637,42 @@ fn build_commit_transaction(
     Ok((transaction, consumed_utxos))
 }
 
-/// Funds fixed commit outputs at an exact fee rate and either creates change or carries it forward.
+/// Selects enough wallet outputs to fund `outputs` and the fee implied by their signed input size.
+fn select_commit_utxos(
+    utxos: &[ListUnspentItem],
+    outputs: &[TxOut],
+    base_output_total: u64,
+    minimum_excess: u64,
+    fee_rate: FeeRate,
+) -> Result<(Vec<ListUnspentItem>, u64, u64), EnvelopeError> {
+    let Some(first_utxo) = utxos.first() else {
+        return Err(EnvelopeError::NotEnoughUtxos(base_output_total, 0));
+    };
+    let mut estimated_size = signed_commit_vsize(slice::from_ref(first_utxo), outputs);
+
+    loop {
+        let estimated_fee = fee_sats_for_vsize(estimated_size, fee_rate)?;
+        let estimated_input_total = base_output_total
+            .checked_add(estimated_fee)
+            .and_then(|total| total.checked_add(minimum_excess))
+            .ok_or(EnvelopeError::FeeOverflow)?;
+        let (chosen_utxos, sum) = choose_utxos(utxos, estimated_input_total)?;
+        let signed_size = signed_commit_vsize(&chosen_utxos, outputs);
+        let fee = fee_sats_for_vsize(signed_size, fee_rate)?;
+        let required = base_output_total
+            .checked_add(fee)
+            .and_then(|total| total.checked_add(minimum_excess))
+            .ok_or(EnvelopeError::FeeOverflow)?;
+
+        if sum >= required {
+            return Ok((chosen_utxos, sum, fee));
+        }
+
+        estimated_size = signed_size;
+    }
+}
+
+/// Funds fixed commit outputs at the requested rate and prefers bumpable change.
 pub(crate) fn fund_commit_transaction(
     utxos: Vec<ListUnspentItem>,
     base_outputs: Vec<TxOut>,
@@ -590,96 +685,78 @@ pub(crate) fn fund_commit_transaction(
     });
     let base_output_total = base_output_total.ok_or(EnvelopeError::FeeOverflow)?;
 
-    // Start coin selection with a single-input, no-change estimate. Once inputs are selected, the
-    // transaction is priced from its actual input count and output shape below.
-    let mut estimated_size = get_size(&default_txin(), &base_outputs, None, None);
-
     let utxos: Vec<ListUnspentItem> = utxos
         .iter()
-        .filter(|utxo| utxo.spendable && utxo.solvable && utxo.amount.to_sat() > BITCOIN_DUST_LIMIT)
+        .filter(|utxo| {
+            utxo.spendable
+                && utxo.solvable
+                && utxo.amount.to_sat() > BITCOIN_DUST_LIMIT
+                && is_supported_commit_utxo(utxo)
+        })
         .cloned()
         .collect();
 
-    loop {
-        let estimated_fee = fee_sats_for_vsize(estimated_size, fee_rate)?;
-        let estimated_input_total = base_output_total
-            .checked_add(estimated_fee)
-            .ok_or(EnvelopeError::FeeOverflow)?;
-        let (chosen_utxos, sum) = choose_utxos(&utxos, estimated_input_total)?;
-        let inputs: Vec<TxIn> = chosen_utxos
-            .iter()
-            .map(|utxo| TxIn {
-                previous_output: OutPoint {
-                    txid: utxo.txid,
-                    vout: utxo.vout,
-                },
-                script_sig: script::Builder::new().into_script(),
-                witness: Witness::new(),
-                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-            })
-            .collect();
-        let mut outputs = base_outputs.clone();
-
-        let no_change_size = get_size(&inputs, &outputs, None, None);
-        let no_change_fee = fee_sats_for_vsize(no_change_size, fee_rate)?;
-        let no_change_total = base_output_total
-            .checked_add(no_change_fee)
-            .ok_or(EnvelopeError::FeeOverflow)?;
-        let Some(no_change_excess) = sum.checked_sub(no_change_total) else {
-            estimated_size = no_change_size;
-            continue;
-        };
-
-        // A change output is only useful when it remains non-dust after paying for its own size.
-        // Otherwise the residual is carried through the reveal output without changing the fee.
-        let mut outputs_with_change = outputs.clone();
-        outputs_with_change.push(TxOut {
-            value: Amount::ZERO,
-            script_pubkey: change_script.clone(),
-        });
-        let with_change_size = get_size(&inputs, &outputs_with_change, None, None);
-        let with_change_fee = fee_sats_for_vsize(with_change_size, fee_rate)?;
-        let with_change_total = base_output_total
-            .checked_add(with_change_fee)
-            .and_then(|total| total.checked_add(BITCOIN_DUST_LIMIT))
-            .ok_or(EnvelopeError::FeeOverflow)?;
-
-        if sum >= with_change_total {
+    // Prefer a standalone change output even when doing so requires another wallet input. The fee
+    // bumper can shrink that output without racing another writer for an unlocked input.
+    let mut outputs_with_change = base_outputs.clone();
+    outputs_with_change.push(TxOut {
+        value: Amount::ZERO,
+        script_pubkey: change_script,
+    });
+    match select_commit_utxos(
+        &utxos,
+        &outputs_with_change,
+        base_output_total,
+        BITCOIN_DUST_LIMIT,
+        fee_rate,
+    ) {
+        Ok((chosen_utxos, sum, fee)) => {
             outputs_with_change
                 .last_mut()
                 .expect("change output was just appended")
-                .value = Amount::from_sat(sum - base_output_total - with_change_fee);
-            outputs = outputs_with_change;
-        } else {
-            let carry_output = outputs
-                .get_mut(carry_output_index)
-                .expect("carry output index must reference a fixed output");
-            carry_output.value = carry_output
-                .value
-                .checked_add(Amount::from_sat(no_change_excess))
-                .ok_or(EnvelopeError::FeeOverflow)?;
+                .value = Amount::from_sat(sum - base_output_total - fee);
+            return Ok((
+                Transaction {
+                    lock_time: LockTime::ZERO,
+                    version: Version(2),
+                    input: commit_inputs(&chosen_utxos),
+                    output: outputs_with_change,
+                },
+                chosen_utxos,
+                Amount::from_sat(fee),
+            ));
         }
-
-        let output_total = outputs.iter().try_fold(0u64, |total, output| {
-            total.checked_add(output.value.to_sat())
-        });
-        let output_total = output_total.ok_or(EnvelopeError::FeeOverflow)?;
-        let actual_fee = Amount::from_sat(
-            sum.checked_sub(output_total)
-                .expect("funded outputs cannot exceed selected inputs"),
-        );
-
-        return Ok((
-            Transaction {
-                lock_time: LockTime::ZERO,
-                version: Version(2),
-                input: inputs,
-                output: outputs,
-            },
-            chosen_utxos,
-            actual_fee,
-        ));
+        Err(EnvelopeError::NotEnoughUtxos(_, _)) => {}
+        Err(error) => return Err(error),
     }
+
+    // If the wallet cannot fund spendable change, carry every non-fee satoshi through a reveal
+    // output. This preserves the requested fee and avoids accidentally burning the remainder.
+    let (chosen_utxos, sum, fee) =
+        select_commit_utxos(&utxos, &base_outputs, base_output_total, 0, fee_rate)?;
+    let carried_value = sum
+        .checked_sub(base_output_total)
+        .and_then(|value| value.checked_sub(fee))
+        .expect("coin selection funded the fixed outputs and fee");
+    let mut outputs = base_outputs;
+    let carry_output = outputs
+        .get_mut(carry_output_index)
+        .expect("carry output index must reference a fixed output");
+    carry_output.value = carry_output
+        .value
+        .checked_add(Amount::from_sat(carried_value))
+        .ok_or(EnvelopeError::FeeOverflow)?;
+
+    Ok((
+        Transaction {
+            lock_time: LockTime::ZERO,
+            version: Version(2),
+            input: commit_inputs(&chosen_utxos),
+            output: outputs,
+        },
+        chosen_utxos,
+        Amount::from_sat(fee),
+    ))
 }
 
 fn default_txin() -> Vec<TxIn> {
@@ -924,7 +1001,8 @@ mod tests {
         secp256k1::{constants::SCHNORR_SIGNATURE_SIZE, Secp256k1, SecretKey},
         taproot::ControlBlock,
         transaction::Version,
-        Address, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+        Address, Network, OutPoint, PubkeyHash, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+        Witness,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
     use strata_l1_txfmt::{MagicBytes, TagData, TagDataRef};
@@ -953,7 +1031,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(100.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -970,7 +1048,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(50.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -987,7 +1065,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(10.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -1110,20 +1188,16 @@ mod tests {
         let returned_dust = 100;
         let fee_rate = FeeRate::from_sat_per_vb(10).unwrap();
         let recipient = ctx.sequencer_address.clone();
-        let mut inputs = default_txin();
-        inputs.push(default_txin().pop().unwrap());
-        let initial_size = get_size(
-            &inputs,
+        utxos.truncate(2);
+        let initial_size = signed_commit_vsize(
+            &utxos,
             &[TxOut {
                 value: Amount::from_sat(output_value),
                 script_pubkey: recipient.script_pubkey(),
             }],
-            None,
-            None,
         );
         let requested_fee = fee_sats_for_vsize(initial_size, fee_rate).unwrap();
         let input_total = output_value + requested_fee + returned_dust;
-        utxos.truncate(2);
         utxos[0].amount = Amount::from_sat(input_total / 2);
         utxos[1].amount = Amount::from_sat(input_total - input_total / 2);
 
@@ -1139,27 +1213,70 @@ mod tests {
     }
 
     #[test]
+    fn commit_selects_another_utxo_to_create_bumpable_change() {
+        let (ctx, _, _, mut utxos) = get_mock_data();
+        let output_value = 100_000;
+        let fee_rate = FeeRate::from_sat_per_vb(10).unwrap();
+        let recipient = ctx.sequencer_address.clone();
+        utxos.truncate(2);
+        let no_change_size = signed_commit_vsize(
+            &utxos[..1],
+            &[TxOut {
+                value: Amount::from_sat(output_value),
+                script_pubkey: recipient.script_pubkey(),
+            }],
+        );
+        let no_change_fee = fee_sats_for_vsize(no_change_size, fee_rate).unwrap();
+        utxos[0].amount = Amount::from_sat(output_value + no_change_fee + 100);
+        utxos[1].amount = Amount::from_sat(10_000);
+
+        let (tx, consumed) =
+            build_commit_transaction(utxos, recipient.clone(), recipient, output_value, fee_rate)
+                .unwrap();
+        let actual_fee = calculate_transaction_fee_from_utxos(&tx, &consumed);
+        let priced_vsize = signed_commit_vsize(&consumed, &tx.output);
+
+        assert_eq!(tx.input.len(), 2);
+        assert_eq!(tx.output.len(), 2);
+        assert!(tx.output[1].value.to_sat() >= BITCOIN_DUST_LIMIT);
+        assert_eq!(
+            actual_fee,
+            fee_sats_for_vsize(priced_vsize, fee_rate).unwrap()
+        );
+    }
+
+    #[test]
+    fn commit_pricing_includes_p2wpkh_signature_and_pubkey() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let outputs = [TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: ctx.sequencer_address.script_pubkey(),
+        }];
+        let unsigned_inputs = commit_inputs(&utxos[..1]);
+        let schnorr_only_vsize = get_size(&unsigned_inputs, &outputs, None, None);
+        let p2wpkh_vsize = signed_commit_vsize(&utxos[..1], &outputs);
+
+        assert!(p2wpkh_vsize > schnorr_only_vsize);
+    }
+
+    #[test]
     fn forwarded_commit_change_does_not_reduce_recorded_reveal_fee() {
         let (ctx, _, _, mut utxos) = get_mock_data();
         let env_config = test_envelope_config(&ctx, Some(test_envelope_pubkey()));
         let payload = test_payload();
         let baseline = create_envelope_transactions(&env_config, &payload, utxos.clone()).unwrap();
         let commit_value = baseline.commit_tx.output[0].value.to_sat();
-        let mut inputs = default_txin();
-        inputs.push(default_txin().pop().unwrap());
-        let commit_size = get_size(
-            &inputs,
+        utxos.truncate(2);
+        let commit_size = signed_commit_vsize(
+            &utxos,
             &[TxOut {
                 value: Amount::from_sat(commit_value),
                 script_pubkey: baseline.commit_tx.output[0].script_pubkey.clone(),
             }],
-            None,
-            None,
         );
         let commit_fee = fee_sats_for_vsize(commit_size, env_config.fee_rate).unwrap();
         let returned_dust = 100;
         let input_total = commit_value + commit_fee + returned_dust;
-        utxos.truncate(2);
         utxos[0].amount = Amount::from_sat(input_total / 2);
         utxos[1].amount = Amount::from_sat(input_total - input_total / 2);
 
@@ -1320,10 +1437,13 @@ mod tests {
         unspendable.spendable = false;
         let mut unsolvable = utxos[1].clone();
         unsolvable.solvable = false;
+        let mut legacy = utxos[2].clone();
+        legacy.script_pubkey = ScriptBuf::new_p2pkh(&PubkeyHash::all_zeros());
+        legacy.amount = Amount::from_btc(100.0).unwrap();
         let viable = utxos[2].clone();
 
         let (tx, consumed) = super::build_commit_transaction(
-            vec![unspendable, unsolvable, viable.clone()],
+            vec![unspendable, unsolvable, legacy, viable.clone()],
             ctx.sequencer_address.clone(),
             ctx.sequencer_address.clone(),
             500_000_000,
