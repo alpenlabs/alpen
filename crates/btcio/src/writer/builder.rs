@@ -407,9 +407,9 @@ pub fn create_envelope_transactions(
     let commit_fee_sats = calculate_transaction_fee_from_utxos(&commit_tx, &consumed_utxos);
 
     let output_to_reveal = commit_tx.output[0].clone();
-    let returned_dust = output_to_reveal.value.to_sat().saturating_sub(commit_value);
+    let carried_change = output_to_reveal.value.to_sat().saturating_sub(commit_value);
     let reveal_output_value = base_reveal_output_value
-        .checked_add(returned_dust)
+        .checked_add(carried_change)
         .ok_or(EnvelopeError::FeeOverflow)?;
 
     // Build reveal tx
@@ -424,7 +424,7 @@ pub fn create_envelope_transactions(
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
             .ok_or(anyhow!("Cannot create control block".to_string()))?,
     )?;
-    let reveal_fee_sats = commit_value.saturating_sub(
+    let reveal_fee_sats = output_to_reveal.value.to_sat().saturating_sub(
         reveal_tx
             .output
             .iter()
@@ -563,17 +563,36 @@ fn build_commit_transaction(
     output_value: u64,
     fee_rate: FeeRate,
 ) -> Result<(Transaction, Vec<ListUnspentItem>), EnvelopeError> {
-    // get single input single output transaction size
-    let mut size = get_size(
-        &default_txin(),
-        &[TxOut {
+    let (transaction, consumed_utxos, _) = fund_commit_transaction(
+        utxos,
+        vec![TxOut {
             script_pubkey: recipient.script_pubkey(),
             value: Amount::from_sat(output_value),
         }],
-        None,
-        None,
-    );
-    let mut last_size = size;
+        change_address.script_pubkey(),
+        0,
+        fee_rate,
+    )?;
+
+    Ok((transaction, consumed_utxos))
+}
+
+/// Funds fixed commit outputs at an exact fee rate and either creates change or carries it forward.
+pub(crate) fn fund_commit_transaction(
+    utxos: Vec<ListUnspentItem>,
+    base_outputs: Vec<TxOut>,
+    change_script: ScriptBuf,
+    carry_output_index: usize,
+    fee_rate: FeeRate,
+) -> Result<(Transaction, Vec<ListUnspentItem>, Amount), EnvelopeError> {
+    let base_output_total = base_outputs.iter().try_fold(0u64, |total, output| {
+        total.checked_add(output.value.to_sat())
+    });
+    let base_output_total = base_output_total.ok_or(EnvelopeError::FeeOverflow)?;
+
+    // Start coin selection with a single-input, no-change estimate. Once inputs are selected, the
+    // transaction is priced from its actual input count and output shape below.
+    let mut estimated_size = get_size(&default_txin(), &base_outputs, None, None);
 
     let utxos: Vec<ListUnspentItem> = utxos
         .iter()
@@ -581,73 +600,86 @@ fn build_commit_transaction(
         .cloned()
         .collect();
 
-    let (commit_txn, consumed_utxo) = loop {
-        let fee = fee_sats_for_vsize(last_size, fee_rate)?;
-
-        let input_total = output_value
-            .checked_add(fee)
+    loop {
+        let estimated_fee = fee_sats_for_vsize(estimated_size, fee_rate)?;
+        let estimated_input_total = base_output_total
+            .checked_add(estimated_fee)
             .ok_or(EnvelopeError::FeeOverflow)?;
-
-        let res = choose_utxos(&utxos, input_total)?;
-
-        let (chosen_utxos, sum) = res;
-
-        let mut outputs: Vec<TxOut> = vec![];
-        outputs.push(TxOut {
-            value: Amount::from_sat(output_value),
-            script_pubkey: recipient.script_pubkey(),
-        });
-
-        let mut direct_return = false;
-        if let Some(excess) = sum.checked_sub(input_total) {
-            if excess >= BITCOIN_DUST_LIMIT {
-                outputs.push(TxOut {
-                    value: Amount::from_sat(excess),
-                    script_pubkey: change_address.script_pubkey(),
-                });
-            } else {
-                // Return sub-dust change through the reveal output instead of silently turning it
-                // into extra fee. The reveal builder forwards the same amount to the sequencer,
-                // keeping both transactions at their requested fee rate and therefore within the
-                // broadcast guardrail when the requested rate is within it.
-                outputs[0].value = outputs[0]
-                    .value
-                    .checked_add(Amount::from_sat(excess))
-                    .ok_or(EnvelopeError::FeeOverflow)?;
-                direct_return = true;
-            }
-        }
-
+        let (chosen_utxos, sum) = choose_utxos(&utxos, estimated_input_total)?;
         let inputs: Vec<TxIn> = chosen_utxos
             .iter()
-            .map(|u| TxIn {
+            .map(|utxo| TxIn {
                 previous_output: OutPoint {
-                    txid: u.txid,
-                    vout: u.vout,
+                    txid: utxo.txid,
+                    vout: utxo.vout,
                 },
                 script_sig: script::Builder::new().into_script(),
                 witness: Witness::new(),
                 sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
             })
             .collect();
+        let mut outputs = base_outputs.clone();
 
-        size = get_size(&inputs, &outputs, None, None);
+        let no_change_size = get_size(&inputs, &outputs, None, None);
+        let no_change_fee = fee_sats_for_vsize(no_change_size, fee_rate)?;
+        let no_change_total = base_output_total
+            .checked_add(no_change_fee)
+            .ok_or(EnvelopeError::FeeOverflow)?;
+        let Some(no_change_excess) = sum.checked_sub(no_change_total) else {
+            estimated_size = no_change_size;
+            continue;
+        };
 
-        if size == last_size || direct_return {
-            let commit_txn = Transaction {
+        // A change output is only useful when it remains non-dust after paying for its own size.
+        // Otherwise the residual is carried through the reveal output without changing the fee.
+        let mut outputs_with_change = outputs.clone();
+        outputs_with_change.push(TxOut {
+            value: Amount::ZERO,
+            script_pubkey: change_script.clone(),
+        });
+        let with_change_size = get_size(&inputs, &outputs_with_change, None, None);
+        let with_change_fee = fee_sats_for_vsize(with_change_size, fee_rate)?;
+        let with_change_total = base_output_total
+            .checked_add(with_change_fee)
+            .and_then(|total| total.checked_add(BITCOIN_DUST_LIMIT))
+            .ok_or(EnvelopeError::FeeOverflow)?;
+
+        if sum >= with_change_total {
+            outputs_with_change
+                .last_mut()
+                .expect("change output was just appended")
+                .value = Amount::from_sat(sum - base_output_total - with_change_fee);
+            outputs = outputs_with_change;
+        } else {
+            let carry_output = outputs
+                .get_mut(carry_output_index)
+                .expect("carry output index must reference a fixed output");
+            carry_output.value = carry_output
+                .value
+                .checked_add(Amount::from_sat(no_change_excess))
+                .ok_or(EnvelopeError::FeeOverflow)?;
+        }
+
+        let output_total = outputs.iter().try_fold(0u64, |total, output| {
+            total.checked_add(output.value.to_sat())
+        });
+        let output_total = output_total.ok_or(EnvelopeError::FeeOverflow)?;
+        let actual_fee = Amount::from_sat(
+            sum.checked_sub(output_total)
+                .expect("funded outputs cannot exceed selected inputs"),
+        );
+
+        return Ok((
+            Transaction {
                 lock_time: LockTime::ZERO,
                 version: Version(2),
                 input: inputs,
                 output: outputs,
-            };
-
-            break (commit_txn, chosen_utxos);
-        }
-
-        last_size = size;
-    };
-
-    Ok((commit_txn, consumed_utxo))
+            },
+            chosen_utxos,
+            actual_fee,
+        ));
+    }
 }
 
 fn default_txin() -> Vec<TxIn> {
@@ -1078,8 +1110,10 @@ mod tests {
         let returned_dust = 100;
         let fee_rate = FeeRate::from_sat_per_vb(10).unwrap();
         let recipient = ctx.sequencer_address.clone();
+        let mut inputs = default_txin();
+        inputs.push(default_txin().pop().unwrap());
         let initial_size = get_size(
-            &default_txin(),
+            &inputs,
             &[TxOut {
                 value: Amount::from_sat(output_value),
                 script_pubkey: recipient.script_pubkey(),
@@ -1088,17 +1122,63 @@ mod tests {
             None,
         );
         let requested_fee = fee_sats_for_vsize(initial_size, fee_rate).unwrap();
-        utxos.truncate(1);
-        utxos[0].amount = Amount::from_sat(output_value + requested_fee + returned_dust);
+        let input_total = output_value + requested_fee + returned_dust;
+        utxos.truncate(2);
+        utxos[0].amount = Amount::from_sat(input_total / 2);
+        utxos[1].amount = Amount::from_sat(input_total - input_total / 2);
 
         let (tx, consumed) =
             build_commit_transaction(utxos, recipient.clone(), recipient, output_value, fee_rate)
                 .unwrap();
         let actual_fee = calculate_transaction_fee_from_utxos(&tx, &consumed);
 
+        assert_eq!(tx.input.len(), 2);
         assert_eq!(tx.output.len(), 1);
         assert_eq!(tx.output[0].value.to_sat(), output_value + returned_dust);
         assert_eq!(actual_fee, requested_fee);
+    }
+
+    #[test]
+    fn forwarded_commit_change_does_not_reduce_recorded_reveal_fee() {
+        let (ctx, _, _, mut utxos) = get_mock_data();
+        let env_config = test_envelope_config(&ctx, Some(test_envelope_pubkey()));
+        let payload = test_payload();
+        let baseline = create_envelope_transactions(&env_config, &payload, utxos.clone()).unwrap();
+        let commit_value = baseline.commit_tx.output[0].value.to_sat();
+        let mut inputs = default_txin();
+        inputs.push(default_txin().pop().unwrap());
+        let commit_size = get_size(
+            &inputs,
+            &[TxOut {
+                value: Amount::from_sat(commit_value),
+                script_pubkey: baseline.commit_tx.output[0].script_pubkey.clone(),
+            }],
+            None,
+            None,
+        );
+        let commit_fee = fee_sats_for_vsize(commit_size, env_config.fee_rate).unwrap();
+        let returned_dust = 100;
+        let input_total = commit_value + commit_fee + returned_dust;
+        utxos.truncate(2);
+        utxos[0].amount = Amount::from_sat(input_total / 2);
+        utxos[1].amount = Amount::from_sat(input_total - input_total / 2);
+
+        let envelope = create_envelope_transactions(&env_config, &payload, utxos).unwrap();
+        let reveal_output_total: Amount = envelope
+            .reveal_tx
+            .output
+            .iter()
+            .map(|output| output.value)
+            .sum();
+        let actual_reveal_fee = envelope.commit_tx.output[0].value - reveal_output_total;
+
+        assert_eq!(envelope.commit_tx.input.len(), 2);
+        assert_eq!(envelope.commit_fee, Amount::from_sat(commit_fee));
+        assert_eq!(envelope.reveal_fee, actual_reveal_fee);
+        assert_eq!(
+            envelope.reveal_tx.output[1].value.to_sat(),
+            baseline.reveal_tx.output[1].value.to_sat() + returned_dust
+        );
     }
 
     fn get_txn_from_utxo(utxo: &ListUnspentItem, _address: &Address) -> Transaction {

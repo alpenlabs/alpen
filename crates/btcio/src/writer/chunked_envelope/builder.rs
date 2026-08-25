@@ -26,8 +26,8 @@ use strata_l1_txfmt::MagicBytes;
 
 use super::commit_op_return::build_commit_op_return;
 use crate::writer::builder::{
-    choose_utxos, fee_sats_for_vsize, get_size, reveal_fee_headroom, sign_reveal_transaction,
-    EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT,
+    fee_sats_for_vsize, fund_commit_transaction, get_size, reveal_fee_headroom,
+    sign_reveal_transaction, EnvelopeConfig, EnvelopeError,
 };
 
 /// Intermediate state for each reveal before tx construction.
@@ -164,14 +164,14 @@ fn build_reveals_for_commit(
         let reveal_fee = fee_sats_for_vsize(reveal_vsize, config.fee_rate)?;
         let reveal_vsize = u64::try_from(reveal_vsize).map_err(|_| EnvelopeError::FeeOverflow)?;
         let headroom = reveal_fee_headroom(config.fee_rate, reveal_vsize, &config.fee_bumping)?;
-        let returned_dust = commit_output
+        let carried_change = commit_output
             .value
             .to_sat()
             .saturating_sub(artifact.commit_value);
         let reveal_output_value = config
             .reveal_amount
             .checked_add(headroom)
-            .and_then(|value| value.checked_add(returned_dust))
+            .and_then(|value| value.checked_add(carried_change))
             .ok_or(EnvelopeError::FeeOverflow)?;
         let required = reveal_output_value
             .checked_add(reveal_fee)
@@ -251,11 +251,6 @@ fn build_multi_output_commit(
     op_return_script: &ScriptBuf,
     utxos: Vec<ListUnspentItem>,
 ) -> Result<(Transaction, Amount), EnvelopeError> {
-    let spendable: Vec<ListUnspentItem> = utxos
-        .into_iter()
-        .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
-        .collect();
-
     let p2tr_outputs: Vec<TxOut> = artifacts
         .iter()
         .map(|a| {
@@ -278,70 +273,18 @@ fn build_multi_output_commit(
         script_pubkey: op_return_script.clone(),
     };
 
-    let total_output: u64 = artifacts.iter().map(|a| a.commit_value).sum();
-
-    let initial_outputs: Vec<TxOut> = iter::once(op_return_output.clone())
+    let base_outputs: Vec<TxOut> = iter::once(op_return_output)
         .chain(p2tr_outputs.iter().cloned())
         .collect();
+    let (commit_tx, _, commit_fee) = fund_commit_transaction(
+        utxos,
+        base_outputs,
+        config.sequencer_address.script_pubkey(),
+        1,
+        config.fee_rate,
+    )?;
 
-    let mut last_size = get_size(
-        &[make_txin(bitcoin::Txid::all_zeros(), 0)],
-        &initial_outputs,
-        None,
-        None,
-    );
-
-    loop {
-        let fee = fee_sats_for_vsize(last_size, config.fee_rate)?;
-        let needed = total_output
-            .checked_add(fee)
-            .ok_or(EnvelopeError::FeeOverflow)?;
-        let (chosen, sum) = choose_utxos(&spendable, needed)?;
-
-        let inputs: Vec<TxIn> = chosen.iter().map(|u| make_txin(u.txid, u.vout)).collect();
-
-        let mut outputs: Vec<TxOut> = iter::once(op_return_output.clone())
-            .chain(p2tr_outputs.iter().cloned())
-            .collect();
-
-        let mut done = false;
-        if let Some(excess) = sum.checked_sub(needed) {
-            if excess >= BITCOIN_DUST_LIMIT {
-                outputs.push(TxOut {
-                    value: Amount::from_sat(excess),
-                    script_pubkey: config.sequencer_address.script_pubkey(),
-                });
-            } else {
-                // Return sub-dust change through the first reveal rather than overpaying the
-                // commit fee. `build_reveals_for_commit` carries this extra value through to that
-                // reveal's sequencer output, so it is not burned as reveal fee either.
-                outputs[1].value = outputs[1]
-                    .value
-                    .checked_add(Amount::from_sat(excess))
-                    .ok_or(EnvelopeError::FeeOverflow)?;
-                done = true;
-            }
-        }
-
-        let size = get_size(&inputs, &outputs, None, None);
-        if size == last_size || done {
-            // Derive the fee from actual totals so the persisted record remains authoritative if
-            // transaction construction changes independently of the sizing estimate.
-            let output_total: u64 = outputs.iter().map(|output| output.value.to_sat()).sum();
-            let commit_fee = Amount::from_sat(sum.saturating_sub(output_total));
-
-            return Ok((
-                Transaction {
-                    lock_time: LockTime::ZERO,
-                    version: Version(2),
-                    input: inputs,
-                    output: outputs,
-                },
-                commit_fee,
-            ));
-        }
-        last_size = size;
-    }
+    Ok((commit_tx, commit_fee))
 }
 
 fn make_txin(txid: bitcoin::Txid, vout: u32) -> TxIn {
@@ -558,6 +501,10 @@ mod tests {
         .unwrap();
         let mut no_change_commit = baseline.commit_tx.clone();
         no_change_commit.output.pop();
+        let mock_utxos = get_mock_utxos();
+        no_change_commit
+            .input
+            .push(make_txin(mock_utxos[1].txid, mock_utxos[1].vout));
         let fixed_output_total: u64 = no_change_commit
             .output
             .iter()
@@ -576,10 +523,10 @@ mod tests {
             )
             .unwrap();
         let returned_dust = 100;
-        let mut utxos = get_mock_utxos();
-        utxos.truncate(1);
-        utxos[0].amount =
-            Amount::from_sat(fixed_output_total + requested_fee.to_sat() + returned_dust);
+        let input_total = fixed_output_total + requested_fee.to_sat() + returned_dust;
+        let mut utxos = mock_utxos;
+        utxos[0].amount = Amount::from_sat(input_total / 2);
+        utxos[1].amount = Amount::from_sat(input_total - input_total / 2);
 
         let result = build_chunked_envelope_txs(
             &config,
@@ -594,6 +541,7 @@ mod tests {
         let commit_output = result.commit_tx.output[1].value;
         let reveal_output_total: Amount = reveal.output.iter().map(|output| output.value).sum();
 
+        assert_eq!(result.commit_tx.input.len(), 2);
         assert_eq!(result.commit_tx.output.len(), 2);
         assert_eq!(result.commit_fee, requested_fee);
         assert_eq!(
