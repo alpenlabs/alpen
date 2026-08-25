@@ -533,7 +533,7 @@ async fn publish_commit_immediately<R: Broadcaster>(
     let txid = tx.compute_txid();
     debug!(%txid, vsize = tx.vsize(), "broadcasting chunked envelope commit");
 
-    match client.send_raw_transaction(&tx).await {
+    match client.send_raw_transaction(&tx, None).await {
         Ok(_) => {
             info!(%txid, "chunked envelope commit accepted by bitcoind");
             Ok(CommitPublishResult::Published)

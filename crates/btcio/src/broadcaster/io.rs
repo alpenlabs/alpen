@@ -266,7 +266,7 @@ where
         tx: &'a Transaction,
     ) -> BroadcasterResult<PublishTxOutcome> {
         let txid = tx.compute_txid();
-        match self.rpc_client.send_raw_transaction(tx).await {
+        match self.rpc_client.send_raw_transaction(tx, None).await {
             Ok(_) => {
                 info!(%txid, "sendrawtransaction accepted (Published)");
                 Ok(PublishTxOutcome::Published)
