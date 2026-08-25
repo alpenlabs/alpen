@@ -81,11 +81,9 @@ pub(super) async fn process_tx_entry(
     params: &BtcioParams,
 ) -> BroadcasterResult<Option<L1TxStatus>> {
     let result = match txentry.status {
-        L1TxStatus::Queued => publish_queued(io, idx, txentry, params).await.map(Some),
+        L1TxStatus::Queued => publish_queued(io, idx, txentry, params).await,
         L1TxStatus::Unpublished | L1TxStatus::Submitting => {
-            probe_ambiguous_entry(io, idx, txentry, txid, params)
-                .await
-                .map(Some)
+            probe_ambiguous_entry(io, idx, txentry, txid, params).await
         }
         L1TxStatus::Published => probe_published_entry(io, txentry, txid, params)
             .await
@@ -327,30 +325,32 @@ async fn probe_ambiguous_entry<C>(
     txentry: &L1TxEntry,
     txid: &Txid,
     params: &BtcioParams,
-) -> BroadcasterResult<L1TxStatus>
+) -> BroadcasterResult<Option<L1TxStatus>>
 where
     C: BroadcasterIoContext,
 {
     let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
     match io.get_transaction(txid).await? {
-        TxLookupOutcome::Found(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
+        TxLookupOutcome::Found(info) => Ok(Some(confirmation_status(&info, reorg_safe_depth))),
         TxLookupOutcome::Missing => {
             let tx = txentry.try_to_tx().expect("could not deserialize tx");
             match io.publish_decision(idx, &tx).await {
                 PublishDecision::Publish => {
-                    let mut submitting = txentry.clone();
-                    submitting.status = L1TxStatus::Submitting;
-                    io.put_tx_entry_by_idx(idx, submitting).await?;
-                    submit_tx(io, params, txentry, L1TxStatus::Submitting).await
+                    if !io.try_mark_tx_entry_submitting(idx).await? {
+                        return Ok(None);
+                    }
+                    submit_tx(io, params, txentry, L1TxStatus::Submitting)
+                        .await
+                        .map(Some)
                 }
-                PublishDecision::Defer => Ok(txentry.status.clone()),
-                PublishDecision::Abandon => Ok(L1TxStatus::Abandoned),
-                PublishDecision::Invalidate => Ok(L1TxStatus::InvalidInputs),
+                PublishDecision::Defer => Ok(Some(txentry.status.clone())),
+                PublishDecision::Abandon => Ok(Some(L1TxStatus::Abandoned)),
+                PublishDecision::Invalidate => Ok(Some(L1TxStatus::InvalidInputs)),
             }
         }
         TxLookupOutcome::RetryLater { reason } => {
             warn!(%reason, "transaction lookup should be retried on next poll");
-            Ok(txentry.status.clone())
+            Ok(Some(txentry.status.clone()))
         }
     }
 }
@@ -432,26 +432,28 @@ async fn publish_queued<C>(
     idx: u64,
     txentry: &L1TxEntry,
     params: &BtcioParams,
-) -> BroadcasterResult<L1TxStatus>
+) -> BroadcasterResult<Option<L1TxStatus>>
 where
     C: BroadcasterIoContext,
 {
     let tx = txentry.try_to_tx().expect("could not deserialize tx");
     match io.publish_decision(idx, &tx).await {
         PublishDecision::Publish => {}
-        PublishDecision::Defer => return Ok(L1TxStatus::Queued),
-        PublishDecision::Abandon => return Ok(L1TxStatus::Abandoned),
-        PublishDecision::Invalidate => return Ok(L1TxStatus::InvalidInputs),
+        PublishDecision::Defer => return Ok(Some(L1TxStatus::Queued)),
+        PublishDecision::Abandon => return Ok(Some(L1TxStatus::Abandoned)),
+        PublishDecision::Invalidate => return Ok(Some(L1TxStatus::InvalidInputs)),
     }
     if tx.input.is_empty() {
         error!("tx has no inputs, excluding from broadcast");
-        return Ok(L1TxStatus::InvalidInputs);
+        return Ok(Some(L1TxStatus::InvalidInputs));
     }
 
-    let mut submitting = txentry.clone();
-    submitting.status = L1TxStatus::Submitting;
-    io.put_tx_entry_by_idx(idx, submitting).await?;
-    submit_tx(io, params, txentry, L1TxStatus::Submitting).await
+    if !io.try_mark_tx_entry_submitting(idx).await? {
+        return Ok(None);
+    }
+    submit_tx(io, params, txentry, L1TxStatus::Submitting)
+        .await
+        .map(Some)
 }
 
 /// Sends a transaction without consulting policy and settles RBF conflicts against its ancestors.
@@ -653,6 +655,8 @@ mod test {
         adoption_applies: bool,
         publish_decision: PublishDecision,
         persisted_statuses: Arc<Mutex<Vec<L1TxStatus>>>,
+        refuse_submission_claim: bool,
+        submitted_txids: Arc<Mutex<Vec<Txid>>>,
         require_submitting_before_send: bool,
     }
 
@@ -690,6 +694,15 @@ mod test {
             self.require_submitting_before_send = true;
             self
         }
+
+        fn refusing_submission_claim(mut self) -> Self {
+            self.refuse_submission_claim = true;
+            self
+        }
+
+        fn submitted_txids(&self) -> Vec<Txid> {
+            self.submitted_txids.lock().unwrap().clone()
+        }
     }
 
     impl BroadcasterIoContext for MockIoContext {
@@ -708,6 +721,17 @@ mod test {
         async fn put_tx_entry_by_idx(&self, _idx: u64, entry: L1TxEntry) -> BroadcasterResult<()> {
             self.persisted_statuses.lock().unwrap().push(entry.status);
             Ok(())
+        }
+
+        async fn try_mark_tx_entry_submitting(&self, _idx: u64) -> BroadcasterResult<bool> {
+            if self.refuse_submission_claim {
+                return Ok(false);
+            }
+            self.persisted_statuses
+                .lock()
+                .unwrap()
+                .push(L1TxStatus::Submitting);
+            Ok(true)
         }
 
         async fn get_tx_entry_by_id(&self, txid: Buf32) -> BroadcasterResult<Option<L1TxEntry>> {
@@ -757,6 +781,7 @@ mod test {
                 );
             }
             let txid = tx.compute_txid();
+            self.submitted_txids.lock().unwrap().push(txid);
             let result = self
                 .broadcast_results
                 .get(&txid)
@@ -917,6 +942,26 @@ mod test {
             assert_eq!(
                 process_status(&io, &entry, &txid, &params).await,
                 Some(L1TxStatus::Abandoned)
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn replacement_winning_submission_claim_prevents_broadcast() {
+        let params = get_test_btcio_params();
+
+        for status in [
+            L1TxStatus::Queued,
+            L1TxStatus::Unpublished,
+            L1TxStatus::Submitting,
+        ] {
+            let (entry, txid) = entry_with_txid(status.clone());
+            let io = MockIoContext::default().refusing_submission_claim();
+
+            assert_eq!(process_status(&io, &entry, &txid, &params).await, None);
+            assert!(
+                io.submitted_txids().is_empty(),
+                "a superseded {status:?} entry must not cross the RPC boundary"
             );
         }
     }

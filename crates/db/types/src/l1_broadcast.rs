@@ -252,6 +252,14 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// Updates an existing txentry
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()>;
 
+    /// Atomically claims an entry for submission to Bitcoin.
+    ///
+    /// The transition applies to [`L1TxStatus::Queued`], [`L1TxStatus::Unpublished`], and
+    /// [`L1TxStatus::Submitting`]. It returns `false` if another transition, such as an RBF
+    /// replacement, won first. A successful claim is the durable boundary after which the caller
+    /// may invoke Bitcoin RPC.
+    fn try_mark_tx_entry_submitting(&self, idx: u64) -> DbResult<bool>;
+
     /// Delete a specific tx entry by its ID.
     ///
     /// Returns true if the tx entry existed and was deleted, false otherwise.

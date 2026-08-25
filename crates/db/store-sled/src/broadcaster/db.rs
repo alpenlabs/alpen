@@ -181,6 +181,32 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
         Ok(())
     }
 
+    fn try_mark_tx_entry_submitting(&self, idx: u64) -> DbResult<bool> {
+        self.config
+            .with_retry((&self.tx_tree, &self.tx_id_tree), |(txtree, txidtree)| {
+                let Some(txid) = txidtree.get(&idx)? else {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::Other(format!("Entry does not exist for idx {idx:?}")),
+                    )));
+                };
+                let Some(mut entry) = txtree.get(&txid)? else {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::Other(format!("Entry does not exist for txid at idx {idx:?}")),
+                    )));
+                };
+                if !matches!(
+                    entry.status,
+                    L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting
+                ) {
+                    return Ok(false);
+                }
+
+                entry.status = L1TxStatus::Submitting;
+                txtree.insert(&txid, &entry)?;
+                Ok(true)
+            })
+    }
+
     fn del_tx_entry(&self, txid: Buf32) -> DbResult<bool> {
         let old_item = self.tx_tree.get(&txid).map_err(conv_sled_err)?;
         let exists = old_item.is_some();

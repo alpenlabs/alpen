@@ -69,6 +69,12 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
         entry: L1TxEntry,
     ) -> impl Future<Output = BroadcasterResult<()>> + Send;
 
+    /// Atomically claims the entry at `idx` for submission to Bitcoin.
+    fn try_mark_tx_entry_submitting(
+        &self,
+        idx: u64,
+    ) -> impl Future<Output = BroadcasterResult<bool>> + Send;
+
     /// Returns the broadcast entry for `txid`, or `None` if the row is missing.
     fn get_tx_entry_by_id(
         &self,
@@ -310,6 +316,10 @@ where
     async fn put_tx_entry_by_idx(&self, idx: u64, entry: L1TxEntry) -> BroadcasterResult<()> {
         self.ops.put_tx_entry_by_idx_async(idx, entry).await?;
         Ok(())
+    }
+
+    async fn try_mark_tx_entry_submitting(&self, idx: u64) -> BroadcasterResult<bool> {
+        Ok(self.ops.try_mark_tx_entry_submitting_async(idx).await?)
     }
 
     async fn get_tx_entry_by_id(&self, txid: Buf32) -> BroadcasterResult<Option<L1TxEntry>> {

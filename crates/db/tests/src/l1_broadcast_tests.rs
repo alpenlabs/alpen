@@ -345,6 +345,49 @@ pub fn test_put_tx_entry_by_idx_allows_rereplacement(db: &impl L1BroadcastDataba
     );
 }
 
+/// Claiming submission is an idempotent durable transition for an eligible entry.
+pub fn test_try_mark_tx_entry_submitting_claims_eligible_entry(db: &impl L1BroadcastDatabase) {
+    for (tx, status) in get_test_bitcoin_txs().iter().zip([
+        L1TxStatus::Queued,
+        L1TxStatus::Unpublished,
+        L1TxStatus::Submitting,
+    ]) {
+        let txid = tx.compute_txid().as_raw_hash().to_byte_array().into();
+        let mut entry = tx_entry(tx);
+        entry.status = status;
+        let idx = db.put_tx_entry(txid, entry).unwrap().unwrap();
+
+        assert!(db.try_mark_tx_entry_submitting(idx).unwrap());
+        assert_eq!(
+            db.get_tx_entry(idx).unwrap().unwrap().status,
+            L1TxStatus::Submitting
+        );
+        assert!(db.try_mark_tx_entry_submitting(idx).unwrap());
+    }
+}
+
+/// A replacement that commits first prevents the superseded attempt from claiming submission.
+pub fn test_try_mark_tx_entry_submitting_refuses_replaced(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let original_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let replacement_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+    let idx = db
+        .put_tx_entry(original_txid, tx_entry(&txns[0]))
+        .unwrap()
+        .unwrap();
+    db.put_replacement_tx_entry(original_txid, replacement_txid, tx_entry(&txns[1]))
+        .unwrap()
+        .expect("replacement wins the race");
+
+    assert!(!db.try_mark_tx_entry_submitting(idx).unwrap());
+    assert_eq!(
+        db.get_tx_entry(idx).unwrap().unwrap().status,
+        L1TxStatus::Replaced {
+            by: L1TxId::from(replacement_txid.0)
+        }
+    );
+}
+
 /// The swap inserts the replacement and supersedes the original in one step.
 pub fn test_put_replacement_tx_entry_swaps_atomically(db: &impl L1BroadcastDatabase) {
     let txns = get_test_bitcoin_txs();
@@ -964,6 +1007,20 @@ macro_rules! l1_broadcast_db_tests {
         fn test_put_tx_entry_by_idx_allows_rereplacement() {
             let db = $setup_expr;
             $crate::l1_broadcast_tests::test_put_tx_entry_by_idx_allows_rereplacement(&db);
+        }
+
+        #[test]
+        fn test_try_mark_tx_entry_submitting_claims_eligible_entry() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_try_mark_tx_entry_submitting_claims_eligible_entry(
+                &db,
+            );
+        }
+
+        #[test]
+        fn test_try_mark_tx_entry_submitting_refuses_replaced() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_try_mark_tx_entry_submitting_refuses_replaced(&db);
         }
 
         #[test]
