@@ -1,6 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
-use bitcoin::{secp256k1::XOnlyPublicKey, Address};
+use bitcoin::{secp256k1::XOnlyPublicKey, Address, FeeRate};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_config::btcio::WriterConfig;
 use strata_status::StatusChannel;
@@ -49,6 +49,9 @@ pub struct WriterContext<R: Reader + Signer + Wallet> {
     /// Btcio specific configuration.
     pub config: Arc<WriterConfig>,
 
+    /// Maximum fee rate accepted for initial transaction construction and broadcast.
+    pub max_fee_rate: FeeRate,
+
     /// Sequencer's address to watch utxos for and spend change amount to.
     pub sequencer_address: Address,
 
@@ -66,6 +69,7 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
     pub fn new(
         btcio_params: BtcioParams,
         config: Arc<WriterConfig>,
+        max_fee_rate: FeeRate,
         sequencer_address: Address,
         client: Arc<R>,
         status_channel: StatusChannel,
@@ -73,6 +77,7 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
         Self {
             btcio_params,
             config,
+            max_fee_rate,
             sequencer_address,
             client,
             status_channel,

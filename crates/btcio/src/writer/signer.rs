@@ -14,8 +14,8 @@ use tracing::*;
 
 use super::{
     builder::{
-        attach_reveal_signature, build_and_sign_envelope_txs, build_envelope_txs, EnvelopeData,
-        EnvelopeError,
+        attach_reveal_signature, build_and_sign_envelope_txs, build_envelope_txs,
+        ensure_built_fee_rate_within_max, EnvelopeData, EnvelopeError,
     },
     context::{EnvelopeSigningMode, WriterContext},
 };
@@ -69,6 +69,11 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
             .map_err(EnvelopeError::SignRawTransaction)?
             .tx;
         envelope.commit_tx = signed_commit;
+        ensure_built_fee_rate_within_max(
+            &envelope.commit_tx,
+            envelope.commit_fee,
+            ctx.max_fee_rate,
+        )?;
 
         info!(%commit_txid, sighash = %envelope.sighash, "envelope built, commit signed");
         Ok(envelope)
@@ -96,6 +101,16 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
 
     async {
         let envelope = build_and_sign_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
+        ensure_built_fee_rate_within_max(
+            &envelope.commit_tx,
+            envelope.commit_fee,
+            ctx.max_fee_rate,
+        )?;
+        ensure_built_fee_rate_within_max(
+            &envelope.reveal_tx,
+            envelope.reveal_fee,
+            ctx.max_fee_rate,
+        )?;
 
         let cid = to_l1_txid(envelope.commit_tx.compute_txid());
         broadcast_handle
@@ -166,6 +181,9 @@ pub(crate) async fn complete_reveal_and_broadcast(
             signature,
         )
         .map_err(EnvelopeError::Other)?;
+        let max_fee_rate = broadcast_handle.max_fee_rate();
+        ensure_built_fee_rate_within_max(&envelope.commit_tx, envelope.commit_fee, max_fee_rate)?;
+        ensure_built_fee_rate_within_max(&reveal_tx, envelope.reveal_fee, max_fee_rate)?;
 
         let cid = to_l1_txid(envelope.commit_tx.compute_txid());
         put_tx_entry_if_missing(

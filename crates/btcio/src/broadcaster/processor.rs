@@ -441,6 +441,17 @@ where
                 )
                 .await
             }
+            Ok(PublishTxOutcome::AboveMaxFeeRate { reason }) => {
+                warn!(%reason, "tx exceeds broadcast fee guardrail; rebuilding instead of retrying unchanged bytes");
+                resolve_invalid_inputs(
+                    io,
+                    params,
+                    &txid,
+                    txentry,
+                    AncestorRescue::ConfirmedOrInMempool,
+                )
+                .await
+            }
             Ok(PublishTxOutcome::RetryLater { reason }) => {
                 warn!(%reason, "broadcast should be retried on next poll");
                 Ok(L1TxStatus::Unpublished)
@@ -581,6 +592,7 @@ mod test {
         Published,
         AlreadyInMempool,
         InvalidInputs,
+        AboveMaxFeeRate,
         RetryLater,
     }
 
@@ -685,6 +697,9 @@ mod test {
                 MockBroadcastResult::Published => Ok(PublishTxOutcome::Published),
                 MockBroadcastResult::AlreadyInMempool => Ok(PublishTxOutcome::AlreadyInMempool),
                 MockBroadcastResult::InvalidInputs => Ok(PublishTxOutcome::InvalidInputs),
+                MockBroadcastResult::AboveMaxFeeRate => Ok(PublishTxOutcome::AboveMaxFeeRate {
+                    reason: "mock fee guardrail rejection".into(),
+                }),
                 MockBroadcastResult::RetryLater => Ok(PublishTxOutcome::RetryLater {
                     reason: "mock retry".into(),
                 }),
@@ -823,6 +838,18 @@ mod test {
             Some(L1TxStatus::Unpublished),
             "HTTP 500 send_raw_transaction errors should keep tx unpublished for retry"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_unpublished_entry_above_max_fee_requires_rebuild() {
+        let (entry, txid) = entry_with_txid(L1TxStatus::Unpublished);
+        let btcio_params = get_test_btcio_params();
+        let io = MockIoContext::default()
+            .with_broadcast_result(txid, MockBroadcastResult::AboveMaxFeeRate);
+
+        let status = process_status(&io, &entry, &txid, &btcio_params).await;
+
+        assert_eq!(status, Some(L1TxStatus::InvalidInputs));
     }
 
     #[tokio::test(flavor = "multi_thread")]

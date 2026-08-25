@@ -74,6 +74,15 @@ impl BtcioConfig {
             );
         }
 
+        if let FeePolicy::Fixed { fee_rate } = self.writer.fee_policy() {
+            if *fee_rate > self.broadcaster.max_fee_rate() {
+                return Err(
+                    "btcio.writer.fixed_fee_rate must not exceed btcio.broadcaster.max_fee_rate_sat_vb"
+                        .to_string(),
+                );
+            }
+        }
+
         Ok(())
     }
 }
@@ -586,6 +595,34 @@ mod tests {
 
         assert_eq!(config.writer.fee_bumping.max_fee_rate_sat_vb.get(), 500);
         assert_eq!(config.broadcaster.max_fee_rate_sat_vb.get(), 500);
+    }
+
+    #[test]
+    fn btcio_rejects_fixed_fee_rate_above_broadcast_guardrail() {
+        let writer = BTCIO_CONFIG_PREFIX.replace("fixed_fee_rate = 1.0", "fixed_fee_rate = 501");
+        let input = format!(
+            "{writer}\n[writer.fee_bumping]\nmax_fee_rate_sat_vb = 500\n\
+             [broadcaster]\npoll_interval_ms = 200\nmax_fee_rate_sat_vb = 500"
+        );
+        let error = toml::from_str::<BtcioConfig>(&input)
+            .expect_err("fixed fee rate must stay within the broadcast guardrail")
+            .to_string();
+
+        assert!(error.contains(
+            "btcio.writer.fixed_fee_rate must not exceed btcio.broadcaster.max_fee_rate_sat_vb"
+        ));
+    }
+
+    #[test]
+    fn btcio_accepts_fixed_fee_rate_at_broadcast_guardrail() {
+        let writer = BTCIO_CONFIG_PREFIX.replace("fixed_fee_rate = 1.0", "fixed_fee_rate = 500");
+        let input = format!(
+            "{writer}\n[writer.fee_bumping]\nmax_fee_rate_sat_vb = 500\n\
+             [broadcaster]\npoll_interval_ms = 200\nmax_fee_rate_sat_vb = 500"
+        );
+
+        toml::from_str::<BtcioConfig>(&input)
+            .expect("fixed fee rate at the broadcast guardrail should be accepted");
     }
 
     #[test]

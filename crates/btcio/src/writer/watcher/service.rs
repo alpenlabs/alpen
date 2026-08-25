@@ -458,6 +458,9 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
                     warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
                 }
+                Err(err) if err.is_blocked_by_fee_guardrail() => {
+                    warn!(%err, "waiting for an initial fee rate within the broadcast guardrail");
+                }
                 Err(err) if is_retryable_envelope_error(&err) => {
                     let reason = retryable_reason(&err);
                     warn!(%reason, "retrying envelope creation after Bitcoin RPC error");
@@ -485,6 +488,9 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 }
                 Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
                     warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
+                }
+                Err(err) if err.is_blocked_by_fee_guardrail() => {
+                    warn!(%err, "waiting for an initial fee rate within the broadcast guardrail");
                 }
                 Err(err) if is_retryable_envelope_error(&err) => {
                     let reason = retryable_reason(&err);
@@ -1029,6 +1035,7 @@ mod tests {
     #[derive(Clone, Copy)]
     enum MockEnvelopeFailure {
         NotEnoughUtxos,
+        FeeGuardrail,
         PrereqFetch,
         SignRawTransaction,
         Other,
@@ -1040,6 +1047,10 @@ mod tests {
                 Self::NotEnoughUtxos => {
                     EnvelopeError::NotEnoughUtxos(TEST_REQUIRED_SATS, TEST_AVAILABLE_SATS)
                 }
+                Self::FeeGuardrail => EnvelopeError::ResolvedFeeRateAboveMax {
+                    resolved_sat_vb: 101,
+                    ceiling_sat_vb: 100,
+                },
                 Self::PrereqFetch => EnvelopeError::PrereqFetch(anyhow::Error::from(
                     ClientError::Connection("mock connection failure".to_string()),
                 )),
@@ -1147,6 +1158,16 @@ mod tests {
 
         fn with_sign_not_enough_utxos(mut self) -> Self {
             self.sign_failure = Some(MockEnvelopeFailure::NotEnoughUtxos);
+            self
+        }
+
+        fn with_create_fee_guardrail(mut self) -> Self {
+            self.create_failure = Some(MockEnvelopeFailure::FeeGuardrail);
+            self
+        }
+
+        fn with_sign_fee_guardrail(mut self) -> Self {
+            self.sign_failure = Some(MockEnvelopeFailure::FeeGuardrail);
             self
         }
 
@@ -1335,6 +1356,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_unchecked_fee_guardrail_keeps_unsigned_for_rebuild() {
+        let ctx = MockWatcherContext::new(false).with_sign_fee_guardrail();
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_unsigned_or_needs_resign(entry).await.unwrap();
+
+        assert_eq!(
+            state.ctx.get_stored(0).unwrap().status,
+            L1BundleStatus::Unsigned
+        );
+        assert_eq!(state.curr_payloadidx, 0);
+        assert!(state.envelope_cache.is_empty());
+        assert_eq!(state.ctx.rpc_error_count(), 0);
+    }
+
+    #[tokio::test]
     async fn test_broadcast_status_resolves_active_fee_bump_txids() {
         let ctx = MockWatcherContext::new(false);
         let mut entry = test_unsigned_entry();
@@ -1426,6 +1465,24 @@ mod tests {
         assert_eq!(stored.reveal_txid, L1TxId::zero());
         assert_eq!(state.curr_payloadidx, 0);
         assert!(state.envelope_cache.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_schnorr_key_fee_guardrail_keeps_unsigned_for_rebuild() {
+        let ctx = MockWatcherContext::new(true).with_create_fee_guardrail();
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_unsigned_or_needs_resign(entry).await.unwrap();
+
+        assert_eq!(
+            state.ctx.get_stored(0).unwrap().status,
+            L1BundleStatus::Unsigned
+        );
+        assert_eq!(state.curr_payloadidx, 0);
+        assert!(state.envelope_cache.is_empty());
+        assert_eq!(state.ctx.rpc_error_count(), 0);
     }
 
     #[tokio::test]

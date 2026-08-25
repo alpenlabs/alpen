@@ -101,6 +101,22 @@ pub enum EnvelopeError {
     #[error("fee calculation overflowed")]
     FeeOverflow,
 
+    #[error(
+        "resolved fee rate {resolved_sat_vb} sat/vB exceeds broadcast ceiling {ceiling_sat_vb} sat/vB"
+    )]
+    ResolvedFeeRateAboveMax {
+        resolved_sat_vb: u64,
+        ceiling_sat_vb: u64,
+    },
+
+    #[error(
+        "built transaction fee rate {built_sat_vb} sat/vB exceeds broadcast ceiling {ceiling_sat_vb} sat/vB"
+    )]
+    BuiltFeeRateAboveMax {
+        built_sat_vb: u64,
+        ceiling_sat_vb: u64,
+    },
+
     #[error("Could not sign raw transaction: {0}")]
     SignRawTransaction(#[source] ClientError),
 
@@ -127,6 +143,16 @@ pub enum EnvelopeError {
 
     #[error("{0}")]
     Other(#[from] anyhow::Error),
+}
+
+impl EnvelopeError {
+    /// Reports whether transaction construction should wait for a fee rate below the guardrail.
+    pub(crate) fn is_blocked_by_fee_guardrail(&self) -> bool {
+        matches!(
+            self,
+            Self::ResolvedFeeRateAboveMax { .. } | Self::BuiltFeeRateAboveMax { .. }
+        )
+    }
 }
 
 /// Intermediate data held in the watcher's in-memory cache between envelope creation and reveal
@@ -195,9 +221,7 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     ctx: &WriterContext<R>,
     envelope_pubkey: XOnlyPublicKey,
 ) -> Result<EnvelopeData, EnvelopeError> {
-    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx)
-        .await
-        .map_err(EnvelopeError::PrereqFetch)?;
+    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx).await?;
     let env_config = EnvelopeConfig::new(
         ctx.btcio_params.magic_bytes(),
         ctx.sequencer_address.clone(),
@@ -219,9 +243,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
 ) -> Result<EnvelopeData, EnvelopeError> {
-    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx)
-        .await
-        .map_err(EnvelopeError::PrereqFetch)?;
+    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx).await?;
     let keypair = generate_key_pair()?;
     let pubkey = XOnlyPublicKey::from_keypair(&keypair).0;
     let env_config = EnvelopeConfig::new(
@@ -259,15 +281,60 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
 // TODO(STR-3411): make OL node resilient against the Bitcoin node not being available.
 async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
     ctx: &WriterContext<R>,
-) -> anyhow::Result<(Network, Vec<ListUnspentItem>, FeeRate)> {
-    let network = ctx.client.network().await?;
+) -> Result<(Network, Vec<ListUnspentItem>, FeeRate), EnvelopeError> {
+    let network = ctx
+        .client
+        .network()
+        .await
+        .map_err(|error| EnvelopeError::PrereqFetch(error.into()))?;
     let utxos = ctx
         .client
         .list_unspent(None, None, None, None, None)
-        .await?
+        .await
+        .map_err(|error| EnvelopeError::PrereqFetch(error.into()))?
         .0;
-    let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref()).await?;
+    let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref())
+        .await
+        .map_err(EnvelopeError::PrereqFetch)?;
+    ensure_initial_fee_rate_within_max(fee_rate, ctx.max_fee_rate)?;
     Ok((network, utxos, fee_rate))
+}
+
+/// Ensures an initial transaction is never built from an estimate above the broadcast ceiling.
+pub(crate) fn ensure_initial_fee_rate_within_max(
+    fee_rate: FeeRate,
+    max_fee_rate: FeeRate,
+) -> Result<(), EnvelopeError> {
+    if fee_rate > max_fee_rate {
+        return Err(EnvelopeError::ResolvedFeeRateAboveMax {
+            resolved_sat_vb: fee_rate.to_sat_per_vb_ceil(),
+            ceiling_sat_vb: max_fee_rate.to_sat_per_vb_ceil(),
+        });
+    }
+
+    Ok(())
+}
+
+/// Ensures a built transaction's effective fee rate fits the broadcast ceiling.
+pub(crate) fn ensure_built_fee_rate_within_max(
+    tx: &Transaction,
+    fee: Amount,
+    max_fee_rate: FeeRate,
+) -> Result<(), EnvelopeError> {
+    let vsize = tx.vsize() as u64;
+    if vsize == 0 {
+        return Err(EnvelopeError::FeeOverflow);
+    }
+    let built_fee_rate =
+        FeeRate::from_sat_per_vb(fee.to_sat().div_ceil(vsize)).ok_or(EnvelopeError::FeeOverflow)?;
+    if built_fee_rate > max_fee_rate {
+        return Err(EnvelopeError::BuiltFeeRateAboveMax {
+            built_sat_vb: built_fee_rate.to_sat_per_vb_ceil(),
+            ceiling_sat_vb: max_fee_rate.to_sat_per_vb_ceil(),
+        });
+    }
+
+    Ok(())
 }
 
 /// Builds unsigned envelope transactions (commit + reveal) and computes the sighash.
@@ -324,7 +391,7 @@ pub fn create_envelope_transactions(
     );
     let reveal_vsize = u64::try_from(reveal_vsize).map_err(|_| EnvelopeError::FeeOverflow)?;
     let headroom = reveal_fee_headroom(env_config.fee_rate, reveal_vsize, &env_config.fee_bumping)?;
-    let reveal_output_value = env_config
+    let base_reveal_output_value = env_config
         .reveal_amount
         .checked_add(headroom)
         .ok_or(EnvelopeError::FeeOverflow)?;
@@ -340,6 +407,10 @@ pub fn create_envelope_transactions(
     let commit_fee_sats = calculate_transaction_fee_from_utxos(&commit_tx, &consumed_utxos);
 
     let output_to_reveal = commit_tx.output[0].clone();
+    let returned_dust = output_to_reveal.value.to_sat().saturating_sub(commit_value);
+    let reveal_output_value = base_reveal_output_value
+        .checked_add(returned_dust)
+        .ok_or(EnvelopeError::FeeOverflow)?;
 
     // Build reveal tx
     let reveal_tx = build_reveal_transaction(
@@ -535,7 +606,14 @@ fn build_commit_transaction(
                     script_pubkey: change_address.script_pubkey(),
                 });
             } else {
-                // if dust is left, leave it for fee
+                // Return sub-dust change through the reveal output instead of silently turning it
+                // into extra fee. The reveal builder forwards the same amount to the sequencer,
+                // keeping both transactions at their requested fee rate and therefore within the
+                // broadcast guardrail when the requested rate is within it.
+                outputs[0].value = outputs[0]
+                    .value
+                    .checked_add(Amount::from_sat(excess))
+                    .ok_or(EnvelopeError::FeeOverflow)?;
                 direct_return = true;
             }
         }
@@ -956,6 +1034,71 @@ mod tests {
             res,
             Err(EnvelopeError::NotEnoughUtxos(50_000_000_000, _))
         ));
+    }
+
+    #[test]
+    fn initial_fee_rate_above_broadcast_ceiling_is_blocked() {
+        let ceiling = FeeRate::from_sat_per_vb(100).unwrap();
+
+        assert!(ensure_initial_fee_rate_within_max(ceiling, ceiling).is_ok());
+        assert!(matches!(
+            ensure_initial_fee_rate_within_max(FeeRate::from_sat_per_vb(101).unwrap(), ceiling),
+            Err(EnvelopeError::ResolvedFeeRateAboveMax {
+                resolved_sat_vb: 101,
+                ceiling_sat_vb: 100,
+            })
+        ));
+    }
+
+    #[test]
+    fn built_fee_rate_above_broadcast_ceiling_is_blocked() {
+        let (_, _, _, utxos) = get_mock_data();
+        let tx = get_txn_from_utxo(&utxos[0], &get_writer_context().sequencer_address);
+        let ceiling = FeeRate::from_sat_per_vb(100).unwrap();
+        let fee_at_ceiling = ceiling.fee_vb(tx.vsize() as u64).unwrap();
+
+        assert!(ensure_built_fee_rate_within_max(&tx, fee_at_ceiling, ceiling).is_ok());
+        assert!(matches!(
+            ensure_built_fee_rate_within_max(
+                &tx,
+                fee_at_ceiling + Amount::from_sat(tx.vsize() as u64),
+                ceiling,
+            ),
+            Err(EnvelopeError::BuiltFeeRateAboveMax {
+                built_sat_vb: 101,
+                ceiling_sat_vb: 100,
+            })
+        ));
+    }
+
+    #[test]
+    fn commit_returns_sub_dust_change_through_reveal_output() {
+        let (ctx, _, _, mut utxos) = get_mock_data();
+        let output_value = 100_000;
+        let returned_dust = 100;
+        let fee_rate = FeeRate::from_sat_per_vb(10).unwrap();
+        let recipient = ctx.sequencer_address.clone();
+        let initial_size = get_size(
+            &default_txin(),
+            &[TxOut {
+                value: Amount::from_sat(output_value),
+                script_pubkey: recipient.script_pubkey(),
+            }],
+            None,
+            None,
+        );
+        let requested_fee = fee_sats_for_vsize(initial_size, fee_rate).unwrap();
+        utxos.truncate(1);
+        utxos[0].amount = Amount::from_sat(output_value + requested_fee + returned_dust);
+
+        let (tx, consumed) =
+            build_commit_transaction(utxos, recipient.clone(), recipient, output_value, fee_rate)
+                .unwrap();
+        let actual_fee = calculate_transaction_fee_from_utxos(&tx, &consumed);
+
+        assert_eq!(tx.output.len(), 1);
+        assert_eq!(tx.output[0].value.to_sat(), output_value + returned_dust);
+        assert_eq!(actual_fee, requested_fee);
     }
 
     fn get_txn_from_utxo(utxo: &ListUnspentItem, _address: &Address) -> Transaction {

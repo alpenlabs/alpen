@@ -227,6 +227,9 @@ pub(crate) enum PublishTxOutcome {
     /// Transaction has invalid/missing inputs and should be marked invalid.
     InvalidInputs,
 
+    /// Transaction exceeds the configured fee-rate ceiling and must be rebuilt.
+    AboveMaxFeeRate { reason: String },
+
     /// Transient failure; call sites should retry in a later poll pass.
     RetryLater { reason: String },
 }
@@ -304,7 +307,7 @@ where
             }
             Err(ClientError::Server(-25, msg)) if is_max_fee_rate_exceeded_message(&msg) => {
                 warn!(%txid, %msg, max_fee_rate_sat_vb = self.max_fee_rate.to_sat_per_vb_ceil(), "sendrawtransaction blocked by fee guardrail");
-                Ok(PublishTxOutcome::RetryLater { reason: msg })
+                Ok(PublishTxOutcome::AboveMaxFeeRate { reason: msg })
             }
             Err(ClientError::Server(-25, msg)) => {
                 // Bitcoind reuses code -25 for several distinct reject reasons.
@@ -447,7 +450,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn max_fee_rate_rejection_is_retryable() {
+    async fn max_fee_rate_rejection_requires_rebuild() {
         let client = Arc::new(
             TestBitcoinClient::new(0)
                 .with_send_raw_transaction_mode(SendRawTransactionMode::MaxFeeRateExceeded),
@@ -457,7 +460,7 @@ mod tests {
         let outcome = io.send_raw_transaction(&test_transaction()).await.unwrap();
         assert!(matches!(
             outcome,
-            PublishTxOutcome::RetryLater { reason }
+            PublishTxOutcome::AboveMaxFeeRate { reason }
                 if is_max_fee_rate_exceeded_message(&reason)
         ));
     }

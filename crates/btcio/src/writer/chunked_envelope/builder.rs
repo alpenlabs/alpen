@@ -44,9 +44,8 @@ pub struct ChunkedEnvelopeTxs {
     pub reveal_txs: Vec<Transaction>,
     /// Exact absolute fee the commit tx pays.
     ///
-    /// This is `sum(inputs) - sum(outputs)`, not `vsize * fee_rate`: when the leftover change
-    /// would be dust the builder drops the change output and the excess becomes extra fee. Fee
-    /// bumping needs the real figure to compute the BIP-125 absolute-fee floor for a replacement.
+    /// This is `sum(inputs) - sum(outputs)`, so fee bumping records the authoritative figure used
+    /// by the BIP-125 absolute-fee floor rather than relying on a sizing estimate.
     pub commit_fee: Amount,
 }
 
@@ -165,9 +164,14 @@ fn build_reveals_for_commit(
         let reveal_fee = fee_sats_for_vsize(reveal_vsize, config.fee_rate)?;
         let reveal_vsize = u64::try_from(reveal_vsize).map_err(|_| EnvelopeError::FeeOverflow)?;
         let headroom = reveal_fee_headroom(config.fee_rate, reveal_vsize, &config.fee_bumping)?;
+        let returned_dust = commit_output
+            .value
+            .to_sat()
+            .saturating_sub(artifact.commit_value);
         let reveal_output_value = config
             .reveal_amount
             .checked_add(headroom)
+            .and_then(|value| value.checked_add(returned_dust))
             .ok_or(EnvelopeError::FeeOverflow)?;
         let required = reveal_output_value
             .checked_add(reveal_fee)
@@ -308,14 +312,21 @@ fn build_multi_output_commit(
                     script_pubkey: config.sequencer_address.script_pubkey(),
                 });
             } else {
+                // Return sub-dust change through the first reveal rather than overpaying the
+                // commit fee. `build_reveals_for_commit` carries this extra value through to that
+                // reveal's sequencer output, so it is not burned as reveal fee either.
+                outputs[1].value = outputs[1]
+                    .value
+                    .checked_add(Amount::from_sat(excess))
+                    .ok_or(EnvelopeError::FeeOverflow)?;
                 done = true;
             }
         }
 
         let size = get_size(&inputs, &outputs, None, None);
         if size == last_size || done {
-            // `done` means the leftover change was dust and got absorbed into the fee, so derive
-            // the fee from the actual input/output totals rather than from `fee_rate * vsize`.
+            // Derive the fee from actual totals so the persisted record remains authoritative if
+            // transaction construction changes independently of the sizing estimate.
             let output_total: u64 = outputs.iter().map(|output| output.value.to_sat()).sum();
             let commit_fee = Amount::from_sat(sum.saturating_sub(output_total));
 
@@ -527,6 +538,71 @@ mod tests {
         assert_eq!(
             result.commit_tx.output[1].value.to_sat(),
             config.reveal_amount + base_fee.to_sat()
+        );
+    }
+
+    #[test]
+    fn sub_dust_commit_change_is_returned_through_first_reveal() {
+        let config = get_test_config();
+        let chunks = [vec![1u8; 150]];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+        let keypair = test_keypair();
+        let baseline = build_chunked_envelope_txs(
+            &config,
+            chunks.iter().map(Vec::as_slice),
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &keypair,
+            get_mock_utxos(),
+        )
+        .unwrap();
+        let mut no_change_commit = baseline.commit_tx.clone();
+        no_change_commit.output.pop();
+        let fixed_output_total: u64 = no_change_commit
+            .output
+            .iter()
+            .map(|output| output.value.to_sat())
+            .sum();
+        let requested_fee = config
+            .fee_rate
+            .fee_vb(
+                u64::try_from(get_size(
+                    &no_change_commit.input,
+                    &no_change_commit.output,
+                    None,
+                    None,
+                ))
+                .unwrap(),
+            )
+            .unwrap();
+        let returned_dust = 100;
+        let mut utxos = get_mock_utxos();
+        utxos.truncate(1);
+        utxos[0].amount =
+            Amount::from_sat(fixed_output_total + requested_fee.to_sat() + returned_dust);
+
+        let result = build_chunked_envelope_txs(
+            &config,
+            chunks.iter().map(Vec::as_slice),
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &keypair,
+            utxos,
+        )
+        .unwrap();
+        let reveal = &result.reveal_txs[0];
+        let commit_output = result.commit_tx.output[1].value;
+        let reveal_output_total: Amount = reveal.output.iter().map(|output| output.value).sum();
+
+        assert_eq!(result.commit_tx.output.len(), 2);
+        assert_eq!(result.commit_fee, requested_fee);
+        assert_eq!(
+            commit_output - reveal_output_total,
+            config.fee_rate.fee_vb(reveal.vsize() as u64).unwrap()
+        );
+        assert_eq!(
+            reveal.output[0].value.to_sat(),
+            baseline.reveal_txs[0].output[0].value.to_sat() + returned_dust
         );
     }
 

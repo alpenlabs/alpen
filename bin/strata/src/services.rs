@@ -138,6 +138,7 @@ mod sequencer_services {
             let ctx = WriterContext::new(
                 btcio_params,
                 config.clone(),
+                nodectx.config().btcio.broadcaster.max_fee_rate(),
                 sequencer_address,
                 nodectx.bitcoin_client().clone(),
                 nodectx.status_channel().as_ref().clone(),

@@ -707,7 +707,7 @@ pub fn create_checkpoint_envelope_tx(address: &str, l1_payload: L1Payload) -> Tr
 pub(crate) mod test_context {
     use std::sync::Arc;
 
-    use bitcoin::{secp256k1::SecretKey, Address, Network};
+    use bitcoin::{secp256k1::SecretKey, Address, FeeRate, Network};
     use strata_config::btcio::{FeeBumpingConfig, FeePolicy, L1FeePolicyConfig, WriterConfig};
     use strata_l1_txfmt::MagicBytes;
     use strata_status::StatusChannel;
@@ -741,8 +741,15 @@ pub(crate) mod test_context {
         );
         let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
         let (pubkey, _) = sk.x_only_public_key(super::SECP256K1);
-        let ctx = WriterContext::new(btcio_params, cfg, addr, client, status_channel)
-            .with_envelope_pubkey(&pubkey.serialize());
+        let ctx = WriterContext::new(
+            btcio_params,
+            cfg,
+            FeeRate::from_sat_per_vb(1_000).unwrap(),
+            addr,
+            client,
+            status_channel,
+        )
+        .with_envelope_pubkey(&pubkey.serialize());
         Arc::new(ctx)
     }
 
@@ -772,6 +779,7 @@ pub(crate) mod test_context {
         let ctx = WriterContext::new(
             base.btcio_params,
             config,
+            base.max_fee_rate,
             base.sequencer_address.clone(),
             client,
             base.status_channel.clone(),

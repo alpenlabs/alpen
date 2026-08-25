@@ -24,7 +24,10 @@ use super::{builder::build_chunked_envelope_txs, context::ChunkedWriterContext};
 use crate::{
     tx_entry::L1TxEntryExt,
     writer::{
-        builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
+        builder::{
+            ensure_built_fee_rate_within_max, ensure_initial_fee_rate_within_max, EnvelopeConfig,
+            EnvelopeError, BITCOIN_DUST_LIMIT,
+        },
         fees::resolve_fee_rate,
     },
 };
@@ -107,6 +110,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref())
             .await
             .map_err(EnvelopeError::PrereqFetch)?;
+        ensure_initial_fee_rate_within_max(fee_rate, ctx.max_fee_rate)?;
 
         debug!(
             envelope_idx,
@@ -144,6 +148,14 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .await
             .map_err(EnvelopeError::SignRawTransaction)?
             .tx;
+        ensure_built_fee_rate_within_max(&signed_commit, built.commit_fee, ctx.max_fee_rate)?;
+        for reveal_tx in &built.reveal_txs {
+            let commit_output =
+                &signed_commit.output[reveal_tx.input[0].previous_output.vout as usize];
+            let reveal_output_total = reveal_tx.output.iter().map(|output| output.value).sum();
+            let reveal_fee = commit_output.value - reveal_output_total;
+            ensure_built_fee_rate_within_max(reveal_tx, reveal_fee, ctx.max_fee_rate)?;
+        }
         let commit_txid = to_l1_txid(signed_commit.compute_txid());
         let commit_wtxid = to_l1_wtxid(signed_commit.compute_wtxid());
 

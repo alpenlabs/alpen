@@ -171,6 +171,7 @@ pub fn create_chunked_envelope_task(
     let ctx = Arc::new(ChunkedWriterContext::new(
         btcio_params,
         config,
+        broadcast_handle.max_fee_rate(),
         sequencer_address,
         sequencer_keypair,
         bitcoin_client,
@@ -298,6 +299,7 @@ fn format_tx_status(txid: L1TxId, status: &L1TxStatus) -> String {
 enum CommitPublishResult {
     Published,
     InvalidInputs,
+    AboveMaxFeeRate(String),
     Deferred(String),
 }
 
@@ -544,7 +546,7 @@ async fn publish_commit_immediately<R: Broadcaster>(
         }
         Err(ClientError::Server(-25, msg)) if is_max_fee_rate_exceeded_message(&msg) => {
             warn!(%txid, %msg, max_fee_rate_sat_vb = max_fee_rate.to_sat_per_vb_ceil(), "commit broadcast blocked by fee guardrail");
-            Ok(CommitPublishResult::Deferred(msg))
+            Ok(CommitPublishResult::AboveMaxFeeRate(msg))
         }
         Err(ClientError::Server(-25, msg)) => {
             // Bitcoind reuses -25 (RPC_VERIFY_ERROR) for both benign
@@ -655,6 +657,21 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
                 "chunked envelope commit has invalid inputs; entry needs resign"
             );
         }
+        CommitPublishResult::AboveMaxFeeRate(reason) => {
+            commit_tx_entry.status = L1TxStatus::InvalidInputs;
+            broadcast_handle
+                .put_tx_entry_by_idx(commit_broadcast_idx, commit_tx_entry)
+                .await?;
+            entry.status = ChunkedEnvelopeStatus::NeedsResign;
+            ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
+                .await?;
+            warn!(
+                envelope_idx,
+                commit_txid = ?entry.commit_txid,
+                %reason,
+                "chunked envelope commit exceeds fee guardrail; entry needs resign"
+            );
+        }
         CommitPublishResult::Deferred(reason) => {
             // The broadcaster owns retrying the persisted commit tx. The
             // frontier stays on this envelope until reconciliation sees the
@@ -727,6 +744,9 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
             }
             Err(EnvelopeError::NotEnoughUtxos(need, have)) => {
                 warn!(idx, %need, %have, "waiting for sufficient utxos");
+            }
+            Err(err) if err.is_blocked_by_fee_guardrail() => {
+                warn!(idx, %err, "waiting for an initial fee rate within the broadcast guardrail");
             }
             Err(err) if is_retryable_envelope_error(&err) => {
                 let reason = retryable_reason(&err);
@@ -1523,7 +1543,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_publish_commit_immediately_defers_fee_guardrail_rejection() {
+    async fn test_publish_commit_immediately_rebuilds_fee_guardrail_rejection() {
         let client = TestBitcoinClient::new(0)
             .with_send_raw_transaction_mode(SendRawTransactionMode::MaxFeeRateExceeded);
         let commit_tx_entry = L1TxEntry::from_tx(&make_test_tx());
@@ -1538,7 +1558,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            CommitPublishResult::Deferred(reason)
+            CommitPublishResult::AboveMaxFeeRate(reason)
                 if is_max_fee_rate_exceeded_message(&reason)
         ));
     }
