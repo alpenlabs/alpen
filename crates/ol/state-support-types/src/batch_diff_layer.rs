@@ -9,7 +9,7 @@ use std::fmt;
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ol_state_types::{IStateAccessor, PendingAsmLog, StateResult};
-use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, WriteBatch};
+use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLAccountStateV1, WriteBatch};
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
 
@@ -25,7 +25,7 @@ use crate::write_tracking_layer::IComputeStateRootWithWrites;
 #[derive(Clone)]
 pub struct BatchDiffState<'batches, 'base, S: IStateAccessor> {
     base: &'base S,
-    write_batches: &'batches [WriteBatch<S::AccountState>],
+    write_batches: &'batches [WriteBatch<OLAccountStateV1>],
 
     /// Helper field so that we only have to compute this once.
     new_accounts: usize,
@@ -34,7 +34,6 @@ pub struct BatchDiffState<'batches, 'base, S: IStateAccessor> {
 impl<S: IStateAccessor> fmt::Debug for BatchDiffState<'_, '_, S>
 where
     S: fmt::Debug,
-    S::AccountState: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BatchDiffState")
@@ -51,7 +50,7 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     /// The batches are checked in reverse order (last = most recent) before falling
     /// back to the base state. An empty batch slice results in a pure read-only
     /// passthrough to the base.
-    pub fn new(base: &'base S, batches: &'batches [WriteBatch<S::AccountState>]) -> Self {
+    pub fn new(base: &'base S, batches: &'batches [WriteBatch<OLAccountStateV1>]) -> Self {
         let new_accounts = batches
             .iter()
             .map(|wb| wb.ledger().new_accounts().len())
@@ -70,7 +69,7 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     }
 
     /// Returns a reference to the batch slice.
-    pub fn write_batches(&self) -> &'batches [WriteBatch<S::AccountState>] {
+    pub fn write_batches(&self) -> &'batches [WriteBatch<OLAccountStateV1>] {
         self.write_batches
     }
 
@@ -85,7 +84,7 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     /// by `on_wb`, or if none match, returns the result of `on_base`.
     fn resolve<T>(
         &self,
-        on_wb: impl Fn(&'batches WriteBatch<S::AccountState>) -> Option<T>,
+        on_wb: impl Fn(&'batches WriteBatch<OLAccountStateV1>) -> Option<T>,
         on_base: impl FnOnce() -> T,
     ) -> T {
         for wb in self.write_batches.iter().rev() {
@@ -97,8 +96,9 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     }
 }
 
-impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAccessor
-    for BatchDiffState<'batches, 'base, S>
+impl<'batches, 'base, S> IStateAccessor for BatchDiffState<'batches, 'base, S>
+where
+    S: IStateAccessor<AccountState = OLAccountStateV1> + IComputeStateRootWithWrites,
 {
     type AccountState = S::AccountState;
 
@@ -239,16 +239,14 @@ impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAcc
     }
 }
 
-impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrites
-    for BatchDiffState<'batches, 'base, S>
+impl<'batches, 'base, S> IComputeStateRootWithWrites for BatchDiffState<'batches, 'base, S>
+where
+    S: IStateAccessor<AccountState = OLAccountStateV1> + IComputeStateRootWithWrites,
 {
     fn compute_state_root_with_writes<'b>(
         &'b self,
-        writes: impl Iterator<Item = &'b WriteBatch<Self::AccountState>>,
-    ) -> StateResult<Buf32>
-    where
-        Self::AccountState: 'b,
-    {
+        writes: impl Iterator<Item = &'b WriteBatch<OLAccountStateV1>>,
+    ) -> StateResult<Buf32> {
         self.base
             .compute_state_root_with_writes(self.write_batches.iter().chain(writes))
     }

@@ -226,7 +226,7 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
 }
 
 impl IStateBatchApplicable for MemoryStateBaseLayer {
-    fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> StateResult<()> {
+    fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountStateV1>) -> StateResult<()> {
         // Validate serial bookkeeping before mutating any state so that an
         // error leaves both the inner state and the serials index untouched.
         let mut new_accounts: Vec<(AccountSerial, AccountId)> =
