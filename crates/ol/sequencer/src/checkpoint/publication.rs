@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
 use bitcoin::Transaction;
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::TxInputRef;
@@ -19,7 +18,7 @@ use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use tracing::warn;
 
-use super::context::CheckpointPublishContext;
+use super::context::{CheckpointContextResult, CheckpointPublishContext};
 
 /// Applies checkpoint safety rules immediately before Bitcoin publication.
 #[derive(Debug)]
@@ -41,14 +40,13 @@ impl<C> CheckpointPublishPolicy<C> {
 impl<C: CheckpointPublishContext> CheckpointPublishPolicy<C> {
     async fn decide_checkpoint(&self, checkpoint: &CheckpointPayload) -> PublishDecision {
         let checkpoint_epoch = checkpoint.new_tip().epoch;
-        let safe_epoch = self
-            .context
-            .get_safe_checkpoint_epoch()
-            .await
-            .unwrap_or_else(|err| {
-                warn!(%err, "checkpoint safe epoch is unavailable");
-                None
-            });
+        let safe_epoch = match self.context.get_safe_checkpoint_epoch().await {
+            Ok(epoch) => epoch,
+            Err(err) => {
+                warn!(%err, "deferring checkpoint while safe epoch is unavailable");
+                return PublishDecision::Defer;
+            }
+        };
         let safe_decision = decide_for_checkpoint_epoch(checkpoint_epoch, safe_epoch);
         if matches!(safe_decision, PublishDecision::Abandon) {
             return safe_decision;
@@ -116,7 +114,7 @@ fn publication_for_tx(
     idx: u64,
     tx: &Transaction,
     parser: &ParseConfig,
-) -> Result<Publication> {
+) -> CheckpointContextResult<Publication> {
     let txid = tx.compute_txid().to_buf32();
     let current = context
         .get_broadcast_entry_by_id(txid)?
@@ -304,16 +302,17 @@ mod tests {
     use strata_db_store_sled::SledBackend;
     use strata_db_types::backend::DatabaseBackend;
     use strata_db_types::l1_broadcast::{L1BroadcastDatabase, L1TxEntry};
+    use strata_db_types::DbError;
     use strata_identifiers::Buf32;
 
     use super::*;
-    use crate::checkpoint::CheckpointContextResult;
-
     #[derive(Debug)]
     struct TestPublishContext {
         db: Arc<SledBackend>,
         accepted_epoch: Option<Epoch>,
         safe_epoch: Option<Epoch>,
+        accepted_epoch_unavailable: bool,
+        safe_epoch_unavailable: bool,
     }
 
     impl TestPublishContext {
@@ -322,17 +321,35 @@ mod tests {
                 db: get_test_sled_backend(),
                 accepted_epoch,
                 safe_epoch,
+                accepted_epoch_unavailable: false,
+                safe_epoch_unavailable: false,
             }
+        }
+
+        fn with_accepted_epoch_unavailable(mut self) -> Self {
+            self.accepted_epoch_unavailable = true;
+            self
+        }
+
+        fn with_safe_epoch_unavailable(mut self) -> Self {
+            self.safe_epoch_unavailable = true;
+            self
         }
     }
 
     #[async_trait::async_trait]
     impl CheckpointPublishContext for TestPublishContext {
         async fn get_accepted_checkpoint_epoch(&self) -> CheckpointContextResult<Option<Epoch>> {
+            if self.accepted_epoch_unavailable {
+                return Err(DbError::Busy.into());
+            }
             Ok(self.accepted_epoch)
         }
 
         async fn get_safe_checkpoint_epoch(&self) -> CheckpointContextResult<Option<Epoch>> {
+            if self.safe_epoch_unavailable {
+                return Err(DbError::Busy.into());
+            }
             Ok(self.safe_epoch)
         }
 
@@ -386,6 +403,36 @@ mod tests {
             let context = Arc::new(TestPublishContext::new(accepted_epoch, safe_epoch));
             let policy = CheckpointPublishPolicy::new(context, TEST_MAGIC_BYTES);
             assert_eq!(policy.decide_checkpoint(&checkpoint).await, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn policy_handles_unavailable_epoch_sources_conservatively() {
+        let previous_epoch = Epoch::from(13u32);
+        let checkpoint_epoch = Epoch::from(14u32);
+        for (context, expected) in [
+            (
+                TestPublishContext::new(Some(previous_epoch), None).with_safe_epoch_unavailable(),
+                PublishDecision::Defer,
+            ),
+            (
+                TestPublishContext::new(None, Some(previous_epoch))
+                    .with_accepted_epoch_unavailable(),
+                PublishDecision::Defer,
+            ),
+            (
+                TestPublishContext::new(None, Some(checkpoint_epoch))
+                    .with_accepted_epoch_unavailable(),
+                PublishDecision::Abandon,
+            ),
+        ] {
+            let policy = CheckpointPublishPolicy::new(Arc::new(context), TEST_MAGIC_BYTES);
+            assert_eq!(
+                policy
+                    .decide_checkpoint(&create_test_checkpoint_payload(14))
+                    .await,
+                expected
+            );
         }
     }
 
@@ -532,6 +579,13 @@ mod tests {
             ),
             (
                 PublishDecision::Abandon,
+                PairMember::Reveal,
+                Some(L1TxStatus::Published),
+                Some(L1TxStatus::Unpublished),
+                PublishDecision::Publish,
+            ),
+            (
+                PublishDecision::Defer,
                 PairMember::Reveal,
                 Some(L1TxStatus::Published),
                 Some(L1TxStatus::Unpublished),
