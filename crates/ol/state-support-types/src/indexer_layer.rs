@@ -4,6 +4,7 @@
 //! to accumulator structures (like MMRs) and records them for later use by
 //! indexers, while passing all operations through to an inner implementation.
 
+use std::convert::Infallible;
 use std::fmt;
 
 use strata_acct_types::*;
@@ -243,10 +244,17 @@ where
 
 impl<A: IAccountStateMut> IAccountState for IndexerAccountStateMut<A> {
     type SnarkAccountState = A::SnarkAccountState;
+    /// A full-state replacement cannot be described by the incremental index
+    /// writes this wrapper tracks, so the write type is unconstructible.
+    type Write = Infallible;
 
     fn new_with_serial(_new_acct_data: NewAccountData, _serial: AccountSerial) -> Self {
         // TODO(STR-3228): refactor indexer bookkeeping types so this isn't required on wrappers
         unimplemented!("cannot construct wrapper type directly")
+    }
+
+    fn apply_write(&mut self, write: Self::Write) -> StateResult<()> {
+        match write {}
     }
 
     fn serial(&self) -> AccountSerial {

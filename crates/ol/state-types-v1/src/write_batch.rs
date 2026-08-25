@@ -9,7 +9,42 @@ use strata_codec_utils::CodecSsz;
 use strata_identifiers::{EpochCommitment, L1BlockId, L1Height, Slot};
 use strata_ol_state_types::{IAccountState, NewAccountData, PendingAsmLog};
 
-use crate::SerialMap;
+use crate::{OLAccountStateV1, SerialMap};
+
+/// A write to a single ledger account.
+///
+/// Currently the only supported write is a full replacement of the account
+/// state; finer-grained writes can be added later. This is NOT a DA type, so
+/// DA considerations do not apply.
+#[derive(Clone, Debug)]
+pub struct AccountStateWrite(OLAccountStateV1);
+
+impl AccountStateWrite {
+    /// Creates an account state write.
+    pub fn new(state: OLAccountStateV1) -> Self {
+        Self(state)
+    }
+
+    /// Returns the replacement account state.
+    pub fn state(&self) -> &OLAccountStateV1 {
+        &self.0
+    }
+
+    /// Returns the replacement account state mutably.
+    pub fn state_mut(&mut self) -> &mut OLAccountStateV1 {
+        &mut self.0
+    }
+
+    /// Consumes the write and returns the replacement account state.
+    pub fn into_state(self) -> OLAccountStateV1 {
+        self.0
+    }
+
+    /// Returns the account serial.
+    pub fn serial(&self) -> AccountSerial {
+        self.0.serial()
+    }
+}
 
 /// Tracked writes to the global state.
 #[derive(Clone, Debug, Default)]
@@ -317,6 +352,17 @@ impl Codec for EpochalStateWrites {
             total_ledger_balance: CodecSsz::<Option<BitcoinAmount>>::decode(dec)?.into_inner(),
             l1_block_refs_mmr: CodecSsz::<Option<Mmr64>>::decode(dec)?.into_inner(),
         })
+    }
+}
+
+impl Codec for AccountStateWrite {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        CodecSsz::new(self.0.clone()).encode(enc)
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let state = CodecSsz::<OLAccountStateV1>::decode(dec)?.into_inner();
+        Ok(Self::new(state))
     }
 }
 

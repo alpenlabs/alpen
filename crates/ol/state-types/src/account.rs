@@ -10,6 +10,9 @@ pub trait IAccountState: Clone + Sized {
     /// Type representing snark account state.
     type SnarkAccountState: ISnarkAccountState;
 
+    /// The write type that can be applied to this account state.
+    type Write;
+
     // Constructor.
 
     /// Creates a new account state with the given serial, balance, and type state.
@@ -17,6 +20,12 @@ pub trait IAccountState: Clone + Sized {
     /// This is just a dumb piece of data, it does not insert it into any state
     /// tree or anything.
     fn new_with_serial(new_acct_data: NewAccountData, serial: AccountSerial) -> Self;
+
+    /// Applies a write to this state.
+    ///
+    /// Errors if the write is not applicable, e.g. it was produced for a
+    /// different account.
+    fn apply_write(&mut self, write: Self::Write) -> StateResult<()>;
 
     // Accessors.
 
