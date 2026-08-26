@@ -10,6 +10,8 @@ mod process;
 
 pub use artifact_cache::*;
 pub use config::*;
+pub use context::*;
+pub use dispatcher::*;
 pub use errors::*;
 pub use linear_executor::*;
 pub use process::*;

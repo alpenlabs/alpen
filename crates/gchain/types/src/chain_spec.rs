@@ -109,6 +109,17 @@ impl<S: GChainSpec> LinkPath<S> {
         Self::new(base_node, Vec::new())
     }
 
+    /// The node the path starts from.  Traversing `links` in order starting
+    /// here reaches the path's final node.
+    pub fn base_node(&self) -> &NodeRef<S> {
+        &self.base_node
+    }
+
+    /// The links making up the path, in traversal order.
+    pub fn links(&self) -> &[LinkRef<S>] {
+        &self.links
+    }
+
     pub fn len(&self) -> usize {
         self.links.len()
     }

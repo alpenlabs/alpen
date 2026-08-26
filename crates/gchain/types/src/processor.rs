@@ -81,7 +81,7 @@ impl Display for ProcId {
 ///
 /// Error variants on result types should *ONLY* be used to indicate that the
 /// processing *failed*, never that the node is invalid.  Nodes being invalid
-/// should be indicated through [`ProcOutput::is_node_valid`].
+/// should be indicated through [`ProcArtifact::is_link_valid`].
 pub trait GChainProc: Sized + 'static {
     /// The chain spec this gchain proc is defined for.
     type Spec: GChainSpec;
@@ -153,7 +153,7 @@ pub trait GChainProc: Sized + 'static {
     /// no longer need.
     ///
     /// The provided node will become the oldest node.
-    fn prune_state_upto(self, nref: &NodeRef<Self::Spec>) -> anyhow::Result<()>;
+    fn prune_state_upto(&self, nref: &NodeRef<Self::Spec>) -> anyhow::Result<()>;
 }
 
 /// Output from a processing stage on a link transition.
@@ -189,8 +189,12 @@ pub trait DynProcArtifact: Sync + Send + 'static {
     /// Returns the type ID of the underlying concrete artifact type.
     fn artifact_type_id(&self) -> TypeId;
 
-    /// Converts to a handle that can be downcast back to the concrete artifact
+    /// Borrows as a handle that can be downcast back to the concrete artifact
     /// type.
+    fn as_any(&self) -> &dyn Any;
+
+    /// Converts to an owned handle that can be downcast back to the concrete
+    /// artifact type.
     fn into_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 }
 
@@ -203,14 +207,39 @@ impl<A: ProcArtifact> DynProcArtifact for A {
         TypeId::of::<A>()
     }
 
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn into_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
     }
 }
 
+/// An artifact a processor stage produced for a particular link.
+///
+/// The artifact is behind an [`Arc`] because the executor hands the same
+/// artifact to the cache, to the commit path, and potentially to later stages
+/// depending on it.
 pub struct ProcStepOutput<P: GChainProc> {
     lref: LinkRef<P::Spec>,
-    output: P::Artifact,
+    artifact: Arc<P::Artifact>,
+}
+
+impl<P: GChainProc> ProcStepOutput<P> {
+    pub fn new(lref: LinkRef<P::Spec>, artifact: Arc<P::Artifact>) -> Self {
+        Self { lref, artifact }
+    }
+
+    /// The link this artifact was produced for.
+    pub fn lref(&self) -> &LinkRef<P::Spec> {
+        &self.lref
+    }
+
+    /// The artifact produced from processing the link.
+    pub fn artifact(&self) -> &Arc<P::Artifact> {
+        &self.artifact
+    }
 }
 
 /// Describes the dependencies a processing stage has, so that we know which
@@ -252,10 +281,32 @@ impl ProcDeps {
 }
 
 /// Provider for context about a processing operation.
+///
+/// This exposes the artifacts other processor stages produced, so a stage can
+/// build on their work instead of recomputing it.  A stage may only fetch
+/// artifacts from stages it declared a dependency on in its [`ProcDeps`]; the
+/// executor is free to treat any other fetch as missing, since it only
+/// guarantees the ordering the declared deps imply.
+///
+/// The context is scoped to the link being processed, so the two fetches
+/// correspond to the two dep lists: the link currently being processed, and the
+/// link we arrived at its origin node by.
 // TODO(trey): this is kinda stubby, will fill out more in the future, see `ProcContextImpl`
 pub trait ProcContext<P: GChainProc> {
-    /// Creates a new empty context instance.
-    fn new() -> Self;
+    /// Fetches the artifact another stage produced for the link currently being
+    /// processed.
+    ///
+    /// Returns `None` if the stage produced no artifact for this link, or if
+    /// the artifact isn't of type `A`.
+    fn get_cur_artifact<A: ProcArtifact>(&self, proc_id: ProcId) -> Option<Arc<A>>;
+
+    /// Fetches the artifact another stage produced for the link we arrived at
+    /// this link's origin node by.
+    ///
+    /// Returns `None` if there is no previous link (we're at the base of the
+    /// path), if the stage produced no artifact for it, or if the artifact
+    /// isn't of type `A`.
+    fn get_prev_artifact<A: ProcArtifact>(&self, proc_id: ProcId) -> Option<Arc<A>>;
 }
 
 #[cfg(test)]

@@ -73,11 +73,7 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>> LinearExecutor<S, P> {
     fn fetch_link(&self, lref: LinkRef<S>) -> anyhow::Result<Link<S>> {
         self.chain_provider
             .fetch_link(&lref)
-            .map_err(anyhow::Error::from)
-            .and_then(|v| {
-                v.ok_or(GExecError::MissingLink)
-                    .map_err(anyhow::Error::from)
-            })
+            .and_then(|v| v.ok_or_else(|| GExecError::MissingLink.into()))
             .with_context(|| format!("fetch link {lref:?}"))
     }
 
