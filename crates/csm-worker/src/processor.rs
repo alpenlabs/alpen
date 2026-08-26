@@ -86,15 +86,6 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             "CSM is processing checkpoint tip update from ASM log"
         );
 
-        let l1_height = tip.l1_height();
-        if l1_height != asm_block.height() {
-            warn!(
-                tip_l1_height = l1_height,
-                asm_block_height = asm_block.height(),
-                "Checkpoint tip L1 height differs from current ASM block height; using ASM block commitment"
-            );
-        }
-
         let new_checkpoint =
             self.mark_ol_checkpoint_l1_observed(pending, checkpoint_tip_update, asm_block)?;
         pending.cur_state = Arc::new(ClientState::new(
