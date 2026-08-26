@@ -101,12 +101,14 @@ fn assert_epoch_root_round_trip(
     );
     let mut verify_state = pre_epoch_state.clone();
     let exp = EpochExecExpectations::new(expected_root);
+    let runtime_params = OLRuntimeParams::default();
     let result = verify_epoch_with_diff::<_, OLDaSchemeV1>(
         &mut verify_state,
         &epoch_info,
         payload,
         &manifests,
         &exp,
+        &runtime_params,
     );
 
     let actual_root = verify_state

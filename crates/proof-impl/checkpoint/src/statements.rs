@@ -179,6 +179,7 @@ pub fn process_ol_stf_core(
         payload,
         &epoch_manifests,
         &exp,
+        runtime_params,
     )
     .expect("DA witness does not reproduce the authenticated epoch state root");
     let state_diff_hash = FixedBytes::<32>::from(hash::raw(&da_state_diff_bytes));

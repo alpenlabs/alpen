@@ -379,6 +379,13 @@ fn ensure_hashes_match(expected_hash: &str, artifact_hash: &str) -> Result<(), I
 }
 
 #[cfg(all(feature = "prover", not(feature = "sp1")))]
+fn validate_checkpoint_runtime_params_hash(
+    _runtime_params: OLRuntimeParams,
+) -> Result<(), InitError> {
+    Ok(())
+}
+
+#[cfg(all(feature = "prover", not(feature = "sp1")))]
 fn checkpoint_sp1_predicate_key_provider(
     _prover_config: &ProverConfig,
     _handle: &Handle,

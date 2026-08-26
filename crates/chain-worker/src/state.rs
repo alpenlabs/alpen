@@ -502,6 +502,7 @@ pub(crate) fn apply_checkpoint_epoch(
     })?;
     let (manifests, epoch_info) =
         assemble_da_inputs(ctx, epoch, &base_state, sidecar, tip, prev_terminal)?;
+    let runtime_params = ctx.runtime_params();
 
     // The sidecar carries logs in its own wire type; convert to the OL chain-types
     // `OLLog` so the reconstructed epoch output mirrors the per-block path.
@@ -520,7 +521,13 @@ pub(crate) fn apply_checkpoint_epoch(
     // run apply_da_epoch, then extract the batch and indexer writes.
     let tracking_state = WriteTrackingState::new_empty(&base_state);
     let mut indexer_state = IndexerState::new(tracking_state);
-    apply_da_epoch::<_, OLDaSchemeV1>(&mut indexer_state, &epoch_info, da_payload, &manifests)?;
+    apply_da_epoch::<_, OLDaSchemeV1>(
+        &mut indexer_state,
+        &epoch_info,
+        da_payload,
+        &manifests,
+        &runtime_params,
+    )?;
     let indexer_state_root =
         indexer_state
             .compute_state_root()

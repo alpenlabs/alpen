@@ -386,6 +386,7 @@ where
         config,
         &block_context,
         &parent_state,
+        &runtime_params,
         BuildBlockTemplateInput {
             accumulated_batch,
             output_buffer: output_buffer.clone(),
@@ -673,8 +674,8 @@ where
         // Step 3: Create per-tx output buffer and execute transaction.
         // Logs are only merged into main buffer on success; on failure they're discarded.
         let tx_buffer = ExecOutputBuffer::new_empty();
-        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &tx_buffer)
-            .with_runtime_params(runtime_params);
+        let basic_ctx =
+            BasicExecContext::new(*block_context.block_info(), &tx_buffer, runtime_params);
         let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
 
         debug!(%txid, kind = %tx.payload().type_id(), "processing transaction");
@@ -792,6 +793,7 @@ fn build_block_template<S>(
     config: &BlockGenerationConfig,
     block_context: &BlockContext<'_>,
     parent_state: &Arc<S>,
+    runtime_params: &OLRuntimeParams,
     input: BuildBlockTemplateInput,
 ) -> BlockAssemblyResult<(FullBlockTemplate, S)>
 where
@@ -820,7 +822,8 @@ where
     // At the epoch terminal, drain the buffered ASM logs, reset intraepoch
     // state, and advance the epoch.
     if is_terminal {
-        let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output_buffer);
+        let basic_ctx =
+            BasicExecContext::new(*block_context.block_info(), &output_buffer, runtime_params);
         process_epoch_terminal(&mut final_state, &basic_ctx).map_err(|e| {
             error!(?e, "epoch terminal processing failed");
             BlockAssemblyError::BlockConstruction(e)

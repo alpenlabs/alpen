@@ -51,7 +51,9 @@ fn test_process_single_tx_stages_sau_writes() {
     });
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
 
@@ -176,7 +178,9 @@ fn test_process_single_tx_reads_prior_staged_writes() {
     });
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
 
@@ -270,7 +274,9 @@ fn test_process_single_tx_loop_can_restore_failed_tx_batch() {
     });
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
 
@@ -381,7 +387,9 @@ fn test_process_tx_segment_reads_staged_writes_between_txs() {
         .build(snark_acct_id, make_state_root(3), make_proof(2));
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
     let tx_segment = OLTxSegmentV1::new(vec![tx1, tx2]).expect("tx segment should fit");
@@ -516,7 +524,9 @@ fn test_multi_effect_sau_coalesces_staged_account_writes() {
     });
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
 

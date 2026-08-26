@@ -116,16 +116,16 @@ impl ChainWorkerContextImpl {
         &self.status_channel
     }
 
-    pub fn runtime_params(&self) -> OLRuntimeParams {
-        self.runtime_params
-    }
-
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
 }
 
 impl ChainWorkerContext for ChainWorkerContextImpl {
+    fn runtime_params(&self) -> OLRuntimeParams {
+        self.runtime_params
+    }
+
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
         Ok(self.ol_block_mgr.get_block_data_blocking(*blkid)?)
     }

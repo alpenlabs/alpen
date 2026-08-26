@@ -21,6 +21,7 @@ use strata_codec::encode_to_vec;
 use strata_identifiers::{AccountSerial, SubjectId};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types::{Coin, IAccountState, IStateAccessor};
 
 use crate::account_processing;
@@ -43,7 +44,8 @@ fn limbo_message_to_nonexistent_account() {
 
     let block_info = BlockInfo::new(1, 0, 0);
     let outputs = ExecOutputBuffer::new_empty();
-    let context = BasicExecContext::new(block_info, &outputs);
+    let runtime_params = OLRuntimeParams::default();
+    let context = BasicExecContext::new(block_info, &outputs, &runtime_params);
 
     let value = BitcoinAmount::try_from(2_500_000)
         .expect("amount must not exceed the Bitcoin money supply");
@@ -79,7 +81,8 @@ fn limbo_transfer_to_nonexistent_account() {
 
     let block_info = BlockInfo::new(1, 0, 0);
     let outputs = ExecOutputBuffer::new_empty();
-    let context = BasicExecContext::new(block_info, &outputs);
+    let runtime_params = OLRuntimeParams::default();
+    let context = BasicExecContext::new(block_info, &outputs, &runtime_params);
 
     let value = BitcoinAmount::try_from(4_000_000)
         .expect("amount must not exceed the Bitcoin money supply");

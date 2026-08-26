@@ -54,6 +54,10 @@ struct OrderEnforcingContext {
 }
 
 impl ChainWorkerContext for OrderEnforcingContext {
+    fn runtime_params(&self) -> OLRuntimeParams {
+        OLRuntimeParams::default()
+    }
+
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
         Ok(self.blocks.get(blkid).cloned())
     }

@@ -33,6 +33,7 @@ use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlo
 use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog as ChainOLLog,
 };
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::IStateAccessor;
 use strata_ol_state_types_v1::OLStateV1;
@@ -70,6 +71,10 @@ impl MockChainWorkerContext {
 }
 
 impl ChainWorkerContext for MockChainWorkerContext {
+    fn runtime_params(&self) -> OLRuntimeParams {
+        OLRuntimeParams::default()
+    }
+
     fn fetch_checkpoint_payload(
         &self,
         epoch: &EpochCommitment,

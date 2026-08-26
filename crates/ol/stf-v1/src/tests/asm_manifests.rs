@@ -356,7 +356,8 @@ fn test_oversized_deposit_amount_returns_clean_error() {
 
     let outputs = ExecOutputBuffer::new_empty();
     let block_info = BlockInfo::new(1, 1, 1);
-    let context = BasicExecContext::new(block_info, &outputs);
+    let runtime_params = OLRuntimeParams::default();
+    let context = BasicExecContext::new(block_info, &outputs, &runtime_params);
 
     let err = process_epoch_terminal(&mut state, &context)
         .expect_err("an oversized deposit amount should error, not panic");

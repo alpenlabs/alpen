@@ -206,28 +206,24 @@ impl EpochInitialContext {
 }
 
 /// Basic execution context which can be used for tracking outputs.
-///
-/// Optionally carries runtime parameters for transaction processing paths.
-/// Manifest processing paths leave this as `None`.
 #[derive(Debug)]
 pub struct BasicExecContext<'b> {
     block_info: BlockInfo,
     output_buffer: &'b ExecOutputBuffer,
-    runtime_params: Option<&'b OLRuntimeParams>,
+    runtime_params: &'b OLRuntimeParams,
 }
 
 impl<'b> BasicExecContext<'b> {
-    pub fn new(block_info: BlockInfo, output_buffer: &'b ExecOutputBuffer) -> Self {
+    pub fn new(
+        block_info: BlockInfo,
+        output_buffer: &'b ExecOutputBuffer,
+        runtime_params: &'b OLRuntimeParams,
+    ) -> Self {
         Self {
             block_info,
             output_buffer,
-            runtime_params: None,
+            runtime_params,
         }
-    }
-
-    pub fn with_runtime_params(mut self, runtime_params: &'b OLRuntimeParams) -> Self {
-        self.runtime_params = Some(runtime_params);
-        self
     }
 
     fn block_info(&self) -> &BlockInfo {
@@ -246,8 +242,8 @@ impl<'b> BasicExecContext<'b> {
         self.block_info.epoch()
     }
 
-    pub fn bridge_params(&self) -> Option<&BridgeParams> {
-        self.runtime_params.map(OLRuntimeParams::bridge_params)
+    pub fn bridge_params(&self) -> &BridgeParams {
+        self.runtime_params.bridge_params()
     }
 }
 

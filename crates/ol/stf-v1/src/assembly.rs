@@ -139,8 +139,7 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     execute_block_start(state, &block_context)?;
 
     // 3. Call process_block_tx_segment for every block as usual.
-    let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output)
-        .with_runtime_params(runtime_params);
+    let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output, runtime_params);
     let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
     execute_block_tx_segment(state, block_exec_input.tx_segment(), &tx_ctx)?;
     // Defense-in-depth: `emit_logs` enforces the cap at insertion time, and this

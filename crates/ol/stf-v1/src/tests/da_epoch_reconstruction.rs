@@ -362,8 +362,15 @@ fn reconstruct_epoch(
         .to_vec();
 
     let mut reconstructed = pre_epoch_state.clone();
-    apply_da_epoch::<_, OLDaSchemeV1>(&mut reconstructed, &epoch_info, payload, &manifests)
-        .expect("apply_da_epoch");
+    let runtime_params = OLRuntimeParams::default();
+    apply_da_epoch::<_, OLDaSchemeV1>(
+        &mut reconstructed,
+        &epoch_info,
+        payload,
+        &manifests,
+        &runtime_params,
+    )
+    .expect("apply_da_epoch");
     reconstructed.compute_state_root().unwrap()
 }
 
