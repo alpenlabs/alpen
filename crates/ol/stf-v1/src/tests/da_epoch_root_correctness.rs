@@ -167,7 +167,7 @@ fn rebuild_da_blob(
         &mut da,
         blocks,
         prev_terminal_header,
-        OLRuntimeParams::default(),
+        &OLRuntimeParams::default(),
     )
     .expect("execute_block_batch_predrain");
     da.take_completed_epoch_da_blob()

@@ -324,7 +324,7 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         summary: &EpochSummary,
     ) -> anyhow::Result<(StateDiffRaw, Vec<OLLog>)> {
         let (statediff, logs, terminal_header) =
-            replay_epoch_and_compute_da(self, summary, self.runtime_params)?;
+            replay_epoch_and_compute_da(self, summary, &self.runtime_params)?;
         assert_terminal_commitment_matches(&terminal_header, summary.terminal())?;
         Ok((statediff, logs))
     }
@@ -359,7 +359,7 @@ fn assert_terminal_commitment_matches(
 fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     ctx: &C,
     summary: &EpochSummary,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> anyhow::Result<(Vec<u8>, Vec<OLLog>, OLBlockHeaderV1)> {
     let epoch_blocks = collect_epoch_blocks(summary, ctx)?;
 

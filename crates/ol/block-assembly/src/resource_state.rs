@@ -139,7 +139,7 @@ where
         &mut da_state,
         &epoch_blocks.blocks,
         &epoch_blocks.epoch_parent,
-        runtime_params,
+        &runtime_params,
     )
     .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
 

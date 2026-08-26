@@ -102,8 +102,8 @@ fn bridge_withdrawal_log_overflow_returns_clean_error() {
         .expect("filling logs to the cap should succeed");
 
     let block_info = BlockInfo::new(1, 1, 1);
-    let context =
-        BasicExecContext::new(block_info, &outputs).with_runtime_params(OLRuntimeParams::default());
+    let runtime_params = OLRuntimeParams::default();
+    let context = BasicExecContext::new(block_info, &outputs).with_runtime_params(&runtime_params);
 
     let err = account_processing::process_message(
         &mut state,

@@ -40,7 +40,7 @@ use zkaleido::ZkVmEnv;
 ///
 /// This function panics if any SSZ deserialization fails.
 /// See [`process_ol_stf_core`] for additional panic conditions.
-pub fn process_ol_stf(zkvm: &impl ZkVmEnv, runtime_params: OLRuntimeParams) {
+pub fn process_ol_stf(zkvm: &impl ZkVmEnv, runtime_params: &OLRuntimeParams) {
     // Read and deserialize the initial OL state from zkVM input
     let initial_state_ssz_bytes = zkvm.read_buf();
     let state = OLStateV1::from_ssz_bytes(&initial_state_ssz_bytes)
@@ -91,7 +91,7 @@ pub fn process_ol_stf_core(
     blocks: Vec<OLBlockV1>,
     parent: OLBlockHeaderV1,
     da_state_diff_bytes: Vec<u8>,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> CheckpointClaim {
     // Wrap OLStateV1 in MemoryStateBaseLayer to satisfy IStateAccessor requirements.
     let mut state = MemoryStateBaseLayer::new(state);
@@ -258,7 +258,7 @@ fn execute_block_batch(
     state: &mut MemoryStateBaseLayer,
     blocks: &[OLBlockV1],
     initial_parent: &OLBlockHeaderV1,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> EpochExecTrace {
     let mut parent = initial_parent.clone();
     let mut logs = Vec::new();

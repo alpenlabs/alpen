@@ -341,7 +341,7 @@ fn reconstruct_epoch(
         &mut da,
         blocks,
         genesis.header(),
-        OLRuntimeParams::default(),
+        &OLRuntimeParams::default(),
     )
     .expect("execute_block_batch_predrain");
     let da_blob = da

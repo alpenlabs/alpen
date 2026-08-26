@@ -61,7 +61,7 @@ impl ZkVmProgram for CheckpointProgram {
 impl CheckpointProgram {
     pub fn native_host(runtime_params: OLRuntimeParams) -> NativeHost {
         NativeHost::new(test_signing_key(), move |zkvm| {
-            process_ol_stf(zkvm, runtime_params)
+            process_ol_stf(zkvm, &runtime_params)
         })
     }
 

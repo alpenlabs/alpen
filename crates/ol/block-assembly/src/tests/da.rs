@@ -120,7 +120,7 @@ async fn test_da_incremental_matches_replay() {
         &mut replay_da_state,
         &owned_blocks,
         parent_header,
-        OLRuntimeParams::default(),
+        &OLRuntimeParams::default(),
     )
     .expect("replay should succeed");
 

@@ -161,7 +161,7 @@ fn fetch_input_blocking(
     let da_state_diff_bytes = {
         let mut da_state =
             DaAccumulatingState::new(MemoryStateBaseLayer::new((*start_state).clone()));
-        execute_block_batch_predrain(&mut da_state, &blocks, &parent, runtime_params)
+        execute_block_batch_predrain(&mut da_state, &blocks, &parent, &runtime_params)
             .map_err(|e| ProverError::DaComputation(e.to_string()))?;
         da_state
             .take_completed_epoch_da_blob()

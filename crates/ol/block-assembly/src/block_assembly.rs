@@ -336,7 +336,7 @@ where
         mempool_txs,
         accumulated_da,
         epoch_cumulative_manifest_count,
-        runtime_params,
+        &runtime_params,
     );
 
     // Phase 3: Fetch buried ASM manifests for this block. Manifest selection may also request
@@ -598,7 +598,7 @@ fn process_transactions<P, E, S>(
     mempool_txs: Vec<(OLTxId, OLTransactionV1)>,
     accumulated_da: AccumulatedDaData,
     epoch_cumulative_manifest_count: u32,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ProcessTransactionsOutput
 where
     P: AccumulatorProofGenerator,
@@ -2852,7 +2852,7 @@ mod tests {
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
             0,
-            OLRuntimeParams::default(),
+            &OLRuntimeParams::default(),
         );
 
         assert!(
@@ -2911,7 +2911,7 @@ mod tests {
             vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
             AccumulatedDaData::new_empty(),
             0,
-            OLRuntimeParams::default(),
+            &OLRuntimeParams::default(),
         );
 
         assert_eq!(
@@ -2958,7 +2958,7 @@ mod tests {
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
             0,
-            OLRuntimeParams::default(),
+            &OLRuntimeParams::default(),
         );
 
         assert!(
@@ -3000,7 +3000,7 @@ mod tests {
             mempool_txs,
             seeded_da,
             0,
-            OLRuntimeParams::default(),
+            &OLRuntimeParams::default(),
         )
     }
 

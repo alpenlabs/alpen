@@ -399,7 +399,7 @@ fn run_block_sync(
             block.header(),
             Some(&prev_header),
             block.body(),
-            OLRuntimeParams::default(),
+            &OLRuntimeParams::default(),
         )
         .expect("block-sync verify_block");
         logs.extend(block_logs);
@@ -434,7 +434,7 @@ fn rebuild_da_and_logs(
 ) -> (Vec<u8>, Vec<CheckpointOLLog>) {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
     let logs =
-        execute_block_batch_predrain(&mut da, blocks, genesis_header, OLRuntimeParams::default())
+        execute_block_batch_predrain(&mut da, blocks, genesis_header, &OLRuntimeParams::default())
             .expect("execute_block_batch_predrain");
     let blob = da
         .take_completed_epoch_da_blob()

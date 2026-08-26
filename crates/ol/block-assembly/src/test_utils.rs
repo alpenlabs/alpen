@@ -663,7 +663,7 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_v1::OLBlockHe
         &mut temp_state,
         genesis_context,
         genesis_components,
-        OLRuntimeParams::default(),
+        &OLRuntimeParams::default(),
     )
     .unwrap();
     genesis_output.completed_block().header().clone()
@@ -1383,7 +1383,7 @@ impl TestStorageFixtureBuilder {
                     &mut state,
                     block_context,
                     components,
-                    OLRuntimeParams::default(),
+                    &OLRuntimeParams::default(),
                 )
                 .expect("Genesis block execution should succeed");
 

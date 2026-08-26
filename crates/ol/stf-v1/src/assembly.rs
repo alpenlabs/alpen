@@ -126,7 +126,7 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_exec_input: BlockExecInput<'_>,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<BlockExecOutputs> {
     // 0. Construct the block exec context for tracking verification state
     // across phases.
@@ -377,7 +377,7 @@ pub fn construct_block<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<ConstructBlockOutput> {
     // 1. First just execute the block with the inputs.
     let is_terminal = block_components.is_terminal();
@@ -430,7 +430,7 @@ pub fn execute_and_complete_block<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<CompletedBlock> {
     let construct_output = construct_block(state, block_context, block_components, runtime_params)?;
     Ok(construct_output.completed_block)
@@ -447,7 +447,7 @@ pub fn execute_block_batch<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlockV1],
     initial_parent: &OLBlockHeaderV1,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let mut parent = initial_parent.clone();
     let mut batch_logs = Vec::with_capacity(blocks.len());
@@ -480,7 +480,7 @@ pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlockV1],
     initial_parent: &OLBlockHeaderV1,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let mut parent = initial_parent.clone();
     let mut batch_logs = Vec::with_capacity(blocks.len());

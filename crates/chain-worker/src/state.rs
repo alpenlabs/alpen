@@ -353,7 +353,7 @@ fn execute_stf(
 
     // Execute and extract outputs
     let (write_batch, indexer_writes, logs) =
-        run_stf_verification(&parent_state, block, parent_header, runtime_params)?;
+        run_stf_verification(&parent_state, block, parent_header, &runtime_params)?;
 
     // Apply write batch to parent state to get new state
     let mut new_state = parent_state;
@@ -897,7 +897,7 @@ fn run_stf_verification(
     parent_state: &MemoryStateBaseLayer,
     block: &OLBlockV1,
     parent_header: Option<&OLBlockHeaderV1>,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> WorkerResult<(WriteBatch, IndexerWrites, Vec<OLLog>)> {
     // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
     let tracking_state = WriteTrackingState::new_empty(parent_state);

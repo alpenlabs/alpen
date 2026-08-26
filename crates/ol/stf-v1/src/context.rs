@@ -213,7 +213,7 @@ impl EpochInitialContext {
 pub struct BasicExecContext<'b> {
     block_info: BlockInfo,
     output_buffer: &'b ExecOutputBuffer,
-    runtime_params: Option<OLRuntimeParams>,
+    runtime_params: Option<&'b OLRuntimeParams>,
 }
 
 impl<'b> BasicExecContext<'b> {
@@ -225,7 +225,7 @@ impl<'b> BasicExecContext<'b> {
         }
     }
 
-    pub fn with_runtime_params(mut self, runtime_params: OLRuntimeParams) -> Self {
+    pub fn with_runtime_params(mut self, runtime_params: &'b OLRuntimeParams) -> Self {
         self.runtime_params = Some(runtime_params);
         self
     }
@@ -247,9 +247,7 @@ impl<'b> BasicExecContext<'b> {
     }
 
     pub fn bridge_params(&self) -> Option<&BridgeParams> {
-        self.runtime_params
-            .as_ref()
-            .map(OLRuntimeParams::bridge_params)
+        self.runtime_params.map(OLRuntimeParams::bridge_params)
     }
 }
 

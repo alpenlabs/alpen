@@ -113,7 +113,7 @@ pub fn verify_block<S: IStateAccessorMut>(
     header: &OLBlockHeaderV1,
     parent_header: Option<&OLBlockHeaderV1>,
     body: &OLBlockBodyV1,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
 
@@ -157,7 +157,7 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
     header: &OLBlockHeaderV1,
     parent_header: Option<&OLBlockHeaderV1>,
     body: &OLBlockBodyV1,
-    runtime_params: OLRuntimeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     // 0. Do preliminary sanity checks.
     verify_header_continuity(header, parent_header)?;

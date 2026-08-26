@@ -137,7 +137,7 @@ fn test_stress_processes_large_inbox_proof_batch() {
         sau_block.completed_block().header(),
         Some(&parent_header),
         sau_block.completed_block().body(),
-        OLRuntimeParams::default(),
+        &OLRuntimeParams::default(),
     )
     .expect("large-message SAU should verify");
 

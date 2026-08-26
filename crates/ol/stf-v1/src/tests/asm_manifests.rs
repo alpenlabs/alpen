@@ -237,7 +237,7 @@ fn test_deposit_terminal_drain_has_no_logs_or_predrain_effects() {
         &mut predrain_state,
         &[to_ol_block(output.completed_block())],
         &parent_header,
-        OLRuntimeParams::default(),
+        &OLRuntimeParams::default(),
     )
     .expect("pre-drain checkpoint replay should succeed");
     assert_eq!(

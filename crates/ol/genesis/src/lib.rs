@@ -78,11 +78,12 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
 
     // Execute genesis block through the OL STF.
     let block_context = BlockContext::new(&genesis_info, None);
+    let runtime_params = params.runtime_params();
     let genesis_block = execute_and_complete_block(
         &mut ol_state,
         block_context,
         genesis_components,
-        params.runtime_params(),
+        &runtime_params,
     )?;
     let ol_state = ol_state.into_inner();
 

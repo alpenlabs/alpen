@@ -12,5 +12,5 @@ fn main() {
     let runtime_params =
         OLRuntimeParams::from_ssz_bytes(runtime_params::CHECKPOINT_RUNTIME_PARAMS_SSZ)
             .expect("embedded checkpoint runtime params must decode");
-    process_ol_stf(&Sp1ZkVmEnv, runtime_params)
+    process_ol_stf(&Sp1ZkVmEnv, &runtime_params)
 }
