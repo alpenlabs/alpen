@@ -73,15 +73,9 @@ RUN mkdir -p /app/data /app/.cache /app/.local/share && \
     chown -R alpen:alpen /app
 
 COPY --from=builder /usr/local/bin/strata /usr/local/bin/strata
-# strata-datatool + the SP1 guest ELF are built on the CI runner with
-# --features sp1-docker-builder. At docker build time they live in the
-# build context under docker/strata/artifacts/. Regeneration steps live
-# in ci-build.yml.
-COPY docker/strata/artifacts/strata-datatool /usr/local/bin/strata-datatool
-COPY docker/strata/artifacts/elfs /app/elfs
 COPY docker/strata/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/strata-datatool /usr/local/bin/entrypoint.sh
+RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/entrypoint.sh
 
 USER alpen
 
