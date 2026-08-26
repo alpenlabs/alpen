@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds strata-datatool (and optionally SP1 guest artifacts), waits for
-# bitcoin, validates params, and runs init-network.sh to generate keys + params.
+# Builds strata-datatool, generates local network artifacts, and optionally
+# builds SP1 guest artifacts.
 #
 # Called by `just docker-seq-up` before starting the compose stack.
 # Reads configuration from .env in the docker/ directory.
@@ -97,10 +97,8 @@ build_sp1_guest_artifacts() {
 }
 
 prepare_sp1_checkpoint_predicate() {
-    SKIP_ASM_PARAMS=1 "${SCRIPT_DIR}/init-network.sh" --sequencer "${DATATOOL_BIN}"
     build_sp1_guest_artifacts
     CHECKPOINT_PREDICATE_FILE="${PREDICATE_DIR}/guest-checkpoint.predicate"
-    rm -f "${OUTPUT_DIR}/asm-params.json"
 }
 
 prepare_checkpoint_predicate() {
@@ -132,17 +130,23 @@ echo "building strata-datatool (fast if unchanged)..."
 cd "${REPO_ROOT}"
 cargo build --locked --release --bin strata-datatool
 
-# ---- Wait for bitcoin, validate params, generate OL params ----
+# ---- Wait for bitcoin, validate params, generate base network artifacts ----
 
 wait_for_bitcoin
 validate_params
 
 export OUTPUT_DIR
 
+"${SCRIPT_DIR}/init-network.sh" --sequencer --base-only "${DATATOOL_BIN}"
+
 prepare_checkpoint_predicate
 
-# ---- Generate ASM params with the guest predicate built from these OL params ----
+# ---- Generate ASM params with the selected checkpoint predicate ----
 
-export CHECKPOINT_PREDICATE_FILE
+rm -f "${OUTPUT_DIR}/asm-params.json"
 
-"${SCRIPT_DIR}/init-network.sh" --sequencer "${DATATOOL_BIN}"
+"${SCRIPT_DIR}/init-network.sh" \
+    --sequencer \
+    --asm-only \
+    --checkpoint-predicate-file "${CHECKPOINT_PREDICATE_FILE}" \
+    "${DATATOOL_BIN}"
