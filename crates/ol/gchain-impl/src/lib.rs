@@ -1,14 +1,7 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Implementation of the gchain traits for the orchestration layer.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod chain_spec;
+mod graph_types;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use chain_spec::OLChainSpec;
+pub use graph_types::*;

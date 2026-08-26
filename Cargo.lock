@@ -9468,7 +9468,9 @@ dependencies = [
 name = "strata-ol-gchain-impl"
 version = "0.1.0"
 dependencies = [
+ "strata-checkpoint-types",
  "strata-gchain-types",
+ "strata-identifiers",
  "strata-ol-chain-types-v1",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
