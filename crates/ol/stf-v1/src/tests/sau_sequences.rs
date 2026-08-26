@@ -2,8 +2,8 @@
 
 use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ol_chain_types_v1::OLBlockHeaderV1;
-use strata_ol_state_types::ISnarkAccountState;
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_types::ISnarkAccountState;
 
 use crate::test_utils::*;
 use crate::verify_block;

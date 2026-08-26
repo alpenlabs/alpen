@@ -23,7 +23,8 @@ GENESIS_L1_HEIGHT="${GENESIS_L1_HEIGHT:-0}"
 BITCOIND_RPC_URL="${BITCOIND_RPC_URL:-${BITCOIND_RPC_URL:-}}"
 BITCOIND_RPC_USER="${BITCOIND_RPC_USER:-${BITCOIND_RPC_USER:-}}"
 BITCOIND_RPC_PASSWORD="${BITCOIND_RPC_PASSWORD:-${BITCOIND_RPC_PASSWORD:-}}"
-SAFE_HARBOUR_ADDRESS="${SAFE_HARBOUR_ADDRESS:?SAFE_HARBOUR_ADDRESS is required: provide a P2TR BOSD descriptor for the bridge emergency sweep address}"
+SAFE_HARBOUR_ADDRESS="${SAFE_HARBOUR_ADDRESS:-}"
+SKIP_ASM_PARAMS="${SKIP_ASM_PARAMS:-}"
 
 MODE="sequencer"
 PARAMS_DIR=""
@@ -61,6 +62,7 @@ while [ $# -gt 0 ]; do
             echo "  BITCOIND_RPC_PASSWORD  Bitcoin RPC password"
             echo "  GENESIS_ACCOUNTS       path to the genesis snark accounts JSON from alpen-ee"
             echo "  CHECKPOINT_PREDICATE_FILE path to ASM checkpoint predicate metadata"
+            echo "  SKIP_ASM_PARAMS        set to 1 to stop after generating OL params"
             echo "  BRIDGE_DENOMINATION_SATS           bridge denomination in satoshis"
             echo "  MAX_WITHDRAWAL_AMOUNT_SATS         optional maximum withdrawal amount in satoshis"
             echo "  MAX_WITHDRAWAL_DESCRIPTOR_LEN      maximum withdrawal BOSD descriptor length"
@@ -200,8 +202,11 @@ GEOF
     fi
 
     ASM_PARAMS="${OUTPUT_DIR}/asm-params.json"
-    if [ ! -f "${ASM_PARAMS}" ]; then
+    if [ "${SKIP_ASM_PARAMS}" = "1" ]; then
+        echo "skipping ${ASM_PARAMS} generation"
+    elif [ ! -f "${ASM_PARAMS}" ]; then
         : "${CHECKPOINT_PREDICATE_FILE:?CHECKPOINT_PREDICATE_FILE is required when generating asm-params.json}"
+        : "${SAFE_HARBOUR_ADDRESS:?SAFE_HARBOUR_ADDRESS is required when generating asm-params.json: provide a P2TR BOSD descriptor for the bridge emergency sweep address}"
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
             gen-asm-params \
             -o "${ASM_PARAMS}" \

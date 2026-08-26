@@ -2210,7 +2210,6 @@ dependencies = [
  "ssz_primitives",
  "strata-asm-checkpoint-types",
  "strata-asm-manifest-types",
- "strata-bridge-params",
  "strata-crypto",
  "strata-ol-chain-types-v1",
  "strata-ol-da-types-v1",

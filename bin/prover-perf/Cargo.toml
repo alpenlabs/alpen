@@ -12,7 +12,6 @@ zkaleido.workspace = true
 # proof programs
 strata-proofimpl-checkpoint.workspace = true
 
-strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-codec.workspace = true
 strata-da-framework.workspace = true
 strata-identifiers.workspace = true
@@ -37,7 +36,6 @@ tracing.workspace = true
 
 [dev-dependencies]
 strata-ol-params.workspace = true
-strata-predicate.workspace = true
 
 [features]
 default = ["sp1"]

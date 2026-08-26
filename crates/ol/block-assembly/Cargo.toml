@@ -61,7 +61,6 @@ test-utils = [
   "dep:strata-msg-fmt",
   "dep:strata-ol-msg-types",
   "strata-db-store-sled/test_utils",
-  "strata-bridge-params/test-defaults",
   "strata-ol-chain-types-v1/test-utils",
   "strata-ol-tx-types-v1/test-utils",
   "strata-ol-params/test-defaults",

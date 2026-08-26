@@ -3,8 +3,8 @@
 //! Covers large transaction, inbox, and proof batches.
 
 use strata_acct_types::{BitcoinAmount, MessageEntry, MsgPayload};
-use strata_ol_state_types::ISnarkAccountState;
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_types::ISnarkAccountState;
 
 use crate::test_utils::*;
 use crate::{SEQUENCER_ACCT_ID, verify_block};
