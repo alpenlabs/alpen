@@ -14,7 +14,7 @@ use bitcoin::{
 use bitcoind_async_client::{error::ClientError, traits::Signer, types::PsbtBumpFeeOptions};
 use strata_db_types::{
     common::L1TxId,
-    fee_bump::{TerminalError, TxAttempt, TxAttemptStatus, TxNodeKind},
+    fee_bump::{TerminalError, TxAttempt, TxAttemptStatus},
     l1_writer::Sighash,
 };
 use strata_primitives::buf::Buf32;
@@ -28,8 +28,6 @@ use crate::{
 /// Errors raised while building a replacement transaction.
 #[derive(Debug, Error)]
 pub(crate) enum ReplacementError {
-    #[error("unsupported RBF transaction kind: {0:?}")]
-    UnsupportedKind(TxNodeKind),
     #[error("Bitcoin wallet could not bump fee: {0}")]
     PsbtBumpFee(#[source] ClientError),
     #[error("Bitcoin wallet could not sign replacement PSBT: {0}")]
@@ -80,8 +78,7 @@ impl ReplacementError {
             // Not transient, but the commit path discards this candidate instead of ending the
             // chain; see the variant's own note.
             Self::ExceedsMaxFeeRate { .. } => false,
-            Self::UnsupportedKind(_)
-            | Self::IncompletePsbt
+            Self::IncompletePsbt
             | Self::MissingFinalTransaction
             | Self::MissingRevealWitness
             | Self::InvalidControlBlock(_)
@@ -99,7 +96,6 @@ impl ReplacementError {
     /// Only call this after [`ReplacementError::is_retryable`] has returned `false`.
     pub(crate) fn terminal_error(&self) -> TerminalError {
         match self {
-            Self::UnsupportedKind(_) => TerminalError::UnsupportedRbfKind,
             Self::PsbtBumpFee(ClientError::Server(_, msg))
                 if msg.to_ascii_lowercase().contains("insufficient") =>
             {
@@ -122,7 +118,7 @@ impl ReplacementError {
     }
 }
 
-/// Builds a wallet-owned commit replacement using Bitcoin Core's wallet RBF flow.
+/// Builds a chunked-envelope commit replacement using Bitcoin Core's wallet RBF flow.
 ///
 /// # Coin selection
 ///
@@ -145,13 +141,8 @@ impl ReplacementError {
 /// `max_fee_rate` is the operator's configured replacement ceiling. `target_fee_rate` is already
 /// capped by it, but the wallet prices the fee off the transaction it ends up building and can pay
 /// more than it was asked for, so the built candidate is checked against the ceiling too.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the wallet call needs every input threaded through explicitly"
-)]
-pub(crate) async fn build_wallet_commit_replacement<C: Signer>(
+pub(crate) async fn build_chunked_commit_replacement<C: Signer>(
     client: &C,
-    kind: &TxNodeKind,
     original_tx: &Transaction,
     active_txid: L1TxId,
     target_fee_rate: FeeRate,
@@ -159,13 +150,6 @@ pub(crate) async fn build_wallet_commit_replacement<C: Signer>(
     attempt_no: u32,
     original_change_index: Option<u32>,
 ) -> Result<TxAttempt, ReplacementError> {
-    if !matches!(
-        kind,
-        TxNodeKind::SingleEnvelopeCommit { .. } | TxNodeKind::ChunkedEnvelopeCommit { .. }
-    ) {
-        return Err(ReplacementError::UnsupportedKind(kind.clone()));
-    }
-
     let txid = Txid::from_byte_array(active_txid.0);
     let bumped = client
         .psbt_bump_fee(
@@ -321,7 +305,7 @@ pub(crate) fn validate_chunked_commit_replacement_layout(
 
 /// Rejects a replacement that spends wallet inputs the original transaction did not.
 ///
-/// See the coin-selection note on [`build_wallet_commit_replacement`].
+/// See the coin-selection note on [`build_chunked_commit_replacement`].
 fn reject_added_inputs(
     original_tx: &Transaction,
     replacement_tx: &Transaction,
@@ -598,7 +582,7 @@ mod tests {
         OutPoint, TxIn, Witness, WitnessProgram, WitnessVersion,
     };
     use strata_config::btcio::FeeBumpingConfig;
-    use strata_db_types::fee_bump::TxNodeRecord;
+    use strata_db_types::fee_bump::{TxNodeKind, TxNodeRecord};
 
     use super::*;
     use crate::{
@@ -1157,9 +1141,8 @@ mod tests {
         let client =
             TestBitcoinClient::new(1).with_wallet_process_psbt_result(true, Some(original.clone()));
 
-        build_wallet_commit_replacement(
+        build_chunked_commit_replacement(
             &client,
-            &TxNodeKind::ChunkedEnvelopeCommit { envelope_idx: 0 },
             &original,
             L1TxId::from([0u8; 32]),
             FeeRate::from_sat_per_vb(4).expect("valid fee rate"),
