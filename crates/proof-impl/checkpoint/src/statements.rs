@@ -294,6 +294,7 @@ fn execute_block_batch(
         let components =
             BlockComponents::new(tx_segment, manifest_container, block.header().is_terminal());
 
+        // TODO(STR-4331): use a replay-oriented STF API instead of `construct_block`.
         // Execute the block's state transition function.
         // This applies transactions, buffers manifests, and (at the terminal)
         // drains the buffered logs and updates state.
