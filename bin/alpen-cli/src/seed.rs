@@ -6,8 +6,8 @@ use aes_gcm_siv::{aead::AeadMutInPlace, Aes256GcmSiv, KeyInit, Nonce, Tag};
 use alloy::{network::EthereumWallet, signers::local::PrivateKeySigner};
 use bdk_wallet::{
     bitcoin::{
-        bip32::{DerivationPath, Xpriv},
-        secp256k1::SECP256K1,
+        bip32::{ChildNumber, DerivationPath, Xpriv},
+        secp256k1::{PublicKey, SecretKey, SECP256K1},
         Network,
     },
     CreateParams, KeychainKind, LoadParams, Wallet,
@@ -20,11 +20,38 @@ use sha2::{Digest, Sha256};
 #[cfg(feature = "test-mode")]
 use shrex::Hex;
 use terrors::OneOf;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::constants::{
-    AES_NONCE_LEN, AES_TAG_LEN, BIP44_ALPEN_EVM_WALLET_PATH, PW_SALT_LEN, SEED_LEN,
+    AES_NONCE_LEN, AES_TAG_LEN, BIP44_ALPEN_EVM_WALLET_PATH, DRT_RECLAIM_PURPOSE, PW_SALT_LEN,
+    SEED_LEN,
 };
+
+/// A deposit-request reclaim keypair, deterministically derived from the seed. Zeroizes its own
+/// stored secret-key copy on drop.
+#[expect(
+    missing_debug_implementations,
+    reason = "Struct contains a secret key that should not be debug printed"
+)]
+pub struct DrtReclaimKeypair {
+    pub secret_key: SecretKey,
+    pub public_key: PublicKey,
+}
+
+impl Zeroize for DrtReclaimKeypair {
+    fn zeroize(&mut self) {
+        // NOTE: `SecretKey::non_secure_erase` writes `1`s to the memory.
+        self.secret_key.non_secure_erase();
+    }
+}
+
+impl ZeroizeOnDrop for DrtReclaimKeypair {}
+
+impl Drop for DrtReclaimKeypair {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
 
 #[expect(
     missing_debug_implementations,
@@ -54,7 +81,7 @@ impl Seed {
         Self(bytes)
     }
 
-    fn gen<R: CryptoRngCore>(rng: &mut R) -> Self {
+    pub(crate) fn gen<R: CryptoRngCore>(rng: &mut R) -> Self {
         let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
         rng.fill_bytes(bytes.as_mut());
         Self(bytes)
@@ -70,6 +97,34 @@ impl Seed {
         hasher.update(b"alpen labs alpen descriptor recovery file 2024");
         hasher.update(self.0.as_slice());
         hasher.finalize().into()
+    }
+
+    /// Derives the deposit-request reclaim keypair for the given counter.
+    ///
+    /// This is deterministic in the seed and `counter`, so a deposit's reclaim key can always be
+    /// recovered from the mnemonic alone, given the counter value it was created with. `counter`
+    /// must never be reused for a live deposit request: it is intended to come from
+    /// [`DescriptorRecovery::next_reclaim_counter`](crate::recovery::DescriptorRecovery::next_reclaim_counter),
+    /// which persists the increment before handing out a value.
+    ///
+    /// The BIP32 master key is derived directly from the mnemonic's raw entropy, independently of
+    /// the BIP39 PBKDF2 seed used by the signet wallet. Changing this would make existing deposit
+    /// requests unrecoverable.
+    pub fn drt_reclaim_keypair(&self, counter: u32) -> DrtReclaimKeypair {
+        let rootpriv = Xpriv::new_master(Network::Signet, self.0.as_ref()).expect("valid xpriv");
+        let path = DerivationPath::master().extend([
+            DRT_RECLAIM_PURPOSE,
+            ChildNumber::from_hardened_idx(counter).expect("counter fits in 31 bits"),
+        ]);
+        let derived = rootpriv
+            .derive_priv(SECP256K1, &path)
+            .expect("valid derivation path");
+        let secret_key = derived.private_key;
+        let public_key = PublicKey::from_secret_key(SECP256K1, &secret_key);
+        DrtReclaimKeypair {
+            secret_key,
+            public_key,
+        }
     }
 
     pub fn encrypt<R: CryptoRngCore>(
@@ -434,7 +489,6 @@ mod test {
         let expected_address = "0x4eEE6B504Bc2c47650bAa7d135DA10F2A469E582".to_string();
         assert_eq!(address, expected_address);
     }
-
     #[test]
     // BIP-86's official test vector for m/86'/0'/0'/0/0 (mnemonic "abandon abandon abandon
     // abandon abandon abandon abandon abandon abandon abandon abandon about", all-zero entropy).
@@ -458,5 +512,25 @@ mod test {
         )
         .expect("valid hex");
         assert_eq!(script_pubkey.as_bytes(), expected_bytes.as_slice());
+    }
+
+    #[test]
+    // The reclaim keypair must be a pure function of (seed, counter): same inputs always
+    // reproduce the same key, so a lost descriptor DB doesn't strand funds.
+    fn drt_reclaim_keypair_is_deterministic_and_distinct_per_counter() {
+        let seed = Seed::gen(&mut OsRng);
+
+        let keypair_0 = seed.drt_reclaim_keypair(0);
+        let keypair_0_again = seed.drt_reclaim_keypair(0);
+        assert_eq!(keypair_0.secret_key, keypair_0_again.secret_key);
+        assert_eq!(keypair_0.public_key, keypair_0_again.public_key);
+
+        let keypair_1 = seed.drt_reclaim_keypair(1);
+        assert_ne!(keypair_0.secret_key, keypair_1.secret_key);
+        assert_ne!(keypair_0.public_key, keypair_1.public_key);
+
+        let other_seed = Seed::gen(&mut OsRng);
+        let keypair_0_other_seed = other_seed.drt_reclaim_keypair(0);
+        assert_ne!(keypair_0.secret_key, keypair_0_other_seed.secret_key);
     }
 }

@@ -44,8 +44,12 @@ pub async fn recovery(
         .read_descs(..)
         .await
         .internal_error("Failed to read descriptors after chain height")?;
+    let reclaim_counter = descriptor_file
+        .current_reclaim_counter()
+        .internal_error("Failed to read reclaim counter")?;
 
     dbg!(descs);
+    dbg!(reclaim_counter);
 
     Ok(())
 }
