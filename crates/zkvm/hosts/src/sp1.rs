@@ -1,5 +1,6 @@
 use std::{
     env::var,
+    path::PathBuf,
     sync::{Arc, LazyLock},
 };
 
@@ -10,6 +11,12 @@ use zkaleido_sp1_host::{SP1Host, SP1HostConfig};
 
 pub static ELF_BASE_PATH: LazyLock<String> =
     LazyLock::new(|| var("ELF_BASE_PATH").unwrap_or_else(|_| "elfs/sp1".to_string()));
+
+const GUEST_CHECKPOINT_RUNTIME_PARAMS_HASH_FILE: &str = "guest-checkpoint.runtime-params-hash";
+
+pub fn checkpoint_runtime_params_hash_path() -> PathBuf {
+    PathBuf::from(&*ELF_BASE_PATH).join(GUEST_CHECKPOINT_RUNTIME_PARAMS_HASH_FILE)
+}
 
 macro_rules! define_host {
     ($host_fn:ident, $cell_name:ident, $guest_const:ident, $elf_file:expr) => {

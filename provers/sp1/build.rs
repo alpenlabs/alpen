@@ -33,6 +33,7 @@ struct VkHashes {
 // Guest program names
 const CHECKPOINT: &str = "guest-checkpoint";
 const CHECKPOINT_RUNTIME_PARAMS_PATH: &str = "CHECKPOINT_RUNTIME_PARAMS_PATH";
+const CHECKPOINT_RUNTIME_PARAMS_HASH: &str = "guest-checkpoint.runtime-params-hash";
 const CHECKPOINT_RUNTIME_PARAMS_RS: &str = "runtime_params.rs";
 
 /// Returns a map of program dependencies.
@@ -134,6 +135,13 @@ fn write_checkpoint_runtime_params() {
         .join(CHECKPOINT_RUNTIME_PARAMS_RS);
     fs::write(&out_path, content)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", out_path.display()));
+
+    let cache_dir = Path::new(CHECKPOINT).join("cache");
+    fs::create_dir_all(&cache_dir)
+        .unwrap_or_else(|e| panic!("Failed to create {}: {e}", cache_dir.display()));
+    let hash_path = cache_dir.join(CHECKPOINT_RUNTIME_PARAMS_HASH);
+    fs::write(&hash_path, format!("{}\n", runtime_params.hash_hex()))
+        .unwrap_or_else(|e| panic!("Failed to write {}: {e}", hash_path.display()));
 }
 
 fn read_checkpoint_runtime_params(path: PathBuf) -> OLRuntimeParams {

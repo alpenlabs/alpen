@@ -14,6 +14,8 @@ pub use account::GenesisSnarkAccountData;
 use arbitrary::Arbitrary;
 pub use header::GenesisHeaderParams;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use ssz::Encode;
 use ssz_derive::{Decode, Encode};
 pub use strata_bridge_params::BridgeParams;
 use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
@@ -53,6 +55,16 @@ pub struct OLRuntimeParams {
 impl OLRuntimeParams {
     pub fn bridge_params(&self) -> &BridgeParams {
         &self.bridge_params
+    }
+
+    /// Computes the SHA-256 hash of the SSZ-encoded runtime params.
+    pub fn hash(&self) -> [u8; 32] {
+        Sha256::digest(self.as_ssz_bytes()).into()
+    }
+
+    /// Computes the hex-encoded hash of the runtime params.
+    pub fn hash_hex(&self) -> String {
+        hex::encode(self.hash())
     }
 }
 

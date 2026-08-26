@@ -23,6 +23,8 @@ use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
 #[cfg(feature = "prover")]
+use strata_ol_params::OLRuntimeParams;
+#[cfg(feature = "prover")]
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{L1BlockCommitment, OLBlockCommitment};
 #[cfg(feature = "prover")]
@@ -32,7 +34,7 @@ use strata_proofimpl_predicate_keys::{NativeCheckpointPredicateKey, validate_pre
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::{NodeStorage, create_node_storage};
 #[cfg(all(feature = "prover", feature = "sp1"))]
-use strata_zkvm_hosts::sp1::checkpoint_host;
+use strata_zkvm_hosts::sp1::{checkpoint_host, checkpoint_runtime_params_hash_path};
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
@@ -68,11 +70,6 @@ pub(crate) fn init_node_context(
         .ok_or(InitError::MissingAsmParams)?;
     let asm_params = load_asm_params(asm_params_path)?;
 
-    // When the integrated prover is enabled, validate that its backend matches the
-    // checkpoint predicate the runtime ASM will enforce.
-    #[cfg(feature = "prover")]
-    validate_integrated_prover_compatibility(&config, &asm_params, &handle)?;
-
     let blockasm_config = config
         .sequencer
         .as_ref()
@@ -82,6 +79,17 @@ pub(crate) fn init_node_context(
     // Load OL params
     let ol_params_path = args.ol_params.as_ref().ok_or(InitError::MissingOLParams)?;
     let ol_params = load_ol_params(ol_params_path)?;
+
+    // When the integrated prover is enabled, validate that its backend matches the
+    // checkpoint predicate the runtime ASM will enforce and, for external SP1
+    // ELFs, that the mounted guest artifact was built with these runtime params.
+    #[cfg(feature = "prover")]
+    validate_integrated_prover_compatibility(
+        &config,
+        &asm_params,
+        ol_params.runtime_params(),
+        &handle,
+    )?;
 
     // TODO(STR-3971): cross-validate the ASM and OL params before booting. The ASM
     // bridge deposit denomination and the OL withdrawal denomination are one network
@@ -208,6 +216,7 @@ fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
 fn validate_integrated_prover_compatibility(
     config: &Config,
     asm_params: &AsmParams,
+    runtime_params: OLRuntimeParams,
     handle: &Handle,
 ) -> Result<(), InitError> {
     let checkpoint_predicate = checkpoint_predicate_from_asm_params(asm_params)?;
@@ -236,7 +245,7 @@ fn validate_integrated_prover_compatibility(
         )));
     }
 
-    validate_checkpoint_predicate_key_for_backend(checkpoint_predicate, prover_config, handle)?;
+    validate_checkpoint_predicate_key(checkpoint_predicate, prover_config, runtime_params, handle)?;
 
     Ok(())
 }
@@ -293,9 +302,10 @@ fn expected_backend_for_checkpoint_predicate(
 }
 
 #[cfg(feature = "prover")]
-fn validate_checkpoint_predicate_key_for_backend(
+fn validate_checkpoint_predicate_key(
     checkpoint_predicate: &PredicateKey,
     prover_config: &ProverConfig,
+    runtime_params: OLRuntimeParams,
     handle: &Handle,
 ) -> Result<(), InitError> {
     match prover_config.backend {
@@ -303,6 +313,7 @@ fn validate_checkpoint_predicate_key_for_backend(
             validate_predicate_key(checkpoint_predicate, &NativeCheckpointPredicateKey)
         }
         ProverBackend::Sp1 => {
+            validate_checkpoint_runtime_params_hash(runtime_params)?;
             let provider = checkpoint_sp1_predicate_key_provider(prover_config, handle)?;
             validate_predicate_key(checkpoint_predicate, &provider)
         }
@@ -325,6 +336,46 @@ fn checkpoint_sp1_predicate_key_provider(
     let sp1_config = checkpoint_sp1_host_config(prover_config);
     let host = handle.block_on(checkpoint_host(sp1_config));
     Ok(Sp1Groth16PredicateKey::new(host.program_id().0))
+}
+
+#[cfg(all(feature = "prover", feature = "sp1"))]
+fn validate_checkpoint_runtime_params_hash(
+    runtime_params: OLRuntimeParams,
+) -> Result<(), InitError> {
+    let hash_path = checkpoint_runtime_params_hash_path();
+    let expected_hash = runtime_params_hash(runtime_params);
+    let artifact_hash = read_hash_sidecar(&hash_path)?;
+
+    ensure_hashes_match(&expected_hash, &artifact_hash)
+}
+
+#[cfg(all(feature = "prover", feature = "sp1"))]
+fn runtime_params_hash(runtime_params: OLRuntimeParams) -> String {
+    runtime_params.hash_hex()
+}
+
+#[cfg(all(feature = "prover", feature = "sp1"))]
+fn read_hash_sidecar(hash_path: &Path) -> Result<String, InitError> {
+    fs::read_to_string(hash_path)
+        .map(|hash| hash.trim().to_owned())
+        .map_err(|e| {
+            InitError::InvalidProverConfig(format!(
+                "failed to read checkpoint runtime params hash sidecar from {}: {e}",
+                hash_path.display()
+            ))
+        })
+}
+
+#[cfg(all(feature = "prover", feature = "sp1"))]
+fn ensure_hashes_match(expected_hash: &str, artifact_hash: &str) -> Result<(), InitError> {
+    if artifact_hash != expected_hash {
+        return Err(InitError::InvalidProverConfig(format!(
+            "checkpoint runtime params hash mismatch: loaded ol-params.json runtime hash \
+             {expected_hash}, but SP1 artifact sidecar contains {artifact_hash}",
+        )));
+    }
+
+    Ok(())
 }
 
 #[cfg(all(feature = "prover", not(feature = "sp1")))]
@@ -849,5 +900,14 @@ mod tests {
         let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
 
         assert!(err.to_string().contains("predicate key mismatch"));
+    }
+
+    #[cfg(all(feature = "prover", feature = "sp1"))]
+    #[test]
+    fn rejects_mismatched_runtime_params_hash() {
+        let err = super::ensure_hashes_match("expected", "actual").unwrap_err();
+
+        assert!(matches!(err, InitError::InvalidProverConfig(_)));
+        assert!(err.to_string().contains("runtime params hash mismatch"));
     }
 }
