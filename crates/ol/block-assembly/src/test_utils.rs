@@ -22,8 +22,8 @@ use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
 use strata_acct_types::{
-    AccountId, AccountSerial, AccumulatorClaim, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, Hash,
-    L1BlockRecord, MessageEntry, MsgPayload, l1_block_record_leaf_hash,
+    AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, Hash, L1BlockRecord, MessageEntry,
+    MsgPayload, l1_block_record_leaf_hash,
 };
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
@@ -36,8 +36,8 @@ use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::asm::AsmExecOutput;
 use strata_db_types::{DbError, MmrId};
 use strata_identifiers::{
-    Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
-    WtxidsRoot,
+    BRIDGE_GATEWAY_ACCT_ID, Buf32, Buf64, Hash, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockCommitment,
+    L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId, WtxidsRoot,
 };
 use strata_l1_txfmt::MagicBytes;
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
@@ -51,7 +51,7 @@ use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::*;
-use strata_ol_state_types_v1::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLStateV1};
+use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_stf_v1::{
     BlockComponents, BlockContext, BlockInfo, construct_block as stf_construct_block,
 };
@@ -1473,7 +1473,7 @@ fn prefill_db_asm_mmr_to_match_state(storage: &NodeStorage, state: &impl IStateA
     let db_count = mmr_handle.get_leaf_count_blocking().unwrap();
     for _ in db_count..state_prefill {
         mmr_handle
-            .append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)
+            .append_leaf_blocking(Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF))
             .unwrap();
     }
 }

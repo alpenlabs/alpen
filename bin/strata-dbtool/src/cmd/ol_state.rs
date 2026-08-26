@@ -370,13 +370,13 @@ mod tests {
         ol_state::OLStateDatabase,
         MmrId,
     };
-    use strata_identifiers::{Buf32, Buf64, Hash, OLBlockId};
+    use strata_identifiers::{Buf32, Buf64, Hash, OLBlockId, L1_HEIGHT_MMR_PREFILL_LEAF};
     use strata_ol_chain_types_v1::{
         BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1,
         SignedOLBlockHeaderV1,
     };
     use strata_ol_params::OLParams;
-    use strata_ol_state_types_v1::{OLStateV1, MMR_SENTINEL_DUMMY_LEAF_HASH};
+    use strata_ol_state_types_v1::OLStateV1;
     use strata_storage::MmrIndexManager;
     use tokio::runtime::Runtime;
 
@@ -427,7 +427,7 @@ mod tests {
         let manager = MmrIndexManager::new(runtime.handle().clone(), db.mmr_index_db());
         let l1_handle = manager.get_handle(MmrId::L1BlockRefs);
         l1_handle
-            .append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)
+            .append_leaf_blocking(Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF))
             .expect("append L1 sentinel");
         l1_handle
             .append_leaf_blocking(Hash::from([0x11; 32]))

@@ -7,12 +7,10 @@ use async_trait::async_trait;
 use strata_acct_types::{append_l1_block_rec_to_mmr, L1BlockRecord, Mmr64};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{DbError, DbResult, MmrId, RawMmrId};
-use strata_identifiers::{Epoch, Hash, OLBlockCommitment};
+use strata_identifiers::{Epoch, Hash, OLBlockCommitment, L1_HEIGHT_MMR_PREFILL_LEAF};
 use strata_ol_mmr_index::OLMmrIndexError;
 use strata_ol_params::{BridgeParams, OLParams};
-use strata_ol_state_types_v1::{
-    OLAccountStateV1, OLStateV1, WriteBatch, MMR_SENTINEL_DUMMY_LEAF_HASH,
-};
+use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
 use strata_storage::{test_runtime_handle, MmrIndexManager};
 
 use super::{
@@ -113,7 +111,7 @@ impl OLMmrReconcileCtx for MmrReconcileTestCtx {
         let l1_block_refs = self.mmr_index.get_handle(MmrId::L1BlockRefs);
         if l1_block_refs.get_leaf_count().await? == 0 {
             l1_block_refs
-                .append_leaf(MMR_SENTINEL_DUMMY_LEAF_HASH)
+                .append_leaf(Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF))
                 .await?;
         }
 

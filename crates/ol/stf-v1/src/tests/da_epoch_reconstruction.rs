@@ -5,10 +5,10 @@
 //! combined, and a bridge withdrawal. Each test builds a multi-block epoch
 //! with empty filler blocks around the meaningful ones.
 
-use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
+use strata_acct_types::{BitcoinAmount, MessageEntry};
 use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
-use strata_identifiers::{Buf32, OLBlockCommitment, SubjectId};
+use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32, OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};

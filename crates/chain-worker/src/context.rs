@@ -666,11 +666,10 @@ mod tests {
 
     use strata_acct_types::{AccountSerial, BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_db_store_sled::{MmrIndexDb, SledDbConfig};
-    use strata_identifiers::Buf32;
+    use strata_identifiers::{Buf32, Hash, L1_HEIGHT_MMR_PREFILL_LEAF};
     use strata_ol_state_support_types::{
         InboxMessageWrite, IndexerWrites, L1BlockRecordWrite, SnarkAcctStateUpdate,
     };
-    use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
     use strata_snark_acct_types::Seqno;
 
     use super::*;
@@ -1030,7 +1029,7 @@ mod tests {
         assert_eq!(handle.get_leaf_count_blocking().unwrap(), 2);
         assert_eq!(
             handle.get_leaf_blocking(0).unwrap(),
-            Some(MMR_SENTINEL_DUMMY_LEAF_HASH)
+            Some(Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF))
         );
         assert_l1_block_ref_entry(&mmr_index_mgr, 1, &first_real);
     }

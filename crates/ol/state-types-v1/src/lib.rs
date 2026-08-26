@@ -17,7 +17,6 @@ mod ssz_generated {
 
 mod account;
 mod batch_application;
-mod constants;
 mod epochal;
 mod global;
 mod intraepoch;

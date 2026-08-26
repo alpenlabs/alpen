@@ -4,6 +4,7 @@ use ssz_primitives::FixedBytes;
 use strata_acct_types::{
     AcctError, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof,
 };
+use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
 use strata_ol_state_types::ISnarkAccountState;
 
 use crate::SEQUENCER_ACCT_ID;
