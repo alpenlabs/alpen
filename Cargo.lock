@@ -9465,6 +9465,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-gchain-impl"
+version = "0.1.0"
+dependencies = [
+ "strata-gchain-types",
+ "strata-ol-chain-types-v1",
+ "strata-ol-state-support-types",
+ "strata-ol-state-types",
+ "strata-ol-state-types-v1",
+ "strata-ol-stf-v1",
+ "strata-ol-tx-types-v1",
+]
+
+[[package]]
 name = "strata-ol-genesis"
 version = "0.1.0"
 dependencies = [
