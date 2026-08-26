@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     str::FromStr,
     sync::{Arc, Mutex},
 };
@@ -72,6 +72,8 @@ pub struct TestBitcoinClient {
     pub wallet_process_psbt_calls: Arc<Mutex<Vec<String>>>,
     /// Optional witness signature size used when echo-signing raw transactions.
     pub sign_raw_transaction_witness_size: Option<usize>,
+    /// Witness signature sizes used by consecutive raw-transaction signing calls.
+    pub sign_raw_transaction_witness_sizes: Arc<Mutex<VecDeque<usize>>>,
     /// Transactions received by `sign_raw_transaction_with_wallet`.
     pub sign_raw_transaction_calls: Arc<Mutex<Vec<Transaction>>>,
 }
@@ -104,6 +106,7 @@ impl TestBitcoinClient {
             wallet_process_psbt_result: Arc::new(Mutex::new(default_wallet_process_psbt_result())),
             wallet_process_psbt_calls: Arc::new(Mutex::new(Vec::new())),
             sign_raw_transaction_witness_size: None,
+            sign_raw_transaction_witness_sizes: Arc::new(Mutex::new(VecDeque::new())),
             sign_raw_transaction_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -149,6 +152,14 @@ impl TestBitcoinClient {
 
     pub fn with_sign_raw_transaction_witness_size(mut self, witness_size: usize) -> Self {
         self.sign_raw_transaction_witness_size = Some(witness_size);
+        self
+    }
+
+    pub fn with_sign_raw_transaction_witness_sizes(self, witness_sizes: Vec<usize>) -> Self {
+        *self
+            .sign_raw_transaction_witness_sizes
+            .lock()
+            .expect("test: sign_raw_transaction_witness_sizes lock") = witness_sizes.into();
         self
     }
 
@@ -596,7 +607,13 @@ impl Signer for TestBitcoinClient {
             .lock()
             .expect("test: sign_raw_transaction_calls lock")
             .push(tx.clone());
-        let signed_tx = if let Some(witness_size) = self.sign_raw_transaction_witness_size {
+        let witness_size = self
+            .sign_raw_transaction_witness_sizes
+            .lock()
+            .expect("test: sign_raw_transaction_witness_sizes lock")
+            .pop_front()
+            .or(self.sign_raw_transaction_witness_size);
+        let signed_tx = if let Some(witness_size) = witness_size {
             let mut signed_tx = tx.clone();
             for input in &mut signed_tx.input {
                 input.witness = Witness::new();

@@ -29,7 +29,7 @@ use crate::{
     writer::{
         builder::{
             effective_fee_rate, ensure_built_fee_rate_within_max,
-            ensure_initial_fee_rate_within_max, sign_commit_at_requested_fee, EnvelopeConfig,
+            ensure_initial_fee_rate_within_max, sign_commit_with_fee_guardrail, EnvelopeConfig,
             EnvelopeError, BITCOIN_DUST_LIMIT,
         },
         fees::resolve_fee_rate,
@@ -147,7 +147,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 
         // Sign commit via bitcoind wallet RPC.
         let unsigned_commit_txid = built.commit_tx.compute_txid();
-        let (signed_commit, commit_fee) = sign_commit_at_requested_fee(
+        let (signed_commit, commit_fee) = sign_commit_with_fee_guardrail(
             ctx.client.as_ref(),
             built.commit_tx,
             built.commit_fee,

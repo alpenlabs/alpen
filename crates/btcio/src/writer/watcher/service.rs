@@ -459,7 +459,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
                 }
                 Err(err) if err.is_blocked_by_fee_guardrail() => {
-                    warn!(%err, "waiting for an initial fee rate within the broadcast guardrail");
+                    warn!(%err, "waiting for a transaction fee rate within the broadcast guardrail");
                 }
                 Err(err) if is_retryable_envelope_error(&err) => {
                     let reason = retryable_reason(&err);
@@ -490,7 +490,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
                 }
                 Err(err) if err.is_blocked_by_fee_guardrail() => {
-                    warn!(%err, "waiting for an initial fee rate within the broadcast guardrail");
+                    warn!(%err, "waiting for a transaction fee rate within the broadcast guardrail");
                 }
                 Err(err) if is_retryable_envelope_error(&err) => {
                     let reason = retryable_reason(&err);

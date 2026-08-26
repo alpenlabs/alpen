@@ -746,7 +746,7 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
                 warn!(idx, %need, %have, "waiting for sufficient utxos");
             }
             Err(err) if err.is_blocked_by_fee_guardrail() => {
-                warn!(idx, %err, "waiting for an initial fee rate within the broadcast guardrail");
+                warn!(idx, %err, "waiting for a transaction fee rate within the broadcast guardrail");
             }
             Err(err) if is_retryable_envelope_error(&err) => {
                 let reason = retryable_reason(&err);

@@ -16,7 +16,7 @@ use super::{
     builder::{
         attach_reveal_signature, build_and_sign_envelope_txs, build_envelope_txs,
         effective_fee_rate, ensure_built_fee_rate_within_max, rebind_single_reveal,
-        sign_commit_at_requested_fee, EnvelopeData, EnvelopeError,
+        sign_commit_with_fee_guardrail, EnvelopeData, EnvelopeError,
     },
     context::{EnvelopeSigningMode, WriterContext},
 };
@@ -63,7 +63,7 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
 
         let commit_txid = envelope.commit_tx.compute_txid();
         debug!(%commit_txid, "Signing commit transaction with wallet");
-        let (signed_commit, commit_fee) = sign_commit_at_requested_fee(
+        let (signed_commit, commit_fee) = sign_commit_with_fee_guardrail(
             ctx.client.as_ref(),
             envelope.commit_tx,
             envelope.commit_fee,

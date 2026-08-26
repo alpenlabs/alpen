@@ -123,11 +123,6 @@ pub enum EnvelopeError {
         ceiling_sat_vb: u64,
     },
 
-    #[error(
-        "wallet-signed commit fee did not stabilize at the requested rate after {attempts} attempts"
-    )]
-    CommitFeeDidNotStabilize { attempts: usize },
-
     #[error("Could not sign raw transaction: {0}")]
     SignRawTransaction(#[source] ClientError),
 
@@ -269,7 +264,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
     let mut envelope = create_envelope_transactions(&env_config, payload, utxos)?;
 
     let unsigned_commit_txid = envelope.commit_tx.compute_txid();
-    let (signed_commit, commit_fee) = sign_commit_at_requested_fee(
+    let (signed_commit, commit_fee) = sign_commit_with_fee_guardrail(
         ctx.client.as_ref(),
         envelope.commit_tx,
         envelope.commit_fee,
@@ -361,14 +356,14 @@ pub(crate) fn ensure_built_fee_rate_within_max(
     Ok(())
 }
 
-/// Signs a commit, correcting its absolute fee only when the first signature breaches the ceiling.
+/// Signs a commit, correcting its absolute fee only while its signed rate breaches the ceiling.
 ///
 /// Wallet ECDSA signatures can be shorter than the conservative witness used during funding. If
 /// that makes the signed transaction exceed `max_fee_rate`, this refunds the excess through the
-/// final output and asks the wallet to sign again. Repricing continues until the fee matches the
-/// requested rate for the transaction's actual signed vsize; the bound prevents a faulty signer
-/// from keeping the writer inside an RPC loop indefinitely.
-pub(crate) async fn sign_commit_at_requested_fee<C: Signer>(
+/// final output and asks the wallet to sign again. The first ceiling-safe result is accepted even
+/// when another signature size would change the exact requested fee, avoiding a fixed-point cycle.
+/// The bound prevents a faulty signer from keeping the writer inside an RPC loop indefinitely.
+pub(crate) async fn sign_commit_with_fee_guardrail<C: Signer>(
     client: &C,
     mut commit_tx: Transaction,
     original_fee: Amount,
@@ -381,28 +376,28 @@ pub(crate) async fn sign_commit_at_requested_fee<C: Signer>(
         .expect("commit transaction has at least one output")
         .value;
     let mut commit_fee = original_fee;
-    let mut correcting_fee = false;
-
-    for _ in 0..MAX_COMMIT_SIGNING_ATTEMPTS {
+    for attempt in 0..MAX_COMMIT_SIGNING_ATTEMPTS {
         let signed_commit = client
             .sign_raw_transaction_with_wallet(&commit_tx, None)
             .await
             .map_err(EnvelopeError::SignRawTransaction)?
             .tx;
 
-        if !correcting_fee
-            && ensure_built_fee_rate_within_max(&signed_commit, commit_fee, max_fee_rate).is_ok()
-        {
-            return Ok((signed_commit, commit_fee));
+        let guardrail_error =
+            match ensure_built_fee_rate_within_max(&signed_commit, commit_fee, max_fee_rate) {
+                Ok(()) => return Ok((signed_commit, commit_fee)),
+                Err(error @ EnvelopeError::BuiltFeeRateAboveMax { .. }) => error,
+                Err(error) => return Err(error),
+            };
+        if attempt + 1 == MAX_COMMIT_SIGNING_ATTEMPTS {
+            return Err(guardrail_error);
         }
 
-        correcting_fee = true;
         let requested_fee = requested_fee_rate
             .fee_vb(signed_commit.vsize() as u64)
             .ok_or(EnvelopeError::FeeOverflow)?;
         if commit_fee == requested_fee {
-            ensure_built_fee_rate_within_max(&signed_commit, commit_fee, max_fee_rate)?;
-            return Ok((signed_commit, commit_fee));
+            return Err(guardrail_error);
         }
 
         let adjusted_output_value = original_fee_output
@@ -421,9 +416,7 @@ pub(crate) async fn sign_commit_at_requested_fee<C: Signer>(
         commit_fee = requested_fee;
     }
 
-    Err(EnvelopeError::CommitFeeDidNotStabilize {
-        attempts: MAX_COMMIT_SIGNING_ATTEMPTS,
-    })
+    unreachable!("commit signing attempt bound is nonzero")
 }
 
 /// Rebinds a single reveal after commit repricing changes the commit txid or carry output.
@@ -1380,11 +1373,9 @@ mod tests {
         assert!(p2wpkh_vsize > schnorr_only_vsize);
     }
 
-    #[tokio::test]
-    async fn commit_repricing_preserves_one_sat_per_vbyte_request() {
-        let (ctx, _, _, mut utxos) = get_mock_data();
+    fn commit_signing_fixture() -> (Transaction, Amount) {
+        let (ctx, _, _, utxos) = get_mock_data();
         let fee_rate = FeeRate::from_sat_per_vb(1).unwrap();
-        utxos.truncate(2);
         let outputs = vec![
             TxOut {
                 value: Amount::from_sat(100_000),
@@ -1396,18 +1387,28 @@ mod tests {
             },
         ];
         let estimated_vsize = signed_commit_vsize(&utxos, &outputs);
-        let original_fee = Amount::from_sat(fee_sats_for_vsize(estimated_vsize, fee_rate).unwrap());
-        let original_change = outputs.last().unwrap().value;
+        let original_fee = Amount::from_sat(
+            fee_sats_for_vsize(estimated_vsize, fee_rate).expect("fixture fee fits"),
+        );
         let unsigned_commit = Transaction {
             version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: commit_inputs(&utxos),
             output: outputs,
         };
+
+        (unsigned_commit, original_fee)
+    }
+
+    #[tokio::test]
+    async fn commit_repricing_preserves_one_sat_per_vbyte_request() {
+        let fee_rate = FeeRate::from_sat_per_vb(1).unwrap();
+        let (unsigned_commit, original_fee) = commit_signing_fixture();
+        let original_change = unsigned_commit.output.last().unwrap().value;
         let client = TestBitcoinClient::new(0)
             .with_sign_raw_transaction_witness_size(MAX_ECDSA_SIGNATURE_SIZE - 2);
 
-        let (signed_commit, commit_fee) = sign_commit_at_requested_fee(
+        let (signed_commit, commit_fee) = sign_commit_with_fee_guardrail(
             &client,
             unsigned_commit,
             original_fee,
@@ -1427,6 +1428,60 @@ mod tests {
             original_change + (original_fee - commit_fee)
         );
         assert!(ensure_built_fee_rate_within_max(&signed_commit, commit_fee, fee_rate).is_ok());
+    }
+
+    #[tokio::test]
+    async fn commit_repricing_accepts_a_ceiling_safe_signature_size_cycle() {
+        let fee_rate = FeeRate::from_sat_per_vb(1).unwrap();
+        let (unsigned_commit, original_fee) = commit_signing_fixture();
+        // Across three inputs, Core's normal one-byte DER variation changes the aggregate vsize.
+        let client = TestBitcoinClient::new(0).with_sign_raw_transaction_witness_sizes(vec![
+            MAX_ECDSA_SIGNATURE_SIZE - 3,
+            MAX_ECDSA_SIGNATURE_SIZE - 2,
+            MAX_ECDSA_SIGNATURE_SIZE - 3,
+        ]);
+
+        let (signed_commit, commit_fee) = sign_commit_with_fee_guardrail(
+            &client,
+            unsigned_commit,
+            original_fee,
+            fee_rate,
+            fee_rate,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(client.sign_raw_transaction_calls().len(), 2);
+        assert!(commit_fee < fee_rate.fee_vb(signed_commit.vsize() as u64).unwrap());
+        assert!(ensure_built_fee_rate_within_max(&signed_commit, commit_fee, fee_rate).is_ok());
+    }
+
+    #[tokio::test]
+    async fn exhausted_commit_corrections_remain_blocked_by_the_guardrail() {
+        let fee_rate = FeeRate::from_sat_per_vb(1).unwrap();
+        let (unsigned_commit, original_fee) = commit_signing_fixture();
+        let witness_sizes = (0..MAX_COMMIT_SIGNING_ATTEMPTS)
+            .map(|attempt| MAX_ECDSA_SIGNATURE_SIZE - 2 * (attempt + 1))
+            .collect();
+        let client =
+            TestBitcoinClient::new(0).with_sign_raw_transaction_witness_sizes(witness_sizes);
+
+        let error = sign_commit_with_fee_guardrail(
+            &client,
+            unsigned_commit,
+            original_fee,
+            fee_rate,
+            fee_rate,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            client.sign_raw_transaction_calls().len(),
+            MAX_COMMIT_SIGNING_ATTEMPTS
+        );
+        assert!(matches!(error, EnvelopeError::BuiltFeeRateAboveMax { .. }));
+        assert!(error.is_blocked_by_fee_guardrail());
     }
 
     #[tokio::test]
@@ -1450,7 +1505,7 @@ mod tests {
         let client = TestBitcoinClient::new(0)
             .with_sign_raw_transaction_witness_size(MAX_ECDSA_SIGNATURE_SIZE - 2);
 
-        let (signed_commit, commit_fee) = sign_commit_at_requested_fee(
+        let (signed_commit, commit_fee) = sign_commit_with_fee_guardrail(
             &client,
             unsigned_commit,
             original_fee,
