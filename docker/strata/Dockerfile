@@ -37,16 +37,16 @@ ARG CARGO_FEATURES=""
 # Bring in the recipe from planner
 COPY --from=planner /app/recipe.json recipe.json
 
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,sharing=locked,target=/usr/local/cargo/git \
+    --mount=type=cache,sharing=locked,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
     cargo chef cook --release --recipe-path recipe.json \
       ${CARGO_FEATURES:+--features "$CARGO_FEATURES"}
 
 COPY . .
 
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,sharing=locked,target=/usr/local/cargo/git \
+    --mount=type=cache,sharing=locked,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
     cargo build --locked --release --bin strata \
       ${CARGO_FEATURES:+--features "$CARGO_FEATURES"} && \
