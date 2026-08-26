@@ -61,9 +61,8 @@ pub trait GChainSpec {
 }
 
 /// Describes a reference to a gchain node.
-///
-///
-pub trait GNodeRef: Copy + Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Hash {}
+// TODO(trey): readd Copy
+pub trait GNodeRef: Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Hash {}
 
 /// A node in the chain.
 ///
@@ -74,7 +73,8 @@ pub trait GNode: Clone {
 }
 
 /// A link between two nodes.
-pub trait GLinkRef: Copy + Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Hash {
+// TODO(trey): readd Copy
+pub trait GLinkRef: Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Hash {
     // TODO
 }
 

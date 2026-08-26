@@ -5,7 +5,8 @@ use crate::processor::{ProcArtifact, ProcId};
 use crate::version::{ProcVersion, RawProcVersion};
 
 /// Description of an processor's execution for a link.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+// TODO(trey): readd Copy when we readd Copy to the trait
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ProcExecDesc<S: GChainSpec> {
     link_ref: LinkRef<S>,
     proc_id: ProcId,
@@ -17,7 +18,8 @@ impl<S: GChainSpec> ProcExecDesc<S> {
     }
 
     pub fn link_ref(&self) -> LinkRef<S> {
-        self.link_ref
+        // TODO(trey): remove when we readd Copy
+        self.link_ref.clone()
     }
 
     pub fn proc_id(&self) -> ProcId {
