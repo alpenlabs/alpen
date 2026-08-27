@@ -11,9 +11,7 @@ from pathlib import Path
 
 
 ENVIRONMENTS = ("dev", "staging", "prod")
-REF_RE = re.compile(r"^[A-Za-z0-9._/@:-]+$")
 VERSION_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-WHITESPACE_RE = re.compile(r"\s")
 
 GUESTS = (
     ("guest-checkpoint", "checkpoint"),
@@ -69,16 +67,10 @@ def require_file(path: Path) -> None:
 
 
 def cmd_validate() -> None:
-    """Env: INPUT_ENV, INPUT_REF."""
+    """Env: INPUT_ENV."""
     env = os.environ["INPUT_ENV"]
-    ref = os.environ.get("INPUT_REF", "")
 
     validate_env(env)
-    if ref:
-        if WHITESPACE_RE.search(ref):
-            fail("ref must not contain whitespace")
-        if not REF_RE.fullmatch(ref):
-            fail("ref contains unsupported characters")
 
 
 def cmd_summarize() -> None:

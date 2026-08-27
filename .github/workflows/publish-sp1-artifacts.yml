@@ -11,19 +11,11 @@ on:
           - dev
           - staging
           - prod
-      ref:
-        description: Alpen git ref to build. Defaults to the branch selected in the UI.
-        required: false
-        type: string
   workflow_call:
     inputs:
       env:
         description: Deployment environment (dev | staging | prod).
         required: true
-        type: string
-      ref:
-        description: Alpen git ref to build. Defaults to the caller's ref.
-        required: false
         type: string
 
 env:
@@ -37,7 +29,7 @@ env:
   SP1_VERSION: v6.1.0
 
 concurrency:
-  group: publish-sp1-artifacts-${{ inputs.env }}-${{ inputs.ref || github.ref }}
+  group: publish-sp1-artifacts-${{ inputs.env }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions: {}
@@ -58,7 +50,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Resolve checked-out commit
@@ -68,7 +60,6 @@ jobs:
       - name: Validate inputs
         env:
           INPUT_ENV: ${{ inputs.env }}
-          INPUT_REF: ${{ inputs.ref }}
         run: python3 .github/scripts/sp1_artifact_publish.py validate
 
       - name: Free up disk space
@@ -111,7 +102,7 @@ jobs:
           ARTIFACT_DIR: artifacts/sp1
           CACHE_ROOT: provers/sp1
           DEPLOY_ENV: ${{ inputs.env }}
-          ALPEN_REF: ${{ inputs.ref || github.ref }}
+          ALPEN_REF: ${{ github.ref }}
           ALPEN_SHA: ${{ steps.resolve-sha.outputs.sha }}
           SP1_VERSION: ${{ env.SP1_VERSION }}
         run: python3 .github/scripts/sp1_artifact_publish.py summarize
