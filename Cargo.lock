@@ -8257,6 +8257,7 @@ dependencies = [
  "bitcoin",
  "bitcoind-async-client 0.15.0",
  "format_serde_error",
+ "hex",
  "http 1.5.0",
  "jsonrpsee",
  "proptest",

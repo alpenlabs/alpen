@@ -5,7 +5,7 @@ include!(concat!(env!("OUT_DIR"), "/methods.rs"));
 /// Exports guest artifact files to the specified directory.
 ///
 /// Creates the output directory if it doesn't exist and copies all `.elf` files
-/// plus their runtime params hash sidecars from guest program directories into
+/// plus their artifact manifests from guest program directories into
 /// it.
 ///
 /// # Arguments
@@ -67,5 +67,5 @@ fn is_artifact(path: &Path) -> bool {
         || path
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| name.ends_with(".runtime-params-hash"))
+            .is_some_and(|name| name.ends_with(".artifact-manifest.json"))
 }

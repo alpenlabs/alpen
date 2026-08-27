@@ -33,7 +33,7 @@ struct VkHashes {
 // Guest program names
 const CHECKPOINT: &str = "guest-checkpoint";
 const CHECKPOINT_RUNTIME_PARAMS_PATH: &str = "CHECKPOINT_RUNTIME_PARAMS_PATH";
-const CHECKPOINT_RUNTIME_PARAMS_HASH: &str = "guest-checkpoint.runtime-params-hash";
+const CHECKPOINT_ARTIFACT_MANIFEST: &str = "guest-checkpoint.artifact-manifest.json";
 const CHECKPOINT_RUNTIME_PARAMS_RS: &str = "runtime_params.rs";
 
 /// Returns a map of program dependencies.
@@ -47,7 +47,7 @@ fn get_program_dependencies() -> HashMap<&'static str, Vec<&'static str>> {
 
 fn main() {
     println!("cargo:rerun-if-env-changed={CHECKPOINT_RUNTIME_PARAMS_PATH}");
-    write_checkpoint_runtime_params();
+    let checkpoint_runtime_params_hash = write_checkpoint_runtime_params();
 
     // List of guest programs to build
     let guest_programs = [CHECKPOINT];
@@ -72,6 +72,13 @@ fn main() {
             &mut results,
             &mut vk_hashes,
         );
+    }
+    if should_emit_guest_artifacts() {
+        let checkpoint_program_id = vk_hashes
+            .get(CHECKPOINT)
+            .map(|vk| vk.program_id)
+            .expect("checkpoint guest must have a generated program ID");
+        write_checkpoint_artifact_manifest(checkpoint_program_id, checkpoint_runtime_params_hash);
     }
 
     // String to accumulate the contents of methods.rs file
@@ -116,10 +123,10 @@ pub const {program_name_upper}_VK_HASH_STR: &str = "{vk_hash_str}";
     });
 }
 
-fn write_checkpoint_runtime_params() {
+fn write_checkpoint_runtime_params() -> String {
     let runtime_params = match env::var_os(CHECKPOINT_RUNTIME_PARAMS_PATH) {
         Some(path) => read_checkpoint_runtime_params(PathBuf::from(path)),
-        None if cfg!(all(feature = "sp1-dev", not(debug_assertions))) => {
+        None if cfg!(all(feature = "build-elf", not(debug_assertions))) => {
             panic!("{CHECKPOINT_RUNTIME_PARAMS_PATH} must be set to build checkpoint guest ELFs")
         }
         None => OLRuntimeParams::default(),
@@ -136,12 +143,25 @@ fn write_checkpoint_runtime_params() {
     fs::write(&out_path, content)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", out_path.display()));
 
+    runtime_params.hash_hex()
+}
+
+fn write_checkpoint_artifact_manifest(program_id: [u8; 32], runtime_params_hash: String) {
+    let manifest = serde_json::json!({
+        "schema": 1,
+        "program_id": hex::encode(program_id),
+        "runtime_params_hash": runtime_params_hash,
+    });
+
     let cache_dir = Path::new(CHECKPOINT).join("cache");
     fs::create_dir_all(&cache_dir)
         .unwrap_or_else(|e| panic!("Failed to create {}: {e}", cache_dir.display()));
-    let hash_path = cache_dir.join(CHECKPOINT_RUNTIME_PARAMS_HASH);
-    fs::write(&hash_path, format!("{}\n", runtime_params.hash_hex()))
-        .unwrap_or_else(|e| panic!("Failed to write {}: {e}", hash_path.display()));
+    let manifest_path = cache_dir.join(CHECKPOINT_ARTIFACT_MANIFEST);
+    fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest).expect("manifest must serialize") + "\n",
+    )
+    .unwrap_or_else(|e| panic!("Failed to write {}: {e}", manifest_path.display()));
 }
 
 fn read_checkpoint_runtime_params(path: PathBuf) -> OLRuntimeParams {
@@ -163,6 +183,10 @@ fn read_checkpoint_runtime_params(path: PathBuf) -> OLRuntimeParams {
                 path.display()
             )
         })
+}
+
+fn should_emit_guest_artifacts() -> bool {
+    cfg!(all(feature = "build-elf", not(debug_assertions)))
 }
 
 /// Recursively builds the given program along with its dependencies.

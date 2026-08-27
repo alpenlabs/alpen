@@ -91,10 +91,10 @@ build_sp1_guest_artifacts() {
 
     mkdir -p "${ELF_DIR}"
     cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.elf "${ELF_DIR}/"
-    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.runtime-params-hash "${ELF_DIR}/"
+    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.artifact-manifest.json "${ELF_DIR}/"
     cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.predicate "${PREDICATE_DIR}/"
     echo "exported SP1 ELFs to ${ELF_DIR}/"
-    echo "exported SP1 runtime params hashes to ${ELF_DIR}/"
+    echo "exported SP1 artifact manifests to ${ELF_DIR}/"
     echo "exported SP1 predicates to ${PREDICATE_DIR}/"
 }
 
