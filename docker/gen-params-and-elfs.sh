@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds strata-datatool (and optionally SP1 ELFs), waits for bitcoin,
-# validates params, and runs init-network.sh to generate keys + params.
+# Builds strata-datatool (and optionally SP1 guest artifacts), waits for
+# bitcoin, validates params, and runs init-network.sh to generate keys + params.
 #
 # Called by `just docker-seq-up` before starting the compose stack.
 # Reads configuration from .env in the docker/ directory.
@@ -21,7 +21,9 @@ fi
 
 OUTPUT_DIR="${SCRIPT_DIR}/configs/generated"
 ELF_DIR="${SCRIPT_DIR}/elfs"
+PREDICATE_DIR="${SCRIPT_DIR}/predicates/sp1"
 DATATOOL_BIN="${REPO_ROOT}/target/release/strata-datatool"
+CHECKPOINT_PREDICATE="${CHECKPOINT_PREDICATE:-always-accept}"
 
 # This script runs on the host, so replace docker container hostname with localhost.
 BITCOIND_RPC_URL="${BITCOIND_RPC_URL//bitcoind/localhost}"
@@ -82,20 +84,48 @@ validate_params() {
     fi
 }
 
-# ---- Build datatool (and ELFs if DATATOOL_CARGO_FEATURES is set) ----
+build_sp1_guest_artifacts() {
+    echo "building SP1 guest artifacts (fast if unchanged)..."
+    cargo build --locked --release -p strata-sp1-guest-builder --features sp1-dev
+
+    mkdir -p "${ELF_DIR}"
+    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.elf "${ELF_DIR}/"
+    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.predicate "${PREDICATE_DIR}/"
+    echo "exported SP1 ELFs to ${ELF_DIR}/"
+    echo "exported SP1 predicates to ${PREDICATE_DIR}/"
+}
+
+prepare_checkpoint_predicate() {
+    mkdir -p "${PREDICATE_DIR}"
+
+    case "${CHECKPOINT_PREDICATE}" in
+        always-accept)
+            CHECKPOINT_PREDICATE_FILE="${PREDICATE_DIR}/checkpoint-dev-empty.predicate"
+            printf 'AlwaysAccept\n' > "${CHECKPOINT_PREDICATE_FILE}"
+            echo "using dev-empty checkpoint predicate at ${CHECKPOINT_PREDICATE_FILE}"
+            ;;
+        sp1-groth16)
+            build_sp1_guest_artifacts
+            CHECKPOINT_PREDICATE_FILE="${PREDICATE_DIR}/guest-checkpoint.predicate"
+            ;;
+        bip340-schnorr-test)
+            CHECKPOINT_PREDICATE_FILE="${REPO_ROOT}/functional-tests/fixtures/predicates/checkpoint-bip340-schnorr-test.predicate"
+            echo "using test checkpoint predicate at ${CHECKPOINT_PREDICATE_FILE}"
+            ;;
+        *)
+            echo "error: unsupported CHECKPOINT_PREDICATE=${CHECKPOINT_PREDICATE} (use always-accept, sp1-groth16, or bip340-schnorr-test)" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# ---- Build datatool and prepare checkpoint predicate metadata ----
 
 echo "building strata-datatool (fast if unchanged)..."
 cd "${REPO_ROOT}"
-cargo build --locked --release --bin strata-datatool \
-    ${DATATOOL_CARGO_FEATURES:+--features "$DATATOOL_CARGO_FEATURES"}
+cargo build --locked --release --bin strata-datatool
 
-# ---- Export SP1 ELFs if built ----
-
-mkdir -p "${ELF_DIR}"
-if [ -n "${DATATOOL_CARGO_FEATURES:-}" ]; then
-    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.elf "${ELF_DIR}/"
-    echo "exported SP1 ELFs to ${ELF_DIR}/"
-fi
+prepare_checkpoint_predicate
 
 # ---- Wait for bitcoin, validate params, generate ----
 
@@ -103,5 +133,6 @@ wait_for_bitcoin
 validate_params
 
 export OUTPUT_DIR
+export CHECKPOINT_PREDICATE_FILE
 
 "${SCRIPT_DIR}/init-network.sh" --sequencer "${DATATOOL_BIN}"

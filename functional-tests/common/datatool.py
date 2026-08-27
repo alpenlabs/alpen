@@ -6,6 +6,8 @@ from pathlib import Path
 from common.config.config import BitcoindConfig
 
 DEFAULT_OL_BLOCK_TIME_MS = 5_000
+PREDICATE_FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "predicates"
+CHECKPOINT_TEST_PREDICATE_FILE = PREDICATE_FIXTURES_DIR / "checkpoint-bip340-schnorr-test.predicate"
 
 # The Alpen EE genesis account, generated in the alpen-ee repo and committed
 # here. Its inner state root and predicate cannot be derived without the EE
@@ -201,8 +203,8 @@ def generate_asm_params(
 
     args = [
         "gen-asm-params",
-        "--checkpoint-predicate",
-        "bip340-schnorr-test",
+        "--checkpoint-predicate-file",
+        str(CHECKPOINT_TEST_PREDICATE_FILE),
         "--name",
         "ALPN",
         "--genesis-l1-height",

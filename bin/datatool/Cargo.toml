@@ -11,6 +11,14 @@ name = "strata-datatool"
 path = "src/main.rs"
 
 [dependencies]
+anyhow.workspace = true
+argh.workspace = true
+bitcoin = { workspace = true, features = ["std"] }
+bitcoind-async-client = { workspace = true, optional = true }
+hex.workspace = true
+rand_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 strata-asm-admin-types.workspace = true
 strata-asm-bridge-types.workspace = true
 strata-asm-params.workspace = true
@@ -24,32 +32,14 @@ strata-ol-genesis.workspace = true
 strata-ol-params.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
-strata-proofimpl-checkpoint.workspace = true
-strata-proofimpl-predicate-keys = { workspace = true, optional = true }
-
-strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
-
-anyhow.workspace = true
-argh.workspace = true
-bitcoin = { workspace = true, features = ["std"] }
-bitcoind-async-client = { workspace = true, optional = true }
-hex.workspace = true
-rand_core.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 tokio = { workspace = true, optional = true }
 toml.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 tempfile.workspace = true
 
 [features]
 default = ["btc-client"]
 btc-client = ["dep:bitcoind-async-client", "dep:tokio"]
-sp1-builder = [
-  "strata-sp1-guest-builder/sp1-dev",
-  "dep:strata-proofimpl-predicate-keys",
-  "strata-proofimpl-predicate-keys/sp1",
-]
-sp1-docker-builder = ["sp1-builder", "strata-sp1-guest-builder/docker-build"]
