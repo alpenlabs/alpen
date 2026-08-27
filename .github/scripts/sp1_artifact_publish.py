@@ -47,6 +47,10 @@ def validate_env(env: str) -> str:
     return env
 
 
+def zkvm_mock_enabled(value: str) -> bool:
+    return value.lower() in ("1", "true")
+
+
 def sha256_hex(path: Path) -> str:
     h = __import__("hashlib").sha256()
     with path.open("rb") as f:
@@ -75,13 +79,16 @@ def cmd_validate() -> None:
 
 def cmd_summarize() -> None:
     """Env: CACHE_ROOT, ARTIFACT_DIR, DEPLOY_ENV, ALPEN_REF, ALPEN_SHA,
-    SP1_VERSION, GITHUB_STEP_SUMMARY."""
+    SP1_VERSION, ZKVM_MOCK, GITHUB_STEP_SUMMARY."""
     cache_root = Path(os.environ["CACHE_ROOT"])
     artifact_dir = Path(os.environ["ARTIFACT_DIR"])
     env = validate_env(os.environ["DEPLOY_ENV"])
     alpen_ref = os.environ["ALPEN_REF"]
     alpen_sha = os.environ["ALPEN_SHA"]
     sp1_version = os.environ["SP1_VERSION"]
+    zkvm_mock = os.environ.get("ZKVM_MOCK", "0")
+    if zkvm_mock_enabled(zkvm_mock):
+        fail("ZKVM_MOCK must not be enabled for published SP1 artifacts")
     run_id = os.environ.get("GITHUB_RUN_ID", "")
 
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -114,6 +121,7 @@ def cmd_summarize() -> None:
         "version": version,
         "run_id": run_id,
         "sp1_version": sp1_version,
+        "zkvm_mock": False,
         "alpen": {
             "ref": alpen_ref,
             "sha": alpen_sha,
@@ -138,6 +146,7 @@ def cmd_summarize() -> None:
         f"- env: `{env}`",
         f"- alpen ref: `{alpen_ref}` @ `{alpen_sha}`",
         f"- SP1 toolchain: `{sp1_version}`",
+        "- ZKVM mock: `false`",
         f"- version: `{version}`",
         "",
         "### Predicates",
@@ -162,22 +171,29 @@ def cmd_summarize() -> None:
 def s3_put(src: Path, bucket: str, key: str) -> None:
     require_file(src)
     print(f"uploading {src} -> s3://{bucket}/{key}")
-    subprocess.run(
-        [
-            "aws",
-            "s3api",
-            "put-object",
-            "--bucket",
-            bucket,
-            "--key",
-            key,
-            "--body",
-            str(src),
-            "--if-none-match",
-            "*",
-        ],
-        check=True,
-    )
+    try:
+        subprocess.run(
+            [
+                "aws",
+                "s3api",
+                "put-object",
+                "--bucket",
+                bucket,
+                "--key",
+                key,
+                "--body",
+                str(src),
+                "--if-none-match",
+                "*",
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError as err:
+        fail(
+            f"failed to upload {src} to s3://{bucket}/{key} (exit {err.returncode}); "
+            "SP1 artifact publishes are write-once, so retrying the same SHA requires manually "
+            "removing the existing S3 prefix"
+        )
 
 
 def cmd_upload() -> None:

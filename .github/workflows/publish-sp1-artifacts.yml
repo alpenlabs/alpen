@@ -94,7 +94,16 @@ jobs:
         run: cargo prove --version
 
       - name: Build SP1 guest artifacts
-        run: cargo build --locked -p strata-sp1-guest-builder --features docker-build --release
+        env:
+          ZKVM_MOCK: "0"
+        run: |
+          case "${ZKVM_MOCK,,}" in
+            1|true)
+              echo "::error::ZKVM_MOCK must not be enabled for published SP1 artifacts"
+              exit 1
+              ;;
+          esac
+          cargo build --locked -p strata-sp1-guest-builder --features docker-build --release
 
       - name: Verify artifacts and emit traceability summary
         id: summarize
@@ -105,6 +114,7 @@ jobs:
           ALPEN_REF: ${{ github.ref }}
           ALPEN_SHA: ${{ steps.resolve-sha.outputs.sha }}
           SP1_VERSION: ${{ env.SP1_VERSION }}
+          ZKVM_MOCK: "0"
         run: python3 .github/scripts/sp1_artifact_publish.py summarize
 
       - name: Configure AWS credentials
