@@ -104,7 +104,7 @@ def cmd_summarize() -> None:
         if path.is_file()
     }
 
-    version = f"{env}-{alpen_sha[:8]}"
+    version = f"{env}-{alpen_sha}"
     if not VERSION_RE.fullmatch(version):
         fail(f"artifact version is not S3-key-safe: {version!r}")
 
@@ -159,10 +159,25 @@ def cmd_summarize() -> None:
         f.write("\n".join(lines))
 
 
-def s3_cp(src: Path, dst: str) -> None:
+def s3_put(src: Path, bucket: str, key: str) -> None:
     require_file(src)
-    print(f"uploading {src} -> {dst}")
-    subprocess.run(["aws", "s3", "cp", str(src), dst, "--no-progress"], check=True)
+    print(f"uploading {src} -> s3://{bucket}/{key}")
+    subprocess.run(
+        [
+            "aws",
+            "s3api",
+            "put-object",
+            "--bucket",
+            bucket,
+            "--key",
+            key,
+            "--body",
+            str(src),
+            "--if-none-match",
+            "*",
+        ],
+        check=True,
+    )
 
 
 def cmd_upload() -> None:
@@ -181,15 +196,17 @@ def cmd_upload() -> None:
     if not VERSION_RE.fullmatch(version):
         fail(f"artifact version is not S3-key-safe: {version!r}")
 
-    base = f"s3://{bucket}/{prefix}/{version}"
+    base_key = f"{prefix}/{version}"
+    base = f"s3://{bucket}/{base_key}"
     uris: list[str] = []
     for name in ARTIFACT_FILES:
-        dst = f"{base}/{name}"
-        s3_cp(artifact_dir / name, dst)
+        key = f"{base_key}/{name}"
+        dst = f"s3://{bucket}/{key}"
+        s3_put(artifact_dir / name, bucket, key)
         uris.append(dst)
         if name != "manifest.json":
             sidecar_name = f"{name}.sha256"
-            s3_cp(artifact_dir / sidecar_name, f"{dst}.sha256")
+            s3_put(artifact_dir / sidecar_name, bucket, f"{key}.sha256")
             uris.append(f"{dst}.sha256")
 
     set_outputs(version=version, s3_base=base)
