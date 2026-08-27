@@ -32,6 +32,7 @@ prover = [
 ]
 sp1 = [
   "prover",
+  "dep:hex",
   "strata-proofimpl-predicate-keys/sp1",
   "strata-paas/remote",
   "dep:strata-zkvm-hosts",
@@ -99,7 +100,7 @@ async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 format_serde_error.workspace = true
-hex.workspace = true
+hex = { workspace = true, optional = true }
 http.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 serde_json.workspace = true
