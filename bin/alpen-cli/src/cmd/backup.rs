@@ -9,7 +9,7 @@ use crate::seed::Seed;
 /// Prints a BIP39 mnemonic encoding the internal wallet's seed bytes
 pub struct BackupArgs {}
 
-pub async fn backup(_args: BackupArgs, seed: Seed) -> Result<(), DisplayedError> {
+pub async fn backup(seed: Seed) -> Result<(), DisplayedError> {
     seed.print_mnemonic(Language::English);
     Ok(())
 }
