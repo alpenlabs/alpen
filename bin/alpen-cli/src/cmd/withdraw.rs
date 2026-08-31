@@ -69,7 +69,7 @@ pub async fn withdraw(
     l1w.sync()
         .await
         .internal_error("Failed to sync Bitcoin wallet")?;
-    let l2w = AlpenWallet::new(&seed, &settings)
+    let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
         .user_error("Invalid Alpen endpoint URL. Check the configuration")?;
 
     let address = match address {

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use alloy::consensus::constants::ETH_TO_WEI;
-use bdk_wallet::bitcoin::{bip32::ChildNumber, Amount, Network};
+use bdk_wallet::bitcoin::{bip32::ChildNumber, Amount};
 use strata_identifiers::{AccountSerial, SYSTEM_RESERVED_ACCTS};
 
 /// Number of blocks that the wallet considers a transaction "buried" or final taking into account
@@ -34,7 +34,6 @@ pub const AES_TAG_LEN: usize = 16;
 /// OP_RETURN magic bytes len
 pub const MAGIC_BYTES_LEN: usize = 4;
 
-pub const DEFAULT_NETWORK: Network = Network::Signet;
 pub const DEFAULT_BRIDGE_ALPEN_ADDRESS: &str = "0x5400000000000000000000000000000000000001";
 pub const BITCOIN_BLOCK_TIME: Duration = Duration::from_secs(10 * 60); // 10 minutes
 

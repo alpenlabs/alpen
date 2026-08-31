@@ -10,7 +10,7 @@ use crate::bitcoin::BitcoinWallet;
 
 /// Wrapper around the built-in rusqlite db.
 ///
-/// It allows [`PersistedWallet`](crate::bitcoin::PersistedWallet) to be shared across multiple
+/// It allows [`PersistedWallet`](bdk_wallet::PersistedWallet) to be shared across multiple
 /// threads by lazily initializing per core connections to the sqlite db and keeping them in
 /// local thread storage instead of sharing the connection across cores.
 ///

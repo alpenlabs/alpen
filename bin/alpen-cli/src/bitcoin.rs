@@ -47,7 +47,7 @@ pub async fn get_fee_rate(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::{collections::HashSet, path::Path};
 
     use async_trait::async_trait;
@@ -67,8 +67,8 @@ mod tests {
     };
 
     #[derive(Debug)]
-    struct TestBitcoinBackend {
-        fee_rate: Option<FeeRate>,
+    pub(crate) struct TestBitcoinBackend {
+        pub(crate) fee_rate: Option<FeeRate>,
     }
 
     #[async_trait]
@@ -78,7 +78,7 @@ mod tests {
             _scripts: Vec<ScriptBuf>,
             _last_cp: CheckPoint,
         ) -> Result<HashSet<ScriptBuf>, ScanError> {
-            unimplemented!("not needed for fee rate tests")
+            Ok(HashSet::new())
         }
 
         async fn sync_wallet(
@@ -87,7 +87,7 @@ mod tests {
             _last_cp: CheckPoint,
             _send_update: UpdateSender,
         ) -> Result<(), SyncError> {
-            unimplemented!("not needed for fee rate tests")
+            Ok(())
         }
 
         async fn scan_wallet(
@@ -96,11 +96,11 @@ mod tests {
             _last_cp: CheckPoint,
             _send_update: UpdateSender,
         ) -> Result<(), ScanError> {
-            unimplemented!("not needed for fee rate tests")
+            Ok(())
         }
 
         async fn broadcast_tx(&self, _tx: &Transaction) -> Result<(), BroadcastTxError> {
-            unimplemented!("not needed for fee rate tests")
+            Ok(())
         }
 
         async fn get_fee_rate(

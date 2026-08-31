@@ -47,7 +47,7 @@ pub async fn balance(
     }
 
     if let Chain::Alpen = chain {
-        let l2w = AlpenWallet::new(&seed, &settings)
+        let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
             .user_error("Invalid Alpen endpoint URL. Check the config file")?;
         println!("Getting balance...");
         let eth_balance = l2w
