@@ -33,7 +33,7 @@ jobs:
 
       - name: Extract Rust toolchain version
         id: extract
-        uses: ./.github/actions/extract-rust-version # zizmor: ignore[unpinned-uses]
+        uses: $/.github/actions/extract-rust-version # zizmor: ignore[unpinned-uses]
 
   run:
     name: Run functional tests
@@ -48,7 +48,7 @@ jobs:
           persist-credentials: false
 
       - name: Cleanup Space
-        uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
+        uses: $/.github/actions/cleanup # zizmor: ignore[unpinned-uses]
 
       - name: Install bitcoind
         env:
@@ -89,7 +89,7 @@ jobs:
           cache-on-failure: true
 
       - name: Install SP1 core runner override
-        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+        uses: $/.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
 
       - name: Build Cargo project
         run: |
