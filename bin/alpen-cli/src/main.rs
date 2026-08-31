@@ -71,7 +71,7 @@ async fn main() {
         Commands::Recover(args) => recover(args, seed, settings).await,
         Commands::Drain(args) => drain(args, seed, settings).await,
         Commands::Balance(args) => balance(args, seed, settings).await,
-        Commands::Backup(args) => backup(args, seed).await,
+        Commands::Backup(_) => backup(seed).await,
         Commands::Deposit(args) => deposit(args, seed, settings).await,
         Commands::Withdraw(args) => withdraw(args, seed, settings).await,
         Commands::Send(args) => send(args, seed, settings).await,
