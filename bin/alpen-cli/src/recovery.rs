@@ -22,16 +22,86 @@ use tokio::io::AsyncReadExt;
 
 use crate::seed::Seed;
 
+// Key for the reclaim counter within its own tree (see `counter_tree` below) -- any fixed key
+// works here since this tree holds nothing else.
+const RECLAIM_COUNTER_KEY: &[u8] = b"drt_reclaim_counter";
+
 #[expect(
     missing_debug_implementations,
     reason = "Struct contains sensitive cryptographic data that should not be debug printed"
 )]
 pub struct DescriptorRecovery {
     db: sled::Db,
+    // Reclaim-counter state lives in its own sled tree, not the default tree `db` derefs to,
+    // so it can never show up in a `read_descs` range scan over descriptor entries -- which,
+    // being always exactly `DescriptorRecoveryKey::ENCODED_SIZE` bytes, would otherwise panic
+    // on `DescriptorRecoveryKey::decode(&key).unwrap()` the first time it saw this key.
+    counter_tree: sled::Tree,
     cipher: Aes256GcmSiv,
 }
 
 impl DescriptorRecovery {
+    /// Reserves and returns the next counter for deriving a deposit-request reclaim key (see
+    /// [`Seed::drt_reclaim_keypair`]).
+    ///
+    /// The increment is flushed to disk before this returns, so a crash right after can't cause
+    /// the same counter to be handed out twice. Missing counter state is an error: callers must
+    /// first reconstruct or initialize it with [`Self::ensure_reclaim_counter_at_least`].
+    pub async fn next_reclaim_counter(&self) -> io::Result<u32> {
+        let updated = self
+            .counter_tree
+            .update_and_fetch(RECLAIM_COUNTER_KEY, |old| {
+                old.map(|bytes| {
+                    let current =
+                        u32::from_be_bytes(bytes.try_into().expect("4-byte reclaim counter"));
+                    (current + 1).to_be_bytes().to_vec()
+                })
+            })?;
+        let updated = updated.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "deposit reclaim counter has not been reconstructed",
+            )
+        })?;
+        self.counter_tree.flush_async().await?;
+        Ok(u32::from_be_bytes(
+            updated.as_ref().try_into().expect("4-byte reclaim counter"),
+        ))
+    }
+
+    /// Advances the reclaim counter to at least `minimum` and flushes it to disk.
+    ///
+    /// This initializes missing counter state after seed recovery without rolling back a higher
+    /// value another process may already have persisted.
+    pub async fn ensure_reclaim_counter_at_least(&self, minimum: u32) -> io::Result<u32> {
+        let updated = self
+            .counter_tree
+            .update_and_fetch(RECLAIM_COUNTER_KEY, |old| {
+                let current = old.map(|bytes| {
+                    u32::from_be_bytes(bytes.try_into().expect("4-byte reclaim counter"))
+                });
+                Some(
+                    current
+                        .map_or(minimum, |value| value.max(minimum))
+                        .to_be_bytes()
+                        .to_vec(),
+                )
+            })?
+            .expect("update_and_fetch always writes a value");
+        self.counter_tree.flush_async().await?;
+        Ok(u32::from_be_bytes(
+            updated.as_ref().try_into().expect("4-byte reclaim counter"),
+        ))
+    }
+
+    /// Returns the last counter [`Self::next_reclaim_counter`] handed out, if allocator state has
+    /// been initialized. For inspection, not for deriving a new deposit's key.
+    pub fn current_reclaim_counter(&self) -> io::Result<Option<u32>> {
+        Ok(self.counter_tree.get(RECLAIM_COUNTER_KEY)?.map(|bytes| {
+            u32::from_be_bytes(bytes.as_ref().try_into().expect("4-byte reclaim counter"))
+        }))
+    }
+
     pub async fn add_desc(
         &mut self,
         recover_at: u32,
@@ -125,8 +195,11 @@ impl DescriptorRecovery {
     pub async fn open(seed: &Seed, descriptor_db: &Path) -> io::Result<Self> {
         let key = seed.descriptor_recovery_key();
         let cipher = Aes256GcmSiv::new(&key.into());
+        let db = sled::open(descriptor_db)?;
+        let counter_tree = db.open_tree(b"reclaim_counter")?;
         Ok(Self {
-            db: sled::open(descriptor_db)?,
+            db,
+            counter_tree,
             cipher,
         })
     }
@@ -340,5 +413,109 @@ impl RangeBounds<[u8; 4]> for BigEndianRangeBounds {
             Bound::Excluded(arr) => Bound::Excluded(arr),
             Bound::Unbounded => Bound::Unbounded,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs, path::PathBuf, process};
+
+    use super::*;
+
+    fn temp_db_path() -> PathBuf {
+        env::temp_dir().join(format!(
+            "alpen-cli-recovery-test-{}-{}",
+            process::id(),
+            OsRng.next_u64()
+        ))
+    }
+
+    #[tokio::test]
+    // The counter must never repeat across a process restart, since a reused counter would
+    // derive the same reclaim key for two different deposit requests.
+    async fn next_reclaim_counter_survives_reopen() {
+        let seed = Seed::gen(&mut OsRng);
+        let path = temp_db_path();
+
+        let recovery = DescriptorRecovery::open(&seed, &path)
+            .await
+            .expect("should open descriptor db");
+        recovery.ensure_reclaim_counter_at_least(0).await.unwrap();
+        let first = recovery.next_reclaim_counter().await.unwrap();
+        drop(recovery);
+
+        let second = DescriptorRecovery::open(&seed, &path)
+            .await
+            .expect("should reopen descriptor db")
+            .next_reclaim_counter()
+            .await
+            .unwrap();
+
+        assert_ne!(
+            first, second,
+            "reopening must not hand out a counter already used"
+        );
+
+        fs::remove_dir_all(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn missing_reclaim_counter_must_be_reconstructed_before_allocation() {
+        let seed = Seed::gen(&mut OsRng);
+        let path = temp_db_path();
+        let recovery = DescriptorRecovery::open(&seed, &path)
+            .await
+            .expect("should open descriptor db");
+
+        let error = recovery.next_reclaim_counter().await.unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(recovery.current_reclaim_counter().unwrap(), None);
+        fs::remove_dir_all(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn reconstructed_reclaim_counter_never_rolls_back() {
+        let seed = Seed::gen(&mut OsRng);
+        let path = temp_db_path();
+        let recovery = DescriptorRecovery::open(&seed, &path)
+            .await
+            .expect("should open descriptor db");
+
+        assert_eq!(
+            recovery.ensure_reclaim_counter_at_least(7).await.unwrap(),
+            7
+        );
+        assert_eq!(
+            recovery.ensure_reclaim_counter_at_least(3).await.unwrap(),
+            7
+        );
+        assert_eq!(recovery.next_reclaim_counter().await.unwrap(), 8);
+
+        fs::remove_dir_all(&path).ok();
+    }
+
+    #[tokio::test]
+    // Regression test: before the counter moved into its own tree, `read_descs`'s range scan
+    // saw the 19-byte counter key alongside real (always 36-byte) descriptor keys, and
+    // `DescriptorRecoveryKey::decode(&key).unwrap()` panicked on it. `alpen debug recovery`
+    // calls `read_descs(..)` on any populated database, so this used to panic on every deposit.
+    async fn read_descs_ignores_reclaim_counter_state() {
+        let seed = Seed::gen(&mut OsRng);
+        let path = temp_db_path();
+
+        let mut recovery = DescriptorRecovery::open(&seed, &path)
+            .await
+            .expect("should open descriptor db");
+        recovery.ensure_reclaim_counter_at_least(0).await.unwrap();
+        recovery.next_reclaim_counter().await.unwrap();
+
+        let descs = recovery
+            .read_descs(..)
+            .await
+            .expect("should not panic or error on the counter's tree");
+        assert!(descs.is_empty());
+
+        fs::remove_dir_all(&path).ok();
     }
 }

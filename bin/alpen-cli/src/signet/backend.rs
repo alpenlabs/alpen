@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashSet},
     error, fmt,
     fmt::Debug,
     marker::Send,
@@ -15,7 +15,7 @@ use bdk_bitcoind_rpc::{
 };
 use bdk_esplora::EsploraAsyncExt;
 use bdk_wallet::{
-    bitcoin::{consensus::encode, Block, FeeRate, Transaction},
+    bitcoin::{consensus::encode, Block, FeeRate, ScriptBuf, Transaction},
     chain::{
         spk_client::{FullScanRequestBuilder, FullScanResponse, SyncRequestBuilder, SyncResponse},
         CheckPoint,
@@ -102,6 +102,12 @@ pub type UpdateSender = UnboundedSender<WalletUpdate>;
 
 #[async_trait]
 pub trait SignetBackend: Debug + Send + Sync {
+    /// Scans a batch of script pubkeys and returns the ones with transaction history.
+    async fn scan_scripts(
+        &self,
+        scripts: Vec<ScriptBuf>,
+        last_cp: CheckPoint,
+    ) -> Result<HashSet<ScriptBuf>, ScanError>;
     async fn sync_wallet(
         &self,
         req: SyncRequestBuilder<(KeychainKind, u32)>,
@@ -123,6 +129,36 @@ pub trait SignetBackend: Debug + Send + Sync {
 
 #[async_trait]
 impl SignetBackend for EsploraClient {
+    async fn scan_scripts(
+        &self,
+        scripts: Vec<ScriptBuf>,
+        last_cp: CheckPoint,
+    ) -> Result<HashSet<ScriptBuf>, ScanError> {
+        let requested_scripts = scripts.iter().cloned().collect::<HashSet<_>>();
+        let request = SyncRequestBuilder::default()
+            .chain_tip(last_cp)
+            .spks(scripts)
+            .build();
+        let response = self
+            .sync(request, 3)
+            .await
+            .map_err(|err| ScanError(Box::new(err) as BoxedErr))?;
+
+        let mut used_scripts = HashSet::new();
+        record_used_scripts(
+            &requested_scripts,
+            &mut used_scripts,
+            response.tx_update.txs.iter().map(AsRef::as_ref),
+        );
+        for txout in response.tx_update.txouts.values() {
+            if requested_scripts.contains(&txout.script_pubkey) {
+                used_scripts.insert(txout.script_pubkey.clone());
+            }
+        }
+
+        Ok(used_scripts)
+    }
+
     async fn sync_wallet(
         &self,
         req: SyncRequestBuilder<(KeychainKind, u32)>,
@@ -236,6 +272,53 @@ impl SignetBackend for EsploraClient {
 
 #[async_trait]
 impl SignetBackend for Arc<bitcoincore_rpc::Client> {
+    async fn scan_scripts(
+        &self,
+        scripts: Vec<ScriptBuf>,
+        last_cp: CheckPoint,
+    ) -> Result<HashSet<ScriptBuf>, ScanError> {
+        let requested_scripts = scripts.into_iter().collect::<HashSet<_>>();
+        let bar = ProgressBar::new_spinner().with_style(
+            ProgressStyle::with_template("{spinner} [{elapsed_precise}] {msg}").unwrap(),
+        );
+        bar.enable_steady_tick(Duration::from_millis(100));
+        let bar2 = bar.clone();
+
+        let used_scripts = spawn_bitcoin_core(self.clone(), move |client| {
+            let mut emitter = Emitter::new(client, last_cp, 0);
+            let mut used_scripts = HashSet::new();
+            let mut blocks_scanned = 0;
+
+            while let Some(event) = emitter.next_block()? {
+                blocks_scanned += 1;
+                record_used_scripts(
+                    &requested_scripts,
+                    &mut used_scripts,
+                    event.block.txdata.iter(),
+                );
+                bar2.set_message(format!(
+                    "Current height: {}, scanned {blocks_scanned} blocks",
+                    event.block_height()
+                ));
+            }
+
+            bar2.set_message("Scanning mempool");
+            let mempool = emitter.mempool()?;
+            record_used_scripts(
+                &requested_scripts,
+                &mut used_scripts,
+                mempool.iter().map(|(tx, _)| tx),
+            );
+
+            Ok(used_scripts)
+        })
+        .await
+        .map_err(|err| ScanError(Box::new(err) as BoxedErr))?;
+
+        bar.finish_with_message("Script scan complete");
+        Ok(used_scripts)
+    }
+
     async fn sync_wallet(
         &self,
         _req: SyncRequestBuilder<(KeychainKind, u32)>,
@@ -283,6 +366,18 @@ impl SignetBackend for Arc<bitcoincore_rpc::Client> {
                 FeeRate::from_sat_per_vb((per_kw / 1000).to_sat()).ok_or(OneOf::new(InvalidFee))?,
             )),
             None => Ok(None),
+        }
+    }
+}
+
+fn record_used_scripts<'a>(
+    requested_scripts: &HashSet<ScriptBuf>,
+    used_scripts: &mut HashSet<ScriptBuf>,
+    transactions: impl IntoIterator<Item = &'a Transaction>,
+) {
+    for txout in transactions.into_iter().flat_map(|tx| &tx.output) {
+        if requested_scripts.contains(&txout.script_pubkey) {
+            used_scripts.insert(txout.script_pubkey.clone());
         }
     }
 }
@@ -349,3 +444,38 @@ async fn sync_wallet_with_core(
 
 #[derive(Debug)]
 pub struct InvalidFee;
+
+#[cfg(test)]
+mod tests {
+    use bdk_wallet::bitcoin::{absolute, transaction, Amount, TxOut};
+
+    use super::*;
+
+    #[test]
+    fn record_used_scripts_only_returns_requested_outputs() {
+        let requested = ScriptBuf::from_bytes(vec![0x51]);
+        let unrelated = ScriptBuf::from_bytes(vec![0x52]);
+        let transaction = Transaction {
+            version: transaction::Version::TWO,
+            lock_time: absolute::LockTime::ZERO,
+            input: vec![],
+            output: vec![
+                TxOut {
+                    value: Amount::ZERO,
+                    script_pubkey: requested.clone(),
+                },
+                TxOut {
+                    value: Amount::ZERO,
+                    script_pubkey: unrelated.clone(),
+                },
+            ],
+        };
+        let requested_scripts = HashSet::from([requested.clone()]);
+        let mut used_scripts = HashSet::new();
+
+        record_used_scripts(&requested_scripts, &mut used_scripts, [&transaction]);
+
+        assert_eq!(used_scripts, HashSet::from([requested]));
+        assert!(!used_scripts.contains(&unrelated));
+    }
+}

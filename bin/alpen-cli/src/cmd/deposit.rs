@@ -16,7 +16,6 @@ use bdk_wallet::{
 };
 use colored::Colorize;
 use indicatif::ProgressBar;
-use rand_core::OsRng;
 use shrex::encode;
 use strata_asm_proto_bridge_v1_txs::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
@@ -27,10 +26,11 @@ use strata_primitives::crypto::even_kp;
 
 use crate::{
     alpen::AlpenWallet,
+    cmd::recover::reconstruct_reclaim_counter,
     constants::{ALPEN_EE_ACCT_SERIAL, SIGNET_BLOCK_TIME},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
-    seed::Seed,
+    seed::{DrtReclaimKeypair, Seed},
     settings::Settings,
     signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
@@ -93,8 +93,10 @@ fn prepare_deposit_request(
     recover_delay: u16,
     alpen_address: AlpenAddress,
     bridge_in_amount: Amount,
+    reclaim_keypair: DrtReclaimKeypair,
 ) -> (DescriptorTemplateOut, BitcoinAddress, DrtHeaderAux, TxOut) {
-    let (secret_key, recovery_public_key) = even_kp(SECP256K1.generate_keypair(&mut OsRng));
+    let (secret_key, recovery_public_key) =
+        even_kp((reclaim_keypair.secret_key, reclaim_keypair.public_key));
     let recovery_public_key = recovery_public_key.x_only_public_key().0;
     let recovery_private_key = PrivateKey::new(secret_key.into(), network);
 
@@ -166,12 +168,34 @@ pub async fn deposit(
         alpen_address.to_string().cyan(),
     );
 
+    let mut desc_file = DescriptorRecovery::open(&seed, &settings.descriptor_db)
+        .await
+        .internal_error("Failed to open descriptor recovery file")?;
+    if desc_file
+        .current_reclaim_counter()
+        .internal_error("Failed to read the deposit reclaim counter")?
+        .is_none()
+    {
+        println!("Reconstructing the missing deposit reclaim counter...");
+        let reconstructed_counter = reconstruct_reclaim_counter(&seed, &settings).await?;
+        desc_file
+            .ensure_reclaim_counter_at_least(reconstructed_counter)
+            .await
+            .internal_error("Failed to save the reconstructed deposit reclaim counter")?;
+    }
+    let reclaim_counter = desc_file
+        .next_reclaim_counter()
+        .await
+        .internal_error("Failed to reserve a deposit reclaim key counter")?;
+    let reclaim_keypair = seed.drt_reclaim_keypair(reclaim_counter);
+
     let (bridge_in_desc, bridge_in_address, header_aux, deposit_output) = prepare_deposit_request(
         settings.bridge_musig2_pubkey,
         settings.network,
         settings.recovery_delay,
         alpen_address,
         drt_amount,
+        reclaim_keypair,
     );
 
     println!(
@@ -185,10 +209,11 @@ pub async fn deposit(
         .expect("valid chain tip")
         .height;
 
-    // Number of blocks after which the wallet actually enables recovery. This is mostly to account
-    // for any reorgs that may happen at the recovery height.
-    let recover_at =
-        current_block_height + settings.recovery_delay as u32 + settings.finality_depth;
+    let recover_at = compute_recover_at_height(
+        current_block_height,
+        settings.recovery_delay as u32,
+        settings.finality_depth,
+    );
 
     println!(
         "Using {} as bridge in address",
@@ -210,9 +235,6 @@ pub async fn deposit(
     let pb = ProgressBar::new_spinner().with_message("Saving output descriptor");
     pb.enable_steady_tick(Duration::from_millis(100));
 
-    let mut desc_file = DescriptorRecovery::open(&seed, &settings.descriptor_db)
-        .await
-        .internal_error("Failed to open descriptor recovery file")?;
     desc_file
         .add_desc(recover_at, &bridge_in_desc)
         .await
@@ -244,7 +266,7 @@ pub async fn deposit(
 ///
 /// This is a P2TR address that the key path spend is locked to the bridge aggregated public key
 /// and the single script path spend is locked to the user's recovery address with a timelock of
-fn bridge_in_descriptor(
+pub(crate) fn bridge_in_descriptor(
     bridge_pubkey: XOnlyPublicKey,
     private_key: PrivateKey,
     recover_delay: u16,
@@ -257,6 +279,22 @@ fn bridge_in_descriptor(
     .expect("valid descriptor")
 }
 
+/// Computes the height at which a deposit's relative timelock (`recovery_delay` blocks past
+/// `from_height`) becomes spendable, with `finality_depth` added as a reorg safety margin.
+///
+/// `from_height` is the current chain tip when called at deposit time (an estimate, since the
+/// deposit hasn't confirmed yet), or a deposit's actual funding confirmation height when called
+/// during recovery.
+pub(crate) fn compute_recover_at_height(
+    from_height: u32,
+    recovery_delay: u32,
+    finality_depth: u32,
+) -> u32 {
+    from_height
+        .saturating_add(recovery_delay)
+        .saturating_add(finality_depth)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -266,6 +304,7 @@ mod tests {
         keys::{DescriptorPublicKey, SinglePub, SinglePubKey},
         miniscript::{descriptor::TapTree, Descriptor, Miniscript},
     };
+    use rand_core::OsRng;
     use strata_asm_proto_bridge_v1_txs::deposit_request::parse_drt;
     use strata_primitives::constants::RECOVER_DELAY;
     use strata_test_utils_btcio::BtcioTestHarness;
@@ -366,6 +405,7 @@ mod tests {
         sync_wallet_from_node(&mut wallet, &harness);
 
         let bridge_in_amount = Amount::from_sat(100_000);
+        let (secret_key, public_key) = SECP256K1.generate_keypair(&mut OsRng);
         let (_bridge_in_desc, bridge_in_address, header_aux, deposit_output) =
             prepare_deposit_request(
                 bridge_pubkey,
@@ -373,6 +413,10 @@ mod tests {
                 RECOVER_DELAY,
                 alpen_address,
                 bridge_in_amount,
+                DrtReclaimKeypair {
+                    secret_key,
+                    public_key,
+                },
             );
 
         let tx = build_deposit_request_tx(

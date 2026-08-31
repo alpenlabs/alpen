@@ -10,6 +10,11 @@ pub const DEFAULT_FINALITY_DEPTH: u32 = 6;
 
 pub const RECOVERY_DESC_CLEANUP_DELAY: u32 = 100;
 
+/// Number of consecutive unused reclaim-key counters `recover --from-seed` tries before giving
+/// up. There's no persisted "last used counter" to resume from when reconstructing purely from the
+/// seed, so this is the only signal for when to stop scanning.
+pub const SEED_RECOVERY_GAP_LIMIT: u32 = 1_000;
+
 /// Fee to cover the mining fees for creating the deposit transaction from the deposit request
 /// transaction. This includes the cost for the bridge to spend the deposit request output into the
 /// federation.
@@ -38,6 +43,20 @@ pub const SIGNET_BLOCK_TIME: Duration = Duration::from_secs(10 * 60); // 10 minu
 /// System serials occupy `0..SYSTEM_RESERVED_ACCTS`, so the Alpen EE account
 /// currently lands at `SYSTEM_RESERVED_ACCTS` by genesis registration order.
 pub const ALPEN_EE_ACCT_SERIAL: AccountSerial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
+
+/// Hardened branch reserved for Alpen CLI deposit-request reclaim keys.
+///
+/// Unregistered — picked above the 10001-19999 range BIP43 reserves for SLIPs, so it can't
+/// collide with anything registered.
+///
+/// Separates this key material from the wallet's BIP-86 path (`m/86'/0'/0'`). Each deposit derives
+/// `m/<DRT_RECLAIM_PURPOSE>'/<counter>'`, where `counter` is durable local state (see
+/// [`DescriptorRecovery::next_reclaim_counter`](crate::recovery::DescriptorRecovery::next_reclaim_counter)),
+/// making the reclaim key recoverable from the seed alone rather than only from the descriptor DB.
+///
+/// Don't change this. A deposit's reclaim key can only be reconstructed from the seed if this
+/// value is still the same as when that deposit was made.
+pub const DRT_RECLAIM_PURPOSE: ChildNumber = ChildNumber::Hardened { index: 43_000 };
 
 /// Alpen CLI [`DerivationPath`](bdk_wallet::bitcoin::bip32::DerivationPath) for Alpen EVM wallet
 ///

@@ -48,9 +48,11 @@ pub async fn get_fee_rate(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use async_trait::async_trait;
     use bdk_wallet::{
-        bitcoin::{FeeRate, Transaction},
+        bitcoin::{FeeRate, ScriptBuf, Transaction},
         chain::{
             spk_client::{FullScanRequestBuilder, SyncRequestBuilder},
             CheckPoint,
@@ -71,6 +73,14 @@ mod tests {
 
     #[async_trait]
     impl SignetBackend for TestSignetBackend {
+        async fn scan_scripts(
+            &self,
+            _scripts: Vec<ScriptBuf>,
+            _last_cp: CheckPoint,
+        ) -> Result<HashSet<ScriptBuf>, ScanError> {
+            unimplemented!("not needed for fee rate tests")
+        }
+
         async fn sync_wallet(
             &self,
             _req: SyncRequestBuilder<(KeychainKind, u32)>,
