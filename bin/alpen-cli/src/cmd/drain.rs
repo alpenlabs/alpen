@@ -15,26 +15,26 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
     alpen::AlpenWallet,
+    bitcoin::{get_fee_rate, log_fee_rate, BitcoinWallet},
     constants::SATS_TO_WEI,
     link::{OnchainObject, PrettyPrint},
     seed::Seed,
     settings::Settings,
-    signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
 
-/// Drains the internal wallet to the provided signet or Alpen address
+/// Drains the internal wallet to the provided Bitcoin or Alpen address
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "drain")]
 pub struct DrainArgs {
-    /// a signet address for signet funds to be drained to
-    #[argh(option, short = 's')]
-    signet_address: Option<String>,
+    /// a Bitcoin address for Bitcoin funds to be drained to
+    #[argh(option, short = 'b')]
+    bitcoin_address: Option<String>,
 
     /// an Alpen address for Alpen funds to be drained to
     #[argh(option, short = 'r')]
     alpen_address: Option<String>,
 
-    /// override signet fee rate in sat/vbyte; the effective rate is at least 1
+    /// override Bitcoin fee rate in sat/vbyte; the effective rate is at least 1
     #[argh(option)]
     fee_rate: Option<u64>,
 }
@@ -57,24 +57,24 @@ fn max_alpen_drain_value(balance: U256, gas_limit: u64, gas_price: u128) -> Opti
 
 pub async fn drain(
     DrainArgs {
-        signet_address,
+        bitcoin_address,
         alpen_address,
         fee_rate,
     }: DrainArgs,
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
-    if alpen_address.is_none() && signet_address.is_none() {
+    if alpen_address.is_none() && bitcoin_address.is_none() {
         return Err(DisplayedError::UserError(
-            "Missing target address. Must provide a `signet` address or `alpen` address.".into(),
+            "Missing target address. Must provide a Bitcoin address or Alpen address.".into(),
             Box::new(MissingTargetAddress),
         ));
     }
 
-    let signet_address = signet_address
+    let bitcoin_address = bitcoin_address
         .map(|a| {
             let unchecked = Address::from_str(&a).user_error(format!(
-                "Invalid signet address: '{a}'. Must be a valid Bitcoin address."
+                "Invalid Bitcoin address: '{a}'. Must be a valid Bitcoin address."
             ))?;
             let checked = unchecked
                 .require_network(settings.network)
@@ -94,20 +94,20 @@ pub async fn drain(
         })
         .transpose()?;
 
-    if let Some(address) = signet_address {
-        let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
-            .internal_error("Failed to load signet wallet")?;
+    if let Some(address) = bitcoin_address {
+        let mut l1w = BitcoinWallet::new(&seed, settings.network, settings.bitcoin_backend.clone())
+            .internal_error("Failed to load Bitcoin wallet")?;
         l1w.sync()
             .await
-            .internal_error("Failed to sync signet wallet")?;
+            .internal_error("Failed to sync Bitcoin wallet")?;
         let balance = l1w.balance();
         if balance.untrusted_pending > Amount::ZERO {
             println!(
                 "{}",
-                "You have pending funds on signet that won't be included in the drain".yellow()
+                "You have pending Bitcoin funds that won't be included in the drain".yellow()
             );
         }
-        let fee_rate = get_fee_rate(fee_rate, settings.signet_backend.as_ref()).await;
+        let fee_rate = get_fee_rate(fee_rate, settings.bitcoin_backend.as_ref()).await;
         log_fee_rate(&fee_rate);
 
         let mut psbt = {
@@ -130,10 +130,10 @@ pub async fn drain(
             .expect("tx should be signed");
         let tx = psbt.extract_tx().expect("tx should be signed and ready");
         settings
-            .signet_backend
+            .bitcoin_backend
             .broadcast_tx(&tx)
             .await
-            .internal_error("Failed to broadcast signet transaction")?;
+            .internal_error("Failed to broadcast Bitcoin transaction")?;
         let txid = tx.compute_txid();
         println!(
             "{}",
@@ -141,7 +141,7 @@ pub async fn drain(
                 .with_maybe_explorer(settings.mempool_space_endpoint.as_deref())
                 .pretty()
         );
-        println!("Drained signet wallet to {address}",);
+        println!("Drained Bitcoin wallet to {address}",);
     }
 
     if let Some(address) = alpen_address {
@@ -208,6 +208,22 @@ pub async fn drain(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_bitcoin_address_option() {
+        let args = DrainArgs::from_args(&["alpen", "drain"], &["--bitcoin-address", "destination"])
+            .unwrap();
+
+        assert_eq!(args.bitcoin_address.as_deref(), Some("destination"));
+    }
+
+    #[test]
+    fn rejects_removed_signet_address_option() {
+        assert!(
+            DrainArgs::from_args(&["alpen", "drain"], &["--signet-address", "destination"],)
+                .is_err()
+        );
+    }
 
     #[test]
     fn alpen_drain_value_reserves_exact_fee() {

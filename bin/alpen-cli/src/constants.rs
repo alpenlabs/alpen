@@ -31,7 +31,7 @@ pub const MAGIC_BYTES_LEN: usize = 4;
 
 pub const DEFAULT_NETWORK: Network = Network::Signet;
 pub const DEFAULT_BRIDGE_ALPEN_ADDRESS: &str = "0x5400000000000000000000000000000000000001";
-pub const SIGNET_BLOCK_TIME: Duration = Duration::from_secs(10 * 60); // 10 minutes
+pub const BITCOIN_BLOCK_TIME: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
 /// Serial of the Alpen EE account used in deposit descriptors.
 ///

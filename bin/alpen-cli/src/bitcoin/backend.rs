@@ -101,7 +101,7 @@ pub enum WalletUpdate {
 pub type UpdateSender = UnboundedSender<WalletUpdate>;
 
 #[async_trait]
-pub trait SignetBackend: Debug + Send + Sync {
+pub trait BitcoinBackend: Debug + Send + Sync {
     async fn sync_wallet(
         &self,
         req: SyncRequestBuilder<(KeychainKind, u32)>,
@@ -122,7 +122,7 @@ pub trait SignetBackend: Debug + Send + Sync {
 }
 
 #[async_trait]
-impl SignetBackend for EsploraClient {
+impl BitcoinBackend for EsploraClient {
     async fn sync_wallet(
         &self,
         req: SyncRequestBuilder<(KeychainKind, u32)>,
@@ -235,7 +235,7 @@ impl SignetBackend for EsploraClient {
 }
 
 #[async_trait]
-impl SignetBackend for Arc<bitcoincore_rpc::Client> {
+impl BitcoinBackend for Arc<bitcoincore_rpc::Client> {
     async fn sync_wallet(
         &self,
         _req: SyncRequestBuilder<(KeychainKind, u32)>,

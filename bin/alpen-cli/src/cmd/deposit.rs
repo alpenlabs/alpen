@@ -27,15 +27,15 @@ use strata_primitives::crypto::even_kp;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::{ALPEN_EE_ACCT_SERIAL, SIGNET_BLOCK_TIME},
+    bitcoin::{get_fee_rate, log_fee_rate, BitcoinWallet},
+    constants::{ALPEN_EE_ACCT_SERIAL, BITCOIN_BLOCK_TIME},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,
     settings::Settings,
-    signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
 
-/// Deposits BTC from signet into Alpen
+/// Deposits BTC from Bitcoin into Alpen
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "deposit")]
 pub struct DepositArgs {
@@ -44,7 +44,7 @@ pub struct DepositArgs {
     #[argh(positional)]
     alpen_address: Option<String>,
 
-    /// override signet fee rate in sat/vbyte; the effective rate is at least 1
+    /// override Bitcoin fee rate in sat/vbyte; the effective rate is at least 1
     #[argh(option)]
     fee_rate: Option<u64>,
 }
@@ -142,14 +142,14 @@ pub async fn deposit(
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
-    let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
-        .internal_error("Failed to load signet wallet")?;
+    let mut l1w = BitcoinWallet::new(&seed, settings.network, settings.bitcoin_backend.clone())
+        .internal_error("Failed to load Bitcoin wallet")?;
     let l2w = AlpenWallet::new(&seed, &settings)
         .user_error("Invalid Alpen endpoint URL. Check the config file")?;
 
     l1w.sync()
         .await
-        .internal_error("Failed to sync signet wallet")?;
+        .internal_error("Failed to sync Bitcoin wallet")?;
 
     let requested_alpen_address = alpen_address
         .map(|a| {
@@ -195,7 +195,7 @@ pub async fn deposit(
         bridge_in_address.to_string().yellow()
     );
 
-    let fee_rate = get_fee_rate(fee_rate, settings.signet_backend.as_ref()).await;
+    let fee_rate = get_fee_rate(fee_rate, settings.bitcoin_backend.as_ref()).await;
     log_fee_rate(&fee_rate);
 
     let tx = build_deposit_request_tx(
@@ -222,17 +222,17 @@ pub async fn deposit(
     let pb = ProgressBar::new_spinner().with_message("Broadcasting transaction");
     pb.enable_steady_tick(Duration::from_millis(100));
     settings
-        .signet_backend
+        .bitcoin_backend
         .broadcast_tx(&tx)
         .await
-        .internal_error("Failed to broadcast signet transaction")?;
+        .internal_error("Failed to broadcast Bitcoin transaction")?;
     let txid = tx.compute_txid();
     pb.finish_with_message(
         OnchainObject::from(&txid)
             .with_maybe_explorer(settings.mempool_space_endpoint.as_deref())
             .pretty(),
     );
-    println!("Expect transaction confirmation in ~{SIGNET_BLOCK_TIME:?}. Funds will take longer than this to be available on Alpen.");
+    println!("Expect transaction confirmation in ~{BITCOIN_BLOCK_TIME:?}. Funds will take longer than this to be available on Alpen.");
     Ok(())
 }
 

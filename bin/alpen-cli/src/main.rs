@@ -1,17 +1,18 @@
 //! Alpen CLI
 
 pub mod alpen;
+pub mod bitcoin;
+pub mod chain;
 pub mod cmd;
 pub mod constants;
 mod link;
-pub mod net_type;
 pub mod recovery;
 pub mod seed;
 pub mod settings;
-pub mod signet;
 
 use std::process::exit;
 
+use bitcoin::persist::set_data_dir;
 use cmd::{
     backup::backup, balance::balance, config::config, deposit::deposit, drain::drain,
     receive::receive, recover::recover, scan::scan, send::send, withdraw::withdraw, Commands,
@@ -24,7 +25,6 @@ use seed::FilePersister;
 #[cfg(all(not(target_os = "linux"), not(feature = "test-mode")))]
 use seed::KeychainPersister;
 use settings::Settings;
-use signet::persist::set_data_dir;
 
 use crate::cmd::debug::debug;
 

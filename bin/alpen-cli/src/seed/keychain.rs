@@ -73,7 +73,7 @@ impl EncryptedSeedPersister for KeychainPersister {
     }
 }
 
-use crate::signet::backend::BoxedErr;
+use crate::bitcoin::backend::BoxedErr;
 
 // below is wrapper around [`keyring::Error`] so it can be used with OneOf to more precisely handle
 // errors
