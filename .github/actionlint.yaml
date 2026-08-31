@@ -2,3 +2,10 @@
 self-hosted-runner:
   labels:
     - ubuntu-latest-m
+
+# actionlint 1.7.12 predates GitHub's $/ self-repository syntax.
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      - 'specifying action "\$/\.github/actions/.+" in invalid format because ref is missing'
+      - 'reusable workflow call "\$/\.github/workflows/.+" at "uses" is not following the format'
