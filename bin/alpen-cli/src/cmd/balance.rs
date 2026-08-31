@@ -15,7 +15,7 @@ use crate::{
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "balance")]
 pub struct BalanceArgs {
-    /// either "signet" or "alpen"
+    /// either "bitcoin" ("signet" alias) or "alpen"
     #[argh(positional)]
     network_type: String,
 }
@@ -47,7 +47,7 @@ pub async fn balance(
     }
 
     if let NetworkType::Alpen = network_type {
-        let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
+        let l2w = AlpenWallet::new(&seed, &settings)
             .user_error("Invalid Alpen endpoint URL. Check the config file")?;
         println!("Getting balance...");
         let eth_balance = l2w

@@ -17,7 +17,7 @@ use dialoguer::{Confirm, Input};
 use password::{HashVersion, IncorrectPassword, Password};
 use rand_core::{CryptoRngCore, OsRng};
 use sha2::{Digest, Sha256};
-#[cfg(feature = "test-mode")]
+#[cfg(any(test, feature = "test-mode"))]
 use shrex::Hex;
 use terrors::OneOf;
 use zeroize::Zeroizing;
@@ -48,7 +48,7 @@ impl BaseWallet {
 pub struct Seed(Zeroizing<[u8; SEED_LEN]>);
 
 impl Seed {
-    #[cfg(feature = "test-mode")]
+    #[cfg(any(test, feature = "test-mode"))]
     pub fn from_file(bytes: Hex<[u8; SEED_LEN]>) -> Self {
         let bytes = Zeroizing::new(*bytes);
         Self(bytes)
@@ -101,11 +101,11 @@ impl Seed {
         Ok(EncryptedSeed(buf))
     }
 
-    pub fn signet_wallet(&self) -> BaseWallet {
+    pub fn bitcoin_wallet(&self, network: Network) -> BaseWallet {
         let mnemonic = Mnemonic::from_entropy(self.0.as_ref()).expect("valid entropy");
         // We do not use a passphrase.
         let bip39_seed = mnemonic.to_seed("");
-        let rootpriv = Xpriv::new_master(Network::Signet, &bip39_seed).expect("valid xpriv");
+        let rootpriv = Xpriv::new_master(network, &bip39_seed).expect("valid xpriv");
         let base_desc = format!("tr({rootpriv}/86h/0h/0h");
         let external_desc = format!("{base_desc}/0/*)");
         let internal_desc = format!("{base_desc}/1/*)");
@@ -443,7 +443,7 @@ mod test {
     // the same funds. https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki#test-vectors
     fn test_l1_signet_wallet_matches_bip86_test_vector() {
         let seed = Seed([0u8; SEED_LEN].into());
-        let (_, create) = seed.signet_wallet().split();
+        let (_, create) = seed.bitcoin_wallet(Network::Signet).split();
         let mut wallet = create
             .network(Network::Signet)
             .create_wallet_no_persist()
@@ -458,5 +458,21 @@ mod test {
         )
         .expect("valid hex");
         assert_eq!(script_pubkey.as_bytes(), expected_bytes.as_slice());
+    }
+
+    #[test]
+    fn builds_bitcoin_mainnet_wallet() {
+        let seed = Seed([0u8; SEED_LEN].into());
+        let (_, builder) = seed.bitcoin_wallet(Network::Bitcoin).split();
+        let mut wallet = builder
+            .network(Network::Bitcoin)
+            .create_wallet_no_persist()
+            .expect("valid descriptor");
+        let address = wallet.reveal_next_address(KeychainKind::External).address;
+
+        assert_eq!(
+            address.to_string(),
+            "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"
+        );
     }
 }

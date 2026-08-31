@@ -145,7 +145,7 @@ pub async fn drain(
     }
 
     if let Some(address) = alpen_address {
-        let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
+        let l2w = AlpenWallet::new(&seed, &settings)
             .user_error("Invalid Alpen endpoint URL. Check the config file")?;
         let balance = l2w
             .get_balance(l2w.default_signer_address())

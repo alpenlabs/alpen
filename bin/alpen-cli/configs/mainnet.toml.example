@@ -1,0 +1,17 @@
+# Mainnet profile from alpenlabs/deployments@78e5d198f288225e0e7b96cbb0502d12cb775696; set the endpoints and credentials before use.
+esplora = "https://mempool.space/api"
+mempool_endpoint = "https://mempool.space"
+network = "bitcoin"
+alpen_endpoint = "https://mainnet-rpc.example.com"
+# alpen_rpc_user = "replace-me"
+# alpen_rpc_password = "replace-me"
+blockscout_endpoint = "https://mainnet-explorer.example.com"
+magic_bytes = "STRA"
+bridge_pubkey = "19c633a53bd7fd35d497e92a61888f6076ccad5c24fef782c0985f7634804cfc"
+bridge_alpen_address = "0x5400000000000000000000000000000000000001"
+bridge_denomination_sats = 200000000
+bridge_fee_sats = 264
+recovery_delay = 36
+max_withdrawal_descriptor_len = 81
+finality_depth = 1
+# `max_withdrawal_amount_sats` is omitted (uncapped).
