@@ -16,7 +16,7 @@ impl FromStr for NetworkType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "signet" => Ok(Self::Signet),
+            "bitcoin" | "signet" => Ok(Self::Signet),
             "alpen" => Ok(Self::Alpen),
             _ => Err(InvalidNetwork),
         }
@@ -29,5 +29,18 @@ impl fmt::Display for NetworkType {
             NetworkType::Signet => "signet",
             NetworkType::Alpen => "alpen",
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_bitcoin_network_name() {
+        assert_eq!(
+            NetworkType::from_str("bitcoin").unwrap(),
+            NetworkType::Signet
+        );
     }
 }

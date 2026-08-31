@@ -56,7 +56,7 @@ async fn main() {
         return;
     }
 
-    assert!(set_data_dir(settings.data_dir.clone()));
+    assert!(set_data_dir(settings.data_dir.clone(), settings.network));
 
     #[cfg(not(feature = "test-mode"))]
     let seed = seed::load_or_create(&persister).unwrap_or_else(|e| {

@@ -33,7 +33,8 @@ const CONFIG_FILE_ENV: &str = "CLI_CONFIG";
 const DEFAULT_CONFIG_FILENAME: &str = "config.toml";
 
 /// Settings deserialized from the config file.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[expect(missing_debug_implementations, reason = "contains RPC credentials")]
 pub struct SettingsFromFile {
     /// Esplora server endpoint.
     pub esplora: Option<String>,
@@ -47,6 +48,9 @@ pub struct SettingsFromFile {
     pub bitcoind_rpc_endpoint: Option<String>,
     /// Alpen network RPC endpoint.
     pub alpen_endpoint: String,
+    /// Optional HTTP Basic credentials for the Alpen RPC endpoint.
+    pub alpen_rpc_user: Option<String>,
+    pub alpen_rpc_password: Option<String>,
     /// Mempool explorer endpoint.
     pub mempool_endpoint: Option<String>,
     /// Blockscout explorer endpoint.
@@ -94,10 +98,11 @@ pub struct SettingsFromFile {
 
 /// Settings struct filled with either config values or
 /// opinionated defaults
-#[derive(Debug)]
+#[expect(missing_debug_implementations, reason = "contains RPC credentials")]
 pub struct Settings {
     pub esplora: Option<String>,
     pub alpen_endpoint: String,
+    alpen_rpc_auth: Option<(String, String)>,
     pub data_dir: PathBuf,
     pub bridge_musig2_pubkey: XOnlyPublicKey,
     pub descriptor_db: PathBuf,
@@ -134,10 +139,15 @@ pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var(CONFIG_FI
 });
 
 impl Settings {
+    pub(crate) fn alpen_rpc_auth(&self) -> Option<(&str, &str)> {
+        self.alpen_rpc_auth
+            .as_ref()
+            .map(|(username, password)| (username.as_str(), password.as_str()))
+    }
+
     pub fn load() -> Result<Self, OneOf<(io::Error, config::ConfigError)>> {
         let proj_dirs = &PROJ_DIRS;
         let config_file = CONFIG_FILE.as_path();
-        let descriptor_file = proj_dirs.data_dir().to_owned().join("descriptors");
         let linux_seed_file = proj_dirs.data_dir().to_owned().join("seed");
 
         create_dir_all(proj_dirs.config_dir()).map_err(OneOf::new)?;
@@ -190,10 +200,24 @@ impl Settings {
                 "invalid withdrawal params in config: {e}"
             )))
         })?;
+        let alpen_rpc_auth = match (from_file.alpen_rpc_user, from_file.alpen_rpc_password) {
+            (None, None) => None,
+            (Some(username), Some(password)) => Some((username, password)),
+            _ => {
+                return Err(OneOf::new(ConfigError::Message(
+                    "alpen_rpc_user and alpen_rpc_password must be configured together".into(),
+                )))
+            }
+        };
+        let descriptor_file = proj_dirs.data_dir().join(match from_file.network {
+            Network::Bitcoin => "descriptors-bitcoin",
+            _ => "descriptors",
+        });
 
         Ok(Settings {
             esplora: from_file.esplora,
             alpen_endpoint: from_file.alpen_endpoint,
+            alpen_rpc_auth,
             data_dir: proj_dirs.data_dir().to_owned(),
             bridge_musig2_pubkey: XOnlyPublicKey::from_slice(&from_file.bridge_pubkey.0)
                 .expect("valid length"),
@@ -227,9 +251,68 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "test-mode"))]
+    use std::{
+        env::{set_var, temp_dir},
+        fs::{create_dir_all, remove_dir_all, write},
+        process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
     use toml;
 
     use super::*;
+
+    #[cfg(not(feature = "test-mode"))]
+    #[test]
+    fn parses_mainnet_profile() {
+        let parsed: SettingsFromFile =
+            toml::from_str(include_str!("../configs/mainnet.toml.example")).unwrap();
+        assert_eq!(parsed.network, Network::Bitcoin);
+    }
+
+    #[cfg(not(feature = "test-mode"))]
+    #[test]
+    fn loads_mainnet_profile_with_optional_rpc_auth() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should follow the Unix epoch")
+            .as_nanos();
+        let test_dir = temp_dir().join(format!("alpen-cli-settings-{}-{unique}", process::id()));
+        let config_file = test_dir.join("config.toml");
+        create_dir_all(&test_dir).expect("test directory should be created");
+        let mainnet_profile = include_str!("../configs/mainnet.toml.example");
+        write(&config_file, mainnet_profile).expect("mainnet profile should be written");
+        set_var(PROJ_DIRS_ENV, &test_dir);
+        set_var(CONFIG_FILE_ENV, &config_file);
+
+        let settings = Settings::load().expect("mainnet profile should load");
+        assert_eq!(settings.network, Network::Bitcoin);
+        assert_eq!(settings.alpen_rpc_auth(), None);
+        assert_eq!(
+            settings
+                .descriptor_db
+                .file_name()
+                .and_then(|name| name.to_str()),
+            Some("descriptors-bitcoin")
+        );
+        drop(settings);
+
+        let user_only = mainnet_profile.replace("# alpen_rpc_user", "alpen_rpc_user");
+        write(&config_file, &user_only).expect("partial auth profile should be written");
+        assert!(Settings::load().is_err());
+
+        let with_auth = user_only.replace("# alpen_rpc_password", "alpen_rpc_password");
+        write(&config_file, with_auth).expect("authenticated profile should be written");
+        let settings = Settings::load().expect("authenticated mainnet profile should load");
+        assert_eq!(
+            settings.alpen_rpc_auth(),
+            Some(("replace-me", "replace-me"))
+        );
+        drop(settings);
+
+        remove_dir_all(test_dir).expect("test directory should be removed");
+    }
 
     #[test]
     fn test_parses_datatool_network_profile_snippet() {
@@ -281,6 +364,8 @@ mod tests {
             bitcoind_rpc_pw = "pass"
             bitcoind_rpc_endpoint = "http://127.0.0.1:38332"
             alpen_endpoint = "https://rpc.testnet.alpenlabs.io"
+            alpen_rpc_user = "alpen"
+            alpen_rpc_password = "secret"
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
@@ -307,6 +392,8 @@ mod tests {
         // Assert important fields survived round-trip
         assert_eq!(parsed.esplora, reparsed.esplora);
         assert_eq!(parsed.alpen_endpoint, reparsed.alpen_endpoint);
+        assert_eq!(parsed.alpen_rpc_user, reparsed.alpen_rpc_user);
+        assert_eq!(parsed.alpen_rpc_password, reparsed.alpen_rpc_password);
         assert_eq!(parsed.bridge_pubkey.0, reparsed.bridge_pubkey.0);
         assert_eq!(parsed.network, reparsed.network);
         assert_eq!(parsed.magic_bytes, reparsed.magic_bytes);

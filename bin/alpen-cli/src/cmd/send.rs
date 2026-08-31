@@ -27,7 +27,7 @@ use crate::{
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "send")]
 pub struct SendArgs {
-    /// either "signet" or "alpen"
+    /// either "bitcoin" ("signet" alias) or "alpen"
     #[argh(positional)]
     network_type: String,
 
@@ -103,7 +103,7 @@ pub async fn send(args: SendArgs, seed: Seed, settings: Settings) -> Result<(), 
             );
         }
         NetworkType::Alpen => {
-            let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
+            let l2w = AlpenWallet::new(&seed, &settings)
                 .user_error("Invalid Alpen endpoint URL. Check the configuration.")?;
             let address = AlpenAddress::from_str(&args.address).user_error(format!(
                 "Invalid Alpen address {}. Must be an EVM-compatible address",

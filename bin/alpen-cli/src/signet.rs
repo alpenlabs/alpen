@@ -48,11 +48,11 @@ pub async fn get_fee_rate(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, path::Path};
 
     use async_trait::async_trait;
     use bdk_wallet::{
-        bitcoin::{FeeRate, ScriptBuf, Transaction},
+        bitcoin::{FeeRate, Network, ScriptBuf, Transaction},
         chain::{
             spk_client::{FullScanRequestBuilder, SyncRequestBuilder},
             CheckPoint,
@@ -63,7 +63,7 @@ mod tests {
 
     use super::{
         backend::{BroadcastTxError, GetFeeRateError, InvalidFee, ScanError, UpdateSender},
-        get_fee_rate, SignetBackend, SyncError,
+        get_fee_rate, SignetBackend, SignetWallet, SyncError,
     };
 
     #[derive(Debug)]
@@ -139,6 +139,19 @@ mod tests {
 
         assert_eq!(fee_rate, FeeRate::BROADCAST_MIN);
     }
+
+    #[test]
+    fn uses_distinct_mainnet_database_path() {
+        let data_dir = Path::new("wallet-data");
+        assert_eq!(
+            SignetWallet::db_path("default", data_dir, Network::Bitcoin),
+            data_dir.join("default-bitcoin.sqlite")
+        );
+        assert_eq!(
+            SignetWallet::db_path("default", data_dir, Network::Signet),
+            data_dir.join("default.sqlite")
+        );
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -174,12 +187,16 @@ pub struct SignetWallet {
 }
 
 impl SignetWallet {
-    fn db_path(wallet: &str, data_dir: &Path) -> PathBuf {
+    fn db_path(wallet: &str, data_dir: &Path, network: Network) -> PathBuf {
+        let wallet = match network {
+            Network::Bitcoin => format!("{wallet}-bitcoin"),
+            _ => wallet.to_string(),
+        };
         data_dir.join(wallet).with_extension("sqlite")
     }
 
-    pub fn persister(data_dir: &Path) -> Result<Connection, rusqlite::Error> {
-        Connection::open(Self::db_path("default", data_dir))
+    pub fn persister(data_dir: &Path, network: Network) -> Result<Connection, rusqlite::Error> {
+        Connection::open(Self::db_path("default", data_dir, network))
     }
 
     pub fn new(
@@ -187,7 +204,7 @@ impl SignetWallet {
         network: Network,
         sync_backend: Arc<dyn SignetBackend>,
     ) -> io::Result<Self> {
-        let (load, create) = seed.signet_wallet().split();
+        let (load, create) = seed.bitcoin_wallet(network).split();
         Ok(Self {
             wallet: load
                 .check_network(network)

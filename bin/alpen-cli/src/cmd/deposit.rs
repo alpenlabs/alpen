@@ -146,7 +146,7 @@ pub async fn deposit(
 ) -> Result<(), DisplayedError> {
     let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
         .internal_error("Failed to load signet wallet")?;
-    let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
+    let l2w = AlpenWallet::new(&seed, &settings)
         .user_error("Invalid Alpen endpoint URL. Check the config file")?;
 
     l1w.sync()
