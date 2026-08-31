@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use backend::{ScanError, SignetBackend, SyncError, UpdateError, WalletUpdate};
+use backend::{BitcoinBackend, ScanError, SyncError, UpdateError, WalletUpdate};
 use bdk_esplora::esplora_client::{self, AsyncClient};
 use bdk_wallet::{
     bitcoin::{FeeRate, Network},
@@ -32,11 +32,11 @@ pub fn log_fee_rate(fr: &FeeRate) {
 
 pub async fn get_fee_rate(
     user_provided_sats_per_vb: Option<u64>,
-    signet_backend: &dyn SignetBackend,
+    bitcoin_backend: &dyn BitcoinBackend,
 ) -> FeeRate {
     let fee_rate = match user_provided_sats_per_vb {
         Some(fr) => FeeRate::from_sat_per_vb(fr).expect("valid fee rate"),
-        None => signet_backend
+        None => bitcoin_backend
             .get_fee_rate(1)
             .await
             .expect("valid fee rate")
@@ -63,16 +63,16 @@ mod tests {
 
     use super::{
         backend::{BroadcastTxError, GetFeeRateError, InvalidFee, ScanError, UpdateSender},
-        get_fee_rate, SignetBackend, SignetWallet, SyncError,
+        get_fee_rate, BitcoinBackend, BitcoinWallet, SyncError,
     };
 
     #[derive(Debug)]
-    struct TestSignetBackend {
+    struct TestBitcoinBackend {
         fee_rate: Option<FeeRate>,
     }
 
     #[async_trait]
-    impl SignetBackend for TestSignetBackend {
+    impl BitcoinBackend for TestBitcoinBackend {
         async fn scan_scripts(
             &self,
             _scripts: Vec<ScriptBuf>,
@@ -113,7 +113,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_fee_rate_clamps_backend_zero_to_broadcast_minimum() {
-        let backend = TestSignetBackend {
+        let backend = TestBitcoinBackend {
             fee_rate: Some(FeeRate::ZERO),
         };
 
@@ -124,7 +124,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_fee_rate_uses_broadcast_minimum_when_backend_has_no_estimate() {
-        let backend = TestSignetBackend { fee_rate: None };
+        let backend = TestBitcoinBackend { fee_rate: None };
 
         let fee_rate = get_fee_rate(None, &backend).await;
 
@@ -133,7 +133,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_fee_rate_clamps_user_zero_to_broadcast_minimum() {
-        let backend = TestSignetBackend { fee_rate: None };
+        let backend = TestBitcoinBackend { fee_rate: None };
 
         let fee_rate = get_fee_rate(Some(0), &backend).await;
 
@@ -144,11 +144,11 @@ mod tests {
     fn uses_distinct_mainnet_database_path() {
         let data_dir = Path::new("wallet-data");
         assert_eq!(
-            SignetWallet::db_path("default", data_dir, Network::Bitcoin),
+            BitcoinWallet::db_path("default", data_dir, Network::Bitcoin),
             data_dir.join("default-bitcoin.sqlite")
         );
         assert_eq!(
-            SignetWallet::db_path("default", data_dir, Network::Signet),
+            BitcoinWallet::db_path("default", data_dir, Network::Signet),
             data_dir.join("default.sqlite")
         );
     }
@@ -181,12 +181,12 @@ impl EsploraClient {
 
 #[derive(Debug)]
 /// A wrapper around BDK's wallet with some custom logic
-pub struct SignetWallet {
+pub struct BitcoinWallet {
     wallet: PersistedWallet<Persister>,
-    sync_backend: Arc<dyn SignetBackend>,
+    sync_backend: Arc<dyn BitcoinBackend>,
 }
 
-impl SignetWallet {
+impl BitcoinWallet {
     fn db_path(wallet: &str, data_dir: &Path, network: Network) -> PathBuf {
         let wallet = match network {
             Network::Bitcoin => format!("{wallet}-bitcoin"),
@@ -202,7 +202,7 @@ impl SignetWallet {
     pub fn new(
         seed: &Seed,
         network: Network,
-        sync_backend: Arc<dyn SignetBackend>,
+        sync_backend: Arc<dyn BitcoinBackend>,
     ) -> io::Result<Self> {
         let (load, create) = seed.bitcoin_wallet(network).split();
         Ok(Self {
@@ -239,7 +239,7 @@ impl SignetWallet {
 
 pub async fn scan_wallet(
     wallet: &mut Wallet,
-    sync_backend: Arc<dyn SignetBackend>,
+    sync_backend: Arc<dyn BitcoinBackend>,
 ) -> Result<(), OneOf<(UpdateError, ScanError, rusqlite::Error)>> {
     let req = wallet.start_full_scan();
     let last_cp = wallet.latest_checkpoint();
@@ -259,7 +259,7 @@ pub async fn scan_wallet(
 
 pub async fn sync_wallet(
     wallet: &mut Wallet,
-    sync_backend: Arc<dyn SignetBackend>,
+    sync_backend: Arc<dyn BitcoinBackend>,
 ) -> Result<(), OneOf<(UpdateError, SyncError, rusqlite::Error)>> {
     let req = wallet.start_sync_with_revealed_spks();
     let last_cp = wallet.latest_checkpoint();
@@ -303,7 +303,7 @@ async fn apply_update_stream(
     Ok(())
 }
 
-impl Deref for SignetWallet {
+impl Deref for BitcoinWallet {
     type Target = PersistedWallet<Persister>;
 
     fn deref(&self) -> &Self::Target {
@@ -311,7 +311,7 @@ impl Deref for SignetWallet {
     }
 }
 
-impl DerefMut for SignetWallet {
+impl DerefMut for BitcoinWallet {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.wallet
     }

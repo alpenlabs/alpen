@@ -4,16 +4,16 @@ use bdk_wallet::KeychainKind;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
-    alpen::AlpenWallet, net_type::NetworkType, seed::Seed, settings::Settings, signet::SignetWallet,
+    alpen::AlpenWallet, bitcoin::BitcoinWallet, chain::Chain, seed::Seed, settings::Settings,
 };
 
 /// Prints a new address for the internal wallet
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "receive")]
 pub struct ReceiveArgs {
-    /// either "bitcoin" ("signet" alias) or "alpen"
+    /// either "bitcoin" or "alpen"
     #[argh(positional)]
-    network_type: String,
+    chain: String,
 }
 
 pub async fn receive(
@@ -21,31 +21,31 @@ pub async fn receive(
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
-    let network_type = args
-        .network_type
+    let chain = args
+        .chain
         .parse()
-        .user_error(format!("invalid network type '{}'", args.network_type))?;
+        .user_error(format!("invalid chain '{}'", args.chain))?;
 
-    let address = match network_type {
-        NetworkType::Signet => {
+    let address = match chain {
+        Chain::Bitcoin => {
             let mut l1w =
-                SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
-                    .internal_error("Failed to load signet wallet")?;
+                BitcoinWallet::new(&seed, settings.network, settings.bitcoin_backend.clone())
+                    .internal_error("Failed to load Bitcoin wallet")?;
 
-            println!("Syncing signet wallet...");
+            println!("Syncing Bitcoin wallet...");
             l1w.sync()
                 .await
-                .internal_error("Failed to sync signet wallet")?;
+                .internal_error("Failed to sync Bitcoin wallet")?;
             println!("Wallet synced.");
 
             let address_info = l1w.reveal_next_address(KeychainKind::External);
 
             l1w.persist()
-                .internal_error("Failed to persist signet wallet")?;
+                .internal_error("Failed to persist Bitcoin wallet")?;
 
             address_info.address.to_string()
         }
-        NetworkType::Alpen => {
+        Chain::Alpen => {
             let l2w = AlpenWallet::new(&seed, &settings)
                 .user_error("Invalid Alpen endpoint URL. Check the config file")?;
             l2w.default_signer_address().to_string()

@@ -101,7 +101,7 @@ pub enum WalletUpdate {
 pub type UpdateSender = UnboundedSender<WalletUpdate>;
 
 #[async_trait]
-pub trait SignetBackend: Debug + Send + Sync {
+pub trait BitcoinBackend: Debug + Send + Sync {
     /// Scans a batch of script pubkeys and returns the ones with transaction history.
     async fn scan_scripts(
         &self,
@@ -128,7 +128,7 @@ pub trait SignetBackend: Debug + Send + Sync {
 }
 
 #[async_trait]
-impl SignetBackend for EsploraClient {
+impl BitcoinBackend for EsploraClient {
     async fn scan_scripts(
         &self,
         scripts: Vec<ScriptBuf>,
@@ -271,7 +271,7 @@ impl SignetBackend for EsploraClient {
 }
 
 #[async_trait]
-impl SignetBackend for Arc<bitcoincore_rpc::Client> {
+impl BitcoinBackend for Arc<bitcoincore_rpc::Client> {
     async fn scan_scripts(
         &self,
         scripts: Vec<ScriptBuf>,

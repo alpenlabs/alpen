@@ -7,17 +7,17 @@ use bdk_wallet::bitcoin::Amount;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
-    alpen::AlpenWallet, constants::SATS_TO_WEI, net_type::NetworkType, seed::Seed,
-    settings::Settings, signet::SignetWallet,
+    alpen::AlpenWallet, bitcoin::BitcoinWallet, chain::Chain, constants::SATS_TO_WEI, seed::Seed,
+    settings::Settings,
 };
 
 /// Prints the wallet's current balance(s)
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "balance")]
 pub struct BalanceArgs {
-    /// either "bitcoin" ("signet" alias) or "alpen"
+    /// either "bitcoin" or "alpen"
     #[argh(positional)]
-    network_type: String,
+    chain: String,
 }
 
 pub async fn balance(
@@ -25,18 +25,18 @@ pub async fn balance(
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
-    let network_type = args
-        .network_type
+    let chain = args
+        .chain
         .parse()
-        .user_error(format!("Invalid network type '{}'", args.network_type))?;
+        .user_error(format!("Invalid chain '{}'", args.chain))?;
 
-    if let NetworkType::Signet = network_type {
-        let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
-            .internal_error("Failed to load signet wallet")?;
+    if let Chain::Bitcoin = chain {
+        let mut l1w = BitcoinWallet::new(&seed, settings.network, settings.bitcoin_backend.clone())
+            .internal_error("Failed to load Bitcoin wallet")?;
 
         l1w.sync()
             .await
-            .internal_error("Failed to sync signet wallet")?;
+            .internal_error("Failed to sync Bitcoin wallet")?;
 
         let balance = l1w.balance();
         println!("Total: {}", balance.total());
@@ -46,7 +46,7 @@ pub async fn balance(
         println!("  Immature: {}", balance.immature);
     }
 
-    if let NetworkType::Alpen = network_type {
+    if let Chain::Alpen = chain {
         let l2w = AlpenWallet::new(&seed, &settings)
             .user_error("Invalid Alpen endpoint URL. Check the config file")?;
         println!("Getting balance...");

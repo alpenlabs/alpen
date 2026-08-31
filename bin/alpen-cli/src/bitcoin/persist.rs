@@ -6,11 +6,11 @@ use bdk_wallet::{
     ChangeSet, WalletPersister,
 };
 
-use crate::signet::SignetWallet;
+use crate::bitcoin::BitcoinWallet;
 
 /// Wrapper around the built-in rusqlite db.
 ///
-/// It allows [`PersistedWallet`](crate::signet::PersistedWallet) to be shared across multiple
+/// It allows [`PersistedWallet`](crate::bitcoin::PersistedWallet) to be shared across multiple
 /// threads by lazily initializing per core connections to the sqlite db and keeping them in
 /// local thread storage instead of sharing the connection across cores.
 ///
@@ -32,7 +32,7 @@ pub fn set_data_dir(data_dir: PathBuf, network: Network) -> bool {
 thread_local! {
     static DB: Rc<RefCell<Connection>> = {
         let (data_dir, network) = PERSISTENCE.get().expect("persistence to be configured");
-        RefCell::new(Connection::open(SignetWallet::db_path("default", data_dir, *network)).unwrap()).into()
+        RefCell::new(Connection::open(BitcoinWallet::db_path("default", data_dir, *network)).unwrap()).into()
     };
 }
 
