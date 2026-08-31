@@ -28,7 +28,7 @@ jobs:
 
       - name: Extract Rust toolchain version
         id: extract
-        uses: ./.github/actions/extract-rust-version # zizmor: ignore[unpinned-uses]
+        uses: $/.github/actions/extract-rust-version # zizmor: ignore[unpinned-uses]
 
   test:
     name: Run unit tests and generate report
@@ -55,7 +55,7 @@ jobs:
           rm -rf SHA256SUMS "bitcoin-$BITCOIND_VERSION" "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
 
       - name: Cleanup space
-        uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
+        uses: $/.github/actions/cleanup # zizmor: ignore[unpinned-uses]
 
       - name: Set up Rust
         env:
@@ -85,7 +85,7 @@ jobs:
           cache-on-failure: true
 
       - name: Install SP1 core runner override
-        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+        uses: $/.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
 
       - name: Run tests with coverage
         run: |
@@ -117,7 +117,7 @@ jobs:
           persist-credentials: false
 
       - name: Cleanup space
-        uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
+        uses: $/.github/actions/cleanup # zizmor: ignore[unpinned-uses]
 
       - name: Set up Rust
         env:
@@ -137,7 +137,7 @@ jobs:
           cache-on-failure: true
 
       - name: Install SP1 core runner override
-        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+        uses: $/.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
 
       - name: Run doctests
         run: cargo test --doc --workspace --all-features

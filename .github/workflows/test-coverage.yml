@@ -19,10 +19,10 @@ permissions: {}
 
 jobs:
   unit-tests:
-    uses: ./.github/workflows/unit.yml
+    uses: $/.github/workflows/unit.yml
 
   functional-tests:
-    uses: ./.github/workflows/functional.yml
+    uses: $/.github/workflows/functional.yml
 
   collect-test-metrics:
     name: Collect test metrics
