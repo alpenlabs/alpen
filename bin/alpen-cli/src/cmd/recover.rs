@@ -15,20 +15,20 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_primitives::crypto::even_kp;
 
 use crate::{
+    bitcoin::{get_fee_rate, log_fee_rate, sync_wallet, BitcoinWallet},
     cmd::deposit::{bridge_in_descriptor, compute_recover_at_height},
     constants::{RECOVERY_DESC_CLEANUP_DELAY, SEED_RECOVERY_GAP_LIMIT},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,
     settings::Settings,
-    signet::{get_fee_rate, log_fee_rate, sync_wallet, SignetWallet},
 };
 
 /// Attempts a recovery of old deposit transactions
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "recover")]
 pub struct RecoverArgs {
-    /// override signet fee rate in sat/vbyte; the effective rate is at least 1
+    /// override Bitcoin fee rate in sat/vbyte; the effective rate is at least 1
     #[argh(option)]
     fee_rate: Option<u64>,
 }
@@ -43,11 +43,11 @@ pub async fn recover(
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
-    let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
-        .internal_error("Failed to load signet wallet")?;
+    let mut l1w = BitcoinWallet::new(&seed, settings.network, settings.bitcoin_backend.clone())
+        .internal_error("Failed to load Bitcoin wallet")?;
     l1w.sync()
         .await
-        .internal_error("Failed to sync signet wallet")?;
+        .internal_error("Failed to sync Bitcoin wallet")?;
 
     println!("Opening descriptor recovery");
     let mut descriptor_file = DescriptorRecovery::open(&seed, &settings.descriptor_db)
@@ -59,7 +59,7 @@ pub async fn recover(
         .expect("valid chain tip")
         .height;
 
-    println!("Current signet chain height: {current_height}");
+    println!("Current Bitcoin chain height: {current_height}");
     let descs = descriptor_file
         .read_descs(..=current_height)
         .await
@@ -69,7 +69,7 @@ pub async fn recover(
         println!("No descriptors in the local database");
     }
 
-    let fee_rate = get_fee_rate(args.fee_rate, settings.signet_backend.as_ref()).await;
+    let fee_rate = get_fee_rate(args.fee_rate, settings.bitcoin_backend.as_ref()).await;
     log_fee_rate(&fee_rate);
 
     let mut drained_recovery_scripts = HashSet::new();
@@ -88,7 +88,7 @@ pub async fn recover(
         let address = recovery_wallet
             .reveal_next_address(KeychainKind::External)
             .address;
-        sync_wallet(&mut recovery_wallet, settings.signet_backend.clone())
+        sync_wallet(&mut recovery_wallet, settings.bitcoin_backend.clone())
             .await
             .internal_error("Failed to sync recovery wallet")?;
         let needs_recovery = recovery_wallet.balance().confirmed > Amount::ZERO;
@@ -185,10 +185,10 @@ async fn drain_recovery_path(
 
     let tx = psbt.extract_tx().expect("tx should be signed and ready");
     settings
-        .signet_backend
+        .bitcoin_backend
         .broadcast_tx(&tx)
         .await
-        .internal_error("Failed to broadcast signet transaction")?;
+        .internal_error("Failed to broadcast Bitcoin transaction")?;
 
     println!(
         "{}",
@@ -265,7 +265,7 @@ async fn discover_seed_candidates(
             HashSet::new()
         } else {
             settings
-                .signet_backend
+                .bitcoin_backend
                 .scan_scripts(scripts_to_scan, scan_checkpoint.clone())
                 .await
                 .internal_error("Failed to scan seed recovery scripts")?
@@ -330,7 +330,7 @@ async fn recover_from_seed(
             .address;
         debug_assert_eq!(address.script_pubkey(), candidate.script_pubkey);
 
-        sync_wallet(&mut recovery_wallet, settings.signet_backend.clone())
+        sync_wallet(&mut recovery_wallet, settings.bitcoin_backend.clone())
             .await
             .internal_error("Failed to sync recovery wallet")?;
 

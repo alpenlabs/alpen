@@ -1,15 +1,16 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::OnceLock};
 
 use bdk_wallet::{
+    bitcoin::Network,
     rusqlite::{self, Connection},
     ChangeSet, WalletPersister,
 };
 
-use crate::signet::SignetWallet;
+use crate::bitcoin::BitcoinWallet;
 
 /// Wrapper around the built-in rusqlite db.
 ///
-/// It allows [`PersistedWallet`](crate::signet::PersistedWallet) to be shared across multiple
+/// It allows [`PersistedWallet`](bdk_wallet::PersistedWallet) to be shared across multiple
 /// threads by lazily initializing per core connections to the sqlite db and keeping them in
 /// local thread storage instead of sharing the connection across cores.
 ///
@@ -17,19 +18,22 @@ use crate::signet::SignetWallet;
 #[derive(Debug)]
 pub struct Persister;
 
-static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+static PERSISTENCE: OnceLock<(PathBuf, Network)> = OnceLock::new();
 
 /// Sets the data directory static for the thread local DB.
 ///
 /// Must be called before accessing [`Persister`].
 ///
 /// Can only be set once - will return whether value was set.
-pub fn set_data_dir(data_dir: PathBuf) -> bool {
-    DATA_DIR.set(data_dir).is_ok()
+pub fn set_data_dir(data_dir: PathBuf, network: Network) -> bool {
+    PERSISTENCE.set((data_dir, network)).is_ok()
 }
 
 thread_local! {
-    static DB: Rc<RefCell<Connection>> = RefCell::new(Connection::open(SignetWallet::db_path("default", DATA_DIR.get().expect("data dir to be set"))).unwrap()).into();
+    static DB: Rc<RefCell<Connection>> = {
+        let (data_dir, network) = PERSISTENCE.get().expect("persistence to be configured");
+        RefCell::new(Connection::open(BitcoinWallet::db_path("default", data_dir, *network)).unwrap()).into()
+    };
 }
 
 impl Persister {

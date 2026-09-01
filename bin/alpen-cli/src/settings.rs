@@ -18,12 +18,12 @@ use strata_bridge_params::BridgeParams;
 use strata_l1_txfmt::MagicBytes;
 use terrors::OneOf;
 
+use crate::{
+    bitcoin::{backend::BitcoinBackend, EsploraClient},
+    constants::*,
+};
 #[cfg(feature = "test-mode")]
 use crate::{constants::SEED_LEN, seed::Seed};
-use crate::{
-    constants::*,
-    signet::{backend::SignetBackend, EsploraClient},
-};
 
 /// Environment variable overriding the project directories root.
 const PROJ_DIRS_ENV: &str = "PROJ_DIRS";
@@ -59,7 +59,7 @@ pub struct SettingsFromFile {
     pub bridge_fee_sats: Option<u64>,
     /// The number of confirmations to consider a Bitcoin transaction final.
     pub finality_depth: Option<u32>,
-    /// L1 network the wallet operates on (e.g. "signet").
+    /// L1 network the wallet operates on (for example, Bitcoin mainnet or signet).
     ///
     /// Must match the network the ASM is anchored to.
     pub network: Network,
@@ -106,7 +106,7 @@ pub struct Settings {
     pub bridge_alpen_address: AlpenAddress,
     pub linux_seed_file: PathBuf,
     pub config_file: PathBuf,
-    pub signet_backend: Arc<dyn SignetBackend>,
+    pub bitcoin_backend: Arc<dyn BitcoinBackend>,
     pub bridge_fee: Amount,
     pub finality_depth: u32,
     pub bridge_params: BridgeParams,
@@ -137,7 +137,6 @@ impl Settings {
     pub fn load() -> Result<Self, OneOf<(io::Error, config::ConfigError)>> {
         let proj_dirs = &PROJ_DIRS;
         let config_file = CONFIG_FILE.as_path();
-        let descriptor_file = proj_dirs.data_dir().to_owned().join("descriptors");
         let linux_seed_file = proj_dirs.data_dir().to_owned().join("seed");
 
         create_dir_all(proj_dirs.config_dir()).map_err(OneOf::new)?;
@@ -152,7 +151,7 @@ impl Settings {
             .try_deserialize::<SettingsFromFile>()
             .map_err(OneOf::new)?;
 
-        let sync_backend: Arc<dyn SignetBackend> = match (
+        let sync_backend: Arc<dyn BitcoinBackend> = match (
             from_file.esplora.clone(),
             from_file.bitcoind_rpc_user,
             from_file.bitcoind_rpc_pw,
@@ -169,7 +168,7 @@ impl Settings {
                 Client::new(&url, Auth::CookieFile(cookie_file))
                     .expect("valid bitcoin core client"),
             )),
-            _ => panic!("invalid config for signet - configure for esplora or bitcoind"),
+            _ => panic!("invalid Bitcoin config - configure Esplora or Bitcoin Core"),
         };
 
         // These fields are hand-merged into config.toml by operators, so a bad
@@ -190,6 +189,10 @@ impl Settings {
                 "invalid withdrawal params in config: {e}"
             )))
         })?;
+        let descriptor_file = proj_dirs.data_dir().join(match from_file.network {
+            Network::Bitcoin => "descriptors-bitcoin",
+            _ => "descriptors",
+        });
 
         Ok(Settings {
             esplora: from_file.esplora,
@@ -209,7 +212,7 @@ impl Settings {
             .expect("valid Alpen address"),
             linux_seed_file,
             config_file: CONFIG_FILE.clone(),
-            signet_backend: sync_backend,
+            bitcoin_backend: sync_backend,
             bridge_fee: from_file
                 .bridge_fee_sats
                 .map(Amount::from_sat)
@@ -284,7 +287,7 @@ mod tests {
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
-            network = "signet"
+            network = "bitcoin"
             magic_bytes = "ALPN"
             bridge_denomination_sats = 100_000_000
             recovery_delay = 1008
@@ -309,6 +312,7 @@ mod tests {
         assert_eq!(parsed.alpen_endpoint, reparsed.alpen_endpoint);
         assert_eq!(parsed.bridge_pubkey.0, reparsed.bridge_pubkey.0);
         assert_eq!(parsed.network, reparsed.network);
+        assert_eq!(parsed.network, Network::Bitcoin);
         assert_eq!(parsed.magic_bytes, reparsed.magic_bytes);
         assert_eq!(
             parsed.bridge_denomination_sats,

@@ -18,18 +18,18 @@ use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::{
     alpen::AlpenWallet,
+    bitcoin::BitcoinWallet,
     constants::SATS_TO_WEI,
     link::{OnchainObject, PrettyPrint},
     seed::Seed,
     settings::Settings,
-    signet::SignetWallet,
 };
 
-/// Withdraws BTC from Alpen to signet
+/// Withdraws BTC from Alpen to Bitcoin
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "withdraw")]
 pub struct WithdrawArgs {
-    /// the signet address to send funds to. defaults to a new internal wallet address
+    /// the Bitcoin address to send funds to. defaults to a new internal wallet address
     #[argh(positional)]
     address: Option<String>,
 
@@ -52,7 +52,7 @@ pub async fn withdraw(
         .address
         .map(|a| {
             let unchecked = Address::from_str(&a).user_error(format!(
-                "Invalid signet address: '{a}'. Must be a valid Bitcoin address."
+                "Invalid Bitcoin address: '{a}'. Must be a valid Bitcoin address."
             ))?;
             let checked = unchecked
                 .require_network(settings.network)
@@ -64,11 +64,11 @@ pub async fn withdraw(
         })
         .transpose()?;
 
-    let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
-        .internal_error("Failed to load signet wallet")?;
+    let mut l1w = BitcoinWallet::new(&seed, settings.network, settings.bitcoin_backend.clone())
+        .internal_error("Failed to load Bitcoin wallet")?;
     l1w.sync()
         .await
-        .internal_error("Failed to sync signet wallet")?;
+        .internal_error("Failed to sync Bitcoin wallet")?;
     let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
         .user_error("Invalid Alpen endpoint URL. Check the configuration")?;
 
@@ -77,7 +77,7 @@ pub async fn withdraw(
         None => {
             let info = l1w.reveal_next_address(KeychainKind::External);
             l1w.persist()
-                .internal_error("Failed to persist signet wallet")?;
+                .internal_error("Failed to persist Bitcoin wallet")?;
             info.address
         }
     };
