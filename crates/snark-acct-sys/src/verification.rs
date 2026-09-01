@@ -265,38 +265,23 @@ mod tests {
         assert_eq!(current_state.inner_state_root(), state_3_root);
         assert_eq!(current_state.seqno(), Seqno::new(2));
 
-        // This is a valid alternative transition from the previously recorded
-        // state 2, modeling a proof produced before state 2 advanced to state 3.
-        let update_2_to_4 = make_update(Seqno::new(1), state_4_root);
+        // Build an alternative proof from state 2, but tag it with the sequence
+        // number currently expected after state 2 has advanced to state 3.
+        let update_2_to_4 = make_update(current_state.seqno(), state_4_root);
         let state_2_claim = compute_update_claim(&state_2, &update_2_to_4);
         let mut verifier = ClaimVerifier {
             accepted_claim: state_2_claim.clone(),
         };
-        verify_update_correctness(target, &state_2, &update_2_to_4, &mut verifier)
-            .expect("fork transition must be valid against its state 2 pre-state");
+        verify_update_proof(target, &state_2, &update_2_to_4, &mut verifier)
+            .expect("fork proof must be valid against its state 2 pre-state");
 
-        // Once state 2 has advanced to state 3, the full verification path
-        // rejects the fork because state 2's sequence number was consumed.
-        let mut verifier = ClaimVerifier {
-            accepted_claim: state_2_claim.clone(),
-        };
-        let result =
-            verify_update_correctness(target, &current_state, &update_2_to_4, &mut verifier);
-        assert!(matches!(
-            result,
-            Err(ExecError::Acct(AcctError::InvalidUpdateSequence {
-                account_id,
-                expected: 2,
-                got: 1,
-            })) if account_id == target
-        ));
-
-        // The proof itself is also bound to state 2's root. Even without the
-        // sequence-number guard, it cannot verify against current state 3.
+        // The forged sequence number passes the full path's sequence check,
+        // but the proof claim is still bound to state 2 instead of current state 3.
         let mut verifier = ClaimVerifier {
             accepted_claim: state_2_claim,
         };
-        let result = verify_update_proof(target, &current_state, &update_2_to_4, &mut verifier);
+        let result =
+            verify_update_correctness(target, &current_state, &update_2_to_4, &mut verifier);
         assert!(matches!(
             result,
             Err(ExecError::Acct(AcctError::InvalidUpdateProof { account_id }))
