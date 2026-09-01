@@ -10012,6 +10012,7 @@ dependencies = [
  "ssz",
  "strata-acct-types",
  "strata-ol-state-types",
+ "strata-ol-state-types-v1",
  "strata-predicate",
  "strata-snark-acct-types",
  "tracing",

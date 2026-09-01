@@ -175,3 +175,80 @@ fn compute_update_claim(
     );
     pub_params.as_ssz_bytes()
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::{AccumulatorClaim, Hash, TxEffects};
+    use strata_ol_state_types::{ExecError, ProofVerifyError};
+    use strata_ol_state_types_v1::OLSnarkAccountStateV1;
+    use strata_predicate::PredicateKey;
+
+    use super::*;
+
+    struct ClaimVerifier {
+        accepted_claim: Vec<u8>,
+    }
+
+    impl TxProofVerifier for ClaimVerifier {
+        fn verify_inbox_mmr_proof_next(
+            &mut self,
+            _claim: &AccumulatorClaim,
+        ) -> Result<(), ProofVerifyError> {
+            unreachable!("the test update has no inbox proofs")
+        }
+
+        fn verify_l1_block_ref_mmr_proof_next(
+            &mut self,
+            _claim: &AccumulatorClaim,
+        ) -> Result<(), ProofVerifyError> {
+            unreachable!("the test update has no L1 block reference proofs")
+        }
+
+        fn verify_local_predicate_next(&mut self, claim: &[u8]) -> Result<(), ProofVerifyError> {
+            if claim == self.accepted_claim {
+                Ok(())
+            } else {
+                Err(ProofVerifyError::InvalidProof)
+            }
+        }
+
+        fn is_exhausted(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn rejects_proof_bound_to_unrecorded_public_pre_state() {
+        let target = AccountId::zero();
+        let recorded_root = Hash::from([1; 32]);
+        let forged_root = Hash::from([2; 32]);
+        let recorded_state =
+            OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), recorded_root);
+        let forged_state =
+            OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), forged_root);
+        let update = SnarkAccountUpdateData::new(
+            Seqno::zero(),
+            ProofState::new(Hash::from([3; 32]), 0),
+            Vec::new(),
+            LedgerRefs::new_empty(),
+            TxEffects::default(),
+            Vec::new(),
+            None,
+        );
+
+        // Model a proof whose public inputs use an attacker-chosen pre-state.
+        // The verifier accepts only the claim committed to by that proof.
+        let forged_claim = compute_update_claim(&forged_state, &update);
+        let mut verifier = ClaimVerifier {
+            accepted_claim: forged_claim,
+        };
+
+        let result = verify_update_correctness(target, &recorded_state, &update, &mut verifier);
+
+        assert!(matches!(
+            result,
+            Err(ExecError::Acct(AcctError::InvalidUpdateProof { account_id }))
+                if account_id == target
+        ));
+    }
+}

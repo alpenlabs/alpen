@@ -11,5 +11,8 @@ strata-predicate.workspace = true
 strata-snark-acct-types.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+strata-ol-state-types-v1.workspace = true
+
 [lints]
 workspace = true
