@@ -22,7 +22,7 @@ use bitcoind_async_client::{
             Bip125Replaceable, EstimateSmartFee, GetAddressInfo, GetBlockchainInfo, GetMempoolInfo,
             GetRawMempool, GetRawMempoolVerbose, GetRawTransaction, GetRawTransactionVerbose,
             GetTransaction, GetTxOut, ListTransactions, ListUnspent, ListUnspentItem,
-            MempoolAcceptance, PsbtBumpFee, SignRawTransaction, SubmitPackage,
+            MempoolAcceptance, PsbtBumpFee, Send, SignRawTransaction, SubmitPackage,
             SubmitPackageTxResult, TestMempoolAccept, WalletCreateFundedPsbt, WalletProcessPsbt,
         },
         v29::{ImportDescriptors, ImportDescriptorsResult},
@@ -32,7 +32,8 @@ use bitcoind_async_client::{
     types::{
         BroadcastOptions, CreateRawTransactionArguments, CreateRawTransactionInput,
         CreateRawTransactionOutput, ImportDescriptorInput, ListUnspentQueryOptions,
-        PreviousTransactionOutput, PsbtBumpFeeOptions, SighashType, WalletCreateFundedPsbtOptions,
+        PreviousTransactionOutput, PsbtBumpFeeOptions, SendOptions, SighashType,
+        WalletCreateFundedPsbtOptions,
     },
     ClientResult,
 };
@@ -489,6 +490,20 @@ impl Wallet for TestBitcoinClient {
     ) -> ClientResult<Transaction> {
         let some_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
         Ok(some_tx)
+    }
+
+    async fn send(
+        &self,
+        _outputs: &[CreateRawTransactionOutput],
+        _options: Option<SendOptions>,
+    ) -> ClientResult<Send> {
+        let some_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
+        Ok(Send {
+            complete: true,
+            txid: Some(some_tx.compute_txid()),
+            hex: None,
+            psbt: None,
+        })
     }
 
     async fn wallet_create_funded_psbt(
