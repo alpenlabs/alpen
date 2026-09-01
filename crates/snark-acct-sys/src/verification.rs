@@ -179,7 +179,7 @@ fn compute_update_claim(
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{AccumulatorClaim, Hash, TxEffects};
-    use strata_ol_state_types::{ExecError, ProofVerifyError};
+    use strata_ol_state_types::{ExecError, ISnarkAccountStateMut, ProofVerifyError};
     use strata_ol_state_types_v1::OLSnarkAccountStateV1;
     use strata_predicate::PredicateKey;
 
@@ -217,34 +217,86 @@ mod tests {
         }
     }
 
-    #[test]
-    fn rejects_proof_bound_to_unrecorded_public_pre_state() {
-        let target = AccountId::zero();
-        let recorded_root = Hash::from([1; 32]);
-        let forged_root = Hash::from([2; 32]);
-        let recorded_state =
-            OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), recorded_root);
-        let forged_state =
-            OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), forged_root);
-        let update = SnarkAccountUpdateData::new(
-            Seqno::zero(),
-            ProofState::new(Hash::from([3; 32]), 0),
+    fn make_update(seq_no: Seqno, new_state_root: Hash) -> SnarkAccountUpdateData {
+        SnarkAccountUpdateData::new(
+            seq_no,
+            ProofState::new(new_state_root, 0),
             Vec::new(),
             LedgerRefs::new_empty(),
             TxEffects::default(),
             Vec::new(),
             None,
+        )
+    }
+
+    fn verify_and_apply_update(
+        target: AccountId,
+        state: &mut OLSnarkAccountStateV1,
+        update: &SnarkAccountUpdateData,
+    ) {
+        let accepted_claim = compute_update_claim(state, update);
+        let mut verifier = ClaimVerifier { accepted_claim };
+
+        verify_update_correctness(target, state, update, &mut verifier)
+            .expect("transition from the recorded state must be verifiable");
+        state.set_proof_state(
+            update.new_proof_state().inner_state(),
+            update.new_proof_state().next_inbox_msg_idx(),
+            update.seq_no().incr(),
         );
+    }
 
-        // Model a proof whose public inputs use an attacker-chosen pre-state.
-        // The verifier accepts only the claim committed to by that proof.
-        let forged_claim = compute_update_claim(&forged_state, &update);
+    #[test]
+    fn rejects_valid_update_forked_from_stale_state() {
+        let target = AccountId::zero();
+        let state_1_root = Hash::from([1; 32]);
+        let state_2_root = Hash::from([2; 32]);
+        let state_3_root = Hash::from([3; 32]);
+        let state_4_root = Hash::from([4; 32]);
+        let mut current_state =
+            OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), state_1_root);
+
+        let update_1_to_2 = make_update(Seqno::zero(), state_2_root);
+        verify_and_apply_update(target, &mut current_state, &update_1_to_2);
+        let state_2 = current_state.clone();
+
+        let update_2_to_3 = make_update(Seqno::new(1), state_3_root);
+        verify_and_apply_update(target, &mut current_state, &update_2_to_3);
+        assert_eq!(current_state.inner_state_root(), state_3_root);
+        assert_eq!(current_state.seqno(), Seqno::new(2));
+
+        // This is a valid alternative transition from the previously recorded
+        // state 2, modeling a proof produced before state 2 advanced to state 3.
+        let update_2_to_4 = make_update(Seqno::new(1), state_4_root);
+        let state_2_claim = compute_update_claim(&state_2, &update_2_to_4);
         let mut verifier = ClaimVerifier {
-            accepted_claim: forged_claim,
+            accepted_claim: state_2_claim.clone(),
         };
+        verify_update_correctness(target, &state_2, &update_2_to_4, &mut verifier)
+            .expect("fork transition must be valid against its state 2 pre-state");
 
-        let result = verify_update_correctness(target, &recorded_state, &update, &mut verifier);
+        // Once state 2 has advanced to state 3, the full verification path
+        // rejects the fork because state 2's sequence number was consumed.
+        let mut verifier = ClaimVerifier {
+            accepted_claim: state_2_claim.clone(),
+        };
+        let result =
+            verify_update_correctness(target, &current_state, &update_2_to_4, &mut verifier);
+        assert!(matches!(
+            result,
+            Err(ExecError::Acct(AcctError::InvalidUpdateSequence {
+                account_id,
+                expected: 2,
+                got: 1,
+            })) if account_id == target
+        ));
 
+        // The proof itself is also bound to state 2's root. Even without the
+        // sequence-number guard, it cannot verify against current state 3.
+        let mut verifier = ClaimVerifier {
+            accepted_claim: state_2_claim,
+        };
+        let result = verify_update_proof(target, &current_state, &update_2_to_4, &mut verifier);
         assert!(matches!(
             result,
             Err(ExecError::Acct(AcctError::InvalidUpdateProof { account_id }))
