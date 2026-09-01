@@ -53,6 +53,7 @@ import flexitest
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
 
+
 @flexitest.register
 class TestExample(StrataNodeTest):
     def __init__(self, ctx: flexitest.InitContext):
@@ -93,6 +94,7 @@ self.wait_for_rpc_ready(rpc, method="strata_protocolVersion")
 
 # Custom wait
 from common.wait import wait_until
+
 wait_until(condition, error_with="Custom error", timeout=30, step=0.5)
 ```
 
@@ -132,6 +134,7 @@ Environments define which services to start:
 # envconfigs/basic.py
 from common.config import ServiceType
 
+
 class BasicEnvConfig(flexitest.EnvConfig):
     def init(self, ectx: flexitest.EnvContext):
         btc_factory = ectx.get_factory(ServiceType.Bitcoin)
@@ -145,10 +148,12 @@ class BasicEnvConfig(flexitest.EnvConfig):
         strata = strata_factory.create_node(...)
         strata.wait_for_ready(timeout=10)
 
-        return flexitest.LiveEnv({
-            ServiceType.Bitcoin: bitcoin,
-            ServiceType.Strata: strata,
-        })
+        return flexitest.LiveEnv(
+            {
+                ServiceType.Bitcoin: bitcoin,
+                ServiceType.Strata: strata,
+            }
+        )
 ```
 
 Use in tests:
@@ -165,6 +170,7 @@ Factories create services. They should be dumb - just build command and start pr
 ```python
 # factories/bitcoin.py
 from common.services import BitcoinServiceWrapper, BitcoinServiceProps
+
 
 class BitcoinFactory(flexitest.Factory):
     @flexitest.with_ectx("ctx")
@@ -188,8 +194,7 @@ class BitcoinFactory(flexitest.Factory):
 
         # Create service wrapper with RPC factory
         svc = BitcoinServiceWrapper(
-            props, cmd, stdout=logfile,
-            rpc_factory=lambda: BitcoindClient(...)
+            props, cmd, stdout=logfile, rpc_factory=lambda: BitcoindClient(...)
         )
         svc.start()
         return svc
